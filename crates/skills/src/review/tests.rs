@@ -9,7 +9,7 @@ fn file<'a>(path: &'a str, executable: bool, text: &'a str) -> FileIn<'a> {
     FileIn {
         path,
         executable,
-        text: Some(text),
+        bytes: text.as_bytes(),
     }
 }
 
@@ -75,7 +75,7 @@ fn a_script_is_known_by_its_first_line_its_name_or_its_mode() {
         FileIn {
             path: "d.bin",
             executable: true,
-            text: None,
+            bytes: b"\x7fELF\0\0",
         },
         file("notes.md", false, "echo not a script\n"),
     ]);
@@ -177,14 +177,76 @@ fn an_update_says_what_the_summary_gained_and_lost() {
 }
 
 #[test]
-fn a_line_diff_shows_each_change_with_its_context() {
-    let was = "a\nb\nc\nd\ne\nf\ng\nh\ni\nj\n";
-    let now = "a\nb\nC\nd\ne\nf\ng\nh\ni\nj\nk\n";
-    let diff = line_diff(was, now);
-    assert!(diff.starts_with("@@ line 1 @@\n"), "{diff}");
-    assert!(diff.contains("-c\n+C\n"), "{diff}");
-    assert!(diff.contains("+k\n"), "{diff}");
-    // Two stretches: the second starts where its context does.
-    assert_eq!(diff.matches("@@").count(), 4, "{diff}");
-    assert_eq!(line_diff(was, was), "");
+fn a_file_that_is_not_text_is_listed_and_a_script_whatever_its_mode() {
+    let summary = summarize(&[
+        file(
+            "SKILL.md",
+            false,
+            "Run `helpers/go` first, then bash tools/x.\n",
+        ),
+        FileIn {
+            path: "helpers/go",
+            executable: false,
+            bytes: b"\xff\xfe\0binary",
+        },
+        FileIn {
+            path: "tools/x",
+            executable: false,
+            bytes: b"echo hi\n",
+        },
+        FileIn {
+            path: "data.bin",
+            executable: false,
+            bytes: b"\0\0\0",
+        },
+        FileIn {
+            path: "latin1.txt",
+            executable: false,
+            bytes: b"caf\xe9",
+        },
+    ]);
+    assert_eq!(summary.not_text, ["data.bin", "helpers/go", "latin1.txt"]);
+    let scripts: Vec<(&str, &str, bool)> = summary
+        .scripts
+        .iter()
+        .map(|s| {
+            (
+                s.path.as_str(),
+                s.runs.as_str(),
+                s.risks.contains(&Risk::NotText),
+            )
+        })
+        .collect();
+    assert_eq!(
+        scripts,
+        [
+            ("helpers/go", "a file that is not text", true),
+            ("tools/x", "a file the instructions run", false),
+        ]
+    );
+}
+
+#[test]
+fn every_invisible_character_is_marked_and_shown_escaped() {
+    let hidden = "Be helpful.\u{E0049}\u{E0067}\nok\u{200B}\nback\u{202E}wards\nfine\n";
+    let summary = summarize(&[file("SKILL.md", false, hidden)]);
+    let lines: Vec<(usize, Vec<Invisible>)> = summary
+        .unseen
+        .iter()
+        .map(|u| (u.line, u.kinds.clone()))
+        .collect();
+    assert_eq!(
+        lines,
+        [
+            (1, vec![Invisible::Tag]),
+            (2, vec![Invisible::ZeroWidth]),
+            (3, vec![Invisible::Bidi]),
+        ]
+    );
+    assert!(summary.risky());
+    assert_eq!(summary.marked(), 3);
+    assert_eq!(
+        escaped("a\u{E0049}b\x1b[31m\r\n"),
+        "a⟦U+E0049⟧b⟦U+001B⟧[31m⟦U+000D⟧\n"
+    );
 }

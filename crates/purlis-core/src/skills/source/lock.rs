@@ -13,6 +13,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use super::{Commit, Remote};
 use crate::skills::verbs::Level;
 
 /// The shared lockfile's name, at the plane root.
@@ -24,9 +25,30 @@ pub const LOCAL_FILE: &str = "skills.local.lock";
 /// The version of the lockfile's shape this purlis writes.
 pub const VERSION: u32 = 1;
 
-/// The lockfile `level`'s installs are recorded in.
-pub fn file_for(level: &Level) -> &'static str {
-    if level.local { LOCAL_FILE } else { FILE }
+/// Which of the two lockfiles: the committed one the team shares, or this machine's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Kept {
+    Shared,
+    Local,
+}
+
+impl Kept {
+    /// The lockfile `level`'s installs are recorded in.
+    pub fn of(level: &Level) -> Kept {
+        if level.local {
+            Kept::Local
+        } else {
+            Kept::Shared
+        }
+    }
+
+    /// Its name, at the plane root.
+    pub fn file(self) -> &'static str {
+        match self {
+            Kept::Shared => FILE,
+            Kept::Local => LOCAL_FILE,
+        }
+    }
 }
 
 /// A level, written as its folder in the plane (`skills`, `workspaces/ops/skills.local`).
@@ -52,17 +74,6 @@ impl<'de> Deserialize<'de> for AtLevel {
     }
 }
 
-/// Where an installed skill came from: the source's URL and branch, and the skill's folder in it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct From {
-    pub url: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub branch: Option<String>,
-    /// The skill's folder in the source, `/` between the parts; empty for a source that is one
-    /// skill.
-    pub folder: String,
-}
-
 /// One file an install wrote, and the digest of what it wrote.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Wrote {
@@ -79,9 +90,12 @@ pub struct Wrote {
 pub struct Locked {
     pub name: String,
     pub level: AtLevel,
-    pub source: From,
+    /// The repository and branch it was copied from.
+    pub source: Remote,
+    /// Its folder in the source, `/` between the parts; empty for a source that is one skill.
+    pub folder: String,
     /// The commit it was copied from.
-    pub commit: String,
+    pub commit: Commit,
     /// The digest of the copy as a whole ([`super::digest_of`]).
     pub digest: String,
     pub files: Vec<Wrote>,
@@ -120,44 +134,52 @@ pub struct Read {
     pub was: Option<String>,
 }
 
-/// **The lockfile `name` at `plane`'s root**, read without following a link. One that is not
-/// there is empty; one that cannot be read, or is of a newer version, is refused in a sentence.
-pub fn read(plane: &Path, name: &str) -> Result<Read, String> {
+/// The sentence a lockfile purlis cannot read whole is refused with.
+const NOT_READ: &str = "the project's record of installed skills could not be read, so no \
+                        installed skill was changed";
+
+/// **The lockfile `kept` at `plane`'s root**, read without following a link, every entry checked:
+/// a name that is a skill's, plain file paths, a plain folder and a source purlis reads. Which of
+/// them this machine contacts is [`super::update::updates`]' to say. One that is not there is empty; anything else is refused whole in one
+/// sentence (the detail is logged).
+pub fn read(plane: &Path, kept: Kept) -> Result<Read, String> {
+    let name = kept.file();
+    let refused = |why: String| {
+        tracing::info!(target: "purlis::skills", "{name} was not read: {why}");
+        NOT_READ.to_owned()
+    };
     let bytes = crate::proposed::read_pinned(plane, Path::new(name))
-        .map_err(|_| format!("{name} is not a plain file, so purlis does not read it"))?;
+        .map_err(|_| refused("it is not a plain file".to_owned()))?;
     let Some(bytes) = bytes else {
         return Ok(Read {
             lock: Lockfile::default(),
             was: None,
         });
     };
-    let text = String::from_utf8(bytes).map_err(|_| format!("{name} is not text"))?;
-    let lock: Lockfile = serde_json::from_str(&text).map_err(|why| {
-        format!(
-            "{name} cannot be read ({}), so no installed skill was changed",
-            crate::shown::short(&why.to_string())
-        )
-    })?;
+    let text = String::from_utf8(bytes).map_err(|_| refused("it is not text".to_owned()))?;
+    let lock: Lockfile = serde_json::from_str(&text).map_err(|why| refused(why.to_string()))?;
     // A name is a folder purlis opens and writes in: one that is not a skill's name (a `..`, a
     // separator) is refused, as is a recorded file whose path is not plain, whoever wrote it.
     for one in &lock.skills {
+        let plain_files = one.files.iter().all(|file| {
+            purlis_skills::tree::folder_parts(&file.path).is_some_and(|parts| !parts.is_empty())
+        });
         if purlis_skills::change::name_problem(&one.name).is_some()
-            || one.files.iter().any(|file| {
-                purlis_skills::tree::folder_parts(&file.path).is_none_or(|p| p.is_empty())
-            })
+            || !plain_files
+            || purlis_skills::tree::folder_parts(&one.folder).is_none()
+            || one.level.0.local != (kept == Kept::Local)
         {
-            return Err(format!(
-                "{name} names an installed skill {:?} purlis will not write, so no installed \
-                 skill was changed",
+            return Err(refused(format!(
+                "it names {:?} in a way purlis never writes",
                 one.name
-            ));
+            )));
+        }
+        if let Err(why) = one.source.check(false) {
+            return Err(refused(why));
         }
     }
     if lock.version > VERSION {
-        return Err(format!(
-            "{name} was written by a newer purlis (version {}), so this one changes nothing in it",
-            lock.version
-        ));
+        return Err(refused(format!("it is version {}", lock.version)));
     }
     Ok(Read {
         lock,
@@ -167,37 +189,38 @@ pub fn read(plane: &Path, name: &str) -> Result<Read, String> {
 
 /// **Every installed skill** both lockfiles hold. One that cannot be read holds none, and the
 /// sentence that says why is answered beside the rest.
-pub fn every(plane: &Path) -> (Vec<Locked>, Vec<String>) {
+pub fn every(plane: &Path) -> (Vec<(Kept, Locked)>, Vec<String>) {
     let mut skills = Vec::new();
     let mut said = Vec::new();
-    for name in [FILE, LOCAL_FILE] {
-        match read(plane, name) {
-            Ok(read) => skills.extend(read.lock.skills),
+    for kept in [Kept::Shared, Kept::Local] {
+        match read(plane, kept) {
+            Ok(read) => skills.extend(read.lock.skills.into_iter().map(|one| (kept, one))),
             Err(why) => said.push(why),
         }
     }
     (skills, said)
 }
 
-/// **Writes `lock` as the lockfile `name`**, only while it is still the `was` it was read as.
-pub fn write(plane: &Path, name: &str, was: Option<&str>, lock: &Lockfile) -> Result<(), String> {
+/// **Writes `lock` as the lockfile `kept`**, only while it is still the `was` it was read as.
+pub fn write(plane: &Path, kept: Kept, was: Option<&str>, lock: &Lockfile) -> Result<(), String> {
     let mut lock = lock.clone();
     lock.version = VERSION;
     lock.skills
         .sort_by(|a, b| (a.level.0.rel(), &a.name).cmp(&(b.level.0.rel(), &b.name)));
     let text = serde_json::to_string_pretty(&lock).map_err(|why| why.to_string())? + "\n";
     let base = was.and_then(|text| crate::proposed::base_of(Some(text.as_bytes())));
-    crate::proposed::write_pinned(plane, Path::new(name), base.as_deref(), &text).map_err(|why| {
-        match why {
-            crate::proposed::NotMade::Stale => format!(
-                "{name} changed while the skill was being installed, so it was not written: try \
-                 again"
-            ),
-            crate::proposed::NotMade::Unprepared => {
-                format!("{name} could not be written: it is not a plain file")
-            }
-        }
-    })
+    crate::proposed::write_pinned(plane, Path::new(kept.file()), base.as_deref(), &text).map_err(
+        |why| match why {
+            crate::proposed::NotMade::Stale => "the project's record of installed skills \
+                                                 changed meanwhile, so nothing was installed: \
+                                                 try again"
+                .to_owned(),
+            crate::proposed::NotMade::Unprepared => "the project's record of installed skills \
+                                                      is not a plain file, so nothing was \
+                                                      installed"
+                .to_owned(),
+        },
+    )
 }
 
 #[cfg(test)]

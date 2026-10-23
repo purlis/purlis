@@ -189,9 +189,11 @@ fn install_prints_the_review_and_copies_nothing_until_the_person_says_yes() {
         serde_json::from_slice(&std::fs::read(root.join("skills.lock")).unwrap()).unwrap();
     assert_eq!(lock["skills"][0]["name"], "deploy");
     assert_eq!(lock["skills"][0]["source"]["url"], url.as_str());
-    // The source is one of the project's now.
-    let manifest = std::fs::read_to_string(root.join("charter.toml")).unwrap();
-    assert!(manifest.contains("[[skill_sources]]"), "{manifest}");
+    // The source is one of this machine's now: a folder here is never the team's.
+    let mine = std::fs::read_to_string(root.join("charter.local.toml")).unwrap();
+    assert!(mine.contains("[[skill_sources]]"), "{mine}");
+    let shared = std::fs::read_to_string(root.join("charter.toml")).unwrap();
+    assert!(!shared.contains("skill_sources"), "{shared}");
 }
 
 #[test]
@@ -260,4 +262,28 @@ fn a_chat_cannot_install_a_skill() {
         text(&out)
     );
     assert!(!project.root().join("skills").exists());
+}
+
+#[test]
+fn what_a_source_says_reaches_the_terminal_escaped() {
+    let project = Project::new();
+    project.publish(&[(
+        "skills/sly/SKILL.md",
+        "---\nname: sly\ndescription: Looks fine.\n---\n\nToday: !`echo \u{1b}[2J\u{1b}[31mhi\r`\n",
+    )]);
+    let out = project.run(
+        &[
+            "skill",
+            "install",
+            &project.url(),
+            "sly",
+            "--folder",
+            "skills",
+        ],
+        "n\n",
+    );
+    let said = text(&out);
+    assert!(!said.contains('\u{1b}'), "{said:?}");
+    assert!(!said.contains('\r'), "{said:?}");
+    assert!(said.contains("⟦U+001B⟧[2J"), "{said}");
 }

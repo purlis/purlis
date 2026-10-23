@@ -202,6 +202,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`skills/` — the project's skills](#skills--the-projects-skills)
   - [`skills.local/` — the project's local skills](#skillslocal--the-projects-local-skills)
   - [`skills.lock` — the project's installed skills](#skillslock--the-projects-installed-skills)
+  - [`[[skill_sources]]` — the sources a project browses](#skill_sources--the-sources-a-project-browses)
   - [`skills.local.lock` — the installs at local levels](#skillslocallock--the-installs-at-local-levels)
   - [`$TMPDIR/purlis-skill-source-<random>/` — a fetched skill source](#tmpdirpurlis-skill-source-random--a-fetched-skill-source)
   - [`workspaces/<ws>/skills/` and `personas/<name>/skills/` — workspace and persona skills](#workspaceswsskills-and-personasnameskills--workspace-and-persona-skills)
@@ -1433,13 +1434,48 @@ outside the project and removes it when the flow ends, so it adds none of them (
 |---|---|---|---|---|---|
 | `name` | string | required | The skill's name, and its folder's at its level. | experimental | ADR 0100 §2 |
 | `level` | string | required | The level's folder in the plane: `skills`, `workspaces/<ws>/skills` (`.local` in the local lockfile). | experimental | `skills::verbs::Level` |
-| `source.url` | string | required | The source's URL: `https://` with no credential in it, or a folder on this machine. | experimental | ADR 0100 §1 |
+| `source.url` | string | required | The source's URL: `https://` with a plain host and no credential in it, or a folder on the machine that installed it. A machine contacts one only once it is confirmed there (`[[skill_sources]]` in its `charter.local.toml`, which an install writes), and never a folder another machine named. | experimental | ADR 0100 §1 |
 | `source.branch` | string | optional, default the source's `HEAD` | The branch its newest commit is read from. | experimental | ADR 0100 §1 |
-| `source.folder` | string | required | The skill's folder in the source; empty for a source that is one skill. | experimental | ADR 0100 §2 |
+| `folder` | string | required | The skill's folder in the source; empty for a source that is one skill. | experimental | ADR 0100 §2 |
 | `commit` | string | required | The commit the copy was made from: the pin. | experimental | ADR 0100 §2 |
 | `digest` | string | required | `sha256:` over each file's path, mode and digest, in path order. | experimental | `source::digest_of` |
 | `files` | list of `{path, executable?, sha256}` | required | Each file the install wrote, so an edit here is seen and an update removes only what the install wrote. | experimental | ADR 0100 §4 |
 | `brought_by` | string | optional | The skill whose install brought this one along, as one it refers to. | experimental | ADR 0100 §2 |
+
+Every entry is checked as it is read: a name that is a skill's, plain file paths and folder,
+a level that belongs in this lockfile, and a source purlis reads. One that is not refuses the
+whole file in one sentence, and nothing installed changes.
+
+### `[[skill_sources]]` — the sources a project browses
+
+- **Format:** TOML array of tables, in `charter.toml` (the project's) and in
+  `charter.local.toml` (this machine's), keys below and no other.
+- **Status:** **purlis only** (SK-10, ADR 0100 §1), **experimental** while the `skill-studio`
+  flag is on.
+- **Tier:** Plane — in `charter.toml`, committed; this machine's, in `charter.local.toml`, are Clone state.
+- **Written by:** Add source and Remove in the Skill studio, `purlis skill install` (a folder
+  here is added to this machine's file), Confirm and `purlis skill update --confirm`
+  (`purlis_core::skills::source::listed`), each by its tables under the settings writer's lock
+  (`settings::skill_sources::edit`), every other line kept. An add to `charter.toml` is one
+  commit.
+- **Read by:** `purlis_core::skills::source::sources`, with a real TOML parser and these keys
+  alone, failing closed: a file whose sources cannot all be read lists none, and says so in one
+  sentence. **A sign-in is read from `charter.local.toml` alone**: a shared table's `vault` and
+  `key` are not used, and this machine's table for the same `url` and `branch` gives the shared
+  source its sign-in. A shared table names an `https://` URL; a folder on one machine is
+  `charter.local.toml`'s alone. A `charter.local.toml` table for a source is also this machine's
+  **confirmation** of it: a source only the committed `skills.lock` names is contacted from
+  here once one exists.
+- **Git:** as each file is.
+
+| Key | Type | Required / default | Meaning | Status | Source |
+|---|---|---|---|---|---|
+| `url` | string | required | The repository: `https://` with a plain host and no credential in it; in `charter.local.toml` also `file:///…` or a folder's full path. | experimental | ADR 0100 §1 |
+| `branch` | string | optional, default the repository's `HEAD` | The branch read. | experimental | ADR 0100 §1 |
+| `folder` | string | optional, default the top | The folder inside the repository its skills are in. | experimental | ADR 0100 §1 |
+| `vault` | string | optional, with `key` | The vault a private source signs in with. Read from `charter.local.toml` only. | experimental | ADR 0100 §5 |
+| `key` | string | optional, with `vault` | The entry in that vault holding the token. Never the token. | experimental | ADR 0100 §5 |
+| `user` | string | optional, default `x-access-token` | The user name sent beside the token, for a forge that wants one. | experimental | ADR 0100 §5 |
 
 ### `skills.local.lock` — the installs at local levels
 
@@ -1464,8 +1500,10 @@ outside the project and removes it when the flow ends, so it adds none of them (
 - **Tier:** Machine, device-bound, transient — made for one browse, review, install or update and removed
   when it ends.
 - **Written by:** `purlis_core::skills::source::fetch`, through purlis's hardened git: no hook,
-  no submodule, `transfer.fsckObjects` on, and a private source's credential handed to its one
-  credential helper by variable, never on a command line.
+  no submodule, `transfer.fsckObjects` on, one commit deep, every blob over 1 MiB left on the
+  server (`--filter=blob:limit`, the repository a partial clone on that command line alone, so
+  nothing it lacks is fetched later), at most 256 MiB landed, and a private source's credential
+  handed to its one credential helper by variable, never on a command line.
 - **Read by:** the same call, alone.
 
 ### `workspaces/<ws>/skills/` and `personas/<name>/skills/` — workspace and persona skills
@@ -7300,6 +7338,7 @@ refuses a `<data>` under a project or inside any git work tree.
 | `CLAUDE_PID` | Adopting a harness pid into `frame/<chat>/harness.pid` | `charter/hooks.py:6084` |
 | `CHARTER_CONFIG_HOME` / `XDG_CONFIG_HOME` | Move `reporting-consent` | `charter/report.py:462` |
 | `CHARTER_DATA_HOME` / `XDG_DATA_HOME` | Move `<data>`, purlis's data home: the event log in it today (FD-9), and the audit once it is written (ADR 0075). A value under a plane or inside a git work tree is refused | ADR 0075, `crates/purlis-core/src/datahome.rs` |
+| `PURLIS_SKILL_SOURCE_TOKEN`, `PURLIS_SKILL_SOURCE_USER`, `PURLIS_SKILL_SOURCE_HOST` | **purlis only** (SK-10, ADR 0100 §5 as amended 2026-10-23). Set on the one git process that fetches from or asks a private skill source, never on purlis's own environment and never on a command line: the token read from the vault entry the source names, the user name sent beside it (`x-access-token` unless the source says), and the source's host. That git's one credential helper prints the first two for `get` only, and only where git asks for that host over https. Nothing stores them | `crates/purlis-core/src/skills/source/fetch.rs` (`TOKEN_VAR`, `USER_VAR`, `HOST_VAR`, `helper`) |
 | `PURLIS_SKILL_SET` | **purlis only** (SK-24). The set's folder of links a chat is handed, set by the host as it arms the chat and taken out of its environment again where its terminal is composed (`chatspec::spec`), so the program never sees it: it keys the chat's note `skill-sets/.held/<digest>/<pid>` | `crates/purlis-core/src/skills.rs` (`SET_ENV`, `take_hold`) |
 | `EDM_HOME` / `EDM_WORKSPACE` / `EDM_PERSONA` | Legacy names, warned about only | `charter/legacyenv.py:39` |
 

@@ -13,7 +13,8 @@
 use std::path::Path;
 
 use clap::{Args, Subcommand, ValueEnum};
-use purlis_core::skills::source::{self, Source, VaultEntry};
+use purlis_core::skills::review::escaped as esc;
+use purlis_core::skills::source::{self, Remote, Source, VaultEntry};
 use purlis_core::skills::verbs::{self, By, Level};
 use purlis_core::skills::{Grant, StudioRow, Template};
 use serde_json::{Value, json};
@@ -180,12 +181,22 @@ pub enum SkillCommand {
     /// Check each installed skill's source for a newer commit (its refs only: nothing is
     /// fetched or written). With a name, print that skill's update as a diff of its review and
     /// its files, and ask before it is applied. Nothing is ever updated by itself.
+    ///
+    /// A source only the committed lockfile names is not contacted from this machine until it
+    /// is confirmed: `--confirm <url>`.
     Update {
         /// The installed skill to update (default: list the updates there are).
+        #[arg(conflicts_with = "confirm")]
         name: Option<String>,
         /// Update without asking: for a script that printed and read the diff itself.
         #[arg(long, requires = "name")]
         yes: bool,
+        /// Confirm the source at this https:// URL on this machine, so it is asked for updates.
+        #[arg(long, value_name = "URL")]
+        confirm: Option<String>,
+        /// The branch of the source `--confirm` names.
+        #[arg(long, requires = "confirm")]
+        branch: Option<String>,
         #[command(flatten)]
         at: At,
     },
@@ -262,7 +273,11 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
         SkillCommand::List { .. }
             | SkillCommand::Show { .. }
             | SkillCommand::Restore { name: None }
-            | SkillCommand::Update { name: None, .. }
+            | SkillCommand::Update {
+                name: None,
+                confirm: None,
+                ..
+            }
             | SkillCommand::Runs { .. }
     );
     if writes
@@ -514,8 +529,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             at,
         } => {
             let source = Source {
-                url,
-                branch,
+                remote: Remote { url, branch },
                 folder,
                 sign_in: vault.zip(key).map(|(vault, key)| VaultEntry {
                     vault,
@@ -525,22 +539,49 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             };
             install(&mut cx, &source, &names, &grant, yes, &at.level())
         }
+        SkillCommand::Update {
+            confirm: Some(url),
+            branch,
+            ..
+        } => match source::confirm(&mut cx, &Remote { url, branch }) {
+            Ok(_) => Ok(0),
+            Err(why) => {
+                voice::err(&esc(&why));
+                Ok(1)
+            }
+        },
         SkillCommand::Update { name: None, .. } => {
-            let (offers, unasked) = source::updates(root);
-            for one in &unasked {
-                voice::warn(&format!("{} ({}): {}", one.name, one.level, one.why));
+            let found = source::updates(root);
+            for one in &found.unasked {
+                voice::warn(&esc(&format!("{} ({}): {}", one.name, one.level, one.why)));
             }
-            if offers.is_empty() {
-                println!("Every installed skill is pinned to its source's newest commit.");
+            for one in &found.unconfirmed {
+                println!(
+                    "{}: not checked on this machine ({}). To check it: purlis skill update \
+                     --confirm {}{}",
+                    esc(&one.remote.to_string()),
+                    esc(&one.skills.join(", ")),
+                    esc(&one.remote.url),
+                    one.remote
+                        .branch
+                        .as_deref()
+                        .map(|b| format!(" --branch {}", esc(b)))
+                        .unwrap_or_default()
+                );
             }
-            for one in &offers {
+            if found.offers.is_empty() {
+                println!(
+                    "Every installed skill this machine checks is pinned to its source's newest commit."
+                );
+            }
+            for one in &found.offers {
                 let edited = if one.edited { ", edited here" } else { "" };
                 println!(
                     "{}  {}  {} -> {}{edited}",
-                    one.name,
+                    esc(&one.name),
                     one.level,
-                    source::short(&one.pinned),
-                    source::short(&one.newer)
+                    one.pinned.short(),
+                    one.newer.short()
                 );
             }
             Ok(0)
@@ -549,20 +590,22 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             name: Some(name),
             yes,
             at,
+            ..
         } => {
             let level = at.level();
             let update = match source::update_review(root, &level, &name) {
                 Ok(update) => update,
                 Err(why) => {
-                    voice::err(&why);
+                    voice::err(&esc(&why));
                     return Ok(1);
                 }
             };
             print!("{}", update_text(&update));
             if !yes
                 && !asked(&format!(
-                    "Update {name} to {}?",
-                    source::short(&update.newer)
+                    "Update {} to {}?",
+                    esc(&name),
+                    update.newer.short()
                 ))
             {
                 voice::info("Nothing was changed.");
@@ -672,16 +715,20 @@ fn install(
         let browse = match source::browse(root, source) {
             Ok(browse) => browse,
             Err(why) => {
-                voice::err(&why);
+                voice::err(&esc(&why));
                 return Ok(1);
             }
         };
-        println!("{source} at {}:", source::short(&browse.commit));
+        println!("{} at {}:", esc(&source.to_string()), browse.commit.short());
         for one in &browse.skills {
-            println!("  {}  {}", one.skill.name, one.skill.description);
+            println!(
+                "  {}  {}",
+                esc(&one.skill.name),
+                esc(&one.skill.description)
+            );
         }
-        for (folder, why) in &browse.not_skills {
-            println!("  ({folder}: {why})");
+        for one in &browse.not_skills {
+            println!("  ({}: {})", esc(&one.folder), esc(&one.why));
         }
         return Ok(0);
     }
@@ -701,7 +748,7 @@ fn install(
     let review = match source::review(root, source, names) {
         Ok(review) => review,
         Err(why) => {
-            voice::err(&why);
+            voice::err(&esc(&why));
             return Ok(1);
         }
     };
@@ -709,20 +756,25 @@ fn install(
     let question = format!(
         "Install {} at {level}, pinned to {}?",
         counted(review.skills.len(), "skill", "skills"),
-        source::short(&review.commit)
+        review.commit.short()
     );
     if !yes && !asked(&question) {
         voice::info("Nothing was installed.");
         return Ok(1);
     }
-    if source::sources(root)
-        .iter()
-        .all(|one| one.source.url != source.url || one.source.branch != source.branch)
-        && let Err(why) = source::add(cx, source, level.local)
+    // A folder on this machine, or an install kept here, is this machine's source alone.
+    let which = if level.local || !source.remote.url.starts_with("https://") {
+        purlis_core::settings::Which::Local
+    } else {
+        purlis_core::settings::Which::Shared
+    };
+    let listed = source::sources(root).unwrap_or_default();
+    if listed.iter().all(|one| one.source.remote != source.remote)
+        && let Err(why) = source::add(cx, source, which)
     {
-        voice::warn(&format!(
+        voice::warn(&esc(&format!(
             "The source was not added to this project's sources: {why}"
-        ));
+        )));
     }
     done(source::install(
         cx,
@@ -741,7 +793,9 @@ fn asked(question: &str) -> bool {
         && matches!(line.trim().to_ascii_lowercase().as_str(), "y" | "yes")
 }
 
-/// A summary as the terminal prints it, each risky item marked `!`, indented by `pad`.
+/// A summary as the terminal prints it, each risky item marked `!`, indented by `pad`. Every
+/// field is the source's text, so each is escaped: no control or invisible character reaches the
+/// terminal.
 fn summary_text(summary: &purlis_core::skills::review::Summary, pad: &str) -> String {
     let mut out = String::new();
     if summary.is_empty() {
@@ -759,28 +813,45 @@ fn summary_text(summary: &purlis_core::skills::review::Summary, pad: &str) -> St
         };
         out.push_str(&format!(
             "{pad}{mark} script {} runs with {}{risks}\n",
-            one.path, one.runs
+            esc(&one.path),
+            esc(&one.runs)
         ));
     }
     for one in &summary.hosts {
         let mark = if one.risky { "!" } else { " " };
         out.push_str(&format!(
             "{pad}{mark} host {} (in {})\n",
-            one.host,
-            one.files.join(", ")
+            esc(&one.host),
+            esc(&one.files.join(", "))
         ));
     }
     for one in &summary.commands {
         out.push_str(&format!(
             "{pad}! command {}:{} runs `{}`\n",
-            one.path, one.line, one.command
+            esc(&one.path),
+            one.line,
+            esc(&one.command)
         ));
     }
     for one in &summary.outside {
         out.push_str(&format!(
             "{pad}! writes {} ({}:{})\n",
-            one.target, one.path, one.line
+            esc(&one.target),
+            esc(&one.path),
+            one.line
         ));
+    }
+    for one in &summary.unseen {
+        let kinds: Vec<String> = one.kinds.iter().map(ToString::to_string).collect();
+        out.push_str(&format!(
+            "{pad}! hidden text {}:{}: {}\n",
+            esc(&one.path),
+            one.line,
+            kinds.join(", ")
+        ));
+    }
+    for path in &summary.not_text {
+        out.push_str(&format!("{pad}  not text, not shown: {}\n", esc(path)));
     }
     out
 }
@@ -790,8 +861,8 @@ fn review_text(review: &source::Review) -> String {
     let mut out = format!(
         "Review of {} from {} at {}\n",
         counted(review.skills.len(), "skill", "skills"),
-        review.source,
-        source::short(&review.commit)
+        esc(&review.source.to_string()),
+        review.commit.short()
     );
     for skill in &review.skills {
         let brought = skill
@@ -800,22 +871,29 @@ fn review_text(review: &source::Review) -> String {
             .map(|by| format!(" (comes along: {by} refers to it)"))
             .unwrap_or_default();
         out.push_str(&format!(
-            "\n{}{brought}: {}\n",
-            skill.name, skill.description
+            "\n{}{}: {}\n",
+            esc(&skill.name),
+            esc(&brought),
+            esc(&skill.description)
         ));
         out.push_str(&summary_text(&skill.summary, "  "));
         for line in &skill.lint {
-            out.push_str(&format!("  lint: {line}\n"));
+            out.push_str(&format!("  lint: {}\n", esc(line)));
         }
         out.push_str(&format!("  Files ({}):\n", skill.files.len()));
         for file in &skill.files {
             let mark = if file.risky { "!" } else { " " };
-            out.push_str(&format!("  {mark} {} ({} bytes)\n", file.path, file.size));
+            out.push_str(&format!(
+                "  {mark} {} ({} bytes)\n",
+                esc(&file.path),
+                file.size
+            ));
         }
         for left in &skill.left_out {
             out.push_str(&format!(
                 "    not installed: {} ({})\n",
-                left.path, left.why
+                esc(&left.path),
+                left.why
             ));
         }
     }
@@ -826,14 +904,15 @@ fn review_text(review: &source::Review) -> String {
     out
 }
 
-/// An update's review as the terminal prints it: the summary's changes, then each file's diff.
+/// An update's review as the terminal prints it: the summary's changes, then each file's diff,
+/// the edits made here, and the skills that come along. Every field escaped.
 fn update_text(update: &source::UpdateReview) -> String {
     let mut out = format!(
         "Update of {} at {}: {} -> {}\n",
-        update.name,
+        esc(&update.name),
         update.level,
-        source::short(&update.pinned),
-        source::short(&update.newer)
+        update.pinned.short(),
+        update.newer.short()
     );
     if !update.from_pin {
         out.push_str(
@@ -848,17 +927,32 @@ fn update_text(update: &source::UpdateReview) -> String {
         out.push_str("Removed:\n");
         out.push_str(&summary_text(&update.changes.removed, "  "));
     }
+    let changes = |files: &[source::FileChange], out: &mut String| {
+        for file in files {
+            let change = match file.change {
+                source::Changed::Added => "added",
+                source::Changed::Removed => "removed",
+                source::Changed::Changed => "changed",
+            };
+            // The diff's lines are escaped by the core as it writes them.
+            out.push_str(&format!("\n{} ({change})\n{}", esc(&file.path), file.diff));
+        }
+    };
+    changes(&update.files, &mut out);
     if !update.edited.is_empty() {
         out.push_str(&format!(
-            "Edited here since the install, and replaced by the update: {}\n",
-            update.edited.join(", ")
+            "\nEdited here since the install, and replaced by the update: {}\n",
+            esc(&update.edited.join(", "))
         ));
+        changes(&update.local_edits, &mut out);
     }
-    for file in &update.files {
+    for skill in &update.brought {
         out.push_str(&format!(
-            "\n{} ({:?})\n{}",
-            file.path, file.change, file.diff
+            "\nComes along: {} ({})\n",
+            esc(&skill.name),
+            esc(&skill.description)
         ));
+        out.push_str(&summary_text(&skill.summary, "  "));
     }
     out
 }
@@ -868,7 +962,8 @@ fn done<T>(answer: Result<T, String>) -> Result<Code, String> {
     match answer {
         Ok(_) => Ok(0),
         Err(why) => {
-            voice::err(&why);
+            // A refusal may quote a source's own words: escaped like everything else it says.
+            voice::err(&esc(&why));
             Ok(1)
         }
     }

@@ -8,18 +8,33 @@
 //! not what a script could compute when it runs: the review is a reading aid, and what bounds a
 //! skill is the chat's sandbox (ADR 0067).
 //!
+//! **No file escapes it.** A file that is not text is listed as not shown, and is a script where
+//! anything says it runs; a file the instructions run, or with a script's name or `#!` line, is a
+//! script whatever its mode. **And what a reviewer reads is what the model reads**: every
+//! invisible character (a Unicode tag, a zero-width character, a bidi override, any other format
+//! character) is marked, and [`escaped`] shows it.
+//!
 //! The same reading answers an update ([`changes`]): what the summary gained and lost between the
-//! pinned commit and the newer one, then each file's [`line_diff`].
+//! pinned commit and the newer one.
 
 use serde::Serialize;
 
 /// One file of a skill, as the summary reads it: its path inside the skill's folder (`/` between
-/// the parts), whether git marks it executable, and its text, `None` for a file that is not text.
+/// the parts), whether git marks it executable, and its bytes.
 #[derive(Debug, Clone, Copy)]
 pub struct FileIn<'a> {
     pub path: &'a str,
     pub executable: bool,
-    pub text: Option<&'a str>,
+    pub bytes: &'a [u8],
+}
+
+impl<'a> FileIn<'a> {
+    /// Its text, `None` where it is not UTF-8 or holds a NUL: a file the review does not show.
+    pub fn text(&self) -> Option<&'a str> {
+        std::str::from_utf8(self.bytes)
+            .ok()
+            .filter(|text| !text.contains('\0'))
+    }
 }
 
 /// Why an item of the summary is marked risky.
@@ -36,6 +51,8 @@ pub enum Risk {
     Removes,
     /// It hides what it runs: `base64 -d`.
     Hidden,
+    /// It is not text, so the review cannot show what it does.
+    NotText,
 }
 
 impl std::fmt::Display for Risk {
@@ -46,6 +63,7 @@ impl std::fmt::Display for Risk {
             Self::Elevates => "asks for more rights",
             Self::Removes => "removes files",
             Self::Hidden => "hides what it runs",
+            Self::NotText => "is not text, so it is not shown",
         })
     }
 }
@@ -92,6 +110,79 @@ pub struct Outside {
     pub target: String,
 }
 
+/// The kind of a character a reader does not see.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Invisible {
+    /// A Unicode tag character (U+E0000 to U+E007F), which can spell words no one sees.
+    Tag,
+    /// A zero-width character.
+    ZeroWidth,
+    /// A bidi override or isolate, which reorders what is shown.
+    Bidi,
+    /// Another format or control character.
+    Format,
+}
+
+impl Invisible {
+    /// The kind of `c`, or `None` for a character a reader sees (and a line end or tab).
+    pub fn of(c: char) -> Option<Invisible> {
+        match c {
+            '\u{E0000}'..='\u{E007F}' => Some(Self::Tag),
+            '\u{200B}'..='\u{200D}' | '\u{2060}' | '\u{FEFF}' | '\u{180E}' => Some(Self::ZeroWidth),
+            '\u{202A}'..='\u{202E}'
+            | '\u{2066}'..='\u{2069}'
+            | '\u{200E}'
+            | '\u{200F}'
+            | '\u{061C}' => Some(Self::Bidi),
+            '\n' | '\t' => None,
+            '\u{0}'..='\u{1F}'
+            | '\u{7F}'..='\u{9F}'
+            | '\u{AD}'
+            | '\u{2061}'..='\u{2064}'
+            | '\u{206A}'..='\u{206F}'
+            | '\u{FFF9}'..='\u{FFFB}'
+            | '\u{1D173}'..='\u{1D17A}' => Some(Self::Format),
+            _ => None,
+        }
+    }
+}
+
+impl std::fmt::Display for Invisible {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Tag => "a hidden tag character",
+            Self::ZeroWidth => "a zero-width character",
+            Self::Bidi => "a character that reorders the text",
+            Self::Format => "an invisible control character",
+        })
+    }
+}
+
+/// A line that holds a character no reader sees. Every one is marked.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+pub struct Unseen {
+    pub path: String,
+    /// Its line, from 1.
+    pub line: usize,
+    pub kinds: Vec<Invisible>,
+}
+
+/// **`text` as a reviewer is shown it**: every character [`Invisible::of`] names written as
+/// `⟦U+XXXX⟧`, so nothing the model reads is hidden from the person, and no control character
+/// reaches a terminal.
+pub fn escaped(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        if Invisible::of(c).is_some() {
+            out.push_str(&format!("⟦U+{:04X}⟧", u32::from(c)));
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 /// **The summary of one skill**: what it does beyond its instructions.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct Summary {
@@ -99,15 +190,27 @@ pub struct Summary {
     pub hosts: Vec<Host>,
     pub commands: Vec<Command>,
     pub outside: Vec<Outside>,
+    pub unseen: Vec<Unseen>,
+    /// Each file that is not text, so not shown.
+    pub not_text: Vec<String>,
 }
 
 impl Summary {
     /// Whether anything in it is marked.
     pub fn risky(&self) -> bool {
-        self.scripts.iter().any(|one| !one.risks.is_empty())
-            || self.hosts.iter().any(|one| one.risky)
-            || !self.commands.is_empty()
-            || !self.outside.is_empty()
+        self.marked() > 0
+    }
+
+    /// How many of its items are marked.
+    pub fn marked(&self) -> usize {
+        self.scripts
+            .iter()
+            .filter(|one| !one.risks.is_empty())
+            .count()
+            + self.hosts.iter().filter(|one| one.risky).count()
+            + self.commands.len()
+            + self.outside.len()
+            + self.unseen.len()
     }
 
     /// Whether it lists nothing at all: a skill of instructions alone.
@@ -116,6 +219,8 @@ impl Summary {
             && self.hosts.is_empty()
             && self.commands.is_empty()
             && self.outside.is_empty()
+            && self.unseen.is_empty()
+            && self.not_text.is_empty()
     }
 }
 
@@ -158,22 +263,71 @@ const WRITERS: [&str; 10] = [
 /// The schemes a URL in a skill's files reaches a host with.
 const SCHEMES: [&str; 7] = ["https", "http", "wss", "ws", "ftp", "ssh", "git"];
 
+/// Words a line runs the path after: `bash scripts/x.sh`, `run scripts/x.sh`.
+const RUN_WORDS: [&str; 7] = ["run", "Run", "execute", "Execute", "exec", "source", "."];
+
+/// Whether `path` is named, in `texts`, as something that runs: after a program that runs files
+/// or a word that says to run it, as `./path`, or inside a `!` line.
+fn named_to_run(path: &str, texts: &[&str]) -> bool {
+    let is_it = |word: &str| {
+        let word = word
+            .trim_matches(|c: char| "`'\"(),;:".contains(c))
+            .trim_end_matches(['.', '!', '?']);
+        word == path || word.ends_with(&format!("/{path}"))
+    };
+    texts.iter().any(|text| {
+        let bang = bang_commands(text);
+        bang.iter()
+            .any(|(_, command)| command.split_whitespace().any(is_it))
+            || text.lines().any(|line| {
+                let said: Vec<&str> = line.split_whitespace().collect();
+                said.iter().enumerate().any(|(at, word)| {
+                    is_it(word)
+                        && (word.trim_start_matches('`').starts_with("./")
+                            || at.checked_sub(1).is_some_and(|before| {
+                                let before = said[before].trim_matches('`');
+                                let before = before.rsplit('/').next().unwrap_or(before);
+                                RUNNERS.contains(&before) || RUN_WORDS.contains(&before)
+                            }))
+                })
+            })
+    })
+}
+
 /// **The summary of a skill** whose files are `files`.
 pub fn summarize(files: &[FileIn<'_>]) -> Summary {
     let mut summary = Summary::default();
     let mut hosts: Vec<Host> = Vec::new();
+    let texts: Vec<&str> = files.iter().filter_map(FileIn::text).collect();
     for file in files {
-        let Some(text) = file.text else {
-            if file.executable {
+        let named = named_to_run(file.path, &texts);
+        let Some(text) = file.text() else {
+            summary.not_text.push(file.path.to_owned());
+            let shebang = file.bytes.starts_with(b"#!");
+            let by_name = script_runs(file.path, file.executable, "");
+            if file.executable || shebang || named || by_name.is_some() {
                 summary.scripts.push(Script {
                     path: file.path.to_owned(),
-                    runs: "an executable file".to_owned(),
-                    risks: Vec::new(),
+                    runs: by_name.unwrap_or_else(|| "a file that is not text".to_owned()),
+                    risks: vec![Risk::NotText],
                 });
             }
             continue;
         };
-        let runs = script_runs(file.path, file.executable, text);
+        for (at, line) in text.lines().enumerate() {
+            let mut kinds: Vec<Invisible> = line.chars().filter_map(Invisible::of).collect();
+            if !kinds.is_empty() {
+                kinds.sort();
+                kinds.dedup();
+                summary.unseen.push(Unseen {
+                    path: file.path.to_owned(),
+                    line: at + 1,
+                    kinds,
+                });
+            }
+        }
+        let runs = script_runs(file.path, file.executable, text)
+            .or_else(|| named.then(|| "a file the instructions run".to_owned()));
         let commands = bang_commands(text);
         // The lines that run: a script's every line, or a `!` line's command.
         let mut running: Vec<(usize, String)> = Vec::new();
@@ -226,6 +380,8 @@ pub fn summarize(files: &[FileIn<'_>]) -> Summary {
     summary.commands.sort();
     summary.outside.sort();
     summary.outside.dedup();
+    summary.unseen.sort();
+    summary.not_text.sort();
     summary
 }
 
@@ -520,6 +676,22 @@ fn gained(now: &Summary, was: &Summary) -> Summary {
             })
             .cloned()
             .collect(),
+        unseen: now
+            .unseen
+            .iter()
+            .filter(|one| {
+                !was.unseen
+                    .iter()
+                    .any(|old| old.path == one.path && old.kinds == one.kinds)
+            })
+            .cloned()
+            .collect(),
+        not_text: now
+            .not_text
+            .iter()
+            .filter(|one| !was.not_text.contains(one))
+            .cloned()
+            .collect(),
     }
 }
 
@@ -529,106 +701,6 @@ pub fn changes(was: &Summary, now: &Summary) -> Changes {
         added: gained(now, was),
         removed: gained(was, now),
     }
-}
-
-/// The most lines a [`line_diff`] compares on each side; a longer file is shown whole as
-/// replaced.
-pub const MOST_DIFF_LINES: usize = 3000;
-
-/// **The lines that changed from `was` to `now`**, as a unified diff with three lines of
-/// context: `-` for a line taken out, `+` for one put in, and `@@ line N @@` where a stretch
-/// starts. Empty where nothing changed.
-pub fn line_diff(was: &str, now: &str) -> String {
-    let old: Vec<&str> = was.lines().collect();
-    let new: Vec<&str> = now.lines().collect();
-    if old == new {
-        return String::new();
-    }
-    let steps = if old.len() > MOST_DIFF_LINES || new.len() > MOST_DIFF_LINES {
-        old.iter()
-            .map(|line| Step::Out(line))
-            .chain(new.iter().map(|line| Step::In(line)))
-            .collect()
-    } else {
-        steps_of(&old, &new)
-    };
-    unified(&steps)
-}
-
-/// One line of a diff.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Step<'a> {
-    Same(&'a str),
-    Out(&'a str),
-    In(&'a str),
-}
-
-/// The steps from `old` to `new` by their longest common run of lines.
-fn steps_of<'a>(old: &[&'a str], new: &[&'a str]) -> Vec<Step<'a>> {
-    let (n, m) = (old.len(), new.len());
-    let mut longest = vec![vec![0u32; m + 1]; n + 1];
-    for i in (0..n).rev() {
-        for j in (0..m).rev() {
-            longest[i][j] = if old[i] == new[j] {
-                longest[i + 1][j + 1] + 1
-            } else {
-                longest[i + 1][j].max(longest[i][j + 1])
-            };
-        }
-    }
-    let (mut i, mut j) = (0, 0);
-    let mut steps = Vec::with_capacity(n + m);
-    while i < n && j < m {
-        if old[i] == new[j] {
-            steps.push(Step::Same(old[i]));
-            i += 1;
-            j += 1;
-        } else if longest[i + 1][j] >= longest[i][j + 1] {
-            steps.push(Step::Out(old[i]));
-            i += 1;
-        } else {
-            steps.push(Step::In(new[j]));
-            j += 1;
-        }
-    }
-    steps.extend(old[i..].iter().map(|line| Step::Out(line)));
-    steps.extend(new[j..].iter().map(|line| Step::In(line)));
-    steps
-}
-
-/// `steps` as a unified diff, three lines of context around each change.
-fn unified(steps: &[Step<'_>]) -> String {
-    const CONTEXT: usize = 3;
-    let changed: Vec<usize> = steps
-        .iter()
-        .enumerate()
-        .filter(|(_, step)| !matches!(step, Step::Same(_)))
-        .map(|(at, _)| at)
-        .collect();
-    let mut out = String::new();
-    // The step after the last one shown, while a stretch is open.
-    let mut open: Option<usize> = None;
-    let mut new_line = 1usize;
-    for (index, step) in steps.iter().enumerate() {
-        let near = changed
-            .iter()
-            .any(|&c| c + CONTEXT >= index && index + CONTEXT >= c);
-        if near {
-            if open != Some(index) {
-                out.push_str(&format!("@@ line {new_line} @@\n"));
-            }
-            match step {
-                Step::Same(line) => out.push_str(&format!(" {line}\n")),
-                Step::Out(line) => out.push_str(&format!("-{line}\n")),
-                Step::In(line) => out.push_str(&format!("+{line}\n")),
-            }
-            open = Some(index + 1);
-        }
-        if !matches!(step, Step::Out(_)) {
-            new_line += 1;
-        }
-    }
-    out
 }
 
 #[cfg(test)]

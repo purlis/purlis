@@ -8,7 +8,6 @@ import {
   type InstallReview,
   type ReviewSkill,
   type ReviewSummary,
-  type Reviewed,
   type SkillChanged,
   type SkillLevel,
   type SkillSource,
@@ -16,6 +15,7 @@ import {
   type SkillUpdates,
   type SourceBrowse,
   type StudioLevel,
+  type UpdateFile,
   type UpdateReview,
 } from "./bindings";
 import { counted } from "./dispatches";
@@ -35,31 +35,13 @@ type Open =
   | { what: "install"; source: SkillSource; review: InstallReview }
   | { what: "update"; offer: SkillUpdateOffer; review: UpdateReview };
 
-/** What a review answered, handed back to install exactly what it showed. */
-export function reviewed(commit: string, skills: readonly ReviewSkill[]): Reviewed {
-  return { commit, skills: skills.map((one) => ({ name: one.name, digest: one.digest })) };
-}
-
-/** A commit's short name. */
-export function shortCommit(commit: string): string {
-  return commit.slice(0, 12);
-}
-
-/** How many risky items a summary marks. */
-export function marked(summary: ReviewSummary): number {
-  return (
-    summary.scripts.filter((one) => one.risks.length > 0).length +
-    summary.hosts.filter((one) => one.risky).length +
-    summary.commands.length +
-    summary.outside.length
-  );
-}
-
 /**
  * **Skill sources in the studio** (SK-10, #2773; ADR 0100): the project's sources, each one
- * browsed in place, an install reviewed summary first with every file one click away, and each
- * newer commit of an installed skill offered as a diff of its summary and files, applied only
- * when the person accepts it.
+ * browsed in place, an install reviewed summary first with every file one click away, a source
+ * only the team's record names confirmed before it is asked anything, and each newer commit of
+ * an installed skill offered as a diff of its summary and files, applied only when the person
+ * accepts it. What is marked, what is empty, each commit's short name and what accepting says
+ * are the core's own.
  */
 export function SkillSources({
   plane,
@@ -78,6 +60,7 @@ export function SkillSources({
   changed: number;
 }) {
   const [sources, setSources] = useState<readonly SkillSource[]>([]);
+  const [unread, setUnread] = useState<string>();
   const [updates, setUpdates] = useState<SkillUpdates>();
   const [open, setOpen] = useState<Open>();
   const [waiting, setWaiting] = useState<string>();
@@ -87,7 +70,11 @@ export function SkillSources({
     void commands
       .skillSources(plane)
       .then((answer) => {
-        if (live && answer.status === "ok" && Array.isArray(answer.data)) setSources(answer.data);
+        if (!live) return;
+        if (answer.status === "ok" && Array.isArray(answer.data)) {
+          setSources(answer.data);
+          setUnread(undefined);
+        } else if (answer.status === "error") setUnread(answer.error);
       })
       .catch(() => undefined);
     void commands
@@ -153,7 +140,7 @@ export function SkillSources({
         <ul className="skill-updates" aria-label="Updates">
           {updates.offers.map((offer) => (
             <li key={`${offer.label}\u0000${offer.name}`} data-testid={`update-${offer.name}`}>
-              <code>{offer.name}</code> · {offer.label}: a newer commit, {shortCommit(offer.newer)}
+              <code>{offer.name}</code> · {offer.label}: a newer commit, {offer.newer.short}
               {offer.edited && " (edited here since it was installed)"}{" "}
               <Button
                 size="sm"
@@ -166,12 +153,39 @@ export function SkillSources({
           ))}
         </ul>
       )}
-      {updates?.unasked.map((one) => (
-        <p key={`${one.label}\u0000${one.name}`} className="honest">
-          {one.name} ({one.label}): its source could not be asked. {one.why}
+      {updates?.unconfirmed.map((one) => (
+        <p
+          key={`${one.remote.url}\u0000${one.remote.branch ?? ""}`}
+          className="honest"
+          data-testid="skill-source-unconfirmed"
+        >
+          {one.remote.label}, where {one.skills.join(", ")} came from, is not checked on this
+          machine: purlis asks it nothing until you confirm it.{" "}
+          <Button
+            size="sm"
+            isDisabled={busy}
+            aria-label={`Confirm ${one.remote.label}`}
+            onPress={() =>
+              done("The source was not confirmed", () =>
+                commands.skillSourceConfirm(plane, one.remote),
+              )
+            }
+          >
+            Confirm
+          </Button>
         </p>
       ))}
-      {sources.length === 0 && open === undefined && (
+      {updates?.unasked.map((one) => (
+        <p key={`${one.label}\u0000${one.name}\u0000${one.why}`} className="honest">
+          {one.name === "" ? one.why : `${one.name} (${one.label}): ${one.why}`}
+        </p>
+      ))}
+      {unread !== undefined && (
+        <p className="honest" data-testid="skill-sources-unread">
+          {unread}
+        </p>
+      )}
+      {unread === undefined && sources.length === 0 && open === undefined && (
         <p className="honest" data-testid="skill-sources-empty">
           This project has no skill sources yet. Add source takes a repository&apos;s https:// URL,
           or a folder on this machine.
@@ -179,9 +193,12 @@ export function SkillSources({
       )}
       <ul className="skill-source-list">
         {sources.map((source) => (
-          <li key={`${source.url}\u0000${source.branch ?? ""}`} data-testid="skill-source">
+          <li
+            key={`${source.remote.url}\u0000${source.remote.branch ?? ""}`}
+            data-testid="skill-source"
+          >
             <FolderGit2 className="node-icon" aria-hidden="true" /> {source.label}
-            {source.local && " · on this machine"}
+            {source.kept === "local" && " · on this machine"}
             {source.vault !== null && ` · signs in with ${source.vault}`}{" "}
             <Button
               size="sm"
@@ -196,7 +213,9 @@ export function SkillSources({
               isDisabled={busy}
               aria-label={`Remove ${source.label}`}
               onPress={() =>
-                done("The source was not removed", () => commands.skillSourceRemove(plane, source))
+                done("The source was not removed", () =>
+                  commands.skillSourceRemove(plane, source.remote),
+                )
               }
             >
               Remove
@@ -236,11 +255,12 @@ export function SkillSources({
       {open?.what === "browse" && (
         <section className="skill-change" aria-label={`Skills in ${open.source.label}`}>
           <h4>
-            {open.source.label} at {shortCommit(open.browse.commit)}
+            {open.source.label} at {open.browse.commit.short}
           </h4>
           {open.browse.skills.length === 0 && (
             <p className="honest">
-              This source holds no skill under its folder: a skill is a folder with a SKILL.md.
+              This source holds no skill under its folder: a skill is a folder with its own
+              instructions.
             </p>
           )}
           <ul>
@@ -276,13 +296,7 @@ export function SkillSources({
           onCancel={() => setOpen(undefined)}
           onInstall={(level) =>
             done("The skill was not installed", () =>
-              commands.skillInstall(
-                plane,
-                open.source,
-                level,
-                reviewed(open.review.commit, open.review.skills),
-                null,
-              ),
+              commands.skillInstall(plane, open.source, level, open.review.accepted, null),
             )
           }
         />
@@ -294,12 +308,7 @@ export function SkillSources({
           onCancel={() => setOpen(undefined)}
           onAccept={() =>
             done("The skill was not updated", () =>
-              commands.skillUpdate(
-                plane,
-                open.offer.level,
-                open.offer.name,
-                reviewed(open.review.newer, [open.review.skill]),
-              ),
+              commands.skillUpdate(plane, open.offer.level, open.offer.name, open.review.accepted),
             )
           }
         />
@@ -332,12 +341,11 @@ function AddSource({
       onSubmit={(event) => {
         event.preventDefault();
         onAdd({
-          url: url.trim(),
-          branch: blank(branch),
+          remote: { url: url.trim(), branch: blank(branch), label: url.trim() },
           folder: blank(folder),
           vault: blank(vault),
           key: blank(key),
-          local,
+          kept: local ? "local" : "shared",
           label: url.trim(),
         });
       }}
@@ -367,7 +375,7 @@ function AddSource({
       />
       <SettingRow
         label="Signs in with vault"
-        help="For a private repository: the vault, then the entry that holds its token. The token stays in the vault."
+        help="For a private repository: the vault, then the entry that holds its token. The token stays in the vault, and only this machine signs in with it."
         control={(ids) => <Field kind="text" ids={ids} value={vault} onChange={setVault} />}
       />
       <SettingRow
@@ -394,14 +402,9 @@ function AddSource({
   );
 }
 
-/** A summary, risky items marked. */
+/** A summary, risky items marked, as the core reads and marks it. */
 export function Summary({ summary, testid }: { summary: ReviewSummary; testid?: string }) {
-  const empty =
-    summary.scripts.length === 0 &&
-    summary.hosts.length === 0 &&
-    summary.commands.length === 0 &&
-    summary.outside.length === 0;
-  if (empty)
+  if (summary.empty)
     return (
       <p className="honest" data-testid={testid}>
         Instructions only: no scripts, network hosts, ! commands or writes outside the workspace.
@@ -414,7 +417,7 @@ export function Summary({ summary, testid }: { summary: ReviewSummary; testid?: 
       {summary.scripts.map((one) => (
         <li key={`s${one.path}`} data-risky={one.risks.length > 0}>
           {mark(one.risks.length > 0)} Script <code>{one.path}</code> runs with {one.runs}
-          {one.risks.length > 0 && `: ${one.risks.join(", ")}`}
+          {one.risks.length > 0 && `: ${one.risks.map((risk) => risk.said).join(", ")}`}
         </li>
       ))}
       {summary.hosts.map((one) => (
@@ -431,6 +434,17 @@ export function Summary({ summary, testid }: { summary: ReviewSummary; testid?: 
         <li key={`o${one.path}${one.line}${one.text}`} data-risky={true}>
           {mark(true)} Writes outside the workspace: <code>{one.text}</code> ({one.path}, line{" "}
           {one.line})
+        </li>
+      ))}
+      {summary.unseen.map((one) => (
+        <li key={`u${one.path}${one.line}`} data-risky={true}>
+          {mark(true)} Hidden text in {one.path}, line {one.line}:{" "}
+          {one.kinds.map((kind) => kind.said).join(", ")}
+        </li>
+      ))}
+      {summary.not_text.map((path) => (
+        <li key={`n${path}`}>
+          <code>{path}</code> is not text, so it is not shown
         </li>
       ))}
     </ul>
@@ -450,9 +464,6 @@ function SkillReviewed({ skill }: { skill: ReviewSkill }) {
         <p className="honest">Comes along: {skill.brought_by} refers to it.</p>
       )}
       <Summary summary={skill.summary} testid={`summary-${skill.name}`} />
-      <p className="honest">
-        {skill.grade === null ? "No grade: this source carries none." : `Grade: ${skill.grade}`}
-      </p>
       {skill.lint.map((line) => (
         <p key={line} className="honest">
           {line}
@@ -475,14 +486,14 @@ function SkillReviewed({ skill }: { skill: ReviewSkill }) {
       </ul>
       {file !== undefined && (
         <pre className="skill-review-file" data-testid="skill-review-file">
-          {file.text ?? "This file is not text."}
+          {file.text ?? "This file is not text, so it is not shown."}
         </pre>
       )}
       {skill.left_out.length > 0 && (
         <ul className="honest" aria-label={`Not installed from ${skill.name}`}>
           {skill.left_out.map((one) => (
             <li key={one.path}>
-              Not installed: <code>{one.path}</code>, {one.why}
+              Not installed: <code>{one.path}</code>, {one.said}
             </li>
           ))}
         </ul>
@@ -514,13 +525,14 @@ function InstallPanel({
     sameLevel,
     level,
   );
-  const risky = review.skills.reduce((n, skill) => n + marked(skill.summary), 0);
+  const risky = review.skills.reduce((n, skill) => n + skill.summary.marked, 0);
   return (
     <section className="skill-change" aria-label="Install review" data-testid="install-review">
       <p className="honest">
-        {counted(review.skills.length, "skill", "skills")} at {shortCommit(review.commit)}
+        {counted(review.skills.length, "skill", "skills")} at {review.commit.short}
         {risky > 0 && `, ${counted(risky, "risky item", "risky items")} marked`}. The review is read
         from the files: a script can do more when it runs, and the chat&apos;s sandbox bounds that.
+        Installing copies all of them or none.
       </p>
       {review.skills.map((skill) => (
         <SkillReviewed key={skill.name} skill={skill} />
@@ -547,7 +559,24 @@ function InstallPanel({
   );
 }
 
-/** An update's review: what the summary gains and loses, each file's diff, then Accept. */
+/** Each file's change, folded. */
+function Changes({ files }: { files: readonly UpdateFile[] }) {
+  return (
+    <>
+      {files.map((file) => (
+        <details key={file.path} className="skill-update-file">
+          <summary>
+            <code>{file.path}</code> {file.change}
+          </summary>
+          <pre>{file.diff === "" ? "Not text, so not shown." : file.diff}</pre>
+        </details>
+      ))}
+    </>
+  );
+}
+
+/** An update's review: what the summary gains and loses, each file's diff, the edits made here
+ *  and the skills that come along, then Accept. */
 function UpdatePanel({
   review,
   busy,
@@ -566,7 +595,7 @@ function UpdatePanel({
       data-testid="update-review"
     >
       <p className="honest">
-        {review.name}: {shortCommit(review.pinned)} to {shortCommit(review.newer)}.
+        {review.name}: {review.pinned.short} to {review.newer.short}.
         {!review.from_pin &&
           " The pinned commit is no longer in the source, so this compares with the copy here."}
       </p>
@@ -574,20 +603,21 @@ function UpdatePanel({
       <Summary summary={review.added} testid="update-added" />
       <h4>Gone from the summary</h4>
       <Summary summary={review.removed} testid="update-removed" />
+      <h4>The source&apos;s change</h4>
+      <Changes files={review.files} />
       {review.edited.length > 0 && (
-        <p className="honest" data-testid="update-edited">
-          Edited here since the install, and replaced by the update: {review.edited.join(", ")}
-        </p>
+        <>
+          <h4>Your edits since the install</h4>
+          <p className="honest" data-testid="update-edited">
+            Accepting replaces these: {review.edited.join(", ")}
+          </p>
+          <Changes files={review.local_edits} />
+        </>
       )}
-      {review.files.map((file) => (
-        <details key={file.path} className="skill-update-file">
-          <summary>
-            <code>{file.path}</code> {file.change}
-          </summary>
-          <pre>{file.diff === "" ? "Not text." : file.diff}</pre>
-        </details>
-      ))}
       <SkillReviewed skill={review.skill} />
+      {review.brought.map((skill) => (
+        <SkillReviewed key={skill.name} skill={skill} />
+      ))}
       <ButtonRow>
         <Button variant="primary" isDisabled={busy} onPress={onAccept}>
           Accept update

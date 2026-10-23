@@ -2,34 +2,96 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! **Skill sources in the studio** (SK-10, #2773; ADR 0100): add a git repository of skills,
-//! browse it, review an install summary first, install it pinned, and review each newer commit
-//! as a diff before it is applied. Each verb is `purlis_core::skills::source`'s own, which
-//! `purlis skill install | update` calls too. Behind the `skill-studio` flag until its finish line
-//! (#2786).
+//! browse it, review an install summary first, install it pinned, confirm a source the committed
+//! lockfile names before it is contacted, and review each newer commit as a diff before it is
+//! applied. Each verb is `purlis_core::skills::source`'s own, which `purlis skill install |
+//! update` calls too. Behind the `skill-studio` flag until its finish line (#2786).
 //!
-//! The window is handed what it shows, and hands back only what the review answered (the commit
-//! and each skill's digest), so an install is of exactly the bytes the person read.
+//! The window is handed what it shows, the core's own words and marks included (what is risky,
+//! what is empty, each commit's short name, what accepting says), every field from a source
+//! escaped by the core, and hands back only what the review answered as accepted, so an install
+//! is of exactly the bytes the person read.
 
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
-use purlis_core::skills::review;
-use purlis_core::skills::source::{self, Accepted, Source, VaultEntry};
+use purlis_core::settings::Which;
+use purlis_core::skills::review as summary;
+use purlis_core::skills::source::{
+    self, Accepted, AcceptedSkill, Commit, Remote, Source, VaultEntry,
+};
 use purlis_core::skills::tree;
 
 use crate::skillchange::{SkillChanged, SkillGrant, SkillLevel, flag_on, heard};
 
+/// A source's text as the window shows it: every invisible character escaped.
+fn esc(text: &str) -> String {
+    summary::escaped(text)
+}
+
+/// Which settings a source is kept in: the project's, shared with the team, or this machine's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum SourceKept {
+    Shared,
+    Local,
+}
+
+impl From<SourceKept> for Which {
+    fn from(kept: SourceKept) -> Which {
+        match kept {
+            SourceKept::Shared => Which::Shared,
+            SourceKept::Local => Which::Local,
+        }
+    }
+}
+
+impl From<Which> for SourceKept {
+    fn from(which: Which) -> SourceKept {
+        match which {
+            Which::Shared => SourceKept::Shared,
+            Which::Local => SourceKept::Local,
+        }
+    }
+}
+
+/// A repository and the branch read from it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct SourceRemote {
+    pub url: String,
+    pub branch: Option<String>,
+    /// As a person reads it.
+    pub label: String,
+}
+
+impl From<&Remote> for SourceRemote {
+    fn from(remote: &Remote) -> Self {
+        SourceRemote {
+            url: remote.url.clone(),
+            branch: remote.branch.clone(),
+            label: esc(&remote.to_string()),
+        }
+    }
+}
+
+impl SourceRemote {
+    fn core(&self) -> Remote {
+        Remote {
+            url: self.url.trim().to_owned(),
+            branch: self.branch.clone().filter(|b| !b.trim().is_empty()),
+        }
+    }
+}
+
 /// A skill source as the studio shows and adds one.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub struct SkillSource {
-    pub url: String,
-    pub branch: Option<String>,
+    pub remote: SourceRemote,
     pub folder: Option<String>,
     /// The vault and the entry in it a private source signs in with; never the token.
     pub vault: Option<String>,
     pub key: Option<String>,
-    /// Kept on this machine, not shared with the project.
-    pub local: bool,
+    pub kept: SourceKept,
     /// As a person reads it.
     pub label: String,
 }
@@ -37,8 +99,7 @@ pub struct SkillSource {
 impl SkillSource {
     fn core(&self) -> Source {
         Source {
-            url: self.url.trim().to_owned(),
-            branch: self.branch.clone().filter(|b| !b.trim().is_empty()),
+            remote: self.remote.core(),
             folder: self.folder.clone().filter(|f| !f.trim().is_empty()),
             sign_in: match (&self.vault, &self.key) {
                 (Some(vault), Some(key)) if !vault.is_empty() && !key.is_empty() => {
@@ -53,15 +114,30 @@ impl SkillSource {
         }
     }
 
-    fn of(source: Source, local: bool) -> SkillSource {
+    fn of(source: Source, which: Which) -> SkillSource {
         SkillSource {
-            label: source.to_string(),
-            url: source.url,
-            branch: source.branch,
+            label: esc(&source.to_string()),
+            remote: (&source.remote).into(),
             folder: source.folder,
             vault: source.sign_in.as_ref().map(|s| s.vault.clone()),
             key: source.sign_in.map(|s| s.key),
-            local,
+            kept: which.into(),
+        }
+    }
+}
+
+/// A commit, and its short name as the core gives it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct SourceCommit {
+    pub id: String,
+    pub short: String,
+}
+
+impl From<&Commit> for SourceCommit {
+    fn from(commit: &Commit) -> Self {
+        SourceCommit {
+            id: commit.as_str().to_owned(),
+            short: commit.short().to_owned(),
         }
     }
 }
@@ -76,20 +152,51 @@ pub struct OfferedSkill {
     pub installed: Vec<String>,
 }
 
-/// What a source offers.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
-pub struct SourceBrowse {
-    pub commit: String,
-    pub skills: Vec<OfferedSkill>,
-    /// Each folder that is not a whole skill, and why.
-    pub not_skills: Vec<NotASkill>,
-}
-
-/// A folder of a source that is not a whole skill.
+/// A folder of a source that is not a skill purlis offers.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct NotASkill {
     pub folder: String,
     pub why: String,
+}
+
+/// What a source offers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct SourceBrowse {
+    pub commit: SourceCommit,
+    pub skills: Vec<OfferedSkill>,
+    pub not_skills: Vec<NotASkill>,
+}
+
+/// Why an item of the summary is marked.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum ReviewRisk {
+    Network,
+    RunsWhatItFetches,
+    Elevates,
+    Removes,
+    Hidden,
+    NotText,
+}
+
+impl From<summary::Risk> for ReviewRisk {
+    fn from(risk: summary::Risk) -> Self {
+        match risk {
+            summary::Risk::Network => Self::Network,
+            summary::Risk::RunsWhatItFetches => Self::RunsWhatItFetches,
+            summary::Risk::Elevates => Self::Elevates,
+            summary::Risk::Removes => Self::Removes,
+            summary::Risk::Hidden => Self::Hidden,
+            summary::Risk::NotText => Self::NotText,
+        }
+    }
+}
+
+/// A risk, and the core's words for it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct RiskMark {
+    pub kind: ReviewRisk,
+    pub said: String,
 }
 
 /// A script the summary lists.
@@ -97,8 +204,8 @@ pub struct NotASkill {
 pub struct ReviewScript {
     pub path: String,
     pub runs: String,
-    /// Why it is marked, as a person reads it; empty for one that is not.
-    pub risks: Vec<String>,
+    /// Why it is marked; empty for one that is not.
+    pub risks: Vec<RiskMark>,
 }
 
 /// A network host the summary lists.
@@ -118,53 +225,127 @@ pub struct ReviewLine {
     pub text: String,
 }
 
-/// What a skill does beyond its instructions.
+/// The kind of a character no reader sees.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum ReviewInvisible {
+    Tag,
+    ZeroWidth,
+    Bidi,
+    Format,
+}
+
+impl From<summary::Invisible> for ReviewInvisible {
+    fn from(kind: summary::Invisible) -> Self {
+        match kind {
+            summary::Invisible::Tag => Self::Tag,
+            summary::Invisible::ZeroWidth => Self::ZeroWidth,
+            summary::Invisible::Bidi => Self::Bidi,
+            summary::Invisible::Format => Self::Format,
+        }
+    }
+}
+
+/// A kind of invisible character, and the core's words for it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct InvisibleMark {
+    pub kind: ReviewInvisible,
+    pub said: String,
+}
+
+/// A line holding characters no reader sees: always marked.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct ReviewUnseen {
+    pub path: String,
+    pub line: u32,
+    pub kinds: Vec<InvisibleMark>,
+}
+
+/// What a skill does beyond its instructions, with the core's own marks.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct ReviewSummary {
     pub scripts: Vec<ReviewScript>,
     pub hosts: Vec<ReviewHost>,
     pub commands: Vec<ReviewLine>,
     pub outside: Vec<ReviewLine>,
-    pub risky: bool,
+    pub unseen: Vec<ReviewUnseen>,
+    /// Each file that is not text, so not shown.
+    pub not_text: Vec<String>,
+    /// How many of its items are marked (`Summary::marked`).
+    pub marked: u32,
+    /// Whether it lists nothing at all (`Summary::is_empty`).
+    pub empty: bool,
 }
 
-impl From<&review::Summary> for ReviewSummary {
-    fn from(summary: &review::Summary) -> Self {
-        let line = |path: &str, line: usize, text: &str| ReviewLine {
-            path: path.to_owned(),
-            line: u32::try_from(line).unwrap_or(u32::MAX),
-            text: text.to_owned(),
-        };
+fn line_of(at: usize) -> u32 {
+    u32::try_from(at).unwrap_or(u32::MAX)
+}
+
+impl From<&summary::Summary> for ReviewSummary {
+    fn from(said: &summary::Summary) -> Self {
         ReviewSummary {
-            scripts: summary
+            scripts: said
                 .scripts
                 .iter()
                 .map(|one| ReviewScript {
-                    path: one.path.clone(),
-                    runs: one.runs.clone(),
-                    risks: one.risks.iter().map(ToString::to_string).collect(),
+                    path: esc(&one.path),
+                    runs: esc(&one.runs),
+                    risks: one
+                        .risks
+                        .iter()
+                        .map(|risk| RiskMark {
+                            kind: (*risk).into(),
+                            said: risk.to_string(),
+                        })
+                        .collect(),
                 })
                 .collect(),
-            hosts: summary
+            hosts: said
                 .hosts
                 .iter()
                 .map(|one| ReviewHost {
-                    host: one.host.clone(),
-                    files: one.files.clone(),
+                    host: esc(&one.host),
+                    files: one.files.iter().map(|f| esc(f)).collect(),
                     risky: one.risky,
                 })
                 .collect(),
-            commands: summary
+            commands: said
                 .commands
                 .iter()
-                .map(|one| line(&one.path, one.line, &one.command))
+                .map(|one| ReviewLine {
+                    path: esc(&one.path),
+                    line: line_of(one.line),
+                    text: esc(&one.command),
+                })
                 .collect(),
-            outside: summary
+            outside: said
                 .outside
                 .iter()
-                .map(|one| line(&one.path, one.line, &one.target))
+                .map(|one| ReviewLine {
+                    path: esc(&one.path),
+                    line: line_of(one.line),
+                    text: esc(&one.target),
+                })
                 .collect(),
-            risky: summary.risky(),
+            unseen: said
+                .unseen
+                .iter()
+                .map(|one| ReviewUnseen {
+                    path: esc(&one.path),
+                    line: line_of(one.line),
+                    kinds: one
+                        .kinds
+                        .iter()
+                        .map(|kind| InvisibleMark {
+                            kind: (*kind).into(),
+                            said: kind.to_string(),
+                        })
+                        .collect(),
+                })
+                .collect(),
+            not_text: said.not_text.iter().map(|f| esc(f)).collect(),
+            marked: u32::try_from(said.marked()).unwrap_or(u32::MAX),
+            empty: said.is_empty(),
         }
     }
 }
@@ -175,18 +356,45 @@ pub struct ReviewFile {
     pub path: String,
     pub size: u32,
     pub executable: bool,
+    /// Its text with every invisible character escaped; `None` for a file that is not text.
     pub text: Option<String>,
     pub risky: bool,
 }
 
-/// An entry of a skill's folder that is not installed, and why.
+/// Why an entry of a skill's folder is not installed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum LeftOutWhy {
+    Link,
+    Submodule,
+    Name,
+    Case,
+    TooLarge,
+    Other,
+}
+
+impl From<tree::Why> for LeftOutWhy {
+    fn from(why: tree::Why) -> Self {
+        match why {
+            tree::Why::Link => Self::Link,
+            tree::Why::Submodule => Self::Submodule,
+            tree::Why::Name => Self::Name,
+            tree::Why::Case => Self::Case,
+            tree::Why::TooLarge => Self::TooLarge,
+            tree::Why::Other => Self::Other,
+        }
+    }
+}
+
+/// An entry of a skill's folder that is not installed, why, and the core's words for it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct ReviewLeftOut {
     pub path: String,
-    pub why: String,
+    pub why: LeftOutWhy,
+    pub said: String,
 }
 
-/// One skill of an install review.
+/// One skill of a review.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct ReviewSkill {
     pub name: String,
@@ -197,105 +405,42 @@ pub struct ReviewSkill {
     pub files: Vec<ReviewFile>,
     pub left_out: Vec<ReviewLeftOut>,
     pub lint: Vec<String>,
-    pub grade: Option<String>,
-    pub digest: String,
-}
-
-fn left_shown(left: &[tree::LeftOut]) -> Vec<ReviewLeftOut> {
-    left.iter()
-        .map(|one| ReviewLeftOut {
-            path: one.path.clone(),
-            why: one.why.to_string(),
-        })
-        .collect()
 }
 
 impl From<&source::SkillReview> for ReviewSkill {
     fn from(skill: &source::SkillReview) -> Self {
         ReviewSkill {
-            name: skill.name.clone(),
-            description: skill.description.clone(),
-            folder: skill.folder.clone(),
-            brought_by: skill.brought_by.clone(),
+            name: esc(&skill.name),
+            description: esc(&skill.description),
+            folder: esc(&skill.folder),
+            brought_by: skill.brought_by.as_deref().map(esc),
             summary: (&skill.summary).into(),
             files: skill
                 .files
                 .iter()
                 .map(|file| ReviewFile {
-                    path: file.path.clone(),
+                    path: esc(&file.path),
                     size: u32::try_from(file.size).unwrap_or(u32::MAX),
                     executable: file.executable,
                     text: file.text.clone(),
                     risky: file.risky,
                 })
                 .collect(),
-            left_out: left_shown(&skill.left_out),
-            lint: skill.lint.clone(),
-            grade: skill.grade.clone(),
-            digest: skill.digest.clone(),
+            left_out: skill
+                .left_out
+                .iter()
+                .map(|one| ReviewLeftOut {
+                    path: esc(&one.path),
+                    why: one.why.into(),
+                    said: one.why.to_string(),
+                })
+                .collect(),
+            lint: skill.lint.iter().map(|l| esc(l)).collect(),
         }
     }
 }
 
-/// **An install review**, summary first.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
-pub struct InstallReview {
-    pub commit: String,
-    pub skills: Vec<ReviewSkill>,
-}
-
-/// One newer commit offered for an installed skill.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
-pub struct SkillUpdateOffer {
-    pub name: String,
-    pub level: SkillLevel,
-    pub label: String,
-    pub url: String,
-    pub pinned: String,
-    pub newer: String,
-    pub edited: bool,
-}
-
-/// An installed skill whose source could not be asked.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
-pub struct SkillUpdateUnasked {
-    pub name: String,
-    pub label: String,
-    pub why: String,
-}
-
-/// The updates there are.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
-pub struct SkillUpdates {
-    pub offers: Vec<SkillUpdateOffer>,
-    pub unasked: Vec<SkillUpdateUnasked>,
-}
-
-/// One file's change in an update.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
-pub struct UpdateFile {
-    pub path: String,
-    /// `added`, `removed` or `changed`.
-    pub change: String,
-    pub diff: String,
-}
-
-/// **An update's review**: the summary's changes, then each file's.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
-pub struct UpdateReview {
-    pub name: String,
-    pub pinned: String,
-    pub newer: String,
-    pub from_pin: bool,
-    pub added: ReviewSummary,
-    pub removed: ReviewSummary,
-    pub files: Vec<UpdateFile>,
-    pub edited: Vec<String>,
-    pub skill: ReviewSkill,
-}
-
-/// What the window hands back to install or update: the commit and each skill's digest, as the
-/// review answered them.
+/// What the window hands back to install or update: what the review answered as accepted.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub struct Reviewed {
     pub commit: String,
@@ -309,17 +454,138 @@ pub struct ReviewedSkill {
     pub digest: String,
 }
 
-impl From<&Reviewed> for Accepted {
-    fn from(reviewed: &Reviewed) -> Accepted {
-        Accepted {
-            commit: reviewed.commit.clone(),
-            skills: reviewed
+impl From<&Accepted> for Reviewed {
+    fn from(accepted: &Accepted) -> Self {
+        Reviewed {
+            commit: accepted.commit.as_str().to_owned(),
+            skills: accepted
                 .skills
                 .iter()
-                .map(|one| (one.name.clone(), one.digest.clone()))
+                .map(|one| ReviewedSkill {
+                    name: one.name.clone(),
+                    digest: one.digest.clone(),
+                })
                 .collect(),
         }
     }
+}
+
+impl TryFrom<&Reviewed> for Accepted {
+    type Error = String;
+    fn try_from(reviewed: &Reviewed) -> Result<Accepted, String> {
+        Ok(Accepted {
+            commit: Commit::parse(&reviewed.commit)
+                .ok_or_else(|| "That review is not one purlis gave.".to_owned())?,
+            skills: reviewed
+                .skills
+                .iter()
+                .map(|one| AcceptedSkill {
+                    name: one.name.clone(),
+                    digest: one.digest.clone(),
+                })
+                .collect(),
+        })
+    }
+}
+
+/// **An install review**, summary first, and what accepting it says.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct InstallReview {
+    pub commit: SourceCommit,
+    pub skills: Vec<ReviewSkill>,
+    pub accepted: Reviewed,
+}
+
+/// One newer commit offered for an installed skill.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct SkillUpdateOffer {
+    pub name: String,
+    pub level: SkillLevel,
+    pub label: String,
+    pub remote: SourceRemote,
+    pub pinned: SourceCommit,
+    pub newer: SourceCommit,
+    pub edited: bool,
+}
+
+/// An installed skill whose source could not be asked.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct SkillUpdateUnasked {
+    pub name: String,
+    pub label: String,
+    pub why: String,
+}
+
+/// A source the committed lockfile names that this machine has not confirmed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct SkillSourceUnconfirmed {
+    pub remote: SourceRemote,
+    pub skills: Vec<String>,
+}
+
+/// The updates there are.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct SkillUpdates {
+    pub offers: Vec<SkillUpdateOffer>,
+    pub unasked: Vec<SkillUpdateUnasked>,
+    pub unconfirmed: Vec<SkillSourceUnconfirmed>,
+}
+
+/// How a file changes in an update.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum FileChanged {
+    Added,
+    Removed,
+    Changed,
+}
+
+impl From<source::Changed> for FileChanged {
+    fn from(change: source::Changed) -> Self {
+        match change {
+            source::Changed::Added => Self::Added,
+            source::Changed::Removed => Self::Removed,
+            source::Changed::Changed => Self::Changed,
+        }
+    }
+}
+
+/// One file's change in an update.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct UpdateFile {
+    pub path: String,
+    pub change: FileChanged,
+    /// Its lines' diff, every line escaped by the core.
+    pub diff: String,
+}
+
+fn files_shown(files: &[source::FileChange]) -> Vec<UpdateFile> {
+    files
+        .iter()
+        .map(|file| UpdateFile {
+            path: esc(&file.path),
+            change: file.change.into(),
+            diff: file.diff.clone(),
+        })
+        .collect()
+}
+
+/// **An update's review**: the summary's changes, then each file's, the edits made here, and
+/// the skills that come along.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct UpdateReview {
+    pub name: String,
+    pub pinned: SourceCommit,
+    pub newer: SourceCommit,
+    pub from_pin: bool,
+    pub added: ReviewSummary,
+    pub removed: ReviewSummary,
+    pub files: Vec<UpdateFile>,
+    pub edited: Vec<String>,
+    pub local_edits: Vec<UpdateFile>,
+    pub skill: ReviewSkill,
+    pub brought: Vec<ReviewSkill>,
+    pub accepted: Reviewed,
 }
 
 /// The project's skill sources.
@@ -332,9 +598,9 @@ pub(crate) async fn skill_sources(
     let held = planes.held(&plane)?;
     crate::off_the_window("reading the skill sources", move || {
         flag_on()?;
-        Ok(source::sources(held.root())
+        Ok(source::sources(held.root())?
             .into_iter()
-            .map(|one| SkillSource::of(one.source, one.local))
+            .map(|one| SkillSource::of(one.source, one.which))
             .collect())
     })
     .await
@@ -352,7 +618,7 @@ pub(crate) async fn skill_source_add(
     crate::off_the_window("adding the skill source", move || {
         flag_on()?;
         heard(held.root(), |cx| {
-            source::add(cx, &source.core(), source.local)
+            source::add(cx, &source.core(), source.kept.into())
         })
     })
     .await
@@ -364,14 +630,29 @@ pub(crate) async fn skill_source_add(
 pub(crate) async fn skill_source_remove(
     planes: tauri::State<'_, crate::planes::Planes>,
     plane: crate::planes::PlaneId,
-    source: SkillSource,
+    remote: SourceRemote,
 ) -> Result<SkillChanged, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("taking the skill source out", move || {
         flag_on()?;
-        heard(held.root(), |cx| {
-            source::remove(cx, &source.url, source.branch.as_deref())
-        })
+        heard(held.root(), |cx| source::remove(cx, &remote.core()))
+    })
+    .await
+}
+
+/// **Confirms a source the committed lockfile names** on this machine, so it is asked for
+/// updates.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_source_confirm(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    remote: SourceRemote,
+) -> Result<SkillChanged, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("confirming the skill source", move || {
+        flag_on()?;
+        heard(held.root(), |cx| source::confirm(cx, &remote.core()))
     })
     .await
 }
@@ -389,21 +670,24 @@ pub(crate) async fn skill_source_browse(
         flag_on()?;
         let browse = source::browse(held.root(), &source.core())?;
         Ok(SourceBrowse {
-            commit: browse.commit,
+            commit: (&browse.commit).into(),
             skills: browse
                 .skills
                 .into_iter()
                 .map(|one| OfferedSkill {
-                    name: one.skill.name,
-                    description: one.skill.description,
-                    folder: one.skill.folder,
+                    name: esc(&one.skill.name),
+                    description: esc(&one.skill.description),
+                    folder: esc(&one.skill.folder),
                     installed: one.installed.iter().map(ToString::to_string).collect(),
                 })
                 .collect(),
             not_skills: browse
                 .not_skills
                 .into_iter()
-                .map(|(folder, why)| NotASkill { folder, why })
+                .map(|one| NotASkill {
+                    folder: esc(&one.folder),
+                    why: esc(&one.why),
+                })
                 .collect(),
         })
     })
@@ -424,8 +708,9 @@ pub(crate) async fn skill_install_review(
         flag_on()?;
         let review = source::review(held.root(), &source.core(), &names)?;
         Ok(InstallReview {
-            commit: review.commit,
+            commit: (&review.commit).into(),
             skills: review.skills.iter().map(Into::into).collect(),
+            accepted: (&review.accepted()).into(),
         })
     })
     .await
@@ -445,13 +730,14 @@ pub(crate) async fn skill_install(
     let held = planes.held(&plane)?;
     crate::off_the_window("installing the skill", move || {
         flag_on()?;
+        let accepted = Accepted::try_from(&reviewed)?;
         let grant: Option<purlis_core::skills::Grant> = grant.map(Into::into);
         heard(held.root(), |cx| {
             source::install(
                 cx,
                 &source.core(),
                 &(&level).into(),
-                &(&reviewed).into(),
+                &accepted,
                 grant.as_ref(),
             )
         })
@@ -459,7 +745,8 @@ pub(crate) async fn skill_install(
     .await
 }
 
-/// **The updates there are**: each source asked for its newest commit, nothing fetched.
+/// **The updates there are**: each source this machine may contact asked for its newest commit,
+/// nothing fetched.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_updates(
@@ -469,26 +756,36 @@ pub(crate) async fn skill_updates(
     let held = planes.held(&plane)?;
     crate::off_the_window("asking the skill sources", move || {
         flag_on()?;
-        let (offers, unasked) = source::updates(held.root());
+        let found = source::updates(held.root());
         Ok(SkillUpdates {
-            offers: offers
-                .into_iter()
+            offers: found
+                .offers
+                .iter()
                 .map(|one| SkillUpdateOffer {
                     label: one.level.to_string(),
                     level: (&one.level).into(),
-                    name: one.name,
-                    url: one.url,
-                    pinned: one.pinned,
-                    newer: one.newer,
+                    name: esc(&one.name),
+                    remote: (&one.remote).into(),
+                    pinned: (&one.pinned).into(),
+                    newer: (&one.newer).into(),
                     edited: one.edited,
                 })
                 .collect(),
-            unasked: unasked
-                .into_iter()
+            unasked: found
+                .unasked
+                .iter()
                 .map(|one| SkillUpdateUnasked {
                     label: one.level.to_string(),
-                    name: one.name,
-                    why: one.why,
+                    name: esc(&one.name),
+                    why: esc(&one.why),
+                })
+                .collect(),
+            unconfirmed: found
+                .unconfirmed
+                .iter()
+                .map(|one| SkillSourceUnconfirmed {
+                    remote: (&one.remote).into(),
+                    skills: one.skills.iter().map(|s| esc(s)).collect(),
                 })
                 .collect(),
         })
@@ -510,29 +807,19 @@ pub(crate) async fn skill_update_review(
     crate::off_the_window("reviewing the update", move || {
         flag_on()?;
         let update = source::update_review(held.root(), &(&level).into(), &name)?;
-        let changed = |change: source::Changed| match change {
-            source::Changed::Added => "added",
-            source::Changed::Removed => "removed",
-            source::Changed::Changed => "changed",
-        };
         Ok(UpdateReview {
-            name: update.name.clone(),
-            pinned: update.pinned.clone(),
-            newer: update.newer.clone(),
+            name: esc(&update.name),
+            pinned: (&update.pinned).into(),
+            newer: (&update.newer).into(),
             from_pin: update.from_pin,
             added: (&update.changes.added).into(),
             removed: (&update.changes.removed).into(),
-            files: update
-                .files
-                .iter()
-                .map(|file| UpdateFile {
-                    path: file.path.clone(),
-                    change: changed(file.change).to_owned(),
-                    diff: file.diff.clone(),
-                })
-                .collect(),
-            edited: update.edited.clone(),
+            files: files_shown(&update.files),
+            edited: update.edited.iter().map(|e| esc(e)).collect(),
+            local_edits: files_shown(&update.local_edits),
             skill: (&update.review).into(),
+            brought: update.brought.iter().map(Into::into).collect(),
+            accepted: (&update.accepted()).into(),
         })
     })
     .await
@@ -551,8 +838,9 @@ pub(crate) async fn skill_update(
     let held = planes.held(&plane)?;
     crate::off_the_window("updating the skill", move || {
         flag_on()?;
+        let accepted = Accepted::try_from(&reviewed)?;
         heard(held.root(), |cx| {
-            source::update(cx, &(&level).into(), &name, &(&reviewed).into())
+            source::update(cx, &(&level).into(), &name, &accepted)
         })
     })
     .await

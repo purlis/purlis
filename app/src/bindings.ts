@@ -1820,7 +1820,12 @@ export const commands = {
 	/**  **Adds a skill source**, shared with the project or kept on this machine. */
 	skillSourceAdd: (plane: PlaneId, source: SkillSource) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_source_add", { plane, source })),
 	/**  **Takes a skill source out** of the project's. Skills installed from it stay. */
-	skillSourceRemove: (plane: PlaneId, source: SkillSource) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_source_remove", { plane, source })),
+	skillSourceRemove: (plane: PlaneId, remote: SourceRemote) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_source_remove", { plane, remote })),
+	/**
+	 *  **Confirms a source the committed lockfile names** on this machine, so it is asked for
+	 *  updates.
+	 */
+	skillSourceConfirm: (plane: PlaneId, remote: SourceRemote) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_source_confirm", { plane, remote })),
 	/**  **Browses a skill source** at its newest commit. */
 	skillSourceBrowse: (plane: PlaneId, source: SkillSource) => typedError<SourceBrowse, string>(__TAURI_INVOKE("skill_source_browse", { plane, source })),
 	/**  **The install review** of `names` from a source, and the skills they refer to. */
@@ -1833,7 +1838,10 @@ export const commands = {
 { to: "all" } | 
 /**  The workspaces named. */
 { to: "only"; workspaces: string[] } | null) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_install", { plane, source, level, reviewed, grant })),
-	/**  **The updates there are**: each source asked for its newest commit, nothing fetched. */
+	/**
+	 *  **The updates there are**: each source this machine may contact asked for its newest commit,
+	 *  nothing fetched.
+	 */
 	skillUpdates: (plane: PlaneId) => typedError<SkillUpdates, string>(__TAURI_INVOKE("skill_updates", { plane })),
 	/**
 	 *  **An update's review**: the installed skill `name` at `level` against its source's newest
@@ -6165,6 +6173,9 @@ export type FileChange = {
 	uncommitted: boolean,
 };
 
+/**  How a file changes in an update. */
+export type FileChanged = "added" | "removed" | "changed";
+
 /**  One file's change, as the comparison tab draws it. */
 export type FileDiff = 
 /**  Text: each side (empty where the file is absent) and git's hunks between them. */
@@ -7106,10 +7117,11 @@ export type InboxUpdate = {
  */
 export type InputOutcome = { outcome: "taken" } | { outcome: "missed" } | { outcome: "refused"; why: string };
 
-/**  **An install review**, summary first. */
+/**  **An install review**, summary first, and what accepting it says. */
 export type InstallReview = {
-	commit: string,
+	commit: SourceCommit,
 	skills: ReviewSkill[],
+	accepted: Reviewed,
 };
 
 /**
@@ -7155,6 +7167,12 @@ export type InstructionStanding =
 { kind: "in-memory" } | 
 /**  It cannot, and why. */
 { kind: "left-out"; why: string };
+
+/**  A kind of invisible character, and the core's words for it. */
+export type InvisibleMark = {
+	kind: ReviewInvisible,
+	said: string,
+};
 
 /**  How much of the brief the record holds. */
 export type Kept = 
@@ -7300,6 +7318,9 @@ export type LeftOut = {
 	/**  The core's whole sentence. */
 	why: string,
 };
+
+/**  Why an entry of a skill's folder is not installed. */
+export type LeftOutWhy = "link" | "submodule" | "name" | "case" | "too-large" | "other";
 
 /**  The level a skill comes from, as the studio draws it. */
 export type Level = "built-in" | "project" | "workspace" | "persona" | 
@@ -7730,7 +7751,7 @@ export type NewBranch = {
 	warnings: string[],
 };
 
-/**  A folder of a source that is not a whole skill. */
+/**  A folder of a source that is not a skill purlis offers. */
 export type NotASkill = {
 	folder: string,
 	why: string,
@@ -9836,6 +9857,7 @@ export type ReviewFile = {
 	path: string,
 	size: number,
 	executable: boolean,
+	/**  Its text with every invisible character escaped; `None` for a file that is not text. */
 	text: string | null,
 	risky: boolean,
 };
@@ -9847,10 +9869,14 @@ export type ReviewHost = {
 	risky: boolean,
 };
 
-/**  An entry of a skill's folder that is not installed, and why. */
+/**  The kind of a character no reader sees. */
+export type ReviewInvisible = "tag" | "zero-width" | "bidi" | "format";
+
+/**  An entry of a skill's folder that is not installed, why, and the core's words for it. */
 export type ReviewLeftOut = {
 	path: string,
-	why: string,
+	why: LeftOutWhy,
+	said: string,
 };
 
 /**  A `!` command, or a write outside the workspace: both always marked. */
@@ -9861,15 +9887,18 @@ export type ReviewLine = {
 	text: string,
 };
 
+/**  Why an item of the summary is marked. */
+export type ReviewRisk = "network" | "runs-what-it-fetches" | "elevates" | "removes" | "hidden" | "not-text";
+
 /**  A script the summary lists. */
 export type ReviewScript = {
 	path: string,
 	runs: string,
-	/**  Why it is marked, as a person reads it; empty for one that is not. */
-	risks: string[],
+	/**  Why it is marked; empty for one that is not. */
+	risks: RiskMark[],
 };
 
-/**  One skill of an install review. */
+/**  One skill of a review. */
 export type ReviewSkill = {
 	name: string,
 	description: string,
@@ -9879,23 +9908,31 @@ export type ReviewSkill = {
 	files: ReviewFile[],
 	left_out: ReviewLeftOut[],
 	lint: string[],
-	grade: string | null,
-	digest: string,
 };
 
-/**  What a skill does beyond its instructions. */
+/**  What a skill does beyond its instructions, with the core's own marks. */
 export type ReviewSummary = {
 	scripts: ReviewScript[],
 	hosts: ReviewHost[],
 	commands: ReviewLine[],
 	outside: ReviewLine[],
-	risky: boolean,
+	unseen: ReviewUnseen[],
+	/**  Each file that is not text, so not shown. */
+	not_text: string[],
+	/**  How many of its items are marked (`Summary::marked`). */
+	marked: number,
+	/**  Whether it lists nothing at all (`Summary::is_empty`). */
+	empty: boolean,
 };
 
-/**
- *  What the window hands back to install or update: the commit and each skill's digest, as the
- *  review answered them.
- */
+/**  A line holding characters no reader sees: always marked. */
+export type ReviewUnseen = {
+	path: string,
+	line: number,
+	kinds: InvisibleMark[],
+};
+
+/**  What the window hands back to install or update: what the review answered as accepted. */
 export type Reviewed = {
 	commit: string,
 	skills: ReviewedSkill[],
@@ -9905,6 +9942,12 @@ export type Reviewed = {
 export type ReviewedSkill = {
 	name: string,
 	digest: string,
+};
+
+/**  A risk, and the core's words for it. */
+export type RiskMark = {
+	kind: ReviewRisk,
+	said: string,
 };
 
 /**  One action an extension's row offers, as the window draws its button (charter-app#341). */
@@ -10808,16 +10851,20 @@ export type SkillLevel = {
 
 /**  A skill source as the studio shows and adds one. */
 export type SkillSource = {
-	url: string,
-	branch: string | null,
+	remote: SourceRemote,
 	folder: string | null,
 	/**  The vault and the entry in it a private source signs in with; never the token. */
 	vault: string | null,
 	key: string | null,
-	/**  Kept on this machine, not shared with the project. */
-	local: boolean,
+	kept: SourceKept,
 	/**  As a person reads it. */
 	label: string,
+};
+
+/**  A source the committed lockfile names that this machine has not confirmed. */
+export type SkillSourceUnconfirmed = {
+	remote: SourceRemote,
+	skills: string[],
 };
 
 /**  How a harness can leave one of its own skills out of a chat. */
@@ -10842,9 +10889,9 @@ export type SkillUpdateOffer = {
 	name: string,
 	level: SkillLevel,
 	label: string,
-	url: string,
-	pinned: string,
-	newer: string,
+	remote: SourceRemote,
+	pinned: SourceCommit,
+	newer: SourceCommit,
 	edited: boolean,
 };
 
@@ -10859,6 +10906,7 @@ export type SkillUpdateUnasked = {
 export type SkillUpdates = {
 	offers: SkillUpdateOffer[],
 	unasked: SkillUpdateUnasked[],
+	unconfirmed: SkillSourceUnconfirmed[],
 };
 
 /**  Who uses a skill, as Delete shows before it deletes. */
@@ -10922,10 +10970,26 @@ export type SmartClosing = {
 
 /**  What a source offers. */
 export type SourceBrowse = {
-	commit: string,
+	commit: SourceCommit,
 	skills: OfferedSkill[],
-	/**  Each folder that is not a whole skill, and why. */
 	not_skills: NotASkill[],
+};
+
+/**  A commit, and its short name as the core gives it. */
+export type SourceCommit = {
+	id: string,
+	short: string,
+};
+
+/**  Which settings a source is kept in: the project's, shared with the team, or this machine's. */
+export type SourceKept = "shared" | "local";
+
+/**  A repository and the branch read from it. */
+export type SourceRemote = {
+	url: string,
+	branch: string | null,
+	/**  As a person reads it. */
+	label: string,
 };
 
 /**  What [`theme_specimen`] answers. */
@@ -11696,8 +11760,8 @@ export type Unsaid =
 /**  One file's change in an update. */
 export type UpdateFile = {
 	path: string,
-	/**  `added`, `removed` or `changed`. */
-	change: string,
+	change: FileChanged,
+	/**  Its lines' diff, every line escaped by the core. */
 	diff: string,
 };
 
@@ -11740,17 +11804,23 @@ export type UpdateNoted = {
 	says: string,
 };
 
-/**  **An update's review**: the summary's changes, then each file's. */
+/**
+ *  **An update's review**: the summary's changes, then each file's, the edits made here, and
+ *  the skills that come along.
+ */
 export type UpdateReview = {
 	name: string,
-	pinned: string,
-	newer: string,
+	pinned: SourceCommit,
+	newer: SourceCommit,
 	from_pin: boolean,
 	added: ReviewSummary,
 	removed: ReviewSummary,
 	files: UpdateFile[],
 	edited: string[],
+	local_edits: UpdateFile[],
 	skill: ReviewSkill,
+	brought: ReviewSkill[],
+	accepted: Reviewed,
 };
 
 /**  What the person did with updates: Mark read, or Dismiss. */

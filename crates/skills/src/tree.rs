@@ -7,7 +7,7 @@
 //! A source is read from git's own object store, never checked out, so nothing in it is ever a
 //! file on disk until purlis writes it under a name it made. This is the rule for those names:
 //! only a plain file or an executable one, never a link or another repository; every part of its
-//! path a plain name (printable ASCII, not `.` or `..`, no separator, never a git control file);
+//! path a plain name (printable ASCII, not `.` or `..`, no separator, nothing starting `.git`);
 //! and no two paths that a case-insensitive disk would make one.
 
 use serde::Serialize;
@@ -47,8 +47,8 @@ pub enum Why {
     Link,
     /// Another repository (a submodule): purlis fetches none.
     Submodule,
-    /// A name purlis does not write: `..`, a separator, a git control file, or one not plain
-    /// ASCII.
+    /// A name purlis does not write: `..`, a separator, anything starting `.git`, or one not
+    /// plain ASCII.
     Name,
     /// A name that a disk which ignores case would make the same as another's.
     Case,
@@ -65,7 +65,7 @@ impl std::fmt::Display for Why {
             Self::Submodule => "another repository inside it, which purlis never fetches",
             Self::Name => "a name purlis never writes",
             Self::Case => "the same name as another file on a disk that ignores case",
-            Self::TooLarge => "larger than 1 MiB",
+            Self::TooLarge => return write!(f, "larger than {} MiB", MOST_FILE_BYTES >> 20),
             Self::Other => "not a plain file",
         })
     }
@@ -78,14 +78,11 @@ pub struct LeftOut {
     pub why: Why,
 }
 
-/// The names of git's own control files: one inside a skill would change how the project's git
-/// reads the skill's folder.
-const GIT_FILES: [&str; 4] = [".git", ".gitattributes", ".gitignore", ".gitmodules"];
-
 /// **Whether `name` is one part of a path purlis writes**: printable ASCII, at most 255 bytes,
-/// not `.` or `..`, no `/`, `\` or `:`, no trailing dot or blank, and no git control file
-/// whatever its case, nor git's short form of `.git` (`git~1`).
-pub fn plain_name(name: &str) -> bool {
+/// not `.` or `..`, no `/`, `\` or `:`, no trailing dot or blank, nothing that starts `.git` in
+/// any case (git's own control files, which would change how the project's git reads the folder),
+/// nor git's short form of `.git` (`git~1`).
+pub(crate) fn plain_name(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
     !name.is_empty()
         && name.len() <= 255
@@ -94,64 +91,138 @@ pub fn plain_name(name: &str) -> bool {
         && name.bytes().all(|b| (0x20..0x7f).contains(&b))
         && !name.contains(['/', '\\', ':'])
         && !name.ends_with(['.', ' '])
-        && !GIT_FILES.contains(&lower.as_str())
+        && !lower.starts_with(".git")
         && !lower.starts_with("git~")
 }
 
-/// **The tree `listing` names** — `git ls-tree -r -z -l <commit>`'s answer — as the files purlis
-/// would write and those it leaves out. A path whose case-folded form another path already took
-/// is left out, so of two such paths the first git lists is the one written. A record that is
-/// not one git writes refuses the whole listing: nothing is read from a tree purlis cannot read
-/// whole.
-pub fn read_listing(listing: &[u8]) -> Result<(Vec<Entry>, Vec<LeftOut>), String> {
-    let unread = || Err("the source's tree could not be read".to_owned());
-    let mut entries = Vec::new();
-    let mut left = Vec::new();
-    let mut folded: Vec<(String, String)> = Vec::new();
+/// The most entries a source's tree may list: past it nothing is read.
+pub const MOST_ENTRIES: usize = 50_000;
+
+/// The most skill folders one source may hold: past it the source is not browsed.
+pub const MOST_SKILLS: usize = 200;
+
+/// The most bytes a path purlis writes may have, the level's folder and the skill's name
+/// included.
+pub const MOST_PATH_BYTES: usize = 1024;
+
+/// What a source's tree is, by git's word for an entry's mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mode {
+    File,
+    Executable,
+    Link,
+    Submodule,
+    Other,
+}
+
+/// One record of `git ls-tree -r -z --full-tree <commit>`: its mode, its object and its path's
+/// bytes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Record {
+    pub mode: Mode,
+    pub oid: String,
+    pub path: Vec<u8>,
+}
+
+/// Why a source's tree is not read at all.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Unread {
+    /// git answered something it does not write.
+    NotGit,
+    /// More than [`MOST_ENTRIES`].
+    TooManyEntries,
+}
+
+impl std::fmt::Display for Unread {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotGit => f.write_str("its files could not be listed"),
+            Self::TooManyEntries => write!(
+                f,
+                "it holds more than {MOST_ENTRIES} files, the most purlis reads of a skill source"
+            ),
+        }
+    }
+}
+
+/// **The records `listing` holds** — `git ls-tree -r -z --full-tree <commit>`'s answer — counted
+/// before any is read, so a tree past [`MOST_ENTRIES`] costs one scan. A record that is not one
+/// git writes refuses the whole listing.
+pub fn records(listing: &[u8]) -> Result<Vec<Record>, Unread> {
+    if listing.iter().filter(|b| **b == 0).count() > MOST_ENTRIES {
+        return Err(Unread::TooManyEntries);
+    }
+    let mut out = Vec::new();
     for record in listing.split(|b| *b == 0) {
         if record.is_empty() {
             continue;
         }
-        let Some(tab) = record.iter().position(|b| *b == b'\t') else {
-            return unread();
-        };
-        let (head, path) = (&record[..tab], &record[tab + 1..]);
-        let path_shown = String::from_utf8_lossy(path).into_owned();
-        let head = String::from_utf8_lossy(head);
-        let mut fields = head.split_whitespace();
-        let (Some(mode), Some(kind), Some(oid), Some(size), None) = (
-            fields.next(),
-            fields.next(),
-            fields.next(),
-            fields.next(),
-            fields.next(),
-        ) else {
-            return unread();
+        let tab = record
+            .iter()
+            .position(|b| *b == b'\t')
+            .ok_or(Unread::NotGit)?;
+        let head = std::str::from_utf8(&record[..tab]).map_err(|_| Unread::NotGit)?;
+        let mut fields = head.split(' ');
+        let (Some(mode), Some(kind), Some(oid), None) =
+            (fields.next(), fields.next(), fields.next(), fields.next())
+        else {
+            return Err(Unread::NotGit);
         };
         if !matches!(oid.len(), 40 | 64) || !oid.bytes().all(|b| b.is_ascii_hexdigit()) {
-            return unread();
+            return Err(Unread::NotGit);
         }
+        let mode = match (mode, kind) {
+            ("100644", "blob") => Mode::File,
+            ("100755", "blob") => Mode::Executable,
+            ("120000", "blob") => Mode::Link,
+            ("160000", "commit") => Mode::Submodule,
+            _ => Mode::Other,
+        };
+        out.push(Record {
+            mode,
+            oid: oid.to_owned(),
+            path: record[tab + 1..].to_vec(),
+        });
+    }
+    Ok(out)
+}
+
+/// **The files purlis would write of `records`, and those it leaves out**, each blob's size
+/// asked of `size_of` (`None`: the fetch left it out, past [`MOST_FILE_BYTES`]). A path whose
+/// case-folded form, or a folder of whose, another path already took is left out, so of two such
+/// paths the first git lists is the one written; each path's folded prefixes are kept in a set,
+/// so a tree costs one pass.
+pub fn read_listing(
+    records: Vec<Record>,
+    size_of: impl Fn(&str) -> Option<u64>,
+) -> (Vec<Entry>, Vec<LeftOut>) {
+    use std::collections::HashMap;
+    let mut entries = Vec::new();
+    let mut left = Vec::new();
+    let mut folded: HashMap<String, String> = HashMap::new();
+    for record in records {
+        let shown = String::from_utf8_lossy(&record.path).into_owned();
         let out = |why| LeftOut {
-            path: path_shown.clone(),
+            path: shown.clone(),
             why,
         };
-        let executable = match (mode, kind) {
-            ("100644", "blob") => false,
-            ("100755", "blob") => true,
-            ("120000", _) => {
+        let executable = match record.mode {
+            Mode::File => false,
+            Mode::Executable => true,
+            Mode::Link => {
                 left.push(out(Why::Link));
                 continue;
             }
-            ("160000", _) => {
+            Mode::Submodule => {
                 left.push(out(Why::Submodule));
                 continue;
             }
-            _ => {
+            Mode::Other => {
                 left.push(out(Why::Other));
                 continue;
             }
         };
-        let Ok(text) = std::str::from_utf8(path) else {
+        let Ok(text) = std::str::from_utf8(&record.path) else {
             left.push(out(Why::Name));
             continue;
         };
@@ -160,42 +231,39 @@ pub fn read_listing(listing: &[u8]) -> Result<(Vec<Entry>, Vec<LeftOut>), String
             left.push(out(Why::Name));
             continue;
         }
-        let Ok(size) = size.parse::<u64>() else {
-            return unread();
-        };
-        if size > MOST_FILE_BYTES {
-            left.push(out(Why::TooLarge));
-            continue;
-        }
-        // Every prefix of the path, folded: a folder `Scripts/` clashes with `scripts/` too.
-        let mut clash = false;
-        let mut prefix = String::new();
-        let mut seen = Vec::new();
-        for part in &parts {
-            if !prefix.is_empty() {
-                prefix.push('/');
+        match size_of(&record.oid) {
+            Some(size) if size <= MOST_FILE_BYTES => {
+                let mut clash = false;
+                let mut prefix = String::new();
+                let mut seen = Vec::new();
+                for part in &parts {
+                    if !prefix.is_empty() {
+                        prefix.push('/');
+                    }
+                    prefix.push_str(part);
+                    let lower = prefix.to_ascii_lowercase();
+                    match folded.get(&lower) {
+                        Some(original) if *original != prefix => clash = true,
+                        Some(_) => {}
+                        None => seen.push((lower, prefix.clone())),
+                    }
+                }
+                if clash {
+                    left.push(out(Why::Case));
+                    continue;
+                }
+                folded.extend(seen);
+                entries.push(Entry {
+                    path: parts,
+                    executable,
+                    oid: record.oid,
+                    size,
+                });
             }
-            prefix.push_str(part);
-            let lower = prefix.to_ascii_lowercase();
-            match folded.iter().find(|(f, _)| *f == lower) {
-                Some((_, original)) if *original != prefix => clash = true,
-                Some(_) => {}
-                None => seen.push((lower, prefix.clone())),
-            }
+            _ => left.push(out(Why::TooLarge)),
         }
-        if clash {
-            left.push(out(Why::Case));
-            continue;
-        }
-        folded.extend(seen);
-        entries.push(Entry {
-            path: parts,
-            executable,
-            oid: oid.to_owned(),
-            size,
-        });
     }
-    Ok((entries, left))
+    (entries, left)
 }
 
 /// The parts of `folder`, a folder inside a source as a person writes it (`skills`,
