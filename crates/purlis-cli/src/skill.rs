@@ -13,7 +13,7 @@
 use std::path::Path;
 
 use clap::{Args, Subcommand, ValueEnum};
-use purlis_core::skills::source::{self, SignIn, Source};
+use purlis_core::skills::source::{self, Source, VaultEntry};
 use purlis_core::skills::verbs::{self, By, Level};
 use purlis_core::skills::{Grant, StudioRow, Template};
 use serde_json::{Value, json};
@@ -517,7 +517,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 url,
                 branch,
                 folder,
-                sign_in: vault.zip(key).map(|(vault, key)| SignIn {
+                sign_in: vault.zip(key).map(|(vault, key)| VaultEntry {
                     vault,
                     key,
                     user: None,

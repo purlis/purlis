@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 
 use purlis_core::skills::review;
-use purlis_core::skills::source::{self, Accepted, SignIn, Source};
+use purlis_core::skills::source::{self, Accepted, Source, VaultEntry};
 use purlis_core::skills::tree;
 
 use crate::skillchange::{SkillChanged, SkillGrant, SkillLevel, flag_on, heard};
@@ -41,11 +41,13 @@ impl SkillSource {
             branch: self.branch.clone().filter(|b| !b.trim().is_empty()),
             folder: self.folder.clone().filter(|f| !f.trim().is_empty()),
             sign_in: match (&self.vault, &self.key) {
-                (Some(vault), Some(key)) if !vault.is_empty() && !key.is_empty() => Some(SignIn {
-                    vault: vault.clone(),
-                    key: key.clone(),
-                    user: None,
-                }),
+                (Some(vault), Some(key)) if !vault.is_empty() && !key.is_empty() => {
+                    Some(VaultEntry {
+                        vault: vault.clone(),
+                        key: key.clone(),
+                        user: None,
+                    })
+                }
                 _ => None,
             },
         }

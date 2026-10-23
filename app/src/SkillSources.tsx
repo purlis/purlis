@@ -20,6 +20,7 @@ import {
 } from "./bindings";
 import { counted } from "./dispatches";
 import { Button, ButtonRow } from "./ui/button/Button";
+import { Notice } from "./Notice";
 import { Select } from "./primitives/Select";
 import { Field, SettingRow } from "./settings/components";
 import { labelOf, picking, sameLevel } from "./skillChanges";
@@ -214,9 +215,14 @@ export function SkillSources({
         </p>
       )}
       {refused !== undefined && (
-        <p className="honest" role="alert" data-testid="skill-source-refused">
-          {refused}
-        </p>
+        <Notice
+          cause="skill-source"
+          tone="trouble"
+          label="The skill source could not be read"
+          onDismiss={() => setRefused(undefined)}
+        >
+          <span data-testid="skill-source-refused">{refused}</span>
+        </Notice>
       )}
       {open?.what === "add" && (
         <AddSource
@@ -569,7 +575,7 @@ function UpdatePanel({
       <h4>Gone from the summary</h4>
       <Summary summary={review.removed} testid="update-removed" />
       {review.edited.length > 0 && (
-        <p className="honest" role="alert">
+        <p className="honest" data-testid="update-edited">
           Edited here since the install, and replaced by the update: {review.edited.join(", ")}
         </p>
       )}

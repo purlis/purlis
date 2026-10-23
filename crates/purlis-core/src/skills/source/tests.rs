@@ -669,7 +669,7 @@ fn sources_are_a_setting_shared_or_local() {
     let tmp = plane();
     let root = tmp.path();
     let mut source = remote.source();
-    source.sign_in = Some(SignIn {
+    source.sign_in = Some(VaultEntry {
         vault: "team".into(),
         key: "TOKEN".into(),
         user: None,
@@ -724,7 +724,7 @@ fn a_private_source_hands_git_the_token_by_one_variable_and_never_writes_it() {
     let tmp = plane_with_a_vault();
     let root = tmp.path();
     let mut source = remote.source();
-    source.sign_in = Some(SignIn {
+    source.sign_in = Some(VaultEntry {
         vault: "team".into(),
         key: "TOKEN".into(),
         user: None,

@@ -64,7 +64,7 @@ const MOST_SKILL_BYTES: u64 = 16 * 1024 * 1024;
 /// **How a private source signs in**: the vault and the entry in it that holds the token, and the
 /// user name the forge wants beside a token, where it wants one. Never the token.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SignIn {
+pub struct VaultEntry {
     pub vault: String,
     pub key: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -81,7 +81,7 @@ pub struct Source {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub folder: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sign_in: Option<SignIn>,
+    pub sign_in: Option<VaultEntry>,
 }
 
 /// Why `url` cannot be a skill source's, or `None` where it can: an `https://` URL with no
@@ -216,7 +216,7 @@ struct Written {
 impl Written {
     fn source(self) -> Source {
         let sign_in = match (self.vault, self.key) {
-            (Some(vault), Some(key)) => Some(SignIn {
+            (Some(vault), Some(key)) => Some(VaultEntry {
                 vault,
                 key,
                 user: self.user,
