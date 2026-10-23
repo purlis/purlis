@@ -169,6 +169,9 @@ describe("forced colours", () => {
       '.ui-segmented-item[data-state="checked"]',
       ".ui-menu-item[data-highlighted]",
       '.ui-menu-item[data-state="open"]',
+      '[data-scope="menu"][data-part="root"][data-focused]:not([data-disabled])',
+      '[data-scope="menu"][data-part="root"][data-hovered]:not([data-disabled])',
+      '[data-scope="menu"][data-part="root"][data-open]',
     ]) {
       const it = drawn(selected);
       expect(it.get("forced-color-adjust"), selected).toBe("none");
@@ -228,7 +231,7 @@ describe("forced colours", () => {
   it("tell what ends or destroys, and a ground that says something is wrong, by a shape", () => {
     for (const danger of [
       '[data-scope="button"][data-part="root"][data-variant="danger"]',
-      ".ui-menu-item-danger",
+      '[data-scope="menu"][data-part="root"][data-variant="danger"]',
       '[data-scope="status-item"][data-part="root"][data-tone="danger"]',
       ".trouble",
       ".ui-inline-surface-trouble",
@@ -241,7 +244,13 @@ describe("forced colours", () => {
   });
 
   it("outline what is opened over the window, taking no room", () => {
-    for (const over of ['[role="dialog"]', '[role="menu"]', '[role="listbox"]', '[role="tooltip"]'])
+    for (const over of [
+      '[role="dialog"]',
+      '[role="menu"]',
+      '[role="listbox"]',
+      '[role="tooltip"]',
+      '[data-scope="popover"][data-part="root"]',
+    ])
       expect(drawn(over).get("outline"), over).toBe("1px solid CanvasText");
   });
 

@@ -1,8 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useId, useMemo, useState, type ReactNode } from "react";
-import * as Popover from "./overlays/popover";
+import { useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { HeldPopover } from "./ui/popover/Popover";
 import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
 import clsx from "clsx";
 import {
@@ -426,6 +426,8 @@ function Row({
   // `persona.show:<name>` is the same verb the palette and a context menu run (charter-app#174),
   // so the three are one state rather than three that look alike — and running it again on
   // dismissal would re-open what was just closed.
+  /** The row's button, which its card stands beside. */
+  const own = useRef<HTMLButtonElement>(null);
   const opened = (opening: boolean) => {
     onOpen(opening);
     if (opening && row.runs !== null) onRun?.(row.runs);
@@ -459,34 +461,39 @@ function Row({
         </Tooltip>
       </RovingFocusGroup.Item>
     ) : (
-      <Popover.Root open={open} onOpenChange={opened}>
-        <Popover.Trigger asChild>
-          <RovingFocusGroup.Item asChild tabStopId={row.key} active={open}>
-            <Tooltip tip={hover}>
-              <button type="button" className="ui-row row">
-                {body}
-              </button>
-            </Tooltip>
-          </RovingFocusGroup.Item>
-        </Popover.Trigger>
-        <Popover.Portal>
-          <Popover.Content
-            className="ui-popover row-card"
-            data-testid={`row-detail-${row.key}`}
-            /* `side="left"` is where it opens from in the default arrangement and no more than
-               that: a region MOVES (ADR 0038), and Radix flips to the other side when
-               there is no room, which is what makes naming a side safe. */
-            side="left"
-            align="start"
-            sideOffset={6}
-            collisionPadding={8}
-            aria-label={row.text}
-          >
-            {detail}
-            <Popover.Arrow className="ui-overlay-arrow" />
-          </Popover.Content>
-        </Popover.Portal>
-      </Popover.Root>
+      <>
+        <RovingFocusGroup.Item asChild tabStopId={row.key} active={open}>
+          <Tooltip tip={hover}>
+            <button
+              type="button"
+              ref={own}
+              className="ui-row row"
+              aria-haspopup="dialog"
+              aria-expanded={open}
+              onClick={() => opened(!open)}
+            >
+              {body}
+            </button>
+          </Tooltip>
+        </RovingFocusGroup.Item>
+        {/* `side="left"` is where it opens from in the default arrangement and no more than
+            that: a region MOVES (ADR 0038), and the popover flips to the other side when
+            there is no room, which is what makes naming a side safe. */}
+        <HeldPopover
+          triggerRef={own}
+          isOpen={open}
+          onOpenChange={opened}
+          className="row-card"
+          data-testid={`row-detail-${row.key}`}
+          side="left"
+          align="start"
+          offset={6}
+          arrow
+          aria-label={row.text}
+        >
+          {detail}
+        </HeldPopover>
+      </>
     );
 
   // **The extension's own actions, beside the row and never inside its button** (charter-app#341):

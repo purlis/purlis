@@ -1346,9 +1346,11 @@ describe("tasks that have finished", () => {
 
     expect(menu()).not.toBeNull();
     expect(document.activeElement).toBe(line("probe"));
-    expect(screen.getByRole("region", { name: "Report of probe" }).textContent).toBe(
+    // Under its words, and the line's description while it is open.
+    expect(line("probe").querySelector(".tasks-menu-report")?.textContent).toBe(
       "The deploy is red: the image is missing.",
     );
+    expect(line("probe")).toHaveAccessibleDescription(/The deploy is red: the image is missing\./);
     // Nothing was gone to: a finished task has no chat.
     expect(onScreen()).toEqual([1]);
   });

@@ -2098,7 +2098,7 @@ function App() {
                               {/* Right-click is the third reader of the same catalogue
                                   (`Menus.tsx`). `asChild`, and on the tab and not the cell: the
                                   context-menu key opens a menu only on the trigger that has the
-                                  keyboard (`openFromTheKeyboard`), and that is the tab. */}
+                                  keyboard (`ContextMenu`'s keys, `ui/menu/ContextMenu.tsx`), and that is the tab. */}
                               <Menued
                                 on={{ on: "project", plane: project.plane }}
                                 offers={stripFound}

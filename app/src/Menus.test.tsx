@@ -17,7 +17,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import { askId, catalogue, catalogued, menuRows, OUTSIDE, type Now } from "./actions";
 import { Menued, useNoBrowserMenu } from "./Menus";
-import { TIP_AFTER_MS } from "./primitives/MenuRow";
+import { TIP_AFTER_MS } from "./ui/menu/MenuTip";
 import { noTabs, openTab, selectTab } from "./tabs";
 import { TOOLTIP_CLOSE_DELAY } from "./ui/tooltip/Tooltip";
 
@@ -326,7 +326,7 @@ describe("a menu on screen", () => {
     ]);
     // What a row draws: its words, and the one line that may stand under them.
     for (const row of rowsIn(menu))
-      expect(row.querySelector(".ui-menu-words")?.textContent).not.toContain(NAME);
+      expect(row.querySelector('[data-part="words"]')?.textContent).not.toContain(NAME);
   });
 
   it("has at most ten rows with twelve personas, and Ask is one row that opens them all", async () => {
@@ -343,7 +343,7 @@ describe("a menu on screen", () => {
       TWELVE.map((persona) => `${persona}…`),
     );
     // What asking does is said once, by the row that opened them, and under no persona.
-    expect(sub.querySelector(".ui-menu-note")).toBeNull();
+    expect(sub.querySelector('[data-part="description"]')).toBeNull();
     expect(ask).toHaveAccessibleDescription(/^A task starts as the persona you pick/);
   });
 
@@ -351,9 +351,9 @@ describe("a menu on screen", () => {
     aMenu();
     const menu = await open();
 
-    const noted = rowsIn(menu).filter((row) => row.querySelector(".ui-menu-note"));
+    const noted = rowsIn(menu).filter((row) => row.querySelector('[data-part="description"]'));
     expect(noted.map((row) => row.getAttribute("aria-label"))).toEqual(["End"]);
-    expect(noted[0].querySelector(".ui-menu-note")).toHaveTextContent(
+    expect(noted[0].querySelector('[data-part="description"]')).toHaveTextContent(
       "Ends the program it runs. There is no undo.",
     );
 
@@ -363,7 +363,7 @@ describe("a menu on screen", () => {
     expect(
       rowsIn(sub).map((row) => [
         row.getAttribute("aria-label"),
-        row.querySelector(".ui-menu-note")?.textContent,
+        row.querySelector('[data-part="description"]')?.textContent,
       ]),
     ).toEqual([
       ["Stop", "Ends the chat."],
@@ -372,7 +372,7 @@ describe("a menu on screen", () => {
     ]);
     for (const row of rowsIn(sub))
       expect(
-        row.classList.contains("ui-menu-item-danger") ||
+        row.getAttribute("data-variant") === "danger" ||
           row.getAttribute("aria-disabled") === "true",
       ).toBe(true);
   });
@@ -401,24 +401,44 @@ describe("a menu on screen", () => {
     expect(below).toHaveAccessibleDescription(`${NAME} started no chat that is still running.`);
   });
 
+  it("raises no row's note for the focus a menu puts on a row as it opens", async () => {
+    aMenu();
+    const menu = await open();
+    const pinned = within(menu).getByRole("menuitemcheckbox", { name: "Pinned" });
+    vi.useFakeTimers();
+    try {
+      // No key since the menu came, and the pointer is not on the row: the menu's own focus.
+      act(() => pinned.focus());
+      act(() => {
+        vi.advanceTimersByTime(TIP_AFTER_MS * 2);
+      });
+      expect(pinned).toBeInTheDocument();
+      expect(document.querySelector('[data-part="tip"]')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("shows a row's note as its tooltip once the keyboard has rested on it, and not before", async () => {
     aMenu();
     const menu = await open();
     const pinned = within(menu).getByRole("menuitemcheckbox", { name: "Pinned" });
     vi.useFakeTimers();
     try {
+      // A key moved the keyboard here, as a person's does.
+      fireEvent.keyDown(document.body, { key: "ArrowDown" });
       act(() => pinned.focus());
       act(() => {
         vi.advanceTimersByTime(TIP_AFTER_MS - 1);
       });
-      expect(document.querySelector(".ui-menu-tip")).toBeNull();
+      expect(document.querySelector('[data-part="tip"]')).toBeNull();
       // No `title` either: the platform's tooltip would say it a second time.
       expect(pinned).not.toHaveAttribute("title");
 
       act(() => {
         vi.advanceTimersByTime(1);
       });
-      const tip = document.querySelector(".ui-menu-tip");
+      const tip = document.querySelector('[data-part="tip"]');
       expect(tip).toHaveTextContent("Draws it first on its strip. Yours, on this machine only.");
       expect(tip).toHaveClass("ui-text-secondary");
       // The window's one tooltip (#2908).
@@ -426,11 +446,13 @@ describe("a menu on screen", () => {
 
       // It goes a moment after the keyboard leaves the row: time for the pointer to cross onto
       // it, which keeps it (WCAG 1.4.13, hoverable).
+      // A key moved the keyboard here, as a person's does.
+      fireEvent.keyDown(document.body, { key: "ArrowDown" });
       act(() => within(menu).getByRole("menuitem", { name: "Rename…" }).focus());
       act(() => {
         vi.advanceTimersByTime(TOOLTIP_CLOSE_DELAY);
       });
-      expect(document.querySelector(".ui-menu-tip")).toBeNull();
+      expect(document.querySelector('[data-part="tip"]')).toBeNull();
     } finally {
       vi.useRealTimers();
     }
@@ -441,24 +463,28 @@ describe("a menu on screen", () => {
     const menu = await open();
     vi.useFakeTimers();
     try {
+      // A key moved the keyboard here, as a person's does.
+      fireEvent.keyDown(document.body, { key: "ArrowDown" });
       act(() => within(menu).getByRole("menuitemcheckbox", { name: "Pinned" }).focus());
       act(() => {
         vi.advanceTimersByTime(TIP_AFTER_MS);
       });
-      const tip = document.querySelector(".ui-menu-tip")?.closest('[role="tooltip"]');
+      const tip = document.querySelector('[data-part="tip"]')?.closest('[role="tooltip"]');
       expect(tip).not.toBeNull();
       // The pointer leaves the row for the note: the row loses the keyboard, the note stays.
       fireEvent.pointerEnter(tip as Element);
+      // A key moved the keyboard here, as a person's does.
+      fireEvent.keyDown(document.body, { key: "ArrowDown" });
       act(() => within(menu).getByRole("menuitem", { name: "Rename…" }).focus());
       act(() => {
         vi.advanceTimersByTime(TOOLTIP_CLOSE_DELAY * 10);
       });
-      expect(document.querySelector(".ui-menu-tip")).not.toBeNull();
+      expect(document.querySelector('[data-part="tip"]')).not.toBeNull();
       fireEvent.pointerLeave(tip as Element);
       act(() => {
         vi.advanceTimersByTime(TOOLTIP_CLOSE_DELAY);
       });
-      expect(document.querySelector(".ui-menu-tip")).toBeNull();
+      expect(document.querySelector('[data-part="tip"]')).toBeNull();
     } finally {
       vi.useRealTimers();
     }
@@ -469,18 +495,20 @@ describe("a menu on screen", () => {
     const menu = await open();
     vi.useFakeTimers();
     try {
+      // A key moved the keyboard here, as a person's does.
+      fireEvent.keyDown(document.body, { key: "ArrowDown" });
       act(() => within(menu).getByRole("menuitemcheckbox", { name: "Pinned" }).focus());
       act(() => {
         vi.advanceTimersByTime(TIP_AFTER_MS);
       });
-      expect(document.querySelector(".ui-menu-tip")).not.toBeNull();
+      expect(document.querySelector('[data-part="tip"]')).not.toBeNull();
 
       fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
       act(() => {
         vi.runOnlyPendingTimers();
       });
       // The note went, and the menu stays with the keyboard on its row (WCAG 1.4.13).
-      expect(document.querySelector(".ui-menu-tip")).toBeNull();
+      expect(document.querySelector('[data-part="tip"]')).toBeNull();
       expect(screen.queryByRole("menu")).not.toBeNull();
       fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
       act(() => {
@@ -493,23 +521,25 @@ describe("a menu on screen", () => {
   });
 
   it("colours only what cannot be undone, by meaning and by look", async () => {
-    // `ends-it` is the house meaning (D-1719-3) and `ui-menu-item-danger` the look (DS-2): a
+    // `ends-it` is the house meaning (D-1719-3) and the `danger` variant the look (DS-2): a
     // row that cannot be undone carries both, and no other row carries either.
     aMenu();
     const menu = await open();
 
     expect(
       rowsIn(menu)
-        .filter((row) => row.classList.contains("ui-menu-item-danger"))
+        .filter((row) => row.getAttribute("data-variant") === "danger")
         .map((row) => row.getAttribute("aria-label")),
     ).toEqual(["End"]);
     const ends = within(menu).getByRole("menuitem", { name: "End" });
-    expect(ends).toHaveClass("ui-menu-item", "ui-menu-item-danger", "ends-it");
+    expect(ends).toHaveClass("ends-it");
+    expect(ends).toHaveAttribute("data-scope", "menu");
+    expect(ends).toHaveAttribute("data-variant", "danger");
     // Restart keeps the conversation, and Stop only opens the ways to stop.
     for (const name of ["Restart", "Stop", "Switch to"]) {
       const row = within(menu).getByRole("menuitem", { name });
       expect(row).not.toHaveClass("ends-it");
-      expect(row).not.toHaveClass("ui-menu-item-danger");
+      expect(row).toHaveAttribute("data-variant", "default");
     }
   });
 
@@ -518,9 +548,8 @@ describe("a menu on screen", () => {
     const menu = await open();
 
     const keys = (name: string) =>
-      within(menu).getByRole("menuitem", { name }).querySelector(".ui-menu-keys");
+      within(menu).getByRole("menuitem", { name }).querySelector('[data-part="shortcut"]');
     expect(keys("Rename…")).toHaveTextContent("F2");
-    expect(keys("Rename…")).toHaveClass("ui-text-meta");
     expect(keys("End")).toHaveTextContent(/^(⌫|Delete)$/);
     expect(keys("Restart")).toBeNull();
     expect(within(menu).getByRole("menuitemcheckbox", { name: "Pinned" })).toHaveAttribute(
@@ -556,7 +585,8 @@ describe("a menu on screen", () => {
 
     await user.keyboard("{ArrowLeft}");
     await waitFor(() => expect(screen.getAllByRole("menu")).toHaveLength(1));
-    expect(ask).toHaveFocus();
+    // The keyboard is handed back to the row that opened it once the submenu has gone.
+    await waitFor(() => expect(ask).toHaveFocus());
 
     await user.keyboard("{ArrowRight}q{Enter}");
     expect(pressed).toEqual([askId(1, "qa")]);
@@ -657,13 +687,14 @@ describe("the Curate ▸ submenu (ADR 0061)", () => {
     const sub = await openCurate();
 
     expect(
-      Array.from(sub.querySelectorAll("[role=menuitem], .ui-menu-label, .ui-menu-line")).map(
-        (el) =>
-          el.getAttribute("role") === "menuitem"
-            ? el.getAttribute("aria-label")
-            : el.classList.contains("ui-menu-label")
-              ? `[${el.textContent}]`
-              : "---",
+      Array.from(
+        sub.querySelectorAll('[role=menuitem], [data-part="header"], [data-part="rule"]'),
+      ).map((el) =>
+        el.getAttribute("role") === "menuitem"
+          ? el.getAttribute("aria-label")
+          : el.getAttribute("data-part") === "header"
+            ? `[${el.textContent}]`
+            : "---",
       ),
     ).toEqual([
       "Safe remove",
@@ -680,8 +711,8 @@ describe("the Curate ▸ submenu (ADR 0061)", () => {
     // **A persona's name is data, and is written as it was given** (ruling T4): its group's
     // label does not wear the label role, whose capitals would head it "OPS".
     const ops = within(sub).getByText("ops");
-    expect(ops).toHaveClass("ui-menu-label", "ui-menu-label-named", "ui-text-secondary");
-    expect(ops).not.toHaveClass("ui-text-label");
+    expect(ops).toHaveAttribute("data-part", "header");
+    expect(ops).toHaveAttribute("data-named");
   });
 
   it("draws an action the core left out as a row that cannot run, saying why", async () => {
