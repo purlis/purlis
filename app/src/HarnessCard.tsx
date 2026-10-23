@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { HarnessGlance } from "./bindings";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
  * **A harness's capability card, at a glance** (HP-19, W10, ADR 0072 §3): labelled *What
@@ -55,16 +56,17 @@ export function HarnessChip({
   onOpen: () => void;
 }) {
   return (
-    <button
-      type="button"
-      className="pane-harness"
-      // In the tab sequence, said out loud (`docs/ui-primitives.md`).
-      tabIndex={0}
-      aria-label={glance.label}
-      title={glanceSaid(glance)}
-      onClick={onOpen}
-    >
-      {glance.title}
-    </button>
+    <Tooltip tip={glanceSaid(glance)}>
+      <button
+        type="button"
+        className="pane-harness"
+        // In the tab sequence, said out loud (`docs/ui-primitives.md`).
+        tabIndex={0}
+        aria-label={glance.label}
+        onClick={onOpen}
+      >
+        {glance.title}
+      </button>
+    </Tooltip>
   );
 }

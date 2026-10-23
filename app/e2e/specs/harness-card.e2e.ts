@@ -113,7 +113,8 @@ async function curateRowsOf(tab: string): Promise<{ name: string; off: boolean; 
     return [...submenu.querySelectorAll('[role="menuitem"]')].map((row) => ({
       name: row.getAttribute("aria-label") ?? row.textContent ?? "",
       off: row.getAttribute("aria-disabled") === "true" || row.hasAttribute("data-disabled"),
-      why: row.getAttribute("title") ?? "",
+      // Why it cannot run: its description, which its words also say under them.
+      why: document.getElementById(row.getAttribute("aria-describedby") ?? "")?.textContent ?? "",
     }));
   });
 }
@@ -400,7 +401,9 @@ describe("a harness's capability card", function () {
               const start = [
                 ...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
               ]
-                .filter((button) => !button.disabled)
+                .filter(
+                  (button) => !button.disabled && button.getAttribute("aria-disabled") !== "true",
+                )
                 .find((button) =>
                   ["Approve and start", "Start"].includes(button.textContent ?? ""),
                 );

@@ -39,6 +39,7 @@ import { sandboxCommandReturned } from "./sandboxAsked";
 import { onAMac } from "./tabKeys";
 import { Button } from "./ui/button/Button";
 import { Form, TextField } from "./ui/field/Field";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /** The keys that are only held with another. */
 const ONLY_HELD = new Set(["Shift", "Control", "Alt", "Meta"]);
@@ -508,7 +509,7 @@ export function BrowserView({ plane, program }: { plane: string; program: string
           <Button
             size="sm"
             variant="primary"
-            title={`Hand the browser back to the agent (${handsBackSaid(mac)})`}
+            tooltip={`Hand the browser back to the agent (${handsBackSaid(mac)})`}
             onPress={handBack}
           >
             Done
@@ -558,8 +559,10 @@ const KEEP_SAID = "Keep blocked";
 function BrowserChip({ mac, origin }: { mac: boolean; origin: string | null }) {
   const chip = addressChip(origin, thisDevice(mac));
   return (
-    <span className="browser-chip" data-testid="browser-chip" title={chip.whole ?? undefined}>
-      {chip.said}
-    </span>
+    <Tooltip tip={chip.whole ?? undefined}>
+      <span className="browser-chip" data-testid="browser-chip">
+        {chip.said}
+      </span>
+    </Tooltip>
   );
 }

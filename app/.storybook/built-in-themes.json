@@ -529,7 +529,7 @@
           }
         ]
       },
-      "parts": "@layer parts {\n  :where([data-scope=\"panel\"][data-part=\"root\"]) { background-color: var(--surface-raised); }\n}\n"
+      "parts": "@layer parts {\n  :where([data-scope=\"panel\"][data-part=\"root\"]) { background-color: var(--surface-raised); }\n  :where([data-scope=\"tooltip\"][data-part=\"root\"]) { border-radius: min(8px, 50%); }\n  :where([data-scope=\"tooltip\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }\n}\n"
     },
     "dark-high-contrast": {
       "name": "Purlis",
@@ -1060,7 +1060,7 @@
           }
         ]
       },
-      "parts": "@layer parts {\n  :where([data-scope=\"panel\"][data-part=\"root\"]) { background-color: var(--surface-raised); }\n}\n"
+      "parts": "@layer parts {\n  :where([data-scope=\"panel\"][data-part=\"root\"]) { background-color: var(--surface-raised); }\n  :where([data-scope=\"tooltip\"][data-part=\"root\"]) { border-radius: min(8px, 50%); }\n  :where([data-scope=\"tooltip\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }\n}\n"
     },
     "light": {
       "name": "Purlis",
@@ -1591,7 +1591,7 @@
           }
         ]
       },
-      "parts": "@layer parts {\n  :where([data-scope=\"panel\"][data-part=\"root\"]) { background-color: var(--surface-raised); }\n}\n"
+      "parts": "@layer parts {\n  :where([data-scope=\"panel\"][data-part=\"root\"]) { background-color: var(--surface-raised); }\n  :where([data-scope=\"tooltip\"][data-part=\"root\"]) { border-radius: min(8px, 50%); }\n  :where([data-scope=\"tooltip\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }\n}\n"
     }
   },
   "purlis-classic": {

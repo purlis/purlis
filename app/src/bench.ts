@@ -401,7 +401,7 @@ async function work(plan: Plan): Promise<unknown> {
       let drawnAt: number | undefined;
       const strip = document.querySelector(PROJECTS);
       const marked = new MutationObserver(() => {
-        const front = `[role="tab"][aria-selected="true"][title="${CSS.escape(plan.plane)}"]`;
+        const front = `[role="tab"][aria-selected="true"][data-directory="${CSS.escape(plan.plane)}"]`;
         if (drawnAt === undefined && strip?.querySelector(front)) drawnAt = performance.now();
       });
       if (strip)
@@ -417,7 +417,7 @@ async function work(plan: Plan): Promise<unknown> {
       row.click();
       const shown = await until(() =>
         document.querySelector(
-          `${PROJECTS} [role="tab"][aria-selected="true"][title="${CSS.escape(plan.plane)}"]`,
+          `${PROJECTS} [role="tab"][aria-selected="true"][data-directory="${CSS.escape(plan.plane)}"]`,
         ),
       ).then(
         () => new Promise<number>((done) => requestAnimationFrame(() => done(performance.now()))),

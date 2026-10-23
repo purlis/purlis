@@ -11,6 +11,7 @@ import { StatusLine, projectName, runningIn } from "./StatusLine";
 import type { DoctorState } from "./Doctor";
 import type { DoctorReport, DoctorRow, FactBadge, Panels, PanelTodo, Piece } from "./bindings";
 import type { WorkspaceState } from "./workspaceState";
+import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
  * **The status line's own rules**, on the component and nothing else.
@@ -201,11 +202,13 @@ describe("the Notices button (#1695)", () => {
     draw();
 
     const button = screen.getByRole("button", { name: "Notices — nothing to open here" });
-    // Unavailable, and still a Tab stop: the bar's menu always opens from Notices (#2913).
+    // Unavailable, and still a Tab stop: the bar's menu always opens from Notices (#2913), and
+    // its tooltip says why (#2908).
     expect(button).toHaveAttribute("aria-disabled", "true");
     expect(button).not.toBeDisabled();
     expect(button).toHaveAttribute("data-disabled", "true");
     expect(button).toHaveAttribute("tabindex", "0");
+    expect(button).toHaveAccessibleDescription("This status line has no Inbox behind it.");
   });
 
   it("drops a count purlis cannot stand behind and still opens the Inbox", async () => {
@@ -421,7 +424,7 @@ describe("an extension's badges (charter-app#340)", () => {
     const drawn = screen.getByTestId("status-badge-prs-open");
     expect(drawn).toHaveTextContent("PRs 3");
     expect(drawn).not.toHaveAttribute("data-tone");
-    expect(drawn.getAttribute("title")).toContain("Pull requests");
+    expect(tipOf(drawn)).toContain("Pull requests");
   });
 
   it("dims a value older than its extension declared fresh, and says how old it is", () => {
@@ -437,7 +440,7 @@ describe("an extension's badges (charter-app#340)", () => {
 
     const said = screen.getByTestId("status-fact-notes");
     expect(said).toHaveTextContent("1 extension note");
-    expect(said.getAttribute("title")).toBe("Pull requests changed since you approved it");
+    expect(tipOf(said)).toBe("Pull requests changed since you approved it");
   });
 
   it("draws no badge when no extension has one", () => {

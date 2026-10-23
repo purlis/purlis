@@ -379,6 +379,10 @@ boxes as tall as what they hold: no target of their own, so only their bounds ho
 of their corners is clamped to half their own box (`min(r, 50%)`; `full` is `50%`). A status item is a control, 24px tall in either density, and keeps
 its words in that height. `panel.root.corner-radius` sets one panel's corners over the theme's
 `panel.corner-radius` token, which sets every panel's.
+**The tooltip** (`tooltip`, manifest version 5, #2908) has a `root`, its surface, and a `detail`, an icon button's
+second line. A theme sets the surface's fill, words, edge colour and width, corners and shadow;
+its size is its words', so none of its sizes is a theme's. Purlis draws it with corners of 8 and
+no edge: `"tooltip.root.corner-radius": 8`, `"tooltip.root.border-width": 0`.
 
 The strip tabs, a tab's `×` closer, the gear on a strip and the list and tree rows are not
 families with parts today: they are drawn as the note under [Geometry](#geometry) says.

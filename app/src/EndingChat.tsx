@@ -259,7 +259,7 @@ export function EndingChat({
                 variant="danger"
                 ref={close}
                 isDisabled={unanswered}
-                title={unanswered ? CHOOSE_DRAFTS : undefined}
+                tooltip={unanswered ? CHOOSE_DRAFTS : undefined}
                 onPress={() => (keepDrafts === undefined ? onEnd(stop) : onEnd(stop, keepDrafts))}
               >
                 Close
@@ -270,7 +270,7 @@ export function EndingChat({
                 variant="primary"
                 ref={smartClose}
                 isDisabled={!smart?.available || unanswered}
-                title={unanswered ? CHOOSE_DRAFTS : undefined}
+                tooltip={unanswered ? CHOOSE_DRAFTS : undefined}
                 aria-describedby={smart?.why ? "smart-close-why" : undefined}
                 onPress={() =>
                   keepDrafts === undefined ? onSmartClose(stop) : onSmartClose(stop, keepDrafts)

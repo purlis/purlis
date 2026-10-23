@@ -19,6 +19,7 @@ import type { ChatDoing, Doing, Moved, OpenChat } from "./bindings";
 import { card, facts, theCard } from "./chatCard.testkit";
 import type { State } from "./chatState";
 import { forgetThisLaunch } from "./regions";
+import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
  * **What a working chat is doing, in its row's card, against the whole window** (#1493,
@@ -303,7 +304,7 @@ describe("a working chat's card says what it is doing (#1493, #1675)", () => {
     // The one component the tab chip's menu draws too, a line of the card here.
     expect(drawn.tagName).toBe("P");
     expect(drawn.getAttribute("aria-hidden")).toBeNull();
-    expect(drawn.getAttribute("title")).toBeNull();
+    expect(tipOf(drawn)).toBeNull();
     expect(drawn.getAttribute("id")).toBeNull();
     expect(shown).toHaveTextContent("running cargo");
   });

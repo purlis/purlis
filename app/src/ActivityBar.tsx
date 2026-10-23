@@ -21,6 +21,7 @@ import { RailIcon } from "./FileIcon";
 import { useTabStop } from "./roving";
 import { useRailIcons } from "./theme/railIcons";
 import type { OwnViewId, PanelViewId, Side, ViewId } from "./regions";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /** A view as its tab draws it: its id, what it is called and its mark. */
 export type Tabbed = { view: ViewId; name: string; mark: LucideIcon };
@@ -109,29 +110,36 @@ export function ActivityBar({
             const described = `${tabOf(view)}-badge`;
             const tab = (
               <RovingFocusGroup.Item asChild tabStopId={view} active={selected}>
-                <button
-                  type="button"
-                  role="tab"
-                  id={tabOf(view)}
-                  className="activity-tab"
-                  aria-selected={selected}
-                  aria-controls={panelOf(view)}
-                  aria-label={called}
-                  aria-describedby={badge === undefined ? undefined : described}
-                  title={
+                <Tooltip
+                  tip={
                     (selected
                       ? (away ?? `Put the ${name} region away`)
                       : `Show the ${called} view`) + (key === undefined ? "" : ` (${key})`)
                   }
-                  onClick={() => onPick(view)}
                 >
-                  {icon ? <RailIcon view={view} paths={icon.paths} /> : <Mark aria-hidden="true" />}
-                  {badge !== undefined && (
-                    <span id={described} className="activity-badge">
-                      {badge}
-                    </span>
-                  )}
-                </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    id={tabOf(view)}
+                    className="activity-tab"
+                    aria-selected={selected}
+                    aria-controls={panelOf(view)}
+                    aria-label={called}
+                    aria-describedby={badge === undefined ? undefined : described}
+                    onClick={() => onPick(view)}
+                  >
+                    {icon ? (
+                      <RailIcon view={view} paths={icon.paths} />
+                    ) : (
+                      <Mark aria-hidden="true" />
+                    )}
+                    {badge !== undefined && (
+                      <span id={described} className="activity-badge">
+                        {badge}
+                      </span>
+                    )}
+                  </button>
+                </Tooltip>
               </RovingFocusGroup.Item>
             );
             return <Fragment key={view}>{menu === undefined ? tab : menu(view, tab)}</Fragment>;

@@ -397,7 +397,7 @@ function FixButton({ row, fixer }: { row: DoctorRow & { fix: string }; fixer: Fi
         aria-label={`Fix ${row.name}`}
         aria-expanded={opens?.open}
         aria-controls={opens?.open ? opens.id : undefined}
-        title={`purlis doctor --fix ${row.fix}`}
+        tooltip={`purlis doctor --fix ${row.fix}`}
         isDisabled={fixer.busy}
         onPress={press}
         className="doctor-fix"
@@ -661,7 +661,7 @@ export function Health({
           data-testid="status-doctor"
           tone={tone === "unknown" ? "quiet" : undefined}
           aria-label={label}
-          title={label}
+          tooltip={label}
           icon={
             running ? (
               // It is running: this is the state the spin is for, *still happening*.

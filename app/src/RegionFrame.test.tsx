@@ -27,6 +27,7 @@ import {
   type ViewId,
 } from "./regions";
 import { Flame, type LucideIcon } from "lucide-react";
+import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
  * **The frame, against the real `react-resizable-panels`** — where a region's content lands,
@@ -279,7 +280,7 @@ describe("the activity bar of a region with views (#1673)", () => {
       "Explorer",
       "Search",
     ]);
-    for (const tab of tabs) expect(tab.getAttribute("title")).toBeTruthy();
+    for (const tab of tabs) expect(tipOf(tab)).toBeTruthy();
     // Outside the slot, so it stays when the slot is put away.
     expect(slot("left").contains(bar())).toBe(false);
   });
@@ -408,7 +409,8 @@ describe("the right side's activity bar (#1678)", () => {
 
     const tabs = within(right()).getAllByRole("tab");
     expect(tabs.map((tab) => tab.getAttribute("aria-label")).at(-1)).toBe("Burn rate");
-    expect(tabs.at(-1)).toHaveAttribute("title", "Show the Burn rate view");
+    // An icon's tooltip: its name, then what a press does.
+    expect(tipOf(tabs.at(-1))).toEqual("Burn rateShow the Burn rate view");
   });
 
   it("shows an extension's panel when it is the open view", () => {
@@ -459,9 +461,8 @@ describe("the Panel (#1737)", () => {
       one.classList.contains("activity-divider") ? "divider" : one.getAttribute("data-region"),
     );
     expect(order).toEqual(["navigation", "divider", "panel-left"]);
-    expect(within(lower()).getByRole("tab", { name: "Repos" })).toHaveAttribute(
-      "title",
-      "Put the panel's left half away",
+    expect(tipOf(within(lower()).getByRole("tab", { name: "Repos" }))).toEqual(
+      "ReposPut the panel's left half away",
     );
   });
 
@@ -543,9 +544,8 @@ describe("the Panel's right half (#1738)", () => {
       one.classList.contains("activity-divider") ? "divider" : one.getAttribute("data-region"),
     );
     expect(order).toEqual(["aside", "divider", "panel-right"]);
-    expect(within(lowerRight()).getByRole("tab", { name: "Memory" })).toHaveAttribute(
-      "title",
-      "Put the panel's right half away",
+    expect(tipOf(within(lowerRight()).getByRole("tab", { name: "Memory" }))).toEqual(
+      "MemoryPut the panel's right half away",
     );
   });
 

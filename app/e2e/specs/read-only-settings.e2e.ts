@@ -7,6 +7,7 @@ import { dirname, join, relative, sep } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import { anEmptyRecord, copyFixturePlane } from "../harness.js";
 import { PROJECTS, ask, inFront, openFromTheStrip } from "../switching.js";
+import { tooltipOf } from "../tooltips.js";
 
 /**
  * **Settings › Project in a read-only project: a control is off or on by the file it writes**
@@ -118,6 +119,13 @@ type Row = { off: boolean; reason: string; controlOff: boolean | null };
 async function rows(): Promise<Record<string, Row>> {
   return browser.execute(() => {
     const out: Record<string, { off: boolean; reason: string; controlOff: boolean | null }> = {};
+    /** What describes `element`, as a screen reader hears it after its name. */
+    const description = (element: Element | null) =>
+      (element?.getAttribute("aria-describedby") ?? "")
+        .split(/\s+/)
+        .map((id) => (id === "" ? "" : (document.getElementById(id)?.textContent ?? "")))
+        .join(" ")
+        .trim();
     for (const row of document.querySelectorAll<HTMLElement>(".ui-setting-row")) {
       const label = row.querySelector(".ui-setting-label")?.textContent?.trim() ?? "";
       if (label === "" || label in out) continue;
@@ -127,7 +135,8 @@ async function rows(): Promise<Record<string, Row>> {
       );
       out[label] = {
         off: fieldset?.disabled ?? false,
-        reason: fieldset?.title ?? "",
+        // Why it is off: its group's description, which every control in it carries too (#2908).
+        reason: description(fieldset),
         controlOff: control === null ? null : control.matches(":disabled"),
       };
     }
@@ -220,7 +229,7 @@ describe("Settings › Project in a read-only project", function () {
         await browser.execute(
           (strip: string, path: string) =>
             [...document.querySelectorAll<HTMLElement>(`${strip} [role="tab"]`)]
-              .find((tab) => tab.getAttribute("title") === path)
+              .find((tab) => tab.getAttribute("data-directory") === path)
               ?.click(),
           PROJECTS,
           first,
@@ -233,6 +242,9 @@ describe("Settings › Project in a read-only project", function () {
 
   it("turns off General's rows, which only the shared file keeps, with the project's sentence", async () => {
     await openGroup("General");
+    // The keyboard reaches the sentence: the off group's "Read-only" takes it, and its tooltip
+    // says it (#2908).
+    expect(await tooltipOf("fieldset.read-only-off > .read-only-why > span")).toContain(FEATURE);
     for (const label of SHARED_ONLY) {
       const row = await rowCalled(label);
       expect({ label, off: row.off }).toEqual({ label, off: true });

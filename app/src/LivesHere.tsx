@@ -68,7 +68,7 @@ export function LivesHere({ plane, as = "line" }: { plane: PlaneId; as?: "line" 
   const publish = suggested !== undefined && (
     <Button
       isDisabled={readOnly !== undefined}
-      title={readOnly}
+      tooltip={readOnly}
       onPress={() => setPublishing(suggested)}
     >
       Publish to GitHub or GitLab…

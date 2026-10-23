@@ -10,6 +10,7 @@ import App from "./App";
 import { forgetThisLaunch } from "./regions";
 import type { Moved, OpenChat } from "./bindings";
 import { stripNamed } from "./test-strips";
+import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
  * The workspace axis: **projects, then workspaces, then chats** (ADR 0036).
@@ -505,7 +506,7 @@ describe("the chat strip at fifty chats (charter-app#130)", () => {
 
     const closer = screen.getByRole("button", { name: "End chat steward 1" });
 
-    expect(closer).toHaveAttribute("title", expect.stringContaining("There is no undo"));
+    expect(tipOf(closer)).toEqual(expect.stringContaining("There is no undo"));
     expect(screen.queryByRole("button", { name: /Close tab/ })).toBeNull();
   });
 
@@ -663,7 +664,8 @@ describe("the plane root's tab (SI-1)", () => {
     const tab = await waitFor(rootTab);
     expect(tab.querySelector(".workspace-name")).toBeNull();
     expect(tab.querySelector("svg")).not.toBeNull();
-    expect(tab.getAttribute("title")).toBe("Project — chats here start at the project root");
+    // Its name, then what chats there start in.
+    expect(tipOf(tab)).toBe("Plane rootProject — chats here start at the project root");
   });
 
   it("cannot be dragged: it carries none of a sortable tab's instructions", async () => {

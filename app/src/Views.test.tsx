@@ -23,6 +23,7 @@ import type {
   ViewAnswer,
 } from "./bindings";
 import type { ViewRef } from "./tabs";
+import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
  * A view in a pane (`Views.tsx`): charter's persona view and an extension's statistics, drawn
@@ -1239,7 +1240,7 @@ describe("the persona view on a read-only project (#826)", () => {
 
     const edit = await screen.findByRole("menuitem", { name: /^Edit/ });
     expect(edit).toHaveAttribute("aria-disabled", "true");
-    expect(edit).toHaveAttribute("title", SENTENCE);
+    expect(edit).toHaveAccessibleDescription(SENTENCE);
     expect(screen.getByRole("menuitem", { name: /^Delete/ })).toHaveAttribute(
       "aria-disabled",
       "true",
@@ -1297,7 +1298,7 @@ describe("the persona view on a read-only project (#826)", () => {
 
     const jot = await screen.findByRole("button", { name: "Jot a note" });
     expect(jot).toHaveAttribute("aria-disabled", "true");
-    expect(jot).toHaveAttribute("title", SENTENCE);
+    expect(tipOf(jot)).toEqual(SENTENCE);
     await userEvent.click(jot);
     expect(ran).toEqual([]);
   });

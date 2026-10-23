@@ -60,6 +60,7 @@ import {
   TextField as AriaTextField,
 } from "react-aria-components";
 import { submits } from "./submitKey";
+import { Tooltip } from "../tooltip/Tooltip";
 
 /** The text input's sizes: 24, 28 and 32 px at the default text size and density (`field.css`). */
 export const FIELD_SIZES = ["sm", "md", "lg"] as const;
@@ -116,8 +117,8 @@ interface Common<E extends HTMLElement> extends Handlers<E> {
   spellCheck?: boolean;
   inputMode?: "text" | "numeric" | "url" | "email" | "search";
   enterKeyHint?: "enter" | "done" | "go" | "next" | "previous" | "search" | "send";
-  /** A tooltip, until the shared tooltip replaces `title` (#2897). */
-  title?: string;
+  /** Its hint, the shared tooltip (#2908), on the element typed in. */
+  tooltip?: string;
   /** Its place in a roving group's tab sequence, which the group hands it (Inbox's rows). */
   tabIndex?: number;
   /** `data-*` attributes reach the element typed in as they are: a test's id, a roving group's
@@ -417,6 +418,31 @@ function describedBy(own: string | undefined, error: string, said: string | unde
   return [own, said !== undefined ? error : undefined].filter(Boolean).join(" ") || undefined;
 }
 
+/**
+ * **A disabled field's hint is its description for good**, as a disabled button's is (#2908): a
+ * disabled box leaves the Tab order, so its tooltip is the pointer's alone, and the reason it is
+ * off would otherwise never be heard. Hands back the call's props described by a hidden node with
+ * the hint, and that node, to draw inside the field.
+ */
+function useReason<
+  P extends { isDisabled?: boolean; tooltip?: string; "aria-describedby"?: string },
+>(props: P): { described: P; reason: ReactNode } {
+  const id = `${useId()}-reason`;
+  const tip = props.isDisabled === true ? props.tooltip : undefined;
+  if (tip === undefined || tip === "") return { described: props, reason: null };
+  return {
+    described: {
+      ...props,
+      "aria-describedby": [props["aria-describedby"], id].filter(Boolean).join(" "),
+    },
+    reason: (
+      <span id={id} hidden>
+        {tip}
+      </span>
+    ),
+  };
+}
+
 /** The field's label, help and error around its control. */
 function Around({
   label,
@@ -499,7 +525,6 @@ function elementProps<E extends HTMLElement>(props: Common<E>, left: () => boole
     onMouseDown: props.onMouseDown,
     placeholder: props.placeholder,
     spellCheck: props.spellCheck ?? false,
-    title: props.title,
     role: props.role,
     "aria-expanded": props["aria-expanded"],
     "aria-controls": props["aria-controls"],
@@ -523,7 +548,8 @@ function elementProps<E extends HTMLElement>(props: Common<E>, left: () => boole
 
 /** **A field for one line**: a name, a token, an address, a filter. */
 export function TextField(props: TextFieldProps) {
-  const one = props as OneLine & { type?: string };
+  const { described, reason } = useReason(props as OneLine & { type?: string });
+  const one = described;
   const { type = "text", size = "md", icon, columns, list, keepsFocus, inputRef, ref } = one;
   const box = useRef<HTMLInputElement>(null);
   const element = useCallback(() => box.current, []);
@@ -592,28 +618,30 @@ export function TextField(props: TextFieldProps) {
           onBlur={() => setFocusedWithin(false)}
         >
           {glass}
-          <input
-            {...elementProps(one, left)}
-            ref={refs}
-            id={id}
-            type={type}
-            name={one.name}
-            maxLength={one.maxLength}
-            autoComplete={one.autoComplete ?? "off"}
-            autoFocus={one.autoFocus}
-            inputMode={one.inputMode}
-            enterKeyHint={one.enterKeyHint}
-            disabled={one.isDisabled}
-            readOnly={one.isReadOnly}
-            required={one.isRequired}
-            size={columns}
-            list={list}
-            aria-label={one["aria-label"]}
-            aria-labelledby={one["aria-labelledby"]}
-            aria-describedby={described}
-            aria-invalid={invalid || undefined}
-            onChange={changed}
-          />
+          <Tooltip tip={one.tooltip}>
+            <input
+              {...elementProps(one, left)}
+              ref={refs}
+              id={id}
+              type={type}
+              name={one.name}
+              maxLength={one.maxLength}
+              autoComplete={one.autoComplete ?? "off"}
+              autoFocus={one.autoFocus}
+              inputMode={one.inputMode}
+              enterKeyHint={one.enterKeyHint}
+              disabled={one.isDisabled}
+              readOnly={one.isReadOnly}
+              required={one.isRequired}
+              size={columns}
+              list={list}
+              aria-label={one["aria-label"]}
+              aria-labelledby={one["aria-labelledby"]}
+              aria-describedby={described}
+              aria-invalid={invalid || undefined}
+              onChange={changed}
+            />
+          </Tooltip>
         </div>
         {one.help !== undefined && (
           <p data-scope="field" data-part="help" id={`${own}-help`}>
@@ -621,6 +649,7 @@ export function TextField(props: TextFieldProps) {
           </p>
         )}
         {error}
+        {reason}
       </div>
     );
   }
@@ -635,15 +664,19 @@ export function TextField(props: TextFieldProps) {
           onMouseDown={intoTheBox}
         >
           {glass}
-          <Input {...elementProps(one, left)} ref={refs} size={columns} list={list} />
+          <Tooltip tip={one.tooltip}>
+            <Input {...elementProps(one, left)} ref={refs} size={columns} list={list} />
+          </Tooltip>
         </Group>
+        {reason}
       </Around>
     </AriaTextField>
   );
 }
 
 /** **A field for lines**: an answer, one entry per line. */
-export function TextArea(props: TextAreaProps) {
+export function TextArea(given: TextAreaProps) {
+  const { described: props, reason } = useReason(given);
   const { rows, grows = false, inputRef, ref } = props;
   const box = useRef<HTMLTextAreaElement>(null);
   const element = useCallback(() => box.current, []);
@@ -660,8 +693,11 @@ export function TextArea(props: TextAreaProps) {
           data-grows={grows ? "" : undefined}
           onMouseDown={intoTheBox}
         >
-          <AriaTextArea {...elementProps(props, left)} ref={refs} rows={rows} />
+          <Tooltip tip={props.tooltip}>
+            <AriaTextArea {...elementProps(props, left)} ref={refs} rows={rows} />
+          </Tooltip>
         </Group>
+        {reason}
       </Around>
     </AriaTextField>
   );

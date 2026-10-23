@@ -246,7 +246,7 @@ export function MemoryTab({
                 <Button
                   variant="danger"
                   isDisabled={saving || readOnly !== undefined}
-                  title={readOnly}
+                  tooltip={readOnly}
                   onPress={() => void save(true)}
                 >
                   Overwrite
@@ -265,7 +265,7 @@ export function MemoryTab({
             variant="primary"
             type="submit"
             isDisabled={saving || stale !== undefined || readOnly !== undefined}
-            title={readOnly}
+            tooltip={readOnly}
           >
             Save
           </Button>

@@ -54,7 +54,7 @@ export type DataContribution = Placed & {
   label: string;
   value?: string;
   /** Its tooltip: where it came from, and how old it is. */
-  title?: string;
+  tooltip?: string;
   /** Older than it declared fresh: drawn quiet. */
   stale?: boolean;
   /** The command a press runs, by its id, handed to the bar's `onCommand`. */
@@ -82,13 +82,13 @@ export function placed<T extends Placed>(
 
 function drawn(item: StatusContribution, onCommand?: (command: string) => void): ReactNode {
   if ("item" in item) return item.item;
-  const { label, value, title, stale, command, testid } = item;
+  const { label, value, tooltip, stale, command, testid } = item;
   if (command !== undefined && onCommand !== undefined)
     return (
       <StatusItem
         data-testid={testid}
         tone={stale ? "quiet" : undefined}
-        title={title}
+        tooltip={tooltip}
         aria-label={value === undefined ? label : `${label}: ${value}`}
         count={value}
         onPress={() => onCommand(command)}
@@ -97,7 +97,12 @@ function drawn(item: StatusContribution, onCommand?: (command: string) => void):
       </StatusItem>
     );
   return (
-    <StatusCell data-testid={testid} tone={stale ? "quiet" : undefined} title={title} count={value}>
+    <StatusCell
+      data-testid={testid}
+      tone={stale ? "quiet" : undefined}
+      tooltip={tooltip}
+      count={value}
+    >
       {label}
     </StatusCell>
   );

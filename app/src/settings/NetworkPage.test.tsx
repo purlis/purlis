@@ -11,6 +11,7 @@ import { networkGroup } from "./GrantedList";
 import type { LiveSetting } from "./groups";
 import { ReadOnlySaid } from "../ReadOnlyLine";
 import { offeredIn, pickIn } from "../primitives/select.testkit";
+import { tipOf } from "../ui/tooltip/tooltip.testkit";
 
 /**
  * **Settings › Sandbox › Network and a chat's Network view** (#1662, spec #1661): Open hosts host
@@ -135,8 +136,8 @@ describe("the Network page of a read-only project (#1759)", () => {
     const everyone = within(blocked).getByRole("button", {
       name: "Allow for everyone in this project: db.example.com:5432",
     });
-    expect(everyone).toBeDisabled();
-    expect(everyone).toHaveAttribute("title", SENTENCE);
+    expect(everyone).toHaveAttribute("aria-disabled", "true");
+    expect(tipOf(everyone)).toEqual(SENTENCE);
 
     const allowed = await screen.findByRole("list", { name: "Allowed" });
     expect(
@@ -145,8 +146,8 @@ describe("the Network page of a read-only project (#1759)", () => {
     const team = within(allowed).getByRole("button", {
       name: "Remove reaching api.team.example:443",
     });
-    expect(team).toBeDisabled();
-    expect(team).toHaveAttribute("title", SENTENCE);
+    expect(team).toHaveAttribute("aria-disabled", "true");
+    expect(tipOf(team)).toEqual(SENTENCE);
   });
 
   it("says which rows write only this machine, so Settings leaves them on", () => {

@@ -377,7 +377,8 @@ describe("a store's archive on a read-only project (#826)", () => {
 
     const restore = screen.getByRole("button", { name: "Restore memory" });
     expect(restore).toBeDisabled();
-    expect(restore.closest("fieldset")).toHaveAttribute("title", SENTENCE);
+    // Why it is off: its group\'s description, which its legend\'s tooltip says too (#2908).
+    expect(restore.closest("fieldset")).toHaveAccessibleDescription(SENTENCE);
     await userEvent.click(restore);
     expect(asked.some((one) => one.cmd === "memory_unarchive")).toBe(false);
   });

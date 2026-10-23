@@ -198,7 +198,7 @@ export function Notice(props: NoticeProps) {
           aria-controls={fix.opens?.open ? fix.opens.id : undefined}
           aria-disabled={fix.busy || fix.off !== undefined || undefined}
           aria-busy={fix.busy || undefined}
-          title={fix.off}
+          tooltip={fix.off}
           onPress={
             fix.busy || fix.off !== undefined
               ? undefined
@@ -218,7 +218,7 @@ export function Notice(props: NoticeProps) {
       {copy !== undefined && (
         <Button
           size="sm"
-          title={copy}
+          tooltip={copy}
           onPress={() => void navigator.clipboard?.writeText(copy).catch(() => undefined)}
           className="notice-copy"
         >
@@ -229,7 +229,7 @@ export function Notice(props: NoticeProps) {
         <Button
           size="sm"
           variant="ghost"
-          title={dismissSays}
+          tooltip={dismissSays}
           onPress={onDismiss}
           className="notice-dismiss"
         >

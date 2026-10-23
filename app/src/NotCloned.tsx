@@ -61,7 +61,7 @@ export function NotClonedHere({
             <SettingActions>
               <Button
                 isDisabled={!all.available}
-                title={all.available ? all.title : all.reason}
+                tooltip={all.available ? all.title : all.reason}
                 onPress={() => onPress(all)}
               >
                 Clone all
@@ -134,7 +134,7 @@ function AbsentRow({
                     <Button
                       aria-label={state?.state === "failed" ? `Retry ${repo}` : offer.title}
                       isDisabled={!offer.available}
-                      title={offer.available ? offer.note : offer.reason}
+                      tooltip={offer.available ? offer.note : offer.reason}
                       onPress={press}
                     >
                       {state?.state === "failed" ? "Retry" : "Clone"}
@@ -145,7 +145,7 @@ function AbsentRow({
                       variant="danger"
                       aria-label={drop.title}
                       isDisabled={!drop.available}
-                      title={drop.available ? drop.note : drop.reason}
+                      tooltip={drop.available ? drop.note : drop.reason}
                       onPress={() => onPress(drop)}
                     >
                       Remove…

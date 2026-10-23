@@ -779,6 +779,52 @@ fn the_buttons_family_default_is_what_button_css_draws() {
     }
 }
 
+#[test]
+fn the_tooltips_family_default_is_what_tooltip_css_draws() {
+    let css = include_str!("../../../../app/src/ui/tooltip/tooltip.css");
+    let root = rule(css, "[data-scope=\"tooltip\"][data-part=\"root\"]");
+    let token = |var: &str| {
+        var.trim_start_matches("var(--")
+            .trim_end_matches(')')
+            .replace('-', ".")
+    };
+    let border = declared(root, "border")
+        .and_then(|it| it.split_whitespace().last())
+        .expect("the tooltip's border");
+    let fill = token(declared(root, "background-color").expect("its fill"));
+    // Nothing on it is pressed: under the pointer it keeps its fill.
+    let drawn = json!({
+        "fill": fill,
+        "text": token(declared(root, "color").expect("its words")),
+        "border": token(border),
+        "hover": fill,
+    });
+    assert_eq!(parts::look_json("tooltip", ""), drawn);
+}
+
+#[test]
+fn a_theme_rounds_the_tooltip_and_turns_its_edge_off() {
+    let sheet = sheet_of(json!({
+        "tooltip.root.corner-radius": 8,
+        "tooltip.root.border-width": 0,
+    }));
+    assert!(
+        sheet.contains("[data-scope=\"tooltip\"][data-part=\"root\"]"),
+        "{sheet}"
+    );
+    assert!(sheet.contains("border-width: 0px"), "{sheet}");
+    // Its size is its words': a theme sets none of it, and a key that tries is said and left out.
+    let loaded = load(&with_parts(json!({ "tooltip.root.height": 30 })));
+    assert!(
+        said(&loaded)
+            .iter()
+            .any(|one| one.contains("parts.tooltip.root.height is not a component part")),
+        "{:?}",
+        said(&loaded)
+    );
+    assert!(sheet_of(json!({ "tooltip.root.height": 30 })).is_empty());
+}
+
 // ---------------------------------------------------------------------------------------
 // The manifest and the schema
 // ---------------------------------------------------------------------------------------
@@ -786,7 +832,7 @@ fn the_buttons_family_default_is_what_button_css_draws() {
 #[test]
 fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
     let manifest = parts::manifest_json();
-    assert_eq!(manifest["version"], 4);
+    assert_eq!(manifest["version"], 5);
     for list in ["states", "properties"] {
         for one in manifest[list].as_array().unwrap() {
             assert_eq!(one["since"], 1, "{one}");
@@ -904,6 +950,17 @@ fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
             .unwrap()
             .contains(&json!("height"))
     );
+    // The tooltip (#2908): one look, its surface and an icon button's second line.
+    let tooltip = family("tooltip");
+    assert_eq!(tooltip["since"], 5);
+    assert_eq!(tooltip["variants"], json!([]));
+    let parts: Vec<&str> = tooltip["parts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|one| one["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(parts, ["root", "detail"]);
 }
 
 #[test]
@@ -972,6 +1029,10 @@ const MANIFEST_DIGESTS: &[(u32, &str)] = &[
     (
         4,
         "dc6e2997214e822fdd97166f037b2d83091813f11701ce0bbfe06fa1403041f3",
+    ),
+    (
+        5,
+        "815d4a7cc64ef67b80a8a2b88423945870fc6a46d72355c43a38ac385f5713de",
     ),
 ];
 

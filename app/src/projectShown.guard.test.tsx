@@ -37,8 +37,6 @@ const KINDS: Record<string, "over" | "says nothing to answer" | "in place"> = {
   "@radix-ui/react-dropdown-menu": "over",
   "@radix-ui/react-popover": "over",
   "@radix-ui/react-select": "over",
-  // A tooltip asks nothing and answers nothing: it is not why a project is taken down.
-  "@radix-ui/react-tooltip": "says nothing to answer",
   "@radix-ui/react-checkbox": "in place",
   "@radix-ui/react-radio-group": "in place",
   "@radix-ui/react-roving-focus": "in place",

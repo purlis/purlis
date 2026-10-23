@@ -1038,9 +1038,10 @@ describe("updates, after the asks (#1693)", () => {
   it("offers Mark all read only while something is unread", () => {
     core();
     draw([], { updates: updates(rows([update("task:a", 1, { read: true })])) });
-    expect(
-      (screen.getByRole("button", { name: "Mark all read" }) as HTMLButtonElement).disabled,
-    ).toBe(true);
+    expect(screen.getByRole("button", { name: "Mark all read" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
     expect(screen.queryByText(/· new/)).toBeNull();
   });
 

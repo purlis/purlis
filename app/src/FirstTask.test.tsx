@@ -9,6 +9,7 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import { stripNamed } from "./test-strips";
+import { hoverTipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
  * The first task (FR-28, #621): the guided task FR-1 measures, offered beside the first chat.
@@ -355,7 +356,7 @@ describe("the first task", () => {
     const section = within(pane).getByRole("region", { name: "First chat" });
     const link = within(section).getByRole("button", { name: "What opencode can do here" });
     expect(link.parentElement).toHaveTextContent(OPENCODE_CANNOT_TYPE);
-    expect(opencode).toHaveAttribute("title", OPENCODE_CANNOT_TYPE);
+    expect(await hoverTipOf(opencode)).toEqual(OPENCODE_CANNOT_TYPE);
 
     // The label is a link: pressed, the card's tab opens (#1134).
     await person.click(link);

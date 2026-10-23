@@ -14,6 +14,7 @@ import {
   type DoctorState,
 } from "./Doctor";
 import type { DoctorReport, DoctorRow } from "./bindings";
+import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
  * **The doctor on the status line**: what the button says, and what opening it asks the core.
@@ -399,7 +400,7 @@ describe("the Fix button", () => {
     const dialog = await screen.findByRole("dialog");
 
     const fix = await within(dialog).findByRole("button", { name: /^Fix schema$/ });
-    expect(fix).toHaveAttribute("title", "purlis doctor --fix reinit");
+    expect(tipOf(fix)).toEqual("purlis doctor --fix reinit");
   });
 
   it("draws Fix on each row the first wave of fixes covers", async () => {
@@ -423,7 +424,7 @@ describe("the Fix button", () => {
 
     for (const [name, fix] of fixable) {
       const pressable = await within(dialog).findByRole("button", { name: `Fix ${name}` });
-      expect(pressable).toHaveAttribute("title", `purlis doctor --fix ${fix}`);
+      expect(tipOf(pressable)).toEqual(`purlis doctor --fix ${fix}`);
     }
   });
 

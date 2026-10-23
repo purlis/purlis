@@ -62,6 +62,7 @@ import type { TasksUsed } from "./bindings";
 import { askOf, tokensOfLine, tokensSaid, type UsedAsk, type UsedReader } from "./tasksUsed";
 import { property } from "./theme/theme";
 import { fitCountsOn } from "./wholeWays";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /** Each count's mark: its shape as it is drawn (`StateShown` draws the same four for a row). */
 const MARKS: Readonly<Record<TaskBucket, LucideIcon>> = {
@@ -783,13 +784,11 @@ function Chip({
                   {/* What the tab's chats used (#1500, V100-43): one line, added up and
                       spelled by the core, with what it adds up on its title. No money. */}
                   {figures?.total != null && (
-                    <div
-                      className="tasks-menu-totals"
-                      data-testid="tasks-used"
-                      title={figures.total.explained}
-                    >
-                      {figures.total.said}
-                    </div>
+                    <Tooltip tip={figures.total.explained}>
+                      <div className="tasks-menu-totals" data-testid="tasks-used">
+                        {figures.total.said}
+                      </div>
+                    </Tooltip>
                   )}
                 </div>
               )}
@@ -837,7 +836,7 @@ function ActivityRow({
   quiet: boolean;
   onPick: () => void;
 }) {
-  const { rested, rest, wake } = useRested(true);
+  const { rested, rest, wake, hold } = useRested(true);
   return (
     <Menu.Item
       className="ui-menu-item tasks-menu-row tasks-menu-activity"
@@ -867,7 +866,7 @@ function ActivityRow({
         {ACTIVITY_SAYS}
       </span>
       {rested && (
-        <MenuTip side="right" onClose={wake}>
+        <MenuTip side="right" onClose={wake} hold={hold}>
           {ACTIVITY_SAYS}
         </MenuTip>
       )}
@@ -943,136 +942,137 @@ function TaskLine({
       : undefined;
   return (
     <>
-      <Menu.Item
-        className="ui-menu-item tasks-menu-row"
-        // How far in its line stands: one step per chat between it and the session.
-        data-level={Math.min(line.level, DEEPEST)}
-        // What the menu's own open lands on and the stylesheet weighs. Said in words below:
-        // `aria-current` in a menu is read unevenly, and both would say it twice.
-        data-current={line.current ? "" : undefined}
-        aria-expanded={line.report === undefined ? undefined : reportOpen}
-        textValue={line.name}
-        title={tokens}
-        // What its task is doing is its description on demand (#1551), as the Chats list's row
-        // has it: the line below is out of the tree where it stands, and named here. An id
-        // that names no element, while nothing is said, describes it with nothing.
-        aria-describedby={row === undefined ? undefined : menuDoingId(row.session)}
-        onPointerMove={quiet ? keepsNoKeyboard : undefined}
-        onPointerLeave={quiet ? keepsNoKeyboard : undefined}
-        // **The keyboard's way to move a task from its line** (#1489): Enter goes to it, and
-        // Enter with a modifier opens it elsewhere, as a link is opened in a new tab. ⌘ or
-        // Ctrl is a tab of its own; Alt is beside its session. Before Radix's own Enter.
-        aria-keyshortcuts={moves === undefined ? undefined : "Control+Enter Meta+Enter Alt+Enter"}
-        onKeyDown={(event: ReactKeyboardEvent) => {
-          if (moves === undefined || onPlace === undefined || event.key !== "Enter") return;
-          const where: Place | undefined =
-            event.metaKey || event.ctrlKey ? "own" : event.altKey ? "beside" : undefined;
-          if (where === undefined) return;
-          event.preventDefault();
-          if (!event.repeat) onPlace(moves.session, where);
-        }}
-        onSelect={(event) => {
-          // Not a pick of a chat: the menu stays, with the keyboard on this line.
-          if (!onPick(line)) event.preventDefault();
-        }}
-      >
-        <span className="now" aria-hidden="true">
-          {line.current && <ChevronRight />}
-        </span>
-        {line.persona === null ? (
-          <SquareTerminal className="node-icon" aria-hidden="true" />
-        ) : (
-          <PersonaMark persona={line.persona} />
-        )}
-        {/* The spaces are for whoever reads the row as text: a screen reader says the name,
+      // The line's one hint: its whole name, cut short where the menu is narrow, then what it //
+      used.
+      <Tooltip tip={tokens === undefined ? line.name : `${line.name}\n${tokens}`}>
+        <Menu.Item
+          className="ui-menu-item tasks-menu-row"
+          // How far in its line stands: one step per chat between it and the session.
+          data-level={Math.min(line.level, DEEPEST)}
+          // What the menu's own open lands on and the stylesheet weighs. Said in words below:
+          // `aria-current` in a menu is read unevenly, and both would say it twice.
+          data-current={line.current ? "" : undefined}
+          aria-expanded={line.report === undefined ? undefined : reportOpen}
+          textValue={line.name}
+          // What its task is doing is its description on demand (#1551), as the Chats list's row
+          // has it: the line below is out of the tree where it stands, and named here. An id
+          // that names no element, while nothing is said, describes it with nothing.
+          aria-describedby={row === undefined ? undefined : menuDoingId(row.session)}
+          onPointerMove={quiet ? keepsNoKeyboard : undefined}
+          onPointerLeave={quiet ? keepsNoKeyboard : undefined}
+          // **The keyboard's way to move a task from its line** (#1489): Enter goes to it, and
+          // Enter with a modifier opens it elsewhere, as a link is opened in a new tab. ⌘ or
+          // Ctrl is a tab of its own; Alt is beside its session. Before Radix's own Enter.
+          aria-keyshortcuts={moves === undefined ? undefined : "Control+Enter Meta+Enter Alt+Enter"}
+          onKeyDown={(event: ReactKeyboardEvent) => {
+            if (moves === undefined || onPlace === undefined || event.key !== "Enter") return;
+            const where: Place | undefined =
+              event.metaKey || event.ctrlKey ? "own" : event.altKey ? "beside" : undefined;
+            if (where === undefined) return;
+            event.preventDefault();
+            if (!event.repeat) onPlace(moves.session, where);
+          }}
+          onSelect={(event) => {
+            // Not a pick of a chat: the menu stays, with the keyboard on this line.
+            if (!onPick(line)) event.preventDefault();
+          }}
+        >
+          <span className="now" aria-hidden="true">
+            {line.current && <ChevronRight />}
+          </span>
+          {line.persona === null ? (
+            <SquareTerminal className="node-icon" aria-hidden="true" />
+          ) : (
+            <PersonaMark persona={line.persona} />
+          )}
+          {/* The spaces are for whoever reads the row as text: a screen reader says the name,
             then the state, and not the two run together. The row lays them out itself. */}
-        <span className="name" title={tokens === undefined ? line.name : `${line.name}\n${tokens}`}>
-          {line.name}
-        </span>
-        {line.current && <span className="hidden-words">, shown now</span>}
-        {/* Who asked for it, where the indent is all that draws it: said, since an indent is
+          <span className="name">{line.name}</span>
+          {line.current && <span className="hidden-words">, shown now</span>}
+          {/* Who asked for it, where the indent is all that draws it: said, since an indent is
             not read; and drawn too in the fold, where every line stands at one step. */}
-        {line.askedBy !== null && (
-          <span className={line.level > 2 ? "hidden-words" : "asked"}>
-            , asked by {line.askedBy}
-          </span>
-        )}
-        {line.elsewhere !== null && <span className="where"> in {line.elsewhere}</span>}
-        {/* A task with a pane of its own is still this tab's (V100-38), and says where it is:
+          {line.askedBy !== null && (
+            <span className={line.level > 2 ? "hidden-words" : "asked"}>
+              , asked by {line.askedBy}
+            </span>
+          )}
+          {line.elsewhere !== null && <span className="where"> in {line.elsewhere}</span>}
+          {/* A task with a pane of its own is still this tab's (V100-38), and says where it is:
             picking it brings that forward. */}
-        {line.placed !== undefined && (
-          <span className="where placed" data-placed={line.placed}>
-            {line.placed === "tab" ? ", in its own tab" : ", beside it"}
-          </span>
-        )}{" "}
-        {row !== undefined ? (
-          <ChatShownState
-            session={row.session}
-            shell={row.shell}
-            report={row.report}
-            outcome={row.outcome}
-            asking={row.asking}
-            harness={row.harness}
-          />
-        ) : (
-          line.ended !== undefined && <StateShown shown={line.ended} />
-        )}
-        {line.qualifier !== undefined && <span className="where"> {line.qualifier}</span>}
-        {row !== undefined && <Since clock={clock} session={row.session} />}
-        {/* What it is doing (#1493): one dim line, cut short; nothing while it is not
+          {line.placed !== undefined && (
+            <span className="where placed" data-placed={line.placed}>
+              {line.placed === "tab" ? ", in its own tab" : ", beside it"}
+            </span>
+          )}{" "}
+          {row !== undefined ? (
+            <ChatShownState
+              session={row.session}
+              shell={row.shell}
+              report={row.report}
+              outcome={row.outcome}
+              asking={row.asking}
+              harness={row.harness}
+            />
+          ) : (
+            line.ended !== undefined && <StateShown shown={line.ended} />
+          )}
+          {line.qualifier !== undefined && <span className="where"> {line.qualifier}</span>}
+          {row !== undefined && <Since clock={clock} session={row.session} />}
+          {/* What it is doing (#1493): one dim line, cut short; nothing while it is not
             working. It reads its own chat, so this line is not drawn again for it. */}
-        {row !== undefined && (
-          <span className="doing">
-            <ChatDoingLine session={row.session} id={menuDoingId(row.session)} />
-          </span>
-        )}
-        {(brief !== undefined || answer !== undefined) && moves === undefined && (
-          <span className="tasks-menu-places" aria-hidden="true">
-            {brief !== undefined && <BriefPlace ask={brief} onBrief={onBrief} />}
-            {answer !== undefined && <AnswerPlace ask={answer} onAnswer={onAnswer} />}
-          </span>
-        )}
-        {moves !== undefined && onPlace !== undefined && (
-          /* **The pointer's way to move a task from its line** (#1489), drawn at the line's
+          {row !== undefined && (
+            <span className="doing">
+              <ChatDoingLine session={row.session} id={menuDoingId(row.session)} />
+            </span>
+          )}
+          {(brief !== undefined || answer !== undefined) && moves === undefined && (
+            <span className="tasks-menu-places" aria-hidden="true">
+              {brief !== undefined && <BriefPlace ask={brief} onBrief={onBrief} />}
+              {answer !== undefined && <AnswerPlace ask={answer} onAnswer={onAnswer} />}
+            </span>
+          )}
+          {moves !== undefined && onPlace !== undefined && (
+            /* **The pointer's way to move a task from its line** (#1489), drawn at the line's
              end while the pointer is on it: to a tab of its own and beside its session, or
              back for one that has a pane of its own. **Not in the accessibility tree**, as a
              list row's fold is not: a button inside a menu's item is reached by no arrow, so
              the keyboard's way is the line's own keys above, and the task's menu in the Chats
              list. */
-          <span className="tasks-menu-places" aria-hidden="true">
-            {line.placed !== "tab" && (
-              <PlaceButton
-                says={`Move ${line.name} to its own tab`}
-                keys={onAMac() ? "⌘Enter" : "Ctrl+Enter"}
-                onPress={() => onPlace(moves.session, "own")}
-              >
-                <SquareArrowOutUpRight />
-              </PlaceButton>
-            )}
-            {line.placed !== "beside" && (
-              <PlaceButton
-                says={`Open ${line.name} beside its session`}
-                keys={onAMac() ? "⌥Enter" : "Alt+Enter"}
-                onPress={() => onPlace(moves.session, "beside")}
-              >
-                <PanelRight />
-              </PlaceButton>
-            )}
-            {line.placed !== undefined && (
-              <PlaceButton
-                says={`Send ${line.name} back into this tab`}
-                onPress={() => onPlace(moves.session, "back")}
-              >
-                <Minus />
-              </PlaceButton>
-            )}
-            {/* Last: it reads, where the others move the task (#1494). */}
-            {brief !== undefined && <BriefPlace ask={brief} onBrief={onBrief} />}
-            {/* Last, at the line's very end: what the task waits on (#1551). */}
-            {answer !== undefined && <AnswerPlace ask={answer} onAnswer={onAnswer} />}
-          </span>
-        )}
-      </Menu.Item>
+            <span className="tasks-menu-places" aria-hidden="true">
+              {line.placed !== "tab" && (
+                <PlaceButton
+                  says={`Move ${line.name} to its own tab`}
+                  keys={onAMac() ? "⌘Enter" : "Ctrl+Enter"}
+                  onPress={() => onPlace(moves.session, "own")}
+                >
+                  <SquareArrowOutUpRight />
+                </PlaceButton>
+              )}
+              {line.placed !== "beside" && (
+                <PlaceButton
+                  says={`Open ${line.name} beside its session`}
+                  keys={onAMac() ? "⌥Enter" : "Alt+Enter"}
+                  onPress={() => onPlace(moves.session, "beside")}
+                >
+                  <PanelRight />
+                </PlaceButton>
+              )}
+              {line.placed !== undefined && (
+                <PlaceButton
+                  says={`Send ${line.name} back into this tab`}
+                  onPress={() => onPlace(moves.session, "back")}
+                >
+                  <Minus />
+                </PlaceButton>
+              )}
+              {/* Last: it reads, where the others move the task (#1494). */}
+              {brief !== undefined && <BriefPlace ask={brief} onBrief={onBrief} />}
+              {/* Last, at the line's very end: what the task waits on (#1551). */}
+              {answer !== undefined && <AnswerPlace ask={answer} onAnswer={onAnswer} />}
+            </span>
+          )}
+        </Menu.Item>
+      </Tooltip>
       {reportOpen && line.report !== undefined && (
         <div
           className="tasks-menu-report"
@@ -1155,28 +1155,31 @@ function PlaceButton({
 }) {
   const own = (event: { stopPropagation: () => void }) => event.stopPropagation();
   return (
-    <button
-      type="button"
-      className="tasks-menu-place"
-      tabIndex={-1}
-      title={
+    <Tooltip
+      tip={
         keys !== undefined
           ? `${says} (${keys} on its line)`
           : also !== undefined
             ? `${says} (${also})`
             : says
       }
-      data-says={says}
-      onPointerDown={own}
-      onPointerUp={own}
-      onClick={(event) => {
-        event.stopPropagation();
-        event.preventDefault();
-        onPress();
-      }}
     >
-      {children}
-    </button>
+      <button
+        type="button"
+        className="tasks-menu-place"
+        tabIndex={-1}
+        data-says={says}
+        onPointerDown={own}
+        onPointerUp={own}
+        onClick={(event) => {
+          event.stopPropagation();
+          event.preventDefault();
+          onPress();
+        }}
+      >
+        {children}
+      </button>
+    </Tooltip>
   );
 }
 
@@ -1188,9 +1191,9 @@ function Since({ clock, session }: { clock: StateClock; session: number }) {
   return (
     <>
       {" "}
-      <span className="since" title="How long it has been in this state, as this window saw it">
-        {sinceSaid(seconds)}
-      </span>
+      <Tooltip tip="How long it has been in this state, as this window saw it">
+        <span className="since">{sinceSaid(seconds)}</span>
+      </Tooltip>
     </>
   );
 }
