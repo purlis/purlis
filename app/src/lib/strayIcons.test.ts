@@ -33,6 +33,7 @@ const OWN_SVG: Record<string, string> = {
   "FileIcon.tsx":
     "the icon theme's and a theme's icon set's symbols, rebuilt from checked path data",
   "ChatGauge.tsx": "a gauge drawn to its numbers, not an icon",
+  "ui/popover/Popover.tsx": "a popover's point toward what opened it, in the surface's ground",
   "editor/imagePreview.ts": "a one-pixel SVG decoded as bytes to ask the webview, never drawn",
 };
 

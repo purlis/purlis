@@ -1,7 +1,6 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import * as Menu from "./overlays/dropdown-menu";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AwayRefusal, FinishedTask } from "./bindings";
 import { useChatsSelect, type Chats } from "./chatState";
@@ -23,6 +22,7 @@ import {
   type Queued,
 } from "./awayCounts";
 import { Button } from "./ui/button/Button";
+import { AnchoredMenu, Menu, MenuItem, opensOnTheArrows } from "./ui/menu/Menu";
 
 /**
  * **While you were away: one summary of what happened** (#1514, V100-65).
@@ -145,9 +145,8 @@ function AwayPart({
    *  the refused dispatches, all answered in the Inbox (#1551, #1693). */
   one?: boolean;
 }) {
-  // Held here and opened on the press itself, as the title bar's list is (`NeedsYou.tsx`): a
-  // link in a sentence is pressed, never opened by a pointer going down on it.
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState<boolean | "first" | "last">(false);
+  const trigger = useRef<HTMLButtonElement>(null);
   if (items.length === 1 || one) {
     const named = items.map((item) => item.says).join(", ");
     return (
@@ -164,33 +163,43 @@ function AwayPart({
     );
   }
   return (
-    <Menu.Root modal={false} open={open} onOpenChange={setOpen}>
-      <Menu.Trigger asChild>
-        <Button
-          variant="link"
-          aria-haspopup="menu"
-          onPointerDown={(event) => event.preventDefault()}
-          onPress={() => setOpen((up) => !up)}
-          className="away-part"
-        >
-          {says}
-        </Button>
-      </Menu.Trigger>
-      <Menu.Portal>
-        <Menu.Content
-          className="ui-menu more-menu away-menu"
-          align="start"
-          sideOffset={4}
-          collisionPadding={8}
-        >
+    <>
+      <Button
+        ref={trigger}
+        variant="link"
+        aria-haspopup="menu"
+        aria-expanded={open !== false}
+        // Opened on the press itself, as the title bar's list is (`NeedsYou.tsx`): a link in a
+        // sentence is pressed, never opened by a pointer going down on it. A press by a key
+        // lands on its first row.
+        onPress={(event) =>
+          setOpen((up) => (up ? false : event.pointerType === "keyboard" ? "first" : true))
+        }
+        onKeyDown={opensOnTheArrows(open !== false, setOpen)}
+        className="away-part"
+      >
+        {says}
+      </Button>
+      <AnchoredMenu
+        triggerRef={trigger}
+        isOpen={open !== false}
+        autoFocus={open === false ? true : open}
+        onOpenChange={setOpen}
+      >
+        <Menu className="more-menu away-menu" aria-label={says}>
           {items.map((item) => (
-            <Menu.Item key={item.key} className="ui-menu-item" onSelect={() => onGo(item.go)}>
+            <MenuItem
+              key={item.key}
+              id={item.key}
+              textValue={item.says}
+              onAction={() => onGo(item.go)}
+            >
               {item.says}
-            </Menu.Item>
+            </MenuItem>
           ))}
-        </Menu.Content>
-      </Menu.Portal>
-    </Menu.Root>
+        </Menu>
+      </AnchoredMenu>
+    </>
   );
 }
 

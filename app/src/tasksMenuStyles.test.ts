@@ -39,7 +39,7 @@ describe("the buttons at the end of a task's line in a tab's menu", () => {
   });
 
   it("are drawn for the pointer on the line, and for the keyboard on it too", () => {
-    for (const on of [":hover", "[data-highlighted]", ":focus-within"]) {
+    for (const on of [":hover", "[data-focused]", ":focus-within"]) {
       expect(declares(`.tasks-menu-row${on} .tasks-menu-places`, "display: inline-flex"), on).toBe(
         true,
       );
