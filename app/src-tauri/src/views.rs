@@ -76,6 +76,12 @@ impl Views {
         self.executor.stop_all();
     }
 
+    /// The app's one executor, for the Skill studio's questions to extensions (ADR 0101): the
+    /// same table of running programs, so [`Self::stop_all`] reaches them too.
+    pub(crate) fn executor(&self) -> Arc<Executor> {
+        Arc::clone(&self.executor)
+    }
+
     /// The lock that is `extension`'s turn.
     fn turn_of(&self, extension: &str) -> Arc<Mutex<()>> {
         let mut turns = self.turns.lock().unwrap_or_else(PoisonError::into_inner);

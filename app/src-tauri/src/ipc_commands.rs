@@ -278,7 +278,7 @@ macro_rules! app_commands {
                 session_record,
                 dispatches::dispatches,
                 skillstudio::skill_studio,
-                skillstudio::skill_runs,
+                skillstudio::skill_panels,
                 skillstudio::skill_studio_on,
                 skillstudio::set_skill_studio_on,
                 skillstudio::skill_share,

@@ -16,6 +16,15 @@
   Codex and opencode alike. The chip and the tab's menu show how many skills and how many
   characters of their descriptions the chat lists, and warn at four fifths of purlis's budget;
   a manual-only skill costs nothing where the chat leaves it out, as Claude Code does (#2775).
+- **Extensions can add to the Skill studio, and run confined when they do** (Skill studio
+  preview, #2777). An extension can offer templates for new skills, add its own findings to a
+  skill's live lint, add panels to a skill's tab, and offer skills from a source that is not git,
+  whose files purlis reviews as it reviews a git source's. Such an extension runs in the same
+  sandbox a chat runs in: it reads only its own folder and what purlis hands it, writes only its
+  own folder, reaches only the hosts its approval names, and never a host that serves an AI model.
+  Its approval says so, and marks these additions as experimental. Where purlis cannot hold it in
+  a sandbox, as on Windows today, it loads none of that extension. A skill's tab draws its Runs
+  panel the way it draws an extension's panel.
 - **A persona brings its skills into every workspace** (Skill studio preview). A persona's own
   skills, and the skills its definition names, reach every chat as that persona, in any
   workspace, whatever the workspace was granted; the persona's copy wins over a workspace's or

@@ -9,6 +9,7 @@ use std::path::Path;
 
 use super::*;
 use crate::testgit::run;
+use purlis_skills::change::BuiltInTemplates;
 
 /// A plane with a workspace `ops`, a persona `steward` that names `deploy`, and a project skill
 /// `deploy` that another project skill `release` names. No git repository: a change is made on
@@ -90,7 +91,8 @@ fn a_new_skill_from_a_template_lands_at_the_level_it_was_made_at() {
             &Level::workspace("ops"),
             "triage",
             "Sorts new issues.",
-            Template::Steps,
+            &BuiltInTemplates,
+            "steps",
         )
     })
     .unwrap();
@@ -110,7 +112,14 @@ fn a_new_skill_is_refused_for_a_bad_name_a_taken_name_or_a_built_in_name() {
     skill(built_in.path(), "handoff", "handoff", "Hands off.");
     let new = |name: &str| {
         on(root, Some(built_in.path()), |cx| {
-            create(cx, &Level::project(), name, "Does it.", Template::Blank)
+            create(
+                cx,
+                &Level::project(),
+                name,
+                "Does it.",
+                &BuiltInTemplates,
+                "blank",
+            )
         })
         .0
     };
@@ -133,7 +142,8 @@ fn a_new_skill_is_refused_for_a_bad_name_a_taken_name_or_a_built_in_name() {
             &Level::workspace("nope"),
             "x",
             "Does x.",
-            Template::Blank,
+            &BuiltInTemplates,
+            "blank",
         )
     });
     assert!(
@@ -451,7 +461,8 @@ fn each_change_is_one_commit_of_its_own_paths_and_nothing_else() {
             &Level::project(),
             "triage",
             "Sorts issues.",
-            Template::Blank,
+            &BuiltInTemplates,
+            "blank",
         )
     })
     .unwrap();
@@ -585,7 +596,8 @@ fn a_save_of_some_paths_is_refused_while_something_else_is_staged() {
             &Level::project(),
             "triage",
             "Sorts issues.",
-            Template::Blank,
+            &BuiltInTemplates,
+            "blank",
         )
     });
 

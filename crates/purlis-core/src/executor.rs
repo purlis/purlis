@@ -134,7 +134,10 @@ use crate::panel::{self, Subject};
 ///   ([`Executor::command`], `command` and `args`), whose answer is not a line of JSON: what the
 ///   program prints on stdout and stderr, and its exit status, passed back as they are.
 ///   Protocol 2 was not yet released when they were added, so it holds all four.
-pub const PROTOCOL: u32 = 2;
+/// - **3** (#2777, ADR 0101) — the studio questions: `studio`, the studio capability asked, and
+///   `ask`, its question ([`crate::extension::studio::Ask`]), answered with that question's keys.
+///   Every question to an extension that declares a studio capability is asked inside its sandbox.
+pub const PROTOCOL: u32 = 3;
 
 /// How long a program has, from being started to its answer's last byte.
 ///
@@ -222,15 +225,25 @@ pub fn how_it_runs(manifest: &extension::Manifest) -> String {
     if manifest.briefing.is_some() {
         when.push("when a chat starts, for its briefing section".to_owned());
     }
+    if manifest.studio.is_some() {
+        when.push("when the Skill studio asks it about a skill".to_owned());
+    }
     let when = match when.as_slice() {
         [one] => one.clone(),
         [rest @ .., last] => format!("{}, and {last}", rest.join(", ")),
         [] => String::new(),
     };
+    // A confined program does not run as you do (ADR 0101 §4): what stops it outliving its
+    // question is the sandbox's, said in the prompt's last sentence.
+    let after = if manifest.confined() {
+        "It runs inside its sandbox, and so does anything it starts."
+    } else {
+        "A program set on outliving that can, because it runs as you do."
+    };
     format!(
         "purlis starts it {when} — never at launch and never on a timer. Each time it is \
          asked one question, given at most {} seconds to answer, and then stopped along with \
-         anything it started. A program set on outliving that can, because it runs as you do.",
+         anything it started. {after}",
         DEADLINE.as_secs()
     )
 }
@@ -327,6 +340,9 @@ enum Asked<'a> {
     /// *Run command `<name>` with `<args>`* (protocol 2, charter-app#342), from the `charter`
     /// command line.
     Command { name: &'a str, args: &'a [String] },
+    /// A studio question (protocol 3, ADR 0101). Waits its turn behind a question in flight, as
+    /// an event does: the studio asks several things of one extension at once.
+    Studio(&'a extension::studio::Ask<'a>),
 }
 
 /// What a program said: one answer line, or — for a command — everything it printed and how it
@@ -347,6 +363,8 @@ struct Printed {
 /// What [`Executor::put`] came back with, before it is shaped into an [`Answer`] or an [`Acted`].
 struct Put {
     blocks: Option<Vec<panel::Block>>,
+    /// A studio question's answer, read as far as every answer is ([`reply_of`]).
+    reply: Option<serde_json::Map<String, serde_json::Value>>,
     /// A briefing's answer: its section, as the program wrote it.
     section: Option<String>,
     /// A command's output and status; `None` for every other request.
@@ -624,6 +642,26 @@ impl Executor {
         })
     }
 
+    /// **Ask `extension`'s program a studio question** (protocol 3, ADR 0101), or say why charter
+    /// did not: the same gate, bounds and watch every question takes, inside the sandbox every
+    /// question to such an extension is asked in. Refused for an extension that does not declare
+    /// the capability `ask` asks, or the template or panel it names.
+    ///
+    /// The answer comes back read as far as every answer is: one object in its protocol, holding
+    /// only `ask`'s keys. What they say is [`extension::studio`]'s to read.
+    pub fn studio(
+        &self,
+        config_root: &Path,
+        project: &extension::project::Choices,
+        extension: &str,
+        ask: &extension::studio::Ask<'_>,
+    ) -> Result<serde_json::Map<String, serde_json::Value>, String> {
+        self.put(config_root, project, extension, Asked::Studio(ask), |_| {
+            serde_json::Value::Null
+        })
+        .map(|put| put.reply.unwrap_or_default())
+    }
+
     /// Put one request to `extension`'s program: the gate, the question, the conversation, the
     /// watch on the plane, the answer. [`Self::ask`], [`Self::act`], [`Self::tell`],
     /// [`Self::brief`] and [`Self::command`] are its shapes.
@@ -691,6 +729,24 @@ impl Executor {
                 }
                 (None, None)
             }
+            Asked::Studio(ask) => {
+                let capability = ask.capability();
+                let studio = declared
+                    .studio
+                    .as_ref()
+                    .filter(|_| declared.capabilities.contains(&capability))
+                    .ok_or_else(|| {
+                        format!(
+                            "'{extension}' does not declare the capability \"{}\", so purlis \
+                             does not ask it",
+                            capability.as_str()
+                        )
+                    })?;
+                if let Some(why) = ask.unoffered(extension, studio) {
+                    return Err(why);
+                }
+                (None, None)
+            }
         };
         let before_hand = began.elapsed();
 
@@ -745,7 +801,9 @@ impl Executor {
         let gate = before_hand + began.elapsed().saturating_sub(before_hand + handed_in);
 
         let _held = match asked {
-            Asked::Event(_) => self.hold_within(extension, Instant::now() + self.deadline)?,
+            Asked::Event(_) | Asked::Studio(_) => {
+                self.hold_within(extension, Instant::now() + self.deadline)?
+            }
             _ => self.hold(extension)?,
         };
         let started = Instant::now();
@@ -780,6 +838,7 @@ impl Executor {
             Said::Whole(printed) => {
                 return Ok(Put {
                     blocks: None,
+                    reply: None,
                     section: None,
                     whole: Some(printed),
                     gate,
@@ -790,6 +849,20 @@ impl Executor {
             }
         };
         let protocol = found.manifest.protocol;
+        if let Asked::Studio(ask) = asked {
+            let reply =
+                reply_of(extension, &line, protocol, ask.answered_keys()).map_err(with_report)?;
+            return Ok(Put {
+                blocks: None,
+                reply: Some(reply),
+                section: None,
+                whole: None,
+                gate,
+                round_trip,
+                overreach,
+                actions: found.manifest.actions.clone(),
+            });
+        }
         let (answered, section) = match asked {
             // An event's answer is that it heard, or an `error`: nothing charter draws.
             Asked::Event(_) => {
@@ -827,6 +900,7 @@ impl Executor {
         };
         Ok(Put {
             blocks: answered,
+            reply: None,
             section,
             whole: None,
             gate,
@@ -1011,15 +1085,39 @@ impl Executor {
         let theirs_in = theirs.try_clone().map_err(could_not)?;
         let ours_to_write = ours.try_clone().map_err(could_not)?;
 
-        let mut command = Command::new(program);
+        // **An extension that declares a studio capability is started confined** (ADR 0101 §2):
+        // the line starts the sandbox, which starts its program, and what the sandbox needs for
+        // the question (its temporary folder, its proxy) lives until this function returns, after
+        // the program has been stopped. A program purlis cannot confine is not started.
+        let confined = found
+            .manifest
+            .studio
+            .as_ref()
+            .map(|declared| {
+                extension::studio::Confined::start(found, declared, program, environment(found))
+            })
+            .transpose()?;
+        let mut command = match &confined {
+            Some(confined) => {
+                let mut command = Command::new(&confined.program);
+                command
+                    .args(&confined.args)
+                    .env_clear()
+                    .envs(confined.env.iter().map(|(name, value)| (name, value)));
+                command
+            }
+            None => {
+                let mut command = Command::new(program);
+                // **Nothing of charter's environment but what a program needs to be a program.**
+                // charter's own process carries its plane fence, its launch log, whatever the
+                // operator's shell exported into the app — none of which is the extension's
+                // business. ADR 0041's table: the harness environment is not grantable, and a
+                // variable handed to a program is a variable granted.
+                command.env_clear().envs(environment(found));
+                command
+            }
+        };
         command
-            // **Nothing of charter's environment but what a program needs to be a program.**
-            // charter's own process carries its plane fence, its launch log, whatever the
-            // operator's shell exported into the app — none of which is the extension's
-            // business. ADR 0041's table: the harness environment is not grantable, and a
-            // variable handed to a program is a variable granted.
-            .env_clear()
-            .envs(environment(found))
             .current_dir(&found.path)
             // Its own process group, so the whole of what it starts is one thing to kill.
             .process_group(0)
@@ -1974,6 +2072,12 @@ fn request_line(
         }
         Asked::Briefing(chat) => {
             doc.insert("briefing".into(), chat.clone());
+        }
+        // A studio question is its capability and its `ask`, which carries what purlis hands it
+        // of a skill: nothing of the project is a path it is handed (ADR 0101 §2).
+        Asked::Studio(ask) => {
+            doc.insert("studio".into(), ask.capability().as_str().into());
+            doc.insert("ask".into(), ask.line());
         }
         // A command is its name and its words, as the command line was given them, and nothing
         // about a view (charter-app#342).

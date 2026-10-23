@@ -894,10 +894,11 @@ export const commands = {
 	 */
 	skillStudio: (plane: PlaneId, workspace: string | null, persona: string | null) => typedError<Studio, string>(__TAURI_INVOKE("skill_studio", { plane, workspace, persona })),
 	/**
-	 *  The runs of skill `skill` in the project, newest first, for its Runs panel: none while the
-	 *  flag is off. On a blocking thread, as it reads the project's skill log.
+	 *  **The panels on skill `skill`'s tab** (ADR 0101 §6): purlis's Runs panel, which lists every
+	 *  run of the skill, newest first, then each extension's. None while the flag is off. On a
+	 *  blocking thread, as it reads the project's skill log and asks each extension.
 	 */
-	skillRuns: (plane: PlaneId, skill: string) => typedError<StudioRun[], string>(__TAURI_INVOKE("skill_runs", { plane, skill })),
+	skillPanels: (plane: PlaneId, skill: string) => typedError<SkillPanel[], string>(__TAURI_INVOKE("skill_panels", { plane, skill })),
 	/**  Whether the Skill studio is on in this window: this machine's flag, or the variable over it. */
 	skillStudioOn: () => typedError<boolean, string>(__TAURI_INVOKE("skill_studio_on")),
 	setSkillStudioOn: __WINDOW_ONLY_RESULT,
@@ -918,8 +919,11 @@ export const commands = {
 	broken: SkillBroken[],
 } | null, string>(__TAURI_INVOKE("chat_skills_missing", { plane, session })),
 	putAwayChatSkillsMissing: __WINDOW_ONLY_RESULT,
-	/**  The templates a new skill can start from. */
-	skillTemplates: () => __TAURI_INVOKE<SkillTemplate[]>("skill_templates"),
+	/**
+	 *  The templates a new skill can start from in the project `plane`: purlis's own, then each
+	 *  extension's (ADR 0101).
+	 */
+	skillTemplates: (plane: PlaneId) => typedError<SkillTemplate[], string>(__TAURI_INVOKE("skill_templates", { plane })),
 	/**
 	 *  **The live lint** of `text`, a `SKILL.md` being edited for the skill `name` at `level` of
 	 *  `plane` (SK-7; SK-8, #2771): each line the editor shows, checked against the project's skills
@@ -6416,7 +6420,12 @@ export type PanelBlock = { kind: "list"; rows: PanelRow[]; empty: PanelEmpty } |
 /**  `bars` or `columns` (`panel::Shape`). */
 shape: string; unit: string | null; points: PanelPoint[] } | 
 /**  Labelled facts, drawn as two columns (`panel::Block::Facts`). */
-{ kind: "facts"; facts: PanelFact[] };
+{ kind: "facts"; facts: PanelFact[] } | 
+/**
+ *  Rows of words under named columns, drawn as a table (`panel::Block::Table`): a skill's
+ *  Runs panel, and a studio panel's (ADR 0101 §6).
+ */
+{ kind: "table"; caption: string; columns: string[]; rows: PanelTableRow[]; empty: PanelEmpty };
 
 /**
  *  What opens when a row is opened, as the window receives it.
@@ -6488,6 +6497,12 @@ export type PanelRow = {
 	 *  answer's. Empty on every row of charter's own.
 	 */
 	actions: RowAction[],
+};
+
+/**  One row of a table: its key, and a cell per column. */
+export type PanelTableRow = {
+	key: string,
+	cells: string[],
 };
 
 /**  One open todo. There is no state field: a closed todo is a deleted file (ADR 0004). */
@@ -8254,30 +8269,6 @@ export type RowWorktree = {
 	discard: boolean,
 };
 
-/**  How a skill run ended, as the Runs panel draws it. */
-export type RunEnd = 
-/**  With its turn. */
-"turn" | 
-/**  A new prompt came first. */
-"interrupted" | 
-/**  The chat ended under it. */
-"session" | 
-/**  An end a newer purlis wrote. */
-"unknown";
-
-/**  What started a skill run, as the Runs panel draws it. */
-export type RunStart = 
-/**  The chat's own Skill tool. */
-"skill-tool" | 
-/**  The chat read the skill's `SKILL.md`. */
-"read" | 
-/**  The chat loaded the skill with purlis's `skill_load` tool. */
-"mcp-load" | 
-/**  The person picked it in Use skill… and sent the prompt it was typed into. */
-"use-skill" | 
-/**  A start a newer purlis wrote. */
-"unknown";
-
 /**  One branch of a pool's runner, as this machine last fetched it (#2046). */
 export type RunnerBranch = {
 	pool: string,
@@ -9199,6 +9190,22 @@ export type SkillLintLevel =
 /**  Worth knowing, and Save does not wait on it. */
 "warns";
 
+/**
+ *  **One panel on a skill's tab** (ADR 0101 §6), as the window draws it: purlis's Runs panel,
+ *  then each panel an extension that declares `studio-panel` adds, each answered in panel blocks
+ *  or refused with the core's sentence.
+ */
+export type SkillPanel = {
+	/**  What the window holds it by: `runs`, or `ext/<extension>/<panel>`. */
+	key: string,
+	title: string,
+	/**  The extension that adds it, by name, or null for purlis's own. */
+	by: string | null,
+	blocks: PanelBlock[],
+	/**  Why it has no blocks, in the core's words, or null where it answered. */
+	refused: string | null,
+};
+
 /**  A skill source as the studio shows and adds one. */
 export type SkillSource = {
 	remote: SourceRemote,
@@ -9224,15 +9231,16 @@ export type SkillSwitch =
 /**  Not on its own, and why, which the studio says in place of a switch. */
 { kind: "not"; why: string };
 
-/**  One template, as the New skill form offers it. */
+/**
+ *  One template, as the New skill form offers it: purlis's own (`blank`, `steps`), then each
+ *  extension's that declares `skill-template`, by `<extension>/<template>` (ADR 0101).
+ */
 export type SkillTemplate = {
-	id: SkillTemplateId,
+	/**  What the New skill form hands back to make the skill from. */
+	id: string,
 	label: string,
 	about: string,
 };
-
-/**  A template a new skill can start from. */
-export type SkillTemplateId = "blank" | "steps";
 
 /**  One newer commit offered for an installed skill. */
 export type SkillUpdateOffer = {
@@ -9559,30 +9567,6 @@ export type StudioPlugin = {
 	state: PluginState,
 	/**  Why purlis fixes it whatever the project says, or `None`: no switch is drawn for it. */
 	pinned: string | null,
-};
-
-/**
- *  One skill run, as a skill's Runs panel lists it (SK-3): what started it and its signals,
- *  never a pass or a fail.
- */
-export type StudioRun = {
-	/**  Its id, or null for a use from before runs were recorded. */
-	id: string | null,
-	skill: string,
-	persona: string | null,
-	/**  What started it, or null for a use from before runs were recorded. */
-	started_by: RunStart | null,
-	/**  When it started. */
-	started: string,
-	/**  How it ended, or null while no end is recorded. */
-	ended: RunEnd | null,
-	ms: number | null,
-	tool_calls: number | null,
-	tool_errors: number | null,
-	refusals: number | null,
-	asks: number | null,
-	/**  Tokens spent inside it, where the harness reported them. */
-	tokens: number | null,
 };
 
 /**  One skill the studio lists: [`purlis_core::skills::StudioRow`], for the window. */

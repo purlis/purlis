@@ -190,6 +190,7 @@ pub mod cli;
 pub mod events;
 pub mod facts;
 pub mod project;
+pub mod studio;
 pub mod writes;
 
 pub use acting::{Action, Command, Does};
@@ -441,6 +442,10 @@ pub struct Manifest {
     pub events: Option<events::Declared>,
     /// Its section of the session-start briefing (the `briefing` capability, [`briefing`]).
     pub briefing: Option<briefing::Declared>,
+    /// What its studio capabilities declare, and the hosts it reaches ([`studio`], ADR 0101):
+    /// `None` for an extension that declares none. **An extension with one runs confined**
+    /// ([`Self::confined`]).
+    pub studio: Option<studio::Declared>,
     /// Whether its manifest names no key but `version`, `id`, `name` and `contributes`, and
     /// contributes under no key but `themes` and `icon_themes` ([`THEMES_ONLY_KEYS`]): what
     /// [`Self::themes_only`] asks before anything else, so a key this purlis does not know never
@@ -482,6 +487,7 @@ impl Manifest {
             cli,
             events,
             briefing,
+            studio,
             keys_themes_only,
         } = self;
         *keys_themes_only
@@ -500,6 +506,13 @@ impl Manifest {
             && cli.is_empty()
             && events.is_none()
             && briefing.is_none()
+            && studio.is_none()
+    }
+
+    /// **Whether its program runs confined**: it declares a studio capability (ADR 0101 §2).
+    /// Then every question its program is asked, studio or not, is asked inside the sandbox.
+    pub fn confined(&self) -> bool {
+        self.studio.is_some()
     }
 
     /// Whether it hears `kind` ([`events`]).
@@ -1142,8 +1155,14 @@ fn plain_file(root: &Path, path: &Path, most: Option<u64>) -> Result<(std::fs::F
     Ok((open, found.len()))
 }
 
-/// A manifest's text, as a manifest, or why it is not one.
+/// A manifest's text, as a manifest, or why it is not one: read with the capabilities this
+/// machine knows ([`Capability::known`]).
 fn parse(text: &str) -> Result<Manifest, String> {
+    parse_knowing(text, &Capability::known())
+}
+
+/// [`parse`], knowing the capabilities `known`.
+fn parse_knowing(text: &str, known: &[Capability]) -> Result<Manifest, String> {
     let doc: serde_json::Value =
         serde_json::from_str(text).map_err(|why| format!("is not JSON: {why}"))?;
     let doc = doc.as_object().ok_or("is not a JSON object")?;
@@ -1169,7 +1188,7 @@ fn parse(text: &str) -> Result<Manifest, String> {
     // the whole manifest, so nothing below is ever loaded for less than it asked for.
     let capabilities = match doc.get("capabilities") {
         None => Vec::new(),
-        Some(value) => capability::declared(value)?,
+        Some(value) => capability::declared(value, known)?,
     };
     // And a capability whose request or answer this manifest's protocol does not carry is
     // refused rather than asked in words the program was not written to read (ADR 0053).
@@ -1268,7 +1287,7 @@ fn parse(text: &str) -> Result<Manifest, String> {
     // **A capability's shape is in `contributes` under its own word, and the two come as a
     // pair** (ADR 0053): a shape whose capability is not listed would be a contribution the
     // prompt never named, and a listed capability that declares nothing is a yes to nothing.
-    for capability in Capability::known() {
+    for capability in known.iter().copied() {
         if !capability.has_shape() {
             continue;
         }
@@ -1421,6 +1440,27 @@ fn parse(text: &str) -> Result<Manifest, String> {
         Some(value) => cli::commands_of(value, program.as_deref(), !writes.is_empty())?,
     };
 
+    // The studio capabilities' shapes, and the hosts a confined program reaches (ADR 0101). A
+    // confined program writes nothing of the project, so it declares no plane path and no folder
+    // in each workspace.
+    let studio = studio::declared_of(
+        doc,
+        contributes,
+        &capabilities,
+        program.as_deref(),
+        crate::sandbox::Os::this(),
+    )?;
+    if studio.is_some()
+        && let Some(why) = studio::writes_nothing_of_the_project(
+            &writes,
+            events
+                .as_ref()
+                .and_then(|events| events.workspace_folder.as_deref()),
+        )
+    {
+        return Err(why);
+    }
+
     let (top, inside) = THEMES_ONLY_KEYS;
     let keys_themes_only = doc.keys().all(|key| top.contains(&key.as_str()))
         && contributes.keys().all(|key| inside.contains(&key.as_str()));
@@ -1446,6 +1486,7 @@ fn parse(text: &str) -> Result<Manifest, String> {
         events,
         briefing,
         cli,
+        studio,
     })
 }
 
@@ -2862,6 +2903,7 @@ pub fn prompt(found: &Extension, standing: Standing) -> Prompt {
             .map(|theme| format!("an icon theme, “{}”", theme.name)),
     );
     declares.extend(found.manifest.left_out.iter().cloned());
+    declares.extend(found.manifest.studio.iter().flat_map(studio::declares));
     declares.extend(found.manifest.panels.iter().map(crate::panel::declares));
     declares.extend(found.manifest.views.iter().map(|view| {
         format!(
@@ -2917,6 +2959,7 @@ pub fn prompt(found: &Extension, standing: Standing) -> Prompt {
                 && manifest.cli.is_empty()
                 && manifest.events.is_none()
                 && manifest.briefing.is_none()
+                && manifest.studio.is_none()
             {
                 format!(
                     "a program, {program} — it declares no view, action or command, hears no \
@@ -2925,6 +2968,7 @@ pub fn prompt(found: &Extension, standing: Standing) -> Prompt {
             } else if manifest.cli.is_empty()
                 && manifest.events.is_none()
                 && manifest.briefing.is_none()
+                && manifest.studio.is_none()
             {
                 format!("a program, {program} — {}", crate::executor::HOW_IT_RUNS)
             } else {
@@ -2942,7 +2986,12 @@ pub fn prompt(found: &Extension, standing: Standing) -> Prompt {
         declares,
         fingerprint: found.fingerprint.clone(),
         first: standing != Standing::Changed,
-        runs_as_you: RUNS_AS_YOU.to_owned(),
+        // A confined extension's program does not run as you do, so the prompt says what holds
+        // it instead, from the core (ADR 0101 §4).
+        runs_as_you: match &found.manifest.studio {
+            Some(declared) => studio::confined_said(&declared.hosts),
+            None => RUNS_AS_YOU.to_owned(),
+        },
         fingerprint_note: FINGERPRINTED.to_owned(),
         state_note: found.manifest.state.as_deref().map(state_note),
     }

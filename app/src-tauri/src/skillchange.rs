@@ -11,8 +11,9 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 
 use purlis_core::repocmd::Say;
+use purlis_core::skills::studio::Templates;
 use purlis_core::skills::verbs::{self, By, Level};
-use purlis_core::skills::{Grant, Template};
+use purlis_core::skills::{Grant, SkillTemplate as Offers};
 
 /// A level of the project's, as the studio names one: the project's root (`workspace` null) or a
 /// workspace's, shared or kept on this machine.
@@ -73,38 +74,35 @@ impl From<SkillGrant> for Grant {
     }
 }
 
-/// A template a new skill can start from.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
-#[serde(rename_all = "kebab-case")]
-pub enum SkillTemplateId {
-    Blank,
-    Steps,
-}
-
-impl From<SkillTemplateId> for Template {
-    fn from(id: SkillTemplateId) -> Template {
-        match id {
-            SkillTemplateId::Blank => Template::Blank,
-            SkillTemplateId::Steps => Template::Steps,
-        }
-    }
-}
-
-impl From<Template> for SkillTemplateId {
-    fn from(template: Template) -> SkillTemplateId {
-        match template {
-            Template::Blank => SkillTemplateId::Blank,
-            Template::Steps => SkillTemplateId::Steps,
-        }
-    }
-}
-
-/// One template, as the New skill form offers it.
+/// One template, as the New skill form offers it: purlis's own (`blank`, `steps`), then each
+/// extension's that declares `skill-template`, by `<extension>/<template>` (ADR 0101).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct SkillTemplate {
-    pub id: SkillTemplateId,
+    /// What the New skill form hands back to make the skill from.
+    pub id: String,
     pub label: String,
     pub about: String,
+}
+
+/// **What the Skill studio asks extensions with, in the project at `root`**, and runs `with` on
+/// it (ADR 0101): the app's executor and this machine's record. With no config home, purlis's own
+/// alone.
+pub(crate) fn with_studio<T>(
+    executor: &purlis_core::executor::Executor,
+    root: &std::path::Path,
+    with: impl FnOnce(Option<purlis_core::skills::studio::Studio<'_>>) -> T,
+) -> T {
+    let config = purlis_core::machine::config_root();
+    let choices = purlis_core::extension::project::Choices::read(root);
+    with(
+        config
+            .as_deref()
+            .map(|config_root| purlis_core::skills::studio::Studio {
+                executor,
+                config_root,
+                project: &choices,
+            }),
+    )
 }
 
 /// What a change had to say beyond being done: that it was left for the next save, or that a
@@ -190,16 +188,34 @@ fn built_in() -> Option<std::path::PathBuf> {
     crate::bundled_plugin_here().and_then(|plugin| purlis_core::skills::in_bundle(&plugin))
 }
 
-/// The templates a new skill can start from.
+/// The templates a new skill can start from in the project `plane`: purlis's own, then each
+/// extension's (ADR 0101).
 #[tauri::command]
 #[specta::specta]
-pub(crate) fn skill_templates() -> Vec<SkillTemplate> {
-    Template::ALL
-        .iter()
-        .map(|template| SkillTemplate {
-            id: (*template).into(),
-            label: template.label().to_owned(),
-            about: template.about().to_owned(),
+pub(crate) async fn skill_templates(
+    views: tauri::State<'_, crate::views::Views>,
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+) -> Result<Vec<SkillTemplate>, String> {
+    let held = planes.held(&plane)?;
+    let executor = views.executor();
+    crate::off_the_window("reading the templates", move || {
+        Ok(with_studio(&executor, held.root(), |studio| {
+            templates(&Templates { studio })
+        }))
+    })
+    .await
+}
+
+/// [`skill_templates`]' list, for the window.
+fn templates(templates: &dyn Offers) -> Vec<SkillTemplate> {
+    templates
+        .offered()
+        .into_iter()
+        .map(|offer| SkillTemplate {
+            id: offer.id,
+            label: offer.label,
+            about: offer.about,
         })
         .collect()
 }
@@ -228,6 +244,7 @@ pub struct SkillLintFinding {
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_lint(
+    views: tauri::State<'_, crate::views::Views>,
     planes: tauri::State<'_, crate::planes::Planes>,
     plane: crate::planes::PlaneId,
     level: SkillLevel,
@@ -235,20 +252,31 @@ pub(crate) async fn skill_lint(
     text: String,
 ) -> Result<Vec<SkillLintFinding>, String> {
     let held = planes.held(&plane)?;
+    let executor = views.executor();
     crate::off_the_window("linting the skill", move || {
-        Ok(findings(held.root(), &(&level).into(), &name, &text))
+        // purlis's own lints, then each extension's that declares `skill-lint`, through the one
+        // interface (ADR 0101).
+        Ok(with_studio(&executor, held.root(), |studio| {
+            let lints = studio.map(|studio| studio.lints()).unwrap_or_default();
+            let more: Vec<&dyn purlis_core::skills::SkillLint> = lints
+                .iter()
+                .map(|lint| lint as &dyn purlis_core::skills::SkillLint)
+                .collect();
+            findings(held.root(), &(&level).into(), &name, &text, &more)
+        }))
     })
     .await
 }
 
-/// [`skill_lint`]'s findings, for the window.
+/// [`skill_lint`]'s findings, for the window: purlis's own lints and `more`.
 fn findings(
     root: &std::path::Path,
     level: &Level,
     name: &str,
     text: &str,
+    more: &[&dyn purlis_core::skills::SkillLint],
 ) -> Vec<SkillLintFinding> {
-    purlis_core::skills::lint(root, level, name, text)
+    purlis_core::skills::lint_with(root, level, name, text, more)
         .into_iter()
         .map(|finding| SkillLintFinding {
             level: match finding.severity {
@@ -264,18 +292,29 @@ fn findings(
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_new(
+    views: tauri::State<'_, crate::views::Views>,
     planes: tauri::State<'_, crate::planes::Planes>,
     plane: crate::planes::PlaneId,
     level: SkillLevel,
     name: String,
     description: String,
-    template: SkillTemplateId,
+    template: String,
 ) -> Result<SkillChanged, String> {
     let held = planes.held(&plane)?;
+    let executor = views.executor();
     crate::off_the_window("making the skill", move || {
         flag_on()?;
-        heard(held.root(), |cx| {
-            verbs::create(cx, &(&level).into(), &name, &description, template.into())
+        with_studio(&executor, held.root(), |studio| {
+            heard(held.root(), |cx| {
+                verbs::create(
+                    cx,
+                    &(&level).into(),
+                    &name,
+                    &description,
+                    &Templates { studio },
+                    &template,
+                )
+            })
         })
     })
     .await

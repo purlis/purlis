@@ -745,6 +745,157 @@ const FLOOR_BASE: &str = "(version 1)
 (allow default)
 ";
 
+/// What a confined extension's program reads of the system, on macOS: the programs and
+/// libraries a program loads, and nothing a person keeps. Every path a person or a project keeps
+/// (their home, the projects, other volumes, other extensions) is under none of these.
+pub const CONFINED_SYSTEM_MACOS: [&str; 10] = [
+    "/usr",
+    "/bin",
+    "/sbin",
+    "/System",
+    "/Library/Apple",
+    "/Library/Developer/CommandLineTools",
+    "/opt/homebrew",
+    "/private/etc/ssl",
+    "/private/var/db/timezone",
+    "/private/var/select",
+];
+
+/// What a confined extension's program reads of the system, on Linux: as on macOS, the programs
+/// and libraries a program loads and the files a dynamic loader and a TLS client read.
+pub const CONFINED_SYSTEM_LINUX: [&str; 16] = [
+    "/usr",
+    "/bin",
+    "/sbin",
+    "/lib",
+    "/lib32",
+    "/lib64",
+    "/libx32",
+    "/nix/store",
+    "/etc/ld.so.cache",
+    "/etc/ld.so.conf",
+    "/etc/ld.so.conf.d",
+    "/etc/alternatives",
+    "/etc/ssl",
+    "/etc/ca-certificates",
+    "/etc/pki",
+    "/etc/localtime",
+];
+
+/// The single files every program may read on either system: the null device and the system's
+/// sources of randomness, and the files a TLS client and a name lookup read.
+const CONFINED_FILES: [&str; 9] = [
+    "/dev/null",
+    "/dev/zero",
+    "/dev/random",
+    "/dev/urandom",
+    "/dev/dtracehelper",
+    "/private/etc/hosts",
+    "/private/etc/localtime",
+    "/etc/hosts",
+    "/etc/resolv.conf",
+];
+
+/// **The profile an extension that declares a studio capability runs in** (ADR 0101 §2, #2777).
+///
+/// Stricter than a chat's ([`profile`]) where a chat's is open: a chat reads every file, and this
+/// program reads only `reads` (its own folder), what it writes, and the system's programs and
+/// libraries ([`CONFINED_SYSTEM_MACOS`] or [`CONFINED_SYSTEM_LINUX`] for `os`), and of every
+/// folder above those only the folder itself, never what is in it. It writes only `writes` (its
+/// state folder and its own temporary folder) and the null device. It reaches no address but the
+/// loopback ports in `proxy_ports`, its own proxy's, which carries only its declared hosts; none
+/// where it declares none. It asks no system service but the log, so it reads no person's
+/// preferences, directory entries or file events through one. Then the denial classes, last,
+/// as for every chat: no project's vaults are read, and nothing a later program runs is written.
+pub fn confined_profile(
+    os: super::Os,
+    reads: &[PathBuf],
+    writes: &[PathBuf],
+    proxy_ports: &[u16],
+) -> Result<String, &'static str> {
+    let mut out = String::from(CONFINED_BASE);
+    let mut line = |text: String| {
+        out.push_str(&text);
+        out.push('\n');
+    };
+    let system: &[&str] = match os {
+        super::Os::Linux => &CONFINED_SYSTEM_LINUX,
+        _ => &CONFINED_SYSTEM_MACOS,
+    };
+    // What it reads: the system, then its own, each under every name the kernel may give it.
+    let mut read_roots: Vec<PathBuf> = system.iter().map(PathBuf::from).collect();
+    read_roots.extend(reads.iter().cloned());
+    read_roots.extend(writes.iter().cloned());
+    line("(allow file-read*".to_owned());
+    for root in &read_roots {
+        for name in kernel_strings(root)? {
+            line(format!("  (subpath {name})"));
+        }
+    }
+    for file in CONFINED_FILES {
+        line(format!("  (literal {})", string(file)?));
+    }
+    line(")".to_owned());
+    // Of each folder above what it reads, the folder alone: what a path resolves through, never
+    // what else a folder holds.
+    let mut above = std::collections::BTreeSet::new();
+    for root in &read_roots {
+        for name in super::kernel_names(root) {
+            for ancestor in name.ancestors().skip(1) {
+                above.insert(ancestor.to_path_buf());
+            }
+        }
+    }
+    line("(allow file-read-metadata".to_owned());
+    for folder in &above {
+        line(format!(
+            "  (literal {})",
+            string(&folder.display().to_string())?
+        ));
+    }
+    line(")".to_owned());
+    line("(allow file-write*".to_owned());
+    for root in writes {
+        for name in kernel_strings(root)? {
+            line(format!("  (subpath {name})"));
+        }
+    }
+    line("  (literal \"/dev/null\")".to_owned());
+    line(")".to_owned());
+    for port in proxy_ports {
+        line(format!(
+            "(allow network-outbound (remote ip \"localhost:{port}\"))"
+        ));
+    }
+    // The denial classes, after every grant: Seatbelt takes the last rule that matches.
+    for root in writes {
+        for rule in planted_rules(root)? {
+            line(rule);
+        }
+    }
+    for rule in vaults_everywhere_rules()? {
+        line(rule);
+    }
+    if out.len() > MOST_PROFILE {
+        return Err(TOO_LARGE);
+    }
+    Ok(out)
+}
+
+/// What a confined extension's program is allowed besides files and its proxy: to run programs
+/// inside its own sandbox, signal and inspect only them, read the system's settings, and log.
+/// No `user-preference-read`, no directory service and no file events: each reads what a person
+/// keeps without a file read.
+const CONFINED_BASE: &str = "(version 1)
+(deny default)
+(allow process-exec)
+(allow process-fork)
+(allow signal (target same-sandbox))
+(allow process-info* (target same-sandbox))
+(allow sysctl-read)
+(allow mach-lookup (global-name \"com.apple.logd\"))
+";
+
 /// The profile a program answers `--version` inside, before a sandboxed chat starts on it
 /// (D-88k): no network at all, and nothing written but `tmp`, the probe's own temp directory,
 /// and `/dev/null`. Stricter than any chat's, so a program that loads a file a chat wrote

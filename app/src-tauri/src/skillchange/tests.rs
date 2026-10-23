@@ -32,31 +32,42 @@ fn a_level_the_studio_names_is_the_cores_level_and_back() {
 
 #[test]
 fn the_lint_and_the_templates_are_the_cores() {
-    let templates = skill_templates();
+    let templates = templates(&Templates { studio: None });
     assert_eq!(
-        templates.iter().map(|one| one.id).collect::<Vec<_>>(),
-        [SkillTemplateId::Blank, SkillTemplateId::Steps]
+        templates
+            .iter()
+            .map(|one| one.id.as_str())
+            .collect::<Vec<_>>(),
+        ["blank", "steps"]
     );
     let tmp = tempfile::tempdir().unwrap();
     for one in &templates {
-        let text = Template::from(one.id).text("deploy", "Ships it to staging and checks it.");
+        let text = purlis_core::skills::BuiltInTemplates
+            .text(&one.id, "deploy", "Ships it to staging and checks it.")
+            .unwrap();
         assert_eq!(
-            findings(tmp.path(), &Level::project(), "deploy", &text),
+            findings(tmp.path(), &Level::project(), "deploy", &text, &[]),
             Vec::<SkillLintFinding>::new(),
             "{:?}",
             one.id
         );
     }
     assert_eq!(
-        findings(tmp.path(), &Level::project(), "deploy", "no frontmatter"),
+        findings(
+            tmp.path(),
+            &Level::project(),
+            "deploy",
+            "no frontmatter",
+            &[]
+        ),
         [SkillLintFinding {
             level: SkillLintLevel::Blocks,
             says: purlis_core::skills::Problem::NoFrontmatter.to_string(),
         }]
     );
     // A short description warns, and Save does not wait on it.
-    let short = Template::Blank.text("deploy", "Ships it.");
-    let said = findings(tmp.path(), &Level::project(), "deploy", &short);
+    let short = purlis_core::skills::Template::Blank.text("deploy", "Ships it.");
+    let said = findings(tmp.path(), &Level::project(), "deploy", &short, &[]);
     assert_eq!(said.len(), 1, "{said:?}");
     assert_eq!(said[0].level, SkillLintLevel::Warns);
 }
@@ -72,7 +83,8 @@ fn a_change_left_for_the_next_save_says_so_and_a_done_line_is_not_repeated() {
             &Level::project(),
             "deploy",
             "Ships it.",
-            Template::Blank,
+            &purlis_core::skills::BuiltInTemplates,
+            "blank",
         )
     })
     .unwrap();
@@ -92,7 +104,8 @@ fn a_deleted_skill_handed_to_the_window_comes_back_whole_and_restores() {
             &Level::project(),
             "deploy",
             "Ships it.",
-            Template::Blank,
+            &purlis_core::skills::BuiltInTemplates,
+            "blank",
         )
     })
     .unwrap();

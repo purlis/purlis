@@ -332,14 +332,15 @@ pub(super) fn complaint(run: &git::Run) -> String {
 
 /// One file of a skill as the source holds it.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct SourceFile {
+pub struct SourceFile {
     pub(super) parts: Vec<String>,
     pub(super) executable: bool,
     pub(super) bytes: Vec<u8>,
 }
 
 impl SourceFile {
-    pub(super) fn path(&self) -> String {
+    /// Its path inside the skill's folder, `/` between the parts.
+    pub fn path(&self) -> String {
         self.parts.join("/")
     }
 }
@@ -482,6 +483,26 @@ pub fn newest(plane: &Path, source: &Source) -> Result<Commit, String> {
         .find(|(_, name)| *name == tip)
         .and_then(|(commit, _)| Commit::parse(commit))
         .ok_or_else(|| format!("{source} has no {tip}"))
+}
+
+/// **The git source, through the SkillSource interface** (ADR 0101 §1): its first user. What it
+/// offers is [`Fetched::skills`], and one skill's files are read from the commit it was fetched
+/// at, with the entries of its folder that are not installed.
+impl super::SkillSource for Fetched {
+    fn shown(&self) -> String {
+        self.source.to_string()
+    }
+
+    fn skills(&self) -> Result<(Vec<Found>, Vec<NotASkill>), String> {
+        Fetched::skills(self)
+    }
+
+    fn files(&self, skill: &Found) -> Result<(Vec<SourceFile>, Vec<LeftOut>), String> {
+        Ok((
+            self.files_of(&skill.dir)?,
+            tree::left_in(&self.left, &skill.dir),
+        ))
+    }
 }
 
 impl Fetched {

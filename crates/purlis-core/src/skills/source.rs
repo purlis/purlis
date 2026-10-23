@@ -24,6 +24,7 @@
 use purlis_skills::tree;
 use serde::{Deserialize, Serialize};
 
+pub mod extension;
 pub mod fetch;
 pub mod install;
 pub mod listed;
@@ -32,7 +33,7 @@ pub mod review;
 pub mod update;
 mod write;
 
-pub use fetch::{Fetched, Found, MOST_SKILL_BYTES, NotASkill, fetch, newest};
+pub use fetch::{Fetched, Found, MOST_SKILL_BYTES, NotASkill, SourceFile, fetch, newest};
 pub use install::install;
 pub use listed::{Listed, TABLE, add, confirm, remove, sources};
 pub use lock::{Kept, Locked, Lockfile};
@@ -43,6 +44,22 @@ pub use update::{
     Changed, FileChange, Offer, Unasked, Unconfirmed, UpdateReview, Updates, line_diff, update,
     update_review, updates,
 };
+
+/// **A skill source** (the SkillSource capability, ADR 0101 §1): what skills it offers, and one
+/// skill's files. The git source ([`Fetched`]) and each extension that declares `skill-source`
+/// ([`extension`]) answer through it, and everything after is purlis's: the review
+/// ([`review`]), the copy and the pin.
+pub trait SkillSource {
+    /// What a sentence names it by.
+    fn shown(&self) -> String;
+    /// The skills it offers, and each folder it holds that is not a skill purlis offers, with why.
+    fn skills(&self) -> Result<(Vec<Found>, Vec<NotASkill>), String>;
+    /// One offered skill's files, and the entries of its folder that are not installed.
+    fn files(
+        &self,
+        skill: &Found,
+    ) -> Result<(Vec<SourceFile>, Vec<purlis_skills::tree::LeftOut>), String>;
+}
 
 /// **A commit's full name**, checked: 40 or 64 hex digits, lowercased.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]

@@ -1009,7 +1009,7 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "show_window_holding",
     "skill_lint",
     "skill_move_needs_grant",
-    "skill_runs",
+    "skill_panels",
     "skill_studio",
     "skill_studio_on",
     "skill_templates",
