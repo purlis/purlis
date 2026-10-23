@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792741386773,
+  "lastUpdate": 1792744481710,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -22512,6 +22512,48 @@ window.BENCHMARK_DATA = {
             "value": 101.24326400000001,
             "unit": "ms",
             "extra": "median of 5 runs: 100.697, 101.160, 101.243, 101.570, 101.777 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2db1996a69a58890f78cc57104725eba1dee1588",
+          "message": "Bump the tauri group across 1 directory with 6 updates (#3055)\n\nBumps the tauri group with 6 updates in the / directory:\n\n| Package | From | To |\n| --- | --- | --- |\n| [tauri-plugin-opener](https://github.com/tauri-apps/plugins-workspace) | `2.7.1` | `2.7.2` |\n| [tauri-plugin-notification](https://github.com/tauri-apps/plugins-workspace) | `2.6.0` | `2.7.0` |\n| [tauri-plugin-single-instance](https://github.com/tauri-apps/plugins-workspace) | `2.5.3` | `2.5.4` |\n| [tauri-plugin-dialog](https://github.com/tauri-apps/plugins-workspace) | `2.8.2` | `2.8.3` |\n| [tauri-plugin-updater](https://github.com/tauri-apps/plugins-workspace) | `2.13.3` | `2.14.0` |\n| [tauri-build](https://github.com/tauri-apps/tauri) | `2.7.2` | `2.7.3` |\n\n\n\nUpdates `tauri-plugin-opener` from 2.7.1 to 2.7.2\n- [Release notes](https://github.com/tauri-apps/plugins-workspace/releases)\n- [Commits](https://github.com/tauri-apps/plugins-workspace/compare/fs-v2.7.1...dialog-v2.7.2)\n\nUpdates `tauri-plugin-notification` from 2.6.0 to 2.7.0\n- [Release notes](https://github.com/tauri-apps/plugins-workspace/releases)\n- [Commits](https://github.com/tauri-apps/plugins-workspace/compare/fs-v2.6.0...fs-v2.7.0)\n\nUpdates `tauri-plugin-single-instance` from 2.5.3 to 2.5.4\n- [Release notes](https://github.com/tauri-apps/plugins-workspace/releases)\n- [Commits](https://github.com/tauri-apps/plugins-workspace/compare/http-v2.5.3...http-v2.5.4)\n\nUpdates `tauri-plugin-dialog` from 2.8.2 to 2.8.3\n- [Release notes](https://github.com/tauri-apps/plugins-workspace/releases)\n- [Commits](https://github.com/tauri-apps/plugins-workspace/compare/http-v2.8.2...http-v2.8.3)\n\nUpdates `tauri-plugin-updater` from 2.13.3 to 2.14.0\n- [Release notes](https://github.com/tauri-apps/plugins-workspace/releases)\n- [Commits](https://github.com/tauri-apps/plugins-workspace/compare/updater-v2.13.3...updater-v2.14.0)\n\nUpdates `tauri-build` from 2.7.2 to 2.7.3\n- [Release notes](https://github.com/tauri-apps/tauri/releases)\n- [Commits](https://github.com/tauri-apps/tauri/compare/tauri-build-v2.7.2...tauri-build-v2.7.3)\nBump the tauri group across 1 directory with 3 updates\n\nBumps the tauri group with 3 updates in the /app directory: [@tauri-apps/api](https://github.com/tauri-apps/tauri), [@tauri-apps/plugin-opener](https://github.com/tauri-apps/plugins-workspace) and [@tauri-apps/cli](https://github.com/tauri-apps/tauri).\n\n\nUpdates `@tauri-apps/api` from 2.12.3 to 2.12.4\n- [Release notes](https://github.com/tauri-apps/tauri/releases)\n- [Commits](https://github.com/tauri-apps/tauri/compare/@tauri-apps/api-v2.12.3...@tauri-apps/api-v2.12.4)\n\nUpdates `@tauri-apps/plugin-opener` from 2.7.1 to 2.7.2\n- [Release notes](https://github.com/tauri-apps/plugins-workspace/releases)\n- [Commits](https://github.com/tauri-apps/plugins-workspace/compare/fs-v2.7.1...dialog-v2.7.2)\n\nUpdates `@tauri-apps/cli` from 2.12.2 to 2.12.3\n- [Release notes](https://github.com/tauri-apps/tauri/releases)\n- [Commits](https://github.com/tauri-apps/tauri/compare/@tauri-apps/cli-v2.12.2...@tauri-apps/cli-v2.12.3)\n\n---\nupdated-dependencies:\n- dependency-name: \"@tauri-apps/api\"\n  dependency-version: 2.12.4\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: tauri\n- dependency-name: \"@tauri-apps/cli\"\n  dependency-version: 2.12.3\n  dependency-type: direct:development\n  update-type: version-update:semver-patch\n  dependency-group: tauri\n- dependency-name: \"@tauri-apps/plugin-opener\"\n  dependency-version: 2.7.2\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: tauri\n- dependency-name: tauri-build\n  dependency-version: 2.7.3\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: tauri\n- dependency-name: tauri-plugin-dialog\n  dependency-version: 2.8.3\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: tauri\n- dependency-name: tauri-plugin-notification\n  dependency-version: 2.7.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: tauri\n- dependency-name: tauri-plugin-opener\n  dependency-version: 2.7.2\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: tauri\n- dependency-name: tauri-plugin-single-instance\n  dependency-version: 2.5.4\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: tauri\n- dependency-name: tauri-plugin-updater\n  dependency-version: 2.14.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: tauri\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>\nCo-authored-by: Aaron Yordanyan <aaron.yor@gmail.com>",
+          "timestamp": "2026-10-23T12:32:53+04:00",
+          "tree_id": "4fea7736542e4fbaff61875ed2795617380e8f6e",
+          "url": "https://github.com/purlis/purlis/commit/2db1996a69a58890f78cc57104725eba1dee1588"
+        },
+        "date": 1792744479100,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.399544,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.383, 0.399, 0.400, 0.408, 0.420 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.703221,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.493, 16.651, 16.703, 16.740, 16.885 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.577293,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.920, 102.108, 102.577, 102.669, 102.778 ms"
           }
         ]
       }
