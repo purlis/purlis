@@ -2979,6 +2979,11 @@ fn workspace_command(command: &Command) -> Option<ExitCode> {
                 },
                 say,
             );
+            // The person made it from their own terminal, not a chat: its skills reach chats
+            // (SK-9). A chat's own create vouches for nothing.
+            if code == 0 && !crate::memory::in_a_chat() {
+                purlis_core::skills::levels::vouch(&root, &format!("workspaces/{name}"));
+            }
             if code == 0 {
                 heard.push(ExtensionEvent::WorkspaceCreated {
                     workspace: name.clone(),

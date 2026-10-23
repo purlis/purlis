@@ -619,6 +619,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     "skill_draft_reject",
     "skill_draft_chat",
     "skill_draft_try",
+    // Accepting a workspace or persona folder a chat could have made (SK-9): its skills then
+    // reach chats, so only the person's own press in their window does it.
+    "skill_level_accept",
     // A harness's plugin or skill turned on or off in the Skill studio (#2769): it writes this
     // machine's project file, or the workspace's settings. The person's own press in their
     // window.

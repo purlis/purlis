@@ -6908,13 +6908,17 @@ rewritten.
 - **Status:** **internal**, **experimental** behind the `skill-studio` flag (#2772).
 - **Tier:** Clone state, transient — it lasts as long as its chat.
 - **Written by:** the session host as it starts a sandboxed chat (`skills::levels::note`); a
-  restart keeps the record it has. `workspace create` and `persona define` add the folder they
-  make to every record (`skills::levels::vouch`). No chat writes the state folder.
-- **Read by:** every skill set while its chat is on the app's record of open chats
-  ([`app/reopen.json`](#appreopenjson)): a workspace's or persona's skills whose folder is not in
-  a record reach no chat, "made while chat N was running", until that chat closes.
-- **Removed by:** the app, each time it writes its record of open chats, for a chat not on it,
-  two minutes after it was written (`skills::levels::sweep`).
+  restart keeps the record it has. A workspace or persona the person makes, in the window or from
+  their own terminal, is added to every record (`skills::levels::vouch`); one the app makes on a
+  chat's request is not. No chat writes the state folder. `unaccepted.json` beside the records
+  (`levels`, folders relative to the plane) keeps every folder a swept record's chat could have
+  made, until the person accepts it in the Skill studio (`skills::levels::accept`).
+- **Read by:** every skill set: a workspace's or persona's skills whose folder is not in a record,
+  or is in `unaccepted.json`, reach no chat, with "accept it in the Skill studio", until the person
+  does.
+- **Removed by:** the app, each time it writes its record of open chats
+  ([`app/reopen.json`](#appreopenjson)), for a chat not on it, two minutes after it was written,
+  moving what it could have made to `unaccepted.json` first (`skills::levels::sweep`).
 - **Git:** gitignored, under the state directory.
 
 ### `save-journal.jsonl`

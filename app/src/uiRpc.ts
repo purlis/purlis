@@ -943,6 +943,7 @@ export const commands = {
 	skillDraftReject: __WINDOW_ONLY_RESULT,
 	skillDraftChat: __WINDOW_ONLY_RESULT,
 	skillDraftTry: __WINDOW_ONLY_RESULT,
+	skillLevelAccept: __WINDOW_ONLY_RESULT,
 	skillStudioSwitch: __WINDOW_ONLY_RESULT,
 	/**
 	 *  **The skills chat `session` has, as Use skill… offers them, and its skill budget**: nothing
@@ -9319,6 +9320,11 @@ export type StudioSkill = {
 	on: boolean,
 	/**  Why it is left out, in one line, where it is. */
 	left_out: string | null,
+	/**
+	 *  Where it is left out because a chat could have made its level's folder (SK-9): that
+	 *  folder, which Accept takes (`skill_level_accept`).
+	 */
+	accept: string | null,
 	/**  What it does and when to use it: its frontmatter's `description`. */
 	description: string,
 	/**  Its folder, relative to the project where it is inside it; empty for an installed skill. */

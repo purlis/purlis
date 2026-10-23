@@ -11,9 +11,10 @@
 //! - **The host notes each sandboxed chat's start** ([`note`]): `skill-levels/<chat id>.json`
 //!   in this machine's state, holding the workspace and persona folders there at that moment.
 //!   A chat cannot write the state folder.
-//! - **A record counts while its chat is open**: while the app's record of open chats
-//!   (`reopen`) lists its id. Each time the app writes that record it sweeps every record no
-//!   chat on it holds ([`sweep`]), so a closed chat's goes, and at a launch every one left.
+//! - **A record counts until the app sweeps it**, each time it writes its record of open chats
+//!   (`reopen`), for a chat no longer on it ([`sweep`]). The sweep moves every folder that chat
+//!   could have made to the folders not accepted yet, which stay left out until the person
+//!   accepts each in the Skill studio ([`accept`]), as a draft waits for its Accept.
 //! - **A folder the person makes through purlis is vouched for** ([`vouch`]): it is added to
 //!   every record. A chat's own `purlis workspace create` cannot write the records.
 
@@ -22,6 +23,16 @@ use std::path::{Path, PathBuf};
 
 /// The folder of this machine's state the records are kept in.
 pub const DIR: &str = "skill-levels";
+
+/// The file in [`DIR`] that keeps the folders a chat that has closed could have made, until the
+/// person accepts each in the Skill studio ([`accept`]).
+const UNACCEPTED: &str = "unaccepted.json";
+
+/// The folders a closed chat could have made, not accepted yet.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+struct Unaccepted {
+    levels: BTreeSet<String>,
+}
 
 /// One running sandboxed chat's record.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -60,6 +71,33 @@ fn an_id(id: &str) -> bool {
 fn rel_of(id: &str) -> String {
     format!("{DIR}/{id}.json")
 }
+
+fn unaccepted(state: &Path) -> Unaccepted {
+    crate::proposed::read_pinned(state, Path::new(&format!("{DIR}/{UNACCEPTED}")))
+        .ok()
+        .flatten()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default()
+}
+
+/// Writes `now` as the folders not accepted yet, over the file as it was just read. The app is
+/// its one writer.
+fn write_unaccepted(state: &Path, now: &Unaccepted) -> Result<(), String> {
+    let rel = format!("{DIR}/{UNACCEPTED}");
+    let there = crate::proposed::read_pinned(state, Path::new(&rel))
+        .map_err(|_| "the folders not accepted yet could not be read".to_owned())?;
+    let base = there
+        .as_deref()
+        .and_then(|bytes| crate::proposed::base_of(Some(bytes)));
+    let text = serde_json::to_string(now).map_err(|why| why.to_string())?;
+    crate::proposed::write_pinned_making(state, Path::new(&rel), base.as_deref(), &text, &|_, _| {
+        true
+    })
+    .map_err(|_| "the folders not accepted yet could not be written".to_owned())
+}
+
+/// What a skill of a level a chat could have made is left out with, ending in its way out.
+const ACCEPT_IT: &str = "accept it in the Skill studio";
 
 fn read(state: &Path, id: &str) -> Option<Record> {
     let bytes = crate::proposed::read_pinned(state, Path::new(&rel_of(id))).ok()??;
@@ -111,17 +149,27 @@ pub fn note(root: &Path, id: &str, name: &str) -> Result<(), String> {
 
 /// The records of the chats the app lists as open in the plane at `root`.
 fn open_records(root: &Path) -> Vec<(String, Record)> {
+    // Every record there is, whether or not its chat is still on the app's record: one whose chat
+    // closed holds until the app's sweep moves what it could have made to the folders not
+    // accepted yet ([`sweep`]), so no moment between the two lets such a folder through.
     let state = crate::plane::state_dir(root);
-    let Ok(record) = crate::reopen::read_or_refusal(root) else {
+    let Ok(entries) = std::fs::read_dir(state.join(DIR)) else {
         return Vec::new();
     };
-    record
-        .chats
-        .iter()
-        .filter_map(|chat| chat.identity.id.clone())
-        .filter(|id| an_id(id))
+    let mut out: Vec<(String, Record)> = entries
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            entry
+                .file_name()
+                .to_str()
+                .and_then(|name| name.strip_suffix(".json"))
+                .filter(|id| an_id(id))
+                .map(str::to_owned)
+        })
         .filter_map(|id| read(&state, &id).map(|one| (id, one)))
-        .collect()
+        .collect();
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out
 }
 
 /// **Why the skills of the workspace or persona folder `owner` (absolute, in the plane at
@@ -129,28 +177,73 @@ fn open_records(root: &Path) -> Vec<(String, Record)> {
 /// started before the folder was there, so it could have made it.
 pub type MadeSince = Box<dyn Fn(&Path) -> Option<String> + Sync>;
 
-/// [`MadeSince`] for the plane at `root`, as its records say now.
+/// [`MadeSince`] for the plane at `root`, as its records say now: a folder an open sandboxed
+/// chat could have made, or one a closed chat could have, that the person has not accepted. It
+/// stays left out until the person accepts it in the Skill studio ([`accept`]), whether or not
+/// the chat has closed.
 pub fn made_since(root: &Path) -> MadeSince {
     let records = open_records(root);
+    let held = unaccepted(&crate::plane::state_dir(root));
     let root = root.to_path_buf();
     Box::new(move |owner: &Path| {
-        let rel = owner.strip_prefix(&root).ok()?;
-        let rel = rel
-            .components()
-            .map(|part| part.as_os_str().to_string_lossy().into_owned())
-            .collect::<Vec<_>>()
-            .join("/");
-        records
+        let rel = rel_in(&root, owner)?;
+        if let Some((_, record)) = records
             .iter()
             .find(|(_, record)| !record.levels.contains(&rel))
-            .map(|(_, record)| {
-                format!(
-                    "its folder was made while chat {} was running, which could have made it: \
-                     its skills reach chats once that chat has closed",
-                    record.name
-                )
-            })
+        {
+            return Some(format!(
+                "its folder was made while chat {} was running, which could have made it: \
+                 {ACCEPT_IT}",
+                record.name
+            ));
+        }
+        held.levels
+            .contains(&rel)
+            .then(|| format!("its folder was made by a chat: {ACCEPT_IT}"))
     })
+}
+
+/// `owner` relative to the plane at `root`, `/` between the parts.
+fn rel_in(root: &Path, owner: &Path) -> Option<String> {
+    let rel = owner.strip_prefix(root).ok()?;
+    Some(
+        rel.components()
+            .map(|part| part.as_os_str().to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+            .join("/"),
+    )
+}
+
+/// Whether `owner` names a workspace's or a persona's folder: `workspaces/<name>`,
+/// `personas/<name>`.
+fn an_owner(owner: &str) -> bool {
+    let parts: Vec<&str> = owner.split('/').collect();
+    matches!(parts.as_slice(), ["workspaces" | "personas", name]
+        if !name.is_empty() && !name.starts_with('.') && !name.contains('\\'))
+}
+
+/// **The person accepts the workspace or persona folder `owner`** (relative to the plane at
+/// `root`) in the Skill studio: its skills reach chats from now on. Vouched for in every open
+/// record, and taken off the folders not accepted yet.
+pub fn accept(root: &Path, owner: &str) -> Result<(), String> {
+    if !an_owner(owner) || !root.join(owner).is_dir() {
+        return Err("that folder is no workspace or persona of this project".to_owned());
+    }
+    vouch(root, owner);
+    let state = crate::plane::state_dir(root);
+    let was = unaccepted(&state);
+    if !was.levels.contains(owner) {
+        return Ok(());
+    }
+    let mut now = was.clone();
+    now.levels.remove(owner);
+    write_unaccepted(&state, &now)
+}
+
+/// [`accept`]'s folder for a skill left out in `folder` of the plane at `plane`, where a chat could
+/// have made its level: what the studio's Accept names.
+pub fn to_accept(plane: &Path, folder: &Path) -> Option<String> {
+    owner_of(plane, folder).and_then(|owner| rel_in(plane, &owner))
 }
 
 /// **Vouches for the workspace or persona folder `owner`** (relative to the plane at `root`),
@@ -183,6 +276,7 @@ pub fn sweep(root: &Path, open: &[String]) {
             .file_name()
             .to_str()
             .and_then(|name| name.strip_suffix(".json"))
+            .filter(|name| *name != UNACCEPTED.trim_end_matches(".json"))
             .map(str::to_owned)
         else {
             continue;
@@ -194,6 +288,16 @@ pub fn sweep(root: &Path, open: &[String]) {
             .and_then(|at| at.elapsed().ok())
             .is_some_and(|age| age < super::verbs::drafts::SWEEP_GRACE);
         if an_id(&id) && !open.contains(&id) && !young {
+            // What it could have made stays left out until the person accepts it.
+            if let Some(record) = read(&state, &id) {
+                let was = unaccepted(&state);
+                let mut now = was.clone();
+                now.levels
+                    .extend(owners(root).difference(&record.levels).cloned());
+                if now != was && write_unaccepted(&state, &now).is_err() {
+                    continue;
+                }
+            }
             remove(&state, &id);
         }
     }

@@ -64,8 +64,22 @@ fn set_in(root: &Path, workspace: &str) -> (Vec<String>, Vec<(String, String)>) 
     )
 }
 
+/// Makes the record of `id` look as if it was written long ago, past the sweep's grace.
+fn noted_long_ago(root: &Path, id: &str) {
+    let record = crate::plane::state_dir(root)
+        .join(DIR)
+        .join(format!("{id}.json"));
+    let old = std::time::SystemTime::now() - crate::skills::verbs::drafts::SWEEP_GRACE * 2;
+    std::fs::File::options()
+        .write(true)
+        .open(record)
+        .unwrap()
+        .set_modified(old)
+        .unwrap();
+}
+
 #[test]
-fn a_workspace_made_while_a_sandboxed_chat_runs_reaches_no_chat_until_it_closes() {
+fn a_workspace_made_while_a_sandboxed_chat_runs_stays_left_out_until_the_person_accepts_it() {
     let tmp = plane(&[CHAT]);
     let root = tmp.path();
     note(root, CHAT, "7").unwrap();
@@ -79,12 +93,55 @@ fn a_workspace_made_while_a_sandboxed_chat_runs_reaches_no_chat_until_it_closes(
         .find(|(name, _)| name == "planted")
         .expect("left out with a reason");
     assert!(why.contains("while chat 7 was running"), "{why}");
+    assert!(why.ends_with("accept it in the Skill studio"), "{why}");
     // One that was there when it started still reaches its chats.
     assert!(set_in(root, "ops").0.contains(&"deploy".to_owned()));
 
-    // Once the chat is off the app's record, its own record no longer counts.
+    // The chat closed, and was swept: what it could have made is not trusted for that.
     on_the_record(root, &[]);
+    assert!(
+        !set_in(root, "new").0.contains(&"planted".to_owned()),
+        "closed, not swept"
+    );
+    noted_long_ago(root, CHAT);
+    sweep(root, &[]);
+    let (gets, left_out) = set_in(root, "new");
+    assert!(!gets.contains(&"planted".to_owned()), "{gets:?}");
+    assert!(
+        left_out
+            .iter()
+            .any(|(name, why)| name == "planted" && why.contains("made by a chat"))
+    );
+    // Only the person's Accept lets it through.
+    accept(root, "workspaces/new").unwrap();
     assert!(set_in(root, "new").0.contains(&"planted".to_owned()));
+    assert!(accept(root, "workspaces/../etc").is_err());
+}
+
+#[test]
+fn a_workspace_the_app_makes_on_a_chats_request_is_never_vouched_for() {
+    let tmp = plane(&[CHAT]);
+    let root = tmp.path();
+    note(root, CHAT, "7").unwrap();
+    // The brokered create a sandboxed chat asks the app for: no vouch on that road.
+    let code = crate::wscmd::create::create(
+        &crate::wscmd::create::Request {
+            root,
+            name: "asked",
+            vision: None,
+            live: false,
+            use_it: false,
+            force: false,
+            repos: &[],
+            hosts: None,
+            now: chrono::Utc::now(),
+            ids: &crate::active::Ids::default(),
+        },
+        &mut |_| {},
+    );
+    assert_eq!(code, 0);
+    skill(root, "workspaces/asked/skills/planted", "planted");
+    assert!(!set_in(root, "asked").0.contains(&"planted".to_owned()));
 }
 
 #[test]
@@ -143,13 +200,7 @@ fn a_record_whose_chat_is_off_the_record_is_swept_only_once_it_is_old() {
     // Just noted: the chat may not be on the app's record yet.
     sweep(root, &[]);
     assert!(record.is_file());
-    let old = std::time::SystemTime::now() - crate::skills::verbs::drafts::SWEEP_GRACE * 2;
-    std::fs::File::options()
-        .write(true)
-        .open(&record)
-        .unwrap()
-        .set_modified(old)
-        .unwrap();
+    noted_long_ago(root, CHAT);
     sweep(root, &[CHAT.to_owned()]);
     assert!(record.is_file(), "its chat is open");
     sweep(root, &[]);

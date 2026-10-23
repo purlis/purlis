@@ -1324,9 +1324,9 @@ impl Denied {
             reach: Reach::AndBelow,
             any_case: false,
         });
-        // …and the project's skills, while the Skill studio's flag lets them into chats (SK-9,
+        // …and the project's skills, wherever they reach chats (SK-9,
         // #2772): a chat's write of one is a draft the person accepts, never the file itself.
-        if crate::skills::studio_on_here() {
+        if crate::skills::reach_chats_here(root) {
             paths.extend(skills_held(root));
         }
         // …and where Docker Desktop, OrbStack and Rancher Desktop link `docker` and its

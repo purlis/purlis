@@ -240,6 +240,10 @@ fn create_in(
         },
         &mut |line: Say| said.push(line),
     );
+    // The person made it, in their window: no chat did, so its skills reach chats (SK-9).
+    if code == 0 {
+        purlis_core::skills::levels::vouch(root, &format!("workspaces/{name}"));
+    }
     ran(code, said)
 }
 

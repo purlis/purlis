@@ -158,6 +158,24 @@ pub(crate) async fn skill_draft_accept(
     .await
 }
 
+/// **Accepts a workspace or persona folder a chat could have made** (SK-9): its skills reach
+/// chats from now on. The person's press in the studio, on a skill left out for it.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_level_accept(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    folder: String,
+) -> Result<SkillChanged, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("accepting the folder", move || {
+        crate::skillchange::flag_on()?;
+        purlis_core::skills::levels::accept(held.root(), &folder)?;
+        Ok(SkillChanged::default())
+    })
+    .await
+}
+
 /// **Rejects a draft**: deletes it.
 #[tauri::command]
 #[specta::specta]

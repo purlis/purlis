@@ -48,9 +48,6 @@ pub fn create(request: &Request, say: Sink) -> u8 {
         }
     };
     let name = request.name;
-    // Made by purlis for the person: no running chat made it, so its skills reach chats (SK-9).
-    // A chat's own `purlis workspace create` cannot write the records, and vouches for nothing.
-    crate::skills::levels::vouch(request.root, &format!("workspaces/{name}"));
     // Every write is checked before the workspace is called ready: one that failed is said,
     // and the command fails.
     let mut failed: Vec<String> = ensure::blocked(&rows);

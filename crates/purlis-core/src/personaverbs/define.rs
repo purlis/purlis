@@ -143,8 +143,6 @@ pub fn create(root: &Path, ask: &Create, register_vault: Option<RegisterVault>, 
         say(Say::Fail(format!("{reserved}. Choose another name")));
         return 1;
     }
-    // Made by purlis for the person: no running chat made it, so its skills reach chats (SK-9).
-    crate::skills::levels::vouch(root, &format!("personas/{name}"));
     if let Some(selecting) = ask.select.as_ref().filter(|s| s.in_chat) {
         say(Say::Fail(super::select::create_use_refusal(
             name,

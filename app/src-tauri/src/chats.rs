@@ -1336,16 +1336,18 @@ impl Chats {
         plugins: &purlis_core::harness_plugin::Chosen,
         sandbox: Option<&purlis_core::sandbox::Applied>,
         persona: Option<&str>,
+        env: &[(String, String)],
     ) -> Result<Armed, String> {
-        purlis_core::hoststart::armed(
-            &self.project,
-            &self.kit(harness),
+        purlis_core::hoststart::armed(&purlis_core::hoststart::Arming {
+            root: &self.project,
+            kit: &self.kit(harness),
             harness,
             cwd,
             plugins,
             sandbox,
             persona,
-        )
+            env,
+        })
     }
 
     /// The sandbox a chat that is not on a profile starts under: the same decision
@@ -3337,6 +3339,7 @@ impl Chats {
                 plugins,
                 sandbox,
                 runs_as.as_deref(),
+                &env,
             )?
         };
         let hooks = match &settings_watched {

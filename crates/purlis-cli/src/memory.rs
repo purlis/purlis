@@ -1164,7 +1164,7 @@ fn persona_ok(root: &Path, name: &str) -> bool {
 
 /// Whether this command runs inside a chat the app started, whose persona is fixed for its
 /// life (ADR 0090 as amended, #1435): the app sets the chat's number in every chat it starts.
-fn in_a_chat() -> bool {
+pub(crate) fn in_a_chat() -> bool {
     purlis_core::envvar::var(purlis_core::hookwire::CHAT_ENV)
         .is_some_and(|chat| !chat.trim().is_empty())
 }
@@ -1236,12 +1236,17 @@ pub fn persona(here: &crate::Here, command: PersonaCommand) -> Result<Code, Stri
                 crate::secret::add_persona_vault(here, vault, &name);
             };
             let mut sink = crate::speak;
-            Ok(purlis_core::personaverbs::define::create(
+            let code = purlis_core::personaverbs::define::create(
                 root,
                 &ask,
                 with_vault.then_some(&mut register as _),
                 &mut sink,
-            ))
+            );
+            // The person made it from their own terminal, not a chat (SK-9).
+            if code == 0 && !in_a_chat() {
+                purlis_core::skills::levels::vouch(root, &format!("personas/{name}"));
+            }
+            Ok(code)
         }
         PersonaCommand::Show { name } => {
             let root = plane.root();

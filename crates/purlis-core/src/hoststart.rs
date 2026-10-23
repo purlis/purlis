@@ -359,7 +359,7 @@ pub fn compose_ready(
     // A sandboxed chat could make a workspace or persona folder while it runs: the ones there
     // now are noted as not its own (SK-9), before it is armed.
     if sandbox.is_some()
-        && crate::skills::studio_on_here()
+        && crate::skills::reach_chats_here(root)
         && let Some(id) = start.program.as_deref()
     {
         let name = start
@@ -369,15 +369,16 @@ pub fn compose_ready(
             tracing::warn!("purlis: a sandboxed chat's start was not noted for its skills ({why})");
         }
     }
-    let armed = armed(
+    let armed = armed(&Arming {
         root,
         kit,
-        ready.harness,
-        Some(&cwd),
-        &ready.plugins,
+        harness: ready.harness,
+        cwd: Some(&cwd),
+        plugins: &ready.plugins,
         sandbox,
-        persona.as_deref(),
-    )?;
+        persona: persona.as_deref(),
+        env: &ready.env,
+    })?;
     let (hooks, armed_env) = armed;
     // No watcher of the project's own settings runs here, so a sandboxed Claude Code chat is
     // started on the person's settings and purlis's, as the window starts one it cannot watch.
@@ -618,39 +619,23 @@ pub type Armed = (Vec<String>, Vec<(String, String)>);
 /// **What arms a chat's harness** for this session alone: the arguments and the variables its
 /// adapter adds, as the window arms it. **Fail closed**: a sandbox compiled for another harness,
 /// or one the harness cannot be armed to carry here, refuses the chat.
-pub fn armed(
-    root: &Path,
-    kit: &Kit,
-    harness: Option<Harness>,
-    cwd: Option<&Path>,
-    plugins: &crate::harness_plugin::Chosen,
-    sandbox: Option<&crate::sandbox::Applied>,
-    persona: Option<&str>,
-) -> Result<Armed, String> {
-    armed_as(
-        crate::skills::reach_chats_here(root),
-        &Arming {
-            root,
-            kit,
-            harness,
-            cwd,
-            plugins,
-            sandbox,
-            persona,
-        },
-    )
+pub fn armed(arming: &Arming<'_>) -> Result<Armed, String> {
+    armed_as(crate::skills::reach_chats_here(arming.root), arming)
 }
 
 /// What [`armed`] arms a chat from, as one value.
 #[derive(Clone, Copy)]
-pub(crate) struct Arming<'a> {
-    pub(crate) root: &'a Path,
-    pub(crate) kit: &'a Kit,
-    pub(crate) harness: Option<Harness>,
-    pub(crate) cwd: Option<&'a Path>,
-    pub(crate) plugins: &'a crate::harness_plugin::Chosen,
-    pub(crate) sandbox: Option<&'a crate::sandbox::Applied>,
-    pub(crate) persona: Option<&'a str>,
+pub struct Arming<'a> {
+    pub root: &'a Path,
+    pub kit: &'a Kit,
+    pub harness: Option<Harness>,
+    pub cwd: Option<&'a Path>,
+    pub plugins: &'a crate::harness_plugin::Chosen,
+    pub sandbox: Option<&'a crate::sandbox::Applied>,
+    pub persona: Option<&'a str>,
+    /// The chat's own variables, as its profile sets them: where its harness keeps its own
+    /// config (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`), which a Try it's turn-offs are read from.
+    pub env: &'a [(String, String)],
 }
 
 /// [`armed`], with the Skill studio's flag `studio` as given rather than as this machine and
@@ -664,6 +649,7 @@ pub(crate) fn armed_as(studio: bool, arming: &Arming<'_>) -> Result<Armed, Strin
         plugins,
         sandbox,
         persona,
+        env,
     } = *arming;
     let not_carried = |then: &str| {
         crate::sandbox::under_policy(
@@ -705,7 +691,7 @@ pub(crate) fn armed_as(studio: bool, arming: &Arming<'_>) -> Result<Armed, Strin
     let alone;
     let plugins = if scope.tried {
         alone =
-            crate::skills::verbs::drafts::alone_on(harness, &crate::harness_plugin::Env::of(&[]));
+            crate::skills::verbs::drafts::alone_on(harness, &crate::harness_plugin::Env::of(env));
         &alone
     } else {
         plugins

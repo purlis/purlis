@@ -304,6 +304,7 @@ macro_rules! app_commands {
                 skilldrafts::skill_draft_reject,
                 skilldrafts::skill_draft_chat,
                 skilldrafts::skill_draft_try,
+                skilldrafts::skill_level_accept,
                 skillstudio::skill_studio_switch,
                 useskill::chat_skills,
                 useskill::use_skill,

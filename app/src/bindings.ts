@@ -1838,6 +1838,11 @@ export const commands = {
 	 */
 	skillDraftTry: (plane: PlaneId, id: string, profile: string | null, columns: number, rows: number) => typedError<Curating, string>(__TAURI_INVOKE("skill_draft_try", { plane, id, profile, columns, rows })),
 	/**
+	 *  **Accepts a workspace or persona folder a chat could have made** (SK-9): its skills reach
+	 *  chats from now on. The person's press in the studio, on a skill left out for it.
+	 */
+	skillLevelAccept: (plane: PlaneId, folder: string) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_level_accept", { plane, folder })),
+	/**
 	 *  **Turns one of a harness's plugins or skills on or off** (SK-6, #2769) for the chats the
 	 *  studio shows: at the project's root on this machine alone (`charter.local.toml`), in a
 	 *  workspace in its own settings, as `purlis_core::harness_plugin::switch_in_the_studio` writes
@@ -11082,6 +11087,11 @@ export type StudioSkill = {
 	on: boolean,
 	/**  Why it is left out, in one line, where it is. */
 	left_out: string | null,
+	/**
+	 *  Where it is left out because a chat could have made its level's folder (SK-9): that
+	 *  folder, which Accept takes (`skill_level_accept`).
+	 */
+	accept: string | null,
 	/**  What it does and when to use it: its frontmatter's `description`. */
 	description: string,
 	/**  Its folder, relative to the project where it is inside it; empty for an installed skill. */

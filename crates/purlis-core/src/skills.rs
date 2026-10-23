@@ -1403,6 +1403,9 @@ pub struct StudioRow {
     /// For a skill from outside the plane (SK-6, #2769): whose it is, and how its harness can
     /// leave it out. `None` for the plane's and the built-in skills.
     pub outside: Option<OutsideRow>,
+    /// For a skill left out because a chat could have made its level's folder (SK-9): that
+    /// folder, relative to the plane, which the person may accept ([`levels::accept`]).
+    pub accept: Option<String>,
 }
 
 /// What a studio row says of a skill from outside the plane.
@@ -1446,6 +1449,7 @@ pub fn outside_rows(harness: &HarnessInTheStudio, plane: &Path) -> Vec<StudioRow
                     owner: found.owner.clone(),
                     switch: found.switch.clone(),
                 }),
+                accept: None,
             }
         })
         .collect()
@@ -1495,6 +1499,7 @@ pub fn studio_rows(set: &SkillSet, plane: &Path, names: &[Reference]) -> Vec<Stu
                 written,
                 unchecked: false,
                 outside: None,
+                accept: None,
             }
         })
         .chain(set.from_the_harness.iter().map(|h| {
@@ -1511,6 +1516,7 @@ pub fn studio_rows(set: &SkillSet, plane: &Path, names: &[Reference]) -> Vec<Stu
                 written,
                 unchecked: !h.checked,
                 outside: None,
+                accept: None,
             }
         }))
         .chain(set.left_out.iter().map(|l| {
@@ -1533,6 +1539,9 @@ pub fn studio_rows(set: &SkillSet, plane: &Path, names: &[Reference]) -> Vec<Stu
                 written,
                 unchecked: false,
                 outside: None,
+                accept: matches!(l.reason, Reason::MadeWhileAChatRan(_))
+                    .then(|| levels::to_accept(plane, &l.folder))
+                    .flatten(),
             }
         }))
         .collect();

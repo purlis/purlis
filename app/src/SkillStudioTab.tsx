@@ -528,6 +528,24 @@ export function SkillStudioTab({
                         )}
                       </span>
                     ))}
+                  {typeof skill.accept === "string" && (
+                    <>
+                      {" "}
+                      <Button
+                        size="sm"
+                        isDisabled={busy}
+                        onPress={() => {
+                          const folder = skill.accept;
+                          if (typeof folder === "string")
+                            change("The folder was not accepted", () =>
+                              commands.skillLevelAccept(plane, folder),
+                            );
+                        }}
+                      >
+                        Accept its folder
+                      </Button>
+                    </>
+                  )}
                   {skill.not_granted !== null && (
                     <span className="honest" data-testid={`not-granted-${skill.name}`}>
                       {" "}
