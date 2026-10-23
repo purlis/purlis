@@ -141,6 +141,20 @@ impl Asking<'_> {
     /// where purlis armed the harness with it: a harness the chat names, whose adapter has such
     /// a start. A terminal's own Claude Code, which names none, has no plugin of the plane's
     /// skills to start one from.
+    /// **What its harness reads of a skill's frontmatter** (SK-8): its adapter's, or, for a
+    /// harness purlis has no adapter for, none of the keys purlis does not read itself. A load
+    /// hands the `SKILL.md` purlis writes for it, as every other route does.
+    fn honours(&self) -> crate::skills::Honours {
+        Harness::of_chat(self.harness).map_or(
+            crate::skills::Honours {
+                reads: &[],
+                manual: crate::skills::ManualOnly::Listing,
+                agents: &[],
+            },
+            Harness::skill_frontmatter,
+        )
+    }
+
     fn narrowed_start(&self, effective: &Effective) -> Option<String> {
         self.harness?;
         Harness::of_chat(self.harness)?
@@ -249,7 +263,7 @@ fn load(
             crate::shown::short(name)
         )
     })?;
-    let loaded = purlis_skills::load(effective)?;
+    let loaded = purlis_skills::load(effective, &chat.honours())?;
     let skill = &effective.skill.name;
     if loaded.narrowing.any()
         && let Some(words) = chat.narrowed_start(effective)

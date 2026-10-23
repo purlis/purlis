@@ -150,34 +150,6 @@ fn a_folder_with_a_way_out_names_nothing() {
 }
 
 #[test]
-fn a_plain_frontmatter_names_its_skill_and_anything_ambiguous_is_refused() {
-    assert_eq!(
-        plain_identity(
-            "---\nname: deploy\ndescription: Ships it.\nallowed-tools: [Read]\n---\nbody\n"
-        ),
-        Ok(("deploy".into(), "Ships it.".into()))
-    );
-    for bad in [
-        // No fence, or no closing one.
-        "name: deploy\n",
-        "---\nname: deploy\ndescription: x\n",
-        // A second name: YAML and the line reader would each pick one.
-        "---\nname: deploy\nname: evil\ndescription: x\n---\n",
-        // Quoted keys, anchors, aliases and flow maps.
-        "---\n\"name\": evil\nname: deploy\ndescription: x\n---\n",
-        "---\nname: &a deploy\ndescription: *a\n---\n",
-        "---\n{name: evil, description: x}\n---\n",
-        // A `---` inside a value ends the line reader's block early.
-        "---\nname: deploy\ndescription: a---b\n---\n",
-        // A value YAML reads otherwise than a line does.
-        "---\nname: deploy\ndescription: |\n  evil\n---\n",
-        "---\nname: deploy # evil\ndescription: x\n---\n",
-    ] {
-        assert!(plain_identity(bad).is_err(), "{bad:?}");
-    }
-}
-
-#[test]
 fn a_listing_git_would_not_write_is_refused_whole() {
     assert_eq!(records(b"100644 blob abc\tx\0"), Err(Unread::NotGit));
     assert_eq!(records(b"100644 blob\tx\0"), Err(Unread::NotGit));

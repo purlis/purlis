@@ -1523,3 +1523,31 @@ fn an_update_of_a_skill_from_an_unconfirmed_committed_source_fetches_nothing() {
     let why = update_review(root, &Level::project(), "far").unwrap_err();
     assert!(why.contains("until it is confirmed here"), "{why}");
 }
+
+#[test]
+fn a_plain_frontmatter_names_its_skill_and_anything_ambiguous_is_refused() {
+    assert_eq!(
+        super::fetch::identity(
+            "---\nname: deploy\ndescription: Ships it.\nallowed-tools: [Read]\n---\nbody\n"
+        ),
+        Ok(("deploy".into(), "Ships it.".into()))
+    );
+    for bad in [
+        // No fence, or no closing one.
+        "name: deploy\n",
+        "---\nname: deploy\ndescription: x\n",
+        // A second name: YAML and the line reader would each pick one.
+        "---\nname: deploy\nname: evil\ndescription: x\n---\n",
+        // Quoted keys, anchors, aliases and flow maps.
+        "---\n\"name\": evil\nname: deploy\ndescription: x\n---\n",
+        "---\nname: &a deploy\ndescription: *a\n---\n",
+        "---\n{name: evil, description: x}\n---\n",
+        // A `---` inside a value ends the line reader's block early.
+        "---\nname: deploy\ndescription: a---b\n---\n",
+        // A value YAML reads otherwise than a line does.
+        "---\nname: deploy\ndescription: |\n  evil\n---\n",
+        "---\nname: deploy # evil\ndescription: x\n---\n",
+    ] {
+        assert!(super::fetch::identity(bad).is_err(), "{bad:?}");
+    }
+}

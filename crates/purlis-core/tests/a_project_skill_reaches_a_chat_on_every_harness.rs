@@ -26,6 +26,7 @@ fn skill(dir: &Path, name: &str) {
         format!("---\nname: {name}\ndescription: Does {name}.\n---\n\nbody\n"),
     )
     .unwrap();
+    fs::write(dir.join(name).join("notes.md"), "notes\n").unwrap();
 }
 
 /// A bundle with one built-in skill and the opencode shim, a plane with one project skill, and
@@ -72,8 +73,14 @@ fn host_armed(
         git_hooks: None,
         skill_sets: Some(here.sets.clone()),
     };
-    let linked =
-        purlis_core::hoststart::plane_skills_laid_out(true, &here.plane, workspace, None, &host);
+    let linked = purlis_core::hoststart::plane_skills_laid_out(
+        true,
+        &here.plane,
+        workspace,
+        None,
+        &host,
+        harness,
+    );
     let skills = PlaneSkills {
         plane: &here.plane,
         workspace,
@@ -142,9 +149,14 @@ fn a_claude_code_chat_at_the_plane_root_loads_the_project_skill_as_a_plugin_of_l
     .unwrap();
     assert_eq!(manifest["name"], "skills");
     assert_eq!(
-        fs::read_link(linked.join("skills/deploy")).unwrap(),
-        here.plane.join("skills/deploy"),
-        "a link to the plane's own folder, never a copy"
+        fs::read_link(linked.join("skills/deploy/notes.md")).unwrap(),
+        here.plane.join("skills/deploy/notes.md"),
+        "its files are links to the plane's own, never copies"
+    );
+    assert_eq!(
+        fs::read_to_string(linked.join("skills/deploy/SKILL.md")).unwrap(),
+        "---\nname: deploy\ndescription: Does deploy.\n---\n\nbody\n",
+        "the SKILL.md purlis writes for it"
     );
     assert_eq!(
         fs::read_dir(linked.join("skills")).unwrap().count(),
@@ -172,8 +184,8 @@ fn an_opencode_chat_at_the_plane_root_is_handed_the_built_in_and_the_project_ski
     assert_eq!(skills[0], here.plugin.join("skills"));
     assert!(skills[1].starts_with(&here.sets), "{}", skills[1].display());
     assert_eq!(
-        fs::read_link(skills[1].join("deploy")).unwrap(),
-        here.plane.join("skills/deploy")
+        fs::read_link(skills[1].join("deploy/notes.md")).unwrap(),
+        here.plane.join("skills/deploy/notes.md")
     );
 }
 
@@ -185,20 +197,15 @@ fn a_codex_chat_at_the_plane_root_is_briefed_on_the_project_skill_from_its_folde
 
     let built_in = here.plugin.join("skills").display().to_string();
     assert_eq!(var(&env, LISTED_ENV), Some(built_in.as_str()));
-    assert_eq!(var(&env, PLANE_LISTED_ENV), Some("1"));
+    let handed = PathBuf::from(var(&env, PLANE_LISTED_ENV).expect("the set's folder"));
+    assert!(handed.starts_with(&here.sets), "{}", handed.display());
 
     let lookup = |name: &str| var(&env, name).map(str::to_owned);
     let text = purlis_core::skills::briefed(&here.plane, None, None, &lookup).expect("listed");
     assert!(text.contains("`deploy`"), "{text}");
     assert!(
-        text.contains(
-            &here
-                .plane
-                .join("skills/deploy/SKILL.md")
-                .display()
-                .to_string()
-        ),
-        "{text}"
+        text.contains(&handed.join("skills/deploy/SKILL.md").display().to_string()),
+        "the SKILL.md purlis wrote for it: {text}"
     );
     assert!(text.contains("`secrets`"), "{text}");
 }

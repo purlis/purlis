@@ -113,3 +113,43 @@ fn the_listing_names_each_skill_when_to_use_it_and_where_to_read_it() {
 fn no_skills_is_no_listing_not_an_empty_one() {
     assert_eq!(listing(&[]), None);
 }
+
+#[test]
+fn a_manual_only_skill_is_listed_by_its_name_and_file_alone_to_run_only_when_named() {
+    let tmp = tempfile::tempdir().unwrap();
+    skill(
+        tmp.path(),
+        "release",
+        "---\nname: release\ndescription: Cuts a release.\ndisable-model-invocation: true\n---\n",
+    );
+    skill(
+        tmp.path(),
+        "review",
+        "---\nname: review\ndescription: Reviews a change.\n---\n",
+    );
+    let text = listing(&read(tmp.path())).expect("a listing");
+    assert!(text.contains("- `review` — Reviews a change."), "{text}");
+    assert!(!text.contains("Cuts a release"), "{text}");
+    let release = tmp.path().join("release/SKILL.md");
+    assert!(
+        text.ends_with(&format!(
+            "\n- Only when the person names one, never by your own choice: `release` (`{}`)",
+            release.display()
+        )),
+        "{text}"
+    );
+}
+
+#[test]
+fn no_built_in_skill_asks_for_what_would_widen_a_chat_and_each_is_handed_whole() {
+    for skill in read(&bundled()) {
+        let text = std::fs::read_to_string(&skill.path).unwrap();
+        let read =
+            crate::handed::parse(&text).unwrap_or_else(|why| panic!("{}: {why}", skill.name));
+        assert!(
+            !read.fields().iter().any(|field| field.widens()),
+            "{} widens a chat",
+            skill.name
+        );
+    }
+}

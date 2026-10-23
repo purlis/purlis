@@ -29,14 +29,13 @@ pub use adapter::{HarnessAdapter, SkillStart, SkillToStart};
 /// harness limit measured on 2026-10-20 (Claude Code's 1% of a 200k-token window, about 8,000
 /// characters for names, descriptions and their lines together), with room for 30 names and the
 /// lines they sit on, so no harness has to cut anything. Each adapter adds its own cap on one
-/// description, whether it lists a skill's path and whether it leaves a manual-only skill out
-/// ([`HarnessAdapter::skill_budget`]).
+/// description and whether it lists a skill's path ([`HarnessAdapter::skill_budget`]); whether a
+/// manual-only skill is free follows from what it reads ([`Harness::skill_budget`]).
 pub(crate) const SKILL_BUDGET: crate::skills::Budget = crate::skills::Budget {
     skills: 30,
     chars: 6_000,
     per_description: None,
     lists_paths: false,
-    manual_free: false,
 };
 pub use claude::SMART_CLOSE_ALLOW;
 
@@ -389,9 +388,17 @@ impl Harness {
         }
     }
 
-    /// [`HarnessAdapter::skill_budget`]: one chat's skill budget on this harness (SK-12).
+    /// [`HarnessAdapter::skill_budget`]: one chat's skill budget on this harness (SK-12). A
+    /// manual-only skill is free on every one, which keeps it out of the listing by its own key
+    /// or purlis's translation ([`Self::skill_frontmatter`], SK-8).
     pub fn skill_budget(self) -> crate::skills::Budget {
         self.adapter().skill_budget()
+    }
+
+    /// [`HarnessAdapter::skill_frontmatter`]: what this harness reads of a skill's frontmatter
+    /// (SK-8).
+    pub fn skill_frontmatter(self) -> crate::skills::Honours {
+        self.adapter().skill_frontmatter()
     }
 
     /// How a chat on this harness comes to know charter's skills, for that chat alone and with
@@ -427,19 +434,19 @@ impl Harness {
     ///   `--plugin-dir` plugin's skills at the start (measured twice on 2.1.304), and opencode
     ///   caches discovery and the body per directory (measured on 1.18.33).
     /// - The MCP route: everything, as its tools ask for the chat's set afresh at each call.
-    /// - The briefing route (Codex): the bodies. The `SessionStart` briefing lists each skill
-    ///   with its `SKILL.md`'s path, once, and the model reads the file from where it lies each
-    ///   time a skill applies, so an edit to a listed skill is read and every other change
-    ///   waits. This is the route's own working, not the harness's: it is handed no folder.
+    /// - The briefing route (Codex): nothing. The `SessionStart` briefing lists each skill with
+    ///   the `SKILL.md` purlis wrote for it in the set's folder, once (SK-8), and that folder
+    ///   never changes while the chat runs, so an edit waits for a restart as on the other
+    ///   routes.
     pub fn skills_reload(self) -> crate::skills::Reload {
         match self.skills() {
-            crate::skills::Route::Briefing => crate::skills::Reload::Bodies,
             // `skill_find` and `skill_load` work the chat's set out at each call (SK-13).
             crate::skills::Route::Mcp => crate::skills::Reload::Everything,
             // `Own` is no harness's route: it is how a harness takes its own skills, which purlis
             // hands nothing of.
             crate::skills::Route::Plugin
             | crate::skills::Route::Config
+            | crate::skills::Route::Briefing
             | crate::skills::Route::Own => crate::skills::Reload::Nothing,
         }
     }

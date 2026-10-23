@@ -60,7 +60,6 @@ const ROOMY: Budget = Budget {
     chars: 1_000,
     per_description: None,
     lists_paths: false,
-    manual_free: true,
 };
 
 #[test]
@@ -99,18 +98,6 @@ fn a_manual_only_skill_costs_nothing_only_where_the_harness_leaves_it_out() {
     assert_eq!(
         (left_out.skills, left_out.chars, left_out.manual),
         (1, "Hands off.".len(), 1)
-    );
-    // A harness still handed its description (#2771) lists it, so it is counted.
-    let listed = spent_by(
-        &set,
-        Budget {
-            manual_free: false,
-            ..ROOMY
-        },
-    );
-    assert_eq!(
-        (listed.skills, listed.chars, listed.manual),
-        (2, "Hands off.".len() + "Cuts a release.".len(), 1)
     );
 }
 

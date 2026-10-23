@@ -295,6 +295,27 @@ fn bytes_under(dir: &Path) -> u64 {
     total
 }
 
+/// **The name and description of a fetched `SKILL.md`**, where every reader reads the same ones:
+/// its frontmatter read as the YAML it is by the one reader ([`purlis_skills::handed::parse`],
+/// failing closed), its `name` and `description` single scalars, and purlis's own line reader
+/// ([`purlis_skills::parsed`]) reading them alike. Anything else is refused in a sentence: a
+/// source's skill is installed only where the name a harness loads is the name the review showed.
+pub(super) fn identity(text: &str) -> Result<(String, String), String> {
+    use purlis_skills::Field;
+    let read = purlis_skills::handed::parse(text).map_err(|why| why.to_string())?;
+    let (Some(name), Some(description)) =
+        (read.scalar(Field::Name), read.scalar(Field::Description))
+    else {
+        return Err("its frontmatter names no name or no description".to_owned());
+    };
+    let lines = purlis_skills::parsed(text, PathBuf::new())
+        .map_err(|_| "its frontmatter is not one purlis reads".to_owned())?;
+    if lines.name != name || lines.description != description {
+        return Err("its frontmatter reads one way as YAML and another line by line".to_owned());
+    }
+    Ok((name.to_owned(), description.to_owned()))
+}
+
 /// The first line of git's complaint, for a sentence.
 pub(super) fn complaint(run: &git::Run) -> String {
     let line = run
@@ -578,7 +599,7 @@ impl Fetched {
     /// `SKILL.md` and is not a skill purlis offers, with why. Refused past [`tree::MOST_SKILLS`].
     ///
     /// Each skill's frontmatter is read as the YAML it is and failing closed
-    /// ([`tree::plain_identity`]): a skill is offered only where every reader reads the same name
+    /// ([`identity`]): a skill is offered only where every reader reads the same name
     /// and description.
     pub fn skills(&self) -> Result<(Vec<Found>, Vec<NotASkill>), String> {
         let folder = self.source.folder_parts().unwrap_or_default();
@@ -609,7 +630,7 @@ impl Fetched {
             let shown = dir.join("/");
             let read = String::from_utf8(bytes)
                 .map_err(|_| "its instructions are not text".to_owned())
-                .and_then(|text| tree::plain_identity(&text));
+                .and_then(|text| identity(&text));
             match read {
                 Ok((name, description)) => match purlis_skills::change::name_problem(&name) {
                     None => found.push(Found {

@@ -8425,6 +8425,37 @@ button.show-more:focus-visible {
   font-size: var(--font-size-sm);
 }
 
+.skill-compat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--font-size-sm);
+}
+
+.skill-compat-widens {
+  color: var(--danger-text);
+}
+
+.skill-compat-badge > summary {
+  cursor: pointer;
+}
+
+.skill-compat-badge[data-fit="widens"] > summary {
+  color: var(--danger-text);
+}
+
+.skill-compat-badge ul {
+  margin: var(--space-1) 0 0;
+  padding-left: var(--space-5);
+}
+
+.skill-lint li[data-level="warns"] {
+  color: var(--text-muted);
+}
+
 .skill-lint,
 .skill-users {
   margin: 0;

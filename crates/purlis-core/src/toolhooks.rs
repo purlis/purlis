@@ -916,7 +916,7 @@ pub fn skill_started(hook: &Hook) -> Option<Box<crate::hookwire::SkillStarted>> 
     let (skill, started_by) = match start {
         SkillStart::Named(skill) => (skill, StartedBy::SkillTool),
         SkillStart::Reading(read) => {
-            let skills = crate::skills::readable_by_a_briefed_chat(hook.root, hook.env);
+            let skills = crate::skills::readable_by_a_briefed_chat(hook.env);
             let cwd = hook
                 .payload
                 .get("cwd")

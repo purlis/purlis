@@ -9,9 +9,8 @@
 //! adapter says; this module only counts. A skill in the set costs one skill and its
 //! description's characters, up to the harness's cap on one description, and its `SKILL.md`'s
 //! path where the harness lists that too. A **manual-only** skill ([`crate::declared`]) costs
-//! nothing only on a harness that keeps its description out of the listing
-//! ([`Budget::manual_free`]); elsewhere it is still listed, and counted, until the harness is
-//! handed the translation (#2771). It is offered by Use skill… either way.
+//! nothing: every harness keeps one out of its listing, by its own key or by purlis's
+//! translation (SK-8, [`crate::ManualOnly`]). It is offered by Use skill… all the same.
 //!
 //! A set **warns** at [`WARN_AT_PERCENT`] of either limit, before the router has to hide skills
 //! behind the index (ADR 0102 as amended 2026-10-21).
@@ -33,19 +32,16 @@ pub struct Budget {
     /// Whether the harness lists each skill's `SKILL.md` path beside its description, which
     /// then counts as its characters do.
     pub lists_paths: bool,
-    /// Whether the harness keeps a manual-only skill's description out of its listing, so the
-    /// skill costs nothing.
-    pub manual_free: bool,
 }
 
 /// What a chat's skill set spends of its budget.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Spent {
-    /// Skills listed: every skill in the set but the manual-only ones the harness leaves out.
+    /// Skills listed: every skill in the set but the manual-only ones.
     pub skills: usize,
     /// Characters of what is listed of them, each as the harness lists it.
     pub chars: usize,
-    /// Manual-only skills in the set: free where [`Budget::manual_free`], counted otherwise.
+    /// Manual-only skills in the set, which cost nothing.
     pub manual: usize,
     /// The budget it is spent against.
     pub budget: Budget,
@@ -95,9 +91,7 @@ pub fn spent<'a>(
     for (skill, declared) in skills {
         if declared.manual {
             out.manual += 1;
-            if budget.manual_free {
-                continue;
-            }
+            continue;
         }
         let chars = skill.description.chars().count();
         let path = if budget.lists_paths {

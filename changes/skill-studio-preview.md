@@ -29,6 +29,16 @@
   allows it, and says plainly where it does not. A project skill that a repo or a program also
   has says that a chat gets both. With the studio on, Settings' Plugins group is a summary that
   opens it.
+- **A skill can only narrow a chat** (Skill studio preview, #2771). A skill that asks to
+  pre-approve tools or to add commands to a chat's events is handed to the chat without them,
+  and says so; one that takes tools away keeps that. Each skill in the Skill studio shows, for
+  Claude Code, Codex and opencode, whether everything it asks for applies there, and what is left
+  out, carried over or not applied. A skill of a program's own or a repo's that would widen a
+  chat is marked. A manual-only skill now stays out of the chat's choice, and costs nothing in
+  its budget, on all three. The editor's live lint also warns of a description too short to say
+  when to use the skill, a skill it names that does not exist, and a program the skill runs that
+  this machine does not have. A chat that starts without a skill it would have loaded, because
+  the skill is broken, says which and why on its tab, with a way to the Skill studio.
 - **Move your project's skills into the Skill studio in one step** (Skill studio preview,
   #2784). `purlis doctor --fix project-skills` moves every skill in the project's
   `.claude/skills` into its `skills/`, shared with every workspace as before. It rewrites the old
