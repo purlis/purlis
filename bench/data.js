@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792735231524,
+  "lastUpdate": 1792736611945,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -22386,6 +22386,48 @@ window.BENCHMARK_DATA = {
             "value": 101.8252795,
             "unit": "ms",
             "extra": "median of 5 runs: 100.216, 101.708, 101.825, 101.925, 101.986 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "14f6b51fc7f9d593780a6a54acd4f1afc76473da",
+          "message": "Purlis is the default theme now; Classic is the alternative (#3038)\n\n* Purlis is the default theme now; Classic is the alternative (#3034)\n\nNothing chosen draws Purlis's dark (its high-contrast dark with more\ncontrast); a pick that cannot be drawn, and a refused theme, draw it too.\nEvery stored pick of Purlis Classic (purlis-classic, purlis-dark,\npurlis-light, charter-*, system) keeps drawing Classic. The window is\nhanded the default beside Classic's appearances; the gallery and theme\nlist show Purlis first, no longer as a preview; a new draft extends\nPurlis. Stories draw Purlis's dark by default from handed.purlis.json,\nwhich a test of the app's core holds to the engine, with Purlis's faces.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* Purlis default, fix round: old ids draw Purlis, specimen handed the default, tints keep the strip\n\nStored picks are read by the operator's ruling (#3034): purlis-dark and\ncharter-dark draw Purlis's dark (high contrast when asked), purlis-light\nand charter-light its light, system follows the system with the person's\nown theme else Purlis; only purlis-classic draws Classic. No file is\nrewritten. Settings stops offering the old ids and labels them; the\ngallery shows them and system under the Purlis card. The window and the\ntheme specimen page are each handed every key theme.ts reads at load,\nheld by a test. A pick that cannot be drawn draws the default for the\ncontrast asked. A tint gives less colour only to the tokens a rule holds\napart from danger, so a red, orange or pink strip keeps its hue; Purlis's\ntints are pinned as numbers.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Stories: the default cell is the core's, beside #3036's matrix (#3034)\n\nThe stories read what a window is handed at creation from\nat-creation.json, by reference into built-in-themes.json: each built-in\npick's appearance and the default's, Purlis's dark. The storythemes test\nwrites and holds both, so Storybook starts on the default's cell and no\nstory file spells a default. A unit test's window is handed the same.\nDrops the earlier handed.purlis.json and its story module.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* clippy: a test-only constant, a needless borrow (#3034)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* e2e: a row's height and a strip's bound read the theme in force (#3034)\n\nThe Chats list's rows are held to `--size-chrome` as the theme sets it,\nnot Classic's 1.5rem; the project and workspace strips to the larger of\none control height and their own 2rem, as their comment says, since\nPurlis's control is 26px.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* theme check: an old id checks Purlis (#3034)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Cold start: a theme's faces wait for the first frame; e2e allows the gutter (#3034)\n\nThe window holds every face back until its first frame is on screen\n(ADR 0026): asking purlis for Purlis's nine faces, decoding them and\nlaying the text out again in them was on the way to the first frame.\nApp.tsx lets them go as it reports the frame.\n\nThe scenario specs that measure where one region meets the next allow\nthe theme's window gutter, read from `--window-gutter` (e2e/gutter.ts):\nnone in Purlis Classic, 8px in Purlis. The breadcrumb spec says what the\nline held when the state does not fit.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Cold start: hand only the default's dark and Classic's at creation (#3034)\n\nA launch measured Purlis's parts across every workspace tint for each\nPurlis appearance it handed the window, the light one included, before\nthe window was built. The window is now handed the default's dark (also\n`default_theme`, drawn once) and Classic's dark; a pick of `purlis-light`\nasks the core as any other theme's does. `at-creation.json` follows\n(`windowprefs::HANDED_PICKS`), and tests read Purlis's light from the\ntestkit. The breadcrumb spec says what the line held without an Error\ncause, which the scenario typings do not take.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* e2e fixture: the Chats list as the component draws it after main's tooltips (#3034)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* e2e: Purlis's light read from the core's file, where the window is not handed it (#3034)\n\nThe native-window and theme-specimen specs read Purlis's light from\n.storybook/built-in-themes.json. The breadcrumb spec names the line's\nroom in a few numbers when the state does not fit.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Pane line: a breadcrumb's line keeps its items a step closer (#3034)\n\nIn Purlis, which keeps an 8px window gutter, two panes in the narrowest\nwindow left the breadcrumb's line a few pixels short of the longest\nstate word, which slid under Brief. The space between the items already\ncut to their padding gives way, never the state.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Tint: an answer of the apart search is kept by its rules and hue (#3034)\n\nA strip of tabs and a list of personas ask the same rules at the same\nhue again and again, and in Purlis red, orange and pink are a search.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-23T10:00:02+04:00",
+          "tree_id": "79650c5c3fe37fc87aefb729f8d3e3df88350279",
+          "url": "https://github.com/purlis/purlis/commit/14f6b51fc7f9d593780a6a54acd4f1afc76473da"
+        },
+        "date": 1792736608901,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.48492050000000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.455, 0.462, 0.485, 0.487, 0.502 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.370245,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.227, 16.326, 16.370, 16.377, 16.844 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.570945,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.360, 101.480, 101.571, 102.211, 102.362 ms"
           }
         ]
       }
