@@ -193,6 +193,18 @@ impl Scratch {
         git::run_with_input(&self.dir, &all, input, git::READ).map_err(|why| why.to_string())
     }
 
+    /// git in the scratch repository, its `-z` output read as it comes and held to
+    /// `most_records` records: `None` past them, git stopped.
+    fn git_capped(
+        &self,
+        args: &[&str],
+        most_records: usize,
+    ) -> Result<Option<git::RawRun>, String> {
+        let mut all = vec![self.git_dir.as_str()];
+        all.extend_from_slice(args);
+        git::run_capped(&self.dir, &all, git::READ, most_records).map_err(|why| why.to_string())
+    }
+
     /// git across the network for `remote`, with what `handing` hands it, git's words redacted.
     /// The source is named [`REMOTE`] on the command line, a promisor of a partial clone only for
     /// this call, so a blob the filter left out is never fetched by a later read.
@@ -347,10 +359,14 @@ fn listed(
     remote: &Remote,
     at: &Commit,
 ) -> Result<(Vec<Entry>, Vec<LeftOut>), String> {
-    let listing = scratch.git_raw(
-        &["ls-tree", "-r", "-z", "--full-tree", at.as_str()],
-        Vec::new(),
-    )?;
+    // Read as it comes and stopped at the entry cap: a tree of a few kilobytes can list more
+    // paths than memory holds.
+    let listing = scratch
+        .git_capped(
+            &["ls-tree", "-r", "-z", "--full-tree", at.as_str()],
+            tree::MOST_ENTRIES,
+        )?
+        .ok_or_else(|| format!("{remote}: {}", tree::Unread::TooManyEntries))?;
     if listing.code != Some(0) {
         return Err(format!("{remote}'s files could not be listed"));
     }

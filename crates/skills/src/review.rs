@@ -116,7 +116,8 @@ pub struct Outside {
 pub enum Invisible {
     /// A Unicode tag character (U+E0000 to U+E007F), which can spell words no one sees.
     Tag,
-    /// A zero-width character.
+    /// A zero-width or blank-looking character: a joiner, a variation selector, a Hangul
+    /// filler.
     ZeroWidth,
     /// A bidi override or isolate, which reorders what is shown.
     Bidi,
@@ -129,7 +130,17 @@ impl Invisible {
     pub fn of(c: char) -> Option<Invisible> {
         match c {
             '\u{E0000}'..='\u{E007F}' => Some(Self::Tag),
-            '\u{200B}'..='\u{200D}' | '\u{2060}' | '\u{FEFF}' | '\u{180E}' => Some(Self::ZeroWidth),
+            '\u{200B}'..='\u{200D}'
+            | '\u{2060}'
+            | '\u{FEFF}'
+            | '\u{180E}'
+            | '\u{034F}'
+            | '\u{FE00}'..='\u{FE0F}'
+            | '\u{E0100}'..='\u{E01EF}'
+            | '\u{115F}'
+            | '\u{1160}'
+            | '\u{3164}'
+            | '\u{FFA0}' => Some(Self::ZeroWidth),
             '\u{202A}'..='\u{202E}'
             | '\u{2066}'..='\u{2069}'
             | '\u{200E}'
@@ -139,6 +150,8 @@ impl Invisible {
             '\u{0}'..='\u{1F}'
             | '\u{7F}'..='\u{9F}'
             | '\u{AD}'
+            | '\u{2028}'
+            | '\u{2029}'
             | '\u{2061}'..='\u{2064}'
             | '\u{206A}'..='\u{206F}'
             | '\u{FFF9}'..='\u{FFFB}'

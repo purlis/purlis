@@ -1757,6 +1757,59 @@ pub(crate) fn run_until(
     })
 }
 
+/// [`run`], bytes back, its standard output **read as it comes and held to `most_records`
+/// NUL-ended records** (a `-z` listing): past them git is stopped, its group with it, and the
+/// answer is `None`. A listing a small tree expands into far more than memory holds is never
+/// read whole (SK-10, #2773).
+pub(crate) fn run_capped(
+    dir: &Path,
+    args: &[&str],
+    timeout: Duration,
+    most_records: usize,
+) -> Result<Option<RawRun>, GitUnavailable> {
+    use std::sync::Arc;
+    let extra = match held(dir, args, Extra::default())? {
+        Ok(extra) => extra,
+        Err(answer) => return Ok(Some(answer)),
+    };
+    counted(dir, args, || {
+        let mut child = spawn_with(dir, args, &extra)?;
+        let mut stdout = child.stdout.take().expect("stdout is piped");
+        let over = Arc::new(AtomicBool::new(false));
+        let (out_tx, out_rx) = std::sync::mpsc::channel();
+        {
+            let over = Arc::clone(&over);
+            std::thread::spawn(move || {
+                let mut kept = Vec::new();
+                let mut records = 0usize;
+                let mut chunk = [0u8; 64 * 1024];
+                loop {
+                    match stdout.read(&mut chunk) {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => {
+                            records += chunk[..n].iter().filter(|b| **b == 0).count();
+                            if records > most_records {
+                                over.store(true, Ordering::Relaxed);
+                                break;
+                            }
+                            kept.extend_from_slice(&chunk[..n]);
+                        }
+                    }
+                }
+                let _ = out_tx.send(kept);
+            });
+        }
+        let raw = wait_raw_until(child, timeout, Some(&over))?;
+        if over.load(Ordering::Relaxed) {
+            return Ok(None);
+        }
+        let out = out_rx
+            .recv_timeout(Duration::from_secs(2))
+            .unwrap_or_default();
+        Ok(Some(RawRun { out, ..raw }))
+    })
+}
+
 /// What one git call answered, as the BYTES it wrote. `code` is `None` when the deadline passed.
 ///
 /// For a caller that must tell "git wrote something that is not UTF-8" from "git wrote U+FFFD",
@@ -2108,13 +2161,16 @@ fn wait_raw_until(
     timeout: Duration,
     called_off: Option<&AtomicBool>,
 ) -> std::io::Result<RawRun> {
-    let mut stdout = child.stdout.take().expect("stdout is piped");
+    // A caller that reads the output as it comes ([`run_capped`]) took it already.
+    let stdout = child.stdout.take();
     let mut stderr = child.stderr.take().expect("stderr is piped");
     let (out_tx, out_rx) = std::sync::mpsc::channel();
     let (err_tx, err_rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
         let mut buf = Vec::new();
-        let _ = stdout.read_to_end(&mut buf);
+        if let Some(mut stdout) = stdout {
+            let _ = stdout.read_to_end(&mut buf);
+        }
         let _ = out_tx.send(buf);
     });
     std::thread::spawn(move || {

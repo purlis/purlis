@@ -1433,3 +1433,93 @@ fn a_private_sources_token_reaches_its_own_host_alone_through_a_401_and_a_redire
         "{seen:?}"
     );
 }
+
+#[test]
+fn a_tree_that_fans_out_to_a_billion_paths_is_stopped_at_the_entry_cap() {
+    let remote = Upstream::new();
+    let blob = remote.blob(b"x");
+    let names: Vec<String> = (0..1000).map(|n| format!("n{n:04}")).collect();
+    let mut level = remote.raw_tree(&[
+        (
+            "100644",
+            "SKILL.md",
+            remote.blob(b"---\nname: wide\ndescription: x\n---\n"),
+        ),
+        ("100644", "x", blob),
+    ]);
+    for _ in 0..3 {
+        let entries: Vec<(&str, &str, String)> = names
+            .iter()
+            .map(|name| ("40000", name.as_str(), level.clone()))
+            .collect();
+        level = remote.raw_tree(&entries);
+    }
+    let top = remote.raw_tree(&[("40000", "skills", level)]);
+    remote.commit(&top, None);
+    let tmp = plane();
+    let started = std::time::Instant::now();
+    let why = browse(tmp.path(), &remote.source()).unwrap_err();
+    assert!(why.contains("more than 50000 files"), "{why}");
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(20),
+        "{:?}",
+        started.elapsed()
+    );
+}
+
+#[test]
+fn an_update_of_a_skill_from_an_unconfirmed_committed_source_fetches_nothing() {
+    let (remote, first) = good_remote();
+    let tmp = plane();
+    let root = tmp.path();
+    let source = remote.source();
+    let accepted = review(root, &source, &["notify".to_owned()])
+        .unwrap()
+        .accepted();
+    on(root, |cx| {
+        install(cx, &source, &Level::project(), &accepted, None)
+    })
+    .0
+    .unwrap();
+    let tree = remote.tree(&[(
+        "skills/notify/SKILL.md",
+        "100644",
+        b"---\nname: notify\ndescription: v2\n---\n",
+    )]);
+    remote.commit(&tree, Some(&first));
+    // Another machine: the committed lockfile, and none of this machine's confirmations.
+    std::fs::remove_file(root.join("charter.local.toml")).unwrap();
+    let lock_before = std::fs::read(root.join(lock::FILE)).unwrap();
+    let why = update_review(root, &Level::project(), "notify").unwrap_err();
+    assert!(why.contains("never a folder on one machine"), "{why}");
+    let wanted = Accepted {
+        commit: Commit::parse(&"0".repeat(40)).unwrap(),
+        skills: accepted.skills.clone(),
+    };
+    let (answer, _) = on(root, |cx| update(cx, &Level::project(), "notify", &wanted));
+    assert!(
+        answer
+            .unwrap_err()
+            .contains("never a folder on one machine")
+    );
+    assert_eq!(std::fs::read(root.join(lock::FILE)).unwrap(), lock_before);
+    let found = updates(root);
+    assert!(
+        found.offers.is_empty() && found.unconfirmed.is_empty(),
+        "{found:?}"
+    );
+
+    // An https source the committed lockfile names is refused until it is confirmed.
+    let entry = serde_json::json!({
+        "version": 1,
+        "skills": [{
+            "name": "far", "level": "skills",
+            "source": {"url": "https://unreachable.invalid/acme/skills"},
+            "folder": "skills/far", "commit": "a".repeat(40), "digest": "sha256:00",
+            "files": [{"path": "SKILL.md", "sha256": "sha256:11"}],
+        }],
+    });
+    std::fs::write(root.join(lock::FILE), entry.to_string()).unwrap();
+    let why = update_review(root, &Level::project(), "far").unwrap_err();
+    assert!(why.contains("until it is confirmed here"), "{why}");
+}

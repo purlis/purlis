@@ -250,3 +250,24 @@ fn every_invisible_character_is_marked_and_shown_escaped() {
         "a⟦U+E0049⟧b⟦U+001B⟧[31m⟦U+000D⟧\n"
     );
 }
+
+#[test]
+fn variation_selectors_fillers_and_line_separators_are_invisible_too() {
+    for c in [
+        '\u{FE00}',
+        '\u{FE0F}',
+        '\u{E0100}',
+        '\u{E01EF}',
+        '\u{034F}',
+        '\u{115F}',
+        '\u{1160}',
+        '\u{3164}',
+        '\u{FFA0}',
+        '\u{2028}',
+        '\u{2029}',
+    ] {
+        assert!(Invisible::of(c).is_some(), "U+{:04X}", u32::from(c));
+    }
+    assert_eq!(Invisible::of('a'), None);
+    assert_eq!(Invisible::of('\u{E01F0}'), None);
+}
