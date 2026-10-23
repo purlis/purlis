@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792754099535,
+  "lastUpdate": 1792757421611,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -22638,6 +22638,48 @@ window.BENCHMARK_DATA = {
             "value": 104.49659600000001,
             "unit": "ms",
             "extra": "median of 5 runs: 102.883, 103.175, 104.497, 105.635, 106.457 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "758e1013f010ddc7422236985ddbe9f813dc317d",
+          "message": "Bump the rust group with 12 updates (#3058)\n\n* Bump the rust group with 12 updates\n\nBumps the rust group with 12 updates:\n\n| Package | From | To |\n| --- | --- | --- |\n| [agent-client-protocol](https://github.com/agentclientprotocol/rust-sdk) | `3.3.0` | `3.4.0` |\n| [plist](https://github.com/ebarnard/rust-plist) | `1.10.1` | `1.10.2` |\n| [zip](https://github.com/zip-rs/zip2) | `9.0.3` | `9.0.5` |\n| [unicode-normalization](https://github.com/unicode-rs/unicode-normalization) | `0.1.25` | `0.1.26` |\n| [libc](https://github.com/rust-lang/libc) | `0.2.190` | `0.2.191` |\n| [tokio](https://github.com/tokio-rs/tokio) | `1.53.2` | `1.53.3` |\n| [p256](https://github.com/RustCrypto/elliptic-curves) | `0.13.2` | `0.14.0` |\n| [psl](https://github.com/addr-rs/psl) | `2.1.241` | `2.1.243` |\n| [arboard](https://github.com/1Password/arboard) | `3.6.1` | `3.7.0` |\n| [objc2](https://github.com/madsmtm/objc2) | `0.6.4` | `0.6.5` |\n| [zbus](https://github.com/z-galaxy/zbus) | `5.19.0` | `6.0.0` |\n| [cairo-rs](https://github.com/gtk-rs/gtk-rs-core) | `0.18.5` | `0.22.9` |\n\n\nUpdates `agent-client-protocol` from 3.3.0 to 3.4.0\n- [Release notes](https://github.com/agentclientprotocol/rust-sdk/releases)\n- [Commits](https://github.com/agentclientprotocol/rust-sdk/compare/agent-client-protocol-http-v3.3.0...agent-client-protocol-http-v3.4.0)\n\nUpdates `plist` from 1.10.1 to 1.10.2\n- [Release notes](https://github.com/ebarnard/rust-plist/releases)\n- [Changelog](https://github.com/ebarnard/rust-plist/blob/master/CHANGELOG.md)\n- [Commits](https://github.com/ebarnard/rust-plist/compare/v1.10.1...v1.10.2)\n\nUpdates `zip` from 9.0.3 to 9.0.5\n- [Release notes](https://github.com/zip-rs/zip2/releases)\n- [Changelog](https://github.com/zip-rs/zip2/blob/master/CHANGELOG.md)\n- [Commits](https://github.com/zip-rs/zip2/compare/v9.0.3...v9.0.5)\n\nUpdates `unicode-normalization` from 0.1.25 to 0.1.26\n- [Commits](https://github.com/unicode-rs/unicode-normalization/commits/v0.1.26)\n\nUpdates `libc` from 0.2.190 to 0.2.191\n- [Release notes](https://github.com/rust-lang/libc/releases)\n- [Changelog](https://github.com/rust-lang/libc/blob/0.2.191/CHANGELOG.md)\n- [Commits](https://github.com/rust-lang/libc/compare/0.2.190...0.2.191)\n\nUpdates `tokio` from 1.53.2 to 1.53.3\n- [Release notes](https://github.com/tokio-rs/tokio/releases)\n- [Commits](https://github.com/tokio-rs/tokio/compare/tokio-1.53.2...tokio-1.53.3)\n\nUpdates `p256` from 0.13.2 to 0.14.0\n- [Commits](https://github.com/RustCrypto/elliptic-curves/compare/p256/v0.13.2...p256/v0.14.0)\n\nUpdates `psl` from 2.1.241 to 2.1.243\n- [Release notes](https://github.com/addr-rs/psl/releases)\n- [Commits](https://github.com/addr-rs/psl/compare/v2.1.241...v2.1.243)\n\nUpdates `arboard` from 3.6.1 to 3.7.0\n- [Release notes](https://github.com/1Password/arboard/releases)\n- [Commits](https://github.com/1Password/arboard/compare/v3.6.1...v3.7.0)\n\nUpdates `objc2` from 0.6.4 to 0.6.5\n- [Commits](https://github.com/madsmtm/objc2/compare/objc2-0.6.4...objc2-0.6.5)\n\nUpdates `zbus` from 5.19.0 to 6.0.0\n- [Release notes](https://github.com/z-galaxy/zbus/releases)\n- [Changelog](https://github.com/z-galaxy/zbus/blob/main/release-plz.toml)\n- [Commits](https://github.com/z-galaxy/zbus/compare/zbus-5.19.0...zbus-6.0.0)\n\nUpdates `cairo-rs` from 0.18.5 to 0.22.9\n- [Release notes](https://github.com/gtk-rs/gtk-rs-core/releases)\n- [Changelog](https://github.com/gtk-rs/gtk-rs-core/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/gtk-rs/gtk-rs-core/compare/0.18.5...0.22.9)\n\n---\nupdated-dependencies:\n- dependency-name: agent-client-protocol\n  dependency-version: 3.4.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: rust\n- dependency-name: plist\n  dependency-version: 1.10.2\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: rust\n- dependency-name: zip\n  dependency-version: 9.0.5\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: rust\n- dependency-name: unicode-normalization\n  dependency-version: 0.1.26\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: rust\n- dependency-name: libc\n  dependency-version: 0.2.191\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: rust\n- dependency-name: tokio\n  dependency-version: 1.53.3\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: rust\n- dependency-name: p256\n  dependency-version: 0.14.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: rust\n- dependency-name: psl\n  dependency-version: 2.1.243\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: rust\n- dependency-name: arboard\n  dependency-version: 3.7.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: rust\n- dependency-name: objc2\n  dependency-version: 0.6.5\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: rust\n- dependency-name: zbus\n  dependency-version: 6.0.0\n  dependency-type: direct:production\n  update-type: version-update:semver-major\n  dependency-group: rust\n- dependency-name: cairo-rs\n  dependency-version: 0.22.9\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: rust\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\n\n* Hold zbus at 5 and cairo-rs at 0.18 out of the rust group bump\n\nzbus 6.0 removes the blocking API that the portal and system-contrast\nreaders are written on, and the tray and notification crates stay on\nzbus 5; moving needs its own migration. cairo-rs must be the version\nwebkit2gtk 2.0.2 hands its snapshot surfaces in (0.18), so it moves\nwith the GTK stack, not alone. The other ten updates stay.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* ACP 3.4 refuses another protocol version during the handshake\n\nagent-client-protocol 3.4 checks the version an agent answers\n`initialize` with and refuses a mismatch itself, as a handshake error\nnaming both versions. The chat still does not start at level 3; the\ntest now reads that refusal, and purlis's own version check stays\nbehind it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Take clipboard-win 5.4.3 over the yanked 5.4.1\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: Aaron Yordanyan <aaron.yor@gmail.com>",
+          "timestamp": "2026-10-23T16:03:16+04:00",
+          "tree_id": "185fa20cbfa978ba00dbab9ba49233f60d8ea692",
+          "url": "https://github.com/purlis/purlis/commit/758e1013f010ddc7422236985ddbe9f813dc317d"
+        },
+        "date": 1792757419654,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5080235000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.488, 0.506, 0.508, 0.512, 0.512 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.137305,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.285, 16.990, 17.137, 17.204, 17.475 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 105.589808,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.598, 104.414, 105.590, 105.734, 106.497 ms"
           }
         ]
       }
