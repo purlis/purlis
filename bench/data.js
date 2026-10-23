@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792720152604,
+  "lastUpdate": 1792721565271,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -22260,6 +22260,48 @@ window.BENCHMARK_DATA = {
             "value": 101.362021,
             "unit": "ms",
             "extra": "median of 5 runs: 100.707, 101.221, 101.362, 101.441, 102.730 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6e061e8e5ef231f5500aa0319eb7d06fdcdcb64f",
+          "message": "The engine's first download shows progress, Cancel and failure words (#2207) (#3007)\n\n* Browsers: the engine install's tests move to install/tests.rs (#2207)\n\nA move alone, before the module changes: no test's name or body changes.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* The engine's first download shows progress, Cancel and failure words (#2207)\n\nSession protocol 1.37: the host pushes engine_download { program, done, total }\na few times a second at most, to links that speak 1.37 and hold the browser\npower, and a window cancels one with cancel_engine_download { program }.\nA cancelled download keeps nothing and its start is refused in words that\nsay so; a failed one says what to do. The window names the browser it\nstarts, shows each download in a Notice with Cancel download, and waits for\na start as long as the download may take.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* The engine download Notice shows none where the core answers nothing (#2207)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Review: pending-only progress, Cancelled is no failure, versions said once (#2207)\n\n- The window shows a download only for a start it waits on, registered\n  before the start is sent; a word heard after its start answered, or for\n  another window's start, raises nothing.\n- NotStarted::Cancelled: the chat is told the person cancelled and not to\n  retry, and the person is told so in the second person.\n- A test holds every KNOWS_ version within VERSION and VERSION's doc\n  naming each minor once, in order, the passed-over ones listed.\n- A cancel during the unpack puts nothing in place (Fetch::still_wanted).\n- Sizes are in MB of a million bytes.\n- The host holds a downloading start's id as taken, under one hold.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* The engine download Notice renders nothing again for an answer that changes nothing (#2207)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: format the start after the rebase onto 1.36 (#2207)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-23T05:58:40+04:00",
+          "tree_id": "52784877e61d8c03c9ce5e6531d5f8514e78e1f7",
+          "url": "https://github.com/purlis/purlis/commit/6e061e8e5ef231f5500aa0319eb7d06fdcdcb64f"
+        },
+        "date": 1792721562653,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.284102,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.261, 0.283, 0.284, 0.284, 0.303 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.509983,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.505, 16.509, 16.510, 16.609, 16.610 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.292575,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.871, 101.188, 101.293, 101.691, 102.177 ms"
           }
         ]
       }
