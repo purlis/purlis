@@ -8393,6 +8393,52 @@ button.show-more:focus-visible {
   background: var(--surface-hover);
 }
 
+/* A skill's state, owners, history and uses (SK-19, #2782). */
+.skill-life {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin-block-end: var(--space-4);
+}
+
+.skill-state-acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--space-2);
+}
+
+.skill-state-acts label,
+.skill-copy-pick {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.skill-diff {
+  max-height: 24rem;
+  overflow: auto;
+  margin: 0;
+  padding: var(--space-2);
+  background: var(--surface-sunken);
+  font-family: var(--font-mono);
+  white-space: pre;
+}
+
+.skill-diff [data-line="added"] {
+  background: var(--diff-inserted);
+  color: var(--diff-inserted-text);
+}
+
+.skill-diff [data-line="removed"] {
+  background: var(--diff-deleted);
+  color: var(--diff-deleted-text);
+}
+
+.skill-uses [data-broken] {
+  color: var(--danger-text);
+}
+
 /* The Skill studio's changes (SK-7, #2770): the panel a change opens under the toolbar, the
    levels a row is dropped on to move it, the editor's lint and the deleted skills. */
 .skill-change,

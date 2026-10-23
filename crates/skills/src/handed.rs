@@ -178,20 +178,43 @@ impl Frontmatter {
 /// plain file into something else while it was opened. The one reader of a skill's own file
 /// for what purlis hands, badges and lints (SK-8).
 pub fn read_skill_md(path: &std::path::Path) -> Result<String, Refusal> {
-    use std::io::Read as _;
-    let unreadable = |why: std::io::Error| Refusal::Unreadable(why.to_string());
     if let Some(folder) = path.parent() {
-        let meta = std::fs::symlink_metadata(folder).map_err(unreadable)?;
+        let meta = std::fs::symlink_metadata(folder)
+            .map_err(|why| Refusal::Unreadable(why.to_string()))?;
         if meta.file_type().is_symlink() || !meta.is_dir() {
             return Err(Refusal::FolderLink);
         }
     }
+    read_plain(path, MOST_BYTES).map_err(|why| match why {
+        NotRead::Unreadable(why) => Refusal::Unreadable(why),
+        NotRead::NotPlain => Refusal::FileLink,
+        NotRead::TooLarge => Refusal::TooLarge,
+    })
+}
+
+/// Why [`read_plain`] read nothing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum NotRead {
+    /// It could not be read: what the system said.
+    Unreadable(String),
+    /// It is a link or no plain file, or it changed into one while it was opened.
+    NotPlain,
+    /// It is larger than the most asked for.
+    TooLarge,
+}
+
+/// **The text of the plain file at `path`, following no link**, of at most `most` bytes: refused
+/// where it is a link or no plain file, is larger, or changed from a plain file into something
+/// else while it was opened. The one reader of a skill's files and the file beside its folder.
+pub(crate) fn read_plain(path: &std::path::Path, most: u64) -> Result<String, NotRead> {
+    use std::io::Read as _;
+    let unreadable = |why: std::io::Error| NotRead::Unreadable(why.to_string());
     let meta = std::fs::symlink_metadata(path).map_err(unreadable)?;
     if !meta.is_file() {
-        return Err(Refusal::FileLink);
+        return Err(NotRead::NotPlain);
     }
-    if meta.len() > MOST_BYTES {
-        return Err(Refusal::TooLarge);
+    if meta.len() > most {
+        return Err(NotRead::TooLarge);
     }
     let file = std::fs::File::open(path).map_err(unreadable)?;
     let opened = file.metadata().map_err(unreadable)?;
@@ -199,18 +222,18 @@ pub fn read_skill_md(path: &std::path::Path) -> Result<String, Refusal> {
     {
         use std::os::unix::fs::MetadataExt as _;
         if (opened.dev(), opened.ino()) != (meta.dev(), meta.ino()) {
-            return Err(Refusal::FileLink);
+            return Err(NotRead::NotPlain);
         }
     }
     if !opened.is_file() {
-        return Err(Refusal::FileLink);
+        return Err(NotRead::NotPlain);
     }
     let mut text = String::new();
-    file.take(MOST_BYTES + 1)
+    file.take(most + 1)
         .read_to_string(&mut text)
         .map_err(unreadable)?;
-    if text.len() as u64 > MOST_BYTES {
-        return Err(Refusal::TooLarge);
+    if text.len() as u64 > most {
+        return Err(NotRead::TooLarge);
     }
     Ok(text)
 }

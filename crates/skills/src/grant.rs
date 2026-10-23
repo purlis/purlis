@@ -74,12 +74,9 @@ fn file_name(folder: &Path) -> String {
 /// or holds no `grant`, or why it cannot be read. A reader treats an error as `root`, the
 /// narrowest grant, and says why.
 pub fn grant_of(folder: &Path) -> Result<Grant, String> {
-    let Ok(text) = std::fs::read_to_string(crate::beside(folder)) else {
+    let Some(table) = crate::lifecycle::beside_table(folder)? else {
         return Ok(Grant::Root);
     };
-    let table = text
-        .parse::<toml::Table>()
-        .map_err(|why| format!("it is not TOML: {}", first_line(&why.to_string())))?;
     match table.get(KEY) {
         None => Ok(Grant::Root),
         Some(value) => grant_in(value),
@@ -111,16 +108,30 @@ fn grant_in(value: &toml::Value) -> Result<Grant, String> {
 /// else is left in it. A file that is not TOML is refused, and left as it was. The file is
 /// written beside itself and renamed over, so a reader never sees half of it.
 pub fn set_grant(folder: &Path, grant: &Grant) -> Result<(), String> {
+    edit_beside(folder, |doc| put(doc, grant))
+}
+
+/// **Changes `<folder>.toml` by `edit`**, keeping every key and comment it does not touch: the
+/// one writer of the file beside a skill's folder (its grant, lifecycle state and owners). A file
+/// left empty is removed. A file that is not TOML, or not a plain file, is refused and left as it
+/// was. The file is written beside itself and renamed over, so a reader never sees half of it,
+/// and the rename replaces a link rather than writing through it.
+pub(crate) fn edit_beside(
+    folder: &Path,
+    edit: impl FnOnce(&mut toml_edit::DocumentMut),
+) -> Result<(), String> {
     let file = crate::beside(folder);
     let name = file_name(folder);
-    let text = match std::fs::read_to_string(&file) {
-        Ok(text) => text,
+    let text = match std::fs::symlink_metadata(&file) {
         Err(why) if why.kind() == std::io::ErrorKind::NotFound => String::new(),
-        Err(why) => {
-            return Err(format!(
-                "{name} could not be read ({why}), so nothing changed"
-            ));
-        }
+        _ => crate::handed::read_plain(&file, crate::lifecycle::MOST_BESIDE).map_err(|why| {
+            let why = match why {
+                crate::handed::NotRead::Unreadable(why) => why,
+                crate::handed::NotRead::NotPlain => "it is not a plain file".to_owned(),
+                crate::handed::NotRead::TooLarge => "it is too large".to_owned(),
+            };
+            format!("{name} could not be read ({why}), so nothing changed")
+        })?,
     };
     let mut doc = text.parse::<toml_edit::DocumentMut>().map_err(|why| {
         format!(
@@ -128,7 +139,7 @@ pub fn set_grant(folder: &Path, grant: &Grant) -> Result<(), String> {
             first_line(&why.to_string())
         )
     })?;
-    put(&mut doc, grant);
+    edit(&mut doc);
     let written = doc.to_string();
     if written.trim().is_empty() {
         return match std::fs::remove_file(&file) {
@@ -169,7 +180,8 @@ pub fn grant_file(grant: &Grant) -> String {
     doc.to_string()
 }
 
-fn first_line(text: &str) -> &str {
+/// The first line of `text` that says anything.
+pub(crate) fn first_line(text: &str) -> &str {
     text.lines()
         .map(str::trim)
         .find(|line| !line.is_empty())

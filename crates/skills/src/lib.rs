@@ -43,6 +43,7 @@ pub mod compat;
 mod declared;
 mod grant;
 pub mod handed;
+pub mod lifecycle;
 pub mod lint;
 mod load;
 mod read;
@@ -50,12 +51,14 @@ mod reference;
 pub mod runs;
 mod share;
 mod stamp;
+pub mod uses;
 
 pub use budget::{Budget, Over, Spent};
 pub use compat::{Compat, Field, Fit, Honours, ManualOnly, compat, handed_text, widening_said};
 pub use declared::{Argument, Declared, Given, declared};
 pub use grant::{Grant, grant_file, grant_of, set_grant};
 pub use handed::{Frontmatter, MOST_BYTES, Refusal, read_skill_md};
+pub use lifecycle::{About, Deprecated, Lifecycle, about_of, set_lifecycle, set_owners};
 pub use lint::{BuiltInLints, Finding, Lint, Severity, SkillFiles, SkillLint};
 pub use load::{Loaded, Narrowing, POINTER, by_name, find, load, other_files};
 pub use read::{DIR_IN_BUNDLE, FILE, frontmatter, in_bundle, listing, parsed, read, scan};
@@ -219,6 +222,9 @@ pub struct Effective {
     pub origin: Origin,
     /// Whether it is a local skill: kept on this machine, in its level's `skills.local/`.
     pub local: bool,
+    /// Where the skill is deprecated (SK-19, decision 62): it still works, and a router lists it
+    /// after the rest with its replacement (ADR 0102 §2). `None` for a skill in use.
+    pub deprecated: Option<Deprecated>,
 }
 
 /// One skill a chat does not get, and why.
@@ -267,6 +273,9 @@ pub enum Reason {
     /// A harness or repo skill named as one of purlis's built-in skills, which never loses to
     /// any other copy (SK-6): the chat is handed purlis's.
     HiddenByBuiltIn,
+    /// A plane skill its project archived (SK-19, decision 62): it never loads, takes no name
+    /// from another copy, and is restored by making it active again.
+    Archived,
 }
 
 /// What a folder lacks to be a whole skill.
@@ -327,6 +336,9 @@ impl std::fmt::Display for Reason {
             }
             Self::OffForTheHarness => f.write_str("turned off for this project's chats"),
             Self::HiddenByBuiltIn => f.write_str("hidden by purlis's built-in skill of this name"),
+            Self::Archived => {
+                f.write_str("archived: it never loads until it is restored from its tab")
+            }
         }
     }
 }
@@ -547,6 +559,7 @@ impl SkillSet {
                     route: Route::Own,
                     origin: one.origin,
                     local: false,
+                    deprecated: None,
                 });
             }
         }
@@ -846,6 +859,27 @@ fn level(
                 continue;
             }
         };
+        let folder = skill
+            .path
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_default();
+        // An archived copy never loads, and takes no name from a wider one (decision 62).
+        let about = if origin.of_the_plane() {
+            about_of(&folder).unwrap_or_default()
+        } else {
+            About::default()
+        };
+        if about.lifecycle == Lifecycle::Archived {
+            set.left_out.push(LeftOut {
+                name: skill.name,
+                origin,
+                local,
+                folder,
+                reason: Reason::Archived,
+            });
+            continue;
+        }
         let taken = set
             .effective
             .iter()
@@ -866,16 +900,16 @@ fn level(
                 route,
                 origin,
                 local,
+                deprecated: match about.lifecycle {
+                    Lifecycle::Deprecated(deprecated) => Some(deprecated),
+                    _ => None,
+                },
             }),
             Some(reason) => set.left_out.push(LeftOut {
                 name: skill.name,
                 origin,
                 local,
-                folder: skill
-                    .path
-                    .parent()
-                    .map(Path::to_path_buf)
-                    .unwrap_or_default(),
+                folder,
                 reason,
             }),
         }

@@ -94,7 +94,7 @@ impl Level {
 
     /// Its folder relative to the plane, `/` between the parts, by the one rule
     /// ([`purlis_skills::level_rel`]): `skills`, `workspaces/ops/skills.local`.
-    fn rel(&self) -> Option<String> {
+    pub(super) fn rel(&self) -> Option<String> {
         purlis_skills::level_rel(self.workspace_name(), self.local)
     }
 
@@ -164,7 +164,7 @@ fn workspaces(plane: &Path) -> Vec<String> {
 }
 
 /// `path` relative to `plane`, `/` between its parts.
-fn rel(plane: &Path, path: &Path) -> String {
+pub(super) fn rel(plane: &Path, path: &Path) -> String {
     path.strip_prefix(plane)
         .unwrap_or(path)
         .components()
@@ -185,7 +185,7 @@ impl Ctx<'_> {
     /// **Commits exactly `paths`** as one change, `message` its subject, through the plane's
     /// save. A project that cannot take it now (no save mode yet, saving off, something else
     /// staged) keeps it for the next save, and that is said.
-    fn commit(&mut self, paths: &[String], message: &str) {
+    pub(super) fn commit(&mut self, paths: &[String], message: &str) {
         let mut unique: Vec<String> = Vec::new();
         for path in paths {
             if !path.is_empty() && !unique.contains(path) {
@@ -245,12 +245,12 @@ impl Ctx<'_> {
     }
 
     /// Says `line` as a warning.
-    fn warn(&mut self, line: String) {
+    pub(super) fn warn(&mut self, line: String) {
         (self.say)(Say::Warn(line));
     }
 
     /// Says `line` as done.
-    fn done(&mut self, line: String) {
+    pub(super) fn done(&mut self, line: String) {
         (self.say)(Say::Done(line));
     }
 }
@@ -271,7 +271,7 @@ fn level_is_there(plane: &Path, level: &Level) -> Result<PathBuf, String> {
 }
 
 /// The folder of the skill named `name` at `level`, or why there is none.
-fn find(plane: &Path, level: &Level, name: &str) -> Result<PathBuf, String> {
+pub(super) fn find(plane: &Path, level: &Level, name: &str) -> Result<PathBuf, String> {
     level
         .dir(plane)
         .and_then(|dir| named(&dir, name))
@@ -397,7 +397,7 @@ pub fn text_of(plane: &Path, level: &Level, name: &str) -> Result<(PathBuf, Stri
 }
 
 /// The paths under `folder` (plane-relative) with changes git has not committed, by their path.
-fn pending_in(plane: &Path, paths: &[&str]) -> Result<Vec<String>, String> {
+pub(super) fn pending_in(plane: &Path, paths: &[&str]) -> Result<Vec<String>, String> {
     let specs: Vec<String> = paths.iter().map(|path| literally(path)).collect();
     let mut args = vec!["status", "--porcelain", "-z", "--untracked-files=all", "--"];
     args.extend(specs.iter().map(String::as_str));
@@ -777,7 +777,7 @@ impl Deleted {
 }
 
 /// `git <args>` in the plane: its stdout, or what it said.
-fn git(plane: &Path, args: &[&str]) -> Result<String, String> {
+pub(super) fn git(plane: &Path, args: &[&str]) -> Result<String, String> {
     let run = crate::worktree::git::run(plane, args, crate::worktree::git::NETWORK)
         .map_err(|why| why.to_string())?;
     if run.ok() {

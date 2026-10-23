@@ -13,6 +13,8 @@ afterEach(() => {
 
 const RUN = "01JB0000000000000000000001";
 
+const EMPTY_PAGE = { copies: [], uses: [], used_by: [], uses_cut: false };
+
 describe("a skill's Runs panel", () => {
   it("lists each run's signals, never a verdict, and marks the run the chip opened it on", async () => {
     mockIPC((cmd) => {
@@ -31,8 +33,11 @@ describe("a skill's Runs panel", () => {
             refusals: 2,
             asks: 1,
             tokens: null,
+            inside: null,
+            ran: [],
           },
         ];
+      if (cmd === "skill_page") return EMPTY_PAGE;
       throw new Error(`unexpected ${cmd}`);
     });
     render(<SkillTab plane="p" name="deploy" run={RUN} changed={0} />);
@@ -67,8 +72,11 @@ describe("a skill's Runs panel, for a use from before runs were recorded", () =>
             refusals: null,
             asks: null,
             tokens: null,
+            inside: null,
+            ran: [],
           },
         ];
+      if (cmd === "skill_page") return EMPTY_PAGE;
       throw new Error(`unexpected ${cmd}`);
     });
 

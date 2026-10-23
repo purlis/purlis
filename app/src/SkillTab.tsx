@@ -6,6 +6,7 @@ import { LoaderCircle, Sparkles } from "lucide-react";
 import { commands, type RunEnd, type RunStart, type StudioRun } from "./bindings";
 import { saidAt } from "./dispatches";
 import { EmptyState } from "./ui/empty-state/EmptyState";
+import { SkillLife } from "./SkillLife";
 
 /** What started a run, as its row says it. */
 export function startedBySaid(started: RunStart | null): string {
@@ -49,6 +50,14 @@ export function timeSaid(ms: number | null): string {
   return `${Math.floor(ms / 60_000)} min ${Math.floor((ms % 60_000) / 1000)} s`;
 }
 
+/** Where a run nests: the skill whose run it started inside, and the skills that ran inside it. */
+export function nestingSaid(run: StudioRun): string {
+  const parts: string[] = [];
+  if (run.inside !== null) parts.push(`Inside ${run.inside}`);
+  if (run.ran.length > 0) parts.push(`Ran ${run.ran.join(", ")}`);
+  return parts.join("; ");
+}
+
 /** A signal's cell: its count, and empty where the run has no end recorded to count from. */
 function signal(n: number | null): string {
   return n === null ? "" : String(n);
@@ -56,9 +65,10 @@ function signal(n: number | null): string {
 
 /**
  * **One skill's tab** (SK-3, #2766), opened from a skill run's chip or the Skill studio. Its
- * Runs panel lists every run of the skill, newest first, with what started it and its signals:
- * tool calls, tool errors, refusals, asks, tokens and time. Never a pass or a fail: those come
- * from grading.
+ * state, owners, history and uses come first (SK-19, #2782, `SkillLife`). Its Runs panel lists
+ * every run of the skill, newest first, with what started it and its signals: tool calls, tool
+ * errors, refusals, asks, tokens and time, and the skill run it nests in or holds. Never a pass
+ * or a fail: those come from grading.
  */
 export function SkillTab({
   plane,
@@ -97,6 +107,7 @@ export function SkillTab({
       <h2 className="skill-tab-name">
         <code>{name}</code>
       </h2>
+      <SkillLife plane={plane} name={name} changed={changed} />
       <section aria-labelledby="skill-runs-heading" data-testid="skill-runs">
         <h3 id="skill-runs-heading">Runs</h3>
         {refused !== undefined ? (
@@ -136,6 +147,7 @@ export function SkillTab({
                   <th scope="col">Asks</th>
                   <th scope="col">Tokens</th>
                   <th scope="col">Time</th>
+                  <th scope="col">Nested</th>
                 </tr>
               </thead>
               <tbody>
@@ -159,6 +171,7 @@ export function SkillTab({
                       <td>{signal(run.asks)}</td>
                       <td>{run.ended === null ? "" : (run.tokens ?? "Not reported")}</td>
                       <td>{timeSaid(run.ms)}</td>
+                      <td>{nestingSaid(run)}</td>
                     </tr>
                   );
                 })}

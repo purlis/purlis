@@ -571,6 +571,10 @@ pub struct StudioRun {
     pub asks: Option<u32>,
     /// Tokens spent inside it, where the harness reported them.
     pub tokens: Option<u32>,
+    /// The skill whose run this one started inside, where it is a child span (SK-19).
+    pub inside: Option<String>,
+    /// The skills whose runs started inside this one, each once (SK-19).
+    pub ran: Vec<String>,
 }
 
 /// Every run of `skill` the project at `root` has recorded, newest first, at most `limit`.
@@ -578,9 +582,12 @@ pub(crate) fn runs(root: &std::path::Path, skill: &str, limit: usize) -> Vec<Stu
     let small = |n: u64| u32::try_from(n).unwrap_or(u32::MAX);
     purlis_core::skills::studio_runs(root, Some(skill), limit)
         .into_iter()
-        .map(|run| {
+        .map(|nested| {
+            let run = &nested.run;
             let end = run.end.as_ref();
             StudioRun {
+                inside: nested.inside.clone(),
+                ran: nested.ran.clone(),
                 id: run.id.clone(),
                 skill: run.skill.clone(),
                 persona: run.persona.clone(),
