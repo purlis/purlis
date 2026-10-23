@@ -836,6 +836,17 @@ pub fn confined_profile(
         line(format!("  (literal {})", string(file)?));
     }
     line(")".to_owned());
+    // On macOS a program's libraries are mapped executable from where it reads them, an
+    // operation of its own that Linux's sandbox has no word for.
+    if os == super::Os::MacOs {
+        line("(allow file-map-executable".to_owned());
+        for root in &read_roots {
+            for name in kernel_strings(root)? {
+                line(format!("  (subpath {name})"));
+            }
+        }
+        line(")".to_owned());
+    }
     // Of each folder above what it reads, the folder alone: what a path resolves through, never
     // what else a folder holds.
     let mut above = std::collections::BTreeSet::new();

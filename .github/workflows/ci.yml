@@ -851,6 +851,10 @@ jobs:
       - name: The studio probe, confined by Seatbelt
         if: steps.scope.outputs.run == 'true'
         run: cargo test --locked -p studio-probe
+      # What Seatbelt refused while the probe ran, from the system's log, for a red run's reader.
+      - name: What the sandbox refused
+        if: failure() && steps.scope.outputs.run == 'true'
+        run: log show --last 15m --style compact --predicate 'sender == "Sandbox" OR eventMessage CONTAINS "Sandbox:"' | grep -i 'studio-probe\|deny' | tail -200 || true
 
   # What the Python charter answered, frozen: every scenario the old differential ran, and the
   # generated cases of the shell reader and the plane-root guards, replayed against this build
