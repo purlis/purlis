@@ -1367,14 +1367,29 @@ export function rowWidth(window: number = globalThis.innerWidth ?? 0): number {
   return Math.max(0, window - RIGHT_BAR - 2 * (Number.isFinite(gutter) ? gutter : 0));
 }
 
+/** The least window height the bottom row starts at its R126 share in, and its share below
+ *  (D-2917-17). */
+const TALL_ENOUGH = 900;
+const SHORT_PANEL = 30;
+
 /**
  * **How big a slot is drawn, as a length its panel takes**: {@link slotSize}'s share, or the
  * catalogue's fixed {@link Definition.length} while nothing has been dragged and the row has
  * room for it (the right panel's 300px, R124; its 20% of a row under 1500px).
  */
-export function slotLength(side: SlotId, placed: Placement[], row: number = rowWidth()): string {
+export function slotLength(
+  side: SlotId,
+  placed: Placement[],
+  row: number = rowWidth(),
+  height: number = globalThis.innerHeight ?? 0,
+): string {
   const first = shownIn(placed)[0] ?? placed[0];
   const share = slotSize(side, placed);
+  // **A short window starts the bottom row lower** (D-2917-17): R126's 34% where the window is
+  // tall enough, and 30% below that, so a pane's line and its Notice fit in the window purlis
+  // opens at (1280×800, `tauri.conf.json`). Its 160px floor holds at every height.
+  if (side === "panel" && first?.size === undefined && height > 0 && height < TALL_ENOUGH)
+    return `${Math.min(share, SHORT_PANEL)}%`;
   const fixed = first === undefined ? undefined : CATALOGUE[first.id].length;
   if (first?.size !== undefined || fixed === undefined) return `${share}%`;
   // **Never more than its share of the row** (#2917): in a row too narrow for the fixed length,

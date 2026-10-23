@@ -660,20 +660,12 @@ describe("the Panel", () => {
     expect((panel as Box).top).toBeGreaterThanOrEqual((right as Box).bottom - 1);
   });
 
-  /** **The most of the column the Panel may take**: 70%, or less where the work above it would go
-   *  under its least height (30rem, D-2917-17). */
-  const ceiling = async () => {
-    const column = await boxOf(COLUMN);
-    const rem = await browser.execute(() =>
-      Number.parseFloat(getComputedStyle(document.documentElement).fontSize),
-    );
-    if (column === null || column.height <= 0) return 0.7;
-    return Math.min(0.7, 1 - (30 * rem) / column.height);
-  };
-  /** The bottom row's default share (R126, #2917): 34%, under that {@link ceiling}. */
-  const defaultShare = async () => Math.min(0.34, await ceiling());
+  /** The bottom row's default share (R126, D-2917-17): 34% from a 900px-tall window up, 30%
+   *  below. */
+  const defaultShare = async () =>
+    (await browser.execute(() => window.innerHeight)) < 900 ? 0.3 : 0.34;
 
-  it("is 34% of the regions' height by default, the work keeping its least, and never under 160px (R126)", async () => {
+  it("is 34% of the regions' height by default (30% in a short window), and never under 160px (R126)", async () => {
     const wanted = await defaultShare();
     expect(await share()).toBeGreaterThan(wanted - 0.04);
     expect(await share()).toBeLessThan(wanted + 0.04);
@@ -685,12 +677,11 @@ describe("the Panel", () => {
     // reports exactly as it reports a drag. Whatever the library's step, the handle is pressed
     // until the Panel reaches its ceiling (or 60 presses), and a range is asserted, not a pixel:
     // well past where it started, and never past 70%, give or take a pixel's rounding.
-    const most = await ceiling();
     await focusOn(HANDLE);
-    for (let press = 0; press < 60 && (await share()) < most - 0.01; press++) {
+    for (let press = 0; press < 60 && (await share()) < 0.69; press++) {
       await browser.keys(["ArrowUp"]);
     }
-    await browser.waitUntil(async () => (await share()) > Math.min(0.6, most - 0.08), {
+    await browser.waitUntil(async () => (await share()) > 0.6, {
       timeout: 20_000,
       timeoutMsg: "the Panel never got taller",
     });

@@ -316,10 +316,24 @@ describe("the Panel's height", () => {
     expect(constraints(given.get("region-panel"))).toEqual({
       collapsedSize: "0%",
       collapsible: true,
-      defaultSize: "34%",
+      // jsdom's window is 768px tall: the short window's 30% (34% from 900px up, D-2917-17).
+      defaultSize: "30%",
       minSize: "160px",
       maxSize: "70%",
     });
+  });
+
+  it("keeps the length it started at when the window changes after launch", async () => {
+    const tall = vi.spyOn(window, "innerHeight", "get").mockReturnValue(768);
+    render(<Harness from={DEFAULT_ARRANGEMENT} to={DEFAULT_ARRANGEMENT.slice()} />);
+    expect(given.get("region-panel")?.defaultSize).toBe("30%");
+
+    // Taller now, and drawn again: a starting length that followed would re-register the panel.
+    tall.mockReturnValue(1000);
+    await rearrange();
+
+    expect(given.get("region-panel")?.defaultSize).toBe("30%");
+    tall.mockRestore();
   });
 
   it("starts at nothing when every half of it was put away", () => {
@@ -359,7 +373,7 @@ describe("the Panel's height", () => {
     await userEvent.dblClick(handle);
 
     expect(handle).toHaveAttribute("data-own-reset");
-    expect(handles.get("region-panel")?.resize).toHaveBeenCalledWith("34%");
+    expect(handles.get("region-panel")?.resize).toHaveBeenCalledWith("30%");
     expect(onReset).toHaveBeenCalledWith("panel");
   });
 
@@ -375,7 +389,7 @@ describe("the Panel's height", () => {
     expect(onReset).not.toHaveBeenCalled();
     pressAt(handle, 1200);
 
-    expect(handles.get("region-panel")?.resize).toHaveBeenCalledWith("34%");
+    expect(handles.get("region-panel")?.resize).toHaveBeenCalledWith("30%");
     expect(onReset).toHaveBeenCalledWith("panel");
   });
 

@@ -806,10 +806,14 @@ describe("the open view of a side (#1673)", () => {
     expect(slotLength("right", dragged, 1600)).toBe("25%");
   });
 
-  it("starts the bottom row at 34% whatever the window's height (R126)", () => {
+  it("starts the bottom row at 34% in a tall window and at 30% in a short one (R126, D-2917-17)", () => {
     const panel = inSlots(DEFAULT_ARRANGEMENT).panel;
-    expect(slotLength("panel", panel, 1600)).toBe("34%");
-    expect(slotLength("panel", panel, 900)).toBe("34%");
+    expect(slotLength("panel", panel, 1600, 1000)).toBe("34%");
+    expect(slotLength("panel", panel, 1600, 900)).toBe("34%");
+    expect(slotLength("panel", panel, 1280, 800)).toBe("30%");
+    // Dragged, it keeps what it was given whatever the window's height.
+    const dragged = panel.map((one) => ({ ...one, size: 40 }));
+    expect(slotLength("panel", dragged, 1280, 800)).toBe("40%");
   });
 
   it("measures the right panel's share against the row, not the window", () => {

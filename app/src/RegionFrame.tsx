@@ -460,9 +460,7 @@ export function RegionFrame({
           narrow column at the window's edge, so a press brings the side back on that view. */}
       {shownIn(slots.left).length === 0 && column("left")}
       <Group className="regions" orientation="vertical" onLayoutChanged={settled}>
-        {/* At least a pane's line and its Notice tall (D-2917-17): in a short window the Panel
-            gives way to its 160px floor before the work goes under that. */}
-        <Panel id="region-upper" className="region-upper" minSize="30rem">
+        <Panel id="region-upper" className="region-upper" minSize="20%">
           <Group className="region-row" orientation="horizontal" onLayoutChanged={settled}>
             <Slot side="left" placed={slots.left} started={started.left} drawn={drawn} />
             <Edge open={shownIn(slots.left).length > 0} named="Resize the left sidebar" />
@@ -1043,6 +1041,10 @@ function Slot({
 
   /** How big it should be when it is brought back. */
   const wanted = slotLength(side, placed);
+  // **Where it starts, read once**: the length is the window's (the right panel's 300px or its
+  // share of the row, the bottom row's share by the window's height), and a `defaultSize` that
+  // changed when the window did would re-register the panel.
+  const [starts] = useState(() => startingLength(side, started));
 
   const before = useRef(open);
   useEffect(() => {
@@ -1089,7 +1091,7 @@ function Slot({
       // `started` is the arrangement the window launched with, snapshotted for this reason.
       collapsible
       collapsedSize="0%"
-      defaultSize={startingLength(side, started)}
+      defaultSize={starts}
       minSize={leastOf(side)}
       maxSize={`${SLOTS[side].most}%`}
     >
