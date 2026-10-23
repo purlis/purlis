@@ -1278,3 +1278,105 @@ fn the_session_record_tool_refuses_a_title_that_is_not_one_line_before_asking_an
     assert!(app.asked.try_recv().is_err(), "the app was asked");
     assert!(records_in_alpha(&tmp).is_empty());
 }
+
+#[test]
+fn a_sandboxed_chat_rewrites_no_workspaces_manifest_and_says_who_does() {
+    let tmp = a_project();
+    let manifest = root(&tmp).join("workspaces/alpha/workspace.json");
+    let held = "{\"name\": \"alpha\", \"repos\": []}\n";
+    std::fs::write(&manifest, held).unwrap();
+    let mut chat = sandboxed_chat(Some("alpha"));
+    // The Skill studio's grant is behind its flag (#2762).
+    chat.push((purlis_core::skills::STUDIO_ENV.to_owned(), "1".to_owned()));
+    for args in [
+        &["workspace", "rename", "alpha", "gamma"][..],
+        &["workspace", "fork", "alpha", "delta"][..],
+        &["skill", "grant", "lint", "-w", "alpha", "--off"][..],
+    ] {
+        let out = purlis(&tmp, args, &chat);
+        assert!(!out.status.success(), "{args:?}: {}", said(&out));
+        assert!(
+            said(&out).contains("a sandboxed chat does not write"),
+            "{args:?}: {}",
+            said(&out)
+        );
+    }
+    assert_eq!(std::fs::read_to_string(&manifest).unwrap(), held);
+    for made in ["gamma", "delta"] {
+        assert!(!root(&tmp).join("workspaces").join(made).exists(), "{made}");
+    }
+    // Outside a chat, the same command is the person's, and runs.
+    let out = purlis(&tmp, &["workspace", "rename", "alpha", "gamma"], &[]);
+    assert!(
+        !said(&out).contains("a sandboxed chat does not write"),
+        "{}",
+        said(&out)
+    );
+}
+
+#[test]
+fn workspace_snapshot_in_a_sandboxed_chat_is_recorded_by_the_app_in_its_own_workspace() {
+    let tmp = a_project();
+    // A clone in `alpha`, on a branch, with a commit: what a snapshot records.
+    let web = root(&tmp).join("workspaces/alpha/web");
+    std::fs::create_dir_all(&web).unwrap();
+    std::fs::write(web.join("README"), "web\n").unwrap();
+    for args in [
+        &["init", "-q", "-b", "main"][..],
+        &["add", "README"][..],
+        &["commit", "-q", "-m", "README"][..],
+    ] {
+        let done = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&web)
+            .args([
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.invalid",
+                "-c",
+                "commit.gpgsign=false",
+                "-c",
+                "init.templateDir=",
+            ])
+            .args(args)
+            .output()
+            .expect("git runs");
+        assert!(done.status.success(), "git {args:?}: {done:?}");
+    }
+    let app = an_app(&tmp, None);
+    let mut chat = app.chat_env();
+    chat.push((hookwire::SANDBOXED_ENV.to_owned(), "1".to_owned()));
+
+    let ran = purlis(
+        &tmp,
+        &[
+            "workspace",
+            "snapshot",
+            "--description",
+            "the login work",
+            "--force",
+        ],
+        &chat,
+    );
+
+    assert!(ran.status.success(), "{}", said(&ran));
+    assert_eq!(
+        app.write_asked(),
+        Write::WorkspaceSnapshot {
+            description: Some("the login work".to_owned()),
+            force: true,
+        }
+    );
+    let manifest: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(root(&tmp).join("workspaces/alpha/workspace.json"))
+            .expect("the app recorded it"),
+    )
+    .expect("JSON");
+    assert_eq!(manifest["description"], "the login work", "{manifest}");
+
+    // Another workspace's is not the chat's to record.
+    let other = purlis(&tmp, &["workspace", "snapshot", "beta"], &chat);
+    assert!(!other.status.success(), "{}", said(&other));
+    assert!(!root(&tmp).join("workspaces/beta/workspace.json").exists());
+}

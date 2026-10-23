@@ -20,6 +20,7 @@ import { emit } from "@tauri-apps/api/event";
 import App from "./App";
 import type { Activity, ActivityLine, OpenChat, ViewTab } from "./bindings";
 import { stripNamed } from "./test-strips";
+import { eventually, tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
  * **A session's Activity tab** (#1495) against the whole window: it opens from the chat tab's
@@ -316,8 +317,8 @@ describe("a session's Activity tab", () => {
 
     await userEvent.click(within(note).getByRole("button", { name: "Show chat talk" }));
 
-    await waitFor(() =>
-      expect(within(note).getByText("talk")).toHaveAttribute("title", "Its chat is closed"),
+    await eventually(() =>
+      expect(tipOf(within(note).getByText("talk"))).toEqual("Its chat is closed"),
     );
     expect(within(note).queryByRole("button", { name: /Show chat/ })).toBeNull();
     // Every other line of that chat too, and the tab stays where it was.
@@ -375,7 +376,7 @@ describe("a session's Activity tab", () => {
     const note = within(list).getAllByRole("listitem")[1];
 
     expect(within(note).queryByRole("button", { name: /Show chat/ })).toBeNull();
-    expect(within(note).getByText("talk")).toHaveAttribute("title", "Its chat is closed");
+    expect(tipOf(within(note).getByText("talk"))).toEqual("Its chat is closed");
     // Said in words, and not only in a tooltip.
     expect(who(note)).toBe("talk (chat closed) → steward 3");
   });

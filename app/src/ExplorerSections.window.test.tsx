@@ -10,6 +10,7 @@ import { showTheExplorer, stripNamed } from "./test-strips";
 import App from "./App";
 import { forgetThisLaunch } from "./regions";
 import { GLOBAL } from "./windowprefs";
+import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
  * **Explorer in sections** (#1677, spec #1671 B-12): the focused workspace's repos and branches;
@@ -289,10 +290,7 @@ describe("Explorer in sections (#1677)", () => {
     expect(repo).not.toHaveAttribute("aria-expanded");
     expect(repo).not.toHaveAttribute("aria-disabled");
     expect(repo).toHaveTextContent("workspace beta");
-    expect(repo).toHaveAttribute(
-      "title",
-      "A repo of workspace beta: its files are on that workspace's tab",
-    );
+    expect(tipOf(repo)).toEqual("A repo of workspace beta: its files are on that workspace's tab");
 
     await userEvent.click(repo);
 

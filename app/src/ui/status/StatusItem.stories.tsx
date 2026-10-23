@@ -159,7 +159,7 @@ const ITEMS = (open: () => void): StatusContribution[] => [
     priority: 40,
     label: "PRs",
     value: "2",
-    title: "PRs, from Forge's facts file",
+    tooltip: "PRs, from Forge's facts file",
   },
   {
     id: "purlis.notices",
@@ -201,7 +201,8 @@ function Bar() {
 }
 
 /**
- * Context on the left by priority, health on the right; the menu key on an item opens the bar's
+ * Context on the left by priority, health on the right; a cell with a hint is a Tab stop that
+ * shows it; the menu key on an item opens the bar's
  * menu, a check hides an item, the same check shows it again, and Escape closes the menu.
  */
 export const StatusBarAndItsMenu: Story = {
@@ -213,6 +214,16 @@ export const StatusBarAndItsMenu: Story = {
       /^purlistodo ?3PRs ?2Notices/,
     );
     const notices = canvas.getByRole("button", { name: "Notices: 2" });
+    // A cell with a hint is a Tab stop, so its hint is the keyboard's too (#2908): the PRs
+    // badge comes first, its tooltip open, and then Notices.
+    const prs = within(bar).getByText("PRs").closest<HTMLElement>('[data-part="root"]');
+    await userEvent.tab();
+    await expect(prs).toHaveFocus();
+    await waitFor(() =>
+      expect(within(document.body).getByRole("tooltip")).toHaveTextContent(
+        "PRs, from Forge's facts file",
+      ),
+    );
     await userEvent.tab();
     await expect(notices).toHaveFocus();
     expectFocusInSight();

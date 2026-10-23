@@ -5,6 +5,7 @@ import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { CountPill, countsSaid } from "./CountPill";
 import { fitPill } from "./wholeWays";
+import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
  * **The one pill a tab's counts are drawn in**: how many chats are open there, and how many of
@@ -57,7 +58,7 @@ describe("the count pill", () => {
     // The digits are the pill's drawing: its one name is what a screen reader is told.
     for (const part of pill.querySelectorAll("span"))
       expect(part.getAttribute("aria-hidden")).toBe("true");
-    expect(pill.getAttribute("title")).toBe("3 chats, 1 needs you");
+    expect(tipOf(pill)).toBe("3 chats, 1 needs you");
   });
 
   it("never hides a chat that needs you behind there being no tab to count", () => {

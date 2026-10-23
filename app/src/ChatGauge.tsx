@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { useOnShownAgain, useProjectShown } from "./projectShown";
 import { commands, type ChatUsage, type GaugeTone, type PlaneId, type UsageTurn } from "./bindings";
 import { everyWhileShown } from "./whileShown";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
  * **A chat's `ctx`/`cache` gauge, in its own pane's corner.**
@@ -148,39 +149,40 @@ export function ChatGauge({ usage }: { usage: ChatUsage | undefined }) {
     .join("; ");
   return (
     // No live region: a screen reader announcing every turn's percentage in every pane would
-    // be noise. The words are in the text and the full sentence is on the title.
-    <div className="chat-gauge" data-testid="chat-gauge" title={said}>
-      {context && (
-        <span className="gauge-part">
-          <span className="gauge-label">ctx</span>{" "}
-          <span className={TONE[context.tone]}>{context.value}%</span>
-        </span>
-      )}
-      {cache && (
-        <span className="gauge-part">
-          <span className="gauge-label">cache</span>{" "}
-          <span className={TONE[cache.tone]}>{cache.value}%</span>
-        </span>
-      )}
-      {rebuilds && (
-        <span className={`gauge-part ${TONE[rebuilds.tone]}`}>
-          ↻{rebuilds.count} {rebuilds.cost}
-        </span>
-      )}
-      {cold != null && (
-        <span
-          className="gauge-part gauge-warn"
-          title={`The cache has been cold ${cold} turns running: something keeps changing the prompt's prefix — a model or effort switch, an MCP server toggling, a /compact. /rewind keeps it; /compact rebuilds it.`}
-        >
-          cold {cold}
-        </span>
-      )}
-      {turns.length > 1 && <Trend turns={turns} />}
-    </div>
+    // be noise. The words are in the text and the full sentence is its tooltip.
+    <Tooltip tip={said}>
+      <div className="chat-gauge" data-testid="chat-gauge">
+        {context && (
+          <span className="gauge-part">
+            <span className="gauge-label">ctx</span>{" "}
+            <span className={TONE[context.tone]}>{context.value}%</span>
+          </span>
+        )}
+        {cache && (
+          <span className="gauge-part">
+            <span className="gauge-label">cache</span>{" "}
+            <span className={TONE[cache.tone]}>{cache.value}%</span>
+          </span>
+        )}
+        {rebuilds && (
+          <span className={`gauge-part ${TONE[rebuilds.tone]}`}>
+            ↻{rebuilds.count} {rebuilds.cost}
+          </span>
+        )}
+        {cold != null && (
+          <Tooltip
+            tip={`The cache has been cold ${cold} turns running: something keeps changing the prompt's prefix — a model or effort switch, an MCP server toggling, a /compact. /rewind keeps it; /compact rebuilds it.`}
+          >
+            <span className="gauge-part gauge-warn">cold {cold}</span>
+          </Tooltip>
+        )}
+        {turns.length > 1 && <Trend turns={turns} />}
+      </div>
+    </Tooltip>
   );
 }
 
-/** What one turn's bar says on its title. */
+/** What one turn's bar says, a line of the trend's tooltip. */
 function turnSaid(turn: UsageTurn, index: number): string {
   return [
     `turn ${index + 1}`,
@@ -203,28 +205,30 @@ function turnSaid(turn: UsageTurn, index: number): string {
 export function Trend({ turns }: { turns: readonly UsageTurn[] }) {
   const width = turns.length * 3;
   return (
-    <svg
-      className="gauge-trend"
-      data-testid="gauge-trend"
-      viewBox={`0 0 ${width} 10`}
-      preserveAspectRatio="none"
-      aria-hidden="true"
-    >
-      {turns.map((turn, i) => {
-        const height = turn.cache ? Math.max(1, Math.round(turn.cache.value / 10)) : 1;
-        return (
-          <rect
-            key={i}
-            x={i * 3}
-            y={10 - height}
-            width={2}
-            height={height}
-            className={turn.cache ? TONE[turn.cache.tone] : "gauge-unknown"}
-          >
-            <title>{turnSaid(turn, i)}</title>
-          </rect>
-        );
-      })}
-    </svg>
+    // Every turn's line in the trend's one tooltip, oldest first: a mark the gauge's words
+    // already say, so the pointer's.
+    <Tooltip tip={turns.map(turnSaid).join("\n")}>
+      <svg
+        className="gauge-trend"
+        data-testid="gauge-trend"
+        viewBox={`0 0 ${width} 10`}
+        preserveAspectRatio="none"
+        aria-hidden="true"
+      >
+        {turns.map((turn, i) => {
+          const height = turn.cache ? Math.max(1, Math.round(turn.cache.value / 10)) : 1;
+          return (
+            <rect
+              key={i}
+              x={i * 3}
+              y={10 - height}
+              width={2}
+              height={height}
+              className={turn.cache ? TONE[turn.cache.tone] : "gauge-unknown"}
+            />
+          );
+        })}
+      </svg>
+    </Tooltip>
   );
 }

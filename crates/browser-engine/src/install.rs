@@ -225,6 +225,20 @@ impl ManifestSignature for NoSigner {
 pub trait Fetch {
     /// The bytes at `url`.
     fn fetch(&self, url: &str) -> io::Result<Box<dyn Read + '_>>;
+
+    /// The bytes at `url`, and how many there are where the answer says (#2207): what a
+    /// download's progress is a share of. Where it is not known, none.
+    fn fetch_sized(&self, url: &str) -> io::Result<(Box<dyn Read + '_>, Option<u64>)> {
+        Ok((self.fetch(url)?, None))
+    }
+
+    /// Whether the install this fetches for is still wanted (#2207): asked once more after the
+    /// archive is downloaded and unpacked, just before the engine is put in place, so a download
+    /// cancelled while it unpacks puts nothing there. An error stops the install, refused as
+    /// [`Refused::Download`] in its words.
+    fn still_wanted(&self) -> io::Result<()> {
+        Ok(())
+    }
 }
 
 /// What a download heard, for each request it made: its address, the status that came back
@@ -308,6 +322,10 @@ impl Default for Https {
 
 impl Fetch for Https {
     fn fetch(&self, url: &str) -> io::Result<Box<dyn Read + '_>> {
+        self.fetch_sized(url).map(|(body, _)| body)
+    }
+
+    fn fetch_sized(&self, url: &str) -> io::Result<(Box<dyn Read + '_>, Option<u64>)> {
         let https_only = self.https_only();
         let agent: ureq::Agent = ureq::Agent::config_builder()
             .https_only(https_only)
@@ -369,16 +387,17 @@ impl Fetch for Https {
                 });
                 return Err(io::Error::other(format!("{url} answered {status}")));
             }
-            let body = response
-                .into_body()
-                .into_with_config()
-                .limit(MAX_ARCHIVE_BYTES)
-                .reader();
-            return Ok(Box::new(Heard {
-                body,
-                heard: Some((self.clone(), url, status, started)),
-                whole: false,
-            }));
+            let body = response.into_body();
+            let length = body.content_length();
+            let body = body.into_with_config().limit(MAX_ARCHIVE_BYTES).reader();
+            return Ok((
+                Box::new(Heard {
+                    body,
+                    heard: Some((self.clone(), url, status, started)),
+                    whole: false,
+                }),
+                length,
+            ));
         }
         Err(io::Error::other(format!(
             "more than {MAX_REDIRECTS} redirects from {url}"
@@ -784,6 +803,8 @@ impl Engines {
                 )
             })
             .map_err(Refused::Store)?;
+        // Cancelled while it unpacked: nothing is put in place, and its scratch goes.
+        fetch.still_wanted().map_err(Refused::Download)?;
         // The one step that touches the engines in place, one at a time in this process; every
         // download and unpack before it is into a scratch name of its own. An engine another
         // install finished meanwhile is kept, never replaced under a browser running it.
@@ -949,151 +970,4 @@ impl Drop for Scratch {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::io::{Cursor, Read, Write};
-    use std::net::TcpListener;
-    use std::sync::{Arc, Mutex, mpsc};
-    use std::time::{Duration, Instant};
-
-    use super::{Fetch, Heard, Https};
-
-    /// What a listener heard: `(url, status, answered)` for each request.
-    type Hops = Arc<Mutex<Vec<(String, Option<u16>, bool)>>>;
-
-    fn listening() -> (Https, Hops) {
-        let heard = Arc::new(Mutex::new(Vec::new()));
-        let into = Arc::clone(&heard);
-        let https = Https::default().listening(Arc::new(move |hop| {
-            into.lock()
-                .unwrap()
-                .push((hop.url.to_owned(), hop.status, hop.answered));
-        }));
-        (https, heard)
-    }
-
-    fn body(https: &Https) -> Heard<Cursor<Vec<u8>>> {
-        Heard {
-            body: Cursor::new(b"the manifest".to_vec()),
-            heard: Some((
-                https.clone(),
-                "https://a.test/m".to_owned(),
-                200,
-                Instant::now(),
-            )),
-            whole: false,
-        }
-    }
-
-    /// A loopback server answering each connection in turn with the next of `answers` (made
-    /// knowing its port), each after its wait; every connection stays open, silent, until the
-    /// test ends.
-    fn serving(answers: impl FnOnce(u16) -> Vec<(Duration, String)>) -> (u16, mpsc::Sender<()>) {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let port = listener.local_addr().unwrap().port();
-        let answers = answers(port);
-        let (done, ended) = mpsc::channel::<()>();
-        std::thread::spawn(move || {
-            let mut open = Vec::new();
-            for (wait, answer) in answers {
-                let Ok((mut stream, _)) = listener.accept() else {
-                    return;
-                };
-                let mut request = [0_u8; 4096];
-                let _ = stream.read(&mut request);
-                std::thread::sleep(wait);
-                let _ = stream.write_all(answer.as_bytes());
-                open.push(stream);
-            }
-            let _ = ended.recv();
-        });
-        (port, done)
-    }
-
-    fn plain(total: Duration) -> (Https, Hops) {
-        let (https, heard) = listening();
-        (
-            Https {
-                total,
-                plain: true,
-                ..https
-            },
-            heard,
-        )
-    }
-
-    #[test]
-    fn a_body_that_stops_mid_way_is_given_up_on_within_the_total_time() {
-        let (port, _done) = serving(|_| {
-            vec![(
-                Duration::ZERO,
-                "HTTP/1.1 200 OK\r\nContent-Length: 1000\r\n\r\nthe first".to_owned(),
-            )]
-        });
-        let (https, heard) = plain(Duration::from_secs(2));
-        let url = format!("http://127.0.0.1:{port}/engine-manifest.json");
-        let started = Instant::now();
-        let mut body = https.fetch(&url).expect("the headers came");
-        let mut bytes = Vec::new();
-        assert!(body.read_to_end(&mut bytes).is_err());
-        drop(body);
-        let took = started.elapsed();
-        assert!(took < Duration::from_secs(10), "given up on after {took:?}");
-        assert_eq!(*heard.lock().unwrap(), [(url, Some(200), false)]);
-    }
-
-    #[test]
-    fn redirects_share_one_total_time() {
-        // Each answer a redirect to the same server, a second after it was asked.
-        let (port, _done) = serving(|port| {
-            (1..=5)
-                .map(|n| {
-                    (
-                        Duration::from_secs(1),
-                        format!(
-                            "HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:{port}/{n}\r\n\
-                             Content-Length: 0\r\nConnection: close\r\n\r\n"
-                        ),
-                    )
-                })
-                .collect()
-        });
-        let (https, _) = plain(Duration::from_secs(2));
-        let started = Instant::now();
-        let got = https.fetch(&format!("http://127.0.0.1:{port}/0"));
-        let took = started.elapsed();
-        assert!(got.is_err());
-        assert!(
-            took < Duration::from_millis(3500),
-            "five redirects a second apart took {took:?} under a two-second limit"
-        );
-    }
-
-    #[test]
-    fn a_body_read_to_its_end_is_heard_as_answered_once_it_is_dropped() {
-        let (https, heard) = listening();
-        let mut whole = body(&https);
-        let mut text = String::new();
-        whole.read_to_string(&mut text).unwrap();
-        assert!(
-            heard.lock().unwrap().is_empty(),
-            "heard only once it is done with"
-        );
-        drop(whole);
-        assert_eq!(
-            *heard.lock().unwrap(),
-            [("https://a.test/m".to_owned(), Some(200), true)]
-        );
-    }
-
-    #[test]
-    fn a_body_left_unread_is_heard_as_not_answered() {
-        let (https, heard) = listening();
-        let mut part = body(&https);
-        part.read_exact(&mut [0_u8; 3]).unwrap();
-        drop(part);
-        assert_eq!(
-            *heard.lock().unwrap(),
-            [("https://a.test/m".to_owned(), Some(200), false)]
-        );
-    }
-}
+mod tests;

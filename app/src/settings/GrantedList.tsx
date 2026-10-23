@@ -195,7 +195,7 @@ function AllowedRows({ plane, file, ids }: { plane: PlaneId; file: string; ids: 
               {canRemove && (
                 <Button
                   isDisabled={one.level === "project" && readOnly !== undefined}
-                  title={one.level === "project" ? readOnly : undefined}
+                  tooltip={one.level === "project" ? readOnly : undefined}
                   aria-label={`Remove ${removed(one)}`}
                   onPress={() => remove(one)}
                 >

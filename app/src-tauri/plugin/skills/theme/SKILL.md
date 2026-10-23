@@ -155,10 +155,12 @@ refused if it tries. A button stays at least 24px tall with its words fitting, i
 and a geometry token is held to the same bounds at the value the theme draws it at. Whatever the
 theme changes, Allow (`grants`) keeps its accent edge and Keep blocked's fill, and no part draws
 Allow or danger nearer the primary than the family does: a look that would is drawn as the
-family default. The button and the fields have parts so far: `field` (its label, help and
-error), `text-input` (the one-line box and its glass) and `textarea`, which have no variants, so
-a key names the part alone (`"text-input.root.border-width": 0` turns off every one-line box's
-edge). The note above still holds for tabs and rows.
+family default. The button, the fields and the tooltip have parts so far: `field` (its label,
+help and error), `text-input` (the one-line box and its glass), `textarea` and `tooltip` (its
+`root`, the surface: colours, edge, corners and shadow, no sizes; and `detail`, an icon button's
+second line), which have no variants, so a key names the part alone
+(`"text-input.root.border-width": 0` turns off every one-line box's edge). The note above still
+holds for tabs and rows.
 
 Done when the file is JSON with every value hex, a palette name, or a token's own type, and
 every shape and size inside its bounds.

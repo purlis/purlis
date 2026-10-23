@@ -12,6 +12,7 @@ import type { BrowserFrame, ChatBrowser, OpenChat } from "./bindings";
 import { setChatsListPrefs } from "./chatsListPrefs";
 import { forgetThisLaunch } from "./regions";
 import { stripNamed } from "./test-strips";
+import { eventually, tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
  * **A chat's browsers, in the window** (#2024, spec #2008): each is a row under its chat in the
@@ -640,7 +641,7 @@ describe("who drives a chat's browser, on its row and its thumbnail (#2300)", ()
     });
     const row = within(browsers).getByRole("button", { name: /Browser b1/ });
     expect(row.textContent).toContain("you are driving");
-    expect(row.title).toContain("You are driving this browser.");
+    expect(tipOf(row)).toContain("You are driving this browser.");
     const thumbnail = await screen.findByRole("button", {
       name: "Open browser b1 of steward 1, you are driving",
     });
@@ -684,13 +685,13 @@ describe("where a chat's browser's page is (#2300)", () => {
     const row = within(
       within(await chatsTree()).getByRole("group", { name: "Browsers of steward 1" }),
     ).getByRole("button", { name: /Browser b1/ });
-    await waitFor(() => expect(row.title).toMatch(/localhost:5173 on this (Mac|computer)/));
+    await eventually(() => expect(tipOf(row)).toMatch(/localhost:5173 on this (Mac|computer)/));
 
     await userEvent.click(row);
     const view = await screen.findByTestId("browser-view");
     const chip = within(view).getByTestId("browser-chip");
     expect(chip.textContent).toMatch(/^localhost:5173 on this (Mac|computer)$/);
-    expect(chip.title).toBe("http://localhost:5173");
+    expect(tipOf(chip)).toBe("http://localhost:5173");
 
     await waitFor(() =>
       expect(host.asked("watch_browser")).toContainEqual(

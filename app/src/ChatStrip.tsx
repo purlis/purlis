@@ -46,6 +46,7 @@ import type { UsedReader } from "./tasksUsed";
 import type { RefObject } from "react";
 import { Doer, ShowMore, Pin, Closer } from "./StripMarks";
 import type { SandboxSaid } from "./SandboxMark";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /** What a tab with no tasks hands its chip, the same lists every time. */
 export const NO_ROWS: readonly ChatRow[] = [];
@@ -221,27 +222,28 @@ export function ChatStrip({
                             tabStopId={String(id)}
                             active={id === tabs.inFront}
                           >
-                            <button
-                              role="tab"
-                              id={chatTabId(place)}
-                              aria-selected={id === tabs.inFront}
-                              aria-label={chipSays(tabs.byId[id].name)}
-                              title={chipSays(tabs.byId[id].name)}
-                              onKeyDown={(event) =>
-                                closeOnDelete(event, by(`tab.close:${id}`), press)
-                              }
-                              onClick={() => {
-                                const offer = by(`tab.select:${id}`);
-                                if (offer?.available) press(offer);
-                              }}
-                            >
-                              <SquareTerminal
-                                className="tab-mark"
-                                data-mark="chat"
-                                aria-hidden="true"
-                              />
-                              <WrappingUp held />
-                            </button>
+                            <Tooltip tip={chipSays(tabs.byId[id].name)}>
+                              <button
+                                role="tab"
+                                id={chatTabId(place)}
+                                aria-selected={id === tabs.inFront}
+                                aria-label={chipSays(tabs.byId[id].name)}
+                                onKeyDown={(event) =>
+                                  closeOnDelete(event, by(`tab.close:${id}`), press)
+                                }
+                                onClick={() => {
+                                  const offer = by(`tab.select:${id}`);
+                                  if (offer?.available) press(offer);
+                                }}
+                              >
+                                <SquareTerminal
+                                  className="tab-mark"
+                                  data-mark="chat"
+                                  aria-hidden="true"
+                                />
+                                <WrappingUp held />
+                              </button>
+                            </Tooltip>
                           </RovingFocusGroup.Item>
                         </span>
                       ) : (
@@ -291,38 +293,8 @@ export function ChatStrip({
                               tabStopId={String(id)}
                               active={id === tabs.inFront}
                             >
-                              <button
-                                role="tab"
-                                id={chatTabId(place)}
-                                aria-selected={id === tabs.inFront}
-                                // What a press does that the tab's name does not say (#1486):
-                                // in front and showing a task, it goes back to the session.
-                                aria-description={
-                                  id === tabs.inFront && taskNameOf(id) !== undefined
-                                    ? `Press to go back to ${tabs.byId[id].name}`
-                                    : undefined
-                                }
-                                // Down opens the menu of its tasks, where it has any (#1487).
-                                aria-haspopup={tabHasTasks(id) ? "menu" : undefined}
-                                // The fresh mark beside it as well (#1246): it is outside the tab.
-                                aria-describedby={
-                                  [
-                                    sortable.attributes["aria-describedby"],
-                                    freshMarkShown(
-                                      freshOf(id),
-                                      planeUpdates[chatOf(tabs, id) ?? -1],
-                                    )
-                                      ? freshMarkOf(id)
-                                      : undefined,
-                                    // And its tasks' counts, which are beside it too
-                                    // (#1487): "Tasks of steward 4: 2 working".
-                                    tabHasTasks(id) ? tasksIdOf(id) : undefined,
-                                  ]
-                                    .filter(Boolean)
-                                    .join(" ") || undefined
-                                }
-                                // Where a handed-off chat came from, by its parent's name (charter-app#258).
-                                title={
+                              <Tooltip
+                                tip={
                                   panesOf(tabs, id).some((one) => wrapping.has(one.session))
                                     ? WRAPPING_UP
                                     : panesOf(tabs, id).some((one) => restoring.has(one.session))
@@ -332,68 +304,100 @@ export function ChatStrip({
                                           workItems[chatOf(tabs, id) ?? -1],
                                         )
                                 }
-                                // F2 renames here rather than opening the palette (`RENAMES_ON_F2`), on a
-                                // tab that has a rename row — a chat's, and never a view's.
-                                {...(by(`tab.rename:${id}`) ? { [RENAMES_ON_F2]: "" } : {})}
-                                {...sortable.listeners}
-                                onKeyDown={(event) => {
-                                  // A tab that is up is being carried: its keys are the drag's.
-                                  keepsTheFocus(event, sortable.isDragging);
-                                  sortable.listeners?.onKeyDown?.(event);
-                                  if (sortable.isDragging) return;
-                                  closeOnDelete(event, by(`tab.close:${id}`), press);
-                                  renameOnF2(event, by(`tab.rename:${id}`), press);
-                                  // **Down on a tab with tasks opens their menu** (#1487),
-                                  // as Down opens the menu under an item of a menu bar. The
-                                  // strip runs across, so Down was nothing's.
-                                  if (
-                                    event.key === "ArrowDown" &&
-                                    !(event.altKey || event.ctrlKey || event.metaKey) &&
-                                    !event.shiftKey &&
-                                    tabHasTasks(id)
-                                  ) {
-                                    event.preventDefault();
-                                    showTabTasks(id);
-                                  }
-                                }}
-                                // The catalogue's row, not a second copy of it. The tab already in front
-                                // has a row that says so and cannot run — a tab is never disabled, because
-                                // the selected tab is the one a keyboard has to be able to land on.
-                                //
-                                // **Pressed while it is in front, a tab showing a task goes
-                                // back to its session's own chat** (#1486, `pressTab`).
-                                onClick={(event) =>
-                                  pressTab(id, by(`tab.select:${id}`), event.detail > 0)
-                                }
-                                // A double-click on the name renames it — the same row again.
-                                onDoubleClick={() => {
-                                  // Not a press to go back to the main chat (#1486).
-                                  notGoingBack();
-                                  // …and keeps a preview tab, VS Code's double-click (SI-9b).
-                                  const offer = by(`tab.rename:${id}`) ?? by(`tab.keep:${id}`);
-                                  if (offer?.available) press(offer);
-                                }}
                               >
-                                {/* No `updates` here: on the strip the plane-updated mark
-                                  is a button of its own beside the tab (`FreshMark`). */}
-                                <TabMarks
-                                  tabs={tabs}
-                                  id={id}
-                                  persona={personaOf(chatOf(tabs, id))}
-                                  sandbox={sandboxOf?.(chatOf(tabs, id))}
-                                  shells={shells}
-                                  wrapping={wrapping}
-                                  stopping={stopping}
-                                  task={taskNameOf(id)}
-                                  taskOf={taskTabOf(id)}
-                                  pin={
-                                    <Pin
-                                      held={isPinned(id)}
-                                      what={chatOf(tabs, id) === undefined ? "tab" : "chat"}
-                                    />
+                                <button
+                                  role="tab"
+                                  id={chatTabId(place)}
+                                  aria-selected={id === tabs.inFront}
+                                  // What a press does that the tab's name does not say (#1486):
+                                  // in front and showing a task, it goes back to the session.
+                                  aria-description={
+                                    id === tabs.inFront && taskNameOf(id) !== undefined
+                                      ? `Press to go back to ${tabs.byId[id].name}`
+                                      : undefined
                                   }
-                                />
-                              </button>
+                                  // Down opens the menu of its tasks, where it has any (#1487).
+                                  aria-haspopup={tabHasTasks(id) ? "menu" : undefined}
+                                  // The fresh mark beside it as well (#1246): it is outside the tab.
+                                  aria-describedby={
+                                    [
+                                      sortable.attributes["aria-describedby"],
+                                      freshMarkShown(
+                                        freshOf(id),
+                                        planeUpdates[chatOf(tabs, id) ?? -1],
+                                      )
+                                        ? freshMarkOf(id)
+                                        : undefined,
+                                      // And its tasks' counts, which are beside it too
+                                      // (#1487): "Tasks of steward 4: 2 working".
+                                      tabHasTasks(id) ? tasksIdOf(id) : undefined,
+                                    ]
+                                      .filter(Boolean)
+                                      .join(" ") || undefined
+                                  }
+                                  // F2 renames here rather than opening the palette (`RENAMES_ON_F2`), on a
+                                  // tab that has a rename row — a chat's, and never a view's.
+                                  {...(by(`tab.rename:${id}`) ? { [RENAMES_ON_F2]: "" } : {})}
+                                  {...sortable.listeners}
+                                  onKeyDown={(event) => {
+                                    // A tab that is up is being carried: its keys are the drag's.
+                                    keepsTheFocus(event, sortable.isDragging);
+                                    sortable.listeners?.onKeyDown?.(event);
+                                    if (sortable.isDragging) return;
+                                    closeOnDelete(event, by(`tab.close:${id}`), press);
+                                    renameOnF2(event, by(`tab.rename:${id}`), press);
+                                    // **Down on a tab with tasks opens their menu** (#1487),
+                                    // as Down opens the menu under an item of a menu bar. The
+                                    // strip runs across, so Down was nothing's.
+                                    if (
+                                      event.key === "ArrowDown" &&
+                                      !(event.altKey || event.ctrlKey || event.metaKey) &&
+                                      !event.shiftKey &&
+                                      tabHasTasks(id)
+                                    ) {
+                                      event.preventDefault();
+                                      showTabTasks(id);
+                                    }
+                                  }}
+                                  // The catalogue's row, not a second copy of it. The tab already in front
+                                  // has a row that says so and cannot run — a tab is never disabled, because
+                                  // the selected tab is the one a keyboard has to be able to land on.
+                                  //
+                                  // **Pressed while it is in front, a tab showing a task goes
+                                  // back to its session's own chat** (#1486, `pressTab`).
+                                  onClick={(event) =>
+                                    pressTab(id, by(`tab.select:${id}`), event.detail > 0)
+                                  }
+                                  // A double-click on the name renames it — the same row again.
+                                  onDoubleClick={() => {
+                                    // Not a press to go back to the main chat (#1486).
+                                    notGoingBack();
+                                    // …and keeps a preview tab, VS Code's double-click (SI-9b).
+                                    const offer = by(`tab.rename:${id}`) ?? by(`tab.keep:${id}`);
+                                    if (offer?.available) press(offer);
+                                  }}
+                                >
+                                  {/* No `updates` here: on the strip the plane-updated mark
+                                  is a button of its own beside the tab (`FreshMark`). */}
+                                  <TabMarks
+                                    tabs={tabs}
+                                    id={id}
+                                    persona={personaOf(chatOf(tabs, id))}
+                                    sandbox={sandboxOf?.(chatOf(tabs, id))}
+                                    shells={shells}
+                                    wrapping={wrapping}
+                                    stopping={stopping}
+                                    task={taskNameOf(id)}
+                                    taskOf={taskTabOf(id)}
+                                    pin={
+                                      <Pin
+                                        held={isPinned(id)}
+                                        what={chatOf(tabs, id) === undefined ? "tab" : "chat"}
+                                      />
+                                    }
+                                  />
+                                </button>
+                              </Tooltip>
                             </RovingFocusGroup.Item>
                           )}
                           {/* **The chip of the session's tasks** (#1487): their counts, the

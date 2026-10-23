@@ -22,7 +22,7 @@ pub fn in_bundle(plugin: &Path) -> Option<PathBuf> {
 
 /// Every folder in `dir`: the skill it holds, or the folder and what it lacks to be one. A file
 /// beside the folders is neither. In the order the directory lists them.
-pub(crate) fn scan(dir: &Path) -> Vec<Result<Skill, (PathBuf, Missing)>> {
+pub fn scan(dir: &Path) -> Vec<Result<Skill, (PathBuf, Missing)>> {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Vec::new();
     };

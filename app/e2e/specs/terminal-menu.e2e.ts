@@ -38,12 +38,19 @@ async function drawn() {
       lines: menu.querySelectorAll('[role="separator"]').length,
       rows: [...menu.querySelectorAll<HTMLElement>('[role="menuitem"]')].map((row) => {
         const at = row.getBoundingClientRect();
-        const title = row.querySelector<HTMLElement>(".ui-menu-title")?.getBoundingClientRect();
-        const key = row.querySelector<HTMLElement>(".ui-menu-keys")?.getBoundingClientRect();
+        const title = row
+          .querySelector<HTMLElement>('[data-part="label"]')
+          ?.getBoundingClientRect();
+        const key = row
+          .querySelector<HTMLElement>('[data-part="shortcut"]')
+          ?.getBoundingClientRect();
         return {
           name: row.getAttribute("aria-label") ?? "",
           off: row.getAttribute("aria-disabled") === "true",
-          why: row.getAttribute("title"),
+          // Why it cannot run: its description, which its words also say under them.
+          why:
+            document.getElementById(row.getAttribute("aria-describedby") ?? "")?.textContent ??
+            null,
           right: at.right,
           titleRight: title?.right ?? null,
           keyLeft: key?.left ?? null,

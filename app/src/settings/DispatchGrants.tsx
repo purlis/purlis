@@ -1062,7 +1062,7 @@ export function DispatchGrantsList({
             variant={offer.grants === true ? "grants" : "secondary"}
             key={key}
             isDisabled={busy || (offer.machine !== true && readOnly !== undefined)}
-            title={offer.machine === true ? undefined : readOnly}
+            tooltip={offer.machine === true ? undefined : readOnly}
             data-ask={key}
             data-line={line}
             aria-label={named(offer)}

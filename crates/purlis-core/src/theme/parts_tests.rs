@@ -779,6 +779,145 @@ fn the_buttons_family_default_is_what_button_css_draws() {
     }
 }
 
+#[test]
+fn the_tooltips_family_default_is_what_tooltip_css_draws() {
+    let css = include_str!("../../../../app/src/ui/tooltip/tooltip.css");
+    let root = rule(css, "[data-scope=\"tooltip\"][data-part=\"root\"]");
+    let token = |var: &str| {
+        var.trim_start_matches("var(--")
+            .trim_end_matches(')')
+            .replace('-', ".")
+    };
+    let border = declared(root, "border")
+        .and_then(|it| it.split_whitespace().last())
+        .expect("the tooltip's border");
+    let fill = token(declared(root, "background-color").expect("its fill"));
+    // Nothing on it is pressed: under the pointer it keeps its fill.
+    let drawn = json!({
+        "fill": fill,
+        "text": token(declared(root, "color").expect("its words")),
+        "border": token(border),
+        "hover": fill,
+    });
+    assert_eq!(parts::look_json("tooltip", ""), drawn);
+}
+
+#[test]
+fn a_theme_rounds_the_tooltip_and_turns_its_edge_off() {
+    let sheet = sheet_of(json!({
+        "tooltip.root.corner-radius": 8,
+        "tooltip.root.border-width": 0,
+    }));
+    assert!(
+        sheet.contains("[data-scope=\"tooltip\"][data-part=\"root\"]"),
+        "{sheet}"
+    );
+    assert!(sheet.contains("border-width: 0px"), "{sheet}");
+    // Its size is its words': a theme sets none of it, and a key that tries is said and left out.
+    let loaded = load(&with_parts(json!({ "tooltip.root.height": 30 })));
+    assert!(
+        said(&loaded)
+            .iter()
+            .any(|one| one.contains("parts.tooltip.root.height is not a component part")),
+        "{:?}",
+        said(&loaded)
+    );
+    assert!(sheet_of(json!({ "tooltip.root.height": 30 })).is_empty());
+}
+
+/// A stylesheet's `var(--x-y)` as the token `x.y`, or `transparent`.
+fn token_of(var: &str) -> String {
+    if var == "transparent" {
+        return var.to_owned();
+    }
+    let name = var
+        .strip_prefix("var(--")
+        .and_then(|it| it.strip_suffix(')'))
+        .unwrap_or_else(|| panic!("{var} is not one token"));
+    vocabulary::TOKENS
+        .iter()
+        .find(|token| token.replace('.', "-") == name)
+        .unwrap_or_else(|| panic!("--{name} is not a token"))
+        .to_string()
+}
+
+#[test]
+fn the_popover_and_menu_family_defaults_are_what_their_stylesheets_draw() {
+    use parts::State::{Disabled, Focused, Hover, Open};
+    let popover = include_str!("../../../../app/src/ui/popover/popover.css");
+    let surface = rule(popover, "[data-scope=\"popover\"][data-part=\"root\"]");
+    let border = declared(surface, "border")
+        .and_then(|it| it.split_whitespace().last())
+        .expect("the surface's border");
+    for variant in ["popover", "menu"] {
+        for state in [&[][..], &[Hover][..]] {
+            assert_eq!(
+                parts::look_of("popover", variant, state).map(str::to_owned),
+                [
+                    token_of(declared(surface, "background-color").unwrap()),
+                    token_of(declared(surface, "color").unwrap()),
+                    token_of(border),
+                ],
+                "the popover's {variant} surface"
+            );
+        }
+    }
+
+    let menu = &include_str!("../../../../app/src/ui/menu/menu.css")
+        .replace("(\n    ", "(")
+        .replace("\n  ) {", ") {");
+    let row = "[data-scope=\"menu\"][data-part=\"root\"]";
+    let at_rest = rule(menu, row);
+    assert_eq!(
+        declared(at_rest, "background-color"),
+        None,
+        "a row at rest has no ground"
+    );
+    assert_eq!(
+        parts::look_of("menu", "default", &[]),
+        ["transparent", "text.primary", "transparent"]
+    );
+    assert_eq!(
+        token_of(declared(at_rest, "color").unwrap()),
+        "text.primary"
+    );
+    let highlight =
+        token_of(declared(rule(menu, &format!("{row}[data-open]")), "background-color").unwrap());
+    for state in [Hover, Focused, Open] {
+        assert_eq!(
+            parts::look_of("menu", "default", &[state])[0],
+            highlight,
+            "{state:?}"
+        );
+    }
+    let danger = format!("{row}[data-variant=\"danger\"]");
+    assert_eq!(
+        parts::look_of("menu", "danger", &[])[1],
+        token_of(declared(rule(menu, &danger), "color").unwrap())
+    );
+    let danger_hover = token_of(
+        declared(
+            rule(
+                menu,
+                &format!("{danger}[data-hovered]:not([data-disabled])"),
+            ),
+            "background-color",
+        )
+        .unwrap(),
+    );
+    for state in [Hover, Focused] {
+        assert_eq!(
+            parts::look_of("menu", "danger", &[state])[0],
+            danger_hover,
+            "{state:?}"
+        );
+    }
+    assert_eq!(
+        parts::look_of("menu", "default", &[Disabled])[1],
+        token_of(declared(rule(menu, &format!("{row}[data-unavailable]")), "color").unwrap())
+    );
+}
+
 // ---------------------------------------------------------------------------------------
 // The manifest and the schema
 // ---------------------------------------------------------------------------------------
@@ -786,7 +925,7 @@ fn the_buttons_family_default_is_what_button_css_draws() {
 #[test]
 fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
     let manifest = parts::manifest_json();
-    assert_eq!(manifest["version"], 4);
+    assert_eq!(manifest["version"], 6);
     for list in ["states", "properties"] {
         for one in manifest[list].as_array().unwrap() {
             assert_eq!(one["since"], 1, "{one}");
@@ -897,6 +1036,35 @@ fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
             .collect();
         assert_eq!(parts, wanted, "{name}");
     }
+    // The popover and menu families (#2909): the surface and its anatomy, and a menu's row.
+    let names = |one: &Value, list: &str| -> Vec<String> {
+        one[list]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|it| it["name"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    let popover = family("popover");
+    assert_eq!(popover["since"], 6);
+    assert_eq!(
+        names(&popover, "parts"),
+        ["root", "filter", "rule", "list", "header", "footer", "key"]
+    );
+    assert_eq!(names(&popover, "variants"), ["popover", "menu"]);
+    let menu = family("menu");
+    assert_eq!(menu["since"], 6);
+    assert_eq!(
+        names(&menu, "parts"),
+        ["root", "label", "description", "shortcut", "indicator"]
+    );
+    assert!(
+        menu["variants"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|one| one["name"] == "danger" && one["consent"] == true)
+    );
     // A textarea is as tall as its lines: no height to set.
     assert!(
         !family("textarea")["parts"][0]["properties"]
@@ -904,6 +1072,17 @@ fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
             .unwrap()
             .contains(&json!("height"))
     );
+    // The tooltip (#2908): one look, its surface and an icon button's second line.
+    let tooltip = family("tooltip");
+    assert_eq!(tooltip["since"], 5);
+    assert_eq!(tooltip["variants"], json!([]));
+    let parts: Vec<&str> = tooltip["parts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|one| one["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(parts, ["root", "detail"]);
 }
 
 #[test]
@@ -972,6 +1151,14 @@ const MANIFEST_DIGESTS: &[(u32, &str)] = &[
     (
         4,
         "dc6e2997214e822fdd97166f037b2d83091813f11701ce0bbfe06fa1403041f3",
+    ),
+    (
+        5,
+        "815d4a7cc64ef67b80a8a2b88423945870fc6a46d72355c43a38ac385f5713de",
+    ),
+    (
+        6,
+        "51e9dfc27ab31296830631003a7071db655e6aa69b7142c99fbce61550b3482c",
     ),
 ];
 

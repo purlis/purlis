@@ -22,7 +22,7 @@ import { closeProject, openThroughTheTrustQuestion } from "../opening.js";
  * **The menu key is sent as the keydown the page would get.** WebDriver's key table has no
  * context-menu key, and a WebDriver keystroke is synthesised inside the page anyway (see
  * `settings-gears.e2e.ts`), so the spec dispatches the `keydown` on the tab that has the focus —
- * exactly what `Menus.openFromTheKeyboard` listens for (D-1213-b).
+ * exactly what the family's context menu (`ui/menu/ContextMenu.tsx`) listens for (D-1213-b).
  *
  * **Its own project, copied into the run's tree**, opened through the opener and closed by its
  * tab's own × — one app process serves the whole run, so a project or a Settings tab left on a

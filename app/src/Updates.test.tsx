@@ -17,6 +17,7 @@ import {
 } from "./Updates";
 import type { Offer, PinReport } from "./bindings";
 import type { Ending } from "./QuitWarning";
+import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
  * **The update offer and the pin, on the status line.**
@@ -579,7 +580,7 @@ describe("the pin item", () => {
     // Sentence case, and named by the words it shows (WCAG 2.5.3); the sentence is its
     // description, and it says project, not the retired word (#1719).
     expect(item).toHaveAccessibleName("Pin 9.0.0");
-    expect(item).toHaveAccessibleDescription("The project pins purlis 9.0.0; this purlis is 0.1.0");
+    expect(tipOf(item)).toBe("The project pins purlis 9.0.0; this purlis is 0.1.0");
 
     await userEvent.click(item);
     const dialog = await screen.findByRole("dialog");

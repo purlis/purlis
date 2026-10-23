@@ -63,6 +63,7 @@ import {
   type StartNotes,
   ChatNotices,
 } from "./ChatNotices";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
  * **The panes of the tab in front** (#1035, split out of `PlaneView.tsx`): the split layout
@@ -869,24 +870,27 @@ export function PaneDoing({
         if (!offer) return null;
         const Mark = markOf(offer);
         return (
-          <button
+          <Tooltip
             key={id}
-            className={
-              offer.id === "pane.close" && !closesOnly(offer.does) ? "ends-a-chat" : undefined
-            }
-            // A task's minimise, as its own tab draws it (#1489): never the close's look.
-            data-minimise={offer.does.verb === "sendBack" ? "" : undefined}
-            // WebKit leaves a `<button>` out of the tab sequence unless this is written down
-            // (`docs/ui-primitives.md`). Only the focused pane's are drawn (`App.css`), so only
-            // they are stops: a hidden control is not one.
-            tabIndex={0}
-            disabled={!offer.available}
-            aria-label={offer.title}
-            title={offer.reason || (offer.note ? `${offer.title} — ${offer.note}` : offer.title)}
-            onClick={() => onPaneDoes(pane, offer)}
+            tip={offer.reason || (offer.note ? `${offer.title} — ${offer.note}` : offer.title)}
           >
-            {Mark && <Mark />}
-          </button>
+            <button
+              className={
+                offer.id === "pane.close" && !closesOnly(offer.does) ? "ends-a-chat" : undefined
+              }
+              // A task's minimise, as its own tab draws it (#1489): never the close's look.
+              data-minimise={offer.does.verb === "sendBack" ? "" : undefined}
+              // WebKit leaves a `<button>` out of the tab sequence unless this is written down
+              // (`docs/ui-primitives.md`). Only the focused pane's are drawn (`App.css`), so only
+              // they are stops: a hidden control is not one.
+              tabIndex={0}
+              disabled={!offer.available}
+              aria-label={offer.title}
+              onClick={() => onPaneDoes(pane, offer)}
+            >
+              {Mark && <Mark />}
+            </button>
+          </Tooltip>
         );
       })}
     </div>

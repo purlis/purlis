@@ -3,12 +3,10 @@
 
 import { useSkillStudioOn } from "../skillStudio";
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
-import * as Menu from "../overlays/dropdown-menu";
-import { Check, LoaderCircle } from "lucide-react";
+import { LoaderCircle } from "lucide-react";
 import { commands, type PlaneId, type SettingsEdit, type SettingsWhich } from "../bindings";
 import { NewPersona } from "../NewPersona";
 import { NewWorkspace } from "../NewWorkspace";
-import { MenuTip, MenuWords, useRested } from "../primitives/MenuRow";
 import { settled } from "../PlaneEdits";
 import { cloneRepos } from "../repoClones";
 import { DEFAULT_THEME, inForce } from "../theme/theme";
@@ -53,11 +51,18 @@ import { CollectionView, type Asked } from "./Collection";
 import { useEnteringFocus } from "./entering";
 import { OutLink } from "./OutLink";
 import { standingIn, type Standing } from "./standing";
-import { OffWhenReadOnly, useReadOnlyMendable, useReadOnlySaid } from "../ReadOnlyLine";
+import {
+  OffWhenReadOnly,
+  ReadOnlyFieldset,
+  useReadOnlyMendable,
+  useReadOnlySaid,
+} from "../ReadOnlyLine";
 import { LivesHere } from "../LivesHere";
 import { usePools } from "../pools";
 import { POOLS } from "./pools";
 import { Button } from "../ui/button/Button";
+import { Menu, MenuItem, MenuSection, MenuTrigger, MenuWords } from "../ui/menu/Menu";
+import { MenuTip, useRested } from "../ui/menu/MenuTip";
 
 /**
  * **Settings** (SE-16, #1166; the spec on #558, rulings V89a–i): the one tab where a setting is
@@ -633,12 +638,7 @@ function OffUnless({
 }) {
   const said = useReadOnlySaid();
   if (!steady) return on ? <>{children}</> : <OffWhenReadOnly>{children}</OffWhenReadOnly>;
-  const off = said !== undefined && !on;
-  return (
-    <fieldset className="read-only-off" disabled={off} title={off ? said : undefined}>
-      {children}
-    </fieldset>
-  );
+  return <ReadOnlyFieldset said={on ? undefined : said}>{children}</ReadOnlyFieldset>;
 }
 
 /**
@@ -1159,65 +1159,59 @@ function MoveTo({
     { value: "local", label: LEVEL_OF.local, says: `${names.local}, on this machine only` },
   ] as const;
   return (
-    <Menu.Root modal={false}>
-      <Menu.Trigger asChild>
-        <Button variant="ghost" isDisabled={disabled} className="ui-setting-reset">
-          Move to…
-        </Button>
-      </Menu.Trigger>
-      <Menu.Portal>
-        <Menu.Content className="ui-menu ui-setting-move" align="end" sideOffset={4}>
-          {held !== undefined ? (
-            places
-              .filter((one) => one.value !== held)
-              .map((one) => {
-                // What the move writes over, which no Undo puts back: the one line that stays
-                // under the row, because it changes the decision (the menus' rule 2).
-                const over =
-                  one.value === "shared" && replacing !== undefined ? replacing : undefined;
-                return (
-                  <Place
-                    key={one.value}
-                    label={one.label}
-                    says={over === undefined ? one.says : `${one.says}, replacing ${over}`}
-                    under={over === undefined ? undefined : `Replaces ${over} there.`}
-                  >
-                    {(row) => (
-                      <Menu.Item
-                        className="ui-menu-item"
-                        onSelect={() => onMove(one.value)}
-                        {...row.props}
-                      >
-                        {row.inside}
-                      </Menu.Item>
-                    )}
-                  </Place>
-                );
-              })
-          ) : (
-            <>
-              <Menu.Label className="ui-menu-label ui-text-label">
-                Where the next value is kept
-              </Menu.Label>
-              <Menu.RadioGroup value={pick} onValueChange={(to) => onPick(to as SettingsWhich)}>
-                {places.map((one) => (
-                  <Place key={one.value} label={one.label} says={one.says}>
-                    {(row) => (
-                      <Menu.RadioItem className="ui-menu-item" value={one.value} {...row.props}>
-                        {row.inside}
-                        <Menu.ItemIndicator className="ui-menu-mark">
-                          <Check className="node-icon" aria-hidden />
-                        </Menu.ItemIndicator>
-                      </Menu.RadioItem>
-                    )}
-                  </Place>
-                ))}
-              </Menu.RadioGroup>
-            </>
-          )}
-        </Menu.Content>
-      </Menu.Portal>
-    </Menu.Root>
+    // **Under its button, lined up with its end** (R59): the button stands at the row's end.
+    <MenuTrigger>
+      <Button variant="ghost" isDisabled={disabled} className="ui-setting-reset">
+        Move to…
+      </Button>
+      <Menu className="ui-setting-move" align="end">
+        {held !== undefined ? (
+          places
+            .filter((one) => one.value !== held)
+            .map((one) => {
+              // What the move writes over, which no Undo puts back: the one line that stays
+              // under the row, because it changes the decision (the menus' rule 2).
+              const over =
+                one.value === "shared" && replacing !== undefined ? replacing : undefined;
+              return (
+                <Place
+                  key={one.value}
+                  label={one.label}
+                  says={over === undefined ? one.says : `${one.says}, replacing ${over}`}
+                  under={over === undefined ? undefined : `Replaces ${over} there.`}
+                >
+                  {(row) => (
+                    <MenuItem id={one.value} onAction={() => onMove(one.value)} {...row.props}>
+                      {row.inside}
+                    </MenuItem>
+                  )}
+                </Place>
+              );
+            })
+        ) : (
+          <MenuSection
+            title="Where the next value is kept"
+            selectionMode="single"
+            disallowEmptySelection
+            selectedKeys={[pick]}
+            onSelectionChange={(keys) => {
+              const [to] = keys === "all" ? [] : [...keys];
+              if (to !== undefined) onPick(to as SettingsWhich);
+            }}
+          >
+            {places.map((one) => (
+              <Place key={one.value} label={one.label} says={one.says}>
+                {(row) => (
+                  <MenuItem id={one.value} {...row.props}>
+                    {row.inside}
+                  </MenuItem>
+                )}
+              </Place>
+            ))}
+          </MenuSection>
+        )}
+      </Menu>
+    </MenuTrigger>
   );
 }
 
@@ -1249,7 +1243,7 @@ function Place({
   }) => ReactNode;
 }) {
   const noted = useId();
-  const { rested, rest, wake } = useRested(true);
+  const { rested, rest, wake, hold } = useRested(true);
   return children({
     props: { textValue: label, "aria-label": label, "aria-describedby": noted, ...rest },
     inside: (
@@ -1259,7 +1253,7 @@ function Place({
           {says}
         </span>
         {rested && (
-          <MenuTip side="left" onClose={wake}>
+          <MenuTip side="left" onClose={wake} hold={hold}>
             {says}
           </MenuTip>
         )}

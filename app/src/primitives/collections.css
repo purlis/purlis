@@ -52,14 +52,14 @@
   border-block-end: 1px solid var(--border-strong);
 }
 
-.ui-table thead :is(th[title], .ui-table-tip) {
+.ui-table thead .ui-table-tip {
   text-decoration: underline dotted;
   text-underline-offset: var(--space-1);
   cursor: help;
 }
 
-/* A heading's words behind the window's tooltip (`.ui-tooltip`, DS-9): they take the keyboard
-   so the tooltip can be read without a pointer, and say so with the focus ring. */
+/* A heading's words behind the window's tooltip (`ui/tooltip`, DS-9, #2908): they take the
+   keyboard so the tooltip can be read without a pointer, and say so with the focus ring. */
 .ui-table-tip:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: var(--focus-ring-offset);

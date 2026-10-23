@@ -41,7 +41,10 @@
   [aria-current]:not([aria-current="false"]),
   .ui-segmented-item[data-state="checked"],
   .ui-menu-item[data-highlighted],
-  .ui-menu-item[data-state="open"] {
+  .ui-menu-item[data-state="open"],
+  [data-scope="menu"][data-part="root"][data-focused]:not([data-disabled]),
+  [data-scope="menu"][data-part="root"][data-hovered]:not([data-disabled]),
+  [data-scope="menu"][data-part="root"][data-open] {
     forced-color-adjust: none;
     color: SelectedItemText;
     background-color: SelectedItem;
@@ -67,7 +70,9 @@
   /* What cannot be used. */
   :is(button, input, select, textarea):disabled,
   [aria-disabled="true"],
-  .ui-menu-item[data-disabled] {
+  .ui-menu-item[data-disabled],
+  [data-scope="menu"][data-part="root"][data-disabled],
+  [data-scope="menu"][data-part="root"][data-unavailable] {
     color: GrayText;
   }
 
@@ -123,7 +128,7 @@
   /* What ends or destroys, and a ground that says something is wrong: a dashed outline inside
      its edge, which takes no room. Focus, below, draws its solid ring over it. */
   [data-scope="button"][data-part="root"][data-variant="danger"],
-  .ui-menu-item-danger,
+  [data-scope="menu"][data-part="root"][data-variant="danger"],
   [data-scope="status-item"][data-part="root"][data-tone="danger"],
   .trouble,
   .ui-inline-surface-trouble,
@@ -140,8 +145,14 @@
   [role="menu"],
   [role="listbox"],
   [role="tooltip"],
-  .ui-menu {
+  .ui-menu,
+  [data-scope="popover"][data-part="root"] {
     outline: 1px solid CanvasText;
+  }
+
+  /* A popover's own parts are inside its outline, which says it once. */
+  [data-scope="popover"]:is([data-part="list"], [data-part="body"]) {
+    outline: none;
   }
 
   /* Focus: wherever Tab lands, a ring the system's palette draws. A menu's row says it by being
@@ -159,7 +170,7 @@
       [role="tab"],
       [role="separator"],
       [tabindex]
-    ):not(.ui-menu-item, .xterm-helper-textarea):focus-visible {
+    ):not(.ui-menu-item, [data-scope="menu"], .xterm-helper-textarea):focus-visible {
     outline-style: solid;
     outline-color: Highlight;
   }

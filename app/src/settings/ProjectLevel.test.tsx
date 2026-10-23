@@ -23,6 +23,7 @@ import type {
   SettingsWhich,
 } from "../bindings";
 import { pickIn } from "../primitives/select.testkit";
+import { tipOf } from "../ui/tooltip/tooltip.testkit";
 
 /**
  * **The Settings tab at the Project level** (SE-17, #1167; the spec on #558, V89b, V89e, V89h):
@@ -822,7 +823,9 @@ describe("one form for Shared and Local (SE-18)", () => {
     const team = within(await moveMenu("Mode")).getByRole("menuitem", { name: "Team" });
     expect(team).toHaveAccessibleDescription("charter.toml, which your team sees, replacing push");
     // No Undo puts the team's value back, so that much stays under the row's words.
-    expect(team.querySelector(".ui-menu-note")).toHaveTextContent("Replaces push there.");
+    expect(team.querySelector('[data-part="description"]')).toHaveTextContent(
+      "Replaces push there.",
+    );
   });
 
   it("puts the focus back on Move to… once a move is chosen", async () => {
@@ -906,8 +909,7 @@ describe("one form for Shared and Local (SE-18)", () => {
       /charter\.toml has push, which this overrides/,
     );
     // The whole sentence is the badge's tooltip.
-    badge.focus();
-    expect(await screen.findByRole("tooltip")).toHaveTextContent(
+    expect(tipOf(badge)).toContain(
       "From charter.local.toml, at the Project level: this machine only. charter.toml has push, which this overrides.",
     );
 
@@ -1062,7 +1064,8 @@ describe("the Project level of a read-only project (#826)", () => {
 
     const mode = screen.getByLabelText("Mode");
     expect(mode).toBeDisabled();
-    expect(mode.closest("fieldset")).toHaveAttribute("title", SENTENCE);
+    // Why it is off: its group\'s description, which its legend\'s tooltip says too (#2908).
+    expect(mode.closest("fieldset")).toHaveAccessibleDescription(SENTENCE);
     // The level switcher and the nav are not the project's files: still on.
     expect(screen.getByRole("radio", { name: "You" })).toBeEnabled();
   });
@@ -1103,7 +1106,8 @@ describe("the Project level of a read-only project (#826)", () => {
     await open("Forges");
     const add = screen.getByRole("button", { name: "Add forge" });
     expect(add).toBeDisabled();
-    expect(add.closest("fieldset")).toHaveAttribute("title", SENTENCE);
+    // Why it is off: its group\'s description, which its legend\'s tooltip says too (#2908).
+    expect(add.closest("fieldset")).toHaveAccessibleDescription(SENTENCE);
   });
 
   it("keeps a row that may move to the committed file off, wherever its value is (#1759)", async () => {
@@ -1123,7 +1127,8 @@ describe("the Project level of a read-only project (#826)", () => {
     const row = screen.getByRole("group", { name: "Repos not catalogued" });
     const discover = within(row).getByRole("button", { name: "Discover repos" });
     expect(discover).toBeDisabled();
-    expect(discover.closest("fieldset")).toHaveAttribute("title", SENTENCE);
+    // Why it is off: its group\'s description, which its legend\'s tooltip says too (#2908).
+    expect(discover.closest("fieldset")).toHaveAccessibleDescription(SENTENCE);
   });
 
   it("keeps a row held in this machine's file on, with only its move off (#1759)", async () => {
@@ -1142,7 +1147,8 @@ describe("the Project level of a read-only project (#826)", () => {
     // Its Move to… writes the committed file too, so that is what is off, with the reason.
     const move = within(rowOf("Mode")).getByRole("button", { name: "Move to…" });
     expect(move).toBeDisabled();
-    expect(move.closest("fieldset[disabled]")).toHaveAttribute("title", SENTENCE);
+    // Why it is off: its group\'s description, which its legend\'s tooltip says too (#2908).
+    expect(move.closest("fieldset[disabled]")).toHaveAccessibleDescription(SENTENCE);
 
     await userEvent.click(within(rowOf("Mode")).getByRole("button", { name: "Reset" }));
     await waitFor(() => expect(sent).toHaveLength(1));
@@ -1183,8 +1189,12 @@ describe("the Project level of a read-only project (#826)", () => {
       for (const control of shown().querySelectorAll<HTMLElement>(
         "input, select, textarea, button",
       )) {
+        // Off: disabled, inside a disabled fieldset, or unavailable and kept in reach for its
+        // reason (`aria-disabled`, #2908).
         const off =
-          (control as HTMLInputElement).disabled || control.closest("fieldset[disabled]") !== null;
+          (control as HTMLInputElement).disabled ||
+          control.getAttribute("aria-disabled") === "true" ||
+          control.closest("fieldset[disabled]") !== null;
         if (off) continue;
         const name =
           control.getAttribute("aria-label") ??

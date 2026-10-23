@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { ShieldCheck, ShieldHalf, ShieldOff } from "lucide-react";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /** How much a chat's sandbox holds, as the core says it (`OpenChat.sandbox`, #2071). */
 export type SandboxLevel = "full" | "floor" | "none";
@@ -56,8 +57,10 @@ export function SandboxMark({
   // Named by `aria-label`, not by words in the tab: the tab's text stays the chat's name, which
   // is what the window and its close button call the chat.
   return (
-    <span className="tab-sandbox" data-sandbox={level} role="img" aria-label={said} title={said}>
-      <Icon className="tab-mark" aria-hidden="true" />
-    </span>
+    <Tooltip tip={said}>
+      <span className="tab-sandbox" data-sandbox={level} role="img" aria-label={said}>
+        <Icon className="tab-mark" aria-hidden="true" />
+      </span>
+    </Tooltip>
   );
 }
