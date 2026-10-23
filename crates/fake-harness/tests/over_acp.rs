@@ -167,7 +167,15 @@ fn an_agent_on_another_protocol_version_does_not_start() {
         Arc::new(Asks::new()),
     )
     .expect_err("refused");
-    assert_eq!(refused, NotStarted::Version { offered: 2 });
+    // The ACP crate refuses the answer during the handshake, naming the version purlis speaks
+    // and the one the agent answered with.
+    let NotStarted::Handshake(why) = &refused else {
+        panic!("refused at the handshake: {refused:?}");
+    };
+    assert!(
+        why.contains("protocol version 1") && why.contains("negotiated 2"),
+        "{why}"
+    );
 }
 
 #[test]
