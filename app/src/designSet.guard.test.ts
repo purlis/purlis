@@ -16,7 +16,7 @@ import { describe, expect, it } from "vitest";
  * a `Field` or a `Choice` in a `SettingRow`, so it has the set's label, help, keyboard and look.
  * The set does not draw buttons: a `<button>` is native HTML that already does the job
  * (`docs/ui-primitives.md`, *The rule*), and a form's or a question's buttons are the caller's,
- * in `SettingActions` or the `AnswerBar`. So the guard is about the three native form
+ * in `SettingActions` or a dialog's footer. So the guard is about the three native form
  * controls, `<input>`, `<select>` and `<textarea>`: outside the set, a file draws one only
  * where it is named below, with how many and why.
  *

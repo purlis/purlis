@@ -1,11 +1,9 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useRef, useState } from "react";
-import * as AlertDialog from "./overlays/alert-dialog";
+import { useState } from "react";
 import { commands, type PlaneId } from "./bindings";
-import { AnswerBar } from "./AnswerBar";
-import { Button } from "./ui/button/Button";
+import { AlertDialog } from "./ui/dialog/Dialog";
 
 /**
  * **Take a repo the workspace names, and this machine has not cloned, out of the workspace**
@@ -35,12 +33,6 @@ export function RemoveFromWorkspace({
 }) {
   const [busy, setBusy] = useState(false);
   const [trouble, setTrouble] = useState<string | null>(null);
-  const cancel = useRef<HTMLButtonElement>(null);
-  /** What had the keyboard when the question opened — the Remove… that asked it — which gets
-   *  it back when the question closes, if it is still there. */
-  const [opener] = useState(() =>
-    document.activeElement instanceof HTMLElement ? document.activeElement : null,
-  );
 
   const confirm = async () => {
     setBusy(true);
@@ -56,51 +48,35 @@ export function RemoveFromWorkspace({
     }
   };
 
+  // What had the keyboard when the question opened — the Remove… that asked it — gets it back
+  // when the question closes, if it is still there: the dialog's own return.
   return (
-    <AlertDialog.Root
-      open
-      onOpenChange={(open) => {
+    <AlertDialog
+      onClose={() => {
         // Not while the core is at work, `NewVault`'s reason: a refusal would land where
         // nobody is looking (#630).
-        if (!open && !busy) onClose();
+        if (!busy) onClose();
+      }}
+      title={`Remove ${repo} from ${workspace}?`}
+      description={
+        <p className="came-back">
+          {`${workspace} stops naming ${repo}. Nothing is deleted: it is not cloned on this machine.`}
+        </p>
+      }
+      cancel={{ isDisabled: busy, onPress: onClose }}
+      main={{
+        children: busy ? "Removing…" : "Remove from workspace",
+        reserve: ["Remove from workspace", "Removing…"],
+        variant: "danger",
+        isDisabled: busy,
+        onPress: () => void confirm(),
       }}
     >
-      <AlertDialog.Portal>
-        <AlertDialog.Overlay className="ui-scrim" />
-        <AlertDialog.Content
-          className="ui-dialog warning"
-          onOpenAutoFocus={(event) => {
-            event.preventDefault();
-            cancel.current?.focus();
-          }}
-          onCloseAutoFocus={(event) => {
-            if (opener?.isConnected) {
-              event.preventDefault();
-              opener.focus();
-            }
-          }}
-        >
-          <AlertDialog.Title>{`Remove ${repo} from ${workspace}?`}</AlertDialog.Title>
-          <AlertDialog.Description className="came-back">
-            {`${workspace} stops naming ${repo}. Nothing is deleted: it is not cloned on this machine.`}
-          </AlertDialog.Description>
-          {trouble !== null && (
-            <p className="trouble" role="alert">
-              {trouble}
-            </p>
-          )}
-          <AnswerBar>
-            <AlertDialog.Cancel asChild>
-              <Button ref={cancel} isDisabled={busy} onPress={onClose}>
-                Cancel
-              </Button>
-            </AlertDialog.Cancel>
-            <Button variant="danger" isDisabled={busy} onPress={() => void confirm()}>
-              {busy ? "Removing…" : "Remove from workspace"}
-            </Button>
-          </AnswerBar>
-        </AlertDialog.Content>
-      </AlertDialog.Portal>
-    </AlertDialog.Root>
+      {trouble !== null && (
+        <p className="trouble" role="alert">
+          {trouble}
+        </p>
+      )}
+    </AlertDialog>
   );
 }

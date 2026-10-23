@@ -1,12 +1,10 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useRef, useState } from "react";
-import * as Dialog from "./overlays/dialog";
+import { useEffect, useState } from "react";
 import { commands } from "./bindings";
-import { Choice, Field, SettingActions, SettingRow } from "./settings/components";
-import { Button } from "./ui/button/Button";
-import { Form } from "./ui/field/Field";
+import { Choice, Field, SettingRow } from "./settings/components";
+import { Dialog } from "./ui/dialog/Dialog";
 
 /**
  * Making a persona (SI-3), asked where the answer is given — `NewVault`'s shape, for `charter
@@ -68,126 +66,98 @@ export function NewPersona({
       gone = true;
     };
   }, [plane]);
-  // The dialog, so the name box can be found in it on opening: the row draws the box, and a
-  // setting's field takes no ref.
-  const content = useRef<HTMLDivElement>(null);
   const given = (text: string) => (text.trim() === "" ? null : text.trim());
   const ready = name.trim() !== "" && (given(when) !== null || given(parent) !== null) && !making;
   const create = () => {
     if (ready) onCreate(name.trim(), given(role), given(when), given(parent));
   };
+  // Why Create waits, said at the act rather than only in one row's help (#1719).
+  const waits = name.trim() !== "" && given(when) === null && given(parent) === null;
   return (
-    <Dialog.Root
-      open
-      onOpenChange={(open) => {
+    <Dialog
+      onClose={() => {
         // Not while charter is making it, `NewVault`'s reason: a refusal would land where
         // nobody is looking.
-        if (!open && !making) onCancel();
+        if (!making) onCancel();
+      }}
+      title="New persona"
+      subtitle={
+        <>
+          in <code>{plane}/personas/</code>, committed with the project
+        </>
+      }
+      summary={
+        waits ? "Create persona needs Delegate when, or a persona it inherits from." : undefined
+      }
+      cancel={{ isDisabled: making, onPress: onCancel }}
+      main={{
+        children: making ? "Creating…" : "Create persona",
+        reserve: ["Create persona", "Creating…"],
+        isDisabled: !ready,
+        onPress: create,
       }}
     >
-      <Dialog.Portal>
-        <Dialog.Overlay className="ui-scrim" />
-        <Dialog.Content
-          ref={content}
-          className="ui-dialog warning"
-          aria-describedby={undefined}
-          // A click outside answers nothing (`docs/ui-primitives.md`). Escape is Cancel.
-          onInteractOutside={(e) => e.preventDefault()}
-          onOpenAutoFocus={(e) => {
-            e.preventDefault();
-            content.current?.querySelector("input")?.focus();
-          }}
-        >
-          <Dialog.Title>New persona</Dialog.Title>
-          <p className="where">
-            in <code>{plane}/personas/</code>, committed with the project
-          </p>
+      <SettingRow
+        label="Name"
+        help={
+          <>
+            Lowercase letters, digits, <code>.</code>, <code>_</code> and <code>-</code>.
+          </>
+        }
+        control={(ids) => <Field ids={ids} kind="text" value={name} onChange={setName} />}
+      />
 
-          <Form
-            onSubmit={(event) => {
-              event.preventDefault();
-              create();
-            }}
-          >
-            <SettingRow
-              label="Name"
-              help={
-                <>
-                  Lowercase letters, digits, <code>.</code>, <code>_</code> and <code>-</code>.
-                </>
-              }
-              control={(ids) => <Field ids={ids} kind="text" value={name} onChange={setName} />}
-            />
+      <SettingRow
+        label="Role"
+        help="Optional. Left empty, it is the name, title-cased."
+        control={(ids) => <Field ids={ids} kind="text" value={role} onChange={setRole} />}
+      />
 
-            <SettingRow
-              label="Role"
-              help="Optional. Left empty, it is the name, title-cased."
-              control={(ids) => <Field ids={ids} kind="text" value={role} onChange={setRole} />}
-            />
+      <SettingRow
+        label="Delegate when"
+        help={
+          "When the steward should route work here. Required unless it inherits from " +
+          "another persona."
+        }
+        control={(ids) => (
+          <Field
+            ids={ids}
+            kind="text"
+            value={when}
+            placeholder="CI/CD pipelines, k8s deploys, cluster access"
+            onChange={setWhen}
+          />
+        )}
+      />
 
-            <SettingRow
-              label="Delegate when"
-              help={
-                "When the steward should route work here. Required unless it inherits from " +
-                "another persona."
-              }
-              control={(ids) => (
-                <Field
-                  ids={ids}
-                  kind="text"
-                  value={when}
-                  placeholder="CI/CD pipelines, k8s deploys, cluster access"
-                  onChange={setWhen}
-                />
-              )}
-            />
-
-            <SettingRow
-              label="Inherits from"
-              help={
-                offered === undefined
-                  ? "Optional. Reading the project's personas…"
-                  : "unread" in offered
-                    ? `purlis could not read the project's personas: ${offered.unread}`
-                    : "Optional: another persona of this project."
-              }
-              control={(ids) => (
-                <Choice
-                  ids={ids}
-                  kind="select"
-                  value={parent}
-                  unset="None"
-                  onValueChange={setParent}
-                  options={(offered !== undefined && "names" in offered ? offered.names : []).map(
-                    (one) => ({ value: one, label: one }),
-                  )}
-                />
-              )}
-            />
-
-            {trouble && (
-              <p className="trouble" role="alert">
-                {trouble}
-              </p>
+      <SettingRow
+        label="Inherits from"
+        help={
+          offered === undefined
+            ? "Optional. Reading the project's personas…"
+            : "unread" in offered
+              ? `purlis could not read the project's personas: ${offered.unread}`
+              : "Optional: another persona of this project."
+        }
+        control={(ids) => (
+          <Choice
+            ids={ids}
+            kind="select"
+            value={parent}
+            unset="None"
+            onValueChange={setParent}
+            options={(offered !== undefined && "names" in offered ? offered.names : []).map(
+              (one) => ({ value: one, label: one }),
             )}
+          />
+        )}
+      />
 
-            <SettingActions>
-              <Button variant="primary" type="submit" isDisabled={!ready}>
-                {making ? "Creating…" : "Create persona"}
-              </Button>
-              <Button isDisabled={making} onPress={onCancel}>
-                Cancel
-              </Button>
-            </SettingActions>
-            {/* Why Create waits, said at the act rather than only in one row's help (#1719). */}
-            {name.trim() !== "" && given(when) === null && given(parent) === null && (
-              <p className="came-back">
-                Create persona needs Delegate when, or a persona it inherits from.
-              </p>
-            )}
-          </Form>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+      {trouble && (
+        <p className="trouble" role="alert">
+          {trouble}
+        </p>
+      )}
+    </Dialog>
   );
 }

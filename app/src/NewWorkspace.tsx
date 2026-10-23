@@ -1,13 +1,11 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useRef, useState } from "react";
-import * as Dialog from "./overlays/dialog";
+import { useState } from "react";
 import type { PlaneId } from "./bindings";
 import { RepoPicker } from "./RepoPicker";
-import { Choice, Field, SettingActions, SettingRow } from "./settings/components";
-import { Button } from "./ui/button/Button";
-import { Form } from "./ui/field/Field";
+import { Choice, Field, SettingRow } from "./settings/components";
+import { Dialog } from "./ui/dialog/Dialog";
 
 /**
  * Making a workspace, asked where the answer is given.
@@ -35,8 +33,8 @@ import { Form } from "./ui/field/Field";
  * cloned after the workspace is made — the dialog closes at once and each repo lands on its
  * own. Picking none is a workspace with no repos, which is still a workspace.
  *
- * Its form is drawn from the settings set (DS-3e): a row per answer, and its buttons a
- * `SettingActions`.
+ * Its form is drawn from the settings set (DS-3e): a row per answer, and its answers the
+ * dialog's footer.
  */
 export function NewWorkspace({
   /** What the plane is called, so the dialog says where the workspace is going. */
@@ -62,133 +60,93 @@ export function NewWorkspace({
   const [vision, setVision] = useState("");
   const [live, setLive] = useState(false);
   const [repos, setRepos] = useState<ReadonlySet<string>>(new Set());
-  // The name box, focused by the dialog itself: it is the one thing that has to be answered,
-  // and a dialog that opens with the keyboard somewhere else is a dialog you have to click at.
-  // Found in the dialog on opening: the row draws the box, and a setting's field takes no ref.
-  const content = useRef<HTMLDivElement>(null);
   const ready = name.trim() !== "" && !making;
   const create = () => {
     if (ready) onCreate(name.trim(), vision, live, [...repos].sort());
   };
+  // The name box has the keyboard as it opens, the dialog's first field: it is the one thing
+  // that has to be answered, and a dialog that opens with the keyboard somewhere else is a
+  // dialog you have to click at. A click outside answers nothing (`docs/ui-primitives.md`).
+  // Escape is Cancel, and nothing is made.
   return (
-    <Dialog.Root
-      open
-      onOpenChange={(open) => {
-        if (!open) onCancel();
+    <Dialog
+      onClose={onCancel}
+      title="New workspace"
+      titleId="new-workspace"
+      subtitle={
+        <>
+          in <code>{plane}</code>
+        </>
+      }
+      main={{
+        children: making ? "Creating…" : "Create workspace",
+        reserve: ["Create workspace", "Creating…"],
+        isDisabled: !ready,
+        onPress: create,
       }}
     >
-      <Dialog.Portal>
-        <Dialog.Overlay className="ui-scrim" />
-        <Dialog.Content
-          ref={content}
-          className="ui-dialog warning"
-          aria-labelledby="new-workspace"
-          // A click outside answers nothing, which is what every dialog in this window does
-          // (`docs/ui-primitives.md`). Escape is Cancel, and nothing is made.
-          onInteractOutside={(e) => e.preventDefault()}
-          onOpenAutoFocus={(e) => {
-            e.preventDefault();
-            content.current?.querySelector("input")?.focus();
-          }}
-        >
-          <Dialog.Title id="new-workspace">New workspace</Dialog.Title>
-          <p className="where">
-            in <code>{plane}</code>
-          </p>
+      {/* charter's own alphabet, said once and not enforced here. It is guidance for somebody
+          typing, and the core is what refuses. */}
+      <SettingRow
+        label="Name"
+        help={
+          <>
+            Letters, digits, <code>.</code>, <code>_</code> and <code>-</code>. It becomes a
+            directory under <code>workspaces/</code>.
+          </>
+        }
+        control={(ids) => <Field ids={ids} kind="text" value={name} onChange={setName} />}
+      />
 
-          <Form
-            onSubmit={(event) => {
-              event.preventDefault();
-              create();
-            }}
-          >
-            {/* charter's own alphabet, said once and not enforced here. It is guidance for
-                somebody typing, and the core is what refuses. */}
-            <SettingRow
-              label="Name"
-              help={
-                <>
-                  Letters, digits, <code>.</code>, <code>_</code> and <code>-</code>. It becomes a
-                  directory under <code>workspaces/</code>.
-                </>
-              }
-              control={(ids) => <Field ids={ids} kind="text" value={name} onChange={setName} />}
-            />
+      <SettingRow
+        label="What it is for (optional)"
+        help={
+          <>
+            Recorded in <code>workspace.md</code>, the living charter a fork inherits. You can add
+            it later with <code>purlis workspace vision</code>.
+          </>
+        }
+        control={(ids) => (
+          <Field ids={ids} kind="list" minRows={3} value={vision} onChange={setVision} />
+        )}
+      />
 
-            <SettingRow
-              label="What it is for (optional)"
-              help={
-                <>
-                  Recorded in <code>workspace.md</code>, the living charter a fork inherits. You can
-                  add it later with <code>purlis workspace vision</code>.
-                </>
-              }
-              control={(ids) => (
-                <Field ids={ids} kind="list" minRows={3} value={vision} onChange={setVision} />
-              )}
-            />
+      <SettingRow
+        label="Repos"
+        grouped
+        help={
+          "Optional. Each one is cloned into the workspace after it is made, and you can " +
+          "add or remove repos later in its settings."
+        }
+        control={(ids) => (
+          <div role="group" aria-labelledby={ids.labelledBy} aria-describedby={ids.describedBy}>
+            {/* A login typed in a shell tab closes the dialog, so the tab is not under it
+                (NO-8). */}
+            <RepoPicker plane={planeId} picked={repos} onPicked={setRepos} onLeave={onCancel} />
+          </div>
+        )}
+      />
 
-            <SettingRow
-              label="Repos"
-              grouped
-              help={
-                "Optional. Each one is cloned into the workspace after it is made, and you can " +
-                "add or remove repos later in its settings."
-              }
-              control={(ids) => (
-                <div
-                  role="group"
-                  aria-labelledby={ids.labelledBy}
-                  aria-describedby={ids.describedBy}
-                >
-                  {/* A login typed in a shell tab closes the dialog, so the tab is not
-                      under it (NO-8). */}
-                  <RepoPicker
-                    plane={planeId}
-                    picked={repos}
-                    onPicked={setRepos}
-                    onLeave={onCancel}
-                  />
-                </div>
-              )}
-            />
+      {/* LOCAL unless ticked: publishing is the operator's choice, never a default. */}
+      <SettingRow
+        label="Live"
+        help={
+          "Its charter, memory and todos are committed with the project and published by " +
+          "every save. Ticked, the project is saved as soon as it is made, as Saving says. " +
+          "Left unticked, they stay on this machine."
+        }
+        control={(ids) => (
+          <Choice ids={ids} kind="toggle" checked={live} onCheckedChange={setLive} />
+        )}
+      />
 
-            {/* LOCAL unless ticked: publishing is the operator's choice, never a default. */}
-            <SettingRow
-              label="Live"
-              help={
-                "Its charter, memory and todos are committed with the project and published by " +
-                "every save. Ticked, the project is saved as soon as it is made, as Saving says. " +
-                "Left unticked, they stay on this machine."
-              }
-              control={(ids) => (
-                <Choice ids={ids} kind="toggle" checked={live} onCheckedChange={setLive} />
-              )}
-            />
-
-            {/* Verbatim, and in the dialog rather than behind it: the operator is still
-                answering, and a refusal they cannot see beside the box is one they cannot act
-                on. */}
-            {trouble && (
-              <p className="trouble" role="alert">
-                {trouble}
-              </p>
-            )}
-
-            {/* `tabIndex={0}` on both, per `docs/ui-primitives.md` (charter-app#186). The name
-                box is this scope's first edge and `Cancel` is its last, so `Create workspace`
-                sat between them — where Radix's focus scope does nothing and WebKit will not
-                tab to a `<button>` whose `tabindex` is not written down. The two text boxes
-                were reachable and the one that acts on them was not. */}
-            <SettingActions>
-              <Button variant="primary" type="submit" isDisabled={!ready}>
-                {making ? "Creating…" : "Create workspace"}
-              </Button>
-              <Button onPress={onCancel}>Cancel</Button>
-            </SettingActions>
-          </Form>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+      {/* Verbatim, and in the dialog rather than behind it: the operator is still answering,
+          and a refusal they cannot see beside the box is one they cannot act on. */}
+      {trouble && (
+        <p className="trouble" role="alert">
+          {trouble}
+        </p>
+      )}
+    </Dialog>
   );
 }

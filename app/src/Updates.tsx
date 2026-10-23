@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import * as Dialog from "./overlays/dialog";
 import { listen } from "./here";
 import { ArrowUpCircle, LoaderCircle, Pin } from "lucide-react";
 import {
@@ -16,8 +15,8 @@ import { MidTurn, mightBeMidTurn, type Ending } from "./QuitWarning";
 import { ReleaseNotes } from "./ReleaseNotes";
 import { Choice, SettingActions, SettingRow } from "./settings/components";
 import { channelMoved, useUpdateChannel } from "./updateChannel";
-import { AnswerBar } from "./AnswerBar";
 import { Button } from "./ui/button/Button";
+import { Dialog } from "./ui/dialog/Dialog";
 import { StatusItem } from "./ui/status/StatusItem";
 
 /**
@@ -305,167 +304,161 @@ export function UpdateItem({
     : `Updates — ${channel ?? "…"} channel, nothing new known`;
   return (
     <>
-      <Dialog.Root
-        open={open}
-        onOpenChange={(to) => {
-          setOpen(to);
+      <StatusItem
+        // A status pill (R115): a quiet updater is its icon alone, in the pill's quiet words; an
+        // offer is the one thing there that is news, on the accent's ground; a failure the person
+        // asked about is amber beside its words.
+        variant={
+          state.kind === "offered" || state.kind === "installed" || state.kind === "installing"
+            ? "accent"
+            : "pill"
+        }
+        tone={state.kind === "failed" ? "waiting" : undefined}
+        data-testid="status-update"
+        data-kind={state.kind}
+        aria-label={label}
+        aria-haspopup="dialog"
+        tooltip={label}
+        icon={
+          state.kind === "installing" ? (
+            <LoaderCircle aria-hidden="true" className="spinning" />
+          ) : (
+            <ArrowUpCircle aria-hidden="true" />
+          )
+        }
+        onPress={() => {
+          setOpen(true);
           setPicked(undefined);
           setMoved(undefined);
         }}
       >
-        <Dialog.Trigger asChild>
-          <StatusItem
-            // A status pill (R115): a quiet updater is its icon alone, in the pill's quiet words;
-            // an offer is the one thing there that is news, on the accent's ground; a failure the
-            // person asked about is amber beside its words.
-            variant={
-              state.kind === "offered" || state.kind === "installed" || state.kind === "installing"
-                ? "accent"
-                : "pill"
+        {words}
+      </StatusItem>
+      <Dialog
+        isOpen={open}
+        onClose={() => {
+          setOpen(false);
+          setPicked(undefined);
+          setMoved(undefined);
+        }}
+        title="Updates"
+        className="update"
+        aria-describedby="update-what"
+        // The footer's order (`docs/design-system.md`, #1719): the way out first, then Check
+        // now, and the act that moves things on (Install, Restart to update) last, at the
+        // trailing edge. With nothing to install, Check now is that act.
+        cancel={{ children: "Close" }}
+        {...(state.kind === "offered"
+          ? {
+              alternative: { children: "Check now", onPress: check },
+              main: { children: `Install ${state.offer.version}`, onPress: install },
             }
-            tone={state.kind === "failed" ? "waiting" : undefined}
-            data-testid="status-update"
-            data-kind={state.kind}
-            aria-label={label}
-            tooltip={label}
-            icon={
-              state.kind === "installing" ? (
-                <LoaderCircle aria-hidden="true" className="spinning" />
-              ) : (
-                <ArrowUpCircle aria-hidden="true" />
-              )
-            }
-          >
-            {words}
-          </StatusItem>
-        </Dialog.Trigger>
-        <Dialog.Portal>
-          <Dialog.Overlay className="ui-scrim" />
-          <Dialog.Content
-            ref={content}
-            className="ui-dialog warning update"
-            aria-describedby="update-what"
-          >
-            <Dialog.Title>Updates</Dialog.Title>
-            <div id="update-what">
-              {state.kind === "offered" || state.kind === "installing" ? (
-                <>
-                  <p>
-                    purlis <strong>{state.offer.version}</strong> is available on the{" "}
-                    {state.offer.channel} channel. This is {state.offer.current}.
-                  </p>
-                  {/* A stable release's notes are its CHANGELOG.md section, in Markdown. */}
-                  {state.offer.notes && (
-                    <div className="update-notes">
-                      <ReleaseNotes markdown={state.offer.notes} />
-                    </div>
-                  )}
-                  <p className="honest mid-turn" role="alert" data-testid="update-ends-sessions">
-                    {INSTALL_ENDS_SESSIONS}
-                  </p>
-                </>
-              ) : state.kind === "installed" ? (
-                <>
-                  <p className="honest">
-                    purlis {state.version} is installed. Restart to update ends every chat and
-                    starts purlis {state.version}. Reopen every chat puts each one back, resuming
-                    its conversation where its harness can; Start fresh puts none back.
-                  </p>
-                  {state.refused && (
-                    <p className="honest doctor-trouble" role="alert">
-                      {state.refused}
-                    </p>
-                  )}
-                </>
-              ) : state.kind === "failed" ? (
-                <>
-                  <p className="honest doctor-trouble" role="alert">
-                    {state.why}
-                  </p>
-                  <p className="honest">Check now tries again.</p>
-                </>
-              ) : (
-                <p className="honest">
-                  No newer purlis is known. purlis checks on its own every few hours.
+          : state.kind === "installing"
+            ? {
+                alternative: { children: "Check now", isDisabled: true },
+                main: { children: `Installing ${state.offer.version}…`, isDisabled: true },
+              }
+            : state.kind === "installed"
+              ? { main: { children: "Restart to update", onPress: toRestart } }
+              : { main: { children: "Check now", variant: "secondary" as const, onPress: check } })}
+      >
+        <div ref={content}>
+          <div id="update-what">
+            {state.kind === "offered" || state.kind === "installing" ? (
+              <>
+                <p>
+                  purlis <strong>{state.offer.version}</strong> is available on the{" "}
+                  {state.offer.channel} channel. This is {state.offer.current}.
                 </p>
-              )}
-            </div>
+                {/* A stable release's notes are its CHANGELOG.md section, in Markdown. */}
+                {state.offer.notes && (
+                  <div className="update-notes">
+                    <ReleaseNotes markdown={state.offer.notes} />
+                  </div>
+                )}
+                <p className="honest mid-turn" role="alert" data-testid="update-ends-sessions">
+                  {INSTALL_ENDS_SESSIONS}
+                </p>
+              </>
+            ) : state.kind === "installed" ? (
+              <>
+                <p className="honest">
+                  purlis {state.version} is installed. Restart to update ends every chat and starts
+                  purlis {state.version}. Reopen every chat puts each one back, resuming its
+                  conversation where its harness can; Start fresh puts none back.
+                </p>
+                {state.refused && (
+                  <p className="honest doctor-trouble" role="alert">
+                    {state.refused}
+                  </p>
+                )}
+              </>
+            ) : state.kind === "failed" ? (
+              <>
+                <p className="honest doctor-trouble" role="alert">
+                  {state.why}
+                </p>
+                <p className="honest">Check now tries again.</p>
+              </>
+            ) : (
+              <p className="honest">
+                No newer purlis is known. purlis checks on its own every few hours.
+              </p>
+            )}
+          </div>
+          <SettingRow
+            label="Channel"
+            grouped
+            control={(ids) => (
+              <Choice
+                ids={ids}
+                kind="radio"
+                options={channels(channel)}
+                value={picked ?? channel}
+                onValueChange={(to) => {
+                  setPicked(to);
+                  setMoved(undefined);
+                }}
+                disabled={writing !== undefined}
+              />
+            )}
+          />
+          {state.kind === "installed" && (
             <SettingRow
-              label="Channel"
+              label="After the restart"
               grouped
               control={(ids) => (
                 <Choice
                   ids={ids}
                   kind="radio"
-                  options={channels(channel)}
-                  value={picked ?? channel}
-                  onValueChange={(to) => {
-                    setPicked(to);
-                    setMoved(undefined);
-                  }}
-                  disabled={writing !== undefined}
+                  options={AFTER_RESTART}
+                  value={after}
+                  onValueChange={(to) => setAfter(to === "StartFresh" ? "StartFresh" : "ReopenAll")}
                 />
               )}
             />
-            {state.kind === "installed" && (
-              <SettingRow
-                label="After the restart"
-                grouped
-                control={(ids) => (
-                  <Choice
-                    ids={ids}
-                    kind="radio"
-                    options={AFTER_RESTART}
-                    value={after}
-                    onValueChange={(to) =>
-                      setAfter(to === "StartFresh" ? "StartFresh" : "ReopenAll")
-                    }
-                  />
-                )}
-              />
-            )}
-            {picked !== undefined && picked !== channel && (
-              <SettingActions>
-                <Button
-                  isDisabled={writing !== undefined}
-                  onPress={() => {
-                    if (writing !== undefined) return;
-                    setWriting({ to: picked, from: state });
-                    choose(picked);
-                  }}
-                >
-                  Use this channel
-                </Button>
-              </SettingActions>
-            )}
-            {moved !== undefined && (
-              <p className="honest" role="status">
-                {`This machine is on the ${moved} channel now.`}
-              </p>
-            )}
-            {/* `tabIndex={0}` on every one, per `docs/ui-primitives.md` (charter-app#186). The
-                channel radios above are the scope's first edge and `Close` is its last, which
-                left `Install`, `Restart to update` and `Check now` in the middle — where Radix's
-                focus scope does nothing and WebKit will not tab to a `<button>` whose
-                `tabindex` is not written down. Installing an update was a mouse-only act. */}
-            {/* The answer bar's order (`docs/design-system.md`, #1719): the way out first, then
-                Check now, and the act that moves things on (Install, Restart to update) last,
-                at the trailing edge. */}
-            <AnswerBar>
-              <Dialog.Close asChild>
-                <Button>Close</Button>
-              </Dialog.Close>
-              {state.kind !== "installing" && state.kind !== "installed" && (
-                <Button onPress={check}>Check now</Button>
-              )}
-              {state.kind === "offered" && (
-                <Button onPress={install}>Install {state.offer.version}</Button>
-              )}
-              {state.kind === "installed" && <Button onPress={toRestart}>Restart to update</Button>}
-            </AnswerBar>
-          </Dialog.Content>
-        </Dialog.Portal>
-      </Dialog.Root>
+          )}
+          {picked !== undefined && picked !== channel && (
+            <SettingActions>
+              <Button
+                isDisabled={writing !== undefined}
+                onPress={() => {
+                  if (writing !== undefined) return;
+                  setWriting({ to: picked, from: state });
+                  choose(picked);
+                }}
+              >
+                Use this channel
+              </Button>
+            </SettingActions>
+          )}
+          {moved !== undefined && (
+            <p className="honest" role="status">
+              {`This machine is on the ${moved} channel now.`}
+            </p>
+          )}
+        </div>
+      </Dialog>
       {asking && (
         <MidTurn
           chats={midTurn}
@@ -529,6 +522,7 @@ export function PinItem({
   trouble?: string;
   again: () => void;
 }) {
+  const [open, setOpen] = useState(false);
   const unread = trouble !== undefined && !pin?.drift;
   if (!pin?.drift && !unread) return null;
   const shown = unread ? "Pin unread" : `Pin ${pin?.pinned ?? "(unreadable)"}`;
@@ -537,38 +531,36 @@ export function PinItem({
     ? `purlis could not read the project's pin: ${trouble}`
     : `The project pins purlis ${pin?.pinned ?? "(unreadable)"}; this purlis is ${pin?.brought}`;
   return (
-    <Dialog.Root onOpenChange={(now) => now && again()}>
-      <Dialog.Trigger asChild>
-        <StatusItem
-          data-testid="status-pin"
-          tooltip={label}
-          tone="waiting"
-          icon={<Pin aria-hidden="true" />}
-        >
-          {shown}
-        </StatusItem>
-      </Dialog.Trigger>
-      <Dialog.Portal>
-        <Dialog.Overlay className="ui-scrim" />
-        <Dialog.Content className="ui-dialog warning update" aria-describedby="pin-said">
-          <Dialog.Title>The project&apos;s pin</Dialog.Title>
-          <div id="pin-said">
-            {said.map((line) => (
-              <p key={line} className="honest">
-                {line}
-              </p>
-            ))}
-          </div>
-          {/* `tabIndex={0}`, per `docs/ui-primitives.md` (charter-app#186): the one control
-              this dialog has, and WebKit leaves a `<button>` out of the tab sequence unless
-              its `tabindex` is written down. */}
-          <AnswerBar>
-            <Dialog.Close asChild>
-              <Button>Close</Button>
-            </Dialog.Close>
-          </AnswerBar>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+    <>
+      <StatusItem
+        data-testid="status-pin"
+        tooltip={label}
+        tone="waiting"
+        aria-haspopup="dialog"
+        icon={<Pin aria-hidden="true" />}
+        onPress={() => {
+          setOpen(true);
+          again();
+        }}
+      >
+        {shown}
+      </StatusItem>
+      <Dialog
+        isOpen={open}
+        onClose={() => setOpen(false)}
+        title="The project's pin"
+        className="update"
+        aria-describedby="pin-said"
+        cancel={{ children: "Close" }}
+      >
+        <div id="pin-said">
+          {said.map((line) => (
+            <p key={line} className="honest">
+              {line}
+            </p>
+          ))}
+        </div>
+      </Dialog>
+    </>
   );
 }

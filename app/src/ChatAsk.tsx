@@ -1,18 +1,16 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import * as AlertDialog from "./overlays/alert-dialog";
 import type { ReactNode } from "react";
-import { AnswerBar } from "./AnswerBar";
-import { Button } from "./ui/button/Button";
+import { AlertDialog } from "./ui/dialog/Dialog";
 
 /**
  * **The question a chat Notice asks before it does what cannot be taken back** (NO-3): Forget
  * this chat… (its record is dropped) and Start fresh (its program ends, and it starts again).
  *
- * Radix's `AlertDialog`, for `EndingChat`'s reasons: an answer that loses something is a
+ * The family's `AlertDialog`, for `EndingChat`'s reasons: an answer that loses something is a
  * question that must be answered, Escape is Cancel, and a click outside answers nothing. Cancel
- * is first and has the focus, so a stray Return loses nothing. **A refusal stays in the
+ * leads and has the focus, so a stray Return loses nothing. **A refusal stays in the
  * question** (`trouble`), in the core's words, so the operator reads why next to what they
  * asked, and the thing it was about is left as it was.
  */
@@ -25,7 +23,7 @@ export function ChatAsk({
   busy,
   onAnswer,
   onCancel,
-  onCloseAutoFocus,
+  afterClose,
   children,
 }: {
   title: string;
@@ -46,52 +44,46 @@ export function ChatAsk({
   busy: boolean;
   onAnswer: () => void;
   onCancel: () => void;
-  /** Where the focus goes as the question closes; Radix's own return when not given. */
-  onCloseAutoFocus?: (event: Event) => void;
+  /** Where the focus goes once the question has closed; back to what had it when not given. */
+  afterClose?: () => void;
 }) {
   return (
-    <AlertDialog.Root
-      open
-      onOpenChange={(open) => {
-        if (!open && !busy) onCancel();
+    <AlertDialog
+      onClose={() => {
+        if (!busy) onCancel();
+      }}
+      title={title}
+      // One description holding both, so a screen reader announces the warning with what the
+      // answer does (#1246 review).
+      description={
+        <>
+          <p className="honest">{says}</p>
+          {warns && <p className="honest mid-turn">{warns}</p>}
+          {children}
+        </>
+      }
+      afterClose={afterClose}
+      cancel={{ isDisabled: busy }}
+      main={{
+        children: answer,
+        variant: "danger",
+        isDisabled: busy,
+        "aria-busy": busy,
+        onPress: onAnswer,
       }}
     >
-      <AlertDialog.Portal>
-        <AlertDialog.Overlay className="ui-scrim" />
-        <AlertDialog.Content className="ui-dialog warning" onCloseAutoFocus={onCloseAutoFocus}>
-          <AlertDialog.Title>{title}</AlertDialog.Title>
-          {/* One description holding both, so a screen reader announces the warning with what
-              the answer does (#1246 review). */}
-          <AlertDialog.Description asChild>
-            <div>
-              <p className="honest">{says}</p>
-              {warns && <p className="honest mid-turn">{warns}</p>}
-              {children}
-            </div>
-          </AlertDialog.Description>
-          {trouble && (
-            <p className="trouble" role="alert">
-              {trouble}
-            </p>
-          )}
-          <AnswerBar>
-            {/* `tabIndex={0}` on both, per `docs/ui-primitives.md` (charter-app#186). */}
-            <AlertDialog.Cancel asChild>
-              <Button isDisabled={busy}>Cancel</Button>
-            </AlertDialog.Cancel>
-            <Button variant="danger" isDisabled={busy} aria-busy={busy} onPress={onAnswer}>
-              {answer}
-            </Button>
-          </AnswerBar>
-        </AlertDialog.Content>
-      </AlertDialog.Portal>
-    </AlertDialog.Root>
+      {trouble && (
+        <p className="trouble" role="alert">
+          {trouble}
+        </p>
+      )}
+    </AlertDialog>
   );
 }
 
 /**
  * **Where the keyboard goes once a question has made its own Notice go** (#1246): Forget this
- * chat… drops the Notice it was asked from, so Radix's return to it would land on the page.
+ * chat… drops the Notice it was asked from, so the dialog's return to it would land on the page.
  * The next Notice standing in the same band, at its first button; with none, the strip's tab in
  * front.
  *

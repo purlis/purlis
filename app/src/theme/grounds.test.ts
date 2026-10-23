@@ -151,6 +151,10 @@ function groundsOfClasses(css: string[]): {
         if (classes.length === 0 && tag === "button") continue;
         // Nor is the family's own stylesheet, on its wrapper's attributes.
         if (/\[data-scope="button"\]/.test(subject)) continue;
+        // Of the dialog family's parts (#2910), only its root is a ground a button stands on: the
+        // scrim is drawn under the root, and the footer's rule holds nothing.
+        if (/\[data-scope="dialog"\]/.test(subject) && !/\[data-part="root"\]/.test(subject))
+          continue;
         const form =
           tag !== undefined
             ? `<${tag}>`
@@ -575,6 +579,12 @@ function readGrounds(
   css: string[],
 ): { found: Map<Token, string[]>; unread: Unread; inline: string[] } {
   const { byClass, window, unread } = groundsOfClasses(css);
+  // What a helper's spread attributes or the theme engine's layout words draw, by class.
+  for (const [name, tokens] of ENGINE_GROUNDS) {
+    const ground = byClass.get(name) ?? { tokens: new Set<Token>(), rest: false };
+    tokens.forEach((token) => ground.tokens.add(token));
+    byClass.set(name, ground);
+  }
   const reader = new Reader(files, byClass);
   // The first pass finds the buttons' classes and each component's `children` places, the next
   // ones read what is placed in them; a third settles a component placed in another's children.
@@ -603,6 +613,22 @@ function buttonGrounds(files: { name: string; text: string }[], css: string[]): 
  * no button is drawn on what it paints. A new one fails the test below until it is read or
  * listed here.
  */
+/**
+ * **The grounds a family draws on an element whose attributes a helper hands it** (#2914), each
+ * listed by the class the element carries: the reader ties a rule to an element by attributes
+ * written out, and `tabsPart`, `panelRoot` and `editorToolbar` spread theirs. The chat strip's
+ * shade is the engine's too, under `tabs.layout.attach: strip` (`attached` in
+ * `crates/purlis-core/src/theme/parts.rs`).
+ */
+const ENGINE_GROUNDS: ReadonlyMap<string, readonly Token[]> = new Map([
+  // The chat strip (`tabsPart("strip")`): none docked, the chat strip's shade on its own.
+  ["bar", ["layer.chat"]],
+  // The content panel the tabs attach to (`panelRoot("content")`), Purlis's panel fill.
+  ["panes", ["surface.raised"]],
+  // The editor's toolbar over a file (`editorToolbar`): the code's own surface.
+  ["piece-files-head", ["terminal.background"]],
+]);
+
 const CLASSLESS: readonly string[] = [
   // The band a chat row takes for a moment once it is revealed (`revealTask.ts` sets the
   // attribute as it runs); the row is a `.ui-row`, which holds no button.
@@ -619,6 +645,13 @@ const CLASSLESS: readonly string[] = [
   // A region panel's ground (`ui/panel`, #2913), set by the family's attributes on a library's
   // panel: `surface.base`, the window's own, which the button family already lists.
   '[data-scope="panel"][data-part="root"]',
+  // The editor's toolbar (`ui/tabs`, #2914): its attributes are spread by `editorToolbar`, and its
+  // ground is listed by class in ENGINE_GROUNDS.
+  '[data-scope="editor"][data-part="toolbar"]',
+  // A session tab's `×` under the pointer (`ui/tabs/tabs.css`, #2914): its attributes are the
+  // family's (`tabPart`), and it holds no button.
+  '[data-scope="tabs"][data-part="tab"] [data-part="closer"][data-scope="tabs"]:hover',
+  '[data-scope="tabs"][data-part="tab"] [data-part="closer"][data-scope="tabs"][data-keeps]:hover',
 ];
 
 /**
@@ -630,7 +663,6 @@ const CLASSLESS: readonly string[] = [
 const WITHIN: readonly string[] = [
   ".chats-section li:has(> .ui-row[data-revealed])",
   '.projects .project:has([aria-selected="true"])',
-  '.tabs .tab:has([aria-selected="true"])',
   '.workspaces-strip .workspace:has([aria-selected="true"])',
 ];
 

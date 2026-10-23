@@ -181,6 +181,7 @@ over the appearance as its colours are.
 | `focus-ring.width` | px | 1–4 | 2 | 2 | every focus ring, and the selected row's edge |
 | `focus-ring.offset` | px | 0–4 | 2 | 2 | a ring outside its element: a control's, a card's |
 | `focus-ring.inset` | px | −4–0 | −2 | −2 | a ring inside its element: a list row's, a tab's, a segment's |
+| `pane.border-width` | px | 0–2 | 1 | 1 | the line around a pane, the focused one's in the accent; Purlis draws none (#2914) |
 | `elevation.raised-y` | px at 14px | 0–8 | 2 | 2 | how far a raised bar's shadow falls: the find bar |
 | `elevation.raised-blur` | px at 14px | 0–24 | 8 | 8 | how soft that shadow is |
 | `elevation.overlay-y` | px at 14px | 0–16 | 8 | 8 | how far an overlay's shadow falls: dialogs, popovers, menus, tooltips |
@@ -196,12 +197,12 @@ not a token: words with no size of their own (a list row's, a paragraph's) follo
 *px at 14px* length grows with it.
 
 The project strip sits in the title bar, whose height no token reaches yet. **Still square,
-whatever `radius.*` says:** the strip tabs (projects, workspaces, chats), a tab's `×` closer, the
-settings gear on a strip, and every list and tree row but the palette's. **The focus ring
-tokens reach every focus ring**, the strip tabs', a tab's `×` closer's and the strip gear's
-among them; a ring that sits half as far out or in draws half the offset. Under forced colours
-the ring is drawn in the system's `Highlight` at the theme's width and offset: forced colours
-replace colour, not geometry.
+whatever `radius.*` says:** the project and workspace strip tabs, the settings gear on a strip,
+and every list and tree row but the palette's. The session tabs and their `×` are rounded through
+their parts ([Session tabs](#session-tabs)). **The focus ring tokens reach every focus ring**, the
+strip tabs', a tab's `×` closer's and the strip gear's among them; a ring that sits half as far
+out or in draws half the offset. Under forced colours the ring is drawn in the system's
+`Highlight` at the theme's width and offset: forced colours replace colour, not geometry.
 
 ### Density's compact layer
 
@@ -283,6 +284,7 @@ an unknown token is.
 | `textarea` (since version 3) | `root` (every property but `gap`, `font-weight` and `height`: a textarea is as tall as its lines) | none |
 | `popover` (since version 6) | `root` (`fill`, `text`, `border-colour`, `border-width`, `corner-radius`, `shadow`: the surface a popover and a menu stand on), `filter` (`fill`, `padding`), `rule` (`fill`), `list` (`padding`, `gap`), `header` (`text`, `font-size`, `font-weight`), `footer` (`fill`, `text`, `padding`, `font-size`), `key` (`fill`, `text`, `corner-radius`) | `popover`, `menu` |
 | `menu` (since version 6) | `root` (every property: a menu's row), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`), `shortcut` (`text`, `font-size`), `indicator` (`text`: a toggle's tick, a submenu's arrow) | `default`, `danger` (what cannot be undone) |
+| `dialog` (since version 7) | `root` (`fill`, `border-colour`, `border-width`, `corner-radius`, `shadow`), `title` (`text`, `font-size`, `font-weight`), `subtitle`, `description` and `summary` (`text`), `separator` (`fill`, the rule over the footer) | `dialog`, `alert` |
 
 A field is its label, its control (a `text-input` or a `textarea`), its help and its error, as
 one: `field.help.text` reaches a field's help line, `text-input.root.border-width` every one-line
@@ -290,10 +292,14 @@ box. A family with no variants is named by its part alone (`text-input.root.fill
 measured on its own fill as a button's are, and its floors fall back to its own default, a field's
 help to the quiet tier and its error to the danger colour.
 
+A dialog's size, height, place and rows are the dialog rules', never a theme's: a dialog key for
+its height or its padding is said and left out.
+
 The states are `hover`, `pressed`, `selected` (chosen, or a toggle that is on), `focused` (the
 keyboard is on it; a field whenever it holds the caret), `disabled` and `open`. A family names
 only the states its wrapper marks: the button every one; a text input and a textarea `hover`,
-`focused` and `disabled`; a field's root `disabled` alone. A key naming another is said and left
+`focused` and `disabled`; a field's root `disabled` alone; a dialog every one, though none
+changes its size. A key naming another is said and left
 out.
 
 | Property | Value | Bounds |
@@ -318,8 +324,10 @@ token follows the person's density; a number is the same in both.
 may be set, so nothing moves when the pointer, a press, the keyboard or a choice reaches a part.
 A theme that sets any other property inside a state is refused, and the check says why.
 
-**A corner is clamped as it is drawn** to half the part's height, its variant's own height
-where the theme sets one, and `full` draws a pill at any height and density. **A control stays a target and its words fit**: in both densities a button
+**A corner is clamped as it is drawn** to half a control's height, its variant's own height
+where the theme sets one, and `full` draws a pill at any height and density. A dialog's corner is
+a surface's: it is drawn at most `space.6`, the inset of what the dialog holds, and `full` is
+that, so a rounded dialog never cuts off a word or an answer in a corner. **A control stays a target and its words fit**: in both densities a button
 the theme sizes is at least 24px tall, and its words (its font size on a line of 1), its block
 padding and its border, top and bottom, fit in its height. A theme that breaks either is refused
 with the density named: Purlis Classic's compact button is 24px, so 14px words and a 1px border
@@ -335,7 +343,8 @@ densities: `"gap": "space.8"` is 32 comfortable, past a gap's 16, and refuses th
 
 **The floors hold per part and per state.** In each variant and state a theme's parts change,
 the part's words contrast 4.5:1 with its fill, and its icon 3:1, on every surface the family is
-drawn on; a border that is the part's only edge, on a fill that is its ground or none, contrasts
+drawn on, each part's words in the tier they are drawn in (a dialog's subtitle muted, its
+question secondary and its summary quiet); a border that is the part's only edge, on a fill that is its ground or none, contrasts
 3:1. A part that breaks one draws its family default in that variant and state, and the check
 says each as a `part-falls-back` warning. A disabled control is exempt, as WCAG has it.
 
@@ -394,6 +403,45 @@ no edge: `"tooltip.root.corner-radius": 8`, `"tooltip.root.border-width": 0`.
 
 The strip tabs, a tab's `×` closer, the gear on a strip and the list and tree rows are not
 families with parts today: they are drawn as the note under [Geometry](#geometry) says.
+
+### Session tabs
+
+The session tabs are the `tabs` family (#2914): each tab (`tab`, in the variants `chat`, `view`,
+`file` and `background`), its `label`, its `×` (`closer`), a `count` on it and an `indicator`;
+and, drawn around every tab and taking no variant or state, the `strip` they sit in, the
+`layout` that holds the strip and the panel, and that panel (`body`). The editor's toolbar over a
+file is the `editor` family's `toolbar`.
+
+**Purlis docks the tabs on the content panel**, and that is the family default: the strip is as
+wide as the panel with the first tab on its edge, the chosen tab takes the panel's fill and
+flares into it with 8px inverse corners, an unchosen tab under the pointer draws a pill inset 3px
+from the top and 5px from the bottom so it never touches the panel, and a tab is as wide as its
+name, at most 240px, shrinking with an ellipsis before the strip gives any tab up to its
+show-more menu. Purlis Classic keeps its strip through parts:
+
+```json
+"parts": {
+  "tabs.layout.attach": "strip",
+  "tabs.layout.sizing": "equal",
+  "tabs.layout.dividers": "on",
+  "tabs.tab.corner-radius": 0,
+  "tabs.tab.hover.inset": 0,
+  "tabs.tab.selected.fill": "layer.selected",
+  "tabs.tab.selected.flare": 0
+}
+```
+
+The layout's properties take words: `attach` is `panel` or `strip`, `sizing` `content` or
+`equal`, `dividers` `on` or `off`; its `gap` is px at the default text size, up to 32.
+`tabs.tab.selected.flare` (0 to 16px, or a radius token) is set only on the selected state, and
+`tabs.tab.hover.inset` (one value or three: top, sides, bottom, each 0 to 8px) only on hover:
+both are drawn out of the tab's flow (a flare at most as wide as the gap), so they are the two sizes a state may set. Every other size
+inside a state is refused, `tabs.tab.selected.font-weight` among them: choosing a tab never
+changes its width. `tabs.tab.max-width` is 48 to 480. `tabs.indicator.height` is a mark's, 0 to
+6px, drawn on the chosen tab's `top` or `bottom` edge (`tabs.indicator.position`). A chosen tab
+takes the fill of what it joins: a theme that gives the panel (`tabs.body.fill`) or the editor's
+toolbar (`editor.toolbar.fill`) a fill draws the chosen tab, or the chosen file tab, in it too,
+unless it names the tab's own. The strip's line is under it (`tabs.strip.border-width`).
 
 ## The theme check
 

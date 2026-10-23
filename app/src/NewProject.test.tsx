@@ -113,6 +113,17 @@ async function askForOne() {
   return await screen.findByRole("dialog", { name: "New project" });
 }
 
+/**
+ * The footer's main action once Advanced is open (#2910): the act of the part the person is in,
+ * in the place every dialog's main action is.
+ */
+async function createProject(dialog: HTMLElement): Promise<HTMLElement> {
+  const advanced = within(dialog).getByText("Advanced").closest("details");
+  if (advanced !== null && !advanced.open)
+    await userEvent.click(within(dialog).getByText("Advanced"));
+  return await within(dialog).findByRole("button", { name: "Create project" });
+}
+
 describe("making a project", () => {
   it("is offered on the project tab's own menu", async () => {
     core();
@@ -235,7 +246,7 @@ describe("making a project", () => {
     const dialog = await askForOne();
 
     await userEvent.type(within(dialog).getByLabelText("Folder"), MADE);
-    await userEvent.click(within(dialog).getByRole("button", { name: "Create project" }));
+    await userEvent.click(await createProject(dialog));
 
     expect(calls("create_project").map((one) => one.args)).toEqual([
       { path: MADE, planeIsThisRepo: false, adopt: null, forge: null },
@@ -251,7 +262,7 @@ describe("making a project", () => {
 
     await userEvent.type(within(dialog).getByLabelText("Folder"), MADE);
     await userEvent.type(within(dialog).getByLabelText("Repo to adopt"), REPO);
-    await userEvent.click(within(dialog).getByRole("button", { name: "Create project" }));
+    await userEvent.click(await createProject(dialog));
 
     expect(calls("create_project").map((one) => one.args)).toEqual([
       { path: MADE, planeIsThisRepo: false, adopt: REPO, forge: null },
@@ -272,7 +283,7 @@ describe("making a project", () => {
 
     expect(within(dialog).getByLabelText("Repo to adopt")).toBeDisabled();
 
-    await userEvent.click(within(dialog).getByRole("button", { name: "Create project" }));
+    await userEvent.click(await createProject(dialog));
 
     expect(calls("create_project")[0].args).toEqual({
       path: MADE,
@@ -289,7 +300,7 @@ describe("making a project", () => {
 
     await userEvent.type(within(dialog).getByLabelText("Folder"), MADE);
     await userEvent.click(within(dialog).getByLabelText("Make this repo itself the project"));
-    await userEvent.click(within(dialog).getByRole("button", { name: "Create project" }));
+    await userEvent.click(await createProject(dialog));
 
     expect(calls("create_project")[0].args.planeIsThisRepo).toBe(true);
   });
@@ -300,7 +311,7 @@ describe("making a project", () => {
     const dialog = await askForOne();
 
     await userEvent.type(within(dialog).getByLabelText("Folder"), MADE);
-    await userEvent.click(within(dialog).getByRole("button", { name: "Create project" }));
+    await userEvent.click(await createProject(dialog));
     const question = await within(dialog).findByRole("group", {
       name: "Which forge are its repos on?",
     });
@@ -322,7 +333,7 @@ describe("making a project", () => {
     const dialog = await askForOne();
 
     await userEvent.type(within(dialog).getByLabelText("Folder"), MADE);
-    await userEvent.click(within(dialog).getByRole("button", { name: "Create project" }));
+    await userEvent.click(await createProject(dialog));
     await within(dialog).findByRole("group", { name: "Which forge are its repos on?" });
     await userEvent.type(within(dialog).getByLabelText("Folder"), "-2");
 
@@ -340,7 +351,7 @@ describe("making a project", () => {
     const dialog = await askForOne();
 
     await userEvent.type(within(dialog).getByLabelText("Folder"), MADE);
-    await userEvent.click(within(dialog).getByRole("button", { name: "Create project" }));
+    await userEvent.click(await createProject(dialog));
 
     const question = await screen.findByRole("dialog", { name: "Open this project?" });
     expect(question).toHaveTextContent(MADE);
@@ -352,7 +363,7 @@ describe("making a project", () => {
     const dialog = await askForOne();
 
     await userEvent.type(within(dialog).getByLabelText("Folder"), MADE);
-    await userEvent.click(within(dialog).getByRole("button", { name: "Create project" }));
+    await userEvent.click(await createProject(dialog));
 
     await vi.waitFor(() =>
       expect(screen.getAllByRole("tab", { name: /new-thing/ })).toHaveLength(1),
@@ -367,7 +378,7 @@ describe("making a project", () => {
     const dialog = await askForOne();
 
     await userEvent.type(within(dialog).getByLabelText("Folder"), "/home/dev/svc");
-    await userEvent.click(within(dialog).getByRole("button", { name: "Create project" }));
+    await userEvent.click(await createProject(dialog));
 
     const refusal = await within(dialog).findByRole("alert");
     expect(refusal.textContent).toBe(NOT_INTO_A_REPO);
@@ -380,7 +391,7 @@ describe("making a project", () => {
     render(<App />);
     const dialog = await askForOne();
 
-    expect(within(dialog).getByRole("button", { name: "Create project" })).toBeDisabled();
+    expect(await createProject(dialog)).toBeDisabled();
   });
 
   it("says a folder dialog that could not open in the dialog, which a cancel does not (#1291)", async () => {
@@ -408,7 +419,7 @@ describe("making a project", () => {
     const dialog = await askForOne();
 
     await userEvent.type(within(dialog).getByLabelText("Folder"), MADE);
-    await userEvent.click(within(dialog).getByRole("button", { name: "Create project" }));
+    await userEvent.click(await createProject(dialog));
     const question = await within(dialog).findByRole("group", {
       name: "Which forge are its repos on?",
     });

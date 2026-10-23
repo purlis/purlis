@@ -1,11 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useRef } from "react";
-import * as Dialog from "./overlays/dialog";
 import type { Ask, FontTheme } from "./bindings";
-import { AnswerBar } from "./AnswerBar";
-import { Button } from "./ui/button/Button";
+import { Dialog } from "./ui/dialog/Dialog";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
@@ -66,177 +63,148 @@ export function ApprovePlane({
     contributes.profiles.length === 0 &&
     contributes.grants.length === 0 &&
     contributes.fonts.length === 0;
-  // Cancel, focused by the dialog itself rather than by tab order: opening a project puts
-  // what this lists in force, and it is never what a stray Return key finds.
-  const cancel = useRef<HTMLButtonElement>(null);
+  // Cancel has the keyboard as it opens: opening a project puts what this lists in force, and
+  // it is never what a stray Return key finds. A click outside answers nothing: a dialog that is
+  // up is a dialog that has to be answered, and dismissing it by missing it is not an answer.
   return (
-    <Dialog.Root
-      open
-      onOpenChange={(open) => {
-        if (!open) onCancel();
+    <Dialog
+      onClose={onCancel}
+      title={ask.first ? "Open this project?" : "This project has changed since you approved it"}
+      titleId="approve-plane"
+      // The root charter resolved, not the directory that was handed in: a picker pointed at a
+      // subfolder opens the project above it, and approving a directory you did not choose is
+      // the failure this dialog exists to prevent, arrived at from the friendly end.
+      subtitle={<code>{ask.path}</code>}
+      // Described by what purlis cannot judge in a project (#630), as the extension's question
+      // is by what purlis cannot stop: the list above it is read in turn.
+      aria-describedby="approve-plane-unjudged"
+      initialFocus="cancel"
+      main={{
+        children: yes ?? (ask.first ? "Open project" : "Open it anyway"),
+        // An answer that grants (ADR 0097 §6): its lock and its edge, never the primary look.
+        variant: "grants",
+        onPress: () => onApprove(ask),
       }}
     >
-      <Dialog.Portal>
-        <Dialog.Overlay className="ui-scrim" />
-        <Dialog.Content
-          className="ui-dialog warning"
-          aria-labelledby="approve-plane"
-          // Described by what purlis cannot judge in a project (#630), as the extension's
-          // question is by what purlis cannot stop: the list above it is read in turn.
-          aria-describedby="approve-plane-unjudged"
-          // A click outside answers nothing: a dialog that is up is a dialog that has to be
-          // answered, and dismissing it by missing it is not an answer.
-          onInteractOutside={(e) => e.preventDefault()}
-          onOpenAutoFocus={(e) => {
-            e.preventDefault();
-            cancel.current?.focus();
-          }}
-        >
-          <Dialog.Title id="approve-plane">
-            {ask.first ? "Open this project?" : "This project has changed since you approved it"}
-          </Dialog.Title>
-          {/* The root charter resolved, not the directory that was handed in: a picker pointed
-            at a subfolder opens the project above it, and approving a directory you did not
-            choose is the failure this dialog exists to prevent, arrived at from the friendly
-            end. */}
-          <p className="where">
-            <code>{ask.path}</code>
-          </p>
+      {ask.changes.length > 0 && (
+        <>
+          <h3>What changed</h3>
+          <ul className="changes">
+            {ask.changes.map((change) => (
+              <li key={change}>{change}</li>
+            ))}
+          </ul>
+        </>
+      )}
 
-          {ask.changes.length > 0 && (
-            <>
-              <h3>What changed</h3>
-              <ul className="changes">
-                {ask.changes.map((change) => (
-                  <li key={change}>{change}</li>
-                ))}
-              </ul>
-            </>
-          )}
-
-          <h3>{ask.first ? "What this project contributes" : "What it contributes now"}</h3>
-          {nothing && (
-            <p className="came-back">
-              Nothing purlis can enumerate: it enables no plugins, sets no environment, grants no
-              persona a tool, brings no font files, and its record names no chat to start.
-            </p>
-          )}
-          {contributes.plugins.length > 0 && (
-            <section>
-              <h4>Plugins it enables in every chat</h4>
-              <ul className="contributes">
-                {contributes.plugins.map(([name, how]) => (
-                  <li key={name}>
-                    <code>{name}</code>
-                    {how && <span className="value"> {how}</span>}
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-          {contributes.env.length > 0 && (
-            <section>
-              {/* Values and not only names: an `env` whose PATH gains a directory is a different
+      <h3>{ask.first ? "What this project contributes" : "What it contributes now"}</h3>
+      {nothing && (
+        <p className="came-back">
+          Nothing purlis can enumerate: it enables no plugins, sets no environment, grants no
+          persona a tool, brings no font files, and its record names no chat to start.
+        </p>
+      )}
+      {contributes.plugins.length > 0 && (
+        <section>
+          <h4>Plugins it enables in every chat</h4>
+          <ul className="contributes">
+            {contributes.plugins.map(([name, how]) => (
+              <li key={name}>
+                <code>{name}</code>
+                {how && <span className="value"> {how}</span>}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {contributes.env.length > 0 && (
+        <section>
+          {/* Values and not only names: an `env` whose PATH gains a directory is a different
                 grant from the one that was approved, and a list of names could not show it. */}
-              <h4>Environment it sets on every harness</h4>
-              <ul className="contributes">
-                {contributes.env.map(([name, value]) => (
-                  <li key={name}>
-                    <code>
-                      {name}={value}
-                    </code>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-          {contributes.grants.length > 0 && (
-            <section>
-              {/* Each persona's grant as the trust record keeps it: the tools, and the digest
+          <h4>Environment it sets on every harness</h4>
+          <ul className="contributes">
+            {contributes.env.map(([name, value]) => (
+              <li key={name}>
+                <code>
+                  {name}={value}
+                </code>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {contributes.grants.length > 0 && (
+        <section>
+          {/* Each persona's grant as the trust record keeps it: the tools, and the digest
                 of any script of its own a tool runs. Only what is approved here runs without a
                 prompt, so a grant that changes later asks again. */}
-              <h4>Tools its personas may run without a prompt</h4>
-              <ul className="contributes">
-                {contributes.grants.map(([persona, grant]) => (
-                  <li key={persona}>
-                    <code>{persona}</code>
-                    <span className="value"> {grant}</span>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-          {contributes.fonts.length > 0 && (
-            <section>
-              {/* Each font file by its path in the project, its size and its sha-256 (the full
+          <h4>Tools its personas may run without a prompt</h4>
+          <ul className="contributes">
+            {contributes.grants.map(([persona, grant]) => (
+              <li key={persona}>
+                <code>{persona}</code>
+                <span className="value"> {grant}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {contributes.fonts.length > 0 && (
+        <section>
+          {/* Each font file by its path in the project, its size and its sha-256 (the full
                 digest on hover): the window draws a face from the project only when it is
                 approved here with that digest, so a face that changes later asks again. */}
-              <h4>Font files its themes bring</h4>
-              <FontFiles fonts={contributes.fonts} />
-            </section>
-          )}
-          {contributes.starts.length > 0 && (
-            <section>
-              <h4>Programs opening it would start</h4>
-              <ul className="contributes">
-                {contributes.starts.map(([what]) => (
-                  <li key={what}>
-                    <code>{what}</code>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-          {contributes.profiles.length > 0 && (
-            <section>
-              {/* Drawn, and deliberately drawn apart from the list above. The record chooses
+          <h4>Font files its themes bring</h4>
+          <FontFiles fonts={contributes.fonts} />
+        </section>
+      )}
+      {contributes.starts.length > 0 && (
+        <section>
+          <h4>Programs opening it would start</h4>
+          <ul className="contributes">
+            {contributes.starts.map(([what]) => (
+              <li key={what}>
+                <code>{what}</code>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {contributes.profiles.length > 0 && (
+        <section>
+          {/* Drawn, and deliberately drawn apart from the list above. The record chooses
                 which of THIS machine's own harness profiles runs and never what it runs, and
                 `profiletrust` shows a new or changed command line before it runs. */}
-              <h4>Chats it would start on your own harness profiles</h4>
-              <ul className="contributes">
-                {contributes.profiles.map(([what]) => (
-                  <li key={what}>
-                    <code>{what}</code>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
+          <h4>Chats it would start on your own harness profiles</h4>
+          <ul className="contributes">
+            {contributes.profiles.map(([what]) => (
+              <li key={what}>
+                <code>{what}</code>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
-          <p className="came-back" id="approve-plane-unjudged">
-            purlis can only list what it can read. A project&rsquo;s persona charters, memory and
-            todos are text a model reads and acts on. purlis makes no judgement about them.
+      <p className="came-back" id="approve-plane-unjudged">
+        purlis can only list what it can read. A project&rsquo;s persona charters, memory and todos
+        are text a model reads and acts on. purlis makes no judgement about them.
+      </p>
+
+      {fonts !== undefined && (
+        <>
+          {fonts.length > 0 && (
+            <p className="where" id="approve-plane-fonts-of">
+              {fontsOf(fonts)}
+            </p>
+          )}
+          <p className="came-back">
+            Font files are read by your system&rsquo;s font engine; allow only fonts you or your
+            team added.
           </p>
-
-          {/* `tabIndex={0}` on both, per `docs/ui-primitives.md` (charter-app#186): WebKit
-              leaves a `<button>` out of the tab sequence unless its `tabindex` is written
-              down, and a dialog should not depend on having exactly two answers to be
-              reachable. */}
-          {fonts !== undefined && (
-            <>
-              {fonts.length > 0 && (
-                <p className="where" id="approve-plane-fonts-of">
-                  {fontsOf(fonts)}
-                </p>
-              )}
-              <p className="came-back">
-                Font files are read by your system&rsquo;s font engine; allow only fonts you or your
-                team added.
-              </p>
-            </>
-          )}
-
-          <AnswerBar>
-            <Button ref={cancel} onPress={onCancel}>
-              Cancel
-            </Button>
-            <Button onPress={() => onApprove(ask)}>
-              {yes ?? (ask.first ? "Open project" : "Open it anyway")}
-            </Button>
-          </AnswerBar>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+        </>
+      )}
+    </Dialog>
   );
 }
 

@@ -1,12 +1,10 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useRef, useState } from "react";
-import * as Dialog from "./overlays/dialog";
+import { useState } from "react";
 import type { PersonaProfile as Read } from "./bindings";
-import { Choice, SettingActions, SettingRow } from "./settings/components";
-import { Button } from "./ui/button/Button";
-import { Form } from "./ui/field/Field";
+import { Choice, SettingRow } from "./settings/components";
+import { Dialog } from "./ui/dialog/Dialog";
 
 /** The value that stands for "names no profile": no profile is called the empty string. */
 const NONE = "";
@@ -57,108 +55,83 @@ export function PersonaProfile({
   const unknown = named !== null && !offered.includes(named);
   const parent = read?.inherited_from ?? null;
   const value = picked ?? (named !== null && !unknown ? named : unknown ? undefined : NONE);
-  const cancel = useRef<HTMLButtonElement>(null);
+  // Cancel has the keyboard as it opens: a profile is a choice to read before it is made.
   return (
-    <Dialog.Root
-      open
-      onOpenChange={(open) => {
-        if (!open && !saving) onCancel();
+    <Dialog
+      onClose={() => {
+        if (!saving) onCancel();
+      }}
+      title={`Profile of ${persona}`}
+      subtitle={
+        <>
+          Written as <code>profile:</code> in <code>personas/{persona}/persona.md</code>
+        </>
+      }
+      initialFocus="cancel"
+      cancel={{ isDisabled: saving && read !== undefined, onPress: onCancel }}
+      main={{
+        children: saving ? "Saving…" : "Save profile",
+        reserve: ["Save profile", "Saving…"],
+        isDisabled: !read || value === undefined || saving,
+        onPress: () => {
+          if (read && value !== undefined && !saving) onSave(value === NONE ? null : value);
+        },
       }}
     >
-      <Dialog.Portal>
-        <Dialog.Overlay className="ui-scrim" />
-        <Dialog.Content
-          className="ui-dialog warning"
-          aria-describedby={undefined}
-          onInteractOutside={(e) => e.preventDefault()}
-          onOpenAutoFocus={(e) => {
-            e.preventDefault();
-            cancel.current?.focus();
-          }}
-        >
-          <Dialog.Title>Profile of {persona}</Dialog.Title>
-          <p className="where">
-            Written as <code>profile:</code> in <code>personas/{persona}/persona.md</code>
-          </p>
+      {!read && !unreadable && (
+        <p className="pending" role="status" aria-busy="true">
+          Reading the profile {persona} names…
+        </p>
+      )}
+      {unreadable && (
+        <p className="trouble" role="alert">
+          {unreadable}
+        </p>
+      )}
+      {unknown && (
+        <p className="honest">
+          Its definition names <code>{named}</code>. This project does not offer it, so no chat
+          starts on it. Pick one of the project&apos;s profiles, or none.
+        </p>
+      )}
 
-          {!read && !unreadable && (
-            <p className="pending" role="status" aria-busy="true">
-              Reading the profile {persona} names…
-            </p>
-          )}
-          {unreadable && (
-            <p className="trouble" role="alert">
-              {unreadable}
-            </p>
-          )}
-          {unknown && (
-            <p className="honest">
-              Its definition names <code>{named}</code>. This project does not offer it, so no chat
-              starts on it. Pick one of the project&apos;s profiles, or none.
-            </p>
-          )}
+      {parent !== null && (
+        <p className="honest">
+          Inherited from <code>{parent}</code>, which this persona extends. A choice here is written
+          in this persona&apos;s own definition, and <code>{parent}</code> keeps its profile.
+        </p>
+      )}
 
-          {parent !== null && (
-            <p className="honest">
-              Inherited from <code>{parent}</code>, which this persona extends. A choice here is
-              written in this persona&apos;s own definition, and <code>{parent}</code> keeps its
-              profile.
-            </p>
-          )}
-
-          {read && (
-            <Form
-              onSubmit={(event) => {
-                event.preventDefault();
-                if (value !== undefined && !saving) onSave(value === NONE ? null : value);
-              }}
-            >
-              <SettingRow
-                label="Profile"
-                grouped
-                help={
-                  "The harness profile this persona's chats start on. With none, a chat handed " +
-                  "to it starts on the asking chat's profile."
-                }
-                control={(ids) => (
-                  <Choice
-                    ids={ids}
-                    kind="radio"
-                    options={[
-                      { value: NONE, label: "None" },
-                      ...offered.map((name) => ({ value: name, label: name })),
-                    ]}
-                    value={value}
-                    onValueChange={setPicked}
-                  />
-                )}
+      {read && (
+        <>
+          <SettingRow
+            label="Profile"
+            grouped
+            help={
+              "The harness profile this persona's chats start on. With none, a chat handed " +
+              "to it starts on the asking chat's profile."
+            }
+            control={(ids) => (
+              <Choice
+                ids={ids}
+                kind="radio"
+                options={[
+                  { value: NONE, label: "None" },
+                  ...offered.map((name) => ({ value: name, label: name })),
+                ]}
+                value={value}
+                onValueChange={setPicked}
               />
+            )}
+          />
 
-              {trouble && (
-                <p className="trouble" role="alert">
-                  {trouble}
-                </p>
-              )}
-
-              <SettingActions>
-                <Button variant="primary" type="submit" isDisabled={value === undefined || saving}>
-                  {saving ? "Saving…" : "Save profile"}
-                </Button>
-                <Button ref={cancel} isDisabled={saving} onPress={onCancel}>
-                  Cancel
-                </Button>
-              </SettingActions>
-            </Form>
+          {trouble && (
+            <p className="trouble" role="alert">
+              {trouble}
+            </p>
           )}
-          {!read && (
-            <SettingActions>
-              <Button ref={cancel} onPress={onCancel}>
-                Cancel
-              </Button>
-            </SettingActions>
-          )}
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+        </>
+      )}
+    </Dialog>
   );
 }

@@ -1,12 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useRef } from "react";
-import * as Alert from "./overlays/alert-dialog";
-import { useFocusBack } from "./EndingChat";
 import { EndingList, type Ending } from "./QuitWarning";
-import { AnswerBar } from "./AnswerBar";
-import { Button } from "./ui/button/Button";
+import { AlertDialog } from "./ui/dialog/Dialog";
 
 /**
  * What charter asks before it closes a project that has chats open.
@@ -26,9 +22,9 @@ import { Button } from "./ui/button/Button";
  * may not be looking at.
  *
  * **An `AlertDialog`, for `EndingChat`'s reasons**: it arrives because of something the
- * operator did, a click outside answers nothing, Escape answers Cancel, and Cancel is first and
- * focused so a stray Return keeps everything. When it closes, the focus goes back to where it
- * was (`useFocusBack`) — the project's tab, when the question came from Delete on it.
+ * operator did, a click outside answers nothing, Escape answers Cancel, and Cancel leads and has
+ * the keyboard so a stray Return keeps everything. When it closes, the focus goes back to where
+ * it was — the project's tab, when the question came from Delete on it.
  */
 export function ClosingProject({
   name,
@@ -46,58 +42,34 @@ export function ClosingProject({
   onClose: () => void;
   onCancel: () => void;
 }) {
-  const cancel = useRef<HTMLButtonElement>(null);
-  const handBack = useFocusBack();
   const count = chats.length === 1 ? "1 chat" : `${chats.length} chats`;
   // The workspaces in the order their chats are listed, each once.
   const where = [...new Set(chats.map((chat) => chat.workspace).filter(Boolean))];
   const title =
     chats.length > 0 ? `Close project ${name} and end ${count}?` : `Close project ${name}?`;
   return (
-    <Alert.Root
-      open
-      onOpenChange={(open) => {
-        if (!open) onCancel();
+    <AlertDialog
+      onClose={onCancel}
+      title={title}
+      description={
+        <p className="honest mid-turn">
+          {chats.length > 0 && `${count} ${chats.length === 1 ? "ends" : "end"}`}
+          {where.length > 0 && ` in ${where.join(", ")}`}
+          {chats.length > 0 && ". Ending a chat ends the program it runs. There is no undo. "}
+          {!heard && "purlis has not yet heard what this project has open, so it may be more. "}
+          Nothing of the project on disk goes.
+        </p>
+      }
+      main={{
+        children: chats.length > 0 ? `Close and end ${count}` : "Close project",
+        // `danger` only where a chat may end (D-1719-3): closing a project with nothing open
+        // loses nothing, and it opens again as it was.
+        variant: chats.length > 0 || !heard ? "danger" : "secondary",
+        onPress: onClose,
       }}
     >
-      <Alert.Portal>
-        <Alert.Overlay className="ui-scrim" />
-        <Alert.Content
-          className="ui-dialog warning"
-          onOpenAutoFocus={(event) => {
-            event.preventDefault();
-            cancel.current?.focus();
-          }}
-          onCloseAutoFocus={handBack}
-        >
-          <Alert.Title>{title}</Alert.Title>
-          <Alert.Description className="honest mid-turn">
-            {chats.length > 0 && `${count} ${chats.length === 1 ? "ends" : "end"}`}
-            {where.length > 0 && ` in ${where.join(", ")}`}
-            {chats.length > 0 && ". Ending a chat ends the program it runs. There is no undo. "}
-            {!heard && "purlis has not yet heard what this project has open, so it may be more. "}
-            Nothing of the project on disk goes.
-          </Alert.Description>
-          {/* The quit warning's rows, so the two cannot drift apart. */}
-          {chats.length > 0 && <EndingList chats={chats} />}
-          {/* `tabIndex={0}` on both, per `docs/ui-primitives.md` (charter-app#186). */}
-          <AnswerBar>
-            <Alert.Cancel asChild>
-              <Button ref={cancel}>Cancel</Button>
-            </Alert.Cancel>
-            <Alert.Action asChild>
-              {/* `ends-it` only where a chat may end (D-1719-3): closing a project with nothing
-                  open loses nothing, and it opens again as it was. */}
-              <Button
-                variant={chats.length > 0 || !heard ? "danger" : "secondary"}
-                onPress={onClose}
-              >
-                {chats.length > 0 ? `Close and end ${count}` : "Close project"}
-              </Button>
-            </Alert.Action>
-          </AnswerBar>
-        </Alert.Content>
-      </Alert.Portal>
-    </Alert.Root>
+      {/* The quit warning's rows, so the two cannot drift apart. */}
+      {chats.length > 0 && <EndingList chats={chats} />}
+    </AlertDialog>
   );
 }

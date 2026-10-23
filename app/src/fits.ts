@@ -56,7 +56,8 @@
  * zero-sized box (#149) — and it is the right degradation: a strip that drew nothing because
  * nobody had told it how wide it was would be a window with no tabs in it.
  */
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { onDrawn } from "./theme/theme";
 
 /**
  * The narrowest a tab of a given strip may be drawn, in pixels at {@link LEAST_TUNED_AT} —
@@ -194,8 +195,15 @@ export type Chips<T> = { is: (one: T) => boolean; width: number };
  * `holds` is how many things the strip is drawing. It is not used in the arithmetic — it is
  * when to measure again, for the reason at the bottom of this function.
  */
-export function useRoom(holds: number): { strip: Ref; controls: Ref; width: number } {
+export function useRoom(holds: number): {
+  strip: Ref;
+  controls: Ref;
+  width: number;
+  /** The room between two of its tabs, as its stylesheet draws it: each tab costs it too. */
+  gap: number;
+} {
   const [width, setWidth] = useState(0);
+  const [gap, setGap] = useState(0);
   const strip = useRef<Watched>({ element: null });
   const controls = useRef<Watched>({ element: null });
 
@@ -217,6 +225,8 @@ export function useRoom(holds: number): { strip: Ref; controls: Ref; width: numb
     const whole = strip.current.element.clientWidth;
     const taken = controls.current.element?.offsetWidth ?? 0;
     setWidth(Math.max(0, whole - taken));
+    // A theme may part the tabs (#2914): read as drawn, none where nothing lays it out.
+    setGap(parseFloat(getComputedStyle(strip.current.element).columnGap) || 0);
   }, []);
 
   // **One observer per element, taken down by the ref that put it up.** React calls a
@@ -242,7 +252,11 @@ export function useRoom(holds: number): { strip: Ref; controls: Ref; width: numb
   // where the count changed — fifty of them across the fifty-tab loop, on one element.
   useLayoutEffect(measure, [holds, measure]);
 
-  return { strip: stripRef, controls: controlsRef, width };
+  // **And again when the theme in force changes** (#2914): a theme sets the room between tabs,
+  // and a new theme changes it without changing the strip's width.
+  useEffect(() => onDrawn(() => measure()), [measure]);
+
+  return { strip: stripRef, controls: controlsRef, width, gap };
 }
 
 /**
@@ -266,6 +280,10 @@ export function useWidth(holds: unknown): { ref: Ref; width: number } {
     [measure],
   );
   useLayoutEffect(measure, [holds, measure]);
+
+  // **And again when the theme in force changes** (#2914): a theme sets the room between tabs,
+  // and a new theme changes it without changing the strip's width.
+  useEffect(() => onDrawn(() => measure()), [measure]);
   return { ref, width };
 }
 

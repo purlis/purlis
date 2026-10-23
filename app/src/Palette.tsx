@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import * as Dialog from "./overlays/dialog";
+import { DialogSurface } from "./ui/dialog/Dialog";
 import {
   aim,
   CHAT_KEYBOARD,
@@ -176,10 +176,15 @@ export function Palette({
    *
    * A pane's keyboard lives in xterm's own textarea, which is an ordinary focusable element —
    * so this is the one function that makes the palette something an operator can open
-   * mid-sentence. It runs as the dialog's closing move (`onCloseAutoFocus`), which is after
-   * the focus trap has let go; Radix would otherwise restore the focus itself, to the same
-   * element, without the check that the element is still on the page.
+   * mid-sentence. It runs as the dialog's closing move (`afterClose`), once the focus trap has
+   * let go and the rest of the window can be reached again.
    */
+  /** Whether the keyboard is on the page and nowhere in particular. */
+  const nothingHasTheKeyboard = () => {
+    const at = document.activeElement;
+    return at === null || at === document.body || at === came.current;
+  };
+
   const giveTheKeyboardBack = useCallback(() => {
     const back = came.current;
     if (back instanceof HTMLElement && back.isConnected) back.focus();
@@ -476,253 +481,239 @@ export function Palette({
   const switcherAsk = finding ? "Go to a project or a file" : "Switch to a project";
 
   return (
-    // A Radix dialog (`docs/ui-primitives.md`). What it adds over the markup that was here is
-    // the trap: the box took the keyboard on opening and nothing held it there, so focus could
-    // leave for a pane behind the overlay while the palette was still up and modal.
+    // **A surface of the dialog family with an anatomy of its own** (#2910, `DialogSurface`):
+    // the family's modal, fixed top, width and height, and the palette's box and rows inside.
+    // What it adds over the markup that was here is the trap: the box took the keyboard on
+    // opening and nothing held it there, so focus could leave for a pane behind the overlay while
+    // the palette was still up and modal.
     //
-    // **Its Escape stays on the window, deliberately.** Radix listens on the document in the
-    // capture phase; this listener is on the window in the capture phase, so it runs first and
-    // stops the event — which is the point, because the same listener is what claims `F2` and
-    // hands `F2` back, and those two answers have to be decided in one place. Radix's own
-    // Escape is wired to the same `close` for the case where the window listener is not the
-    // one that sees it.
-    <Dialog.Root
-      open
-      onOpenChange={(up) => {
-        if (!up) close();
+    // **Its Escape stays on the window, deliberately.** This listener is on the window in the
+    // capture phase, so it runs before the dialog's own and stops the event — which is the point,
+    // because the same listener is what claims `F2` and hands `F2` back, and those two answers
+    // have to be decided in one place. The dialog's own Escape is wired to the same `close` for
+    // the case where the window listener is not the one that sees it.
+    //
+    // A click outside answers nothing, which is how every surface in this app has always
+    // behaved: the way out is Escape or a row.
+    <DialogSurface
+      onClose={close}
+      className="palette"
+      aria-label={switcher ? (finding ? switcherAsk : "Project switcher") : "Command palette"}
+      // The box, so the first thing typed narrows.
+      initialFocus={box}
+      afterClose={() => {
+        // A row that went into Settings sent the keyboard there (#1206); a row that put it
+        // somewhere itself (a tab's rename box) keeps it there.
+        if (!landSettingsFocus() && nothingHasTheKeyboard()) giveTheKeyboardBack();
+        // A row that moves the keyboard itself moves it from there (#1769).
+        theKeyboardIsBack();
       }}
     >
-      <Dialog.Portal>
-        <Dialog.Overlay className="ui-scrim" />
-        <Dialog.Content
-          className="ui-dialog warning palette"
-          aria-label={switcher ? (finding ? switcherAsk : "Project switcher") : "Command palette"}
-          // A click outside answers nothing, which is how every surface in this app has always
-          // behaved: the way out is Escape or a row. Turned off explicitly rather than left to
-          // the default, so a reviewer sees it was decided.
-          onInteractOutside={(e) => e.preventDefault()}
-          onOpenAutoFocus={(e) => {
-            // The box, so the first thing typed narrows. Radix would otherwise aim at the
-            // first tabbable thing in the content, which is the box today and need not stay
-            // so.
+      <label className="palette-ask" id="palette-ask" htmlFor="palette-query">
+        {switcher ? switcherAsk : "Run an action"}
+      </label>
+      {/* The field family's box; its rows and their keys are the palette's own until the
+          combobox family moves (#2906). */}
+      <TextField
+        id="palette-query"
+        inputRef={box}
+        className="palette-query"
+        aria-labelledby="palette-ask"
+        role="combobox"
+        aria-expanded="true"
+        aria-controls={
+          [rows.length > 0 && "palette-rows", fileRows.length > 0 && "palette-files"]
+            .filter(Boolean)
+            .join(" ") || undefined
+        }
+        aria-activedescendant={aimedId}
+        placeholder={
+          switcher
+            ? finding
+              ? "Type a project's or a file's name"
+              : "Type a project's name"
+            : "Type to narrow"
+        }
+        value={query}
+        onChange={(to) => {
+          setQuery(to);
+          // The aim goes back to `aim` on every keystroke: a row the arrows reached under
+          // the last query is not the row that survived this one.
+          setAt(undefined);
+          setHeld(undefined);
+          setFileSaid(undefined);
+        }}
+        onKeyDown={(e) => {
+          // Escape is not here: it is on the window, so it leaves from anywhere.
+          const fileKey = aimedFile && fileKeyOf(e.nativeEvent, mac);
+          if (aimedFile && fileKey) {
             e.preventDefault();
-            box.current?.focus();
-          }}
-          onCloseAutoFocus={(e) => {
+            if (!e.repeat) onFile(aimedFile, fileKey);
+          } else if (e.key === "ArrowDown") {
             e.preventDefault();
-            // A row that went into Settings sent the keyboard there (#1206).
-            if (!landSettingsFocus()) giveTheKeyboardBack();
-            // A row that moves the keyboard itself moves it from there (#1769).
-            theKeyboardIsBack();
-          }}
-        >
-          <label className="palette-ask" id="palette-ask" htmlFor="palette-query">
-            {switcher ? switcherAsk : "Run an action"}
-          </label>
-          {/* The field family's box; its rows and their keys are the palette's own until the
-              combobox family moves (#2906). */}
-          <TextField
-            id="palette-query"
-            inputRef={box}
-            className="palette-query"
-            aria-labelledby="palette-ask"
-            role="combobox"
-            aria-expanded="true"
-            aria-controls={
-              [rows.length > 0 && "palette-rows", fileRows.length > 0 && "palette-files"]
-                .filter(Boolean)
-                .join(" ") || undefined
-            }
-            aria-activedescendant={aimedId}
-            placeholder={
-              switcher
-                ? finding
-                  ? "Type a project's or a file's name"
-                  : "Type a project's name"
-                : "Type to narrow"
-            }
-            value={query}
-            onChange={(to) => {
-              setQuery(to);
-              // The aim goes back to `aim` on every keystroke: a row the arrows reached under
-              // the last query is not the row that survived this one.
-              setAt(undefined);
-              setHeld(undefined);
-              setFileSaid(undefined);
-            }}
-            onKeyDown={(e) => {
-              // Escape is not here: it is on the window, so it leaves from anywhere.
-              const fileKey = aimedFile && fileKeyOf(e.nativeEvent, mac);
-              if (aimedFile && fileKey) {
-                e.preventDefault();
-                if (!e.repeat) onFile(aimedFile, fileKey);
-              } else if (e.key === "ArrowDown") {
-                e.preventDefault();
-                move(1);
-              } else if (e.key === "ArrowUp") {
-                e.preventDefault();
-                move(-1);
-              } else if (e.key === "Enter") {
-                e.preventDefault();
-                runRow(aimed);
-              } else if (e.key === "Tab" && finding) {
-                // Tab widens where files are found, Shift+Tab narrows it, round the ladder.
-                e.preventDefault();
-                const by = e.shiftKey ? -1 : 1;
-                setRung((rungNow + by + ladder.length) % ladder.length);
-                setAt(undefined);
-              }
-            }}
-          />
+            move(1);
+          } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            move(-1);
+          } else if (e.key === "Enter") {
+            e.preventDefault();
+            runRow(aimed);
+          } else if (e.key === "Tab" && finding) {
+            // Tab widens where files are found, Shift+Tab narrows it, round the ladder.
+            e.preventDefault();
+            const by = e.shiftKey ? -1 : 1;
+            setRung((rungNow + by + ladder.length) % ladder.length);
+            setAt(undefined);
+          }
+        }}
+      />
 
-          {handsBack && (
-            <p className="palette-through">
-              Press {PASS_THROUGH_KEY} again to send {PASS_THROUGH_KEY} to the chat in front.
-            </p>
-          )}
+      {handsBack && (
+        <p className="palette-through">
+          Press {PASS_THROUGH_KEY} again to send {PASS_THROUGH_KEY} to the chat in front.
+        </p>
+      )}
 
-          {/* The core's sentence, unchanged, beside the rows. A refusal is an alert because it
+      {/* The core's sentence, unchanged, beside the rows. A refusal is an alert because it
             is the answer to something the operator just did; a report is a status. */}
-          {showing && (
-            <p
-              className={showing.refused ? "refusal said" : "said"}
-              role={showing.refused ? "alert" : "status"}
-            >
-              <span>{showing.words}</span>
-              {showing.settings !== undefined && onSettings !== undefined && (
-                <SaidLink
-                  way={showing.settings}
-                  onFollow={(link) => {
-                    close();
-                    onSettings(link);
-                  }}
-                />
-              )}
-            </p>
+      {showing && (
+        <p
+          className={showing.refused ? "refusal said" : "said"}
+          role={showing.refused ? "alert" : "status"}
+        >
+          <span>{showing.words}</span>
+          {showing.settings !== undefined && onSettings !== undefined && (
+            <SaidLink
+              way={showing.settings}
+              onFollow={(link) => {
+                close();
+                onSettings(link);
+              }}
+            />
           )}
-          {held && (
-            <p className="held" role="status">
-              {held}
-            </p>
-          )}
+        </p>
+      )}
+      {held && (
+        <p className="held" role="status">
+          {held}
+        </p>
+      )}
 
-          {rows.length === 0 && finding ? null : rows.length === 0 ? (
-            <p className="none" role="status">
-              {switcher
-                ? "No open project matches what you typed."
-                : "No action matches what you typed."}
-            </p>
-          ) : (
-            <ul
-              id="palette-rows"
-              className="palette-rows"
-              role="listbox"
-              aria-label={switcher ? "Projects" : "Actions"}
+      {rows.length === 0 && finding ? null : rows.length === 0 ? (
+        <p className="none" role="status">
+          {switcher
+            ? "No open project matches what you typed."
+            : "No action matches what you typed."}
+        </p>
+      ) : (
+        <ul
+          id="palette-rows"
+          className="palette-rows"
+          role="listbox"
+          aria-label={switcher ? "Projects" : "Actions"}
+        >
+          {rows.map((row, index) => (
+            <li
+              key={row.id}
+              id={`palette-row-${row.id}`}
+              role="option"
+              aria-selected={index === aimed}
+              aria-disabled={row.available ? undefined : true}
+              className={
+                (index === aimed ? "palette-row aimed" : "palette-row") +
+                (row.available ? "" : " refused")
+              }
+              onClick={() => runOffer(row)}
             >
-              {rows.map((row, index) => (
-                <li
-                  key={row.id}
-                  id={`palette-row-${row.id}`}
-                  role="option"
-                  aria-selected={index === aimed}
-                  aria-disabled={row.available ? undefined : true}
-                  className={
-                    (index === aimed ? "palette-row aimed" : "palette-row") +
-                    (row.available ? "" : " refused")
-                  }
-                  onClick={() => runOffer(row)}
-                >
-                  {/* A project's name alone in the switcher: every row there is a switch, and
+              {/* A project's name alone in the switcher: every row there is a switch, and
                     `Switch to project` ten times over is ten times the same three words. */}
-                  <span className="palette-title">
-                    {switcher ? (row.name ?? row.title) : row.title}
-                  </span>
-                  {/* The reason, as words. Dimming is decoration; this is the meaning, and it
+              <span className="palette-title">
+                {switcher ? (row.name ?? row.title) : row.title}
+              </span>
+              {/* The reason, as words. Dimming is decoration; this is the meaning, and it
                     is what a screen reader and a monochrome display both get. */}
-                  {!row.available && <span className="palette-why">{row.reason}</span>}
-                  {/* What a row that CAN run costs, where its title cannot fit it: ending a
+              {!row.available && <span className="palette-why">{row.reason}</span>}
+              {/* What a row that CAN run costs, where its title cannot fit it: ending a
                     chat ends the program it runs, and nothing said so (charter-app#130).
                     In the same slot as the reason, because a row has one or the other. */}
-                  {row.available && row.note && <span className="palette-why">{row.note}</span>}
-                </li>
-              ))}
-            </ul>
-          )}
+              {row.available && row.note && <span className="palette-why">{row.note}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
 
-          {/* ⌘P's files (FM-7): a group of their own after the projects, never ranked into
+      {/* ⌘P's files (FM-7): a group of their own after the projects, never ranked into
             them, under the scope they were found in. */}
-          {finding && fileScope && files && (
-            <section className="palette-files" aria-label="Files">
-              <p className="palette-scope" role="status" aria-label="Where files are found">
-                Files in {scopeSaid(fileScope, files.nameOf)}
-                {ladder.length > 1 && (
-                  <span className="palette-why">
-                    {rungNow === ladder.length - 1 ? "Tab to narrow again" : "Tab to widen"}
-                  </span>
-                )}
-              </p>
-              {found.partial.map((said) => (
-                <p key={said} className="said" role="status">
-                  {said}
-                </p>
-              ))}
-              {found.refused.map((why) => (
-                <p key={why} className="refusal said" role="alert">
-                  {why}
-                </p>
-              ))}
-              {/* Said while the core looks (`docs/ui-copy.md`, #630): a group with nothing in it
+      {finding && fileScope && files && (
+        <section className="palette-files" aria-label="Files">
+          <p className="palette-scope" role="status" aria-label="Where files are found">
+            Files in {scopeSaid(fileScope, files.nameOf)}
+            {ladder.length > 1 && (
+              <span className="palette-why">
+                {rungNow === ladder.length - 1 ? "Tab to narrow again" : "Tab to widen"}
+              </span>
+            )}
+          </p>
+          {found.partial.map((said) => (
+            <p key={said} className="said" role="status">
+              {said}
+            </p>
+          ))}
+          {found.refused.map((why) => (
+            <p key={why} className="refusal said" role="alert">
+              {why}
+            </p>
+          ))}
+          {/* Said while the core looks (`docs/ui-copy.md`, #630): a group with nothing in it
                   yet reads as one that found nothing. A status of its own (#1719): the scope
                   line above says where they are found, this one that they are not in yet. */}
-              {fileRows.length === 0 && found.looking && (
-                <p className="pending" role="status" aria-busy="true">
-                  Finding files…
-                </p>
-              )}
-              {query.trim() !== "" && fileRows.length === 0 && !found.looking && (
-                <p className="none" role="status">
-                  No file matches what you typed.
-                </p>
-              )}
-              {fileRows.length > 0 && (
-                <ul id="palette-files" className="palette-rows" role="listbox" aria-label="Files">
-                  {fileRows.map((file, at) => {
-                    const index = rows.length + at;
-                    const { marks } = hitSaid(file, files.nameOf);
-                    return (
-                      <li
-                        key={`${file.plane}\n${file.workspace}\n${file.repo}\n${file.piece ?? ""}\n${file.path}`}
-                        id={`palette-file-${at}`}
-                        role="option"
-                        aria-selected={index === aimed}
-                        className={index === aimed ? "palette-row aimed" : "palette-row"}
-                        onClick={() => openFile(file)}
-                      >
-                        <FoundIcon file={file} />
-                        <span className="palette-title">
-                          <Marked parts={marks.name} />
-                        </span>
-                        <span className="palette-why">
-                          <Marked parts={marks.folder} />
-                          {marks.after}
-                        </span>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-              {/* The aimed file's two keys, said while there is a file to act on (#1143). */}
-              {aimedFile && (
-                <p className="palette-through">
-                  Copy path ({fileKeySaid("copy", mac)}) · {revealSaid(navigator.platform)} (
-                  {fileKeySaid("reveal", mac)})
-                </p>
-              )}
-            </section>
+          {fileRows.length === 0 && found.looking && (
+            <p className="pending" role="status" aria-busy="true">
+              Finding files…
+            </p>
           )}
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+          {query.trim() !== "" && fileRows.length === 0 && !found.looking && (
+            <p className="none" role="status">
+              No file matches what you typed.
+            </p>
+          )}
+          {fileRows.length > 0 && (
+            <ul id="palette-files" className="palette-rows" role="listbox" aria-label="Files">
+              {fileRows.map((file, at) => {
+                const index = rows.length + at;
+                const { marks } = hitSaid(file, files.nameOf);
+                return (
+                  <li
+                    key={`${file.plane}\n${file.workspace}\n${file.repo}\n${file.piece ?? ""}\n${file.path}`}
+                    id={`palette-file-${at}`}
+                    role="option"
+                    aria-selected={index === aimed}
+                    className={index === aimed ? "palette-row aimed" : "palette-row"}
+                    onClick={() => openFile(file)}
+                  >
+                    <FoundIcon file={file} />
+                    <span className="palette-title">
+                      <Marked parts={marks.name} />
+                    </span>
+                    <span className="palette-why">
+                      <Marked parts={marks.folder} />
+                      {marks.after}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          {/* The aimed file's two keys, said while there is a file to act on (#1143). */}
+          {aimedFile && (
+            <p className="palette-through">
+              Copy path ({fileKeySaid("copy", mac)}) · {revealSaid(navigator.platform)} (
+              {fileKeySaid("reveal", mac)})
+            </p>
+          )}
+        </section>
+      )}
+    </DialogSurface>
   );
 }
 

@@ -1,11 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useRef } from "react";
-import * as Alert from "./overlays/alert-dialog";
 import type { RelaunchChoice, RelaunchQuestion } from "./bindings";
-import { AnswerBar } from "./AnswerBar";
-import { Button } from "./ui/button/Button";
+import { AlertDialog } from "./ui/dialog/Dialog";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
@@ -18,13 +15,12 @@ import { Tooltip } from "./ui/tooltip/Tooltip";
  * project back until `relaunch` has the answer, and the window restores the other projects
  * after it (`App.tsx`).
  *
- * **Every way out that is not the "Start fresh" button is "Reopen all"**: the first button,
- * which has the keyboard, and Escape, which is the primitive's `Cancel`. Starting fresh clears
- * the record, and an answer lost to a stray key must never be the one that throws work away.
+ * **Every way out that is not the "Start fresh" button is "Reopen all"**: the leading answer,
+ * which has the keyboard, and Escape. Starting fresh clears the record, and an answer lost to a
+ * stray key must never be the one that throws work away.
  *
- * **Radix's `AlertDialog`**, for `EndingChat`'s reasons: it arrives without being asked for, a
- * click outside answers nothing, and the primitive requires the `Cancel` the focus goes to.
- * Both answers carry `tabIndex={0}` (`docs/ui-primitives.md`, charter-app#186).
+ * **The family's `AlertDialog`**, for `EndingChat`'s reasons: it arrives without being asked
+ * for, a click outside answers nothing, and it starts on its safe answer.
  *
  * `question.after_update` is charter-app#251's: Restart to update writes it into each record,
  * and the launch it restarts into says why it is being asked. "Reopen all" is in front either
@@ -43,60 +39,44 @@ export function RelaunchAsk({
   nameOf: (plane: string) => string;
   onAnswer: (choice: RelaunchChoice) => void;
 }) {
-  const reopen = useRef<HTMLButtonElement>(null);
   const chats = question.projects.reduce((sum, project) => sum + project.chats, 0);
   const views = question.projects.reduce((sum, project) => sum + project.views, 0);
   const open = counts(chats, views, " and ");
   return (
-    <Alert.Root
-      open
-      onOpenChange={(isOpen) => {
-        if (!isOpen) onAnswer("ReopenAll");
+    <AlertDialog
+      onClose={() => onAnswer("ReopenAll")}
+      title="Reopen your sessions?"
+      description={
+        <p className="honest">
+          {question.after_update && "purlis restarted to install an update. "}
+          {`${open} ${chats + views === 1 ? "was" : "were"} open when purlis last quit.`}
+        </p>
+      }
+      // The way out, which has the keyboard, is "Reopen all", as Escape is.
+      cancel={{ children: "Reopen all sessions" }}
+      main={{
+        children: "Start fresh",
+        // `danger`: starting fresh clears the record of what was open, and that cannot be
+        // taken back (`docs/design-system.md`, the dialog's footer).
+        variant: "danger",
+        onPress: () => onAnswer("StartFresh"),
       }}
     >
-      <Alert.Portal>
-        <Alert.Overlay className="ui-scrim" />
-        <Alert.Content
-          className="ui-dialog warning"
-          onOpenAutoFocus={(event) => {
-            event.preventDefault();
-            reopen.current?.focus();
-          }}
-        >
-          <Alert.Title>Reopen your sessions?</Alert.Title>
-          <Alert.Description className="honest">
-            {question.after_update && "purlis restarted to install an update. "}
-            {`${open} ${chats + views === 1 ? "was" : "were"} open when purlis last quit.`}
-          </Alert.Description>
-          <ul className="ending">
-            {question.projects.map((project) => (
-              // Its whole directory, where its name shows less of it.
-              <Tooltip
-                key={project.plane}
-                tip={nameOf(project.plane) === project.plane ? undefined : project.plane}
-              >
-                <li>
-                  <span>{nameOf(project.plane)}</span>
-                  <span className="what">{counts(project.chats, project.views, ", ")}</span>
-                </li>
-              </Tooltip>
-            ))}
-          </ul>
-          <AnswerBar>
-            <Alert.Cancel asChild>
-              <Button ref={reopen}>Reopen all sessions</Button>
-            </Alert.Cancel>
-            {/* Not the primitive's `Action`: an `Action` also closes the dialog, and closing
-                is this dialog's "Reopen all" — one press would send both answers. */}
-            {/* `ends-it`: starting fresh clears the record of what was open, and that cannot be
-                taken back (`docs/design-system.md`, the answer bar). */}
-            <Button variant="danger" onPress={() => onAnswer("StartFresh")}>
-              Start fresh
-            </Button>
-          </AnswerBar>
-        </Alert.Content>
-      </Alert.Portal>
-    </Alert.Root>
+      <ul className="ending">
+        {question.projects.map((project) => (
+          // Its whole directory, where its name shows less of it.
+          <Tooltip
+            key={project.plane}
+            tip={nameOf(project.plane) === project.plane ? undefined : project.plane}
+          >
+            <li>
+              <span>{nameOf(project.plane)}</span>
+              <span className="what">{counts(project.chats, project.views, ", ")}</span>
+            </li>
+          </Tooltip>
+        ))}
+      </ul>
+    </AlertDialog>
   );
 }
 

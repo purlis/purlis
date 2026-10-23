@@ -242,11 +242,21 @@ body {
    the argument; `--least` is set on the element from the same constant the arithmetic uses, so
    the stylesheet and the count cannot disagree. */
 .projects,
-.workspaces-strip,
-.bar .tabs {
+.workspaces-strip {
   display: flex;
   align-items: stretch;
   gap: 0;
+}
+
+/* **The chat strip's tabs** (#2914): along the strip's floor, the room between them the theme's
+   (`tabs.layout.gap`, 8px by default, as the prototype draws it), and the strip's end after the
+   `+`. How a tab is drawn is the tabs family's (`ui/tabs/tabs.css`); where it sits, and what
+   collapses, is the strip's. */
+.bar .tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--tabs-gap);
+  padding-inline-end: var(--space-4);
 }
 
 /* The projects this window holds, above everything one of them draws (ADR 0033), and the
@@ -377,9 +387,11 @@ body {
   min-width: 0;
 }
 
-/* One tab: the cell, and the hairline that parts it from the next. `.project` and `.tab` are
-   wrappers holding a tab and its `×`; `.workspace` holds a workspace's tab and, on the focused
-   one, its settings gear (SE-23) — there is nothing about a workspace to close.
+/* One tab: the cell, and the hairline that parts it from the next. `.project` is a wrapper
+   holding a tab and its `×`; `.workspace` holds a workspace's tab and, on the focused one, its
+   settings gear (SE-23) — there is nothing about a workspace to close. A chat's tab is the tabs
+   family's cell (`ui/tabs/tabs.css`, #2914), floored at the same `--least`, as wide as its words
+   in Purlis and an equal share in Purlis Classic, so the collapse below is as exact.
 
    **`flex: 1 1 0` and a floor, which is what makes the collapse exact.** Every tab takes an
    equal share of its strip and is never drawn narrower than `--least`, so `n` tabs fit in a
@@ -388,8 +400,7 @@ body {
    are drawn as two wide tabs) and the number itself, which is handed to this rule on the
    element rather than written here a second time. */
 .projects .project,
-.workspaces-strip .workspace,
-.tabs .tab {
+.workspaces-strip .workspace {
   position: relative;
   display: flex;
   align-items: center;
@@ -417,10 +428,6 @@ body {
   max-width: 18rem;
 }
 
-.tabs .tab {
-  max-width: 15rem;
-}
-
 /* `:has` is how a wrapper knows its own button is the selected one. Where it is not supported
    the button alone takes the surface — the same colour, one hairline narrower — which is a
    floor rather than an undressed tab.
@@ -431,18 +438,15 @@ body {
    were *"not feeling well"*, and a background is enough to say which tab you are on. */
 .projects .project:has([aria-selected="true"]),
 .workspaces-strip .workspace:has([aria-selected="true"]),
-.tabs .tab:has([aria-selected="true"]),
 .projects [role="tab"][aria-selected="true"],
-.workspaces-strip [role="tab"][aria-selected="true"],
-.tabs [role="tab"][aria-selected="true"] {
+.workspaces-strip [role="tab"][aria-selected="true"] {
   background: var(--layer-selected);
 }
 
 /* The tab itself: flat, because the cell around it is the shape. Quiet until it is the one you
    are on, which on a strip of fifty is the only thing that may be loud. */
 .projects [role="tab"],
-.workspaces-strip [role="tab"],
-.tabs [role="tab"] {
+.workspaces-strip [role="tab"] {
   display: flex;
   align-items: center;
   align-self: stretch;
@@ -479,8 +483,7 @@ body {
    matched it took its floor away, so the strip squeezed eight workspaces into the room its
    arithmetic said four could have. Every strip's floor is now on its cell. */
 .projects .project > [role="tab"],
-.workspaces-strip .workspace > [role="tab"],
-.tabs .tab > [role="tab"] {
+.workspaces-strip .workspace > [role="tab"] {
   flex: 1 1 auto;
   min-width: 0;
 }
@@ -488,15 +491,13 @@ body {
 /* Hover never touches the selected tab: it is already the loudest thing on the strip, and a
    pointer resting on it should not make it change. */
 .projects [role="tab"]:hover:not([aria-selected="true"]),
-.workspaces-strip [role="tab"]:hover:not([aria-selected="true"]),
-.tabs [role="tab"]:hover:not([aria-selected="true"]) {
+.workspaces-strip [role="tab"]:hover:not([aria-selected="true"]) {
   background: var(--surface-hover);
   color: var(--text-primary);
 }
 
 .projects [role="tab"][aria-selected="true"],
-.workspaces-strip [role="tab"][aria-selected="true"],
-.tabs [role="tab"][aria-selected="true"] {
+.workspaces-strip [role="tab"][aria-selected="true"] {
   color: var(--text-primary);
 }
 
@@ -514,8 +515,7 @@ body {
 
 /* Inside the cell, because a ring outside it is clipped by the strip that scrolls. */
 .projects [role="tab"]:focus-visible,
-.workspaces-strip [role="tab"]:focus-visible,
-.tabs [role="tab"]:focus-visible {
+.workspaces-strip [role="tab"]:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: var(--focus-ring-inset);
 }
@@ -524,7 +524,6 @@ body {
    surface on hover rather than lighting up like a close box — the glyph already reads lighter
    than what it does (charter-app#130), and the one thing the look may not do is agree with the
    glyph. The accessible name is still the catalogue's `End chat 3 steward`. */
-.tab .closer,
 .project .closer {
   display: flex;
   align-items: center;
@@ -539,19 +538,11 @@ body {
   cursor: pointer;
 }
 
-.tab .closer:hover,
 .project .closer:hover {
   background: var(--danger-surface);
   color: var(--danger-text);
 }
 
-/* A view tab's `×` ends nothing (`Closer`), so it hovers as the tab does and not as a danger. */
-.tab .closer.keeps:hover {
-  background: var(--surface-hover);
-  color: var(--text-primary);
-}
-
-.tab .closer:focus-visible,
 .project .closer:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: var(--focus-ring-inset);
@@ -745,6 +736,16 @@ body {
   padding-inline: var(--space-2);
 }
 
+/* **The chat strip's `+` sits 2px after its last tab** (#2914, R136), as the switcher prototype
+   draws it, rounded as a tab is: the strip's gap parts tabs, not the `+` from them. */
+.bar .strip-doing {
+  margin-inline-start: calc(var(--space-1) - var(--tabs-gap) - var(--space-2));
+}
+
+.bar .strip-doing button.bare {
+  border-radius: calc(var(--radius-md) + 1px);
+}
+
 /* The strip's own buttons. A tab overrides every one of these from a more specific selector
    above; what is left here is a button. */
 .projects button {
@@ -780,7 +781,6 @@ body {
   align-items: stretch;
   min-height: var(--size-chrome);
   padding-inline: 0 var(--space-4);
-  background: var(--layer-chat);
 }
 
 /* **The editor: its tab bar, then its panes.** A column inside the centre region, whose height
@@ -795,12 +795,6 @@ body {
 
 .editor > .bar {
   flex: none;
-}
-
-.tab {
-  display: flex;
-  gap: var(--space-2);
-  align-items: center;
 }
 
 /* The tabs are the one thing on the bar that gives way: they take what is left after the
@@ -1162,7 +1156,9 @@ button.show-more:focus-visible {
   height: 100%;
   width: 100%;
   overflow: hidden;
-  border: 1px solid transparent;
+  /* The theme's line around a pane (`pane.border-width`, #2914): Classic's hairline, which the
+     focused pane draws in the accent; none in Purlis, the operator's ruling of 2026-10-22. */
+  border: var(--pane-border-width) solid transparent;
   /* The terminal's own layers (xterm raises its helpers and decorations) are ordered among
      themselves, never against the pane's corners: what purlis says over a terminal is over
      all of it (#1481). */
@@ -1171,6 +1167,26 @@ button.show-more:focus-visible {
 
 .pane.focused {
   border-color: var(--accent-base);
+}
+
+/* **Docked under the strip, a pane draws no line along its top** (#2914): the chosen tab joins
+   what is under it as one piece, so nothing runs between them. The focused pane says so on its
+   other three edges. On a strip of their own (`--tabs-joined: 0`) the line is back. */
+[data-scope="tabs"][data-part="layout"] > [data-scope="panel"][data-variant="content"] .pane {
+  border-block-start-width: calc(var(--pane-border-width) * (1 - var(--tabs-joined)));
+}
+
+/* **Which of a split's panes has the keyboard** (#2914), where a theme draws no line around a
+   pane (Purlis, the operator's ruling of 2026-10-22): the words in its corner (where it came
+   from, its work item, its harness, its breadcrumb) are primary, and every other pane's keep their
+   muted tier. A split is the panes' own group inside the content panel; one pane is never marked,
+   and a split's separator parts the panes. */
+[data-scope="panel"][data-variant="content"]
+  [data-group]
+  .pane-frame[data-focused]
+  .pane-corner.at-start
+  :is(.pane-from, .pane-work-item, .pane-harness, .pane-crumbs) {
+  color: var(--text-primary);
 }
 
 /* A pane: what purlis has to say of its chats, in a row of its own at the top (#1647), and under
@@ -1503,13 +1519,8 @@ button.show-more:focus-visible {
 }
 
 /* **Use skill…** (`UseSkill.tsx`, #2775): the chat's skills to pick from, then the boxes of the
-   one picked, centred as every such dialog is. It fits the window and its list scrolls inside it; each row says the skill's
-   name, its level, whether it is manual-only, and what it does. */
-.warning.use-skill {
-  width: min(34rem, calc(100vw - 2rem));
-  max-height: calc(100vh - 2rem);
-}
-
+   one picked, in a dialog of the family (#2910); each row says the skill's name, its level,
+   whether it is manual-only, and what it does. */
 .use-skill-budget {
   margin: 0;
   font-size: var(--font-size-xs);
@@ -2086,17 +2097,8 @@ button.show-more:focus-visible {
   display: none;
 }
 
-/* The name gives way a thousand times sooner than the chip, and stops at its floor. */
-.tabs .tab:has(> .tab-tasks) > [role="tab"] {
-  flex-shrink: 1000;
-  min-width: var(--size-control);
-  padding-inline-end: var(--space-2);
-}
-
-/* A pinned one keeps its row clear of its pin's corner here too (`.pinned`). */
-.tabs .tab:has(> .tab-tasks) > [role="tab"]:has(> .pinned) {
-  padding-inline-end: var(--space-5);
-}
+/* The name gives way a thousand times sooner than the chip, and stops at its floor: the tabs
+   family's (`ui/tabs/tabs.css`), which draws the tab's button. */
 
 .tabs .tab-tasks button {
   display: flex;
@@ -4440,67 +4442,9 @@ button.show-more:focus-visible {
   cursor: pointer;
 }
 
-/* Quitting asks first, over everything, because it ends every session.
-
-   **A dialog is drawn by the overlay surface** (`.ui-dialog` and the scrim's `.ui-scrim`,
-   `primitives/overlays.css`, #1845); `.warning` only places it and caps its size.
-
-   **The scrim and the surface are siblings**, not a box inside a box. Radix portals
-   `Dialog.Overlay` and `Dialog.Content` next to each other (`docs/ui-primitives.md`), so the
-   centring that used to be `place-items` on the scrim is now on the surface itself. */
-.warning {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  max-width: 34rem;
-  max-height: 80vh;
-  overflow: auto;
-}
-
-.warning h2 {
-  margin: 0 0 var(--space-5);
-  font-size: var(--font-size-base);
-}
-
-/* **Ask {persona}** (`AskPersona.tsx`, #1481): the tallest of the dialogs, opened over narrow
-   windows too.
-
-   - **It fits the window**, with a margin, and scrolls inside itself.
-   - **Its answers are always in reach**: the row of buttons stays at the dialog's bottom edge
-     while the form scrolls under it, on the dialog's own ground.
-   - **The box you write in takes the row**, as the name's does, and grows downwards only. */
-.warning.ask-persona {
-  width: min(34rem, calc(100vw - 2rem));
-  max-height: calc(100vh - 2rem);
-  --ui-dialog-padding-end: 0;
-}
-
-/* **The Brief panel** (`Brief.tsx`, #1494): the brief a task was sent, read back.
-
-   - **It fits the window**, and its title, its facts and its two buttons stay put: a column,
-     in which the brief's own box is the row that gives way.
-   - **The brief's box scrolls, and the panel cuts nothing**: every line of a long brief is
-     reached by scrolling the box. Lines wrap, and a word longer than the box breaks, so
-     nothing is ever off to the side.
-   - **Text, set as text**: one face, the lines and the spaces as they were sent. */
-.warning.brief-panel {
-  display: flex;
-  flex-direction: column;
-  width: min(44rem, calc(100vw - 2rem));
-  max-width: none;
-  max-height: calc(100vh - 2rem);
-  overflow: hidden;
-}
-
-/* **Answer a task's question, from its row or its tab menu's line** (#1551): the Activity
-   tab's form in a dialog of its own, as wide as a brief's, and no taller than the window. */
-.warning.answer-panel {
-  width: min(44rem, calc(100vw - 2rem));
-  max-width: none;
-  max-height: calc(100vh - 2rem);
-  overflow: auto;
-}
+/* **Every dialog is the dialog family's** (`ui/dialog/dialog.css`, #2910): its place, its width,
+   its height, its title and its three rows are the family's, and nothing here sets them. What
+   is below styles what a dialog holds. */
 
 .brief-panel .brief-facts {
   margin: 0 0 var(--space-5);
@@ -4517,7 +4461,6 @@ button.show-more:focus-visible {
 }
 
 .brief-panel .brief-text {
-  flex: 1 1 auto;
   min-height: 4rem;
   margin: 0 0 var(--space-5);
   padding: var(--space-3) var(--space-4);
@@ -4538,27 +4481,6 @@ button.show-more:focus-visible {
 .brief-panel .brief-text:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: calc(var(--focus-ring-offset) / 2);
-}
-
-.brief-panel .answer {
-  flex: none;
-  align-items: center;
-}
-
-/* What Copy did, said at the row's start: the buttons do not move when it is said. */
-.brief-panel .brief-copied {
-  margin-right: auto;
-  font-size: var(--font-size-xs);
-  color: var(--text-secondary);
-}
-
-.ask-persona .ui-setting-actions {
-  position: sticky;
-  bottom: 0;
-  margin: 0;
-  padding: var(--space-5) 0 var(--space-6);
-  background: var(--surface-overlay);
-  border-top: 1px solid var(--border-subtle);
 }
 
 .ending {
@@ -4588,24 +4510,11 @@ button.show-more:focus-visible {
   white-space: nowrap;
 }
 
-/* The picker is the longest of these surfaces — three groups, a list of refusals and a
-   command line per row — so it is given room the others do not need. */
-.starting {
-  width: min(38rem, 92vw);
-  max-width: none;
-}
-
 /* The sentence that says what charter does not know. It is not a warning to be styled away. */
 .honest {
   margin: 0 0 var(--space-5);
   font-size: var(--font-size-sm);
   opacity: 0.8;
-}
-
-.answer {
-  display: flex;
-  gap: var(--space-3);
-  justify-content: flex-end;
 }
 
 /* What a chat is doing. A mark, plus a shape per state: colour alone is no state at all to
@@ -4704,9 +4613,7 @@ button.show-more:focus-visible {
   vertical-align: middle;
   flex: none;
 }
-.tabs .tab[data-wrapping-up] {
-  box-shadow: inset 0 -2px 0 var(--state-waiting);
-}
+/* Its tab's amber underline is the tabs family's (`ui/tabs/tabs.css`). */
 .tabs .tab[data-wrapping-up] .tab-name,
 .chat[data-wrapping-up] .session {
   color: var(--text-muted);
@@ -4731,23 +4638,11 @@ button.show-more:focus-visible {
   vertical-align: middle;
   flex: none;
 }
-.tabs .tab[data-stopping] {
-  box-shadow: inset 0 -2px 0 var(--state-waiting);
-}
+/* Its tab's amber underline is the tabs family's (`ui/tabs/tabs.css`). */
 
-/* **A chat in the background** (SI-8f): its tab shrinks to a chip — the chat's icon and the
-   breathing diamond — at the strip's left edge while the chat writes its record, so closing it
-   feels like putting it away. It holds no name to share room with, so it is not a share: it is
-   exactly `--chip` wide, the width `fits.ts` counts it at (`LEAST_CHIP`), handed to the strip
-   by `PlaneView` as `--least` is, so the arithmetic and this rule cannot disagree. */
-.tabs .tab.chip {
-  flex: 0 0 var(--chip);
-  min-width: var(--chip);
-  max-width: var(--chip);
-}
-.tabs .tab.chip [role="tab"] {
-  padding-inline: 0;
-}
+/* **A chat in the background** (SI-8f): its tab shrinks to a chip, the chat's icon and the
+   breathing diamond, at the strip's left edge while the chat writes its record. Its width,
+   exactly `--chip` as `fits.ts` counts it, is the tabs family's (`ui/tabs/tabs.css`). */
 .tabs .tab.chip .wrapping-up {
   margin-inline-start: 0;
 }
@@ -4765,8 +4660,8 @@ button.show-more:focus-visible {
    be read before it is answered. `.honest` fades what charter is being honest about; these are
    not that, so the fade comes off and the words are marked as the answer to something the
    operator just did. */
-.warning .honest.mid-turn,
-.warning .honest.approve {
+[data-scope="dialog"] .honest.mid-turn,
+[data-scope="dialog"] .honest.approve {
   padding: var(--space-3) var(--space-4);
   border-inline-start: 2px solid var(--danger-base);
   border-radius: var(--radius-sm);
@@ -4860,21 +4755,10 @@ button.show-more:focus-visible {
   margin: var(--space-2) 0;
 }
 
-/* The command palette: the primary input (spec decision 1). It sits over everything on the
-   same overlay the quit warning and the picker use, because it is modal for the same
-   reason — one surface, one question, one key that always leaves.
-
-   High on the window rather than centred on it, which is where every palette an operator has
-   used before sits. `.warning` centres both ways; this overrides the vertical half. */
-.palette {
-  top: 8vh;
-  transform: translateX(-50%);
-  width: min(42rem, 92vw);
-  max-width: none;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
+/* The command palette: the primary input (spec decision 1). It sits over everything as every
+   dialog does, because it is modal for the same reason — one surface, one question, one key
+   that always leaves — and it is the dialog family's surface (`DialogSurface`), anchored high
+   on the window, which is where every palette an operator has used before sits. */
 
 /* The box is labelled, and the label is read rather than only implied by a placeholder — a
    placeholder disappears the moment somebody types. */
@@ -5309,12 +5193,12 @@ button.show-more:focus-visible {
 
 /* What opening a project puts in force. Read before it is answered, so it is a list and not
    a paragraph — and every entry is `code`, because these are names and values and not prose. */
-.warning h3 {
+[data-scope="dialog"] h3 {
   margin: var(--space-5) 0 var(--space-2);
   font-size: var(--font-size-md);
 }
 
-.warning h4 {
+[data-scope="dialog"] h4 {
   margin: var(--space-5) 0 var(--space-2);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-regular);
@@ -5334,7 +5218,7 @@ button.show-more:focus-visible {
   overflow-wrap: anywhere;
 }
 
-.warning .where {
+[data-scope="dialog"] .where {
   margin: 0;
   font-size: var(--font-size-xs);
   opacity: 0.7;
@@ -5348,7 +5232,7 @@ button.show-more:focus-visible {
   overflow-wrap: anywhere;
 }
 
-.warning .value {
+[data-scope="dialog"] .value {
   opacity: 0.6;
 }
 
@@ -5364,10 +5248,6 @@ button.show-more:focus-visible {
   color: var(--text-muted);
 }
 
-.warning.update {
-  max-width: 40rem;
-}
-
 .update-notes {
   max-height: 12rem;
   overflow: auto;
@@ -5377,14 +5257,7 @@ button.show-more:focus-visible {
   border-radius: var(--radius-md);
 }
 
-/* The dialog. Wider than a consent prompt, because a row's detail is a sentence and its hint is
-   often a command to copy. */
-.warning.doctor {
-  max-width: 48rem;
-  width: calc(100vw - 4rem);
-}
-
-.warning.doctor h3 {
+.doctor h3 {
   margin: var(--space-5) 0 var(--space-2);
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
@@ -5544,7 +5417,7 @@ button.show-more:focus-visible {
 }
 
 /* The extension list (ADR 0041 item 5: what is in force, after approval and not only
-   at it). It is a `.ui-dialog` as well, so the dialog chrome is the one every other consent
+   at it). It is a dialog of the family, so the dialog chrome is the one every other consent
    surface in this window uses rather than a second look nobody maintains. Only the row shape
    is here. */
 .extension-rows {
@@ -5597,7 +5470,7 @@ button.show-more:focus-visible {
 /* The one paragraph in this window that must never read as a reassurance. It is charter's own
    sentence about what it cannot stop an extension doing, and it is drawn as the dialog's
    loudest text rather than as small print under the buttons. */
-.warning .runs-as-you {
+[data-scope="dialog"] .runs-as-you {
   margin-top: var(--space-5);
   padding: var(--space-4) var(--space-5);
   border-left: 2px solid var(--danger-base);
@@ -5649,7 +5522,7 @@ button.show-more:focus-visible {
 /* What charter is still finding out, inside a dialog. Not the explorer's spinner: this is one
    line in a question that is already on screen, and a dialog with a spinner in it reads as a
    dialog that is loading rather than one that is asking. */
-.warning .pending {
+[data-scope="dialog"] .pending {
   margin: var(--space-3) 0 0;
   color: var(--text-muted);
 }
@@ -6150,9 +6023,15 @@ button.show-more:focus-visible {
 .piece-files-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  /* The file's name and its path side by side, the actions at the end (#2914). */
+  justify-content: flex-start;
   gap: var(--space-4);
   padding: var(--space-2) var(--space-5);
+}
+
+/* The changes' row over a comparison, parted from the comparison under it; the toolbar over a
+   file is one piece with its code (`ui/tabs/tabs.css`). */
+nav.piece-files-head {
   border-bottom: 1px solid var(--border-subtle);
 }
 
@@ -6164,6 +6043,7 @@ button.show-more:focus-visible {
 }
 
 .piece-files-actions {
+  margin-inline-start: auto;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -7049,21 +6929,11 @@ button.show-more:focus-visible {
   animation: charter-appear var(--motion-duration-enter) var(--motion-easing-enter);
 }
 
-/* **A modal surface opening** — every dialog and the scrim behind it. A fade
-   and no movement: a question should be where the eye already is. Opening only, on purpose.
-   Radix unmounts a closing surface at once unless an animation is running on it, and a close
-   that lingers leaves a dismissed question over the window the operator has gone back to. */
-.ui-scrim[data-state="open"],
-[role="dialog"][data-state="open"],
-[role="alertdialog"][data-state="open"] {
-  animation: charter-appear var(--motion-duration-enter) var(--motion-easing-enter);
-}
-
 /* **A popover or a menu opening** — the show-more menus, the context menus, the persona card,
    and whatever anchored surface is added next, because the rule hangs off Radix's own popper
    wrapper rather than off a class. It comes a quarter of a rem out of the side it is anchored
-   to, which is what says what opened it. After the dialog rule on purpose: a popover is also
-   `role="dialog"`, and this is the one it gets. */
+   to, which is what says what opened it. A dialog's own opening is the dialog family's
+   (`ui/dialog/dialog.css`). */
 @keyframes charter-arrive {
   from {
     opacity: 0;
@@ -8222,7 +8092,7 @@ button.show-more:focus-visible {
 /* A line made of a few facts — a harness's kind, the command it runs, where it was declared —
    wraps fact by fact. The command is what is about to run, so it is not faded with the rest,
    and a profile charter has never run says so in its own colour (Start chat, DS-3d). Three
-   deep to outrank `.warning .where`, which dims every path in a dialog. */
+   deep to outrank `[data-scope="dialog"] .where`, which dims every path in a dialog. */
 .ui-choice-says .meta {
   display: flex;
   flex-wrap: wrap;

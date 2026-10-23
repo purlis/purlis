@@ -1,12 +1,9 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useRef, useState } from "react";
-import * as AlertDialog from "./overlays/alert-dialog";
-import { AnswerBar } from "./AnswerBar";
+import { useState } from "react";
 import { Field, SettingRow } from "./settings/components";
-import { Button } from "./ui/button/Button";
-import { Form } from "./ui/field/Field";
+import { AlertDialog } from "./ui/dialog/Dialog";
 
 /** What a vault holds, as `vault_open` said it: its provider and its secrets' NAMES. */
 export type VaultHolds = { provider: string; secrets: readonly string[] };
@@ -39,7 +36,7 @@ export type VaultHolds = { provider: string; secrets: readonly string[] };
  * of what it ends: that confirms an answer, it makes or changes nothing, so the dialog ends as
  * `DeleteWorkspace` does — Cancel first, the delete last at the trailing edge — and not in a
  * form's `SettingActions` (V89j), which ends the forms that make or change something.
- * `answerBar.guard.test.ts` keeps an `ends-it` act out of any dialog's form row.
+ * `dialogAnswers.guard.test.ts` keeps a `danger` act out of any dialog's form row.
  */
 export function DeleteVault({
   vault,
@@ -65,88 +62,60 @@ export function DeleteVault({
   onCancel: () => void;
 }) {
   const [typed, setTyped] = useState("");
-  // The dialog, so the box can be found in it on opening: the row draws the box, and a
-  // setting's field takes no ref.
-  const content = useRef<HTMLDivElement>(null);
   const ready = typed === vault && !deleting;
-  const del = () => {
-    if (ready) onDelete();
-  };
+  // The keyboard starts in the box the name is typed back into. A question's footer (D-1210-8):
+  // the way out first, the delete last at the trailing edge. Return in the box deletes once the
+  // name is typed exactly, and not before (D-1210-9).
   return (
-    <AlertDialog.Root
-      open
-      onOpenChange={(open) => {
-        if (!open && !deleting) onCancel();
+    <AlertDialog
+      onClose={() => {
+        if (!deleting) onCancel();
+      }}
+      title={`Delete vault ${vault}?`}
+      description={<p className="came-back">{fate(holds)}</p>}
+      initialFocus="field"
+      cancel={{ isDisabled: deleting, onPress: onCancel }}
+      main={{
+        children: deleting ? "Deleting…" : "Delete vault",
+        reserve: ["Delete vault", "Deleting…"],
+        variant: "danger",
+        isDisabled: !ready,
+        byReturn: true,
+        onPress: onDelete,
       }}
     >
-      <AlertDialog.Portal>
-        <AlertDialog.Overlay className="ui-scrim" />
-        <AlertDialog.Content
-          ref={content}
-          className="ui-dialog warning"
-          onOpenAutoFocus={(event) => {
-            event.preventDefault();
-            content.current?.querySelector<HTMLInputElement>("form input")?.focus();
-          }}
-        >
-          <AlertDialog.Title>Delete vault {vault}?</AlertDialog.Title>
-          <AlertDialog.Description className="came-back">{fate(holds)}</AlertDialog.Description>
+      {holds === undefined && unreadable === undefined && (
+        <p className="pending">Reading what it holds…</p>
+      )}
+      {holds === undefined && unreadable !== undefined && (
+        <p className="trouble" role="alert">
+          purlis could not read what it holds: {unreadable}. Delete reads it again, and a keychain
+          vault's secrets are still destroyed.
+        </p>
+      )}
 
-          {holds === undefined && unreadable === undefined && (
-            <p className="pending">Reading what it holds…</p>
-          )}
-          {holds === undefined && unreadable !== undefined && (
-            <p className="trouble" role="alert">
-              purlis could not read what it holds: {unreadable}. Delete reads it again, and a
-              keychain vault's secrets are still destroyed.
-            </p>
-          )}
+      {holds !== undefined && holds.secrets.length > 0 && (
+        <>
+          <h3>What it holds</h3>
+          <ul className="at-risk" aria-label={`Secrets in ${vault}`}>
+            {holds.secrets.map((key) => (
+              <li key={key}>{key}</li>
+            ))}
+          </ul>
+        </>
+      )}
 
-          {holds !== undefined && holds.secrets.length > 0 && (
-            <>
-              <h3>What it holds</h3>
-              <ul className="at-risk" aria-label={`Secrets in ${vault}`}>
-                {holds.secrets.map((key) => (
-                  <li key={key}>{key}</li>
-                ))}
-              </ul>
-            </>
-          )}
+      <SettingRow
+        label={`Type ${vault} to confirm`}
+        control={(ids) => <Field ids={ids} kind="text" value={typed} onChange={setTyped} />}
+      />
 
-          <Form
-            onSubmit={(event) => {
-              event.preventDefault();
-              del();
-            }}
-          >
-            <SettingRow
-              label={`Type ${vault} to confirm`}
-              control={(ids) => <Field ids={ids} kind="text" value={typed} onChange={setTyped} />}
-            />
-
-            {trouble && (
-              <p className="trouble" role="alert">
-                {trouble}
-              </p>
-            )}
-
-            {/* A question's bar, not a form's row (D-1210-8): the way out first, the delete last
-                at the trailing edge. `tabIndex={0}` on both, per `docs/ui-primitives.md`
-                (charter-app#186). */}
-            <AnswerBar>
-              <AlertDialog.Cancel asChild>
-                <Button isDisabled={deleting} onPress={onCancel}>
-                  Cancel
-                </Button>
-              </AlertDialog.Cancel>
-              <Button variant="danger" type="submit" isDisabled={!ready}>
-                {deleting ? "Deleting…" : "Delete vault"}
-              </Button>
-            </AnswerBar>
-          </Form>
-        </AlertDialog.Content>
-      </AlertDialog.Portal>
-    </AlertDialog.Root>
+      {trouble && (
+        <p className="trouble" role="alert">
+          {trouble}
+        </p>
+      )}
+    </AlertDialog>
   );
 }
 

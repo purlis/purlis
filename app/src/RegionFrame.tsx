@@ -412,8 +412,8 @@ export function RegionFrame({
               minSize="20%"
               role="region"
               aria-label={EDITOR}
-              // The content panel (`ui/panel`): its ground and the theme's corners.
-              {...panelRoot("content")}
+              // The content panel is drawn under the session tabs docked on it (`ui/tabs`,
+              // #2914): the region holds the strip and the panel, and draws no ground itself.
             >
               {centre}
             </Panel>

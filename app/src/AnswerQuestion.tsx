@@ -50,16 +50,53 @@ type Asked = { number: number; question: string };
  *   form says why, keeps their text in the box where it can be selected and copied, and has
  *   nothing left to send.
  */
-export function AnswerQuestion({
-  plane,
-  session,
-  task,
-  number,
-  question,
-  closed,
-  onDone,
-  onCancel,
-}: {
+export function AnswerQuestion(props: AnswerProps & { onCancel: () => void }) {
+  const { task, onCancel } = props;
+  const answering = useAnswerQuestion(props);
+  const { asked, refused, shut, sending, send, ids } = answering;
+  if (asked === undefined) return <ReadingTheQuestion />;
+  if (asked === null) {
+    return (
+      <div className="answer-question" data-testid="answer-question">
+        <NoQuestion task={task} refused={refused} />
+        <div className="answer-actions">
+          <Button size="sm" onPress={onCancel}>
+            Close
+          </Button>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <Form
+      className="answer-question"
+      data-testid="answer-question"
+      aria-label={`Answer ${task}'s question`}
+      onSubmit={(event) => {
+        event.preventDefault();
+        void send();
+      }}
+    >
+      <AnswerBox answering={answering} />
+      <div className="answer-actions">
+        <Button size="sm" type="submit" isDisabled={sending || shut !== undefined}>
+          Send
+        </Button>
+        <Button size="sm" onPress={onCancel}>
+          {shut === undefined ? "Cancel" : "Close"}
+        </Button>
+        {shut === undefined && (
+          <span className="answer-how" id={`${ids}-how`}>
+            {answerHowSaid(task)}
+          </span>
+        )}
+      </div>
+    </Form>
+  );
+}
+
+/** What a form for a task's question is handed: which task, and the question if it is known. */
+export type AnswerProps = {
   plane: PlaneId;
   /** The task's chat, by the app's number for it now. */
   session: number;
@@ -73,9 +110,26 @@ export function AnswerQuestion({
   closed?: string;
   /** The answer was taken: the surface puts the form away. */
   onDone: () => void;
-  /** The person put the form away without sending. */
-  onCancel: () => void;
-}) {
+};
+
+/** What the form says under the box, while there is something to send. */
+export function answerHowSaid(task: string): string {
+  return `${task} is told this is your answer. Enter sends, Shift+Enter starts a new line.`;
+}
+
+/**
+ * **The answering itself**, for whatever draws the form: the inline form above, and the Answer
+ * dialog, whose Send and Cancel are its footer's (`AnswerPanel.tsx`). The rules are
+ * {@link AnswerQuestion}'s.
+ */
+export function useAnswerQuestion({
+  plane,
+  session,
+  number,
+  question,
+  closed,
+  onDone,
+}: AnswerProps) {
   const given: Asked | undefined =
     number !== undefined && question !== undefined ? { number, question } : undefined;
   /** The question the core says the task is paused on, where the surface gave none. */
@@ -144,37 +198,36 @@ export function AnswerQuestion({
     onDone();
   };
 
-  if (asked === undefined) {
-    return (
-      <p className="answer-question pending" aria-busy="true">
-        Reading the question…
-      </p>
-    );
-  }
-  if (asked === null) {
-    return (
-      <div className="answer-question" data-testid="answer-question">
-        <p className="answer-refused" role="alert">
-          {refused ?? noQuestionSaid(task)}
-        </p>
-        <div className="answer-actions">
-          <Button size="sm" onPress={onCancel}>
-            Close
-          </Button>
-        </div>
-      </div>
-    );
-  }
+  return { asked, text, setText, sending, refused, setRefused, shut, send, box, ids };
+}
+
+/** What {@link useAnswerQuestion} hands what draws the form. */
+export type Answering = ReturnType<typeof useAnswerQuestion>;
+
+/** The form while the question is read. */
+export function ReadingTheQuestion() {
   return (
-    <Form
-      className="answer-question"
-      data-testid="answer-question"
-      aria-label={`Answer ${task}'s question`}
-      onSubmit={(event) => {
-        event.preventDefault();
-        void send();
-      }}
-    >
+    <p className="answer-question pending" aria-busy="true">
+      Reading the question…
+    </p>
+  );
+}
+
+/** Where the task asks nothing now: the core's refusal, or that it has no question. */
+export function NoQuestion({ task, refused }: { task: string; refused?: string }) {
+  return (
+    <p className="answer-refused" role="alert">
+      {refused ?? noQuestionSaid(task)}
+    </p>
+  );
+}
+
+/** The question, the box the answer is typed in, and what is wrong, if anything is. */
+export function AnswerBox({ answering }: { answering: Answering }) {
+  const { asked, text, setText, sending, refused, setRefused, shut, send, box, ids } = answering;
+  if (asked === undefined || asked === null) return null;
+  return (
+    <>
       <p className="answer-asked" id={`${ids}-asked`}>
         {asked.question}
       </p>
@@ -211,19 +264,6 @@ export function AnswerQuestion({
           {shut}
         </p>
       )}
-      <div className="answer-actions">
-        <Button size="sm" type="submit" isDisabled={sending || shut !== undefined}>
-          Send
-        </Button>
-        <Button size="sm" onPress={onCancel}>
-          {shut === undefined ? "Cancel" : "Close"}
-        </Button>
-        {shut === undefined && (
-          <span className="answer-how" id={`${ids}-how`}>
-            {`${task} is told this is your answer. Enter sends, Shift+Enter starts a new line.`}
-          </span>
-        )}
-      </div>
-    </Form>
+    </>
   );
 }

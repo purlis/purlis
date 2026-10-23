@@ -10,8 +10,6 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import * as AlertDialog from "./overlays/alert-dialog";
-import * as Dialog from "./overlays/dialog";
 import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
 import { Ellipsis, Eye, EyeOff, KeyRound, LoaderCircle, Plus, Search } from "lucide-react";
 import { EmptyState } from "./ui/empty-state/EmptyState";
@@ -25,13 +23,13 @@ import {
 } from "./bindings";
 import { SAID } from "./menuWords";
 import { useTabStop } from "./roving";
-import { Field, SettingActions, SettingRow } from "./settings/components";
+import { Field, SettingRow } from "./settings/components";
 import { counted } from "./Vaults";
 import { saidOfTheOldExport, saidOfTheOthers, VaultSignIn } from "./VaultSignIn";
-import { AnswerBar } from "./AnswerBar";
 import { providerName } from "./vaultProviders";
 import { Button, ButtonRow, ToggleButton } from "./ui/button/Button";
-import { Form, TextField } from "./ui/field/Field";
+import { AlertDialog, Dialog } from "./ui/dialog/Dialog";
+import { TextField } from "./ui/field/Field";
 import { AnchoredMenu, Menu, MenuItem, MenuSeparator, MenuWords } from "./ui/menu/Menu";
 
 /**
@@ -552,54 +550,42 @@ export function VaultTab({
       </div>
 
       {changing && (
-        <Dialog.Root
-          open
-          onOpenChange={(open) => {
-            if (!open && !changingBusy) setChanging(false);
+        <Dialog
+          onClose={() => {
+            if (!changingBusy) setChanging(false);
           }}
+          title={`How ${vault} signs in`}
         >
-          <Dialog.Portal>
-            <Dialog.Overlay className="ui-scrim" />
-            <Dialog.Content
-              className="ui-dialog warning"
-              aria-describedby={undefined}
-              onInteractOutside={(e) => e.preventDefault()}
-            >
-              <Dialog.Title>{`How ${vault} signs in`}</Dialog.Title>
-              <VaultSignIn
-                plane={plane}
-                vault={vault}
-                name={vault}
-                onBusy={setChangingBusy}
-                onCancel={() => setChanging(false)}
-                onDone={(done) => {
-                  setChanging(false);
-                  setChangingBusy(false);
-                  setSaid({ contents: done.contents });
-                  hide();
-                  onChanged();
-                  // The other open vault tabs read again: a ticked one now has its token.
-                  window.dispatchEvent(
-                    new CustomEvent<Stored>(STORED, { detail: { plane, vault } }),
-                  );
-                  const others = [saidOfTheOthers(done), saidOfTheOldExport(done)]
-                    .filter((said) => said !== "")
-                    .join(" ");
-                  const unread = done.contents.refused !== null;
-                  setNote({
-                    said: `${
-                      unread
-                        ? "How this vault signs in is stored, and the vault still could not be read: the reason is above."
-                        : "How this vault signs in is stored. purlis reads the vault with it from now on, with no restart."
-                    }${others === "" ? "" : ` ${others}`}`,
-                    // An export left to remove is asked of the person: it stays until read.
-                    trouble: unread || done.skipped.length > 0 || done.no_longer_read.length > 0,
-                  });
-                }}
-              />
-            </Dialog.Content>
-          </Dialog.Portal>
-        </Dialog.Root>
+          <VaultSignIn
+            plane={plane}
+            vault={vault}
+            name={vault}
+            onBusy={setChangingBusy}
+            onCancel={() => setChanging(false)}
+            onDone={(done) => {
+              setChanging(false);
+              setChangingBusy(false);
+              setSaid({ contents: done.contents });
+              hide();
+              onChanged();
+              // The other open vault tabs read again: a ticked one now has its token.
+              window.dispatchEvent(new CustomEvent<Stored>(STORED, { detail: { plane, vault } }));
+              const others = [saidOfTheOthers(done), saidOfTheOldExport(done)]
+                .filter((said) => said !== "")
+                .join(" ");
+              const unread = done.contents.refused !== null;
+              setNote({
+                said: `${
+                  unread
+                    ? "How this vault signs in is stored, and the vault still could not be read: the reason is above."
+                    : "How this vault signs in is stored. purlis reads the vault with it from now on, with no restart."
+                }${others === "" ? "" : ` ${others}`}`,
+                // An export left to remove is asked of the person: it stays until read.
+                trouble: unread || done.skipped.length > 0 || done.no_longer_read.length > 0,
+              });
+            }}
+          />
+        </Dialog>
       )}
       {asking?.doing === "add" && (
         <ValueDialog
@@ -1066,9 +1052,6 @@ function ValueDialog({
   const [trouble, setTrouble] = useState<string>();
   const [writing, setWriting] = useState(false);
   const busy = writing;
-  // The dialog, so its first box can be found in it on opening: the rows draw the boxes, and a
-  // setting's field takes no ref.
-  const content = useRef<HTMLDivElement>(null);
   const valueBox = useRef<HTMLInputElement>(null);
   const key = secret ?? name.trim();
   const ready = key !== "" && filled && !writing;
@@ -1088,77 +1071,50 @@ function ValueDialog({
     setWriting(false);
   };
 
+  // The keyboard starts in the dialog's first box: the name box when a new secret is asked for,
+  // else the value box. A click outside answers nothing (`docs/ui-primitives.md`). Escape is
+  // Cancel.
   return (
-    <Dialog.Root
-      open
-      onOpenChange={(open) => {
+    <Dialog
+      onClose={() => {
         // Not while the core is writing: the answer would land on a dialog nobody is looking at.
-        if (!open && !busy) onCancel();
+        if (!busy) onCancel();
       }}
+      title={title}
+      cancel={{ isDisabled: busy, onPress: onCancel }}
+      main={{ children: doing, isDisabled: !ready, onPress: () => void submit() }}
     >
-      <Dialog.Portal>
-        <Dialog.Overlay className="ui-scrim" />
-        <Dialog.Content
-          ref={content}
-          className="ui-dialog warning"
-          aria-describedby={undefined}
-          // A click outside answers nothing (`docs/ui-primitives.md`). Escape is Cancel.
-          onInteractOutside={(e) => e.preventDefault()}
-          onOpenAutoFocus={(e) => {
-            e.preventDefault();
-            // The name box when a new secret is asked for, else the value box.
-            content.current?.querySelector("input")?.focus();
-          }}
-        >
-          <Dialog.Title>{title}</Dialog.Title>
-          <Form
-            onSubmit={(event) => {
-              event.preventDefault();
-              void submit();
-            }}
-          >
-            {secret === undefined && (
-              <SettingRow
-                label="Name"
-                control={(ids) => <Field ids={ids} kind="text" value={name} onChange={setName} />}
-              />
-            )}
-            <SettingRow
-              label={secret === undefined ? "Value" : "New value"}
-              help="It goes into the vault and nowhere else. purlis never shows it here."
-              control={(ids) => (
-                // **A box that holds its own words, not a settings `Field`**: a `Field` is
-                // controlled, and a secret's value is never held in React state (see above).
-                <TextField
-                  id={ids.id}
-                  inputRef={valueBox}
-                  className="ui-setting-box"
-                  type="password"
-                  // What keeps a password manager from filling it; WebKit ignores `off` here.
-                  autoComplete="new-password"
-                  aria-labelledby={ids.labelledBy}
-                  aria-describedby={ids.describedBy}
-                  onChange={setFilled}
-                />
-              )}
-            />
-            {trouble && (
-              <p className="trouble" role="alert">
-                {trouble}
-              </p>
-            )}
-            <SettingActions>
-              <Button variant="primary" type="submit" isDisabled={!ready}>
-                {doing}
-              </Button>
-              <Button isDisabled={busy} onPress={onCancel}>
-                Cancel
-              </Button>
-            </SettingActions>
-          </Form>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+      {secret === undefined && (
+        <SettingRow
+          label="Name"
+          control={(ids) => <Field ids={ids} kind="text" value={name} onChange={setName} />}
+        />
+      )}
+      <SettingRow
+        label={secret === undefined ? "Value" : "New value"}
+        help="It goes into the vault and nowhere else. purlis never shows it here."
+        control={(ids) => (
+          // **A box that holds its own words, not a settings `Field`**: a `Field` is controlled,
+          // and a secret's value is never held in React state (see above).
+          <TextField
+            id={ids.id}
+            inputRef={valueBox}
+            className="ui-setting-box"
+            type="password"
+            // What keeps a password manager from filling it; WebKit ignores `off` here.
+            autoComplete="new-password"
+            aria-labelledby={ids.labelledBy}
+            aria-describedby={ids.describedBy}
+            onChange={setFilled}
+          />
+        )}
+      />
+      {trouble && (
+        <p className="trouble" role="alert">
+          {trouble}
+        </p>
+      )}
+    </Dialog>
   );
 }
 
@@ -1176,9 +1132,6 @@ function RenameDialog({
   const [trouble, setTrouble] = useState<string>();
   const [writing, setWriting] = useState(false);
   const busy = writing;
-  // The dialog, so the box can be found in it on opening: the row draws the box, and a
-  // setting's field takes no ref.
-  const content = useRef<HTMLDivElement>(null);
   const to = name.trim();
   const ready = to !== "" && to !== secret && !writing;
 
@@ -1192,54 +1145,37 @@ function RenameDialog({
   };
 
   return (
-    <Dialog.Root
-      open
-      onOpenChange={(open) => {
+    <Dialog
+      onClose={() => {
         // Not while the core is writing: the answer would land on a dialog nobody is looking at.
-        if (!open && !busy) onCancel();
+        if (!busy) onCancel();
+      }}
+      title={`Rename ${secret}`}
+      // The box, with its name chosen, so what is typed replaces it.
+      initialFocus={(dialog) => {
+        const box = dialog.querySelector("input");
+        box?.select();
+        return box;
+      }}
+      cancel={{ isDisabled: busy, onPress: onCancel }}
+      main={{
+        // Said while the core writes it (D-630-3, #1719).
+        children: writing ? "Renaming…" : "Rename",
+        reserve: ["Rename", "Renaming…"],
+        isDisabled: !ready,
+        onPress: () => void submit(),
       }}
     >
-      <Dialog.Portal>
-        <Dialog.Overlay className="ui-scrim" />
-        <Dialog.Content
-          ref={content}
-          className="ui-dialog warning"
-          aria-describedby={undefined}
-          onInteractOutside={(e) => e.preventDefault()}
-          onOpenAutoFocus={(e) => {
-            e.preventDefault();
-            content.current?.querySelector("input")?.select();
-          }}
-        >
-          <Dialog.Title>Rename {secret}</Dialog.Title>
-          <Form
-            onSubmit={(event) => {
-              event.preventDefault();
-              void submit();
-            }}
-          >
-            <SettingRow
-              label="New name"
-              control={(ids) => <Field ids={ids} kind="text" value={name} onChange={setName} />}
-            />
-            {trouble && (
-              <p className="trouble" role="alert">
-                {trouble}
-              </p>
-            )}
-            <SettingActions>
-              <Button variant="primary" type="submit" isDisabled={!ready}>
-                {/* Said while the core writes it (D-630-3, #1719). */}
-                {writing ? "Renaming…" : "Rename"}
-              </Button>
-              <Button isDisabled={busy} onPress={onCancel}>
-                Cancel
-              </Button>
-            </SettingActions>
-          </Form>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+      <SettingRow
+        label="New name"
+        control={(ids) => <Field ids={ids} kind="text" value={name} onChange={setName} />}
+      />
+      {trouble && (
+        <p className="trouble" role="alert">
+          {trouble}
+        </p>
+      )}
+    </Dialog>
   );
 }
 
@@ -1261,58 +1197,37 @@ function DeleteDialog({
   const [trouble, setTrouble] = useState<string>();
   const [deleting, setDeleting] = useState(false);
   const busy = deleting;
-  const cancel = useRef<HTMLButtonElement>(null);
   return (
-    <AlertDialog.Root
-      open
-      onOpenChange={(open) => {
+    <AlertDialog
+      onClose={() => {
         // Not while the core is writing: the answer would land on a dialog nobody is looking at.
-        if (!open && !busy) onCancel();
+        if (!busy) onCancel();
+      }}
+      title={`Delete ${secret} from ${vault}?`}
+      description={
+        <p className="came-back">Its value is gone from the vault for good. There is no undo.</p>
+      }
+      cancel={{ isDisabled: busy }}
+      main={{
+        children: deleting ? "Deleting…" : "Delete",
+        reserve: ["Delete", "Deleting…"],
+        variant: "danger",
+        isDisabled: deleting,
+        onPress: () => {
+          setDeleting(true);
+          void onDelete().then((refused) => {
+            if (refused === undefined) return;
+            setTrouble(refused);
+            setDeleting(false);
+          });
+        },
       }}
     >
-      <AlertDialog.Portal>
-        <AlertDialog.Overlay className="ui-scrim" />
-        <AlertDialog.Content
-          className="ui-dialog warning"
-          onOpenAutoFocus={(event) => {
-            event.preventDefault();
-            cancel.current?.focus();
-          }}
-        >
-          <AlertDialog.Title>
-            Delete {secret} from {vault}?
-          </AlertDialog.Title>
-          <AlertDialog.Description className="came-back">
-            Its value is gone from the vault for good. There is no undo.
-          </AlertDialog.Description>
-          {trouble && (
-            <p className="trouble" role="alert">
-              {trouble}
-            </p>
-          )}
-          <AnswerBar>
-            <AlertDialog.Cancel asChild>
-              <Button isDisabled={busy} ref={cancel}>
-                Cancel
-              </Button>
-            </AlertDialog.Cancel>
-            <Button
-              variant="danger"
-              isDisabled={deleting}
-              onPress={() => {
-                setDeleting(true);
-                void onDelete().then((refused) => {
-                  if (refused === undefined) return;
-                  setTrouble(refused);
-                  setDeleting(false);
-                });
-              }}
-            >
-              {deleting ? "Deleting…" : "Delete"}
-            </Button>
-          </AnswerBar>
-        </AlertDialog.Content>
-      </AlertDialog.Portal>
-    </AlertDialog.Root>
+      {trouble && (
+        <p className="trouble" role="alert">
+          {trouble}
+        </p>
+      )}
+    </AlertDialog>
   );
 }

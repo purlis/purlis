@@ -2,14 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useRef, useState } from "react";
-import * as AlertDialog from "./overlays/alert-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { AnswerBar } from "./AnswerBar";
 import { commands, type PlaneId, type SaveMerge } from "./bindings";
 import { Notice, type NoticeAction } from "./Notice";
 import { FIX_STARTING_SIZE, PLANE_SAVED, tellFixStarted } from "./saving";
 import { askSettingsLink, type SettingsLink } from "./settings/links";
-import { Button } from "./ui/button/Button";
+import { AlertDialog } from "./ui/dialog/Dialog";
 
 /** Settings › You › Accounts, where a forge is signed in to. */
 const ACCOUNTS: SettingsLink = { group: "you.accounts" };
@@ -260,7 +258,7 @@ function FailedChecks({ merge }: { merge: SaveMerge }) {
  * its name, the branch it goes into, the checks that failed when it is red, and that purlis
  * merges without waiting for checks. Nothing is merged until the person says so here.
  *
- * Radix's `AlertDialog`, as Save all's confirmation is: an act that reaches past this machine
+ * The family's `AlertDialog`, as Save all's confirmation is: an act that reaches past this machine
  * and has no undo is one the person confirms, and focus starts on Cancel.
  */
 function ConfirmMerge({
@@ -272,48 +270,26 @@ function ConfirmMerge({
   onMerge: () => void;
   onCancel: () => void;
 }) {
-  const cancel = useRef<HTMLButtonElement>(null);
   const into = of.target === null ? "its target branch" : of.target;
   return (
-    <AlertDialog.Root
-      open
-      onOpenChange={(open) => {
-        if (!open) onCancel();
-      }}
+    <AlertDialog
+      onClose={onCancel}
+      title={`Merge the ${numbered(of)} of ${of.name} as it stands?`}
+      description={
+        <p className="came-back">
+          {`purlis merges it into ${into} now, without waiting for its checks. `}
+          {of.merge.state === "red"
+            ? `${of.merge.why}. `
+            : `No check has passed on it: ${of.merge.why}. `}
+          A conflict, a review its branch requires and every other rule of the forge still stop it.
+          There is no undo.
+        </p>
+      }
+      // `danger`: a merge lands on the target branch, and purlis has no undo for it (D-1719-3,
+      // `docs/ui-primitives.md`).
+      main={{ children: "Merge as it stands", variant: "danger", onPress: onMerge }}
     >
-      <AlertDialog.Portal>
-        <AlertDialog.Overlay className="ui-scrim" />
-        <AlertDialog.Content
-          className="ui-dialog warning"
-          onOpenAutoFocus={(event) => {
-            event.preventDefault();
-            cancel.current?.focus();
-          }}
-        >
-          <AlertDialog.Title>{`Merge the ${numbered(of)} of ${of.name} as it stands?`}</AlertDialog.Title>
-          <AlertDialog.Description className="came-back">
-            {`purlis merges it into ${into} now, without waiting for its checks. `}
-            {of.merge.state === "red"
-              ? `${of.merge.why}. `
-              : `No check has passed on it: ${of.merge.why}. `}
-            A conflict, a review its branch requires and every other rule of the forge still stop
-            it. There is no undo.
-          </AlertDialog.Description>
-          {of.merge.state === "red" && of.merge.checks.length > 0 && (
-            <FailedChecks merge={of.merge} />
-          )}
-          <AnswerBar>
-            <AlertDialog.Cancel asChild>
-              <Button ref={cancel}>Cancel</Button>
-            </AlertDialog.Cancel>
-            {/* `ends-it`: a merge lands on the target branch, and purlis has no undo for it
-                (D-1719-3, `docs/ui-primitives.md`). */}
-            <Button variant="danger" onPress={onMerge}>
-              Merge as it stands
-            </Button>
-          </AnswerBar>
-        </AlertDialog.Content>
-      </AlertDialog.Portal>
-    </AlertDialog.Root>
+      {of.merge.state === "red" && of.merge.checks.length > 0 && <FailedChecks merge={of.merge} />}
+    </AlertDialog>
   );
 }

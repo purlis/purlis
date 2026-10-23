@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useRef, useState } from "react";
-import * as AlertDialog from "./overlays/alert-dialog";
 import { CircleAlert, CircleCheck, CircleDot, LoaderCircle, Save } from "lucide-react";
 import {
   commands,
@@ -35,7 +34,6 @@ import { Choice, Field, SettingActions, SettingRow, type Option } from "./settin
 import { useReadOnlySaid } from "./ReadOnlyLine";
 import { askSettingsLink, type SettingsLink } from "./settings/links";
 import { Notice } from "./Notice";
-import { AnswerBar } from "./AnswerBar";
 import { RemoteQuestionNotice } from "./RemoteQuestion";
 import { SaveBlockedBySecret } from "./SaveBlockedBySecret";
 import { updateSaid, UpdateFromRemote, UpdateLeftNotice } from "./SavingUpdate";
@@ -43,6 +41,7 @@ import { RequestMerge } from "./SavingMerge";
 import { SaveConflict } from "./SavingResolve";
 import { Button, IconButton } from "./ui/button/Button";
 import { Tooltip } from "./ui/tooltip/Tooltip";
+import { AlertDialog } from "./ui/dialog/Dialog";
 
 /** Settings › Saving › Mode: where a project's save mode is changed (SE-22's address). */
 const SAVING_MODE: SettingsLink = { group: "project.saving", setting: "project.saving.plane.mode" };
@@ -570,7 +569,7 @@ function RepoRows({
  * is a developer's, and a save commits every file changed in it and may push it. Nothing is
  * saved until the operator says so here.
  *
- * Radix's `AlertDialog`, as `DeleteWorkspace` is: an action that reaches past this machine is
+ * The family's `AlertDialog`, as `DeleteWorkspace` is: an action that reaches past this machine is
  * one the operator confirms, and focus starts on Cancel.
  */
 function ConfirmSaveAll({
@@ -587,7 +586,6 @@ function ConfirmSaveAll({
   onSave: () => void;
   onCancel: () => void;
 }) {
-  const cancel = useRef<HTMLButtonElement>(null);
   const count = (plane === null ? 0 : 1) + repos.length;
   const reposSaid = `${repos.length} ${repos.length === 1 ? "repo" : "repos"}`;
   const title =
@@ -597,47 +595,28 @@ function ConfirmSaveAll({
         ? "Save the project?"
         : `Save the project and ${reposSaid}?`;
   return (
-    <AlertDialog.Root
-      open
-      onOpenChange={(open) => {
-        if (!open) onCancel();
-      }}
+    <AlertDialog
+      onClose={onCancel}
+      title={title}
+      description={
+        <p className="came-back">
+          A repo&apos;s save commits every file changed in it on the branch it is on, then goes as
+          far as its mode says.
+        </p>
+      }
+      // `danger`: a save commits, and goes as far as each repo's mode says, a push included, and
+      // purlis has no Undo for it (D-1719-3, `docs/ui-primitives.md`).
+      main={{ children: `Save all ${count}`, variant: "danger", onPress: onSave }}
     >
-      <AlertDialog.Portal>
-        <AlertDialog.Overlay className="ui-scrim" />
-        <AlertDialog.Content
-          className="ui-dialog warning"
-          onOpenAutoFocus={(event) => {
-            event.preventDefault();
-            cancel.current?.focus();
-          }}
-        >
-          <AlertDialog.Title>{title}</AlertDialog.Title>
-          <AlertDialog.Description className="came-back">
-            A repo&apos;s save commits every file changed in it on the branch it is on, then goes as
-            far as its mode says.
-          </AlertDialog.Description>
-          <ul className="saving-files" aria-label="What Save all saves">
-            {plane !== null && <li>{`The project — ${planeTakes(plane)}`}</li>}
-            {repos.map((repo) => (
-              <li key={repo.name}>
-                {`${repo.name} on ${repo.branch ?? "no branch"} — ${repoTakes(repo)} — ${repoSaveGoesTo(repo, workspace)}`}
-              </li>
-            ))}
-          </ul>
-          <AnswerBar>
-            <AlertDialog.Cancel asChild>
-              <Button ref={cancel}>Cancel</Button>
-            </AlertDialog.Cancel>
-            {/* `ends-it`: a save commits, and goes as far as each repo's mode says, a push
-                included, and purlis has no Undo for it (D-1719-3, `docs/ui-primitives.md`). */}
-            <Button variant="danger" onPress={onSave}>
-              {`Save all ${count}`}
-            </Button>
-          </AnswerBar>
-        </AlertDialog.Content>
-      </AlertDialog.Portal>
-    </AlertDialog.Root>
+      <ul className="saving-files" aria-label="What Save all saves">
+        {plane !== null && <li>{`The project — ${planeTakes(plane)}`}</li>}
+        {repos.map((repo) => (
+          <li key={repo.name}>
+            {`${repo.name} on ${repo.branch ?? "no branch"} — ${repoTakes(repo)} — ${repoSaveGoesTo(repo, workspace)}`}
+          </li>
+        ))}
+      </ul>
+    </AlertDialog>
   );
 }
 

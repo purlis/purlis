@@ -1,13 +1,11 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useRef, useState } from "react";
-import * as AlertDialog from "./overlays/alert-dialog";
+import { useEffect, useState } from "react";
 import { Radio } from "lucide-react";
 import { commands, type LivePreview, type PlaneId, type RemoteReaders } from "./bindings";
 import { askSavingTab, tellSaved } from "./saving";
-import { AnswerBar } from "./AnswerBar";
-import { Button } from "./ui/button/Button";
+import { AlertDialog } from "./ui/dialog/Dialog";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
@@ -45,7 +43,6 @@ export function LiveDialog({
   const [readers, setReaders] = useState<{ said: RemoteReaders | null }>();
   /** A switch that happened and a save that did not: kept on screen until it is closed. */
   const [switched, setSwitched] = useState<{ said: string[]; notSaved: string } | null>(null);
-  const cancel = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     let gone = false;
@@ -108,98 +105,74 @@ export function LiveDialog({
   };
 
   return (
-    <AlertDialog.Root
-      open
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
+    <AlertDialog
+      onClose={() => (switched !== null ? onDone(switched.said) : onClose())}
+      title={`Make ${workspace} ${word}?`}
+      description={
+        <p className="came-back">
+          {going === false
+            ? "Its charter, memory and todos stay on this machine and stop being committed."
+            : "Its charter, memory and todos are committed with the project. Every save publishes them."}
+        </p>
+      }
+      {...(switched !== null
+        ? {
+            cancel: { children: "Close", onPress: () => onDone(switched.said) },
+            // Where a save that did not happen is mended (NO-8's follow-up, #1296): the Saving
+            // tab says why, and has the save, the mode and the ways out.
+            main: {
+              children: "Go to Saving",
+              variant: "secondary" as const,
+              onPress: () => {
+                onDone(switched.said);
+                askSavingTab(plane);
+              },
+            },
+          }
+        : {
+            cancel: { onPress: onClose },
+            main: {
+              // Said while the core switches it (D-630-3).
+              children: busy ? `Making ${word}…` : `Make ${word}`,
+              reserve: [`Make ${word}`, `Making ${word}…`],
+              variant: "danger" as const,
+              isDisabled: busy || read === null,
+              onPress: () => void confirm(),
+            },
+          })}
     >
-      <AlertDialog.Portal>
-        <AlertDialog.Overlay className="ui-scrim" />
-        <AlertDialog.Content
-          className="ui-dialog warning"
-          onOpenAutoFocus={(event) => {
-            event.preventDefault();
-            cancel.current?.focus();
-          }}
-        >
-          <AlertDialog.Title>{`Make ${workspace} ${word}?`}</AlertDialog.Title>
-          <AlertDialog.Description className="came-back">
-            {going === false
-              ? "Its charter, memory and todos stay on this machine and stop being committed."
-              : "Its charter, memory and todos are committed with the project. Every save publishes them."}
-          </AlertDialog.Description>
-          {read === null && trouble === null && (
-            <p className="pending" role="status">
-              Reading the workspace…
-            </p>
+      {read === null && trouble === null && (
+        <p className="pending" role="status">
+          Reading the workspace…
+        </p>
+      )}
+      {read !== null && (
+        <>
+          {read.files.length > 0 && (
+            <ul className="at-risk" aria-label="What it publishes">
+              {read.files.map((file) => (
+                <li key={file}>{file}</li>
+              ))}
+            </ul>
           )}
-          {read !== null && (
-            <>
-              {read.files.length > 0 && (
-                <ul className="at-risk" aria-label="What it publishes">
-                  {read.files.map((file) => (
-                    <li key={file}>{file}</li>
-                  ))}
-                </ul>
-              )}
-              <p className="came-back">{whereText(read)}</p>
-              {asksForge && (
-                <ReadersLine readers={readers === undefined ? "asking" : readers.said} />
-              )}
-            </>
-          )}
-          {read !== null && read.mode !== null && read.mode !== "off" && (
-            <p className="came-back">
-              The save also takes every other unsaved change in the project.
-            </p>
-          )}
-          {trouble !== null && (
-            <p className="trouble" role="alert">
-              {trouble}
-            </p>
-          )}
-          {switched !== null && (
-            <p className="trouble" role="alert">
-              {`It is ${word} now, and the project was not saved: ${switched.notSaved}`}
-            </p>
-          )}
-          {switched !== null ? (
-            <AnswerBar>
-              <Button ref={cancel} onPress={() => onDone(switched.said)}>
-                Close
-              </Button>
-              {/* Where a save that did not happen is mended (NO-8's follow-up, #1296): the
-                  Saving tab says why, and has the save, the mode and the ways out. */}
-              <Button
-                onPress={() => {
-                  onDone(switched.said);
-                  askSavingTab(plane);
-                }}
-              >
-                Go to Saving
-              </Button>
-            </AnswerBar>
-          ) : (
-            <AnswerBar>
-              <AlertDialog.Cancel asChild>
-                <Button ref={cancel} onPress={onClose}>
-                  Cancel
-                </Button>
-              </AlertDialog.Cancel>
-              <Button
-                variant="danger"
-                isDisabled={busy || read === null}
-                onPress={() => void confirm()}
-              >
-                {/* Said while the core switches it (D-630-3). */}
-                {busy ? `Making ${word}…` : `Make ${word}`}
-              </Button>
-            </AnswerBar>
-          )}
-        </AlertDialog.Content>
-      </AlertDialog.Portal>
-    </AlertDialog.Root>
+          <p className="came-back">{whereText(read)}</p>
+          {asksForge && <ReadersLine readers={readers === undefined ? "asking" : readers.said} />}
+        </>
+      )}
+      {read !== null && read.mode !== null && read.mode !== "off" && (
+        <p className="came-back">The save also takes every other unsaved change in the project.</p>
+      )}
+      {trouble !== null && (
+        <p className="trouble" role="alert">
+          {trouble}
+        </p>
+      )}
+      {switched !== null && (
+        <p className="trouble" role="alert">
+          {`It is ${word} now, and the project was not saved: ${switched.notSaved}`}
+        </p>
+      )}
+    </AlertDialog>
   );
 }
 

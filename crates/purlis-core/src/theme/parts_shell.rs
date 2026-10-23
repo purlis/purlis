@@ -73,6 +73,8 @@ pub(super) const PANEL: Family = Family {
     states: &[],
     focused: "[data-focus-visible]",
     words: &[],
+    corner_most: None,
+    around: &[],
 };
 
 /// **The panel's colours as `app/src/ui/panel/panel.css` draws them**: the base surface, the
@@ -130,6 +132,8 @@ pub(super) const PANEL_SECTION: Family = Family {
     states: &[],
     focused: "[data-focus-visible]",
     words: &[],
+    corner_most: None,
+    around: &[],
 };
 
 /// **A section's colours as `panel.css` draws them**: no ground of its own, its title in the
@@ -204,6 +208,8 @@ pub(super) const EMPTY_STATE: Family = Family {
     states: &[],
     focused: "[data-focus-visible]",
     words: &[],
+    corner_most: None,
+    around: &[],
 };
 
 /// **An empty state's colours as `empty-state.css` draws them**: no ground, its sentence and its
@@ -291,6 +297,8 @@ pub(super) const STATUS_ITEM: Family = Family {
     ],
     focused: "[data-focus-visible]",
     words: &[],
+    corner_most: None,
+    around: &[],
 };
 
 /// **A status item's colours as `app/src/ui/status/status.css` draws them**, at rest and under
