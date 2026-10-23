@@ -1320,6 +1320,8 @@ export const commands = {
 	runnerWrite: __WINDOW_ONLY_RESULT,
 	dismissRunnerWrite: __WINDOW_ONLY_RESULT,
 	setChatsRunOn: __WINDOW_ONLY_RESULT,
+	sendLeavesOut: __WINDOW_ONLY_RESULT,
+	setSendLeavesOut: __WINDOW_ONLY_RESULT,
 	/**  Look for a newer charter now. The answer arrives as [`CHECKED`] or [`FAILED`]. */
 	checkForUpdate: () => __TAURI_INVOKE<void>("check_for_update"),
 	installUpdate: __WINDOW_ONLY,
@@ -7935,6 +7937,12 @@ export type RepoState_Deserialize = {
 	 *  there is none.
 	 */
 	on_a_runner?: RunnerBranch[],
+	/**
+	 *  The changed or new files the last send of this clone to its pool's runner left out, as a
+	 *  save to the forge would refuse them (#2046, the operator's ruling of 2026-10-25), by their
+	 *  paths in the clone. Left out where none was.
+	 */
+	left_out_of_send?: string[],
 };
 
 /**  One clone's git state, and what the forge cache last recorded for its branch. */
@@ -7975,6 +7983,12 @@ export type RepoState_Serialize = {
 	 *  there is none.
 	 */
 	on_a_runner?: RunnerBranch[],
+	/**
+	 *  The changed or new files the last send of this clone to its pool's runner left out, as a
+	 *  save to the forge would refuse them (#2046, the operator's ruling of 2026-10-25), by their
+	 *  paths in the clone. Left out where none was.
+	 */
+	left_out_of_send?: string[],
 };
 
 /**  Every clone of one workspace, as the panels draw them. */

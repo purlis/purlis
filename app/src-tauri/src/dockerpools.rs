@@ -405,6 +405,40 @@ pub async fn chats_run_on(
     }
 }
 
+/// **What a workspace's sends to a pool's runner leave out** besides what a save to the forge
+/// refuses (#2046, the operator's ruling of 2026-10-25): `settings.runners.leave_out` in its
+/// `workspace.json`, as its settings show it.
+#[tauri::command]
+#[specta::specta]
+pub async fn send_leaves_out(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    workspace: String,
+) -> Result<Vec<String>, String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    crate::off_the_window("reading what the workspace's sends leave out", move || {
+        purlis_core::settings::workspace::send_leaves_out(&root, &workspace)
+    })
+    .await
+}
+
+/// **Sets what a workspace's sends to a pool's runner leave out** (#2046): the person's list in
+/// its settings, one file or folder in a clone per entry. Answers what it holds after.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_send_leaves_out(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    workspace: String,
+    entries: Vec<String>,
+) -> Result<Vec<String>, String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    crate::off_the_window("setting what the workspace's sends leave out", move || {
+        purlis_core::settings::workspace::set_send_leaves_out(&root, &workspace, &entries)
+    })
+    .await
+}
+
 /// **Sets where a workspace's chats run** (#2046): the person's choice in its settings.
 #[tauri::command]
 #[specta::specta]

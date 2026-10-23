@@ -44,6 +44,7 @@ pub const READ: &[&str] = &[
     crate::harness_plugin::SKILLS_TABLE,
     project::theme::TABLE,
     SKILLS,
+    RUNNERS,
 ];
 
 /// The table that holds what a workspace turned off of the project skills granted to it
@@ -53,6 +54,165 @@ pub const SKILLS: &str = "skills";
 
 /// The key in [`SKILLS`] that lists the names turned off.
 pub const SKILLS_OFF: &str = "off";
+
+/// The table that holds what a workspace's sends to a pool's runner leave out besides what a
+/// save to the forge refuses (#2046, the operator's ruling of 2026-10-25):
+/// `settings.runners.leave_out`, a list of files and folders, each relative to the top of the
+/// clone it is in. A workspace's alone.
+pub const RUNNERS: &str = "runners";
+
+/// The key in [`RUNNERS`] that lists what a send leaves out.
+pub const LEAVE_OUT: &str = "leave_out";
+
+/// The most entries [`LEAVE_OUT`] holds.
+pub const MOST_LEFT_OUT: usize = 64;
+
+/// The longest entry of [`LEAVE_OUT`], in bytes.
+pub const LONGEST_LEFT_OUT: usize = 256;
+
+/// Whether `entry` is one [`LEAVE_OUT`] holds: a path relative to the top of a clone, with no
+/// part that climbs out of it, no empty or `.` part, and no control character.
+pub fn leave_out_ok(entry: &str) -> bool {
+    !entry.is_empty()
+        && entry.len() <= LONGEST_LEFT_OUT
+        && !entry.starts_with('/')
+        && !entry.chars().any(char::is_control)
+        && entry
+            .trim_end_matches('/')
+            .split('/')
+            .all(|part| !part.is_empty() && part != "." && part != "..")
+}
+
+/// **What `workspace`'s sends to a pool's runner leave out besides what a save refuses**
+/// (#2046): `settings.runners.leave_out`. Empty where it names none. **Never empty for a list
+/// it cannot read**: a workspace whose `workspace.json` cannot be read, or whose list holds an
+/// entry its save refuses or more than [`MOST_LEFT_OUT`], is answered why, and its sends are
+/// refused in those words, so what the person listed never goes for want of a reading.
+pub fn send_leaves_out(plane: &Path, workspace: &str) -> Result<Vec<String>, String> {
+    let held = Plane::open(plane)
+        .workspace(workspace)
+        .map_err(|why| why.to_string())?;
+    let (doc, owner) = held.manifest();
+    let file = named(workspace);
+    let Some(doc) = doc else {
+        // Absent is also what a file purlis may not read says (one that leads out of the
+        // project): only one that is not there at all names nothing.
+        let there = std::fs::symlink_metadata(held.dir().join(FILE)).is_ok();
+        return if owner == Ownership::Absent && !there {
+            Ok(Vec::new())
+        } else {
+            Err(format!(
+                "{file} cannot be read, so what it leaves out of a send is not known"
+            ))
+        };
+    };
+    let Some(table) = table_of(&doc) else {
+        return Ok(Vec::new());
+    };
+    let refused = runners_refused(&table, &file);
+    if let Some(first) = refused.first() {
+        return Err(first.why.clone());
+    }
+    Ok(table
+        .get(RUNNERS)
+        .and_then(|runners| runners.get(LEAVE_OUT))
+        .and_then(toml::Value::as_array)
+        .map(|names| {
+            names
+                .iter()
+                .filter_map(toml::Value::as_str)
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default())
+}
+
+/// **Sets what `workspace`'s sends to a pool's runner leave out** to `entries` (#2046), through
+/// this level's own save: blank entries dropped, and none left removes the key. Answers what it
+/// holds after.
+pub fn set_send_leaves_out(
+    plane: &Path,
+    workspace: &str,
+    entries: &[String],
+) -> Result<Vec<String>, String> {
+    crate::settings::writable(plane)?;
+    let mut kept: Vec<String> = Vec::new();
+    for entry in entries
+        .iter()
+        .map(|one| one.trim())
+        .filter(|one| !one.is_empty())
+    {
+        if !leave_out_ok(entry) {
+            return Err(format!(
+                "“{entry}” is not a file or folder in a clone, so nothing was saved: name one \
+                 relative to the top of the clone, such as secrets/ or config/local.yml"
+            ));
+        }
+        if !kept.iter().any(|one| one == entry) {
+            kept.push(entry.to_owned());
+        }
+    }
+    if kept.len() > MOST_LEFT_OUT {
+        return Err(format!(
+            "a workspace leaves out at most {MOST_LEFT_OUT} files and folders from what it sends, \
+             so nothing was saved"
+        ));
+    }
+    let read = read_file(plane, workspace)?;
+    let base = read.exists.then_some(read.text.as_str());
+    let path = vec![
+        crate::settings::Step::Key(RUNNERS.to_owned()),
+        crate::settings::Step::Key(LEAVE_OUT.to_owned()),
+    ];
+    let value = (!kept.is_empty()).then(|| crate::settings::Value::List(kept.clone()));
+    save(
+        plane,
+        workspace,
+        base,
+        &[crate::settings::Edit { path, value }],
+    )
+    .map_err(|why| why.join(" "))?;
+    Ok(kept)
+}
+
+/// What a workspace's `settings.runners` holds that [`send_leaves_out`] would not read (#2046):
+/// anything but `leave_out`, and a `leave_out` that is not a list of at most
+/// [`MOST_LEFT_OUT`] paths in a clone. The reader then leaves out nothing more.
+pub fn runners_refused(top: &toml::Table, file: &str) -> Vec<Refusal> {
+    let Some(table) = top.get(RUNNERS) else {
+        return Vec::new();
+    };
+    let shape =
+        format!("a workspace's {RUNNERS} are {{\"{LEAVE_OUT}\": [\"<path in a clone>\", …]}}");
+    let Some(table) = table.as_table() else {
+        return vec![Refusal::at(
+            format!("{KEY}.{RUNNERS} in {file} is not an object — {shape}"),
+            &[RUNNERS],
+        )];
+    };
+    table
+        .iter()
+        .filter_map(|(key, value)| {
+            let why = if key != LEAVE_OUT {
+                format!("{KEY}.{RUNNERS}.{key} in {file} is not read — {shape}")
+            } else if !value.as_array().is_some_and(|names| {
+                names.len() <= MOST_LEFT_OUT
+                    && names
+                        .iter()
+                        .all(|name| name.as_str().is_some_and(leave_out_ok))
+            }) {
+                format!(
+                    "{KEY}.{RUNNERS}.{LEAVE_OUT} in {file} is not a list of at most \
+                     {MOST_LEFT_OUT} files and folders in a clone, so a send leaves out nothing \
+                     more — {shape}"
+                )
+            } else {
+                return None;
+            };
+            Some(Refusal::at(why, &[RUNNERS, key.as_str()]))
+        })
+        .collect()
+}
 
 /// The file as a sentence names it: `workspaces/<ws>/workspace.json`.
 pub fn named(workspace: &str) -> String {
@@ -156,6 +316,7 @@ pub fn standing(text: &str, workspace: &str) -> Vec<Refusal> {
         // And `theme` (charter-app#281), by the one reader of a theme.
         out.extend(project::theme::keyed_in_workspace(&table, &file));
         out.extend(skills_refused(&table, &file));
+        out.extend(runners_refused(&table, &file));
     }
     out
 }
