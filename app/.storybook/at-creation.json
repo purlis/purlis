@@ -1,0 +1,16 @@
+{
+  "default": {
+    "theme": "purlis",
+    "appearance": "dark"
+  },
+  "built_in": {
+    "purlis-classic": {
+      "theme": "purlis-classic",
+      "appearance": "dark"
+    },
+    "purlis-dark": {
+      "theme": "purlis",
+      "appearance": "dark"
+    }
+  }
+}

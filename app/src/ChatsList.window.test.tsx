@@ -20,6 +20,7 @@ import { setChatsListPrefs } from "./chatsListPrefs";
 import { cardOf } from "./chatCard.testkit";
 import type { State } from "./chatState";
 import { forgetThisLaunch } from "./regions";
+import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
  * **The Chats list at fifty chats, against the whole window** (#1499, V100-47 to V100-50): the
@@ -999,7 +1000,7 @@ describe("a row of the Chats list (V100-19, V100-50)", () => {
     expect(theTree().querySelector(".no-tab")).toBeNull();
     expect(theTree().textContent).not.toMatch(/no tab/i);
     for (const one of within(theTree()).getAllByRole("treeitem"))
-      expect(one.getAttribute("title") ?? "").not.toMatch(/tab/i);
+      expect(tipOf(one) ?? "").not.toMatch(/tab/i);
   });
 });
 

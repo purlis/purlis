@@ -415,6 +415,7 @@ describe("the mark picker on a read-only project (#826)", () => {
     for (const radio of within(picker).getAllByRole("radio")) expect(radio).toBeDisabled();
     const hex = within(picker).getByRole("textbox", { name: "Any colour, as #rrggbb" });
     expect(hex).toBeDisabled();
-    expect(hex.closest("fieldset")).toHaveAttribute("title", SENTENCE);
+    // Why it is off: its group\'s description, which its legend\'s tooltip says too (#2908).
+    expect(hex.closest("fieldset")).toHaveAccessibleDescription(SENTENCE);
   });
 });

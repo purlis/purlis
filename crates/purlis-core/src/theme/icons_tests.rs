@@ -156,7 +156,7 @@ fn a_path_outside_the_grammar_refuses_the_theme() {
             "{d}: {:?}",
             said(&loaded)
         );
-        assert_eq!(&loaded.theme, classic());
+        assert_eq!(&loaded.theme, purlis());
     }
 }
 
@@ -315,7 +315,7 @@ fn an_icon_set_that_is_a_link_or_under_a_link_is_not_read() {
     for name in ["file", "dir"] {
         let loaded = Library::new().load_folder(&themes, name);
         assert!(loaded.refused, "{name}");
-        assert_eq!(&loaded.theme, classic(), "{name}");
+        assert_eq!(&loaded.theme, purlis(), "{name}");
     }
 }
 

@@ -33,19 +33,21 @@ fn machine(config: &Path) -> Place {
 }
 
 #[test]
-fn the_machines_gallery_is_classic_and_the_persons_folders_and_says_what_is_drawn() {
+fn the_machines_gallery_is_the_built_ins_and_the_persons_folders_and_says_what_is_drawn() {
     let home = tempfile::tempdir().unwrap();
     let place = machine(home.path());
     let shown = gallery_of(&place, None);
     let ids: Vec<&str> = shown.cards.iter().map(|one| one.id.as_str()).collect();
-    assert_eq!(ids, ["purlis-classic", "purlis", "dusk"]);
+    assert_eq!(ids, ["purlis", "purlis-classic", "dusk"]);
     assert_eq!(shown.cards[2].from, "machine");
     assert_eq!(shown.cards[0].from, "built-in");
-    // Purlis is built in and ships as a preview (#2336); Purlis Classic stays what is drawn.
+    // Purlis is built in and the default, first and drawn where nothing chose (#3034); Purlis
+    // Classic beside it, and neither is a preview.
     assert_eq!(shown.cards[1].from, "built-in");
-    assert!(shown.cards[1].preview && !shown.cards[0].preview);
+    assert!(!shown.cards[0].preview && !shown.cards[1].preview);
     assert_eq!(shown.yours, None);
-    assert_eq!(shown.drawn.as_deref(), Some("purlis-classic"));
+    assert_eq!(shown.drawn.as_deref(), Some("purlis"));
+    assert_eq!(shown.chosen.as_deref(), Some("purlis"));
     assert_eq!(shown.level, "purlis");
     assert_eq!(shown.from, "nothing chose one");
 }
@@ -232,10 +234,10 @@ fn the_persons_own_theme_json_drawn_is_said_with_what_following_does_with_it() {
             note: Some("Owl has only a dark appearance, so following the system stays dark".into()),
         })
     );
-    // With no theme of the person's, the old id draws Purlis Classic's card.
+    // With no theme of the person's, the old id draws the default's card, Purlis (#3034).
     let shown = gallery_of(&place, None);
     assert_eq!(shown.theirs, None);
-    assert_eq!(shown.chosen.as_deref(), Some("purlis-classic"));
+    assert_eq!(shown.chosen.as_deref(), Some("purlis"));
 }
 
 #[test]

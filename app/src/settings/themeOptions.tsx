@@ -6,6 +6,7 @@ import type { WindowOption } from "../bindings";
 import { themeOptionsInForce } from "../Extensions";
 import { onDrawn } from "../theme/theme";
 import { Choice, type Badge, type RowIds } from "./components";
+import { Tooltip } from "../ui/tooltip/Tooltip";
 
 /**
  * **A theme's options** (#2325), as Settings › Theme shows them (#2331): each option, the value
@@ -64,9 +65,11 @@ export function optionBadge(option: WindowOption): Badge {
  *  accessible description. */
 function OptionBadge({ badge }: { badge: Badge }) {
   return (
-    <span className="ui-setting-badge" title={badge.says} aria-description={badge.says}>
-      {badge.label}
-    </span>
+    <Tooltip tip={badge.says}>
+      <span className="ui-setting-badge" aria-description={badge.says}>
+        {badge.label}
+      </span>
+    </Tooltip>
   );
 }
 
@@ -114,9 +117,11 @@ export function OptionsList({
       {said !== undefined && <p className="ui-setting-help">{said}</p>}
       {options?.map((option) =>
         onChoose === undefined ? (
-          <p key={option.id} className="ui-setting-help" title={option.description || undefined}>
-            {option.label}: {valueLabel(option)} <OptionBadge badge={optionBadge(option)} />
-          </p>
+          <Tooltip key={option.id} tip={option.description || undefined}>
+            <p className="ui-setting-help">
+              {option.label}: {valueLabel(option)} <OptionBadge badge={optionBadge(option)} />
+            </p>
+          </Tooltip>
         ) : (
           <div key={option.id} className="flex flex-col gap-1">
             <p className="ui-setting-help">

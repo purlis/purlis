@@ -111,6 +111,15 @@ pub enum Write {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         vision: Option<String>,
     },
+    /// `purlis workspace snapshot [--description] [--force]` (#2046): the chat's own
+    /// workspace's repos and branches, recorded in its `workspace.json`, which a chat's sandbox
+    /// does not write.
+    WorkspaceSnapshot {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        description: Option<String>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        force: bool,
+    },
 }
 
 /// One of the chat's own memory stores (#1408). **Never a name**: which workspace and which
@@ -217,6 +226,9 @@ impl Write {
             Self::WorkspaceCreate { name, vision } => {
                 (vision.as_deref().unwrap_or_default(), None, name.len())
             }
+            Self::WorkspaceSnapshot { description, .. } => {
+                (description.as_deref().unwrap_or_default(), None, 0)
+            }
         };
         let bytes = text.len() + title.map_or(0, str::len) + more;
         if bytes > MOST_TEXT_BYTES {
@@ -265,6 +277,7 @@ impl Write {
             Self::PersonaOptimize { .. } => "persona_optimize",
             Self::TodoClose { .. } => "todo_close",
             Self::WorkspaceCreate { .. } => "workspace_create",
+            Self::WorkspaceSnapshot { .. } => "workspace_snapshot",
         }
     }
 }
@@ -679,6 +692,26 @@ fn upkeep(
             let store = format!("workspaces/{owner}/todos");
             (code, code == 0, (owner, store))
         }
+        Write::WorkspaceSnapshot { description, force } => {
+            let ws = own_workspace(root, asker)?;
+            guard(root, &ws.dir().join(crate::settings::workspace::FILE), None)?;
+            let when = chrono::TimeZone::from_local_datetime(&chrono::Local, &now)
+                .single()
+                .map_or_else(chrono::Utc::now, |local| local.with_timezone(&chrono::Utc));
+            let code = crate::wscmd::snapshot::snapshot(
+                &crate::wscmd::snapshot::Request {
+                    root,
+                    ws: ws.name(),
+                    description: description.as_deref(),
+                    force: *force,
+                    now: when,
+                },
+                &mut say,
+            );
+            let owner = ws.name().to_owned();
+            let store = format!("workspaces/{owner}/{}", crate::settings::workspace::FILE);
+            (code, code == 0, (owner, store))
+        }
         Write::WorkspaceCreate { name, vision } => {
             let code = create_workspace(root, name, vision.as_deref(), now, &mut say)?;
             (
@@ -697,6 +730,7 @@ fn upkeep(
             | Write::WorkspaceOptimize { .. }
             | Write::PersonaOptimize { .. }
             | Write::WorkspaceCreate { .. }
+            | Write::WorkspaceSnapshot { .. }
     );
     if changed && !said_already {
         saved();

@@ -253,6 +253,22 @@ describe("the workspace strip's show-more button", () => {
     ).toBeInTheDocument();
   });
 
+  it("opens on Down on its first row and on Up on its last, as a menu's trigger does", async () => {
+    threeWorkspaces();
+    render(<App />);
+    await waitFor(() => expect(showMore("workspace")).toBeInTheDocument());
+    showMore("workspace").focus();
+    await userEvent.keyboard("{ArrowDown}");
+    const rows = within(await screen.findByRole("menu")).getAllByRole("menuitem");
+    await waitFor(() => expect(rows[0]).toHaveFocus());
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    await waitFor(() => expect(showMore("workspace")).toHaveFocus());
+    await userEvent.keyboard("{ArrowUp}");
+    const again = within(await screen.findByRole("menu")).getAllByRole("menuitem");
+    await waitFor(() => expect(again[again.length - 1]).toHaveFocus());
+  });
+
   it("lists the workspaces that need you first", async () => {
     // beta comes before gamma on the strip, and gamma is the one asking.
     const { move } = threeWorkspaces();

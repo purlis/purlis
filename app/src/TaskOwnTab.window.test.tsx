@@ -22,6 +22,7 @@ import { setChatsListPrefs } from "./chatsListPrefs";
 import { forgetKeyboard } from "./paneKeyboard";
 import { forgetThisLaunch } from "./regions";
 import { stripNamed } from "./test-strips";
+import { hoverTipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
  * **A task gets a tab of its own only when asked, and a pane beside its session** (#1489,
@@ -857,7 +858,7 @@ describe("nothing drawn on a task's tab ends it (fix round 1, M2)", () => {
       fireEvent.contextMenu(tab("talk"));
       const row = await screen.findByRole("menuitem", { name: "Start fresh" });
       expect(row.getAttribute("aria-disabled")).toBe("true");
-      expect(row.title).toContain("This chat is a task");
+      expect(row).toHaveAccessibleDescription(expect.stringContaining("This chat is a task"));
       expect(commandsOf(asked, "start_chat_fresh")).toEqual([]);
     },
   );
@@ -951,8 +952,8 @@ describe("nothing drawn on a task's tab ends it (fix round 1, M2)", () => {
       one.getAttribute("aria-label")?.startsWith("Send back into"),
     );
     expect(back).toBeGreaterThanOrEqual(0);
-    expect(items[back]).not.toHaveClass("ui-menu-item-danger");
-    const ends = items.findIndex((one) => one.classList.contains("ui-menu-item-danger"));
+    expect(items[back]).not.toHaveAttribute("data-variant", "danger");
+    const ends = items.findIndex((one) => one.getAttribute("data-variant") === "danger");
     expect(ends).toBeGreaterThan(back);
     const lastGroup = menu.querySelector('[role="group"]:last-of-type');
     expect(lastGroup?.contains(items[back])).toBe(false);
@@ -1121,9 +1122,10 @@ describe("what the core is told is on screen (M1, M4)", () => {
     await drawn(withTasks());
     press(within(cell("steward 1")).getByRole("button", { name: /^Tasks of steward 1/ }));
     const menu = await screen.findByRole("menu", { name: /^Tasks of steward 1/ });
-    const titles = [...menu.querySelectorAll<HTMLElement>(".tasks-menu-place")]
-      .slice(0, 2)
-      .map((one) => one.title);
+    // The pointer's buttons at a line's end: their tooltips, read as the pointer reads them.
+    const titles: (string | null)[] = [];
+    for (const one of [...menu.querySelectorAll<HTMLElement>(".tasks-menu-place")].slice(0, 2))
+      titles.push(await hoverTipOf(one));
     expect(titles).toEqual([
       "Move talk to its own tab (Ctrl+Enter on its line)",
       "Open talk beside its session (Alt+Enter on its line)",

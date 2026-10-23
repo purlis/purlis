@@ -165,6 +165,7 @@ impl World {
             sign_ins: self.sign_ins.clone(),
             sandbox_only: self.sandbox_only.clone(),
             proposals: Vec::new(),
+            runner_writes: Vec::new(),
             browsers: self.browsers.clone(),
             needs_you: self.needs_you.clone(),
             browser_sites: self.browser_sites.clone(),

@@ -167,15 +167,27 @@ fn an_id_that_is_not_a_chat_s_has_no_drafts_and_starts_none() {
 }
 
 #[test]
-fn a_new_draft_extends_purlis_classic_and_is_drawn() {
+fn a_new_draft_extends_the_default_purlis_and_is_drawn() {
     let places = Places::new();
     let id = chat();
-    places.start(None, &id, "dusk");
+    let path = places.start(None, &id, "dusk");
+    // A new theme starts as the default (#3034).
+    let written: Value =
+        serde_json::from_str(&std::fs::read_to_string(path.join(THEME_JSON)).unwrap()).unwrap();
+    assert_eq!(written["extends"], DEFAULT);
     let draft = places.drafts(None, &[&id]).remove(0);
     let read = drafts::read(Some(&places.config), places.at(None), &draft, true);
     let drafted = drafts::drafted(read, None, None, Appearance::Dark, Contrast::Standard);
     assert!(drafted.broken.is_empty() && drafted.refused.is_empty());
     assert!(drafted.drawn.is_some() && drafted.good.is_some());
+    // Drawn as Purlis, its parent, and not a fallback.
+    let drawn = drafted.drawn.unwrap();
+    let theme = drawn.theme.as_ref().expect("a theme is drawn");
+    assert_eq!(
+        theme.value("surface.base"),
+        purlis().first().value("surface.base")
+    );
+    assert_eq!(theme.fonts, purlis().first().fonts);
 }
 
 #[test]

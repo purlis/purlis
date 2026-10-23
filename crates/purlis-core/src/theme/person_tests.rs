@@ -141,7 +141,7 @@ fn a_colour_that_puts_a_pair_under_its_floor_is_left_out_and_said() {
     assert_eq!(drawn.mine[0].token.as_deref(), Some("text.primary"));
     assert!(
         drawn.mine[0].said.starts_with(&format!(
-            "your colour for text.primary, {ground}, is left out in purlis-dark: text.primary on \
+            "your colour for text.primary, {ground}, is left out in Purlis Classic: text.primary on \
              surface.base would contrast 1:1, under its floor of 4.5:1"
         )),
         "{}",

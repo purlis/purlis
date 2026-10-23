@@ -1,10 +1,17 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import * as AlertDialog from "./overlays/alert-dialog";
 import * as Dialog from "./overlays/dialog";
-import * as Menu from "./overlays/dropdown-menu";
 import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
 import { Ellipsis, Eye, EyeOff, KeyRound, LoaderCircle, Plus, Search } from "lucide-react";
 import { EmptyState } from "./ui/empty-state/EmptyState";
@@ -17,7 +24,6 @@ import {
   type VaultSecret,
 } from "./bindings";
 import { SAID } from "./menuWords";
-import { MenuWords } from "./primitives/MenuRow";
 import { useTabStop } from "./roving";
 import { Field, SettingActions, SettingRow } from "./settings/components";
 import { counted } from "./Vaults";
@@ -26,6 +32,7 @@ import { AnswerBar } from "./AnswerBar";
 import { providerName } from "./vaultProviders";
 import { Button, ButtonRow, ToggleButton } from "./ui/button/Button";
 import { Form, TextField } from "./ui/field/Field";
+import { AnchoredMenu, Menu, MenuItem, MenuSeparator, MenuWords } from "./ui/menu/Menu";
 
 /**
  * **One vault, in a tab of its own** (charter-app#235): its name, its provider and how many
@@ -955,10 +962,10 @@ function SecretRow({
 /**
  * A secret's name in its row, and the row's menu.
  *
- * **The roving item is outside the menu's trigger**, and the order is the point: the item's
- * handler sees a key first and, for Up and Down, moves the focus and marks the event handled —
- * so the trigger, which would otherwise open the menu on Down, leaves it alone. Enter and Space
- * are not the item's, and open the menu. Right is neither's, and goes to the row's eye.
+ * **The row keeps its own keys, and the menu is held by it** (`AnchoredMenu`): the roving item
+ * sees a key first and, for Up and Down, moves the focus, so neither opens the menu. Enter and
+ * Space press the row, which opens it on its first row; a click opens it with the keyboard on
+ * the menu. Right is neither's, and goes to the row's eye.
  */
 function SecretMenu({
   secret,
@@ -968,61 +975,66 @@ function SecretMenu({
   onRight,
 }: {
   secret: string;
-  trigger: Ref<HTMLButtonElement>;
+  trigger: RefObject<HTMLButtonElement | null>;
   onAsk: (asking: Asking) => void;
   onCopy: () => void;
   onRight: () => void;
 }) {
+  const [open, setOpen] = useState<false | "first" | true>(false);
+  const ask = (doing: Asking["doing"]) => () => onAsk({ doing, secret } as Asking);
   return (
-    // **Not modal**, for the strip's show-more menu's reason (`StripMarks.tsx`): a menu is not a
-    // question. What an item opens is, and that dialog is modal.
-    <Menu.Root modal={false}>
+    <>
       <RovingFocusGroup.Item asChild tabStopId={secret}>
-        <Menu.Trigger asChild>
-          <button
-            type="button"
-            ref={trigger}
-            className="ui-row vault-secret"
-            onKeyDown={(event) => {
-              if (event.key !== "ArrowRight") return;
-              event.preventDefault();
-              onRight();
-            }}
-          >
-            <span className="vault-secret-name">{secret}</span>
-            <Ellipsis className="node-icon" aria-hidden="true" />
-          </button>
-        </Menu.Trigger>
-      </RovingFocusGroup.Item>
-      <Menu.Portal>
-        <Menu.Content
-          className="ui-menu more-menu"
-          align="start"
-          sideOffset={4}
-          collisionPadding={8}
+        <button
+          type="button"
+          ref={trigger}
+          className="ui-row vault-secret"
+          aria-haspopup="menu"
+          aria-expanded={open !== false}
+          // A press by Enter or Space (no pointer) lands on the menu's first row.
+          onClick={(event) => setOpen(event.detail === 0 ? "first" : true)}
+          onKeyDown={(event) => {
+            if (event.key !== "ArrowRight") return;
+            event.preventDefault();
+            onRight();
+          }}
         >
-          {/* The menus' rules (`docs/ui-primitives.md`, "Menus"): a short verb that does not
-              say the secret's name again, an ellipsis on a row that asks first, and the row that
-              cannot be undone last, under a line, in the danger colour. */}
-          <Menu.Item className="ui-menu-item" onSelect={() => onAsk({ doing: "edit", secret })}>
+          <span className="vault-secret-name">{secret}</span>
+          <Ellipsis className="node-icon" aria-hidden="true" />
+        </button>
+      </RovingFocusGroup.Item>
+      <AnchoredMenu
+        triggerRef={trigger}
+        isOpen={open !== false}
+        autoFocus={open === false ? true : open}
+        onOpenChange={(next) => setOpen(next ? true : false)}
+      >
+        {/* The menus' rules (`docs/ui-primitives.md`, "Menus"): a short verb that does not say
+            the secret's name again, an ellipsis on a row that asks first, and the row that
+            cannot be undone last, under a line, in the danger colour. */}
+        <Menu aria-label={secret} className="more-menu" onAction={() => setOpen(false)}>
+          <MenuItem id="edit" textValue={SAID.editValue} onAction={ask("edit")}>
             <MenuWords said={SAID.editValue} />
-          </Menu.Item>
-          <Menu.Item className="ui-menu-item" onSelect={() => onAsk({ doing: "rename", secret })}>
+          </MenuItem>
+          <MenuItem id="rename" textValue={SAID.rename} onAction={ask("rename")}>
             <MenuWords said={SAID.rename} />
-          </Menu.Item>
-          <Menu.Item className="ui-menu-item" onSelect={onCopy}>
+          </MenuItem>
+          <MenuItem id="copy" textValue={SAID.copy} onAction={onCopy}>
             <MenuWords said={SAID.copy} />
-          </Menu.Item>
-          <Menu.Separator className="ui-menu-line" />
-          <Menu.Item
-            className="ui-menu-item ui-menu-item-danger ends-it"
-            onSelect={() => onAsk({ doing: "delete", secret })}
+          </MenuItem>
+          <MenuSeparator />
+          <MenuItem
+            id="delete"
+            variant="danger"
+            className="ends-it"
+            textValue={SAID.deleteAsks}
+            onAction={ask("delete")}
           >
-            <MenuWords said={SAID.deleteAsks} danger />
-          </Menu.Item>
-        </Menu.Content>
-      </Menu.Portal>
-    </Menu.Root>
+            <MenuWords said={SAID.deleteAsks} />
+          </MenuItem>
+        </Menu>
+      </AnchoredMenu>
+    </>
   );
 }
 

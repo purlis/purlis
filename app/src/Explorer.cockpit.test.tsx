@@ -19,6 +19,7 @@ import type {
 import type { Catalogued, Offer } from "./actions";
 import type { Place } from "./pieceViews";
 import type { WorkspaceState } from "./workspaceState";
+import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
  * **The branch cockpit** (FM-5, #1108): the render states the real-app scenario
@@ -225,8 +226,8 @@ describe("the branch cockpit", () => {
 
     expect(onPress).toHaveBeenCalledWith(merge);
     // A row the catalogue cannot run is drawn, disabled, with why.
-    expect(doneButton).toHaveProperty("disabled", true);
-    expect(doneButton.getAttribute("title")).toContain("no project");
+    expect(doneButton).toHaveAttribute("aria-disabled", "true");
+    expect(tipOf(doneButton)).toContain("no project");
   });
 
   it("steps back out on Esc and on the breadcrumb", async () => {

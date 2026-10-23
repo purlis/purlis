@@ -12,6 +12,7 @@ import {
 import { useEffect, useState } from "react";
 import type { Shown, UpdateKind } from "./bindings";
 import { agoSaid } from "./inboxRules";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
  * **What an Inbox row is made of** (qw359): the parts every row of the Inbox shares, so an ask,
@@ -115,13 +116,13 @@ export function RowAge({
   return (
     <>
       {lead && <span className="inbox-meta-dot">{" · "}</span>}
-      <time
-        className="inbox-age"
-        dateTime={at.toISOString()}
-        title={`${since} ${at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`}
+      <Tooltip
+        tip={`${since} ${at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`}
       >
-        {said}
-      </time>
+        <time className="inbox-age" dateTime={at.toISOString()}>
+          {said}
+        </time>
+      </Tooltip>
     </>
   );
 }

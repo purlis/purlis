@@ -28,7 +28,9 @@ async function measured() {
     const menus = document.querySelectorAll<HTMLElement>('[role="menu"]');
     const menu = menus[menus.length - 1];
     if (!menu) return null;
-    const box = menu.getBoundingClientRect();
+    // The surface the list stands on, which the window caps; the list scrolls inside it.
+    const surface = menu.closest<HTMLElement>('[data-scope="popover"][data-part="root"]') ?? menu;
+    const box = surface.getBoundingClientRect();
     // A control's height, as the page's own tokens give it: what one row is at least.
     const probe = document.createElement("div");
     probe.style.cssText = "position:absolute;visibility:hidden;block-size:var(--size-control)";
@@ -43,7 +45,7 @@ async function measured() {
       width: box.width,
       window: window.innerHeight,
       across: window.innerWidth,
-      cap: getComputedStyle(menu).maxHeight,
+      cap: getComputedStyle(surface).maxHeight,
       scrolls: getComputedStyle(menu).overflowY,
       inside: menu.scrollHeight,
       shown: menu.clientHeight,
@@ -52,9 +54,9 @@ async function measured() {
       control,
       rows: [...menu.querySelectorAll<HTMLElement>('[role^="menuitem"]')].map((row) => {
         const at = row.getBoundingClientRect();
-        const title = row.querySelector<HTMLElement>(".ui-menu-title");
-        const note = row.querySelector<HTMLElement>(".ui-menu-note");
-        const keys = row.querySelector<HTMLElement>(".ui-menu-keys");
+        const title = row.querySelector<HTMLElement>('[data-part="label"]');
+        const note = row.querySelector<HTMLElement>('[data-part="description"]');
+        const keys = row.querySelector<HTMLElement>('[data-part="shortcut"]');
         return {
           name: row.getAttribute("aria-label") ?? "",
           top: at.top,
@@ -75,7 +77,7 @@ async function measured() {
           noteRight: note ? note.getBoundingClientRect().right : null,
           right: at.right,
           keys: keys ? parseFloat(getComputedStyle(keys).fontSize) : null,
-          danger: row.classList.contains("ui-menu-item-danger"),
+          danger: row.getAttribute("data-variant") === "danger",
           off: row.getAttribute("aria-disabled") === "true",
           opens: row.getAttribute("aria-haspopup") === "menu",
           tooltip: row.getAttribute("title"),

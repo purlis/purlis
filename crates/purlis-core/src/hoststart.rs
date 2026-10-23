@@ -615,7 +615,7 @@ pub fn armed(
     persona: Option<&str>,
 ) -> Result<Armed, String> {
     armed_as(
-        crate::skills::studio_on_here(),
+        crate::skills::reach_chats_here(root),
         &Arming {
             root,
             kit,
@@ -673,7 +673,8 @@ pub(crate) fn armed_as(studio: bool, arming: &Arming<'_>) -> Result<Armed, Strin
             None => Ok((Vec::new(), Vec::new())),
         };
     };
-    // The plane's skills, only while the Skill studio's flag is on (ADR 0099, #2786): their
+    // The plane's skills, where they reach the project's chats: while the Skill studio's flag is
+    // on, and once the project requires them (`skills::reach_chats`, #2784): their
     // folder of links laid out here, by the host, as the git hooks are, so the adapter only
     // turns the set into words (ADR 0063 as amended 2026-10-20).
     let workspace = cwd.and_then(|cwd| crate::active::workspace_of_tree(root, cwd));

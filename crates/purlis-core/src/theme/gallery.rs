@@ -7,8 +7,8 @@
 //!
 //! # A card per theme within reach
 //!
-//! A level's gallery holds the themes a choice made there reaches ([`Reach`]): Purlis Classic and
-//! Purlis (a preview, #2336); the theme folders of that level and of the levels farther out,
+//! A level's gallery holds the themes a choice made there reaches ([`Reach`]): Purlis, the
+//! default (#3034), and Purlis Classic; the theme folders of that level and of the levels farther out,
 //! nearest first, each with its level, so two folders of one name at two levels are two cards a
 //! choice tells apart (#2516); and the themes of the extensions in force there. So the machine's
 //! gallery is the built-in themes, the person's own folders and every approved extension's themes;
@@ -83,8 +83,8 @@ pub struct Card {
     /// What a person calls it.
     pub name: String,
     pub from: From,
-    /// Whether it ships as a preview (spec #2313, "Preview theme"): Purlis, until it becomes the
-    /// default. The card says so beside its name.
+    /// Whether it ships as a preview (spec #2313, "Preview theme"; [`super::is_preview`]). The
+    /// card says so beside its name.
     pub preview: bool,
     /// Its appearances in its order: the first is what it draws when nothing chose one. A
     /// refused theme has none of its own.
@@ -140,12 +140,12 @@ pub struct Shelf<'a> {
     pub offered: &'a [Offered],
 }
 
-/// **Every theme a choice within `shelf`'s reach may name**, a card each: Purlis Classic first
-/// and Purlis, the built-in themes; then the theme folders nearest level first and by name within one, a name two levels have
+/// **Every theme a choice within `shelf`'s reach may name**, a card each: Purlis, the default,
+/// first and Purlis Classic, the built-in themes; then the theme folders nearest level first and by name within one, a name two levels have
 /// once at each (#2516), then each extension's theme in force in the order the survey found
 /// them.
 pub fn cards(shelf: &Shelf<'_>) -> Vec<Card> {
-    let mut cards: Vec<Card> = [(CLASSIC, classic()), (PURLIS, purlis())]
+    let mut cards: Vec<Card> = [(PURLIS, purlis()), (CLASSIC, classic())]
         .into_iter()
         .map(|(id, theme)| {
             card(

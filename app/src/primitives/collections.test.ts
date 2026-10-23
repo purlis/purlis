@@ -348,7 +348,7 @@ describe("the table", () => {
     <table class="ui-table ${variant}">
       <thead><tr>
         <th scope="col">Level</th>
-        <th scope="col" title="How many tasks may run at once">Tasks</th>
+        <th scope="col"><span class="ui-table-tip" data-tooltip-target="">Tasks</span></th>
         <th scope="col" class="ui-cell-actions"><span>Actions</span></th>
       </tr></thead>
       <tbody>
@@ -374,7 +374,9 @@ describe("the table", () => {
   it("marks a heading that has a tooltip", () => {
     const body = draw(table());
     const [plain, titled] = body.querySelectorAll("thead th");
-    expect(resolved(titled, "text-decoration")).toBe("underline dotted");
+    expect(resolved(titled.querySelector(".ui-table-tip") as Element, "text-decoration")).toBe(
+      "underline dotted",
+    );
     expect(resolved(plain, "text-decoration")).toBeUndefined();
   });
 

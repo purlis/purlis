@@ -25,7 +25,7 @@
 //! 3. the person's choice for the project;
 //! 4. the project's committed default;
 //! 5. the person's machine default;
-//! 6. Purlis.
+//! 6. Purlis, the default ([`super::DEFAULT`], #3034).
 //!
 //! **The plane root resolves from level 3 down**: it is on no workspace.
 //!
@@ -61,8 +61,8 @@ pub(crate) use super::folders::plane_fonts;
 pub use super::folders::{Folders, Found, FoundFolder, MOST_FOLDERS, Reach, THEMES, ThemesFolder};
 use super::resolve::{Drawn, Offered, On, follow};
 use super::{
-    Appearance, Complaint, Contrast, PURLIS, Theme, Values, built_in, classic, default_theme,
-    shipped,
+    Appearance, CLASSIC, Complaint, Contrast, PURLIS, Theme, Values, default_for, purlis,
+    shipped_pick,
 };
 use crate::extension::project::theme::{Pick, SYSTEM, Said, is_appearance};
 use crate::settings::Source;
@@ -97,7 +97,8 @@ impl Level {
 }
 
 /// **A choice of theme**: a theme, by what a pick names it (a theme folder's name, an
-/// extension's `<extension>/<theme>`, Purlis Classic by its id or an old one, or `system`);
+/// extension's `<extension>/<theme>`, Purlis or Purlis Classic by its id, `purlis-dark` or
+/// `purlis-light` or an old id of either, or `system`);
 /// which of its appearances, by its id or `system`, none drawing the theme's first; for a theme
 /// folder, the level of the folder it picked (#2516); and the value of each of the theme's
 /// options it chose (#2527), every other option drawing its default.
@@ -179,24 +180,14 @@ impl Choice {
     }
 
     /// **What the window is told this choice draws**, as `project_theme_drawn` answers: a pick
-    /// the window can draw in the same frame (an appearance of Purlis Classic, by the id a pick
-    /// names it by) or any other theme's id, Purlis's included, which the window asks the engine
-    /// to resolve.
+    /// the window can draw in the same frame (Purlis's dark or light by `purlis-dark` or
+    /// `purlis-light`, whichever id the file named it by, #3034) or any other theme's id, which
+    /// the window asks the engine to resolve: Purlis and Purlis Classic by their own ids, and a
+    /// built-in pick that names an appearance besides.
     pub fn told(&self) -> String {
-        let Some(Pick::BuiltIn(id)) = Pick::parse(&self.theme) else {
-            return self.theme.clone();
-        };
-        if id == PURLIS {
-            return self.theme.clone();
-        }
-        match self.appearance.as_deref() {
-            None => id.to_owned(),
-            Some(SYSTEM) => SYSTEM.to_owned(),
-            Some(wanted) => classic()
-                .appearances
-                .iter()
-                .find(|one| one.id == wanted)
-                .map_or_else(|| id.to_owned(), |one| one.name.clone()),
+        match (Pick::parse(&self.theme), self.appearance.as_deref()) {
+            (Some(Pick::BuiltIn(id)), None) if id != PURLIS && id != CLASSIC => id.to_owned(),
+            _ => self.theme.clone(),
         }
     }
 }
@@ -399,7 +390,7 @@ pub fn resolve_levels(inputs: &LevelInputs<'_>, offered: impl FnOnce() -> Arc<[O
                 complaints: one.theme.complaints.clone(),
                 ..Drawn::of(one.theme.theme.first_for(inputs.contrast))
             },
-            None => Drawn::of(default_theme()),
+            None => Drawn::of(default_for(inputs.contrast)),
         };
         Drawn {
             level: Some(Level::Purlis),
@@ -438,40 +429,23 @@ fn drawn_for(
     };
     let valued = |theme: &Theme, before: Vec<Complaint>| valued_in(theme, appearance, before);
     Ok(match Pick::parse(&choice.theme) {
-        // The old id names a theme as any id does (#2615): the person's own theme, else Purlis
-        // Classic, following the system unless the choice names an appearance. A theme of theirs
-        // with one appearance stays in it, and Settings › Theme says so.
+        // The old id names a theme as any id does (#2615): the person's own theme, else the
+        // default, Purlis (#3034), following the system unless the choice names an appearance. A
+        // theme of theirs with one appearance stays in it, and Settings › Theme says so.
         Some(Pick::System) => Drawn {
             theirs: inputs.theirs.is_some(),
             ..valued_in(
-                inputs.theirs.unwrap_or_else(|| classic()),
+                inputs.theirs.unwrap_or_else(|| purlis()),
                 appearance.or(Some(SYSTEM)),
                 Vec::new(),
             )
         },
-        // Purlis Classic by an id one of its appearances has had draws that appearance; Purlis,
-        // and either by an appearance chosen, are drawn as any theme is.
-        Some(Pick::BuiltIn(id)) => match appearance {
-            // An appearance of Purlis Classic by the id a pick names it by.
-            None if id != PURLIS => {
-                let (theme, left_out) = classic().with(&choice.options);
-                let drawn = match built_in(id) {
-                    Some(one) => Drawn::of(
-                        theme
-                            .appearances
-                            .iter()
-                            .find(|valued| valued.id == one.id)
-                            .unwrap_or(one),
-                    ),
-                    None => Drawn::of(default_theme()),
-                };
-                Drawn {
-                    complaints: left_out,
-                    ..drawn
-                }
-            }
-            _ => valued(shipped(id).unwrap_or_else(classic), Vec::new()),
-        },
+        // A built-in by its id is drawn as any theme is, in the appearance its id implies when
+        // the choice names none (`purlis-light`, #3034).
+        Some(Pick::BuiltIn(id)) => {
+            let (theme, implied) = shipped_pick(id).unwrap_or((purlis(), None));
+            valued_in(theme, appearance.or(implied), Vec::new())
+        }
         Some(Pick::Extension { id, name }) => {
             let offered = offered();
             let found = offered
@@ -479,13 +453,14 @@ fn drawn_for(
                 .filter(|one| inputs.on.has(&one.extension))
                 .find(|one| one.extension == id && one.name == name);
             match found {
-                None => cannot(format!(
-                    "{id}/{name} is not a theme in force here, so Purlis is drawn"
-                )),
+                None => cannot(
+                    format!("{id}/{name} is not a theme in force here, so Purlis is drawn"),
+                    inputs.contrast,
+                ),
                 Some(one) if one.theme.refused => Drawn {
                     complaints: one.theme.complaints.clone(),
                     refused: true,
-                    ..Drawn::of(default_theme())
+                    ..Drawn::of(default_for(inputs.contrast))
                 },
                 Some(one) => valued(&one.theme.theme, one.theme.complaints.clone()),
             }
@@ -510,7 +485,7 @@ fn drawn_for(
                 Found::Read(resolved) if resolved.refused => Drawn {
                     complaints: resolved.complaints,
                     refused: true,
-                    ..Drawn::of(default_theme())
+                    ..Drawn::of(default_for(inputs.contrast))
                 },
                 Found::Read(resolved) => valued(&resolved.theme, resolved.complaints),
             }
@@ -519,11 +494,11 @@ fn drawn_for(
     })
 }
 
-/// Purlis, and why.
-fn cannot(why: String) -> Drawn {
+/// The default, Purlis, for the contrast asked, and why.
+fn cannot(why: String, contrast: Contrast) -> Drawn {
     Drawn {
         complaints: vec![Complaint::said(why)],
-        ..Drawn::of(default_theme())
+        ..Drawn::of(default_for(contrast))
     }
 }
 

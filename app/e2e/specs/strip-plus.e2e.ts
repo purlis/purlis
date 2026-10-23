@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import { anEmptyRecord, copyFixturePlane } from "../harness.js";
 import { endEveryChat, openThroughTheTrustQuestion, pressAndStart } from "../opening.js";
+import { tooltipOf } from "../tooltips.js";
 
 /**
  * **The `+` right after the last tab, in both strips** (DS-7, #1839; the operator's D6):
@@ -326,7 +327,6 @@ describe("the `+` right after the last tab", function () {
           rootFirst: box(held.at(0)),
           rootLast: box(held.at(-1)),
           rootName: root?.getAttribute("aria-label") ?? "",
-          rootTip: root?.getAttribute("title") ?? "",
           rootIcon: root?.querySelector("svg")?.getAttribute("class") ?? "",
           pin: box(pin),
           pinGlyph: box(pin?.querySelector("svg")),
@@ -353,7 +353,7 @@ describe("the `+` right after the last tab", function () {
 
       // The root's tab: a house, named and titled, with room on both sides of what it holds.
       expect(at.rootName).not.toBe("");
-      expect(at.rootTip).not.toBe("");
+      expect(await tooltipOf('[data-strip="Workspaces"] [role="tab"].plane-root')).not.toBeNull();
       expect(at.rootIcon).toContain("lucide-house");
       const root = at.root as Box;
       const before = (at.rootFirst as Box).left - root.left;

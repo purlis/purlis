@@ -45,11 +45,13 @@ fn both(name: &str) -> Value {
 }
 
 fn classic_dark() -> &'static ResolvedTheme {
-    built_in("purlis-dark").expect("Classic's dark appearance")
+    classic().first()
 }
 
 fn classic_light() -> &'static ResolvedTheme {
-    built_in("purlis-light").expect("Classic's light appearance")
+    classic()
+        .of(Appearance::Light)
+        .expect("Classic's light appearance")
 }
 
 /// The tokens #2327 added after the digests below were taken: what Classic gives each is held
@@ -107,10 +109,10 @@ fn purlis_classic_is_one_theme_with_a_dark_and_a_light_appearance() {
         [("dark", Appearance::Dark), ("light", Appearance::Light)]
     );
     assert!(classic.appearances.iter().all(|one| !one.high_contrast));
-    // The appearances are what the old ids draw, and what the window comes up in.
+    // The appearances are what the old ids draw; the window comes up in Purlis (#3034).
     assert_eq!(&classic.appearances[0], classic_dark());
     assert_eq!(&classic.appearances[1], classic_light());
-    assert_eq!(default_theme(), classic_dark());
+    assert_eq!(default_theme(), purlis().first());
 }
 
 #[test]
@@ -210,7 +212,8 @@ fn purlis_classic_by_its_own_id_is_its_first_appearance_for_a_pick_and_a_lookup(
 }
 
 #[test]
-fn the_old_ids_draw_purlis_classic_s_appearances() {
+fn the_old_ids_draw_purlis_s_dark_and_light() {
+    // They were written as the default's dark or light, so they draw Purlis's (#3034).
     for (old, appearance) in [
         ("purlis-dark", Appearance::Dark),
         ("charter-dark", Appearance::Dark),
@@ -219,11 +222,7 @@ fn the_old_ids_draw_purlis_classic_s_appearances() {
     ] {
         let drawn = built_in(old).expect(old);
         assert_eq!(drawn.appearance, appearance, "{old}");
-        assert_eq!(
-            drawn.values,
-            classic().of(appearance).unwrap().values,
-            "{old}"
-        );
+        assert_eq!(drawn, purlis().of(appearance).unwrap(), "{old}");
     }
 }
 
@@ -264,8 +263,8 @@ fn a_name_that_is_not_in_the_palette_refuses_the_theme_and_says_so() {
           name in this theme's palette"
         ]
     );
-    // A refused theme draws Purlis, whole.
-    assert_eq!(&loaded.theme, classic());
+    // A refused theme draws the default, Purlis, whole.
+    assert_eq!(&loaded.theme, purlis());
 }
 
 #[test]
@@ -660,7 +659,7 @@ fn a_theme_folder_that_is_a_link_is_not_read() {
     std::os::unix::fs::symlink(&elsewhere, themes.join("far")).unwrap();
     let loaded = Library::new().load_folder(&themes, "far");
     assert!(loaded.refused);
-    assert_eq!(&loaded.theme, classic());
+    assert_eq!(&loaded.theme, purlis());
 }
 
 #[test]
@@ -688,7 +687,7 @@ fn a_theme_json_that_is_a_link_is_not_read() {
     std::os::unix::fs::symlink(&elsewhere, folder.join("theme.json")).unwrap();
     let loaded = Library::new().load_folder(dir.path(), "linked");
     assert!(loaded.refused);
-    assert_eq!(&loaded.theme, classic());
+    assert_eq!(&loaded.theme, purlis());
 }
 
 #[test]
@@ -861,9 +860,9 @@ fn a_system_pick_with_a_one_appearance_theme_of_the_person_s_stays_in_it_and_say
 }
 
 #[test]
-fn a_system_pick_draws_what_it_drew_before_with_two_appearances_or_none_of_the_person_s() {
-    // Every other setup with the old id draws unchanged (#2615): the person's own theme of two
-    // appearances follows the system with it, and with none Purlis Classic follows.
+fn a_system_pick_follows_with_two_appearances_of_the_person_s_or_with_purlis() {
+    // The person's own theme of two appearances follows the system with it (#2615), and with
+    // none the default, Purlis, follows (#3034).
     let mine = load(&both("Mine")).theme;
     for system in [Appearance::Light, Appearance::Dark] {
         let drawn = follow(&mine, system);
@@ -885,16 +884,17 @@ fn a_system_pick_draws_what_it_drew_before_with_two_appearances_or_none_of_the_p
             },
             || unreachable!("no survey for following the system"),
         );
-        assert_eq!(none, super::follow(classic(), system, Contrast::Standard));
+        assert_eq!(none, super::follow(purlis(), system, Contrast::Standard));
         assert!(none.follows_system && !none.theirs);
     }
 }
 
 #[test]
-fn following_the_system_with_no_theme_of_the_person_s_follows_with_purlis_classic() {
+fn following_the_system_with_no_theme_of_the_person_s_follows_with_purlis() {
+    let purlis = purlis();
     for (system, drawn) in [
-        (Appearance::Light, classic_light()),
-        (Appearance::Dark, classic_dark()),
+        (Appearance::Light, purlis.of(Appearance::Light).unwrap()),
+        (Appearance::Dark, purlis.first()),
     ] {
         let it = resolve(
             &Inputs {
