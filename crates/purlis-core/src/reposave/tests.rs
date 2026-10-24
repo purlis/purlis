@@ -1340,12 +1340,97 @@ fn a_repo_save_refuses_a_file_with_a_second_name_as_the_plane_save_does() {
         );
         assert_eq!(f.head(), before, "{said}");
         assert_eq!(f.journal()[0]["outcome"], "blocked");
+        assert!(said.contains("Nothing was staged or committed."), "{said}");
         assert_eq!(
             run(&f.clone, &["diff", "--cached", "--name-only"]),
-            "a.md\n",
-            "only what is held back is unstaged"
+            "",
+            "refused before anything is staged"
         );
         let log = crate::testgit::run(&f.clone, &["log", "-p", "--all", "--text"]).out;
         assert!(!log.contains("canary-7c40e2"), "a commit carries the file");
+        let sha = run(&f.clone, &["hash-object", outside.to_str().unwrap()]);
+        assert!(
+            !crate::testgit::run(&f.clone, &["cat-file", "-e", sha.trim()]).ok(),
+            "the clone's object store holds the file"
+        );
     }
+}
+
+/// What a test does to a clone at one point inside a save.
+type Then = Box<dyn Fn(&Path)>;
+
+thread_local! {
+    /// What a test does when a repo save reaches its secret check.
+    static AT_THE_SECRET_CHECK: std::cell::RefCell<Option<Then>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Runs what the test set in [`AT_THE_SECRET_CHECK`], if it set anything.
+pub(super) fn at_the_secret_check(clone: &Path) {
+    AT_THE_SECRET_CHECK.with(|then| {
+        if let Some(then) = then.borrow().as_ref() {
+            then(clone);
+        }
+    });
+}
+
+/// `run`, with `then` done when the save reaches its secret check.
+fn at_the_check<T>(then: impl Fn(&Path) + 'static, run: impl FnOnce() -> T) -> T {
+    struct Clear;
+    impl Drop for Clear {
+        fn drop(&mut self) {
+            AT_THE_SECRET_CHECK.with(|then| then.borrow_mut().take());
+        }
+    }
+    AT_THE_SECRET_CHECK.with(|held| *held.borrow_mut() = Some(Box::new(then)));
+    let _clear = Clear;
+    run()
+}
+
+#[cfg(unix)]
+#[test]
+fn a_held_back_row_is_out_of_the_clones_object_store_before_the_secret_check_reads_a_blob() {
+    let f = Fixture::new("[repos.widget]\nmode = \"commit\"\n");
+    let before = f.head();
+    let outside = f.plane.parent().unwrap().join("outside.md");
+    std::fs::write(&outside, b"canary-91b4f0 from outside\n").unwrap();
+    std::fs::hard_link(&outside, f.clone.join("notes.md")).unwrap();
+    // Staged before the save and unchanged since, so nothing the save's own add would stage
+    // names it: the save finds its second name once staged, and holds the row back.
+    run(&f.clone, &["add", "notes.md"]);
+    let sha = run(&f.clone, &["hash-object", outside.to_str().unwrap()])
+        .trim()
+        .to_owned();
+    assert!(crate::testgit::run(&f.clone, &["cat-file", "-e", &sha]).ok());
+
+    let seen = std::rc::Rc::new(std::cell::Cell::new(false));
+    let (code, said) = at_the_check(
+        {
+            let seen = seen.clone();
+            move |clone: &Path| {
+                seen.set(true);
+                assert!(
+                    !crate::testgit::run(clone, &["cat-file", "-e", &sha]).ok(),
+                    "the held-back blob is still in the object store at the secret check"
+                );
+            }
+        },
+        || f.save(),
+    );
+
+    assert!(
+        seen.get(),
+        "the save never reached its secret check: {said}"
+    );
+    assert_eq!(code, 1, "{said}");
+    assert!(
+        said.contains("notes.md has a second name (a hard link), so purlis does not save it"),
+        "{said}"
+    );
+    assert_eq!(f.head(), before, "{said}");
+    assert_eq!(
+        run(&f.clone, &["diff", "--cached", "--name-only"]),
+        "",
+        "{said}"
+    );
 }
