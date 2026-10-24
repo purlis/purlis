@@ -5583,6 +5583,9 @@ thread_local! {
     /// What a test does when the plane's save reaches its secret guard.
     static AT_THE_SECRET_GUARD: std::cell::RefCell<Option<Then>> =
         const { std::cell::RefCell::new(None) };
+    /// What a test does once the plane's save has staged, before it asks what it staged.
+    static AFTER_THE_ADD: std::cell::RefCell<Option<Then>> =
+        const { std::cell::RefCell::new(None) };
     /// What a test does once Continue has checked the settled files, before it stages them.
     static BEFORE_THE_ADD: std::cell::RefCell<Option<Then>> =
         const { std::cell::RefCell::new(None) };
@@ -5601,6 +5604,10 @@ fn reached(point: &'static Point, root: &Path) {
 
 pub(super) fn at_the_secret_guard(root: &Path) {
     reached(&AT_THE_SECRET_GUARD, root);
+}
+
+pub(super) fn after_the_add(root: &Path) {
+    reached(&AFTER_THE_ADD, root);
 }
 
 pub(super) fn before_the_add(root: &Path) {
@@ -5666,6 +5673,53 @@ fn a_held_back_row_is_out_of_the_object_store_before_the_secret_guard_reads_a_bl
     );
     assert_eq!(fixture.head(), before);
     assert!(!fixture.staged().contains("notes.md"), "{said}");
+}
+
+#[test]
+fn a_row_gone_after_the_add_is_out_of_the_object_store_before_the_secret_guard_reads_a_blob() {
+    let fixture = Fixture::plane();
+    let gone = "personas/steward/memory/gone.md";
+    write(
+        &fixture.root,
+        gone,
+        b"staged, then removed: canary-3e7a51\n",
+    );
+    let before = fixture.head();
+    let sha = run(&fixture.root, &["hash-object", gone]).trim().to_owned();
+
+    let seen = std::rc::Rc::new(std::cell::Cell::new(false));
+    let (code, said) = doing_at(
+        &AFTER_THE_ADD,
+        move |root: &Path| std::fs::remove_file(root.join(gone)).unwrap(),
+        || {
+            doing_at(
+                &AT_THE_SECRET_GUARD,
+                {
+                    let seen = seen.clone();
+                    move |root: &Path| {
+                        seen.set(true);
+                        assert!(
+                            !crate::testgit::run(root, &["cat-file", "-e", &sha]).ok(),
+                            "the gone row's blob is still in the object store at the secret guard"
+                        );
+                    }
+                },
+                || saved_as(&fixture.root, Trigger::Cli),
+            )
+        },
+    );
+
+    assert!(
+        seen.get(),
+        "the save never reached its secret guard: {said}"
+    );
+    assert_eq!(code, 1, "{said}");
+    assert!(
+        said.contains(&format!("{gone} is no longer on disk as it was staged")),
+        "{said}"
+    );
+    assert_eq!(fixture.head(), before);
+    assert!(!fixture.staged().contains("gone.md"), "{said}");
 }
 
 /// A plane stopped on a conflict in `a.md`, settled on disk with no markers left.

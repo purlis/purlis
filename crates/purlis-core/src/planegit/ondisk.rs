@@ -256,10 +256,11 @@ pub(crate) fn refused(root: &Path, found: &Result<Vec<Held>, String>) -> Option<
 
 /// **`found` split into the rows a save takes out before its secret guard reads any blob, and
 /// the rest.** A row with a second name, or one changed since it was staged, holds bytes nobody
-/// checked as this file's, and its blob leaves the object store first. A row that is gone, or
-/// that git is told not to look at, holds what was staged under its own name: the guard reads
-/// it and names what it finds, and the row is taken out after it ([`refused`] of the second).
-/// Where git could not say, that is the first, and the second is empty.
+/// checked as this file's, and a row that is gone has no file left to stand for: each is named
+/// from the row alone, and its blob leaves the object store first. A row git is told not to
+/// look at holds what was staged under its own name: the guard reads it and names what it
+/// finds, and the row is taken out after it ([`refused`] of the second). Where git could not
+/// say, that is the first, and the second is empty.
 pub(crate) fn split_for_guard(
     found: Result<Vec<Held>, String>,
 ) -> (Result<Vec<Held>, String>, Vec<Held>) {
@@ -267,7 +268,7 @@ pub(crate) fn split_for_guard(
         Ok(held) => {
             let (first, after): (Vec<Held>, Vec<Held>) = held
                 .into_iter()
-                .partition(|one| matches!(one.why, Why::SecondName | Why::Changed));
+                .partition(|one| !matches!(one.why, Why::NotLooked));
             (Ok(first), after)
         }
         Err(said) => (Err(said), Vec::new()),
@@ -301,7 +302,10 @@ pub(crate) fn refused_into(
         Ok(held) => held,
         Err(said) => {
             let then = match back {
+                // Nothing was taken out of the index, so no blob is left unstaged by this.
                 PutBack::AsHead => "Nothing was committed.".to_owned(),
+                // Every file staged is put back in conflict, and the blob each was staged as
+                // taken out of the object store where nothing else reaches it, as below.
                 PutBack::Conflicted(staged) => {
                     let all: Vec<Held> = staged
                         .iter()
@@ -310,7 +314,7 @@ pub(crate) fn refused_into(
                             why: Why::Changed,
                         })
                         .collect();
-                    put_back(root, &all, back).1
+                    put_back_and_forget(root, &all, back)
                 }
             };
             return Some(Refusal {
@@ -321,16 +325,23 @@ pub(crate) fn refused_into(
             });
         }
     };
+    Some(Refusal {
+        named: named(held),
+        then: put_back_and_forget(root, held, back),
+    })
+}
+
+/// [`put_back`], and where every one of `held` went back, the blob each was staged as taken out
+/// of the object store where nothing else reaches it ([`forget`]): what became of them, in a
+/// sentence.
+fn put_back_and_forget(root: &Path, held: &[Held], back: PutBack<'_>) -> String {
     // Asked before the index forgets them: once unstaged, nothing says which blob each was.
     let blobs = staged_blobs(root, held);
     let (back_all, then) = put_back(root, held, back);
     if back_all {
         forget(root, &blobs);
     }
-    Some(Refusal {
-        named: named(held),
-        then,
-    })
+    then
 }
 
 /// Puts each of `held` back in the index of the repository at `root` as `back` says: whether

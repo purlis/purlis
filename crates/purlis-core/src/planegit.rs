@@ -3323,11 +3323,13 @@ fn commit_push(
     attempt.files = staged.len();
     show_what_is_staged(root, &staged, say);
     // Each staged file is the one name it has on disk, as the readers ask of a file: asked now.
-    // A row with a second name or changed since it was staged is taken out of the index, and
-    // its blob out of the object store where nothing else reaches it, before the secret guard
-    // below reads any blob. A row that is gone or that git does not look at is read by the
-    // guard, which names what it finds, and taken out after it. What the refusal says comes
+    // A row with a second name, changed since it was staged, or gone is taken out of the index,
+    // and its blob out of the object store where nothing else reaches it, before the secret
+    // guard below reads any blob. A row git does not look at is read by the guard, which names
+    // what it finds, and taken out after it. What the refusal says comes
     // after the guard's own findings, so a save the guard refuses names both ([`ondisk`]).
+    #[cfg(test)]
+    tests::after_the_add(root);
     let (first, after) = ondisk::split_for_guard(ondisk::not_as_staged(root));
     let held_back: std::collections::HashSet<String> = first
         .as_ref()

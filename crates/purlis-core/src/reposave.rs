@@ -352,10 +352,10 @@ fn commit_push(
                     .unwrap_or_default();
             attempt.files = staged.len();
             // Each staged file is the one name it has on disk, as the plane's save asks: a row
-            // with a second name or changed since it was staged is taken out of the index, and
-            // its blob out of the clone's object store where nothing else reaches it, before
-            // the secret check reads any blob. A row that is gone or that git does not look at
-            // is read by that check and taken out after it. What the refusal says comes after
+            // with a second name, changed since it was staged, or gone is taken out of the
+            // index, and its blob out of the clone's object store where nothing else reaches
+            // it, before the secret check reads any blob. A row git does not look at is read by
+            // that check and taken out after it. What the refusal says comes after
             // the check's own findings, as the plane's save says it (`planegit::ondisk`).
             let (first, after) =
                 planegit::ondisk::split_for_guard(planegit::ondisk::not_as_staged(clone));
