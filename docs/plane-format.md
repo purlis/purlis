@@ -2926,7 +2926,11 @@ beside a purlis one is removed when the record is published (V93i).
     (ADR 0064) and the `skills` pair (ADR 0099, #2767) are purlis's: a workspace's work links,
     session records and skills follow it, LIVE or LOCAL, and its `skills.local/` stays ignored
     either way. A block written before them is brought up to date by `reinit`, as any older
-    block is.
+    block is. `purlis doctor`'s `live skills` row names a LIVE workspace whose block lacks the
+    `skills` pair, and each level's `skills.local/` line the file lacks (by the one level
+    rule, a persona's included); `purlis doctor --fix live-skills` adds those lines and
+    nothing else: the pair after the workspace's last line in the block, the ignore lines at
+    the end of the file (#2875).
   - Lines are joined with `\n` and the block has no trailing newline of its own; the rewrite
     is `re.sub(BEGIN .*? END, block, flags=DOTALL)` (`charter/workspace.py:1412`). A first
     write is inserted directly after the literal line `!/workspaces/.gitkeep\n`

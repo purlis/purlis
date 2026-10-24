@@ -346,3 +346,57 @@ pub(super) fn behind_the_layout(d: &Doctor) -> Option<Row> {
         .fixed_by(super::fix::FixId::WorkspaceReinit),
     )
 }
+
+/// `live skills` (SK-28, #2875): an older LIVE block without the skills lines. A `.gitignore`
+/// written before a LIVE workspace shared its `skills/` (SK-4) keeps that workspace's skills
+/// on this machine, and one written before a level's local skills were ignored lacks that
+/// level's line, so its local skills are not read. One reading with the fix
+/// ([`crate::wscmd::skills_lines_missing`]), so the row names exactly the lines the fix adds.
+///
+/// **No row unless a LIVE workspace lacks one**, so a project with no LIVE workspace, or one
+/// at the current block, prints what it printed before. None where the `.gitignore` is a link,
+/// which git does not read, so its block shares nothing either way.
+pub(super) fn live_skills(d: &Doctor) -> Option<Row> {
+    const NAME: &str = "live skills";
+    if !d.has_plane || crate::scaffold::gitignore_is_a_link(&d.root) {
+        return None;
+    }
+    let missing = match crate::wscmd::skills_lines_missing(&d.root) {
+        Ok(missing) => missing,
+        Err(e) => {
+            return Some(Row::not_checked(
+                NAME,
+                super::fsx::py_os_error(&e, &d.root.join(".gitignore")),
+            ));
+        }
+    };
+    if missing.is_empty() {
+        return None;
+    }
+    let mut found: Vec<String> = missing
+        .unshared
+        .iter()
+        .map(|(name, lines)| {
+            format!(
+                "the LIVE block does not share {name}'s skills ({})",
+                lines.join(", ")
+            )
+        })
+        .collect();
+    if !missing.unignored.is_empty() {
+        found.push(format!(
+            "local skills are not ignored ({})",
+            missing.unignored.join(", ")
+        ));
+    }
+    Some(
+        Row::warn(
+            NAME,
+            format!(".gitignore is older than its LIVE block: {}", found.join("; ")),
+            "A LIVE workspace's skills reach the team only through its LIVE block, and a \
+             level's local skills are read only while git ignores them. `purlis doctor --fix \
+             live-skills` adds these lines and nothing else.",
+        )
+        .fixed_by(super::fix::FixId::LiveSkills),
+    )
+}

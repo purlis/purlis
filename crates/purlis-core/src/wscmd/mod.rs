@@ -49,7 +49,7 @@
 //! - **A clone charter could not read is work at risk**, which is Python's rule (charter#917)
 //!   and is restated here because it is the one that gates a `remove`.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -112,19 +112,7 @@ pub fn live_workspaces(root: &Path) -> BTreeSet<String> {
 
 /// The workspaces the managed block in `text` marks LIVE.
 fn live_in(text: &str) -> BTreeSet<String> {
-    let mut out = BTreeSet::new();
-    let mut inside = false;
-    for line in crate::mdsection::split_lines(text) {
-        let line = crate::memstore::py_strip(line);
-        if names::LIVE_BEGIN.recognises(line) {
-            inside = true;
-        } else if names::LIVE_END.recognises(line) {
-            inside = false;
-        } else if inside && let Some(name) = live_line(line) {
-            out.insert(name);
-        }
-    }
-    out
+    block_lines(text).into_iter().filter_map(live_line).collect()
 }
 
 /// The workspace a line inside the managed block un-ignores, or `None`.
@@ -171,12 +159,14 @@ pub fn live_block<'a>(root: &Path, names: impl IntoIterator<Item = &'a str>) -> 
             format!("!/workspaces/{n}/work/**"),
             format!("!/workspaces/{n}/sessions"),
             format!("!/workspaces/{n}/sessions/**"),
-            format!("!/workspaces/{n}/skills"),
-            format!("!/workspaces/{n}/skills/**"),
+        ]
+        .into_iter()
+        .chain(skills_pair(n))
+        .chain([
             format!("!/workspaces/{n}/changes"),
             format!("!/workspaces/{n}/changes/**"),
             format!("/workspaces/{n}/changes/log/"),
-        ] {
+        ]) {
             lines.push(line);
         }
     }
@@ -212,6 +202,168 @@ pub fn refresh_live_block(root: &Path) -> io::Result<()> {
         ))
     })
     .map(|_| ())
+}
+
+/// The two lines that share LIVE workspace `name`'s skills (SK-4, #2860): its skills folder,
+/// spelled by the one level rule ([`purlis_skills::level_rel`]), and what is in it. None for a
+/// name that is no workspace folder's.
+fn skills_pair(name: &str) -> Vec<String> {
+    purlis_skills::level_rel(&purlis_skills::Whose::Workspace(name.to_owned()), false)
+        .map(|rel| vec![format!("!/{rel}"), format!("!/{rel}/**")])
+        .unwrap_or_default()
+}
+
+/// **The skills lines an older LIVE block lacks** (SK-28, #2875): a `.gitignore` written
+/// before a LIVE workspace shared its `skills/` (SK-4) has a block without each workspace's
+/// [`skills_pair`], and one written before a level's local skills were ignored lacks that
+/// level's line ([`crate::scaffold::skills_local_ignores`], by the one level rule, a persona's
+/// included). What `purlis doctor` names and its `live-skills` fix adds.
+///
+/// Empty where no workspace is LIVE: nothing is shared then, and the block is not this
+/// finding's. The block's other lines (`sessions`, `work`) are `workspace-reinit`'s.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SkillsLines {
+    /// Each LIVE workspace the block does not share the skills of, with the lines it lacks.
+    pub unshared: BTreeMap<String, Vec<String>>,
+    /// The local skills ignore lines the file lacks.
+    pub unignored: Vec<String>,
+}
+
+impl SkillsLines {
+    /// Whether nothing is missing.
+    pub fn is_empty(&self) -> bool {
+        self.unshared.is_empty() && self.unignored.is_empty()
+    }
+
+    /// Every missing line: each workspace's pair, by its name, then the ignore lines.
+    pub fn lines(&self) -> Vec<&str> {
+        self.unshared
+            .values()
+            .flatten()
+            .chain(&self.unignored)
+            .map(String::as_str)
+            .collect()
+    }
+}
+
+/// The header the `live-skills` fix appends the local skills ignore lines under.
+const SKILLS_LINES_HEADER: &str = "added by `purlis doctor --fix live-skills`";
+
+/// [`SkillsLines`] of the plane at `root`, as its `.gitignore` stands; empty when there is
+/// none.
+pub fn skills_lines_missing(root: &Path) -> io::Result<SkillsLines> {
+    let path = root.join(".gitignore");
+    match std::fs::read(&path) {
+        Ok(bytes) => String::from_utf8(bytes)
+            .map(|text| skills_lines_in(&text))
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "it is not UTF-8 text")),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(SkillsLines::default()),
+        Err(e) => Err(e),
+    }
+}
+
+/// [`SkillsLines`] of the `.gitignore` text `text`.
+fn skills_lines_in(text: &str) -> SkillsLines {
+    let live = live_in(text);
+    if live.is_empty() {
+        return SkillsLines::default();
+    }
+    let in_block = block_lines(text);
+    let unshared = live
+        .into_iter()
+        .filter_map(|name| {
+            let lacks: Vec<String> = skills_pair(&name)
+                .into_iter()
+                .filter(|line| !in_block.contains(&line.as_str()))
+                .collect();
+            (!lacks.is_empty()).then_some((name, lacks))
+        })
+        .collect();
+    let present = crate::scaffold::text::stripped_lines(text);
+    let unignored = crate::scaffold::skills_local_ignores()
+        .into_iter()
+        .filter(|line| !present.contains(&line.as_str()))
+        .collect();
+    SkillsLines {
+        unshared,
+        unignored,
+    }
+}
+
+/// Every line inside a managed block of `text`, stripped as [`live_in`] reads them.
+fn block_lines(text: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut inside = false;
+    for line in crate::mdsection::split_lines(text) {
+        let line = crate::memstore::py_strip(line);
+        if names::LIVE_BEGIN.recognises(line) {
+            inside = true;
+        } else if names::LIVE_END.recognises(line) {
+            inside = false;
+        } else if inside {
+            out.push(line);
+        }
+    }
+    out
+}
+
+/// **Add the skills lines an older LIVE block lacks, and nothing else** (SK-28, #2875): each
+/// LIVE workspace's [`skills_pair`] goes inside the block, straight after that workspace's last
+/// line there, and the local skills ignore lines are appended under a header. Every byte that
+/// was there is kept; the block's other missing lines are left to `workspace-reinit`. Read and
+/// written under one lock, as [`set_live`] is. What it added, empty when nothing was missing.
+pub fn add_skills_lines(root: &Path) -> io::Result<SkillsLines> {
+    let mut added = SkillsLines::default();
+    rewrite_gitignore(root, |text| {
+        added = skills_lines_in(text);
+        if added.is_empty() {
+            return None;
+        }
+        let shared = with_pairs(text, &added.unshared);
+        let ignores: Vec<&str> = added.unignored.iter().map(String::as_str).collect();
+        Some(crate::scaffold::with_appended(&shared, &ignores, SKILLS_LINES_HEADER).0)
+    })?;
+    Ok(added)
+}
+
+/// `text` with each workspace's `lines` inserted after its last line inside a managed block,
+/// ended as that line is.
+fn with_pairs(text: &str, lines: &BTreeMap<String, Vec<String>>) -> String {
+    let all: Vec<&str> = text.split_inclusive('\n').collect();
+    let mut last: BTreeMap<&str, usize> = BTreeMap::new();
+    let mut inside = false;
+    for (at, line) in all.iter().enumerate() {
+        let stripped = crate::memstore::py_strip(line);
+        if names::LIVE_BEGIN.recognises(stripped) {
+            inside = true;
+        } else if names::LIVE_END.recognises(stripped) {
+            inside = false;
+        } else if inside {
+            let path = stripped.trim_start_matches('!').trim_start_matches('/');
+            if let Some(name) = lines.keys().find(|name| {
+                path.strip_prefix("workspaces/")
+                    .and_then(|rest| rest.strip_prefix(name.as_str()))
+                    .is_some_and(|rest| rest.starts_with('/'))
+            }) {
+                last.insert(name, at);
+            }
+        }
+    }
+    let mut out = String::with_capacity(text.len());
+    for (at, line) in all.iter().enumerate() {
+        out.push_str(line);
+        for (name, _) in last.iter().filter(|(_, after)| **after == at) {
+            let end = if line.ends_with("\r\n") { "\r\n" } else { "\n" };
+            if !line.ends_with('\n') {
+                out.push_str(end);
+            }
+            for added in &lines[*name] {
+                out.push_str(added);
+                out.push_str(end);
+            }
+        }
+    }
+    out
 }
 
 /// The plane's `.gitignore`, read, handed to `change` (`""` when absent), and replaced with

@@ -237,7 +237,8 @@ fn a_fix_id_is_spelled_one_way_and_read_back_the_same() {
             "persona-agents",
             "workspace-reinit",
             "handoff-rule",
-            "project-skills"
+            "project-skills",
+            "live-skills"
         ]
     );
     for id in FixId::ALL {
@@ -265,7 +266,9 @@ fn every_fix_but_discover_is_applied_by_bare_fix() {
             "git-identity",
             // Offered by the `workspace layout` row while a workspace is behind it (#1289), so
             // bare --fix runs it then: it only adds and never removes your content.
-            "workspace-reinit"
+            "workspace-reinit",
+            // Offered by the `live skills` row (#2875): it only adds .gitignore lines.
+            "live-skills"
         ]
     );
     // git-identity is chosen by bare --fix too, and refused there: it takes input
@@ -836,4 +839,140 @@ fn every_fix_is_refused_on_a_project_whose_charter_toml_links_out_of_it_and_writ
         assert_eq!(outside_git(&root), before, "{id} wrote in the project");
         assert_eq!(tree(outside.path()), target, "{id} wrote through the link");
     }
+}
+
+// ---- live-skills --------------------------------------------------------------------------
+
+/// A `.gitignore` written before a LIVE workspace shared its skills (SK-4, #2860) and before a
+/// persona's local skills were ignored (#3124): the block lists `alpha` without its `skills`
+/// pair, and the baseline lacks the persona level's `skills.local/` line.
+const OLDER_IGNORE: &str = "\
+/workspaces/*/*
+!/workspaces/.gitkeep
+# >>> charter live workspaces (managed by `charter workspace live`) >>>
+!/workspaces/alpha/workspace.json
+!/workspaces/alpha/workspace.md
+!/workspaces/alpha/memory
+!/workspaces/alpha/memory/**
+!/workspaces/alpha/todos
+!/workspaces/alpha/todos/**
+!/workspaces/alpha/changes
+!/workspaces/alpha/changes/**
+/workspaces/alpha/changes/log/
+# <<< charter live workspaces <<<
+/.charter/
+/skills.local/
+/workspaces/*/skills.local/
+/skills.local.lock
+";
+
+/// Whether the doctor has a `live skills` row for `root`, and the row.
+fn live_skills(root: &Path) -> Option<Row> {
+    Doctor::at(root, root, false, true)
+        .run()
+        .into_iter()
+        .find(|r| r.name == "live skills")
+}
+
+#[test]
+fn an_older_live_block_without_the_skills_lines_is_named_and_offers_live_skills() {
+    purlis_core::unsteered!();
+    let (_d, root) = baseline("schema = 1\n");
+    std::fs::write(root.join(".gitignore"), OLDER_IGNORE).unwrap();
+
+    let found = live_skills(&root).expect("an older LIVE block is reported");
+
+    assert_eq!(found.status, Status::Warn, "{found:?}");
+    assert_eq!(found.fix, Some(FixId::LiveSkills), "{found:?}");
+    for line in [
+        "!/workspaces/alpha/skills",
+        "!/workspaces/alpha/skills/**",
+        "/personas/*/skills.local/",
+    ] {
+        assert!(found.detail.contains(line), "names {line}: {found:?}");
+    }
+    assert!(found.detail.contains("alpha"), "{found:?}");
+    // What the block lacks besides the skills lines is not this row's (workspace-reinit's).
+    assert!(!found.detail.contains("sessions"), "{found:?}");
+    assert!(
+        Doctor::at(&root, &root, false, true)
+            .fixes()
+            .contains(&FixId::LiveSkills)
+    );
+}
+
+#[test]
+fn live_skills_adds_the_skills_lines_and_nothing_else() {
+    purlis_core::unsteered!();
+    let (_d, root) = baseline("schema = 1\n");
+    std::fs::write(root.join(".gitignore"), OLDER_IGNORE).unwrap();
+    let before = tree(&root);
+
+    let said = ran(&fix::apply(&root, FixId::LiveSkills)).to_vec();
+
+    let after = std::fs::read_to_string(root.join(".gitignore")).unwrap();
+    let old: Vec<&str> = OLDER_IGNORE.lines().collect();
+    let new: Vec<&str> = after.lines().collect();
+    // Every line that was there is kept, in its order.
+    let mut kept = new.iter().filter(|l| old.contains(l));
+    for line in &old {
+        assert_eq!(kept.next(), Some(line), "{after}");
+    }
+    // And the lines added are exactly the skills lines, the pair inside the block.
+    let added: Vec<&str> = new
+        .iter()
+        .copied()
+        .filter(|l| !old.contains(l) && !l.starts_with('#') && !l.is_empty())
+        .collect();
+    assert_eq!(
+        added,
+        [
+            "!/workspaces/alpha/skills",
+            "!/workspaces/alpha/skills/**",
+            "/personas/*/skills.local/"
+        ],
+        "{after}"
+    );
+    let end = new
+        .iter()
+        .position(|l| l.starts_with("# <<<"))
+        .expect("the block still closes");
+    let pair = new
+        .iter()
+        .position(|l| *l == "!/workspaces/alpha/skills")
+        .unwrap();
+    assert!(pair < end, "the pair is inside the block: {after}");
+    assert!(
+        said.iter().any(|l| l.contains("!/workspaces/alpha/skills")),
+        "it says what it added: {said:?}"
+    );
+    // Nothing but .gitignore changed.
+    let mut rest = tree(&root);
+    rest.remove(Path::new(".gitignore"));
+    let mut was = before;
+    was.remove(Path::new(".gitignore"));
+    assert_eq!(rest, was);
+
+    assert_eq!(live_skills(&root), None, "the finding is gone");
+    let again = ran(&fix::apply(&root, FixId::LiveSkills)).to_vec();
+    assert!(again.iter().any(|l| l.contains("nothing to do")), "{again:?}");
+    assert_eq!(std::fs::read_to_string(root.join(".gitignore")).unwrap(), after);
+}
+
+#[test]
+fn a_current_live_block_and_a_project_with_no_live_workspace_have_no_live_skills_row() {
+    purlis_core::unsteered!();
+    let (_d, root) = baseline("schema = 1\n");
+    std::fs::write(
+        root.join(".gitignore"),
+        purlis_core::scaffold::GITIGNORE_BASELINE,
+    )
+    .unwrap();
+    purlis_core::wscmd::write_live_block(&root, ["alpha"]).unwrap();
+    assert_eq!(live_skills(&root), None);
+
+    // No workspace is LIVE: nothing is shared, so an older baseline is not this row's.
+    let (_e, local) = baseline("schema = 1\n");
+    std::fs::write(local.join(".gitignore"), "/workspaces/*/*\n!/workspaces/.gitkeep\n").unwrap();
+    assert_eq!(live_skills(&local), None);
 }

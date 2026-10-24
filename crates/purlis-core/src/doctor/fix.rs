@@ -154,11 +154,19 @@ pub enum FixId {
     /// preview is off on this machine, on a project with uncommitted changes or outside git, and
     /// where the move would leave any chat without one of its skills ([`project_skills`]).
     ProjectSkills,
+    /// **`live-skills`** (SK-28, #2875): adds to the project's `.gitignore` the skills lines an
+    /// older LIVE block lacks, and nothing else. Inside the block, after each LIVE workspace's
+    /// last line, the pair that shares its `skills/` (SK-4); at the end, under a header, each
+    /// level's `skills.local/` line, a persona's included, by the one level rule. Every line
+    /// already there is kept where it is; the block's other lines are `workspace-reinit`'s. It
+    /// commits nothing. Offered by the `live skills` row. It refuses, writing nothing, where
+    /// `.gitignore` is a symbolic link, which git does not read ([`crate::wscmd::add_skills_lines`]).
+    LiveSkills,
 }
 
 impl FixId {
     /// Every fix, in the order `charter doctor --fix` applies them.
-    pub const ALL: [FixId; 12] = [
+    pub const ALL: [FixId; 13] = [
         FixId::RenameLocal,
         FixId::PluginInstall,
         FixId::Reinit,
@@ -171,6 +179,7 @@ impl FixId {
         FixId::WorkspaceReinit,
         FixId::HandoffRule,
         FixId::ProjectSkills,
+        FixId::LiveSkills,
     ];
 
     /// The id, as `charter doctor --fix <id>`, `--json` and the window spell it.
@@ -188,6 +197,7 @@ impl FixId {
             Self::WorkspaceReinit => "workspace-reinit",
             Self::HandoffRule => "handoff-rule",
             Self::ProjectSkills => "project-skills",
+            Self::LiveSkills => "live-skills",
         }
     }
 
@@ -318,6 +328,7 @@ fn applied(root: &Path, id: FixId, machine: Option<&crate::plugin_install::Machi
         FixId::WorkspaceReinit => workspace_reinit(root),
         FixId::HandoffRule => handoff_rule(root),
         FixId::ProjectSkills => project_skills::apply(root),
+        FixId::LiveSkills => live_skills(root),
         FixId::PluginInstall | FixId::RenameLocal => unreachable!("answered above"),
     }
 }
@@ -506,6 +517,57 @@ fn discover(root: &Path, caller: &crate::forge::Caller) -> Fixed {
     if code != 0 {
         return Fixed::Refused(failed.join(" "));
     }
+    Fixed::Ran {
+        said,
+        complete: true,
+    }
+}
+
+/// `live-skills`: the skills lines an older LIVE block lacks, added and said line by line.
+fn live_skills(root: &Path) -> Fixed {
+    if crate::scaffold::gitignore_is_a_link(root) {
+        return Fixed::Refused(
+            "this project's .gitignore is a symbolic link, which git does not read, so a line \
+             added to it would change nothing; nothing was written. Replace the link with a \
+             real .gitignore, then run the fix again."
+                .to_owned(),
+        );
+    }
+    let added = match crate::wscmd::add_skills_lines(root) {
+        Ok(added) => added,
+        Err(e) => {
+            return Fixed::Refused(format!(
+                "{}: {e}; nothing was written",
+                super::fsx::path_field(&root.join(".gitignore"))
+            ));
+        }
+    };
+    if added.is_empty() {
+        return Fixed::Ran {
+            said: vec![
+                "✓ .gitignore has every skills line its LIVE block needs — nothing to do."
+                    .to_owned(),
+            ],
+            complete: true,
+        };
+    }
+    let mut said: Vec<String> = added
+        .unshared
+        .iter()
+        .map(|(name, lines)| {
+            format!(
+                "✓ .gitignore: the LIVE block shares {name}'s skills now: added {}",
+                lines.join(", ")
+            )
+        })
+        .collect();
+    if !added.unignored.is_empty() {
+        said.push(format!(
+            "✓ .gitignore: local skills stay on this machine: added {}",
+            added.unignored.join(", ")
+        ));
+    }
+    said.push("• Nothing was committed.".to_owned());
     Fixed::Ran {
         said,
         complete: true,

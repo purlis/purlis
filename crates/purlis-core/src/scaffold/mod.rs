@@ -1189,23 +1189,33 @@ pub(crate) fn append_gitignore(
     } else {
         String::new()
     };
-    let present = text::stripped_lines(&body);
+    let (next, missing) = with_appended(&body, lines, header);
+    if missing.is_empty() {
+        return Ok(missing);
+    }
+    replace_text(path, &next)?;
+    Ok(missing)
+}
+
+/// [`append_gitignore`]'s text, without the write: `body` with the `lines` it is missing
+/// appended under a `# header`, and the lines that were. `body` itself when none is.
+pub(crate) fn with_appended(body: &str, lines: &[&str], header: &str) -> (String, Vec<String>) {
+    let present = text::stripped_lines(body);
     let missing: Vec<String> = lines
         .iter()
         .filter(|l| !present.contains(*l))
         .map(|l| (*l).to_owned())
         .collect();
     if missing.is_empty() {
-        return Ok(missing);
+        return (body.to_owned(), missing);
     }
-    let prefix = if crate::memstore::py_strip(&body).is_empty() {
+    let prefix = if crate::memstore::py_strip(body).is_empty() {
         String::new()
     } else {
         format!("{}\n\n", body.trim_end_matches(['\n', '\r']))
     };
     let block: String = missing.iter().map(|l| format!("{l}\n")).collect();
-    replace_text(path, &format!("{prefix}# {header}\n{block}"))?;
-    Ok(missing)
+    (format!("{prefix}# {header}\n{block}"), missing)
 }
 
 /// An ask rule `init` writes by default, in each harness's own syntax (#363 D11).

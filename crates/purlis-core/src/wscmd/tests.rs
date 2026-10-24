@@ -406,3 +406,120 @@ fn two_workspaces_made_live_at_once_are_both_live() {
         BTreeSet::from(["beta".to_string(), "gamma".to_string()])
     );
 }
+
+/// A block as a charter before SK-4 wrote it for `names`: no `skills` pair.
+fn older_block(names: &[&str]) -> String {
+    let mut lines = vec![LIVE_BEGIN.to_owned()];
+    for n in names {
+        for path in ["workspace.json", "memory", "memory/**"] {
+            lines.push(format!("!/workspaces/{n}/{path}"));
+        }
+        lines.push(format!("/workspaces/{n}/changes/log/"));
+    }
+    lines.push(LIVE_END.to_owned());
+    lines.join("\n")
+}
+
+/// The local skills ignore lines a current baseline has.
+fn local_ignores() -> String {
+    crate::scaffold::skills_local_ignores().join("\n")
+}
+
+#[test]
+fn an_older_block_lacks_each_live_workspaces_skills_pair_and_a_current_one_lacks_none() {
+    let text = format!("{}\n{}\n", older_block(&["alpha", "beta"]), local_ignores());
+    let missing = skills_lines_in(&text);
+    assert_eq!(
+        missing.unshared,
+        BTreeMap::from([
+            (
+                "alpha".to_owned(),
+                vec![
+                    "!/workspaces/alpha/skills".to_owned(),
+                    "!/workspaces/alpha/skills/**".to_owned()
+                ]
+            ),
+            (
+                "beta".to_owned(),
+                vec![
+                    "!/workspaces/beta/skills".to_owned(),
+                    "!/workspaces/beta/skills/**".to_owned()
+                ]
+            ),
+        ])
+    );
+    assert_eq!(missing.unignored, Vec::<String>::new());
+
+    let current = format!(
+        "{}\n{}\n",
+        live_block(unmigrated(), ["alpha", "beta"]),
+        local_ignores()
+    );
+    assert!(skills_lines_in(&current).is_empty());
+}
+
+#[test]
+fn the_ignore_lines_are_every_levels_by_the_one_rule_a_personas_included() {
+    let text = format!("{}\n/skills.local/\n", live_block(unmigrated(), ["alpha"]));
+    let missing = skills_lines_in(&text);
+    assert!(missing.unshared.is_empty());
+    assert!(
+        missing
+            .unignored
+            .contains(&"/personas/*/skills.local/".to_owned()),
+        "{missing:?}"
+    );
+    assert!(!missing.unignored.contains(&"/skills.local/".to_owned()));
+    // A pair outside the block shares nothing, so it does not count.
+    let outside = format!(
+        "{}\n!/workspaces/alpha/skills\n!/workspaces/alpha/skills/**\n",
+        older_block(&["alpha"])
+    );
+    assert!(skills_lines_in(&outside).unshared.contains_key("alpha"));
+}
+
+#[test]
+fn with_no_live_workspace_nothing_is_missing() {
+    assert!(skills_lines_in("").is_empty());
+    assert!(skills_lines_in("/workspaces/*/*\n!/workspaces/.gitkeep\n").is_empty());
+    assert!(skills_lines_in(&format!("{}\n", older_block(&[]))).is_empty());
+}
+
+#[test]
+fn adding_the_skills_lines_puts_each_pair_after_its_workspace_and_keeps_every_byte() {
+    let dir = plane();
+    let text = format!("head\r\n{}\r\ntail", older_block(&["alpha", "beta"]).replace('\n', "\r\n"));
+    std::fs::write(dir.path().join(".gitignore"), &text).unwrap();
+
+    let added = add_skills_lines(dir.path()).unwrap();
+
+    assert_eq!(added.unshared.len(), 2, "{added:?}");
+    let after = std::fs::read_to_string(dir.path().join(".gitignore")).unwrap();
+    let block = after.split("tail").next().unwrap();
+    assert!(
+        block.contains(
+            "/workspaces/alpha/changes/log/\r\n!/workspaces/alpha/skills\r\n\
+             !/workspaces/alpha/skills/**\r\n!/workspaces/beta/workspace.json"
+        ),
+        "{after:?}"
+    );
+    assert!(
+        block.contains("/workspaces/beta/changes/log/\r\n!/workspaces/beta/skills\r\n"),
+        "{after:?}"
+    );
+    // The lines that were there, as they were and in their order.
+    let mut kept = after.as_str();
+    for line in text.split_inclusive('\n') {
+        let at = kept.find(line).unwrap_or_else(|| panic!("{line:?} kept: {after:?}"));
+        kept = &kept[at + line.len()..];
+    }
+    assert!(skills_lines_in(&after).is_empty(), "{after:?}");
+    assert_eq!(live_in(&after), live_in(&text));
+
+    // Twice is once.
+    assert!(add_skills_lines(dir.path()).unwrap().is_empty());
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join(".gitignore")).unwrap(),
+        after
+    );
+}
