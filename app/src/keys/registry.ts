@@ -89,6 +89,8 @@ export type Yield =
   | "tab"
   /** The keystroke landed in a text editor, whose keymap has it. */
   | "editor"
+  /** …and is one of the act's `editorKeeps` chords, which the editor's keymap binds. */
+  | "editor-chords"
   /** The keystroke landed in a field or an editor, and the act cannot run now. */
   | "typing"
   /** The keystroke landed in an open menu. */
@@ -143,6 +145,8 @@ export interface Shortcut {
   /** Its other chords, as the sheet spells them beside the first. */
   alsoSaid?: (mac: boolean) => readonly string[];
   yields: readonly Yield[];
+  /** The chords an editor keeps from this act (`editor-chords`): its keymap's, on each keyboard. */
+  editorKeeps?: Readonly<Record<Platform, readonly Chord[]>>;
   /** The catalogue rows whose palette and menu rows show it: an id, or a prefix ending in `:`. */
   rows?: readonly string[];
   matches?: (e: KeyboardEvent, mac: boolean) => boolean;
@@ -199,8 +203,14 @@ export const SHORTCUTS: readonly Shortcut[] = [
     said: (mac) => (mac ? "⌘K" : "Ctrl+K"),
     alsoSaid: () => ["F2"],
     // A modal's keys are its own; the palette's own second press is the palette's (`handBack`);
-    // Ctrl+K is a chat's kill-line; a chat's tab renames on F2.
-    yields: ["modal", "palette", "terminal-ctrl", "tab"],
+    // Ctrl+K is a chat's kill-line; a chat's tab renames on F2; and in a code editor the editor
+    // keeps its deleteLine (⌘⇧K, Ctrl+Shift+K) and a Mac's deleteToLineEnd (Ctrl+K), as VS Code
+    // leaves them to its editor (D-2921-25). ⌘K is the palette's there too.
+    yields: ["modal", "palette", "terminal-ctrl", "tab", "editor-chords"],
+    editorKeeps: {
+      mac: [cmd("k", { shift: true }), ctl("k")],
+      other: [ctl("k", { shift: true })],
+    },
     matches: (e) => opensIt(e),
   },
   {
@@ -995,6 +1005,11 @@ export function yieldsTo(entry: Shortcut, e: KeyboardEvent, held: Held = {}): Yi
         return e.key === "F2" && onARenamingTab(on);
       case "editor":
         return inAnEditor(on);
+      case "editor-chords":
+        return (
+          inAnEditor(on) &&
+          (entry.editorKeeps?.[mac ? "mac" : "other"] ?? []).some((chord) => isChord(e, chord))
+        );
       case "typing":
         return held.runnable === false && typedInto(on);
       case "menu":
@@ -1066,6 +1081,9 @@ function covers(rule: Yield, platform: Platform, chord: Chord): readonly Scope[]
       return ["tab"];
     case "editor":
       return ["editor"];
+    case "editor-chords":
+      // Only its own chords, which `standsBackFor` reads from the act.
+      return [];
     case "typing":
       return ["editor", "form"];
     case "menu":
@@ -1080,7 +1098,23 @@ export function standsBackFor(
   platform: Platform,
   chord: Chord,
 ): boolean {
-  return one.yields.some((rule) => covers(rule, platform, chord).includes(other.where));
+  return one.yields.some((rule) =>
+    rule === "editor-chords"
+      ? other.where === "editor" &&
+        (one.editorKeeps?.[platform] ?? []).some((kept) => chordWord(kept) === chordWord(chord))
+      : covers(rule, platform, chord).includes(other.where),
+  );
+}
+
+/** Whether a keystroke is `chord` exactly: its key, whatever its case, and only its modifiers. */
+function isChord(e: KeyboardEvent, chord: Chord): boolean {
+  return (
+    e.key.toLowerCase() === chord.key.toLowerCase() &&
+    e.metaKey === (chord.meta === true) &&
+    e.ctrlKey === (chord.ctrl === true) &&
+    e.altKey === (chord.alt === true) &&
+    e.shiftKey === (chord.shift === true)
+  );
 }
 
 /** A chord as one word, for comparing: the key (a letter in lower case) and what is held. */

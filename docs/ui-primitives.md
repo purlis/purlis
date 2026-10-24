@@ -2100,7 +2100,8 @@ an editor, a form), its chords on a Mac and everywhere else, and what it yields 
 - any **dialog** that has the keyboard, a popover's included;
 - the **palette** while it is up;
 - a chat's **terminal**: always, only for its Ctrl chords, or only off a Mac;
-- a **tab** that renames on `F2`, an **editor** (CodeMirror's `Mod-/`), or a **field** the
+- a **tab** that renames on `F2`, an **editor** (CodeMirror's `Mod-/`; and, for the palette,
+  only the chords its keymap binds: ⌘⇧K and a Mac's Ctrl+K, `editorKeeps`), or a **field** the
   key would be typed into when its row cannot run.
 
 A handler asks `pressed(event, ids)` which of its acts a keystroke is; the registry applies the

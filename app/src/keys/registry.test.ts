@@ -347,11 +347,6 @@ function editorKeys(mac: boolean): { spec: string; chord: Chord }[] {
  * test's; a new one fails here.
  */
 const TAKEN_FROM_THE_EDITOR = new Set([
-  // ⌘⇧K is CodeMirror's deleteLine; the palette has always opened on ⌘K with Shift held too.
-  "palette.open on Shift-Mod-k",
-  // A Mac's Ctrl+K is CodeMirror's deleteToLineEnd (Emacs's kill); the palette has always
-  // opened on Ctrl+K on a Mac as well as on ⌘K, so a person on one keyboard never lacks it.
-  "palette.open on Ctrl-k",
   // Escape in an editor inside a dialog: CodeMirror's own Escape only narrows a selection, and
   // takes the key only then; otherwise the dialog closes, which is the way out of it (WCAG 2.1.2).
   "dialog.close on Escape",
@@ -372,6 +367,41 @@ describe("the editors' own keys (CodeMirror's keymap)", () => {
       }
     }
     expect(found.filter((one) => !TAKEN_FROM_THE_EDITOR.has(one))).toEqual([]);
+  });
+});
+
+describe("the palette and a code editor (D-2921-25)", () => {
+  const editor = () => landOn({}, { [EDITOR_HOLDER]: "" });
+
+  it("leaves the editor its deleteLine and a Mac's deleteToLineEnd", () => {
+    expect(
+      pressed(keystroke({ key: "K", meta: true, shift: true }, editor()), ["palette.open"], {
+        mac: true,
+      }),
+    ).toBeUndefined();
+    expect(
+      pressed(keystroke({ key: "k", ctrl: true }, editor()), ["palette.open"], { mac: true }),
+    ).toBeUndefined();
+    expect(
+      pressed(keystroke({ key: "K", ctrl: true, shift: true }, editor()), ["palette.open"], {
+        mac: false,
+      }),
+    ).toBeUndefined();
+  });
+
+  it("opens on ⌘K, Ctrl+K off a Mac and F2 in an editor, and on ⌘⇧K anywhere else", () => {
+    for (const [chord, mac] of [
+      [{ key: "k", meta: true }, true],
+      [{ key: "k", ctrl: true }, false],
+      [{ key: "F2" }, true],
+    ] as const)
+      expect(pressed(keystroke(chord, editor()), ["palette.open"], { mac })?.id).toBe(
+        "palette.open",
+      );
+    expect(
+      pressed(keystroke({ key: "K", meta: true, shift: true }), ["palette.open"], { mac: true })
+        ?.id,
+    ).toBe("palette.open");
   });
 });
 
