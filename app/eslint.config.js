@@ -77,18 +77,10 @@ export default tseslint.config(
       "no-restricted-imports": [
         "error",
         {
-          paths: [
-            ...PRIMITIVES.map((name) => ({
-              name,
-              message: "Screens draw from the component layer in `src/ui`, never the primitives.",
-            })),
-            // Every resize handle is the panel separator family's (#3143).
-            {
-              name: "react-resizable-panels",
-              importNames: ["Separator"],
-              message: "A resize handle is `Separator` from `ui/panel/Separator` (#3143).",
-            },
-          ],
+          paths: PRIMITIVES.map((name) => ({
+            name,
+            message: "Screens draw from the component layer in `src/ui`, never the primitives.",
+          })),
           patterns: PRIMITIVES.map((name) => ({
             group: [`${name}/*`],
             message: "Screens draw from the component layer in `src/ui`, never the primitives.",

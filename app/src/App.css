@@ -2626,12 +2626,12 @@ button.show-more:focus-visible {
   fill: var(--text-muted);
 }
 
-/* The handle between two panes: thin, and easier to hit than it looks. Its look under the
-   pointer and while it is dragged is the panel separator family's (`ui/panel/panel.css`, #3143),
-   which a theme's `panel-separator` parts set. */
+/* The handle between two panes: thin, and easier to hit than it looks. Its box, which straddles
+   the room it takes here (`--separator-room`, none between two panes), and its look under the
+   pointer, while it is dragged and with the keyboard are the panel separator family's
+   (`ui/panel/panel.css`, #3143), which a theme's `panel-separator` parts set. */
 [data-separator] {
-  background: var(--border-subtle);
-  flex: 0 0 1px;
+  flex: none;
 }
 
 .xterm {
@@ -2678,14 +2678,9 @@ button.show-more:focus-visible {
 /* Each boundary between two regions is the gutter's width, and draws no line of its own: a
    side's line is its slot's border. Under the pointer its handle shows its grip at its middle
    (`ui/panel/panel.css`, #3143), never a line the window's length. */
-.region-row > [data-separator] {
-  width: var(--window-gutter);
-  background-color: transparent;
-}
-
+.region-row > [data-separator],
 .regions > [data-separator] {
-  height: var(--window-gutter);
-  background-color: transparent;
+  --separator-room: var(--window-gutter);
 }
 
 /* The row above the Panel fills its panel's inner box, as a slot's content does. */
@@ -2713,15 +2708,13 @@ button.show-more:focus-visible {
    drawn no pixels wide. A side's slot has a line because the slot has a border; a half has
    none, so its handle is the line, and there is never a second one. */
 .panel-halves > [data-separator] {
+  --separator-room: max(var(--panel-border-width), var(--window-gutter));
   align-self: stretch;
-  /* The line is the handle's content box, `panel.border-width` wide in the middle of the gap:
-     the whole handle where the halves sit flush, nothing where they float (`border-box`, so the
-     padding never moves a half). */
-  box-sizing: border-box;
-  width: max(var(--panel-border-width), var(--window-gutter));
-  padding-inline: calc(
-    (max(var(--panel-border-width), var(--window-gutter)) - var(--panel-border-width)) / 2
-  );
+  /* The line is the handle's content box, `panel.border-width` wide in the middle of its box
+     (`--separator-box`, the family's): the hairline where the halves sit flush, nothing where
+     they float. */
+  padding-inline: calc((var(--separator-box) - var(--panel-border-width)) / 2);
+  background-color: var(--border-subtle);
   background-clip: content-box;
 }
 

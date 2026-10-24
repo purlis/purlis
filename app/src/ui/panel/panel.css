@@ -79,18 +79,36 @@
    A panel separator: the handle between two panels that resizes them (#3143).
    --------------------------------------------------------------------------------------------- */
 
-/* **The handle** is the library's (`ui/panel/Separator`): its box, and the hairline it draws at
-   rest, are the regions' (`App.css`). It stands over the panels either side, so its grip and the
-   keyboard's ring are drawn over them and never under. */
+/* **The handle's box.** Where it sits, the room it takes between its panels, is the regions'
+   (`--separator-room` in `App.css`: the window's gutter, or none between two panes). Its box is
+   never thinner than the keyboard's ring (`--separator-least`), so the keyboard always lands on
+   something drawn, and a
+   negative margin gives the difference back, so it straddles its boundary and nothing moves. It
+   stands over the panels either side, so its grip is drawn over them and never under. */
 [data-scope="panel-separator"][data-part="root"] {
+  --separator-least: var(--focus-ring-width);
+  --separator-box: max(var(--separator-room, 0px), var(--separator-least));
   position: relative;
   z-index: 1;
+  box-sizing: border-box;
 }
 
-/* **The keyboard's ring** is the window's 2px one (`App.css`), drawn outside the handle at the
-   ring's offset rather than inside it: a handle is thinner than its ring, or has no width at all
-   where the panels sit flush, and a ring drawn inside it would close up to nothing. */
+[data-scope="panel-separator"][data-part="root"][aria-orientation="vertical"] {
+  inline-size: var(--separator-box);
+  margin-inline: calc((var(--separator-room, 0px) - var(--separator-box)) / 2);
+}
+
+[data-scope="panel-separator"][data-part="root"][aria-orientation="horizontal"] {
+  block-size: var(--separator-box);
+  margin-block: calc((var(--separator-room, 0px) - var(--separator-box)) / 2);
+}
+
+/* **With the keyboard** the handle says so by its grip, in the window's focus colour (below),
+   rather than by a ring its whole length: a short mark at 3:1 that nothing draws over. Purlis
+   Classic draws its accent line instead, through its own parts. In forced colours the window's
+   ring comes back (`theme/forced-colors.css`), outside the handle, which is thinner than it. */
 [data-scope="panel-separator"][data-part="root"]:focus-visible {
+  outline-style: none;
   outline-offset: var(--focus-ring-offset);
 }
 
@@ -104,7 +122,7 @@
   inset-inline-start: 50%;
   inline-size: 4px;
   block-size: 32px;
-  border-radius: 9999px;
+  border-radius: var(--radius-full);
   background-color: transparent;
   pointer-events: none;
   translate: -50% -50%;
@@ -116,11 +134,11 @@
   block-size: 4px;
 }
 
-/* **Purlis's quiet hover and clear drag**: under the pointer the grip is the faint tier, a mark
-   held at 3:1; while it is dragged, the muted tier. Never the accent, and never a line the
-   panels' whole length. The library marks the handle under the pointer, in a hit area wider
-   than the handle, except one a press has given the keyboard, which it marks `focus`: that one
-   is under the pointer when its own box is. */
+/* **Purlis's quiet hover, clear drag and focus**: under the pointer the grip is the faint tier, a
+   mark held at 3:1; while it is dragged, the muted tier; with the keyboard on it, the accent.
+   Never a line the panels' whole length. The library marks the handle under the pointer, in a
+   hit area wider than the handle, except one a press has given the keyboard, which it marks
+   `focus`: that one is under the pointer when its own box is. */
 [data-scope="panel-separator"][data-part="root"][data-separator="hover"]
   > [data-scope="panel-separator"][data-part="grip"] {
   background-color: var(--text-faint);
@@ -129,6 +147,11 @@
 [data-scope="panel-separator"][data-part="root"][data-separator="focus"]:hover
   > [data-scope="panel-separator"][data-part="grip"] {
   background-color: var(--text-faint);
+}
+
+[data-scope="panel-separator"][data-part="root"]:focus-visible
+  > [data-scope="panel-separator"][data-part="grip"] {
+  background-color: var(--accent-base);
 }
 
 [data-scope="panel-separator"][data-part="root"][data-separator="active"]

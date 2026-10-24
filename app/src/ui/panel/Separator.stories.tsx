@@ -75,25 +75,54 @@ function middleOf(handle: HTMLElement) {
   return { x: box.left + box.width / 2, y: box.top + box.height / 2 };
 }
 
-/** **At rest**: no grip; a flush window's pane split keeps its hairline. */
+/** The colour a fill of `value` is drawn in here, read off a probe: `transparent`, or a token. */
+function drawnAs(value: string) {
+  const probe = document.createElement("span");
+  probe.style.backgroundColor = value;
+  document.body.append(probe);
+  const drawn = getComputedStyle(probe).backgroundColor;
+  probe.remove();
+  return drawn;
+}
+
+/**
+ * **What the handle draws in a state**: never the accent on its grip under the pointer or while
+ * dragged, and something to see: Purlis's grip, or Purlis Classic's accent line.
+ */
+function expectAQuietMark(handle: HTMLElement) {
+  const grip = getComputedStyle(gripOf(handle) as HTMLElement).backgroundColor;
+  const line = getComputedStyle(handle).backgroundColor;
+  const accent = drawnAs("var(--accent-base)");
+  expect(grip).not.toBe(accent);
+  expect(grip !== drawnAs("transparent") || line === accent).toBe(true);
+}
+
+/** **The keyboard is on `handle`**: its box is drawn, and its grip or its line says so in the accent. */
+function expectFocusShown(handle: HTMLElement) {
+  const box = handle.getBoundingClientRect();
+  expect(Math.min(box.width, box.height)).toBeGreaterThanOrEqual(2);
+  expectFocusInSight();
+  const accent = drawnAs("var(--accent-base)");
+  const grip = getComputedStyle(gripOf(handle) as HTMLElement).backgroundColor;
+  expect(grip === accent || getComputedStyle(handle).backgroundColor === accent).toBe(true);
+}
+
+/** **At rest**: no grip, and no line of its own between two panes. */
 export const AtRest: Story = {
   play: async ({ canvas }) => {
     const edge = edgeOf(canvas);
     await expect(edge).toHaveAttribute("data-scope", "panel-separator");
     await expect(edge).toHaveAttribute("data-part", "root");
-    // No fill: what a span with no fill of its own draws.
-    const bare = document.createElement("span");
-    document.body.append(bare);
-    const none = getComputedStyle(bare).backgroundColor;
-    bare.remove();
-    await expect(getComputedStyle(gripOf(edge) as HTMLElement).backgroundColor).toBe(none);
+    await expect(getComputedStyle(gripOf(edge) as HTMLElement).backgroundColor).toBe(
+      drawnAs("transparent"),
+    );
   },
 };
 
 /**
  * **Under the pointer**: Purlis's grip, a short faint mark at the edge's middle, and no line the
- * window's length; Purlis Classic's accent line. The pointer is held at the side's own edge, inside
- * the handle's hit area, which is wider than a flush window's handle.
+ * window's length; Purlis Classic's accent line. The pointer is held at the side's own edge,
+ * inside the handle's hit area.
  */
 export const UnderThePointer: Story = {
   play: async ({ canvas, canvasElement }) => {
@@ -113,14 +142,25 @@ export const UnderThePointer: Story = {
     const edge = edgeOf(canvas);
     await waitFor(() => expect(edge).toHaveAttribute("data-separator", "hover"));
     expect(placesOf(canvasElement)).toEqual(before);
+    expectAQuietMark(edge);
   },
 };
 
+/** The press a story holds, let go once its picture is taken, so no later story starts dragged. */
+function letGo() {
+  return () => {
+    document.dispatchEvent(
+      new PointerEvent("pointerup", { bubbles: true, isPrimary: true, pointerType: "mouse" }),
+    );
+  };
+}
+
 /**
  * **Dragged**: the grip in the muted tier, clear but not loud; Purlis Classic's accent line. The
- * press is held, as a person's is while they drag.
+ * press is held for the picture, as a person's is while they drag, and let go after it.
  */
 export const Dragged: Story = {
+  beforeEach: letGo,
   play: async ({ canvas, canvasElement }) => {
     const before = placesOf(canvasElement);
     const edge = edgeOf(canvas);
@@ -139,25 +179,46 @@ export const Dragged: Story = {
     );
     await waitFor(() => expect(edge).toHaveAttribute("data-separator", "active"));
     expect(placesOf(canvasElement)).toEqual(before);
+    expectAQuietMark(edge);
   },
 };
 
-/** **With the keyboard**: Tab lands on the edge with the window's 2px ring, and an arrow moves it. */
+/**
+ * **With the keyboard on the side's edge**: Tab lands on a handle that is drawn, and its grip in
+ * the accent says so (Purlis Classic: its accent line), not a ring the window's height; an arrow
+ * moves it.
+ */
 export const WithTheKeyboard: Story = {
   play: async ({ canvas, userEvent }) => {
     const edge = edgeOf(canvas);
     await userEvent.tab();
     await expect(edge).toHaveFocus();
-    expectFocusInSight();
-    const ring = getComputedStyle(edge);
-    await expect(ring.outlineStyle).toBe("solid");
-    await expect(ring.outlineWidth).toBe("2px");
-    // Outside the handle, which is thinner than its ring.
-    await expect(ring.outlineOffset).toBe("2px");
+    expectFocusShown(edge);
     const side = canvas.getByRole("region", { name: "Side" });
     const was = side.getBoundingClientRect().width;
     await userEvent.keyboard("{ArrowRight}");
     await waitFor(() => expect(side.getBoundingClientRect().width).toBeGreaterThan(was));
     await expect(edge).toHaveFocus();
+  },
+};
+
+/**
+ * **With the keyboard on a pane split**: two panes sit flush, so the split takes no room, and
+ * still the keyboard lands on a handle that is drawn, straddling the line between them.
+ */
+export const SplitWithTheKeyboard: Story = {
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const before = placesOf(canvasElement);
+    const split = canvas.getByRole("separator", { name: "Resize the split" });
+    await userEvent.tab();
+    await userEvent.tab();
+    await expect(split).toHaveFocus();
+    expect(placesOf(canvasElement)).toEqual(before);
+    expectFocusShown(split);
+    const talk = canvas.getByText("talk").parentElement as HTMLElement;
+    const was = talk.getBoundingClientRect().height;
+    await userEvent.keyboard("{ArrowDown}");
+    await waitFor(() => expect(talk.getBoundingClientRect().height).toBeGreaterThan(was));
+    await expect(split).toHaveFocus();
   },
 };

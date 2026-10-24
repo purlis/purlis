@@ -1034,7 +1034,7 @@ fn the_list_family_default_is_what_its_stylesheet_draws() {
 #[test]
 fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
     let manifest = parts::manifest_json();
-    assert_eq!(manifest["version"], 12);
+    assert_eq!(manifest["version"], 13);
     for one in manifest["states"].as_array().unwrap() {
         assert_eq!(one["since"], 1, "{one}");
     }
@@ -1357,9 +1357,10 @@ const MANIFEST_DIGESTS: &[(u32, &str)] = &[
         11,
         "be280ba42efe49bf56ddae1aa28df6e1ee50ce46e77f4a3458af198b01077c39",
     ),
+    // 12 is the title bar's (#3118), which merges before this one.
     (
-        12,
-        "bdd2f11930b7c8b563a7b34d74deb080c0d64d3498b48f7efbc3691e1e90b450",
+        13,
+        "83337fcec1e3fd5b51eb176f9a073b69cb7cc49b3c603bdf6b3d1bc4614a2d64",
     ),
 ];
 

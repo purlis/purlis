@@ -28,17 +28,17 @@ pub(super) const PANEL_SEPARATOR: Family = Family {
     name: "panel-separator",
     description: "The handle between two panels that resizes them: a side's edge, the line under \
                   the work, the line between the bottom panel's halves, a split between panes.",
-    since: 12,
+    since: 13,
     parts: &[
         Part {
             name: "root",
-            since: 12,
+            since: 13,
             description: "The handle: its line, as long as the panels it parts.",
             properties: &[Prop::Fill],
         },
         Part {
             name: "grip",
-            since: 12,
+            since: 13,
             description: "The short mark at the handle's middle, drawn under the pointer and \
                           while it is dragged.",
             properties: &[Prop::Fill],
@@ -55,8 +55,8 @@ pub(super) const PANEL_SEPARATOR: Family = Family {
     line_height: 1.0,
     border_width: 0.0,
     defaults: separator_look,
-    // Under the pointer and dragged: what the panel library marks (`OWN_STATES`).
-    states: &[State::Hover, State::Pressed],
+    // Under the pointer, dragged and with the keyboard (`OWN_STATES`).
+    states: &[State::Hover, State::Pressed, State::Focused],
     focused: "[data-focus-visible]",
     words: &[],
     corner_most: None,
@@ -67,13 +67,15 @@ pub(super) const PANEL_SEPARATOR: Family = Family {
 /// **What the panel library marks a handle with in each state** (#3143): under the pointer, and
 /// dragged. The library's own hit area is wider than the handle, so it, and not `:hover`, says
 /// when the pointer is on it; but a handle a press has given the keyboard is marked `focus`
-/// from then on, so under the pointer it is that handle's own box that says so.
+/// from then on, so under the pointer it is that handle's own box that says so. The keyboard is
+/// on it when it is `:focus-visible`: a press focuses a handle without the keyboard's mark.
 pub(super) const OWN_STATES: &[(State, &str)] = &[
     (
         State::Hover,
         ":is([data-separator=\"hover\"], [data-separator=\"focus\"]:hover)",
     ),
     (State::Pressed, "[data-separator=\"active\"]"),
+    (State::Focused, ":focus-visible"),
 ];
 
 /// **The handle's colours as `panel.css` draws them**: no fill of its own in any state (its line
@@ -87,14 +89,17 @@ pub(super) fn separator_look(_variant: &str, _states: &[State]) -> Look {
 }
 
 /// **Each part's fill as `panel.css` draws it while `states` hold** (#3143): the handle draws
-/// none; the grip is none at rest, the faint tier under the pointer, and the muted tier while it
-/// is dragged: a quiet mark, then a clear one, and never the accent.
+/// none; the grip is none at rest, the faint tier under the pointer, the muted tier while it is
+/// dragged, and the accent while the keyboard is on it: a quiet mark, a clear one, and the
+/// window's focus colour as a short mark rather than a ring the handle's whole length.
 pub(super) fn separator_fill(part: usize, states: &[State]) -> &'static str {
     if part == 0 {
         return TRANSPARENT;
     }
     if states.contains(&State::Pressed) {
         "text.muted"
+    } else if states.contains(&State::Focused) {
+        "accent.base"
     } else if states.contains(&State::Hover) {
         "text.faint"
     } else {

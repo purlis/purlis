@@ -76,7 +76,7 @@ use super::{Complaint, ResolvedTheme, stringify};
 
 /// **The manifest's version**: it grows when a family, a part, a variant or a property is added,
 /// and never takes one away.
-pub const VERSION: u32 = 12;
+pub const VERSION: u32 = 13;
 
 /// The least height a control keeps, in px at the default text size: WCAG 2.2's target size.
 pub const LEAST_TARGET: f64 = 24.0;
@@ -2404,6 +2404,21 @@ fn faint_mark(
         return None;
     }
     let line = look.marks[0] == drawn(rules, family, variant, &[]).marks[0];
+    // With the keyboard on it, it draws a mark of its own: a focused handle that draws nothing
+    // has no focus indicator (WCAG 2.4.7).
+    if states.contains(&State::Focused)
+        && look
+            .marks
+            .iter()
+            .enumerate()
+            .all(|(at, mark)| *mark == TRANSPARENT || (at == 0 && line))
+    {
+        return Some((
+            "a handle with the keyboard on it draws its grip or its line in a state of its own"
+                .to_owned(),
+            None,
+        ));
+    }
     let floor = theme.least.floor(3.0);
     for (at, part) in family.parts.iter().enumerate() {
         if at == 0 && line {
@@ -2782,10 +2797,16 @@ fn states_of(family: &Family) -> Vec<State> {
 /// Every set of two or more of the states `family` names that a part can be in at once, but
 /// disabled: the smaller first.
 fn combined(family: &Family) -> Vec<Vec<State>> {
-    // A family keyed on marks of its own is in one of them at a time: the panel library's
-    // `data-separator` has one value (#3143).
+    // A family keyed on marks of its own (#3143) is dragged alone: the panel library's
+    // `data-separator` is `active` then and nothing else, and no keyboard mark is on it. Under
+    // the pointer and with the keyboard can hold at once.
     if !own_states(family).is_empty() {
-        return Vec::new();
+        let both = vec![State::Hover, State::Focused];
+        return if both.iter().all(|one| family.states.contains(one)) {
+            vec![both]
+        } else {
+            Vec::new()
+        };
     }
     let states = states_of(family);
     let mut sets: Vec<Vec<State>> = (0u32..1 << states.len())

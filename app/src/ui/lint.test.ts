@@ -322,11 +322,27 @@ tester.run("purlis/tabs-family", purlisUi.rules["tabs-family"], {
 });
 
 tester.run("purlis/panel-separator-family", purlisUi.rules["panel-separator-family"], {
-  valid: [{ code: `<Separator aria-label="Resize the split" />` }],
+  valid: [
+    { code: `<Separator aria-label="Resize the split" />` },
+    { code: `import { Group, Panel } from "react-resizable-panels";` },
+    { code: `import { Separator } from "./ui/panel/Separator";` },
+  ],
   invalid: [
     {
       code: `<div data-scope="panel-separator" role="separator" />`,
       errors: [{ messageId: "scope" }],
+    },
+    {
+      code: `import { Group, Separator } from "react-resizable-panels";`,
+      errors: [{ messageId: "library" }],
+    },
+    {
+      code: `import { Separator as Handle } from "react-resizable-panels";`,
+      errors: [{ messageId: "library" }],
+    },
+    {
+      code: `import * as Panels from "react-resizable-panels";`,
+      errors: [{ messageId: "library" }],
     },
   ],
 });

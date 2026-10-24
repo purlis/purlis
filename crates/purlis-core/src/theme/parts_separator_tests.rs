@@ -41,9 +41,9 @@ const HOVER: &str = ":is([data-separator=\"hover\"], [data-separator=\"focus\"]:
 // ---------------------------------------------------------------------------------------
 
 #[test]
-fn the_panel_separator_is_in_the_manifest_at_version_12() {
+fn the_panel_separator_is_in_the_manifest_at_version_13() {
     let manifest = parts::manifest_json();
-    assert!(manifest["version"].as_u64().unwrap() >= 12);
+    assert!(manifest["version"].as_u64().unwrap() >= 13);
     let family = manifest["families"]
         .as_array()
         .unwrap()
@@ -51,7 +51,7 @@ fn the_panel_separator_is_in_the_manifest_at_version_12() {
         .find(|one| one["name"] == "panel-separator")
         .expect("the panel separator is in the manifest")
         .clone();
-    assert_eq!(family["since"], 12);
+    assert_eq!(family["since"], 13);
     let parts: Vec<&str> = family["parts"]
         .as_array()
         .unwrap()
@@ -63,13 +63,14 @@ fn the_panel_separator_is_in_the_manifest_at_version_12() {
         assert_eq!(part["properties"], json!(["fill"]), "{part}");
     }
     assert_eq!(family["variants"], json!([]));
-    assert_eq!(family["states"], json!(["hover", "pressed"]));
+    assert_eq!(family["states"], json!(["hover", "pressed", "focused"]));
     assert_eq!(family["marks"], true);
     assert_eq!(
         family["attributes"],
         json!({
             "hover": ":is([data-separator=\"hover\"], [data-separator=\"focus\"]:hover)",
             "pressed": "[data-separator=\"active\"]",
+            "focused": ":focus-visible",
         })
     );
     // Only this family says so: every other one is drawn in words, on React Aria's marks.
@@ -90,7 +91,7 @@ fn a_size_or_a_state_the_handle_never_takes_is_said_and_left_out() {
         "panel-separator.grip.height",
         "panel-separator.root.border-width",
         "panel-separator.grip.text",
-        "panel-separator.root.focused.fill",
+        "panel-separator.root.open.fill",
         "panel-separator.grip.selected.fill",
     ] {
         let loaded = load(&over(PURLIS, json!({ key: "accent.base" })));
@@ -302,9 +303,18 @@ fn the_grip_s_defaults_are_what_panel_css_draws() {
         fill_of(&css, &grip("[data-separator=\"active\"]")),
         parts::separator_fill_of(1, &[parts::State::Pressed])
     );
+    assert_eq!(
+        fill_of(&css, &grip(":focus-visible")),
+        parts::separator_fill_of(1, &[parts::State::Focused])
+    );
     // The handle draws no fill of its own: its line at rest is the regions' (`App.css`).
-    for state in [HOVER, "[data-separator=\"active\"]"] {
-        assert!(!css.contains(&format!("\n{ROOT}{state} {{")), "{css}");
+    for state in [HOVER, "[data-separator=\"active\"]", ":focus-visible"] {
+        let Some(at) = css.find(&format!("\n{ROOT}{state} {{")) else {
+            continue;
+        };
+        let body = &css[at..];
+        let body = &body[..body.find('}').unwrap()];
+        assert!(!body.contains("background"), "{state}: {body}");
     }
     assert_eq!(parts::look_of("panel-separator", "", &[])[0], "transparent");
 }
@@ -325,10 +335,21 @@ fn purlis_draws_a_quiet_grip_and_never_the_accent() {
         "Purlis draws the panel separator's default"
     );
     for states in [&[parts::State::Hover][..], &[parts::State::Pressed]] {
+        // Under the pointer and dragged, never the accent.
         let fill = parts::separator_fill_of(1, states);
         assert!(fill.starts_with("text."), "{states:?}: {fill}");
         assert_ne!(parts::separator_fill_of(0, states), "accent.base");
     }
+    // With the keyboard on it, the grip in the window's focus colour: a short mark, not a ring
+    // the handle's whole length.
+    assert_eq!(
+        parts::separator_fill_of(1, &[parts::State::Focused]),
+        "accent.base"
+    );
+    assert_eq!(
+        parts::separator_fill_of(1, &[parts::State::Hover, parts::State::Focused]),
+        "accent.base"
+    );
     // Quiet under the pointer, clear while dragged: two tiers, the faint one first.
     assert_eq!(
         parts::separator_fill_of(1, &[parts::State::Hover]),
@@ -343,7 +364,7 @@ fn purlis_draws_a_quiet_grip_and_never_the_accent() {
 #[test]
 fn classic_keeps_its_accent_line_and_draws_no_grip() {
     let sheet = parts::stylesheet(classic().first());
-    for state in [HOVER, "[data-separator=\"active\"]"] {
+    for state in [HOVER, "[data-separator=\"active\"]", ":focus-visible"] {
         assert!(
             sheet.contains(&format!(
                 ":where({ROOT}{state}) {{ background-color: var(--accent-base); }}"
@@ -360,4 +381,29 @@ fn classic_keeps_its_accent_line_and_draws_no_grip() {
     for appearance in &classic().appearances {
         assert!(parts::fallen(appearance).is_empty(), "{}", appearance.id);
     }
+}
+
+#[test]
+fn a_handle_with_the_keyboard_on_it_that_draws_nothing_draws_its_default() {
+    // No grip and no line of its own: nothing says where the keyboard is (WCAG 2.4.7).
+    let (sheet, fell) = drawn_over_purlis(json!({
+        "panel-separator.grip.focused.fill": "transparent",
+    }));
+    let one = fell
+        .iter()
+        .find(|one| one.part == "panel-separator.root.focused")
+        .unwrap_or_else(|| panic!("{fell:?}"));
+    assert!(one.floor.contains("keyboard"), "{one:?}");
+    assert!(
+        sheet.contains(&format!(
+            ":where({ROOT}:focus-visible {GRIP}) {{ background-color: var(--accent-base); }}"
+        )),
+        "{sheet}"
+    );
+    // Its line in the accent says it as well as a grip does.
+    let (_, fell) = drawn_over_purlis(json!({
+        "panel-separator.root.focused.fill": "accent.base",
+        "panel-separator.grip.focused.fill": "transparent",
+    }));
+    assert!(fell.is_empty(), "{fell:?}");
 }

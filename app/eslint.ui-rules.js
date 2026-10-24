@@ -58,8 +58,8 @@
  *   `TabCell`, and the panel a tab names `tabPanelOf` (`ui/tabs/Tabs`). The tablists still drawn
  *   by hand are turned off by file in `eslint.config.js`, each naming the ticket that moves it.
  * - `purlis/panel-separator-family` (error: every resize handle is the family's, #3143):
- *   `data-scope="panel-separator"` written by hand. The panel library's own `Separator` is
- *   refused outside `src/ui` by `no-restricted-imports`, in `eslint.config.js`.
+ *   `data-scope="panel-separator"` written by hand, and the panel library's own `Separator`,
+ *   by name or through `import * as`.
  *
  * The primitives library itself is refused outside `src/ui` by `no-restricted-imports`, in
  * `eslint.config.js`: one wrapper per primitive, and screens never import it.
@@ -631,12 +631,44 @@ const listFamily = moved({
     "a list: draw it as `<ListBox>` and `<ListOption>` (a list to choose from) or `<List>` and `<ListRow>` (rows that act), with the row's slots, from `ui/list/List` (#2911).",
 });
 
-const panelSeparatorFamily = moved({
+const separatorScope = moved({
   description: "A resize handle between two panels is the shared panel separator family",
   scopes: ["panel-separator"],
   classes: [],
   message: "a resize handle: draw it as `<Separator>` from `ui/panel/Separator` (#3143).",
 });
+
+/** The panel library, whose own handle only the family's wrapper draws. */
+const PANEL_LIBRARY = "react-resizable-panels";
+
+/**
+ * **The panel separator family** (#3143): its `data-scope` by hand, as every family that has
+ * moved; and the panel library's own `Separator`, taken by name or through the whole module
+ * (`import * as`), which `no-restricted-imports` cannot see.
+ */
+const panelSeparatorFamily = {
+  meta: {
+    ...separatorScope.meta,
+    messages: {
+      ...separatorScope.meta.messages,
+      library:
+        "the panel library's own handle is drawn only by the family: draw it as `<Separator>` from `ui/panel/Separator` (#3143).",
+    },
+  },
+  create(context) {
+    return {
+      ...separatorScope.create(context),
+      ImportDeclaration(node) {
+        if (node.source.value !== PANEL_LIBRARY) return;
+        for (const one of node.specifiers) {
+          const whole = one.type === "ImportNamespaceSpecifier";
+          const named = one.type === "ImportSpecifier" && one.imported.name === "Separator";
+          if (whole || named) context.report({ node: one, messageId: "library" });
+        }
+      },
+    };
+  },
+};
 
 export const purlisUi = {
   meta: { name: "purlis-ui" },

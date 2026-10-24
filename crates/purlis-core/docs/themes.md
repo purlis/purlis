@@ -409,19 +409,20 @@ no edge: `"tooltip.root.corner-radius": 8`, `"tooltip.root.border-width": 0`.
 `indicator`, the mark along a chosen item's edge. Purlis draws the family default; Purlis
 Classic's own `parts` give its square items and accent edge (`activity.indicator.selected.fill`).
 
-**The panel separator** (manifest version 12, #3143): `panel-separator`, the handle between two
+**The panel separator** (manifest version 13, #3143): `panel-separator`, the handle between two
 panels that resizes them (a side's edge, the line under the work, the line between the bottom
 panel's halves, a split between panes). Its `root` is the handle and its `grip` a short mark at
 its middle, drawn over what is either side of it, so a wider look never changes the handle's box.
-Each takes only `fill`, in the states `hover` and `pressed` (dragged), which are keyed on the
-panel library's own marks (the manifest's `attributes`), not React Aria's. It is drawn in marks
-(the manifest's `marks`): what it draws in a state is held at 3:1 on its grounds as a non-text
-mark, and a part that breaks it draws its family default there. Its line at rest is the window's
-hairline. Purlis draws the family default: no grip at rest, a faint grip under the pointer and a
-muted one while dragged, never the accent. Purlis Classic's own `parts` keep its accent line and
-draw no grip (`panel-separator.root.hover.fill: accent.base`,
-`panel-separator.grip.hover.fill: transparent`, and the same for `pressed`). The keyboard's ring
-is the window's 2px one on every separator, outside the handle.
+Each takes only `fill`, in the states `hover`, `pressed` (dragged) and `focused` (the keyboard
+on it), keyed on the panel library's own marks and `:focus-visible` (the manifest's
+`attributes`), not React Aria's. It is drawn in marks (the manifest's `marks`): what it draws in
+a state is held at 3:1 on its grounds as a non-text mark, a focused handle draws a mark of its
+own, and a part that breaks either draws its family default there. Its line at rest is the
+window's hairline. Purlis draws the family default: no grip at rest, a faint grip under the
+pointer, a muted one while dragged and the accent's with the keyboard on it, in place of a ring
+the handle's length. Purlis Classic's own `parts` draw its accent line in all three and no grip
+(`panel-separator.root.hover.fill: accent.base`, `panel-separator.grip.hover.fill: transparent`,
+and the same for `pressed` and `focused`).
 
 The strip tabs, a tab's `×` closer, the gear on a strip and the list and tree rows are not
 families with parts today: they are drawn as the note under [Geometry](#geometry) says.
