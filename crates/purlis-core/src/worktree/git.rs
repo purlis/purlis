@@ -1760,7 +1760,8 @@ pub(crate) fn run_until(
 /// [`run`], bytes back, its standard output **read as it comes and held to `most_records`
 /// NUL-ended records** (a `-z` listing): past them git is stopped, its group with it, and the
 /// answer is `None`. A listing a small tree expands into far more than memory holds is never
-/// read whole (SK-10, #2773).
+/// read whole (SK-10, #2773). A read that fails, or a reader that never answers, is an error and
+/// never a listing (SK-43, #3115).
 pub(crate) fn run_capped(
     dir: &Path,
     args: &[&str],
@@ -1776,38 +1777,97 @@ pub(crate) fn run_capped(
         let mut child = spawn_with(dir, args, &extra)?;
         let mut stdout = child.stdout.take().expect("stdout is piped");
         let over = Arc::new(AtomicBool::new(false));
-        let (out_tx, out_rx) = std::sync::mpsc::channel();
+        // What the reader heard: the whole listing, `None` past the cap, or the error that cut
+        // its read short. A reader that sends nothing died, and is heard as nothing.
+        let (out_tx, out_rx) = std::sync::mpsc::channel::<std::io::Result<Option<Vec<u8>>>>();
+        #[cfg(test)]
+        let before_read = capped_hook::current();
+        #[cfg(not(test))]
+        let before_read = || -> std::io::Result<()> { Ok(()) };
         {
             let over = Arc::clone(&over);
             std::thread::spawn(move || {
                 let mut kept = Vec::new();
                 let mut records = 0usize;
                 let mut chunk = [0u8; 64 * 1024];
-                loop {
-                    match stdout.read(&mut chunk) {
-                        Ok(0) | Err(_) => break,
+                let heard = loop {
+                    match before_read().and_then(|()| stdout.read(&mut chunk)) {
+                        Ok(0) => break Ok(Some(kept)),
                         Ok(n) => {
                             records += chunk[..n].iter().filter(|b| **b == 0).count();
                             if records > most_records {
                                 over.store(true, Ordering::Relaxed);
-                                break;
+                                break Ok(None);
                             }
                             kept.extend_from_slice(&chunk[..n]);
                         }
+                        Err(why) if why.kind() == std::io::ErrorKind::Interrupted => {}
+                        Err(why) => break Err(why),
                     }
-                }
-                let _ = out_tx.send(kept);
+                };
+                let _ = out_tx.send(heard);
             });
         }
         let raw = wait_raw_until(child, timeout, Some(&over))?;
-        if over.load(Ordering::Relaxed) {
-            return Ok(None);
+        // The reader's answer decides, never the flag alone: git can exit before the reader
+        // has counted its last chunk, and the flag read then let a listing past the cap
+        // through, cut short (SK-43, #3115). A git that exited is heard in full, as
+        // [`wait_raw_until`] waits for its readers; one that was stopped gets the same grace.
+        let heard = match raw.code {
+            Some(_) => out_rx.recv().ok(),
+            None => out_rx.recv_timeout(Duration::from_secs(2)).ok(),
+        };
+        match heard {
+            Some(Ok(Some(out))) => Ok(Some(RawRun { out, ..raw })),
+            Some(Ok(None)) => Ok(None),
+            Some(Err(why)) => Err(why.into()),
+            None if over.load(Ordering::Relaxed) => Ok(None),
+            // Stopped at the deadline with nothing heard: no code, which no caller reads as
+            // a listing.
+            None if raw.code.is_none() => Ok(Some(RawRun {
+                out: Vec::new(),
+                ..raw
+            })),
+            None => Err(std::io::Error::other("git's listing was not read to its end").into()),
         }
-        let out = out_rx
-            .recv_timeout(Duration::from_secs(2))
-            .unwrap_or_default();
-        Ok(Some(RawRun { out, ..raw }))
     })
+}
+
+/// A test's way into [`run_capped`]'s reader: `f` runs before each read, on the reader's
+/// thread, and an error from it is that read's answer. Set on the calling thread, so it reaches
+/// only the calls the test that set it makes: `cargo test` runs tests on a pool.
+#[cfg(test)]
+pub(crate) mod capped_hook {
+    use std::cell::RefCell;
+    use std::io;
+    use std::sync::Arc;
+
+    type Hook = Arc<dyn Fn() -> io::Result<()> + Send + Sync>;
+
+    thread_local! {
+        static BEFORE_READ: RefCell<Option<Hook>> = const { RefCell::new(None) };
+    }
+
+    /// Run `f` before every read of every [`super::run_capped`] this thread starts, until the
+    /// returned guard drops.
+    pub(crate) fn set(f: impl Fn() -> io::Result<()> + Send + Sync + 'static) -> Unset {
+        BEFORE_READ.with(|h| *h.borrow_mut() = Some(Arc::new(f)));
+        Unset
+    }
+
+    pub(crate) struct Unset;
+
+    impl Drop for Unset {
+        fn drop(&mut self) {
+            BEFORE_READ.with(|h| *h.borrow_mut() = None);
+        }
+    }
+
+    /// What the reader runs before each read: the hook set on this thread, or nothing.
+    pub(super) fn current() -> impl Fn() -> io::Result<()> + Send + 'static {
+        let hook = BEFORE_READ.with(|h| h.borrow().clone());
+        move || hook.as_ref().map_or(Ok(()), |f| f())
+    }
 }
 
 /// What one git call answered, as the BYTES it wrote. `code` is `None` when the deadline passed.

@@ -68,3 +68,9 @@
   refusals, asks, tokens and time, by the program each chat ran on, by persona and by
   workspace. Each run says what it ran on, and a run that a curation action's prompt started
   says so, whichever way the chat's program started the skill.
+
+### Fixed
+
+- **A skill source of more than 50 000 files is always refused whole** (Skill studio preview).
+  On a busy machine its listing could be read cut short and refused for the wrong reason, and a
+  listing whose read failed was taken as complete (#3115).

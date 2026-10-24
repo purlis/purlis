@@ -1307,3 +1307,97 @@ fn the_repair_exemption_reaches_a_moved_folder_s_bare_repair_and_nothing_else() 
         None
     );
 }
+
+/// A bare repository holding a tree of four files, `a` to `d`, and the `ls-tree -z` that lists
+/// it: four records.
+fn four_records() -> (tempfile::TempDir, String, String) {
+    let dir = tempfile::tempdir().unwrap();
+    crate::testgit::run(dir.path(), &["init", "-q", "--bare", "tree.git"]);
+    let git_dir = format!("--git-dir={}", dir.path().join("tree.git").display());
+    let git = |args: &[&str], input: &[u8]| {
+        let mut all = vec![git_dir.as_str()];
+        all.extend_from_slice(args);
+        let raw = run_with_input(dir.path(), &all, input.to_vec(), READ).unwrap();
+        assert_eq!(raw.code, Some(0), "{}", String::from_utf8_lossy(&raw.err));
+        String::from_utf8(raw.out).unwrap().trim().to_owned()
+    };
+    let blob = git(&["hash-object", "-w", "--stdin"], b"x");
+    let entries: String = ["a", "b", "c", "d"]
+        .iter()
+        .map(|name| format!("100644 blob {blob}\t{name}\0"))
+        .collect();
+    let tree = git(&["mktree", "-z"], entries.as_bytes());
+    (dir, git_dir, tree)
+}
+
+/// SK-43 (#3115): a listing past the cap that git finishes writing, and exits, before the
+/// reader has counted it is still refused. The reader stalls here as a starved one does, so
+/// git's exit beats its count every round: the race the 50 000-entry source test lost on a
+/// loaded runner, where the flag was read before the reader set it and the cut-short listing
+/// went through.
+#[test]
+fn a_listing_past_the_cap_is_refused_even_when_git_exits_before_the_count() {
+    let (dir, git_dir, tree) = four_records();
+    let listing = [git_dir.as_str(), "ls-tree", "-z", "--name-only", &tree];
+    {
+        let _stall = capped_hook::set(|| {
+            std::thread::sleep(Duration::from_millis(50));
+            Ok(())
+        });
+        for round in 0..20 {
+            let over = run_capped(dir.path(), &listing, READ, 3).expect("git runs");
+            assert!(
+                over.is_none(),
+                "round {round}: past the cap and let through: {over:?}"
+            );
+        }
+    }
+    let whole = run_capped(dir.path(), &listing, READ, 4)
+        .expect("git runs")
+        .expect("at the cap, the listing is read whole");
+    assert_eq!(whole.code, Some(0));
+    assert_eq!(whole.out, b"a\0b\0c\0d\0");
+}
+
+#[test]
+fn a_listing_whose_read_fails_is_an_error_and_never_a_listing() {
+    let (dir, git_dir, tree) = four_records();
+    let listing = [git_dir.as_str(), "ls-tree", "-z", "--name-only", &tree];
+    let _fail = capped_hook::set(|| Err(std::io::Error::other("the pipe broke")));
+    let read = run_capped(dir.path(), &listing, READ, 4);
+    assert!(
+        read.is_err(),
+        "a failed read was taken for a listing: {read:?}"
+    );
+}
+
+#[test]
+fn an_interrupted_read_is_read_again_and_the_listing_is_whole() {
+    let (dir, git_dir, tree) = four_records();
+    let listing = [git_dir.as_str(), "ls-tree", "-z", "--name-only", &tree];
+    let interrupted = std::sync::atomic::AtomicBool::new(false);
+    let _once = capped_hook::set(move || {
+        if interrupted.swap(true, Ordering::Relaxed) {
+            Ok(())
+        } else {
+            Err(std::io::ErrorKind::Interrupted.into())
+        }
+    });
+    let whole = run_capped(dir.path(), &listing, READ, 4)
+        .expect("git runs")
+        .expect("under the cap");
+    assert_eq!(whole.code, Some(0));
+    assert_eq!(whole.out, b"a\0b\0c\0d\0");
+}
+
+#[test]
+fn a_reader_that_dies_without_answering_is_an_error_and_never_an_empty_listing() {
+    let (dir, git_dir, tree) = four_records();
+    let listing = [git_dir.as_str(), "ls-tree", "-z", "--name-only", &tree];
+    let _die = capped_hook::set(|| panic!("the reader died"));
+    let read = run_capped(dir.path(), &listing, READ, 4);
+    assert!(
+        read.is_err(),
+        "a dead reader was taken for a listing: {read:?}"
+    );
+}
