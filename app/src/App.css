@@ -1487,35 +1487,18 @@ button.show-more:focus-visible {
   margin-block-start: var(--space-1);
 }
 
+/* The skills are a list of the family (`ui/list`, #2911): a skill's name, its level and its
+   description under them, in the row. The list scrolls inside the dialog. */
 .use-skill-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
   max-height: 22rem;
-  margin: 0;
-  padding: 0;
   overflow-y: auto;
-  list-style: none;
 }
 
-.use-skill-row {
-  display: grid;
-  grid-template-columns: auto auto 1fr;
-  align-items: center;
-  gap: 0 var(--space-2);
-  padding: var(--space-1) 0;
-}
-
-.use-skill-level,
-.use-skill-manual {
-  font-size: var(--font-size-xs);
-  color: var(--text-secondary);
+.use-skill-name {
+  flex: 0 1 auto;
 }
 
 .use-skill-description {
-  grid-column: 1 / -1;
-  font-size: var(--font-size-xs);
-  color: var(--text-secondary);
   white-space: normal;
 }
 
@@ -3919,7 +3902,7 @@ button.show-more:focus-visible {
 
 /* A path a task or branch changed is git's name for it, so its direction never runs into the mark
    and the sentence drawn after it (#704). */
-.task-changes-files button,
+.task-changes-files [data-part="label"],
 .refused-path {
   unicode-bidi: isolate;
 }
@@ -4709,39 +4692,11 @@ button.show-more:focus-visible {
   width: 100%;
 }
 
+/* The palette's rows are the list family's list a field aims at (`ui/list/AimedList.tsx`,
+   #2911), which draws them, the aim and a row that cannot run. The list scrolls inside it. */
 .palette-rows {
-  margin: 0;
-  padding: 0;
-  list-style: none;
   max-height: 55vh;
   overflow: auto;
-}
-
-.palette-row {
-  display: flex;
-  gap: var(--space-5);
-  align-items: baseline;
-  padding: var(--space-2) var(--space-4);
-  border-radius: var(--radius-md);
-  cursor: default;
-}
-
-/* The row Enter is aimed at (#1682, D-1682-1): where the keys are, which is focus and not a
-   selection, so it keeps the aim's own fill (`control.aimed`), quieter than `list.selected`;
-   and the edge every selected row draws, the one inset idiom with its right-to-left twin, so
-   the aim survives a display that renders neither colour nor translucency. */
-.palette-row.aimed {
-  background: var(--control-aimed);
-  box-shadow: inset 2px 0 0 var(--list-selected-edge);
-}
-
-.palette-row.aimed:dir(rtl) {
-  box-shadow: inset -2px 0 0 var(--list-selected-edge);
-}
-
-/* Dimming is decoration. The reason beside it is the meaning, and it is always drawn. */
-.palette-row.refused .palette-title {
-  opacity: 0.55;
 }
 
 /* The letters a ⌘P query matched (#1131): weight and an underline, not a colour, so the mark
@@ -4755,10 +4710,8 @@ button.show-more:focus-visible {
 }
 
 .palette-why {
-  margin-left: auto;
   font-size: var(--font-size-xs);
-  opacity: 0.7;
-  text-align: right;
+  text-align: end;
 }
 
 .palette .refusal {
@@ -5048,35 +5001,10 @@ button.show-more:focus-visible {
   align-items: center;
 }
 
-.recents {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.recents li {
-  display: flex;
-  gap: var(--space-3);
-  align-items: baseline;
-  border-top: 1px solid var(--border-subtle);
-}
-
-.recents li button {
-  display: flex;
-  gap: var(--space-5);
-  align-items: baseline;
-  flex: 1;
-  border: 0;
-  border-radius: 0;
-  text-align: left;
-}
-
+/* The recent projects are rows of the list family (`ui/list`, #2911); a project's path is its
+   description, cut to one line. */
 .recents .where {
   font-size: var(--font-size-xs);
-  opacity: 0.55;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* The first run's list of what this machine has (FR-4): statuses, not controls. */
@@ -5664,68 +5592,11 @@ button.show-more:focus-visible {
   overflow-y: auto;
 }
 
-/* **The days a dated list is drawn under** (#1674): Today, Yesterday, Earlier. Quieter than the
-   section's own title, which is the uppercase line above it, so a day reads as where a run of
-   rows starts and not as a second heading. One scroll holds every day (`.panel-rows`). */
-.panel-day {
-  margin: var(--space-3) 0 var(--space-1);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-strong);
-  color: var(--text-quiet);
-}
-
-.panel-day:first-child {
-  margin-top: 0;
-}
-
-.panel-day-rows {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-/* **A row is one line and never three.** `nowrap` plus `ellipsis` is what actually fits the
-   text to a region the operator drags; `PanelList.shorten` cuts the string before it reaches
-   the DOM, which is the half a jsdom test can see. Both, because they do different work —
-   `PanelList.tsx` has the argument. */
-/* **A list row is its own box; the button inside it is the flex row.**
-   Everything else about a row is written unscoped, deliberately: the same list is drawn inside
-   a popover that Radix portals to `document.body`, so a rule scoped to `.panels` would style a
-   panel's rows and not a persona's memories.
-
-   This one rule is the exception, and it has to be scoped to out-specify it: `.panels li`
-   above is `display: flex` at (0,1,1), written for the queue, and a bare `.panel-row` is
-   (0,1,0) — which loses however far down the file it is written. */
-.panels .panel-row {
-  display: block;
-  padding: 0;
-  overflow: hidden;
-}
-
-.panel-row {
-  display: block;
-  padding: 0;
-  overflow: hidden;
-}
-
-/* The row is the shared list row (`.ui-row`, DS-12): its height, its padding, its hover and the
-   keyboard's ring. Its own words and weight are the list's, and not `pointer`: a row that
-   suddenly looked like a control would turn a list of names into five buttons on the one region
-   ADR 0038 says must not compete with the queue above it. */
-.panel-row .row {
-  min-width: 0;
-  color: inherit;
-  font: inherit;
-}
-
-.panel-row .row-text {
-  flex: 1 1 auto;
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
+/* **A panel's row is the list family's** (`ui/list`, #2911): one line and never three, its words
+   cut with an ellipsis by the family and to a line's characters by `PanelList.shorten`, which is
+   the half a jsdom test can see. Its own words and weight are the list's, and not `pointer`: a row
+   that suddenly looked like a control would turn a list of names into five buttons on the one
+   region ADR 0038 says must not compete with the queue above it. */
 .panel-row .row-note {
   flex: 0 0 auto;
   font-variant-numeric: tabular-nums;
@@ -6607,15 +6478,8 @@ nav.piece-files-head {
   outline-offset: calc(var(--focus-ring-offset) / 2);
 }
 
-/* An extension's own actions on its row (charter-app#341): beside the row's words, drawn as the
-   view buttons on a heading are, so a row that can be acted on says so without a colour of its
-   own. */
-.panel-row:has(.row-actions) {
-  display: flex;
-  gap: var(--space-3);
-  align-items: center;
-}
-
+/* An extension's own actions on its row (charter-app#341): at the row's end, drawn as the view
+   buttons on a heading are, so a row that can be acted on says so without a colour of its own. */
 /* Small buttons (the family's small `Button`), the row's height. */
 .panel-row .row-actions {
   display: flex;
@@ -7092,7 +6956,7 @@ nav.piece-files-head {
 /* The part of a row's body a search matched (ADR 0065 Q11), under the row while one is typed:
    one quiet line, the match in the row's own weight. */
 .panel-row .row-snippet {
-  margin: 0 0 var(--space-1) var(--space-7);
+  padding-inline-start: var(--space-7);
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -7155,8 +7019,8 @@ nav.piece-files-head {
   margin: var(--space-3) 0;
 }
 
-/* **A store's archive** (KN-4): its memories as a list's rows, the one chosen (`aria-pressed`)
-   drawn as the shared list draws its selected row, and that memory read under the list. The list keeps its own
+/* **A store's archive** (KN-4): its memories as a list to choose from (`ui/list`, #2911), the one
+   chosen drawn as every list draws it, and that memory read under the list. The list keeps its own
    height and scrolls, so the memory read never pushes Restore off the tab. */
 .memory-archive {
   max-width: 60rem;
@@ -7209,11 +7073,10 @@ nav.piece-files-head {
   color: var(--danger-text);
 }
 
-/* A Land's refusal beside its member's row (#474): the core's sentence, under the row it is
-   about, in the trouble colour the rest of the view uses. */
-.panel-row + .row-refusal {
-  list-style: none;
-  margin: 0 0 var(--space-2) var(--space-7);
+/* A Land's refusal beside its member's row (#474): the core's sentence, under the row's words
+   inside it, in the trouble colour the rest of the view uses. */
+.panel-row .row-refusal {
+  padding-inline-start: var(--space-7);
   font-size: var(--font-size-xs);
 }
 
@@ -7297,22 +7160,32 @@ nav.piece-files-head {
   padding: 0 0 var(--space-4);
 }
 
+/* A file's head is its group's name (the list family's `header`, which pads it), over its
+   lines: the project and the branch where they start, then the file, each a step further in. */
+.search-file > header > span {
+  display: block;
+}
+
 .search-project {
-  padding: var(--space-4) var(--space-5) var(--space-1);
+  display: block;
+  padding-block: var(--space-3) var(--space-1);
+  color: var(--text-primary);
   font-weight: var(--font-weight-strong);
 }
 
 .search-branch {
-  padding: var(--space-2) var(--space-5) var(--space-1) var(--space-6);
-  color: var(--text-secondary);
-  font-size: var(--font-size-sm);
+  display: block;
+  padding-block: var(--space-1);
+  padding-inline-start: var(--space-4);
 }
 
 .search-file-head {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  padding: var(--space-2) var(--space-5) var(--space-1) var(--space-7);
+  padding-block-start: var(--space-1);
+  padding-inline-start: var(--space-6);
+  color: var(--text-primary);
 }
 
 .search-file-name {
@@ -7326,7 +7199,8 @@ nav.piece-files-head {
 }
 
 .search-file-rest {
-  padding: 0 var(--space-5) var(--space-2) calc(var(--space-8) + var(--space-5));
+  display: block;
+  padding-inline-start: calc(var(--space-6) + var(--space-7));
 }
 
 .search-count {
@@ -7338,20 +7212,14 @@ nav.piece-files-head {
   font-size: var(--font-size-xs);
 }
 
-/* **A hit is the shared list row** (`.ui-row`, DS-12): its height, its hover, and the hit
-   stepped to (`aria-selected`) drawn as every list draws its selected row, with more than
-   colour. Its number is the row's lead, a column wide enough that the text starts under the
-   file's name. */
+/* **A hit is the list family's row** (`ui/list`, #2911): its height, its hover, and the hit
+   stepped to (chosen) drawn as every list draws its chosen row, with more than colour. Its
+   number is the row's lead, a column wide enough that the text starts under the file's name. */
 .search-line {
   font-family: var(--font-mono);
   font-size: var(--font-size-xs);
   white-space: pre;
   cursor: pointer;
-}
-
-.search-hits:focus-visible .search-line.active {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: var(--focus-ring-inset);
 }
 
 .search-line-number {
@@ -7979,20 +7847,8 @@ nav.piece-files-head {
   margin: var(--space-5) 0 0;
 }
 
-/* Settings › Repos' "Not cloned here": one line per repo, its Remove on the line (#1228). */
-.absent-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.absent-list li {
-  display: flex;
-  gap: var(--space-3);
-  align-items: center;
-  justify-content: space-between;
-}
-
+/* Settings › Repos' "Not cloned here": one row per repo, its Remove at the row's end (#1228),
+   rows of the list family (`ui/list`, #2911). */
 .absent-list .ui-setting-actions {
   margin: 0;
 }

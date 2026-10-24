@@ -222,7 +222,9 @@ fn a_local_skill_in_a_plane_that_is_no_git_repository_is_read_and_shared() {
         "{set:?}"
     );
 
-    let moved = share_here(plane.path(), &Whose::Project, "scratch").unwrap();
+    let moved = share_here(plane.path(), &Whose::Project, "scratch")
+        .unwrap()
+        .to;
 
     assert_eq!(moved, plane.path().join("skills/scratch"));
     let set = in_the_studio(None, plane.path(), None, None);
@@ -1204,8 +1206,9 @@ fn a_harness_skill_a_persona_names_is_badged_and_marked_where_it_widens_the_chat
         skill: Skill {
             name: "wide".to_owned(),
             description: "Widens a chat on purpose.".to_owned(),
-            path,
+            path: path.clone(),
         },
+        root: path.parent().unwrap().to_path_buf(),
         origin: Origin::Harness,
         id: "wide".to_owned(),
         owner: Owner::You,
@@ -1233,4 +1236,142 @@ fn a_harness_skill_a_persona_names_is_badged_and_marked_where_it_widens_the_chat
         "{:?}",
         rows[0].lint
     );
+}
+
+#[test]
+fn the_studio_list_of_a_workspace_chat_holds_its_rows_and_each_harnesss_own_with_their_rows() {
+    // SK-34 (#3008): the one list the window and `purlis skill list` draw. A workspace chat gets
+    // its workspace's skill; Codex finds one of the person's own and one in the workspace's
+    // clone, each row with whose it is and its badge on Codex.
+    let tmp = tempfile::tempdir().unwrap();
+    let plane = tmp.path().join("plane");
+    let ship = plane.join("workspaces/alpha/skills/ship");
+    std::fs::create_dir_all(&ship).unwrap();
+    std::fs::write(
+        ship.join("SKILL.md"),
+        "---\nname: ship\ndescription: Ships.\n---\n",
+    )
+    .unwrap();
+    std::fs::write(plane.join("charter.toml"), "[plane]\n").unwrap();
+    let clone = plane.join("workspaces/alpha/app");
+    std::fs::create_dir_all(clone.join(".git")).unwrap();
+    std::fs::create_dir_all(clone.join(".agents/skills/tool")).unwrap();
+    std::fs::write(
+        clone.join(".agents/skills/tool/SKILL.md"),
+        "---\nname: tool\ndescription: The repo's tool.\n---\n",
+    )
+    .unwrap();
+    let codex = tmp.path().join("codex-home");
+    std::fs::create_dir_all(codex.join("skills/mine")).unwrap();
+    std::fs::write(
+        codex.join("skills/mine/SKILL.md"),
+        "---\nname: mine\ndescription: Mine alone.\n---\n",
+    )
+    .unwrap();
+    let chat = [("CODEX_HOME".to_owned(), codex.display().to_string())];
+    let env = crate::harness_plugin::Env {
+        chat: &chat,
+        home: Some(tmp.path().join("home")),
+        process: false,
+    };
+
+    let list = studio_list(None, &plane, Some("alpha"), None, &env);
+
+    let plane_rows: Vec<(&str, Origin, bool)> = list
+        .rows
+        .iter()
+        .map(|row| (row.name.as_str(), row.origin, row.left_out.is_none()))
+        .collect();
+    assert_eq!(plane_rows, [("ship", Origin::Workspace, true)]);
+    let on_codex = list
+        .harnesses
+        .iter()
+        .find(|one| one.harness == Harness::Codex)
+        .expect("Codex listed");
+    let rows: Vec<(&str, Origin, Option<Owner>, bool)> = on_codex
+        .rows
+        .iter()
+        .map(|row| {
+            (
+                row.name.as_str(),
+                row.origin,
+                row.outside.as_ref().map(|o| o.owner.clone()),
+                row.compat.is_empty(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            ("mine", Origin::Harness, Some(Owner::You), false),
+            (
+                "tool",
+                Origin::Repo,
+                Some(Owner::Repo("app".to_owned())),
+                false
+            ),
+        ]
+    );
+}
+
+// ---- links (SK-36) --------------------------------------------------------------------------
+
+/// A plane whose project skill `deploy` has a file beside its `SKILL.md`, and a folder outside it
+/// holding a `deploy` of its own: the set is read, then `swap` puts a link in place of a folder.
+#[cfg(unix)]
+fn swapped_after_the_set_was_read(swap: impl Fn(&Path, &Path)) -> (SkillSet, PathBuf, PathBuf) {
+    let tmp = tempfile::tempdir().unwrap().keep();
+    let plane = tmp.join("plane");
+    let outside = tmp.join("outside");
+    for (dir, said) in [(&plane, "Ship it."), (&outside, "Not this one.")] {
+        let skill = dir.join("skills/deploy");
+        std::fs::create_dir_all(&skill).unwrap();
+        std::fs::write(
+            skill.join("SKILL.md"),
+            format!("---\nname: deploy\ndescription: {said}\n---\n"),
+        )
+        .unwrap();
+        std::fs::write(skill.join("notes.md"), said).unwrap();
+    }
+    let set = of_a_chat(None, &plane, None, None, Route::Plugin);
+    assert_eq!(set.effective.len(), 1, "{set:?}");
+    swap(&plane, &outside);
+    (set, plane, tmp)
+}
+
+#[cfg(unix)]
+#[test]
+fn a_lay_out_hands_nothing_through_a_folder_swapped_for_a_link_after_the_set_was_read() {
+    type Swap = fn(&Path, &Path);
+    let swaps: [(&str, Swap); 2] = [
+        ("the skill's folder", |plane, outside| {
+            let at = plane.join("skills/deploy");
+            std::fs::rename(&at, plane.join("was-deploy")).unwrap();
+            std::os::unix::fs::symlink(outside.join("skills/deploy"), &at).unwrap();
+        }),
+        ("the level's folder", |plane, outside| {
+            let at = plane.join("skills");
+            std::fs::rename(&at, plane.join("was-skills")).unwrap();
+            std::os::unix::fs::symlink(outside.join("skills"), &at).unwrap();
+        }),
+    ];
+    for (what, swap) in swaps {
+        let (set, _plane, tmp) = swapped_after_the_set_was_read(swap);
+        let honours = Harness::ClaudeCode.skill_frontmatter();
+        let sets = tmp.join("sets");
+        std::fs::create_dir_all(&sets).unwrap();
+
+        assert_eq!(lay_out(&set, &sets, &honours).unwrap(), None, "{what}");
+        let said = not_here_of(&set, &honours);
+        assert_eq!(said, [Refusal::FolderLink], "{what}");
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+}
+
+/// Why each plane skill of `set` is handed to no chat, as a chat's tab is told.
+#[cfg(unix)]
+fn not_here_of(set: &SkillSet, honours: &Honours) -> Vec<Refusal> {
+    set.from_the_plane()
+        .filter_map(|effective| handout::of(effective, honours).err())
+        .collect()
 }

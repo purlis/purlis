@@ -158,13 +158,16 @@ describe("the Search view", () => {
     const hits = screen.getByRole("listbox", { name: "Search results" });
     const groups = within(hits).getAllByRole("group");
     expect(groups.map((one) => one.getAttribute("aria-label"))).toEqual([
-      "a.rs, src · fix-login · alpha",
-      "b.md, docs · fix-login · beta",
+      "a.rs, src · fix-login · alpha, 2 matching lines",
+      "b.md, docs · fix-login · beta, 1 matching line",
     ]);
     expect(groups[0]).toHaveTextContent("alpha");
     expect(groups[0]).toHaveTextContent("fix-login · web");
     const lines = within(groups[0]).getAllByRole("option");
     expect(lines.map((one) => one.textContent)).toEqual(["3let needle = 1;", "9let needle = 1;"]);
+    // A hit is named by its line, not by its number run into it (#2911).
+    // A hit is named by its line, not by its number run into it (#2911).
+    expect(within(groups[0]).getAllByRole("option", { name: "let needle = 1;" })).toHaveLength(2);
     expect(within(lines[0]).getByText("needle").tagName).toBe("MARK");
     expect(status()).toHaveTextContent("3 matching lines in 2 files");
     expect(screen.queryByRole("button", { name: "Show more" })).toBeNull();
@@ -349,8 +352,8 @@ describe("a search hit into a chat, from the keyboard (#1151)", () => {
     const { asked, hits } = await found([hit("src/a.rs", [3, 9])]);
     await userEvent.keyboard("{ArrowDown}{Shift>}{Enter}{/Shift}");
 
-    const menu = screen.getByRole("menu", { name: "Add src/a.rs:9 to a chat's context" });
-    const items = within(menu).getAllByRole("menuitem");
+    const menu = screen.getByRole("listbox", { name: "Add src/a.rs:9 to a chat's context" });
+    const items = within(menu).getAllByRole("option");
     expect(items.map((one) => one.textContent)).toEqual(["steward 3", "web 5"]);
     expect(items[0]).toHaveFocus();
     await userEvent.keyboard("{ArrowDown}{Enter}");
@@ -369,8 +372,8 @@ describe("a search hit into a chat, from the keyboard (#1151)", () => {
         },
       ],
     );
-    expect(screen.queryByRole("menu")).toBeNull();
-    expect(hits).toHaveFocus();
+    expect(screen.queryByRole("listbox", { name: /to a chat's context/ })).toBeNull();
+    expect(hits).toContainElement(document.activeElement as HTMLElement);
   });
 
   it("opens no file on Shift+Enter, which Enter alone does", async () => {
@@ -385,7 +388,7 @@ describe("a search hit into a chat, from the keyboard (#1151)", () => {
     await found([hit("src/a.rs", [3])]);
     await userEvent.keyboard("{Shift>}{Enter}{/Shift}");
 
-    expect(screen.getByRole("menu")).toBeInTheDocument();
+    expect(screen.getByRole("listbox", { name: /to a chat's context/ })).toBeInTheDocument();
     expect(jumps).toEqual([]);
     await userEvent.keyboard("{Escape}{Enter}");
 
@@ -398,8 +401,8 @@ describe("a search hit into a chat, from the keyboard (#1151)", () => {
     await userEvent.keyboard("{Shift>}{Enter}{/Shift}");
     await userEvent.keyboard("{Escape}");
 
-    expect(screen.queryByRole("menu")).toBeNull();
-    expect(hits).toHaveFocus();
+    expect(screen.queryByRole("listbox", { name: /to a chat's context/ })).toBeNull();
+    expect(hits).toContainElement(document.activeElement as HTMLElement);
     expect(asked.some((one) => one.cmd === "reference_into_chat")).toBe(false);
     expect(box()).not.toHaveFocus();
   });
@@ -417,11 +420,11 @@ describe("a search hit into a chat, from the keyboard (#1151)", () => {
     const { asked, hits } = await found([hit("docs/b.md", [1], OTHER)]);
     await userEvent.keyboard("{Shift>}{Enter}{/Shift}");
 
-    expect(screen.queryByRole("menu")).toBeNull();
+    expect(screen.queryByRole("listbox", { name: /to a chat's context/ })).toBeNull();
     expect(status()).toHaveTextContent(
       "docs/b.md:1 is in another project, so this project's chats cannot take it.",
     );
-    expect(hits).toHaveFocus();
+    expect(hits).toContainElement(document.activeElement as HTMLElement);
     expect(asked.some((one) => one.cmd === "reference_into_chat")).toBe(false);
   });
 
@@ -429,8 +432,8 @@ describe("a search hit into a chat, from the keyboard (#1151)", () => {
     const { hits } = await found([hit("src/a.rs", [3])], []);
     await userEvent.keyboard("{Shift>}{Enter}{/Shift}");
 
-    expect(screen.queryByRole("menu")).toBeNull();
+    expect(screen.queryByRole("listbox", { name: /to a chat's context/ })).toBeNull();
     expect(status()).toHaveTextContent("No chat is open in this project to add src/a.rs:3 to.");
-    expect(hits).toHaveFocus();
+    expect(hits).toContainElement(document.activeElement as HTMLElement);
   });
 });

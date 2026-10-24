@@ -28,7 +28,8 @@
   each with whose it is. Each can be turned off for this project's chats where the program
   allows it, and says plainly where it does not. A project skill that a repo or a program also
   has says that a chat gets both. With the studio on, Settings' Plugins group is a summary that
-  opens it.
+  opens it. `purlis skill list` and `purlis skill show` list them too, each program's under its
+  own heading, with whose each is and whether a chat gets it (#3008).
 - **A skill can only narrow a chat** (Skill studio preview, #2771). A skill that asks to
   pre-approve tools or to add commands to a chat's events is handed to the chat without them,
   and says so; one that takes tools away keeps that. Each skill in the Skill studio shows, for

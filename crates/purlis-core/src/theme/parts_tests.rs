@@ -973,6 +973,60 @@ fn the_popover_and_menu_family_defaults_are_what_their_stylesheets_draw() {
     );
 }
 
+#[test]
+fn the_list_family_default_is_what_its_stylesheet_draws() {
+    use parts::State::{Disabled, Focused, Hover, Selected};
+    let css = include_str!("../../../../app/src/ui/list/list.css");
+    let row = "[data-scope=\"list\"][data-part=\"root\"]";
+    let at_rest = rule(css, row);
+    assert_eq!(
+        declared(at_rest, "background-color"),
+        None,
+        "a row at rest has no ground"
+    );
+    assert_eq!(
+        parts::look_of("list", "", &[]),
+        [
+            "transparent",
+            token_of(declared(at_rest, "color").unwrap()).as_str(),
+            "transparent"
+        ]
+    );
+    // The pointer's pill is drawn on a row that is not chosen: a chosen row keeps its wash.
+    let hover = rule(
+        css,
+        &format!("{row}[data-hovered]:not([data-disabled]):not([data-selected])"),
+    );
+    assert_eq!(
+        parts::look_of("list", "", &[Hover])[0],
+        token_of(declared(hover, "background-color").unwrap())
+    );
+    // The keyboard's ring changes no colour of the row.
+    assert_eq!(
+        parts::look_of("list", "", &[Focused]),
+        parts::look_of("list", "", &[])
+    );
+    let chosen = rule(css, &format!("{row}[data-selected]"));
+    for states in [&[Selected][..], &[Selected, Hover][..]] {
+        let look = parts::look_of("list", "", states);
+        assert_eq!(
+            look[0],
+            token_of(declared(chosen, "background-color").unwrap()),
+            "{states:?}"
+        );
+        assert_eq!(
+            look[1],
+            token_of(declared(chosen, "color").unwrap()),
+            "{states:?}"
+        );
+    }
+    let off = rule(css, &format!("{row}[data-unavailable]"));
+    assert_eq!(
+        parts::look_of("list", "", &[Disabled])[1],
+        token_of(declared(off, "color").unwrap())
+    );
+}
+
 // ---------------------------------------------------------------------------------------
 // The manifest and the schema
 // ---------------------------------------------------------------------------------------
@@ -980,7 +1034,7 @@ fn the_popover_and_menu_family_defaults_are_what_their_stylesheets_draw() {
 #[test]
 fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
     let manifest = parts::manifest_json();
-    assert_eq!(manifest["version"], 10);
+    assert_eq!(manifest["version"], 11);
     for one in manifest["states"].as_array().unwrap() {
         assert_eq!(one["since"], 1, "{one}");
     }
@@ -1172,6 +1226,22 @@ fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
             .iter()
             .any(|one| one["name"] == "danger" && one["consent"] == true)
     );
+    // The list family (#2911): a row, the list around it, its slots and a group's name.
+    let list = family("list");
+    assert_eq!(list["since"], 11);
+    assert_eq!(list["variants"], json!([]));
+    assert_eq!(
+        names(&list, "parts"),
+        [
+            "root",
+            "body",
+            "lead",
+            "label",
+            "description",
+            "trail",
+            "header"
+        ]
+    );
     // A textarea is as tall as its lines: no height to set.
     assert!(
         !family("textarea")["parts"][0]["properties"]
@@ -1282,6 +1352,10 @@ const MANIFEST_DIGESTS: &[(u32, &str)] = &[
     (
         10,
         "c939e7d602f3e4d800d4bc7ae3ce8a55abe8d0724287f76ecc058ec2a40c9efe",
+    ),
+    (
+        11,
+        "be280ba42efe49bf56ddae1aa28df6e1ee50ce46e77f4a3458af198b01077c39",
     ),
 ];
 

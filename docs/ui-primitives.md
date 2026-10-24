@@ -374,33 +374,10 @@ sizes: `--ui-row-height` is `--size-chrome`, `--ui-row-pad` is `--space-4`, `--u
 
 ### List row
 
-```html
-<ul class="ui-list" role="listbox">
-  <li class="ui-row" role="option" aria-selected="true" tabindex="0">
-    <span class="ui-row-lead">…state mark, icon…</span>
-    <span class="ui-row-label">The row's name</span>
-    <span class="ui-row-trail">…count, actions…</span>
-  </li>
-</ul>
-```
-
-- **`.ui-list`** is the container: no bullets, margin or padding. **`.ui-row`** is one line,
-  whether it is an `<li>`, a `<div>` or a `<button>`. As a button it drops the bezel and fills
-  its line.
-- **One height**: at least `--ui-row-height`, the strips' `--size-chrome`, so a list next to a
-  strip keeps the same rhythm. No vertical padding: the height does that job. A row's text starts
-  `--space-4` in, which is where a field's text starts, so a list lines up with its filter.
-- **Three slots**, separated by `--space-3`. **`.ui-row-lead`** holds the marks: a state, an
-  icon, a persona. **`.ui-row-label`** takes the remaining room and is cut to one line with an
-  ellipsis. **`.ui-row-trail`** holds counts and actions, pushed to the row's end. A slot the row
-  does not need is left out. Never draw an empty slot to line rows up.
-- **Selected** is `aria-selected="true"`, any `aria-current` but `"false"`, or
-  `aria-pressed="true"` on a row a list's toggle picks (the memory archive, DS-12). It is drawn
-  with `list.selected` and an inset edge of `list.selected-edge` down the row's start, the
-  selected look every tree has had since #1672. It stays selected under the pointer. Any other row
-  under the pointer is `surface.hover`. **The keyboard's place is the inside focus ring**
-  (`--focus-ring-inset`), with no fill, so a list never clips it and a focused row never looks
-  selected.
+**A list's row is the list family's** since #2911: [The list family](#the-list-family) below
+draws it, from the same geometry, with its slots (`RowLead`, `RowLabel`, `RowDescription`,
+`RowTrail`) where `.ui-row-lead`, `.ui-row-label` and `.ui-row-trail` were. `.ui-row` is left only
+under a tree's row (`.ui-row.ui-tree-row`), which the tree family takes next.
 
 ### Tree row
 
@@ -717,6 +694,53 @@ the old classes until the select family moves (#2906).
   `projectShown.guard.test.tsx` draws each member under a project behind.
 - **Stories hold it** (`Menu.stories.tsx`, `Popover.stories.tsx`, `docs/component-stories.md`).
 
+## The list family
+
+**Every list is the list family** (`app/src/ui/list/List.tsx`, #2911, ADR 0104), on React
+Aria's `ListBox` and `GridList`. No screen says a list's role (`listbox`, `option`) or wears the
+old `.ui-list` class: `eslint.config.js` refuses both (`purlis/list-family`, an error).
+
+| Member | What it is |
+| --- | --- |
+| `ListBox`, `ListOption`, `ListSection` | **A list to choose from** (the WAI-ARIA listbox): a persona to start a chat with, a theme, a search hit, a skill. A choice of one follows the arrows; `onAction` runs the one picked; `layout="grid"` lays its options out as cards the arrows walk in two directions; an option `unavailable` says so (`aria-disabled`) and keeps the keyboard, so why is read |
+| `List`, `ListRow`, `ListRowSection` | **A list of rows that act** (a grid of one column): a panel's todos, a vault's rows. A row runs something (`onAction`), may be chosen, and may hold its own buttons, which ← and → reach |
+| `RowLead`, `RowLabel`, `RowDescription`, `RowTrail`, `RowBelow` (`Row.tsx`) | A row's slots, the same in a list, a tree and a table: its marks, its words (one line, cut with an ellipsis), the one line about it in the quiet tier, its end (a count, its own actions), and a line under its words inside it (what a search matched in its body, why the core refused it). **In an option, its words are its name and its one line its description** (React Aria's `label` and `description` slots), so a reader hears the name alone and then what it is, never the row's content run together |
+| `AimedList`, `AimedOption` (`AimedList.tsx`) | **A list a field aims at**: a combobox's list drawn in place, the palette's actions, projects and files. The field keeps the keyboard and moves the aim (`aria-activedescendant`); the aimed row wears the keyboard's ring inside it and the aim's fill (`control.aimed`); a press runs a row |
+| `ListFilter`, `useListFilter`, `noMatchSaid` (`ListFilter.tsx`) | **A list over about seven items gets a filter** (R164): from eight, a field at the large size over the list, the total in its placeholder ("Filter 28 personas"), a case-insensitive part of each name, and "No persona is called “x”." where nothing matches. What is typed is the caller's, so drawing the list again keeps the field, its focus and its caret (R168) |
+| `useRowDrag` (`drag.ts`) | What a dragged row carries, by type, to a drop target outside the window's collections (a file's reference onto a chat) |
+
+- **Sizes**: `sm` (24 px, a side view's dense list), `md` (28, the default) and `lg` (32, a
+  dialog's list beside its details). A list takes one size. Its rows keep `space.1` apart, so one
+  row's pill never touches its neighbour's wash.
+- **Where a list gets a filter** (R164): a list in a dialog takes `ListFilter` from eight items.
+  A panel's list (`PanelList`) keeps its own search from a page and one row, which reads a row's
+  body too and pages the rest (ADR 0065 Q11): a side panel is no dialog, and it searches from
+  where it starts to page (`PAGE`).
+- **Nothing moves when a state changes** (#2800). Under the pointer a row takes its pill
+  (`surface.hover`); chosen, the wash (`list.selected`) with its words in the primary tier and an
+  edge down its start (`list.selected-edge`), a shadow, so it is told by a shape as well as a
+  colour (R21); the keyboard's ring is drawn inside the row (`--focus-ring-inset`, [ADR 0104's
+  amendment](adr/0104/2026-10-22-a-row-draws-its-focus-ring-inset.md)). A row at rest is in the
+  secondary tier (R19); one that cannot be used in the faint tier. **The rows stand in from the
+  list's edges** (`space.2`), so a pill never touches the panel the list is joined to.
+- **The keyboard is React Aria's**: one Tab stop, the row last focused; ↑ and ↓ move and stop at
+  the ends; Home and End; typing finds a row by its `textValue`; Enter and Space choose or run.
+- **A row's menu and its tooltip are the row's own** (`menu` and `tip` on a row): a collection
+  draws its rows itself, so no `ContextMenu` or `Tooltip` can be put around one. The menu opens
+  on a right-click, or by Shift+F10 or the menu key while the row has the keyboard, on its first
+  row (`useContextMenu`, `askForAMenu` in `ui/menu/ContextMenu.tsx`); the tooltip shows under the
+  pointer after the window's delay, at once while the keyboard is on the row, is the row's
+  description while it is shown, and Esc takes it down (`RowTip.tsx`).
+- **A drag is never the only way**: whatever dropping a row does, its menu or a key does too
+  (Shift+Enter on a search hit hands it to a chat).
+- **Drawn by its parts** (ADR 0103): the list is `data-scope="list" data-part="body"`, a row the
+  family's root (`data-part="root"`, its `data-size`) with React Aria's state attributes, its
+  slots and a group's `header` (`data-named` for a name from data: a day, a file). `ui/list/list.css`
+  draws the family default; a theme's parts reach the same attributes.
+- **Stories hold it** (`List.stories.tsx`): a list to choose from under its filter, a list a field aims at, rows that act
+  with a row's own button and its menu, a grid of cards, and an empty one, in
+  Chromium and WebKit, with axe.
+
 ## The dialog family
 
 **Every dialog and alert dialog is `Dialog` or `AlertDialog`** (`app/src/ui/dialog/Dialog.tsx`,
@@ -734,7 +758,7 @@ the old classes until the select family moves (#2906).
 | **Height** | At most the window less 48 px; `height` gives a dialog one of its own, and it takes the lesser of the two whatever it holds. |
 | **A fixed top** | 24 px under the window's top edge, so a change in its content moves only its bottom edge. |
 | **Text that changes with a choice keeps its room** | `Reserved` (`ui/dialog/Reserved.tsx`) lays every text a place can show in one cell, and an answer's `reserve` lists every word it can say (`Create`, `Creating…`), so nothing moves or resizes when a choice or a state changes. |
-| **A list over about seven items gets a filter** | `useListFilter` and `ListFilter` (`ui/dialog/ListFilter.tsx`): from eight items, a filter field at the large size over the list, its total in its placeholder ("Filter 28 personas"), a case-insensitive substring of each item's name, and "No persona is called “x”." where nothing matches. |
+| **A list over about seven items gets a filter** | `useListFilter` and `ListFilter` (the list family's, `ui/list/ListFilter.tsx`): from eight items, a filter field at the large size over the list, its total in its placeholder ("Filter 28 personas"), a case-insensitive substring of each item's name, and "No persona is called “x”." where nothing matches. |
 | **At most three answers, each in its place** | `cancel` leads, `main` trails, and one `alternative` may stand between them. They are props, not children, so a fourth, or a main action anywhere but last, cannot be written. The main action is in the same place in every dialog. |
 | **⏎ and Esc** | The body and the footer are one form, so Return in a field is the main action and a button with the keyboard is pressed by its own Return. An answer that grants (`grants`) is pressed, never found by Return, from a field or a checkbox, and `byReturn` cannot say otherwise. An act that cannot be taken back (`danger`), or one that says so (`byReturn: false`, Start a chat), is pressed, never found by Return from a field. Esc closes, as `onClose`. A click outside answers nothing. |
 | **No dialog opens another** | One opened while another is up says so (`console.error`). A question about a dialog's row is asked in its place (Extensions' Review), and the dialog comes back once it is answered. |
@@ -773,12 +797,34 @@ The chat strip's tabs are drawn by `app/src/ui/tabs`: `TabCell` is one tab's cel
 column (`layout`), the strip and the panel under it (`body`), `tabPart` the label, the `×` and a
 count, and `editorToolbar` the bar over a file. `tabs.css` draws Purlis's docked tabs from those
 attributes; a theme's `tabs.*` parts reach the same ones (`crates/purlis-core/docs/themes.md`,
-Session tabs). The strip keeps its behaviour where it was: the roving focus, the drag, the
-tablist that owns the tabs (`StripTablist`) and the collapse into show-more (`fits.ts`, which
-now counts the theme's gap between tabs). Choosing a tab changes its colour and fill only
-(`tabs.guard.test.ts`; the Docked story measures every tab before and after each choice). The
-other tab strips (projects, workspaces, the activity tabs) move to the family with their own
-shell tickets.
+Session tabs). Choosing a tab changes its colour and fill only (`tabs.guard.test.ts`; the Docked
+story measures every tab before and after each choice).
+
+**The strip is on React Aria's tabs** (#3042, `app/src/ui/tabs/TabStrip.tsx`): `useTabStrip`
+holds the strip's tabs as React Aria does (`useTabListState`), `TabStripRow` is the row that holds
+the cells and its tablist (`useTabList`), and `StripTab` is one tab (`useTab`). They follow the
+WAI-ARIA "Tabs" pattern:
+
+- **The keyboard along it**: Left and Right move to the tab beside, wrapping past either end, Home
+  and End to the first and the last, the direction following the locale. Only these keys are
+  React Aria's, and only pressed on a tab: a `×` or a chip beside a tab keeps its own, Tab goes
+  on to the next stop in the document (the `+`), and a key the tab has taken is its own (a lifted
+  tab's arrows are the drag's).
+- **Manual activation**: moving is not choosing; Enter or Space chooses, through the strip's own
+  press (`tab.select:<id>`), which can do what React Aria's selection cannot: a press on the tab in
+  front showing a task goes back to its chat, and a drag's release is no press.
+- **One Tab stop**: the tab the keyboard is on while it is inside, the chosen tab once it leaves
+  (or the first drawn when the chosen one is collapsed), and the chosen tab again when the tab
+  with the keyboard goes.
+- **Still the strip's own**: the tablist that owns the tabs by id and nothing else (below), the
+  drag along it (`dnd-kit`, `sortable.tsx`; React Aria's drag and drop is for list boxes, grids,
+  tables and trees) and the collapse into show-more (`fits.ts`, which counts the theme's gap
+  between tabs).
+
+`purlis/tabs-family` (an error) refuses a `tab`, `tablist` or `tabpanel` role written by hand,
+the old hand-made tablist (`StripTablist`) and `data-scope="tabs"` outside `src/ui`. The tablists
+still drawn by hand (the workspace strip, the activity bars, the project rail's) are turned off by
+file in `eslint.config.js` until their own tickets move them.
 
 
 ## The activity family: the four corners
@@ -1757,12 +1803,14 @@ chat's `×`, fresh mark and task chip, every strip's own `+`), so the `tablist` 
 element that holds them.
 
 - **The strip element** (`.projects`, `.workspaces-strip`, `.tabs`) has no role. It is marked
-  `data-strip="Projects" | "Workspaces" | "Tabs"`, and keeps its cells, its `RovingFocusGroup.Root`
-  (the arrows, Home and End read the order from the document, not from a role), its `DndContext`
-  and the ref `useRoom` measures.
+  `data-strip="Projects" | "Workspaces" | "Tabs"`, and keeps its cells, its keyboard (React Aria's
+  on the chat strip, `TabStripRow`; a `RovingFocusGroup.Root` on the others, whose arrows, Home and
+  End read the order from the document, not from a role), its `DndContext` and the ref `useRoom`
+  measures.
 - **The tablist** is an empty `<span role="tablist" aria-label=…>` first inside it
-  (`StripTablist.tsx`), owning the tabs drawn by id, in order. The stylesheet lays it over the
-  strip with `pointer-events: none`, so it takes no room and no press.
+  (`TabStripRow` on the chat strip, `StripTablist.tsx` on the others), owning the tabs drawn by
+  id, in order. The stylesheet lays it over the strip with `pointer-events: none`, so it takes no
+  room and no press.
 - **Reaching a strip's tabs**: code, the stylesheet and the scenario specs go through
   `[data-strip="…"]`; a vitest finds the tablist by its role and name and takes the strip around
   it with `stripNamed` (`test-strips.ts`), which also holds the tablist to owning exactly the tabs

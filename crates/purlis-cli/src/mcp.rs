@@ -254,7 +254,7 @@ fn instructions() -> String {
 
 /// The chat's harness, by the word the app named it with.
 fn this_harness() -> Option<String> {
-    purlis_core::envvar::var(purlis_core::hookwire::HARNESS_ENV).filter(|kind| !kind.is_empty())
+    purlis_core::hookwire::chat_harness(&purlis_core::envvar::var)
 }
 
 /// The route this chat's skills take, by its harness and the project's harness declarations.
@@ -688,7 +688,7 @@ fn wait_report(
     waits: bool,
     env: &dyn Fn(&str) -> Option<String>,
 ) -> Option<purlis_core::hookwire::Report> {
-    if says_its_own_wait(env(purlis_core::hookwire::HARNESS_ENV).as_deref()) {
+    if says_its_own_wait(purlis_core::hookwire::chat_harness(env).as_deref()) {
         return None;
     }
     let kind = if waits { ASKS } else { ANSWERED };

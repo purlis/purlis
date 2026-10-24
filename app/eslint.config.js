@@ -19,7 +19,7 @@ const PRIMITIVES = ["react-aria-components", "react-aria", "react-stately"];
  * their role.
  */
 const OTHER_FAMILIES = {
-  roles: ["tab", "option", "switch", "radio", "checkbox", "treeitem", "row", "link"],
+  roles: ["tab", "switch", "radio", "checkbox", "treeitem", "row", "link"],
   classes: [
     // Rows of a list, a tree or a table, a segment.
     "ui-row",
@@ -47,7 +47,6 @@ const OTHER_FAMILIES = {
     "plane-root",
     // The cards: the welcome's doors, a recent project, a repo.
     "welcome-door",
-    "recent-project",
     "repo-card",
     // The settings nav, and the files a settings page is edited as.
     "ui-settings-nav-item",
@@ -105,7 +104,24 @@ export default tseslint.config(
       "purlis/status-item-family": "error",
       "purlis/rail-family": "error",
       "purlis/activity-family": "error",
+      // Every list is the list family's, since #2911.
+      "purlis/list-family": "error",
+      // A tablist is the tabs family's, on React Aria, since #3042.
+      "purlis/tabs-family": "error",
     },
+  },
+  // **The tablists still drawn by hand**, each until the ticket that moves it onto the tabs
+  // family (#3042): the workspace strip (#2916), the activity bars (#2917), the project rail's
+  // tablist (#2915's rail family, whose projects are tabs), and the strip's old hand-made tablist
+  // they share.
+  {
+    files: [
+      "src/WorkspaceStrip.tsx",
+      "src/ActivityBar.tsx",
+      "src/ProjectRail.tsx",
+      "src/StripTablist.tsx",
+    ],
+    rules: { "purlis/tabs-family": "off" },
   },
   // The select's list is drawn in the old menu classes until the select family moves (#2906).
   {

@@ -158,7 +158,7 @@ function core(): {
 // read whether or not it is the one on screen.
 const todoRows = () =>
   within(screen.getByTestId("panel-todos"))
-    .queryAllByRole("listitem", { hidden: true })
+    .queryAllByRole("row", { hidden: true })
     .map((row) => row.textContent);
 
 beforeEach(() => {

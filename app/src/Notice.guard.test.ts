@@ -360,6 +360,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       READING +
       ": Finding files…",
   },
+  "PanelList.tsx": {
+    count: 1,
+    why: "a refusal said about one row (a Land's member, #474), inside that row: an inline error, not a line",
+  },
   "Panels.tsx": { count: 2, why: "a panel's read refusal and its blocks' tone, inside the panel" },
   "PersonaProfile.tsx": {
     count: 3,
@@ -486,9 +490,9 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why: VAULT,
   },
   "Views.tsx": {
-    // Four: a region drawn inside another tag's attribute is that region's, counted once
-    // (#2910).
-    count: 4,
+    // Three: a region drawn inside another tag's attribute is that region's, counted once
+    // (#2910). A Land's refusal beside its row is the row's now (`PanelList.tsx`, #2911).
+    count: 3,
     why: VIEWS,
   },
   "Welcome.tsx": {

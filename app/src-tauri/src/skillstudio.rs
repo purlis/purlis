@@ -217,6 +217,15 @@ pub enum SkillSwitch {
     Not { why: String },
 }
 
+impl From<purlis_core::skills::Switch> for SkillSwitch {
+    fn from(switch: purlis_core::skills::Switch) -> SkillSwitch {
+        match switch {
+            purlis_core::skills::Switch::Alone => SkillSwitch::Alone,
+            purlis_core::skills::Switch::Not(why) => SkillSwitch::Not { why },
+        }
+    }
+}
+
 /// What the project has a harness's plugin at.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
 #[serde(rename_all = "kebab-case")]
@@ -387,7 +396,7 @@ impl From<purlis_core::skills::first_open::FirstOpen> for StudioFirst {
 
 /// The studio of the project at `root`, for a chat at its root (`workspace` `None`) or in
 /// `workspace`, as `persona` or on none, with the built-in skills in `built_in`: nothing while
-/// the flag is off. Its rows are the command line's (`purlis_core::skills::studio_rows`).
+/// the flag is off. Its list is the command line's (`purlis_core::skills::studio_list`).
 pub(crate) fn studio(
     root: &std::path::Path,
     built_in: Option<&std::path::Path>,
@@ -411,23 +420,20 @@ pub(crate) fn studio(
             first: StudioFirst::default(),
         };
     }
-    let set = purlis_core::skills::in_the_studio(
-        built_in,
-        root,
-        workspace.as_deref(),
-        persona.as_deref(),
-    );
-    let names = persona
-        .as_deref()
-        .map(|persona| purlis_core::skills::names_of(root, persona))
-        .unwrap_or_default();
     let off = workspace
         .as_deref()
         .map(|ws| purlis_core::skills::turned_off(root, ws))
         .unwrap_or_default();
-    let all = purlis_core::skills::harnesses_in_the_studio(&set, root, workspace.as_deref(), env);
-    let mut rows = purlis_core::skills::studio_rows(&set, root, &names);
-    purlis_core::skills::with_harness_badges(&mut rows, &all, root);
+    let purlis_core::skills::StudioList {
+        rows,
+        harnesses: all,
+    } = purlis_core::skills::studio_list(
+        built_in,
+        root,
+        workspace.as_deref(),
+        persona.as_deref(),
+        env,
+    );
     let first = purlis_core::skills::first_open::first_open(root, &rows).into();
     let skills = rows
         .into_iter()
@@ -470,7 +476,7 @@ pub(crate) fn studio(
             lint: row.lint,
         })
         .collect();
-    let (harnesses, clashes) = harnesses(&all, root);
+    let (harnesses, clashes) = harnesses(&all);
     let workspaces = purlis_core::workspaces::Plane::open(root)
         .workspaces()
         .unwrap_or_default();
@@ -491,13 +497,9 @@ pub(crate) fn studio(
 /// its harness can leave it out.
 fn outside_shown(row: purlis_core::skills::StudioRow) -> StudioSkill {
     let (owner, switch) = match row.outside {
-        Some(purlis_core::skills::OutsideRow { owner, switch }) => (
-            Some(owner.into()),
-            Some(match switch {
-                purlis_core::skills::Switch::Alone => SkillSwitch::Alone,
-                purlis_core::skills::Switch::Not(why) => SkillSwitch::Not { why },
-            }),
-        ),
+        Some(purlis_core::skills::OutsideRow { owner, switch }) => {
+            (Some(owner.into()), Some(switch.into()))
+        }
         None => (None, None),
     };
     StudioSkill {
@@ -527,7 +529,6 @@ fn outside_shown(row: purlis_core::skills::StudioRow) -> StudioSkill {
 /// Each harness in the studio, and every clash, for a chat whose plane skills are `set`.
 fn harnesses(
     all: &[purlis_core::skills::HarnessInTheStudio],
-    root: &std::path::Path,
 ) -> (Vec<StudioHarness>, Vec<StudioClash>) {
     use purlis_core::harness_plugin;
     let mut clashes: Vec<StudioClash> = Vec::new();
@@ -573,10 +574,7 @@ fn harnesses(
                         pinned: it.pinned.map(str::to_owned),
                     })
                     .collect(),
-                skills: purlis_core::skills::outside_rows(one, root)
-                    .into_iter()
-                    .map(outside_shown)
-                    .collect(),
+                skills: one.rows.iter().cloned().map(outside_shown).collect(),
             }
         })
         .collect();

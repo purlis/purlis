@@ -20,10 +20,6 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
   "Brief.tsx": [
     "<button className=\"pane-brief\">",
   ],
-  "ChatStrip.tsx": [
-    "<button>",
-    "<button>",
-  ],
   "ChatsSection.tsx": [
     "<button className=\"needs-you-mark rolled-up\">",
   ],
@@ -50,15 +46,11 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     "<button className=\"tab-tasks-counts\">",
     "<button className=\"tasks-menu-place\">",
   ],
-  "TaskChangesTab.tsx": [
-    "<button className=\"vault-secret\">",
-  ],
   "TaskEnd.tsx": [
     "<button className=\"task-end\">",
   ],
   "Welcome.tsx": [
     "<button className=\"welcome-door\">",
-    "<button className=\"recent-project\">",
   ],
   "WorkspaceStrip.tsx": [
     "<button className={root ? \"plane-root\" : undefined}>",

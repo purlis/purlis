@@ -261,3 +261,62 @@ tester.run("purlis/status-item-family", purlisUi.rules["status-item-family"], {
     { code: `<span data-scope="status-item">x</span>`, errors: [{ messageId: "scope" }] },
   ],
 });
+
+tester.run("purlis/list-family", purlisUi.rules["list-family"], {
+  valid: [
+    { code: `<ListBox aria-label="Personas" selectionMode="single">{rows}</ListBox>` },
+    { code: `<List aria-label="Todos" size="sm">{rows}</List>` },
+    // A list of words is no collection: a sentence's bullets stay a list.
+    { code: `<ul className="contributes"><li>a theme</li></ul>` },
+    { code: `<div role="list"><span role="listitem">x</span></div>` },
+  ],
+  invalid: [
+    {
+      code: `<div role="listbox" aria-label="Search results">{hits}</div>`,
+      errors: [{ messageId: "role" }],
+    },
+    { code: `<li role="option" aria-selected>x</li>`, errors: [{ messageId: "role" }] },
+    { code: `<ul role={"listbox"}>{rows}</ul>`, errors: [{ messageId: "role" }] },
+    { code: `<li role={on ? "option" : "none"}>x</li>`, errors: [{ messageId: "role" }] },
+    { code: `<ul className="ui-list">{rows}</ul>`, errors: [{ messageId: "oldClass" }] },
+    { code: `<div data-scope="list">x</div>`, errors: [{ messageId: "scope" }] },
+  ],
+});
+
+tester.run("purlis/tabs-family", purlisUi.rules["tabs-family"], {
+  valid: [
+    {
+      code: `<StripTab strip={along} tabKey="1" selected tip={undefined} id={idOf(0)}>talk</StripTab>`,
+    },
+    { code: `<TabStripRow strip={along} name="Tabs" ids={ids} className="tabs">x</TabStripRow>` },
+    { code: `<div className="panes" {...tabPanelOf(namedBy)} />` },
+    // Another role, and a selector that reads a tab: neither draws one.
+    { code: `<li role="treeitem">x</li>` },
+    { code: `<li role={open ? "treeitem" : "option"}>x</li>` },
+    { code: `strip.querySelector('[role="tab"][aria-selected="true"]')` },
+    // The id helper beside the old tablist is not a tablist.
+    { code: `import { useTabIds } from "./StripTablist";` },
+    { code: `<span data-scope="rail">x</span>` },
+  ],
+  invalid: [
+    { code: `<button role="tab" aria-selected>talk</button>`, errors: [{ messageId: "role" }] },
+    { code: `<div role="tablist" aria-label="Tabs" />`, errors: [{ messageId: "role" }] },
+    { code: `<div role="tabpanel" aria-labelledby={id} />`, errors: [{ messageId: "role" }] },
+    { code: `<button role={"tab"}>talk</button>`, errors: [{ messageId: "role" }] },
+    { code: "<div role={`tablist`} />", errors: [{ messageId: "role" }] },
+    { code: `<li role={open ? "tab" : "option"} />`, errors: [{ messageId: "role" }] },
+    {
+      code: `const panel = { role: "tabpanel", "aria-labelledby": id };`,
+      errors: [{ messageId: "role" }],
+    },
+    {
+      code: `import { StripTablist, useTabIds } from "./StripTablist";`,
+      errors: [{ messageId: "owner" }],
+    },
+    { code: `<span data-scope="tabs" data-part="tab" />`, errors: [{ messageId: "scope" }] },
+    {
+      code: `const part = { "data-scope": "tabs", "data-part": "strip" };`,
+      errors: [{ messageId: "scope" }],
+    },
+  ],
+});

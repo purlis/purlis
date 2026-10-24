@@ -56,10 +56,6 @@ use purlis_core::toolhooks::Answer;
 /// denial. `hooks.py:DENY_EXIT`.
 const DENY_EXIT: u8 = 2;
 
-/// `$CHARTER_HARNESS`: which harness this session is running under, as charter's own word for
-/// it. A7 reads it to decide whether an `agent_id` on the payload means a sub-agent.
-const HARNESS_ENV: &str = "PURLIS_HARNESS";
-
 /// The plane's facts, owned, because [`Plane`] borrows them.
 struct Found {
     root: String,
@@ -87,7 +83,9 @@ pub fn pretooluse(payload: &str, now: Option<&str>) -> crate::hooks::Answered {
     let cwd = text(&data["cwd"]);
     let agent_id = data["agent_id"].as_str().map(str::to_owned);
     let permission_mode = data["permission_mode"].as_str().map(str::to_owned);
-    let harness = purlis_core::envvar::var(HARNESS_ENV);
+    // Which harness this session runs under: A7 reads it to decide whether an `agent_id` on the
+    // payload means a sub-agent.
+    let harness = purlis_core::hookwire::chat_harness(&purlis_core::envvar::var);
 
     // `config.ROOT`: `$CHARTER_ROOT`, then the marker walk up from the process's directory,
     // then — when nothing is found — the directory itself, which is what Python falls back to

@@ -317,6 +317,15 @@ describe("tabs and their panes", () => {
     ]);
   });
 
+  it("hands back the very tabs when the pane asked for already has the focus (#3136)", () => {
+    // Every focus inside a pane asks for it: a click, a select's list opening and closing.
+    // New tabs there draw the whole window again and read the sidebar again each time.
+    const tabs = focusPane(splitFocusedPane(openTab(noTabs(), 11), "row", 12), 1);
+
+    expect(focusPane(tabs, 1)).toBe(tabs);
+    expect(focusPane(tabs, 2)).not.toBe(tabs);
+  });
+
   it("leaves tabs alone when something that is not there is closed or focused", () => {
     const tabs = openTab(noTabs(), 11);
 

@@ -28,6 +28,7 @@ fn skill(dir: &Path, name: &str, description: &str, more: &str) -> Effective {
             description: description.to_owned(),
             path,
         },
+        root: dir.to_path_buf(),
         route: Route::Mcp,
         origin: Origin::Project,
         local: false,
@@ -131,6 +132,45 @@ fn a_load_follows_no_link_out_of_the_skill() {
     std::os::unix::fs::symlink(outside.join("secret.txt"), &linked.skill.path).unwrap();
     let refused = load(&linked, &PLAIN).unwrap_err();
     assert!(refused.contains("not a plain file"), "{refused}");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_folder_swapped_for_a_link_after_the_set_was_read_is_never_loaded_through() {
+    // SK-36: the set is read (the look), then a folder on the way to the skill is swapped for a
+    // link to one outside it that holds a skill of the same name; the load walks from the
+    // level's root through held folders and refuses it, naming nothing outside.
+    let tmp = tempfile::tempdir().unwrap();
+    let outside = tmp.path().join("outside");
+    let elsewhere = skill(&outside, "deploy", "Not this one.", "");
+    std::fs::write(outside.join("deploy/secret.txt"), "no\n").unwrap();
+    let level = tmp.path().join("skills");
+    let mut deploy = skill(&level, "deploy", "Ship it.", "");
+    deploy.root = tmp.path().to_path_buf();
+    assert!(load(&deploy, &PLAIN).is_ok(), "loaded before the swap");
+
+    // The skill's own folder.
+    std::fs::rename(level.join("deploy"), tmp.path().join("was-deploy")).unwrap();
+    std::os::unix::fs::symlink(outside.join("deploy"), level.join("deploy")).unwrap();
+    let refused = load(&deploy, &PLAIN).unwrap_err();
+    assert!(
+        refused.ends_with(&crate::Refusal::FolderLink.to_string()),
+        "{refused}"
+    );
+
+    // The level's folder above it.
+    std::fs::remove_file(level.join("deploy")).unwrap();
+    std::fs::rename(&level, tmp.path().join("was-skills")).unwrap();
+    std::os::unix::fs::symlink(&outside, &level).unwrap();
+    let refused = load(&deploy, &PLAIN).unwrap_err();
+    assert!(
+        refused.ends_with(&crate::Refusal::FolderLink.to_string()),
+        "{refused}"
+    );
+    assert!(
+        load(&elsewhere, &PLAIN).is_ok(),
+        "the outside skill is whole"
+    );
 }
 
 #[test]

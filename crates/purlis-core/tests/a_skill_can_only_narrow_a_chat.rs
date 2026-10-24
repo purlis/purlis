@@ -271,20 +271,13 @@ fn nothing_is_handed_through_a_link_and_only_the_top_skill_md_is_the_skills() {
         .map(|one| (one.name.clone(), one.why.to_string()))
         .collect();
     broken.sort();
+    const LINK: &str = "a link, so purlis doesn't read it";
     assert_eq!(
         broken,
         [
-            (
-                "away".to_owned(),
-                "purlis hands it to no chat: its folder is a link, which purlis does not follow"
-                    .to_owned()
-            ),
-            (
-                "pointed".to_owned(),
-                "purlis hands it to no chat: its SKILL.md is a link or not a plain file, which \
-                 purlis does not follow"
-                    .to_owned()
-            ),
+            // Discovery leaves both out before anything is handed (SK-36).
+            ("away".to_owned(), LINK.to_owned()),
+            ("pointed".to_owned(), LINK.to_owned()),
         ]
     );
 }

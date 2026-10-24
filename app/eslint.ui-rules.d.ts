@@ -20,7 +20,11 @@ export const purlisUi: {
     | "panel-family"
     | "panel-section-family"
     | "empty-state-family"
-    | "status-item-family",
+    | "status-item-family"
+    | "list-family"
+    | "rail-family"
+    | "activity-family"
+    | "tabs-family",
     Rule.RuleModule
   >;
 };

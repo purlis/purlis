@@ -408,3 +408,29 @@ fn a_studio_with_only_built_in_skills_lists_them_and_offers_the_starts_and_the_s
         })
     );
 }
+
+#[test]
+fn the_window_spells_an_owner_and_a_switch_as_the_command_line_does() {
+    use purlis_core::skills::{Owner as CoreOwner, Switch as CoreSwitch};
+    for owner in [
+        CoreOwner::You,
+        CoreOwner::Plugin("figma".to_owned()),
+        CoreOwner::Repo("app".to_owned()),
+    ] {
+        assert_eq!(
+            serde_json::to_value(Owner::from(owner.clone())).unwrap(),
+            serde_json::to_value(&owner).unwrap(),
+            "{owner:?}"
+        );
+    }
+    for switch in [
+        CoreSwitch::Alone,
+        CoreSwitch::Not("only with its plugin".to_owned()),
+    ] {
+        assert_eq!(
+            serde_json::to_value(SkillSwitch::from(switch.clone())).unwrap(),
+            serde_json::to_value(&switch).unwrap(),
+            "{switch:?}"
+        );
+    }
+}

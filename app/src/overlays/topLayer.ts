@@ -17,7 +17,12 @@ import { createElement, type ComponentPropsWithRef, type ElementType } from "rea
  * rows and its dialogs.
  */
 export function topLayer(): HTMLElement {
-  const found = document.querySelector<HTMLElement>("body > [data-purlis-top-layer]");
+  // Asked on every draw of an open list, so it looks only among the body's own children: a
+  // `body > [...]` selector walks the whole window's tree to answer (#3136).
+  const found = Array.from(document.body.children).find(
+    (child): child is HTMLElement =>
+      child instanceof HTMLElement && child.hasAttribute("data-purlis-top-layer"),
+  );
   if (found) return found;
   const made = document.createElement("div");
   made.setAttribute("data-purlis-top-layer", "");
