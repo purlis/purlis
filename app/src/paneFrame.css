@@ -30,6 +30,8 @@
 /* A pane with a chat, or with a task that is away, is the terminal's fill from edge to edge. A
    view's pane keeps its own ground. */
 .pane-frame.pane-headed {
+  /* Its size is the layout's, never its content's, so what it holds can be capped by it. */
+  container-type: size;
   background-color: var(--terminal-background);
 }
 
@@ -201,11 +203,16 @@
   opacity: 1;
 }
 
-/* What a way out opened stays under the line, at the warning's width. */
+/* What a way out opened stays under the line, at the warning's width, and never more than a
+   third of the pane's height: past that it scrolls in its own box, so a warning with a long
+   brief under it is never taller than the band can scroll to, and its line and ways out are
+   always whole. */
 .pane-top
   :is(.notice-pane-box, [data-scope="notice"][data-placement="pane"])
   > :is(.notice-under-pane, [data-scope="notice"][data-part="under"]) {
   padding-inline: 0;
+  max-block-size: 33cqb;
+  overflow-y: auto;
 }
 
 /* **A consent's Allow stands apart from Keep blocked** (rule 9): the first plain answer after
