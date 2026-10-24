@@ -11,6 +11,7 @@ import {
 } from "react";
 import { Channel } from "@tauri-apps/api/core";
 import { FitAddon } from "@xterm/addon-fit";
+import { afterTheSlide } from "./railSlide";
 import { SearchAddon } from "@xterm/addon-search";
 import { Terminal } from "@xterm/xterm";
 import { CHAT_KEYBOARD } from "./actions";
@@ -353,7 +354,13 @@ export function SessionPane({
     const resized = pane.onResize(({ cols, rows }) => {
       void commands.resizeSession(plane, session, cols, rows);
     });
-    const watching = new ResizeObserver(() => fit.fit());
+    // Once the project rail's slide is over, not on each of its frames (`railSlide.ts`): the
+    // program is told one new size per hide or show.
+    const refit = () => fit.fit();
+    let unqueue = () => {};
+    const watching = new ResizeObserver(() => {
+      unqueue = afterTheSlide(refit);
+    });
     watching.observe(where);
 
     let view: number | undefined;
@@ -405,6 +412,8 @@ export function SessionPane({
       unfont();
       unread();
       watching.disconnect();
+      // A pane gone before the slide's end fits nothing at it.
+      unqueue();
       wheeling.dispose();
       typed.dispose();
       bytes.dispose();

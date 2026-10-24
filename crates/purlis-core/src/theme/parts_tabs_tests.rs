@@ -397,7 +397,8 @@ fn the_manifest_names_the_tabs_and_the_editor_toolbar() {
             "tooltip",
             "popover",
             "menu",
-            "dialog"
+            "dialog",
+            "rail",
         ]
     );
     let tabs = &manifest["families"][4];

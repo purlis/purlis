@@ -19,10 +19,11 @@ import App from "./App";
 import type { Moved, OpenChat } from "./bindings";
 import {
   dragWithTheKeyboard,
-  laidOutInARow,
+  laidOutInAColumn,
   openTheInbox,
   queryStripNamed,
   stripNamed,
+  closeFromTheRail,
 } from "./test-strips";
 import { DEFAULT_THEME, drawIn, inForce, onDrawn, type Theme } from "./theme/theme";
 import { KEPT_DRAWN } from "./projectShown";
@@ -274,7 +275,7 @@ const projectTabs = () =>
     .getAllByRole("tab")
     .map(
       (tab) =>
-        `${tab.querySelector(".project-name")?.textContent}${
+        `${tab.getAttribute("aria-label")}${
           tab.getAttribute("aria-selected") === "true" ? "*" : ""
         }`,
     );
@@ -293,7 +294,7 @@ const started = (plane: string) => panes.get(`${plane}#1`)?.started ?? 0;
 function projectTab(name: string): HTMLElement {
   const tab = within(stripNamed("Projects"))
     .getAllByRole("tab")
-    .find((one) => one.querySelector(".project-name")?.textContent === name);
+    .find((one) => one.getAttribute("aria-label") === name);
   if (!tab) throw new Error(`no project tab called ${name}`);
   return tab;
 }
@@ -383,7 +384,8 @@ describe("a window holding more than one project", () => {
     };
     move({ ...asking, session: 1, needs_you: true, queue: [1, 2], sequence: 1 });
     move({ ...asking, session: 2, needs_you: true, queue: [1, 2], sequence: 2 });
-    const count = () => projectTab("one").querySelector(".count-pill-needs")?.textContent;
+    const count = () =>
+      projectTab("one").querySelector('[data-part="badge"]')?.getAttribute("data-count");
     await waitFor(() => expect(count()).toBe("2"));
 
     // The palette's row: the hand's list that had the ✕ retired into the Inbox (#1695).
@@ -594,9 +596,11 @@ describe("a window holding more than one project", () => {
     });
 
     await waitFor(() =>
-      expect(projectTab("one").querySelector(".count-pill-needs")?.textContent).toBe("1"),
+      expect(
+        projectTab("one").querySelector('[data-part="badge"]')?.getAttribute("data-count"),
+      ).toBe("1"),
     );
-    expect(projectTab("two").querySelector(".count-pill-needs")).toBeNull();
+    expect(projectTab("two").querySelector('[data-part="badge"]')).toBeNull();
   });
 
   it("asks about the workspace of the project in front, and not of the one it launched in", async () => {
@@ -636,7 +640,7 @@ describe("a window holding more than one project", () => {
     await openByPath(TWO);
     await waitFor(() => expect(projectTabs()).toEqual(["one", "two*"]));
 
-    await userEvent.click(screen.getByRole("button", { name: "Close project two" }));
+    await closeFromTheRail("two");
 
     // It has a chat open, so it asks first (charter-app#239's ruling), and this answers it.
 
@@ -673,7 +677,7 @@ describe("a window holding more than one project", () => {
     await openByPath(TWO);
     await waitFor(() => expect(projectTabs()).toEqual(["one", "two*"]));
 
-    await userEvent.click(screen.getByRole("button", { name: "Close project two" }));
+    await closeFromTheRail("two");
     await userEvent.click(
       within(await screen.findByRole("alertdialog")).getByRole("button", {
         name: /^Close and end/,
@@ -744,7 +748,7 @@ describe("a window holding more than one project", () => {
     await userEvent.click(screen.getByRole("button", { name: "Open a project…" }));
     await openByPath(TWO);
     await waitFor(() => expect(projectTabs()).toEqual(["one", "two*"]));
-    await userEvent.click(screen.getByRole("button", { name: "Close project two" }));
+    await closeFromTheRail("two");
     await waitFor(() => expect(projectTabs()).toEqual(["one*"]));
     const opens = () => asked.filter((one) => one.cmd === "open_plane").length;
     const before = opens();
@@ -804,16 +808,17 @@ describe("a window holding more than one project", () => {
     );
   });
 
-  it("puts its projects in the order a project tab was dragged into, and remembers it", async () => {
-    // SI-6: the project strip's order is the window's arrangement, which is what the machine
-    // store keeps for the next cold launch — so the drag is written down by the same call.
-    laidOutInARow();
+  it("puts its projects in the order a project was dragged into on the rail, and remembers it", async () => {
+    // SI-6: the rail's order is the window's arrangement, which is what the machine store keeps
+    // for the next cold launch — so the drag is written down by the same call. Up and down the
+    // rail (#2915).
+    laidOutInAColumn();
     const { asked } = core({ restore: { planes: [ONE, TWO], active: 0, dropped: [] } });
     render(<App />);
     await waitFor(() => expect(projectTabs()).toEqual(["one*", "two"]));
 
     within(stripNamed("Projects")).getAllByRole("tab")[1].focus();
-    await dragWithTheKeyboard("{ArrowLeft}");
+    await dragWithTheKeyboard("{ArrowUp}");
 
     await waitFor(() => expect(projectTabs()).toEqual(["two", "one*"]));
     await waitFor(() =>
@@ -1115,7 +1120,7 @@ describe("a project that is not in front stays drawn, off the window", () => {
     for (let n = 1; n <= KEPT_DRAWN; n++) expect(open(planes[n])).toBe(1);
 
     // A project kept behind the front one is closed: its terminal is closed with it, once.
-    fireEvent.click(screen.getByRole("button", { name: "Close project p2" }));
+    await closeFromTheRail("p2");
     fireEvent.click(
       within(await screen.findByRole("alertdialog")).getByRole("button", {
         name: /^Close and end/,
@@ -1142,7 +1147,7 @@ describe("a project that is not in front stays drawn, off the window", () => {
     for (let n = 1; n <= KEPT_DRAWN; n++) await goTo(n);
     await goTo(0);
     for (const n of [2, 3, 4]) {
-      fireEvent.click(screen.getByRole("button", { name: `Close project p${n}` }));
+      await closeFromTheRail(`p${n}`);
       fireEvent.click(
         within(await screen.findByRole("alertdialog")).getByRole("button", {
           name: /^Close and end/,
@@ -1282,10 +1287,10 @@ describe("the project switcher (FR-27)", () => {
     expect([ONE, TWO, THREE].map(themesOf)).toEqual(before);
   });
 
-  it("lists the open projects from the title bar, the last one you were in first and aimed at", async () => {
+  it("lists the open projects, the last one you were in first and aimed at", async () => {
     await beenInTwoThenThree();
 
-    await userEvent.click(screen.getByRole("button", { name: "Switch project…" }));
+    switcherKey();
 
     // The one in front is listed, and cannot run — the strip's rule — so Enter is on the one
     // before it, and the rest follow in the order the operator was last in them.

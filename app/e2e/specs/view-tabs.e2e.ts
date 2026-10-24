@@ -439,7 +439,7 @@ describe("view tabs", function () {
       // window drawing a project it closed (`plane-closed`, #1242). The next spec file shares
       // this app process, and a tab left in front here cost `workspace-explorer.e2e.ts` its
       // clones before that.
-      const closer = await $(`${PROJECTS} button[aria-label="Close project views-back"]`);
+      const closer = await $(`${PROJECTS} [role="tab"][aria-label="views-back"]`);
       if (!(await ask<string[]>("open_planes")).includes(other)) return;
       await ask("close_plane", { plane: other });
       await browser.waitUntil(async () => !(await ask<string[]>("open_planes")).includes(other), {

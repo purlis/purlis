@@ -50,8 +50,9 @@
  * `easing.standard` and `easing.enter`, `cubic-bezier(.22, .8, .24, 1)`:
  *
  * - `slide` — the rail hiding or showing, and a workspace switch sliding the work across (260).
+ *   A token since the rail (#2915), as are `reveal` and `leave`.
  * - `panel` — the right panel arriving (240).
- * - `half` — a bottom half arriving, and the rail's peek coming in (220).
+ * - `reveal` — a hidden surface coming in: the rail's peek, a bottom half (220).
  * - `leave` — the peek going, and the rail fading out (200).
  * - `view` — a side view's list changing (180).
  *
@@ -63,6 +64,9 @@ export const DURATIONS = [
   "duration.settle",
   "duration.spin",
   "duration.breathe",
+  "duration.slide",
+  "duration.reveal",
+  "duration.leave",
 ] as const;
 
 /**

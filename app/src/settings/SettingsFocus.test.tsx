@@ -142,7 +142,6 @@ afterEach(() => {
 
 const nav = () => screen.getByRole("navigation", { name: "Groups" });
 const workspaces = () => stripNamed("Workspaces");
-const projects = () => stripNamed("Projects");
 const level = (name: string) => screen.getByRole("radio", { name });
 
 /** The keyboard is on the group nav's current group, named `group` when given. */
@@ -238,12 +237,15 @@ describe("every way into Settings leaves the keyboard on the nav's current group
     await onTheCurrentGroup();
   });
 
-  it("the project gear", async () => {
+  it("the palette's Project settings…", async () => {
     core(PLANE);
     render(<App />);
     await screen.findByRole("tab", { name: /alpha/ });
 
-    await userEvent.click(within(projects()).getByRole("button", { name: "Project settings…" }));
+    await userEvent.keyboard("{F2}");
+    await screen.findByRole("dialog", { name: "Command palette" });
+    await userEvent.keyboard("Project settings…");
+    await userEvent.keyboard("{Enter}");
 
     await waitFor(() => expect(level("Project")).toBeChecked());
     await onTheCurrentGroup();

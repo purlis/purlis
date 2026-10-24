@@ -2,27 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { saidOfLate, useLateAnswers } from "./answerWatch";
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-} from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { listen } from "./here";
-import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
-import { closestCenter, DndContext } from "@dnd-kit/core";
-import { horizontalListSortingStrategy, SortableContext } from "@dnd-kit/sortable";
 import { afterDrop } from "./reorder";
-import {
-  ALONG_THE_STRIP,
-  keepsTheFocus,
-  SortableTab,
-  stripAccessibility,
-  useStripSensors,
-} from "./sortable";
 import "./styles.css";
 import {
   commands,
@@ -43,7 +25,6 @@ import type { ForgeAsk } from "./ForgeQuestion";
 
 /** What trying to open a repo came to: refused, a question about its forge, or opened. */
 type RepoTried = { refused?: string; asksForge?: string };
-import { UnsavedMark } from "./SavingView";
 import { SessionBusNotice } from "./SessionBusNotice";
 import { EngineDownloadNotice } from "./EngineDownloadNotice";
 import { EngineSandboxNotice } from "./EngineSandboxNotice";
@@ -93,8 +74,6 @@ import { useExtensionsOn } from "./extensionsOn";
 import { useProjectTheme } from "./projectTheme";
 import { drawTint, facesAfterTheFirstFrame } from "./theme/theme";
 import { useContributedPanels } from "./Panels";
-import { useTabStop } from "./roving";
-import { closeOnDelete } from "./tabKeys";
 import { useExtensionCommands, useExtensionViews } from "./Views";
 import { Palette } from "./Palette";
 import { placeOf, scopeLadder } from "./fileFind";
@@ -103,16 +82,13 @@ import type { Place } from "./pieceViews";
 import { ClosingProject } from "./ClosingProject";
 import { QuitWarning, type Ending } from "./QuitWarning";
 import { RelaunchAsk } from "./RelaunchAsk";
-import { fitting, LEAST, leastAt, useRoom } from "./fits";
-import { Menued, useNoBrowserMenu } from "./Menus";
+import { useNoBrowserMenu } from "./Menus";
 import { NewProject } from "./NewProject";
 import { PlaneView } from "./PlaneView";
 import { keptOf } from "./projectShown";
 import { switched } from "./switchClock";
 import { withSessionRows } from "./sessionOffers";
 import type { FirstChat, PlaneReport, WindowDoing } from "./planeReport";
-import { Closer, Doer, Gear, Pin, ShowMore } from "./StripMarks";
-import { CountPill } from "./CountPill";
 import { TitleBar, useTitleBarRoom } from "./TitleBar";
 import type { Needing, Quiet } from "./NeedsYou";
 import { useAsks } from "./asks";
@@ -120,12 +96,14 @@ import { landsOn, useNotificationLanding, type Landing } from "./askNotices";
 import { aQuestionIsUp, useCloseHanded } from "./closeHanded";
 import { useAwayRefusals } from "./dispatchAway";
 import { useUpdates } from "./Updates";
-import { StripTablist, useTabIds } from "./StripTablist";
 import { noTabs, SETTINGS_TAB_TITLE } from "./tabs";
-import { useTextSizes } from "./textSize";
 import { MAIN, runElsewhere, thisWindow, useOtherWindows, useRunHere } from "./windows";
 import { Button } from "./ui/button/Button";
-import { Tooltip } from "./ui/tooltip/Tooltip";
+import { IconButton } from "./ui/button/Button";
+import { SidebarIcon } from "./ui/rail/Rail";
+import { ProjectRail } from "./ProjectRail";
+import { unsavedOf } from "./SavingView";
+import { useRailMode } from "./railMode";
 
 /**
  * Puts the app's own `charter` on a terminal's `PATH`, and answers what the core said — the
@@ -1653,27 +1631,6 @@ function App() {
   const stripFound = useMemo(() => catalogued(stripOffers), [stripOffers]);
 
   /**
-   * How wide the project strip is, less its own `+`, and therefore which projects it draws.
-   *
-   * The widest of the three (`LEAST.project`), because a project is the thing that holds the
-   * other two: the operator asked for *"PROJECT is holder of workspaces, workspaces are
-   * holder of sessions"*, and the shape is what says so before any word is read.
-   */
-  const { strip: projectStrip, controls: projectControls, width: room } = useRoom(drawn.length);
-  /** The project tabs' ids, which the strip's tablist owns them by (#1204). */
-  const projectTabId = useTabIds();
-  const projectLeast = leastAt(LEAST.project, useTextSizes().window);
-  const projectsShown = useMemo(
-    () =>
-      fitting(
-        drawn,
-        drawn.find((one) => one.plane === inFront),
-        room,
-        projectLeast,
-      ),
-    [drawn, inFront, room, projectLeast],
-  );
-  /**
    * A project tab dragged onto another (SI-6): the window's projects put in the new order, and
    * the project pinned or unpinned when it was carried across the boundary (`reorder.ts`).
    *
@@ -1687,7 +1644,7 @@ function App() {
     (moved: string, onto: string) => {
       const made = afterDrop({
         whole: drawn.map((one) => one.plane),
-        drawn: projectsShown.shown.map((one) => one.plane),
+        drawn: drawn.map((one) => one.plane),
         moved,
         onto,
         isPinned: (plane) => pinnedProjects.includes(plane),
@@ -1699,58 +1656,27 @@ function App() {
         if (!ran.ok) setReport({ from: "project.drag", refused: true, words: ran.refused });
       });
     },
-    [drawn, pinProject, pinnedProjects, projectsShown.shown],
+    [drawn, pinProject, pinnedProjects],
   );
-  const dragSensors = useStripSensors();
-  const projectDragWords = useMemo(
-    () => stripAccessibility("project", (id) => calledOn(String(id))),
-    [],
-  );
-
-  const projectStop = useTabStop(
-    inFront,
-    projectsShown.shown.map((project) => project.plane),
-  );
-
-  /**
-   * What the project strip's show-more menu lists: the projects it is not drawing, **most
-   * recently moved first** — the workspace strip's rule one level up (ADR 0039, ADR 0054,
-   * charter#401). `ShowMore` puts the ones that need you before these.
-   *
-   * A project moved when the newest of its chats did (`PlaneReport.moved`). One nothing has
-   * been heard about reads `0` and keeps the strip's order: `sort` is stable. **The cost,
-   * stated:** the core's count lives as long as the app, and reopening a chat is a move, so
-   * right after a relaunch the projects rank by the order their chats were put back in until
-   * one of them does something. The chat and workspace menus pay the same (ADR 0054).
-   */
-  const projectsNotShowing = useMemo(() => {
-    const movedIn = (project: Project) => reports[project.plane]?.moved ?? 0;
-    return [...projectsShown.hidden].sort((one, other) => movedIn(other) - movedIn(one));
-  }, [projectsShown.hidden, reports]);
-
   /** How many chats in `project` need you: its tab's count, and its share of the count on the
    *  show-more button when the strip is not drawing it (ADR 0054). Its own report's queue for
    *  both, so the button goes down exactly when the tab would. */
   const askingIn = (project: Project) => reports[project.plane]?.asking.length ?? 0;
 
-  /** What a project is drawn as, on the strip and in the menu of what the strip had no room
-   *  for. One definition, because they are the same project. */
-  const projectMarks = (project: Project) => (
-    <>
-      <span className="project-name">{project.name}</span>
-      {/* Whether it has work not yet saved, or a save that is blocked (charter-app#302) —
-          every project's, not only the one in front, because a project behind is where work
-          is forgotten. */}
-      <UnsavedMark saving={reports[project.plane]?.saving} name={project.name} />
-      {/* What is waiting for you over there. It is the reason a project behind the one on
-          screen goes on listening rather than being torn down. */}
-      {/* The workspace tabs' own pill (`CountPill`, qw337), with the one count a project's
-          tab has: a project counts no chats of its own on its tab. */}
-      <CountPill needs={askingIn(project)} />
-      {/* Last, because it is drawn out of the row, in the tab's top corner (`.pinned`). */}
-      <Pin held={pinnedProjects.includes(project.plane)} what="project" />
-    </>
-  );
+  /** The rail always shown or hiding itself (#2915, R82, R83), as the window was left. */
+  const [railMode, setRailMode] = useRailMode();
+  /** Below the title bar: the rail and the work, whose left edge peeks a hidden rail (R86). */
+  const below = useRef<HTMLDivElement>(null);
+  /** The title bar's show (R91): the rail slides back, and the keyboard goes to its project in
+   *  front, the button that was pressed having gone. */
+  const showRail = useCallback(() => {
+    setRailMode("shown");
+    requestAnimationFrame(() =>
+      below.current
+        ?.querySelector<HTMLElement>('[data-scope="rail"] [aria-selected="true"]')
+        ?.focus({ preventScroll: true }),
+    );
+  }, [setRailMode]);
 
   /** Every action a window with no project in front can do. The project's own catalogue is
    *  `PlaneView`'s; this is the one for the opener, and its refusals are #111's. */
@@ -2036,168 +1962,34 @@ function App() {
 
   return (
     <main className="window">
-      {/* The window's own title bar, and the project strip is in it (ADR 0054): on macOS it
-          IS the title bar — the system's traffic lights float over it — and on every other
-          platform it is the window's first row under the system's own bar. `TitleBar.tsx`
-          argues the shape, the drag region and what moved here.
-
-          The projects this window holds, as top-level tabs (ADR 0033). Drawn whenever it holds
-          any — including one, because `+` is how it gets a second and `×` is the way back to
-          the opener. Named, because the chat tabs and the workspaces are tablists too and a
-          query for `role="tab"` across the whole window would mix all three. */}
+      {/* The window's own title bar (ADR 0054): on macOS it IS the title bar — the system's
+          traffic lights float over it — and on every other platform it is the window's first
+          row under the system's own bar. `TitleBar.tsx` argues the shape and the drag region.
+          The projects are the rail at the window's left now (#2915); while the rail hides
+          itself, the bar's first control shows it again (R91). */}
       <TitleBar
-        projects={
-          planes.length > 0 && (
-            // One Tab stop for the strip, the project in front, and the arrows along it
-            // (charter-app#189, `roving.ts`). Its own controls after the tabs are stops of
-            // their own.
-            // Draggable along the strip (SI-6, `sortable.tsx`): a drop puts the window's
-            // projects in a new order, and one carried across the pinned boundary pins or
-            // unpins it. Every tab is a `<button>`, so Tauri's window drag never starts on one.
-            <DndContext
-              sensors={dragSensors}
-              collisionDetection={closestCenter}
-              modifiers={ALONG_THE_STRIP}
-              accessibility={projectDragWords}
-              onDragEnd={({ active, over }) => {
-                if (over) dragProject(String(active.id), String(over.id));
-              }}
-            >
-              <SortableContext
-                items={projectsShown.shown.map((project) => project.plane)}
-                strategy={horizontalListSortingStrategy}
-              >
-                <RovingFocusGroup.Root asChild orientation="horizontal" {...projectStop}>
-                  <div
-                    className="projects"
-                    data-strip="Projects"
-                    // The closes this window asked that have not let go of their project yet
-                    // (#1949): a scenario spec waits for none before the next one runs.
-                    data-letting-go={lettingGo}
-                    ref={projectStrip}
-                    style={{ "--least": `${projectLeast}px` } as CSSProperties}
-                  >
-                    {/* The tablist, which owns the tabs and not the cells around them (#1204,
-                        `StripTablist.tsx`). First, so a screen reader reads the tabs before
-                        the controls beside them. */}
-                    <StripTablist
-                      name="Projects"
-                      ids={projectsShown.shown.map((_, place) => projectTabId(place))}
-                    />
-                    {projectsShown.shown.map((project, place) => {
-                      const at = drawn.indexOf(project);
-                      return (
-                        <SortableTab key={project.plane} id={project.plane}>
-                          {({ sortable, style }) => (
-                            /* The cell: the tab, its gear on the project in front (SE-23)
-                               and its `×`. It is what is dragged. */
-                            <span
-                              className="project"
-                              ref={sortable.setNodeRef}
-                              style={style}
-                              data-dragging={sortable.isDragging || undefined}
-                            >
-                              {/* Right-click is the third reader of the same catalogue
-                                  (`Menus.tsx`). `asChild`, and on the tab and not the cell: the
-                                  context-menu key opens a menu only on the trigger that has the
-                                  keyboard (`ContextMenu`'s keys, `ui/menu/ContextMenu.tsx`), and that is the tab. */}
-                              <Menued
-                                on={{ on: "project", plane: project.plane }}
-                                offers={stripFound}
-                                onPress={press}
-                              >
-                                <RovingFocusGroup.Item
-                                  asChild
-                                  tabStopId={project.plane}
-                                  active={project.plane === inFront}
-                                >
-                                  <Tooltip tip={project.plane}>
-                                    <button
-                                      role="tab"
-                                      id={projectTabId(place)}
-                                      // Its directory, which its tooltip shows: how a scenario
-                                      // learns which project a tab is (as the status line's).
-                                      data-directory={project.plane}
-                                      aria-selected={project.plane === inFront}
-                                      aria-describedby={sortable.attributes["aria-describedby"]}
-                                      {...sortable.listeners}
-                                      onKeyDown={(event) => {
-                                        // A tab that is up is being carried: its keys are the drag's.
-                                        keepsTheFocus(event, sortable.isDragging);
-                                        sortable.listeners?.onKeyDown?.(event);
-                                        if (!sortable.isDragging)
-                                          closeOnDelete(event, strip.close[at], press);
-                                      }}
-                                      onClick={() => {
-                                        const offer = strip.switchTo[at];
-                                        if (offer.available) press(offer);
-                                      }}
-                                    >
-                                      {projectMarks(project)}
-                                    </button>
-                                  </Tooltip>
-                                </RovingFocusGroup.Item>
-                              </Menued>
-                              {/* Its settings (SE-23, V89i): on the project in front only,
-                                  and quiet until its tab is under the pointer or the
-                                  keyboard. The row its menu's Project settings… runs. */}
-                              {project.plane === inFront && (
-                                <Gear offer={strip.settings[at]} onPress={press} />
-                              )}
-                              <Closer offer={strip.close[at]} onPress={press} />
-                            </span>
-                          )}
-                        </SortableTab>
-                      );
-                    })}
-                    {/* The strip's own controls, and the one part of this strip that never
-                        collapses. They are inside the strip (not its tablist, #1204) so that
-                        `useRoom` is told to take their width off the room the tabs get rather
-                        than leaving the tabs to be squeezed under them.
-
-                        **A `+` and not a labelled button** — the operator's: *"open-project button
-                        is not looks like separate button, but it should looks like new tab, without
-                        label — just icon."* It is the same shape as the chat strip's `New tab` one
-                        level down: the `+` at the end of a strip makes one more of what the strip
-                        lists. Its accessible name is still the catalogue's `Open a project…`.
-
-                        **And beside it, the other half of the same sentence** — *"also we need to
-                        have create new project button too"* (charter-app#178). Two controls and not
-                        one menu: opening a project the operator already has and making one that does
-                        not exist yet are different acts, and the second writes to disk. It is drawn
-                        exactly as its neighbour is — one `Doer` over the catalogue's
-                        `project.create`, icon-only, named `New project…` by the same row the palette
-                        and the tab's menu read — so there is still one place those words are written
-                        down. It is second because opening one is the commoner act; both are always
-                        available, including with no project open, which is exactly the window that
-                        needs them.
-
-                        And the projects there was no room for, in the same component the chat strip
-                        uses, so an operator learns one control for all three strips. */}
-                    <span className="strip-doing" ref={projectControls}>
-                      {/* The switcher (FR-27), first of the strip's controls because it is
-                          about the tabs before it. Only once there is somewhere to switch to:
-                          with one project it could only ever say so, and the palette's row
-                          already does. */}
-                      {drawn.length > 1 && <Doer offer={strip.switcher} onPress={press} iconOnly />}
-                      <Doer offer={strip.open} onPress={press} iconOnly />
-                      <Doer offer={strip.create} onPress={press} iconOnly />
-                      <ShowMore
-                        noun="project"
-                        hidden={projectsNotShowing.map((project) => ({
-                          key: project.plane,
-                          offer: strip.switchTo[drawn.indexOf(project)],
-                          needs: askingIn(project),
-                          children: projectMarks(project),
-                        }))}
-                        onPress={press}
-                      />
-                    </span>
-                  </div>
-                </RovingFocusGroup.Root>
-              </SortableContext>
-            </DndContext>
-          )
+        leading={
+          planes.length > 0 ? (
+            <>
+              {railMode === "auto" && (
+                <IconButton
+                  variant="ghost"
+                  size="md"
+                  aria-label="Show the projects sidebar"
+                  icon={<SidebarIcon />}
+                  data-rail-show=""
+                  onPress={showRail}
+                />
+              )}
+              {/* The project in front, as the prototype's title bar says it: its name, quiet.
+                  The "/" before its workspaces comes with them (#2916). */}
+              {inFront !== undefined && (
+                <span className="title-bar-crumb" data-testid="title-project">
+                  <span className="title-bar-project">{calledOn(inFront)}</span>
+                </span>
+              )}
+            </>
+          ) : undefined
         }
         updates={updates}
         room={titleBarRoom}
@@ -2229,21 +2021,45 @@ function App() {
             : undefined
         }
       />
-      {/* What the last action answered. Said here only while the palette is down: it is modal
+      {/* **Below the title bar**: the project rail at the far left (#2915, R76), and the work
+          beside it, which glides as the rail hides and shows (R84). Its left edge is where the
+          pointer peeks a hidden rail (R86). */}
+      <div className="window-below" ref={below}>
+        {planes.length > 0 && (
+          <ProjectRail
+            projects={drawn}
+            inFront={inFront}
+            rows={strip}
+            offers={stripFound}
+            onPress={press}
+            waitingIn={(project) => registry.held[project.plane]?.length ?? askingIn(project)}
+            unsavedIn={(project) => unsavedOf(reports[project.plane]?.saving)}
+            onDrop={dragProject}
+            lettingGo={lettingGo}
+            mode={railMode}
+            onMode={setRailMode}
+            edge={below}
+            nameOf={calledOn}
+          />
+        )}
+        <div className="window-work">
+          {/* What the last action answered. Said here only while the palette is down: it is modal
           and draws over this line, and shows the same words itself rather than leaving the
           operator to guess at a sentence behind the overlay. One state, two places it can be
           drawn — never two states. */}
-      {said && !paletteOpen && (
-        <p
-          className={said.refused ? "trouble" : "came-back"}
-          role={said.refused ? "alert" : "status"}
-        >
-          <span>{said.words}</span>
-          {said.settings !== undefined && <SaidLink way={said.settings} onFollow={followSaid} />}
-        </p>
-      )}
+          {said && !paletteOpen && (
+            <p
+              className={said.refused ? "trouble" : "came-back"}
+              role={said.refused ? "alert" : "status"}
+            >
+              <span>{said.words}</span>
+              {said.settings !== undefined && (
+                <SaidLink way={said.settings} onFollow={followSaid} />
+              )}
+            </p>
+          )}
 
-      {/* **The window's own lines, one list** (D-LB-1): what the window says about itself
+          {/* **The window's own lines, one list** (D-LB-1): what the window says about itself
           rather than about a project (a slow start, the session bus, vaults left waiting, a
           project gone, an entry the store would not take back). With no project in front they
           are listed at the top of the opener's page, with the opener's own lines, the most
@@ -2252,18 +2068,18 @@ function App() {
           in its status line (#1695); only until its Inbox is first drawn do they stand under
           the title bar. Written once here, wherever they are drawn, so a
           dismissal or the session bus's answer is never lost when a project comes or goes. */}
-      <NoticeList
-        into={
-          openerUp && !settingsAlone
-            ? windowLinesAt
-            : inFront !== undefined
-              ? (inboxLinesAt ?? undefined)
-              : undefined
-        }
-        onCount={onWindowLines}
-        className="window-notices"
-      >
-        {/* A launch nobody could see. The core only answers here when the start passed the
+          <NoticeList
+            into={
+              openerUp && !settingsAlone
+                ? windowLinesAt
+                : inFront !== undefined
+                  ? (inboxLinesAt ?? undefined)
+                  : undefined
+            }
+            onCount={onWindowLines}
+            className="window-notices"
+          >
+            {/* A launch nobody could see. The core only answers here when the start passed the
             spec's limit, so on an ordinary launch there is nothing to draw and nothing to
             dismiss. It is the one place an operator who clicked an icon can be told — the
             line purlis writes while it waits goes to standard error, which they do not have.
@@ -2271,81 +2087,81 @@ function App() {
             core knows the relaunch that avoids the wait, it is offered as Copy command (NO-4):
             the window has no fix for a launch already made, so this is V91q's last resort and
             `Notice.guard.test.ts` lists it as debt. */}
-        {slowStart && (
-          <Notice
-            cause="slow-start"
-            tone="trouble"
-            copy={slowStart.relaunch ?? undefined}
-            onDismiss={() => setSlowStart(undefined)}
-          >
-            {slowStart.said}
-          </Notice>
-        )}
+            {slowStart && (
+              <Notice
+                cause="slow-start"
+                tone="trouble"
+                copy={slowStart.relaunch ?? undefined}
+                onDismiss={() => setSlowStart(undefined)}
+              >
+                {slowStart.said}
+              </Notice>
+            )}
 
-        {/* A launch without the session bus, and what that run has not got (charter#746). */}
-        <SessionBusNotice chats={ending} />
-        {/* Browsers that cannot start for the engine's sandbox, and the ways out (#2835). */}
-        <EngineDownloadNotice />
-        <EngineSandboxNotice />
+            {/* A launch without the session bus, and what that run has not got (charter#746). */}
+            <SessionBusNotice chats={ending} />
+            {/* Browsers that cannot start for the engine's sandbox, and the ways out (#2835). */}
+            <EngineDownloadNotice />
+            <EngineSandboxNotice />
 
-        {/* The session host stopped unexpectedly three times in five minutes, and the window's
+            {/* The session host stopped unexpectedly three times in five minutes, and the window's
             supervisor stopped starting it again: Try again (#2007). */}
-        <HostFailingNotice />
+            <HostFailingNotice />
 
-        {/* Vaults the launch left under the old name because macOS would have asked (#1306). */}
-        <VaultsWaitingNotice />
+            {/* Vaults the launch left under the old name because macOS would have asked (#1306). */}
+            <VaultsWaitingNotice />
 
-        {/* A project the last quit had open that has moved or gone, with Locate… and Forget
+            {/* A project the last quit had open that has moved or gone, with Locate… and Forget
             (NO-5). A line, never an error dialog: the record is a convenience and the project
             is the truth (ADR 0033). Said up here, because the window may well have come back on
             another project; when the opener is drawn and lists the same project, the opener's
             line is the one, and settling it there settles it here. */}
-        {goneAtLaunch
-          .filter((gone) => !goneDismissed.has(gone.path))
-          .filter(
-            (gone) =>
-              !(openerUp && !settingsAlone) ||
-              (openerGone !== "unread" && !openerGone.includes(gone.path)),
-          )
-          .map((gone) => (
-            <GoneProjectNotice
-              key={gone.path}
-              gone={gone}
-              cause={goneCause(gone.path)}
-              onLocated={(found) => {
-                goneSettled(gone.path);
-                letGoneGo(gone.path);
-                setGoneChanged((n) => n + 1);
-                void openInto(found, true);
-              }}
-              onForgotten={() => {
-                goneSettled(gone.path);
-                letGoneGo(gone.path);
-                setGoneChanged((n) => n + 1);
-              }}
-              onDismiss={() => {
-                dismissGone(gone.path);
-                keepGoneDismissed(gone.path);
-                goneSettled(gone.path);
-              }}
-            />
-          ))}
-        {/* A browser sign-in a forge ended, with Sign in again (#729). */}
-        <ForgeSignInEnded />
-        {/* Add a Docker pool… (#2679): a dialog, opened from the palette or the Pools group. */}
-        <AddDockerPoolHost />
-        {/* An entry the store itself would not take back, said the same way. */}
-        {notRestored.map((line) => (
-          <Notice
-            key={line}
-            cause={`not-restored:${line}`}
-            onDismiss={() => setNotRestored((was) => was.filter((one) => one !== line))}
-          >
-            {line}
-          </Notice>
-        ))}
+            {goneAtLaunch
+              .filter((gone) => !goneDismissed.has(gone.path))
+              .filter(
+                (gone) =>
+                  !(openerUp && !settingsAlone) ||
+                  (openerGone !== "unread" && !openerGone.includes(gone.path)),
+              )
+              .map((gone) => (
+                <GoneProjectNotice
+                  key={gone.path}
+                  gone={gone}
+                  cause={goneCause(gone.path)}
+                  onLocated={(found) => {
+                    goneSettled(gone.path);
+                    letGoneGo(gone.path);
+                    setGoneChanged((n) => n + 1);
+                    void openInto(found, true);
+                  }}
+                  onForgotten={() => {
+                    goneSettled(gone.path);
+                    letGoneGo(gone.path);
+                    setGoneChanged((n) => n + 1);
+                  }}
+                  onDismiss={() => {
+                    dismissGone(gone.path);
+                    keepGoneDismissed(gone.path);
+                    goneSettled(gone.path);
+                  }}
+                />
+              ))}
+            {/* A browser sign-in a forge ended, with Sign in again (#729). */}
+            <ForgeSignInEnded />
+            {/* Add a Docker pool… (#2679): a dialog, opened from the palette or the Pools group. */}
+            <AddDockerPoolHost />
+            {/* An entry the store itself would not take back, said the same way. */}
+            {notRestored.map((line) => (
+              <Notice
+                key={line}
+                cause={`not-restored:${line}`}
+                onDismiss={() => setNotRestored((was) => was.filter((one) => one !== line))}
+              >
+                {line}
+              </Notice>
+            ))}
 
-        {/* No project in front: the welcome, and nothing else (#1812). "No sessions" would be
+            {/* No project in front: the welcome, and nothing else (#1812). "No sessions" would be
             true and useless — there is nowhere to open one, and the thing the operator needs is
             the way to give the window a project.
             **Not before the core has answered, and not while the restore is still opening
@@ -2353,98 +2169,100 @@ function App() {
             flashed up in between would be purlis telling a newcomer there is nothing here half
             a second before eight projects arrive.
             Inside the window's list, so the welcome's own lines are listed with the window's. */}
-        {openerUp && !settingsAlone && (
-          <div className="body">
-            <div className="panes">
-              <div className="window-notices-at" ref={setWindowLinesAt} />
-              <Onboarding
-                steps={steps}
-                gate={gitGate}
-                holdsMade={steps.holding !== undefined && planes.includes(steps.holding)}
-                reopen={(path) => void openInto(path, true)}
-                here={!heldSomething && (launch?.here ?? false)}
-                reason={launch?.reason ?? ""}
-                adding={planes.length > 0}
-                onOpen={(path) => void openInto(path, true)}
-                onGoneListed={setOpenerGone}
-                onGoneSettled={goneSettled}
-                goneChanged={goneChanged}
-                trouble={openTrouble}
-                // Create a project's act, on every window: a repo into this machine's project
-                // (FR-4), laid out from the template picked beside it (FR-17).
-                onOpenRepo={firstRunRepo}
-                onNewProject={windowDoes.createProject}
-                onSignInToForge={(row) => {
-                  setRepoTrouble(undefined);
-                  void signInToForge(row).then(setRepoTrouble);
-                }}
-                openingRepo={openingRepo}
-                repoTrouble={repoTrouble}
-                repoForgeAsk={repoForgeAsk}
-              />
-            </div>
-          </div>
-        )}
-      </NoticeList>
+            {openerUp && !settingsAlone && (
+              <div className="body">
+                <div className="panes">
+                  <div className="window-notices-at" ref={setWindowLinesAt} />
+                  <Onboarding
+                    steps={steps}
+                    gate={gitGate}
+                    holdsMade={steps.holding !== undefined && planes.includes(steps.holding)}
+                    reopen={(path) => void openInto(path, true)}
+                    here={!heldSomething && (launch?.here ?? false)}
+                    reason={launch?.reason ?? ""}
+                    adding={planes.length > 0}
+                    onOpen={(path) => void openInto(path, true)}
+                    onGoneListed={setOpenerGone}
+                    onGoneSettled={goneSettled}
+                    goneChanged={goneChanged}
+                    trouble={openTrouble}
+                    // Create a project's act, on every window: a repo into this machine's project
+                    // (FR-4), laid out from the template picked beside it (FR-17).
+                    onOpenRepo={firstRunRepo}
+                    onNewProject={windowDoes.createProject}
+                    onSignInToForge={(row) => {
+                      setRepoTrouble(undefined);
+                      void signInToForge(row).then(setRepoTrouble);
+                    }}
+                    openingRepo={openingRepo}
+                    repoTrouble={repoTrouble}
+                    repoForgeAsk={repoForgeAsk}
+                  />
+                </div>
+              </div>
+            )}
+          </NoticeList>
 
-      {/* Every project this window holds. Only the one in front is in the window; the ones the
+          {/* Every project this window holds. Only the one in front is in the window; the ones the
           person was in last stay drawn off it (`projectShown.ts`), and the rest keep their tabs,
           their splits and their chat states and draw nothing at all. */}
-      <div className="project-views" ref={setProjectSlot} />
-      {planes.map((plane) => (
-        <PlaneView
-          key={plane}
-          plane={plane}
-          inFront={plane === inFront}
-          kept={keptDrawn.has(plane)}
-          slot={projectSlot}
-          projects={drawn}
-          pinnedProjects={pinnedProjects}
-          window={windowDoes}
-          onReport={onReport}
-          onSessionRows={onSessionRows}
-          alerts={alerts}
-          contributed={contributedPanels}
-          views={extensionViews}
-          commands={extensionCommands}
-          settingsAsked={settingsAsk?.plane === plane ? settingsAsk.at : undefined}
-          savingAsked={savingAsk?.plane === plane ? savingAsk.at : undefined}
-          licencesAsked={licencesAsk?.plane === plane ? licencesAsk.at : undefined}
-          settingsTabAsked={settingsTabAsk?.plane === plane ? settingsTabAsk.at : undefined}
-          settingsLinkAsked={settingsLinkAsk?.plane === plane ? settingsLinkAsk : undefined}
-          yourSettingsAsked={yourSettingsAsk?.plane === plane ? yourSettingsAsk.at : undefined}
-          firstChatAsked={firstChat?.plane === plane ? firstChat : undefined}
-          shellAsked={shellAsk?.plane === plane ? shellAsk : undefined}
-          fileAsked={fileAsk?.plane === plane ? fileAsk : undefined}
-          closeAsked={closeAsk?.plane === plane ? closeAsk : undefined}
-          onAsking={onAsking}
-          awayRefused={awayRefusals.held[plane]}
-          onAway={answerAway}
-          waiting={registry.held[plane]}
-          inboxAsked={inboxAsk?.plane === plane ? inboxAsk.at : undefined}
-          inboxGroup={inboxAsk?.plane === plane ? inboxAsk.session : undefined}
-          elsewhere={elsewhere}
-          windowLines={plane === inFront ? windowLines : undefined}
-          paletteOpen={paletteOpen}
-        />
-      ))}
+          <div className="project-views" ref={setProjectSlot} />
+          {planes.map((plane) => (
+            <PlaneView
+              key={plane}
+              plane={plane}
+              inFront={plane === inFront}
+              kept={keptDrawn.has(plane)}
+              slot={projectSlot}
+              projects={drawn}
+              pinnedProjects={pinnedProjects}
+              window={windowDoes}
+              onReport={onReport}
+              onSessionRows={onSessionRows}
+              alerts={alerts}
+              contributed={contributedPanels}
+              views={extensionViews}
+              commands={extensionCommands}
+              settingsAsked={settingsAsk?.plane === plane ? settingsAsk.at : undefined}
+              savingAsked={savingAsk?.plane === plane ? savingAsk.at : undefined}
+              licencesAsked={licencesAsk?.plane === plane ? licencesAsk.at : undefined}
+              settingsTabAsked={settingsTabAsk?.plane === plane ? settingsTabAsk.at : undefined}
+              settingsLinkAsked={settingsLinkAsk?.plane === plane ? settingsLinkAsk : undefined}
+              yourSettingsAsked={yourSettingsAsk?.plane === plane ? yourSettingsAsk.at : undefined}
+              firstChatAsked={firstChat?.plane === plane ? firstChat : undefined}
+              shellAsked={shellAsk?.plane === plane ? shellAsk : undefined}
+              fileAsked={fileAsk?.plane === plane ? fileAsk : undefined}
+              closeAsked={closeAsk?.plane === plane ? closeAsk : undefined}
+              onAsking={onAsking}
+              awayRefused={awayRefusals.held[plane]}
+              onAway={answerAway}
+              waiting={registry.held[plane]}
+              inboxAsked={inboxAsk?.plane === plane ? inboxAsk.at : undefined}
+              inboxGroup={inboxAsk?.plane === plane ? inboxAsk.session : undefined}
+              elsewhere={elsewhere}
+              windowLines={plane === inFront ? windowLines : undefined}
+              paletteOpen={paletteOpen}
+            />
+          ))}
 
-      {/* Settings drawn where the opener is, with no project open (#1206). */}
-      {openerUp && settingsAlone && (
-        <div className="body">
-          <div className="panes">
-            <section className="view-pane" aria-label={SETTINGS_TAB_TITLE}>
-              <header className="view-head">
-                <h2>{SETTINGS_TAB_TITLE}</h2>
-                <Button onPress={() => setSettingsAlone(false)}>Done</Button>
-              </header>
-              <div className="view-body">
-                <SettingsTab />
+          {/* Settings drawn where the opener is, with no project open (#1206). */}
+          {openerUp && settingsAlone && (
+            <div className="body">
+              <div className="panes">
+                <section className="view-pane" aria-label={SETTINGS_TAB_TITLE}>
+                  <header className="view-head">
+                    <h2>{SETTINGS_TAB_TITLE}</h2>
+                    <Button onPress={() => setSettingsAlone(false)}>Done</Button>
+                  </header>
+                  <div className="view-body">
+                    <SettingsTab />
+                  </div>
+                </section>
               </div>
-            </section>
-          </div>
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
       {/* What opening a project puts in force, and the question about it (ADR 0035).
           Nothing has been attached and nothing has been started while this is up: cancelling
