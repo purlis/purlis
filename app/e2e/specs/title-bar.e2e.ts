@@ -4,7 +4,6 @@
 import { basename } from "node:path";
 import { browser, expect, $, $$ } from "@wdio/globals";
 import { untilTheStripLists } from "../reading.js";
-import { tooltipOf } from "../tooltips.js";
 
 /**
  * **The window's title bar**, against the real app (`app/src/TitleBar.tsx`, ADR 0054).
@@ -51,11 +50,11 @@ async function planeRoot(): Promise<string> {
   return ((await said.getAttribute("data-directory")) ?? "").trim();
 }
 
-/** The strip in the bar, by its role and name. */
-const PROJECTS = '[data-testid="title-bar"] [data-strip="Projects"]';
+/** The project rail, at the window's left below the bar (#2915). */
+const PROJECTS = '[data-strip="Projects"]';
 
 describe("the title bar", () => {
-  it("is the first thing in the window, against the top edge, with the project strip in it", async () => {
+  it("is the first thing in the window, against the top edge, with the project rail below it", async () => {
     await untilTheStripIsRead();
 
     const bar = await $('[data-testid="title-bar"]');
@@ -64,14 +63,12 @@ describe("the title bar", () => {
     const height = (await bar.getSize("height")) as number;
     // Nothing above it. A pixel of slack, because a fractional layout rounds.
     expect(top).toBeLessThanOrEqual(1);
-    // The project strip is inside it rather than a row of its own (ADR 0054)…
-    const strip = await $(PROJECTS);
-    await strip.waitForDisplayed({ timeout: 20_000 });
-    const stripTop = (await strip.getLocation("y")) as number;
-    expect(stripTop).toBeGreaterThanOrEqual(top - 1);
-    expect(stripTop + ((await strip.getSize("height")) as number)).toBeLessThanOrEqual(
-      top + height + 1,
-    );
+    // The projects are the rail at the window's left, below the bar (R76), not in it (N22)…
+    const rail = await $(PROJECTS);
+    await rail.waitForDisplayed({ timeout: 20_000 });
+    expect((await rail.getLocation("y")) as number).toBeGreaterThanOrEqual(top + height - 1);
+    expect((await rail.getLocation("x")) as number).toBeLessThanOrEqual(1);
+    expect(await $(`[data-testid="title-bar"] ${PROJECTS}`).isExisting()).toBe(false);
     // …and the workspace strip begins where the bar ends, rather than under it or over it.
     const workspaces = await $('[data-strip="Workspaces"]');
     expect((await workspaces.getLocation("y")) as number).toBeGreaterThanOrEqual(top + height - 1);
@@ -90,93 +87,39 @@ describe("the title bar", () => {
     expect(height).toBeLessThanOrEqual(48);
   });
 
-  it("names the project the app really opened, on the selected tab of the strip in it", async () => {
+  it("names the project the app really opened, on the current button of the rail", async () => {
     await untilTheStripIsRead();
     const root = await planeRoot();
     const name = basename(root);
 
-    // The selected tab carries the project's whole path as its directory and its tooltip, and
-    // its name is the directory's.
+    // The current button carries the project's whole path as its directory, and is named, and
+    // its tooltip says, the project's name (R89).
     const selected = await $(`${PROJECTS} [aria-selected="true"]`);
     await selected.waitForExist({ timeout: 20_000 });
     expect(await selected.getAttribute("data-directory")).toBe(root);
-    expect(await tooltipOf(`${PROJECTS} [aria-selected="true"]`)).toBe(root);
-    expect(await selected.getText()).toContain(name);
+    expect(await selected.getAttribute("aria-label")).toBe(name);
+    // Its tooltip is the pointer's (the tooltip family's rule for a button named by its words);
+    // the rail's story holds it under the pointer (`ui/rail/Rail.stories.tsx`).
   });
 
-  it("leaves a stretch to grab between the project strip and its right-hand end", async () => {
-    // The tabs give way before the right-hand end does, and never take the whole of what is
-    // left: `--title-bar-drag` is kept free so a window full of projects can still be moved.
-    // A press in the middle of that stretch has to land on the bar itself, which is the
-    // element carrying `data-tauri-drag-region="deep"`, and not on a control.
+  it("is a stretch to grab from the project's name to its right-hand end", async () => {
+    // With the projects on the rail, everything left of the right-hand end that is not a
+    // control is the bar itself, the element carrying `data-tauri-drag-region="deep"`.
     await untilTheStripIsRead();
 
-    const seen = await browser.execute((strip: string) => {
+    const pressed = await browser.execute(() => {
       const bar = document.querySelector<HTMLElement>('[data-testid="title-bar"]');
-      const tabs = document.querySelector(strip);
       const end = bar?.querySelector(".title-bar-doing");
-      if (!bar || !tabs || !end) return { gap: -1, least: 0, pressed: "(nothing to measure)" };
-      // The stretch is the strip's end margin (`--title-bar-drag`, a multiple of a control's
-      // height), so the computed margin is it in px.
-      const least = Number.parseFloat(getComputedStyle(tabs).marginInlineEnd);
-      const from = tabs.getBoundingClientRect();
+      if (!bar || !end) return "(nothing to measure)";
+      const from = bar.getBoundingClientRect();
+      // After its first controls and the project's name (`.title-bar-leading`).
+      const start =
+        bar.querySelector(".title-bar-leading")?.getBoundingClientRect().right ?? from.left;
       const to = end.getBoundingClientRect();
-      const hit = document.elementFromPoint((from.right + to.left) / 2, from.top + from.height / 2);
-      return {
-        gap: to.left - from.right,
-        least,
-        pressed: hit === bar ? "the bar" : (hit?.outerHTML.slice(0, 80) ?? "(nothing)"),
-      };
-    }, PROJECTS);
-
-    expect(seen.least).toBeGreaterThan(0);
-    expect(seen.gap).toBeGreaterThanOrEqual(seen.least - 1);
-    expect(seen.pressed).toBe("the bar");
-  });
-
-  it("leaves the project strip room for two tabs in a narrow window, whatever the save indicator says", async () => {
-    // The right-hand end never gives way (ADR 0054), so whatever it spends the tabs lose. A
-    // save indicator saying a whole sentence once left a 1024 px window room for ONE project
-    // tab, and `projects.e2e.ts` failed on the macOS runner; `.save-indicator-words` in
-    // `App.css` has the numbers. 1024 px is the narrowest window charter supports (ADR 0054,
-    // amended 2026-09-26). Every fixture plane is not a git repository, so the bar here says
-    // that sentence.
-    //
-    // **Room, measured the way the strip measures it** (`fits.useRoom`): the strip's width
-    // less its own controls, against the floor each tab is drawn at (`--least`). Two tabs fit
-    // exactly when that room is at least twice the floor (`fits.capacity`).
-    await untilTheStripIsRead();
-    await $('[data-testid="title-bar"] [aria-label^="Saving:"]').waitForExist({
-      timeout: 20_000,
+      const hit = document.elementFromPoint((start + to.left) / 2, from.top + from.height / 2);
+      return hit === bar ? "the bar" : (hit?.outerHTML.slice(0, 80) ?? "(nothing)");
     });
-
-    const was = await browser.getWindowSize();
-    await browser.setWindowSize(1024, 768);
-    try {
-      let seen = { window: 0, room: 0, least: 0 };
-      await browser.waitUntil(
-        async () => {
-          seen = await browser.execute((strip: string) => {
-            const tabs = document.querySelector<HTMLElement>(strip);
-            const controls = tabs?.querySelector<HTMLElement>(".strip-doing");
-            return {
-              window: window.innerWidth,
-              room: (tabs?.clientWidth ?? 0) - (controls?.offsetWidth ?? 0),
-              least: Number.parseFloat(tabs?.style.getPropertyValue("--least") ?? "") || 0,
-            };
-          }, PROJECTS);
-          return seen.window <= 1024;
-        },
-        { timeout: 20_000, timeoutMsg: "the window never became 1024 px wide" },
-      );
-
-      expect(seen.least).toBeGreaterThan(0);
-      expect(seen.room).toBeGreaterThanOrEqual(2 * seen.least);
-    } finally {
-      // One app process serves the whole run, and every spec after this one expects the
-      // window it was built for.
-      await browser.setWindowSize(was.width, was.height);
-    }
+    expect(pressed).toBe("the bar");
   });
 
   it("carries the drag region the shipped bundle has to keep, and keeps it off its controls", async () => {

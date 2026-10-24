@@ -43,6 +43,8 @@
  * - `purlis/panel-family`, `purlis/panel-section-family`, `purlis/empty-state-family` and
  *   `purlis/status-item-family` (errors: these families have moved, #2913): each family's old
  *   classes, and its `data-scope` written by hand, which only its wrapper draws.
+ * - `purlis/rail-family` (error: the project rail is a family, #2915): the project strip's old
+ *   classes (`projects`, `project`, `project-name`) and `data-scope="rail"` by hand.
  *
  * The primitives library itself is refused outside `src/ui` by `no-restricted-imports`, in
  * `eslint.config.js`: one wrapper per primitive, and screens never import it.
@@ -516,6 +518,14 @@ const statusItemFamily = moved({
     "a status item: draw it as `<StatusItem>` or `<StatusCell>` from `ui/status/StatusItem`, on a `<StatusBar>` (`ui/status/StatusBar`) where it is the bar's (#2913).",
 });
 
+const railFamily = moved({
+  description: "The project rail is the shared rail family",
+  scopes: ["rail"],
+  classes: ["projects", "project", "project-name"],
+  message:
+    "the project rail: draw it as `<Rail>`, `<RailProject>` and `<RailAction>` from `ui/rail/Rail` (#2915).",
+});
+
 export const purlisUi = {
   meta: { name: "purlis-ui" },
   rules: {
@@ -530,5 +540,6 @@ export const purlisUi = {
     "panel-section-family": panelSectionFamily,
     "empty-state-family": emptyStateFamily,
     "status-item-family": statusItemFamily,
+    "rail-family": railFamily,
   },
 };

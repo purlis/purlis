@@ -100,12 +100,12 @@ export async function openFromTheStrip(plane: string): Promise<void> {
 }
 
 /**
- * Closes every `switch-<n>` project by its `×`, answering the question a project with a chat
+ * Closes every `switch-<n>` project from its rail button, answering the question a project with a chat
  * open asks. The strip collapses rather than scrolling, so a project it was hiding comes onto
  * it as the drawn ones go — `endEveryChat`'s loop one level up, and bounded the same way.
  */
 export async function closeTheProjectsOfItsOwn(): Promise<void> {
-  const closer = `${PROJECTS} button[aria-label^="Close project switch-"]`;
+  const closer = `${PROJECTS} [role="tab"][aria-label^="switch-"]`;
   for (let pressed = 0; pressed < OPEN; pressed++) {
     if (!(await $(closer).isExisting())) return;
     await closeProject(closer);

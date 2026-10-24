@@ -37,7 +37,7 @@ import { hideStatusItem, useHiddenStatusItems } from "./statusBarPrefs";
  *   where you are and which project you are in. A status line an operator can lose is one they
  *   will lose and then report as a bug. `FourRegions.test.tsx`'s *"cannot be put away, because
  *   it is not a region"* is the guard.
- * - **It is the frame, not a tenant of it.** `.projects`, in the title bar, sits above the
+ * - **It is the frame, not a tenant of it.** the title bar sits above the
  *   regions and is not in the arrangement either. The window is chrome, regions, chrome;
  *   this is the bottom half of the chrome, and `RegionFrame` is untouched by it — which is also
  *   why this change moved no JSX inside the frame and added no fourth `Panel` to a live group

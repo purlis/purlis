@@ -24,7 +24,7 @@ import {
   useGoneDismissed,
 } from "./GoneProjectNotice";
 import type { GoneProject } from "./bindings";
-import { openTheInbox, stripNamed } from "./test-strips";
+import { openTheInbox, stripNamed, closeFromTheRail } from "./test-strips";
 import { GLOBAL } from "./windowprefs";
 import { dismissedIn, goneKept, letGoneGo } from "./dismissals";
 
@@ -137,7 +137,7 @@ function core(over: {
 const projectTabs = () =>
   within(stripNamed("Projects"))
     .getAllByRole("tab")
-    .map((tab) => tab.querySelector(".project-name")?.textContent);
+    .map((tab) => tab.getAttribute("aria-label"));
 
 /** The Notice about the gone project, wherever it stands. */
 const gone = async () =>
@@ -299,7 +299,7 @@ describe("a gone project dismissed (#1291)", () => {
     await waitFor(() => expect(screen.queryByText(GONE.said)).not.toBeInTheDocument());
 
     // The last project closes: the opener is drawn, and its recents still list the gone one.
-    await userEvent.click(await screen.findByRole("button", { name: "Close project two" }));
+    await closeFromTheRail("two");
 
     await screen.findByRole("heading", { level: 1 });
     await screen.findByRole("button", { name: /two/ });
@@ -315,13 +315,13 @@ describe("a gone project dismissed (#1291)", () => {
 
     // The disk comes back: the opener's answer no longer lists it as gone.
     plugged(true);
-    await userEvent.click(await screen.findByRole("button", { name: "Close project two" }));
+    await closeFromTheRail("two");
     await userEvent.click(await screen.findByRole("button", { name: /two/ }));
     await waitFor(() => expect(projectTabs()).toEqual(["two"]));
 
     // And it goes again: a new cause, so its line is drawn.
     plugged(false);
-    await userEvent.click(await screen.findByRole("button", { name: "Close project two" }));
+    await closeFromTheRail("two");
     expect(await gone()).toBeInTheDocument();
   });
 });
@@ -385,7 +385,7 @@ describe("a gone project dismissed, at the next launch (#1291)", () => {
     await waitFor(() => expect(sent("recent_planes").length).toBeGreaterThan(0));
     expect(screen.queryByText(GONE.said)).not.toBeInTheDocument();
 
-    await userEvent.click(await screen.findByRole("button", { name: "Close project two" }));
+    await closeFromTheRail("two");
     await screen.findByRole("button", { name: /two/ });
     expect(screen.queryByText(GONE.said)).not.toBeInTheDocument();
     expect(sent("set_dismissed")).toEqual([]);

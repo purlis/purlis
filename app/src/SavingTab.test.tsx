@@ -7,8 +7,9 @@ import { cleanup, render, screen, waitFor, within } from "@testing-library/react
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
+import { findStripNamed } from "./test-strips";
 import type { PlaneSaving, RepoSaving } from "./bindings";
-import { findStripNamed, stripNamed } from "./test-strips";
+import { stripNamed } from "./test-strips";
 
 /**
  * The save indicator and the Saving tab, from the window (charter-app#294): the title bar says
@@ -107,13 +108,15 @@ describe("the save indicator, in the window", () => {
   });
 });
 
-describe("the project strip (charter-app#302)", () => {
+describe("the project rail (charter-app#302, #2915)", () => {
   it("marks a project with unsaved work, and not one with nothing left to save", async () => {
     core();
     render(<App />);
-    const strip = await findStripNamed("Projects");
+    const rail = await findStripNamed("Projects");
+    const dot = () => rail.querySelector('[data-scope="rail"][data-part="unsaved"]');
 
-    expect(await within(strip).findByRole("img", { name: /^unsaved work in / })).toBeTruthy();
+    await waitFor(() => expect(dot()).not.toBeNull());
+    expect(within(rail).getByRole("tab", { description: /unsaved work/ })).toBeTruthy();
 
     // Saved from the bar: the dot goes with the work.
     await userEvent.click(
@@ -121,9 +124,7 @@ describe("the project strip (charter-app#302)", () => {
         name: "Save the project",
       }),
     );
-    await waitFor(() =>
-      expect(within(strip).queryByRole("img", { name: /^unsaved work in / })).toBeNull(),
-    );
+    await waitFor(() => expect(dot()).toBeNull());
   });
 });
 

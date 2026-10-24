@@ -132,7 +132,7 @@ describe("a tab's menu opens Settings at that tab's level", function () {
   after(async () => {
     // The window as it was found: this spec's project closed from its own tab, which takes
     // anything left on its strips with it and brings the launch's project back to the front.
-    const closer = `${PROJECTS} button[aria-label="Close project ${basename(mine)}"]`;
+    const closer = `${PROJECTS} [role="tab"][aria-label="${basename(mine)}"]`;
     if (await $(closer).isExisting()) {
       await closeProject(closer);
       await browser.waitUntil(async () => !(await $(closer).isExisting()), {

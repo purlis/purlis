@@ -228,6 +228,38 @@ describe("a menu held open by its owner", () => {
   });
 });
 
+describe("a menu that takes no keyboard", () => {
+  // A preview the pointer's rest opened (`takesNoKeyboard`): a press like a screen reader's on
+  // one of its rows leaves the keyboard where it was (#3074 takes the keyboard to a pressed row
+  // only in a menu that takes it).
+  function Preview() {
+    const trigger = useRef<HTMLButtonElement>(null);
+    return (
+      <>
+        <button ref={trigger} type="button">
+          Tasks
+        </button>
+        <AnchoredMenu triggerRef={trigger} isOpen onOpenChange={() => {}} autoFocus={false}>
+          <Menu aria-label="Tasks" takesNoKeyboard>
+            <MenuItem id="one" textValue="One" shouldCloseOnSelect={false}>
+              One
+            </MenuItem>
+          </Menu>
+        </AnchoredMenu>
+      </>
+    );
+  }
+
+  it("leaves the keyboard where it was when a row is pressed", async () => {
+    render(<Preview />);
+    const tasks = screen.getByRole("button", { name: "Tasks" });
+    tasks.focus();
+    fireEvent.click(within(screen.getByRole("menu", { name: "Tasks" })).getByRole("menuitem"));
+    await act(() => new Promise((done) => setTimeout(done, 50)));
+    expect(document.activeElement).toBe(tasks);
+  });
+});
+
 describe("a row's shortcut", () => {
   it("is the key registry's for its act, where the registry has one", async () => {
     render(
@@ -277,7 +309,11 @@ describe("a menu's groups, toggles and submenus", () => {
             </MenuItem>
           </MenuSection>
           <MenuSection>
-            <Submenu row={<MenuItem textValue="Open">Open</MenuItem>} aria-label="Open">
+            <Submenu
+              row={<MenuItem textValue="Open">Open</MenuItem>}
+              aria-label="Open"
+              onAction={(key) => onAction(String(key))}
+            >
               <MenuItem id="activity" textValue="Activity">
                 Activity
               </MenuItem>
@@ -318,6 +354,26 @@ describe("a menu's groups, toggles and submenus", () => {
     await waitFor(() => expect(document.activeElement).toHaveTextContent("Activity"));
     await userEvent.keyboard("{ArrowLeft}");
     await waitFor(() => expect(screen.getAllByRole("menu")).toHaveLength(1));
+  });
+
+  // #3074: a press that is not the pointer's (a screen reader's, `element.click()`) hands the
+  // keyboard on only after the page's transitions, a frame or more late; a submenu row pressed
+  // before then stays open, and its row runs on the first click.
+  it("keeps a submenu its row opened before the menu took the keyboard, and runs its row", async () => {
+    const chose = vi.fn();
+    render(<Grouped onAction={chose} />);
+    fireEvent.click(screen.getByRole("button", { name: "Tab" }));
+    // At once: before the frame the menu's hand-on waits for.
+    const menu = screen.getByRole("menu", { name: "Tab steward 4" });
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "Open" }));
+    const sub = screen.getByRole("menu", { name: "Open" });
+    // Past the frames the menu's own hand-on waits for.
+    await act(() => new Promise((done) => setTimeout(done, 100)));
+    expect(sub).toBeInTheDocument();
+    // The keyboard is in the submenu, where React Aria hands it after a press like this.
+    expect(sub).toContainElement(document.activeElement as HTMLElement);
+    await userEvent.click(within(sub).getByRole("menuitem", { name: "Activity" }));
+    expect(chose).toHaveBeenCalledWith("activity");
   });
 });
 

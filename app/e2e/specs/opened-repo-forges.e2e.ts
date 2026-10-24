@@ -7,7 +7,7 @@ import { basename, join } from "node:path";
 import process from "node:process";
 import { $, browser } from "@wdio/globals";
 import { THE_RUNS_TREE } from "../harness.js";
-import { closeProject } from "../opening.js";
+import { closeProject, fromThePalette } from "../opening.js";
 import { ask } from "../switching.js";
 
 /**
@@ -71,7 +71,7 @@ async function windowLines(): Promise<string[]> {
  * it asks, and lets the first chat's picker go: the picker is not this spec's.
  */
 async function openFromNewProject(repo: string): Promise<void> {
-  await $(`${PROJECTS} button[aria-label="New project…"]`).click();
+  await fromThePalette("New project…");
   const dialog = await $(NEW_PROJECT);
   await dialog.waitForExist({ timeout: 20_000 });
   const box = await dialog.$('input[placeholder="/where/the/repo/is"]');
@@ -137,7 +137,7 @@ describe("opening a repo says what it did to the project's forges", function () 
   let local = "";
 
   before(async () => {
-    await $(`${PROJECTS} button[aria-label="New project…"]`).waitForClickable({
+    await $(`${PROJECTS} button[aria-label="Open a project…"]`).waitForClickable({
       timeout: 60_000,
     });
     first = (await ask<string[]>("open_planes"))[0];
@@ -152,7 +152,7 @@ describe("opening a repo says what it did to the project's forges", function () 
       await browser.keys(["Escape"]);
     }
     if (local !== "") {
-      const closer = `${PROJECTS} button[aria-label="Close project ${basename(local)}"]`;
+      const closer = `${PROJECTS} [role="tab"][aria-label="${basename(local)}"]`;
       if (await $(closer).isExisting()) await closeProject(closer);
     }
     for (const plane of (await ask<string[]>("open_planes")).filter((one) => one !== first))

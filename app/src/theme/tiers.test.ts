@@ -22,7 +22,6 @@ const SRC = join(process.cwd(), "src");
 const FAINT: ReadonlySet<string> = new Set([
   // A session tab's `×`, a mark (`ui/tabs/tabs.css`, #2914).
   '[data-scope="tabs"][data-part="tab"] [data-part="closer"][data-scope="tabs"]',
-  ".project .closer",
   ".pinned",
   ".pane-crumbs .crumb-sep",
   ".tab-task-sep",

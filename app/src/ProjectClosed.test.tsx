@@ -111,7 +111,7 @@ const projectTabs = () =>
     .getAllByRole("tab")
     .map(
       (tab) =>
-        `${tab.querySelector(".project-name")?.textContent}${
+        `${tab.getAttribute("aria-label")}${
           tab.getAttribute("aria-selected") === "true" ? "*" : ""
         }`,
     );

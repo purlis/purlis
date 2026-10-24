@@ -968,7 +968,7 @@ fn the_popover_and_menu_family_defaults_are_what_their_stylesheets_draw() {
 #[test]
 fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
     let manifest = parts::manifest_json();
-    assert_eq!(manifest["version"], 8);
+    assert_eq!(manifest["version"], 9);
     for one in manifest["states"].as_array().unwrap() {
         assert_eq!(one["since"], 1, "{one}");
     }
@@ -1262,6 +1262,10 @@ const MANIFEST_DIGESTS: &[(u32, &str)] = &[
     (
         8,
         "3a5db3c2ce7fc328da8f0c6a22a4af730aec9e51b45d02141051884af667ecc0",
+    ),
+    (
+        9,
+        "f9ce10aed0e38be894b68e8d340ec365a805608c9914086c62cc7958926db105",
     ),
 ];
 
