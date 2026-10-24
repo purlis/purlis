@@ -307,7 +307,11 @@ async function measured(pane: number) {
       row: box(frame?.querySelector(".pane-notice-row")),
       terminal: box(frame?.querySelector('[data-testid="pane"]')),
       more: box(frame?.querySelector(".pane-notice-row > .notice-more-pane")),
-      moreSays: frame?.querySelector(".pane-notice-row > .notice-more-pane")?.textContent ?? null,
+      // What it says: of its two labels, the one not hidden (#3142).
+      moreSays:
+        frame?.querySelector(
+          ".pane-notice-row > .notice-more-pane .notice-more-says > :not([data-off])",
+        )?.textContent ?? null,
       stack: box(stack),
       // The stack's width inside its scrollbar, which a card takes whole.
       stackInside: stack ? stack.clientWidth : 0,
