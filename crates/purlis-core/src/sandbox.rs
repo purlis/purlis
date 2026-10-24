@@ -6511,6 +6511,7 @@ pub mod browser_sites;
 pub mod caches;
 pub mod claude;
 pub mod codex;
+pub mod confined;
 pub mod egress;
 pub mod grant;
 pub mod held;

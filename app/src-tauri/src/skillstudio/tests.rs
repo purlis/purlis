@@ -353,3 +353,9 @@ fn a_skills_totals_name_what_it_ran_on_as_a_person_calls_it_and_say_a_start_that
     assert_eq!(runs[0].started_by, Some(RunStart::Curation));
     assert_eq!(runs[0].ran_on.as_deref(), Some("Claude Code"));
 }
+
+#[test]
+fn the_runs_panel_is_told_to_the_window_by_the_word_the_window_names_it_by() {
+    let told = serde_json::to_value(SkillPanelKey::Runs).unwrap();
+    assert_eq!(told["kind"], RUNS_PANEL);
+}

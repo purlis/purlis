@@ -57,6 +57,10 @@ pub enum Lint {
     },
     /// A program it calls that this machine does not have, and where it calls it.
     Missing { tool: String, place: Place },
+    /// What another lint said, a line of its own words, and whose lint it is: an extension that
+    /// declares `skill-lint` (ADR 0101). Always a warning: a lint of a third party's never stops
+    /// a save.
+    Said { by: String, says: String },
 }
 
 /// Where a skill calls a program.
@@ -134,6 +138,7 @@ impl Finding {
                     "purlis has"
                 }
             ),
+            Lint::Said { by, says } => format!("{by}: {says}"),
             Lint::Missing { tool, place } => format!(
                 "{} calls {tool}, which this machine does not have",
                 match place {
@@ -159,9 +164,9 @@ pub struct SkillFiles<'a> {
     pub origin: crate::Origin,
 }
 
-/// **A lint of a skill's files**: what the live lint and the install review ask, of the
-/// built-in lints ([`BuiltInLints`]) and, once SK-14 lands, of each extension that declares
-/// `skill-lint`.
+/// **A lint of a skill's files** (the SkillLint capability, ADR 0101): what the live lint asks, of
+/// the built-in lints ([`BuiltInLints`]) and of each extension that declares `skill-lint`, which
+/// answers through this same interface.
 pub trait SkillLint {
     /// Everything it finds in `skill`, in the order a person reads it.
     fn findings(&self, skill: &SkillFiles<'_>) -> Vec<Finding>;

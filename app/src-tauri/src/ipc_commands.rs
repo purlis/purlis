@@ -280,6 +280,7 @@ macro_rules! app_commands {
                 skillstudio::skill_studio,
                 skillstudio::skill_runs,
                 skillstudio::skill_stats,
+                skillstudio::skill_panels,
                 skillstudio::skill_studio_on,
                 skillstudio::set_skill_studio_on,
                 skillstudio::skill_share,

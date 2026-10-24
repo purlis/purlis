@@ -715,6 +715,7 @@ function ChangePanel({
     case "new":
       return (
         <NewSkill
+          plane={plane}
           scope={scope}
           levels={levels}
           busy={busy}
@@ -835,36 +836,44 @@ function UsedBy({ users }: { users: SkillUsers }) {
 
 /** **New skill** (decisions 13 and 37): a name, a description and a template, at the level the
  *  person came from, said in one line they can change. */
+/** What the template picker holds a template by: its kind, or `<extension>/<template>`. */
+function templateKey(id: SkillTemplateId): string {
+  return id.kind === "extension" ? `${id.extension}/${id.template}` : id.kind;
+}
+
 function NewSkill({
+  plane,
   scope,
   levels,
   busy,
   onCancel,
   onMake,
 }: {
+  plane: string;
   scope: StudioScope;
   levels: readonly StudioLevel[];
   busy: boolean;
   onCancel: () => void;
+  /** `template` is purlis's own, or one an extension offers (ADR 0101). */
   onMake: (level: SkillLevel, name: string, description: string, template: SkillTemplateId) => void;
 }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [templates, setTemplates] = useState<readonly SkillTemplate[]>([]);
-  const [template, setTemplate] = useState<SkillTemplateId>("blank");
+  const [template, setTemplate] = useState<SkillTemplateId>({ kind: "blank" });
   const [level, setLevel] = useState<SkillLevel>(() => levelFrom(scope, levels));
   useEffect(() => {
     let live = true;
     void commands
-      .skillTemplates()
+      .skillTemplates(plane)
       .then((all) => {
-        if (live) setTemplates(all);
+        if (live && all.status === "ok") setTemplates(all.data);
       })
       .catch(() => undefined);
     return () => {
       live = false;
     };
-  }, []);
+  }, [plane]);
   return (
     <form
       className="skill-change"
@@ -890,9 +899,16 @@ function NewSkill({
       />
       <Select
         aria-label="Starts from"
-        value={template}
-        options={templates.map((one) => ({ value: one.id, label: one.label, title: one.about }))}
-        onValueChange={(to) => setTemplate(to === "steps" ? "steps" : "blank")}
+        value={templateKey(template)}
+        options={templates.map((one) => ({
+          value: templateKey(one.id),
+          label: one.label,
+          title: one.about,
+        }))}
+        // One of the offered ids, or the blank template where the list does not name it.
+        onValueChange={(to) =>
+          setTemplate(templates.find((one) => templateKey(one.id) === to)?.id ?? { kind: "blank" })
+        }
       />
       <p className="honest" data-testid="skill-new-level">
         It lands in the {labelOf(levels, level)} skills.{" "}

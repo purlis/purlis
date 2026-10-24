@@ -904,6 +904,12 @@ export const commands = {
 	 *  log.
 	 */
 	skillStats: (plane: PlaneId, skill: string) => typedError<SkillStats, string>(__TAURI_INVOKE("skill_stats", { plane, skill })),
+	/**
+	 *  **The panels on skill `skill`'s tab** (ADR 0101 §6): purlis's Runs panel, which lists every
+	 *  run of the skill, newest first, then each extension's. None while the flag is off. On a
+	 *  blocking thread, as it reads the project's skill log and asks each extension.
+	 */
+	skillPanels: (plane: PlaneId, skill: string) => typedError<SkillPanel[], string>(__TAURI_INVOKE("skill_panels", { plane, skill })),
 	/**  Whether the Skill studio is on in this window: this machine's flag, or the variable over it. */
 	skillStudioOn: () => typedError<boolean, string>(__TAURI_INVOKE("skill_studio_on")),
 	setSkillStudioOn: __WINDOW_ONLY_RESULT,
@@ -924,8 +930,11 @@ export const commands = {
 	broken: SkillBroken[],
 } | null, string>(__TAURI_INVOKE("chat_skills_missing", { plane, session })),
 	putAwayChatSkillsMissing: __WINDOW_ONLY_RESULT,
-	/**  The templates a new skill can start from. */
-	skillTemplates: () => __TAURI_INVOKE<SkillTemplate[]>("skill_templates"),
+	/**
+	 *  The templates a new skill can start from in the project `plane`: purlis's own, then each
+	 *  extension's (ADR 0101).
+	 */
+	skillTemplates: (plane: PlaneId) => typedError<SkillTemplate[], string>(__TAURI_INVOKE("skill_templates", { plane })),
 	/**
 	 *  **The live lint** of `text`, a `SKILL.md` being edited for the skill `name` at `level` of
 	 *  `plane` (SK-7; SK-8, #2771): each line the editor shows, checked against the project's skills
@@ -2007,6 +2016,8 @@ export const ENGINE_SANDBOX_NEEDED = "engine-sandbox-needed" as const;
 export const PERSONA_SCOPE_KEY = "persona/" as const;
 
 export const SESSION_BUS_ANSWERS = "session-bus://answers" as const;
+
+export const SKILL_RUNS_PANEL = "runs" as const;
 
 export const SKILL_STUDIO_IN = "skills.studio:" as const;
 
@@ -6443,7 +6454,12 @@ export type PanelBlock = { kind: "list"; rows: PanelRow[]; empty: PanelEmpty } |
 /**  `bars` or `columns` (`panel::Shape`). */
 shape: string; unit: string | null; points: PanelPoint[] } | 
 /**  Labelled facts, drawn as two columns (`panel::Block::Facts`). */
-{ kind: "facts"; facts: PanelFact[] };
+{ kind: "facts"; facts: PanelFact[] } | 
+/**
+ *  Rows of words under named columns, drawn as a table (`panel::Block::Table`): a skill's
+ *  Runs panel, and a studio panel's (ADR 0101 §6).
+ */
+{ kind: "table"; caption: string; columns: string[]; rows: PanelTableRow[]; empty: PanelEmpty };
 
 /**
  *  What opens when a row is opened, as the window receives it.
@@ -6515,6 +6531,12 @@ export type PanelRow = {
 	 *  answer's. Empty on every row of charter's own.
 	 */
 	actions: RowAction[],
+};
+
+/**  One row of a table: its key, and a cell per column. */
+export type PanelTableRow = {
+	key: string,
+	cells: string[],
 };
 
 /**  One open todo. There is no state field: a closed todo is a deleted file (ADR 0004). */
@@ -9309,6 +9331,27 @@ export type SkillLintLevel =
 /**  Worth knowing, and Save does not wait on it. */
 "warns";
 
+/**
+ *  **One panel on a skill's tab** (ADR 0101 §6), as the window draws it: purlis's Runs panel,
+ *  then each panel an extension that declares `studio-panel` adds, each answered in panel blocks
+ *  or refused with the core's sentence.
+ */
+export type SkillPanel = {
+	key: SkillPanelKey,
+	title: string,
+	/**  The extension that adds it, by name, or null for purlis's own. */
+	by: string | null,
+	blocks: PanelBlock[],
+	/**  Why it has no blocks, in the core's words, or null where it answered. */
+	refused: string | null,
+};
+
+/**
+ *  **Which panel on a skill's tab**, as the window holds it: purlis's Runs panel, or one an
+ *  extension adds, by its id and the panel's.
+ */
+export type SkillPanelKey = { kind: "runs" } | { kind: "extension"; extension: string; panel: string };
+
 /**  A skill source as the studio shows and adds one. */
 export type SkillSource = {
 	remote: SourceRemote,
@@ -9341,15 +9384,21 @@ export type SkillSwitch =
 /**  Not on its own, and why, which the studio says in place of a switch. */
 { kind: "not"; why: string };
 
-/**  One template, as the New skill form offers it. */
+/**
+ *  One template, as the New skill form offers it: purlis's own, then each extension's that
+ *  declares `skill-template` (ADR 0101).
+ */
 export type SkillTemplate = {
 	id: SkillTemplateId,
 	label: string,
 	about: string,
 };
 
-/**  A template a new skill can start from. */
-export type SkillTemplateId = "blank" | "steps";
+/**
+ *  Which template a new skill starts from, as the window names it: one of purlis's own, or one
+ *  an extension offers, by its id and the template's (ADR 0101).
+ */
+export type SkillTemplateId = { kind: "blank" } | { kind: "steps" } | { kind: "extension"; extension: string; template: string };
 
 /**  One newer commit offered for an installed skill. */
 export type SkillUpdateOffer = {

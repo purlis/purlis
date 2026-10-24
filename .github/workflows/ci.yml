@@ -773,9 +773,9 @@ jobs:
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       - name: Build the tests
-        run: cargo nextest run --locked -p purlis-core -p purlis-terminal -p purlis-app -p purlis-browser-engine --no-run
+        run: cargo nextest run --locked -p purlis-core -p purlis-terminal -p purlis-app -p purlis-browser-engine -p studio-probe --no-run
       - name: Run the tests
-        run: tools/no-orphans.sh --reap -- cargo nextest run --locked -p purlis-core -p purlis-terminal -p purlis-app -p purlis-browser-engine --profile ci --partition count:${{ matrix.part }}/3 -E 'not (package(purlis-app) & test(/^behaviour::/))'
+        run: tools/no-orphans.sh --reap -- cargo nextest run --locked -p purlis-core -p purlis-terminal -p purlis-app -p purlis-browser-engine -p studio-probe --profile ci --partition count:${{ matrix.part }}/3 -E 'not (package(purlis-app) & test(/^behaviour::/))'
       # What makes a part slow, as notices on the run, as in `rust`.
       - name: Annotate the slowest tests
         if: ${{ !cancelled() }}
@@ -817,6 +817,45 @@ jobs:
       - name: The engine's tests, the runner's Chrome
         if: steps.scope.outputs.run == 'true'
         run: cargo test --locked -p purlis-browser-engine -- --test-threads=2
+
+  # An extension that declares a studio capability, confined on macOS by Seatbelt (ADR 0101,
+  # #2777): the studio probe tries from inside its sandbox to read the project, write outside its
+  # state folder, and reach an undeclared host or a model provider's. The Linux `rust` job runs
+  # the same tests under purlis's own wrap on every pull request; Seatbelt is macOS's alone, so
+  # its claims are proven here. Scoped like `browser-engine-macos`: a pull request that does not
+  # touch the confinement runs a check of a few seconds and nothing else.
+  studio-confinement-macos:
+    name: studio confinement on macos (Seatbelt, when the confinement changes)
+    if: github.event_name == 'pull_request'
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+      - name: Whether this change touches the confinement
+        id: scope
+        run: |
+          changed=$(git diff --name-only HEAD^1 HEAD)
+          if echo "$changed" | grep -qE '^(crates/studio-probe/|crates/purlis-core/src/(executor|extension)(\.rs|/)|crates/purlis-core/src/sandbox/(seatbelt|egress|reach|wrapper|hosts)(\.rs|/)|Cargo\.lock$|rust-toolchain\.toml$)'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::the studio confinement has not changed; not run"
+          fi
+      - if: steps.scope.outputs.run == 'true'
+        uses: ./.github/actions/rust-toolchain
+      - if: steps.scope.outputs.run == 'true'
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: false
+      - name: The studio probe, confined by Seatbelt
+        if: steps.scope.outputs.run == 'true'
+        run: cargo test --locked -p studio-probe
+      # Which of the confined profile's parts the probe needs to start, each tried on its own.
+      # What Seatbelt refused while the probe ran, from the system's log, for a red run's reader.
+      - name: What the sandbox refused
+        if: failure() && steps.scope.outputs.run == 'true'
+        run: log show --last 15m --style compact --predicate 'eventMessage CONTAINS "studio-probe" AND eventMessage CONTAINS "deny"' | tail -100 || true
 
   # What the Python charter answered, frozen: every scenario the old differential ran, and the
   # generated cases of the shell reader and the plane-root guards, replayed against this build

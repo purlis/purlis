@@ -206,6 +206,11 @@ describe("the project rail", () => {
 
   it("is a 52px column of 36px buttons at the window's left, the project in front selected", async () => {
     await shownAgain();
+    // Read once the column has opened: shown, it grows to its width over the rail's transition.
+    await browser.waitUntil(async () => Math.round((await seen()).width) === 52, {
+      timeout: 10_000,
+      timeoutMsg: "the shown rail never reached its width",
+    });
     const now = await seen();
     expect(Math.round(now.width)).toBe(52);
     expect(Math.round(now.button)).toBe(36);

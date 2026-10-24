@@ -1029,6 +1029,7 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "skill_diff",
     "skill_lint",
     "skill_move_needs_grant",
+    "skill_panels",
     "skill_revert_widens",
     "skill_runs",
     "skill_stats",

@@ -1,0 +1,293 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+//! **The studio probe**: an extension that adds a skill source, a lint, a template and a panel
+//! to the Skill studio (ADR 0101), and one command, `try`, that attempts one thing from inside
+//! its sandbox and prints what happened, so a test reads what the confinement let it do.
+//!
+//! Test-only, and written as a stranger would write an extension: it knows the protocol and
+//! nothing of purlis's insides. `studio-probe assemble <dir>` puts the program and its manifest
+//! in `<dir>`, as an author would lay an extension out.
+
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
+
+/// The protocol it speaks.
+pub const PROTOCOL: u64 = 3;
+
+/// Its manifest.
+pub const MANIFEST: &str = include_str!("../purlis-extension.json");
+
+/// The skill its source offers.
+pub const OFFERED: &str = "probe-skill";
+
+/// The revision its source names what it holds by.
+pub const REVISION: &str = "probe-r1";
+
+/// Lay the probe out in `dir`: its manifest, and this program as `bin/studio-probe`.
+pub fn assemble(dir: &Path) -> std::io::Result<PathBuf> {
+    let me = std::env::current_exe()?;
+    std::fs::create_dir_all(dir.join("bin"))?;
+    std::fs::create_dir_all(dir.join("state"))?;
+    std::fs::write(dir.join("purlis-extension.json"), MANIFEST)?;
+    let program = dir.join("bin").join("studio-probe");
+    // A rename over the old copy, never a write through it: on macOS writing a program that has
+    // run invalidates its signature.
+    let beside = dir.join("bin").join(".studio-probe.new");
+    std::fs::copy(&me, &beside)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&beside, std::fs::Permissions::from_mode(0o755))?;
+    }
+    std::fs::rename(&beside, &program)?;
+    Ok(program)
+}
+
+/// The answer to one request line, and, for a command, its exit status: `None` for an answer
+/// line, which is printed with a newline.
+pub fn answer(request: &serde_json::Value) -> (String, Option<u8>) {
+    if request.get("command").and_then(serde_json::Value::as_str) == Some("try") {
+        let words: Vec<String> = request
+            .get("args")
+            .and_then(serde_json::Value::as_array)
+            .map(|args| {
+                args.iter()
+                    .filter_map(|it| it.as_str().map(str::to_owned))
+                    .collect()
+            })
+            .unwrap_or_default();
+        return (format!("{}\n", tried(&words)), Some(0));
+    }
+    let said = match request.get("studio").and_then(serde_json::Value::as_str) {
+        Some(_) => studio(request.get("ask").unwrap_or(&serde_json::Value::Null)),
+        None => serde_json::json!({ "error": "the probe answers studio questions and `try`" }),
+    };
+    let mut said = said;
+    said["charter"] = PROTOCOL.into();
+    (said.to_string(), None)
+}
+
+/// A studio question's answer.
+fn studio(ask: &serde_json::Value) -> serde_json::Value {
+    let word = |key: &str| {
+        ask.get(key)
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("")
+    };
+    let files = ask
+        .get("files")
+        .and_then(serde_json::Value::as_array)
+        .map_or(0, Vec::len);
+    match word("ask") {
+        "skills" => serde_json::json!({
+            "revision": REVISION,
+            "skills": [{ "name": OFFERED, "description": "A skill the studio probe offers, for its tests." }],
+        }),
+        "files" => serde_json::json!({
+            "revision": word("revision"),
+            "files": [
+                {
+                    "path": "SKILL.md",
+                    "text": format!(
+                        "---\nname: {OFFERED}\ndescription: A skill the studio probe offers, for its tests.\n---\n\n# {OFFERED}\n\nRun `scripts/check.sh` when asked.\n"
+                    ),
+                },
+                { "path": "scripts/check.sh", "text": "#!/bin/sh\necho checked\n", "executable": true },
+            ],
+        }),
+        "findings" => serde_json::json!({
+            "findings": [{ "says": format!("the probe was handed {files} files of {}", word("skill")) }],
+        }),
+        "template" => serde_json::json!({
+            "text": format!(
+                "---\nname: {}\ndescription: {}\n---\n\n# {}\n\nWritten by the studio probe.\n",
+                word("name"),
+                word("description"),
+                word("name")
+            ),
+        }),
+        "panel" => serde_json::json!({
+            "blocks": [
+                { "kind": "note", "text": format!("The probe's panel on {}.", word("skill")) },
+                {
+                    "kind": "table",
+                    "caption": "Probe",
+                    "columns": ["Handed", "Files"],
+                    "rows": [{ "key": "handed", "cells": ["files", files.to_string()] }],
+                },
+            ],
+        }),
+        other => serde_json::json!({ "error": format!("the probe has no answer to {other:?}") }),
+    }
+}
+
+/// **One thing tried from inside the sandbox**, and what happened, as one line: `ok` and what it
+/// saw, or what refused it.
+///
+/// - `read <path>`: read a file.
+/// - `write <path>`: write a file.
+/// - `connect <address:port>`: connect to an address directly, past any proxy.
+/// - `link <from> <to>` and `symlink <from> <to>`: make a link at `<to>` to `<from>`.
+/// - `hello <host> <name>`: ask its proxy for a tunnel to `<host>:443`, send a TLS ClientHello
+///   naming `<name>` through it, and say whether anything came back.
+/// - `environ <pid>`: what `ps -wwE` shows of another process's command and environment.
+/// - `proxy <host>`: ask its proxy (`HTTPS_PROXY`) for a tunnel to `<host>:443`, and say the
+///   proxy's status line.
+pub fn tried(words: &[String]) -> String {
+    let said = match words {
+        [verb, path] if verb == "read" => std::fs::read(path)
+            .map(|bytes| format!("ok, {} bytes", bytes.len()))
+            .map_err(|why| why.kind().to_string()),
+        [verb, path] if verb == "write" => std::fs::write(path, "probe\n")
+            .map(|()| "ok".to_owned())
+            .map_err(|why| why.kind().to_string()),
+        [verb, address] if verb == "connect" => {
+            match address
+                .parse::<std::net::SocketAddr>()
+                .map_err(|why| why.to_string())
+            {
+                Ok(address) => std::net::TcpStream::connect_timeout(
+                    &address,
+                    std::time::Duration::from_secs(3),
+                )
+                .map(|_| "ok, connected".to_owned())
+                .map_err(|why| why.kind().to_string()),
+                Err(why) => Err(why),
+            }
+        }
+        [verb, from, to] if verb == "link" => std::fs::hard_link(from, to)
+            .map(|()| "ok".to_owned())
+            .map_err(|why| why.kind().to_string()),
+        #[cfg(unix)]
+        [verb, from, to] if verb == "symlink" => std::os::unix::fs::symlink(from, to)
+            .map(|()| "ok".to_owned())
+            .map_err(|why| why.kind().to_string()),
+        [verb, host] if verb == "proxy" => through_the_proxy(host),
+        [verb, host, named] if verb == "hello" => hello_through_the_proxy(host, named),
+        [verb, pid] if verb == "environ" => environ(pid),
+        _ => Err(format!("nothing to try in {words:?}")),
+    };
+    match said {
+        Ok(it) => it,
+        Err(why) => format!("refused: {why}"),
+    }
+}
+
+/// The proxy's status line for a tunnel to `host`, or why there was none.
+fn through_the_proxy(host: &str) -> Result<String, String> {
+    let proxy = std::env::var("HTTPS_PROXY").map_err(|_| "no proxy".to_owned())?;
+    let at = proxy
+        .strip_prefix("http://")
+        .ok_or_else(|| format!("a proxy that is not http: {proxy}"))?
+        .trim_end_matches('/');
+    let mut stream = std::net::TcpStream::connect(at).map_err(|why| why.kind().to_string())?;
+    let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(20)));
+    write!(
+        stream,
+        "CONNECT {host}:443 HTTP/1.1\r\nHost: {host}:443\r\n\r\n"
+    )
+    .map_err(|why| why.kind().to_string())?;
+    let mut head = Vec::new();
+    let mut byte = [0u8; 1];
+    while head.len() < 512 && !head.ends_with(b"\r\n") {
+        match stream.read(&mut byte) {
+            Ok(1) => head.push(byte[0]),
+            _ => break,
+        }
+    }
+    Ok(format!(
+        "proxy said {}",
+        String::from_utf8_lossy(&head).trim()
+    ))
+}
+
+/// The proxy's status line for a tunnel to `host`, then whether anything came back once a TLS
+/// ClientHello naming `named` was sent through it.
+fn hello_through_the_proxy(host: &str, named: &str) -> Result<String, String> {
+    let proxy = std::env::var("HTTPS_PROXY").map_err(|_| "no proxy".to_owned())?;
+    let at = proxy
+        .strip_prefix("http://")
+        .ok_or_else(|| format!("a proxy that is not http: {proxy}"))?
+        .trim_end_matches('/');
+    let mut stream = std::net::TcpStream::connect(at).map_err(|why| why.kind().to_string())?;
+    let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(20)));
+    write!(
+        stream,
+        "CONNECT {host}:443 HTTP/1.1\r\nHost: {host}:443\r\n\r\n"
+    )
+    .map_err(|why| why.kind().to_string())?;
+    let mut head = Vec::new();
+    let mut byte = [0u8; 1];
+    while head.len() < 4096 && !head.ends_with(b"\r\n\r\n") {
+        match stream.read(&mut byte) {
+            Ok(1) => head.push(byte[0]),
+            _ => break,
+        }
+    }
+    let status = String::from_utf8_lossy(&head)
+        .lines()
+        .next()
+        .unwrap_or_default()
+        .to_owned();
+    if !status.contains(" 200 ") {
+        return Ok(format!("proxy said {status}"));
+    }
+    stream
+        .write_all(&client_hello(named))
+        .map_err(|why| why.kind().to_string())?;
+    let mut back = [0u8; 512];
+    let came = stream.read(&mut back).unwrap_or(0);
+    Ok(format!("proxy said {status}; {came} bytes came back"))
+}
+
+/// A TLS record holding a ClientHello naming `name`, as a client writes one.
+fn client_hello(name: &str) -> Vec<u8> {
+    let name = name.as_bytes();
+    let len = |n: usize| u16::try_from(n).unwrap_or(u16::MAX).to_be_bytes();
+    let mut list = Vec::new();
+    list.extend(len(3 + name.len()));
+    list.push(0);
+    list.extend(len(name.len()));
+    list.extend(name);
+    let mut extensions = Vec::new();
+    extensions.extend(43u16.to_be_bytes());
+    extensions.extend(5u16.to_be_bytes());
+    extensions.extend([4, 3, 4, 3, 3]);
+    extensions.extend(0u16.to_be_bytes());
+    extensions.extend(len(list.len()));
+    extensions.extend(list);
+    let mut hello = vec![3, 3];
+    hello.extend([7u8; 32]);
+    hello.push(0);
+    hello.extend(4u16.to_be_bytes());
+    hello.extend([0x13, 0x01, 0xc0, 0x2f]);
+    hello.extend([1, 0]);
+    hello.extend(len(extensions.len()));
+    hello.extend(extensions);
+    let mut handshake = vec![1, 0];
+    handshake.extend(len(hello.len()));
+    handshake.extend(hello);
+    let mut record = vec![0x16, 3, 1];
+    record.extend(len(handshake.len()));
+    record.extend(handshake);
+    record
+}
+
+/// Another process's command and environment, as this system shows them: `ps -wwE` on macOS,
+/// which reads them through the system's settings, and its `/proc` files on Linux.
+fn environ(pid: &str) -> Result<String, String> {
+    if cfg!(target_os = "macos") {
+        return std::process::Command::new("ps")
+            .args(["-wwE", "-o", "command=", "-p", pid])
+            .output()
+            .map(|out| format!("ok, {}", String::from_utf8_lossy(&out.stdout).trim()))
+            .map_err(|why| why.kind().to_string());
+    }
+    let read = |name: &str| {
+        std::fs::read(format!("/proc/{pid}/{name}"))
+            .map(|bytes| String::from_utf8_lossy(&bytes).replace('\0', " "))
+            .map_err(|why| why.kind().to_string())
+    };
+    Ok(format!("ok, {} {}", read("cmdline")?, read("environ")?))
+}

@@ -27,7 +27,7 @@
 
 use std::path::{Path, PathBuf};
 
-use purlis_skills::change::{self, Template};
+use purlis_skills::change::{self, SkillTemplate, TemplateId};
 
 use super::{Grant, LINKED_PLUGIN, Origin, beside, grant_of, level_dir, set_grant};
 use crate::planegit::literally;
@@ -413,16 +413,22 @@ fn write(
     .map_err(|why| not_written(what, why))
 }
 
-/// **Creates a skill** named `name`, described by `description`, from `template`, at `level`
-/// (#2770): its folder and `SKILL.md`, committed. A project skill starts granted to the
-/// project's root alone, the default. Refused for a name the open format does not allow, one a
-/// built-in skill has, or one the level already holds.
+/// **Creates a skill** named `name`, described by `description`, from the template `template`
+/// that `templates` offers, at `level` (#2770): its folder and `SKILL.md`, committed. A project
+/// skill starts granted to the project's root alone, the default. Refused for a name the open
+/// format does not allow, one a built-in skill has, or one the level already holds, and for a
+/// template whose text is not a whole skill that keeps its name.
+///
+/// `templates` is purlis's own ([`purlis_skills::change::BuiltInTemplates`]) or the studio's,
+/// which adds each extension's (`crate::skills::studio::Templates`): one interface, the
+/// SkillTemplate capability's (ADR 0101).
 pub fn create(
     cx: &mut Ctx<'_>,
     level: &Level,
     name: &str,
     description: &str,
-    template: Template,
+    templates: &dyn SkillTemplate,
+    template: &TemplateId,
 ) -> Result<PathBuf, String> {
     let plane = cx.plane;
     crate::settings::writable(plane)?;
@@ -433,6 +439,12 @@ pub fn create(
         return Err(format!("that description cannot be used: {why}"));
     }
     cx.not_built_in(name)?;
+    let text = templates.text(template, name, description)?;
+    if let Some(problem) = change::check(&text, name).first() {
+        return Err(format!(
+            "that template does not make a whole skill: {problem}"
+        ));
+    }
     let dir = free_at(plane, level, name, name)?;
     let folder = dir.join(name);
     write(
@@ -440,7 +452,7 @@ pub fn create(
         &format!("{}/SKILL.md", rel(plane, &folder)),
         &format!("{name}'s instructions"),
         None,
-        &template.text(name, description),
+        &text,
         level.depth(),
     )?;
     cx.done(format!(
