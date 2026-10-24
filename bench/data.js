@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792853457602,
+  "lastUpdate": 1792855120115,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -23772,6 +23772,48 @@ window.BENCHMARK_DATA = {
             "value": 101.5351785,
             "unit": "ms",
             "extra": "median of 5 runs: 101.215, 101.450, 101.535, 101.693, 102.208 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "52114e03ad8a9ff89cc4e251a69c7fe37f73961f",
+          "message": "Rail spec: wait for the column to open before measuring it (#3157)\n\nshownAgain waited only for the slot to stop saying it is hidden. The\nperson's show slides the column open over duration.slide (R84), and the\nattribute goes as the slide starts, so the first test of \"the project\nrail\" could read the column part of the way open (7px) when the test\nbefore it ended with the rail hidden by the person. It now waits until\nthe column is 52px. The window's own hide and show stay instant.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-24T18:59:10+04:00",
+          "tree_id": "a6f19a38199552d84d0a25b608ebcb6adb2c306a",
+          "url": "https://github.com/purlis/purlis/commit/52114e03ad8a9ff89cc4e251a69c7fe37f73961f"
+        },
+        "date": 1792855118277,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.541469,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.511, 0.514, 0.541, 0.542, 0.546 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.7844045,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.312, 16.554, 16.784, 16.788, 16.823 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.6977445,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.128, 103.445, 103.698, 103.866, 105.280 ms"
           }
         ]
       }
