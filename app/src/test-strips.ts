@@ -42,6 +42,35 @@ export function laidOutInARow() {
 }
 
 /**
+ * {@link laidOutInARow}, down a column: the project rail's (#2915), whose buttons move up and down
+ * it. Every element is given a box by its place among its siblings, one a hundred pixels below the
+ * last, and a strip one tall enough to hold them all.
+ */
+export function laidOutInAColumn() {
+  vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+    const strip = this.hasAttribute("data-strip");
+    const at = this.parentElement
+      ? [...this.parentElement.children]
+          .filter((one) => one.getAttribute("role") !== "tablist")
+          .indexOf(this)
+      : 0;
+    const top = strip ? 0 : at * 100;
+    const height = strip ? 1000 : 90;
+    return {
+      x: 0,
+      y: top,
+      left: 0,
+      top,
+      right: 40,
+      bottom: top + height,
+      width: 40,
+      height,
+      toJSON: () => ({}),
+    } as DOMRect;
+  });
+}
+
+/**
  * **The strip whose tablist is called `name`**: the element its tabs, their `×` and gears, and
  * its own controls are drawn in (#1204, `StripTablist.tsx`).
  *
@@ -51,6 +80,16 @@ export function laidOutInARow() {
  */
 export function stripNamed(name: string): HTMLElement {
   return holding(screen.getByRole("tablist", { name }));
+}
+
+/**
+ * **Closes the project `name` from the rail** (#2915): its button focused and Delete pressed, the
+ * key that closes a focused project, as the rail has no `×`. Found once it is drawn.
+ */
+export async function closeFromTheRail(name: string): Promise<void> {
+  const tab = await screen.findByRole("tab", { name });
+  tab.focus();
+  fireEvent.keyDown(tab, { key: "Delete" });
 }
 
 /** {@link stripNamed}, once the strip is drawn. */
@@ -78,7 +117,9 @@ function holding(tablist: HTMLElement): HTMLElement {
 }
 
 /** Picks up the focused tab with the keyboard, presses `arrow` once, and puts it down. */
-export async function dragWithTheKeyboard(arrow: "{ArrowLeft}" | "{ArrowRight}") {
+export async function dragWithTheKeyboard(
+  arrow: "{ArrowLeft}" | "{ArrowRight}" | "{ArrowUp}" | "{ArrowDown}",
+) {
   await userEvent.keyboard("{Shift>}[Space]{/Shift}");
   await userEvent.keyboard(arrow);
   await userEvent.keyboard("[Space]");

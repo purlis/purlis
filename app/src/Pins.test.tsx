@@ -549,7 +549,7 @@ describe("the workspace strip", () => {
 });
 
 describe("a pinned project", () => {
-  it("is drawn first on the project strip, and marked", async () => {
+  it("is drawn first on the project rail", async () => {
     // **Two projects, because one cannot show an order.** A cold launch that restores both
     // is the shortest route to a window holding two, and it is the state the pin is for.
     const other = "/home/dev/other";
@@ -574,8 +574,15 @@ describe("a pinned project", () => {
     });
     render(<App />);
 
-    await vi.waitFor(() => expect(pinned()).toContain("pinned project"));
-    expect(namesIn("Projects", ".project-name")).toEqual(["other", "plane"]);
+    // The rail draws no pin mark (#2915, as `prototype/switcher` draws it): the order says it,
+    // and the button's menu offers Unpin.
+    await vi.waitFor(() =>
+      expect(
+        within(strip("Projects"))
+          .getAllByRole("tab")
+          .map((tab) => tab.getAttribute("aria-label")),
+      ).toEqual(["other", "plane"]),
+    );
   });
 
   it("is pinned by the palette, and the core is told which project", async () => {
@@ -588,7 +595,6 @@ describe("a pinned project", () => {
     expect(asked(asks, "pin_project").map((one) => one.args)).toEqual([
       { plane: PLANE, pinned: true },
     ]);
-    await vi.waitFor(() => expect(pinned()).toContain("pinned project"));
   });
 
   it("shows the core's refusal in the core's own words", async () => {

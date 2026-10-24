@@ -5,7 +5,12 @@ import { existsSync, realpathSync, renameSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { $, $$, browser, expect } from "@wdio/globals";
 import { THE_RUNS_TREE, anEmptyRecord, copyFixturePlane } from "../harness.js";
-import { closeProject, noDialogIsLeftUp, openThroughTheTrustQuestion } from "../opening.js";
+import {
+  closeProject,
+  noDialogIsLeftUp,
+  openThroughTheTrustQuestion,
+  fromThePalette,
+} from "../opening.js";
 import { attributesOfEach } from "../reading.js";
 import { projectInFront, runningIn } from "../running.js";
 import { endChatById, startAChat } from "../started.js";
@@ -303,7 +308,7 @@ describe("a window holding more than one project", function () {
   });
 
   it("closes one project without disturbing the other", async () => {
-    await closeProject(`${PROJECTS} button[aria-label="Close project ${basename(second)}"]`);
+    await closeProject(`${PROJECTS} [role="tab"][aria-label="${basename(second)}"]`);
 
     await stripBecomes([{ path: first, front: true }]);
     expect(await ask<string[]>("open_planes")).toEqual([first]);
@@ -334,7 +339,7 @@ describe("a window holding more than one project", function () {
     // The test's own failure is the one reported: a cleanup that fails after it is only said.
     let failed: unknown;
     try {
-      await $(`${PROJECTS} button[aria-label="New project…"]`).click();
+      await fromThePalette("New project…");
 
       const dialog = await $('[role="dialog"]');
       await dialog.waitForDisplayed({ timeout: 20_000 });
@@ -366,7 +371,7 @@ describe("a window holding more than one project", function () {
       ]);
       expect(existsSync(join(made, "charter.toml"))).toBe(true);
 
-      await closeProject(`${PROJECTS} button[aria-label="Close project ${basename(made)}"]`);
+      await closeProject(`${PROJECTS} [role="tab"][aria-label="${basename(made)}"]`);
       await stripBecomes([{ path: first, front: true }]);
     } catch (error) {
       failed = error;
@@ -374,7 +379,7 @@ describe("a window holding more than one project", function () {
     let cleanupFailed: unknown;
     try {
       await noDialogIsLeftUp();
-      const left = `${PROJECTS} button[aria-label="Close project ${basename(made)}"]`;
+      const left = `${PROJECTS} [role="tab"][aria-label="${basename(made)}"]`;
       if (await $(left).isExisting()) await closeProject(left);
     } catch (cleanup) {
       cleanupFailed = cleanup;

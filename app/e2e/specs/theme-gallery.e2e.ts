@@ -4,6 +4,7 @@
 import { mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
+import { openMenuOn } from "../acting.js";
 import { anEmptyRecord, copyFixturePlane } from "../harness.js";
 import { closeProject, openThroughTheTrustQuestion } from "../opening.js";
 
@@ -146,12 +147,9 @@ describe("Settings › Theme's hover preview", function () {
     });
     await $(`${WORKSPACES} [role="tab"].plane-root`).waitForExist({ timeout: 30_000 });
     await $(`${WORKSPACES} [role="tab"].plane-root`).click();
-    await $(`${PROJECTS} button.gear[aria-label^="Project settings"]`).waitForExist({
-      timeout: 20_000,
-    });
-    await browser.execute((selector: string) => {
-      document.querySelector<HTMLElement>(`${selector} button.gear`)?.click();
-    }, PROJECTS);
+    // The rail has no gear (#2915): its project's menu has the same row.
+    await openMenuOn(`${PROJECTS} [role="tab"][aria-selected="true"]`);
+    await $('[role="menu"]').$('[role="menuitem"]*=Settings').click();
     await browser.waitUntil(
       async () =>
         (await browser.execute(
@@ -168,7 +166,7 @@ describe("Settings › Theme's hover preview", function () {
   });
 
   after(async () => {
-    const closer = `${PROJECTS} button[aria-label="Close project ${basename(mine)}"]`;
+    const closer = `${PROJECTS} [role="tab"][aria-label="${basename(mine)}"]`;
     if (await $(closer).isExisting()) {
       await closeProject(closer);
       await browser.waitUntil(async () => !(await $(closer).isExisting()), {

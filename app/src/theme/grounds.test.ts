@@ -662,7 +662,6 @@ const CLASSLESS: readonly string[] = [
  */
 const WITHIN: readonly string[] = [
   ".chats-section li:has(> .ui-row[data-revealed])",
-  '.projects .project:has([aria-selected="true"])',
   '.workspaces-strip .workspace:has([aria-selected="true"])',
 ];
 

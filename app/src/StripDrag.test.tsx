@@ -8,7 +8,7 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import { forgetThisLaunch } from "./regions";
-import { dragWithTheKeyboard, laidOutInARow, stripNamed } from "./test-strips";
+import { dragWithTheKeyboard, laidOutInAColumn, laidOutInARow, stripNamed } from "./test-strips";
 
 /**
  * **Dragging a tab with the keyboard** (SI-6): Shift+Space picks the focused tab up, the arrows
@@ -138,7 +138,9 @@ const namesOn = (strip: string) =>
 const tabOn = (strip: string, name: string) =>
   within(stripNamed(strip))
     .getAllByRole("tab")
-    .find((tab) => tab.textContent?.includes(name)) as HTMLElement;
+    .find(
+      (tab) => tab.textContent?.includes(name) || tab.getAttribute("aria-label") === name,
+    ) as HTMLElement;
 
 describe("dragging a chat tab with the keyboard", () => {
   it("moves it along the strip and tells the core the order to record", async () => {
@@ -370,8 +372,14 @@ describe("dragging a workspace tab with the keyboard", () => {
   });
 });
 
-describe("dragging a project tab with the keyboard", () => {
+describe("dragging a project up the rail with the keyboard (#2915)", () => {
   const OTHER = "/home/dev/other";
+
+  // The rail is a column: its buttons move up and down it.
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    laidOutInAColumn();
+  });
 
   /** A window holding two projects, `other` pinned; `pin_project` answers as `pinProject`. */
   function twoProjects(pinProject: () => Promise<unknown>) {
@@ -399,43 +407,33 @@ describe("dragging a project tab with the keyboard", () => {
   const projects = () =>
     within(stripNamed("Projects"))
       .getAllByRole("tab")
-      .map((tab) => tab.querySelector(".project-name")?.textContent);
+      .map((tab) => tab.getAttribute("aria-label"));
 
   it("is drawn among the pinned at once, while the core has not answered the pin", async () => {
     let answer: (said: unknown) => void = () => undefined;
     const window = twoProjects(() => new Promise((resolve) => (answer = resolve)));
     render(<App />);
     await waitFor(() => expect(projects()).toEqual(["other", "plane"]));
-    await waitFor(() =>
-      expect(
-        within(tabOn("Projects", "other")).queryByRole("img", { name: /^pinned / }),
-      ).toBeTruthy(),
-    );
+    await waitFor(() => expect(window.last("plane_pins")).toBeDefined());
 
     tabOn("Projects", "plane").focus();
-    await dragWithTheKeyboard("{ArrowLeft}");
+    await dragWithTheKeyboard("{ArrowUp}");
 
     expect(window.last("pin_project")).toEqual({ plane: PLANE, pinned: true });
     expect(projects()).toEqual(["plane", "other"]);
-    expect(within(tabOn("Projects", "plane")).getByRole("img", { name: /^pinned / })).toBeTruthy();
     answer(null);
   });
 
   it("goes back to its own group, and says why, when the core refuses the pin", async () => {
-    twoProjects(() => Promise.reject("charter pins at most 32 projects."));
+    const window = twoProjects(() => Promise.reject("charter pins at most 32 projects."));
     render(<App />);
     await waitFor(() => expect(projects()).toEqual(["other", "plane"]));
-    await waitFor(() =>
-      expect(
-        within(tabOn("Projects", "other")).queryByRole("img", { name: /^pinned / }),
-      ).toBeTruthy(),
-    );
+    await waitFor(() => expect(window.last("plane_pins")).toBeDefined());
 
     tabOn("Projects", "plane").focus();
-    await dragWithTheKeyboard("{ArrowLeft}");
+    await dragWithTheKeyboard("{ArrowUp}");
 
     expect(await screen.findByText("charter pins at most 32 projects.")).toBeInTheDocument();
     expect(projects()).toEqual(["other", "plane"]);
-    expect(within(tabOn("Projects", "plane")).queryByRole("img", { name: /^pinned / })).toBeNull();
   });
 });

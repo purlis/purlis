@@ -156,7 +156,7 @@ describe("creating a project on a forge", function () {
       timeoutMsg: "the made project never opened",
     });
 
-    await closeProject(`${PROJECTS} button[aria-label="Close project ${basename(folder)}"]`);
+    await closeProject(`${PROJECTS} [role="tab"][aria-label="${basename(folder)}"]`);
     await browser.waitUntil(async () => !(await ask<string[]>("open_planes")).includes(folder), {
       timeout: 60_000,
       timeoutMsg: "the made project stayed open",

@@ -989,6 +989,7 @@ has it; nothing reads the key after that.
   "chats": { "grouped": true, "tabbed": true, "away": false },
   "notifications": { "quiet": { "on": true, "from": "22:00", "to": "07:00" } },
   "explorer": { "closed": ["repos"] },
+  "rail": "auto",
   "dismissed": { "/home/me/project": ["pin-dormant:ide", "chat-fresh:3"] }
 }
 ```
@@ -1133,6 +1134,10 @@ has it; nothing reads the key after that.
   writes it (`app/src/explorerSections.ts`). Each project keeps its own too, under
   `projects` (#1686); this one is the last fold in any project, which a project with none of
   its own starts from, as a project with no arrangement starts from the machine's.
+- **`rail`** is whether the project rail hides itself (#2915): `"auto"` while it does, and
+  left out while it is always shown, the default. Any other value is the default, and the Inbox
+  says so. The rail's own last button and the title bar's show button write it
+  (`app/src/railMode.ts`); the first frame draws the rail as it says.
 - **`dismissed`** is the Notices you dismissed (NO-2, V91j), per project by its path, each
   by its cause. A Notice stays hidden while its cause is kept here, and the window lets the
   cause go once the project answers without it, so the Notice shows again if the cause comes
@@ -1172,7 +1177,7 @@ pipelines with animation"_), and adding it on top of that shape would have multi
 
 ### The vocabulary
 
-`DURATIONS` and `EASINGS` in `app/src/theme/motion.ts`. Nine names, written to the document as
+`DURATIONS` and `EASINGS` in `app/src/theme/motion.ts`. Twelve names, written to the document as
 `--motion-duration-*` and `--motion-easing-*` beside the colours. The built-ins are Purlis
 Classic's; Purlis draws `duration.quick` at 150 ms and `easing.standard` and `easing.enter` on
 the shell's one ease (below):
@@ -1184,6 +1189,9 @@ the shell's one ease (below):
 | `duration.settle`  | 280 ms             | a mark arriving at an answer: a pipeline finished, a chat changed state |
 | `duration.spin`    | 900 ms             | one turn of _still running_                                             |
 | `duration.breathe` | 1600 ms            | one breath of _queued, not yet running_                                 |
+| `duration.slide`   | 260 ms             | the project rail hiding and showing, the work column gliding with it    |
+| `duration.reveal`  | 220 ms             | the rail's peek coming in from the window's edge                        |
+| `duration.leave`   | 200 ms             | the peek going, and the rail fading out as it hides                     |
 | `easing.standard`  | `[0.2, 0, 0, 1]`   | a state changing in place                                               |
 | `easing.enter`     | `[0, 0, 0.2, 1]`   | decelerating into place, which is what reads as _arrived_               |
 | `easing.steady`    | `[0, 0, 1, 1]`     | a turn; an eased one stutters once a second                             |
@@ -1192,7 +1200,8 @@ the shell's one ease (below):
 **The shell's motion rule** (R150, #2925): one ease, `cubic-bezier(.22, .8, .24, 1)`, which
 Purlis gives `easing.standard` and `easing.enter`, and 150 ms for a chevron and a switch's knob,
 Purlis's `duration.quick`. Each of the shell's other steps is a duration token that arrives with
-the motion it times.
+the motion it times: `slide`, `reveal` and `leave` came with the project rail (#2915), at the same
+values in both built-ins.
 
 **Semantic, not a scale**, for the reason `needs-you.base` and `danger.base` are two tokens: a
 theme that wants arrivals quicker changes `duration.enter` and does not also speed up whatever

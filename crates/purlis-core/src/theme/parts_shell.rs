@@ -2,13 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! **The window's own families** (#2913, spec #2897): the region panel, a panel's section, an
-//! empty state and a status item, each declared once here and once in its wrapper under
+//! empty state, a status item and the project rail (#2915), each declared once here and once in its wrapper under
 //! `app/src/ui/`, whose stylesheet draws the defaults [`super::Look`] holds a copy of.
 //!
 //! A panel, a section and an empty state are boxes as tall as what they hold (`height: None`):
 //! no target of their own, so [`super::fits`] holds only their bounds, and each of their corners is
 //! clamped to half their own box. A status item is a control, drawn 24px tall in either density
-//! (R115), and holds the least target like a button.
+//! (R115), and holds the least target like a button; a rail button is 36px (R77).
 
 use super::{ALL, Family, Length, Look, Part, Prop, State, TRANSPARENT, Variant};
 
@@ -336,4 +336,94 @@ fn status_look(variant: &str, states: &[State]) -> Look {
         };
     }
     look
+}
+
+/// **The project rail** (#2915, R76–R89, N17): a button per project at the window's far left,
+/// then open a project and the rail's own hide. A button is 36px with corners of 9 (R77); the
+/// rail's ground is the window's frame, which the current project's ring keeps a gap of (R78).
+///
+/// The family's root is the button (`rail.button.*`, R139): the column around the buttons lays
+/// them out and is no part a theme keys.
+pub(super) const RAIL: Family = Family {
+    name: "rail",
+    description: "The project rail at the window's left: a button per project, open and hide.",
+    since: 9,
+    parts: &[
+        Part {
+            name: "button",
+            since: 9,
+            description: "A button of the rail: its fill, edge, corners and size.",
+            properties: ALL,
+        },
+        Part {
+            name: "monogram",
+            since: 9,
+            description: "A project's two letters, in the project's own colour.",
+            properties: &[Prop::FontSize, Prop::FontWeight],
+        },
+        Part {
+            name: "badge",
+            since: 9,
+            description: "How many things wait on the person in the project, at its corner.",
+            properties: &[Prop::Fill, Prop::Text],
+        },
+        Part {
+            name: "unsaved",
+            since: 9,
+            description: "The dot of the project's unsaved work, at its other corner.",
+            properties: &[Prop::Fill],
+        },
+    ],
+    variants: &[
+        Variant {
+            name: "project",
+            since: 9,
+            description: "A project: its monogram on its own colour, ringed while it is current.",
+            consent: None,
+        },
+        Variant {
+            name: "action",
+            since: 9,
+            description: "Open a project, and hide or keep the rail: an icon, no box at rest.",
+            consent: None,
+        },
+    ],
+    // On the window's frame, in its column or peeking over the content.
+    grounds: &["surface.deep"],
+    keeps_size: &[],
+    sized_apart: &[],
+    height: Some(Length::Number(36.0)),
+    font_size: "font-size.xs",
+    line_height: 1.0,
+    border_width: 0.0,
+    defaults: rail_look,
+    // What its wrapper marks: under the pointer, the current project, the keyboard's focus.
+    states: &[State::Hover, State::Selected, State::Focused],
+    focused: "[data-focus-visible]",
+    words: &[("badge", "state.waiting")],
+    corner_most: None,
+    around: &[],
+};
+
+/// **A rail button's colours as `app/src/ui/rail/rail.css` draws them.** A project's are its own
+/// colour (the accent turned to the project's hue, keeping its luminance) on that colour at 13%:
+/// measured here as the accent on the accent's surface, which is what they are at the accent's
+/// own hue. An action is quiet words with no box until the pointer reaches it.
+fn rail_look(variant: &str, states: &[State]) -> Look {
+    if variant == "project" {
+        return Look {
+            fill: "accent.surface",
+            text: "accent.base",
+            border: TRANSPARENT,
+        };
+    }
+    Look {
+        fill: if states.contains(&State::Hover) {
+            "surface.overlay"
+        } else {
+            TRANSPARENT
+        },
+        text: "text.muted",
+        border: TRANSPARENT,
+    }
 }

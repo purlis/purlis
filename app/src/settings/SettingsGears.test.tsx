@@ -196,35 +196,6 @@ describe("Your settings…, in the palette", () => {
   });
 });
 
-describe("the project gear", () => {
-  it("is on the project in front's tab, named, and runs the row its menu runs", async () => {
-    core(PLANE);
-    render(<App />);
-    await screen.findByRole("tab", { name: /alpha/ });
-
-    const gears = within(projects()).getAllByRole("button", { name: "Project settings…" });
-    expect(gears).toHaveLength(1);
-    await userEvent.click(gears[0]);
-
-    await waitFor(() => expect(level()).toBe("Project"));
-    const opened = chatTabs().length;
-    // The same row as the palette's: pressed again, it brings the same tab forward.
-    await userEvent.click(gears[0]);
-    expect(chatTabs()).toHaveLength(opened);
-  });
-
-  it("is one Tab away from the project in front's tab", async () => {
-    core(PLANE);
-    render(<App />);
-    await screen.findByRole("tab", { name: /alpha/ });
-
-    within(projects()).getByRole("tab", { selected: true }).focus();
-    await userEvent.tab();
-
-    expect(within(projects()).getByRole("button", { name: "Project settings…" })).toHaveFocus();
-  });
-});
-
 describe("the workspace gear", () => {
   it("is on the focused workspace's tab only, and opens Settings at its level", async () => {
     core(PLANE);
@@ -283,7 +254,7 @@ describe("the gears' look", () => {
   }));
 
   it("hides a gear until its tab is under the pointer or the keyboard", () => {
-    const base = rules.find((rule) => rule.selectors.includes(".project .gear"));
+    const base = rules.find((rule) => rule.selectors.includes(".workspace .gear"));
     expect(base?.body).toMatch(/opacity:\s*0;/);
     const shown = rules.filter(
       (rule) =>

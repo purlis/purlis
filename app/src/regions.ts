@@ -15,6 +15,7 @@ import { commands } from "./bindings";
 import { forgetTextSizes, onTextSizes, textSizes, type TextSizes } from "./textSize";
 import { CHATS_LIST, type ChatsListPrefs } from "./chatsListPrefs";
 import { YOUR_EDITOR } from "./yourEditor";
+import { RAIL_MODE } from "./railMode";
 import { APPEARANCE, type Appearance } from "./appearance";
 import { NOTIFICATIONS, type NotificationPrefs } from "./notificationPrefs";
 import { STATUS_BAR, type StatusBarPrefs } from "./statusBarPrefs";
@@ -527,6 +528,7 @@ const LAYOUT_PREFS = [
   SCREEN_READER,
   NOTIFICATIONS,
   STATUS_BAR,
+  RAIL_MODE,
 ] as const satisfies readonly {
   readonly key: PrefField;
 }[];
@@ -567,6 +569,8 @@ type Document = {
   notifications?: NotificationPrefs;
   /** The status items the person hid (`statusBarPrefs.ts`, #2913), when any is. */
   status?: StatusBarPrefs;
+  /** The project rail hiding itself (`railMode.ts`, #2915), while it does. */
+  rail?: "auto";
 };
 
 /** One project's entry: its own arrangement, once it has one, and what its views keep

@@ -139,7 +139,7 @@ async function untilOpen(open: boolean, why: string): Promise<void> {
 
 /** Closes this spec's project by its own ×, as a person does. */
 async function closeMine(): Promise<void> {
-  await closeProject(`${PROJECTS} button[aria-label="Close project ${basename(mine)}"]`);
+  await closeProject(`${PROJECTS} [role="tab"][aria-label="${basename(mine)}"]`);
   await untilOpen(false, "this spec's project stayed open");
 }
 
