@@ -848,6 +848,11 @@ pub fn confined_profile(
     for file in CONFINED_FILES {
         line(format!("  (literal {})", string(file)?));
     }
+    // On macOS a program's start lists the root folder (measured: it aborts without it), which
+    // names the top folders and holds nothing of anybody's.
+    if os == super::Os::MacOs {
+        line("  (literal \"/\")".to_owned());
+    }
     line(")".to_owned());
     // **The data volume is not the system's**: on macOS `/System/Volumes/Data` holds every
     // person's home and every project under another name, so it is held out of `/System` here,

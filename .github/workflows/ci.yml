@@ -852,36 +852,10 @@ jobs:
         if: steps.scope.outputs.run == 'true'
         run: cargo test --locked -p studio-probe
       # Which of the confined profile's parts the probe needs to start, each tried on its own.
-      - name: What the probe needs to start under Seatbelt
-        if: failure() && steps.scope.outputs.run == 'true'
-        run: |
-          set +e
-          p=target/debug/studio-probe
-          d=$(cd target/debug && pwd -P)
-          base='(version 1)(deny default)(allow process-exec)(allow process-fork)(allow signal (target same-sandbox))(allow process-info* (target same-sandbox))(allow sysctl-read)(allow mach-lookup (global-name "com.apple.logd"))'
-          sys="(allow file-read* file-map-executable (subpath \"/usr\") (subpath \"/System\") (subpath \"/bin\") (subpath \"$d\") (literal \"/dev/null\") (literal \"/dev/urandom\"))"
-          try() { /usr/bin/sandbox-exec -p "$2" "$p" </dev/null >/dev/null 2>/tmp/err; echo "$1: exit $? $(head -c 300 /tmp/err)"; }
-          try "system" "$base$sys"
-          try "system, dev" "$base$sys(allow file-read* (subpath \"/dev\"))"
-          try "system, metadata" "$base$sys(allow file-read-metadata)"
-          try "system, root" "$base$sys(allow file-read* (literal \"/\"))"
-          try "system, private" "$base$sys(allow file-read* (subpath \"/private\"))"
-          try "system, private etc" "$base$sys(allow file-read* (subpath \"/private/etc\"))"
-          try "system, private var" "$base$sys(allow file-read* (subpath \"/private/var\"))"
-          try "system, Library" "$base$sys(allow file-read* (subpath \"/Library\"))"
-          try "system, Users" "$base$sys(allow file-read* (subpath \"/Users\"))"
-          try "system, opt" "$base$sys(allow file-read* (subpath \"/opt\"))"
-          /usr/bin/sandbox-exec -p "(version 1)(debug deny)$base$sys" "$p" </dev/null >/dev/null 2>&1
-          sleep 2
-          log show --last 1m --style compact --predicate 'eventMessage CONTAINS "deny"' | grep -i 'studio' | head -40
       # What Seatbelt refused while the probe ran, from the system's log, for a red run's reader.
       - name: What the sandbox refused
         if: failure() && steps.scope.outputs.run == 'true'
-        run: |
-          log show --last 15m --style compact --predicate 'process == "studio-probe" OR eventMessage CONTAINS "studio-probe"' | tail -100 || true
-          for report in $(ls -t ~/Library/Logs/DiagnosticReports/studio-probe*.ips 2>/dev/null | head -1); do
-            grep -E '"termination"|"exception"|"indicator"|"namespace"|"reasons"|"details"|"code"|"signal"|"subtype"|"type"' -A3 "$report" | head -60
-          done
+        run: log show --last 15m --style compact --predicate 'eventMessage CONTAINS "studio-probe" AND eventMessage CONTAINS "deny"' | tail -100 || true
 
   # What the Python charter answered, frozen: every scenario the old differential ran, and the
   # generated cases of the shell reader and the plane-root guards, replayed against this build
