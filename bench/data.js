@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792866053269,
+  "lastUpdate": 1792868273799,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -24024,6 +24024,48 @@ window.BENCHMARK_DATA = {
             "value": 100.79147649999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.049, 100.286, 100.791, 100.804, 101.766 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "682b04ee8939a3a37fc8d60d7235774f83f015a6",
+          "message": "SK-47: the shared padding shows bidi and invisible characters escaped (#3164)\n\n* SK-47: the shared padding shows a cell's bidi and invisible characters escaped\n\ntui::pad and tui::column take a table cell as untrusted text and escape it\nwith review::escaped_line before measuring it, so no table has to remember to.\npurlis's own markup keeps its SGR through Node cells, and tui::sanitize now\nmarks bidi and zero-width characters in markup too.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-47: name the status command in the changes fragment\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-47: rustfmt\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* voice: move its tests to voice/tests.rs (move only)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-47: the column nothing pads is escaped too, through tui::row\n\ntui::row pads each cell and escapes the last unpadded one with the same\nrule. recall's title, status's BRANCH / NOTE, worktree list and history's\nlast column, and skill runs' SIGNALS use it; piececmd no longer keeps a\ncell's SGR through sanitize. Tests for each, for the project skills\ntable, and pinning that a joined emoji shows its marks. The changes\nfragment names only the tables that show the marks.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-47: the status test's branch has a commit, so rev-parse names it\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-24T22:56:13+04:00",
+          "tree_id": "0d3c55805a80d42e89760df18d9361a11bf090a9",
+          "url": "https://github.com/purlis/purlis/commit/682b04ee8939a3a37fc8d60d7235774f83f015a6"
+        },
+        "date": 1792868271219,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.47663,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.468, 0.469, 0.477, 0.483, 0.483 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.284045,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.131, 16.269, 16.284, 16.375, 16.951 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.88683800000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.878, 100.955, 101.887, 101.994, 102.043 ms"
           }
         ]
       }
