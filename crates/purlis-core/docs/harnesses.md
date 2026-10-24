@@ -70,6 +70,13 @@ kind = "claude"
 command = ["ccs", "work"]
 ```
 
+**A profile can name its icon** (#2922): `icon = "spark"` (or `braces`, `terminal`) draws
+it with one of the harness glyphs, and `icon = "mine.svg"` with an SVG of your own in the
+`icons` folder of purlis's directory in your config home (`~/.config/purlis/icons/mine.svg`),
+which is never shipped or committed. purlis reads the SVG as shapes and nothing else. A
+profile that names no icon shows the monogram of its kind (`C`, `OC`, `CX`); the built-ins
+are drawn with the glyphs purlis draws for them, never a vendor's mark.
+
 Pick `claude-ccs` in the app's new-chat picker and the chat runs `ccs work`. It is still the
 Claude Code harness, because the kind says so and not the program's name: the chat carries
 `$PURLIS_HARNESS`, purlis's hooks and a session id the app can resume it by. The program

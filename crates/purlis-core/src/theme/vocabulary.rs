@@ -309,6 +309,11 @@ pub const RAIL_VIEWS: &[&str] = &[
     "sessions", "vaults",
 ];
 
+/// **The glyphs a theme's icon set may draw besides its views** (#2922, ruling #2866): the
+/// harness glyphs purlis draws in its own stroke style, which a profile names as its icon and a
+/// built-in harness is drawn with. An icon pack redraws them as it redraws a view.
+pub const GLYPHS: &[&str] = &["spark", "braces", "terminal"];
+
 /// **The quiet tiers a theme leaves out follow the muted it names** (#2902, ADR 0097's
 /// amendment of 2026-10-21). `given` is what one place gives (an appearance, a layer of an
 /// option, a format 1 file) and `below` the values it is laid over (its parent, the appearance

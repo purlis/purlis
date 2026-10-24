@@ -3,8 +3,9 @@ The Purlis theme is part of purlis and is licensed under the Apache License, Ver
 their own licences.
 
 - Its icon set, icons/icons.json, is converted from Lucide (https://lucide.dev), under the ISC
-  License that follows. Every icon in it comes from Lucide; key and search are among the icons
-  Lucide derives from Feather.
+  License that follows. Every view icon in it comes from Lucide; key and search are among the
+  icons Lucide derives from Feather. Its harness glyphs (spark, braces and terminal) are drawn
+  by purlis and are under the Apache License, Version 2.0, as the rest of the theme is.
 - Its fonts fonts/IBMPlexSans-Regular.woff2, fonts/IBMPlexSans-Italic.woff2,
   fonts/IBMPlexSans-Medium.woff2, fonts/IBMPlexSans-MediumItalic.woff2,
   fonts/IBMPlexSans-SemiBold.woff2 and fonts/IBMPlexSans-SemiBoldItalic.woff2 are IBM Plex Sans
