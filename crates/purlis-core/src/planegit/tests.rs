@@ -5630,15 +5630,9 @@ fn a_held_back_row_is_out_of_the_object_store_before_the_secret_guard_reads_a_bl
     fixture.with_a_second_name("workspaces/w/skills/s", OUTSIDE.as_bytes());
     let before = fixture.head();
     let local = "workspaces/w/skills/s/notes.md";
-    // Staged while it had its second name, git told to look no further at it, and then a
-    // file of one name in its place: the save holds the row back once staged.
+    // Staged before the save and unchanged since, so nothing the save's own add would stage
+    // names it: the save finds its second name once staged, and holds the row back.
     run(&fixture.root, &["add", local]);
-    run(
-        &fixture.root,
-        &["update-index", "--assume-unchanged", local],
-    );
-    std::fs::remove_file(fixture.root.join(local)).unwrap();
-    std::fs::write(fixture.root.join(local), "one name\n").unwrap();
     assert!(fixture.stores_outside(), "the fixture's own add stored it");
     let outside = fixture.root.parent().unwrap().join("outside/notes.md");
     let sha = run(&fixture.root, &["hash-object", outside.to_str().unwrap()])
@@ -5667,9 +5661,7 @@ fn a_held_back_row_is_out_of_the_object_store_before_the_secret_guard_reads_a_bl
     );
     assert_eq!(code, 1, "{said}");
     assert!(
-        said.contains(&format!(
-            "{local} is marked for git not to look at it on disk"
-        )),
+        said.contains(&format!("{local} has a second name (a hard link)")),
         "{said}"
     );
     assert_eq!(fixture.head(), before);

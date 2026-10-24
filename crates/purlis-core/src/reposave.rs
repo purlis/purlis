@@ -352,16 +352,18 @@ fn commit_push(
                     .unwrap_or_default();
             attempt.files = staged.len();
             // Each staged file is the one name it has on disk, as the plane's save asks: a row
-            // that is not is taken out of the index, and its blob out of the clone's object
-            // store where nothing else reaches it, before the secret check reads any blob.
-            // What the refusal says comes after that check's own findings, as the plane's save
-            // says it (`planegit::ondisk`).
-            let held = planegit::ondisk::not_as_staged(clone);
-            let held_back: std::collections::HashSet<&str> = held
+            // with a second name or changed since it was staged is taken out of the index, and
+            // its blob out of the clone's object store where nothing else reaches it, before
+            // the secret check reads any blob. A row that is gone or that git does not look at
+            // is read by that check and taken out after it. What the refusal says comes after
+            // the check's own findings, as the plane's save says it (`planegit::ondisk`).
+            let (first, after) =
+                planegit::ondisk::split_for_guard(planegit::ondisk::not_as_staged(clone));
+            let held_back: std::collections::HashSet<String> = first
                 .as_ref()
-                .map(|held| held.iter().map(|one| one.path.as_str()).collect())
+                .map(|held| held.iter().map(|one| one.path.clone()).collect())
                 .unwrap_or_default();
-            let refusal = planegit::ondisk::refused(clone, &held);
+            let refused_first = planegit::ondisk::refused(clone, &first);
             #[cfg(test)]
             tests::at_the_secret_check(clone);
             // What a save must never carry to a remote: a secret-shaped file, or a private key
@@ -371,10 +373,14 @@ fn commit_push(
             // A row held back above is no longer staged: nothing of it is committed to scan.
             let to_scan: Vec<String> = staged
                 .iter()
-                .filter(|path| !held_back.contains(path.as_str()))
+                .filter(|path| !held_back.contains(*path))
                 .cloned()
                 .collect();
             let flagged = secret_files(clone, &to_scan);
+            let refusal = planegit::ondisk::Refusal::joined(
+                refused_first,
+                planegit::ondisk::refused(clone, &Ok(after)),
+            );
             if !flagged.is_empty() {
                 let named: Vec<String> = flagged
                     .iter()

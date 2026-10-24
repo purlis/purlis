@@ -3322,17 +3322,18 @@ fn commit_push(
 
     attempt.files = staged.len();
     show_what_is_staged(root, &staged, say);
-    // Each staged file is the one name it has on disk, as the readers ask of a file: asked now,
-    // and a row that is not is taken out of the index, and its blob out of the object store
-    // where nothing else reaches it, before the secret guard below reads any blob. What the
-    // refusal says is said after the guard's own findings, so a save the guard refuses names
-    // both ([`ondisk`]).
-    let held = ondisk::not_as_staged(root);
-    let held_back: std::collections::HashSet<&str> = held
+    // Each staged file is the one name it has on disk, as the readers ask of a file: asked now.
+    // A row with a second name or changed since it was staged is taken out of the index, and
+    // its blob out of the object store where nothing else reaches it, before the secret guard
+    // below reads any blob. A row that is gone or that git does not look at is read by the
+    // guard, which names what it finds, and taken out after it. What the refusal says comes
+    // after the guard's own findings, so a save the guard refuses names both ([`ondisk`]).
+    let (first, after) = ondisk::split_for_guard(ondisk::not_as_staged(root));
+    let held_back: std::collections::HashSet<String> = first
         .as_ref()
-        .map(|held| held.iter().map(|one| one.path.as_str()).collect())
+        .map(|held| held.iter().map(|one| one.path.clone()).collect())
         .unwrap_or_default();
-    let refusal = ondisk::refused(root, &held);
+    let refused_first = ondisk::refused(root, &first);
     #[cfg(test)]
     tests::at_the_secret_guard(root);
 
@@ -3376,7 +3377,7 @@ fn commit_push(
     let mut to_read: Vec<&String> = Vec::new();
     for path in &staged {
         // A row held back above is no longer staged: nothing of it is committed to scan.
-        if deleted.contains(path) || held_back.contains(path.as_str()) {
+        if deleted.contains(path) || held_back.contains(path) {
             continue;
         }
         let file = root.join(path);
@@ -3449,6 +3450,7 @@ fn commit_push(
             )),
         }
     }
+    let refusal = ondisk::Refusal::joined(refused_first, ondisk::refused(root, &Ok(after)));
     if !skipped.is_empty() {
         say(Say::Info(
             "Not scanned for secrets — git calls it binary, or it is over 10 MiB:".into(),

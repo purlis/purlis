@@ -1395,15 +1395,9 @@ fn a_held_back_row_is_out_of_the_clones_object_store_before_the_secret_check_rea
     let outside = f.plane.parent().unwrap().join("outside.md");
     std::fs::write(&outside, b"canary-91b4f0 from outside\n").unwrap();
     std::fs::hard_link(&outside, f.clone.join("notes.md")).unwrap();
-    // Staged while it had its second name, git told to look no further at it, and then a file
-    // of one name in its place: the save holds the row back once staged.
+    // Staged before the save and unchanged since, so nothing the save's own add would stage
+    // names it: the save finds its second name once staged, and holds the row back.
     run(&f.clone, &["add", "notes.md"]);
-    run(
-        &f.clone,
-        &["update-index", "--assume-unchanged", "notes.md"],
-    );
-    std::fs::remove_file(f.clone.join("notes.md")).unwrap();
-    std::fs::write(f.clone.join("notes.md"), "one name\n").unwrap();
     let sha = run(&f.clone, &["hash-object", outside.to_str().unwrap()])
         .trim()
         .to_owned();
@@ -1430,7 +1424,7 @@ fn a_held_back_row_is_out_of_the_clones_object_store_before_the_secret_check_rea
     );
     assert_eq!(code, 1, "{said}");
     assert!(
-        said.contains("notes.md is marked for git not to look at it on disk"),
+        said.contains("notes.md has a second name (a hard link), so purlis does not save it"),
         "{said}"
     );
     assert_eq!(f.head(), before, "{said}");

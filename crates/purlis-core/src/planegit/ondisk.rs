@@ -254,6 +254,42 @@ pub(crate) fn refused(root: &Path, found: &Result<Vec<Held>, String>) -> Option<
     refused_into(root, found, PutBack::AsHead)
 }
 
+/// **`found` split into the rows a save takes out before its secret guard reads any blob, and
+/// the rest.** A row with a second name, or one changed since it was staged, holds bytes nobody
+/// checked as this file's, and its blob leaves the object store first. A row that is gone, or
+/// that git is told not to look at, holds what was staged under its own name: the guard reads
+/// it and names what it finds, and the row is taken out after it ([`refused`] of the second).
+/// Where git could not say, that is the first, and the second is empty.
+pub(crate) fn split_for_guard(
+    found: Result<Vec<Held>, String>,
+) -> (Result<Vec<Held>, String>, Vec<Held>) {
+    match found {
+        Ok(held) => {
+            let (first, after): (Vec<Held>, Vec<Held>) = held
+                .into_iter()
+                .partition(|one| matches!(one.why, Why::SecondName | Why::Changed));
+            (Ok(first), after)
+        }
+        Err(said) => (Err(said), Vec::new()),
+    }
+}
+
+impl Refusal {
+    /// `first` and `then` said as one refusal: every path, then what became of them.
+    pub(crate) fn joined(first: Option<Refusal>, then: Option<Refusal>) -> Option<Refusal> {
+        match (first, then) {
+            (Some(mut first), Some(then)) => {
+                first.named.extend(then.named);
+                if first.then != then.then {
+                    first.then = format!("{} {}", first.then, then.then);
+                }
+                Some(first)
+            }
+            (first, then) => first.or(then),
+        }
+    }
+}
+
 /// [`refused`], each path held back put back as `back` says.
 pub(crate) fn refused_into(
     root: &Path,
