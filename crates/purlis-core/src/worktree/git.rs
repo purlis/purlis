@@ -1820,13 +1820,33 @@ pub(crate) fn run_capped(
         match heard {
             Some(Ok(Some(out))) => Ok(Some(RawRun { out, ..raw })),
             Some(Ok(None)) => Ok(None),
-            Some(Err(why)) => Err(why.into()),
             None if over.load(Ordering::Relaxed) => Ok(None),
-            // A reader that never answered, whether git exited, was stopped at the deadline or
-            // was ended by the pipe the dead reader closed (no code then either).
-            None => Err(std::io::Error::other("git's listing was not read to its end").into()),
+            // git ran, and its listing could not be read whole: no code, as for a call
+            // stopped at the deadline, so no caller takes it for a listing. A reader that
+            // never answered is one too, whether git exited, was stopped or was ended by the
+            // pipe the dead reader closed.
+            Some(Err(why)) => Ok(Some(unread(
+                raw,
+                &format!("git's listing could not be read: {why}"),
+            ))),
+            None => Ok(Some(unread(raw, "git's listing was not read to its end"))),
         }
     })
+}
+
+/// A [`run_capped`] whose listing could not be read whole: no code and no output, and `why` with
+/// whatever git said.
+fn unread(raw: RawRun, why: &str) -> RawRun {
+    let mut err = raw.err;
+    if !err.is_empty() && !err.ends_with(b"\n") {
+        err.push(b'\n');
+    }
+    err.extend_from_slice(why.as_bytes());
+    RawRun {
+        code: None,
+        out: Vec::new(),
+        err,
+    }
 }
 
 /// A test's way into [`run_capped`]'s reader: `f` runs before each read, on the reader's
@@ -1866,7 +1886,8 @@ pub(crate) mod capped_hook {
     }
 }
 
-/// What one git call answered, as the BYTES it wrote. `code` is `None` when the deadline passed.
+/// What one git call answered, as the BYTES it wrote. `code` is `None` when the deadline passed,
+/// or when [`run_capped`] could not read its listing whole.
 ///
 /// For a caller that must tell "git wrote something that is not UTF-8" from "git wrote U+FFFD",
 /// which [`Run`]'s lossy strings cannot: Python decodes a child's output strictly and RAISES on

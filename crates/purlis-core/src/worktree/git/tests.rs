@@ -1359,16 +1359,25 @@ fn a_listing_past_the_cap_is_refused_even_when_git_exits_before_the_count() {
     assert_eq!(whole.out, b"a\0b\0c\0d\0");
 }
 
+/// A listing that could not be read whole: no code, so no caller takes it for one, nothing of
+/// it, and a sentence that says so and never sends anyone to install the git that just ran.
+fn assert_unread(run: &RawRun, says: &str) {
+    let said = String::from_utf8_lossy(&run.err);
+    assert_eq!(run.code, None, "{run:?}");
+    assert!(run.out.is_empty(), "{run:?}");
+    assert!(said.contains(says), "{said}");
+    assert!(!said.contains("Install git"), "{said}");
+}
+
 #[test]
-fn a_listing_whose_read_fails_is_an_error_and_never_a_listing() {
+fn a_listing_whose_read_fails_is_said_and_never_taken_for_a_listing() {
     let (dir, git_dir, tree) = four_records();
     let listing = [git_dir.as_str(), "ls-tree", "-z", "--name-only", &tree];
     let _fail = capped_hook::set(|| Err(std::io::Error::other("the pipe broke")));
-    let read = run_capped(dir.path(), &listing, READ, 4);
-    assert!(
-        read.is_err(),
-        "a failed read was taken for a listing: {read:?}"
-    );
+    let run = run_capped(dir.path(), &listing, READ, 4)
+        .expect("git ran")
+        .expect("no cap was crossed");
+    assert_unread(&run, "could not be read: the pipe broke");
 }
 
 #[test]
@@ -1391,13 +1400,12 @@ fn an_interrupted_read_is_read_again_and_the_listing_is_whole() {
 }
 
 #[test]
-fn a_reader_that_dies_without_answering_is_an_error_and_never_an_empty_listing() {
+fn a_reader_that_dies_without_answering_is_said_and_never_an_empty_listing() {
     let (dir, git_dir, tree) = four_records();
     let listing = [git_dir.as_str(), "ls-tree", "-z", "--name-only", &tree];
     let _die = capped_hook::set(|| panic!("the reader died"));
-    let read = run_capped(dir.path(), &listing, READ, 4);
-    assert!(
-        read.is_err(),
-        "a dead reader was taken for a listing: {read:?}"
-    );
+    let run = run_capped(dir.path(), &listing, READ, 4)
+        .expect("git ran")
+        .expect("no cap was crossed");
+    assert_unread(&run, "was not read to its end");
 }
