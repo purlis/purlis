@@ -598,11 +598,12 @@ refuses all four (`purlis/select-family`, an error).
   open it on what it holds; ↑ and ↓ move and stop at the ends, passing an option out of reach
   with no reason; **an option out of reach that says why** (`isDisabled` with `tooltip`) is the
   menu's row that cannot run: it stays in the arrows' way in the faint tier, with why on the line
-  under its words as its description, and a press or Enter on it picks nothing; Enter picks; Escape closes the list and leaves the value as it was, and on a closed select
-  goes on to what it stands in (a form that closes). A letter typed goes to the first option it
-  starts. **A long list is filtered**: from `FILTERED_FROM` (10) options a select's list opens
-  with the popover's filter row holding the keyboard, and what is typed narrows it while ↑ and ↓
-  still move in it.
+  under its words as its description, and a press or Enter on it picks nothing; Enter picks;
+  Escape closes the list and leaves the value as it was, and on a closed select goes on to what
+  it stands in (a form that closes). A letter typed goes to the first option it starts. **A long
+  list is filtered**: from `FILTERED_FROM` (10) options a select's list opens with the popover's
+  filter row holding the keyboard, and what is typed narrows it while ↑ and ↓ still move in it;
+  the filter never names an option the typing has filtered out (D-2906-14).
 - **Named by what it holds, then its own name**, as React Aria names it: a settings row's select
   by its row's label (`aria-labelledby`), one with no row by its `aria-label`. An unavailable
   select with a reason (`tooltip`) stays in reach of the keyboard so its reason is heard, and
@@ -1140,8 +1141,10 @@ to add to it.
 ## What is already converted
 
 _History: the dialogs below moved from Radix's `Dialog` and `AlertDialog` onto [the dialog
-family](#the-dialog-family) in #2910. What follows records why each was drawn as it was; the
-rules it states hold, kept by the family._
+family](#the-dialog-family) in #2910, and the menus from Radix's `DropdownMenu` and
+`ContextMenu` onto [the menu family](#the-menu-and-popover-families) in #2909; those packages
+are no longer in the window (#2906). What follows records why each was drawn as it was; the
+rules it states hold, kept by the families._
 
 `StartChat`, `QuitWarning`, `ApprovePlane` and `Palette` — every modal surface the window has.
 The terminal panes are xterm.js and are not a candidate.

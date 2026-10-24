@@ -309,6 +309,48 @@ describe("a long select", () => {
     expect(picked).toHaveBeenLastCalledWith("ws-7");
   });
 
+  it("names only what is drawn, open after open: every id it points at is in the page (D-2906-14)", async () => {
+    const user = userEvent.setup();
+    const picked = vi.fn();
+    render(<Filter start="" options={MANY} onPick={picked} />);
+    const select = selectNamed("Filter by workspace");
+    /** Each id an element of the page points at that no element has. */
+    const dangling = () =>
+      [
+        ...document.querySelectorAll("[aria-controls], [aria-activedescendant], [aria-labelledby]"),
+      ].flatMap((one) =>
+        ["aria-controls", "aria-activedescendant", "aria-labelledby"].flatMap((name) =>
+          (one.getAttribute(name) ?? "")
+            .split(/\s+/)
+            .filter((id) => id !== "" && document.getElementById(id) === null)
+            .map((id) => `${name}=${id}`),
+        ),
+      );
+    for (const round of ["first", "again"]) {
+      act(() => select.focus());
+      await user.keyboard("{Enter}");
+      const filter = await screen.findByRole("textbox", { name: "Filter" });
+      await waitFor(() => expect(filter).toHaveFocus());
+      expect(dangling(), `${round}, open`).toEqual([]);
+      await user.keyboard("dev");
+      // At once, while React Aria holds back moving its aim so the letter typed is heard.
+      expect(dangling(), `${round}, typed`).toEqual([]);
+      const devops = await screen.findByRole("option", { name: "devops" });
+      await waitFor(() => expect(filter).toHaveAttribute("aria-activedescendant", devops.id));
+      expect(dangling(), `${round}, narrowed`).toEqual([]);
+      await user.keyboard("{Escape}");
+      await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull());
+      await waitFor(() => expect(select).toHaveFocus());
+      expect(dangling(), `${round}, closed`).toEqual([]);
+    }
+    expect(picked).not.toHaveBeenCalled();
+    // Narrowed, Enter picks the one drawn.
+    await user.keyboard("{Enter}");
+    await screen.findByRole("textbox", { name: "Filter" });
+    await user.keyboard("dev{Enter}");
+    expect(picked).toHaveBeenLastCalledWith("ws-7");
+  });
+
   it("offers every option while nothing is typed", async () => {
     render(<Filter start="ws-0" options={MANY} />);
     expect(await offeredIn(selectNamed("Filter by workspace"))).toHaveLength(MANY.length);
