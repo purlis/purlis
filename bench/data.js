@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792809073432,
+  "lastUpdate": 1792810857778,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -23142,6 +23142,48 @@ window.BENCHMARK_DATA = {
             "value": 101.5378025,
             "unit": "ms",
             "extra": "median of 5 runs: 101.154, 101.464, 101.538, 101.595, 102.711 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2dee403ff46f19689ebc71117b129a32c5ed30ee",
+          "message": "Dialog: a close's last steps use the dialog's own document (#3111)\n\nThe close of a dialog finishes a microtask after it goes, and holds\nReact Aria's return for 100 ms when its answer hands the keyboard on.\nBoth steps now use the document the dialog was drawn in, kept as the\ndialog opens, so they hold when the global document is gone first (a\ntest environment taken down, a webview). The opener is narrowed to an\nHTMLElement as the dialog opens, and a document with no window left\nhands nothing back.\n\nThe keyboard holds the modal's one close record from the start and\nreads its fields as it goes; the modal writes them in place each\nrender, so the close still uses the values of its last render.\n\nFound in CI on #3060.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-24T06:59:41+04:00",
+          "tree_id": "b5bc282846cbea9b6b6d1275214e7c3004a81367",
+          "url": "https://github.com/purlis/purlis/commit/2dee403ff46f19689ebc71117b129a32c5ed30ee"
+        },
+        "date": 1792810855957,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.47046699999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.466, 0.469, 0.470, 0.471, 0.473 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3240725,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.103, 16.141, 16.324, 16.340, 16.512 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.0898185,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.198, 101.055, 101.090, 101.584, 102.052 ms"
           }
         ]
       }
