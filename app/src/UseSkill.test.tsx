@@ -74,8 +74,13 @@ describe("Use skill…", () => {
       "handoff",
       "release",
     ]);
-    expect(within(rows[2]).getByText("manual only")).toBeTruthy();
-    expect(within(rows[0]).queryByText("manual only")).toBeNull();
+    expect(within(rows[2]).getByText("· manual only")).toBeTruthy();
+    expect(within(rows[0]).queryByText("· manual only")).toBeNull();
+    // Each skill is named by its name alone, and its level is its description (#2911).
+    expect(screen.getByRole("option", { name: "deploy" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "release" })).toHaveAccessibleDescription(
+      /manual only/,
+    );
     expect(screen.getByTestId("use-skill-budget").textContent).toBe(
       "3 skills of 30 · 1,234 of 6,000 characters · 1 manual-only skill free",
     );
@@ -84,7 +89,7 @@ describe("Use skill…", () => {
 
   it("types a skill that takes nothing at once", () => {
     const onUse = opened(skills([skill("deploy")]));
-    fireEvent.click(within(screen.getByTestId("use-skill-row")).getByRole("button"));
+    fireEvent.click(screen.getByTestId("use-skill-row"));
     expect(onUse).toHaveBeenCalledWith("deploy", []);
   });
 
@@ -92,7 +97,7 @@ describe("Use skill…", () => {
     const onUse = opened(
       skills([skill("review", { arguments: ["pr", "focus"], hint: "<pr> [focus]" })]),
     );
-    fireEvent.click(within(screen.getByTestId("use-skill-row")).getByRole("button"));
+    fireEvent.click(screen.getByTestId("use-skill-row"));
     expect(screen.getByRole("heading").textContent).toBe("Use review");
     const boxes = screen.getAllByRole("textbox");
     expect(boxes).toHaveLength(2);
@@ -105,7 +110,7 @@ describe("Use skill…", () => {
 
   it("gives a skill that only says what to pass one box with that hint", () => {
     const onUse = opened(skills([skill("triage", { hint: "[issue number]" })]));
-    fireEvent.click(within(screen.getByTestId("use-skill-row")).getByRole("button"));
+    fireEvent.click(screen.getByTestId("use-skill-row"));
     expect(screen.getAllByRole("textbox")).toHaveLength(1);
     expect(screen.getByText("[issue number]")).toBeTruthy();
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "12" } });
@@ -123,7 +128,7 @@ describe("Use skill…", () => {
     const filter = screen.getByRole("searchbox", { name: "Filter skills" });
     expect(filter.getAttribute("placeholder")).toBe("Filter 8 skills");
     fireEvent.change(filter, { target: { value: "nothing like it" } });
-    expect(screen.getByText("No skill of this chat matches that.")).toBeTruthy();
+    expect(screen.getByText("No skill is called “nothing like it”.")).toBeTruthy();
   });
 
   it("draws no filter over a list of seven or fewer", () => {

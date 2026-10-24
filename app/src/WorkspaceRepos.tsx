@@ -17,6 +17,8 @@ import { RemoveFromWorkspace } from "./RemoveFromWorkspace";
 import { SettingActions, type RowIds } from "./settings/components";
 import { hearUnapplied, holdUnapplied, unappliedKey, unappliedOf } from "./unappliedRepos";
 import { Button } from "./ui/button/Button";
+import { List, ListRow } from "./ui/list/List";
+import { RowLabel, RowTrail } from "./ui/list/Row";
 
 /**
  * What Settings › Repos' picker changed in a workspace's membership, heard by the "Not cloned
@@ -209,27 +211,30 @@ export function useNotClonedHere(
           <p className="none">Every repo it names is cloned here.</p>
         )}
         {absent !== undefined && absent.length > 0 && (
-          <ul className="absent-list">
+          // Rows with their own action (`ui/list`, #2911): ← and → reach the row's button.
+          <List className="absent-list" aria-labelledby={ids.labelledBy}>
             {absent.map((repo) => {
               const busy = underWay(clones.get(repo));
               return (
-                <li key={repo}>
-                  <span className="repo">{repo}</span>
-                  <SettingActions>
-                    <Button
-                      variant="danger"
-                      aria-label={dropMembershipTitle(repo)}
-                      isDisabled={busy}
-                      tooltip={busy ? `${repo} is being cloned.` : undefined}
-                      onPress={() => setAsking(repo)}
-                    >
-                      Remove from workspace…
-                    </Button>
-                  </SettingActions>
-                </li>
+                <ListRow key={repo} id={repo} textValue={repo}>
+                  <RowLabel className="repo">{repo}</RowLabel>
+                  <RowTrail>
+                    <SettingActions>
+                      <Button
+                        variant="danger"
+                        aria-label={dropMembershipTitle(repo)}
+                        isDisabled={busy}
+                        tooltip={busy ? `${repo} is being cloned.` : undefined}
+                        onPress={() => setAsking(repo)}
+                      >
+                        Remove from workspace…
+                      </Button>
+                    </SettingActions>
+                  </RowTrail>
+                </ListRow>
               );
             })}
-          </ul>
+          </List>
         )}
         {asking !== undefined && (
           <RemoveFromWorkspace

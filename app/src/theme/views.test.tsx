@@ -1417,7 +1417,7 @@ const STATES: State[] = [
     view: ARCHIVE_REF,
     drawn: /Restore memory/,
     then: async () => {
-      await userEvent.click(await screen.findByRole("button", { name: /^Freeze/ }));
+      await userEvent.click(await screen.findByRole("option", { name: /^Freeze/ }));
     },
   },
   {

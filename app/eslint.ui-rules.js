@@ -47,6 +47,10 @@
  *   classes (`projects`, `project`, `project-name`) and `data-scope="rail"` by hand.
  * - `purlis/activity-family` (error: the family has moved, #2917): an activity item's old
  *   classes, and `data-scope="activity"` or `"activity-bar"` written by hand.
+ * - `purlis/list-family` (error: the list family has moved, #2911): a list's role written by hand
+ *   (`listbox`, `option`), its old class (`ui-list`) and its `data-scope`. A list to choose from
+ *   is the family's `ListBox`, a list of rows that act its `List` (`ui/list/List`); a list of
+ *   words (a sentence's bullets) is no collection and stays a `<ul>`.
  *
  * The primitives library itself is refused outside `src/ui` by `no-restricted-imports`, in
  * `eslint.config.js`: one wrapper per primitive, and screens never import it.
@@ -429,9 +433,11 @@ const tooltipFamily = {
 /**
  * **A family that has moved** (#2913): its old styling classes are an error outside `src/ui`, and
  * so is its `data-scope` written by hand, since only its wrapper draws it. `classes` are whole
- * words of a `className`, or a prefix where one ends in `*`.
+ * words of a `className`, or a prefix where one ends in `*`. A collection family (#2911) also
+ * refuses its `roles` written by hand and its raw `elements` (`<table>`), which only its wrapper
+ * writes.
  */
-function moved({ description, scopes, classes, message }) {
+function moved({ description, scopes, classes, message, roles = [], elements = [] }) {
   const named = (word) =>
     classes.some((one) => (one.endsWith("*") ? word.startsWith(one.slice(0, -1)) : word === one));
   return {
@@ -441,11 +447,22 @@ function moved({ description, scopes, classes, message }) {
       messages: {
         oldClass: `\`{{word}}\` is the old class of ${message}`,
         scope: `\`data-scope="{{scope}}"\` is drawn by its family's wrapper only: ${message}`,
+        role: `\`role="{{role}}"\` by hand is ${message}`,
+        element: `A raw \`<{{element}}>\` is ${message}`,
       },
       schema: [],
     },
     create(context) {
       return {
+        JSXOpeningElement(node) {
+          if (node.name.type === "JSXIdentifier" && elements.includes(node.name.name))
+            context.report({ node, messageId: "element", data: { element: node.name.name } });
+          // A role written as a string, in quotes or in braces (`role={"listbox"}`, a branch).
+          const role = attributeOf(node, "role");
+          for (const [, said] of classStrings(role?.value))
+            if (roles.includes(said.trim()))
+              context.report({ node: role, messageId: "role", data: { role: said.trim() } });
+        },
         JSXAttribute(node) {
           if (node.name.name === "className") {
             for (const [at, text] of classStrings(node.value))
@@ -536,6 +553,15 @@ const activityFamily = moved({
     "an activity item or bar: draw it as `<ActivityItem>`, its count as `<ActivityCount>`, its group as `<ActivityGroup>` and its bar as `<ActivityBarFrame>`, from `ui/activity/ActivityItem` (#2917).",
 });
 
+const listFamily = moved({
+  description: "A list is the shared list family",
+  scopes: ["list"],
+  classes: ["ui-list"],
+  roles: ["listbox", "option"],
+  message:
+    "a list: draw it as `<ListBox>` and `<ListOption>` (a list to choose from) or `<List>` and `<ListRow>` (rows that act), with the row's slots, from `ui/list/List` (#2911).",
+});
+
 export const purlisUi = {
   meta: { name: "purlis-ui" },
   rules: {
@@ -552,5 +578,6 @@ export const purlisUi = {
     "status-item-family": statusItemFamily,
     "rail-family": railFamily,
     "activity-family": activityFamily,
+    "list-family": listFamily,
   },
 };

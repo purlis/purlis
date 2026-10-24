@@ -36,7 +36,8 @@ import { endChatsStartedHere, startAChat, type Started } from "../started.js";
 const BOX = 'input[aria-label="Search the files"]';
 const SCOPE = '[role="combobox"][aria-label="Where to search"]';
 const HITS = '[role="listbox"][aria-label="Search results"]';
-const PICKER = '.search-pick [role="menu"]';
+// The chats to pick from are a list of the family (#2911).
+const PICKER = '.search-pick [role="listbox"]';
 const NAVIGATION = '[role="tablist"][aria-label="Navigation"]';
 
 /** What the status line says was refused, sentence by sentence, read in one pass. */
@@ -145,7 +146,7 @@ describe("Search as a side view, handing a hit to a chat", function () {
     // It lists the project's chats, the one this spec started among them, by its number.
     const offered = await browser.execute(
       (menu: string) =>
-        [...document.querySelectorAll(`${menu} [role="menuitem"]`)].map((row) => ({
+        [...document.querySelectorAll(`${menu} [role="option"]`)].map((row) => ({
           session: Number(row.getAttribute("data-session") ?? -1),
           name: (row.textContent ?? "").trim(),
         })),
@@ -161,7 +162,7 @@ describe("Search as a side view, handing a hit to a chat", function () {
     await browser.execute(
       (menu: string, n: number) => {
         document
-          .querySelector<HTMLElement>(`${menu} [role="menuitem"][data-session="${n}"]`)
+          .querySelector<HTMLElement>(`${menu} [role="option"][data-session="${n}"]`)
           ?.click();
       },
       PICKER,

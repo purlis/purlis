@@ -1011,7 +1011,7 @@ const DIALOGS: Opened[] = [
         );
       }
       render(<List />);
-      await userEvent.click(screen.getByRole("button", { name: /Review the rollout plan/ }));
+      await userEvent.click(screen.getByRole("row", { name: /Review the rollout plan/ }));
     },
   },
   {

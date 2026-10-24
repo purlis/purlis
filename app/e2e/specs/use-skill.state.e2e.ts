@@ -50,9 +50,10 @@ describe("Use skill… on a Codex chat", function () {
     await browser.waitUntil(
       async () => {
         for (const row of await $$('[data-testid="use-skill-row"]')) {
-          const button = await row.$("button");
-          if ((await button.getText()) === USED_SKILL) {
-            await button.click();
+          // The row is the skill's option (#2911), named by the skill: a press picks it.
+          const name = await row.$('[data-part="label"]');
+          if ((await name.getText()) === USED_SKILL) {
+            await row.click();
             return true;
           }
         }

@@ -19,12 +19,14 @@
  *   (`ChatsToPick`, #1151);
  * - **"Start a chat here"** on a file or folder row (`actions.ts`, `startChatHere`).
  */
+import { ListBox, ListOption } from "./ui/list/List";
+import { RowLabel } from "./ui/list/Row";
 import { createContext, useContext, useState, type DragEvent } from "react";
 import { MessageSquarePlus } from "lucide-react";
 import { commands, type Handed, type PlaneId } from "./bindings";
 import type { Ran } from "./actions";
 import { Button, IconButton } from "./ui/button/Button";
-import { InlineMenu, Menu, MenuItem, MenuTrigger } from "./ui/menu/Menu";
+import { Menu, MenuItem, MenuTrigger } from "./ui/menu/Menu";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /** The drag's own type: only charter's rows carry it, so a file dragged in from the desktop or
@@ -53,9 +55,15 @@ export function referenceSaid(r: Referenced): string {
 
 /** Starts a drag carrying `r`. A copy, never a move: nothing in the branch changes. */
 export function dragReference(event: DragEvent, r: Referenced): void {
-  event.dataTransfer.setData(REFERENCE_TYPE, JSON.stringify(r));
-  event.dataTransfer.setData("text/plain", referenceSaid(r));
+  for (const [type, data] of Object.entries(carriedReference(r)))
+    event.dataTransfer.setData(type, data);
   event.dataTransfer.effectAllowed = "copy";
+}
+
+/** **What a reference dragged out of a collection carries** (#2911): the reference by its own
+ *  type, and the words a text box takes, as `dragReference` writes them. */
+export function carriedReference(r: Referenced): Record<string, string> {
+  return { [REFERENCE_TYPE]: JSON.stringify(r), "text/plain": referenceSaid(r) };
 }
 
 /** Whether a drag over a chat carries a reference: what makes the chat a drop target. */
@@ -242,10 +250,10 @@ function ChatToPick({ chat, onPick }: { chat: ChatHere; onPick: () => void }) {
 }
 
 /**
- * **The chats to pick from**, as a menu named `label` drawn in place (`InlineMenu`): one row
- * per chat, in the order given, walked by the arrows and chosen by Enter, or the sentence that
- * says none is open. The Search tab draws it under its hits, and Add to a chat in its dialog
- * (#1151).
+ * **The chats to pick from**, a list to choose from named `label` (`ui/list`, #2911): one option
+ * per chat, in the order given, walked by the arrows and chosen by Enter or a press, or the
+ * sentence that says none is open. The Search tab draws it under its hits, and Add to a chat in
+ * its dialog (#1151).
  */
 export function ChatsToPick({
   chats,
@@ -261,15 +269,26 @@ export function ChatsToPick({
 }) {
   if (chats.length === 0) return <NoChatToPick />;
   return (
-    <InlineMenu
+    <ListBox
       className="pick-a-chat-list"
       aria-label={label}
       autoFocus={autoFocus ? "first" : undefined}
+      onAction={(key) => {
+        const chat = chats.find((one) => one.session === key);
+        if (chat !== undefined) onPick(chat);
+      }}
     >
       {chats.map((chat) => (
-        <ChatToPick key={chat.session} chat={chat} onPick={() => onPick(chat)} />
+        <ListOption
+          key={chat.session}
+          id={chat.session}
+          textValue={chat.name}
+          data-session={chat.session}
+        >
+          <RowLabel>{chat.name}</RowLabel>
+        </ListOption>
       ))}
-    </InlineMenu>
+    </ListBox>
   );
 }
 
