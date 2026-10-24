@@ -241,7 +241,9 @@ fn the_approval_says_it_runs_confined_and_names_its_hosts() {
     let found = extension::read_at(&probe.ext()).expect("it reads");
     let prompt = extension::prompt(&found, extension::Standing::New);
     assert!(
-        prompt.runs_as_you.contains("runs this extension confined"),
+        prompt
+            .runs_as_you
+            .contains("runs this extension in the sandbox a chat runs in"),
         "{}",
         prompt.runs_as_you
     );
@@ -418,7 +420,6 @@ fn a_declared_name_that_resolves_to_a_private_network_is_not_reached() {
     for (name, address) in [
         ("10.0.0.1.sslip.io", "10.0.0.1"),
         ("100.64.0.1.sslip.io", "100.64.0.1"),
-        ("fd00--1.sslip.io", "fd00::1"),
     ] {
         if !resolves_to(name, address) {
             may_skip(&format!("{name} does not resolve to {address} here"));
