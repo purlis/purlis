@@ -535,9 +535,12 @@ export const Narrow: Story = {
     const pane = boxOf(rowsOf(canvasElement).frame);
     const words = boxOf(block.firstElementChild);
     const stack = block.parentElement?.parentElement as HTMLElement;
-    for (const way of within(block).getAllByRole("button")) {
+    const ways = within(block).getAllByRole("button");
+    for (const way of ways) {
       expect(boxOf(way).top).toBeGreaterThanOrEqual(words.bottom - 1);
       expect(boxOf(way).right).toBeLessThanOrEqual(pane.right + 1);
+    }
+    for (const way of ways) {
       // Whole, once the band is scrolled to it: never cut by its own warning (rule 6).
       way.scrollIntoView({ block: "nearest" });
       expect(boxOf(way).bottom).toBeLessThanOrEqual(boxOf(stack).bottom + 1);
