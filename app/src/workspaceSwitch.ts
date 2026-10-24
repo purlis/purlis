@@ -110,22 +110,39 @@ export function pinOfKey(e: Keyed, mac: boolean): number | undefined {
 }
 
 /** What a key event says of the physical key and the modifiers held. */
-export type Coded = Keyed & Pick<KeyboardEvent, "code">;
+export type Coded = Keyed &
+  Pick<KeyboardEvent, "code"> & { getModifierState?: (key: string) => boolean };
 
 /**
  * **Whether a key opens the title bar's workspace popover** (the operator's ruling of 2026-10-24):
  * ⌥⌘P on a Mac, Ctrl+Alt+Shift+P elsewhere, read by the physical key, since ⌥ turns P into
- * another letter on a Mac. A terminal sends nothing for a ⌘ chord, nor for Ctrl+Shift with a
- * letter (`switcherKey.ts`), so it takes nothing from a chat.
+ * another letter on a Mac.
+ *
+ * **On a Mac it takes nothing from a chat**: a terminal sends nothing for a ⌘ chord. **Off a Mac
+ * it is taken from a chat on purpose**, as VS Code takes its own app keys, so the key works from
+ * a chat too (the operator's decision of 2026-10-24): xterm.js would send Ctrl+Alt+Shift+P to a
+ * focused terminal as `ESC ^P` (C-M-p), which bash, zsh and readline leave unbound and Emacs
+ * binds to backward-list. **AltGr is not this key**: Windows reports AltGr as Ctrl+Alt, and on a
+ * layout where AltGr+Shift+P types a letter (US-International's Ö) that letter is left alone.
  */
 export function opensTheWorkspaces(e: Coded, mac: boolean): boolean {
   if (e.code !== "KeyP" || !e.altKey) return false;
-  return mac ? e.metaKey && !e.ctrlKey && !e.shiftKey : e.ctrlKey && e.shiftKey && !e.metaKey;
+  if (mac) return e.metaKey && !e.ctrlKey && !e.shiftKey;
+  if (e.getModifierState?.("AltGraph") === true) return false;
+  return e.ctrlKey && e.shiftKey && !e.metaKey;
 }
 
 /** How the workspace popover's key is spelled on this platform. */
 export function workspacesKeySaid(mac: boolean): string {
   return mac ? "⌥⌘P" : "Ctrl+Alt+Shift+P";
+}
+
+/**
+ * **The workspace popover's key as its cap draws it**, in a switcher's filter row: the symbols,
+ * which fit beside the filter's words (`⌃⌥⇧P` off a Mac); the ⌄'s tooltip spells it out.
+ */
+export function workspacesKeyCap(mac: boolean): string {
+  return mac ? "⌥⌘P" : "⌃⌥⇧P";
 }
 
 /** How a pin's key is spelled on this platform: `⌘3`, or `Ctrl+3`. */

@@ -99,9 +99,11 @@
   background-color: var(--surface-overlay);
 }
 
-/* The current workspace while it is not pinned (R105): muted words, a dashed line, "+". */
+/* The current workspace while it is not pinned (R105): muted words, a dashed line, "+", and no
+   fill though it is current, as the prototype draws it, so its edge is what says it. */
 [data-part="workspace"][data-scope="titlebar"][data-variant="unpinned"] {
   color: var(--text-muted);
+  background-color: transparent;
   border-style: dashed;
   border-color: var(--border-subtle);
 }
@@ -143,7 +145,7 @@
 /* ---------------------------------------------------------------------------------------------
    The switchers (R94–R100, R107): the workspace popover the ⌄ opens, 320px, and the two-column
    switcher the crumb opens, 560px (the window less 24 at most) and 440px tall at most, each on
-   the popover family's surface. Their rows are the menu family's.
+   the popover family's surface. Their rows, pin toggles, key cap and headers are this family's.
    --------------------------------------------------------------------------------------------- */
 
 [data-switcher="workspaces"] {
@@ -199,15 +201,6 @@
 
 [data-part="divider"][data-scope="titlebar"] {
   background-color: var(--border-subtle);
-}
-
-[data-part="column"][data-scope="titlebar"] {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  min-block-size: 0;
-  padding: var(--space-3);
-  overflow-y: auto;
 }
 
 /* A list and its pins, row for row: the pin column is as wide as a toggle. */

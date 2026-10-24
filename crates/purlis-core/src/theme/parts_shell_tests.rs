@@ -424,6 +424,20 @@ fn the_title_bar_chip_s_defaults_are_what_titlebar_css_draws() {
     let [_, text, border] = parts::look_of("titlebar", "unpinned", &[]);
     assert_eq!(text, token(declared(unpinned, "color").unwrap()));
     assert_eq!(border, token(declared(unpinned, "border-color").unwrap()));
+    // It is always current and takes no fill for it, as the prototype draws it; the pointer
+    // lights it like any chip.
+    let [fill, ..] = parts::look_of("titlebar", "unpinned", &[parts::State::Selected]);
+    assert_eq!(fill, token(declared(unpinned, "background-color").unwrap()));
+    let unpinned_lit = rule(
+        &css,
+        &format!("{root}[data-variant=\"unpinned\"][data-hovered]"),
+    );
+    let [fill, text, _] = parts::look_of("titlebar", "unpinned", &[parts::State::Hover]);
+    assert_eq!(
+        fill,
+        token(declared(unpinned_lit, "background-color").unwrap())
+    );
+    assert_eq!(text, token(declared(unpinned_lit, "color").unwrap()));
 }
 
 // ---------------------------------------------------------------------------------------

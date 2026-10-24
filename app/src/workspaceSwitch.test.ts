@@ -11,6 +11,7 @@ import {
   stepTarget,
   Swipe,
   workspacesFound,
+  workspacesKeyCap,
   workspacesKeySaid,
 } from "./workspaceSwitch";
 
@@ -160,8 +161,22 @@ describe("the workspace popover's key (the ruling of 2026-10-24)", () => {
     expect(opensTheWorkspaces(key("KeyP", { ctrl: true, shift: true }), false)).toBe(false);
   });
 
+  it("is not AltGr off a Mac, which Windows reports as Ctrl+Alt and which types a letter", () => {
+    const altGr = {
+      ...key("KeyP", { ctrl: true, alt: true, shift: true }),
+      key: "Ö",
+      getModifierState: (which: string) => which === "AltGraph",
+    };
+    expect(opensTheWorkspaces(altGr, false)).toBe(false);
+  });
+
   it("is said the platform's way", () => {
     expect(workspacesKeySaid(true)).toBe("⌥⌘P");
     expect(workspacesKeySaid(false)).toBe("Ctrl+Alt+Shift+P");
+  });
+
+  it("is capped in symbols, short enough to leave the filter its words", () => {
+    expect(workspacesKeyCap(true)).toBe("⌥⌘P");
+    expect(workspacesKeyCap(false)).toBe("⌃⌥⇧P");
   });
 });

@@ -47,6 +47,7 @@ import {
   stepTarget,
   Swipe,
   workspacesFound,
+  workspacesKeyCap,
   workspacesKeySaid,
   type Step,
 } from "./workspaceSwitch";
@@ -108,9 +109,10 @@ const rootMark = (
  * - **With the rail shown** the name is words (R92); with it hidden the name is a crumb — its
  *   mark, its name and ⌄ — that opens the two-column switcher of every project and workspace
  *   (R93–R100), since the rail that names the projects is out of sight.
- * - **⌘P** (Ctrl+Shift+P elsewhere, `switcherKey.ts`) opens and closes the workspace popover, or
- *   the two-column switcher while the rail is hidden (R106). **⌘1–⌘9** (Ctrl+1–9 elsewhere) go to
- *   the first nine pins (R111).
+ * - **⌥⌘P** (Ctrl+Alt+Shift+P elsewhere, `workspaceSwitch.opensTheWorkspaces`) opens and closes
+ *   the workspace popover, or the two-column switcher while the rail is hidden (R106 as the
+ *   operator's ruling of 2026-10-24 amends it; ⌘P stays the palette's). **⌘1–⌘9** (Ctrl+1–9
+ *   elsewhere) go to the first nine pins (R111). None of them acts while a dialog is up.
  * - **A sideways swipe over the title bar** steps one pin per gesture, round the ends (R112);
  *   over a strip too long to show whole, it scrolls the strip instead (R103). Anywhere else a
  *   sideways scroll scrolls what is under it.
@@ -129,7 +131,7 @@ export function TitleBarSwitch({
   inFront: string;
   /** The rail is shown, so the bar names the project in words; hidden, the name switches. */
   railShown: boolean;
-  /** Something modal is up (the palette): the keys are not this bar's. */
+  /** The palette is up: the keys are not this bar's (a dialog is found by `aModalIsUp`). */
   held?: boolean;
   does: SwitchDoes;
   /** A chip's context menu, around the chip: the workspace's rows of the catalogue. */
@@ -351,7 +353,7 @@ export function TitleBarSwitch({
         >
           <WorkspacePopover
             project={front}
-            keys={workspacesKeySaid(mac)}
+            keys={workspacesKeyCap(mac)}
             onGo={(workspace) => goTo(workspace)}
             onPin={(workspace, pinned) => does.pin(inFront, workspace, pinned)}
             onCreate={() => {
@@ -375,7 +377,7 @@ export function TitleBarSwitch({
           <ProjectSwitcher
             projects={projects}
             inFront={inFront}
-            keys={workspacesKeySaid(mac)}
+            keys={workspacesKeyCap(mac)}
             onGo={(plane, workspace) => {
               setOpen(undefined);
               if (plane === inFront) goTo(workspace);
@@ -470,55 +472,52 @@ function WorkspacePopover({
         keys={keys}
         onKeyDown={key}
       />
-      <PopoverRule />
-      <div data-scope="popover" data-part="list">
-        <SwitcherList
-          id={id}
-          label={`Workspaces in ${project.name}`}
-          empty="No workspace matches."
-          nothing={names.length === 0}
-          pins={rows.map((row) =>
-            row === OUTSIDE || row === NEW ? (
-              <span key={row} aria-hidden="true" />
-            ) : (
-              <PinToggle
-                key={row}
-                name={row}
-                pinned={listed?.pins.includes(row) ?? false}
-                onChange={(pinned) => onPin(row, pinned)}
-              />
-            ),
-          )}
-        >
-          {rows.map((row, place) =>
-            row === NEW ? (
-              <SwitcherRow
-                key={row}
-                id={rowId(row)}
-                name="New workspace…"
-                unavailable={project.cannotCreate}
-                mark={
-                  <SwitcherIcon>
-                    <Plus />
-                  </SwitcherIcon>
-                }
-                active={place === chosen}
-                onPress={onCreate}
-              />
-            ) : (
-              <SwitcherRow
-                key={row}
-                id={rowId(row)}
-                name={row === OUTSIDE ? OUTSIDE_TITLE : row}
-                mark={row === OUTSIDE ? rootMark : undefined}
-                waiting={listed?.waiting[row] ?? 0}
-                active={place === chosen}
-                onPress={() => onGo(row)}
-              />
-            ),
-          )}
-        </SwitcherList>
-      </div>
+      <SwitcherList
+        id={id}
+        label={`Workspaces in ${project.name}`}
+        empty="No workspace matches."
+        nothing={names.length === 0}
+        pins={rows.map((row) =>
+          row === OUTSIDE || row === NEW ? (
+            <span key={row} aria-hidden="true" />
+          ) : (
+            <PinToggle
+              key={row}
+              name={row}
+              pinned={listed?.pins.includes(row) ?? false}
+              onChange={(pinned) => onPin(row, pinned)}
+            />
+          ),
+        )}
+      >
+        {rows.map((row, place) =>
+          row === NEW ? (
+            <SwitcherRow
+              key={row}
+              id={rowId(row)}
+              name="New workspace…"
+              unavailable={project.cannotCreate}
+              mark={
+                <SwitcherIcon>
+                  <Plus />
+                </SwitcherIcon>
+              }
+              active={place === chosen}
+              onPress={onCreate}
+            />
+          ) : (
+            <SwitcherRow
+              key={row}
+              id={rowId(row)}
+              name={row === OUTSIDE ? OUTSIDE_TITLE : row}
+              mark={row === OUTSIDE ? rootMark : undefined}
+              waiting={listed?.waiting[row] ?? 0}
+              active={place === chosen}
+              onPress={() => onGo(row)}
+            />
+          ),
+        )}
+      </SwitcherList>
       <PopoverRule />
       <PopoverFooter />
     </>
@@ -655,7 +654,6 @@ function ProjectSwitcher({
         keys={keys}
         onKeyDown={key}
       />
-      <PopoverRule />
       <SwitcherColumns>
         <SwitcherList id={`${id}-p`} label="Projects" header="Projects" empty="No project matches.">
           {found.map((index, place) => {
@@ -720,11 +718,12 @@ function ProjectSwitcher({
 }
 
 /**
- * Whether something modal is up (a dialog, an alert dialog): the title bar's keys are not taken
- * from under it. The switchers' own popovers are not modal.
+ * Whether a dialog is up (the dialog family's, or an alert dialog): the title bar's keys are not
+ * taken from under it. React Aria marks no dialog `aria-modal`, so the family's own root is what
+ * is looked for. The switchers' own popovers are not dialogs of that family.
  */
 function aModalIsUp(): boolean {
-  return [
-    ...document.querySelectorAll('[role="dialog"][aria-modal="true"], [role="alertdialog"]'),
-  ].some((one) => one.closest('[data-scope="popover"]') === null);
+  return (
+    document.querySelector('[data-scope="dialog"][data-part="root"], [role="alertdialog"]') !== null
+  );
 }
