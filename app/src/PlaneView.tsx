@@ -6954,6 +6954,10 @@ export const PlaneView = memo(function PlaneView({
   );
   const curations = useCurations(plane, subjects, curationsChanges);
 
+  // The catalogue's screen-reader row says what pressing it does now: it is built again when
+  // the mode is turned on or off, not only when something else draws this view again.
+  const screenReader = useScreenReaderMode();
+
   /**
    * Every action this project's window can do, in one list.
    *
@@ -6968,9 +6972,6 @@ export const PlaneView = memo(function PlaneView({
    * 0026's limits that is the difference between rebuilding 117 rows once per hook event and
    * rebuilding them once per hook event per project the window happens to hold.
    */
-  // The catalogue's screen-reader row says what pressing it does now: it is built again when
-  // the mode is turned on or off, not only when something else draws this view again.
-  const screenReader = useScreenReaderMode();
   const offers = useMemo(
     () =>
       !inFront
