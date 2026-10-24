@@ -37,7 +37,7 @@ fn sheet_of(parts: Value) -> String {
 // ---------------------------------------------------------------------------------------
 
 #[test]
-fn the_content_families_are_in_the_manifest_at_version_10() {
+fn the_content_families_are_in_the_manifest_at_version_11() {
     let manifest = parts::manifest_json();
     let families = manifest["families"].as_array().unwrap();
     let of = |name: &str| -> (Vec<String>, Vec<(String, bool)>) {
@@ -45,7 +45,7 @@ fn the_content_families_are_in_the_manifest_at_version_10() {
             .iter()
             .find(|one| one["name"] == name)
             .unwrap_or_else(|| panic!("{name} is in the manifest"));
-        assert_eq!(family["since"], 10, "{name}");
+        assert_eq!(family["since"], 11, "{name}");
         let parts = family["parts"]
             .as_array()
             .unwrap()

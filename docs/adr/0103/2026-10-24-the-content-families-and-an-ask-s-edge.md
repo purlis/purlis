@@ -1,7 +1,7 @@
 # Amendment, 2026-10-24 (#2912): the content families, an ask's edge and the ground answers stand on
 
 The card, Notice, badge, count and separator families (ADR 0104, `app/src/ui/card`,
-`ui/notice`, `ui/badge`, `ui/separator`) join the manifest at **version 10**, each reached by its
+`ui/notice`, `ui/badge`, `ui/separator`) join the manifest at **version 11**, each reached by its
 wrapper's attributes alone. None is a control: each is a box as tall as what it holds, held as the
 2026-10-22 amendment holds a box.
 

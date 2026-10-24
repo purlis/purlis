@@ -35,11 +35,11 @@ pub(super) const CARD: Family = Family {
     name: "card",
     description: "A box one step off the surface it stands on: an ask, a question, a group of \
                   rows.",
-    since: 10,
+    since: 11,
     parts: &[
         Part {
             name: "root",
-            since: 10,
+            since: 11,
             description: "The card: its fill, words, edge, corners, lift and the room inside it.",
             properties: &[
                 Prop::Fill,
@@ -54,7 +54,7 @@ pub(super) const CARD: Family = Family {
         },
         Part {
             name: "title",
-            since: 10,
+            since: 11,
             description: "Its first line, where it has one: whose it is, what it asks.",
             properties: WORDS,
         },
@@ -62,13 +62,13 @@ pub(super) const CARD: Family = Family {
     variants: &[
         Variant {
             name: "raised",
-            since: 10,
+            since: 11,
             description: "A card: a question, a report, a group of rows.",
             consent: None,
         },
         Variant {
             name: "ask",
-            since: 10,
+            since: 11,
             description: "A card that asks the person something, edged in the waiting colour \
                           in every theme.",
             consent: Some(Consent::Asks),
@@ -89,6 +89,7 @@ pub(super) const CARD: Family = Family {
     words: &[],
     corner_most: None,
     around: &[],
+    fills: &[],
 };
 
 /// **A card's colours as `app/src/ui/card/card.css` draws them**: the raised ground behind the
@@ -112,11 +113,11 @@ pub(super) const NOTICE: Family = Family {
     name: "notice",
     description: "A standing line about something true now, with its ways out: in a pane's row, \
                   in the Inbox's list, on a page.",
-    since: 10,
+    since: 11,
     parts: &[
         Part {
             name: "root",
-            since: 10,
+            since: 11,
             description: "The Notice's box: its fill, words, edge colour, corners and the room \
                           inside it. Its edge's width is the window's: no theme takes it away.",
             properties: &[
@@ -130,13 +131,13 @@ pub(super) const NOTICE: Family = Family {
         },
         Part {
             name: "message",
-            since: 10,
+            since: 11,
             description: "What it says.",
             properties: &[Prop::Text, Prop::FontSize],
         },
         Part {
             name: "whose",
-            since: 10,
+            since: 11,
             description: "Whose it is, before what it says, for a chat that is not on screen.",
             properties: &[Prop::Text, Prop::FontWeight],
         },
@@ -144,13 +145,13 @@ pub(super) const NOTICE: Family = Family {
     variants: &[
         Variant {
             name: "news",
-            since: 10,
+            since: 11,
             description: "Nothing is wrong: the person is being told. Its waiting edge stays.",
             consent: Some(Consent::Asks),
         },
         Variant {
             name: "trouble",
-            since: 10,
+            since: 11,
             description: "Something went wrong. Its waiting edge stays.",
             consent: Some(Consent::Asks),
         },
@@ -169,6 +170,7 @@ pub(super) const NOTICE: Family = Family {
     words: &[],
     corner_most: None,
     around: &[],
+    fills: &[],
 };
 
 /// **A Notice's colours as `app/src/ui/notice/notice.css` draws them**: the raised ground edged in
@@ -206,35 +208,35 @@ const MARK: &[Prop] = &[
 pub(super) const BADGE: Family = Family {
     name: "badge",
     description: "A word or two beside what it is about: where a value comes from, a state.",
-    since: 10,
+    since: 11,
     parts: &[Part {
         name: "root",
-        since: 10,
+        since: 11,
         description: "The badge: its fill, words, edge, corners and size.",
         properties: MARK,
     }],
     variants: &[
         Variant {
             name: "neutral",
-            since: 10,
+            since: 11,
             description: "A word that says what something is.",
             consent: None,
         },
         Variant {
             name: "accent",
-            since: 10,
+            since: 11,
             description: "Where a value comes from: the level it is set at.",
             consent: None,
         },
         Variant {
             name: "waiting",
-            since: 10,
+            since: 11,
             description: "What waits on the person: \"Waiting for you\", \"deprecated\".",
             consent: None,
         },
         Variant {
             name: "ok",
-            since: 10,
+            since: 11,
             description: "What is settled: \"Confirmed\".",
             consent: None,
         },
@@ -252,6 +254,7 @@ pub(super) const BADGE: Family = Family {
     words: &[],
     corner_most: None,
     around: &[],
+    fills: &[],
 };
 
 /// **A badge's colours as `app/src/ui/badge/badge.css` draws them**: a pill on the count's ground,
@@ -274,17 +277,17 @@ pub(super) fn badge_look(variant: &str, _states: &[State]) -> Look {
 pub(super) const COUNT: Family = Family {
     name: "count",
     description: "A number on a pill beside what it counts: a view's items, what waits.",
-    since: 10,
+    since: 11,
     parts: &[
         Part {
             name: "root",
-            since: 10,
+            since: 11,
             description: "The count: its fill, number, edge, corners and size.",
             properties: MARK,
         },
         Part {
             name: "group",
-            since: 10,
+            since: 11,
             description: "Counts drawn as one pill: its corners.",
             properties: &[Prop::CornerRadius],
         },
@@ -292,25 +295,25 @@ pub(super) const COUNT: Family = Family {
     variants: &[
         Variant {
             name: "neutral",
-            since: 10,
+            since: 11,
             description: "How many there are.",
             consent: None,
         },
         Variant {
             name: "accent",
-            since: 10,
+            since: 11,
             description: "How many are new.",
             consent: None,
         },
         Variant {
             name: "waiting",
-            since: 10,
+            since: 11,
             description: "How many wait on the person, in the waiting colour.",
             consent: None,
         },
         Variant {
             name: "hot",
-            since: 10,
+            since: 11,
             description: "How many need the person now, in the needs-you colours.",
             consent: None,
         },
@@ -333,6 +336,7 @@ pub(super) const COUNT: Family = Family {
     words: &[],
     corner_most: None,
     around: &[],
+    fills: &[],
 };
 
 /// **A count's colours as `app/src/ui/badge/badge.css` draws them.**
@@ -356,10 +360,10 @@ pub(super) const SEPARATOR: Family = Family {
     name: "separator",
     description: "The line between two groups inside a surface. Its width is the theme's \
                   separator.width, 0 for none.",
-    since: 10,
+    since: 11,
     parts: &[Part {
         name: "root",
-        since: 10,
+        since: 11,
         description: "The line: its colour.",
         properties: &[Prop::Fill],
     }],
@@ -377,6 +381,7 @@ pub(super) const SEPARATOR: Family = Family {
     words: &[],
     corner_most: None,
     around: &[],
+    fills: &[],
 };
 
 /// **A separator's colour as `app/src/ui/separator/separator.css` draws it**: the subtle hairline.

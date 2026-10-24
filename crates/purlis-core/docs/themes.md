@@ -286,11 +286,11 @@ an unknown token is.
 | `popover` (since version 6) | `root` (`fill`, `text`, `border-colour`, `border-width`, `corner-radius`, `shadow`: the surface a popover and a menu stand on), `filter` (`fill`, `padding`), `rule` (`fill`), `list` (`padding`, `gap`), `header` (`text`, `font-size`, `font-weight`), `footer` (`fill`, `text`, `padding`, `font-size`), `key` (`fill`, `text`, `corner-radius`) | `popover`, `menu` |
 | `menu` (since version 6) | `root` (every property: a menu's row), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`), `shortcut` (`text`, `font-size`), `indicator` (`text`: a toggle's tick, a submenu's arrow) | `default`, `danger` (what cannot be undone) |
 | `dialog` (since version 7) | `root` (`fill`, `border-colour`, `border-width`, `corner-radius`, `shadow`), `title` (`text`, `font-size`, `font-weight`), `subtitle`, `description` and `summary` (`text`), `separator` (`fill`, the rule over the footer) | `dialog`, `alert` |
-| `card` (since version 10) | `root` (`fill`, `text`, `border-colour`, `border-width`, `corner-radius`, `shadow`, `padding`, `gap`), `title` (`text`, `font-size`, `font-weight`) | `raised`, `ask` (a card that asks the person something) |
-| `notice` (since version 10) | `root` (`fill`, `text`, `border-colour`, `corner-radius`, `padding`, `gap`: a Notice's box, in a pane's row, the Inbox's list or on a page), `message` (`text`, `font-size`), `whose` (`text`, `font-weight`) | `news`, `trouble` |
-| `badge` (since version 10) | `root` (`fill`, `text`, `border-colour`, `border-width`, `corner-radius`, `padding`, `font-size`, `font-weight`) | `neutral`, `accent`, `waiting`, `ok` |
-| `count` (since version 10) | `root` (as the badge's), `group` (`corner-radius`: counts drawn as one pill) | `neutral`, `accent`, `waiting`, `hot` (what needs the person now) |
-| `separator` (since version 10) | `root` (`fill`: the line's colour; its width is the `separator.width` geometry) | none |
+| `card` (since version 11) | `root` (`fill`, `text`, `border-colour`, `border-width`, `corner-radius`, `shadow`, `padding`, `gap`), `title` (`text`, `font-size`, `font-weight`) | `raised`, `ask` (a card that asks the person something) |
+| `notice` (since version 11) | `root` (`fill`, `text`, `border-colour`, `corner-radius`, `padding`, `gap`: a Notice's box, in a pane's row, the Inbox's list or on a page), `message` (`text`, `font-size`), `whose` (`text`, `font-weight`) | `news`, `trouble` |
+| `badge` (since version 11) | `root` (`fill`, `text`, `border-colour`, `border-width`, `corner-radius`, `padding`, `font-size`, `font-weight`) | `neutral`, `accent`, `waiting`, `ok` |
+| `count` (since version 11) | `root` (as the badge's), `group` (`corner-radius`: counts drawn as one pill) | `neutral`, `accent`, `waiting`, `hot` (what needs the person now) |
+| `separator` (since version 11) | `root` (`fill`: the line's colour; its width is the `separator.width` geometry) | none |
 
 A field is its label, its control (a `text-input` or a `textarea`), its help and its error, as
 one: `field.help.text` reaches a field's help line, `text-input.root.border-width` every one-line
