@@ -258,3 +258,136 @@ fn use_skill_is_a_start_word_of_its_own() {
         serde_json::json!("use-skill")
     );
 }
+
+/// A tool call that starts `skill` by the harness's own route `started_by`.
+fn started(skill: &str, started_by: StartedBy) -> ToolCall {
+    let mut call = named(skill);
+    call.tool_hook = "posttooluse-skill".to_owned();
+    call.tool = Some("Skill".to_owned());
+    if let Some(started) = call.skill.as_mut() {
+        started.started_by = started_by;
+    }
+    call
+}
+
+const CURATION: &str = "Use purlis's compact skill to compact and improve the persona ops.";
+
+#[test]
+fn a_skill_the_turn_of_a_curation_prompt_starts_is_started_by_the_curation_action() {
+    let mut tracker = Tracker::default();
+    tracker.prompted("4", Prompted::of(StartedBy::Curation, CURATION));
+    tracker.report("4", &prompt(CURATION), 0, || None);
+    let opened = tracker
+        .call(
+            "4",
+            &started("purlis:compact", StartedBy::SkillTool),
+            1,
+            || None,
+        )
+        .expect("the harness's pick opens the run");
+    assert_eq!(opened.started_by, StartedBy::Curation);
+    // A skill started inside it is the harness's own pick.
+    let child = tracker
+        .call("4", &started("memory", StartedBy::Read), 2, || None)
+        .expect("a child run opens");
+    assert_eq!(child.started_by, StartedBy::Read);
+
+    // The next turn is the person's own.
+    tracker.report("4", &report(Event::Stop), 3, || None);
+    tracker.report("4", &prompt("now compact the workspace too"), 4, || None);
+    let next = tracker
+        .call(
+            "4",
+            &started("purlis:compact", StartedBy::SkillTool),
+            5,
+            || None,
+        )
+        .expect("a run opens");
+    assert_eq!(next.started_by, StartedBy::SkillTool);
+}
+
+#[test]
+fn a_curation_prompt_the_person_replaced_before_sending_starts_nothing_of_its_own() {
+    let mut tracker = Tracker::default();
+    tracker.prompted("4", Prompted::of(StartedBy::Curation, CURATION));
+    tracker.report("4", &prompt("something else entirely"), 0, || None);
+    let opened = tracker
+        .call(
+            "4",
+            &started("purlis:compact", StartedBy::McpLoad),
+            1,
+            || None,
+        )
+        .expect("a run opens");
+    assert_eq!(opened.started_by, StartedBy::McpLoad);
+}
+
+#[test]
+fn a_curation_prompt_is_held_until_it_is_sent_and_goes_with_the_session() {
+    let mut tracker = Tracker::default();
+    tracker.prompted("4", Prompted::of(StartedBy::Curation, CURATION));
+    // Read for long before it is sent: still the curation action's.
+    tracker.report("4", &prompt(CURATION), HELD_FOR_MS * 3, || None);
+    let opened = tracker
+        .call(
+            "4",
+            &started("purlis:compact", StartedBy::SkillTool),
+            1,
+            || None,
+        )
+        .expect("a run opens");
+    assert_eq!(opened.started_by, StartedBy::Curation);
+
+    tracker.prompted("4", Prompted::of(StartedBy::Curation, CURATION));
+    tracker.report("4", &report(Event::SessionEnd), 2, || None);
+    tracker.report("4", &prompt(CURATION), 3, || None);
+    let after = tracker
+        .call("4", &started("theme", StartedBy::SkillTool), 4, || None)
+        .expect("a run opens");
+    assert_eq!(after.started_by, StartedBy::SkillTool);
+}
+
+#[test]
+fn only_a_curation_action_or_a_trigger_is_held_for_a_prompt() {
+    let mut tracker = Tracker::default();
+    tracker.prompted("4", Prompted::of(StartedBy::Read, CURATION));
+    tracker.report("4", &prompt(CURATION), 0, || None);
+    let opened = tracker
+        .call(
+            "4",
+            &started("purlis:compact", StartedBy::SkillTool),
+            1,
+            || None,
+        )
+        .expect("a run opens");
+    assert_eq!(opened.started_by, StartedBy::SkillTool);
+}
+
+#[test]
+fn every_start_has_a_word_of_its_own_read_back_as_itself() {
+    let all = [
+        StartedBy::SkillTool,
+        StartedBy::Read,
+        StartedBy::McpLoad,
+        StartedBy::UseSkill,
+        StartedBy::Curation,
+        StartedBy::Trigger,
+    ];
+    let words: std::collections::HashSet<&str> = all.iter().map(|by| by.word()).collect();
+    assert_eq!(words.len(), all.len());
+    for by in all {
+        assert_eq!(StartedBy::parse(by.word()), Some(by));
+        assert_eq!(
+            serde_json::to_value(by).unwrap(),
+            serde_json::json!(by.word())
+        );
+    }
+}
+
+#[test]
+fn a_debug_dump_of_a_prompt_held_says_what_put_it_there_and_nothing_of_the_prompt() {
+    let prompted = Prompted::of(StartedBy::Curation, CURATION);
+    let dumped = format!("{prompted:?}");
+    assert!(dumped.contains("Curation"), "{dumped}");
+    assert!(!dumped.contains(&prompted.lead.to_string()), "{dumped}");
+}

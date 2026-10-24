@@ -24,7 +24,7 @@ import {
   THE_RUNS_TREE,
   theRunsStandIns,
 } from "../harness.js";
-import { closeProject } from "../opening.js";
+import { closeProject, fromThePalette } from "../opening.js";
 import { ask } from "../switching.js";
 
 /**
@@ -309,7 +309,7 @@ describe("the first task, from its tab", function () {
       await browser.keys(["Escape"]);
     }
     if (local !== "") {
-      const closer = `${PROJECTS} button[aria-label="Close project ${basename(local)}"]`;
+      const closer = `${PROJECTS} [role="tab"][aria-label="${basename(local)}"]`;
       if (await $(closer).isExisting()) await closeProject(closer);
     }
     for (const plane of (await ask<string[]>("open_planes")).filter((one) => one !== first))
@@ -321,7 +321,7 @@ describe("the first task, from its tab", function () {
     const before = await ask<string[]>("open_planes");
 
     // New project, its default form: the repo, opened into this machine's local project.
-    await $(`${PROJECTS} button[aria-label="New project…"]`).click();
+    await fromThePalette("New project…");
     const dialog = await $('[role="dialog"][aria-labelledby="new-project"]');
     await dialog.waitForExist({ timeout: 20_000 });
     // The repo's box is the dialog's first; the Advanced form's boxes are folded away.

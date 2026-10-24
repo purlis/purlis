@@ -1083,6 +1083,71 @@ fn an_edit_whose_text_is_not_in_the_file_is_refused_in_fixed_words() {
     assert_eq!(verdict.denial, crate::proposed::UNPREPARED);
 }
 
+/// SK-9 (#2772): a Claude Code chat's write of a plane skill's file, sandboxed or not, is handed
+/// to the app to keep as a draft skill, and the tool refused; an app that does not take it leaves
+/// the edit to the guards as before.
+#[test]
+fn a_claude_code_write_of_a_skills_file_is_handed_over_as_a_draft_and_the_tool_refused() {
+    let write = |plane: &Plane| {
+        serde_json::json!({
+            "tool_name": "Write",
+            "cwd": plane.cwd(),
+            "tool_input": {"file_path": "skills/triage/SKILL.md", "content": "drafted\n"},
+        })
+    };
+    for plane in [
+        sandboxed_claude(Plane::new()),
+        Plane::new()
+            .with_env(crate::hookwire::HARNESS_ENV, "claude-code")
+            .with_env(crate::hookwire::CHAT_ENV, "7"),
+    ] {
+        let handed = std::cell::RefCell::new(Vec::new());
+        let answer = plane.ask(write(&plane), |hook| {
+            pretooluse_edit_proposing(hook, &|ask| {
+                handed.borrow_mut().push(ask);
+                true
+            })
+        });
+        let Answer::Deny(verdict) = answer else {
+            panic!("refused, not {answer:?}");
+        };
+        assert_eq!(verdict.denial, crate::skills::verbs::drafts::DRAFTED_SAID);
+        let handed = handed.into_inner();
+        assert_eq!(handed.len(), 1);
+        assert_eq!(
+            (handed[0].chat, handed[0].path.as_str()),
+            (7, "skills/triage/SKILL.md")
+        );
+        assert_eq!(
+            handed[0].change,
+            crate::proposed::Change::Whole {
+                content: "drafted\n".to_owned()
+            }
+        );
+        assert!(!plane.root.join("skills/triage").exists());
+        assert_eq!(
+            plane.ask(write(&plane), |hook| pretooluse_edit_proposing(
+                hook,
+                &|_| false
+            )),
+            Answer::Nothing
+        );
+    }
+    // Policy's `sandbox.proposed-changes = "off"` holds no draft either (PC-14).
+    let plane = sandboxed_claude(Plane::new());
+    crate::sandbox::policy::set_for_this_test(crate::sandbox::policy::Locks::parse(
+        r#"{"sandbox": {"proposed-changes": "off"}}"#,
+        Path::new("/etc/purlis/policy.json"),
+    ));
+    assert_eq!(
+        plane.ask(write(&plane), |hook| {
+            pretooluse_edit_proposing(hook, &|_| panic!("nothing is handed over"))
+        }),
+        Answer::Nothing
+    );
+    crate::sandbox::policy::set_for_this_test(crate::sandbox::policy::Locks::none());
+}
+
 // ---- posttooluse: a theme draft (#2332) ---------------------------------------------------
 
 /// A plane with nothing but its manifest and its state folder: a chat's theme draft `folder`

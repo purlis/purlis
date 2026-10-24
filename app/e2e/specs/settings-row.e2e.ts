@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { $, browser, expect } from "@wdio/globals";
+import { railHidden } from "../rail.js";
 
 /**
  * **A settings row is one line at one height, in the real WebView** (DS-8, #1840; spec #1832's
@@ -95,6 +96,10 @@ async function measured() {
 }
 
 describe("a settings row, in the real WebView", () => {
+  // The work measured with the project rail hidden (`rail.ts`, #2915).
+  before(() => railHidden(true));
+  after(() => railHidden(false));
+
   let tabWasOpen = false;
 
   before(async () => {

@@ -139,7 +139,7 @@ async function backTo(first: string): Promise<void> {
 async function openAndClose(path: string): Promise<void> {
   await openFromTheStrip(path);
   await $(`${WORKSPACES} [role="tab"].plane-root`).waitForExist({ timeout: 30_000 });
-  await closeProject(`${PROJECTS} button[aria-label="Close project ${basename(path)}"]`);
+  await closeProject(`${PROJECTS} [role="tab"][aria-label="${basename(path)}"]`);
   await browser.waitUntil(async () => !(await ask<string[]>("open_planes")).includes(path), {
     timeout: 20_000,
     timeoutMsg: `${path} stayed open`,

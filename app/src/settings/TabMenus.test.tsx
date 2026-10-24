@@ -114,7 +114,7 @@ const inFront = () => tabs().find((tab) => tab.getAttribute("aria-selected") ===
 function projectTab(name: string): HTMLElement {
   const tab = within(projects())
     .getAllByRole("tab")
-    .find((one) => one.querySelector(".project-name")?.textContent === name);
+    .find((one) => one.getAttribute("aria-label") === name);
   if (!tab) throw new Error(`no project tab called ${name}`);
   return tab;
 }
@@ -176,7 +176,7 @@ describe("a project tab's menu", () => {
     await waitFor(() => expect(level()).toBe("Project"));
   });
 
-  it("lands on the tab the palette's Project settings… and the gear open, not a second", async () => {
+  it("lands on the tab the palette's Project settings… and the menu open, not a second", async () => {
     core([ONE]);
     render(<App />);
     await screen.findByRole("tab", { name: /alpha/ });
@@ -195,7 +195,7 @@ describe("a project tab's menu", () => {
 
     await userEvent.click(other);
     expect(inFront()).toBe(other);
-    await userEvent.click(within(projects()).getByRole("button", { name: "Project settings…" }));
+    await fromItsMenu(projectTab("one"), "Settings…");
 
     await waitFor(() => expect(inFront()).toBe(project));
     expect(level()).toBe("Project");

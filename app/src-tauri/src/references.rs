@@ -370,6 +370,7 @@ pub fn here(
             label: label.clone(),
             prompt: text.clone(),
             then_a_space: true,
+            starts_runs: None,
         },
         size,
         |_, declared, _| {

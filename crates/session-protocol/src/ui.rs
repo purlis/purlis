@@ -610,6 +610,24 @@ pub const WINDOW_ONLY: &[&str] = &[
     "skill_restore",
     "skill_grant",
     "skill_turn",
+    // A skill's tab (#2782): reverting it to a version, deprecating, archiving or restoring it,
+    // and naming its owners. Each is one commit to the project, the person's own press in their
+    // window.
+    "skill_revert",
+    "skill_lifecycle",
+    "skill_owners",
+    // A chat's draft skills read, accepted or rejected, and a chat opened to draft one or to try
+    // one (SK-9, #2772): a draft is what a chat wrote, read by the person in their window as a
+    // proposed change is; an accept is one commit to the project, and a chat starts a program as
+    // the person. The person's own press in their window, as every skill change is.
+    "skill_drafts",
+    "skill_draft_accept",
+    "skill_draft_reject",
+    "skill_draft_chat",
+    "skill_draft_try",
+    // Accepting a workspace or persona folder a chat could have made (SK-9): its skills then
+    // reach chats, so only the person's own press in their window does it.
+    "skill_level_accept",
     // Skill sources (#2773): each reaches a git repository the person named, a private one with
     // a credential read from a vault, and an install or an update is one commit to the project.
     // The person's own press in their window, never a link's.
@@ -1007,9 +1025,13 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "session_record",
     "set_dismissed",
     "show_window_holding",
+    "skill_details",
+    "skill_diff",
     "skill_lint",
     "skill_move_needs_grant",
+    "skill_revert_widens",
     "skill_runs",
+    "skill_stats",
     "skill_studio",
     "skill_studio_on",
     "skill_templates",

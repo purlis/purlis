@@ -12,11 +12,16 @@ import { NeedsYouButton, type Quiet } from "./NeedsYou";
 import { KillSwitch } from "./KillSwitch";
 
 /**
- * **The window's title bar**: the project strip on the left, what charter is on the right.
+ * **The window's title bar**: what charter is on the right; on the left, while the project rail
+ * hides itself, the button that shows it (#2915).
  *
  * ```
- * ● ● ●  [charter ²] [volaticloud] [▾ 3 more ¹] [+]  ···drag···  ✋2  About  ⟳
+ * ● ● ●  [▥]  ···drag···  ✋2  About  ⟳
  * ```
+ *
+ * **The project tabs were here until #2915**, which moved the projects to the rail at the
+ * window's left (spec #2897, N22). What follows is the bar as ADR 0054 argued it; where it speaks
+ * of the project strip, the strip is gone and its room is drag region.
  *
  * **ADR 0054 supersedes the operator's first spec for this bar**, which was a breadcrumb —
  * *"`{selected project name} / {selected workspace name} / {N sessions running}`"* on the
@@ -83,7 +88,7 @@ import { KillSwitch } from "./KillSwitch";
  * call is refused and the bar is one the operator cannot grab.
  */
 export function TitleBar({
-  projects,
+  leading,
   updates,
   room,
   chats,
@@ -98,11 +103,11 @@ export function TitleBar({
    */
   sandbox?: SandboxSaid | null;
   /**
-   * The project strip (ADR 0054), drawn after the room the window controls take. `App` builds
-   * it, because the projects, their pins and the strip's show-more are the window's. Absent — a
-   * window holding no project — draws none, and the right-hand end stays at the right.
+   * **The bar's first controls**, after the room the window controls take: the button that shows
+   * the project rail while it hides itself (#2915, R91). The project tabs that were here are the
+   * rail now (N22). The project's crumb and its pinned workspaces come after it (#2916).
    */
-  projects?: ReactNode;
+  leading?: ReactNode;
   /**
    * The updater, as the WINDOW knows it (`Updates.tsx`).
    *
@@ -166,7 +171,7 @@ export function TitleBar({
       data-overlaid={room?.overlaid ? "yes" : "no"}
       style={{ "--window-controls": `${room?.reserved ?? 0}px` } as CSSProperties}
     >
-      {projects}
+      {leading !== undefined && <span className="title-bar-leading">{leading}</span>}
       {/* The right-hand end, and the part of the bar that never gives way: the strip before it
           gives way first. What is here is about the window rather than one project — the save
           indicator aside, which is the project in front's — which is why it is up here and not

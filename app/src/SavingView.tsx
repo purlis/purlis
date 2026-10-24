@@ -40,7 +40,6 @@ import { updateSaid, UpdateFromRemote, UpdateLeftNotice } from "./SavingUpdate";
 import { RequestMerge } from "./SavingMerge";
 import { SaveConflict } from "./SavingResolve";
 import { Button, IconButton } from "./ui/button/Button";
-import { Tooltip } from "./ui/tooltip/Tooltip";
 import { AlertDialog } from "./ui/dialog/Dialog";
 
 /** Settings › Saving › Mode: where a project's save mode is changed (SE-22's address). */
@@ -931,23 +930,15 @@ function entryText(one: SaveEntry): string {
 }
 
 /**
- * **A project's unsaved mark** (charter-app#302), on its tab in the project strip: a dot when
- * it has work a save would take — files, a blocked save, commits a push would carry — and
- * nothing when a save has nothing left to do. Named for a screen reader; the Saving tab says
- * what exactly.
+ * **A project's unsaved mark** (charter-app#302), the dot on its button on the project rail
+ * (#2915): whether it has work a save would take — files, a blocked save, commits a push would
+ * carry — and what the Saving tab would say of it. Nothing when a save has nothing left to do.
  */
-export function UnsavedMark({ saving, name }: { saving: PlaneSaving | undefined; name: string }) {
-  if (saving === undefined) return null;
+export function unsavedOf(
+  saving: PlaneSaving | undefined,
+): { blocked: boolean; says: string } | undefined {
+  if (saving === undefined) return undefined;
   const blocked = saving.stage === "blocked";
-  if (!blocked && !savable(saving)) return null;
-  return (
-    <Tooltip tip={stageText(saving)}>
-      <span
-        className="project-unsaved"
-        data-stage={saving.stage}
-        role="img"
-        aria-label={blocked ? `saving is blocked in ${name}` : `unsaved work in ${name}`}
-      />
-    </Tooltip>
-  );
+  if (!blocked && !savable(saving)) return undefined;
+  return { blocked, says: stageText(saving) };
 }

@@ -278,6 +278,7 @@ fn start(
             label: trouble.label.clone(),
             prompt: purlis_core::savefix::prompt(trouble),
             then_a_space: false,
+            starts_runs: None,
         },
         size,
         SentFor::FixASave,

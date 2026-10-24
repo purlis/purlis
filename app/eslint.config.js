@@ -103,6 +103,7 @@ export default tseslint.config(
       "purlis/panel-section-family": "error",
       "purlis/empty-state-family": "error",
       "purlis/status-item-family": "error",
+      "purlis/rail-family": "error",
     },
   },
   // The select's list is drawn in the old menu classes until the select family moves (#2906).
