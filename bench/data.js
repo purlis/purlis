@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792799539675,
+  "lastUpdate": 1792803823203,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -23016,6 +23016,48 @@ window.BENCHMARK_DATA = {
             "value": 104.3766995,
             "unit": "ms",
             "extra": "median of 5 runs: 102.879, 102.976, 104.377, 104.732, 104.968 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "3f49b762040c3164d3633c9b977e07d9d8bca11e",
+          "message": "SK-9: draft skills, Try it in a throwaway piece, Accept and Reject (#3047)\n\n* SK-9: draft skills, Try it in a throwaway piece, Accept and Reject (#2772)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-9: rustfmt\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-9: generated bindings, a module name that differs by more than case, prettier\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-9: the e2e brings the studio forward before asking for a drafting chat\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-9: the throwaway piece is inside the project, a new skill's folder is committed whole, the drafts list is the window's alone\n\nA sandboxed chat starts only in a folder of the project, so the piece moves to\nworkspaces/.throwaway/, which git ignores and the save never stages.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-9: the e2e says the core's refusal when no chat opens\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-9: a save of named paths stages a new file beside them; the e2e waits on a started chat\n\ngit add -A with an exclude pathspec leaves an untracked file named beside it\nunstaged, so the excludes are passed only where a named folder could hold what\nthey keep out.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-9: the e2e brings the studio back after the scratch chat ends\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-9: review fixes: skill folders at every level held, Try it alone on every harness, leftovers swept\n\n- Skill folders at every level are held, including levels created later: by\n  pattern where the backend allows it, and a level made while a sandboxed chat\n  runs reaches no chat until it closes (skills::levels), with a reason.\n- No clone is named skills or skills.local.\n- Try it turns off every harness skill and plugin, and defaults to the draft's\n  level's profile.\n- Pieces, tries and level records are swept whenever the app writes its record.\n- A direct save_paths test; named NEVER_STAGED; Record.level is a Level;\n  SKILL_NEVER reused; one hand-over preamble honouring policy; one draft text.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-9: a chat-made level waits for the person's Accept; Try it reads the chat's own environment\n\n- Only the person's own creates vouch for a folder; the brokered create does not.\n- A level a chat could have made stays left out after its chat closes, until the\n  person accepts it in the Skill studio.\n- Try it's turn-offs are read from the chat's environment, so a profile's own\n  config folder is the one turned off.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* e2e: a picker that stays says what it reads\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* e2e: the end of what a stuck picker reads\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-9: hold workspace and persona skill levels by one pattern each\n\nHolding each workspace's and persona's folders by path as well grew a Claude\nCode chat's settings argument past what Linux starts a program with, beside\nevery workspace manifest now held too.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-9: vouch only for a folder the create made; long settings through a file\n\n- A person's create vouches for its workspace or persona folder only where the\n  create made it; one already there waits for Accept, and the create says so.\n- Every existing level's skill folders are held by exact path again beside the\n  patterns, and a Claude Code chat's settings longer than one command-line word\n  go through chat-settings/<chat id>.json (--settings <file>).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-9: the window's start puts long settings in a file too; a create says only what waits\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-9: settings go through a file only past 96 KiB\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* e2e: the stand-in Claude Code reads a settings file as Claude Code does\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-24T05:02:16+04:00",
+          "tree_id": "9655ba8bc8d7f7390688dd78eabd0428d87788fc",
+          "url": "https://github.com/purlis/purlis/commit/3f49b762040c3164d3633c9b977e07d9d8bca11e"
+        },
+        "date": 1792803821248,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.2774095,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.265, 0.272, 0.277, 0.280, 0.281 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.584672,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.505, 16.539, 16.585, 16.601, 16.662 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.44316,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.654, 101.429, 101.443, 101.841, 102.476 ms"
           }
         ]
       }
