@@ -8130,12 +8130,9 @@ export const PlaneView = memo(function PlaneView({
   }, [nameOfListed, plane, showChat, startChatHere, tabs]);
 
   // Each strip is ONE Tab stop, the selected tab, and the arrows move along it (charter-app#189,
-  // `roving.ts`). Asked here rather than below the early return, because they are hooks.
+  // `roving.ts`). Asked here rather than below the early return, because they are hooks. The
+  // chat strip's is React Aria's, inside it (`ui/tabs/TabStrip`, #3042).
   const workspaceStop = useTabStop(focused, workspacesShown.shown);
-  const chatStop = useTabStop(
-    tabs.inFront === undefined ? undefined : String(tabs.inFront),
-    shown.map(String),
-  );
 
   /** **While you were away** (#1514): kept for this project whether or not it is in front,
    *  so a project behind another has its own summary when the person switches to it. */
@@ -8984,7 +8981,6 @@ export const PlaneView = memo(function PlaneView({
                 shown={shown}
                 notShowing={notShowing}
                 chatTabId={chatTabId}
-                chatStop={chatStop}
                 strip={strip}
                 chatControls={chatControls}
                 chatLeast={chatLeast}

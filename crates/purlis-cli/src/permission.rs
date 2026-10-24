@@ -45,7 +45,7 @@ pub fn permissionrequest(payload: &str) -> ExitCode {
     };
     // A harness this does not know decides nothing, and its own prompt asks in the pane.
     let Some(source) =
-        Source::of_harness(purlis_core::envvar::var(hookwire::HARNESS_ENV).as_deref())
+        Source::of_harness(hookwire::chat_harness(&purlis_core::envvar::var).as_deref())
     else {
         return ExitCode::SUCCESS;
     };

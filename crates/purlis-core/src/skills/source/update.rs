@@ -325,9 +325,7 @@ fn locked_at(plane: &Path, level: &Level, name: &str) -> Result<(lock::Read, usi
 
 /// Whether `level` holds a skill named `name`.
 fn has(plane: &Path, level: &Level, name: &str) -> bool {
-    level
-        .dir(plane)
-        .is_some_and(|dir| crate::skills::named(&dir, name).is_some())
+    level.named(plane, name).is_some()
 }
 
 /// **The review of updating the installed skill `name` at `level`** to its source's newest

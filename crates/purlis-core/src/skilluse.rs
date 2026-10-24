@@ -158,8 +158,7 @@ fn content_of(
         purlis_skills::Origin::Persona => purlis_skills::Whose::Persona(persona?.to_owned()),
         _ => return None,
     };
-    let dir = purlis_skills::level_dir(root, &at, level.local)?;
-    let folder = purlis_skills::named(&dir, name)?;
+    let folder = purlis_skills::named_at(root, &at, level.local, name)?;
     let rel = folder
         .strip_prefix(root)
         .ok()?

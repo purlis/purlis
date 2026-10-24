@@ -22,8 +22,9 @@
  * - **`toolbar`** (family `editor`) is the bar over a file, named by its file tab, which joins it
  *   while it is chosen ({@link editorToolbar}).
  *
- * The strip keeps its behaviour where it was: the roving focus, the drag along the strip and the
- * tablist that owns the tabs (`ChatStrip.tsx`, `StripTablist.tsx`). This layer is how it is drawn.
+ * The strip's tablist behaviour (the keyboard along it, its one Tab stop, the tablist that owns
+ * the tabs) is React Aria's, in `TabStrip.tsx` (#3042); the drag along it is `dnd-kit`'s
+ * (`sortable.tsx`). This layer is how it is drawn.
  */
 import { useState, type ComponentPropsWithRef, type PointerEvent, type ReactNode } from "react";
 
@@ -78,8 +79,14 @@ export function ToolbarFile({ path }: { path: string }) {
 /**
  * **One tab's cell**: the element the strip lays out and drags, holding the tab's own button,
  * its marks and its `×`. It is drawn by its attributes: its variant, whether it is the chosen tab
- * (`data-selected`), whether the pointer is over it (`data-hovered`, a mouse's only, as React
- * Aria has it), and whether it is the first on the strip, on the panel's edge (`data-first`).
+ * (`data-selected`), whether the pointer is over it (`data-hovered`: a mouse's, from the cell's
+ * own enter and leave), and whether it is the first on the strip, on the panel's edge
+ * (`data-first`).
+ *
+ * Not React Aria's `useHover` (D-3042-7): it also ends a hover when a `pointerover` lands outside
+ * the cell with no `pointerleave`, which is how it handles an element removed under the pointer,
+ * and a story's hover then read as no hover in one cell of the matrix. The cell's own enter and
+ * leave are what the strip has always drawn by.
  *
  * `className` places it, as the strip's own rules do (`.tab`, a chip); never a look.
  */

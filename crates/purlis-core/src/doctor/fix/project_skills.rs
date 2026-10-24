@@ -397,11 +397,12 @@ fn whole(root: &Path, built_in: Option<&Path>, names: &[String]) -> Result<Vec<F
         .into_iter()
         .map(|name| name.to_lowercase())
         .collect();
-    let project: Vec<String> = crate::skills::read(&root.join(TO))
+    let project: Vec<String> = crate::skills::scan(root, Path::new(TO))
         .into_iter()
+        .filter_map(Result::ok)
         .map(|skill| skill.name)
         .collect();
-    let scanned = crate::skills::scan(&root.join(FROM));
+    let scanned = crate::skills::scan(root, Path::new(FROM));
     let mut folders: Vec<Folder> = Vec::new();
     for folder in names {
         let found = scanned.iter().find(|one| {

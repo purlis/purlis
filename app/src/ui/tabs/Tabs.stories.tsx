@@ -7,21 +7,23 @@
  * keyboard and compared with its baseline in Chromium and WebKit (`docs/component-stories.md`).
  *
  * The strip here is laid out by the window's own strip rules (`.bar`, `.tabs` in `App.css`) and
- * owns its tabs as the chat strip does (`StripTablist`), so what is drawn is what the window
- * draws. Its behaviour beyond choosing a tab (the drag, the collapse into show-more, the menus)
- * is the chat strip's, held by its own tests.
+ * is the family's tablist on React Aria (`TabStrip.tsx`), as the chat strip is, so what is drawn
+ * and how the keyboard moves along it are what the window does. Its behaviour beyond choosing a
+ * tab (the drag, the collapse into show-more, the menus) is the chat strip's, held by its own
+ * tests.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { Fragment, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
+import { Fragment, useState, type CSSProperties } from "react";
 import { expect, waitFor } from "storybook/test";
 import { Plus, X } from "lucide-react";
 import { expectFocusInSight } from "../../stories.testkit";
-import { StripTablist, useTabIds } from "../../StripTablist";
+import { useTabIds } from "../../StripTablist";
 import { ChatMark } from "../../NeedsYou";
 import type { State } from "../../chatState";
 import { IconButton } from "../button/Button";
 import { editorToolbar, TabCell, tabPart, tabsPart, ToolbarFile, type TabVariant } from "./Tabs";
 import { panelRoot } from "../panel/Panel";
+import { StripTab, TabStripRow, useTabStrip } from "./TabStrip";
 
 /** One tab as a story draws it: its name, what it holds, and its chat's state, if any. */
 type Shown = { name: string; variant?: TabVariant; state?: State };
@@ -34,8 +36,9 @@ const CHATS: Shown[] = [
 ];
 
 /**
- * **A docked strip and the panel under it.** The arrows choose the tab beside the one with the
- * keyboard, Home and End the first and the last, as the chat strip's roving focus does.
+ * **A docked strip and the panel under it.** The arrows move to the tab beside the one with the
+ * keyboard, Home and End to the first and the last, and Enter or Space chooses it, as on the
+ * chat strip (React Aria's tabs, manual activation).
  */
 function DockedStrip({
   tabs = CHATS,
@@ -52,38 +55,20 @@ function DockedStrip({
   const [inFront, setInFront] = useState(chosen);
   const [open, setOpen] = useState(tabs);
   const idOf = useTabIds();
-  const buttons = useRef<(HTMLButtonElement | null)[]>([]);
-  const choose = (at: number) => {
-    setInFront(at);
-    buttons.current[at]?.focus();
-  };
-  const keys = (event: KeyboardEvent, at: number) => {
-    const last = open.length - 1;
-    const to =
-      event.key === "ArrowRight"
-        ? Math.min(last, at + 1)
-        : event.key === "ArrowLeft"
-          ? Math.max(0, at - 1)
-          : event.key === "Home"
-            ? 0
-            : event.key === "End"
-              ? last
-              : undefined;
-    if (to === undefined) return;
-    event.preventDefault();
-    choose(to);
-  };
   const front = open[inFront];
+  const along = useTabStrip({ keys: open.map((one) => one.name), selected: front?.name });
   return (
     <div className="editor" {...tabsPart("layout")} style={{ inlineSize: width, blockSize: 220 }}>
       <header className="bar" {...tabsPart("strip")}>
-        <div
+        <TabStripRow
+          strip={along}
+          name="Chats"
+          ids={open.map((_, at) => idOf(at))}
           className="tabs"
           data-strip="Chats"
           // The strip's floor, as the chat strip is handed it (`fits.ts`).
           style={{ "--least": "88px" } as CSSProperties}
         >
-          <StripTablist name="Chats" ids={open.map((_, at) => idOf(at))} />
           {open.map((one, at) => (
             <TabCell
               key={one.name}
@@ -92,23 +77,20 @@ function DockedStrip({
               selected={at === inFront}
               first={at === 0}
             >
-              <button
+              <StripTab
+                strip={along}
+                tabKey={one.name}
+                selected={at === inFront}
+                tip={undefined}
                 type="button"
-                role="tab"
                 id={idOf(at)}
-                ref={(button) => {
-                  buttons.current[at] = button;
-                }}
-                aria-selected={at === inFront}
-                tabIndex={at === inFront ? 0 : -1}
                 onClick={() => setInFront(at)}
-                onKeyDown={(event) => keys(event, at)}
               >
                 {one.state && <ChatMark state={one.state} />}
                 <span className="tab-name" {...tabPart("label")}>
                   {one.name}
                 </span>
-              </button>
+              </StripTab>
               <button
                 type="button"
                 className="closer"
@@ -127,7 +109,7 @@ function DockedStrip({
           <span className="strip-doing">
             <IconButton variant="ghost" size="sm" icon={<Plus />} aria-label="New tab" />
           </span>
-        </div>
+        </TabStripRow>
       </header>
       <div
         className="panes"
@@ -209,9 +191,9 @@ function placesOf(canvas: HTMLElement): Map<string, { x: number; width: number }
 
 /**
  * **The chosen tab on the panel, its flares joining it.** Tab lands on the chosen tab with its
- * ring in sight; the arrows, Home and End choose another; and **no tab moves when the choice
- * changes**: each is measured before and after every choice, and none has moved or changed its
- * width by a pixel.
+ * ring in sight; the arrows, Home and End move to another, which Enter chooses; and **no tab
+ * moves when the choice changes**: each is measured before and after every choice, and none has
+ * moved or changed its width by a pixel.
  */
 export const Docked: Story = {
   play: async ({ canvas, canvasElement, userEvent }) => {
@@ -220,15 +202,26 @@ export const Docked: Story = {
     await expect(chosen).toHaveFocus();
     expectFocusInSight();
     const before = placesOf(canvasElement);
+    // Moving is not choosing (manual activation, D-3042-2): the first move leaves talk chosen.
+    await userEvent.keyboard("{ArrowRight}");
+    await expect(chosen).toHaveAttribute("aria-selected", "true");
+    await expect(document.activeElement).toHaveAttribute("aria-selected", "false");
+    await userEvent.keyboard("{ArrowLeft}");
+    await expect(chosen).toHaveFocus();
     for (const key of ["{ArrowRight}", "{ArrowRight}", "{Home}", "{End}", "{ArrowLeft}"]) {
       await userEvent.keyboard(key);
+      await userEvent.keyboard("{Enter}");
       await waitFor(() => expect(document.activeElement).toHaveAttribute("aria-selected", "true"));
       expect(placesOf(canvasElement)).toEqual(before);
     }
+    // Past the last tab is the first (WAI-ARIA Tabs, D-3042-4).
+    await userEvent.keyboard("{End}{ArrowRight}");
+    await expect(canvas.getByRole("tab", { name: /steward 1/ })).toHaveFocus();
     expectFocusInSight();
     // Back on the second, which is what the baseline shows.
-    await userEvent.keyboard("{Home}{ArrowRight}");
+    await userEvent.keyboard("{Home}{ArrowRight}{Enter}");
     await expect(chosen).toHaveAttribute("aria-selected", "true");
+    await expect(chosen).toHaveFocus();
     // The chosen tab joins the pane under it: the focused pane draws no line along its top,
     // where the tab and its flares meet it, and keeps its focus on its other edges.
     const pane = canvasElement.querySelector<HTMLElement>(".pane.focused");
