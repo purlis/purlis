@@ -1066,7 +1066,11 @@ fn keep_here(plane: &Path, level: &Level, folder: &Path) -> Result<String, Unmov
             store::put_away(&state, DELETED_DIR, &kept, KEPT_FROM);
             Err(Unmoved::Nothing(why))
         }
-        // Its folder is kept and named by its `from`, so it is still listed and comes back.
+        // Its folder is kept and named by its `from`, and a file of its own left in the project
+        // takes nothing (`taken_again`): it is listed, and Restore brings it back.
+        Err(Unmoved::Stranded(what)) if into.symlink_metadata().is_ok() => Err(Unmoved::Stranded(
+            format!("{what}. It is in this machine's deleted skills: restore it from there"),
+        )),
         Err(stranded) => Err(stranded),
     }
 }
@@ -1102,7 +1106,12 @@ pub fn deleted(plane: &Path) -> Vec<Deleted> {
         let Some(name) = name_in(&text) else {
             continue;
         };
-        if taken_again(plane, &level, &name, &folder) {
+        // A file beside its folder left in the project (a delete that could not move it) takes
+        // its place only where the kept skill has one of its own to bring back over it.
+        let toml_kept = beside(&state.join(DELETED_DIR).join(&kept).join(&folder))
+            .symlink_metadata()
+            .is_ok();
+        if taken_again(plane, &level, &name, &folder, toml_kept) {
             continue;
         }
         let at = kept
@@ -1164,7 +1173,7 @@ pub fn deleted(plane: &Path) -> Vec<Deleted> {
             let here_too = out
                 .iter()
                 .any(|one: &Deleted| one.level == level && one.folder == folder);
-            if here_too || taken_again(plane, &level, &name, folder) {
+            if here_too || taken_again(plane, &level, &name, folder, true) {
                 continue;
             }
             out.push(Deleted {
@@ -1190,14 +1199,16 @@ fn name_in(text: &str) -> Option<String> {
 
 /// Whether `level` holds a skill named `name`, or a folder named `folder` with a skill or a file
 /// git tracks in it, again. Files git ignores, left behind in a deleted skill's folder (a build's
-/// output, an editor's), take nothing: Restore puts the skill back beside them.
-fn taken_again(plane: &Path, level: &Level, name: &str, folder: &str) -> bool {
+/// output, an editor's), take nothing: Restore puts the skill back beside them. The file beside
+/// the folder there takes it only where `toml_counts`: where the deleted skill would bring one
+/// back over it (SK-48).
+fn taken_again(plane: &Path, level: &Level, name: &str, folder: &str, toml_counts: bool) -> bool {
     let Some(dir) = level.dir(plane) else {
         return true;
     };
     let at = dir.join(folder);
     let held = at.join("SKILL.md").symlink_metadata().is_ok()
-        || beside(&at).symlink_metadata().is_ok()
+        || (toml_counts && beside(&at).symlink_metadata().is_ok())
         || (at.symlink_metadata().is_ok() && tracked(plane, &rel(plane, &at)));
     held || level.named(plane, name).is_some()
 }

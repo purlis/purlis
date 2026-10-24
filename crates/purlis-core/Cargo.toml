@@ -210,6 +210,8 @@ minisign = "0.10"
 purlis-core = { path = ".", features = ["fenced", "test-support"] }
 # The fork lock held as a fork holds it, for the executor's test of what waits for one.
 purlis-terminal = { workspace = true, features = ["test-support"] }
+# A move of a skill caught at the instant a swap would land, for delete's and restore's tests.
+purlis-skills = { workspace = true, features = ["test-support"] }
 # The frozen fuzz subsets under `fixtures/corpora/*-generated.jsonl.gz` are read through it.
 # Test-only, and already in this workspace's lockfile (Tauri's `png` pulls it in), with the
 # same default features — so it adds no crate to the tree and no licence to review.

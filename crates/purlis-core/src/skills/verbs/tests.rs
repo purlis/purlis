@@ -411,7 +411,11 @@ fn a_delete_whose_file_beside_the_folder_cannot_move_puts_the_folder_back_and_re
 
     let refused = did(root, |cx| delete(cx, &Level::project(), "deploy")).unwrap_err();
 
-    assert!(refused.starts_with("deploy was not deleted: "), "{refused}");
+    assert_eq!(
+        refused,
+        "deploy was not deleted: skills/deploy.toml could not go with it (it is not a plain \
+         folder or file, so purlis does not move it), so nothing was moved"
+    );
     assert!(root.join("skills/deploy/SKILL.md").is_file());
     assert!(root.join("skills/deploy.toml").is_symlink());
     assert!(deleted(root).is_empty());
@@ -422,6 +426,53 @@ fn a_delete_whose_file_beside_the_folder_cannot_move_puts_the_folder_back_and_re
         0,
         "nothing is kept of a delete that did not happen"
     );
+}
+
+/// A delete whose file beside the folder cannot move and whose folder's way back is taken: the
+/// folder is kept, the delete says so and where to restore it from, and the file left in the
+/// project does not hide it from Restore (SK-48).
+#[cfg(unix)]
+#[test]
+fn a_delete_stranded_in_its_kept_folder_says_so_and_is_restored_from_there() {
+    let tmp = plane();
+    let root = tmp.path();
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::write(outside.path().join("deploy.toml"), "grant = \"all\"\n").unwrap();
+    std::os::unix::fs::symlink(
+        outside.path().join("deploy.toml"),
+        root.join("skills/deploy.toml"),
+    )
+    .unwrap();
+    let way_back = root.join("skills/deploy");
+    let hook = purlis_skills::moving::hook::set(move |moment, _, to| {
+        if moment == purlis_skills::moving::hook::Moment::BeforeRename && to == way_back {
+            std::fs::write(to, "in the way\n").unwrap();
+        }
+    });
+
+    let stranded = did(root, |cx| delete(cx, &Level::project(), "deploy")).unwrap_err();
+    drop(hook);
+
+    assert!(
+        stranded.starts_with("deploy was deleted only in part: its folder was moved to "),
+        "{stranded}"
+    );
+    assert!(
+        stranded.ends_with(
+            "and skills/deploy.toml was not moved (it is not a plain folder or file, so purlis \
+             does not move it). It is in this machine's deleted skills: restore it from there"
+        ),
+        "{stranded}"
+    );
+    std::fs::remove_file(root.join("skills/deploy")).unwrap();
+    let listed = deleted(root);
+    assert_eq!(listed.len(), 1, "{listed:?}");
+
+    did(root, |cx| restore(cx, &listed[0])).unwrap();
+
+    assert!(root.join("skills/deploy/SKILL.md").is_file());
+    assert!(root.join("skills/deploy.toml").is_symlink());
+    assert!(deleted(root).is_empty());
 }
 
 /// The kept file beside a deleted skill's folder that cannot come back (a link in its place):

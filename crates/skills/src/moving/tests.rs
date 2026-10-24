@@ -159,15 +159,19 @@ fn a_link_in_the_skills_place_or_beside_it_is_never_moved() {
     )
     .unwrap();
 
-    assert!(
+    assert_eq!(
         move_skill(
             &plane,
             &plane.join("skills.local/notes"),
             &plane,
             &plane.join("skills/notes"),
             1,
-        )
-        .is_err()
+        ),
+        Err(Unmoved::Nothing(
+            "skills.local/notes.toml could not go with it (it is not a plain folder or file, so \
+             purlis does not move it), so nothing was moved"
+                .to_owned()
+        ))
     );
     assert!(
         plane.join("skills.local/notes/SKILL.md").is_file(),

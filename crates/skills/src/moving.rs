@@ -183,10 +183,10 @@ pub fn move_between(
     let to_at = open_dir(to_root, &to_dirs, make_from).map_err(|why| {
         Unmoved::Nothing(format!("the folder it goes into could not be made ({why})"))
     })?;
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     hook::at(hook::Moment::BeforeRename, from, to);
     rename_new(&from_at, &from_leaf, &to_at, &to_leaf).map_err(Unmoved::Nothing)?;
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     hook::at(hook::Moment::AfterRename, from, to);
     let not_it = match statat(&to_at, to_leaf.as_str(), AtFlags::SYMLINK_NOFOLLOW) {
         Ok(moved)
@@ -204,7 +204,7 @@ pub fn move_between(
         }
         Err(_) => "it could not be looked at once moved",
     };
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     hook::at(hook::Moment::BeforeRename, to, from);
     match rename_new(&to_at, &to_leaf, &from_at, &from_leaf) {
         Ok(()) => Err(Unmoved::Nothing(format!("{not_it}, so it was put back"))),
@@ -243,21 +243,30 @@ pub fn move_skill(
         && let Err(why) = move_between(from_root, &toml_from, to_root, &toml_to, usize::MAX)
     {
         // The folder moved and the file beside it did not: put the folder back.
+        let toml_shown = shown(from_root, &toml_from);
         return match (move_between(to_root, to, from_root, from, usize::MAX), why) {
-            (Ok(()), why) => Err(why),
+            // Name the file: "it" alone reads as the skill.
+            (Ok(()), Unmoved::Nothing(why)) => Err(Unmoved::Nothing(format!(
+                "{toml_shown} could not go with it ({why}), so nothing was moved"
+            ))),
+            (Ok(()), Unmoved::Stranded(what)) => Err(Unmoved::Stranded(format!(
+                "its folder was put back, and {toml_shown} could not go with it: {what}"
+            ))),
             (Err(back), why) => Err(Unmoved::Stranded(format!(
                 "its folder was moved to {} and could not be put back ({back}), and {} was not \
                  moved ({why})",
                 shown(to_root, to),
-                shown(from_root, &toml_from)
+                toml_shown
             ))),
         };
     }
     Ok(())
 }
 
-#[cfg(test)]
-pub(crate) mod hook;
+/// A test's way into [`move_between`]: this crate's tests, and another crate's with
+/// `test-support` on (purlis-core's delete and restore, SK-48).
+#[cfg(any(test, feature = "test-support"))]
+pub mod hook;
 
 #[cfg(test)]
 mod tests;
