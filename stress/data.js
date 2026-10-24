@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792830766504,
+  "lastUpdate": 1792830784059,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -13754,6 +13754,40 @@ window.BENCHMARK_DATA = {
             "value": 679.2,
             "unit": "MB",
             "extra": "median of 6 samples: 640.4, 663.4, 677.8, 680.5, 681.6, 772.2 MB; window 424 MB, session host 255.2 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]",
+            "email": "49699333+dependabot[bot]@users.noreply.github.com"
+          },
+          "committer": {
+            "name": "GitHub",
+            "username": "web-flow",
+            "email": "noreply@github.com"
+          },
+          "id": "487bb0a162365f9c5dbb37577a0ad017774563c8",
+          "message": "Bump serialize-javascript from 7.1.2 to 7.1.4 in /app (#3103)\n\nBumps [serialize-javascript](https://github.com/yahoo/serialize-javascript) from 7.1.2 to 7.1.4.\n- [Release notes](https://github.com/yahoo/serialize-javascript/releases)\n- [Commits](https://github.com/yahoo/serialize-javascript/compare/v7.1.2...v7.1.4)\n\n---\nupdated-dependencies:\n- dependency-name: serialize-javascript\n  dependency-version: 7.1.4\n  dependency-type: indirect\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>\nCo-authored-by: Aaron Yordanyan <aaron.yor@gmail.com>",
+          "timestamp": "2026-10-24T06:34:23Z",
+          "url": "https://github.com/purlis/purlis/commit/487bb0a162365f9c5dbb37577a0ad017774563c8"
+        },
+        "date": 1792830781609,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1638.7,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1450.7, 1638.7, 1726.9 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 703.1,
+            "unit": "MB",
+            "extra": "median of 6 samples: 661.3, 685.2, 697.1, 709.1, 709.9, 799.9 MB; window 424.6 MB, session host 278.6 MB"
           }
         ]
       }
