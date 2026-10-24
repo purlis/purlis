@@ -13,7 +13,7 @@
 //!   wash, selected or not, and the needs-you count's number on its chip;
 //! - **Allow is distinguishable from Keep blocked** ([`Floor::AllowApart`]): the two carry equal
 //!   weight on the control's own ground, and Allow is edged in `accent.base` where Keep blocked
-//!   is edged in `border.strong`. The two edges are at least [`ALLOW_APART`] apart as OKLab draws
+//!   is edged in `border.control`, a plain control's edge (none in Purlis, #3177). The two edges are at least [`ALLOW_APART`] apart as OKLab draws
 //!   colour, as the theme writes them and under each of its own tints, and the Allow's edge
 //!   contrasts with its ground, at rest and under the pointer;
 //! - **the danger colours contrast with what they are drawn on** ([`Floor::Danger`]): the
@@ -99,7 +99,7 @@ impl Floor {
 pub const DANGER_APART: f64 = 0.1;
 
 /// **How far apart Allow's edge and Keep blocked's are, at least**: the distance between
-/// `accent.base` and `border.strong` in OKLab, held as [`DANGER_APART`] is, for the same reason:
+/// `accent.base` and `border.control` in OKLab, held as [`DANGER_APART`] is, for the same reason:
 /// two answers told apart at a glance, not on a second look.
 pub const ALLOW_APART: f64 = 0.1;
 
@@ -468,11 +468,11 @@ pub(super) fn apart(theme: &ResolvedTheme) -> f64 {
     apart_of(theme.value("danger.base"), theme.value("accent.base"))
 }
 
-/// How far Allow's edge, `accent.base`, is from Keep blocked's, `border.strong`, in OKLab, as
+/// How far Allow's edge, `accent.base`, is from Keep blocked's, `border.control`, in OKLab, as
 /// the theme writes them.
 #[cfg(test)]
 pub(super) fn allow_apart(theme: &ResolvedTheme) -> f64 {
-    apart_of(theme.value("accent.base"), theme.value("border.strong"))
+    apart_of(theme.value("accent.base"), theme.value("border.control"))
 }
 
 /// **`theme` with the consent floors held**: as it is when it clears them; otherwise with

@@ -89,10 +89,11 @@ fn every_built_in_combination_draws_with_no_consent_floor_held() {
 
 #[test]
 fn a_primary_drawn_on_allow_s_fill_is_drawn_as_purlis_s_own() {
+    // The primary's fill follows the accent's surface a theme over Purlis Classic colours (#3177).
     let theme = dark(json!({ "accent.surface": ours("control.base") }));
     let (drawn, floors) = drawn_of(&theme);
     assert!(floors.contains(&Floor::AllowNotPrimary), "{floors:?}");
-    assert_eq!(drawn.value("accent.surface"), ours("accent.surface"));
+    assert_eq!(drawn.value("accent.fill"), ours("accent.fill"));
     // Allow stays as plain as Keep blocked: its fill is the theme's.
     assert_eq!(
         drawn.value("control.base"),
@@ -114,7 +115,7 @@ fn the_primary_under_the_pointer_is_held_too() {
     let theme = dark(json!({ "tab.active": ours("control.hover") }));
     let (drawn, floors) = drawn_of(&theme);
     assert!(floors.contains(&Floor::AllowNotPrimary), "{floors:?}");
-    assert_eq!(drawn.value("tab.active"), ours("tab.active"));
+    assert_eq!(drawn.value("accent.fill-hover"), ours("accent.fill-hover"));
     assert!(nearest(&drawn) >= ALLOW_FROM_PRIMARY);
 }
 
@@ -152,7 +153,7 @@ fn a_tint_that_brings_them_together_leaves_the_primary_untinted_there() {
             "control.base": "#2f2424",
             "accent.surface": "#1e2a2a"
         } }],
-        "tint": { "tokens": ["accent.surface"] }
+        "tint": { "tokens": ["accent.fill"] }
     }));
     assert!(!resolved.refused, "{:?}", resolved.complaints);
     let theme = resolved.theme.first();
@@ -161,7 +162,7 @@ fn a_tint_that_brings_them_together_leaves_the_primary_untinted_there() {
     let held = drawn.held.expect("held in a tint");
     assert!(held.floors.contains(&Floor::AllowNotPrimary), "{held:?}");
     assert!(
-        held.untinted.contains(&"accent.surface") || held.tokens.contains(&"accent.surface"),
+        held.untinted.contains(&"accent.fill") || held.tokens.contains(&"accent.fill"),
         "{held:?}"
     );
 }
@@ -185,9 +186,9 @@ fn the_floor_holds_on_the_final_token_set_whatever_layer_set_it() {
     for appearance in [Appearance::Dark, Appearance::Light] {
         let classic = built_in_for(appearance);
         for (token, from) in [
-            ("control.base", "accent.surface"),
-            ("accent.surface", "control.base"),
-            ("control.hover", "tab.active"),
+            ("control.base", "accent.fill"),
+            ("accent.fill", "control.base"),
+            ("control.hover", "accent.fill-hover"),
         ] {
             let mut laid = classic.clone();
             laid.values.insert(token, classic.value(from).to_owned());
@@ -240,5 +241,93 @@ fn every_built_in_clears_the_floor_at_every_whole_degree() {
                 theme.id
             );
         }
+    }
+}
+
+// ---------------------------------------------------------------------------------------
+// The filled primary (#3177)
+// ---------------------------------------------------------------------------------------
+
+/// A theme over Purlis that sets `tokens` in dark and `parts`.
+fn over_purlis(tokens: Value, parts: Value) -> Theme {
+    let resolved = load(&json!({
+        "name": "Probe",
+        "extends": "purlis",
+        "parts": parts,
+        "appearances": [{ "id": "dark", "appearance": "dark", "tokens": tokens }]
+    }));
+    assert!(!resolved.refused, "{:?}", resolved.complaints);
+    resolved.theme
+}
+
+#[test]
+fn purlis_s_filled_primary_stands_apart_from_allow_at_a_glance() {
+    // Filled in the accent with white words, the primary is as far from Allow (the control's
+    // own ground behind the accent's edge) as two looks told apart at a glance, in every
+    // appearance: the token floor of #2948 holds with room to spare.
+    for theme in &purlis().appearances {
+        assert!(
+            nearest(theme) >= super::super::ALLOW_APART,
+            "{}: {}",
+            theme.id,
+            nearest(theme)
+        );
+    }
+}
+
+#[test]
+fn a_theme_whose_tokens_draw_allow_as_the_filled_primary_is_drawn_apart() {
+    // Allow's ground, the control's, given the filled primary's colour, at rest and under the
+    // pointer: the floor draws Purlis's own there, and Allow is apart again.
+    let ours = purlis().first().clone();
+    for (token, like) in [
+        ("control.base", "accent.fill"),
+        ("control.hover", "accent.fill-hover"),
+        ("accent.fill", "control.base"),
+    ] {
+        let theme = over_purlis(json!({ token: ours.value(like) }), json!({}));
+        let (drawn, floors) = drawn_of(&theme);
+        assert!(
+            floors.contains(&Floor::AllowNotPrimary),
+            "{token}: {floors:?}"
+        );
+        assert!(nearest(&drawn) >= ALLOW_FROM_PRIMARY, "{token}");
+    }
+}
+
+#[test]
+fn parts_that_draw_allow_as_the_filled_primary_fall_back() {
+    // Allow given the filled primary's fill and words by its parts, its edge kept or taken away:
+    // it draws its own look again, and keeps its accent edge and its lock.
+    for parts in [
+        json!({
+            "button.root.grants.fill": "accent.fill",
+            "button.root.grants.text": "accent.fill-text",
+        }),
+        json!({
+            "button.root.grants.fill": "accent.fill",
+            "button.root.grants.text": "accent.fill-text",
+            "button.root.grants.border-colour": "transparent",
+        }),
+    ] {
+        let theme = over_purlis(json!({}), parts.clone());
+        let fallen = parts::fallen(theme.first());
+        assert!(
+            fallen
+                .iter()
+                .any(|one| one.part.starts_with("button.root.grants")),
+            "{parts}: {fallen:?}"
+        );
+        // Allow draws its own again, last, so it wins: the control's ground and the accent's edge.
+        let sheet = parts::stylesheet(theme.first());
+        let allow = sheet
+            .lines()
+            .rfind(|line| line.contains("[data-variant=\"grants\"])"))
+            .expect("Allow's rule");
+        assert!(allow.contains("var(--control-base)"), "{allow}");
+        assert!(
+            allow.contains("border-color: var(--accent-base)"),
+            "{allow}"
+        );
     }
 }

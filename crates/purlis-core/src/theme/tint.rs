@@ -191,27 +191,33 @@ pub struct Apart {
 /// from the danger colour (danger is distinguishable from primary), Allow's edge from Keep
 /// blocked's (Allow is distinguishable from Keep blocked), the consent floors of ADR 0097 §6, and
 /// each accent-hued token drawn beside danger from it as the accent is ([`ACCENT_KIN`]).
-pub const APART: [Apart; 6] = [
+pub const APART: [Apart; 8] = [
     danger_apart("accent.base"),
+    // Keep blocked's edge is a plain control's (#3177).
     Apart {
         token: "accent.base",
-        from: "border.strong",
+        from: "border.control",
         distance: ALLOW_APART,
     },
     danger_apart(ACCENT_KIN[0]),
     danger_apart(ACCENT_KIN[1]),
     danger_apart(ACCENT_KIN[2]),
     danger_apart(ACCENT_KIN[3]),
+    danger_apart(ACCENT_KIN[4]),
+    danger_apart(ACCENT_KIN[5]),
 ];
 
 /// The tokens in the accent's hue that the window draws beside the danger colour: the focus
-/// ring, the selected row's edge, the accent's surface and the active tab (#2526). Each is kept
-/// apart from danger as the accent is, by the tint and by the floors.
-pub const ACCENT_KIN: [&str; 4] = [
+/// ring, the selected row's edge, the accent's surface and the active tab (#2526), and the
+/// primary's fill at rest and under the pointer (#3177), which stands beside a danger answer.
+/// Each is kept apart from danger as the accent is, by the tint and by the floors.
+pub const ACCENT_KIN: [&str; 6] = [
     "focus.ring",
     "list.selected-edge",
     "accent.surface",
     "tab.active",
+    "accent.fill",
+    "accent.fill-hover",
 ];
 
 /// `token` held [`DANGER_APART`] from `danger.base`.

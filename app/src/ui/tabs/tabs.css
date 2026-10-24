@@ -70,8 +70,9 @@
 [data-scope="tabs"][data-part="tab"] {
   /* The fill a chosen tab takes on a strip of its own: a step lighter, tinted where it is. */
   --tabs-chosen-shade: var(--layer-selected);
-  /* 8px in Purlis, whose `radius.md` is 7 (the hover pill's): the prototype's numbers. */
-  --tabs-flare: calc(var(--radius-md) + 1px);
+  /* 8px in Purlis, its control corner (`radius.control`; the hover pill's is `radius.md`, 7):
+     the prototype's numbers. */
+  --tabs-flare: var(--radius-control);
   --tabs-hover-inset: calc(var(--space-1) + 1px) 0 calc(var(--space-2) + 1px);
   --tabs-hover-corner: var(--radius-md);
   position: relative;
@@ -86,7 +87,7 @@
   box-sizing: border-box;
   padding-block: 0;
   padding-inline: var(--space-5) calc(var(--space-4) + var(--space-1));
-  border-radius: calc(var(--radius-md) + 1px) calc(var(--radius-md) + 1px) 0 0;
+  border-radius: var(--radius-control) var(--radius-control) 0 0;
   background-color: transparent;
   color: var(--text-quiet);
   font-size: var(--font-size-md);
@@ -266,7 +267,7 @@
   block-size: calc(16rem / 14);
   padding: 0;
   border: 0;
-  border-radius: calc(var(--radius-md) - var(--space-1));
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--text-faint);
   line-height: 1;

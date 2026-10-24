@@ -321,18 +321,18 @@ describe("a theme's own recipe", () => {
 
 describe("every tint", () => {
   it("keeps Allow's edge apart from Keep blocked's at every whole degree of a custom colour", () => {
-    // Keep blocked's edge the accent turned red with half its colour: one colour with Allow's
+    // Keep blocked's edge (a plain control's, #3177) the accent turned red with half its colour: one colour with Allow's
     // under any tint that turns both alike.
     const accent = CLASSIC_THEME.values["accent.base"];
     const edges = {
-      ...withTint(CLASSIC_THEME, { tabs: ["accent.base", "border.strong"] }),
-      values: { ...CLASSIC_THEME.values, "border.strong": tintHex(accent, 25, 0.05) },
+      ...withTint(CLASSIC_THEME, { tabs: ["accent.base", "border.control"] }),
+      values: { ...CLASSIC_THEME.values, "border.control": tintHex(accent, 25, 0.05) },
     };
     for (let degree = 0; degree < 360; degree++) {
       const colour = tintHex("#c0392b", degree);
       const tint = tinted(edges, colour);
       expect(
-        oklabDistance(tint.values["accent.base"], tint.values["border.strong"]),
+        oklabDistance(tint.values["accent.base"], tint.values["border.control"]),
         `${degree}`,
       ).toBeGreaterThanOrEqual(0.1);
       expect(
@@ -347,18 +347,18 @@ describe("a recipe that turns only Keep blocked's edge", () => {
   it("keeps the edge apart from Allow's at every whole degree, and turns it still", () => {
     const accent = CLASSIC_THEME.values["accent.base"];
     const edge = {
-      ...withTint(CLASSIC_THEME, { tabs: ["border.strong"] }),
-      values: { ...CLASSIC_THEME.values, "border.strong": tintHex(accent, 25, 0.05) },
+      ...withTint(CLASSIC_THEME, { tabs: ["border.control"] }),
+      values: { ...CLASSIC_THEME.values, "border.control": tintHex(accent, 25, 0.05) },
     };
     let turned = 0;
     for (let degree = 0; degree < 360; degree++) {
       const tint = tinted(edge, tintHex("#c0392b", degree));
       expect(tint.values["accent.base"], `${degree}`).toBe(accent);
       expect(
-        oklabDistance(accent, tint.values["border.strong"]),
+        oklabDistance(accent, tint.values["border.control"]),
         `${degree}`,
       ).toBeGreaterThanOrEqual(0.1);
-      if (tint.values["border.strong"] !== edge.values["border.strong"]) turned++;
+      if (tint.values["border.control"] !== edge.values["border.control"]) turned++;
     }
     expect(turned).toBeGreaterThan(300);
   });

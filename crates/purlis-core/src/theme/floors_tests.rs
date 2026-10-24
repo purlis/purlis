@@ -340,7 +340,7 @@ fn faded_words_are_measured_at_the_opacity_they_are_drawn() {
 #[test]
 fn allow_and_keep_blocked_are_held_apart_by_the_allow_s_edge_and_its_ground() {
     // Allow and Keep blocked are equal in weight on `control.base`: Allow behind an
-    // `accent.base` edge, Keep blocked behind a `border.strong` one.
+    // `accent.base` edge, Keep blocked behind a `border.control` one.
     let held: Vec<(&str, &str)> = floors::pairs()
         .filter(|(floor, _)| *floor == Floor::AllowApart)
         .map(|(_, pair)| (pair.front, pair.back))
@@ -361,7 +361,7 @@ fn allow_and_keep_blocked_are_held_apart_by_the_allow_s_edge_and_its_ground() {
 fn an_allow_edged_in_keep_blocked_s_colour_is_drawn_with_purlis_s_accent() {
     let mine = theme(
         "Slate",
-        json!({ "accent.base": ours("border.strong"), "text.primary": "#eeeeee" }),
+        json!({ "accent.base": ours("border.control"), "text.primary": "#eeeeee" }),
     );
     let (drawn, held) = drawn_of(&mine);
     assert_eq!(drawn.value("accent.base"), ours("accent.base"));

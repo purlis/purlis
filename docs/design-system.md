@@ -282,9 +282,9 @@ runs every hue of the theme's recipe, and holds two pairs the tint adds — the 
 (`accent.base`) and a tab's primary text on `layer.workspace`. **Every tint holds the consent
 floors that keep colours apart itself, at every hue, custom colours included** (`tint::APART`,
 OKLab 0.1 each): the accent and the accent-hued tokens drawn beside danger (`focus.ring`,
-`list.selected-edge`, `accent.surface`, `tab.active`, `tint::ACCENT_KIN`) stay apart from the
-danger colour, and Allow and Keep blocked stay apart (`accent.base` from `border.strong`, as the
-tint draws it); every rule holds whichever side a theme tints. At a hue that would bring a pair
+`list.selected-edge`, `accent.surface`, `tab.active`, and the primary's `accent.fill` and
+`accent.fill-hover`, `tint::ACCENT_KIN`) stay apart from the danger colour, and Allow and Keep
+blocked stay apart (`accent.base` from `border.control`, as the tint draws it); every rule holds whichever side a theme tints. At a hue that would bring a pair
 nearer, the tint keeps the hue and gives less colour, in steps of 0.005 chroma, so a red
 workspace stays red, and a grey accent keeps as much of its small tint as holds it apart; a
 colour no amount holds apart is drawn untinted. Purlis Classic's light appearance gives less
@@ -417,11 +417,27 @@ asked for), whatever the system's appearance. Where its values come from:
   informational text, and none of it is exempt: line numbers, placeholders (`placeholder` is
   quiet), counts, paths and group labels. Faint is a tab's ×, a separator, a pin, a chevron and
   disabled words; informational text never takes it.
-- **Geometry is the foundation's where a core token draws the same thing**: controls' corners
-  7, menus' and dialogs' 10, a control 26 high and a chrome row 24, body text at a line height
-  of 1.55, and no shadow under a raised surface. `radius.xl` is 12, the record's largest card
-  corner: it draws the Welcome screen's doors. Panels' 12 has no token yet. The type sizes and
-  the spacing the record uses are core's already.
+- **Geometry is the foundation's where a core token draws the same thing**, on the record's
+  corner scale, 7, 8, 10, 12 and full (R157, R158): a small corner and a menu row's 7
+  (`radius.sm`, `radius.md`), an md control's 8 (`radius.control`: buttons, fields, selects, a
+  list's rows, title-bar chips, a tab's top), menus' and dialogs' 10, panels' and the Welcome
+  doors' 12; a control 28 high (#3113, the ruling on #2793; the record's buttons were 26) and a
+  chrome row 24; controls' and a dialog's words at 13 (`font-size.base`, the record's 12–13) and
+  headings at 15 and 18 (`font-size.lg`, `font-size.xl`, R160); body text at a line height of
+  1.55, and no shadow under a raised surface. Every corner a stylesheet draws in Purlis is on
+  the scale, and `app/src/ui/corners.test.ts` holds that.
+- **The Figma pass** (#3177, the operator's ruling of 2026-10-24) took the audit's fifteen
+  deviations out at once. **No hairlines**: a plain control's edge (`border.control`) is
+  transparent, and the dialog, the popover and the tooltip draw none (their parts); Allow keeps
+  its accent edge and its lock. **The primary is filled**: `accent.fill` `#6d58bb` with white
+  words (`accent.fill-text`), 5.6:1, and `#745fc3` under the pointer, 5.0:1, in dark, light and
+  high contrast alike, with no edge (its part); Allow, on the control's ground behind the
+  accent's edge, stands farther from it than before. **A chosen activity button** is the
+  record's .14 wash (`accent.wash`) with its icon in the lighter lavender (`accent.text`,
+  `#c3baf5`), and the update pill's words take `accent.text` too. Section labels are tracked at
+  .05em in every theme. Purlis Classic draws as it did: each new token is the value of the one
+  that drew it before, and its parts keep its 9px rail buttons, its 5px title-bar chips and its
+  update pill's primary words.
 - **Light is derived from dark by one rule**: each colour's OKLCH lightness is reflected about
   the record's deepest colour (`#121215`, L 0.184), so L becomes 1 − (L − 0.184), keeping its
   hue, chroma and alpha. A reflected colour that misses a floor of the check steps its
@@ -656,9 +672,9 @@ appearance and option values, and no option value can bring a consent surface be
   (an answer's button, Allow's and Keep blocked's alike, at rest and under the pointer) and on
   `danger.wash` over the window and over a dialog, and `needs-you.text` on `needs-you.base`;
 - **Allow is distinguishable from Keep blocked**: on every ask of the two they carry equal
-  weight. Keep blocked is the plain `Button`, edged in `border.strong`; each Allow is
-  `variant="grants"`, on the same `control.base` ground, edged in `accent.base` and led by an
-  open lock, a cue that is not colour. The two edges are at least 0.1 apart in OKLab as the theme
+  weight. Keep blocked is the plain `Button`, edged in `border.control` (none in Purlis); each
+  Allow is `variant="grants"`, on the same `control.base` ground, edged in `accent.base` and led
+  by an open lock, a cue that is not colour. The two edges are at least 0.1 apart in OKLab as the theme
   writes them, and `accent.base` clears 3:1 on `control.base` and on `control.hover`, so the edge
   that tells them apart is seen. `variant="primary"` stays the answer purlis suggests and is
   never a grant's;
@@ -1480,6 +1496,7 @@ are no geometry token: they are the window's own family and its one monospace fa
 | `--font-mono`           | `ui-monospace, Menlo, Consolas, monospace`                   |
 | `--radius-sm`           | 3px                                                          |
 | `--radius-md`           | 4px                                                          |
+| `--radius-control`      | 4px                                                          |
 | `--radius-lg`           | 6px                                                          |
 | `--radius-xl`           | 8px                                                          |
 | `--radius-full`         | 9999px                                                       |
@@ -1526,6 +1543,7 @@ engine's (`purlis_core::theme::geometry::STEPS`), which the published schema car
 | `line-height.body` | `--line-height-body` | 1.2 to 1.8 × text | 1.4 | 1.3 |
 | `radius.sm` | `--radius-sm` | 0 to 8 px | 3 | 3 |
 | `radius.md` | `--radius-md` | 0 to 10 px | 4 | 4 |
+| `radius.control` | `--radius-control` | 0 to 14 px | 4 | 4 |
 | `radius.lg` | `--radius-lg` | 0 to 14 px | 6 | 6 |
 | `radius.xl` | `--radius-xl` | 0 to 18 px | 8 | 8 |
 | `radius.full` | `--radius-full` | 0 to 9999 px | 9999 | 9999 |
@@ -1578,7 +1596,7 @@ specificity:
   13.33px system font;
 - **one with no class** takes the whole look from the tokens: no native appearance, the field
   surface (`surface.sunken`) or the control surface (`control.base`, `control.hover` under the
-  pointer), a 1px `border.strong`, `--radius-md`, `--space-4` at the sides, an arrow on a
+  pointer), a 1px `border.control`, `--radius-control`, `--space-4` at the sides, an arrow on a
   select drawn in the text's own colour, and the outside focus ring.
 
 Its height comes from padding, never from `height` or `min-height`: about 180 controls have no

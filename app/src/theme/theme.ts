@@ -95,10 +95,24 @@ export const TOKENS = [
 
   "border.subtle",
   "border.strong",
+  // **A plain control's edge** (#3177): the secondary button's, a field's and a select's. Its
+  // own token rather than `border.strong`, so a theme can draw its controls without hairlines
+  // (Purlis: transparent, the control told by its fill) and keep every other strong rule. It is
+  // never Allow's: an answer that grants keeps its accent edge whatever this is.
+  "border.control",
 
   // What charter is drawing attention to, and where the keyboard is.
   "accent.base",
   "accent.surface",
+  // **The accent's kin** (#3177): `wash` is a chosen rail or activity button's ground, a step
+  // stronger than `surface`; `text` is words and icons drawn in the accent on its surface or
+  // wash (the update pill, a chosen rail button); `fill` is the filled primary's ground,
+  // `fill-hover` it under the pointer, and `fill-text` the words on both, held to 4.5:1.
+  "accent.wash",
+  "accent.text",
+  "accent.fill",
+  "accent.fill-hover",
+  "accent.fill-text",
   "focus.ring",
   "tab.active",
 

@@ -1120,13 +1120,13 @@ fn field_look(_variant: &str, _states: &[State]) -> Look {
 }
 
 /// **A text input's and a textarea's colours as `app/src/ui/field/field.css` draws them**: the
-/// sunken ground behind the strong edge, in every state; the keyboard's ring and a refused value's
+/// sunken ground behind the control's edge (`border.control`, none in Purlis), in every state; the keyboard's ring and a refused value's
 /// danger edge are drawn by the family, outside the parts.
 fn box_look(_variant: &str, _states: &[State]) -> Look {
     Look {
         fill: "surface.sunken",
         text: "text.primary",
-        border: "border.strong",
+        border: "border.control",
     }
 }
 
@@ -1164,9 +1164,10 @@ fn button_look_in(variant: &str, states: &[State]) -> Look {
 /// that file: at rest, under the pointer and pressed as a toggle (selected).
 fn button_look(variant: &str, state: Option<State>) -> Look {
     let mut look = match variant {
+        // The accent's fill and its words, behind the accent's edge (#3177).
         "primary" => Look {
-            fill: "accent.surface",
-            text: "text.primary",
+            fill: "accent.fill",
+            text: "accent.fill-text",
             border: "accent.base",
         },
         "ghost" => Look {
@@ -1177,7 +1178,7 @@ fn button_look(variant: &str, state: Option<State>) -> Look {
         "danger" => Look {
             fill: "control.base",
             text: "danger.base",
-            border: "border.strong",
+            border: "border.control",
         },
         "grants" => Look {
             fill: "control.base",
@@ -1202,13 +1203,13 @@ fn button_look(variant: &str, state: Option<State>) -> Look {
         _ => Look {
             fill: "control.base",
             text: "text.primary",
-            border: "border.strong",
+            border: "border.control",
         },
     };
     match state {
         Some(State::Hover) => {
             look.fill = match variant {
-                "primary" => "tab.active",
+                "primary" => "accent.fill-hover",
                 "ghost" => "surface.hover",
                 "danger" => "danger.surface",
                 "soft-accent" => "list.selected",
@@ -1220,6 +1221,11 @@ fn button_look(variant: &str, state: Option<State>) -> Look {
         Some(State::Selected) => {
             look.fill = "accent.surface";
             look.border = "accent.base";
+            // The primary's words are its fill's, so on the accent's surface they are the
+            // primary words (#3177).
+            if variant == "primary" {
+                look.text = "text.primary";
+            }
         }
         _ => {}
     }

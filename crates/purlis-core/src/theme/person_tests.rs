@@ -485,10 +485,10 @@ fn no_colour_of_the_person_s_draws_allow_as_the_primary() {
     let base = default_theme();
     // Allow's fill as the primary's, the primary's as Allow's, and each under the pointer.
     let cases = [
-        ("control.base", "accent.surface"),
-        ("accent.surface", "control.base"),
-        ("control.hover", "tab.active"),
-        ("tab.active", "control.hover"),
+        ("control.base", "accent.fill"),
+        ("accent.fill", "control.base"),
+        ("control.hover", "accent.fill-hover"),
+        ("accent.fill-hover", "control.hover"),
     ];
     for contrast in ["standard", "more"] {
         for (token, like) in cases {

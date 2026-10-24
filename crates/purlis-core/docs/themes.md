@@ -169,7 +169,8 @@ over the appearance as its colours are.
 | `line-height.tight` | × text | 1–1.4 | 1.2 | 1.2 | a compact line: counts |
 | `line-height.body` | × text | 1.2–1.8 | 1.4 | 1.3 | the window's own line, and every line the fit checks hold |
 | `radius.sm` | px | 0–8 | 3 | 3 | labels, chips, crumbs, badges, checkboxes, error and report boxes |
-| `radius.md` | px | 0–10 | 4 | 4 | buttons, fields, selects, menu rows, a list's rows, Notices, the palette's rows, Inbox asks |
+| `radius.md` | px | 0–10 | 4 | 4 | menu rows, Notices, the palette's rows, Inbox asks, a tab's hover pill and its `×` |
+| `radius.control` | px | 0–14 | 4 | 4 | an md control's corner: buttons, fields, selects, a list's rows, title-bar chips, a tab's top (#3113) |
 | `radius.lg` | px | 0–14 | 6 | 6 | dialogs, popovers, menus, tooltips, segmented controls |
 | `radius.xl` | px | 0–18 | 8 | 8 | the Welcome page's doors, nothing else |
 | `radius.full` | px | 0–9999 | 9999 | 9999 | pills: counts, toggle tracks |
@@ -199,8 +200,8 @@ not a token: words with no size of their own (a list row's, a paragraph's) follo
 The project strip sits in the title bar, whose height no token reaches yet. **Still square,
 whatever `radius.*` says:** the project and workspace strip tabs, the settings gear on a strip,
 and every tree row. The session tabs and their `×` are rounded through their parts ([Session
-tabs](#session-tabs)), and a list's rows by `radius.md` (the list family, since manifest version
-11). **The focus ring tokens reach every focus ring**, the strip tabs', a tab's `×` closer's and
+tabs](#session-tabs)), and a list's rows by `radius.control` (the list family, since manifest
+version 11; `radius.md` before #3177). **The focus ring tokens reach every focus ring**, the strip tabs', a tab's `×` closer's and
 the strip gear's among them; a ring that sits half as far out or in draws half the offset. Under
 forced colours the ring is drawn in the system's `Highlight` at the theme's width and offset:
 forced colours replace colour, not geometry.

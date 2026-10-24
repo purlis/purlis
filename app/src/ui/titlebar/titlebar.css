@@ -82,7 +82,7 @@
   /* The dashed chip's edge is there at rest on every chip, transparent, so pinning one never
      moves its neighbours (R153). */
   border: 1px solid transparent;
-  border-radius: calc(var(--radius-md) + 1px);
+  border-radius: var(--radius-control);
   color: var(--text-quiet);
   background-color: transparent;
   font: inherit;
@@ -230,6 +230,8 @@
   box-sizing: border-box;
   min-block-size: 32px;
   padding-inline: var(--space-4);
+  /* 8 in Purlis, as a control's; a theme's parts cannot reach this part apart from a chip
+     yet, so it keeps Classic's 5 by its own sum. */
   border-radius: calc(var(--radius-md) + 1px);
   color: var(--text-secondary);
   cursor: default;
@@ -305,7 +307,7 @@
   place-items: center;
   inline-size: 22px;
   block-size: 22px;
-  border-radius: calc(var(--radius-sm) * 2);
+  border-radius: var(--radius-lg);
   color: var(--accent-base);
   background-color: var(--accent-surface);
   font-size: var(--font-size-xs);
@@ -343,6 +345,8 @@
   padding-block: 0;
   padding-inline: var(--space-3) var(--space-2);
   border: 0;
+  /* 8 in Purlis, as a control's; a theme's parts cannot reach this part apart from a chip
+     yet, so it keeps Classic's 5 by its own sum. */
   border-radius: calc(var(--radius-md) + 1px);
   color: var(--text-secondary);
   background-color: transparent;

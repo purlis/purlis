@@ -939,6 +939,8 @@
   "window": [
    "accent.base",
    "accent.surface",
+   "accent.fill",
+   "accent.fill-hover",
    "focus.ring",
    "tab.active",
    "list.selected",
@@ -949,6 +951,8 @@
   "tabs": [
    "accent.base",
    "accent.surface",
+   "accent.fill",
+   "accent.fill-hover",
    "focus.ring",
    "tab.active",
    "list.selected",
@@ -1001,7 +1005,7 @@
    },
    {
     "token": "accent.base",
-    "from": "border.strong",
+    "from": "border.control",
     "distance": 0.1
    },
    {
@@ -1021,6 +1025,16 @@
    },
    {
     "token": "tab.active",
+    "from": "danger.base",
+    "distance": 0.1
+   },
+   {
+    "token": "accent.fill",
+    "from": "danger.base",
+    "distance": 0.1
+   },
+   {
+    "token": "accent.fill-hover",
     "from": "danger.base",
     "distance": 0.1
    }
@@ -2891,6 +2905,14 @@
    "held": true
   },
   {
+   "token": "accent.fill",
+   "held": true
+  },
+  {
+   "token": "accent.fill-hover",
+   "held": true
+  },
+  {
    "token": "focus.ring",
    "held": true
   },
@@ -2931,7 +2953,7 @@
    "held": true
   },
   {
-   "token": "border.strong",
+   "token": "border.control",
    "held": true
   }
  ]
