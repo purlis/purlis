@@ -24,7 +24,7 @@
  *
  * What is searched, and what never is, is the core's (`contentSearch.ts`). This draws.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CaseSensitive, LoaderCircle, Regex, Search, WholeWord } from "lucide-react";
 import type { PlaneId, SearchedFile } from "./bindings";
 import { EmptyState } from "./ui/empty-state/EmptyState";
@@ -46,8 +46,8 @@ import {
 } from "./contentSearch";
 import { jumpTo } from "./fileJump";
 import {
+  carriedReference,
   ChatsToPick,
-  dragReference,
   handReference,
   referenceSaid,
   useReferenceChats,
@@ -60,6 +60,9 @@ import type { ViewRef } from "./tabs";
 import { Button, ToggleButton } from "./ui/button/Button";
 import { TextField } from "./ui/field/Field";
 import { Tooltip } from "./ui/tooltip/Tooltip";
+import { ListBox, ListOption, ListSection } from "./ui/list/List";
+import { RowLabel, RowLead } from "./ui/list/Row";
+import { useRowDrag } from "./ui/list/drag";
 
 /** How long the query is still before it is asked. */
 const SETTLE = 250;
@@ -286,6 +289,17 @@ function grouped(files: readonly SearchedFile[]): { shown: Shown[]; lines: numbe
   return { shown, lines };
 }
 
+/** Where a hit's file is: its name, its folder, and the place a reader hears it in. */
+function placeOf(file: SearchedFile) {
+  const cut = file.path.lastIndexOf("/");
+  const name = file.path.slice(cut + 1);
+  const folder = cut < 0 ? "" : file.path.slice(0, cut);
+  const where = [folder, placeName(file), projectCalled(file.plane)]
+    .filter((part) => part !== "")
+    .join(" · ");
+  return { name, folder, where };
+}
+
 /** What the status line says of a search. */
 function summary(heard: SearchHeard, files: number, lines: number): string {
   const found =
@@ -328,11 +342,30 @@ function Hits({
   /** What the last hand to a chat answered, said in the status line. */
   const [handed, setHanded] = useState<{ words: string; refused: boolean }>();
   const picker = useRef<HTMLDivElement>(null);
+  /** Shift+Enter picked a chat for the hit, so the Enter that went with it opens nothing. */
+  const shiftPicked = useRef(false);
 
-  // The line stepped to stays in view.
-  useEffect(() => {
-    list.current?.querySelector(`[data-hit="${at}"]`)?.scrollIntoView?.({ block: "nearest" });
-  }, [at, list]);
+  /** The hit `n` lines into what is shown: its file and its line's number. */
+  const hitAt = (n: number) => {
+    const found = shown.find((one) => n >= one.first && n < one.first + one.file.lines.length);
+    if (found === undefined) return undefined;
+    return { file: found.file, line: found.file.lines[n - found.first].number };
+  };
+
+  /** What a hit dragged out carries: its line, as a reference a chat takes (FM-9). */
+  const drag = useRowDrag((key) => {
+    const hit = hitAt(Number(key));
+    if (hit === undefined) return undefined;
+    return carriedReference({
+      plane: hit.file.plane,
+      workspace: hit.file.workspace,
+      repo: hit.file.repo,
+      piece: hit.file.piece,
+      path: hit.file.path,
+      folder: false,
+      lines: { first: hit.line, last: hit.line },
+    });
+  });
 
   if (!asked) {
     return (
@@ -352,13 +385,6 @@ function Hits({
   // hits would be. The status line above still counts it, and still names a branch it could
   // not search, which is the other reason nothing came back.
   const nothing = heard.state === "done" && heard.files.length === 0;
-
-  /** The hit `n` lines into what is shown: its file and its line's number. */
-  const hitAt = (n: number) => {
-    const found = shown.find((one) => n >= one.first && n < one.first + one.file.lines.length);
-    if (found === undefined) return undefined;
-    return { file: found.file, line: found.file.lines[n - found.first].number };
-  };
 
   const open = (n: number) => {
     const hit = hitAt(n);
@@ -402,6 +428,7 @@ function Hits({
 
   /** The picker is done: closed, and the keyboard back on the hits. */
   const picked = () => {
+    shiftPicked.current = false;
     setPicking(undefined);
     list.current?.focus();
   };
@@ -422,31 +449,6 @@ function Hits({
     e.preventDefault();
     e.stopPropagation();
     picked();
-  };
-
-  const keys = (e: React.KeyboardEvent) => {
-    const to = (n: number) => {
-      e.preventDefault();
-      setActive(Math.max(0, Math.min(lines - 1, n)));
-    };
-    if (e.key === "ArrowDown") to(at + 1);
-    else if (e.key === "ArrowUp") {
-      if (at === 0) {
-        e.preventDefault();
-        onBack();
-      } else to(at - 1);
-    } else if (e.key === "Home") to(0);
-    else if (e.key === "End") to(lines - 1);
-    else if (e.key === "Enter" && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
-      e.preventDefault();
-      pick(at);
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      open(at);
-    } else if (e.key === "Escape") {
-      e.preventDefault();
-      onBack();
-    }
   };
 
   return (
@@ -493,97 +495,113 @@ function Hits({
           testid="search-none"
         />
       ) : (
-        <div
+        <ListBox
           ref={list}
           className="search-hits"
-          role="listbox"
+          size="sm"
           aria-label="Search results"
-          tabIndex={0}
-          aria-activedescendant={lines > 0 ? `search-hit-${at}` : undefined}
           aria-keyshortcuts="Shift+Enter"
-          onKeyDown={keys}
+          // The hit stepped to is the one chosen: the arrows choose as they move (the listbox's
+          // single select), and a press or Enter opens it.
+          selectionMode="single"
+          disallowEmptySelection
+          selectedKeys={lines > 0 ? [at] : []}
+          onSelectionChange={(chosen) => {
+            const [key] = chosen === "all" ? [] : [...chosen];
+            if (key !== undefined) setActive(Number(key));
+          }}
+          // Enter opens the hit; a press opens it too (below). Shift+Enter is the chat picker's.
+          onAction={(key) => {
+            if (shiftPicked.current) shiftPicked.current = false;
+            else open(Number(key));
+          }}
+          // A hit dragged onto a chat carries its line (FM-9); Shift+Enter does the same, and the
+          // keyboard drags with Alt+Enter.
+          dragAndDropHooks={drag}
         >
           {shown.map(({ file, project, branch, first }) => {
-            const cut = file.path.lastIndexOf("/");
-            const name = file.path.slice(cut + 1);
-            const folder = cut < 0 ? "" : file.path.slice(0, cut);
-            const where = [folder, placeName(file), projectCalled(file.plane)]
-              .filter((part) => part !== "")
-              .join(" · ");
+            const { name, folder, where } = placeOf(file);
             return (
-              <div
+              <ListSection
                 key={`${file.plane}\u0000${file.workspace}/${file.repo}/${file.piece ?? ""}\u0000${file.path}`}
-                role="group"
-                aria-label={`${name}, ${where}`}
+                // What its head shows, said: the file, where it is, how many lines match, and how
+                // many more the file has than are drawn.
+                aria-label={[
+                  name,
+                  where,
+                  `${file.count} matching ${file.count === 1 ? "line" : "lines"}`,
+                  ...(file.count > file.lines.length
+                    ? [`${file.count - file.lines.length} more in this file`]
+                    : []),
+                ].join(", ")}
                 className="search-file"
+                named
+                title={
+                  // The group's name is said in its label; what is drawn over its lines is seen.
+                  <span aria-hidden="true">
+                    {project !== undefined && <span className="search-project">{project}</span>}
+                    {branch !== undefined && <span className="search-branch">{branch}</span>}
+                    <span className="search-file-head">
+                      <HitIcon file={file} name={name} />
+                      <span className="search-file-name">{name}</span>
+                      {folder !== "" && <span className="search-file-folder">{folder}</span>}
+                      <span className="search-count">{file.count}</span>
+                    </span>
+                    {file.count > file.lines.length && (
+                      <span className="search-file-rest">
+                        {`${file.count - file.lines.length} more in this file`}
+                      </span>
+                    )}
+                  </span>
+                }
               >
-                {project !== undefined && (
-                  <div className="search-project" aria-hidden="true">
-                    {project}
-                  </div>
-                )}
-                {branch !== undefined && (
-                  <div className="search-branch" aria-hidden="true">
-                    {branch}
-                  </div>
-                )}
-                <div className="search-file-head" aria-hidden="true">
-                  <HitIcon file={file} name={name} />
-                  <span className="search-file-name">{name}</span>
-                  {folder !== "" && <span className="search-file-folder">{folder}</span>}
-                  <span className="search-count">{file.count}</span>
-                </div>
                 {file.lines.map((line, i) => {
                   const n = first + i;
                   return (
-                    <div
+                    <ListOption
                       key={line.number}
-                      id={`search-hit-${n}`}
+                      id={n}
+                      textValue={`${line.number} ${line.parts.map((part) => part.text).join("")}`}
+                      className="search-line"
                       data-hit={n}
-                      role="option"
-                      aria-selected={n === at}
-                      className={n === at ? "ui-row search-line active" : "ui-row search-line"}
-                      // A hit dragged onto a chat carries its line (FM-9).
-                      draggable
-                      onDragStart={(event) =>
-                        dragReference(event, {
-                          plane: file.plane,
-                          workspace: file.workspace,
-                          repo: file.repo,
-                          piece: file.piece,
-                          path: file.path,
-                          folder: false,
-                          lines: { first: line.number, last: line.number },
-                        })
-                      }
-                      onClick={() => {
-                        setActive(n);
-                        open(n);
+                      // A click opens it; the keyboard's Enter is the list's action.
+                      onPress={(e) => {
+                        if (e.pointerType !== "keyboard" && !e.shiftKey) open(n);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "ArrowUp" && n === 0) onBack();
+                        else if (e.key === "Escape") onBack();
+                        else if (
+                          e.key === "Enter" &&
+                          e.shiftKey &&
+                          !e.metaKey &&
+                          !e.ctrlKey &&
+                          !e.altKey
+                        ) {
+                          shiftPicked.current = true;
+                          pick(n);
+                        } else e.continuePropagation();
                       }}
                     >
-                      <span className="ui-row-lead search-line-number">{line.number}</span>
-                      <span className="search-line-text">
+                      <RowLead className="search-line-number">{line.number}</RowLead>
+                      <RowLabel className="search-line-text">
                         {line.clipped && "…"}
                         {line.parts.map((part, j) =>
                           part.hit ? (
                             <mark key={j}>{part.text}</mark>
                           ) : (
-                            <span key={j}>{part.text}</span>
+                            // Plain words as words, so the line is said as it reads.
+                            <Fragment key={j}>{part.text}</Fragment>
                           ),
                         )}
-                      </span>
-                    </div>
+                      </RowLabel>
+                    </ListOption>
                   );
                 })}
-                {file.count > file.lines.length && (
-                  <div className="search-file-rest" aria-hidden="true">
-                    {`${file.count - file.lines.length} more in this file`}
-                  </div>
-                )}
-              </div>
+              </ListSection>
             );
           })}
-        </div>
+        </ListBox>
       )}
       {heard.state === "more" && (
         <Button onPress={onMore} className="search-more">

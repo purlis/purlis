@@ -242,7 +242,7 @@ const tabNames = () =>
 /** Opens the persona's tab from its row on the personas panel. */
 async function openFromTheRow() {
   const panel = await showThePanel("Personas");
-  await userEvent.click(within(panel).getByRole("button", { name: /steward/ }));
+  await userEvent.click(within(panel).getByRole("row", { name: /steward/ }));
   return screen.findByText("It remembers 1 thing.");
 }
 
@@ -537,7 +537,7 @@ describe("a vault's own tab (charter-app#235)", () => {
   /** Opens `ops` from its row in the Vaults panel, and waits for its table. */
   async function openOps() {
     const panel = await showThePanel("Vaults");
-    await userEvent.click(await within(panel).findByRole("button", { name: /ops/ }));
+    await userEvent.click(await within(panel).findByRole("row", { name: /ops/ }));
     return screen.findByRole("table", { name: "Secrets in ops" });
   }
 
@@ -667,7 +667,7 @@ describe("a vault's own tab (charter-app#235)", () => {
     await screen.findByRole("dialog", { name: "Command palette" });
     await userEvent.keyboard("Open vault…{Enter}");
     const picker = await screen.findByRole("dialog", { name: "Open vault" });
-    await userEvent.click(within(picker).getByRole("button", { name: /ops/ }));
+    await userEvent.click(within(picker).getByRole("row", { name: /ops/ }));
 
     expect(await screen.findByRole("table", { name: "Secrets in ops" })).toBeInTheDocument();
     expect(screen.queryByRole("dialog", { name: "Open vault" })).toBeNull();
@@ -681,7 +681,7 @@ describe("a project's own extensions (charter-app#253)", () => {
     core({ offered: [STATISTICS], extensionsOn: ["persona-statistics"] });
     render(<App />);
     const panel = await showThePanel("Personas");
-    await userEvent.click(await within(panel).findByRole("button", { name: /steward/ }));
+    await userEvent.click(await within(panel).findByRole("row", { name: /steward/ }));
 
     const tab = await screen.findByTestId("view-pane-charter-persona-steward");
     expect(await within(tab).findByRole("button", { name: /Statistics/ })).toBeInTheDocument();
@@ -697,7 +697,7 @@ describe("a project's own extensions (charter-app#253)", () => {
         true,
       ),
     );
-    await userEvent.click(await within(panel).findByRole("button", { name: /steward/ }));
+    await userEvent.click(await within(panel).findByRole("row", { name: /steward/ }));
     const tab = await screen.findByTestId("view-pane-charter-persona-steward");
     await within(tab).findByText(/It remembers/);
 

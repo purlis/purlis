@@ -183,7 +183,7 @@ describe("a workspace's Memory section", () => {
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
 
     expect(
-      await within(screen.getByTestId("panel-memory")).findByRole("button", {
+      await within(screen.getByTestId("panel-memory")).findByRole("row", {
         name: /Deploys freeze/,
       }),
     ).toBeInTheDocument();
@@ -203,7 +203,7 @@ describe("a workspace's Memory section", () => {
       const section = await showThePanel("Memory");
 
       await userEvent.click(within(section).getByRole("button", { name: "Open alpha's archive" }));
-      await userEvent.click(await screen.findByRole("button", { name: /^Freeze/ }));
+      await userEvent.click(await screen.findByRole("option", { name: /^Freeze/ }));
       expect(await screen.findByTestId("archived-body")).toHaveTextContent("Freeze, archived.");
       await userEvent.click(screen.getByRole("button", { name: "Restore memory" }));
 

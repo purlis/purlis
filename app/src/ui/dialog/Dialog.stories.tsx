@@ -15,7 +15,7 @@ import { Menu, MenuItem, MenuTrigger, MenuWords } from "../menu/Menu";
 import { Button } from "../button/Button";
 import { TextField } from "../field/Field";
 import { AlertDialog, Dialog, type DialogSize } from "./Dialog";
-import { ListFilter, noMatchSaid, useListFilter } from "./ListFilter";
+import { ListFilter, noMatchSaid, useListFilter } from "../list/ListFilter";
 import { Reserved } from "./Reserved";
 
 /** What a person reads after answering: which answer was taken, in words. */

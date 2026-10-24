@@ -259,6 +259,10 @@ describe("Settings › Theme's cards (#2331)", () => {
     expect(named("Dusk")).toHaveTextContent("Yours, on this machine · 1 warning");
     expect(named("Team")).toHaveTextContent("This project's");
     expect(screen.getByText(/^Drawn here: Purlis Classic/)).toHaveTextContent("Purlis");
+    // A card is named by its theme's name, and where it comes from is its description (#2911).
+    expect(screen.getByRole("option", { name: "Dusk" })).toHaveAccessibleDescription(
+      "Yours, on this machine · 1 warning",
+    );
   });
 
   it("says a built-in theme that ships as a preview is one (#2336)", async () => {
@@ -280,19 +284,17 @@ describe("Settings › Theme's cards (#2331)", () => {
     expect(shown).toHaveTextContent("Built in · Preview");
   });
 
-  it("is one listbox and one Tab stop, the chosen card the stop, and takes no focus itself", async () => {
+  it("is one listbox and one Tab stop, and Tab lands on the chosen card", async () => {
     core(shown({ yours: mine("dusk", null), drawn: "machine:dusk" }));
     render(<Group at={null} />);
     await cards();
     const list = screen.getByRole("listbox");
     expect(list).toHaveAttribute("aria-labelledby", "you.theme.gallery-label");
-    const stops = within(list)
-      .getAllByRole("option")
-      .filter((one) => one.tabIndex === 0);
-    expect(stops).toEqual([named("Dusk")]);
     expect(named("Dusk")).toHaveAttribute("aria-selected", "true");
     expect(named("Purlis Classic")).toHaveAttribute("aria-selected", "false");
     expect(document.activeElement).toBe(document.body);
+    act(() => list.focus());
+    expect(named("Dusk")).toHaveFocus();
   });
 
   it("draws a card's theme while it is pointed at, and puts yours back when it is left", async () => {
@@ -651,7 +653,10 @@ describe("choosing nothing, and a refused card (#2331 review)", () => {
     render(<Group at={null} />);
     await cards();
     const broken = named("Broken");
+    // It says it cannot be chosen, keeps the keyboard so why is read, and nothing chooses it.
     expect(broken).toHaveAttribute("aria-disabled", "true");
+    act(() => broken.focus());
+    expect(broken).toHaveFocus();
     expect(broken).toHaveAccessibleDescription("surface.base is not a colour");
     fireEvent.click(broken);
     fireEvent.keyDown(broken, { key: "Enter" });

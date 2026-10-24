@@ -18,7 +18,7 @@ import {
   UserRound,
   type LucideIcon,
 } from "lucide-react";
-import { Menued } from "./Menus";
+import { catalogueMenu } from "./Menus";
 import { useSessionOffers } from "./sessionOffers";
 import { PanelList } from "./PanelList";
 import { HeadingOffer, PanelSection } from "./PanelSection";
@@ -408,55 +408,29 @@ function Contributed({
               const offer = lookUp(id);
               if (offer) onPress(kept ? toKeep(offer) : offer);
             }}
-            wrap={(row, item) =>
-              panel.key === TODOS ? (
-                /* Open, Mark done, and Forget (SI-3, #1214): the catalogue's rows for this todo
-                   in the focused workspace, which is the one this panel is about. */
-                <Menued
-                  key={row.key}
-                  on={{ on: "todo", slug: row.key }}
-                  offers={offers}
-                  onPress={onPress}
-                >
-                  {item}
-                </Menued>
-              ) : panel.key === SESSIONS ? (
-                /* Open and Resume (SI-8d): the place's rows for this record, whose key is
-                   its plane-relative path. */
-                <Menued
-                  key={row.key}
-                  on={{ on: "session", path: row.key }}
-                  offers={sessions}
-                  onPress={onPress}
-                >
-                  {item}
-                </Menued>
-              ) : panel.key === MEMORY ? (
-                /* Open, Edit | Delete (ADR 0065 Q12): this memory's rows, from the lookup
-                   above rather than the catalogue. */
-                <Menued
-                  key={row.key}
-                  on={{ on: "memory", key: memoryKeyRun(row.runs) ?? "" }}
-                  offers={memories}
-                  onPress={onPress}
-                >
-                  {item}
-                </Menued>
-              ) : panel.key === PERSONAS && row.key !== SHARED_ROW ? (
-                /* Right-click is the third reader of the catalogue (`Menus.tsx`), and on a
-                   persona it has exactly one honest row: what the plane says this persona is.
-                   `asChild`, so the list gains no element. */
-                <Menued
-                  key={row.key}
-                  on={{ on: "persona", persona: row.key }}
-                  offers={offers}
-                  onPress={onPress}
-                >
-                  {item}
-                </Menued>
-              ) : (
-                item
-              )
+            menuOf={(row) =>
+              panel.key === TODOS
+                ? /* Open, Mark done, and Forget (SI-3, #1214): the catalogue's rows for this todo
+                     in the focused workspace, which is the one this panel is about. */
+                  catalogueMenu({ on: "todo", slug: row.key }, offers, onPress)
+                : panel.key === SESSIONS
+                  ? /* Open and Resume (SI-8d): the place's rows for this record, whose key is
+                       its plane-relative path. */
+                    catalogueMenu({ on: "session", path: row.key }, sessions, onPress)
+                  : panel.key === MEMORY
+                    ? /* Open, Edit | Delete (ADR 0065 Q12): this memory's rows, from the lookup
+                         above rather than the catalogue. */
+                      catalogueMenu(
+                        { on: "memory", key: memoryKeyRun(row.runs) ?? "" },
+                        memories,
+                        onPress,
+                      )
+                    : panel.key === PERSONAS && row.key !== SHARED_ROW
+                      ? /* Right-click is the third reader of the catalogue (`Menus.tsx`), and on
+                           a persona it has exactly one honest row: what the plane says this
+                           persona is. */
+                        catalogueMenu({ on: "persona", persona: row.key }, offers, onPress)
+                      : undefined
             }
           />
         ),

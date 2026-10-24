@@ -169,12 +169,12 @@ over the appearance as its colours are.
 | `line-height.tight` | × text | 1–1.4 | 1.2 | 1.2 | a compact line: counts |
 | `line-height.body` | × text | 1.2–1.8 | 1.4 | 1.3 | the window's own line, and every line the fit checks hold |
 | `radius.sm` | px | 0–8 | 3 | 3 | labels, chips, crumbs, badges, checkboxes, error and report boxes |
-| `radius.md` | px | 0–10 | 4 | 4 | buttons, fields, selects, menu rows, Notices, the palette's rows, Inbox asks |
+| `radius.md` | px | 0–10 | 4 | 4 | buttons, fields, selects, menu rows, a list's rows, Notices, the palette's rows, Inbox asks |
 | `radius.lg` | px | 0–14 | 6 | 6 | dialogs, popovers, menus, tooltips, segmented controls |
 | `radius.xl` | px | 0–18 | 8 | 8 | the Welcome page's doors, nothing else |
 | `radius.full` | px | 0–9999 | 9999 | 9999 | pills: counts, toggle tracks |
-| `size.control` | px at 14px | 20–40 | 28 | 24 | buttons, fields, selects, menu rows, the workspace strip |
-| `size.chrome` | px at 14px | 16–32 | 21 | 18 | small buttons, the chat strip, pane and panel headers, every list and tree row |
+| `size.control` | px at 14px | 20–40 | 28 | 24 | buttons, fields, selects, menu rows, a list's rows, the workspace strip |
+| `size.chrome` | px at 14px | 16–32 | 21 | 18 | small buttons, the chat strip, pane and panel headers, a dense list's rows and every tree row |
 | `window.gutter` | px | 0–16 | 0 | 0 | the gap between the window's regions, and around them inside the frame |
 | `panel.corner-radius` | px | 0–24 | 0 | 0 | a region panel's corners: the sides, the content and the bottom panel's halves |
 | `panel.border-width` | px | 0–2 | 1 | 1 | the hairline between two regions, drawn only while they sit flush (no gutter) |
@@ -198,11 +198,12 @@ not a token: words with no size of their own (a list row's, a paragraph's) follo
 
 The project strip sits in the title bar, whose height no token reaches yet. **Still square,
 whatever `radius.*` says:** the project and workspace strip tabs, the settings gear on a strip,
-and every list and tree row but the palette's. The session tabs and their `×` are rounded through
-their parts ([Session tabs](#session-tabs)). **The focus ring tokens reach every focus ring**, the
-strip tabs', a tab's `×` closer's and the strip gear's among them; a ring that sits half as far
-out or in draws half the offset. Under forced colours the ring is drawn in the system's
-`Highlight` at the theme's width and offset: forced colours replace colour, not geometry.
+and every tree row. The session tabs and their `×` are rounded through their parts ([Session
+tabs](#session-tabs)), and a list's rows by `radius.md` (the list family, since manifest version
+11). **The focus ring tokens reach every focus ring**, the strip tabs', a tab's `×` closer's and
+the strip gear's among them; a ring that sits half as far out or in draws half the offset. Under
+forced colours the ring is drawn in the system's `Highlight` at the theme's width and offset:
+forced colours replace colour, not geometry.
 
 ### Density's compact layer
 
@@ -285,6 +286,7 @@ an unknown token is.
 | `popover` (since version 6) | `root` (`fill`, `text`, `border-colour`, `border-width`, `corner-radius`, `shadow`: the surface a popover and a menu stand on), `filter` (`fill`, `padding`), `rule` (`fill`), `list` (`padding`, `gap`), `header` (`text`, `font-size`, `font-weight`), `footer` (`fill`, `text`, `padding`, `font-size`), `key` (`fill`, `text`, `corner-radius`) | `popover`, `menu` |
 | `menu` (since version 6) | `root` (every property: a menu's row), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`), `shortcut` (`text`, `font-size`), `indicator` (`text`: a toggle's tick, a submenu's arrow) | `default`, `danger` (what cannot be undone) |
 | `dialog` (since version 7) | `root` (`fill`, `border-colour`, `border-width`, `corner-radius`, `shadow`), `title` (`text`, `font-size`, `font-weight`), `subtitle`, `description` and `summary` (`text`), `separator` (`fill`, the rule over the footer) | `dialog`, `alert` |
+| `list` (since version 11) | `root` (every property: a list's row), `body` (`padding`, `gap`: the list around the rows), `lead` and `trail` (`text`, `gap`: a row's marks and its end), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`), `header` (`text`, `font-size`, `font-weight`: a group's name) | none |
 
 A field is its label, its control (a `text-input` or a `textarea`), its help and its error, as
 one: `field.help.text` reaches a field's help line, `text-input.root.border-width` every one-line

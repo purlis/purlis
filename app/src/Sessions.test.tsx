@@ -211,7 +211,7 @@ describe("the Sessions panel", () => {
 
     // One line a record (#1674): its title, and when, as whom and whether it resumes on hover.
     const rows = within(panel)
-      .getAllByRole("button")
+      .getAllByRole("row")
       .filter((row) => /^\d{4}-/.test(tipOf(row) ?? ""));
     expect(rows.map((row) => row.textContent)).toEqual(["Ship the widget", "Plan it"]);
     expect(tipOf(rows[0])).toContain("↻ resumable");
@@ -222,7 +222,7 @@ describe("the Sessions panel", () => {
     const { asked } = core();
     render(<App />);
     const panel = await showThePanel("Sessions");
-    await userEvent.click(await within(panel).findByRole("button", { name: /Ship the widget/ }));
+    await userEvent.click(await within(panel).findByRole("row", { name: /Ship the widget/ }));
 
     const view = await screen.findByTestId("session-record");
     expect(within(view).getByRole("heading", { name: "Goal" })).toBeTruthy();
@@ -242,7 +242,7 @@ describe("the Sessions panel", () => {
     core({ personaHosts: { hosts: ["10.0.0.5:6443"], holds: true, locked } });
     render(<App />);
     const panel = await showThePanel("Sessions");
-    await userEvent.click(await within(panel).findByRole("button", { name: /Ship the widget/ }));
+    await userEvent.click(await within(panel).findByRole("row", { name: /Ship the widget/ }));
 
     await screen.findByTestId("session-record");
     expect(
@@ -255,7 +255,7 @@ describe("the Sessions panel", () => {
     core({ personaHosts: { hosts: ["10.0.0.5:6443"], holds: true, locked: null, wait: true } });
     render(<App />);
     const panel = await showThePanel("Sessions");
-    await userEvent.click(await within(panel).findByRole("button", { name: /Ship the widget/ }));
+    await userEvent.click(await within(panel).findByRole("row", { name: /Ship the widget/ }));
 
     await screen.findByTestId("session-record");
     expect(
@@ -269,7 +269,7 @@ describe("the Sessions panel", () => {
     const { asked } = core();
     render(<App />);
     const panel = await showThePanel("Sessions");
-    const row = await within(panel).findByRole("button", { name: /Ship the widget/ });
+    const row = await within(panel).findByRole("row", { name: /Ship the widget/ });
 
     fireEvent.contextMenu(row);
     await userEvent.click(await screen.findByRole("menuitem", { name: "Resume" }));
@@ -284,7 +284,7 @@ describe("the Sessions panel", () => {
     const { asked } = core();
     render(<App />);
     const panel = await showThePanel("Sessions");
-    await userEvent.click(await within(panel).findByRole("button", { name: /Ship the widget/ }));
+    await userEvent.click(await within(panel).findByRole("row", { name: /Ship the widget/ }));
     await screen.findByTestId("session-record");
 
     await userEvent.click(screen.getByRole("button", { name: "Resume session: Ship the widget" }));
@@ -338,7 +338,7 @@ describe("the Sessions panel", () => {
     });
     render(<App />);
     const panel = await showThePanel("Sessions");
-    fireEvent.contextMenu(await within(panel).findByRole("button", { name: /Ship the widget/ }));
+    fireEvent.contextMenu(await within(panel).findByRole("row", { name: /Ship the widget/ }));
     await userEvent.click(await screen.findByRole("menuitem", { name: "Resume" }));
 
     expect(await screen.findByText(/was resumed where it left off/)).toBeTruthy();
@@ -360,7 +360,7 @@ describe("the Sessions panel", () => {
     });
     render(<App />);
     const panel = await showThePanel("Sessions");
-    fireEvent.contextMenu(await within(panel).findByRole("button", { name: /Plan it/ }));
+    fireEvent.contextMenu(await within(panel).findByRole("row", { name: /Plan it/ }));
     await userEvent.click(await screen.findByRole("menuitem", { name: "Resume" }));
 
     expect(
@@ -384,7 +384,7 @@ describe("the Sessions panel", () => {
     });
     render(<App />);
     const panel = await showThePanel("Sessions");
-    fireEvent.contextMenu(await within(panel).findByRole("button", { name: /Ship the widget/ }));
+    fireEvent.contextMenu(await within(panel).findByRole("row", { name: /Ship the widget/ }));
     await userEvent.click(await screen.findByRole("menuitem", { name: "Resume" }));
     await waitFor(() => expect(tabNames()).toContain("steward 1"));
 

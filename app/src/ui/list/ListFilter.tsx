@@ -6,15 +6,16 @@ import { Search } from "lucide-react";
 import { TextField } from "../field/Field";
 
 /**
- * **A list in a dialog over about seven items gets a filter** (#2910, the map's Dialogs rule,
- * R164): from {@link FILTERED_FROM} items the list is drawn under a filter field, the list's main
- * one, at the large size (32 px), with the total in its placeholder ("Filter 28 personas", R11).
+ * **A list over about seven items gets a filter** (#2911, R164; the map's Dialogs rule, #2910):
+ * from {@link FILTERED_FROM} items the list is drawn under a filter field, the list's main one, at
+ * the large size (32 px), with the total in its placeholder ("Filter 28 personas", R11). The list
+ * family's (`ui/list`): a dialog's list, a panel's and a settings table's take the same one.
  *
  * **A filter keeps what was typed and where**: its value is the caller's state, so drawing the
  * list again keeps the field, its focus and its caret (R168).
  */
 
-/** The fewest items a list in a dialog has for it to be filtered: more than about seven. */
+/** The fewest items a list has for it to be filtered: more than about seven. */
 export const FILTERED_FROM = 8;
 
 /** What a list's items are called, one and many: `chat`, `chats`. */
@@ -65,11 +66,11 @@ export function ListFilter({
     // The field family's box (#2905) at the large size, a list's main filter field, with its
     // glass; it keeps the keyboard and its caret as the list it narrows is drawn again (R168).
     <TextField
-      className="dialog-filter"
+      className="list-filter"
       type="search"
       size="lg"
       icon={<Search aria-hidden="true" />}
-      keepsFocus={`dialog-filter:${noun.many}`}
+      keepsFocus={`list-filter:${noun.many}`}
       aria-label={`Filter ${noun.many}`}
       aria-controls={controls}
       placeholder={`Filter ${total} ${total === 1 ? noun.one : noun.many}`}
