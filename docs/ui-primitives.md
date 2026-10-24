@@ -362,7 +362,8 @@ sizes: `--ui-row-height` is `--size-chrome`, `--ui-row-pad` is `--space-4`, `--u
   and a cell with nothing in it is not drawn. Nothing is cut and nothing scrolls sideways. Each
   control still names its column and row in full, so a screen reader hears the same either way.
   The Dispatch limits table and the dispatch grants table (#1865) wear it. 29rem lies between
-  Settings' body at the default window, where the table stays a table, and at the narrowest
+  Settings' body at a 1280×800 window (the default one until 2026-10-24, when it grew to
+  1440×900), where the table stays a table, and at the narrowest
   window with both sidebars open, where it stacks; CI's runs of `settings-tables.e2e.ts` and
   `settings-limits.e2e.ts` hold both ends in the real WebView (#1865). It is the one length the
   stylesheet writes, because a container query's condition cannot read a token.

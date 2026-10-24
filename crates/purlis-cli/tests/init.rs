@@ -203,9 +203,9 @@ fn init_in_an_empty_directory_leaves_exactly_the_plane_the_python_charter_leaves
                 "/charter.local.toml\n/purlis.local.toml\n\n# Session records of chats at the plane root (a chat's \
                  Smart close writes them). This\n# machine's own, like a LOCAL workspace's; \
                  delete this line to share them with the plane.\n/sessions/\n\n# Local skills, \
-                 at the plane root and in each workspace (skills.local/): this machine's own,\n\
-                 # never committed. Move one into skills/ (Share) to give it to the team.\n\
-                 /skills.local/\n/workspaces/*/skills.local/\n/skills.local.lock\n",
+                 at the plane root, in each workspace and of each persona (skills.local/): this\n\
+                 # machine's own, never committed. Move one into skills/ (Share) to give it to the team.\n\
+                 /skills.local/\n/workspaces/*/skills.local/\n/personas/*/skills.local/\n/skills.local.lock\n",
                 1,
             )
             .into_bytes(),
@@ -359,7 +359,7 @@ fn a_file_already_at_every_path_init_writes_is_left_byte_for_byte() {
         ".gitignore",
         "dist/\n/workspaces/*/*\n!/workspaces/.gitkeep\n/.charter/\n/.purlis/\n\
          /.claude/settings.local.json\n/charter.local.toml\n/purlis.local.toml\n/sessions/\n\
-         /skills.local/\n/workspaces/*/skills.local/\n/skills.local.lock\n",
+         /skills.local/\n/workspaces/*/skills.local/\n/personas/*/skills.local/\n/skills.local.lock\n",
     );
     scene.write(
         ".claude/settings.json",

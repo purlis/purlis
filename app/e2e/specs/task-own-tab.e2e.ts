@@ -10,6 +10,7 @@ import {
   startAChat,
   type Started,
 } from "../started.js";
+import { theWindowHoldsTheRail, WINDOW_1280, windowAt } from "../rail.js";
 
 /**
  * **A task's own tab draws a minimise and no close, and a task beside its session is two panes
@@ -205,6 +206,11 @@ function inside(inner: Box | null, outer: Box | null, what: string) {
 }
 
 describe("a task in a tab of its own, and beside its session", () => {
+  // At 1280×800, where this was held to fit before the default window grew (`rail.ts`,
+  // #3077); the project rail hides itself there beside both sidebars.
+  before(() => windowAt(WINDOW_1280));
+  after(() => theWindowHoldsTheRail());
+
   let wereAlreadyOpen: string[] = [];
   let mine: Started | undefined;
   let asker = -1;

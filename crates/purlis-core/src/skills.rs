@@ -19,7 +19,7 @@ pub use purlis_skills::{
     Effective, Field, Finding, Fit, FromHarness, Given, Grant, HarnessSkills, Honours, LOCAL_DIR,
     LeftOut, Lint, Machine, ManualOnly, Missing, Narrowing, OnMachine, Origin, Outcome,
     OutsideSkill, Over, Owner, POINTER, PROJECT_DIR, Reason, Reference, Refusal, Reload, Route,
-    Severity, Skill, SkillSet, Spent, Stamp, Switch, beside, compat, declared, grant_file,
+    Severity, Skill, SkillSet, Spent, Stamp, Switch, Whose, beside, compat, declared, grant_file,
     grant_of, handed_text, in_bundle, level_dir, level_shown, listing, named, persona_dir, read,
     scan, set_grant, share,
 };
@@ -1089,7 +1089,7 @@ pub fn turned_off(plane: &Path, workspace: &str) -> Vec<String> {
 pub fn project_folder(plane: &Path, name: &str) -> Option<PathBuf> {
     [false, true]
         .into_iter()
-        .filter_map(|local| level_dir(plane, None, local))
+        .filter_map(|local| level_dir(plane, &Whose::Project, local))
         .find_map(|dir| named(&dir, name))
 }
 
@@ -1194,12 +1194,12 @@ fn no_project_skill(name: &str) -> String {
     )
 }
 
-/// **Share** (#2767): moves the local skill `name` of the plane root (`workspace` `None`) or of
-/// `workspace` into that level's shared `skills/`, so the plane's save commits it. Refused on a
-/// project purlis opens read-only, whose committed files it does not write.
-pub fn share_here(plane: &Path, workspace: Option<&str>, name: &str) -> Result<PathBuf, String> {
+/// **Share** (#2767): moves the local skill `name` of the level `at` (the plane root's, a
+/// workspace's or a persona's) into that level's shared `skills/`, so the plane's save commits
+/// it. Refused on a project purlis opens read-only, whose committed files it does not write.
+pub fn share_here(plane: &Path, at: &Whose, name: &str) -> Result<PathBuf, String> {
     crate::settings::writable(plane)?;
-    share(plane, workspace, name)
+    share(plane, at, name)
 }
 
 /// The `requires` feature of a project whose skills the `project-skills` fix moved from
@@ -1622,15 +1622,10 @@ fn linted(
     origin: Origin,
 ) -> Vec<Finding> {
     use purlis_skills::SkillLint;
+    // Every level, each persona's among them (SK-32).
     let mut known: Vec<String> = verbs::Level::every(plane)
         .iter()
         .filter_map(|level| level.dir(plane))
-        .chain(
-            crate::personaverbs::names(plane)
-                .iter()
-                .flat_map(|persona| [true, false].map(|local| persona_dir(plane, persona, local)))
-                .flatten(),
-        )
         .flat_map(|dir| read(&dir))
         .map(|skill| skill.name)
         .collect();

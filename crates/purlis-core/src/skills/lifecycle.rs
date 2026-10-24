@@ -82,13 +82,15 @@ fn not_kept(name: &str, why: &str) -> String {
 /// loads in its place once it is archived (ADR 0099 §3, narrowest first).
 fn wider_copy(plane: &Path, level: &Level, name: &str) -> Option<Level> {
     let mut wider: Vec<Level> = Vec::new();
-    if level.workspace_name().is_some() && level.local {
+    // A workspace's or a persona's level is narrower than the project's (ADR 0099 §3).
+    let narrower = level.at != super::verbs::Whose::Project;
+    if narrower && level.local {
         wider.push(level.clone().local(false));
     }
-    if level.workspace_name().is_some() {
+    if narrower {
         wider.push(Level::project().local(true));
     }
-    if level.workspace_name().is_some() || level.local {
+    if narrower || level.local {
         wider.push(Level::project());
     }
     wider.into_iter().find(|one| {
@@ -221,7 +223,7 @@ pub fn unused(plane: &Path, now: u64) -> Vec<Unused> {
                 .get(&(
                     skill.name.clone(),
                     copy,
-                    level.workspace_name().map(str::to_owned),
+                    level.at.workspace().map(str::to_owned),
                 ))
                 .copied();
             let since = last_run.or_else(|| made_at(plane, &made, &skill.path));
@@ -257,11 +259,7 @@ fn made_at(plane: &Path, made: &HashMap<String, u64>, path: &Path) -> Option<u64
 /// The first commit time of every shared skill's `SKILL.md` git has, by its plane-relative path:
 /// one `git log` of the paths added.
 fn first_commits(plane: &Path) -> HashMap<String, u64> {
-    let globs: Vec<String> = [None, Some("*")]
-        .into_iter()
-        .filter_map(|ws| purlis_skills::level_rel(ws, false))
-        .map(|dir| format!(":(glob){dir}/*/SKILL.md"))
-        .collect();
+    let globs = super::verbs::shared_globs();
     let mut args = vec![
         "log",
         "--diff-filter=A",

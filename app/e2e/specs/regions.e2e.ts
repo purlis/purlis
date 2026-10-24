@@ -7,7 +7,7 @@ import { showView } from "../opening.js";
 import { bringSideBack, putSideAway } from "../sides.js";
 import { tooltipOf } from "../tooltips.js";
 import { gutter } from "../gutter.js";
-import { railHidden } from "../rail.js";
+import { theWindowHoldsTheRail, WINDOW_1280, windowAt } from "../rail.js";
 
 /**
  * The right region and the Changes view (ADR 0038; the bottom region until #1676, the left
@@ -996,9 +996,10 @@ describe("the Panel", () => {
  * really lays out.
  */
 describe("the layout as data", () => {
-  // The work measured with the project rail hidden (`rail.ts`, #2915).
-  before(() => railHidden(true));
-  after(() => railHidden(false));
+  // At 1280×800, both sidebars open, where the project rail hides itself to leave the work its
+  // room (`rail.ts`, #3077): measured with the rail as the window draws it.
+  before(() => windowAt(WINDOW_1280));
+  after(() => theWindowHoldsTheRail());
 
   it("draws each region in the slot the arrangement names", async () => {
     await untilTheStripIsRead();

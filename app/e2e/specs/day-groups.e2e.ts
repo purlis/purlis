@@ -7,6 +7,7 @@ import { browser, expect } from "@wdio/globals";
 import { showView } from "../opening.js";
 import { focusWorkspace, projectInFront } from "../reach.js";
 import { tooltipsOf } from "../tooltips.js";
+import { theWindowHoldsTheRail, WINDOW_1280, windowAt } from "../rail.js";
 
 /**
  * **The right side's dated rows under Today, Yesterday and Earlier** (#1674, B-9), in the built
@@ -75,6 +76,11 @@ async function titles(): Promise<string[]> {
 }
 
 describe("the right side's rows grouped by day", () => {
+  // At 1280×800, where this was held to fit before the default window grew (`rail.ts`,
+  // #3077); the project rail hides itself there beside both sidebars.
+  before(() => windowAt(WINDOW_1280));
+  after(() => theWindowHoldsTheRail());
+
   const written: string[] = [];
   const now = new Date();
   const yesterday = new Date(now);

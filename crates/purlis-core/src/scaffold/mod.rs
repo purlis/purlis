@@ -231,10 +231,11 @@ pub const GITIGNORE_BASELINE: &str = "\
 # machine's own, like a LOCAL workspace's; delete this line to share them with the plane.
 /sessions/
 
-# Local skills, at the plane root and in each workspace (skills.local/): this machine's own,
-# never committed. Move one into skills/ (Share) to give it to the team.
+# Local skills, at the plane root, in each workspace and of each persona (skills.local/): this
+# machine's own, never committed. Move one into skills/ (Share) to give it to the team.
 /skills.local/
 /workspaces/*/skills.local/
+/personas/*/skills.local/
 /skills.local.lock
 
 # Python
@@ -278,15 +279,20 @@ fn state_ignores() -> Vec<String> {
 /// take the side that publishes nothing by itself. Un-ignoring the line shares them.
 pub const PLANE_SESSIONS_IGNORE: &str = "/sessions/";
 
-/// The local skills of the plane root and of each workspace (ADR 0099 §1, #2767), kept on this
+/// The local skills of every level (ADR 0099 §1, #2767; a persona's, #3124), kept on this
 /// machine: a level's `skills.local/` is read only while git ignores it, and these lines are
-/// what make a fresh plane's ignored. A workspace's is already under `/workspaces/*/*`; its
-/// line keeps it ignored once the workspace is LIVE and its own `skills/` is un-ignored.
-pub const SKILLS_LOCAL_IGNORES: [&str; 3] = [
-    "/skills.local/",
-    "/workspaces/*/skills.local/",
-    "/skills.local.lock",
-];
+/// what make a fresh plane's ignored. They are spelled by the one level rule
+/// ([`purlis_skills::local_globs`]), so a level added there is ignored too, and
+/// [`GITIGNORE_BASELINE`] holds each (its test says so). A workspace's is already under
+/// `/workspaces/*/*`; its line keeps it ignored once the workspace is LIVE and its own `skills/`
+/// is un-ignored.
+pub fn skills_local_ignores() -> Vec<String> {
+    purlis_skills::local_globs()
+        .iter()
+        .map(|dir| format!("/{dir}/"))
+        .chain(["/skills.local.lock".to_owned()])
+        .collect()
+}
 
 /// A path that resolves somewhere charter will not write: `(the path as named, where it lands)`.
 type Escape = (String, String);
@@ -732,9 +738,10 @@ pub fn reinit(place: &Place) -> Outcome {
                 run.failed = true;
             }
         }
+        let ignores = skills_local_ignores();
         match append_gitignore(
             &path,
-            &SKILLS_LOCAL_IGNORES,
+            &ignores.iter().map(String::as_str).collect::<Vec<_>>(),
             "added by `charter reinit` — local skills stay on this machine",
         ) {
             Ok(written) if !written.is_empty() => run
@@ -1111,8 +1118,9 @@ fn ensure_gitignore(path: &Path) -> Result<bool, String> {
     if !lines.contains(&PLANE_SESSIONS_IGNORE) {
         missing.push(PLANE_SESSIONS_IGNORE);
     }
-    for line in SKILLS_LOCAL_IGNORES {
-        if !lines.contains(&line) {
+    let ignores = skills_local_ignores();
+    for line in &ignores {
+        if !lines.contains(&line.as_str()) {
             missing.push(line);
         }
     }

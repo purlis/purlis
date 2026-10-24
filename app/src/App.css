@@ -7685,7 +7685,7 @@ nav.piece-files-head {
    all: the label is as wide as its words, up to two fifths of the row (a longer one wraps
    inside its own box), and the control takes the rest down to its least width. Only a row
    narrower than that puts the control under its label. Fixed bases for both made the line
-   wrap at the default window with both sidebars open (settings-row.e2e on macOS). */
+   wrap at a 1280px window with both sidebars open (settings-row.e2e on macOS). */
 .ui-setting-name {
   display: flex;
   flex: 0 1 auto;

@@ -11,6 +11,7 @@ import {
   startAChat,
   type Started,
 } from "../started.js";
+import { theWindowHoldsTheRail, WINDOW_1280, windowAt } from "../rail.js";
 
 /**
  * **A chat's Activity tab, measured in the real WebView** (#1457, the follow-ups of #1495).
@@ -347,6 +348,11 @@ async function marks() {
 }
 
 describe("a chat's Activity tab", () => {
+  // At 1280×800, where this was held to fit before the default window grew (`rail.ts`,
+  // #3077); the project rail hides itself there beside both sidebars.
+  before(() => windowAt(WINDOW_1280));
+  after(() => theWindowHoldsTheRail());
+
   let wereAlreadyOpen: string[] = [];
   let mine: Started | undefined;
 

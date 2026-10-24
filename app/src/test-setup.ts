@@ -36,6 +36,11 @@ afterEach(() => {
   forgetEntering();
 });
 
+// jsdom's window is 1024px wide, the narrowest purlis supports, where the project rail hides
+// itself to leave the work its room (`railRoom.ts`, #3077). A test's window holds the rail beside
+// both sidebars, as the default window (1440 px) does; a test of a narrow window sets its own.
+Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 1440 });
+
 // jsdom has no ResizeObserver, and the panes and their splits watch their own size with one.
 globalThis.ResizeObserver ??= class {
   observe() {}

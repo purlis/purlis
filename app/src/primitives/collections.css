@@ -106,12 +106,12 @@
    fit, and the row's actions on a line of their own. Nothing is cut and nothing scrolls sideways.
    A cell with nothing in it is not drawn. Each control in a cell still names its column and its
    row in full (`aria-label`), so a screen reader hears the same thing stacked or not. 32rem sits
-   between Settings' body at the default window (about 560px, the sidebars at their default
-   sizes), where the table stays a table, and at the narrowest one (1024px with both sidebars
-   open, about 420px), where it stacks. It was 29rem until the left bar moved into the side
-   panel (#2917) and gave the work its 2.5rem column. CI's runs in the real WebView hold both ends
-   (`settings-tables.e2e.ts` at the default window, `settings-limits.e2e.ts` and
-   `settings-tables.e2e.ts` at the narrowest, #1865). */
+   between Settings' body at a 1280px window (about 560px, the sidebars at their default sizes;
+   the default window until it grew to 1440px, #3077), where the table stays a table, and at the
+   narrowest one (1024px with both sidebars open, about 420px), where it stacks. It was 29rem
+   until the left bar moved into the side panel (#2917) and gave the work its 2.5rem column. CI's
+   runs in the real WebView hold both ends (`settings-tables.e2e.ts` at 1280px,
+   `settings-limits.e2e.ts` and `settings-tables.e2e.ts` at the narrowest, #1865). */
 .ui-table-room {
   container: ui-table / inline-size;
 }

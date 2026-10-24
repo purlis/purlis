@@ -44,9 +44,10 @@ written.
   project tabs is **cancelled**: there are no project tabs. 1024 px stays the narrowest window.
   The rail takes its 52px from the work, so at the narrowest window, and at the default one with
   both sidebars open, some views (a pane's breadcrumb and Notices, a settings row and table, the
-  merge list) no longer have the room they were held to. **That promise to the work is
-  suspended until #3077** decides how the rail gives the room back; until then it holds with the
-  rail hidden, which the scenario specs measure (`app/e2e/rail.ts`).
+  merge list) no longer have the room they were held to. **That promise to the work was
+  suspended until #3077** decided how the rail gives the room back. [The amendment of
+  2026-10-24](2026-10-24-the-rail-gives-a-narrow-window-its-room-back.md) restores it: the rail
+  hides itself where it would take that room.
 - **2026-09-26-01, the project menu's order by activity.** **Moot**: it ordered the strip's
   show-more menu, which is gone with the strip. A project is never put behind a menu; the rail
   scrolls, and what waits below its fold is counted at its foot.
