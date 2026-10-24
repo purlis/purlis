@@ -1059,14 +1059,21 @@ export function showWorkspace(
   return { ...tabs, inFront: prefer !== undefined && here.includes(prefer) ? prefer : here[0] };
 }
 
+/** Brings tab `id` to the front: `tabs` itself when it is in front already, as {@link focusPane}. */
 export function selectTab(tabs: Tabs, id: number): Tabs {
-  return id in tabs.byId ? { ...tabs, inFront: id } : tabs;
+  return id in tabs.byId && tabs.inFront !== id ? { ...tabs, inFront: id } : tabs;
 }
 
-/** Focuses a pane of the tab in front, so the next split or close acts on it. */
+/**
+ * Focuses a pane of the tab in front, so the next split or close acts on it.
+ *
+ * **Answers `tabs` itself when that pane is focused already.** A pane says so on every focus
+ * inside it, and new tabs redraw the whole window and read the sidebar again.
+ */
 export function focusPane(tabs: Tabs, pane: number): Tabs {
   const tab = frontTab(tabs);
-  if (!tab || !panes(tab.layout).some((each) => each.pane === pane)) return tabs;
+  if (!tab || tab.focused === pane || !panes(tab.layout).some((each) => each.pane === pane))
+    return tabs;
   return { ...tabs, byId: { ...tabs.byId, [tab.id]: { ...tab, focused: pane } } };
 }
 

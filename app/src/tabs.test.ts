@@ -272,6 +272,23 @@ describe("tabs and their panes", () => {
     });
   });
 
+  it("answers the very tabs when the pane asked for is already focused", () => {
+    // Every focus inside a pane says so (`onFocus`), and a new arrangement redraws the whole
+    // window and reads the sidebar again: one that changed nothing must not be new.
+    const two = splitFocusedPane(openTab(noTabs(), 11), "row", 12);
+    const onFirst = focusPane(two, 1);
+
+    expect(focusPane(onFirst, 1)).toBe(onFirst);
+    expect(focusPane(onFirst, 2)).not.toBe(onFirst);
+  });
+
+  it("answers the very tabs when the tab asked for is in front already", () => {
+    const tabs = openTab(openTab(noTabs(), 11), 12);
+
+    expect(selectTab(tabs, front(tabs))).toBe(tabs);
+    expect(front(selectTab(tabs, tabs.order[0]))).toBe(tabs.order[0]);
+  });
+
   it("puts what is left in a split's place when the focused pane closes", () => {
     const tabs = closeFocusedPane(splitFocusedPane(openTab(noTabs(), 11), "row", 12), oneWorkspace);
     const tab = tabs.byId[front(tabs)];
