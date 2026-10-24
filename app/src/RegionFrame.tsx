@@ -593,11 +593,11 @@ function RegionViews({
     hosts.forEach((host, at) => {
       host.hidden = views[at] !== open;
       // A list hidden or moved has finished arriving: shown again, it does not replay (R151).
-      if (host.hidden) host.removeAttribute(SWAPPED);
+      if (host.hidden) swapOut(host);
       // Moved only where it is not in its place already: an element taken out of the document
       // and put back loses its scroll.
       if (root.children[at] !== host) {
-        host.removeAttribute(SWAPPED);
+        swapOut(host);
         focusMoving.noted(host);
         root.insertBefore(host, root.children[at] ?? null);
       }
@@ -859,13 +859,25 @@ const SWAPPED = "data-swapped";
  * so nothing replays when it is shown again; under reduced motion the duration is 0ms.
  */
 function swapIn(host: HTMLElement) {
+  swapOut(host);
   host.setAttribute(SWAPPED, "");
   const ended = (e: AnimationEvent) => {
-    if (e.target !== host) return;
-    host.removeAttribute(SWAPPED);
-    host.removeEventListener("animationend", ended);
+    if (e.target === host) swapOut(host);
   };
+  SWAP_ENDS.set(host, ended);
   host.addEventListener("animationend", ended);
+}
+
+/** What hears each fading list's animation end, so whatever ends the fade takes it off too. */
+const SWAP_ENDS = new WeakMap<HTMLElement, (e: AnimationEvent) => void>();
+
+/** A list's fade over: its mark off, and nothing left listening for its end. */
+function swapOut(host: HTMLElement) {
+  host.removeAttribute(SWAPPED);
+  const ended = SWAP_ENDS.get(host);
+  if (ended === undefined) return;
+  host.removeEventListener("animationend", ended);
+  SWAP_ENDS.delete(host);
 }
 
 /** What the editor region is called: its region's name, for F6 and a screen reader (#1751). */
@@ -1030,10 +1042,11 @@ function Slot({
   // Brought back while the window is up, as opposed to open since launch: only the first is
   // drawn arriving, so a window does not fade its own regions in every time it starts.
   const [arrived, arrivedEnd] = useArrival(open);
-  // The library's panel takes no handler of ours: its element is heard by its id.
+  // The library's panel takes no handler of ours: its element is found by its id, and the one
+  // heard is the box inside it that carries the class, and so the animation.
   useEffect(() => {
-    const element = document.getElementById(panelOf(side));
-    if (element === null) return;
+    const element = document.getElementById(panelOf(side))?.firstElementChild;
+    if (!(element instanceof HTMLElement)) return;
     const ended = (e: AnimationEvent) => arrivedEnd(e);
     element.addEventListener("animationend", ended);
     return () => element.removeEventListener("animationend", ended);

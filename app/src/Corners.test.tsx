@@ -145,9 +145,16 @@ describe("motion: only the part that opened (R122, R124, R127, R128, R151)", () 
 
     await userEvent.click(tabIn("Attention", "Inbox"));
     expect(slot("right")).toHaveClass("arrived");
+    fireEvent.animationEnd(slot("right"));
+    expect(slot("right")).not.toHaveClass("arrived");
+
+    // Another of its views, while it is open: it does not arrive again.
+    await userEvent.click(tabIn("Attention", "Personas"));
+    expect(screen.getByRole("tabpanel", { name: "Personas" })).toBeInTheDocument();
+    expect(slot("right")).not.toHaveClass("arrived");
 
     // Closing has no motion: it is gone.
-    await userEvent.click(tabIn("Attention", "Inbox"));
+    await userEvent.click(tabIn("Attention", "Personas"));
     expect(slot("right")).not.toHaveClass("arrived");
   });
 
@@ -199,15 +206,35 @@ describe("the keyboard and the side put away (S4, S7, D-2917-18)", () => {
     expect(tabIn("Panel, right half", "Memory")).toHaveFocus();
   });
 
-  it("lets an arrival end, so the part is never drawn arriving again", async () => {
+  it("lets a half's arrival end, so it is never drawn arriving again", async () => {
     render(<Window from={closed("panel-right")} />);
     await userEvent.click(tabIn("Panel, right half", "Todos"));
     expect(half("right")).toHaveClass("arrived");
 
     fireEvent.animationEnd(half("right"));
-
-    // Taken out of the document and put back (a project brought in front again) it stays put.
     expect(half("right")).not.toHaveClass("arrived");
+
+    // Taken out of the document and put back, as a project brought in front again is, it
+    // stays put: nothing marks it arriving, so its animation has nothing to replay.
+    const box = half("right");
+    const parent = box.parentElement as HTMLElement;
+    parent.removeChild(box);
+    parent.appendChild(box);
+    expect(half("right")).not.toHaveClass("arrived");
+  });
+
+  it("lets the right panel's arrival end, heard on the box that animates", async () => {
+    render(<Window from={closed("aside")} />);
+    await userEvent.click(tabIn("Attention", "Inbox"));
+    expect(slot("right")).toHaveClass("arrived");
+
+    // An animation inside the panel that ends is not the panel's.
+    const inner = slot("right").querySelector('[role="tabpanel"]') as HTMLElement;
+    fireEvent.animationEnd(inner);
+    expect(slot("right")).toHaveClass("arrived");
+
+    fireEvent.animationEnd(slot("right"));
+    expect(slot("right")).not.toHaveClass("arrived");
   });
 
   it("keeps the left bar as a column while the side panel is away, a press bringing it back", async () => {

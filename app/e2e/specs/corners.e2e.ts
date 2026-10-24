@@ -38,6 +38,35 @@ async function moving(css: string): Promise<string[]> {
   }, css);
 }
 
+/**
+ * **Starts recording the animations that start on what `css` names**, by their keyframes' name.
+ * An arrival's mark comes off when its animation ends (D-2917-20), so a spec that polled for the
+ * mark could miss it; the event is heard as it happens, from the page. {@link started} reads what
+ * was heard since.
+ */
+async function hear(css: string): Promise<void> {
+  await browser.execute((selector: string) => {
+    const kept = window as unknown as { heard2917?: Record<string, string[]> };
+    const heard = (kept.heard2917 ??= {});
+    heard[selector] = [];
+    const listen = (e: AnimationEvent) => {
+      if (e.target instanceof Element && e.target.matches(selector)) {
+        heard[selector]?.push(e.animationName);
+      }
+    };
+    document.addEventListener("animationstart", listen, true);
+  }, css);
+}
+
+/** The animations heard starting on what `css` names since {@link hear} was called for it. */
+async function started(css: string): Promise<string[]> {
+  return browser.execute(
+    (selector: string) =>
+      (window as unknown as { heard2917?: Record<string, string[]> }).heard2917?.[selector] ?? [],
+    css,
+  );
+}
+
 async function press(css: string): Promise<void> {
   const it = await $(css);
   await it.waitForExist({ timeout: 30_000 });
@@ -95,6 +124,7 @@ describe("the four corners", function () {
     });
     expect(await moving(".slot-right")).toEqual([]);
 
+    await hear(".slot-right");
     await press(tab(ATTENTION, "Inbox"));
     // 300px where the window has room, else its 20% (R124).
     const wide = await browser.execute(() => document.documentElement.clientWidth);
@@ -102,11 +132,16 @@ describe("the four corners", function () {
       async () => ((await boxOf(".slot-right"))?.width ?? 0) >= Math.min(300, wide * 0.2) - 24,
       { timeout: 10_000, timeoutMsg: "the right panel never opened" },
     );
-    expect(await $(".slot-right").getAttribute("class")).toContain("arrived");
+    await browser.waitUntil(async () => (await started(".slot-right")).includes("purlis-open"), {
+      timeout: 10_000,
+      timeoutMsg: "the right panel never arrived",
+    });
 
     // Another view of the right panel: the panel does not arrive again.
+    await hear(".slot-right");
     await press(tab(ATTENTION, "Personas"));
     await browser.pause(400);
+    expect(await started(".slot-right")).toEqual([]);
     expect(await moving(".slot-right")).toEqual([]);
     await press(tab(ATTENTION, "Inbox"));
   });
@@ -122,13 +157,14 @@ describe("the four corners", function () {
         { timeout: 10_000, timeoutMsg: "the right half never closed" },
       );
     }
+    await hear('.panel-half[data-side="right"]');
+    await hear('.panel-half[data-side="left"]');
     await press(todos);
     await browser.waitUntil(
-      async () =>
-        (await $('.panel-half[data-side="right"]').getAttribute("class"))?.includes("arrived") ===
-        true,
+      async () => (await started('.panel-half[data-side="right"]')).includes("purlis-reveal"),
       { timeout: 10_000, timeoutMsg: "the right half never arrived" },
     );
+    expect(await started('.panel-half[data-side="left"]')).toEqual([]);
     expect(await moving('.panel-half[data-side="left"]')).toEqual([]);
   });
 });
