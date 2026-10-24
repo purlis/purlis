@@ -970,6 +970,7 @@ export const commands = {
 	skillDraftTry: __WINDOW_ONLY_RESULT,
 	skillLevelAccept: __WINDOW_ONLY_RESULT,
 	skillSources: __WINDOW_ONLY_RESULT,
+	skillSourcesOffered: __WINDOW_ONLY_RESULT,
 	skillSourceAdd: __WINDOW_ONLY_RESULT,
 	skillSourceRemove: __WINDOW_ONLY_RESULT,
 	skillSourceConfirm: __WINDOW_ONLY_RESULT,
@@ -6143,6 +6144,17 @@ export type OfferedSkill = {
 };
 
 /**
+ *  **A skill source the studio offers** (SK-22, #2785): its name, why it is on the list, and the source Add
+ *  source starts filled in with, kept with the project unless the person picks this machine.
+ */
+export type OfferedSource = {
+	offering: SourceOffering,
+	name: string,
+	why: string,
+	source: SkillSource,
+};
+
+/**
  *  The chats of a project still running under an older sandbox (#1428), for the Notice after
  *  a sandbox setting changes: those that run under a sandbox other than the one a start would
  *  compile for them now. The window is sent this type itself (`chats_on_older_sandbox`).
@@ -9487,6 +9499,13 @@ export type SourceCommit = {
 /**  Which settings a source is kept in: the project's, shared with the team, or this machine's. */
 export type SourceKept = "shared" | "local";
 
+/**  Whose list an offered source is on. */
+export type SourceOffering = 
+/**  purlis's own first-party catalogue. */
+"catalogue" | 
+/**  A collection someone else keeps that people use widely. */
+"well-known";
+
 /**  A repository and the branch read from it. */
 export type SourceRemote = {
 	url: string,
@@ -9678,6 +9697,8 @@ export type Studio = {
 	harnesses: StudioHarness[],
 	/**  Every skill from outside the plane that has the name of a skill a chat gets, by name. */
 	clashes: StudioClash[],
+	/**  What it offers to start from (SK-22, #2785): the core's `skills::first_open`. */
+	first: StudioFirst,
 };
 
 /**
@@ -9695,6 +9716,23 @@ export type StudioClash = {
 	outside: Level,
 	owner: Owner,
 	outcome: ClashOutcome,
+};
+
+/**
+ *  **What the studio offers when it opens** (SK-22, #2785; decision 42), as the core works it
+ *  out (`purlis_core::skills::first_open`).
+ */
+export type StudioFirst = {
+	/**
+	 *  Whether the project has no skill of its own, so the three starts are offered: make one
+	 *  with a chat, browse skill sources, start blank.
+	 */
+	starts: boolean,
+	/**
+	 *  Where the project's skills are still where only some chat programs read them: how many,
+	 *  and the doctor's fix that moves them (SK-21).
+	 */
+	unmoved: StudioUnmoved | null,
 };
 
 /**  One harness in the studio (SK-6): its plugins and the skills it finds itself. */
@@ -9854,6 +9892,13 @@ export type StudioSkill = {
  *  lives here and turns into the core's in one place.
  */
 export type StudioSwitched = "plugin" | "skill";
+
+/**  The project's skills still to move into the studio's. */
+export type StudioUnmoved = {
+	skills: number,
+	/**  The doctor's fix that moves them, by its id (`planeDoctorFix`). */
+	fix: string,
+};
 
 /**  What one subject is offered. */
 export type SubjectCurations = {

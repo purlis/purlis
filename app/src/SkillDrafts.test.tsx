@@ -45,6 +45,7 @@ function core(drafts: unknown[]) {
         on: true,
         workspace: (given.workspace as string | null) ?? null,
         persona: null,
+        first: { starts: false, unmoved: null },
         workspaces: ["ops"],
         levels: [{ level: { at: "project", local: false }, label: "project" }],
         harnesses: [],
