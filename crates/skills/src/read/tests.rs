@@ -198,7 +198,10 @@ fn a_skill_folder_that_is_a_link_out_of_the_level_is_left_out_as_a_link_and_neve
     let names: Vec<String> = read(&level).into_iter().map(|s| s.name).collect();
     assert_eq!(names, ["whole"]);
     // And were it handed on by its path, nothing of what it leads to is named.
-    assert!(crate::other_files(&level.join("linked/SKILL.md")).is_empty());
+    assert_eq!(
+        crate::SkillFolder::open(tmp.path(), &level.join("linked/SKILL.md")).err(),
+        Some(crate::Refusal::FolderLink)
+    );
 }
 
 #[cfg(unix)]
@@ -221,7 +224,7 @@ fn a_skill_md_that_is_a_link_or_has_a_second_name_is_left_out_as_a_link() {
         ]
     );
     assert_eq!(
-        crate::read_skill_md(&level.join("twinned/SKILL.md")),
+        crate::read_skill_md(tmp.path(), &level.join("twinned/SKILL.md")),
         Err(crate::Refusal::FileLink)
     );
 }

@@ -17,21 +17,11 @@
 
 use std::path::{Path, PathBuf};
 
-use purlis_skills::{Honours, Refusal, Skill};
-
-/// How deep in a skill's folder purlis looks for files to hand: as deep as a load looks.
-const MOST_DEPTH: usize = 4;
-
-/// The most files of one skill purlis hands.
-const MOST_FILES: usize = 200;
+use purlis_skills::{Effective, Honours, Refusal, SkillFolder};
 
 /// One entry of a skill's folder as it is handed: a folder of its own, or a link to a plain file
-/// of the skill's, by its path inside the folder.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum Entry {
-    Folder(PathBuf),
-    File(PathBuf),
-}
+/// of the skill's, by its path inside the folder ([`SkillFolder::entries`]).
+pub(super) use purlis_skills::Entry;
 
 /// **One plane skill, as a set's folder hands it.**
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,88 +35,22 @@ pub(super) struct Handed {
     pub(super) entries: Vec<Entry>,
 }
 
-/// **`skill`, as a harness that reads `honours` is handed it**, or why it is handed to no chat:
-/// its folder or `SKILL.md` is a link, or its frontmatter is refused
-/// ([`purlis_skills::Refusal`]). The one place that decides, for the set's folder, the Codex
-/// briefing and the Notice alike.
-pub(super) fn of(skill: &Skill, honours: &Honours) -> Result<Handed, Refusal> {
-    let folder = skill.path.parent().ok_or(Refusal::FolderLink)?;
-    let own = purlis_skills::read_skill_md(&skill.path)?;
+/// **`effective`, as a harness that reads `honours` is handed it**, or why it is handed to no
+/// chat: a folder on the way to it from its level's root or its `SKILL.md` is a link, or its
+/// frontmatter is refused ([`purlis_skills::Refusal`]). Its folder is held from that root, and
+/// its `SKILL.md` read and its entries listed through that handle ([`SkillFolder`], SK-36), so a
+/// folder swapped for a link after the set was read hands nothing. The one place that decides,
+/// for the set's folder, the Codex briefing and the Notice alike.
+pub(super) fn of(effective: &Effective, honours: &Honours) -> Result<Handed, Refusal> {
+    let folder = SkillFolder::of(effective)?;
+    let own = folder.skill_md()?;
     let text = purlis_skills::handed_text(&own, honours)?;
-    let mut entries = Vec::new();
-    walk(folder, Path::new(""), 0, &mut entries);
     Ok(Handed {
-        name: skill.name.clone(),
-        folder: folder.to_path_buf(),
+        name: effective.skill.name.clone(),
+        folder: folder.path().to_path_buf(),
         text,
-        entries,
+        entries: folder.entries(),
     })
-}
-
-/// Every plain file and folder under `folder`'s `rel`, into `entries`, never through a link and
-/// never a `SKILL.md`, to [`MOST_DEPTH`] and at most [`MOST_FILES`] files, in order of name.
-#[cfg(unix)]
-fn walk(folder: &Path, rel: &Path, depth: usize, entries: &mut Vec<Entry>) {
-    use rustix::fs::FileType;
-    let Ok(dir) = super::at::folder(&folder.join(rel)) else {
-        return;
-    };
-    let Ok(mut found) = super::at::entries(&dir) else {
-        return;
-    };
-    found.sort_by(|a, b| a.name.cmp(&b.name));
-    for one in found {
-        let files = entries
-            .iter()
-            .filter(|e| matches!(e, Entry::File(_)))
-            .count();
-        if files >= MOST_FILES {
-            return;
-        }
-        let path = rel.join(&one.name);
-        match one.kind {
-            FileType::RegularFile if one.name != purlis_skills::FILE => {
-                entries.push(Entry::File(path));
-            }
-            FileType::Directory if depth + 1 < MOST_DEPTH => {
-                entries.push(Entry::Folder(path.clone()));
-                walk(folder, &path, depth + 1, entries);
-            }
-            _ => {}
-        }
-    }
-}
-
-/// [`walk`] where there are no handles to read a folder by.
-#[cfg(not(unix))]
-fn walk(folder: &Path, rel: &Path, depth: usize, entries: &mut Vec<Entry>) {
-    let Ok(listed) = std::fs::read_dir(folder.join(rel)) else {
-        return;
-    };
-    let mut names: Vec<std::ffi::OsString> = listed
-        .filter_map(Result::ok)
-        .map(|e| e.file_name())
-        .collect();
-    names.sort();
-    for name in names {
-        let files = entries
-            .iter()
-            .filter(|e| matches!(e, Entry::File(_)))
-            .count();
-        if files >= MOST_FILES {
-            return;
-        }
-        let path = rel.join(&name);
-        let Ok(meta) = std::fs::symlink_metadata(folder.join(&path)) else {
-            continue;
-        };
-        if meta.is_file() && name != purlis_skills::FILE {
-            entries.push(Entry::File(path));
-        } else if meta.is_dir() && depth + 1 < MOST_DEPTH {
-            entries.push(Entry::Folder(path.clone()));
-            walk(folder, &path, depth + 1, entries);
-        }
-    }
 }
 
 /// What a digest of a set's folder covers of one handed skill: its name, its folder, the text
@@ -218,7 +142,7 @@ pub(super) fn holds(skills: &Path, handed: &[Handed]) -> bool {
         && handed.iter().all(|one| {
             let own = skills.join(&one.name);
             std::fs::symlink_metadata(&own).is_ok_and(|meta| meta.is_dir())
-                && purlis_skills::read_skill_md(&own.join(purlis_skills::FILE))
+                && purlis_skills::read_skill_md(skills, &own.join(purlis_skills::FILE))
                     .ok()
                     .as_deref()
                     == Some(one.text.as_str())

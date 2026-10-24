@@ -164,15 +164,6 @@ impl Folder {
         Opened::Folder(at)
     }
 
-    /// The folder `dir` names, its last part opened without following a link, the folders above
-    /// it as they are: for a caller that holds no root to walk from.
-    pub(crate) fn at(dir: &Path) -> Opened {
-        match (dir.parent(), dir.file_name()) {
-            (Some(parent), Some(name)) => Self::walk(parent, Path::new(name)),
-            _ => Self::open_root(dir).map_or(Opened::Absent, Opened::Folder),
-        }
-    }
-
     /// Every name in it but `.` and `..`, by name.
     pub(crate) fn names(&self) -> Vec<OsString> {
         let mut names = self.listed();

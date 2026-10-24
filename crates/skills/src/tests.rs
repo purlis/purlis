@@ -1069,6 +1069,7 @@ fn outside(id: &str, origin: Origin, owner: Owner, off: bool) -> OutsideSkill {
             description: format!("Does {id}."),
             path: PathBuf::from(format!("/elsewhere/{id}/SKILL.md")),
         },
+        root: PathBuf::from(format!("/elsewhere/{id}")),
         origin,
         id: id.to_owned(),
         owner,

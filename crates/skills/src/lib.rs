@@ -64,7 +64,7 @@ pub use grant::{Grant, grant_file, grant_of, set_grant};
 pub use handed::{Frontmatter, MOST_BYTES, Refusal, read_skill_md};
 pub use lifecycle::{About, Deprecated, Lifecycle, about_of, set_lifecycle, set_owners};
 pub use lint::{BuiltInLints, Finding, Lint, Severity, SkillFiles, SkillLint};
-pub use load::{Loaded, Narrowing, POINTER, by_name, find, load, other_files};
+pub use load::{Entry, Loaded, Narrowing, POINTER, SkillFolder, by_name, find, load};
 pub use read::{
     DIR_IN_BUNDLE, FILE, frontmatter, in_bundle, listing, parsed, read, scan, scan_dir,
 };
@@ -408,6 +408,9 @@ pub struct FromHarness {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutsideSkill {
     pub skill: Skill,
+    /// The folder it is reached from (SK-36): a repo skill's clone, whose every folder below is
+    /// opened without following a link; the person's own skill's folder itself, read as it is.
+    pub root: PathBuf,
     /// [`Origin::Harness`] or [`Origin::Repo`].
     pub origin: Origin,
     /// The name the harness knows it by, which a project turns it off by: its `name`, or
@@ -585,10 +588,8 @@ impl SkillSet {
                     reason: Reason::OffForTheHarness,
                 });
             } else {
-                // The harness loads it itself; purlis never reads it through this root.
-                let root = folder.parent().map(Path::to_path_buf).unwrap_or_default();
                 self.effective.push(Effective {
-                    root,
+                    root: one.root,
                     skill: Skill {
                         name: one.id,
                         ..one.skill

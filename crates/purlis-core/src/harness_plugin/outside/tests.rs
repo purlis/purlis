@@ -229,3 +229,38 @@ fn a_link_in_a_clone_is_named_and_never_read_through() {
         found[0].skill.description
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn a_repo_skill_whose_folder_is_swapped_for_a_link_after_it_was_found_is_never_loaded_through() {
+    // SK-36: a repo skill's folder is held from the clone's folder down, so a `skills/` swapped
+    // for a link to one outside the clone after discovery is refused, naming nothing outside.
+    let tmp = tempfile::tempdir().unwrap();
+    let clone = tmp.path().join("ws/api");
+    skill(&clone.join(".claude/skills"), "review", "review");
+    let outside = tmp.path().join("outside");
+    skill(&outside, "review", "review");
+    std::fs::write(outside.join("review/secret.txt"), "no\n").unwrap();
+    let found = repo_skills(
+        &CLAUDE_CODE,
+        &Choices::default(),
+        &[clone_at("api", &clone)],
+    );
+    let set = purlis_skills::SkillSet::default().with_outside(purlis_skills::Route::Mcp, found);
+    let review = purlis_skills::by_name(&set, "review").expect("found");
+    let honours = crate::harness::Harness::ClaudeCode.skill_frontmatter();
+    assert!(
+        purlis_skills::load(review, &honours).is_ok(),
+        "loaded before the swap"
+    );
+
+    let at = clone.join(".claude/skills");
+    std::fs::rename(&at, clone.join(".claude/was-skills")).unwrap();
+    std::os::unix::fs::symlink(&outside, &at).unwrap();
+
+    let refused = purlis_skills::load(review, &honours).unwrap_err();
+    assert!(
+        refused.ends_with(&purlis_skills::Refusal::FolderLink.to_string()),
+        "{refused}"
+    );
+}

@@ -182,22 +182,14 @@ impl Frontmatter {
     }
 }
 
-/// **Reads the `SKILL.md` at `path`, following no link**: refused where its folder or the file
-/// is a link, the file is no plain file, has a second name or is larger than [`MOST_BYTES`]. The
-/// folder is opened without following a link and the file through its handle
-/// ([`crate::held::Folder`]), so a link put in place after a look is never read through. The one
-/// reader of a skill's own file for what purlis hands, badges and lints (SK-8).
-pub fn read_skill_md(path: &std::path::Path) -> Result<String, Refusal> {
-    use crate::held::{Folder, Opened};
-    let folder = match path.parent().map(Folder::at) {
-        Some(Opened::Folder(folder)) => folder,
-        Some(Opened::Link) => return Err(Refusal::FolderLink),
-        Some(Opened::Absent) | None => {
-            return Err(Refusal::Unreadable("its folder is not there".to_owned()));
-        }
-    };
-    let name = path.file_name().unwrap_or_default();
-    read_held(&folder, name)
+/// **Reads the `SKILL.md` at `path`, under `root`, following no link**: refused where any
+/// folder below `root` on the way to it or the file is a link, the file is no plain file, has a
+/// second name or is larger than [`MOST_BYTES`]. Every folder below `root` is opened through the
+/// handle of the one above and the file through its folder's ([`crate::SkillFolder`]), so a
+/// link put in place after a look is never read through. The one reader of a skill's own file
+/// for what purlis hands, badges and lints (SK-8).
+pub fn read_skill_md(root: &std::path::Path, path: &std::path::Path) -> Result<String, Refusal> {
+    crate::SkillFolder::open(root, path)?.skill_md()
 }
 
 /// The `SKILL.md` named `name` in the skill's folder held at `folder`, as [`read_skill_md`]
