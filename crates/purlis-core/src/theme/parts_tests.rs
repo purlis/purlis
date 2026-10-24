@@ -94,14 +94,20 @@ fn a_theme_that_names_no_parts_draws_exactly_as_today() {
         );
         assert!(parts::fallen(theme).is_empty());
     }
-    // Purlis names its panels' fill (#2913), the one its docked tabs join by default (#2914), and
-    // no more: its tabs are the family default and cost nothing to measure.
+    // Purlis names its panels' fill (#2913), the one its docked tabs join by default (#2914), its
+    // tooltip's, its cards' and its controls' borders (#2912), and no more: its tabs are the
+    // family default and cost nothing to measure.
     let purlis = built_in("purlis").expect("Purlis");
     assert!(
-        purlis
-            .parts
-            .keys()
-            .all(|key| key.family == "panel" || key.family == "tooltip"),
+        purlis.parts.keys().all(|key| [
+            "panel",
+            "tooltip",
+            "card",
+            "button",
+            "text-input",
+            "textarea"
+        ]
+        .contains(&key.family)),
         "{:?}",
         purlis.parts.keys().collect::<Vec<_>>()
     );
@@ -980,7 +986,7 @@ fn the_popover_and_menu_family_defaults_are_what_their_stylesheets_draw() {
 #[test]
 fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
     let manifest = parts::manifest_json();
-    assert_eq!(manifest["version"], 10);
+    assert_eq!(manifest["version"], 11);
     for one in manifest["states"].as_array().unwrap() {
         assert_eq!(one["since"], 1, "{one}");
     }
@@ -1282,6 +1288,10 @@ const MANIFEST_DIGESTS: &[(u32, &str)] = &[
     (
         10,
         "c939e7d602f3e4d800d4bc7ae3ce8a55abe8d0724287f76ecc058ec2a40c9efe",
+    ),
+    (
+        11,
+        "ffc9d51696dc28b8b1aa9aeb594ef86ac8ec3c89d5de340ab665ae8213d03151",
     ),
 ];
 

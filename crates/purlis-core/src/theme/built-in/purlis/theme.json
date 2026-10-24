@@ -55,7 +55,13 @@
   "parts": {
     "panel.root.fill": "surface.raised",
     "tooltip.root.corner-radius": 8,
-    "tooltip.root.border-width": 0
+    "tooltip.root.border-width": 0,
+    "button.root.secondary.border-colour": "transparent",
+    "button.root.primary.border-colour": "transparent",
+    "text-input.root.border-colour": "transparent",
+    "textarea.root.border-colour": "transparent",
+    "card.root.fill": "surface.base",
+    "card.root.border-width": 0
   },
   "appearances": [
     {

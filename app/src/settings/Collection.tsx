@@ -8,6 +8,7 @@ import type { Driven, EntryReferrer, EntryRefused, EntryRefusal } from "./driver
 import { askSettingsLink, referrerElsewhere } from "./links";
 import { OutLink } from "./OutLink";
 import type { Collection, CollectionEntry, EntryField, Setting } from "./groups";
+import { HostStatus } from "../ui/badge/Badge";
 import { Button } from "../ui/button/Button";
 import { Form } from "../ui/field/Field";
 
@@ -171,6 +172,7 @@ export function CollectionView({
         <div key={entry.id} className="ui-collection-entry" role="group" aria-label={entry.label}>
           <div className="ui-collection-head">
             <h4>{entry.label}</h4>
+            {entry.status !== undefined && <HostStatus waiting={entry.status === "waiting"} />}
             {entry.page !== undefined && reachable(entry.page) && (
               <Button
                 size="sm"

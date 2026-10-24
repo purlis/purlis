@@ -310,7 +310,7 @@ describe("the status line", () => {
     });
     expect(page).toMatch(/^scrolled 0,0 of (\d+)x(\d+) in \1x\2$/);
     // No alert here, so no alert's row.
-    expect(await inbox.$$('.notice-list [data-cause^="alert:"]').length).toBe(0);
+    expect(await inbox.$$('[data-scope=notice-list] [data-cause^="alert:"]').length).toBe(0);
   });
 
   it("lists an alert the plane has as a Notice, counts it, and stops counting it once it is fixed", async () => {
@@ -331,7 +331,7 @@ describe("the status line", () => {
       // Opening the Inbox from the button reads the alerts again, as the drawer's opening did.
       const inbox = await openTheInbox();
       await untilTheButtonSays(noticesSaid(before + 1));
-      const row = await inbox.$('.notice-list [data-cause="alert:reinit"]');
+      const row = await inbox.$('[data-scope=notice-list] [data-cause="alert:reinit"]');
       await row.waitForDisplayed({ timeout: 20_000 });
       await expect(row).toHaveText(expect.stringContaining("behind the current layout"));
       await expect(row.$("button=Update workspace layout")).toBeExisting();

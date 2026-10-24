@@ -105,6 +105,11 @@ export default tseslint.config(
       "purlis/status-item-family": "error",
       "purlis/rail-family": "error",
       "purlis/activity-family": "error",
+      // The card, notice, badge and count, and separator families have moved (#2912).
+      "purlis/card-family": "error",
+      "purlis/notice-family": "error",
+      "purlis/badge-family": "error",
+      "purlis/separator-family": "error",
     },
   },
   // The select's list is drawn in the old menu classes until the select family moves (#2906).

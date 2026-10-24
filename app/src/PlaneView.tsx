@@ -5891,7 +5891,7 @@ export const PlaneView = memo(function PlaneView({
     );
     forgetAsked.current = {
       notice,
-      band: notice?.closest(".notice-list") ?? null,
+      band: notice?.closest('[data-scope="notice-list"]') ?? null,
       forgot: false,
     };
     setForgetting({ id, name, busy: false });

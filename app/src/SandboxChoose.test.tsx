@@ -337,7 +337,10 @@ describe("a block the chat only read back", () => {
 
   it("is a quiet line that says so and is put away with Dismiss", async () => {
     const { onDismiss, sent } = drawn(QUIET);
-    expect(notice()).not.toHaveClass("notice-trouble");
+    expect(notice()?.closest('[data-scope="notice"]')).not.toHaveAttribute(
+      "data-variant",
+      "trouble",
+    );
     expect(notice()).toHaveTextContent(
       "This chat read a sandbox refusal back: a connection to a local socket. It was in the " +
         "output of a command that ran earlier, so nothing waits on your answer.",
@@ -357,7 +360,7 @@ describe("a block the chat only read back", () => {
     await userEvent.click(screen.getByRole("button", { name: "Show what you can do" }));
 
     expect(await screen.findByRole("button", { name: "Choose the socket…" })).toBeInTheDocument();
-    expect(notice()).toHaveClass("notice-trouble");
+    expect(notice()?.closest('[data-scope="notice"]')).toHaveAttribute("data-variant", "trouble");
     expect(sent("take_up_sandbox_block")).toEqual([
       {
         plane: PLANE,
@@ -398,7 +401,10 @@ describe("a block the chat only read back", () => {
     });
     await userEvent.click(screen.getByRole("button", { name: "Show what you can do" }));
     await waitFor(() => expect(notice()).toHaveTextContent("Chat 4 is not blocked on what"));
-    expect(notice()).not.toHaveClass("notice-trouble");
+    expect(notice()?.closest('[data-scope="notice"]')).not.toHaveAttribute(
+      "data-variant",
+      "trouble",
+    );
     expect(screen.queryByRole("button", { name: "Choose the socket…" })).toBeNull();
   });
 

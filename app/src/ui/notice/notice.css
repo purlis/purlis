@@ -1,0 +1,255 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **The notice family's default** (#2912, ADR 0103, ADR 0104): a Notice's box, its line, what it
+   says and what a way out opened; the Inbox's list of them; a pane's row of them
+   (`ui/notice/Notice.tsx`, `src/Notice.tsx`). Keyed on the wrapper's attributes alone;
+   `purlis_core::theme::parts` holds a copy of the box's colours.
+
+   **The box at rest is a pane's**: the raised ground edged in the waiting colour, so it reads as
+   purlis speaking to the person and not as the shell's output (#1647); trouble on the danger
+   ground. Where it stands changes only its layout and its edge: a row of the Inbox's list is the
+   list's (no box of its own), and one alone on a page is edged in the subtle hairline. Its
+   edge's width is no theme's: a Notice holds answers, and an ask keeps its mark.
+
+   In the `components` layer (`styles.css`), above `App.css`. */
+
+[data-scope="notice"][data-part="root"] {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  min-inline-size: 0;
+  border: 1px solid var(--state-waiting);
+  border-radius: var(--radius-lg);
+  color: var(--text-primary);
+  background-color: var(--surface-raised);
+  font-size: var(--font-size-sm);
+  /* **It wraps, whatever it says** (#1497): a path or one long word breaks inside the window. */
+  overflow-wrap: anywhere;
+}
+
+[data-scope="notice"][data-part="root"][data-variant="trouble"] {
+  color: var(--danger-text);
+  background-color: var(--danger-surface);
+}
+
+/* The line: what it says, and its ways out (`ButtonRow`, #1855). */
+[data-scope="notice"][data-part="root"] > [data-scope="button-row"] {
+  margin: 0;
+  padding-block: var(--space-2);
+  padding-inline: var(--space-5);
+}
+
+[data-scope="notice"][data-part="whose"] {
+  font-weight: var(--font-weight-strong);
+}
+
+[data-scope="notice"][data-part="message"] code {
+  opacity: 0.7;
+}
+
+[data-scope="notice"][data-part="message"] p {
+  margin: 0 0 var(--space-2);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   In a pane (#1481, #1647): one box, never taller than the pane. The box may shrink in the stack,
+   the line and its answers never do, and what a way out opened gives way first. The sentence has
+   the row: the ways out stand beside it only when all of it fits unwrapped.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="notice"][data-part="root"][data-placement="pane"] {
+  flex: 0 1 auto;
+  min-block-size: 0;
+  max-inline-size: 100%;
+  font-size: var(--font-size-xs);
+}
+
+[data-scope="notice-row"][data-part="stack"]
+  > [data-scope="notice"][data-part="root"][data-placement="pane"][data-opened] {
+  inline-size: 40rem;
+}
+
+[data-scope="notice"][data-part="root"][data-placement="pane"] > [data-scope="button-row"] {
+  flex: none;
+  padding-block: var(--space-1);
+  padding-inline: var(--space-3);
+}
+
+/* Where "Show the request" lands (`VaultRefusedNotice`): the line itself, never one of its
+   buttons, so no key pressed next answers it. */
+[data-scope="notice"][data-part="root"][data-placement="pane"] > [data-scope="button-row"]:focus {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: calc(var(--focus-ring-offset) / 2);
+}
+
+[data-placement="pane"] > [data-scope="button-row"] > [data-scope="notice"][data-part="message"] {
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+[data-placement="pane"] > [data-scope="notice"][data-part="under"] {
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 auto;
+  min-block-size: 0;
+  min-inline-size: 0;
+  overflow-y: auto;
+  padding-block: 0 var(--space-2);
+  padding-inline: var(--space-3);
+}
+
+[data-placement="pane"] > [data-scope="notice"][data-part="under"] > * {
+  flex: none;
+  max-inline-size: 100%;
+}
+
+[data-placement="pane"] > [data-scope="notice"][data-part="under"] pre {
+  max-inline-size: 100%;
+  margin: var(--space-2) 0;
+  overflow: auto;
+}
+
+[data-placement="pane"] > [data-scope="notice"][data-part="under"] p {
+  margin: var(--space-2) 0;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   Alone on a page: the inline surface, edged in the subtle hairline.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="notice"][data-part="root"][data-placement="alone"] {
+  border-color: var(--border-subtle);
+}
+
+[data-placement="alone"] > [data-scope="button-row"] > [data-scope="notice"][data-part="message"] {
+  display: inline;
+}
+
+[data-placement="alone"] > [data-scope="notice"][data-part="under"] {
+  padding-block: 0 var(--space-2);
+  padding-inline: var(--space-5);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   A row of the Inbox's list (#1695): the mark, the words, then its ways out on a line of their
+   own under the words, so a long detail never pushes a button off the side. The list is the
+   box; a row has none of its own, and trouble takes the danger ground across the row.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="notice"][data-part="root"][data-placement="inbox"] {
+  border-width: 0;
+  border-radius: 0;
+  background-color: transparent;
+  font-size: inherit;
+}
+
+[data-scope="notice"][data-part="root"][data-placement="inbox"][data-variant="trouble"] {
+  background-color: var(--danger-surface);
+}
+
+[data-scope="notice"][data-part="root"][data-placement="inbox"] > [data-scope="button-row"] {
+  padding-inline: var(--space-3);
+}
+
+[data-placement="inbox"] > [data-scope="button-row"] > [data-scope="notice"][data-part="message"] {
+  display: flex;
+  flex: 1 1 100%;
+  gap: var(--space-3);
+  align-items: baseline;
+}
+
+[data-placement="inbox"] > [data-scope="notice"][data-part="under"] {
+  padding-block: 0 var(--space-2);
+  padding-inline: var(--space-3);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   The Inbox's list (#1695): one box, a row per Notice, a separator between two rows. The
+   window's own lines are listed at the top of an Inbox with no box of their own (`lines`), stand
+   under the title bar as a band until an Inbox is drawn (`band`), and at the top of the page a
+   window with no project shows, at the page's width (`page`, D-LB-1).
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="notice-list"][data-part="root"] {
+  box-sizing: border-box;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background-color: var(--surface-raised);
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+[data-scope="notice-list"][data-part="root"] > * + * {
+  border-block-start: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
+}
+
+[data-scope="notice-list"][data-part="root"][data-at="lines"] {
+  border-width: 0;
+  background-color: transparent;
+}
+
+[data-scope="notice-list"][data-part="root"][data-at="band"] {
+  border-width: 0 0 1px;
+  border-radius: 0;
+}
+
+[data-scope="notice-list"][data-part="root"][data-at="page"] {
+  inline-size: calc(100% - 3rem);
+  max-inline-size: 37rem;
+  margin: var(--space-7) auto 0;
+}
+
+[data-scope="notice-list"][data-part="root"][hidden] {
+  display: none;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   A pane's row of Notices, above its terminal (`NoticePaneRow`, #1647): never over the terminal,
+   never more than most of the pane (the terminal keeps two fifths), and no row with none.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="notice-row"][data-part="root"] {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: stretch;
+  gap: var(--space-2);
+  min-block-size: 0;
+  max-block-size: 60%;
+  padding-block: var(--space-1);
+  padding-inline: var(--space-4);
+  background-color: var(--surface-base);
+  border-block-end: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
+}
+
+[data-scope="notice-row"][data-part="root"][data-empty] {
+  display: none;
+}
+
+/* One under another, together never taller than the row: the stack gives way and scrolls, so a
+   Notice's buttons are always reachable; each as wide as what it says, up to a sentence's width. */
+[data-scope="notice-row"][data-part="stack"] {
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 auto;
+  align-items: flex-start;
+  gap: var(--space-2);
+  min-inline-size: 0;
+  max-inline-size: min(100%, 40rem);
+  min-block-size: 0;
+  overflow-y: auto;
+}
+
+/* `hidden` hides a Notice the row keeps behind "+N more": its box's own `display` would otherwise
+   win over the browser's rule for the attribute. */
+[data-scope="notice-row"][data-part="stack"] > [hidden] {
+  display: none;
+}
+
+/* "+N more", beside the stack and at its top: a third Notice changes the row's width by a
+   button, never its height. */
+[data-scope="notice-row"][data-part="root"] > [data-way="more"] {
+  flex: none;
+  align-self: flex-start;
+}

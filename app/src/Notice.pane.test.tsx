@@ -29,6 +29,14 @@ import { drawnWith } from "./cascade.testkit";
 
 afterEach(cleanup);
 
+/** What an element of a Notice is, by the notice family's attributes (#2912): a way out by its
+ *  `data-way`, a part by its `data-part`, the line by its `data-scope` (the shared button row). */
+const partOf = (one: Element) =>
+  one.getAttribute("data-way") ??
+  (one.getAttribute("data-scope") === "notice" ? one.getAttribute("data-part") : null) ??
+  one.getAttribute("data-scope") ??
+  one.tagName;
+
 const opened = { id: "what-it-opens", open: true };
 
 const aPaneNotice = (under?: React.ReactNode) =>
@@ -55,11 +63,11 @@ describe("a Notice in a pane's corner", () => {
 
     const box = container.firstElementChild;
     expect(container.children).toHaveLength(1);
-    expect(box).toHaveClass("notice-pane-box", "notice-opened");
-    expect([...(box?.children ?? [])].map((one) => one.className)).toEqual([
-      "notice notice-pane notice-trouble",
-      "notice-under notice-under-pane",
-    ]);
+    expect(box).toHaveAttribute("data-scope", "notice");
+    expect(box).toHaveAttribute("data-placement", "pane");
+    expect(box).toHaveAttribute("data-variant", "trouble");
+    expect(box).toHaveAttribute("data-opened");
+    expect([...(box?.children ?? [])].map(partOf)).toEqual(["button-row", "under"]);
     // What it opened is outside the line: the line is a live region, and a form in one would
     // be read again on every keystroke.
     const line = screen.getByRole("status", { name: "Vault" });
@@ -71,12 +79,7 @@ describe("a Notice in a pane's corner", () => {
 
     const line = screen.getByRole("status", { name: "Vault" });
     expect(line).toHaveAttribute("data-cause", "vault-refused:7:devops");
-    expect([...line.children].map((one) => one.className.split(" ")[0] || one.tagName)).toEqual([
-      "notice-says",
-      "notice-fix",
-      "notice-fix",
-      "notice-dismiss",
-    ]);
+    expect([...line.children].map(partOf)).toEqual(["message", "fix", "fix", "dismiss"]);
     // Each a Tab stop (`docs/ui-primitives.md`), and the one that opens something says so.
     for (const button of screen.getAllByRole("button"))
       expect(button).toHaveAttribute("tabindex", "0");
@@ -89,8 +92,8 @@ describe("a Notice in a pane's corner", () => {
     const { container } = aPaneNotice();
 
     const box = container.firstElementChild;
-    expect(box).toHaveClass("notice-pane-box");
-    expect(box).not.toHaveClass("notice-opened");
+    expect(box).toHaveAttribute("data-placement", "pane");
+    expect(box).not.toHaveAttribute("data-opened");
     expect(box?.children).toHaveLength(1);
   });
 
@@ -104,7 +107,7 @@ describe("a Notice in a pane's corner", () => {
 
     const line = screen.getByRole("status");
     const mark = line.querySelector(".persona-mark");
-    expect(mark?.parentElement).toHaveClass("notice-says");
+    expect(mark?.parentElement).toHaveAttribute("data-part", "message");
     expect(mark?.parentElement?.firstElementChild).toBe(mark);
   });
 });
@@ -179,7 +182,7 @@ describe("a pane's row of Notices", () => {
 
     rerender(<NoticePaneRow>{null}</NoticePaneRow>);
     await waitFor(() =>
-      expect(container.querySelector(".pane-notice-row")).toHaveClass("pane-notice-row-empty"),
+      expect(container.querySelector('[data-scope="notice-row"]')).toHaveAttribute("data-empty"),
     );
   });
 
@@ -279,9 +282,9 @@ describe("the dispatch question's extras, in a pane", () => {
         <pre>the brief</pre>
       </>,
     );
-    const box = document.querySelector(".notice-pane-box");
-    const line = box?.querySelector(".notice-pane");
-    const under = box?.querySelector(".notice-under-pane");
+    const box = document.querySelector('[data-scope="notice"][data-placement="pane"]');
+    const line = box?.querySelector(':scope > [data-scope="button-row"]');
+    const under = box?.querySelector('[data-scope="notice"][data-part="under"]');
     expect(under?.children.length).toBe(2);
     expect(under?.children[0]).toHaveClass("dispatch-choice");
     expect(under?.children[1].tagName).toBe("PRE");
@@ -291,29 +294,32 @@ describe("the dispatch question's extras, in a pane", () => {
 });
 
 describe("a Notice in the Inbox", () => {
-  it.each(["inbox"] as const)("is not boxed at %s: the line and what it opened", (at) => {
-    const { container } = render(
-      <Notice
-        cause="doctor-finding:git-identity"
-        at={at}
-        persona="devops"
-        fixes={[{ label: "Set it", onPress: () => undefined, opens: opened }]}
-        under={<div id="what-it-opens">a form</div>}
-      >
-        git has no name for you.
-      </Notice>,
-    );
+  it.each(["inbox"] as const)(
+    "stands alone at %s outside a list: one surface, the line and what it opened",
+    (at) => {
+      const { container } = render(
+        <Notice
+          cause="doctor-finding:git-identity"
+          at={at}
+          persona="devops"
+          fixes={[{ label: "Set it", onPress: () => undefined, opens: opened }]}
+          under={<div id="what-it-opens">a form</div>}
+        >
+          git has no name for you.
+        </Notice>,
+      );
 
-    expect(container.querySelector(".notice-pane-box")).toBeNull();
-    // Standing alone, the line is the inline surface itself (#1855).
-    expect([...container.children].map((one) => one.className)).toEqual([
-      `notice notice-${at} ui-inline-surface`,
-      `notice-under notice-under-${at}`,
-    ]);
-    // The mark stays before the sentence, where the Inbox's rules place it.
-    const line = screen.getByRole("status");
-    expect(line.firstElementChild).toHaveClass("persona-mark");
-  });
+      expect(container.querySelector('[data-placement="pane"]')).toBeNull();
+      // Standing alone, its box is the inline surface (#1855), the line and what it opened in it.
+      expect(container.children).toHaveLength(1);
+      const box = container.firstElementChild;
+      expect(box).toHaveAttribute("data-placement", "alone");
+      expect([...(box?.children ?? [])].map(partOf)).toEqual(["button-row", "under"]);
+      // The mark stays before the sentence, where the Inbox's rules place it.
+      const line = screen.getByRole("status");
+      expect(line.firstElementChild).toHaveClass("persona-mark");
+    },
+  );
 });
 
 /**
@@ -327,6 +333,20 @@ describe("the pane Notice's rules", () => {
   );
   const rule = (selector: string) =>
     new RegExp(`(^|[},])\\s*${selector}\\s*\\{([^}]*)\\}`).exec(css)?.[2] ?? "";
+  /** The notice family's stylesheet (#2912), each rule's selector on one line. */
+  const family = readFileSync(join(process.cwd(), "src/ui/notice/notice.css"), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/\s+/g, " ");
+  /** The declarations of the family's rule written for exactly `selector`. */
+  const of = (selector: string) =>
+    [...family.matchAll(/([^{}]+)\{([^}]*)\}/g)].find(
+      (hit) => hit[1].trim() === selector.replace(/\s+/g, " "),
+    )?.[2] ?? "";
+  const ROOT = '[data-scope="notice"][data-part="root"]';
+  const PANE = `${ROOT}[data-placement="pane"]`;
+  const UNDER = '[data-placement="pane"] > [data-scope="notice"][data-part="under"]';
+  const ROW = '[data-scope="notice-row"][data-part="root"]';
+  const STACK = '[data-scope="notice-row"][data-part="stack"]';
 
   it("keeps the corner inside the pane", () => {
     expect(rule("\\.pane-corner\\.at-start")).toMatch(
@@ -348,13 +368,13 @@ describe("the pane Notice's rules", () => {
     expect(body).toMatch(/min-height:\s*0/);
     // The row is in the column, not positioned over anything, and leaves the terminal most of
     // the pane whatever is opened.
-    const row = rule("\\.pane-notice-row");
+    const row = of(ROW);
     expect(row).not.toMatch(/position|z-index/);
-    expect(row).toMatch(/max-height:\s*60%/);
-    expect(row).toMatch(/min-height:\s*0/);
-    expect(rule("\\.pane-notice-row\\.pane-notice-row-empty")).toMatch(/display:\s*none/);
+    expect(row).toMatch(/max-block-size:\s*60%/);
+    expect(row).toMatch(/min-block-size:\s*0/);
+    expect(of(`${ROW}[data-empty]`)).toMatch(/display:\s*none/);
     // What the row keeps behind "+N more" is not drawn, whatever its box's own display says.
-    expect(rule("\\.pane-notices > \\[hidden\\]")).toMatch(/display:\s*none/);
+    expect(of(`${STACK} > [hidden]`)).toMatch(/display:\s*none/);
   });
 
   it("lets the terminal be reached through the part of the corner that draws nothing", () => {
@@ -363,13 +383,13 @@ describe("the pane Notice's rules", () => {
   });
 
   it("stacks a pane's Notices and scrolls them when they are taller than the pane", () => {
-    const stack = rule("\\.pane-notices");
+    const stack = of(STACK);
     expect(stack).toMatch(/flex-direction:\s*column/);
-    expect(stack).toMatch(/min-height:\s*0/);
+    expect(stack).toMatch(/min-block-size:\s*0/);
     expect(stack).toMatch(/overflow-y:\s*auto/);
     // Never wider than the pane, and no wider than a sentence reads well.
-    expect(stack).toMatch(/max-width:\s*min\(100%, 40rem\)/);
-    expect(rule("\\.notice-pane-box")).toMatch(/max-width:\s*100%/);
+    expect(stack).toMatch(/max-inline-size:\s*min\(100%, 40rem\)/);
+    expect(of(PANE)).toMatch(/max-inline-size:\s*100%/);
   });
 
   it("wraps the ways out under the sentence, and never breaks one that fits", () => {
@@ -379,7 +399,11 @@ describe("the pane Notice's rules", () => {
     const line = screen.getByRole("status", { name: "Vault" });
     expect(drawnWith(line, "flex-wrap")).toBe("wrap");
     // The sentence is as wide as it reads, so it shares a row only when everything fits.
-    expect(rule("\\.notice-pane > \\.notice-says")).toMatch(/flex:\s*0 1 auto/);
+    expect(
+      of(
+        '[data-placement="pane"] > [data-scope="button-row"] > [data-scope="notice"][data-part="message"]',
+      ),
+    ).toMatch(/flex:\s*0 1 auto/);
     // A way out never shrinks, so a row with no room sends it to the next; only its cap at the
     // row's width can make it narrower than its words, and only then do they wrap.
     for (const way of within(line).getAllByRole("button")) {
@@ -389,9 +413,9 @@ describe("the pane Notice's rules", () => {
   });
 
   it("keeps what a way out opened at the Notice's width, its draft scrolling in its own box", () => {
-    expect(rule("\\.notice-under-pane")).toMatch(/min-width:\s*0/);
-    const draft = rule("\\.notice-under-pane pre");
-    expect(draft).toMatch(/max-width:\s*100%/);
+    expect(of(UNDER)).toMatch(/min-inline-size:\s*0/);
+    const draft = of(`${UNDER} pre`);
+    expect(draft).toMatch(/max-inline-size:\s*100%/);
     expect(draft).toMatch(/overflow:\s*auto/);
   });
 
@@ -417,30 +441,35 @@ describe("the pane Notice's rules", () => {
     expect(parts).toMatch(/min-width:\s*0/);
     expect(rule("\\.ui-choice-option")).toMatch(/grid-template-columns:\s*auto 1fr/);
     // It is drawn under the line, so the rules for what a way out opened hold it too.
-    expect(rule("\\.notice-under-pane > \\*")).toMatch(/max-width:\s*100%/);
+    expect(of(`${UNDER} > *`)).toMatch(/max-inline-size:\s*100%/);
   });
 
   it("is never taller than its pane: what it opened gives way, the answers never do", () => {
     // The dispatch question in a short pane (#1483's train): the box shrinks in the stack,
     // its line and answers keep their height, and what is under them scrolls, the brief
     // first.
-    const box = rule("\\.notice-pane-box");
-    expect(box).toMatch(/flex-direction:\s*column/);
-    expect(box).toMatch(/min-height:\s*0/);
+    expect(of(ROOT)).toMatch(/flex-direction:\s*column/);
+    const box = of(PANE);
+    expect(box).toMatch(/min-block-size:\s*0/);
     expect(box).toMatch(/flex:\s*0 1 auto/);
-    expect(rule("\\.notice-pane")).toMatch(/flex:\s*none/);
-    const under = rule("\\.notice-under-pane");
-    expect(under).toMatch(/min-height:\s*0/);
+    expect(of(`${PANE} > [data-scope="button-row"]`)).toMatch(/flex:\s*none/);
+    const under = of(UNDER);
+    expect(under).toMatch(/min-block-size:\s*0/);
     expect(under).toMatch(/overflow-y:\s*auto/);
-    expect(rule("\\.notice-under-pane > \\.block-report")).toMatch(/min-height:\s*0/);
+    expect(
+      rule(
+        '\\[data-placement="pane"\\] > \\[data-scope="notice"\\]\\[data-part="under"\\] > \\.block-report',
+      ),
+    ).toMatch(/min-height:\s*0/);
     // The stack still scrolls as a whole when the Notices together are too tall.
-    expect(rule("\\.pane-notices")).toMatch(/overflow-y:\s*auto/);
+    expect(of(STACK)).toMatch(/overflow-y:\s*auto/);
   });
 
   it("is opaque", () => {
     const { container } = aPaneNotice();
-    expect(drawnWith(container.firstElementChild as Element, "background")).toBe(
-      "var(--surface-raised)",
+    // Its trouble is the danger ground (#2912), as opaque as the raised one news stands on.
+    expect(drawnWith(container.firstElementChild as Element, "background-color")).toBe(
+      "var(--danger-surface)",
     );
   });
 
@@ -450,14 +479,15 @@ describe("the pane Notice's rules", () => {
   });
 
   it("leaves the window's lines and the Inbox's rows as they were", () => {
-    expect(rule("\\.notice-inbox \\.notice-says")).toMatch(/display:\s*inline/);
+    const message = '> [data-scope="button-row"] > [data-scope="notice"][data-part="message"]';
+    expect(of(`[data-placement="alone"] ${message}`)).toMatch(/display:\s*inline/);
     // The Inbox's row puts its ways out under the words, in the shared row that wraps.
-    expect(rule("\\.notice-list \\.notice-inbox \\.notice-says")).toMatch(/flex:\s*1 1 100%/);
+    expect(of(`[data-placement="inbox"] ${message}`)).toMatch(/flex:\s*1 1 100%/);
     // No rule of the pane's reaches a Notice that is not in one.
-    const reach = [...css.matchAll(/([^{}]+)\{[^{}]*\}/g)]
+    const reach = [...family.matchAll(/([^{}]+)\{[^{}]*\}/g)]
       .map((hit) => hit[1].trim())
-      .filter((selector) => /notice-(pane|under-pane)|pane-notices/.test(selector));
-    for (const selector of reach) expect(selector).not.toMatch(/notice-(inbox|list)/);
+      .filter((selector) => /data-placement="pane"|notice-row/.test(selector));
+    for (const selector of reach) expect(selector).not.toMatch(/"(inbox|alone)"|notice-list/);
   });
 });
 
@@ -500,7 +530,7 @@ describe("a granting Notice on a pane that just moved (#1695, train 54's review)
     Object.defineProperty(HTMLElement.prototype, "offsetTop", {
       configurable: true,
       get(this: HTMLElement) {
-        const box = this.closest(".pane-notices > *");
+        const box = this.closest('[data-scope="notice-row"][data-part="stack"] > *');
         return box === null ? 0 : [...(box.parentElement?.children ?? [])].indexOf(box) * 40;
       },
     });

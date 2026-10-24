@@ -404,7 +404,9 @@ function countsOn(workspace: string): string | null {
   const tab = [
     ...document.querySelectorAll<HTMLElement>('[data-strip="Workspaces"] [role="tab"]'),
   ].find((one) => one.querySelector(".workspace-name")?.textContent === workspace);
-  return tab?.querySelector(".count-pill")?.getAttribute("aria-label") ?? null;
+  return (
+    tab?.querySelector("[data-scope=count][data-part=group]")?.getAttribute("aria-label") ?? null
+  );
 }
 
 describe("the Chats section", () => {

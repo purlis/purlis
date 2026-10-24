@@ -363,6 +363,9 @@ pub const PAIRS: &[Pair] = &[
     p("text.primary", "wash.warning", 4.5).over("surface.deep"),
     // - Its hand, a mark in the needs-you colour on the same wash: 3:1.
     p("needs-you.base", "wash.warning", 3.0).over("surface.deep"),
+    // - What waits on the person said in a badge or a count, in the waiting colour on the amber
+    //   wash, on a panel (#2912, R66: "Waiting for you").
+    p("state.waiting", "wash.warning", 4.5).over("surface.raised"),
     // - What a dialog is honest about (`.honest`): its words at the opacity it fades them to.
     p("text.primary", "surface.overlay", TEXT).faded(0.8),
     // - A task that is away draws its words on the terminal's own background.

@@ -270,6 +270,7 @@
           "--radius-md": "7px",
           "--radius-sm": "3px",
           "--radius-xl": "12px",
+          "--separator-width": "1px",
           "--size-chrome": "calc(24rem / 14)",
           "--size-control": "calc(26rem / 14)",
           "--space-0": "0",
@@ -309,6 +310,7 @@
           "--radius-md": "7px",
           "--radius-sm": "3px",
           "--radius-xl": "12px",
+          "--separator-width": "1px",
           "--size-chrome": "calc(18rem / 14)",
           "--size-control": "calc(24rem / 14)",
           "--space-0": "0",
@@ -536,7 +538,7 @@
           }
         ]
       },
-      "parts": "@layer parts {\n  :where([data-scope=\"panel\"][data-part=\"root\"]) { background-color: var(--surface-raised); }\n  :where([data-scope=\"tooltip\"][data-part=\"root\"]) { border-radius: min(8px, 50%); }\n  :where([data-scope=\"tooltip\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }\n}\n"
+      "parts": "@layer parts {\n  :where([data-scope=\"card\"][data-part=\"root\"]) { background-color: var(--surface-base); }\n  :where([data-scope=\"card\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }\n  :where([data-scope=\"panel\"][data-part=\"root\"]) { background-color: var(--surface-raised); }\n  :where([data-scope=\"text-input\"][data-part=\"root\"]) { border-color: transparent; }\n  :where([data-scope=\"textarea\"][data-part=\"root\"]) { border-color: transparent; }\n  :where([data-scope=\"tooltip\"][data-part=\"root\"]) { border-radius: min(8px, 50%); }\n  :where([data-scope=\"tooltip\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }\n  :where([data-scope=\"button\"][data-part=\"root\"][data-variant=\"primary\"]) { border-color: transparent; }\n  :where([data-scope=\"button\"][data-part=\"root\"][data-variant=\"secondary\"]) { border-color: transparent; }\n  :where([data-scope=\"card\"][data-part=\"root\"][data-variant=\"ask\"]) { border-width: 1px; border-style: solid; }\n}\n"
     },
     "dark-high-contrast": {
       "name": "Purlis",
@@ -808,6 +810,7 @@
           "--radius-md": "7px",
           "--radius-sm": "3px",
           "--radius-xl": "12px",
+          "--separator-width": "1px",
           "--size-chrome": "calc(24rem / 14)",
           "--size-control": "calc(26rem / 14)",
           "--space-0": "0",
@@ -847,6 +850,7 @@
           "--radius-md": "7px",
           "--radius-sm": "3px",
           "--radius-xl": "12px",
+          "--separator-width": "1px",
           "--size-chrome": "calc(18rem / 14)",
           "--size-control": "calc(24rem / 14)",
           "--space-0": "0",
@@ -1074,7 +1078,7 @@
           }
         ]
       },
-      "parts": "@layer parts {\n  :where([data-scope=\"panel\"][data-part=\"root\"]) { background-color: var(--surface-raised); }\n  :where([data-scope=\"tooltip\"][data-part=\"root\"]) { border-radius: min(8px, 50%); }\n  :where([data-scope=\"tooltip\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }\n}\n"
+      "parts": "@layer parts {\n  :where([data-scope=\"card\"][data-part=\"root\"]) { background-color: var(--surface-base); }\n  :where([data-scope=\"card\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }\n  :where([data-scope=\"panel\"][data-part=\"root\"]) { background-color: var(--surface-raised); }\n  :where([data-scope=\"text-input\"][data-part=\"root\"]) { border-color: transparent; }\n  :where([data-scope=\"textarea\"][data-part=\"root\"]) { border-color: transparent; }\n  :where([data-scope=\"tooltip\"][data-part=\"root\"]) { border-radius: min(8px, 50%); }\n  :where([data-scope=\"tooltip\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }\n  :where([data-scope=\"button\"][data-part=\"root\"][data-variant=\"primary\"]) { border-color: transparent; }\n  :where([data-scope=\"button\"][data-part=\"root\"][data-variant=\"secondary\"]) { border-color: transparent; }\n  :where([data-scope=\"card\"][data-part=\"root\"][data-variant=\"ask\"]) { border-width: 1px; border-style: solid; }\n}\n"
     },
     "light": {
       "name": "Purlis",
@@ -1346,6 +1350,7 @@
           "--radius-md": "7px",
           "--radius-sm": "3px",
           "--radius-xl": "12px",
+          "--separator-width": "1px",
           "--size-chrome": "calc(24rem / 14)",
           "--size-control": "calc(26rem / 14)",
           "--space-0": "0",
@@ -1385,6 +1390,7 @@
           "--radius-md": "7px",
           "--radius-sm": "3px",
           "--radius-xl": "12px",
+          "--separator-width": "1px",
           "--size-chrome": "calc(18rem / 14)",
           "--size-control": "calc(24rem / 14)",
           "--space-0": "0",
@@ -1612,7 +1618,7 @@
           }
         ]
       },
-      "parts": "@layer parts {\n  :where([data-scope=\"panel\"][data-part=\"root\"]) { background-color: var(--surface-raised); }\n  :where([data-scope=\"tooltip\"][data-part=\"root\"]) { border-radius: min(8px, 50%); }\n  :where([data-scope=\"tooltip\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }\n}\n"
+      "parts": "@layer parts {\n  :where([data-scope=\"card\"][data-part=\"root\"]) { background-color: var(--surface-base); }\n  :where([data-scope=\"card\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }\n  :where([data-scope=\"panel\"][data-part=\"root\"]) { background-color: var(--surface-raised); }\n  :where([data-scope=\"text-input\"][data-part=\"root\"]) { border-color: transparent; }\n  :where([data-scope=\"textarea\"][data-part=\"root\"]) { border-color: transparent; }\n  :where([data-scope=\"tooltip\"][data-part=\"root\"]) { border-radius: min(8px, 50%); }\n  :where([data-scope=\"tooltip\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }\n  :where([data-scope=\"button\"][data-part=\"root\"][data-variant=\"primary\"]) { border-color: transparent; }\n  :where([data-scope=\"button\"][data-part=\"root\"][data-variant=\"secondary\"]) { border-color: transparent; }\n  :where([data-scope=\"card\"][data-part=\"root\"][data-variant=\"ask\"]) { border-width: 1px; border-style: solid; }\n}\n"
     }
   },
   "purlis-classic": {
@@ -1811,6 +1817,7 @@
           "--radius-md": "4px",
           "--radius-sm": "3px",
           "--radius-xl": "8px",
+          "--separator-width": "1px",
           "--size-chrome": "1.5rem",
           "--size-control": "2rem",
           "--space-0": "0",
@@ -1850,6 +1857,7 @@
           "--radius-md": "4px",
           "--radius-sm": "3px",
           "--radius-xl": "8px",
+          "--separator-width": "1px",
           "--size-chrome": "calc(18rem / 14)",
           "--size-control": "calc(24rem / 14)",
           "--space-0": "0",
@@ -2211,6 +2219,7 @@
           "--radius-md": "4px",
           "--radius-sm": "3px",
           "--radius-xl": "8px",
+          "--separator-width": "1px",
           "--size-chrome": "1.5rem",
           "--size-control": "2rem",
           "--space-0": "0",
@@ -2250,6 +2259,7 @@
           "--radius-md": "4px",
           "--radius-sm": "3px",
           "--radius-xl": "8px",
+          "--separator-width": "1px",
           "--size-chrome": "calc(18rem / 14)",
           "--size-control": "calc(24rem / 14)",
           "--space-0": "0",

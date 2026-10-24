@@ -47,6 +47,9 @@
  *   classes (`projects`, `project`, `project-name`) and `data-scope="rail"` by hand.
  * - `purlis/activity-family` (error: the family has moved, #2917): an activity item's old
  *   classes, and `data-scope="activity"` or `"activity-bar"` written by hand.
+ * - `purlis/card-family`, `purlis/notice-family`, `purlis/badge-family` and
+ *   `purlis/separator-family` (errors: these families have moved, #2912): the same, and a raw
+ *   `<hr>`, which is the separator family's `Separator` (`ui/separator/Separator`).
  *
  * The primitives library itself is refused outside `src/ui` by `no-restricted-imports`, in
  * `eslint.config.js`: one wrapper per primitive, and screens never import it.
@@ -431,7 +434,7 @@ const tooltipFamily = {
  * so is its `data-scope` written by hand, since only its wrapper draws it. `classes` are whole
  * words of a `className`, or a prefix where one ends in `*`.
  */
-function moved({ description, scopes, classes, message }) {
+function moved({ description, scopes, classes, message, elements = [] }) {
   const named = (word) =>
     classes.some((one) => (one.endsWith("*") ? word.startsWith(one.slice(0, -1)) : word === one));
   return {
@@ -441,6 +444,7 @@ function moved({ description, scopes, classes, message }) {
       messages: {
         oldClass: `\`{{word}}\` is the old class of ${message}`,
         scope: `\`data-scope="{{scope}}"\` is drawn by its family's wrapper only: ${message}`,
+        raw: `A raw \`<{{element}}>\` is drawn by its family's wrapper only: ${message}`,
       },
       schema: [],
     },
@@ -460,6 +464,10 @@ function moved({ description, scopes, classes, message }) {
             scopes.includes(node.value.value)
           )
             context.report({ node, messageId: "scope", data: { scope: node.value.value } });
+        },
+        JSXOpeningElement(node) {
+          if (node.name.type === "JSXIdentifier" && elements.includes(node.name.name))
+            context.report({ node, messageId: "raw", data: { element: node.name.name } });
         },
       };
     },
@@ -536,6 +544,44 @@ const activityFamily = moved({
     "an activity item or bar: draw it as `<ActivityItem>`, its count as `<ActivityCount>`, its group as `<ActivityGroup>` and its bar as `<ActivityBarFrame>`, from `ui/activity/ActivityItem` (#2917).",
 });
 
+const cardFamily = moved({
+  description: "A box one step off its surface is the shared Card family",
+  scopes: ["card"],
+  classes: ["ui-inline-surface", "ui-inline-surface-*"],
+  message: 'a card: draw it as `<Card>` (an ask as `variant="ask"`) from `ui/card/Card` (#2912).',
+});
+
+const noticeFamily = moved({
+  description: "A Notice is drawn by the shared notice family",
+  scopes: ["notice", "notice-list", "notice-row"],
+  classes: [
+    "notice",
+    "notice-*",
+    "pane-notice-row",
+    "pane-notice-row-*",
+    "pane-notices",
+    "window-notices",
+  ],
+  message:
+    "a Notice: draw it as `<Notice>` (`src/Notice.tsx`), which draws through `ui/notice/Notice` (#2912).",
+});
+
+const badgeFamily = moved({
+  description: "A badge or a count is the shared badge and count family",
+  scopes: ["badge", "count"],
+  classes: ["ui-setting-badge", "count-pill", "count-pill-*", "show-more-needs", "activity-said"],
+  message:
+    "a badge or a count: draw it as `<Badge>`, `<Count>` or `<CountGroup>` from `ui/badge/Badge` (#2912).",
+});
+
+const separatorFamily = moved({
+  description: "A line between two groups is the shared Separator family",
+  scopes: ["separator"],
+  classes: [],
+  elements: ["hr"],
+  message: "a separator: draw it as `<Separator>` from `ui/separator/Separator` (#2912).",
+});
+
 export const purlisUi = {
   meta: { name: "purlis-ui" },
   rules: {
@@ -552,5 +598,9 @@ export const purlisUi = {
     "status-item-family": statusItemFamily,
     "rail-family": railFamily,
     "activity-family": activityFamily,
+    "card-family": cardFamily,
+    "notice-family": noticeFamily,
+    "badge-family": badgeFamily,
+    "separator-family": separatorFamily,
   },
 };

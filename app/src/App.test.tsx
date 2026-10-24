@@ -309,7 +309,7 @@ describe("App", () => {
     const page = heading.closest(".body");
     if (page === null) throw new Error("the opener is drawn outside the window's body");
     const lists = await waitFor(() => {
-      const found = page.querySelectorAll(".notice-list:not([hidden])");
+      const found = page.querySelectorAll("[data-scope=notice-list]:not([hidden])");
       expect(found).toHaveLength(1);
       expect(found[0].querySelectorAll("[data-cause]")).toHaveLength(2);
       return found;

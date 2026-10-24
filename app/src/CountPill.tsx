@@ -3,6 +3,7 @@
 
 import { useLayoutEffect, useRef } from "react";
 import { fitPillOn } from "./wholeWays";
+import { Count, CountGroup } from "./ui/badge/Badge";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
@@ -37,25 +38,14 @@ export function CountPill({ chats, needs }: { chats?: number; needs: number }) {
   const said = countsSaid(chats, needs);
   return (
     <Tooltip tip={said}>
-      <span
-        ref={pill}
-        className="count-pill"
-        role="img"
-        aria-label={said}
-        data-chats={chats}
-        data-needs={needs}
-      >
-        {(chats ?? 0) > 0 && (
-          <span className="count-pill-chats" aria-hidden="true">
-            {chats}
-          </span>
-        )}
+      <CountGroup ref={pill} role="img" aria-label={said} data-chats={chats} data-needs={needs}>
+        {(chats ?? 0) > 0 && <Count aria-hidden="true">{chats}</Count>}
         {needs > 0 && (
-          <span className="count-pill-needs" aria-hidden="true">
+          <Count variant="hot" aria-hidden="true">
             {needs}
-          </span>
+          </Count>
         )}
-      </span>
+      </CountGroup>
     </Tooltip>
   );
 }

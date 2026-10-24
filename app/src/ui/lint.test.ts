@@ -261,3 +261,62 @@ tester.run("purlis/status-item-family", purlisUi.rules["status-item-family"], {
     { code: `<span data-scope="status-item">x</span>`, errors: [{ messageId: "scope" }] },
   ],
 });
+
+tester.run("purlis/card-family", purlisUi.rules["card-family"], {
+  valid: [
+    { code: `<Card variant="ask" className="inbox-ask">x</Card>` },
+    { code: `<div className="row-card">x</div>` },
+  ],
+  invalid: [
+    {
+      code: `<div className="block-report ui-inline-surface">x</div>`,
+      errors: [{ messageId: "oldClass" }],
+    },
+    {
+      code: `<p className="ui-inline-surface ui-inline-surface-waiting">x</p>`,
+      errors: [{ messageId: "oldClass" }, { messageId: "oldClass" }],
+    },
+    { code: `<li data-scope="card">x</li>`, errors: [{ messageId: "scope" }] },
+  ],
+});
+
+tester.run("purlis/notice-family", purlisUi.rules["notice-family"], {
+  valid: [
+    { code: `<Notice cause="x" onDismiss={go}>x</Notice>` },
+    { code: `<section className="inbox-notices specimen-notice">x</section>` },
+  ],
+  invalid: [
+    {
+      code: `<div className="notice notice-pane notice-trouble">x</div>`,
+      errors: [{ messageId: "oldClass" }, { messageId: "oldClass" }, { messageId: "oldClass" }],
+    },
+    {
+      code: `<div className={empty ? "pane-notice-row pane-notice-row-empty" : "pane-notice-row"} />`,
+      errors: [{ messageId: "oldClass" }, { messageId: "oldClass" }, { messageId: "oldClass" }],
+    },
+    { code: `<div data-scope="notice-list" />`, errors: [{ messageId: "scope" }] },
+  ],
+});
+
+tester.run("purlis/badge-family", purlisUi.rules["badge-family"], {
+  valid: [
+    { code: `<Badge variant="waiting">Waiting for you</Badge>` },
+    { code: `<Count className="activity-count" variant="hot" said="2 need you">2</Count>` },
+  ],
+  invalid: [
+    { code: `<span className="ui-setting-badge">x</span>`, errors: [{ messageId: "oldClass" }] },
+    {
+      code: `<span className="count-pill"><span className="count-pill-needs">2</span></span>`,
+      errors: [{ messageId: "oldClass" }, { messageId: "oldClass" }],
+    },
+    { code: `<span data-scope="count">2</span>`, errors: [{ messageId: "scope" }] },
+  ],
+});
+
+tester.run("purlis/separator-family", purlisUi.rules["separator-family"], {
+  valid: [{ code: `<Separator decorative className="activity-divider" />` }],
+  invalid: [
+    { code: `<hr />`, errors: [{ messageId: "raw" }] },
+    { code: `<div data-scope="separator" />`, errors: [{ messageId: "scope" }] },
+  ],
+});

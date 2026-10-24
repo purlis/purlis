@@ -652,6 +652,10 @@ const CLASSLESS: readonly string[] = [
   // family's (`tabPart`), and it holds no button.
   '[data-scope="tabs"][data-part="tab"] [data-part="closer"][data-scope="tabs"]:hover',
   '[data-scope="tabs"][data-part="tab"] [data-part="closer"][data-scope="tabs"][data-keeps]:hover',
+  // A card's ground (`ui/card`, #2912), set by the family's attributes on the element a screen
+  // asks for: `surface.raised`, which the button family lists, and in Purlis `surface.base`
+  // (its `card.root.fill`), which the engine holds to the button's grounds.
+  '[data-scope="card"][data-part="root"]',
 ];
 
 /**
