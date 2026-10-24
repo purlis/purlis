@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792877142872,
+  "lastUpdate": 1792880307780,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -6930,6 +6930,42 @@ window.BENCHMARK_DATA = {
             "value": 328.6,
             "unit": "MB",
             "extra": "median of 6 samples: 374.7, 375.4, 337.6, 318.7, 319.6, 235.7 MB; window 208.3 MB, session host 120.3 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b5f42c7485ae13202fe5cd210fac2ee288709432",
+          "message": "Purlis light and high contrast ship as its appearances (#2924) (#3169)\n\n* Purlis light keeps its washes' hue; picture high contrast (#2924)\n\nLight was dark reflected by one rule, and a wash reflected became a dark\nhue laid thin on a light ground, which read as grey (the pane warnings'\namber). A wash is now its hue's purest colour at dark's alpha, and a test\nholds that each wash keeps its hue on every light ground.\n\nThe stories now picture Purlis's dark high contrast too, so the derived\nappearances can be seen beside dark and Classic before either ships.\n\nRefs #2924\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* stories: redraw Purlis light's status and title-bar pictures (#2924)\n\nTheir washes changed by less than the picture comparison notices, so\nthe baselines are removed for update-baselines to draw them again from\nthe current light appearance.\n\nRefs #2924\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* pictured.json: one cell a line, as prettier writes it (#2924)\n\nRefs #2924\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Purlis light and high contrast ship as its appearances (#2924)\n\nThe operator's ruling of 2026-10-24, after the look: light and high\ncontrast ship as drawn. Each can be chosen, Purlis chosen to follow the\nsystem draws light on a light system and high contrast where more is\nasked for, and with nothing chosen it stays dark. A test holds the\nruling; the design notes and the change note record it.\n\nCloses #2924\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-25T01:02:25+04:00",
+          "tree_id": "f07dfa5f861dd8e3b4895ca0aa3f5f0b30790841",
+          "url": "https://github.com/purlis/purlis/commit/b5f42c7485ae13202fe5cd210fac2ee288709432"
+        },
+        "date": 1792880305386,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 1085,
+            "unit": "MB",
+            "extra": "median of 3 samples: 900, 1085, 1405 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 332.7,
+            "unit": "MB",
+            "extra": "median of 6 samples: 369.2, 353.4, 330.2, 332.3, 333, 264.3 MB; window 207.2 MB, session host 126.7 MB"
           }
         ]
       }
