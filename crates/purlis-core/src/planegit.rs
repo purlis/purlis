@@ -2601,7 +2601,7 @@ pub fn save_as(request: &Request, trigger: Trigger, say: Sink) -> u8 {
 pub fn save_claimed(request: &Request, trigger: Trigger, claim: &Claim, say: Sink) -> u8 {
     let stages = save_stages();
     let stages: Vec<&str> = stages.iter().map(String::as_str).collect();
-    save_staging(request, trigger, claim, &stages, say)
+    save_staging(request, trigger, claim, Staging::Add(&stages), say)
 }
 
 /// What a save of exactly some paths says when something else is staged already.
@@ -2639,19 +2639,34 @@ pub fn save_paths(request: &Request, trigger: Trigger, paths: &[String], say: Si
         ));
         return 0;
     }
+    // Each file under them is staged from one open descriptor ([`ondisk::stage_named`]), and
+    // one inside what a save never stages is left out by [`kept_out`], file by file: no exclude
+    // pathspec, which would make `git add -A` skip an untracked file named beside it (git 2.50,
+    // measured for #2772).
     let literal: Vec<String> = named.iter().map(|path| literally(path)).collect();
-    let mut add: Vec<&str> = vec!["add", "-A", "--"];
-    add.extend(literal.iter().map(String::as_str));
-    // **An exclude pathspec makes `git add -A` skip an untracked file named beside it** (git
-    // 2.50, measured for #2772: `add -A -- :(literal)a/new :(exclude,glob)x/**` leaves `a/new`
-    // untracked), so a new file a skill change names would miss its commit. A path inside what
-    // the excludes keep out is never named ([`kept_out`]), and the excludes are passed only where
-    // a named folder could hold it.
-    let excluded = never_staged();
-    if named.iter().any(|path| could_hold_kept_out(root, path)) {
-        add.extend(excluded.iter().map(String::as_str));
+    let literal: Vec<&str> = literal.iter().map(String::as_str).collect();
+    save_staging(request, trigger, &claim, Staging::Named(&literal), say)
+}
+
+/// How a save stages what it commits.
+#[derive(Clone, Copy)]
+enum Staging<'a> {
+    /// `git add` with these arguments.
+    Add(&'a [&'a str]),
+    /// What `git add -A` of these literal pathspecs would stage, each file from one open
+    /// descriptor ([`ondisk::stage_named`]).
+    Named(&'a [&'a str]),
+}
+
+impl<'a> Staging<'a> {
+    /// The paths the staging looks at, for the look before anything is staged
+    /// ([`ondisk::second_names_ahead`]).
+    fn pathspec(self) -> Vec<&'a str> {
+        match self {
+            Staging::Add(add) => ondisk::pathspec_of(add),
+            Staging::Named(specs) => specs.to_vec(),
+        }
     }
-    save_staging(request, trigger, &claim, &add, say)
 }
 
 /// Whether `path` (plane-relative) is inside what a save never stages ([`never_staged`]): a
@@ -2664,16 +2679,6 @@ fn kept_out(path: &str) -> bool {
             parts.as_slice(),
             ["skills.local.lock"] | ["workspaces", ".throwaway", ..]
         )
-}
-
-/// Whether `path` (plane-relative) is a folder that could hold what a save never stages: the
-/// plane's root, `workspaces/` or `personas/`, or one workspace's or persona's folder.
-fn could_hold_kept_out(root: &Path, path: &str) -> bool {
-    let parts: Vec<&str> = path.split('/').filter(|part| !part.is_empty()).collect();
-    matches!(
-        parts.as_slice(),
-        [] | ["."] | ["workspaces" | "personas"] | ["workspaces" | "personas", _]
-    ) && root.join(path).is_dir()
 }
 
 /// Whether `path` (plane-relative) can be named to `git add -A`: git tracks something under it,
@@ -2742,12 +2747,12 @@ pub fn paths_unsaved(root: &Path, paths: &[String]) -> Option<String> {
         .then(|| OTHERS_STAGED.to_owned())
 }
 
-/// [`save_claimed`], staging with `add_cmd`.
+/// [`save_claimed`], staging as `staging` says.
 fn save_staging(
     request: &Request,
     trigger: Trigger,
     _claim: &Claim,
-    add_cmd: &[&str],
+    staging: Staging<'_>,
     say: Sink,
 ) -> u8 {
     let started = std::time::Instant::now();
@@ -2784,7 +2789,7 @@ fn save_staging(
         commit_push(
             request,
             &plane,
-            add_cmd,
+            staging,
             &trigger.caller(),
             &mut attempt,
             say,
@@ -3025,10 +3030,33 @@ fn group_of(path: &str) -> String {
     }
 }
 
+/// A save refused because a file is not the one file on disk ([`ondisk`]): `header`, then a
+/// line for each path, then what became of them.
+fn refuse_on_disk(header: &str, refusal: ondisk::Refusal, attempt: &mut Attempt, say: Sink) -> u8 {
+    say(Say::Fail(header.into()));
+    for line in refusal.named {
+        say(Say::Fail(format!("  {line}")));
+    }
+    say(Say::Info(refusal.then));
+    attempt.outcome = "blocked";
+    attempt.detail = ondisk::NOT_AS_STAGED.into();
+    1
+}
+
+/// [`refuse_on_disk`] for what is held back once staged.
+fn refuse_not_as_staged(refusal: ondisk::Refusal, attempt: &mut Attempt, say: Sink) -> u8 {
+    refuse_on_disk(
+        "Refusing to save — a staged file is not the one file on disk:",
+        refusal,
+        attempt,
+        say,
+    )
+}
+
 fn commit_push(
     request: &Request,
     plane: &crate::planesave::Plane,
-    add_cmd: &[&str],
+    staging: Staging<'_>,
     caller: &forge::Caller,
     attempt: &mut Attempt,
     say: Sink,
@@ -3036,7 +3064,9 @@ fn commit_push(
     let root = request.root;
     // `--sign` asks for it this once; `[plane] sign` asks for it every time.
     let sign = request.sign || plane.sign.value;
-    if stages_the_whole_tree(add_cmd) {
+    if let Staging::Add(add_cmd) = staging
+        && stages_the_whole_tree(add_cmd)
+    {
         // BEFORE the git-repo check and before any staging: a refusal that has already run
         // `git add -A` has done the damage and merely declined to name it.
         if let Some(tree) = tree_of(root, request.cwd) {
@@ -3130,38 +3160,76 @@ fn commit_push(
         return 1;
     }
 
-    // **The add's exit status is the whole fix.** Under a held `.git/index.lock` it exits 128
-    // and stages nothing, and the probe below then answers 0 — because there is no difference
-    // between HEAD and an index nothing was written to. Discarded, that made "charter could not
-    // stage anything" and "there was nothing to stage" the same value.
-    // The write that adds git's untracked cache to the index, which a status that can write it
-    // (the operator's own) keeps fresh and every status then uses (FD-11, [`git::UNTRACKED_CACHE`]).
-    let added = match git::run_untimed(root, &git::with_untracked_cache(root, add_cmd)) {
-        Ok(run) => run,
-        Err(unavailable) => {
-            return refuse_unreadable(
-                root,
-                &git_dir,
-                &format!("`git {}` could not be run", add_cmd.join(" ")),
-                &unavailable.to_string(),
-                say,
-            );
-        }
-    };
-    if !added.ok() {
-        return refuse_unreadable(
-            root,
-            &git_dir,
-            &format!(
-                "`git {}` exited {}",
-                add_cmd.join(" "),
-                added
-                    .code
-                    .map_or_else(|| "None".to_string(), |c| c.to_string())
-            ),
-            &gitstate::said(&added),
+    // Before anything is staged, too: a file the staging would take that has a second name
+    // refuses the save here, so its bytes never reach the object store ([`ondisk`]).
+    if let Some(refusal) =
+        ondisk::refused_ahead(&ondisk::second_names_ahead(root, &staging.pathspec()))
+    {
+        return refuse_on_disk(
+            "Refusing to save — a file to be saved is not the one file on disk:",
+            refusal,
+            attempt,
             say,
         );
+    }
+
+    match staging {
+        Staging::Named(specs) => {
+            let held = match ondisk::stage_named(root, specs, kept_out) {
+                Ok(held) => held,
+                Err(said) => {
+                    return refuse_unreadable(
+                        root,
+                        &git_dir,
+                        "staging the named files failed",
+                        &said,
+                        say,
+                    );
+                }
+            };
+            // A file whose own descriptor showed a second name was not staged, and is refused
+            // as one found after the add is.
+            if let Some(refusal) = ondisk::refused(root, &Ok(held)) {
+                return refuse_not_as_staged(refusal, attempt, say);
+            }
+        }
+        Staging::Add(add_cmd) => {
+            // **The add's exit status is the whole fix.** Under a held `.git/index.lock` it
+            // exits 128 and stages nothing, and the probe below then answers 0 — because there
+            // is no difference between HEAD and an index nothing was written to. Discarded,
+            // that made "charter could not stage anything" and "there was nothing to stage" the
+            // same value.
+            // The write that adds git's untracked cache to the index, which a status that can
+            // write it (the operator's own) keeps fresh and every status then uses (FD-11,
+            // [`git::UNTRACKED_CACHE`]).
+            let added = match git::run_untimed(root, &git::with_untracked_cache(root, add_cmd)) {
+                Ok(run) => run,
+                Err(unavailable) => {
+                    return refuse_unreadable(
+                        root,
+                        &git_dir,
+                        &format!("`git {}` could not be run", add_cmd.join(" ")),
+                        &unavailable.to_string(),
+                        say,
+                    );
+                }
+            };
+            if !added.ok() {
+                return refuse_unreadable(
+                    root,
+                    &git_dir,
+                    &format!(
+                        "`git {}` exited {}",
+                        add_cmd.join(" "),
+                        added
+                            .code
+                            .map_or_else(|| "None".to_string(), |c| c.to_string())
+                    ),
+                    &gitstate::said(&added),
+                    say,
+                );
+            }
+        }
     }
 
     // Three outcomes, and `diff --quiet` has always answered in three: 0 for no difference, 1
@@ -3254,6 +3322,22 @@ fn commit_push(
 
     attempt.files = staged.len();
     show_what_is_staged(root, &staged, say);
+    // Each staged file is the one name it has on disk, as the readers ask of a file: asked now.
+    // A row with a second name, changed since it was staged, or gone is taken out of the index,
+    // and its blob out of the object store where nothing else reaches it, before the secret
+    // guard below reads any blob. A row git does not look at is read by the guard, which names
+    // what it finds, and taken out after it. What the refusal says comes
+    // after the guard's own findings, so a save the guard refuses names both ([`ondisk`]).
+    #[cfg(test)]
+    tests::after_the_add(root);
+    let (first, after) = ondisk::split_for_guard(ondisk::not_as_staged(root));
+    let held_back: std::collections::HashSet<String> = first
+        .as_ref()
+        .map(|held| held.iter().map(|one| one.path.clone()).collect())
+        .unwrap_or_default();
+    let refused_first = ondisk::refused(root, &first);
+    #[cfg(test)]
+    tests::at_the_secret_guard(root);
 
     // The secret guard: refuse if any staged file looks like it holds a secret. Every file a
     // save stages is committed and pushed to a shared repository, so a credential in any of
@@ -3294,7 +3378,8 @@ fn commit_push(
     let mut skipped: Vec<(String, &'static str)> = Vec::new();
     let mut to_read: Vec<&String> = Vec::new();
     for path in &staged {
-        if deleted.contains(path) {
+        // A row held back above is no longer staged: nothing of it is committed to scan.
+        if deleted.contains(path) || held_back.contains(path) {
             continue;
         }
         let file = root.join(path);
@@ -3367,6 +3452,7 @@ fn commit_push(
             )),
         }
     }
+    let refusal = ondisk::Refusal::joined(refused_first, ondisk::refused(root, &Ok(after)));
     if !skipped.is_empty() {
         say(Say::Info(
             "Not scanned for secrets — git calls it binary, or it is over 10 MiB:".into(),
@@ -3393,9 +3479,18 @@ fn commit_push(
             "Secrets belong in the vault (`purlis persona secret set`). Remove it, then retry."
                 .into(),
         ));
+        if let Some(refusal) = refusal {
+            for line in refusal.named {
+                say(Say::Fail(format!("  {line}")));
+            }
+            say(Say::Info(refusal.then));
+        }
         attempt.outcome = "blocked";
         attempt.detail = SECRET_REFUSED.into();
         return 1;
+    }
+    if let Some(refusal) = refusal {
+        return refuse_not_as_staged(refusal, attempt, say);
     }
 
     let msg = match request.message {
@@ -3621,6 +3716,7 @@ pub fn push_saved(root: &Path, sign: bool, say: Sink) -> PushResult {
 
 mod blockedby;
 pub mod merging;
+pub(crate) mod ondisk;
 mod prsave;
 pub mod resolve;
 mod update;

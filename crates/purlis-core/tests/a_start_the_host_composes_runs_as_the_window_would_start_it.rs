@@ -595,7 +595,10 @@ fn a_composed_chat_at_the_floor_never_writes_the_plugin_or_git_hooks_it_is_armed
 
     let line = words(&launch).join(" ");
     for folder in [&plugin, &git_hooks] {
-        let rule = format!("(deny file-write* (subpath \"{}\"))", folder.display());
+        let rule = format!(
+            "(deny file-write* file-link (subpath \"{}\"))",
+            folder.display()
+        );
         assert!(line.contains(&rule), "{rule} not in {line}");
     }
 }

@@ -1938,6 +1938,18 @@ pub fn run_with_input(
     input: Vec<u8>,
     timeout: Duration,
 ) -> Result<RawRun, GitUnavailable> {
+    run_reading(dir, args, std::io::Cursor::new(input), timeout)
+}
+
+/// [`run_with_input`], git's standard input copied from `input` as git reads it: an open file
+/// reaches git as the bytes that descriptor reads, never by its name (a save staging the file
+/// it checked, `crate::planegit::ondisk`).
+pub(crate) fn run_reading(
+    dir: &Path,
+    args: &[&str],
+    mut input: impl std::io::Read + Send + 'static,
+    timeout: Duration,
+) -> Result<RawRun, GitUnavailable> {
     let extra = Extra {
         stdin: true,
         ..Extra::default()
@@ -1950,9 +1962,8 @@ pub fn run_with_input(
         let mut child = spawn_with(dir, args, &extra)?;
         if let Some(mut stdin) = child.stdin.take() {
             std::thread::spawn(move || {
-                use std::io::Write as _;
                 // A git that stopped reading has answered or failed; its answer says which.
-                let _ = stdin.write_all(&input);
+                let _ = std::io::copy(&mut input, &mut stdin);
             });
         }
         Ok(wait_raw(child, timeout)?)

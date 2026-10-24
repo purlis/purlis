@@ -215,7 +215,9 @@ fn a_keyring_vault_does_not_refuse_a_wrapped_opencode_chat_because_the_wrap_hold
     let line = line_in(&applied, plane.path(), None, &confinement).expect("starts");
     let profile = profile_of(&line);
     assert!(
-        profile.contains("(deny file-read* file-write* (subpath \"/Users/op/Library/Keychains\"))"),
+        profile.contains(
+            "(deny file-read* file-write* file-link (subpath \"/Users/op/Library/Keychains\"))"
+        ),
         "{profile}"
     );
     assert!(!profile.contains("Security"), "{profile}");
@@ -404,9 +406,9 @@ fn nothing_a_later_opencode_loads_is_written() {
     let profile = profile_of(&line);
     let data = "/Users/op/.local/share/opencode";
     for rule in [
-        format!("(deny file-write* (literal \"{data}/auth.json\"))"),
-        format!("(deny file-write* (literal \"{data}/mcp-auth.json\"))"),
-        format!("(deny file-write* (subpath \"{data}/snapshot\"))"),
+        format!("(deny file-write* file-link (literal \"{data}/auth.json\"))"),
+        format!("(deny file-write* file-link (literal \"{data}/mcp-auth.json\"))"),
+        format!("(deny file-write* file-link (subpath \"{data}/snapshot\"))"),
         format!("(deny file-write-create (require-all (vnode-type SYMLINK) (subpath \"{data}\")))"),
         format!("(deny file-write-create (require-all (vnode-type DIRECTORY) (subpath \"{data}\")))"),
         "(deny file-write-create (require-all (vnode-type SYMLINK) (literal \"/Users/op/.config/opencode/.gitignore\")))".to_owned(),
@@ -430,20 +432,22 @@ fn every_later_code_name_is_denied_at_any_depth_of_the_chat_directory() {
         .replace('.', "\\\\.");
     assert!(
         profile.contains(&format!(
-            "(deny file-write* (regex \"^{root}/(.*/)?\\\\.git/config(/.*)?$\"))"
+            "(deny file-write* file-link (regex \"^{root}/(.*/)?\\\\.git/config(/.*)?$\"))"
         )),
         "{profile}"
     );
     // The `.git` itself, so a directory holding a config is never moved into its place.
     assert!(
         profile.contains(&format!(
-            "(deny file-write* (regex \"^{root}/(.*/)?\\\\.git$\"))"
+            "(deny file-write* file-link (regex \"^{root}/(.*/)?\\\\.git$\"))"
         )),
         "{profile}"
     );
     assert_eq!(
         profile
-            .matches(&format!("(deny file-write* (regex \"^{root}/(.*/)?"))
+            .matches(&format!(
+                "(deny file-write* file-link (regex \"^{root}/(.*/)?"
+            ))
             .count(),
         PLANTED.len()
     );
@@ -557,7 +561,7 @@ fn the_profile_denies_every_class_after_what_it_lets_the_chat_write() {
     // The integrity class inside the plane, written for.
     assert!(
         profile.contains(&format!(
-            "(deny file-write* (subpath \"{}\"))",
+            "(deny file-write* file-link (subpath \"{}\"))",
             real(&plane.path().join(".charter/app")).display()
         )),
         "{profile}"
@@ -1274,7 +1278,7 @@ fn stated(harness: Harness, plane: &Path, cwd: &Path, machine: &Machine) -> Stat
                 denies_write: Box::new(move |path| profile.contains(path)),
                 denies_read: Box::new(move |path| {
                     read.contains(&format!(
-                        "(deny file-read* file-write* (subpath \"{path}\"))"
+                        "(deny file-read* file-write* file-link (subpath \"{path}\"))"
                     ))
                 }),
             }
@@ -1592,7 +1596,7 @@ fn every_harness_is_kept_from_writing_the_roots_charter_local_toml() {
         let path = match harness {
             Harness::ClaudeCode => root.join("charter.local.toml").display().to_string(),
             Harness::Codex | Harness::Opencode => format!(
-                "(deny file-write* (subpath \"{}\"))",
+                "(deny file-write* file-link (subpath \"{}\"))",
                 root.join("charter.local.toml").display()
             ),
         };

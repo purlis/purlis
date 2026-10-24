@@ -692,13 +692,13 @@ fn a_wrapped_chat_writes_a_granted_folder_with_every_denial_after_it() {
     for profile in [opencode, codex] {
         let allowed = profile.find(&quoted).expect("the grant is written");
         let denial = profile
-            .find("(deny file-write* (subpath")
+            .find("(deny file-write* file-link (subpath")
             .expect("the classes are denied");
         assert!(allowed < denial, "a denial comes after the grant");
         // The later-code names are denied at any depth of the granted folder too.
         assert!(
             profile.contains(&format!(
-                "(deny file-write* (regex \"^{}/(.*/)?\\\\.git/config(/.*)?$\"))",
+                "(deny file-write* file-link (regex \"^{}/(.*/)?\\\\.git/config(/.*)?$\"))",
                 crate::sandbox::seatbelt::escaped(&cache.display().to_string())
                     .replace('\\', "\\\\")
             )),

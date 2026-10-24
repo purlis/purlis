@@ -44,6 +44,12 @@
 //! (an LFS one, most often) live in the config this commit does not read, so the file would
 //! be stored as it is on disk where their own git would store the filtered form.
 //!
+//! A commit holds itself to the plane's save's rule of one file, one name
+//! (`planegit::ondisk`): a named file with a second name (a hard link) is refused before
+//! anything is staged, and once staged, a row that is not the file on disk now, with one name,
+//! refuses the commit, is unstaged, and its blob is taken out of the object store where it is
+//! a loose object nothing else reaches.
+//!
 //! # One at a time, and never left half done
 //!
 //! One commit runs in a branch folder at a time. Before it stages, the app leaves a note in
@@ -62,6 +68,7 @@ use std::path::{Component, Path, PathBuf};
 use super::Asker;
 use crate::counts::counted;
 use crate::hookwire::{Answer, CommitAsk, Stage};
+use crate::planegit::ondisk;
 use crate::repocmd::Say;
 use crate::worktree::{self, git, link};
 
@@ -449,16 +456,32 @@ fn made(
             .into());
         }
     }
+    // Before anything is staged: a named file with a second name refuses the commit here, so
+    // its bytes never reach the repository's object store (`planegit::ondisk`).
+    if let Stage::Paths(paths) = &ask.stage
+        && let Some(refusal) = ondisk::refused_ahead(&ondisk::second_names_of(&here.cwd, paths))
+    {
+        return Err(not_the_file(&refusal).into());
+    }
     here.note("")?;
     let mut queue = None;
     // From here the index may hold what the ask named: anything that stops the commit puts
     // it back and takes the note away.
     let staged = stage(here, &ask.stage)
         .and_then(|()| {
+            #[cfg(test)]
+            tests::once_staged(top);
             let tree = said(top, &["write-tree"])?.unwrap_or_default();
             here.note(&tree)
         })
         .and_then(|()| staged(top))
+        // What is staged is the file on disk now, with one name: a row that is not is taken
+        // out of the index again, and its blob out of the object store where nothing else
+        // reaches it, before the rest is put back below.
+        .and_then(|staged| {
+            ondisk::refused(top, &ondisk::not_as_staged(top))
+                .map_or(Ok(staged), |refusal| Err(not_the_file(&refusal)))
+        })
         .and_then(|staged| {
             if staged.is_empty() {
                 return Err(
@@ -528,6 +551,14 @@ fn made(
         )),
     );
     Ok(lines)
+}
+
+/// What a commit refused by `planegit::ondisk` says: a named file is not the one file on disk.
+fn not_the_file(refusal: &ondisk::Refusal) -> String {
+    format!(
+        "a file to commit is not the one file on disk: {}",
+        refusal.sentence()
+    )
 }
 
 /// Whether `asker` runs sandboxed: on a harness, not started without the sandbox, in a project
