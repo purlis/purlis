@@ -75,7 +75,6 @@ describe("the window's keyboard reach", () => {
     // tab bar (DS-6, #1836), so it comes after the left column and before the right one.
     expect(strips.map((one) => one.strip)).toEqual([
       "Projects",
-      "Workspaces",
       "Navigation",
       "Panel, left half",
       "Tabs",
@@ -92,7 +91,6 @@ describe("the window's keyboard reach", () => {
       // its tabs first, then the bar's right-hand end.
       const regions: [string, string][] = [
         ["title bar", ".title-bar"],
-        ["workspaces", '[data-strip="Workspaces"]'],
         ["chats", '[data-strip="Tabs"]'],
         // The left side panel (#1673): its tabs across its top (#2917, N36), then its open view;
         // its other views are hidden, and not stops.
@@ -150,7 +148,8 @@ describe("the window's keyboard reach", () => {
     expect(tabbed).toEqual(laidOut);
     // The two full-width rows, then the left side; the chat strip is the editor's, so it is
     // reached after the left side and straight before the panes it sits on (DS-6, #1836).
-    expect(tabbed.slice(0, 3)).toEqual(["title bar", "workspaces", "navigation"]);
+    // The workspaces are the title bar's (#2916), reached as the title bar.
+    expect(tabbed.slice(0, 2)).toEqual(["title bar", "navigation"]);
     expect(tabbed.indexOf("panes") - tabbed.indexOf("chats")).toBe(1);
     expect(tabbed[tabbed.length - 1]).toBe("status line");
     expect(controlsFirst).toBe(true);

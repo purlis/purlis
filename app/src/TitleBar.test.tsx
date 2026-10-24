@@ -10,7 +10,7 @@ import App from "./App";
 import { TitleBar } from "./TitleBar";
 import { HELP } from "./About";
 import type { About, Moved, OpenChat, PlaneSaving, RepoSaving } from "./bindings";
-import { queryStripNamed, stripNamed } from "./test-strips";
+import { chipName, queryStripNamed, stripNamed, workspaceChips } from "./test-strips";
 import { forgetRailMode, RAIL_MODE } from "./railMode";
 
 /**
@@ -686,17 +686,18 @@ describe("the title bar in the window, and the project rail below it (#2915)", (
     }
   });
 
-  it("names the project in front, and leaves the workspace to the strip (#2915, S7)", async () => {
+  it("names the project in front, then a slash and its workspace (#2915, #2916, R92)", async () => {
     core();
     render(
       <StrictMode>
         <App />
       </StrictMode>,
     );
-    await waitFor(() => expect(stripNamed("Workspaces")).toHaveTextContent("alpha"));
+    // alpha, the workspace in front, a chip of its own while it is not pinned (R105).
+    await waitFor(() => expect(workspaceChips().map(chipName)).toEqual(["alpha"]));
 
     expect(within(bar()).getByTestId("title-project")).toHaveTextContent(/^one$/);
-    expect(bar()).not.toHaveTextContent("alpha");
+    expect(bar().querySelector('[data-part="slash"]')).toHaveTextContent("/");
     expect(bar()).not.toHaveTextContent(/running|counting chats/);
   });
 
