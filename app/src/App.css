@@ -2550,19 +2550,23 @@ button.show-more:focus-visible {
 }
 
 /* **The right bar** (#2917, R117): the activity family's column (`ui/activity`) at the window's
-   edge, the window's whole height; a hairline toward the regions where a theme draws one. The
-   left bar is tabs across the side panel's own top (N36, R116), drawn inside its slot. */
+   edge, the window's whole height; a hairline toward the regions where a theme draws one. */
 .activity-column[data-side="right"] {
   border-inline-start: var(--panel-border-width) solid var(--border-subtle);
 }
 
-/* **The left bar while its side panel is away** (D-2917-18): a column at the window's edge. */
+/* **The left bar** (#3144): the same column, the frame's first, beside the project rail, as the
+   switcher prototype's variant D draws it ("Bar: column"). The theme's gutter parts it from the
+   rail, as the prototype's 8px do (Purlis Classic's 0 sits it flush), and its hairline toward
+   the regions is drawn where a theme draws one. It stands whether or not the side panel is out,
+   so nothing moves when the side comes or goes. */
 .activity-column[data-side="left"] {
+  margin-inline-start: var(--window-gutter);
   border-inline-end: var(--panel-border-width) solid var(--border-subtle);
 }
 
-/* **A side panel's body**: what it draws above its views (its tabs and header on the left, its
-   title and × on the right), then the open view, which takes the rest and scrolls inside itself. */
+/* **A side panel's body**: what it draws above its views (its header on the left, its title and
+   × on the right), then the open view, which takes the rest and scrolls inside itself. */
 .slot-body {
   display: flex;
   flex-direction: column;

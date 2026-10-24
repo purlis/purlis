@@ -347,7 +347,7 @@ function sideKey(side: "left" | "right") {
 }
 /** Whether a side is put away: its activity bar stands and none of its views is the open one. */
 function away(region: "Navigation" | "Attention"): boolean {
-  // The side panel's tabs are across its own top (N36): away, they are gone with it.
+  // The left column stands while its side is away (#3144), none of its tabs chosen.
   const bar = screen.queryByRole("tablist", { name: region });
   return (
     bar === null ||
@@ -651,7 +651,7 @@ describe("the four regions", () => {
     expect(await screen.findByRole("tabpanel", { name: "Inbox" })).toBeInTheDocument();
     expect(away("Attention")).toBe(false);
 
-    // The side panel's tabs are its own top (N36): its key brings it back.
+    // A press of the side panel's open view leaves it out (R121): its key brings it back.
     sideKey("left");
     await waitFor(() => expect(away("Navigation")).toBe(true));
     sideKey("left");
