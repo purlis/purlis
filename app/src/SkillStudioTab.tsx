@@ -325,9 +325,12 @@ export function SkillStudioTab({
             <Button
               icon={<FolderGit2 aria-hidden="true" />}
               onPress={() => {
-                const heading = sourcesHeading.current;
-                heading?.scrollIntoView?.({ block: "start" });
-                heading?.focus();
+                // After the press is done with focus: WebKit hands it back to a pressed button.
+                window.setTimeout(() => {
+                  const heading = sourcesHeading.current;
+                  heading?.scrollIntoView?.({ block: "start" });
+                  heading?.focus();
+                }, 0);
               }}
             >
               Browse sources

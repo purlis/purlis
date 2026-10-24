@@ -114,7 +114,9 @@ describe("the empty Skill studio", () => {
     expect(asks).toEqual([{ plane: "p", kind: "draft", level: PROJECT }]);
 
     await user.click(within(starts).getByRole("button", { name: "Browse sources" }));
-    expect(screen.getByRole("heading", { name: "Skill sources" })).toHaveFocus();
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: "Skill sources" })).toHaveFocus(),
+    );
 
     await user.click(within(starts).getByRole("button", { name: "Start blank" }));
     expect(await screen.findByRole("form", { name: "New skill" })).toBeInTheDocument();
