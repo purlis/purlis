@@ -486,6 +486,61 @@ describe("Ask {persona}'s rules", () => {
 });
 
 describe("a granting Notice on a pane that just moved (#1695, train 54's review)", () => {
+  it("holds any answer that grants, whatever its Notice's cause (#3142)", async () => {
+    // A vault refusal's Allow is the grants variant, and its cause is in no list: the look is
+    // the rule.
+    const rect = vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: Element,
+    ) {
+      const box = this.closest(".pane-notices > *");
+      const top = box === null ? 0 : [...(box.parentElement?.children ?? [])].indexOf(box) * 40;
+      return DOMRect.fromRect({ x: 0, y: top, width: 100, height: 30 });
+    });
+    let clock = 1_000_000;
+    const now = vi.spyOn(Date, "now").mockImplementation(() => clock);
+    try {
+      const allowed: string[] = [];
+      let away: () => void = () => undefined;
+      function Pane() {
+        const [first, setFirst] = useState(true);
+        away = () => setFirst(false);
+        return (
+          <NoticePaneRow>
+            {first && (
+              <Notice cause="skills-missing:7" at="pane" label="Skills" onDismiss={() => undefined}>
+                A skill is missing.
+              </Notice>
+            )}
+            <Notice
+              cause="vault-refused:7:forge"
+              at="pane"
+              tone="trouble"
+              label="Vault"
+              fixes={[
+                { label: "Allow forge", onPress: () => allowed.push("forge"), allows: true },
+                { label: "Keep blocked", onPress: () => undefined },
+              ]}
+            >
+              purlis did not open vault forge.
+            </Notice>
+          </NoticePaneRow>
+        );
+      }
+      render(<Pane />);
+      act(() => away());
+      await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+      expect(allowed).toEqual([]);
+      expect(screen.getByText(NOTICE_MOVED_JUST_NOW)).toBeTruthy();
+
+      clock += 2000;
+      await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+      expect(allowed).toEqual(["forge"]);
+    } finally {
+      now.mockRestore();
+      rect.mockRestore();
+    }
+  });
+
   it("does nothing for a press on its way out until it settles, and says so", async () => {
     // jsdom lays nothing out: each Notice's box stands at its place among the stack's, and the
     // row at the top. Its `offsetTop` says nothing, as a positioned box makes it say nothing in

@@ -28,6 +28,10 @@ export const grants = (cause: string) =>
   cause === "dispatch-grants" ||
   cause.startsWith("dispatch-grant:");
 
+/** **Whether a way out grants by its look**: drawn as the button family's grants variant, as
+ *  every Notice answer with `allows` is (ADR 0097 §6). */
+export const grantsByLook = (way: Element) => way.closest('[data-variant="grants"]') !== null;
+
 const now = () => Date.now();
 
 /**
@@ -91,7 +95,11 @@ export function useNoticeSettle<T extends HTMLElement>(firstDrawn: "moves" | "st
   const allows = (way: Element): boolean => {
     const notice = way.closest("[data-cause]");
     const cause = notice?.getAttribute("data-cause");
-    if (!notice || cause === null || cause === undefined || !grants(cause)) return true;
+    if (!notice || cause === null || cause === undefined) return true;
+    // **Any answer that grants waits**, whatever Notice it is on (#3142): the button family's
+    // grants variant (a way out with `allows`) is the one rule, and the causes above add the
+    // answers that grant without it.
+    if (!grantsByLook(way) && !grants(cause)) return true;
     if (now() - look(notice) < SETTLE_MS) {
       setSaid(NOTICE_MOVED_JUST_NOW);
       return false;

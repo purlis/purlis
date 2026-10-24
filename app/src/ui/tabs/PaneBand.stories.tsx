@@ -94,7 +94,11 @@ function Warnings({ shown }: { shown: readonly Warning[] }) {
         tone="trouble"
         label="Vault"
         fixes={[
-          { label: "Allow steward to use this vault", onPress: () => undefined, allows: true },
+          {
+            label: "Allow steward to use this vault",
+            onPress: () => allowed.push("forge"),
+            allows: true,
+          },
           { label: "Keep blocked", onPress: off("vault-refused") },
         ]}
       >
@@ -460,24 +464,33 @@ export const PutAway: Story = {
 
 /**
  * **A consent that moved holds its Allow** (#1693, #1695): the warning above it is put away, the
- * consent moves up under the pointer, and a press on its Allow at once does nothing and says
- * why. The keyboard is landed on the consent's line, never on its Allow. Measured in the real
- * engine, where the warning's box is positioned for its mark: the guard reads where the line
- * is drawn against the band, not its `offsetTop`.
+ * consents move up under the pointer, and a press on an Allow at once does nothing and says
+ * why: the vault's, held because it grants, and the sandbox's. The keyboard is landed on the
+ * consent's line, never on its Allow. Measured in the real engine, where the warning's box is
+ * positioned for its mark: the guard reads where the line is drawn against the band, not its
+ * `offsetTop`.
  */
 export const ConsentMoved: Story = {
-  args: { warnings: ["skills-missing", "sandbox-ask"] },
+  args: { warnings: ["skills-missing", "vault-refused", "sandbox-ask"] },
   play: async ({ canvas, userEvent }) => {
     allowed.length = 0;
     const open = await canvas.findByRole("button", { name: "Open in Skill studio" });
     open.focus();
     await userEvent.keyboard("{Escape}");
-    const ask = await canvas.findByRole("status", { name: "Sandbox block" });
-    await waitFor(() => expect(ask).toHaveFocus());
+    // The vault's card moved up into the first place, and the sandbox's came out from behind
+    // "+1 more": both moved, and neither is a cause the guard lists by name for the vault.
+    const vault = await canvas.findByRole("status", { name: "Vault" });
+    await waitFor(() => expect(vault).toHaveFocus());
 
-    await userEvent.click(within(ask).getByRole("button", { name: "Allow registry.npmjs.org" }));
+    await userEvent.click(
+      within(vault).getByRole("button", { name: "Allow steward to use this vault" }),
+    );
     expect(allowed).toEqual([]);
     expect(await canvas.findByText(NOTICE_MOVED_JUST_NOW)).toBeVisible();
+
+    const ask = canvas.getByRole("status", { name: "Sandbox block" });
+    await userEvent.click(within(ask).getByRole("button", { name: "Allow registry.npmjs.org" }));
+    expect(allowed).toEqual([]);
     atRest();
   },
 };
