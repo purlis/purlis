@@ -1060,3 +1060,25 @@ fn a_gitignore_this_charter_cannot_read_is_not_checked() {
     assert!(found.detail.starts_with("not checked"), "{found:?}");
     assert_eq!(found.fix, None, "{found:?}");
 }
+
+#[test]
+fn a_live_name_git_reads_as_a_pattern_is_named_and_offers_no_fix() {
+    purlis_core::unsteered!();
+    let (_d, root) = baseline("schema = 1\n");
+    std::fs::write(
+        root.join(".gitignore"),
+        purlis_core::scaffold::GITIGNORE_BASELINE,
+    )
+    .unwrap();
+    purlis_core::wscmd::write_live_block(&root, ["a*"]).unwrap();
+
+    let found = live_skills(&root).expect("a pattern in the block is said");
+
+    assert!(found.detail.contains("`a*`"), "{found:?}");
+    assert!(found.detail.contains("pattern"), "{found:?}");
+    assert_eq!(
+        found.fix, None,
+        "no line the fix could add helps: {found:?}"
+    );
+    assert!(!found.hint.contains("--fix"), "{found:?}");
+}

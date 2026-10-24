@@ -396,13 +396,20 @@ pub(super) fn live_skills(d: &Doctor) -> Option<Row> {
             .trim_start_matches("• ")
             .to_owned()
     }));
+    let mut hint = "A LIVE workspace's skills reach the team only through its LIVE block, and \
+                    the local skills of a project, workspace or persona are read only while git \
+                    ignores them."
+        .to_owned();
+    if !missing.is_empty() {
+        hint.push_str(" `purlis doctor --fix live-skills` adds these lines and nothing else.");
+    }
+    if !missing.patterns.is_empty() {
+        hint.push_str(" A pattern in the LIVE block is yours to correct by hand.");
+    }
     let row = Row::warn(
         NAME,
         format!("an older .gitignore: {}", found.join("; ")),
-        "A LIVE workspace's skills reach the team only through its LIVE block, and the local \
-         skills of a project, workspace or persona are read only while git ignores them. \
-         `purlis doctor --fix live-skills` adds these lines and nothing else; a pattern in the \
-         LIVE block is yours to correct.",
+        hint,
     );
     // A pattern alone is nothing the fix can add a line for.
     Some(if missing.is_empty() {
