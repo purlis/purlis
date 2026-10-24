@@ -6617,3 +6617,72 @@ fn a_chat_asked_for_through_a_chain_purlis_cannot_read_never_starts_lower_than_t
         Some(Level::Floor)
     );
 }
+
+/// SK-9 (#2772): every plane level's skills, shared and local, at the root, in each workspace and
+/// in each persona's folder, are denied writing, there yet or not, and those of any workspace or
+/// persona made later by pattern; nothing else is.
+#[test]
+fn the_projects_skills_are_held_at_every_level() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::write(root.join("charter.toml"), "schema = 1\n").unwrap();
+    std::fs::create_dir_all(root.join("workspaces/ops")).unwrap();
+    std::fs::create_dir_all(root.join("personas/steward")).unwrap();
+    std::fs::write(root.join("personas/flat.md"), "---\nname: flat\n---\n").unwrap();
+    let held: Vec<PathBuf> = skills_held(root).into_iter().map(|d| d.path).collect();
+    let expected: Vec<PathBuf> = [
+        "skills",
+        "skills.local",
+        "workspaces/ops/skills",
+        "workspaces/ops/skills.local",
+        "personas/steward/skills",
+        "personas/steward/skills.local",
+        "workspaces/*/skills",
+        "workspaces/*/skills.local",
+        "personas/*/skills",
+        "personas/*/skills.local",
+    ]
+    .iter()
+    .map(|rel| root.join(rel))
+    .collect();
+    assert_eq!(held, expected);
+    assert!(
+        skills_held(root)
+            .iter()
+            .all(|d| d.class == Class::LaterCode && d.access == Access::Write)
+    );
+}
+
+/// SK-9 (#2772): purlis's own wrap holds a pattern's levels with a regular expression, each
+/// any-name part one name, above it as the kernel names the folder: a workspace made after the
+/// chat started cannot be given a skill either.
+#[test]
+fn a_pattern_denial_is_held_by_a_regular_expression_of_one_name_a_part() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(tmp.path()).unwrap();
+    std::fs::create_dir_all(root.join("workspaces")).unwrap();
+    let denial = Denial {
+        class: Class::LaterCode,
+        path: root.join("workspaces").join(ANY_NAME).join("skills"),
+        access: Access::Write,
+        named: None,
+        reach: Reach::AndBelow,
+        any_case: false,
+    };
+    let rules = seatbelt::denial_rules(&denial).unwrap();
+    let escaped = seatbelt::escaped(&root.join("workspaces").display().to_string());
+    assert!(
+        rules.iter().any(|rule| rule
+            == &format!(
+                "(deny file-write* (regex {}))",
+                seatbelt::string(&format!("^{escaped}/[^/]+/skills(/.*)?$")).unwrap()
+            )),
+        "{rules:?}"
+    );
+    let regex = regex::Regex::new(&format!("^{escaped}/[^/]+/skills(/.*)?$")).unwrap();
+    let at = |rel: &str| root.join(rel).display().to_string();
+    assert!(regex.is_match(&at("workspaces/later/skills/x/SKILL.md")));
+    assert!(regex.is_match(&at("workspaces/later/skills")));
+    assert!(!regex.is_match(&at("workspaces/later/skills-repo/x")));
+    assert!(!regex.is_match(&at("workspaces/later/notes/skills/x")));
+}

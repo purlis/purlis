@@ -2973,6 +2973,8 @@ fn workspace_command(command: &Command) -> Option<ExitCode> {
                      name it with -w {name} from here."
                 )));
             }
+            let owner = format!("workspaces/{name}");
+            let was_there = purlis_core::skills::levels::there(&root, &owner);
             let code = wscmd::create::create(
                 &wscmd::create::Request {
                     root: &root,
@@ -2988,6 +2990,15 @@ fn workspace_command(command: &Command) -> Option<ExitCode> {
                 },
                 say,
             );
+            // The person made it from their own terminal, not a chat: its skills reach chats
+            // (SK-9). A chat's own create vouches for nothing.
+            if code == 0
+                && !crate::memory::in_a_chat()
+                && let Some(note) =
+                    purlis_core::skills::levels::vouch_if_made(&root, &owner, was_there)
+            {
+                say(purlis_core::repocmd::Say::Info(note));
+            }
             if code == 0 {
                 heard.push(ExtensionEvent::WorkspaceCreated {
                     workspace: name.clone(),

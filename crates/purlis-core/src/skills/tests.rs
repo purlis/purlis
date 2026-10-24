@@ -353,6 +353,7 @@ fn a_skills_folder_a_running_chat_uses_is_kept_and_removed_once_the_chat_has_end
             plugins: &crate::harness_plugin::Chosen::new(),
             sandbox: None,
             persona: None,
+            env: &[],
         },
     )
     .unwrap();
@@ -1134,6 +1135,58 @@ fn a_repo_skill_named_as_a_built_in_one_never_replaces_it_on_codex_or_opencode()
             "{route:?}"
         );
     }
+}
+
+/// SK-9 (#2772, decision 50): a Try it's scratch chat is handed every one of its profile's own
+/// harness skills as turned off, read from the config folder the profile points its harness at
+/// (`CLAUDE_CONFIG_DIR`), not purlis's own; a chat elsewhere on the same profile keeps them.
+#[test]
+fn a_try_chat_turns_off_the_skills_of_its_profiles_own_config_folder() {
+    crate::unsteered!();
+    let tmp = tempfile::tempdir().unwrap();
+    let (plane, kit) = a_host_on(tmp.path());
+    std::fs::write(plane.join("charter.toml"), "schema = 1\n").unwrap();
+    let file = verbs::drafts::draftable(&plane, &plane.join("skills/triage/SKILL.md")).unwrap();
+    let id = verbs::drafts::take(
+        &plane,
+        7,
+        &file,
+        &crate::proposed::Change::Whole {
+            content: "---\nname: triage\ndescription: Sorts.\n---\n\nbody\n".to_owned(),
+        },
+    )
+    .unwrap();
+    let tried = verbs::drafts::try_out(&plane, &id).unwrap();
+    let config = tmp.path().canonicalize().unwrap().join("profile-claude");
+    std::fs::create_dir_all(config.join("skills/profiles-own")).unwrap();
+    std::fs::write(
+        config.join("skills/profiles-own/SKILL.md"),
+        "---\nname: profiles-own\ndescription: The profile's own.\n---\n\nbody\n",
+    )
+    .unwrap();
+    let env = vec![("CLAUDE_CONFIG_DIR".to_owned(), config.display().to_string())];
+    let armed_in = |cwd: &Path| {
+        crate::hoststart::armed_as(
+            true,
+            &crate::hoststart::Arming {
+                root: &plane,
+                kit: &kit,
+                harness: Some(Harness::ClaudeCode),
+                cwd: Some(cwd),
+                plugins: &crate::harness_plugin::Chosen::new(),
+                sandbox: None,
+                persona: None,
+                env: &env,
+            },
+        )
+        .unwrap()
+        .0
+        .join(" ")
+    };
+    let in_the_piece = armed_in(&tried.piece);
+    assert!(in_the_piece.contains("skillOverrides"), "{in_the_piece}");
+    assert!(in_the_piece.contains("profiles-own"), "{in_the_piece}");
+    assert!(!armed_in(&plane).contains("profiles-own"));
 }
 
 #[test]

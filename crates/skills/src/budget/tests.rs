@@ -26,6 +26,7 @@ fn set_at_the_root(plane: &Path, built_in: &Path) -> SkillSet {
             built_in: Some(built_in),
             kept_local: Some(&|_| Ok(())),
             harness: None,
+            made_since: None,
         },
         &Chat {
             workspace: None,

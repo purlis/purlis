@@ -1362,6 +1362,17 @@ pub(crate) fn changed_paths(root: &Path) -> Vec<String> {
 
 /// [`changed_paths`], and whether any of them is a file git tracks (any entry but `??`).
 fn status_of(root: &Path) -> (Vec<String>, bool) {
+    // What a save stages ([`SAVE_STAGES`]): never what is [`NEVER_STAGED`].
+    let mut args = vec![
+        "--no-optional-locks",
+        "status",
+        "--porcelain=v1",
+        "-z",
+        "--untracked-files=all",
+        "--",
+        ".",
+    ];
+    args.extend(NEVER_STAGED);
     let Ok(run) = git::run(
         root,
         // `--no-optional-locks`, as `profiles.rs` and `guest.rs` ask: a plain `status`
@@ -1369,19 +1380,7 @@ fn status_of(root: &Path) -> (Vec<String>, bool) {
         // seconds — a save's `git add -A` landing inside that window failed on the lock.
         // No `-c core.untrackedCache`: a read-only status uses a cache the index holds without
         // it, and git never consults one under `--untracked-files=all` (FD-11, measured).
-        &[
-            "--no-optional-locks",
-            "status",
-            "--porcelain=v1",
-            "-z",
-            "--untracked-files=all",
-            // What a save stages ([`SAVE_STAGES`]): never a level's local skills.
-            "--",
-            ".",
-            SAVE_STAGES[4],
-            SAVE_STAGES[5],
-            SAVE_STAGES[6],
-        ],
+        &args,
         git::READ,
     ) else {
         return (Vec::new(), false);
@@ -2085,18 +2084,28 @@ const WHOLE_TREE_PATHSPECS: [&str; 4] = [".", "./", ":/", ":/:"];
 /// operator's mid-edit `charter.toml`.
 const WHOLE_TREE_FLAGS: [&str; 5] = ["-A", "--all", "--no-ignore-removal", "-u", "--update"];
 
-/// **What a plane save stages**: the whole tree, but never a level's local skills (ADR 0099 §1,
-/// #2767) nor the lockfile of the skills installed there (ADR 0100 §2, #2773), whatever the
-/// plane's `.gitignore` says. `skills.local/` is this machine's own, and a plane whose
-/// `.gitignore` lost its line would otherwise commit it to the team.
-pub const SAVE_STAGES: [&str; 7] = [
+/// **What a save never stages** ([`SAVE_STAGES`]): a level's local skills (ADR 0099 §1, #2767)
+/// and the lockfile of the skills installed there (ADR 0100 §2, #2773), whatever the plane's
+/// `.gitignore` says, since `skills.local/` is this machine's own and a plane whose `.gitignore`
+/// lost its line would otherwise commit it to the team; and a Try it's throwaway pieces (#2772),
+/// which last as long as their chats.
+pub const NEVER_STAGED: [&str; 4] = [
+    ":(exclude,glob)skills.local/**",
+    ":(exclude,glob)workspaces/*/skills.local/**",
+    ":(exclude,literal)skills.local.lock",
+    ":(exclude,glob)workspaces/.throwaway/**",
+];
+
+/// **What a plane save stages**: the whole tree, but what is [`NEVER_STAGED`].
+pub const SAVE_STAGES: [&str; 8] = [
     "add",
     "-A",
     "--",
     ".",
-    ":(exclude,glob)skills.local/**",
-    ":(exclude,glob)workspaces/*/skills.local/**",
-    ":(exclude,literal)skills.local.lock",
+    NEVER_STAGED[0],
+    NEVER_STAGED[1],
+    NEVER_STAGED[2],
+    NEVER_STAGED[3],
 ];
 
 /// Would `add_cmd` stage EVERYTHING under the root it is run in?
@@ -2616,7 +2625,7 @@ pub fn save_paths(request: &Request, trigger: Trigger, paths: &[String], say: Si
     }
     let named: Vec<String> = paths
         .iter()
-        .filter(|path| stageable(root, path))
+        .filter(|path| !kept_out(path) && stageable(root, path))
         .cloned()
         .collect();
     if named.is_empty() {
@@ -2628,8 +2637,38 @@ pub fn save_paths(request: &Request, trigger: Trigger, paths: &[String], say: Si
     let literal: Vec<String> = named.iter().map(|path| literally(path)).collect();
     let mut add: Vec<&str> = vec!["add", "-A", "--"];
     add.extend(literal.iter().map(String::as_str));
-    add.extend(&SAVE_STAGES[4..]);
+    // **An exclude pathspec makes `git add -A` skip an untracked file named beside it** (git
+    // 2.50, measured for #2772: `add -A -- :(literal)a/new :(exclude,glob)x/**` leaves `a/new`
+    // untracked), so a new file a skill change names would miss its commit. A path inside what
+    // the excludes keep out is never named ([`kept_out`]), and the excludes are passed only where
+    // a named folder could hold it.
+    if named.iter().any(|path| could_hold_kept_out(root, path)) {
+        add.extend(&NEVER_STAGED);
+    }
     save_staging(request, trigger, &claim, &add, say)
+}
+
+/// Whether `path` (plane-relative) is inside what a save never stages ([`NEVER_STAGED`]): a
+/// level's `skills.local/`, the installed skills' local lockfile, or a throwaway piece.
+fn kept_out(path: &str) -> bool {
+    let parts: Vec<&str> = path.split('/').collect();
+    matches!(
+        parts.as_slice(),
+        ["skills.local", ..]
+            | ["skills.local.lock"]
+            | ["workspaces", ".throwaway", ..]
+            | ["workspaces", _, "skills.local", ..]
+    )
+}
+
+/// Whether `path` (plane-relative) is a folder that could hold what a save never stages: the
+/// plane's root, `workspaces/` or one workspace's folder.
+fn could_hold_kept_out(root: &Path, path: &str) -> bool {
+    let parts: Vec<&str> = path.split('/').filter(|part| !part.is_empty()).collect();
+    matches!(
+        parts.as_slice(),
+        [] | ["."] | ["workspaces"] | ["workspaces", _]
+    ) && root.join(path).is_dir()
 }
 
 /// Whether `path` (plane-relative) can be named to `git add -A`: git tracks something under it,
