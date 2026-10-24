@@ -74,10 +74,23 @@ export function aDialogOffers(
  * ("Starting…") while the dialog is still up, so it cannot say the dialog went.
  */
 async function theDialogHasGone(role: string, text: string, timeoutMsg: string): Promise<void> {
-  await browser.waitUntil(
-    async () => !(await browser.execute(aDialogOffers, role, text, "Cancel", false)),
-    { timeout: 20_000, timeoutMsg },
-  );
+  try {
+    await browser.waitUntil(
+      async () => !(await browser.execute(aDialogOffers, role, text, "Cancel", false)),
+      { timeout: 20_000 },
+    );
+  } catch {
+    // Said with what the dialog reads, so a red run says why it stayed.
+    const says = await browser.execute(
+      (wanted: string) =>
+        [...document.querySelectorAll(`[role="${wanted}"]`)]
+          .map((one) => (one.textContent ?? "").replace(/\s+/g, " ").trim())
+          .join(" | ")
+          .slice(-1500),
+      role,
+    );
+    throw new Error(`${timeoutMsg}. It reads: ${says}`);
+  }
 }
 
 /**
