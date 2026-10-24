@@ -51,6 +51,12 @@
  *   (`listbox`, `option`), its old class (`ui-list`) and its `data-scope`. A list to choose from
  *   is the family's `ListBox`, a list of rows that act its `List` (`ui/list/List`); a list of
  *   words (a sentence's bullets) is no collection and stays a `<ul>`.
+ * - `purlis/tabs-family` (error: the session strip is on React Aria's tabs, #3042): a `tab`,
+ *   `tablist` or `tabpanel` role written by hand, in JSX or in an object of props, the strip's
+ *   old hand-made tablist (`StripTablist`), and `data-scope="tabs"` by hand. A tablist is the
+ *   family's `useTabStrip`, `StripTabList` and `StripTab` (`ui/tabs/TabStrip`), a tab's cell its
+ *   `TabCell`, and the panel a tab names `tabPanelOf` (`ui/tabs/Tabs`). The tablists still drawn
+ *   by hand are turned off by file in `eslint.config.js`, each naming the ticket that moves it.
  *
  * The primitives library itself is refused outside `src/ui` by `no-restricted-imports`, in
  * `eslint.config.js`: one wrapper per primitive, and screens never import it.
@@ -552,6 +558,64 @@ const activityFamily = moved({
   message:
     "an activity item or bar: draw it as `<ActivityItem>`, its count as `<ActivityCount>`, its group as `<ActivityGroup>` and its bar as `<ActivityBarFrame>`, from `ui/activity/ActivityItem` (#2917).",
 });
+/** The roles of a tablist's elements, which only the tabs family writes. */
+const TAB_ROLES = new Set(["tab", "tablist", "tabpanel"]);
+
+const TABS_SAID =
+  "draw a tablist with `useTabStrip`, `StripTabList` and `StripTab` from `ui/tabs/TabStrip` (React Aria's tabs), a tab's cell with `TabCell` and the panel it names with `tabPanelOf` from `ui/tabs/Tabs` (#3042).";
+
+const tabsFamily = {
+  meta: {
+    type: "problem",
+    docs: { description: "A tablist is the shared tabs family, on React Aria, never by hand" },
+    messages: {
+      role: `\`role="{{role}}"\` by hand: ${TABS_SAID}`,
+      owner: `\`StripTablist\` is the strip's old hand-made tablist: ${TABS_SAID}`,
+      scope: `\`data-scope="tabs"\` is drawn by the family's wrappers only: ${TABS_SAID}`,
+    },
+    schema: [],
+  },
+  create(context) {
+    /** Reports `node` when `value` is a literal tab role. */
+    const role = (node, value) => {
+      if (value?.type === "Literal" && TAB_ROLES.has(value.value))
+        context.report({ node, messageId: "role", data: { role: value.value } });
+    };
+    return {
+      JSXAttribute(node) {
+        if (node.name.name === "role") role(node, node.value);
+        else if (
+          node.name.name === "data-scope" &&
+          node.value?.type === "Literal" &&
+          node.value.value === "tabs"
+        )
+          context.report({ node, messageId: "scope" });
+      },
+      // `{ role: "tabpanel", … }`, handed on to an element.
+      Property(node) {
+        const key =
+          node.key.type === "Identifier"
+            ? node.key.name
+            : node.key.type === "Literal"
+              ? node.key.value
+              : undefined;
+        if (key === "role") role(node, node.value);
+        else if (
+          key === "data-scope" &&
+          node.value?.type === "Literal" &&
+          node.value.value === "tabs"
+        )
+          context.report({ node, messageId: "scope" });
+      },
+      ImportDeclaration(node) {
+        if (!/(?:^|\/)StripTablist$/.test(String(node.source.value))) return;
+        for (const one of node.specifiers)
+          if (one.type === "ImportSpecifier" && one.imported.name === "StripTablist")
+            context.report({ node: one, messageId: "owner" });
+      },
+    };
+  },
+};
 
 const listFamily = moved({
   description: "A list is the shared list family",
@@ -579,5 +643,6 @@ export const purlisUi = {
     "rail-family": railFamily,
     "activity-family": activityFamily,
     "list-family": listFamily,
+    "tabs-family": tabsFamily,
   },
 };
