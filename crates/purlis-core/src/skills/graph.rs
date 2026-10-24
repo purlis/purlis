@@ -41,7 +41,7 @@ pub fn uses_of(plane: &Path, built_in: Option<&Path>, name: &str) -> UsesOf {
             if skills.len() > uses::MOST_SKILLS {
                 break 'dirs;
             }
-            let text = purlis_skills::read_skill_md(&skill.path).unwrap_or_default();
+            let text = purlis_skills::read_skill_md(plane, &skill.path).unwrap_or_default();
             skills.push((skill.name, text));
         }
     }

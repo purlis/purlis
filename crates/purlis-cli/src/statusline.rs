@@ -118,7 +118,7 @@ impl Ambient {
             socket: purlis_core::envvar::var_os(SOCKET_ENV).map(PathBuf::from),
             chat: purlis_core::envvar::var(CHAT_ENV),
             chat_id: purlis_core::envvar::var(CHAT_ID_ENV).filter(|id| !id.is_empty()),
-            harness: purlis_core::envvar::var("PURLIS_HARNESS"),
+            harness: purlis_core::hookwire::chat_harness(&purlis_core::envvar::var),
             footer: purlis_core::envvar::var(FOOTER_ENV),
         }
     }
