@@ -77,10 +77,18 @@ export default tseslint.config(
       "no-restricted-imports": [
         "error",
         {
-          paths: PRIMITIVES.map((name) => ({
-            name,
-            message: "Screens draw from the component layer in `src/ui`, never the primitives.",
-          })),
+          paths: [
+            ...PRIMITIVES.map((name) => ({
+              name,
+              message: "Screens draw from the component layer in `src/ui`, never the primitives.",
+            })),
+            // Every resize handle is the panel separator family's (#3143).
+            {
+              name: "react-resizable-panels",
+              importNames: ["Separator"],
+              message: "A resize handle is `Separator` from `ui/panel/Separator` (#3143).",
+            },
+          ],
           patterns: PRIMITIVES.map((name) => ({
             group: [`${name}/*`],
             message: "Screens draw from the component layer in `src/ui`, never the primitives.",
@@ -108,6 +116,7 @@ export default tseslint.config(
       "purlis/list-family": "error",
       // A tablist is the tabs family's, on React Aria, since #3042.
       "purlis/tabs-family": "error",
+      "purlis/panel-separator-family": "error",
     },
   },
   // **The tablists still drawn by hand**, each until the ticket that moves it onto the tabs

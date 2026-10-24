@@ -11,7 +11,7 @@ import {
   type RefObject,
 } from "react";
 import { Group, Panel } from "react-resizable-panels";
-import { Separator } from "./shownSeparator";
+import { Separator } from "./ui/panel/Separator";
 import {
   type ChatBlocked,
   type HarnessGlance,

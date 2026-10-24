@@ -320,3 +320,13 @@ tester.run("purlis/tabs-family", purlisUi.rules["tabs-family"], {
     },
   ],
 });
+
+tester.run("purlis/panel-separator-family", purlisUi.rules["panel-separator-family"], {
+  valid: [{ code: `<Separator aria-label="Resize the split" />` }],
+  invalid: [
+    {
+      code: `<div data-scope="panel-separator" role="separator" />`,
+      errors: [{ messageId: "scope" }],
+    },
+  ],
+});

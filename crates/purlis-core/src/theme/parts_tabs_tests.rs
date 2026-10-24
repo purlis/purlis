@@ -401,6 +401,7 @@ fn the_manifest_names_the_tabs_and_the_editor_toolbar() {
             "rail",
             "activity",
             "list",
+            "panel-separator"
         ]
     );
     let tabs = &manifest["families"][4];
