@@ -27,7 +27,7 @@ pub(crate) fn table(folder: &Path) -> Result<Option<toml::Table>, String> {
     {
         return Ok(None);
     }
-    let text = crate::handed::read_plain(&file, MOST).map_err(|why| why.to_string())?;
+    let text = crate::held::read_plain(&file, MOST).map_err(|why| why.to_string())?;
     text.parse::<toml::Table>()
         .map(Some)
         .map_err(|why| format!("it is not TOML: {}", first_line(&why.to_string())))
@@ -46,7 +46,7 @@ pub(crate) fn edit(
     let name = file_name(folder);
     let text = match std::fs::symlink_metadata(&file) {
         Err(why) if why.kind() == std::io::ErrorKind::NotFound => String::new(),
-        _ => crate::handed::read_plain(&file, MOST)
+        _ => crate::held::read_plain(&file, MOST)
             .map_err(|why| format!("{name} could not be read: {why}, so nothing changed"))?,
     };
     let mut doc = text.parse::<toml_edit::DocumentMut>().map_err(|why| {

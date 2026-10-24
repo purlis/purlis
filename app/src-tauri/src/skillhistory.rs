@@ -133,9 +133,7 @@ fn details_of(root: &std::path::Path, name: &str, now: u64) -> SkillDetails {
     let copies = Level::every(root)
         .into_iter()
         .filter_map(|level| {
-            let folder = level
-                .dir(root)
-                .and_then(|dir| purlis_core::skills::named(&dir, name))?;
+            let folder = level.named(root, name)?;
             let about = purlis_core::skills::about_of(&folder);
             let history = history::history(root, &level, name).unwrap_or_default();
             let versions = history

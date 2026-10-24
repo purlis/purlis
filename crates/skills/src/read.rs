@@ -15,30 +15,80 @@ pub const DIR_IN_BUNDLE: &str = "skills";
 /// A skill's file inside its folder.
 pub const FILE: &str = "SKILL.md";
 
-/// The skills directory inside the bundled plugin at `plugin`, when it is there.
+/// The skills directory inside the bundled plugin at `plugin`, when it is there as a folder of
+/// its own: a link there is never read through ([`scan`]).
 pub fn in_bundle(plugin: &Path) -> Option<PathBuf> {
-    Some(plugin.join(DIR_IN_BUNDLE)).filter(|dir| dir.is_dir())
+    Some(plugin.join(DIR_IN_BUNDLE)).filter(|dir| crate::held::is_plain_dir(dir))
 }
 
-/// Every folder in `dir`: the skill it holds, or the folder and what it lacks to be one. A file
-/// beside the folders is neither. In the order the directory lists them.
-pub fn scan(dir: &Path) -> Vec<Result<Skill, (PathBuf, Missing)>> {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return Vec::new();
+/// **Every folder in the level `rel` under `root`**: the skill it holds, or the folder and what
+/// it lacks to be one. A file beside the folders is neither. By folder name.
+///
+/// **Nothing is read through a link** (SK-36): `root` is a folder purlis trusts (the plane's
+/// root, the bundle's plugin folder), and every part of `rel` below it, each skill's folder and
+/// its `SKILL.md` are opened through the handle of the folder above without following a link
+/// ([`crate::held::Folder`]). A folder that is a link to a folder is left out as a link
+/// ([`Missing::Link`]), and so is the level where any part of `rel` is one, whatever it leads to:
+/// what is listed of a skill, and every file a load names of it, is inside it.
+pub fn scan(root: &Path, rel: &Path) -> Vec<Result<Skill, (PathBuf, Missing)>> {
+    use crate::held::{Folder, Kind, Opened};
+    let level = match Folder::walk(root, rel) {
+        Opened::Folder(level) => level,
+        Opened::Link => return vec![Err((root.join(rel), Missing::Link))],
+        Opened::Absent => return Vec::new(),
     };
-    entries
-        .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        .filter(|folder| folder.is_dir())
-        .map(|folder| whole(&folder).map_err(|missing| (folder, missing)))
-        .collect()
+    let mut out = Vec::new();
+    for name in level.names() {
+        let path = level.shown().join(&name);
+        match level.kind(&name) {
+            Some(Kind::Folder) => {}
+            // A link is told as one only where it leads to a folder: one to a file is a file
+            // beside the folders, which is nothing.
+            Some(Kind::Link { to_folder: true }) => {
+                out.push(Err((path, Missing::Link)));
+                continue;
+            }
+            _ => continue,
+        }
+        match level.child(&name) {
+            Opened::Folder(folder) => {
+                out.push(whole(&folder).map_err(|missing| (path, missing)));
+            }
+            // It turned into a link since it was looked at.
+            Opened::Link => out.push(Err((path, Missing::Link))),
+            Opened::Absent => {}
+        }
+    }
+    out
 }
 
-/// The skill in `folder`, or what it lacks.
-fn whole(folder: &Path) -> Result<Skill, Missing> {
-    let path = folder.join(FILE);
-    let text = std::fs::read_to_string(&path).map_err(|_| Missing::File)?;
-    parsed(&text, path)
+/// [`scan`] of the folder `dir`, its last part opened without following a link and the folders
+/// above it trusted as they are: for a folder that is no level of a plane (the bundle's own).
+pub fn scan_dir(dir: &Path) -> Vec<Result<Skill, (PathBuf, Missing)>> {
+    match (dir.parent(), dir.file_name()) {
+        (Some(parent), Some(name)) => scan(parent, Path::new(name)),
+        _ => Vec::new(),
+    }
+}
+
+/// The skill in the folder held at `folder`, or what it lacks: its `SKILL.md` read as every
+/// skill's own file is ([`crate::handed::read_skill_md`]).
+fn whole(folder: &crate::held::Folder) -> Result<Skill, Missing> {
+    use crate::Refusal;
+    let text = crate::handed::read_held(folder, FILE.as_ref()).map_err(|why| match why {
+        Refusal::TooLarge => Missing::TooLarge,
+        // A link, or a plain file with a second name (a hard link): either reaches past it.
+        Refusal::FileLink
+            if matches!(
+                folder.kind(FILE.as_ref()),
+                Some(crate::held::Kind::Link { .. } | crate::held::Kind::File)
+            ) =>
+        {
+            Missing::Link
+        }
+        _ => Missing::File,
+    })?;
+    parsed(&text, folder.shown().join(FILE))
 }
 
 /// **The skill a `SKILL.md` whose text is `text` holds**, at `path`, or what it lacks: by the
@@ -63,7 +113,7 @@ pub fn parsed(text: &str, path: PathBuf) -> Result<Skill, Missing> {
 /// Every skill in `dir`, by name. A folder with no `SKILL.md`, or one whose frontmatter names no
 /// `name` or no `description`, is not a skill any harness would load, and is left out.
 pub fn read(dir: &Path) -> Vec<Skill> {
-    let mut skills: Vec<Skill> = scan(dir).into_iter().filter_map(Result::ok).collect();
+    let mut skills: Vec<Skill> = scan_dir(dir).into_iter().filter_map(Result::ok).collect();
     skills.sort_by(|a, b| a.name.cmp(&b.name));
     skills
 }
