@@ -10,7 +10,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::{Whose, level_rel, move_skill, read};
+use crate::{Unmoved, Whose, level_rel, move_skill, read};
 
 /// The folder in `dir` whose skill is named `name`: its frontmatter's `name`, which is a
 /// skill's identity, never its folder's name. The first by folder name where two have one.
@@ -99,8 +99,12 @@ pub fn share(plane: &Path, at: &Whose, name: &str) -> Result<Shared, String> {
     }
     // Only the level's own `skills/` is made; the folders above it are the level's.
     let make_from = Path::new(&shared).components().count();
-    move_skill(plane, &from, &to, make_from).map_err(|why| {
-        format!("{name} could not be moved to {shown} ({why}), so nothing was moved")
+    move_skill(plane, &from, &to, make_from).map_err(|unmoved| match unmoved {
+        Unmoved::Nothing(why) => {
+            format!("{name} could not be moved to {shown} ({why}), so nothing was moved")
+        }
+        // Something moved and stayed: say what, never that nothing was moved (SK-45).
+        Unmoved::Stranded(what) => format!("{name} could not be moved to {shown}: {what}"),
     })?;
     Ok(Shared { from, to })
 }
