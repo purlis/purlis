@@ -87,10 +87,11 @@ impl SkillFile {
 }
 
 /// **Whether `path` is a file of a skill at a plane level** of the project at `root`
-/// (`skills/`, `skills.local/`, a workspace's `skills/` or `skills.local/`), judged on its
-/// lexical path and on the disk: which skill and which of its files, or `None`. Never a
-/// dot-name, a package manifest or a hooks folder below the skill's folder; never a level of a
-/// workspace that is not there; and never a path with a link in it.
+/// (`skills/`, `skills.local/`, a workspace's or a persona's `skills/` or `skills.local/`),
+/// judged on its lexical path and on the disk: which skill and which of its files, or `None`.
+/// Never a dot-name, a package manifest or a hooks folder below the skill's folder; never a
+/// level of a workspace that is not there, or of a persona with no folder of its own (SK-32,
+/// #3048); and never a path with a link in it.
 pub fn draftable(root: &Path, path: &Path) -> Option<SkillFile> {
     let rel = relative_to(root, path)?;
     let parts: Vec<&str> = rel
@@ -98,7 +99,7 @@ pub fn draftable(root: &Path, path: &Path) -> Option<SkillFile> {
         .map(|part| part.to_str())
         .collect::<Option<_>>()?;
     let at = match parts.first().copied()? {
-        "workspaces" => 3,
+        "workspaces" | "personas" => 3,
         _ => 1,
     };
     if parts.len() < at + 2 || parts.len() > at + 1 + DEEPEST {
@@ -113,8 +114,13 @@ pub fn draftable(root: &Path, path: &Path) -> Option<SkillFile> {
     {
         return None;
     }
-    if let Some(ws) = level.workspace_name()
+    if let Some(ws) = level.at.workspace()
         && !root.join("workspaces").join(ws).is_dir()
+    {
+        return None;
+    }
+    if let Some(persona) = level.at.persona()
+        && !super::holds_skills(root, persona)
     {
         return None;
     }
@@ -578,7 +584,7 @@ fn random_id() -> Result<String, String> {
 /// The folder of the project the throwaway pieces are made in, relative to its root: inside the
 /// project, since a sandboxed chat starts only in a folder of the project, and below
 /// `workspaces/` under a dot-name no workspace takes, so git ignores it with every LOCAL
-/// workspace's files (`/workspaces/*/*`) and no save stages it (`planegit::SAVE_STAGES`).
+/// workspace's files (`/workspaces/*/*`) and no save stages it (`planegit::save_stages`).
 pub const PIECES: [&str; 2] = ["workspaces", ".throwaway"];
 
 /// The folder of the throwaway pieces of the project at `root`, held open, made where it is not
@@ -867,10 +873,12 @@ pub fn alone_on(
 /// starts where `level`'s skills are reached from (the project's root, or its workspace's
 /// folder): one line, which the person ends with what the skill is for.
 pub fn asking(level: &Level) -> String {
-    let dir = if level.local {
-        purlis_skills::LOCAL_DIR
-    } else {
-        purlis_skills::PROJECT_DIR
+    let dir = match level.at.persona() {
+        // A persona's draft chat starts at the project's root (SK-32, #3048), so it is told the
+        // persona's folder in full.
+        Some(_) => level.rel().unwrap_or_default(),
+        None if level.local => purlis_skills::LOCAL_DIR.to_owned(),
+        None => purlis_skills::PROJECT_DIR.to_owned(),
     };
     format!(
         "Draft a skill as {dir}/<name>/SKILL.md, with name and description frontmatter (where \

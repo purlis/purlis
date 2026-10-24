@@ -351,6 +351,7 @@ fn delete_says_who_uses_it_and_a_skill_git_does_not_track_comes_back_on_restore(
         Users {
             root: true,
             workspaces: vec!["ops".to_owned()],
+            persona: None,
             personas: vec!["steward".to_owned()],
             skills: vec!["release".to_owned()],
         }
@@ -670,4 +671,379 @@ fn files_git_ignores_left_in_a_deleted_skills_folder_do_not_hide_it_from_restore
         .unwrap_or_else(|| panic!("hidden by an ignored file: {listed:?}"));
     did(root, |cx| restore(cx, one)).unwrap();
     assert!(root.join("skills/release/SKILL.md").exists());
+}
+
+// Persona-owned skills (SK-32, #3003): every verb above at a persona's level.
+
+/// What a chat as `persona` in `workspace` gets, by name.
+fn gets_as(root: &Path, workspace: Option<&str>, persona: &str) -> Vec<String> {
+    crate::skills::in_the_studio(None, root, workspace, Some(persona))
+        .effective
+        .into_iter()
+        .map(|e| e.skill.name)
+        .collect()
+}
+
+/// The `skills:` line of `persona`'s definition at `rel`.
+fn skills_line(root: &Path, rel: &str) -> String {
+    std::fs::read_to_string(root.join(rel))
+        .unwrap()
+        .lines()
+        .find(|line| line.starts_with("skills:"))
+        .unwrap_or_default()
+        .to_owned()
+}
+
+/// [`committed_plane`] with a persona `reviewer` that owns the skill `lint`, a one-file persona
+/// `auditor` that names `lint`, and the project skill `release` naming `skills:lint`.
+fn persona_plane() -> tempfile::TempDir {
+    let tmp = committed_plane();
+    let root = tmp.path();
+    std::fs::create_dir_all(root.join("personas/reviewer")).unwrap();
+    std::fs::write(
+        root.join("personas/reviewer/persona.md"),
+        "---\nname: reviewer\n---\n\nReviews.\n",
+    )
+    .unwrap();
+    skill(root, "personas/reviewer/skills/lint", "lint", "Lints it.");
+    std::fs::write(
+        root.join("personas/auditor.md"),
+        "---\nname: auditor\nskills: lint\n---\n\nAudits.\n",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("skills/release/SKILL.md"),
+        "---\nname: release\ndescription: Cuts a release.\n---\n\nThen skills:lint.\n",
+    )
+    .unwrap();
+    run(root, &["add", "-A"]);
+    run(root, &["commit", "-q", "-m", "personas"]);
+    tmp
+}
+
+#[test]
+fn a_personas_own_skill_is_made_edited_and_committed_at_its_level() {
+    let tmp = persona_plane();
+    let root = tmp.path();
+
+    let folder = did(root, |cx| {
+        create(
+            cx,
+            &Level::persona("reviewer"),
+            "triage",
+            "Sorts new issues.",
+            Template::Blank,
+        )
+    })
+    .unwrap();
+    assert_eq!(folder, root.join("personas/reviewer/skills/triage"));
+    let (subject, paths) = last_commit(root);
+    assert!(subject.ends_with("skill new triage"), "{subject}");
+    assert_eq!(paths, ["personas/reviewer/skills/triage/SKILL.md"]);
+    // It goes with the persona into every workspace, and reaches no one else.
+    assert!(gets_as(root, Some("ops"), "reviewer").contains(&"triage".to_owned()));
+    assert!(!gets(root, Some("ops")).contains(&"triage".to_owned()));
+    assert!(!gets(root, None).contains(&"triage".to_owned()));
+
+    let (_, was) = text_of(root, &Level::persona("reviewer"), "triage").unwrap();
+    let now = was.replace("body", "Sort them.");
+    did(root, |cx| {
+        edit(cx, &Level::persona("reviewer"), "triage", &was, &now)
+    })
+    .unwrap();
+    assert_eq!(
+        last_commit(root).1,
+        ["personas/reviewer/skills/triage/SKILL.md"]
+    );
+
+    assert!(
+        Level::every(root).contains(&Level::persona("reviewer").local(true)),
+        "a persona with a folder is a level the studio offers"
+    );
+    assert!(
+        !Level::every(root)
+            .iter()
+            .any(|level| level.at.persona() == Some("auditor")),
+        "a one-file persona keeps no skills"
+    );
+}
+
+#[test]
+fn a_persona_skill_is_refused_for_a_persona_there_is_not_or_one_made_as_one_file() {
+    let tmp = persona_plane();
+    let root = tmp.path();
+    let new = |persona: &str| {
+        did(root, |cx| {
+            create(
+                cx,
+                &Level::persona(persona),
+                "x",
+                "Does x.",
+                Template::Blank,
+            )
+        })
+    };
+
+    assert!(new("nobody").unwrap_err().contains("no persona \"nobody\""));
+    assert!(
+        new("auditor")
+            .unwrap_err()
+            .contains("keeps no skills of its own")
+    );
+    assert!(!root.join("personas/auditor").exists());
+    assert!(!root.join("personas/nobody").exists());
+}
+
+#[test]
+fn renaming_a_personas_skill_follows_into_every_persona_list_and_skill_that_names_it() {
+    let tmp = persona_plane();
+    let root = tmp.path();
+
+    let to = did(root, |cx| {
+        rename(cx, &Level::persona("reviewer"), "lint", "check")
+    })
+    .unwrap();
+
+    assert_eq!(to, root.join("personas/reviewer/skills/check"));
+    assert_eq!(skills_line(root, "personas/auditor.md"), "skills: check");
+    assert!(
+        std::fs::read_to_string(root.join("skills/release/SKILL.md"))
+            .unwrap()
+            .contains("skills:check")
+    );
+    let (subject, paths) = last_commit(root);
+    assert!(subject.ends_with("skill rename lint check"), "{subject}");
+    assert_eq!(
+        paths,
+        [
+            "personas/auditor.md",
+            "personas/reviewer/skills/check/SKILL.md",
+            "personas/reviewer/skills/lint/SKILL.md",
+            "skills/release/SKILL.md",
+        ]
+    );
+    assert!(gets_as(root, None, "reviewer").contains(&"check".to_owned()));
+}
+
+#[test]
+fn promoting_a_personas_skill_asks_for_its_grant_and_the_persona_keeps_it_everywhere() {
+    let tmp = persona_plane();
+    let root = tmp.path();
+    let (from, to) = (Level::persona("reviewer"), Level::project());
+    assert!(needs_grant(&from, &to));
+    assert!(!needs_grant(&to, &from));
+    assert!(!needs_grant(&from, &Level::workspace("ops")));
+
+    let refused = did(root, |cx| move_to(cx, &from, "lint", &to, None));
+    assert_eq!(refused.unwrap_err(), GRANT_NEEDED);
+    assert!(root.join("personas/reviewer/skills/lint/SKILL.md").exists());
+
+    // Granted to the root alone: the persona's list is what brings it into a workspace.
+    let moved = did(root, |cx| {
+        move_to(cx, &from, "lint", &to, Some(&Grant::Root))
+    })
+    .unwrap();
+    assert_eq!(moved, root.join("skills/lint"));
+    assert_eq!(
+        skills_line(root, "personas/reviewer/persona.md"),
+        "skills: lint"
+    );
+    assert!(gets_as(root, Some("ops"), "reviewer").contains(&"lint".to_owned()));
+    assert!(!gets(root, Some("ops")).contains(&"lint".to_owned()));
+    let (subject, paths) = last_commit(root);
+    assert!(subject.ends_with("skill mv lint project"), "{subject}");
+    assert_eq!(
+        paths,
+        [
+            "personas/reviewer/persona.md",
+            "personas/reviewer/skills/lint/SKILL.md",
+            "skills/lint/SKILL.md",
+        ]
+    );
+}
+
+#[test]
+fn a_project_skill_moved_to_a_persona_leaves_its_list_its_grant_and_the_turn_offs_and_says_who_loses_it()
+ {
+    let tmp = persona_plane();
+    let root = tmp.path();
+    crate::skills::grant(root, "deploy", &Grant::All).unwrap();
+    crate::skills::switch(root, "ops", "deploy", false).unwrap();
+    run(root, &["add", "-A"]);
+    run(root, &["commit", "-q", "-m", "granted"]);
+
+    // steward names deploy: it becomes steward's own, so steward's list no longer needs it.
+    let (moved, lines) = on(root, None, |cx| {
+        move_to(
+            cx,
+            &Level::project(),
+            "deploy",
+            &Level::persona("steward"),
+            None,
+        )
+    });
+
+    let moved = moved.unwrap();
+    assert_eq!(moved, root.join("personas/steward/skills/deploy"));
+    assert!(!beside(&moved).exists(), "a persona's skill keeps no grant");
+    assert_eq!(
+        skills_line(root, "personas/steward/persona.md"),
+        "skills: purlis:handoff"
+    );
+    assert!(crate::skills::turned_off(root, "ops").is_empty());
+    assert!(gets_as(root, Some("ops"), "steward").contains(&"deploy".to_owned()));
+    assert!(!gets(root, None).contains(&"deploy".to_owned()));
+    assert!(said(&lines, |line| matches!(
+        line,
+        Say::Warn(text) if text.contains("the project's chats get deploy now only as persona steward")
+    )));
+    let (_, paths) = last_commit(root);
+    assert!(
+        paths.contains(&"personas/steward/persona.md".to_owned())
+            && paths.contains(&"personas/steward/skills/deploy/SKILL.md".to_owned())
+            && paths.contains(&"workspaces/ops/workspace.json".to_owned()),
+        "{paths:?}"
+    );
+}
+
+#[test]
+fn moving_a_skill_into_a_persona_names_the_other_personas_that_lose_it() {
+    let tmp = persona_plane();
+    let root = tmp.path();
+    // auditor names lint; moving it from reviewer to steward leaves auditor and reviewer without.
+    let (moved, lines) = on(root, None, |cx| {
+        move_to(
+            cx,
+            &Level::persona("reviewer"),
+            "lint",
+            &Level::persona("steward"),
+            None,
+        )
+    });
+
+    moved.unwrap();
+    assert!(said(&lines, |line| matches!(
+        line,
+        Say::Warn(text) if text.contains("persona reviewer no longer gets lint")
+    )));
+    assert!(said(&lines, |line| matches!(
+        line,
+        Say::Warn(text) if text.contains("1 persona names lint") && text.contains("auditor")
+    )));
+    assert!(gets_as(root, None, "steward").contains(&"lint".to_owned()));
+    assert!(!gets_as(root, None, "reviewer").contains(&"lint".to_owned()));
+}
+
+#[test]
+fn a_personas_skill_says_who_uses_it_and_is_deleted_and_restored_from_git() {
+    let tmp = persona_plane();
+    let root = tmp.path();
+
+    let users = users(root, &Level::persona("reviewer"), "lint").unwrap();
+    assert_eq!(
+        users,
+        Users {
+            root: false,
+            workspaces: Vec::new(),
+            persona: Some("reviewer".to_owned()),
+            personas: vec!["auditor".to_owned()],
+            skills: vec!["release".to_owned()],
+        }
+    );
+
+    let kept = did(root, |cx| delete(cx, &Level::persona("reviewer"), "lint")).unwrap();
+    assert!(kept.in_git(), "{kept:?}");
+    assert!(!root.join("personas/reviewer/skills/lint").exists());
+    assert_eq!(
+        last_commit(root).1,
+        ["personas/reviewer/skills/lint/SKILL.md"]
+    );
+    let listed = deleted(root);
+    let one = listed
+        .iter()
+        .find(|one| one.name == "lint")
+        .unwrap_or_else(|| panic!("{listed:?}"));
+    assert_eq!(one.level, Level::persona("reviewer"));
+
+    did(root, |cx| restore(cx, one)).unwrap();
+    assert!(gets_as(root, None, "reviewer").contains(&"lint".to_owned()));
+    let (subject, paths) = last_commit(root);
+    assert!(subject.ends_with("skill restore lint"), "{subject}");
+    assert_eq!(paths, ["personas/reviewer/skills/lint/SKILL.md"]);
+}
+
+#[test]
+fn a_personas_local_skill_is_kept_on_this_machine_when_deleted_and_shared_into_its_skills() {
+    let tmp = persona_plane();
+    let root = tmp.path();
+    skill(
+        root,
+        "personas/reviewer/skills.local/scratch",
+        "scratch",
+        "Tries things.",
+    );
+    skill(
+        root,
+        "personas/reviewer/skills.local/notes",
+        "notes",
+        "Keeps notes.",
+    );
+    let local = Level::persona("reviewer").local(true);
+
+    let kept = did(root, |cx| delete(cx, &local, "scratch")).unwrap();
+    assert!(!kept.in_git());
+    let listed = deleted(root);
+    let one = listed.iter().find(|one| one.name == "scratch").unwrap();
+    assert_eq!(one.level, local);
+    did(root, |cx| restore(cx, one)).unwrap();
+    assert!(
+        root.join("personas/reviewer/skills.local/scratch/SKILL.md")
+            .exists()
+    );
+
+    let shared = did(root, |cx| {
+        share(cx, &Whose::Persona("reviewer".to_owned()), "notes")
+    })
+    .unwrap();
+    assert_eq!(shared, root.join("personas/reviewer/skills/notes"));
+    let (subject, paths) = last_commit(root);
+    assert!(subject.ends_with("skill share notes"), "{subject}");
+    assert_eq!(paths, ["personas/reviewer/skills/notes/SKILL.md"]);
+}
+
+#[test]
+fn a_skill_moved_into_a_personas_local_skills_keeps_loading_and_is_never_committed() {
+    // SK-32 (#3124): the plane's `.gitignore` keeps every level's `skills.local/` on this
+    // machine, a persona's too, so its local skill is read, and no save takes it.
+    let tmp = persona_plane();
+    let root = tmp.path();
+    let ignores = crate::scaffold::skills_local_ignores().join("\n");
+    std::fs::write(
+        root.join(".gitignore"),
+        format!(".charter/\n.purlis/\n{ignores}\n"),
+    )
+    .unwrap();
+    run(root, &["add", "-A"]);
+    run(root, &["commit", "-q", "-m", "ignores"]);
+
+    let moved = did(root, |cx| {
+        move_to(
+            cx,
+            &Level::project(),
+            "deploy",
+            &Level::persona("steward").local(true),
+            None,
+        )
+    })
+    .unwrap();
+
+    assert_eq!(moved, root.join("personas/steward/skills.local/deploy"));
+    assert!(gets_as(root, Some("ops"), "steward").contains(&"deploy".to_owned()));
+    let (_, paths) = last_commit(root);
+    assert!(
+        paths.iter().all(|path| !path.contains("skills.local")),
+        "{paths:?}"
+    );
+    let tree = run(root, &["ls-tree", "-r", "--name-only", "HEAD"]).out;
+    assert!(!tree.contains("skills.local"), "{tree}");
 }

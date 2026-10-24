@@ -35,18 +35,14 @@ use crate::repocmd::{Say, Sink};
 
 pub mod drafts;
 
-/// Where a level is: the project's root, or one workspace.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub enum At {
-    Project,
-    Workspace(String),
-}
+/// Where a level is: the project's root, one workspace or one persona.
+pub use purlis_skills::Whose;
 
-/// A plane level a skill lives at (ADR 0099 §1): the project's or one workspace's, shared or
-/// local.
+/// A plane level a skill lives at (ADR 0099 §1): the project's, one workspace's or one
+/// persona's (SK-32, #3003), shared or local.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct Level {
-    pub at: At,
+    pub at: Whose,
     /// Its `skills.local/`, kept on this machine.
     pub local: bool,
 }
@@ -55,7 +51,7 @@ impl Level {
     /// The project's shared skills: `skills/` at its root.
     pub fn project() -> Level {
         Level {
-            at: At::Project,
+            at: Whose::Project,
             local: false,
         }
     }
@@ -63,7 +59,15 @@ impl Level {
     /// `workspace`'s shared skills.
     pub fn workspace(workspace: &str) -> Level {
         Level {
-            at: At::Workspace(workspace.to_owned()),
+            at: Whose::Workspace(workspace.to_owned()),
+            local: false,
+        }
+    }
+
+    /// `persona`'s shared skills (SK-32, #3003).
+    pub fn persona(persona: &str) -> Level {
+        Level {
+            at: Whose::Persona(persona.to_owned()),
             local: false,
         }
     }
@@ -73,43 +77,31 @@ impl Level {
         Level { local, ..self }
     }
 
-    /// The workspace it is in, or `None` for the project's.
-    pub fn workspace_name(&self) -> Option<&str> {
-        match &self.at {
-            At::Project => None,
-            At::Workspace(ws) => Some(ws),
-        }
-    }
-
     /// The level a skill in it comes from.
     pub fn origin(&self) -> Origin {
         match self.at {
-            At::Project => Origin::Project,
-            At::Workspace(_) => Origin::Workspace,
+            Whose::Project => Origin::Project,
+            Whose::Workspace(_) => Origin::Workspace,
+            Whose::Persona(_) => Origin::Persona,
         }
     }
 
     /// Its folder in the plane at `plane`, or `None` for a workspace name that names no folder.
     pub fn dir(&self, plane: &Path) -> Option<PathBuf> {
-        level_dir(plane, self.workspace_name(), self.local)
+        level_dir(plane, &self.at, self.local)
     }
 
     /// Its folder relative to the plane, `/` between the parts, by the one rule
-    /// ([`purlis_skills::level_rel`]): `skills`, `workspaces/ops/skills.local`.
+    /// ([`purlis_skills::level_rel`]): `skills`, `workspaces/ops/skills.local`,
+    /// `personas/reviewer/skills`.
     pub(in crate::skills) fn rel(&self) -> Option<String> {
-        purlis_skills::level_rel(self.workspace_name(), self.local)
+        purlis_skills::level_rel(&self.at, self.local)
     }
 
     /// The level whose folder `rel` is, read by the same rule.
     pub(in crate::skills) fn of_rel(rel: &str) -> Option<Level> {
-        let (workspace, local) = purlis_skills::level_of_rel(rel)?;
-        Some(
-            match workspace {
-                None => Level::project(),
-                Some(ws) => Level::workspace(&ws),
-            }
-            .local(local),
-        )
+        let (at, local) = purlis_skills::level_of_rel(rel)?;
+        Some(Level { at, local })
     }
 
     /// How many folders its [`Self::rel`] has: the first one a new skill may make is the last.
@@ -117,13 +109,18 @@ impl Level {
         self.rel().map_or(usize::MAX, |rel| rel.split('/').count())
     }
 
-    /// **Every level of the plane at `plane`**: the project's, then each workspace's, shared
-    /// then local. What the studio's level pickers offer, and where a rename looks for names.
+    /// **Every level of the plane at `plane`**: the project's, then each workspace's, then each
+    /// persona's that has a folder of its own (a one-file persona holds no skills), shared then
+    /// local. What the studio's level pickers offer, and where a rename looks for names.
     pub fn every(plane: &Path) -> Vec<Level> {
         let mut levels = vec![Level::project(), Level::project().local(true)];
         for ws in workspaces(plane) {
             levels.push(Level::workspace(&ws));
             levels.push(Level::workspace(&ws).local(true));
+        }
+        for persona in personas(plane) {
+            levels.push(Level::persona(&persona));
+            levels.push(Level::persona(&persona).local(true));
         }
         levels
     }
@@ -134,8 +131,9 @@ impl std::fmt::Display for Level {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let shown = super::level_shown(self.origin(), self.local);
         match &self.at {
-            At::Project => f.write_str(&shown),
-            At::Workspace(ws) => write!(f, "{shown} {ws}"),
+            Whose::Project => f.write_str(&shown),
+            Whose::Workspace(ws) => write!(f, "{shown} {ws}"),
+            Whose::Persona(persona) => write!(f, "{shown} {persona}"),
         }
     }
 }
@@ -165,6 +163,42 @@ fn workspaces(plane: &Path) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// The plane's personas that can hold skills of their own: those with a folder
+/// (`personas/<p>/persona.md`), by name. A one-file persona has no folder, so no skills
+/// (`docs/plane-format.md`).
+fn personas(plane: &Path) -> Vec<String> {
+    crate::personaverbs::names(plane)
+        .into_iter()
+        .filter(|persona| holds_skills(plane, persona))
+        .collect()
+}
+
+/// **Whether `persona` is one with a folder of its own** (`personas/<p>/persona.md`), which a
+/// write into its skills is gated on: its folders opened one at a time with `O_NOFOLLOW`
+/// ([`store::open_dir`]) and its `persona.md` looked at through that handle, so no link on the
+/// way is followed.
+#[cfg(unix)]
+pub(in crate::skills) fn holds_skills(plane: &Path, persona: &str) -> bool {
+    use rustix::fs::{AtFlags, FileType, statat};
+    if !purlis_skills::level_rel(&Whose::Persona(persona.to_owned()), false).is_some() {
+        return false;
+    }
+    let Ok(dir) = store::open_dir(
+        plane,
+        &["personas".to_owned(), persona.to_owned()],
+        usize::MAX,
+    ) else {
+        return false;
+    };
+    statat(&dir, "persona.md", AtFlags::SYMLINK_NOFOLLOW)
+        .is_ok_and(|stat| FileType::from_raw_mode(stat.st_mode) == FileType::RegularFile)
+}
+
+/// [`holds_skills`] where no folder can be held open: no persona holds skills there.
+#[cfg(not(unix))]
+pub(in crate::skills) fn holds_skills(_: &Path, _: &str) -> bool {
+    false
+}
 /// `path` relative to `plane`, `/` between its parts.
 pub(in crate::skills) fn rel(plane: &Path, path: &Path) -> String {
     path.strip_prefix(plane)
@@ -259,12 +293,28 @@ impl Ctx<'_> {
 
 /// Refused where `level` is a workspace's and the plane has no such workspace.
 pub(in crate::skills) fn level_is_there(plane: &Path, level: &Level) -> Result<PathBuf, String> {
-    if let Some(ws) = level.workspace_name() {
-        let held = crate::workspaces::Plane::open(plane);
-        if !held.workspace(ws).is_ok_and(|one| one.dir().is_dir()) {
-            return Err(format!(
-                "this project has no workspace {ws:?}, so nothing was changed"
-            ));
+    match &level.at {
+        Whose::Project => {}
+        Whose::Workspace(ws) => {
+            let held = crate::workspaces::Plane::open(plane);
+            if !held.workspace(ws).is_ok_and(|one| one.dir().is_dir()) {
+                return Err(format!(
+                    "this project has no workspace {ws:?}, so nothing was changed"
+                ));
+            }
+        }
+        Whose::Persona(persona) => {
+            if !crate::personaverbs::names(plane).contains(persona) {
+                return Err(format!(
+                    "this project has no persona {persona:?}, so nothing was changed"
+                ));
+            }
+            if !holds_skills(plane, persona) {
+                return Err(format!(
+                    "persona {persona} keeps no skills of its own, as a persona made as one file \
+                     does not: add the skill to its skills by name instead"
+                ));
+            }
         }
     }
     level
@@ -461,7 +511,7 @@ pub fn edit(
             "{} of {name} besides its instructions {} changes this save does not take; the next save \
              does",
             crate::counts::counted(others, "other file", "other files"),
-            if others == 1 { "has" } else { "have" }
+            crate::counts::plural(others, "has", "have")
         ));
     }
     cx.commit(&[file], &format!("skill edit {name}"));
@@ -570,7 +620,7 @@ fn references_renamed(cx: &mut Ctx<'_>, level: &Level, old: &str, new: &str) -> 
             });
         }
     }
-    if level.at == At::Project {
+    if level.at == Whose::Project {
         changed.extend(turned_off_renamed(cx, old, Some(new)));
     }
     changed
@@ -604,7 +654,7 @@ fn turned_off_renamed(cx: &mut Ctx<'_>, old: &str, new: Option<&str>) -> Vec<Str
 /// Whether moving a skill from `from` to `to` makes it a project skill, which asks for its grant
 /// (decision 14): a project skill reaches only the chats its grant names.
 pub fn needs_grant(from: &Level, to: &Level) -> bool {
-    to.at == At::Project && from.at != At::Project
+    to.at == Whose::Project && from.at != Whose::Project
 }
 
 /// What a move into the project's skills is told when it names no grant.
@@ -614,7 +664,13 @@ pub const GRANT_NEEDED: &str = "a project skill reaches only the chats its grant
 /// **Moves the skill named `name` from `from` to `to`** (#2770, decisions 14 and 37): its folder
 /// and the file beside it, never over anything there. Into the project's skills it takes
 /// `grant`, which it must have ([`needs_grant`]); out of them it leaves its grant behind, since a
-/// workspace's skill has none, and each workspace's turn-off of it is taken out. One commit.
+/// workspace's or a persona's skill has none, and each workspace's turn-off of it is taken out.
+///
+/// **A persona keeps what it had** (SK-32, #3003, decision 4): a persona's own skill moved into
+/// the project's skills is added to that persona's `skills:` list, which brings a project skill
+/// into every workspace, so the persona's chats keep it; one moved into a persona's skills is
+/// taken out of that persona's list, which no longer needs to name it. What another persona or
+/// a workspace no longer gets is said. One commit.
 pub fn move_to(
     cx: &mut Ctx<'_>,
     from: &Level,
@@ -652,7 +708,7 @@ pub fn move_to(
         rel(plane, &moved),
         rel(plane, &beside(&moved)),
     ];
-    if to.at == At::Project {
+    if to.at == Whose::Project {
         if let Some(grant) = grant
             && let Err(why) = set_grant(&moved, grant)
         {
@@ -660,13 +716,16 @@ pub fn move_to(
                 "{name} is moved, and its grant was not written: {why}"
             ));
         }
-    } else if from.at == At::Project {
-        // A workspace's skill reaches its workspace alone: it keeps no grant, and nothing turns
-        // it off.
+    } else if from.at == Whose::Project {
+        // A workspace's or a persona's skill reaches its own chats alone: it keeps no grant, and
+        // nothing turns it off.
         if grant_of(&moved).is_ok_and(|was| was != Grant::Root) {
             let _ = set_grant(&moved, &Grant::Root);
         }
         touched.extend(turned_off_renamed(cx, name, None));
+    }
+    if from.at.persona() != to.at.persona() {
+        touched.extend(personas_followed(cx, from, name, to));
     }
     cx.done(format!(
         "{name} is a {to} skill now, in {}",
@@ -674,6 +733,64 @@ pub fn move_to(
     ));
     cx.commit(&touched, &format!("skill mv {name} {to}"));
     Ok(moved)
+}
+
+/// The persona lists a move of the skill `name` from `from` to `to` changes, between a persona's
+/// own skills and another level (SK-32, #3003), and the persona files it changed. What could not
+/// be written, and what a persona or a workspace no longer gets, is said.
+fn personas_followed(cx: &mut Ctx<'_>, from: &Level, name: &str, to: &Level) -> Vec<String> {
+    use super::persona::{Change, change};
+    let plane = cx.plane;
+    let mut changed = Vec::new();
+    let mut listed =
+        |cx: &mut Ctx<'_>, persona: &str, how: Change| match change(plane, persona, name, how) {
+            Ok(true) => changed.push(rel(plane, &crate::personas::def_path(plane, persona))),
+            Ok(false) => {}
+            Err(why) => cx.warn(format!(
+                "persona {persona}'s skills could not be changed for {name}: {why}"
+            )),
+        };
+    if let Some(owner) = from.at.persona() {
+        match &to.at {
+            Whose::Project => listed(cx, owner, Change::Add),
+            Whose::Workspace(ws) => cx.warn(format!(
+                "persona {owner} gets {name} only in workspace {ws} now"
+            )),
+            Whose::Persona(other) => cx.warn(format!(
+                "persona {owner} no longer gets {name}: it is persona {other}'s own now"
+            )),
+        }
+    }
+    if let Some(owner) = to.at.persona() {
+        listed(cx, owner, Change::Remove);
+        let others: Vec<String> = crate::personaverbs::names(plane)
+            .into_iter()
+            .filter(|persona| persona != owner)
+            .filter(|persona| {
+                let file = crate::personas::def_path(plane, persona);
+                text_at(plane, &file, persona)
+                    .is_ok_and(|text| change::persona_names(&text, LINKED_PLUGIN, name))
+            })
+            .collect();
+        if !others.is_empty() {
+            cx.warn(format!(
+                "{} {} {name}, and a persona's own skill reaches that persona's chats alone, so \
+                 {} no longer get it",
+                crate::counts::counted(others.len(), "persona", "personas"),
+                crate::counts::plural(others.len(), "names", "name"),
+                others.join(", ")
+            ));
+        }
+        let reached = match &from.at {
+            Whose::Project => Some("the project's chats".to_owned()),
+            Whose::Workspace(ws) => Some(format!("workspace {ws}'s chats")),
+            Whose::Persona(_) => None,
+        };
+        if let Some(who) = reached {
+            cx.warn(format!("{who} get {name} now only as persona {owner}"));
+        }
+    }
+    changed
 }
 
 /// Who uses a skill: what Delete shows before it deletes (decision 14).
@@ -684,6 +801,9 @@ pub struct Users {
     /// The workspaces whose chats get it: its own, or those its grant reaches and that did not
     /// turn it off.
     pub workspaces: Vec<String>,
+    /// The persona whose own skill it is: chats as that persona get it in every workspace
+    /// (decision 4).
+    pub persona: Option<String>,
     /// The personas that name it in their `skills:` list or their text.
     pub personas: Vec<String>,
     /// The other skills whose text names it.
@@ -696,7 +816,7 @@ pub fn users(plane: &Path, level: &Level, name: &str) -> Result<Users, String> {
     let folder = find(plane, level, name)?;
     let mut users = Users::default();
     match &level.at {
-        At::Project => {
+        Whose::Project => {
             users.root = true;
             let grant = grant_of(&folder).unwrap_or(Grant::Root);
             for ws in workspaces(plane) {
@@ -707,10 +827,14 @@ pub fn users(plane: &Path, level: &Level, name: &str) -> Result<Users, String> {
                 }
             }
         }
-        At::Workspace(ws) => users.workspaces.push(ws.clone()),
+        Whose::Workspace(ws) => users.workspaces.push(ws.clone()),
+        Whose::Persona(persona) => users.persona = Some(persona.clone()),
     }
     for persona in crate::personaverbs::names(plane) {
         let file = crate::personas::def_path(plane, &persona);
+        if users.persona.as_ref() == Some(&persona) {
+            continue;
+        }
         if let Ok(text) = text_at(plane, &file, &persona)
             && (change::persona_names(&text, LINKED_PLUGIN, name)
                 || change::references(&text, LINKED_PLUGIN, name))
@@ -926,14 +1050,18 @@ fn keep_here(plane: &Path, level: &Level, folder: &Path) -> Result<String, Strin
 /// How many deleted skills from git [`deleted`] lists at most, newest first.
 const MOST_DELETED: usize = 30;
 
-/// The git-log pathspecs of every shared skill's `SKILL.md`: the project's and each workspace's,
-/// by the one rule of where a level's skills are ([`purlis_skills::level_rel`]).
-fn deleted_globs() -> Vec<String> {
-    [None, Some("*")]
-        .into_iter()
-        .filter_map(|ws| purlis_skills::level_rel(ws, false))
-        .map(|dir| format!(":(glob){dir}/*/SKILL.md"))
-        .collect()
+/// The git-log pathspecs of every shared skill's `SKILL.md`: the project's, each workspace's and
+/// each persona's, by the one rule of where a level's skills are ([`purlis_skills::level_rel`]).
+pub(in crate::skills) fn shared_globs() -> Vec<String> {
+    [
+        Whose::Project,
+        Whose::Workspace("*".to_owned()),
+        Whose::Persona("*".to_owned()),
+    ]
+    .iter()
+    .filter_map(|at| purlis_skills::level_rel(at, false))
+    .map(|dir| format!(":(glob){dir}/*/SKILL.md"))
+    .collect()
 }
 
 /// **Every deleted skill that can be restored**, newest first: from the commits that removed a
@@ -965,7 +1093,7 @@ pub fn deleted(plane: &Path) -> Vec<Deleted> {
             at,
         });
     }
-    let globs = deleted_globs();
+    let globs = shared_globs();
     let mut args = vec![
         "log",
         "--diff-filter=D",
@@ -1128,14 +1256,14 @@ pub fn switch(cx: &mut Ctx<'_>, workspace: &str, name: &str, on: bool) -> Result
     Ok(changed)
 }
 
-/// **Share** (#2767): the local skill `name` at the project's root or in `workspace` moved into
-/// its level's `skills/`, committed (#2770).
-pub fn share(cx: &mut Ctx<'_>, workspace: Option<&str>, name: &str) -> Result<PathBuf, String> {
+/// **Share** (#2767): the local skill `name` at the project's root, in a workspace or of a
+/// persona (`at`) moved into its level's `skills/`, committed (#2770).
+pub fn share(cx: &mut Ctx<'_>, at: &Whose, name: &str) -> Result<PathBuf, String> {
     let plane = cx.plane;
-    let from = level_dir(plane, workspace, true)
+    let from = level_dir(plane, at, true)
         .and_then(|dir| named(&dir, name))
         .ok_or_else(|| format!("no local skill is named {name:?} there"))?;
-    let folder = super::share_here(plane, workspace, name)?;
+    let folder = super::share_here(plane, at, name)?;
     cx.done(format!(
         "{name} is shared: it is in {} now",
         rel(plane, &folder)

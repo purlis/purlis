@@ -51,7 +51,7 @@ function page(lifecycle: unknown, unused: number | null) {
   return {
     copies: [
       {
-        level: { workspace: null, local: false },
+        level: { at: "project", local: false },
         label: "project",
         lifecycle,
         unread: false,

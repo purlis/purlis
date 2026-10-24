@@ -11,32 +11,62 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 
 use purlis_core::repocmd::Say;
-use purlis_core::skills::verbs::{self, By, Level};
+use purlis_core::skills::verbs::{self, By, Level, Whose};
 use purlis_core::skills::{Grant, Template};
 
-/// A level of the project's, as the studio names one: the project's root (`workspace` null) or a
-/// workspace's, shared or kept on this machine.
+/// A level of the project's, as the studio names one: the project's root, a workspace's or a
+/// persona's (SK-32, #3003), shared or kept on this machine (`local`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
-pub struct SkillLevel {
-    pub workspace: Option<String>,
-    pub local: bool,
+#[serde(tag = "at", rename_all = "kebab-case")]
+pub enum SkillLevel {
+    Project { local: bool },
+    Workspace { name: String, local: bool },
+    Persona { name: String, local: bool },
+}
+
+/// Whose skills a level is, as the studio names it without saying shared or local: what Share
+/// takes, as a share is always of a local skill into its own level's shared ones.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(tag = "at", rename_all = "kebab-case")]
+pub enum SkillWhose {
+    Project,
+    Workspace { name: String },
+    Persona { name: String },
+}
+
+impl From<&SkillWhose> for Whose {
+    fn from(whose: &SkillWhose) -> Whose {
+        match whose {
+            SkillWhose::Project => Whose::Project,
+            SkillWhose::Workspace { name } => Whose::Workspace(name.clone()),
+            SkillWhose::Persona { name } => Whose::Persona(name.clone()),
+        }
+    }
 }
 
 impl From<&SkillLevel> for Level {
     fn from(level: &SkillLevel) -> Level {
-        match &level.workspace {
-            None => Level::project(),
-            Some(ws) => Level::workspace(ws),
+        match level {
+            SkillLevel::Project { local } => Level::project().local(*local),
+            SkillLevel::Workspace { name, local } => Level::workspace(name).local(*local),
+            SkillLevel::Persona { name, local } => Level::persona(name).local(*local),
         }
-        .local(level.local)
     }
 }
 
 impl From<&Level> for SkillLevel {
     fn from(level: &Level) -> SkillLevel {
-        SkillLevel {
-            workspace: level.workspace_name().map(str::to_owned),
-            local: level.local,
+        let local = level.local;
+        match &level.at {
+            Whose::Project => SkillLevel::Project { local },
+            Whose::Workspace(name) => SkillLevel::Workspace {
+                name: name.clone(),
+                local,
+            },
+            Whose::Persona(name) => SkillLevel::Persona {
+                name: name.clone(),
+                local,
+            },
         }
     }
 }
@@ -120,6 +150,8 @@ pub struct SkillUsers {
     /// Whether chats at the project's root get it.
     pub root: bool,
     pub workspaces: Vec<String>,
+    /// The persona whose own skill it is: its chats get it in every workspace.
+    pub persona: Option<String>,
     pub personas: Vec<String>,
     pub skills: Vec<String>,
 }
@@ -385,6 +417,7 @@ pub(crate) async fn skill_users(
         Ok(SkillUsers {
             root: users.root,
             workspaces: users.workspaces,
+            persona: users.persona,
             personas: users.personas,
             skills: users.skills,
         })
@@ -492,12 +525,8 @@ pub(crate) async fn skill_turn(
 }
 
 /// **Shares** a local skill: commits it to the project at its level (#2767), one commit.
-pub(crate) fn share(
-    root: &std::path::Path,
-    workspace: Option<&str>,
-    name: &str,
-) -> Result<(), String> {
-    heard(root, |cx| verbs::share(cx, workspace, name)).map(|_| ())
+pub(crate) fn share(root: &std::path::Path, at: &Whose, name: &str) -> Result<(), String> {
+    heard(root, |cx| verbs::share(cx, at, name)).map(|_| ())
 }
 
 #[cfg(test)]

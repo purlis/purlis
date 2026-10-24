@@ -698,7 +698,7 @@ const ORDINARY: Answers = {
   skill_details: {
     copies: [
       {
-        level: { workspace: null, local: false },
+        level: { at: "project", local: false },
         label: "project",
         lifecycle: { state: "deprecated", replacement: "ship" },
         unread: false,
@@ -1347,6 +1347,7 @@ const STATES: State[] = [
         on: true,
         workspace: null,
         workspaces: [],
+        levels: [],
         skills: [],
         harnesses: [],
         clashes: [],
