@@ -809,16 +809,25 @@ shell tickets.
 
 **A view's icon on a side's bar is an `ActivityItem`** (#2917, spec #2897 R116–R120, N17,
 `ui/activity/ActivityItem.tsx`), with the lint rule `purlis/activity-family` at error. Its parts
-are `item` (the root), `icon`, `count` and `indicator`; its variants are the two corners.
+are `item` (the root), `icon`, `count` and `indicator`; both corners draw the `bar` variant
+(#3144, the operator's ruling of 2026-10-24, ADR 0038 as amended that day).
 
-- **`tab`, the left bar** (N36, R116): 32×30 tabs across the top of the side panel, over a rule,
-  the side panel's views first and its half of the bottom panel's (Branch folders, Changes) at
-  the row's end. A press switches the view; a press of the open one does nothing (R121), and ⌘B
-  is still the way to put the side away. While it is away, the same icons stand as a narrow
-  column at the window's edge, and a press brings the side back on that view.
-- **`bar`, the right bar** (R117): a 44px column of 36px icons at the window's edge, its own
-  views at the top (a press toggles the 300px right panel, whose header has a × that closes it)
-  and its half of the bottom panel's at its foot.
+- **The left bar** (#3144): a 44px column of 36px icons, the frame's first column, beside the
+  project rail and the theme's gutter from it, as the switcher prototype's variant D draws it
+  with "Bar: column". The side panel's views at the top (Chats, Explorer, Search), its half of
+  the bottom panel's (Repos, Changes) at its foot. A press switches the view; a press of the
+  open one does nothing (R121), and ⌘B is the way to put the side away. The column stands
+  whether or not the side is out, so nothing moves when it goes or comes back; while the side is
+  away none of its icons is marked, and a press brings it back on that view. A hidden rail
+  leaves the column at the window's edge, and the rail's peek slides in over it.
+- **The right bar** (R117): the same column at the window's edge, its own views at the top (a
+  press toggles the 300px right panel, whose header has a × that closes it) and its half of the
+  bottom panel's at its foot.
+- **The `tab` variant** (R116): 32×30 tabs across the top of a side panel, over a rule. No bar
+  of the window draws it since #3144; it stays in the manifest, which never takes a variant
+  away, for a theme that names it.
+- **Classic's accent edge** is drawn along each column's outer side: the left column's left
+  edge and the right bar's right edge.
 - **Its states are colours** (R118): muted at rest, the card's fill under the pointer, the
   accent's wash while its view is open. The `indicator` is empty by default; Purlis Classic paints
   it as its accent edge through parts.

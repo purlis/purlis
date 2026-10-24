@@ -224,7 +224,8 @@ export const CATALOGUE: Record<RegionId, Definition> = {
     // Search since #1676. Changes, which holds what the bottom region drew (B-7), was here
     // too until it moved to the Panel's left half (#1739, P-2).
     views: ["chats", "explorer", "search"],
-    // Its bar is tabs across its own top (N36, R116), so pressing the open one leaves it out.
+    // Pressing its open view leaves it out (R121), as the switcher prototype's left column
+    // does (#3144); its key, ⌘B, puts it away.
     stays: true,
   },
   // The right is "for you" (ADR 0038 as amended 2026-10-10, B-13): what is asking for you,
