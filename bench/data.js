@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792847494998,
+  "lastUpdate": 1792849846080,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -23646,6 +23646,48 @@ window.BENCHMARK_DATA = {
             "value": 101.840025,
             "unit": "ms",
             "extra": "median of 5 runs: 101.125, 101.318, 101.840, 102.240, 102.437 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "575ed44571010750e4f1da41c5cee5dda60113c3",
+          "message": "SK-34: purlis skill list shows harness and repo skills too (#3140)\n\n* SK-34: purlis skill list and show list harness and repo skills\n\nThe CLI and the studio now call one core list, purlis_core::skills::studio_list,\nand the CLI prints each harness's own skills with whose each is and whether a\nchat gets it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-34: rustfmt\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-34: review fixes: one copy of the outside rows, typed owner and switch, escaping\n\n- studio_list returns each harness's outside rows; the CLI and the app read them\n  instead of calling outside_rows themselves. harnesses_in_the_studio,\n  with_harness_badges and outside_rows are private, studio_rows pub(crate).\n- Owner and Switch serialize as the window spells them (kind-tagged), and\n  Owner displays as you / plugin / repo <clone>; a test holds the app's mirror\n  to the same spelling.\n- Every free-text cell in list and show is escaped, measured after escaping.\n- Tests: core studio_list, Owner's words, a plugin's skill with its switch, a\n  linked repo skill folder, control and bidi characters.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-34: write the control characters into the fixture as they are\n\nThe frontmatter is read line by line, so a YAML escape stays literal text.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-24T17:41:23+04:00",
+          "tree_id": "8b8e8419849d7caf12a9e6e4815879f64242680c",
+          "url": "https://github.com/purlis/purlis/commit/575ed44571010750e4f1da41c5cee5dda60113c3"
+        },
+        "date": 1792849843986,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.47920150000000006,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.475, 0.476, 0.479, 0.492, 0.505 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.240676999999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.143, 16.159, 16.241, 16.243, 16.286 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.783174,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.850, 101.100, 101.783, 101.829, 102.319 ms"
           }
         ]
       }
