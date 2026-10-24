@@ -42,6 +42,9 @@ const FAINT: ReadonlySet<string> = new Set([
   // A list's row that cannot be used (#2911).
   '[data-scope="list"][data-part="root"][data-disabled]',
   '[data-scope="list"][data-part="root"][data-unavailable]',
+  // A resize handle's grip under the pointer, a mark (`ui/panel/panel.css`, #3143).
+  '[data-scope="panel-separator"][data-part="root"][data-separator="hover"] > [data-scope="panel-separator"][data-part="grip"]',
+  '[data-scope="panel-separator"][data-part="root"][data-separator="focus"]:hover > [data-scope="panel-separator"][data-part="grip"]',
 ]);
 
 /** Informational words, each drawn in quiet: line numbers, placeholders, counts, paths, group

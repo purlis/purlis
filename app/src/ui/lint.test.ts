@@ -282,3 +282,13 @@ tester.run("purlis/list-family", purlisUi.rules["list-family"], {
     { code: `<div data-scope="list">x</div>`, errors: [{ messageId: "scope" }] },
   ],
 });
+
+tester.run("purlis/panel-separator-family", purlisUi.rules["panel-separator-family"], {
+  valid: [{ code: `<Separator aria-label="Resize the split" />` }],
+  invalid: [
+    {
+      code: `<div data-scope="panel-separator" role="separator" />`,
+      errors: [{ messageId: "scope" }],
+    },
+  ],
+});

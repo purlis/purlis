@@ -22,6 +22,7 @@ export const purlisUi: {
     | "empty-state-family"
     | "status-item-family"
     | "list-family",
+    "panel-separator-family",
     Rule.RuleModule
   >;
 };

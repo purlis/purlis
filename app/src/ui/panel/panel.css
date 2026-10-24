@@ -74,3 +74,64 @@
   flex: none;
   color: inherit;
 }
+
+/* ---------------------------------------------------------------------------------------------
+   A panel separator: the handle between two panels that resizes them (#3143).
+   --------------------------------------------------------------------------------------------- */
+
+/* **The handle** is the library's (`ui/panel/Separator`): its box, and the hairline it draws at
+   rest, are the regions' (`App.css`). It stands over the panels either side, so its grip and the
+   keyboard's ring are drawn over them and never under. */
+[data-scope="panel-separator"][data-part="root"] {
+  position: relative;
+  z-index: 1;
+}
+
+/* **The keyboard's ring** is the window's 2px one (`App.css`), drawn outside the handle at the
+   ring's offset rather than inside it: a handle is thinner than its ring, or has no width at all
+   where the panels sit flush, and a ring drawn inside it would close up to nothing. */
+[data-scope="panel-separator"][data-part="root"]:focus-visible {
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* **Its grip**: a short mark at the handle's middle, 4 by 32 and round, drawn over what is either
+   side and out of the pointer's way. It is drawn in every state and only its colour changes, so
+   no state moves anything or changes where the handle can be grabbed. Along the line the handle
+   is: upright between two columns, flat between two rows. */
+[data-scope="panel-separator"][data-part="grip"] {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  inline-size: 4px;
+  block-size: 32px;
+  border-radius: 9999px;
+  background-color: transparent;
+  pointer-events: none;
+  translate: -50% -50%;
+}
+
+[data-scope="panel-separator"][data-part="root"][aria-orientation="horizontal"]
+  > [data-scope="panel-separator"][data-part="grip"] {
+  inline-size: 32px;
+  block-size: 4px;
+}
+
+/* **Purlis's quiet hover and clear drag**: under the pointer the grip is the faint tier, a mark
+   held at 3:1; while it is dragged, the muted tier. Never the accent, and never a line the
+   panels' whole length. The library marks the handle under the pointer, in a hit area wider
+   than the handle, except one a press has given the keyboard, which it marks `focus`: that one
+   is under the pointer when its own box is. */
+[data-scope="panel-separator"][data-part="root"][data-separator="hover"]
+  > [data-scope="panel-separator"][data-part="grip"] {
+  background-color: var(--text-faint);
+}
+
+[data-scope="panel-separator"][data-part="root"][data-separator="focus"]:hover
+  > [data-scope="panel-separator"][data-part="grip"] {
+  background-color: var(--text-faint);
+}
+
+[data-scope="panel-separator"][data-part="root"][data-separator="active"]
+  > [data-scope="panel-separator"][data-part="grip"] {
+  background-color: var(--text-muted);
+}

@@ -425,11 +425,13 @@ fn purlis_draws_its_panels_one_step_up_and_classic_as_it_always_did() {
         );
         assert_eq!(parts::fallen(theme), Vec::new(), "Purlis {}", theme.id);
     }
-    // Classic names no panel part: its parts are its tabs' strip look (#2914) and its activity
-    // items' (#2917).
+    // Classic names no panel part: its parts are its tabs' strip look (#2914), its activity
+    // items' (#2917) and its resize handles' (#3143).
     for theme in built_ins() {
+        let sheet = parts::stylesheet(theme);
         assert!(
-            !parts::stylesheet(theme).contains("data-scope=\"panel"),
+            !sheet.contains("data-scope=\"panel\"")
+                && !sheet.contains("data-scope=\"panel-section"),
             "Classic {}",
             theme.id
         );

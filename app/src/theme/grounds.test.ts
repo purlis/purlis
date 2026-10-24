@@ -640,8 +640,6 @@ const CLASSLESS: readonly string[] = [
   ':root[data-theme-draws~="selection.background"] :not(.cm-editor, .cm-editor *)::selection',
   // The handle between two panes, which the panel library draws, and which holds nothing.
   "[data-separator]",
-  "[data-separator]:hover",
-  "[data-separator][data-dragging]",
   // A region panel's ground (`ui/panel`, #2913), set by the family's attributes on a library's
   // panel: `surface.base`, the window's own, which the button family already lists.
   '[data-scope="panel"][data-part="root"]',

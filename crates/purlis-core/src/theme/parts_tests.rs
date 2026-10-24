@@ -81,15 +81,15 @@ fn a_theme_rounds_the_buttons_root_to_a_pill() {
 
 #[test]
 fn a_theme_that_names_no_parts_draws_exactly_as_today() {
-    // Purlis Classic names only its tabs' strip look (#2914) and its activity items' (#2917);
-    // nothing it draws falls back.
+    // Purlis Classic names only its tabs' strip look (#2914), its activity items' (#2917) and its
+    // resize handles' accent line (#3143); nothing it draws falls back.
     for theme in built_ins() {
         assert!(
             theme
                 .parts
                 .keys()
-                .all(|key| key.family == "tabs" || key.family == "activity"),
-            "{} names parts beyond its tabs and its activity items",
+                .all(|key| ["tabs", "activity", "panel-separator"].contains(&key.family)),
+            "{} names parts beyond its tabs, its activity items and its resize handles",
             theme.name
         );
         assert!(parts::fallen(theme).is_empty());
@@ -1034,7 +1034,7 @@ fn the_list_family_default_is_what_its_stylesheet_draws() {
 #[test]
 fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
     let manifest = parts::manifest_json();
-    assert_eq!(manifest["version"], 11);
+    assert_eq!(manifest["version"], 12);
     for one in manifest["states"].as_array().unwrap() {
         assert_eq!(one["since"], 1, "{one}");
     }
@@ -1356,6 +1356,10 @@ const MANIFEST_DIGESTS: &[(u32, &str)] = &[
     (
         11,
         "be280ba42efe49bf56ddae1aa28df6e1ee50ce46e77f4a3458af198b01077c39",
+    ),
+    (
+        12,
+        "bdd2f11930b7c8b563a7b34d74deb080c0d64d3498b48f7efbc3691e1e90b450",
     ),
 ];
 
