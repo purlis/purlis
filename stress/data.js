@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792837808657,
+  "lastUpdate": 1792846066426,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -13896,6 +13896,42 @@ window.BENCHMARK_DATA = {
             "value": 699.2,
             "unit": "MB",
             "extra": "median of 6 samples: 645.3, 677.1, 692.3, 706.1, 707.7, 811.1 MB; window 424.9 MB, session host 274.2 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "61748066c166f624e55779345ff5b71798d7e8b5",
+          "message": "List family: every list is one family, on React Aria (#2911, 1/3) (#3112)\n\nA list to choose from (ListBox), a list of rows that act (List, a grid of one column) and a\nlist a field aims at (AimedList, the palette's), each row drawn from one anatomy (lead,\nlabel, description, trail, below) that the tree and table families share. An option is\nnamed by its label and described by its one line. Rows stand in from the list's edges and\na hairline apart, a chosen row keeps its size and its wash, and the keyboard's ring is\ninside the row. A row's menu and tooltip are its own, since a collection draws its rows\nitself. ListFilter moves here (R164). The palette's rows, the search hits and their chat\npicker, the theme gallery, every panel list, the memory archive, Use skill, Welcome's\nrecent projects, a task's changed files, Settings' repos not cloned here and Add to a chat\nare the family; the scenario specs read them by role and name; the list joins the parts\nmanifest; purlis/list-family is an error.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-24T15:47:08+04:00",
+          "tree_id": "ed2b75bf30b84dc9861e398a27aa28ec5e9eb680",
+          "url": "https://github.com/purlis/purlis/commit/61748066c166f624e55779345ff5b71798d7e8b5"
+        },
+        "date": 1792846064099,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1637.7,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1494.8, 1637.7, 1732.4 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 677.1,
+            "unit": "MB",
+            "extra": "median of 6 samples: 628.7, 668.2, 673.5, 680.7, 681.8, 781.5 MB; window 419.9 MB, session host 257.2 MB"
           }
         ]
       }
