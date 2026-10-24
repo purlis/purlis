@@ -186,9 +186,7 @@ fn a_pipe_in_the_icons_folder_never_holds_up_the_read() {
     let dir = home(&[]);
     let pipe = folder(dir.path()).join("pipe.svg");
     // `mkfifo(1)`, which macOS and Linux both have: rustix makes no pipe on macOS.
-    let made = std::process::Command::new("mkfifo")
-        .arg(&pipe)
-        .status()
+    let made = crate::forklock::status(std::process::Command::new("mkfifo").arg(&pipe))
         .expect("mkfifo runs");
     assert!(made.success(), "a pipe is made");
     let root = dir.path().to_path_buf();
