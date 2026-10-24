@@ -45,6 +45,8 @@
  *   classes, and its `data-scope` written by hand, which only its wrapper draws.
  * - `purlis/rail-family` (error: the project rail is a family, #2915): the project strip's old
  *   classes (`projects`, `project`, `project-name`) and `data-scope="rail"` by hand.
+ * - `purlis/activity-family` (error: the family has moved, #2917): an activity item's old
+ *   classes, and `data-scope="activity"` or `"activity-bar"` written by hand.
  *
  * The primitives library itself is refused outside `src/ui` by `no-restricted-imports`, in
  * `eslint.config.js`: one wrapper per primitive, and screens never import it.
@@ -526,6 +528,14 @@ const railFamily = moved({
     "the project rail: draw it as `<Rail>`, `<RailProject>` and `<RailAction>` from `ui/rail/Rail` (#2915).",
 });
 
+const activityFamily = moved({
+  description: "A view's icon on a side's bar is the shared activity family",
+  scopes: ["activity", "activity-bar"],
+  classes: ["activity-tab", "activity-count", "activity-said", "activity-divider"],
+  message:
+    "an activity item or bar: draw it as `<ActivityItem>`, its count as `<ActivityCount>`, its group as `<ActivityGroup>` and its bar as `<ActivityBarFrame>`, from `ui/activity/ActivityItem` (#2917).",
+});
+
 export const purlisUi = {
   meta: { name: "purlis-ui" },
   rules: {
@@ -541,5 +551,6 @@ export const purlisUi = {
     "empty-state-family": emptyStateFamily,
     "status-item-family": statusItemFamily,
     "rail-family": railFamily,
+    "activity-family": activityFamily,
   },
 };

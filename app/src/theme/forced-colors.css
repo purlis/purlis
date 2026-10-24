@@ -58,13 +58,11 @@
     text-underline-offset: 0.25em;
   }
 
-  /* The activity bar's tab is an icon: its edge toward the side it opens is the shape. */
-  .activity-bar[data-side="left"] .activity-tab[aria-selected="true"] {
-    box-shadow: inset 2px 0 0 SelectedItemText;
-  }
-
-  .activity-bar[data-side="right"] .activity-tab[aria-selected="true"] {
-    box-shadow: inset -2px 0 0 SelectedItemText;
+  /* An activity item is an icon: the mark along its edge is the shape (`ui/activity`), under a
+     tab across the side panel and beside the right bar's window edge. */
+  [data-scope="activity"][data-part="item"][data-selected] > [data-part="indicator"] {
+    forced-color-adjust: none;
+    background-color: SelectedItemText;
   }
 
   /* What cannot be used. */
@@ -117,7 +115,7 @@
   /* What needs you: the system's pair for what is marked. */
   .count-pill-needs,
   .show-more-needs,
-  .activity-count[data-tone="needs-you"],
+  [data-scope="activity"][data-part="count"][data-tone="needs-you"],
   [data-scope="status-item"][data-variant="waiting"] > [data-part="count"],
   .repo-instruction-text .invisible-char {
     forced-color-adjust: none;

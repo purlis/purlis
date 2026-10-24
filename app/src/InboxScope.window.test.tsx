@@ -379,15 +379,18 @@ describe("a row's ranks are the text roles (#1920)", () => {
     expect([...primary.classList]).toEqual(
       expect.arrayContaining(["ui-text-body", "ui-text-strong"]),
     );
-    expect(where.classList).toContain("ui-text-secondary");
+    // The workspace is the card's quiet line at its top right (R132, #2917).
+    expect(where.classList).toContain("ui-text-meta");
     expect(meta.classList).toContain("ui-text-meta");
     // #1919's declarations: md / 600 / primary; sm / secondary; xs / quiet (#2902).
     expect(drawn(primary)).toEqual(["var(--font-size-md)", "600", "var(--text-primary)"]);
-    expect(drawn(where)).toEqual(["var(--font-size-sm)", "400", "var(--text-secondary)"]);
+    expect(drawn(where)).toEqual(["var(--font-size-xs)", "400", "var(--text-quiet)"]);
     expect(drawn(meta)).toEqual(["var(--font-size-xs)", "400", "var(--text-quiet)"]);
+    expect(part(ask, ".inbox-who").textContent).not.toBe("");
     // The kind's words inside the meta are the meta's, by inheritance.
     expect(drawnWith(part(meta, ".inbox-source"), "font-size")).toBe("inherit");
-    expect(drawnWith(part(meta, ".inbox-source"), "color")).toBe("inherit");
+    // An ask's kind is its status line, in the waiting amber (R132, #2917).
+    expect(drawnWith(part(meta, ".inbox-source"), "color")).toBe("var(--state-waiting)");
 
     const [fresh, read] = [...document.querySelectorAll("li.inbox-update")];
     expect(fresh.hasAttribute("data-read")).toBe(false);

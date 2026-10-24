@@ -419,6 +419,8 @@ describe("the window's tab order", () => {
       "button End this pane's chat",
       "textarea Terminal 2",
       "separator Resize the right sidebar",
+      // The right panel's × (R125), on its header.
+      "button Close Inbox",
       // Attention, on the right, opens on the Inbox (#1738), which holds nothing here: no
       // stop. The needs-you queue is the title bar's (charter-app#249), and the Vaults view,
       // with its `+`, is hidden while the Inbox is open.
