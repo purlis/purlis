@@ -64,8 +64,8 @@
     text-underline-offset: 0.25em;
   }
 
-  /* An activity item is an icon: the mark along its edge is the shape (`ui/activity`), under a
-     tab across the side panel and beside the right bar's window edge. */
+  /* An activity item is an icon: the mark along its edge is the shape (`ui/activity`), along
+     its column's outer edge on either side (#3144). */
   [data-scope="activity"][data-part="item"][data-selected] > [data-part="indicator"] {
     forced-color-adjust: none;
     background-color: SelectedItemText;

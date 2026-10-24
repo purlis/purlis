@@ -7,8 +7,9 @@
  * draws an activity item's look itself (`purlis/activity-family` in `eslint.config.js`).
  *
  * - **An item is drawn by its parts.** Its root carries `data-scope="activity"`,
- *   `data-part="item"` and its `data-variant`: `tab` (the left bar's 32×30 tabs across the top of
- *   the side panel) or `bar` (the right bar's 36px column). Its mark, its count and the mark along
+ *   `data-part="item"` and its `data-variant`: `bar` (a side's 36px column, both corners' since
+ *   #3144) or `tab` (32×30 tabs across a side panel's top, which no bar of the window draws now
+ *   but a theme may still name). Its mark, its count and the mark along
  *   its edge while it is chosen are the `icon`, `count` and `indicator` parts. `activity.css`
  *   draws the defaults, and a theme's parts reach the same attributes (ADR 0103).
  * - **Its states are marked as React Aria marks a button's**: `data-hovered` under a pointer that
@@ -185,9 +186,9 @@ export function ActivityGroup({
 }
 
 /**
- * **A side's bar**: its items in their order, the top group, the gap, then the bottom group. The
- * left bar (`tab`) is drawn across the side panel's top over its rule; the right one (`bar`) is
- * the column at the window's edge.
+ * **A side's bar**: its items in their order, the top group, the gap, then the bottom group. A
+ * `bar` is a column (the left one beside the project rail, the right one at the window's edge,
+ * #3144); a `tab` row is drawn across a side panel's top over its rule.
  */
 export function ActivityBarFrame({
   variant,
