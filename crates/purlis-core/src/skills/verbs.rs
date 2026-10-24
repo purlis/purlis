@@ -32,7 +32,7 @@ use purlis_skills::change::{self, Template};
 use super::{Grant, LINKED_PLUGIN, Origin, beside, grant_of, level_dir, set_grant};
 use crate::planegit::literally;
 use crate::repocmd::{Say, Sink};
-use purlis_skills::{move_between, move_skill};
+use purlis_skills::{Unmoved, move_between, move_skill};
 
 pub mod drafts;
 
@@ -556,10 +556,17 @@ pub fn rename(cx: &mut Ctx<'_>, level: &Level, old: &str, new: &str) -> Result<P
     write(plane, &file, &what, Some(&text), &renamed, usize::MAX)?;
     let to = if renames_folder {
         let to = from.with_file_name(new);
-        if let Err(why) = move_skill(plane, &from, &to, usize::MAX) {
-            // The folder stayed where it was: put its name back.
-            let _ = write(plane, &file, &what, Some(&renamed), &text, usize::MAX);
-            return Err(format!("{old} was not renamed: {why}"));
+        match move_skill(plane, &from, &to, usize::MAX) {
+            Ok(()) => {}
+            Err(Unmoved::Nothing(why)) => {
+                // The folder stayed where it was: put its name back.
+                let _ = write(plane, &file, &what, Some(&renamed), &text, usize::MAX);
+                return Err(format!("{old} was not renamed: {why}"));
+            }
+            // Its folder went and could not come back (SK-45): say so, never "not renamed".
+            Err(Unmoved::Stranded(what)) => {
+                return Err(format!("{old} was renamed only in part: {what}"));
+            }
         }
         touched.push(rel(plane, &to));
         touched.push(rel(plane, &beside(&to)));
@@ -706,8 +713,10 @@ pub fn move_to(
     let folder_is = folder_name(&folder);
     let dir = free_at(plane, to, name, &folder_is)?;
     let moved = dir.join(&folder_is);
-    move_skill(plane, &folder, &moved, to.depth())
-        .map_err(|why| format!("{name} was not moved: {why}"))?;
+    move_skill(plane, &folder, &moved, to.depth()).map_err(|unmoved| match unmoved {
+        Unmoved::Nothing(why) => format!("{name} was not moved: {why}"),
+        Unmoved::Stranded(what) => format!("{name} was moved only in part: {what}"),
+    })?;
     let mut touched = vec![
         rel(plane, &folder),
         rel(plane, &beside(&folder)),
@@ -965,8 +974,11 @@ pub fn delete(cx: &mut Ctx<'_>, level: &Level, name: &str) -> Result<Kept, Strin
             return deleted_by_git(cx, name, &folder_rel, &toml_rel);
         }
     }
-    let kept =
-        keep_here(plane, level, &folder).map_err(|why| format!("{name} was not deleted: {why}"))?;
+    let kept = keep_here(plane, level, &folder).map_err(|unmoved| match unmoved {
+        Unmoved::Nothing(why) => format!("{name} was not deleted: {why}"),
+        // Its folder left and could not come back (SK-45): say so, never "not deleted".
+        Unmoved::Stranded(what) => format!("{name} was deleted only in part: {what}"),
+    })?;
     cx.done(format!(
         "{name} is deleted; it is kept on this machine, and Restore brings it back"
     ));
@@ -1024,7 +1036,7 @@ fn deleted_by_git(
 
 /// Moves the skill's `folder`, and the file beside it, at `level` into a new folder of this
 /// machine's [`DELETED_DIR`] with a `from` naming its level, and answers that folder's name.
-fn keep_here(plane: &Path, level: &Level, folder: &Path) -> Result<String, String> {
+fn keep_here(plane: &Path, level: &Level, folder: &Path) -> Result<String, Unmoved> {
     let state = crate::plane::state_dir(plane);
     let folder_is = folder_name(folder);
     let stamp = std::time::SystemTime::now()
@@ -1034,16 +1046,17 @@ fn keep_here(plane: &Path, level: &Level, folder: &Path) -> Result<String, Strin
     let kept = format!("{stamp}-{folder_is}");
     let from_level = level.rel().unwrap_or_default();
     // Private to the person, as every folder in the state directory is (`plane-format.md`).
-    crate::profiletrust::private_dir(&state).map_err(|why| why.to_string())?;
-    store::made(&state, &[DELETED_DIR], true).map_err(|why| why.to_string())?;
-    store::made(&state, &[DELETED_DIR, &kept], false).map_err(|why| why.to_string())?;
+    crate::profiletrust::private_dir(&state).map_err(|why| Unmoved::Nothing(why.to_string()))?;
+    store::made(&state, &[DELETED_DIR], true).map_err(|why| Unmoved::Nothing(why.to_string()))?;
+    store::made(&state, &[DELETED_DIR, &kept], false)
+        .map_err(|why| Unmoved::Nothing(why.to_string()))?;
     store::write_new(
         &state,
         &[DELETED_DIR, &kept],
         KEPT_FROM,
         &format!("{from_level}\n"),
     )
-    .map_err(|why| why.to_string())?;
+    .map_err(|why| Unmoved::Nothing(why.to_string()))?;
     let into = state.join(DELETED_DIR).join(&kept).join(&folder_is);
     move_between(plane, folder, &state, &into, usize::MAX)?;
     let toml = beside(folder);
@@ -1218,8 +1231,15 @@ pub fn restore(cx: &mut Ctx<'_>, deleted: &Deleted) -> Result<PathBuf, String> {
         Source::Here(kept) => {
             let state = crate::plane::state_dir(plane);
             let from = state.join(DELETED_DIR).join(kept).join(&deleted.folder);
-            move_between(&state, &from, plane, &folder, deleted.level.depth())
-                .map_err(|why| format!("{name} was not restored: {why}"))?;
+            move_between(&state, &from, plane, &folder, deleted.level.depth()).map_err(
+                |unmoved| match unmoved {
+                    Unmoved::Nothing(why) => format!("{name} was not restored: {why}"),
+                    // It left the kept folder and could not go back (SK-45): say so.
+                    Unmoved::Stranded(what) => {
+                        format!("{name} was restored only in part: {what}")
+                    }
+                },
+            )?;
             let toml = beside(&from);
             if toml.symlink_metadata().is_ok() {
                 let _ = move_between(&state, &toml, plane, &beside(&folder), usize::MAX);
