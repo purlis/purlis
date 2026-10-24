@@ -128,7 +128,9 @@ fn a_table_cell_shows_bidi_invisible_and_escape_characters_and_is_measured_as_sh
         pad("a\u{202e}b\u{200b}", 20, Align::Left),
         "a⟦U+202E⟧b⟦U+200B⟧  "
     );
-    for c in ['\u{202a}', '\u{202e}', '\u{2066}', '\u{2069}', '\u{200d}', '\u{feff}'] {
+    for c in [
+        '\u{202a}', '\u{202e}', '\u{2066}', '\u{2069}', '\u{200d}', '\u{feff}',
+    ] {
         assert_eq!(
             pad(&format!("x{c}"), 9, Align::Left),
             format!("x⟦U+{:04X}⟧", u32::from(c))

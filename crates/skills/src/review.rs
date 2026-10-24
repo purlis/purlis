@@ -194,7 +194,9 @@ pub fn escaped(text: &str) -> String {
 /// This is purlis's one rule for untrusted text in terminal output (SK-47): the shared padding,
 /// `purlis_core::tui::pad`, applies it to every cell, so no table has to remember to.
 pub fn escaped_line(text: &str) -> String {
-    marked(text, |c| matches!(c, '\n' | '\t') || Invisible::of(c).is_some())
+    marked(text, |c| {
+        matches!(c, '\n' | '\t') || Invisible::of(c).is_some()
+    })
 }
 
 /// `text` with each character `hidden` names written as `⟦U+XXXX⟧`.
