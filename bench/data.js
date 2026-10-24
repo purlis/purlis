@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792877600802,
+  "lastUpdate": 1792879262543,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -24192,6 +24192,48 @@ window.BENCHMARK_DATA = {
             "value": 101.603204,
             "unit": "ms",
             "extra": "median of 5 runs: 101.113, 101.147, 101.603, 101.631, 101.651 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2c854c37a9ccb1e15c68676eb5c0d037eae5bced",
+          "message": "persona-skill-changes e2e waits for the persona's skills line after a move (#3170) (#3183)\n\nThe move puts the folder in place before it writes the persona's\nskills: line, so reading persona.md as soon as SKILL.md appears could\nland between the two. The spec now waits for the line to name the skill.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-25T01:52:31+04:00",
+          "tree_id": "344518b2afbf25e7a201450355a5528a20ba9070",
+          "url": "https://github.com/purlis/purlis/commit/2c854c37a9ccb1e15c68676eb5c0d037eae5bced"
+        },
+        "date": 1792879259373,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5249314999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.511, 0.512, 0.525, 0.527, 0.552 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.063952999999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.792, 17.015, 17.064, 17.174, 17.422 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.4619715,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.826, 102.946, 103.462, 106.904, 107.192 ms"
           }
         ]
       }
