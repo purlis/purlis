@@ -374,6 +374,7 @@ function repoRows({
         id={changesRow(name)}
         textValue={`changes: ${state === undefined ? unread : (state.unreadable ?? dirtOf(state))}`}
         className="changes tree-row"
+        data-testid={`changes-${name}`}
         data-repo={name}
         menu={menu}
         content={

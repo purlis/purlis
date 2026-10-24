@@ -310,7 +310,7 @@ export function TreeRow<T extends object>({
  * it could not be, how many more it holds than are drawn. It is a row to the keyboard, so it is
  * read in its place, and it runs nothing.
  */
-export function TreeLine<T extends object>({
+export function TreeLine({
   id,
   textValue,
   children,
@@ -325,7 +325,7 @@ export function TreeLine<T extends object>({
   [data: `data-${string}`]: string | number | boolean | undefined;
 }) {
   return (
-    <TreeRow<T>
+    <TreeRow
       {...rest}
       id={id}
       textValue={textValue}

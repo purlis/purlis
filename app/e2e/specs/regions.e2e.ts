@@ -94,8 +94,9 @@ describe("the Changes view", () => {
     await onAlpha();
 
     // The fixture leaves one untracked file in `tool` and nothing in `svc`.
-    await untilSays("repo-tool", "untracked");
-    await untilSays("repo-svc", "clean");
+    // What is uncommitted is the repo's Changes row, under its heading (the tree family's rows).
+    await untilSays("changes-tool", "untracked");
+    await untilSays("changes-svc", "clean");
   });
 
   it("counts the worktrees cut off each clone", async () => {
