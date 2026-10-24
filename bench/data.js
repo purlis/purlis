@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792832774227,
+  "lastUpdate": 1792834391879,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -23478,6 +23478,48 @@ window.BENCHMARK_DATA = {
             "value": 101.20176649999999,
             "unit": "ms",
             "extra": "median of 5 runs: 99.778, 100.407, 101.202, 101.319, 101.478 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "57b8e3c1d1db254a76b3280d3011f1d932508fc1",
+          "message": "Rail: never crowd the work area in narrow windows (#3117)\n\n* Rail: never crowd the work area in narrow windows (#3077)\n\nThe project rail hides itself where its 52px would leave the work less\nthan it is held to: the narrowest window (1024px), and the default one\n(1280px) with both sidebars open, counted at the default text size. It\npeeks and shows as on auto-hide, comes back as the window widens or a\nsidebar is put away, and is drawn over the rail's mode, never written.\nA rail the person hid stays hidden; one they show in a narrow window\nstays shown until they hide it.\n\nThe six specs measure with the rail as drawn; every scenario starts in\na 1440x900 window that holds the rail. ADR 0054's promise to the work\nis restored by a new amendment.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Rail narrow-window scenario: no in-file timeout (budget rule)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Rail fix round: a pin holds in any window; new windows open at 1440x900\n\n- B1: any show or pin this launch holds over the window's hide, until\n  the person hides the rail.\n- The operator's ruling of 2026-10-24: new windows open at 1440x900, or\n  the screen's usable size where smaller (screenfit.rs), recorded as an\n  ADR 0054 amendment.\n- S1: useRailCrowded's snapshot is the crowded answer, not the width.\n- S2: specs that measured the default window pin 1280x800.\n- The rail spec is a run of its own (wdio.rail.conf.ts, e2e:rail), the\n  narrow-window tests first; a pin at 1440 holds at 1024.\n- N1-N3: windowAt waits for the asked width; a gone frame clears its\n  sidebar count; the rail spec's clean-ups are tried.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Rail review 2: fit a split to its own screen, and wording\n\n- SN1: a split window is fitted to the screen of the window it is split\n  from, the primary screen only where that is unknown.\n- SN2: the changes note says where the rail hides (about 1080px, or\n  1330px with both sidebars), not \"the default window\".\n- Stale \"default window\" comments, the seven single-app runs in ci.yml,\n  the pin test reads the rail again over a second, and the title bar's\n  height on Linux and Windows is recorded in screenfit.rs.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-24T13:29:34+04:00",
+          "tree_id": "3c27ffb932b719f852547fa1185dd3402e85618c",
+          "url": "https://github.com/purlis/purlis/commit/57b8e3c1d1db254a76b3280d3011f1d932508fc1"
+        },
+        "date": 1792834388961,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4980025,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.472, 0.498, 0.498, 0.512, 0.527 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.999111,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.667, 16.909, 16.999, 17.021, 17.097 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.52129000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.043, 103.932, 104.521, 105.034, 106.244 ms"
           }
         ]
       }
