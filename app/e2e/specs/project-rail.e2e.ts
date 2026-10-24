@@ -3,6 +3,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { $, browser, expect } from "@wdio/globals";
+import { STARTING_WINDOW, theWindowHoldsTheRail, windowAt } from "../rail.js";
 
 /**
  * **The project rail, both modes, its peek and what it remembers** (#2915, spec #2897 R76–R89),
@@ -16,6 +17,9 @@ import { $, browser, expect } from "@wdio/globals";
  *   the content; further than 70px away it goes; its last button keeps the rail shown.
  * - **Remembered**: the mode is written to the layout file under `rail` (`auto`, and nothing
  *   for always shown), which the next launch hands the window before it draws.
+ * - **Never crowding the work** (#3077): at the narrowest window the rail hides itself, peeks
+ *   as on auto-hide, and comes back as the window widens, with nothing written; a rail the person
+ *   shows there stays shown, and one they hide stays hidden in a wide window.
  *
  * Every test leaves the rail shown, which is what every spec after this one expects.
  */
@@ -157,5 +161,78 @@ describe("the project rail", function () {
     });
     expect((await seen()).peek).toBe(false);
     await keptBecomes(undefined);
+  });
+});
+
+describe("the project rail in a narrow window (#3077)", function () {
+  this.timeout(120_000);
+
+  /** ADR 0054's narrowest window. */
+  const NARROWEST = { width: 1024, height: 768 } as const;
+
+  /** Waits until the rail's column is `width` px wide. */
+  async function columnIs(width: number, why: string) {
+    await browser.waitUntil(async () => Math.round((await seen()).width) === width, {
+      timeout: 10_000,
+      timeoutMsg: why,
+    });
+  }
+
+  before(async () => {
+    await $(`${PROJECTS} [role="tab"][aria-selected="true"]`).waitForExist({ timeout: 30_000 });
+  });
+
+  afterEach(async () => {
+    await theWindowHoldsTheRail();
+    await shownAgain();
+  });
+
+  it("hides itself at the narrowest window, still peeks, and comes back as it widens, writing nothing", async () => {
+    await theWindowHoldsTheRail();
+    await shownAgain();
+    await keptBecomes(undefined);
+
+    await windowAt(NARROWEST);
+    await columnIs(0, "the rail kept its column at the narrowest window");
+    const narrow = await seen();
+    expect(narrow.hidden).toBe(true);
+    expect(narrow.show).toBe(true);
+    // The edge still peeks it, as on auto-hide.
+    await pointerAt(2);
+    await browser.waitUntil(async () => (await seen()).peek, {
+      timeout: 5_000,
+      timeoutMsg: "the pointer at the edge never peeked the rail in the narrow window",
+    });
+    await pointerAt(200);
+    await browser.waitUntil(async () => !(await seen()).peek, { timeout: 5_000 });
+
+    await windowAt(STARTING_WINDOW);
+    await columnIs(52, "the rail never came back as the window widened");
+    expect((await seen()).show).toBe(false);
+    // The window's hide was never the person's: the layout file says nothing of it.
+    expect(await kept()).toBeUndefined();
+  });
+
+  it("never overrides the person: shown in a narrow window it stays, hidden in a wide one it stays", async () => {
+    await windowAt(NARROWEST);
+    await columnIs(0, "the rail kept its column at the narrowest window");
+
+    // Shown by the person in the narrow window: it stays, however the window moves after.
+    await $(SHOW).click();
+    await columnIs(52, "the title bar's show never showed the rail in the narrow window");
+    await windowAt(STARTING_WINDOW);
+    await windowAt(NARROWEST);
+    await columnIs(52, "the window hid a rail the person had shown");
+    expect(await kept()).toBeUndefined();
+
+    // Hidden by the person: written, and it stays hidden in a window with room for it.
+    await $(`${RAIL} [data-rail-toggle="hide"]`).click();
+    await columnIs(0, "the rail's own hide never closed its column");
+    await keptBecomes("auto");
+    await windowAt(STARTING_WINDOW);
+    const wide = await seen();
+    expect(Math.round(wide.width)).toBe(0);
+    expect(wide.hidden).toBe(true);
+    expect(await kept()).toBe("auto");
   });
 });

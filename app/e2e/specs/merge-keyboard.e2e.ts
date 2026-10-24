@@ -4,7 +4,7 @@
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
-import { railHidden } from "../rail.js";
+import { DEFAULT_WINDOW, theWindowHoldsTheRail, windowAt } from "../rail.js";
 
 /**
  * **The merge view's keyboard list of differences, in the real WebView** (#1875, after #1862):
@@ -141,9 +141,10 @@ async function measured() {
 }
 
 describe("the merge view's keyboard list of differences", function () {
-  // The work measured with the project rail hidden (`rail.ts`, #2915).
-  before(() => railHidden(true));
-  after(() => railHidden(false));
+  // At the default window, both sidebars open, where the project rail hides itself to leave
+  // the work its room (`rail.ts`, #3077): measured with the rail as the window draws it.
+  before(() => windowAt(DEFAULT_WINDOW));
+  after(() => theWindowHoldsTheRail());
 
   this.timeout(180_000);
 
