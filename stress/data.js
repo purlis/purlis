@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792822535226,
+  "lastUpdate": 1792822550968,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -13540,6 +13540,42 @@ window.BENCHMARK_DATA = {
             "value": 711.3,
             "unit": "MB",
             "extra": "median of 6 samples: 672.8, 697.8, 706.8, 715.7, 716.7, 802.3 MB; window 429.7 MB, session host 281.6 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7bd4c54e878de173df6e58dcfbe5cbd0a7e5bd3c",
+          "message": "Cargo.lock: crypto-bigint past RUSTSEC-2026-0387 (#3122)\n\ncrypto-bigint 0.7.5 -> 0.7.6 (via p256 -> ecdsa -> rfc6979 in\npurlis-browser-engine). 0.7.6 removes the secret-dependent branches the\nadvisory reports. Only the lock entry changes.\n\n\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-24T09:23:01+04:00",
+          "tree_id": "96d91ae6de0ec8d4fb7b97d370e2f3e5c67d6141",
+          "url": "https://github.com/purlis/purlis/commit/7bd4c54e878de173df6e58dcfbe5cbd0a7e5bd3c"
+        },
+        "date": 1792822548942,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1592.7,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1517.4, 1592.7, 1744.7 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 698.5,
+            "unit": "MB",
+            "extra": "median of 6 samples: 658.3, 684.5, 697, 700.1, 701.1, 782.9 MB; window 425 MB, session host 273.8 MB"
           }
         ]
       }
