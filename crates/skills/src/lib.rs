@@ -48,6 +48,7 @@ mod held;
 pub mod lifecycle;
 pub mod lint;
 mod load;
+pub mod moving;
 mod read;
 mod reference;
 pub mod review;
@@ -65,12 +66,13 @@ pub use handed::{Frontmatter, MOST_BYTES, Refusal, read_skill_md};
 pub use lifecycle::{About, Deprecated, Lifecycle, about_of, set_lifecycle, set_owners};
 pub use lint::{BuiltInLints, Finding, Lint, Severity, SkillFiles, SkillLint};
 pub use load::{Entry, Loaded, Narrowing, POINTER, SkillFolder, by_name, find, load};
+pub use moving::{move_between, move_skill};
 pub use read::{
     DIR_IN_BUNDLE, FILE, frontmatter, in_bundle, listing, parsed, read, scan, scan_dir,
 };
 use reference::Seen;
 pub use reference::{BUILT_IN_PREFIXES, OnMachine, Reference};
-pub use share::{named, share};
+pub use share::{Shared, named, named_at, share};
 pub use stamp::{Reload, Stamp};
 
 /// A skill, as a chat is told about it: a folder in the open SKILL.md format.

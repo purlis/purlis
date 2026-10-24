@@ -19,9 +19,9 @@ pub use purlis_skills::{
     Effective, Field, Finding, Fit, FromHarness, Given, Grant, HarnessSkills, Honours, LOCAL_DIR,
     LeftOut, Lint, Machine, ManualOnly, Missing, Narrowing, OnMachine, Origin, Outcome,
     OutsideSkill, Over, Owner, POINTER, PROJECT_DIR, Reason, Reference, Refusal, Reload, Route,
-    Severity, Skill, SkillSet, Spent, Stamp, Switch, Whose, beside, compat, declared, grant_file,
-    grant_of, handed_text, in_bundle, level_dir, level_shown, listing, named, persona_dir, read,
-    scan, set_grant, share,
+    Severity, Shared, Skill, SkillSet, Spent, Stamp, Switch, Whose, beside, compat, declared,
+    grant_file, grant_of, handed_text, in_bundle, level_dir, level_shown, listing, named, named_at,
+    persona_dir, read, scan, set_grant, share,
 };
 
 /// Skill runs: the span from the moment a skill starts to the end of the turn (SK-3).
@@ -1089,8 +1089,7 @@ pub fn turned_off(plane: &Path, workspace: &str) -> Vec<String> {
 pub fn project_folder(plane: &Path, name: &str) -> Option<PathBuf> {
     [false, true]
         .into_iter()
-        .filter_map(|local| level_dir(plane, &Whose::Project, local))
-        .find_map(|dir| named(&dir, name))
+        .find_map(|local| named_at(plane, &Whose::Project, local, name))
 }
 
 /// **`purlis skill grant <name> <grant>`** (#2767): writes `grant` as where the project skill
@@ -1197,7 +1196,7 @@ fn no_project_skill(name: &str) -> String {
 /// **Share** (#2767): moves the local skill `name` of the level `at` (the plane root's, a
 /// workspace's or a persona's) into that level's shared `skills/`, so the plane's save commits
 /// it. Refused on a project purlis opens read-only, whose committed files it does not write.
-pub fn share_here(plane: &Path, at: &Whose, name: &str) -> Result<PathBuf, String> {
+pub fn share_here(plane: &Path, at: &Whose, name: &str) -> Result<Shared, String> {
     crate::settings::writable(plane)?;
     share(plane, at, name)
 }

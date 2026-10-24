@@ -652,8 +652,10 @@ fn share_moves_a_local_project_skill_and_its_grant_into_the_shared_folder() {
     )
     .unwrap();
 
-    let moved = share(&plane.root, &Whose::Project, "scratch").unwrap();
+    let shared = share(&plane.root, &Whose::Project, "scratch").unwrap();
+    let moved = shared.to;
 
+    assert_eq!(shared.from, plane.project_local().join("scratch-folder"));
     assert_eq!(moved, plane.project().join("scratch-folder"));
     assert!(moved.join("SKILL.md").is_file());
     assert!(!plane.project_local().join("scratch-folder").exists());
@@ -677,7 +679,9 @@ fn share_moves_a_local_workspace_skill_into_that_workspaces_skills() {
         &whole("notes"),
     );
 
-    let moved = share(&plane.root, &Whose::Workspace("smart-ide".into()), "notes").unwrap();
+    let moved = share(&plane.root, &Whose::Workspace("smart-ide".into()), "notes")
+        .unwrap()
+        .to;
 
     assert_eq!(moved, plane.workspace("smart-ide").join("notes"));
     assert_eq!(
@@ -1499,4 +1503,70 @@ fn share_of_a_persona_or_workspace_whose_folder_is_a_link_moves_nothing() {
     }
     assert!(outside.join(LOCAL_DIR).join("secret/SKILL.md").is_file());
     assert!(!outside.join(PROJECT_DIR).exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn share_into_a_skills_folder_that_is_a_link_moves_nothing_at_the_root_or_in_a_workspace() {
+    // A chat could make a level's `skills/` a link to a folder its sandbox denies it; the app,
+    // which is not sandboxed, must not move a skill the chat wrote into it.
+    let plane = Plane::new();
+    let denied = plane._tmp.path().join("denied");
+    std::fs::create_dir_all(&denied).unwrap();
+    skill(&plane.project_local(), "notes", &whole("notes"));
+    skill(
+        &plane.workspace_local("smart-ide"),
+        "notes",
+        &whole("notes"),
+    );
+    std::os::unix::fs::symlink(&denied, plane.project()).unwrap();
+    std::os::unix::fs::symlink(&denied, plane.workspace("smart-ide")).unwrap();
+
+    for at in [Whose::Project, Whose::Workspace("smart-ide".into())] {
+        let refused = share(&plane.root, &at, "notes").unwrap_err();
+        assert!(
+            refused.contains("so nothing was moved"),
+            "{at:?}: {refused}"
+        );
+    }
+    assert_eq!(std::fs::read_dir(&denied).unwrap().count(), 0);
+    assert!(plane.project_local().join("notes/SKILL.md").is_file());
+    assert!(
+        plane
+            .workspace_local("smart-ide")
+            .join("notes/SKILL.md")
+            .is_file()
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn share_of_a_skill_whose_toml_is_a_link_moves_nothing() {
+    let plane = Plane::new();
+    let outside = plane._tmp.path().join("outside.toml");
+    std::fs::write(&outside, "grant = \"all\"\n").unwrap();
+    skill(&plane.project_local(), "notes", &whole("notes"));
+    std::os::unix::fs::symlink(&outside, plane.project_local().join("notes.toml")).unwrap();
+
+    let refused = share(&plane.root, &Whose::Project, "notes").unwrap_err();
+
+    assert!(refused.contains("so nothing was moved"), "{refused}");
+    assert!(plane.project_local().join("notes/SKILL.md").is_file());
+    assert!(
+        plane
+            .project_local()
+            .join("notes.toml")
+            .symlink_metadata()
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    assert!(!plane.project().join("notes").exists());
+    assert!(
+        plane
+            .project()
+            .join("notes.toml")
+            .symlink_metadata()
+            .is_err()
+    );
 }

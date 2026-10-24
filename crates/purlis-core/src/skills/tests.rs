@@ -222,7 +222,9 @@ fn a_local_skill_in_a_plane_that_is_no_git_repository_is_read_and_shared() {
         "{set:?}"
     );
 
-    let moved = share_here(plane.path(), &Whose::Project, "scratch").unwrap();
+    let moved = share_here(plane.path(), &Whose::Project, "scratch")
+        .unwrap()
+        .to;
 
     assert_eq!(moved, plane.path().join("skills/scratch"));
     let set = in_the_studio(None, plane.path(), None, None);
