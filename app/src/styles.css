@@ -114,6 +114,7 @@
 @import "./ui/panel/panel.css" layer(components);
 @import "./ui/empty-state/empty-state.css" layer(components);
 @import "./ui/status/status.css" layer(components);
+@import "./ui/harness-icon/harness-icon.css" layer(components);
 @import "./ui/dialog/dialog.css" layer(components);
 @import "./ui/tabs/tabs.css" layer(components);
 @import "./ui/rail/rail.css" layer(components);

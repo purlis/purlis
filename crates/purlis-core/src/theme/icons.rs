@@ -7,11 +7,15 @@
 //! "icons/icons.json"`), and the file is data, never SVG:
 //!
 //! ```json
-//! { "views": { "chats": { "paths": ["M22 17a2 2 0 0 1-2 2H6.828…"] } } }
+//! { "views": { "chats": { "paths": ["M22 17a2 2 0 0 1-2 2H6.828…"] } },
+//!   "glyphs": { "spark": { "paths": ["M12 2.7v18.6…"] } } }
 //! ```
 //!
 //! - **A view is named by the window's own id** ([`RAIL_VIEWS`]). A name purlis does not have is
 //!   said and left out, as an unknown token is: a newer purlis may have a view this one does not.
+//! - **A glyph is named from [`GLYPHS`]** (#2922): the harness glyphs a profile names as its icon
+//!   and a built-in harness is drawn with. They are held to the same rules as a view's symbol,
+//!   and an unknown name is said and left out the same way. A set names views, glyphs or both.
 //! - **A symbol is outlines on a 24 grid, stroked**: the window draws each path in the rail's
 //!   own colour for its state, 2 wide with round caps and joins. None of that is a field, so a
 //!   set can say only where its lines go.
@@ -28,7 +32,7 @@ use std::collections::BTreeMap;
 use serde_json::Value;
 
 use super::Complaint;
-use super::vocabulary::RAIL_VIEWS;
+use super::vocabulary::{GLYPHS, RAIL_VIEWS};
 
 /// The longest path a symbol may hold: the icon theme's own cap (`MOST_PATH` in `icons.ts`).
 pub const MOST_PATH: usize = 16384;
@@ -37,11 +41,11 @@ pub const MOST_PATH: usize = 16384;
 pub const MOST_PATHS: usize = 16;
 
 /// The most views a set may name before purlis reads it: room for every view and for views a
-/// newer purlis has.
+/// newer purlis has. The same cap holds a set's glyphs.
 const MOST_VIEWS: usize = 64;
 
 /// The keys of a set's file.
-const SET_KEYS: &[&str] = &["views"];
+const SET_KEYS: &[&str] = &["views", "glyphs"];
 
 /// The keys of a symbol.
 const SYMBOL_KEYS: &[&str] = &["paths"];
@@ -51,24 +55,30 @@ const SYMBOL_KEYS: &[&str] = &["paths"];
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
 pub struct Icons {
     pub views: BTreeMap<&'static str, Symbol>,
+    /// The harness glyphs it draws, by their name in [`GLYPHS`] (#2922).
+    pub glyphs: BTreeMap<&'static str, Symbol>,
 }
 
 impl Icons {
-    /// Whether the set draws no view.
+    /// Whether the set draws no view and no glyph.
     pub fn is_empty(&self) -> bool {
-        self.views.is_empty()
+        self.views.is_empty() && self.glyphs.is_empty()
     }
 
-    /// This set over `parent`: each view this set draws, and every other view the parent draws.
+    /// This set over `parent`: each view and glyph this set draws, and every other one the
+    /// parent draws.
     #[must_use]
     pub fn over(&self, parent: &Self) -> Self {
-        let mut views = parent.views.clone();
-        views.extend(
-            self.views
-                .iter()
-                .map(|(view, symbol)| (*view, symbol.clone())),
-        );
-        Self { views }
+        let laid = |mine: &BTreeMap<&'static str, Symbol>,
+                    theirs: &BTreeMap<&'static str, Symbol>| {
+            let mut all = theirs.clone();
+            all.extend(mine.iter().map(|(name, symbol)| (*name, symbol.clone())));
+            all
+        };
+        Self {
+            views: laid(&self.views, &parent.views),
+            glyphs: laid(&self.glyphs, &parent.glyphs),
+        }
     }
 }
 
@@ -109,39 +119,88 @@ pub(super) fn read(
             )));
         }
     }
-    let views = match set.get("views") {
-        Some(Value::Object(views)) => views,
-        None => {
-            complaints.push(Complaint::said(format!("{file} names no views")));
-            return icons;
-        }
-        Some(_) => {
-            complaints.push(Complaint::said(format!(
-                "views in {file} is an object of view names to icons"
-            )));
-            return icons;
-        }
-    };
-    // The cap is held before anything is read, so a set of any size costs one count.
-    if views.len() > MOST_VIEWS {
-        complaints.push(Complaint::said(format!(
-            "{file} names {} views, and a set names at most {MOST_VIEWS}",
-            views.len()
-        )));
+    let (views, glyphs) = (set.get("views"), set.get("glyphs"));
+    if views.is_none() && glyphs.is_none() {
+        complaints.push(Complaint::said(format!("{file} names no views or glyphs")));
         return icons;
     }
-    for (view, raw) in views {
-        let Some(known) = RAIL_VIEWS.iter().copied().find(|it| it == view) else {
+    if let Some(views) = views {
+        icons.views = named(file, views, Names::VIEWS, complaints, notes);
+    }
+    if let Some(glyphs) = glyphs {
+        icons.glyphs = named(file, glyphs, Names::GLYPHS, complaints, notes);
+    }
+    icons
+}
+
+/// One of a set's two maps, and the words its complaints say it in.
+struct Names {
+    /// The key of the set's file.
+    key: &'static str,
+    /// Every name the map may hold.
+    known: &'static [&'static str],
+    /// What one of them is, in a complaint: `view`.
+    one: &'static str,
+    /// What the left-out note says a name is not.
+    not_a: &'static str,
+}
+
+impl Names {
+    const VIEWS: Self = Self {
+        key: "views",
+        known: RAIL_VIEWS,
+        one: "view",
+        not_a: "purlis view",
+    };
+    const GLYPHS: Self = Self {
+        key: "glyphs",
+        known: GLYPHS,
+        one: "glyph",
+        not_a: "purlis glyph",
+    };
+}
+
+/// The symbols of one of a set's maps, `raw` as the file holds it, each name held to `names`.
+fn named(
+    file: &str,
+    raw: &Value,
+    names: Names,
+    complaints: &mut Vec<Complaint>,
+    notes: &mut Vec<Complaint>,
+) -> BTreeMap<&'static str, Symbol> {
+    let mut drawn = BTreeMap::new();
+    let Names {
+        key,
+        known,
+        one,
+        not_a,
+    } = names;
+    let Some(raw) = raw.as_object() else {
+        complaints.push(Complaint::said(format!(
+            "{key} in {file} is an object of {one} names to icons"
+        )));
+        return drawn;
+    };
+    // The cap is held before anything is read, so a set of any size costs one count.
+    if raw.len() > MOST_VIEWS {
+        complaints.push(Complaint::said(format!(
+            "{file} names {} {key}, and a set names at most {MOST_VIEWS}",
+            raw.len()
+        )));
+        return drawn;
+    }
+    for (name, symbol_raw) in raw {
+        let Some(known) = known.iter().copied().find(|it| it == name) else {
             notes.push(Complaint::said(format!(
-                "{view} in {file} is not a purlis view, so it is left out"
+                "{name} in {file} is not a {not_a}, so it is left out"
             )));
             continue;
         };
-        if let Some(symbol) = symbol(file, known, raw, complaints) {
-            icons.views.insert(known, symbol);
+        if let Some(symbol) = symbol(file, known, symbol_raw, complaints) {
+            drawn.insert(known, symbol);
         }
     }
-    icons
+    drawn
 }
 
 /// The symbol `raw` for `view`, or why not in `complaints`.

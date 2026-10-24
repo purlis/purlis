@@ -39,6 +39,7 @@ function row(name: string, more: Partial<MachineProfileRow> = {}): MachineProfil
     offered: null,
     sandbox_only: false,
     commands_can_read_sign_in: null,
+    icon: { glyph: null, svg: null, monogram: "C" },
     ...more,
   };
 }
@@ -168,6 +169,10 @@ describe("Settings › You › Profiles", () => {
     expect(screen.getByText("Claude Code, the harness's own folder")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Import the settings of work again" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Import the settings of mine again" })).toBeNull();
+    // Each profile's icon is drawn beside its name (#2922), hidden from assistive technology.
+    const icons = document.querySelectorAll(".ui-machine-entry .harness-icon");
+    expect(icons).toHaveLength(2);
+    for (const icon of icons) expect(icon.getAttribute("aria-hidden")).toBe("true");
   });
 
   it("warns plainly on a profile whose sign-in the commands its chats run can read (#2037)", async () => {

@@ -7041,6 +7041,19 @@ export type HarnessGlance = {
 	cannot_type: string | null,
 };
 
+/**
+ *  A profile's icon: the glyph of the theme's icon set it is drawn with, or the shapes of the
+ *  person's own SVG, and always the monogram of its harness kind, which the window draws where
+ *  it can draw neither.
+ */
+export type HarnessIconRow = {
+	/**  `spark`, `braces` or `terminal`. */
+	glyph: string | null,
+	svg: SvgIcon | null,
+	/**  `C`, `OC`, `CX`. */
+	monogram: string,
+};
+
 /**  A harness, as the window and the core name one to each other: a profile's `kind`. */
 export type HarnessKind = "claude" | "opencode" | "codex";
 
@@ -7590,6 +7603,11 @@ export type MachineProfileRow = {
 	 *  page's warning, in the core's words; null where its harness keeps the sign-in from them.
 	 */
 	commands_can_read_sign_in: string | null,
+	/**
+	 *  What it is drawn with (#2922): its harness's glyph where it stands for the built-in, else
+	 *  its kind's monogram.
+	 */
+	icon: HarnessIconRow,
 };
 
 /**  One project this machine remembers, with what it holds about it. */
@@ -9155,6 +9173,11 @@ export type ProfileRow = {
 	 *  (#2036). Always sent; optional for the same reason.
 	 */
 	billed_to?: string | null,
+	/**
+	 *  What it is drawn with (#2922): its glyph or its own SVG, and its kind's monogram. Always
+	 *  sent; optional for the same reason.
+	 */
+	icon?: HarnessIconRow | null,
 };
 
 /**
@@ -11688,6 +11711,25 @@ export type SubjectCurations = {
 	trouble: string | null,
 };
 
+/**
+ *  A person's SVG as checked shapes (`purlis_core::safesvg`): the window draws each with its
+ *  own element, and never reads it as markup.
+ */
+export type SvgIcon = {
+	/**  `min-x min-y width height`. */
+	view_box: string,
+	shapes: SvgShape[],
+};
+
+/**
+ *  One shape: `path`, `circle`, `ellipse`, `rect`, `line`, `polyline` or `polygon`, and its
+ *  checked attributes by their SVG names.
+ */
+export type SvgShape = {
+	tag: string,
+	attributes: { [key in string]: string },
+};
+
 /**  The brief a task was sent, and the facts of its sending. */
 export type TaskBrief = {
 	/**  The task's name: the one its dispatch gave it, else its chat's. */
@@ -12702,6 +12744,8 @@ export type WindowTheme = {
 	motion: WindowMotion,
 	/**  The theme's icon set, by view id: empty when the rails draw the window's own marks. */
 	icons: { [key in string]: WindowIcon },
+	/**  The harness glyphs of its icon set, by name (#2922): empty when the window draws its own. */
+	glyphs: { [key in string]: WindowIcon },
 	/**  The geometry's custom properties, written by the engine, for each density (#2326). */
 	geometry: WindowGeometry,
 	/**  The UI, mono and terminal fonts (#2326). */

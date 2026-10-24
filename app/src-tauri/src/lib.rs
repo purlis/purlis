@@ -70,6 +70,7 @@ mod goingaway;
 mod handoff;
 mod harness_plugins;
 mod harnessdecls;
+mod harnessicon;
 mod heard;
 mod hooks;
 mod host;
@@ -1339,6 +1340,10 @@ struct ProfileRow {
     /// (#2036). Always sent; optional for the same reason.
     #[specta(optional)]
     billed_to: Option<String>,
+    /// What it is drawn with (#2922): its glyph or its own SVG, and its kind's monogram. Always
+    /// sent; optional for the same reason.
+    #[specta(optional)]
+    icon: Option<harnessicon::HarnessIconRow>,
 }
 
 /// Everything the picker draws, read from the plane when it is opened.
@@ -1493,6 +1498,7 @@ fn start_options_on(
                 sandbox,
                 model: Some(purlis_core::profilesignin::THE_HARNESS_DEFAULT.to_owned()),
                 billed_to: purlis_core::profilesignin::billed(p, &profiles_here, &passed),
+                icon: Some(harnessicon::of(&p.name, &p.kind, set.icon_of(&p.name))),
             })
             .collect(),
         refused: set
