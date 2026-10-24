@@ -274,14 +274,14 @@ describe("a persona with an icon and a colour is drawn with them", () => {
     const [qa] = marksIn(panel, "qa");
     expect(qa).toMatchObject({ mark: "initials", initials: "QA" });
     // The generic person is the section's own glyph now, and no row's.
-    expect(panel.querySelector(".row svg.lucide-user-round")).toBeNull();
+    expect(panel.querySelector(".panel-row svg.lucide-user-round")).toBeNull();
   });
 
   it("on its own view's tab and heading", async () => {
     await opened();
     const panel = await showThePanel("Personas");
 
-    await userEvent.click(within(panel).getByRole("button", { name: /devops/ }));
+    await userEvent.click(within(panel).getByRole("row", { name: /devops/ }));
     await screen.findByText("It remembers 0 things.");
 
     const tab = within(strip()).getByRole("tab", { selected: true });
@@ -329,7 +329,7 @@ describe("the persona's view lets the person pick", () => {
   it("writes the pick to the definition, and every surface draws it", async () => {
     const { asked, tab } = await opened();
     const panel = await showThePanel("Personas");
-    await userEvent.click(within(panel).getByRole("button", { name: /devops/ }));
+    await userEvent.click(within(panel).getByRole("row", { name: /devops/ }));
     const picker = await screen.findByRole("region", { name: "Icon and colour" });
     expect(within(picker).getByRole("radio", { name: "rocket" })).toBeChecked();
 
@@ -359,7 +359,7 @@ describe("the persona's view lets the person pick", () => {
     );
 
     const panel = await showThePanel("Personas");
-    await userEvent.click(within(panel).getByRole("button", { name: /devops/ }));
+    await userEvent.click(within(panel).getByRole("row", { name: /devops/ }));
 
     const picker = await screen.findByRole("region", { name: "Icon and colour" });
     expect(await within(picker).findByText(why)).toBeInTheDocument();

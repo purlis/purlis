@@ -190,7 +190,7 @@ const tabNames = () =>
 
 async function todoRowFor(title: string) {
   const panel = await showThePanel("Todos");
-  return within(panel).findByRole("button", { name: new RegExp(title) });
+  return within(panel).findByRole("row", { name: new RegExp(title) });
 }
 
 describe("a todo row", () => {

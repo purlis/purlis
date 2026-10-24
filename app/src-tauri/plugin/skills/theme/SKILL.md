@@ -116,12 +116,12 @@ Most asks for another shape come down to the corners and the heights:
 | Token | Bounds | Classic | Compact | What it reaches |
 |---|---|---|---|---|
 | `radius.sm` | 0–8 px | 3 | 3 | labels, chips, crumbs, badges, checkboxes, error and report boxes |
-| `radius.md` | 0–10 px | 4 | 4 | buttons, fields, selects, menu rows, Notices, the palette's rows, Inbox asks |
+| `radius.md` | 0–10 px | 4 | 4 | buttons, fields, selects, menu rows, a list's rows, Notices, the palette's rows, Inbox asks |
 | `radius.lg` | 0–14 px | 6 | 6 | dialogs, popovers, menus, tooltips, segmented controls |
 | `radius.xl` | 0–18 px | 8 | 8 | the Welcome page's doors, nothing else |
 | `radius.full` | 0–9999 px | 9999 | 9999 | pills: counts, toggle tracks |
-| `size.control` | 20–40 | 28 | 24 | buttons, fields, selects, menu rows, the workspace strip |
-| `size.chrome` | 16–32 | 21 | 18 | small buttons, the chat strip, pane and panel headers, every list and tree row |
+| `size.control` | 20–40 | 28 | 24 | buttons, fields, selects, menu rows, a list's rows, the workspace strip |
+| `size.chrome` | 16–32 | 21 | 18 | small buttons, the chat strip, pane and panel headers, a dense list's rows and every tree row |
 | `window.gutter` | 0–16 px | 0 | 0 | the gap between the window's regions: 0 draws them flush, 8 floats them |
 | `panel.corner-radius` | 0–24 px | 0 | 0 | the corners of the side panels, the content and the bottom panel's halves |
 | `panel.border-width` | 0–2 px | 1 | 1 | the hairline between two regions that sit flush |
@@ -141,10 +141,10 @@ tighter: `font-size.md` 14 fits comfortable (14 × 1.4 = 19.6, within 21) and fa
 (14 × 1.3 = 18.2, over 18). The check reports each line that does not fit, with its density.
 
 **Still square, whatever `radius.*` says:** the project and workspace strip tabs, the settings
-gear on a strip, and every list and tree row but the palette's. Tell the person when they ask for
-rounder ones: the theme cannot round those yet. The session tabs (chats, views, files) and their
-`×` are rounded through their parts (`tabs.*`, below). The focus ring tokens reach every focus
-ring, the strip tabs', the closer's and the gear's among them.
+gear on a strip, and every tree row. Tell the person when they ask for rounder ones: the theme
+cannot round those yet. The session tabs (chats, views, files) and their `×` are rounded through
+their parts (`tabs.*`, below), and a list's rows by `radius.md` and the `list` family's parts. The
+focus ring tokens reach every focus ring, the strip tabs', the closer's and the gear's among them.
 
 **One part of one control** is a component part, in a top-level `parts` object:
 `"button.root.corner-radius": "full"` rounds every button to a pill, and
@@ -164,7 +164,10 @@ icon button's second line), which have no variants, so a key names the part alon
 (`"text-input.root.border-width": 0` turns off every one-line box's edge); and `dialog`
 (`dialog.root.corner-radius`, `dialog.title.font-size`, `dialog.separator.fill`, …), whose size
 and rows are never a theme's, whose corner is drawn at most `space.6`, and whose quieter lines
-are held to 4.5:1 in their own tiers. The note above still holds for the strip tabs and rows.
+are held to 4.5:1 in their own tiers; and `list` (`list.root.corner-radius`,
+`list.root.selected.fill`, `list.body.padding`, …), a list's row, which has no variants and whose
+dense and large sizes are never a theme's. The note above still holds for the strip tabs and tree
+rows.
 
 **The session tabs** are the `tabs` family. Purlis docks them on the content panel: the chosen
 tab takes the panel's fill and flares into it, an unchosen tab's hover is a pill inset from its

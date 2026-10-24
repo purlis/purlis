@@ -172,6 +172,7 @@ describe("forced colours", () => {
       '[data-scope="menu"][data-part="root"][data-focused]:not([data-disabled])',
       '[data-scope="menu"][data-part="root"][data-hovered]:not([data-disabled])',
       '[data-scope="menu"][data-part="root"][data-open]',
+      '[data-scope="list"][data-part="root"][data-selected]',
     ]) {
       const it = drawn(selected);
       expect(it.get("forced-color-adjust"), selected).toBe("none");
@@ -188,6 +189,10 @@ describe("forced colours", () => {
         '[data-scope="activity"][data-part="item"][data-selected] > [data-part="indicator"]',
       ).get("background-color"),
     ).toBe("SelectedItemText");
+    // A list's chosen row keeps its edge (#2911).
+    expect(drawn('[data-scope="list"][data-part="root"][data-selected]').get("box-shadow")).toBe(
+      "inset 2px 0 0 SelectedItemText",
+    );
   });
 
   it("keep each state mark's shape, which tells the states apart without colour", () => {

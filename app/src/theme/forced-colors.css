@@ -44,10 +44,16 @@
   .ui-menu-item[data-state="open"],
   [data-scope="menu"][data-part="root"][data-focused]:not([data-disabled]),
   [data-scope="menu"][data-part="root"][data-hovered]:not([data-disabled]),
-  [data-scope="menu"][data-part="root"][data-open] {
+  [data-scope="menu"][data-part="root"][data-open],
+  [data-scope="list"][data-part="root"][data-selected] {
     forced-color-adjust: none;
     color: SelectedItemText;
     background-color: SelectedItem;
+  }
+
+  /* A chosen row of a list keeps its edge down its start: its shape (#2911). */
+  [data-scope="list"][data-part="root"][data-selected] {
+    box-shadow: inset 2px 0 0 SelectedItemText;
   }
 
   /* And a shape, so it is told without the colour: a tab and a segment are underlined. */
@@ -70,7 +76,8 @@
   [aria-disabled="true"],
   .ui-menu-item[data-disabled],
   [data-scope="menu"][data-part="root"][data-disabled],
-  [data-scope="menu"][data-part="root"][data-unavailable] {
+  [data-scope="menu"][data-part="root"][data-unavailable],
+  [data-scope="list"][data-part="root"][data-disabled] {
     color: GrayText;
   }
 

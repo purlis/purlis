@@ -120,7 +120,8 @@ describe("a vault's tab", function () {
 
     await fromThePalette("Open vault…");
     const picker = await dialog("Open vault");
-    await picker.$(`button*=${VAULT}`).click();
+    // A vault is a row of the list family (#2911), by its name.
+    await picker.$(`[role="row"][aria-label^="${VAULT}"]`).click();
 
     await browser.waitUntil(async () => (await secretNames()).length === 2, {
       timeout: 20_000,
