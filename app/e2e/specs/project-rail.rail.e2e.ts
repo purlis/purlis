@@ -84,13 +84,21 @@ async function pointerAt(x: number) {
   }, x);
 }
 
-/** Puts the rail back to always shown, however the test left it. */
+/**
+ * Puts the rail back to always shown, however the test left it, and waits until its column has
+ * opened to its 52px. The person's show slides the column open over `duration.slide` (R84), and
+ * the slot stops saying it is hidden as the slide starts, so a reading taken then finds the
+ * column part of the way open.
+ */
 async function shownAgain() {
   if (await $(SHOW).isExisting()) await $(SHOW).click();
-  await browser.waitUntil(async () => !(await seen()).hidden, {
-    timeout: 10_000,
-    timeoutMsg: "the rail was never shown again",
-  });
+  await browser.waitUntil(
+    async () => {
+      const now = await seen();
+      return !now.hidden && Math.round(now.width) === 52;
+    },
+    { timeout: 10_000, timeoutMsg: "the rail was never shown again at its 52px" },
+  );
 }
 
 /** Runs `step`, and goes on whatever it threw: a clean-up that fails leaves the next one to run. */
