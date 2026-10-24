@@ -52,9 +52,6 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
   "Welcome.tsx": [
     "<button className=\"welcome-door\">",
   ],
-  "WorkspaceStrip.tsx": [
-    "<button className={root ? \"plane-root\" : undefined}>",
-  ],
   "YourRepos.tsx": [
     "<button className=\"welcome-link repo-card\">",
   ],

@@ -17,7 +17,7 @@ import { vi } from "vitest";
 import App from "./App";
 import { forgetRepoClones } from "./repoClones";
 import { SETTINGS_LINK, type SettingsLinkAsk } from "./settings/links";
-import { stripNamed } from "./test-strips";
+import { chipName, workspaceChips } from "./test-strips";
 
 /**
  * **A refusal that names a setting links to it** (#1201, SE-22): the window's line under the
@@ -91,10 +91,8 @@ describe("a refusal's way to its setting (#1201)", () => {
     try {
       render(<App />);
       const tab = await waitFor(() => {
-        const found = within(stripNamed("Workspaces"))
-          .getAllByRole("tab")
-          .find((one) => one.querySelector(".workspace-name")?.textContent === "alpha");
-        if (found === undefined) throw new Error("alpha is not on the strip yet");
+        const found = workspaceChips().find((one) => chipName(one) === "alpha");
+        if (found === undefined) throw new Error("alpha is not in the title bar yet");
         return found;
       });
       fireEvent.contextMenu(tab);

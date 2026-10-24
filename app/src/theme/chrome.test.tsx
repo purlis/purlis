@@ -26,12 +26,13 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, configure, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, configure, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "../App";
 import { AboutCharter } from "../About";
-import { ENDS_IT } from "../actions";
+import { ENDS_IT, OUTSIDE } from "../actions";
+import { TitleBarSwitch, type SwitchDoes, type SwitchProject } from "../TitleBarSwitch";
 import { InboxAlerts } from "../InboxAlerts";
 import { NoticeList } from "../Notice";
 import { AnswerPanel } from "../AnswerPanel";
@@ -247,7 +248,8 @@ async function windowIn(theme: string, colour: string | null = null) {
   render(<App />);
   await waitFor(() => expect(inForce()).toBe(BUILT_IN[theme]));
   await screen.findByTestId("pane");
-  await screen.findByRole("tab", { name: /alpha/ });
+  // The workspace in front, a chip in the title bar (#2916).
+  await within(screen.getByTestId("title-bar")).findByRole("button", { name: /alpha/ });
 }
 
 describe.each(Object.keys(BUILT_IN))("the window's chrome in %s", (theme) => {
@@ -496,6 +498,23 @@ function dialogCore() {
 /** One dialog of the window: the file it is in, and how a test opens it. */
 type Opened = { name: string; file: string; open: () => Promise<unknown> };
 
+/** Two projects as the title bar's switchers list them (#2916). */
+const SWITCHING: SwitchProject[] = [
+  {
+    plane: "/home/dev/one",
+    name: "one",
+    waiting: 1,
+    workspaces: {
+      names: ["alpha", "beta"],
+      pins: ["alpha"],
+      focused: "alpha",
+      waiting: { [OUTSIDE]: 0, alpha: 1, beta: 0 },
+    },
+  },
+  { plane: "/home/dev/two", name: "two", waiting: 0 },
+];
+const SWITCHED: SwitchDoes = { go: nothing, choose: nothing, pin: nothing, create: nothing };
+
 const DIALOGS: Opened[] = [
   {
     name: "About",
@@ -503,6 +522,31 @@ const DIALOGS: Opened[] = [
     open: async () => {
       render(<AboutCharter />);
       await userEvent.click(screen.getByTestId("title-about"));
+    },
+  },
+  {
+    name: "the title bar's workspace popover",
+    file: "TitleBarSwitch.tsx",
+    open: async () => {
+      render(
+        <TitleBarSwitch projects={SWITCHING} inFront="/home/dev/one" railShown does={SWITCHED} />,
+      );
+      await userEvent.click(screen.getByRole("button", { name: "All workspaces" }));
+    },
+  },
+  {
+    name: "the title bar's two-column switcher",
+    file: "TitleBarSwitch.tsx",
+    open: async () => {
+      render(
+        <TitleBarSwitch
+          projects={SWITCHING}
+          inFront="/home/dev/one"
+          railShown={false}
+          does={SWITCHED}
+        />,
+      );
+      await userEvent.click(screen.getByTestId("title-project"));
     },
   },
   {

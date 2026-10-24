@@ -1,0 +1,408 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **The title bar's workspace family default** (#2916, R92, R101–R106, R167, ADR 0103, ADR
+   0104): how `WorkspaceChip`, `PinnedStrip`, `TitleBarSlash` and `TitleBarProject` are drawn
+   when a theme names none of their parts, which is the Purlis look. Keyed on the wrappers'
+   attributes alone; `purlis_core::theme::parts` holds a copy of the chips' colours.
+
+   A state changes a colour, never a size or a neighbour's place (R153). In the `components`
+   layer (`styles.css`), above `App.css`. Each rule names its part before its family, so a rule is
+   read as reaching only that part's elements (`theme/grounds.test.ts` reads a rule by its first
+   attribute). */
+
+/* ---------------------------------------------------------------------------------------------
+   The project's name and the slash after it (R92): quiet, 500, then a faint "/".
+   --------------------------------------------------------------------------------------------- */
+
+[data-part="project"][data-scope="titlebar"] {
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  color: var(--text-quiet);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The faint tier is for marks (R156): the slash is one. 6px after it, 2px before (the prototype's
+   `margin: 0 6px 0 2px`), inside the bar's 10px gap. */
+[data-part="slash"][data-scope="titlebar"] {
+  flex: none;
+  margin-inline: var(--space-1) var(--space-3);
+  color: var(--text-faint);
+  font-size: var(--font-size-md);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   The strip (R103, R167): at most 62% of the bar, scrolling sideways with its scrollbar hidden.
+   The ring of a focused chip stands inside its clip: the strip's padding is that room, given
+   back by its margin, so nothing moves.
+   --------------------------------------------------------------------------------------------- */
+
+[data-part="strip"][data-scope="titlebar"] {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: var(--space-1);
+  box-sizing: border-box;
+  min-inline-size: 0;
+  /* 62% of the title bar, which is the window's width (R103). */
+  max-inline-size: 62vw;
+  margin-block: calc(var(--space-2) * -1);
+  margin-inline: calc(var(--space-2) * -1);
+  padding-block: var(--space-2);
+  padding-inline: var(--space-2);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+
+[data-part="strip"][data-scope="titlebar"]::-webkit-scrollbar {
+  display: none;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   A chip (R101): 28px, padding 0 10, corners of 8, quiet 13px words. Under the pointer the
+   primary words on the card's fill; the current one takes the same. Its count after its name.
+   --------------------------------------------------------------------------------------------- */
+
+[data-part="workspace"][data-scope="titlebar"] {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-3);
+  box-sizing: border-box;
+  /* In CSS px, as WCAG measures a target: no text size draws it smaller (R101). */
+  block-size: max(28px, calc(28rem / 14));
+  padding-block: 0;
+  padding-inline: calc(var(--space-4) + var(--space-1));
+  /* The dashed chip's edge is there at rest on every chip, transparent, so pinning one never
+     moves its neighbours (R153). */
+  border: 1px solid transparent;
+  border-radius: calc(var(--radius-md) + 1px);
+  color: var(--text-quiet);
+  background-color: transparent;
+  font: inherit;
+  font-size: var(--font-size-md);
+  line-height: 1;
+  white-space: nowrap;
+  cursor: default;
+  appearance: none;
+}
+
+[data-part="workspace"][data-scope="titlebar"][data-hovered],
+[data-part="workspace"][data-scope="titlebar"][data-selected] {
+  color: var(--text-primary);
+  background-color: var(--surface-overlay);
+}
+
+/* The current workspace while it is not pinned (R105): muted words, a dashed line, "+", and no
+   fill though it is current, as the prototype draws it, so its edge is what says it. */
+[data-part="workspace"][data-scope="titlebar"][data-variant="unpinned"] {
+  color: var(--text-muted);
+  background-color: transparent;
+  border-style: dashed;
+  border-color: var(--border-subtle);
+}
+
+[data-part="workspace"][data-scope="titlebar"][data-variant="unpinned"][data-hovered] {
+  color: var(--text-primary);
+  background-color: var(--surface-overlay);
+}
+
+/* The ring from the keyboard only. Inside the chip, so the strip's clip leaves it whole. */
+[data-part="workspace"][data-scope="titlebar"][data-focus-visible] {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: calc(var(--focus-ring-width) * -1);
+}
+
+[data-part="name"][data-scope="titlebar"] {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* A workspace's waiting count (R101): 16px, amber on its wash. */
+[data-part="count"][data-scope="titlebar"] {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  box-sizing: border-box;
+  min-inline-size: 16px;
+  block-size: 16px;
+  padding-inline: var(--space-2);
+  border-radius: var(--radius-full);
+  color: var(--state-waiting);
+  background-color: var(--wash-warning);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-strong);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   The switchers (R94–R100, R107): the workspace popover the ⌄ opens, 320px, and the two-column
+   switcher the crumb opens, 560px (the window less 24 at most) and 440px tall at most, each on
+   the popover family's surface. Their rows, pin toggles, key cap and headers are this family's.
+   --------------------------------------------------------------------------------------------- */
+
+[data-switcher="workspaces"] {
+  inline-size: min(320px, calc(100vw - 24px));
+  max-block-size: min(440px, calc(100vh - 60px));
+}
+
+[data-switcher="projects"] {
+  inline-size: min(560px, calc(100vw - 24px));
+  max-block-size: min(440px, calc(100vh - 60px));
+}
+
+/* The filter row: the box, then the key that opens it in a mono cap. */
+[data-part="filter"][data-scope="titlebar"] {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+/* The filter's box is the field family's, as wide as the row leaves it. */
+[data-part="filter"][data-scope="titlebar"] > .titlebar-filter {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+/* The key that opens a switcher, in a mono cap (R95). */
+[data-part="key"][data-scope="titlebar"] {
+  flex: none;
+  padding-inline: var(--space-2);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  background-color: var(--surface-overlay);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+}
+
+/* A column's heading (R96): its words in the quiet tier, small capitals. */
+[data-part="header"][data-scope="titlebar"] {
+  margin: var(--space-3) var(--space-4) var(--space-2);
+  color: var(--text-quiet);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-strong);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* Two columns side by side, the line between them a part of its own. */
+[data-part="columns"][data-scope="titlebar"] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 1px minmax(0, 1fr);
+  min-block-size: 0;
+}
+
+[data-part="divider"][data-scope="titlebar"] {
+  background-color: var(--border-subtle);
+}
+
+/* A list and its pins, row for row: the pin column is as wide as a toggle. */
+[data-part="rows"][data-scope="titlebar"] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--space-1);
+}
+
+[data-part="listbox"][data-scope="titlebar"],
+[data-part="pins"][data-scope="titlebar"] {
+  display: grid;
+  grid-auto-rows: 32px;
+  row-gap: var(--space-1);
+  align-items: center;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   A row (R96, R107): 32px, corners of 8, the secondary words; the card's fill under the pointer
+   and the accent's wash on the row Enter would go to. A state changes colours only.
+   --------------------------------------------------------------------------------------------- */
+
+[data-part="row"][data-scope="titlebar"] {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  box-sizing: border-box;
+  min-block-size: 32px;
+  padding-inline: var(--space-4);
+  border-radius: calc(var(--radius-md) + 1px);
+  color: var(--text-secondary);
+  cursor: default;
+}
+
+[data-part="row"][data-scope="titlebar"][data-hovered] {
+  background-color: var(--surface-overlay);
+}
+
+[data-part="row"][data-scope="titlebar"][data-active] {
+  color: var(--text-primary);
+  background-color: var(--list-selected);
+}
+
+[data-part="row"][data-scope="titlebar"][data-unavailable] {
+  color: var(--text-faint);
+}
+
+[data-part="row-name"][data-scope="titlebar"] {
+  flex: 1;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A row's pin (R107): 28px, the icon faint at rest and in the accent while pinned; no box and no
+   edge of its own, the card's fill under the pointer. */
+[data-part="pin"][data-scope="titlebar"] {
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  inline-size: 28px;
+  block-size: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  color: var(--text-faint);
+  background-color: transparent;
+  cursor: default;
+  appearance: none;
+}
+
+[data-part="pin"][data-scope="titlebar"] > svg {
+  inline-size: 12px;
+  block-size: 12px;
+}
+
+[data-part="pin"][data-scope="titlebar"][data-hovered] {
+  color: var(--text-primary);
+  background-color: var(--surface-overlay);
+}
+
+[data-part="pin"][data-scope="titlebar"][data-selected] {
+  color: var(--accent-base);
+}
+
+[data-part="pin"][data-scope="titlebar"][data-focus-visible] {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: calc(var(--focus-ring-width) * -1);
+}
+
+[data-part="empty"][data-scope="titlebar"] {
+  padding: var(--space-3);
+  color: var(--text-quiet);
+  font-size: var(--font-size-sm);
+}
+
+/* A project's mark (R96): its two letters in its own colour on that colour's surface. */
+[data-part="mark"][data-scope="titlebar"] {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  inline-size: 22px;
+  block-size: 22px;
+  border-radius: calc(var(--radius-sm) * 2);
+  color: var(--accent-base);
+  background-color: var(--accent-surface);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-strong);
+}
+
+[data-part="mark"][data-scope="titlebar"]::before {
+  content: attr(data-letters);
+}
+
+[data-part="mark"][data-scope="titlebar"][data-small] {
+  inline-size: 20px;
+  block-size: 20px;
+}
+
+[data-part="mark"][data-scope="titlebar"] > svg {
+  inline-size: 14px;
+  block-size: 14px;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   The crumb while the rail is hidden (R93): 28px, corners of 8, the project's 20px mark, its
+   name and ⌄; the card's fill under the pointer and while its switcher is open. And the ⌄ at the
+   strip's end (R106): 26px, corners of 7, quiet, the same fill and the primary words.
+   --------------------------------------------------------------------------------------------- */
+
+[data-part="crumb"][data-scope="titlebar"] {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: var(--space-1);
+  box-sizing: border-box;
+  min-inline-size: 0;
+  block-size: max(28px, calc(28rem / 14));
+  padding-block: 0;
+  padding-inline: var(--space-3) var(--space-2);
+  border: 0;
+  border-radius: calc(var(--radius-md) + 1px);
+  color: var(--text-secondary);
+  background-color: transparent;
+  font: inherit;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
+  cursor: default;
+  appearance: none;
+}
+
+[data-part="crumb"][data-scope="titlebar"][data-hovered],
+[data-part="crumb"][data-scope="titlebar"][data-selected] {
+  background-color: var(--surface-overlay);
+}
+
+[data-part="crumb-name"][data-scope="titlebar"] {
+  min-inline-size: 0;
+  margin-inline-start: var(--space-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-part="chevron"][data-scope="titlebar"] {
+  flex: none;
+  inline-size: 12px;
+  block-size: 12px;
+  margin-inline-start: var(--space-2);
+  color: var(--text-quiet);
+}
+
+[data-part="all"][data-scope="titlebar"] {
+  display: grid;
+  flex: none;
+  place-items: center;
+  box-sizing: border-box;
+  inline-size: max(26px, calc(26rem / 14));
+  block-size: max(26px, calc(26rem / 14));
+  margin-inline-start: var(--space-1);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  color: var(--text-quiet);
+  background-color: transparent;
+  cursor: default;
+  appearance: none;
+}
+
+[data-part="all"][data-scope="titlebar"] > svg {
+  inline-size: 12px;
+  block-size: 12px;
+}
+
+[data-part="all"][data-scope="titlebar"][data-hovered],
+[data-part="all"][data-scope="titlebar"][data-selected] {
+  color: var(--text-primary);
+  background-color: var(--surface-overlay);
+}
+
+:is([data-part="crumb"], [data-part="all"])[data-scope="titlebar"][data-focus-visible] {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: calc(var(--focus-ring-width) * -1);
+}

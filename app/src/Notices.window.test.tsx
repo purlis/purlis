@@ -18,7 +18,7 @@ import type { NotStarted } from "./bindings";
 import { countsInStatusBar, IMPORTANCE } from "./Notice";
 import { forgetThisLaunch } from "./regions";
 import { GLOBAL } from "./windowprefs";
-import { findStripNamed } from "./test-strips";
+import { findTheWorkspaces } from "./test-strips";
 
 /**
  * **A project's Notices, in its Inbox, against the whole window** (NO-2 #1229, rulings V91i,
@@ -235,7 +235,7 @@ describe("a dismissed Notice", () => {
     relaunch();
     core([chat(1, "one")], { gone: ["delta"] });
     render(<App />);
-    await findStripNamed("Workspaces");
+    await findTheWorkspaces();
     await settle();
 
     expect(screen.queryByText(/^delta is gone/)).toBeNull();
@@ -252,7 +252,7 @@ describe("a dismissed Notice", () => {
     relaunch();
     ({ asked } = core([chat(1, "one")], { gone: [] }));
     render(<App />);
-    await findStripNamed("Workspaces");
+    await findTheWorkspaces();
     await waitFor(() => expect(keptLast(asked)).toEqual([]));
     expect(disk.dismissed).toEqual({});
 
@@ -275,14 +275,14 @@ describe("a dismissed Notice", () => {
       relaunch();
       ({ asked } = core([chat(1, "one")], { gone: ["delta"], pins }));
       render(<App />);
-      await findStripNamed("Workspaces");
+      await findTheWorkspaces();
       await settle();
     }
 
     relaunch();
     core([chat(1, "one")], { gone: ["delta"] });
     render(<App />);
-    await findStripNamed("Workspaces");
+    await findTheWorkspaces();
     await settle();
     expect(screen.queryByText(/^delta is gone/)).toBeNull();
   }, 20_000); // Five launches: given the time five take on a loaded machine.
@@ -299,7 +299,7 @@ describe("a dismissed Notice", () => {
     relaunch();
     core(fresh, { gone: [] });
     render(<App />);
-    await findStripNamed("Workspaces");
+    await findTheWorkspaces();
     await settle();
     expect(screen.queryByText(/came back as a new chat/)).toBeNull();
   });
@@ -323,7 +323,7 @@ describe("a dismissed Notice", () => {
     relaunch();
     core(untaken, { gone: [] });
     render(<App />);
-    await findStripNamed("Workspaces");
+    await findTheWorkspaces();
     await settle();
     expect(screen.queryByText(/could not bring back what it was doing/)).toBeNull();
   });
@@ -338,13 +338,13 @@ describe("a dismissed Notice", () => {
     relaunch();
     core(fresh, { gone: [], chats: "refuses" });
     render(<App />);
-    await findStripNamed("Workspaces");
+    await findTheWorkspaces();
     await settle();
 
     relaunch();
     core(fresh, { gone: [] });
     render(<App />);
-    await findStripNamed("Workspaces");
+    await findTheWorkspaces();
     await settle();
     expect(screen.queryByText(/came back as a new chat/)).toBeNull();
   });
@@ -380,7 +380,7 @@ describe("a dismissed Notice", () => {
     relaunch();
     core(resumed("conv-a"), { gone: [] });
     render(<App />);
-    await findStripNamed("Workspaces");
+    await findTheWorkspaces();
     await settle();
     expect(screen.queryByText(/was resumed/)).toBeNull();
 

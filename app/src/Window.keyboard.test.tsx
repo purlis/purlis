@@ -11,7 +11,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import { forgetThisLaunch } from "./regions";
 import { sequenceIn } from "./tabSequence";
-import { showTheExplorer, stripNamed, closeFromTheRail } from "./test-strips";
+import { closeFromTheRail, showTheExplorer, stripNamed, workspaceChips } from "./test-strips";
 
 /**
  * **Where Tab goes in the window outside its dialogs** (charter-app#189).
@@ -245,29 +245,28 @@ describe("a strip is one Tab stop", () => {
     expect(selected).toHaveFocus();
   });
 
-  it("the workspace strip: the focused workspace is the stop, and the arrows move", async () => {
+  it("the title bar's pins: the workspace in front is the stop, and the arrows move", async () => {
     core();
     render(<App />);
-    // The plane root's tab first (SI-1), then the two workspaces.
-    await waitFor(() => expect(tabsOf("Workspaces")).toHaveLength(3));
-    const [root, alpha, beta] = tabsOf("Workspaces");
-    expect(alpha).toHaveAttribute("aria-selected", "true");
-    expect([root, alpha, beta].map((tab) => tab.getAttribute("tabindex"))).toEqual([
-      "-1",
+    await waitFor(() => expect(workspaceChips().length).toBeGreaterThan(1));
+    const chips = workspaceChips();
+    // ONE stop (#2916, charter-app#189): the chip of the workspace in front.
+    expect(chips[0]).toHaveAttribute("aria-current", "true");
+    expect(chips.map((chip) => chip.getAttribute("tabindex"))).toEqual([
       "0",
-      "-1",
+      ...chips.slice(1).map(() => "-1"),
     ]);
 
-    alpha.focus();
+    chips[0].focus();
     await userEvent.keyboard("{ArrowRight}");
-    await waitFor(() => expect(beta).toHaveFocus());
+    await waitFor(() => expect(chips[1]).toHaveFocus());
     await userEvent.keyboard(" ");
-    await waitFor(() => expect(tabsOf("Workspaces")[2]).toHaveAttribute("aria-selected", "true"));
-    // And the root is reached the same way: it is a tab on the strip like any other.
-    await userEvent.keyboard("{ArrowLeft}{ArrowLeft}");
-    await waitFor(() => expect(tabsOf("Workspaces")[0]).toHaveFocus());
-    await userEvent.keyboard(" ");
-    await waitFor(() => expect(tabsOf("Workspaces")[0]).toHaveAttribute("aria-selected", "true"));
+    await waitFor(() => expect(workspaceChips()[1]).toHaveAttribute("aria-current", "true"));
+    // And the ⌄ is the strip's last control, at its end.
+    await userEvent.keyboard("{End}");
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "All workspaces" })).toHaveFocus(),
+    );
   });
 
   it("the project strip: the project in front is the stop", async () => {
@@ -371,10 +370,12 @@ describe("the window's tab order", () => {
       .filter((el) => el.closest("[hidden]") === null)
       .map(said);
     expect(stops).toEqual([
-      // The title bar, left to right (ADR 0054): with the rail shown nothing stands at its left,
-      // so its right-hand end: what comes and goes on its inner side, the needs-you button
+      // The title bar, left to right (ADR 0054): with the rail shown, the project's pinned
+      // workspaces (#2916): ONE stop, the chip of the one in front, its name and its count;
+      // then its right-hand end: what comes and goes on its inner side, the needs-you button
       // (charter-app#249) and the update pill, then the kill switch (OV-1) and About, which
       // stays at the bar's end (#2913).
+      "button alpha2",
       "button 2 chats need you",
       "button Updates — … channel, nothing new known",
       "button Stop every chat and shell purlis started, in every project and window",
@@ -384,11 +385,6 @@ describe("the window's tab order", () => {
       "tab plane",
       "button Open a project…",
       "button Hide the projects sidebar",
-      // The workspace strip.
-      "tab alpha32",
-      // The focused workspace's settings gear (SE-23), for the same reason.
-      "button Workspace settings…",
-      "button New workspace…",
       // The left side's activity bar (#1673): ONE stop, the open view's tab. Then its Lower
       // icons (#1737), the same column below the divider: ONE stop, the left half's open view.
       "tab Chats",
@@ -664,11 +660,11 @@ describe("Delete on a focused tab", () => {
     await waitFor(() => expect(asked).toContain("close_plane"));
   });
 
-  it("closes nothing on a workspace tab, which has no × and whose menu deletes it on disk", async () => {
+  it("closes nothing on a workspace chip, which has no × and whose menu deletes it on disk", async () => {
     const { asked } = core();
     render(<App />);
-    await waitFor(() => expect(tabsOf("Workspaces")).toHaveLength(3));
-    const [, alpha] = tabsOf("Workspaces");
+    await waitFor(() => expect(workspaceChips().length).toBeGreaterThan(1));
+    const [alpha] = workspaceChips();
     alpha.focus();
 
     const del = new KeyboardEvent("keydown", { key: "Delete", bubbles: true, cancelable: true });
@@ -676,7 +672,6 @@ describe("Delete on a focused tab", () => {
 
     expect(del.defaultPrevented).toBe(false);
     expect(screen.queryByRole("alertdialog")).toBeNull();
-    expect(tabsOf("Workspaces")).toHaveLength(3);
     expect(asked.filter((cmd) => cmd.startsWith("delete"))).toEqual([]);
   });
 
