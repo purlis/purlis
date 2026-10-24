@@ -5571,3 +5571,239 @@ fn a_file_staged_and_then_swapped_out_from_under_the_save_is_not_committed() {
         "an unrelated loose object was removed"
     );
 }
+
+// --------------------------------------------------------------------------------------- //
+// what a test does at a point inside a save or a Continue                                  //
+// --------------------------------------------------------------------------------------- //
+
+/// What a test does to a repository at one point inside a save or a Continue.
+type Then = Box<dyn Fn(&Path)>;
+
+thread_local! {
+    /// What a test does when the plane's save reaches its secret guard.
+    static AT_THE_SECRET_GUARD: std::cell::RefCell<Option<Then>> =
+        const { std::cell::RefCell::new(None) };
+    /// What a test does once Continue has checked the settled files, before it stages them.
+    static BEFORE_THE_ADD: std::cell::RefCell<Option<Then>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+type Point = std::thread::LocalKey<std::cell::RefCell<Option<Then>>>;
+
+/// Runs what the test set at `point`, if it set anything.
+fn reached(point: &'static Point, root: &Path) {
+    point.with(|then| {
+        if let Some(then) = then.borrow().as_ref() {
+            then(root);
+        }
+    });
+}
+
+pub(super) fn at_the_secret_guard(root: &Path) {
+    reached(&AT_THE_SECRET_GUARD, root);
+}
+
+pub(super) fn before_the_add(root: &Path) {
+    reached(&BEFORE_THE_ADD, root);
+}
+
+/// `run`, with `then` done at `point`.
+fn doing_at<T>(
+    point: &'static Point,
+    then: impl Fn(&Path) + 'static,
+    run: impl FnOnce() -> T,
+) -> T {
+    struct Clear(&'static Point);
+    impl Drop for Clear {
+        fn drop(&mut self) {
+            self.0.with(|then| then.borrow_mut().take());
+        }
+    }
+    point.with(|held| *held.borrow_mut() = Some(Box::new(then)));
+    let _clear = Clear(point);
+    run()
+}
+
+#[test]
+fn a_held_back_row_is_out_of_the_object_store_before_the_secret_guard_reads_a_blob() {
+    let fixture = Fixture::plane();
+    fixture.with_a_second_name("workspaces/w/skills/s", OUTSIDE.as_bytes());
+    let before = fixture.head();
+    let local = "workspaces/w/skills/s/notes.md";
+    // Staged while it had its second name, git told to look no further at it, and then a
+    // file of one name in its place: the save holds the row back once staged.
+    run(&fixture.root, &["add", local]);
+    run(
+        &fixture.root,
+        &["update-index", "--assume-unchanged", local],
+    );
+    std::fs::remove_file(fixture.root.join(local)).unwrap();
+    std::fs::write(fixture.root.join(local), "one name\n").unwrap();
+    assert!(fixture.stores_outside(), "the fixture's own add stored it");
+    let outside = fixture.root.parent().unwrap().join("outside/notes.md");
+    let sha = run(&fixture.root, &["hash-object", outside.to_str().unwrap()])
+        .trim()
+        .to_owned();
+
+    let seen = std::rc::Rc::new(std::cell::Cell::new(false));
+    let (code, said) = doing_at(
+        &AT_THE_SECRET_GUARD,
+        {
+            let seen = seen.clone();
+            move |root: &Path| {
+                seen.set(true);
+                assert!(
+                    !crate::testgit::run(root, &["cat-file", "-e", &sha]).ok(),
+                    "the held-back blob is still in the object store at the secret guard"
+                );
+            }
+        },
+        || saved_as(&fixture.root, Trigger::Cli),
+    );
+
+    assert!(
+        seen.get(),
+        "the save never reached its secret guard: {said}"
+    );
+    assert_eq!(code, 1, "{said}");
+    assert!(
+        said.contains(&format!(
+            "{local} is marked for git not to look at it on disk"
+        )),
+        "{said}"
+    );
+    assert_eq!(fixture.head(), before);
+    assert!(!fixture.staged().contains("notes.md"), "{said}");
+}
+
+/// A plane stopped on a conflict in `a.md`, settled on disk with no markers left.
+fn a_settled_conflict() -> Scene {
+    let scene = Scene::new(&[("a.md", b"one\n")]);
+    scene.theirs("theirs", |dir| write(dir, "a.md", b"theirs\n"));
+    scene.mine("mine", |dir| write(dir, "a.md", b"mine\n"));
+    assert_eq!(
+        resolve_start(&scene.fixture),
+        resolve::Settled::Stopped(vec!["a.md".into()])
+    );
+    write(&scene.fixture.root, "a.md", b"settled under two names\n");
+    scene
+}
+
+impl Scene {
+    /// Whether the project's object store holds the blob of what `a.md` holds now.
+    fn stores_a(&self) -> bool {
+        let sha = run(&self.fixture.root, &["hash-object", "a.md"]);
+        crate::testgit::run(&self.fixture.root, &["cat-file", "-e", sha.trim()]).ok()
+    }
+
+    fn remote_main(&self) -> String {
+        run(&self.theirs, &["ls-remote", "origin", "refs/heads/main"])
+    }
+
+    /// The stop is as git left it: `a.md` in conflict, nothing committed, nothing pushed.
+    fn still_stopped(&self, head: &str, remote: &str) {
+        let root = &self.fixture.root;
+        assert!(gitstate::stopped(root).is_some(), "the rebase went on");
+        assert_eq!(gitstate::unmerged(root), vec!["a.md".to_string()]);
+        assert_eq!(run(root, &["rev-parse", "HEAD"]), head, "a commit was made");
+        assert_eq!(self.remote_main(), remote, "something was pushed");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn continue_refuses_a_settled_file_with_a_second_name_and_goes_on_once_it_has_one() {
+    let scene = a_settled_conflict();
+    let root = scene.fixture.root.clone();
+    let second = root.parent().unwrap().join("second-name");
+    std::fs::hard_link(root.join("a.md"), &second).unwrap();
+    let head = run(&root, &["rev-parse", "HEAD"]);
+    let remote = scene.remote_main();
+
+    let refused = resolve_continue(&scene.fixture, &["a.md"]);
+
+    assert!(refused_with(&refused, "has a second name"), "{refused:?}");
+    assert!(refused_with(&refused, "Nothing was staged"), "{refused:?}");
+    scene.still_stopped(&head, &remote);
+    assert!(
+        !scene.stores_a(),
+        "the file's bytes reached the object store"
+    );
+
+    // With one name again, Continue carries on, and the push follows.
+    std::fs::remove_file(&second).unwrap();
+    assert_eq!(
+        resolve_continue(&scene.fixture, &["a.md"]),
+        resolve::Settled::Replayed
+    );
+    let (pushed, _) = resolve::push_after(&root, &mut |_: Say| {});
+    assert_eq!(pushed.map(|res| res.outcome), Some(Outcome::Pushed));
+    assert_ne!(scene.remote_main(), remote, "nothing was pushed");
+    assert_eq!(scene.at("a.md"), b"settled under two names\n");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_second_name_made_as_continue_stages_puts_the_conflict_back_and_its_blob_out() {
+    let scene = a_settled_conflict();
+    let root = scene.fixture.root.clone();
+    let second = root.parent().unwrap().join("second-name");
+    let head = run(&root, &["rev-parse", "HEAD"]);
+    let remote = scene.remote_main();
+
+    let refused = doing_at(
+        &BEFORE_THE_ADD,
+        {
+            let second = second.clone();
+            move |root: &Path| std::fs::hard_link(root.join("a.md"), &second).unwrap()
+        },
+        || resolve_continue(&scene.fixture, &["a.md"]),
+    );
+
+    assert!(refused_with(&refused, "has a second name"), "{refused:?}");
+    assert!(
+        refused_with(&refused, "marked as conflicted again"),
+        "{refused:?}"
+    );
+    scene.still_stopped(&head, &remote);
+    assert!(
+        !scene.stores_a(),
+        "the file's bytes are in the object store"
+    );
+
+    std::fs::remove_file(&second).unwrap();
+    assert_eq!(
+        resolve_continue(&scene.fixture, &["a.md"]),
+        resolve::Settled::Replayed
+    );
+}
+
+#[test]
+fn a_file_changed_as_continue_stages_it_puts_the_conflict_back_and_its_blob_out() {
+    let scene = a_settled_conflict();
+    let root = scene.fixture.root.clone();
+    let head = run(&root, &["rev-parse", "HEAD"]);
+    let remote = scene.remote_main();
+
+    let refused = doing_at(
+        &BEFORE_THE_ADD,
+        |root: &Path| write(root, "a.md", b"written after the check\n"),
+        || resolve_continue(&scene.fixture, &["a.md"]),
+    );
+
+    assert!(
+        refused_with(&refused, "changed while purlis was checking"),
+        "{refused:?}"
+    );
+    scene.still_stopped(&head, &remote);
+    assert!(
+        !scene.stores_a(),
+        "the unchecked bytes are in the object store"
+    );
+
+    assert_eq!(
+        resolve_continue(&scene.fixture, &["a.md"]),
+        resolve::Settled::Replayed
+    );
+    assert_eq!(scene.at("a.md"), b"written after the check\n");
+}

@@ -11,4 +11,5 @@
   links as before.
   A commit the app makes for a sandboxed chat in its branch folder, and the files
   `purlis worktree update --continue` stages once a conflict is resolved, hold to the same
-  rule; a resolved file refused there is marked as conflicted again.
+  rule; a resolved file refused there is marked as conflicted again. So does Continue on a
+  project's save conflict in the window.

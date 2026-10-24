@@ -3323,9 +3323,18 @@ fn commit_push(
     attempt.files = staged.len();
     show_what_is_staged(root, &staged, say);
     // Each staged file is the one name it has on disk, as the readers ask of a file: asked now,
-    // before the secret guard below reads a blob, and refused after it, so a save the guard
-    // refuses also takes such a file out of the index ([`ondisk`]).
+    // and a row that is not is taken out of the index, and its blob out of the object store
+    // where nothing else reaches it, before the secret guard below reads any blob. What the
+    // refusal says is said after the guard's own findings, so a save the guard refuses names
+    // both ([`ondisk`]).
     let held = ondisk::not_as_staged(root);
+    let held_back: std::collections::HashSet<&str> = held
+        .as_ref()
+        .map(|held| held.iter().map(|one| one.path.as_str()).collect())
+        .unwrap_or_default();
+    let refusal = ondisk::refused(root, &held);
+    #[cfg(test)]
+    tests::at_the_secret_guard(root);
 
     // The secret guard: refuse if any staged file looks like it holds a secret. Every file a
     // save stages is committed and pushed to a shared repository, so a credential in any of
@@ -3366,7 +3375,8 @@ fn commit_push(
     let mut skipped: Vec<(String, &'static str)> = Vec::new();
     let mut to_read: Vec<&String> = Vec::new();
     for path in &staged {
-        if deleted.contains(path) {
+        // A row held back above is no longer staged: nothing of it is committed to scan.
+        if deleted.contains(path) || held_back.contains(path.as_str()) {
             continue;
         }
         let file = root.join(path);
@@ -3465,7 +3475,7 @@ fn commit_push(
             "Secrets belong in the vault (`purlis persona secret set`). Remove it, then retry."
                 .into(),
         ));
-        if let Some(refusal) = ondisk::refused(root, &held) {
+        if let Some(refusal) = refusal {
             for line in refusal.named {
                 say(Say::Fail(format!("  {line}")));
             }
@@ -3475,7 +3485,7 @@ fn commit_push(
         attempt.detail = SECRET_REFUSED.into();
         return 1;
     }
-    if let Some(refusal) = ondisk::refused(root, &held) {
+    if let Some(refusal) = refusal {
         return refuse_not_as_staged(refusal, attempt, say);
     }
 

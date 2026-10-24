@@ -492,7 +492,7 @@ fn remove_loose(objects: &Path, sha: &str) {
 fn remove_loose(_: &Path, _: &str) {}
 
 /// What a file a save of named paths stages is, asked of one open descriptor ([`opened`]).
-enum OnDisk {
+pub(super) enum OnDisk {
     /// A regular file with one name, open to read, and whether its owner may run it.
     File(std::fs::File, bool),
     /// A regular file with more than one name.
@@ -504,7 +504,7 @@ enum OnDisk {
 
 /// What `path` (relative to `root`) is, opened one folder at a time and never through a link.
 #[cfg(unix)]
-fn opened(root: &Path, path: &str) -> OnDisk {
+pub(super) fn opened(root: &Path, path: &str) -> OnDisk {
     let parts: Vec<&str> = path.split('/').filter(|part| !part.is_empty()).collect();
     let Some((name, folders)) = parts.split_last() else {
         return OnDisk::Other;
@@ -532,7 +532,7 @@ fn opened(root: &Path, path: &str) -> OnDisk {
 
 /// Where a folder cannot be held open, each path is staged by `git add`.
 #[cfg(not(unix))]
-fn opened(_: &Path, _: &str) -> OnDisk {
+pub(super) fn opened(_: &Path, _: &str) -> OnDisk {
     OnDisk::Other
 }
 
