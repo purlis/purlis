@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792803619913,
+  "lastUpdate": 1792803638633,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -13144,6 +13144,42 @@ window.BENCHMARK_DATA = {
             "value": 711.1,
             "unit": "MB",
             "extra": "median of 6 samples: 667.2, 700.2, 707.5, 714.8, 715.6, 796.8 MB; window 417.7 MB, session host 293.9 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "99d287ee55be25665af8ed4ce562a1a3c75a5a77",
+          "message": "Bump gix from 0.89.0 to 0.90.0 (#3087)\n\nBumps [gix](https://github.com/GitoxideLabs/gitoxide) from 0.89.0 to 0.90.0.\n- [Release notes](https://github.com/GitoxideLabs/gitoxide/releases)\n- [Changelog](https://github.com/GitoxideLabs/gitoxide/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/GitoxideLabs/gitoxide/compare/gix-v0.89.0...gix-v0.90.0)\n\n---\nupdated-dependencies:\n- dependency-name: gix\n  dependency-version: 0.90.0\n  dependency-type: direct:production\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>\nCo-authored-by: Aaron Yordanyan <aaron.yor@gmail.com>",
+          "timestamp": "2026-10-24T03:50:44+04:00",
+          "tree_id": "02b498708fbb3be75fe97e7396104a6c9024f4f2",
+          "url": "https://github.com/purlis/purlis/commit/99d287ee55be25665af8ed4ce562a1a3c75a5a77"
+        },
+        "date": 1792803636296,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1675.7,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1573.8, 1675.7, 1712.5 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 711.2,
+            "unit": "MB",
+            "extra": "median of 6 samples: 664.5, 688.6, 705.4, 717, 718.8, 814.1 MB; window 424 MB, session host 287.2 MB"
           }
         ]
       }
