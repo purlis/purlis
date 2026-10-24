@@ -61,6 +61,12 @@ export function onScreenReaderMode(heard: (on: boolean) => void): () => void {
   return SCREEN_READER.on(heard);
 }
 
+/** Screen-reader mode, drawn again whenever it is turned on or off: for what a render reads of
+ *  it, such as the palette's row whose words say what pressing it does now. */
+export function useScreenReaderMode(): boolean {
+  return SCREEN_READER.use();
+}
+
 /** Forgets what this launch chose and read, as a new launch would. For tests. */
 export function forgetScreenReaderMode(): void {
   SCREEN_READER.forget();

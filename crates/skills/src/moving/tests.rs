@@ -28,6 +28,7 @@ fn a_plain_folder_moves_and_the_level_folder_it_goes_into_is_made() {
     move_skill(
         &plane,
         &plane.join("skills.local/notes"),
+        &plane,
         &plane.join("skills/notes"),
         1,
     )
@@ -158,14 +159,19 @@ fn a_link_in_the_skills_place_or_beside_it_is_never_moved() {
     )
     .unwrap();
 
-    assert!(
+    assert_eq!(
         move_skill(
             &plane,
             &plane.join("skills.local/notes"),
+            &plane,
             &plane.join("skills/notes"),
             1,
-        )
-        .is_err()
+        ),
+        Err(Unmoved::Nothing(
+            "skills.local/notes.toml could not go with it (it is not a plain folder or file, so \
+             purlis does not move it), so nothing was moved"
+                .to_owned()
+        ))
     );
     assert!(
         plane.join("skills.local/notes/SKILL.md").is_file(),
@@ -295,6 +301,7 @@ fn a_failed_put_back_says_the_folder_moved_and_the_file_beside_it_did_not() {
     let refused = move_skill(
         &plane,
         &plane.join("skills.local/notes"),
+        &plane,
         &plane.join("skills/notes"),
         1,
     )
@@ -310,6 +317,73 @@ fn a_failed_put_back_says_the_folder_moved_and_the_file_beside_it_did_not() {
         )
     );
     assert!(plane.join("skills/notes/SKILL.md").is_file());
+}
+
+/// A skill moved between two held roots (the project and its state folder, as delete and
+/// restore move one), whose file beside it cannot move and whose way back is taken: said to be
+/// where it went, each part named under its own root (SK-48).
+#[cfg(unix)]
+#[test]
+fn a_move_between_two_roots_pairs_the_file_beside_it_and_says_what_was_stranded() {
+    use std::os::unix::fs::symlink;
+    let (_tmp, plane, state) = plane();
+    folder(&plane.join("skills/notes"));
+    let elsewhere = tempfile::tempdir().unwrap();
+    std::fs::write(elsewhere.path().join("notes.toml"), "grant = \"all\"\n").unwrap();
+    symlink(
+        elsewhere.path().join("notes.toml"),
+        plane.join("skills/notes.toml"),
+    )
+    .unwrap();
+    let back_to = plane.join("skills/notes");
+    let _hook = hook::set(move |moment, _, to| {
+        if moment == hook::Moment::BeforeRename && to == back_to {
+            folder(to);
+        }
+    });
+
+    let refused = move_skill(
+        &plane,
+        &plane.join("skills/notes"),
+        &state,
+        &state.join("deleted/1-notes/notes"),
+        1,
+    )
+    .unwrap_err();
+
+    assert_eq!(
+        refused,
+        Unmoved::Stranded(
+            "its folder was moved to deleted/1-notes/notes and could not be put back (something \
+             of its name is already where it goes), and skills/notes.toml was not moved (it is \
+             not a plain folder or file, so purlis does not move it)"
+                .to_owned()
+        )
+    );
+    assert!(state.join("deleted/1-notes/notes/SKILL.md").is_file());
+    assert!(plane.join("skills/notes.toml").is_symlink());
+}
+
+/// A skill and the file beside it moved between two held roots, both moved.
+#[test]
+fn a_skill_and_the_file_beside_it_move_between_two_roots() {
+    let (_tmp, plane, state) = plane();
+    folder(&plane.join("skills/notes"));
+    std::fs::write(plane.join("skills/notes.toml"), "grant = \"all\"\n").unwrap();
+
+    move_skill(
+        &plane,
+        &plane.join("skills/notes"),
+        &state,
+        &state.join("deleted/1-notes/notes"),
+        1,
+    )
+    .unwrap();
+
+    assert!(state.join("deleted/1-notes/notes/SKILL.md").is_file());
+    assert!(state.join("deleted/1-notes/notes.toml").is_file());
+    assert!(!plane.join("skills/notes").exists());
+    assert!(!plane.join("skills/notes.toml").exists());
 }
 
 /// The entry taken away from where it went, between the rename and the look that proves it:
@@ -377,6 +451,7 @@ fn a_hard_linked_file_is_never_moved() {
         move_skill(
             &plane,
             &plane.join("skills.local/notes"),
+            &plane,
             &plane.join("skills/notes"),
             1,
         )

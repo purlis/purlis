@@ -26,7 +26,16 @@ export function useProfileNames(
       .projectSettings(plane)
       .then((read) => {
         if (gone || read.status !== "ok") return;
-        setNames(profileNamesOf(read.data?.local));
+        const next = profileNamesOf(read.data?.local);
+        // The same names keep the same list: every opening reads them, and a new list redraws
+        // the whole window for nothing.
+        setNames((was) =>
+          was !== undefined &&
+          was.length === next.length &&
+          was.every((name, at) => name === next[at])
+            ? was
+            : next,
+        );
       })
       .catch(() => {
         // No core to ask (a test, a window going away): the rows wait for the next opening.
