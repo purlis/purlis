@@ -216,12 +216,17 @@ pub enum SkillCommand {
         json: bool,
     },
     /// Put a skill back as one version of its history has it, by that version's commit, as one
-    /// commit. Its grant, lifecycle state and owners stay as they are.
+    /// commit. Its grant, lifecycle state and owners stay as they are. A version that would widen
+    /// a chat says so and is asked about first.
     Revert {
         /// The skill's name, as `purlis skill list` prints it.
         name: String,
         /// The version's commit, as `purlis skill history` prints it.
         commit: String,
+        /// Revert without asking, where the version would widen a chat: for a script that read
+        /// the warning itself.
+        #[arg(long)]
+        yes: bool,
         #[command(flatten)]
         at: At,
     },
@@ -746,8 +751,30 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 }
             }
         }
-        SkillCommand::Revert { name, commit, at } => {
-            done(history::revert(&mut cx, &at.level(), &name, &commit))
+        SkillCommand::Revert {
+            name,
+            commit,
+            yes,
+            at,
+        } => {
+            let level = at.level();
+            // The same warning, and the same ask, as the window's confirm (SK-8: purlis still
+            // leaves what widens out when it hands the skill over).
+            match history::revert_widens(root, &level, &name, &commit) {
+                Ok(Some(widens)) => {
+                    voice::warn(&widens);
+                    if !yes && !asked(&format!("Revert {name} to {}?", history::short(&commit))) {
+                        voice::info("Nothing was reverted.");
+                        return Ok(1);
+                    }
+                }
+                Ok(None) => {}
+                Err(why) => {
+                    voice::err(&why);
+                    return Ok(1);
+                }
+            }
+            done(history::revert(&mut cx, &level, &name, &commit))
         }
         SkillCommand::Deprecate {
             name,
