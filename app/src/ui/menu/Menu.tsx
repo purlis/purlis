@@ -24,8 +24,9 @@
  * - **The keyboard is React Aria's**: the arrows move and stop at the ends, Right opens a
  *   submenu, Left and Escape close it, Enter and Space choose, and typing finds a row by its
  *   `textValue`.
- * - **A row pressed has the keyboard** (#3074), whatever pressed it, so a submenu its row opened
- *   stays open when its menu's own hand-on of the keyboard comes after the press.
+ * - **A row a screen reader (or `element.click()`) presses takes the keyboard** (#3074), in a
+ *   menu that takes the keyboard, so a submenu its row opened stays open when its menu's own
+ *   hand-on of the keyboard comes after the press.
  */
 import {
   createContext,
@@ -512,7 +513,7 @@ export function MenuItem<T extends object = object>({
           event.pointerType === "virtual" &&
           !noKeyboard &&
           row instanceof HTMLElement &&
-          !row.contains(document.activeElement)
+          !row.contains(row.ownerDocument.activeElement)
         )
           row.focus({ preventScroll: true });
         onPressStart?.(event);

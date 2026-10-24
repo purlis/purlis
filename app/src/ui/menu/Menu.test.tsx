@@ -228,6 +228,38 @@ describe("a menu held open by its owner", () => {
   });
 });
 
+describe("a menu that takes no keyboard", () => {
+  // A preview the pointer's rest opened (`takesNoKeyboard`): a press like a screen reader's on
+  // one of its rows leaves the keyboard where it was (#3074 takes the keyboard to a pressed row
+  // only in a menu that takes it).
+  function Preview() {
+    const trigger = useRef<HTMLButtonElement>(null);
+    return (
+      <>
+        <button ref={trigger} type="button">
+          Tasks
+        </button>
+        <AnchoredMenu triggerRef={trigger} isOpen onOpenChange={() => {}} autoFocus={false}>
+          <Menu aria-label="Tasks" takesNoKeyboard>
+            <MenuItem id="one" textValue="One" shouldCloseOnSelect={false}>
+              One
+            </MenuItem>
+          </Menu>
+        </AnchoredMenu>
+      </>
+    );
+  }
+
+  it("leaves the keyboard where it was when a row is pressed", async () => {
+    render(<Preview />);
+    const tasks = screen.getByRole("button", { name: "Tasks" });
+    tasks.focus();
+    fireEvent.click(within(screen.getByRole("menu", { name: "Tasks" })).getByRole("menuitem"));
+    await act(() => new Promise((done) => setTimeout(done, 50)));
+    expect(document.activeElement).toBe(tasks);
+  });
+});
+
 describe("a row's shortcut", () => {
   it("is the key registry's for its act, where the registry has one", async () => {
     render(

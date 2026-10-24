@@ -332,7 +332,9 @@ export const ASubmenu: Story = {
 /**
  * **A submenu pressed at once** (#3074): a press that is not the pointer's (a screen reader's,
  * `element.click()`) opens the menu and, before the menu has taken the keyboard, its submenu
- * row. The submenu stays open with the keyboard in it, and its row runs on the first click. The picture is `ASubmenu`'s.
+ * row. The submenu stays open with the keyboard in it, and its row runs on the first click.
+ * A smoke check of that path in a real browser; the regression guard is `Menu.test.tsx`'s. The
+ * picture is `ASubmenu`'s.
  */
 export const ASubmenuPressedAtOnce: Story = {
   render: () => <WithASubmenu />,
