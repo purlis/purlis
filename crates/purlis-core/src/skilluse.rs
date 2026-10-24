@@ -89,7 +89,7 @@ pub fn started(
     // What the chat ran (SK-19): the tree git holds of the copy's folder, or that its folder held
     // changes not committed, so the run is matched to its version by content, not by time.
     if let Some(level) = run.level
-        && let Some(content) = content_of(root, skill_name(skill), level, run.workspace)
+        && let Some(content) = content_of(root, skill_name(skill), level, run.workspace, persona)
     {
         row["tree"] = content.word().into();
     }
@@ -142,12 +142,20 @@ fn skill_name(skill: &str) -> &str {
 }
 
 /// What the copy at `level` of the skill `name` holds, in the plane at `root` (a chat in
-/// `workspace`): `None` for a copy with no folder of the plane's levels a history is kept of (a
-/// persona's, a built-in or a harness skill), and for a plane git does not keep.
-fn content_of(root: &Path, name: &str, level: Level, workspace: Option<&str>) -> Option<Content> {
+/// `workspace`, as `persona`): `None` for a copy with no folder of the plane's levels a history
+/// is kept of (a built-in or a harness skill), and for a plane git does not keep. A persona's
+/// copy has its history as the other levels' do (SK-32, #3124).
+fn content_of(
+    root: &Path,
+    name: &str,
+    level: Level,
+    workspace: Option<&str>,
+    persona: Option<&str>,
+) -> Option<Content> {
     let at = match level.origin {
         purlis_skills::Origin::Project => purlis_skills::Whose::Project,
         purlis_skills::Origin::Workspace => purlis_skills::Whose::Workspace(workspace?.to_owned()),
+        purlis_skills::Origin::Persona => purlis_skills::Whose::Persona(persona?.to_owned()),
         _ => return None,
     };
     let dir = purlis_skills::level_dir(root, &at, level.local)?;

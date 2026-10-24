@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 
 use purlis_core::repocmd::Say;
-use purlis_core::skills::verbs::{self, At, By, Level};
+use purlis_core::skills::verbs::{self, By, Level, Whose};
 use purlis_core::skills::{Grant, Template};
 
 /// A level of the project's, as the studio names one: the project's root, a workspace's or a
@@ -22,6 +22,26 @@ pub enum SkillLevel {
     Project { local: bool },
     Workspace { name: String, local: bool },
     Persona { name: String, local: bool },
+}
+
+/// Whose skills a level is, as the studio names it without saying shared or local: what Share
+/// takes, as a share is always of a local skill into its own level's shared ones.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(tag = "at", rename_all = "kebab-case")]
+pub enum SkillWhose {
+    Project,
+    Workspace { name: String },
+    Persona { name: String },
+}
+
+impl From<&SkillWhose> for Whose {
+    fn from(whose: &SkillWhose) -> Whose {
+        match whose {
+            SkillWhose::Project => Whose::Project,
+            SkillWhose::Workspace { name } => Whose::Workspace(name.clone()),
+            SkillWhose::Persona { name } => Whose::Persona(name.clone()),
+        }
+    }
 }
 
 impl From<&SkillLevel> for Level {
@@ -38,12 +58,12 @@ impl From<&Level> for SkillLevel {
     fn from(level: &Level) -> SkillLevel {
         let local = level.local;
         match &level.at {
-            At::Project => SkillLevel::Project { local },
-            At::Workspace(name) => SkillLevel::Workspace {
+            Whose::Project => SkillLevel::Project { local },
+            Whose::Workspace(name) => SkillLevel::Workspace {
                 name: name.clone(),
                 local,
             },
-            At::Persona(name) => SkillLevel::Persona {
+            Whose::Persona(name) => SkillLevel::Persona {
                 name: name.clone(),
                 local,
             },
@@ -505,7 +525,7 @@ pub(crate) async fn skill_turn(
 }
 
 /// **Shares** a local skill: commits it to the project at its level (#2767), one commit.
-pub(crate) fn share(root: &std::path::Path, at: &At, name: &str) -> Result<(), String> {
+pub(crate) fn share(root: &std::path::Path, at: &Whose, name: &str) -> Result<(), String> {
     heard(root, |cx| verbs::share(cx, at, name)).map(|_| ())
 }
 

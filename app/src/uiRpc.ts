@@ -9412,6 +9412,12 @@ export type SkillVersion = {
 };
 
 /**
+ *  Whose skills a level is, as the studio names it without saying shared or local: what Share
+ *  takes, as a share is always of a local skill into its own level's shared ones.
+ */
+export type SkillWhose = { at: "project" } | { at: "workspace"; name: string } | { at: "persona"; name: string };
+
+/**
  *  The skills a chat started without (SK-5, #2768; SK-8, #2771, decision 41): the ones its
  *  persona names, each as the persona's `skills:` list writes it, and the ones that could not be
  *  loaded. What its tab's Notice says.

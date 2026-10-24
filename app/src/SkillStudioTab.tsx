@@ -37,6 +37,7 @@ import {
   levelOf,
   levelsFor,
   picking,
+  whoseOf,
   sameGrant,
   sameLevel,
 } from "./skillChanges";
@@ -193,7 +194,7 @@ export function SkillStudioTab({
   const share = (skill: StudioSkill, level: SkillLevel) =>
     change("The skill was not shared", () =>
       commands
-        .skillShare(plane, level, skill.name)
+        .skillShare(plane, whoseOf(level), skill.name)
         .then((answer): Answer =>
           answer.status === "ok" ? { status: "ok", data: { notes: [] } } : answer,
         ),

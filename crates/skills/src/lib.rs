@@ -642,6 +642,53 @@ pub fn level_rel(at: &Whose, local: bool) -> Option<String> {
     }
 }
 
+impl Whose {
+    /// **Every kind of level's owner, its name `*`**: what a pattern over every level of every
+    /// plane is spelled from by the one rule ([`level_rel`]), so a level added here is in each
+    /// pattern too.
+    pub fn every_kind() -> [Whose; 3] {
+        [
+            Whose::Project,
+            Whose::Workspace("*".to_owned()),
+            Whose::Persona("*".to_owned()),
+        ]
+    }
+
+    /// The workspace it is, or `None`.
+    pub fn workspace(&self) -> Option<&str> {
+        match self {
+            Whose::Workspace(ws) => Some(ws),
+            Whose::Project | Whose::Persona(_) => None,
+        }
+    }
+
+    /// The persona it is, or `None`.
+    pub fn persona(&self) -> Option<&str> {
+        match self {
+            Whose::Persona(persona) => Some(persona),
+            Whose::Project | Whose::Workspace(_) => None,
+        }
+    }
+}
+
+/// **Every level's local folder, as a glob relative to the plane** (ADR 0099 §1):
+/// `skills.local`, `workspaces/*/skills.local`, `personas/*/skills.local`, by the one rule. What
+/// the plane's `.gitignore` baseline and a save's excludes are spelled from.
+pub fn local_globs() -> Vec<String> {
+    Whose::every_kind()
+        .iter()
+        .filter_map(|whose| level_rel(whose, true))
+        .collect()
+}
+
+/// Whether the plane-relative path `rel` (`/` between its parts) is a level's local folder or
+/// inside one, by the one rule.
+pub fn in_local_level(rel: &str) -> bool {
+    let parts: Vec<&str> = rel.split('/').collect();
+    (1..=parts.len().min(3))
+        .any(|at| level_of_rel(&parts[..at].join("/")).is_some_and(|(_, local)| local))
+}
+
 /// The level whose skills folder `rel` is, as [`level_rel`] spells it: whose it is, and whether
 /// it is local. `None` for any other path.
 pub fn level_of_rel(rel: &str) -> Option<(Whose, bool)> {

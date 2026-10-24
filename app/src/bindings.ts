@@ -1752,10 +1752,10 @@ export const commands = {
 	 */
 	setSkillStudioOn: (on: boolean) => typedError<boolean, string>(__TAURI_INVOKE("set_skill_studio_on", { on })),
 	/**
-	 *  **Share** (#2767): moves the local skill `name` at `level` (the project's root's, a
-	 *  workspace's or a persona's) into that level's `skills/`, committed (#2770), or says why not.
+	 *  **Share** (#2767): moves the local skill `name` of `whose` (the project's root, a workspace
+	 *  or a persona) into that level's `skills/`, committed (#2770), or says why not.
 	 */
-	skillShare: (plane: PlaneId, level: SkillLevel, name: string) => typedError<null, string>(__TAURI_INVOKE("skill_share", { plane, level, name })),
+	skillShare: (plane: PlaneId, whose: SkillWhose, name: string) => typedError<null, string>(__TAURI_INVOKE("skill_share", { plane, whose, name })),
 	/**
 	 *  **Adds a skill to a persona's skills, or takes one out** (SK-5, #2768): Add and Remove in the
 	 *  Skill studio filtered to the persona. `written` is the skill as the studio's row writes it.
@@ -11228,6 +11228,12 @@ export type SkillVersion = {
 	runs: StatsRow,
 	grade: SkillGrade | null,
 };
+
+/**
+ *  Whose skills a level is, as the studio names it without saying shared or local: what Share
+ *  takes, as a share is always of a local skill into its own level's shared ones.
+ */
+export type SkillWhose = { at: "project" } | { at: "workspace"; name: string } | { at: "persona"; name: string };
 
 /**
  *  The skills a chat started without (SK-5, #2768; SK-8, #2771, decision 41): the ones its

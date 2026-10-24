@@ -114,17 +114,13 @@ pub fn draftable(root: &Path, path: &Path) -> Option<SkillFile> {
     {
         return None;
     }
-    if let Some(ws) = level.workspace_name()
+    if let Some(ws) = level.at.workspace()
         && !root.join("workspaces").join(ws).is_dir()
     {
         return None;
     }
-    if let Some(persona) = level.persona_name()
-        && !root
-            .join("personas")
-            .join(persona)
-            .join("persona.md")
-            .is_file()
+    if let Some(persona) = level.at.persona()
+        && !super::holds_skills(root, persona)
     {
         return None;
     }
@@ -588,7 +584,7 @@ fn random_id() -> Result<String, String> {
 /// The folder of the project the throwaway pieces are made in, relative to its root: inside the
 /// project, since a sandboxed chat starts only in a folder of the project, and below
 /// `workspaces/` under a dot-name no workspace takes, so git ignores it with every LOCAL
-/// workspace's files (`/workspaces/*/*`) and no save stages it (`planegit::SAVE_STAGES`).
+/// workspace's files (`/workspaces/*/*`) and no save stages it (`planegit::save_stages`).
 pub const PIECES: [&str; 2] = ["workspaces", ".throwaway"];
 
 /// The folder of the throwaway pieces of the project at `root`, held open, made where it is not
@@ -877,7 +873,7 @@ pub fn alone_on(
 /// starts where `level`'s skills are reached from (the project's root, or its workspace's
 /// folder): one line, which the person ends with what the skill is for.
 pub fn asking(level: &Level) -> String {
-    let dir = match level.persona_name() {
+    let dir = match level.at.persona() {
         // A persona's draft chat starts at the project's root (SK-32, #3048), so it is told the
         // persona's folder in full.
         Some(_) => level.rel().unwrap_or_default(),

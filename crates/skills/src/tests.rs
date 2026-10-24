@@ -1376,3 +1376,37 @@ fn a_lifecycle_word_purlis_does_not_know_leaves_the_skill_working() {
             .contains("none of \"active\", \"deprecated\" or \"archived\"")
     );
 }
+
+#[test]
+fn every_levels_local_folder_is_spelled_by_the_one_rule() {
+    // SK-32 (#3003, #3124): a persona's level is one more, and every pattern follows it.
+    assert_eq!(
+        local_globs(),
+        [
+            "skills.local",
+            "workspaces/*/skills.local",
+            "personas/*/skills.local"
+        ]
+    );
+    assert_eq!(
+        level_of_rel("personas/reviewer/skills.local"),
+        Some((Whose::Persona("reviewer".to_owned()), true))
+    );
+    assert_eq!(level_of_rel("personas/a/b/skills"), None);
+    for inside in [
+        "skills.local",
+        "skills.local/x/SKILL.md",
+        "workspaces/ops/skills.local/x/SKILL.md",
+        "personas/reviewer/skills.local/x/SKILL.md",
+    ] {
+        assert!(in_local_level(inside), "{inside}");
+    }
+    for outside in [
+        "skills/x/SKILL.md",
+        "personas/reviewer/skills/x/SKILL.md",
+        "personas/reviewer/persona.md",
+        "notes/skills.local/x",
+    ] {
+        assert!(!in_local_level(outside), "{outside}");
+    }
+}

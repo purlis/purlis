@@ -83,7 +83,7 @@ fn not_kept(name: &str, why: &str) -> String {
 fn wider_copy(plane: &Path, level: &Level, name: &str) -> Option<Level> {
     let mut wider: Vec<Level> = Vec::new();
     // A workspace's or a persona's level is narrower than the project's (ADR 0099 §3).
-    let narrower = level.at != super::verbs::At::Project;
+    let narrower = level.at != super::verbs::Whose::Project;
     if narrower && level.local {
         wider.push(level.clone().local(false));
     }
@@ -223,7 +223,7 @@ pub fn unused(plane: &Path, now: u64) -> Vec<Unused> {
                 .get(&(
                     skill.name.clone(),
                     copy,
-                    level.workspace_name().map(str::to_owned),
+                    level.at.workspace().map(str::to_owned),
                 ))
                 .copied();
             let since = last_run.or_else(|| made_at(plane, &made, &skill.path));

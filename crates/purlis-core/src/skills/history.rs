@@ -172,7 +172,15 @@ fn count_runs(plane: &Path, level: &Level, name: &str, history: &mut History) {
         .filter(|run| {
             run.is_of(name)
                 && run.copy.as_ref().is_some_and(|one| {
-                    one.level == copy && one.workspace.as_deref() == level.workspace_name()
+                    // A persona's copy goes with it into every workspace: it is its persona's
+                    // runs, wherever they ran (SK-32).
+                    one.level == copy
+                        && match &level.at {
+                            super::verbs::Whose::Persona(persona) => {
+                                run.persona.as_deref() == Some(persona.as_str())
+                            }
+                            _ => one.workspace.as_deref() == level.at.workspace(),
+                        }
                 })
         })
         .collect();

@@ -190,7 +190,7 @@ describe("the Skill studio", () => {
       if (cmd === "skill_share") {
         expect(args).toMatchObject({
           plane: "p",
-          level: { at: "project", local: true },
+          whose: { at: "project" },
           name: "scratch",
         });
         shared = true;

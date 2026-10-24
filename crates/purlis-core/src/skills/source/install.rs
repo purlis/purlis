@@ -165,7 +165,7 @@ pub fn install(
         .iter()
         .map(|folder| verbs::rel(plane, folder))
         .collect();
-    if level.at == verbs::At::Project
+    if level.at == verbs::Whose::Project
         && !level.local
         && let Some(grant) = grant.filter(|g| **g != Grant::Root)
     {

@@ -763,7 +763,7 @@ fn a_personas_own_skill_is_made_edited_and_committed_at_its_level() {
     assert!(
         !Level::every(root)
             .iter()
-            .any(|level| level.persona_name() == Some("auditor")),
+            .any(|level| level.at.persona() == Some("auditor")),
         "a one-file persona keeps no skills"
     );
 }
@@ -1002,11 +1002,48 @@ fn a_personas_local_skill_is_kept_on_this_machine_when_deleted_and_shared_into_i
     );
 
     let shared = did(root, |cx| {
-        share(cx, &At::Persona("reviewer".to_owned()), "notes")
+        share(cx, &Whose::Persona("reviewer".to_owned()), "notes")
     })
     .unwrap();
     assert_eq!(shared, root.join("personas/reviewer/skills/notes"));
     let (subject, paths) = last_commit(root);
     assert!(subject.ends_with("skill share notes"), "{subject}");
     assert_eq!(paths, ["personas/reviewer/skills/notes/SKILL.md"]);
+}
+
+#[test]
+fn a_skill_moved_into_a_personas_local_skills_keeps_loading_and_is_never_committed() {
+    // SK-32 (#3124): the plane's `.gitignore` keeps every level's `skills.local/` on this
+    // machine, a persona's too, so its local skill is read, and no save takes it.
+    let tmp = persona_plane();
+    let root = tmp.path();
+    let ignores = crate::scaffold::skills_local_ignores().join("\n");
+    std::fs::write(
+        root.join(".gitignore"),
+        format!(".charter/\n.purlis/\n{ignores}\n"),
+    )
+    .unwrap();
+    run(root, &["add", "-A"]);
+    run(root, &["commit", "-q", "-m", "ignores"]);
+
+    let moved = did(root, |cx| {
+        move_to(
+            cx,
+            &Level::project(),
+            "deploy",
+            &Level::persona("steward").local(true),
+            None,
+        )
+    })
+    .unwrap();
+
+    assert_eq!(moved, root.join("personas/steward/skills.local/deploy"));
+    assert!(gets_as(root, Some("ops"), "steward").contains(&"deploy".to_owned()));
+    let (_, paths) = last_commit(root);
+    assert!(
+        paths.iter().all(|path| !path.contains("skills.local")),
+        "{paths:?}"
+    );
+    let tree = run(root, &["ls-tree", "-r", "--name-only", "HEAD"]).out;
+    assert!(!tree.contains("skills.local"), "{tree}");
 }

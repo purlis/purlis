@@ -1127,8 +1127,10 @@ key refuses.
     this machine. In the baseline under its own comment, added by `init` when missing, and by
     `reinit` under ``added by `purlis reinit` — the plane root's session records stay on this
     machine``. Deleting the line shares them.
-  - `/skills.local/` and `/workspaces/*/skills.local/` — **purlis only** (ADR 0099 §1, #2874): every
-    level's local skills stay on this machine. In the baseline under its own comment, added by
+  - `/skills.local/`, `/workspaces/*/skills.local/` and `/personas/*/skills.local/` — **purlis
+    only** (ADR 0099 §1, #2874; a persona's, #3124): every level's local skills stay on this
+    machine. The lines are spelled by the one level rule (`purlis_skills::local_globs`), so a
+    level added there gets its line too. In the baseline under its own comment, added by
     `init` when missing, and by `reinit` under ``added by `purlis reinit` — local skills stay on
     this machine``. A save excludes them as well, whatever this file says.
   - `__pycache__/`, `*.py[cod]`, `.venv/`, `.DS_Store` (`charter/commands.py:1107`–`:1112`)
@@ -1439,11 +1441,11 @@ it; a write keeps every other key and comment, and removes the file when nothing
   `purlis_core::profiles::kept_local`), or where the plane is no git repository. A folder git
   would commit, or one git could not answer for, is left out with git's answer and the fix.
 - **Git:** must be ignored; a `skills.local/` git would carry is not read. `purlis init` writes
-  `/skills.local/` and `/workspaces/*/skills.local/` into the plane's `.gitignore`, and
-  `purlis reinit` adds them, under their own header, to a plane made before them
-  (`scaffold::SKILLS_LOCAL_IGNORES`, #2874). **A save never stages one** whatever the
-  `.gitignore` says: its stage and the standing's status both exclude `skills.local/**` and
-  `workspaces/*/skills.local/**` (`planegit::SAVE_STAGES`).
+  `/skills.local/`, `/workspaces/*/skills.local/` and `/personas/*/skills.local/` into the
+  plane's `.gitignore`, and `purlis reinit` adds them, under their own header, to a plane made
+  before them (`scaffold::skills_local_ignores`, #2874, #3124). **A save never stages one**
+  whatever the `.gitignore` says: its stage and the standing's status both exclude every level's
+  `skills.local/**` (`planegit::never_staged`). Both lists are spelled from the one level rule.
 
 ### `skills.lock` — the project's installed skills
 
@@ -1523,8 +1525,8 @@ whole file in one sentence, and nothing installed changes.
   committed.
 - **Read by:** as `skills.lock`.
 - **Git:** must be ignored: `purlis init` writes `/skills.local.lock` into the plane's
-  `.gitignore` and `purlis reinit` adds it (`scaffold::SKILLS_LOCAL_IGNORES`). **A save never
-  stages it** whatever the `.gitignore` says (`planegit::SAVE_STAGES`).
+  `.gitignore` and `purlis reinit` adds it (`scaffold::skills_local_ignores`). **A save never
+  stages it** whatever the `.gitignore` says (`planegit::save_stages`).
 
 ### `$TMPDIR/purlis-skill-source-<random>/` — a fetched skill source
 
@@ -1664,7 +1666,7 @@ Two rules hold for the whole area and are not repeated per file:
   named `purlis-try-<16 hex>` are removed, through the handle of `workspaces/.throwaway/`, and no
   link is followed.
 - **Git:** ignored by `/workspaces/*/*`, and never staged by a save whatever the `.gitignore`
-  says (`planegit::NEVER_STAGED`).
+  says (`planegit::never_staged`).
 - **Encoding details:** exactly `name + "\n"` (`charter/workspace.py:512`). On read the
   value is `.strip()`ed and re-checked with `valid_name`; a `contain.file_refusal` (symlink,
   FIFO, oversized) makes it read as absent (`charter/workspace.py:488`).
@@ -7032,7 +7034,7 @@ rewritten.
   `workspaces/.throwaway/purlis-try-<id>` made new, `0700`, inside the project (a sandboxed chat
   starts only in a folder of the project), which the scratch chat starts in. A dot-name below
   `workspaces/` is no workspace, git ignores it with every LOCAL workspace's files
-  (`/workspaces/*/*`), and a save never stages it (`planegit::SAVE_STAGES`).
+  (`/workspaces/*/*`), and a save never stages it (`planegit::save_stages`).
   A chat started in that folder is armed with the built-in skills and this one skill alone, as if
   `skill-tries/<id>/` were a project of its own (`drafts::tried`).
 - **Status:** **internal**, **experimental** behind the `skill-studio` flag (#2772).

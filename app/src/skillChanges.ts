@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import type { SkillGrant, SkillLevel, StudioLevel, StudioSkill } from "./bindings";
+import type { SkillGrant, SkillLevel, SkillWhose, StudioLevel, StudioSkill } from "./bindings";
 import type { StudioScope } from "./skillStudio";
 
 /**
@@ -38,12 +38,17 @@ export function levelOf(skill: StudioSkill, scope: StudioScope): SkillLevel | nu
  *  or the persona the studio shows, or the project's skills at its root. A persona the project
  *  lists no level for (one made as one file keeps no skills) starts at the project's. */
 export function levelFrom(scope: StudioScope, levels: readonly StudioLevel[]): SkillLevel {
-  const from: SkillLevel =
-    scope.at === "root"
-      ? PROJECT
-      : scope.at === "workspace"
-        ? { at: "workspace", name: scope.name, local: false }
-        : { at: "persona", name: scope.name, local: false };
+  let from: SkillLevel;
+  switch (scope.at) {
+    case "root":
+      return PROJECT;
+    case "workspace":
+      from = { at: "workspace", name: scope.name, local: false };
+      break;
+    case "persona":
+      from = { at: "persona", name: scope.name, local: false };
+      break;
+  }
   const listed = from.at !== "persona" || levels.some((one) => sameLevel(one.level, from));
   return listed ? from : PROJECT;
 }
@@ -66,13 +71,27 @@ export function sameLevel(a: SkillLevel, b: SkillLevel): boolean {
 
 /** A level's key among the studio's drop targets: `project`, `ops-local`, `persona-reviewer`. */
 export function levelKey(level: SkillLevel): string {
-  const at =
-    level.at === "project"
-      ? "project"
-      : level.at === "workspace"
-        ? level.name
-        : `persona-${level.name}`;
-  return `${at}${level.local ? "-local" : ""}`;
+  const local = level.local ? "-local" : "";
+  switch (level.at) {
+    case "project":
+      return `project${local}`;
+    case "workspace":
+      return `${level.name}${local}`;
+    case "persona":
+      return `persona-${level.name}${local}`;
+  }
+}
+
+/** Whose skills `level` is, without shared or local: what Share takes. */
+export function whoseOf(level: SkillLevel): SkillWhose {
+  switch (level.at) {
+    case "project":
+      return { at: "project" };
+    case "workspace":
+      return { at: "workspace", name: level.name };
+    case "persona":
+      return { at: "persona", name: level.name };
+  }
 }
 
 /** A level's words, as the core gives them in `levels`. */

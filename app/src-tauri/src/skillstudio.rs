@@ -804,14 +804,14 @@ pub(crate) async fn skill_studio(
     .await
 }
 
-/// **Share** (#2767): moves the local skill `name` at `level` (the project's root's, a
-/// workspace's or a persona's) into that level's `skills/`, committed (#2770), or says why not.
+/// **Share** (#2767): moves the local skill `name` of `whose` (the project's root, a workspace
+/// or a persona) into that level's `skills/`, committed (#2770), or says why not.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_share(
     planes: tauri::State<'_, crate::planes::Planes>,
     plane: crate::planes::PlaneId,
-    level: crate::skillchange::SkillLevel,
+    whose: crate::skillchange::SkillWhose,
     name: String,
 ) -> Result<(), String> {
     let held = planes.held(&plane)?;
@@ -819,8 +819,7 @@ pub(crate) async fn skill_share(
         if !purlis_core::skills::studio_on_here() {
             return Err("The Skill studio is not turned on on this machine.".to_owned());
         }
-        let level: purlis_core::skills::verbs::Level = (&level).into();
-        crate::skillchange::share(held.root(), &level.at, &name)
+        crate::skillchange::share(held.root(), &(&whose).into(), &name)
     })
     .await
 }

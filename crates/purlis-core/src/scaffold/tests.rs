@@ -1886,17 +1886,18 @@ fn the_first_clone_is_named_after_origin_unless_origin_ends_in_no_name() {
 /// plane root's and every workspace's `skills.local/`.
 #[test]
 fn a_fresh_plane_keeps_every_levels_local_skills_on_this_machine() {
-    for line in SKILLS_LOCAL_IGNORES {
+    for line in skills_local_ignores() {
         assert!(
             GITIGNORE_BASELINE.lines().any(|one| one == line),
             "{line}: {GITIGNORE_BASELINE}"
         );
     }
     assert_eq!(
-        SKILLS_LOCAL_IGNORES,
+        skills_local_ignores(),
         [
             "/skills.local/",
             "/workspaces/*/skills.local/",
+            "/personas/*/skills.local/",
             "/skills.local.lock"
         ]
     );
@@ -1908,7 +1909,7 @@ fn reinit_keeps_every_levels_local_skills_on_this_machine_and_adds_the_lines_onc
     let (_dir, root) = empty_plane();
     init(&at(&root, false), &plain());
     let mut old = GITIGNORE_BASELINE.to_owned();
-    for line in SKILLS_LOCAL_IGNORES {
+    for line in skills_local_ignores() {
         old = old.replace(&format!("{line}\n"), "");
     }
     std::fs::write(root.join(".gitignore"), &old).expect("an old .gitignore");
@@ -1920,7 +1921,8 @@ fn reinit_keeps_every_levels_local_skills_on_this_machine_and_adds_the_lines_onc
     assert!(
         text.ends_with(
             "\n\n# added by `charter reinit` — local skills stay on this machine\n\
-             /skills.local/\n/workspaces/*/skills.local/\n/skills.local.lock\n"
+             /skills.local/\n/workspaces/*/skills.local/\n/personas/*/skills.local/\n\
+             /skills.local.lock\n"
         ),
         "{text}"
     );
