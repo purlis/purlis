@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { lazy, Suspense, useEffect, useState, type DragEvent } from "react";
-import { LoaderCircle, Plus, Sparkles } from "lucide-react";
+import { LoaderCircle, MessageSquarePlus, Plus, Sparkles } from "lucide-react";
 import {
   commands,
   type DeletedSkill,
@@ -23,6 +23,8 @@ import { Button, ButtonRow } from "./ui/button/Button";
 import { Notice } from "./Notice";
 import { SkillCompatBadges } from "./SkillCompatBadges";
 import { SkillRowActions } from "./SkillRowActions";
+import { SkillDrafts } from "./SkillDrafts";
+import { askSkillChat, useSkillDrafts } from "./skillDraftAsks";
 import { SkillSources } from "./SkillSources";
 import { Select } from "./primitives/Select";
 import { Field, SettingRow } from "./settings/components";
@@ -111,6 +113,7 @@ export function SkillStudioTab({
   const [switched, setSwitched] = useState(0);
   const { workspace, persona } = whoseChats(scope);
   const on = studio?.on === true;
+  const drafts = useSkillDrafts(plane, changed + done);
   useEffect(() => {
     let live = true;
     void commands.skillStudio(plane, workspace, persona).then((answer) => {
@@ -273,6 +276,12 @@ export function SkillStudioTab({
       >
         New skill
       </Button>
+      <Button
+        icon={<MessageSquarePlus aria-hidden="true" />}
+        onPress={() => askSkillChat({ plane, kind: "draft", level: levelFrom(scope) })}
+      >
+        Ask a chat to draft a skill
+      </Button>
     </div>
   );
   const levels = studio.levels;
@@ -303,6 +312,27 @@ export function SkillStudioTab({
       onCancel={() => setDoing(undefined)}
       change={change}
       restoreOffered={restoreOffered}
+    />
+  );
+  /** A chat's drafts (SK-9, #2772): Accept is one commit, Reject deletes the draft. */
+  const drafted = (
+    <SkillDrafts
+      plane={plane}
+      drafts={drafts}
+      levels={studio.levels}
+      busy={busy}
+      onAccept={(draft) =>
+        change("The draft was not accepted", () => commands.skillDraftAccept(plane, draft.id))
+      }
+      onReject={(draft) =>
+        change("The draft was not rejected", () =>
+          commands
+            .skillDraftReject(plane, draft.id)
+            .then((answer): Answer =>
+              answer.status === "ok" ? { status: "ok", data: { notes: [] } } : answer,
+            ),
+        )
+      }
     />
   );
   const restorable = deleted.length > 0 && (
@@ -342,6 +372,7 @@ export function SkillStudioTab({
         {picker}
         {notice}
         {panel}
+        {drafted}
         {doing === undefined && (
           <EmptyState
             headline="This project has no skills yet"
@@ -388,6 +419,7 @@ export function SkillStudioTab({
       </p>
       {notice}
       {panel}
+      {drafted}
       <div
         className="skill-levels"
         role="group"
@@ -511,6 +543,24 @@ export function SkillStudioTab({
                         )}
                       </span>
                     ))}
+                  {typeof skill.accept === "string" && (
+                    <>
+                      {" "}
+                      <Button
+                        size="sm"
+                        isDisabled={busy}
+                        onPress={() => {
+                          const folder = skill.accept;
+                          if (typeof folder === "string")
+                            change("The folder was not accepted", () =>
+                              commands.skillLevelAccept(plane, folder),
+                            );
+                        }}
+                      >
+                        Accept its folder
+                      </Button>
+                    </>
+                  )}
                   {skill.not_granted !== null && (
                     <span className="honest" data-testid={`not-granted-${skill.name}`}>
                       {" "}

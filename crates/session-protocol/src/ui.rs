@@ -610,6 +610,18 @@ pub const WINDOW_ONLY: &[&str] = &[
     "skill_restore",
     "skill_grant",
     "skill_turn",
+    // A chat's draft skills read, accepted or rejected, and a chat opened to draft one or to try
+    // one (SK-9, #2772): a draft is what a chat wrote, read by the person in their window as a
+    // proposed change is; an accept is one commit to the project, and a chat starts a program as
+    // the person. The person's own press in their window, as every skill change is.
+    "skill_drafts",
+    "skill_draft_accept",
+    "skill_draft_reject",
+    "skill_draft_chat",
+    "skill_draft_try",
+    // Accepting a workspace or persona folder a chat could have made (SK-9): its skills then
+    // reach chats, so only the person's own press in their window does it.
+    "skill_level_accept",
     // Skill sources (#2773): each reaches a git repository the person named, a private one with
     // a credential read from a vault, and an install or an update is one commit to the project.
     // The person's own press in their window, never a link's.

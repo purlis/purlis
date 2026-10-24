@@ -788,7 +788,9 @@ function theProfilesProgram(program: string): string {
     `    [ -n "$SEEN" ] && printf '%s' "$2" > "$SEEN/plugin-$CHARTER_CHAT"`,
     "  fi",
     '  if [ "$1" = "--settings" ]; then',
-    `    [ -n "$SEEN" ] && printf '%s' "$2" > "$SEEN/settings-$CHARTER_CHAT"`,
+    // Claude Code reads `--settings` as JSON or as a file of it; purlis hands a file where the
+    // JSON is too long for one word of a command line (SK-9).
+    `    if [ -n "$SEEN" ] && [ -f "$2" ]; then cat "$2" > "$SEEN/settings-$CHARTER_CHAT"; elif [ -n "$SEEN" ]; then printf '%s' "$2" > "$SEEN/settings-$CHARTER_CHAT"; fi`,
     "  fi",
     "  shift",
     "done",

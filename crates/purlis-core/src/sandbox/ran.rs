@@ -45,13 +45,20 @@ pub fn applied_to(program: &OsStr, args: &[OsString], confined: bool, os: Os) ->
 }
 
 /// Whether `args` start Claude Code with its own sandbox on: the settings after `--settings`
-/// turn it on.
+/// turn it on, as JSON, or in the chat's own settings file purlis wrote where they were too long
+/// for one word (`hoststart::settings_in_a_file`).
 fn claude_codes_own_is_on(args: &[OsString]) -> bool {
     args.iter()
         .position(|arg| arg == "--settings")
         .and_then(|flag| args.get(flag + 1))
         .and_then(|settings| settings.to_str())
-        .and_then(|settings| serde_json::from_str::<serde_json::Value>(settings).ok())
+        .and_then(|settings| {
+            serde_json::from_str::<serde_json::Value>(settings)
+                .ok()
+                .or_else(|| {
+                    crate::hoststart::settings_from_its_file(std::path::Path::new(settings))
+                })
+        })
         .is_some_and(|settings| settings.pointer("/sandbox/enabled") == Some(&true.into()))
 }
 

@@ -279,7 +279,7 @@ pub(crate) fn default_profile(root: &Path, outcome: &str) -> Result<(String, Str
 /// a prompt typed into it, or why it cannot, in a sentence: the line its capability card
 /// (`card`) says for it (HP-19, ADR 0072 §3). One answer for the menu's rows and for the start
 /// itself.
-fn when_typed(
+pub(crate) fn when_typed(
     profile: &str,
     declared: Option<&purlis_core::harness_declaration::Declaration>,
     card: Option<&purlis_core::harness_card::Card>,
