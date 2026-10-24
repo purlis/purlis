@@ -126,7 +126,8 @@ pub enum Mode {
     /// A secret — a vault file. 0600 before a byte lands, or nothing is written at all: the
     /// error is a [`NotPrivate`] when the filesystem will not hold the mode. (Unix: on
     /// Windows there is no mode to set or read back, and the directory's ACL decides.) A read-only file
-    /// is refused, as the in-place write this replaces refused it.
+    /// is refused, as the in-place write this replaces refused it, and so is a regular file
+    /// with a second name: the rename would leave the old bytes under that name.
     Secret,
 }
 
@@ -244,6 +245,17 @@ fn replace_through(
             format!("{} is read-only", path.display()),
         ));
     }
+    // A secret with a second name would keep its old bytes under that name once the rename
+    // gives this one a new inode, where nothing that writes the secret can see them.
+    if mode == Mode::Secret && has_a_second_name(path) {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!(
+                "{} has a second name, so purlis does not rewrite it in place",
+                path.display()
+            ),
+        ));
+    }
     let wanted = mode.permissions(now);
     let result = (|| {
         let mut out = create_temp(root, temp, wanted.as_ref().is_some_and(owner_only))?;
@@ -287,6 +299,21 @@ fn replace_through(
         let _ = d.sync_all();
     }
     Ok(())
+}
+
+/// Whether `path` is a regular file that has more than one name. Asked without following a
+/// link; a path that is missing, or is not a regular file, has no second name.
+fn has_a_second_name(path: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        std::fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_file() && m.nlink() > 1)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+        false
+    }
 }
 
 /// `EPERM`, the errno a sandbox answers a write it refuses with. A file's own mode answers
@@ -633,6 +660,68 @@ mod tests {
 
         assert!(replace(dir.path(), &target, b"x", Mode::Kept).is_err());
         assert_eq!(std::fs::read_to_string(&victim).unwrap(), "mine");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_secret_with_a_second_name_is_refused_and_both_names_keep_their_bytes() {
+        use std::os::unix::fs::MetadataExt;
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("app.json");
+        std::fs::write(&target, "old\n").unwrap();
+        let second = dir.path().join("second.json");
+        std::fs::hard_link(&target, &second).unwrap();
+        let inode = std::fs::metadata(&target).unwrap().ino();
+
+        let err = replace(dir.path(), &target, b"new\n", Mode::Secret).unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            format!(
+                "{} has a second name, so purlis does not rewrite it in place",
+                target.display()
+            )
+        );
+        assert_eq!(std::fs::read(&target).unwrap(), b"old\n");
+        assert_eq!(std::fs::read(&second).unwrap(), b"old\n");
+        assert_eq!(std::fs::metadata(&target).unwrap().ino(), inode);
+        assert_eq!(std::fs::metadata(&target).unwrap().nlink(), 2);
+        assert_eq!(
+            std::fs::read_dir(dir.path()).unwrap().count(),
+            2,
+            "no temp left"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_secret_with_one_name_is_rewritten_as_before() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("app.json");
+        std::fs::write(&target, "old\n").unwrap();
+
+        replace(dir.path(), &target, b"new\n", Mode::Secret).unwrap();
+
+        assert_eq!(std::fs::read(&target).unwrap(), b"new\n");
+        let mode = std::fs::metadata(&target).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_plane_file_with_a_second_name_is_rewritten_as_before() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("charter.toml");
+        std::fs::write(&target, "old\n").unwrap();
+        let second = dir.path().join("second.toml");
+        std::fs::hard_link(&target, &second).unwrap();
+
+        replace(dir.path(), &target, b"new\n", Mode::Kept).unwrap();
+
+        assert_eq!(std::fs::read(&target).unwrap(), b"new\n");
+        assert_eq!(std::fs::read(&second).unwrap(), b"old\n");
     }
 
     #[cfg(unix)]
