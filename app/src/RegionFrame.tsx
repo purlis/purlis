@@ -28,6 +28,7 @@ import {
   openView,
   placeOf,
   shownIn,
+  SIDES,
   sizeForgotten,
   slotLength,
   SLOT_IDS,
@@ -48,6 +49,7 @@ import { isPanelView, type ViewPlace } from "./sideViews";
 import { useArrived } from "./lib/arrived";
 import { HalfActions } from "./halfHead";
 import { lastUsed, narrowed, narrowPicked, useNarrow } from "./narrowPanel";
+import { useSidesOfTheFront } from "./railRoom";
 import { cycleOf, f6Of, stepped, STOPS, type Stop } from "./regionCycle";
 import { moveAlong, sequenceIn } from "./tabSequence";
 import { inADialog } from "./paneKeyboard";
@@ -155,6 +157,8 @@ export function RegionFrame({
   const now = drawnNow(kept, present);
   const arrangement = narrow ? narrowed(now, last) : now;
   const slots = inSlots(arrangement);
+  // The sidebars drawn, which the project rail makes room for (`railRoom.ts`, #3077).
+  useSidesOfTheFront(SIDES.filter((side) => shownIn(slots[side]).length > 0).length);
   const base = useId();
   const ids = {
     panelOf: (view: ViewId) => `${base}view-${view}`,

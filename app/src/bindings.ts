@@ -1752,10 +1752,10 @@ export const commands = {
 	 */
 	setSkillStudioOn: (on: boolean) => typedError<boolean, string>(__TAURI_INVOKE("set_skill_studio_on", { on })),
 	/**
-	 *  **Share** (#2767): moves the local skill `name` of the project's root (`workspace` `None`) or
-	 *  of `workspace` into that level's `skills/`, committed (#2770), or says why not.
+	 *  **Share** (#2767): moves the local skill `name` of `whose` (the project's root, a workspace
+	 *  or a persona) into that level's `skills/`, committed (#2770), or says why not.
 	 */
-	skillShare: (plane: PlaneId, workspace: string | null, name: string) => typedError<null, string>(__TAURI_INVOKE("skill_share", { plane, workspace, name })),
+	skillShare: (plane: PlaneId, whose: SkillWhose, name: string) => typedError<null, string>(__TAURI_INVOKE("skill_share", { plane, whose, name })),
 	/**
 	 *  **Adds a skill to a persona's skills, or takes one out** (SK-5, #2768): Add and Remove in the
 	 *  Skill studio filtered to the persona. `written` is the skill as the studio's row writes it.
@@ -11110,13 +11110,10 @@ export type SkillGrant =
 { to: "only"; workspaces: string[] };
 
 /**
- *  A level of the project's, as the studio names one: the project's root (`workspace` null) or a
- *  workspace's, shared or kept on this machine.
+ *  A level of the project's, as the studio names one: the project's root, a workspace's or a
+ *  persona's (SK-32, #3003), shared or kept on this machine (`local`).
  */
-export type SkillLevel = {
-	workspace: string | null,
-	local: boolean,
-};
+export type SkillLevel = { at: "project"; local: boolean } | { at: "workspace"; name: string; local: boolean } | { at: "persona"; name: string; local: boolean };
 
 /**  A skill's lifecycle state, as its tab shows and sets it. */
 export type SkillLifecycle = 
@@ -11224,6 +11221,8 @@ export type SkillUsers = {
 	/**  Whether chats at the project's root get it. */
 	root: boolean,
 	workspaces: string[],
+	/**  The persona whose own skill it is: its chats get it in every workspace. */
+	persona: string | null,
 	personas: string[],
 	skills: string[],
 };
@@ -11240,6 +11239,12 @@ export type SkillVersion = {
 	runs: StatsRow,
 	grade: SkillGrade | null,
 };
+
+/**
+ *  Whose skills a level is, as the studio names it without saying shared or local: what Share
+ *  takes, as a share is always of a local skill into its own level's shared ones.
+ */
+export type SkillWhose = { at: "project" } | { at: "workspace"; name: string } | { at: "persona"; name: string };
 
 /**
  *  The skills a chat started without (SK-5, #2768; SK-8, #2771, decision 41): the ones its

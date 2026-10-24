@@ -1137,7 +1137,9 @@ has it; nothing reads the key after that.
 - **`rail`** is whether the project rail hides itself (#2915): `"auto"` while it does, and
   left out while it is always shown, the default. Any other value is the default, and the Inbox
   says so. The rail's own last button and the title bar's show button write it
-  (`app/src/railMode.ts`); the first frame draws the rail as it says.
+  (`app/src/railMode.ts`); the first frame draws the rail as it says. Where the rail would
+  crowd the work, the window hides it over a `rail` left out (#3077, `app/src/railRoom.ts`), and
+  that hide is never written.
 - **`dismissed`** is the Notices you dismissed (NO-2, V91j), per project by its path, each
   by its cause. A Notice stays hidden while its cause is kept here, and the window lets the
   cause go once the project answers without it, so the Notice shows again if the cause comes

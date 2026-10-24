@@ -1127,8 +1127,10 @@ key refuses.
     this machine. In the baseline under its own comment, added by `init` when missing, and by
     `reinit` under ``added by `purlis reinit` — the plane root's session records stay on this
     machine``. Deleting the line shares them.
-  - `/skills.local/` and `/workspaces/*/skills.local/` — **purlis only** (ADR 0099 §1, #2874): every
-    level's local skills stay on this machine. In the baseline under its own comment, added by
+  - `/skills.local/`, `/workspaces/*/skills.local/` and `/personas/*/skills.local/` — **purlis
+    only** (ADR 0099 §1, #2874; a persona's, #3124): every level's local skills stay on this
+    machine. The lines are spelled by the one level rule (`purlis_skills::local_globs`), so a
+    level added there gets its line too. In the baseline under its own comment, added by
     `init` when missing, and by `reinit` under ``added by `purlis reinit` — local skills stay on
     this machine``. A save excludes them as well, whatever this file says.
   - `__pycache__/`, `*.py[cod]`, `.venv/`, `.DS_Store` (`charter/commands.py:1107`–`:1112`)
@@ -1439,11 +1441,11 @@ it; a write keeps every other key and comment, and removes the file when nothing
   `purlis_core::profiles::kept_local`), or where the plane is no git repository. A folder git
   would commit, or one git could not answer for, is left out with git's answer and the fix.
 - **Git:** must be ignored; a `skills.local/` git would carry is not read. `purlis init` writes
-  `/skills.local/` and `/workspaces/*/skills.local/` into the plane's `.gitignore`, and
-  `purlis reinit` adds them, under their own header, to a plane made before them
-  (`scaffold::SKILLS_LOCAL_IGNORES`, #2874). **A save never stages one** whatever the
-  `.gitignore` says: its stage and the standing's status both exclude `skills.local/**` and
-  `workspaces/*/skills.local/**` (`planegit::SAVE_STAGES`).
+  `/skills.local/`, `/workspaces/*/skills.local/` and `/personas/*/skills.local/` into the
+  plane's `.gitignore`, and `purlis reinit` adds them, under their own header, to a plane made
+  before them (`scaffold::skills_local_ignores`, #2874, #3124). **A save never stages one**
+  whatever the `.gitignore` says: its stage and the standing's status both exclude every level's
+  `skills.local/**` (`planegit::never_staged`). Both lists are spelled from the one level rule.
 
 ### `skills.lock` — the project's installed skills
 
@@ -1523,8 +1525,8 @@ whole file in one sentence, and nothing installed changes.
   committed.
 - **Read by:** as `skills.lock`.
 - **Git:** must be ignored: `purlis init` writes `/skills.local.lock` into the plane's
-  `.gitignore` and `purlis reinit` adds it (`scaffold::SKILLS_LOCAL_IGNORES`). **A save never
-  stages it** whatever the `.gitignore` says (`planegit::SAVE_STAGES`).
+  `.gitignore` and `purlis reinit` adds it (`scaffold::skills_local_ignores`). **A save never
+  stages it** whatever the `.gitignore` says (`planegit::save_stages`).
 
 ### `$TMPDIR/purlis-skill-source-<random>/` — a fetched skill source
 
@@ -1553,7 +1555,14 @@ whole file in one sentence, and nothing installed changes.
   On a same-name tie the narrowest copy wins: persona over workspace over project, and local
   over shared at one level. The copy left out says which copy hid it, and the studio lists both.
 - **Tier:** Plane when LIVE, Clone state when LOCAL — a workspace's, as its other files are; a persona's is committed with the persona, in the Plane tier
-- **Written by:** the person, Share (as at the plane root), and the Skill studio from #2770.
+- **Written by:** the person, Share (as at the plane root), and the Skill studio's and `purlis
+  skill`'s new, edit, rename, move, delete and restore, at a workspace's level from #2770 and at a
+  persona's from #3003 (`-p <persona>`), each one commit as at the plane root. Only a persona with
+  a folder of its own has a level: one made as one `personas/<name>.md` file is refused. A move of
+  a persona's own skill into the project's `skills/` also adds its name to that persona's
+  `skills:` list, which brings it into every workspace, and a move into a persona's `skills/`
+  takes its name out of that persona's list; that persona definition is in the move's commit. A
+  chat's write to a persona's skill becomes a [draft skill](#skill-draftsid) (#3048).
 - **Read by:** `purlis_skills::skill_set`: a workspace's `skills/` and `skills.local/`, for a
   chat in that workspace and for the studio filtered to it. Its `skills.local/` is read under
   the same git rule as the plane root's. A persona's `skills/` and `skills.local/`, for every
@@ -1657,7 +1666,7 @@ Two rules hold for the whole area and are not repeated per file:
   named `purlis-try-<16 hex>` are removed, through the handle of `workspaces/.throwaway/`, and no
   link is followed.
 - **Git:** ignored by `/workspaces/*/*`, and never staged by a save whatever the `.gitignore`
-  says (`planegit::NEVER_STAGED`).
+  says (`planegit::never_staged`).
 - **Encoding details:** exactly `name + "\n"` (`charter/workspace.py:512`). On read the
   value is `.strip()`ed and re-checked with `valid_name`; a `contain.file_refusal` (symlink,
   FIFO, oversized) makes it read as absent (`charter/workspace.py:488`).
@@ -6983,7 +6992,7 @@ rewritten.
   track (a local skill, or one in a workspace that is not LIVE), or a committed one in a project
   that could not commit it then (no save mode yet, saving off, or something else staged). It
   holds the skill's folder as it was, the `<folder>.toml` beside it where there was one, and `from`: one line naming the level it came from, relative to the
-  plane (`skills.local`, `workspaces/ops/skills`). `<stamp>` is when it was deleted, in
+  plane (`skills.local`, `workspaces/ops/skills`, `personas/reviewer/skills.local`). `<stamp>` is when it was deleted, in
   milliseconds since the epoch. Folders are `0700` and `from` is `0600`.
 - **Status:** **internal**, **experimental** behind the `skill-studio` flag (#2770).
 - **Tier:** Clone state — this machine's, as the skill was.
@@ -7001,7 +7010,7 @@ rewritten.
   for the person to try, accept or reject in the Skill studio. `<id>` is sixteen hex characters
   of a SHA-256 over the level's folder and the skill's folder name, so a skill has one draft and a
   second write adds to it. It holds `draft.json` (`level`: the level's folder relative to the
-  plane, `skills` or `workspaces/ops/skills.local`; `folder`: the skill's folder name; `chat`: the
+  plane, `skills`, `workspaces/ops/skills.local` or `personas/reviewer/skills`; `folder`: the skill's folder name; `chat`: the
   number of the chat that wrote it last; `bases`: each file the draft changed, below the skill's
   folder, with the SHA-256 of what the project held there when the draft first changed it, `null`
   for nothing) and `files/`, each drafted file at its path below the skill's folder. Folders are
@@ -7025,7 +7034,7 @@ rewritten.
   `workspaces/.throwaway/purlis-try-<id>` made new, `0700`, inside the project (a sandboxed chat
   starts only in a folder of the project), which the scratch chat starts in. A dot-name below
   `workspaces/` is no workspace, git ignores it with every LOCAL workspace's files
-  (`/workspaces/*/*`), and a save never stages it (`planegit::SAVE_STAGES`).
+  (`/workspaces/*/*`), and a save never stages it (`planegit::save_stages`).
   A chat started in that folder is armed with the built-in skills and this one skill alone, as if
   `skill-tries/<id>/` were a project of its own (`drafts::tried`).
 - **Status:** **internal**, **experimental** behind the `skill-studio` flag (#2772).

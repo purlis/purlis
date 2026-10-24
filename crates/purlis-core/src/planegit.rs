@@ -1362,7 +1362,7 @@ pub(crate) fn changed_paths(root: &Path) -> Vec<String> {
 
 /// [`changed_paths`], and whether any of them is a file git tracks (any entry but `??`).
 fn status_of(root: &Path) -> (Vec<String>, bool) {
-    // What a save stages ([`SAVE_STAGES`]): never what is [`NEVER_STAGED`].
+    // What a save stages ([`save_stages`]): never what is [`never_staged`].
     let mut args = vec![
         "--no-optional-locks",
         "status",
@@ -1372,7 +1372,8 @@ fn status_of(root: &Path) -> (Vec<String>, bool) {
         "--",
         ".",
     ];
-    args.extend(NEVER_STAGED);
+    let excluded = never_staged();
+    args.extend(excluded.iter().map(String::as_str));
     let Ok(run) = git::run(
         root,
         // `--no-optional-locks`, as `profiles.rs` and `guest.rs` ask: a plain `status`
@@ -2084,29 +2085,31 @@ const WHOLE_TREE_PATHSPECS: [&str; 4] = [".", "./", ":/", ":/:"];
 /// operator's mid-edit `charter.toml`.
 const WHOLE_TREE_FLAGS: [&str; 5] = ["-A", "--all", "--no-ignore-removal", "-u", "--update"];
 
-/// **What a save never stages** ([`SAVE_STAGES`]): a level's local skills (ADR 0099 §1, #2767)
+/// **What a save never stages** ([`save_stages`]): every level's local skills (ADR 0099 §1,
+/// #2767; a persona's, #3124), spelled by the one level rule ([`purlis_skills::local_globs`]),
 /// and the lockfile of the skills installed there (ADR 0100 §2, #2773), whatever the plane's
 /// `.gitignore` says, since `skills.local/` is this machine's own and a plane whose `.gitignore`
 /// lost its line would otherwise commit it to the team; and a Try it's throwaway pieces (#2772),
 /// which last as long as their chats.
-pub const NEVER_STAGED: [&str; 4] = [
-    ":(exclude,glob)skills.local/**",
-    ":(exclude,glob)workspaces/*/skills.local/**",
-    ":(exclude,literal)skills.local.lock",
-    ":(exclude,glob)workspaces/.throwaway/**",
-];
+pub fn never_staged() -> Vec<String> {
+    purlis_skills::local_globs()
+        .iter()
+        .map(|dir| format!(":(exclude,glob){dir}/**"))
+        .chain([
+            ":(exclude,literal)skills.local.lock".to_owned(),
+            ":(exclude,glob)workspaces/.throwaway/**".to_owned(),
+        ])
+        .collect()
+}
 
-/// **What a plane save stages**: the whole tree, but what is [`NEVER_STAGED`].
-pub const SAVE_STAGES: [&str; 8] = [
-    "add",
-    "-A",
-    "--",
-    ".",
-    NEVER_STAGED[0],
-    NEVER_STAGED[1],
-    NEVER_STAGED[2],
-    NEVER_STAGED[3],
-];
+/// **What a plane save stages**: the whole tree, but what is [`never_staged`].
+pub fn save_stages() -> Vec<String> {
+    ["add", "-A", "--", "."]
+        .into_iter()
+        .map(str::to_owned)
+        .chain(never_staged())
+        .collect()
+}
 
 /// Would `add_cmd` stage EVERYTHING under the root it is run in?
 ///
@@ -2596,7 +2599,9 @@ pub fn save_as(request: &Request, trigger: Trigger, say: Sink) -> u8 {
 
 /// [`save_as`], for a caller that already holds the plane's [`Claim`].
 pub fn save_claimed(request: &Request, trigger: Trigger, claim: &Claim, say: Sink) -> u8 {
-    save_staging(request, trigger, claim, &SAVE_STAGES, say)
+    let stages = save_stages();
+    let stages: Vec<&str> = stages.iter().map(String::as_str).collect();
+    save_staging(request, trigger, claim, &stages, say)
 }
 
 /// What a save of exactly some paths says when something else is staged already.
@@ -2642,32 +2647,32 @@ pub fn save_paths(request: &Request, trigger: Trigger, paths: &[String], say: Si
     // untracked), so a new file a skill change names would miss its commit. A path inside what
     // the excludes keep out is never named ([`kept_out`]), and the excludes are passed only where
     // a named folder could hold it.
+    let excluded = never_staged();
     if named.iter().any(|path| could_hold_kept_out(root, path)) {
-        add.extend(&NEVER_STAGED);
+        add.extend(excluded.iter().map(String::as_str));
     }
     save_staging(request, trigger, &claim, &add, say)
 }
 
-/// Whether `path` (plane-relative) is inside what a save never stages ([`NEVER_STAGED`]): a
-/// level's `skills.local/`, the installed skills' local lockfile, or a throwaway piece.
+/// Whether `path` (plane-relative) is inside what a save never stages ([`never_staged`]): a
+/// level's `skills.local/` by the one level rule, the installed skills' local lockfile, or a
+/// throwaway piece.
 fn kept_out(path: &str) -> bool {
     let parts: Vec<&str> = path.split('/').collect();
-    matches!(
-        parts.as_slice(),
-        ["skills.local", ..]
-            | ["skills.local.lock"]
-            | ["workspaces", ".throwaway", ..]
-            | ["workspaces", _, "skills.local", ..]
-    )
+    purlis_skills::in_local_level(path)
+        || matches!(
+            parts.as_slice(),
+            ["skills.local.lock"] | ["workspaces", ".throwaway", ..]
+        )
 }
 
 /// Whether `path` (plane-relative) is a folder that could hold what a save never stages: the
-/// plane's root, `workspaces/` or one workspace's folder.
+/// plane's root, `workspaces/` or `personas/`, or one workspace's or persona's folder.
 fn could_hold_kept_out(root: &Path, path: &str) -> bool {
     let parts: Vec<&str> = path.split('/').filter(|part| !part.is_empty()).collect();
     matches!(
         parts.as_slice(),
-        [] | ["."] | ["workspaces"] | ["workspaces", _]
+        [] | ["."] | ["workspaces" | "personas"] | ["workspaces" | "personas", _]
     ) && root.join(path).is_dir()
 }
 

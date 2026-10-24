@@ -24,7 +24,7 @@ afterEach(() => {
 const draft = (name: string, over: Record<string, unknown> = {}) => ({
   id: `${name}-id`,
   name,
-  level: { workspace: null, local: false },
+  level: { at: "project", local: false },
   chat: 4,
   new: true,
   stale: false,
@@ -47,7 +47,7 @@ function core(drafts: unknown[]) {
         persona: null,
         first: { starts: false, sources: [], unmoved: null },
         workspaces: ["ops"],
-        levels: [{ level: { workspace: null, local: false }, label: "project" }],
+        levels: [{ level: { at: "project", local: false }, label: "project" }],
         harnesses: [],
         clashes: [],
         skills: [],
@@ -116,7 +116,7 @@ describe("draft skills in the Skill studio", () => {
     stop();
     expect(asks).toEqual([
       { plane: "p", kind: "try", id: "triage-id", profile: null },
-      { plane: "p", kind: "draft", level: { workspace: "ops", local: false } },
+      { plane: "p", kind: "draft", level: { at: "workspace", name: "ops", local: false } },
     ]);
   });
 });
