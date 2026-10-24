@@ -292,6 +292,7 @@ tester.run("purlis/tabs-family", purlisUi.rules["tabs-family"], {
     { code: `<div className="panes" {...tabPanelOf(namedBy)} />` },
     // Another role, and a selector that reads a tab: neither draws one.
     { code: `<li role="treeitem">x</li>` },
+    { code: `<li role={open ? "treeitem" : "option"}>x</li>` },
     { code: `strip.querySelector('[role="tab"][aria-selected="true"]')` },
     // The id helper beside the old tablist is not a tablist.
     { code: `import { useTabIds } from "./StripTablist";` },
@@ -301,6 +302,9 @@ tester.run("purlis/tabs-family", purlisUi.rules["tabs-family"], {
     { code: `<button role="tab" aria-selected>talk</button>`, errors: [{ messageId: "role" }] },
     { code: `<div role="tablist" aria-label="Tabs" />`, errors: [{ messageId: "role" }] },
     { code: `<div role="tabpanel" aria-labelledby={id} />`, errors: [{ messageId: "role" }] },
+    { code: `<button role={"tab"}>talk</button>`, errors: [{ messageId: "role" }] },
+    { code: "<div role={`tablist`} />", errors: [{ messageId: "role" }] },
+    { code: `<li role={open ? "tab" : "option"} />`, errors: [{ messageId: "role" }] },
     {
       code: `const panel = { role: "tabpanel", "aria-labelledby": id };`,
       errors: [{ messageId: "role" }],

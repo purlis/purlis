@@ -31,7 +31,9 @@
  */
 import {
   useEffect,
+  useLayoutEffect,
   useMemo,
+  useRef,
   type ComponentPropsWithoutRef,
   type FocusEvent,
   type KeyboardEvent,
@@ -45,6 +47,16 @@ import { Tooltip, type Tip } from "../tooltip/Tooltip";
 
 /** The keys that move along a strip: React Aria's, and no others (not Tab, not Escape). */
 const ALONG = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"]);
+
+/** Whether the keyboard is on one of a strip's tabs: React Aria's own collection marks. */
+function keyboardOnTheStrip(): boolean {
+  const at = document.activeElement;
+  return (
+    at instanceof HTMLElement &&
+    at.dataset.collection !== undefined &&
+    at.getAttribute("role") === "tab"
+  );
+}
 
 /** One tab of the collection React Aria builds from the strip's keys. */
 type Keyed = { key: string };
@@ -91,11 +103,14 @@ export function useTabStrip({
   });
   const manager = state.selectionManager;
   // A tab that goes (closed, collapsed, renamed) takes the stop with it: the stop comes back to
-  // the chosen tab, so the strip always has one.
+  // the chosen tab, so the strip always has one. Only the stop: the keyboard is moved only while
+  // it is still on the strip (`StripTab`), and once a tab has gone it is not.
   const at = manager.focusedKey;
   const gone = at == null || !items.some((one) => one.key === String(at));
   useEffect(() => {
-    if (home !== undefined && gone) manager.setFocusedKey(home);
+    if (home === undefined || !gone) return;
+    if (manager.isFocused && !keyboardOnTheStrip()) manager.setFocused(false);
+    manager.setFocusedKey(home);
   }, [home, gone, manager]);
   return { state, keys, home };
 }
@@ -204,6 +219,25 @@ export function StripTab({
   [data: `data-${string}`]: string | number | boolean | undefined;
 }) {
   const own = useObjectRef(ref);
+  const manager = strip.state.selectionManager;
+  // **A tab that goes with the keyboard on it never takes the keyboard elsewhere.** No blur
+  // reaches the row when an element leaves the document, so React Aria would still think the
+  // strip has the keyboard and move it onto the next stop, away from wherever it went (the
+  // palette, a terminal). The strip lets the keyboard go here, before the tab is removed;
+  // `tabKeys.ts` brings it back to the strip where nothing else took it.
+  // Once, as it leaves: the manager is a new object on each render, so it is read as it is then.
+  const latest = useRef(manager);
+  useLayoutEffect(() => {
+    latest.current = manager;
+  });
+  useLayoutEffect(
+    () => () => {
+      const element = own.current;
+      if (element !== null && element.contains(document.activeElement))
+        latest.current.setFocused(false);
+    },
+    [own],
+  );
   const { tabProps } = useTab({ key: tabKey }, strip.state, own);
   // React Aria's Tab stop, focus and marks, and nothing of its press (see this module).
   const {

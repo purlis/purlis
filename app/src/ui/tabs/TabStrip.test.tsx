@@ -32,6 +32,12 @@ function Strip({
   lifted?: boolean;
 }) {
   const [inFront, setInFront] = useState(chosen);
+  // A tab chosen from outside the strip (the palette, a menu) is handed in as `chosen`.
+  const [handed, setHanded] = useState(chosen);
+  if (handed !== chosen) {
+    setHanded(chosen);
+    setInFront(chosen);
+  }
   const along = useTabStrip({ keys: drawn, selected: inFront });
   return (
     <TabStripRow
@@ -65,6 +71,16 @@ function Strip({
         ))}
       <button type="button">New tab</button>
     </TabStripRow>
+  );
+}
+
+/** The strip, and a box outside it the keyboard can be in (the palette's, a terminal's). */
+function Window(props: Parameters<typeof Strip>[0]) {
+  return (
+    <>
+      <Strip {...props} />
+      <input aria-label="Palette" />
+    </>
   );
 }
 
@@ -181,5 +197,37 @@ describe("a strip on React Aria", () => {
     act(() => three.focus());
     rerender(<Strip names={["one", "two", "three"]} chosen="two" drawn={["one", "two"]} />);
     await waitFor(() => expect(stops()).toEqual(["-1", "0"]));
+  });
+
+  it("never takes the keyboard back when the tab it was on goes and it went elsewhere", async () => {
+    const names = ["one", "two", "three"];
+    const { rerender } = render(<Window names={names} chosen="two" />);
+    act(() => tabs()[2].focus());
+    // The tab with the keyboard goes: no blur reaches the strip as it leaves the document.
+    rerender(<Window names={names} chosen="two" drawn={["one", "two"]} />);
+    await waitFor(() => expect(stops()).toEqual(["-1", "0"]));
+    expect(tabs().some((tab) => tab === document.activeElement)).toBe(false);
+    // The keyboard goes to the palette, and the strip changes under it: a tab is chosen, one
+    // comes and goes. It stays in the palette.
+    const palette = screen.getByRole("textbox", { name: "Palette" });
+    act(() => palette.focus());
+    rerender(<Window names={names} chosen="one" drawn={["one", "two"]} />);
+    rerender(<Window names={names} chosen="one" drawn={["one"]} />);
+    rerender(<Window names={names} chosen="one" />);
+    await waitFor(() => expect(stops()).toEqual(["0", "-1", "-1"]));
+    expect(palette).toHaveFocus();
+  });
+
+  it("makes a tab chosen from outside the strip its stop, where Shift+Tab comes back in", async () => {
+    const names = ["one", "two", "three"];
+    const { rerender } = render(<Window names={names} chosen="two" />);
+    const plus = screen.getByRole("button", { name: "New tab" });
+    act(() => plus.focus());
+    // Chosen from the palette or a menu, while the keyboard is not on the tabs.
+    rerender(<Window names={names} chosen="three" />);
+    await waitFor(() => expect(stops()).toEqual(["-1", "-1", "0"]));
+    expect(plus).toHaveFocus();
+    await userEvent.tab({ shift: true });
+    expect(tabs()[2]).toHaveFocus();
   });
 });

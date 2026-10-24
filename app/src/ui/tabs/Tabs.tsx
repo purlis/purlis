@@ -26,8 +26,7 @@
  * the tabs) is React Aria's, in `TabStrip.tsx` (#3042); the drag along it is `dnd-kit`'s
  * (`sortable.tsx`). This layer is how it is drawn.
  */
-import type { ComponentPropsWithRef, ReactNode } from "react";
-import { mergeProps, useHover } from "react-aria";
+import { useState, type ComponentPropsWithRef, type PointerEvent, type ReactNode } from "react";
 
 /** The tab's variants, in the order the manifest names them. */
 export const TAB_VARIANTS = ["chat", "view", "file", "background"] as const;
@@ -80,9 +79,14 @@ export function ToolbarFile({ path }: { path: string }) {
 /**
  * **One tab's cell**: the element the strip lays out and drags, holding the tab's own button,
  * its marks and its `×`. It is drawn by its attributes: its variant, whether it is the chosen tab
- * (`data-selected`), whether the pointer is over it (`data-hovered`, React Aria's `useHover`: a
- * mouse's, never a touch's), and whether it is the first on the strip, on the panel's edge
+ * (`data-selected`), whether the pointer is over it (`data-hovered`: a mouse's, from the cell's
+ * own enter and leave), and whether it is the first on the strip, on the panel's edge
  * (`data-first`).
+ *
+ * Not React Aria's `useHover` (D-3042-7): it also ends a hover when a `pointerover` lands outside
+ * the cell with no `pointerleave`, which is how it handles an element removed under the pointer,
+ * and a story's hover then read as no hover in one cell of the matrix. The cell's own enter and
+ * leave are what the strip has always drawn by.
  *
  * `className` places it, as the strip's own rules do (`.tab`, a chip); never a look.
  */
@@ -91,6 +95,8 @@ export function TabCell({
   selected,
   first = false,
   children,
+  onPointerEnter,
+  onPointerLeave,
   ...rest
 }: Omit<ComponentPropsWithRef<"span">, "children"> & {
   variant: TabVariant;
@@ -100,16 +106,27 @@ export function TabCell({
   children?: ReactNode;
   [data: `data-${string}`]: string | number | boolean | undefined;
 }) {
-  const { hoverProps, isHovered } = useHover({});
+  const [hovered, setHovered] = useState(false);
+  const hover = (on: boolean) => (event: PointerEvent<HTMLSpanElement>) => {
+    if (event.pointerType === "mouse") setHovered(on);
+  };
   return (
     <span
-      {...mergeProps(rest, hoverProps)}
+      {...rest}
       data-scope="tabs"
       data-part="tab"
       data-variant={variant}
       data-selected={selected || undefined}
-      data-hovered={isHovered || undefined}
+      data-hovered={hovered || undefined}
       data-first={first || undefined}
+      onPointerEnter={(event) => {
+        hover(true)(event);
+        onPointerEnter?.(event);
+      }}
+      onPointerLeave={(event) => {
+        hover(false)(event);
+        onPointerLeave?.(event);
+      }}
     >
       {children}
       {/* The theme's indicator, if it draws one: a mark on the chosen tab's edge, none by
