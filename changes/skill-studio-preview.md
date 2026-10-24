@@ -67,9 +67,9 @@
   so a link can no longer widen where a skill reaches.
 - **A skill that changes as it is moved is put back** (#3145). Sharing, renaming, moving,
   deleting or restoring a skill checks, once it has moved, that it moved what was checked; one
-  swapped for a link in that instant is put back and the move refused. Where a skill could not be
-  put back after a failed move, the message says what moved and what stayed, instead of that
-  nothing was moved.
+  swapped for a link in that instant is put back and the move refused, and a file with a second
+  name (a hard link) is never moved. Where a skill could not be put back after a failed move, the
+  message says what moved and what stayed, instead of that nothing was moved.
 - **A skill's tab totals its runs** (Skill studio preview, #2783): runs, tool calls, errors,
   refusals, asks, tokens and time, by the program each chat ran on, by persona and by
   workspace. Each run says what it ran on, and a run that a curation action's prompt started

@@ -84,11 +84,7 @@ impl std::fmt::Display for Unmoved {
     }
 }
 
-impl From<Unmoved> for String {
-    fn from(unmoved: Unmoved) -> Self {
-        unmoved.to_string()
-    }
-}
+impl std::error::Error for Unmoved {}
 
 /// `path` under `root`, as the person reads it.
 fn shown(root: &Path, path: &Path) -> String {
@@ -98,7 +94,9 @@ fn shown(root: &Path, path: &Path) -> String {
         .into_owned()
 }
 
-/// Renames `from_leaf` in `from_at` to `to_leaf` in `to_at`, never over anything there.
+/// Renames `from_leaf` in `from_at` to `to_leaf` in `to_at`, never over anything there: one
+/// `renameat` that refuses to replace. Where the filesystem cannot rename that way it is refused,
+/// never a look and then a rename that replaces an empty folder or a file put there in between.
 #[cfg(unix)]
 fn rename_new(
     from_at: &OwnedFd,
@@ -106,33 +104,44 @@ fn rename_new(
     to_at: &OwnedFd,
     to_leaf: &str,
 ) -> Result<(), String> {
-    use rustix::fs::{AtFlags, statat};
     #[cfg(any(
         target_os = "linux",
         target_os = "android",
         target_os = "macos",
         target_os = "ios"
     ))]
-    match rustix::fs::renameat_with(
+    return match rustix::fs::renameat_with(
         from_at,
         from_leaf,
         to_at,
         to_leaf,
         rustix::fs::RenameFlags::NOREPLACE,
     ) {
-        Ok(()) => return Ok(()),
+        Ok(()) => Ok(()),
         Err(rustix::io::Errno::EXIST) => {
-            return Err("something of its name is already where it goes".to_owned());
+            Err("something of its name is already where it goes".to_owned())
         }
-        Err(rustix::io::Errno::INVAL | rustix::io::Errno::NOSYS | rustix::io::Errno::NOTSUP) => {}
-        Err(why) => return Err(format!("it could not be moved ({why})")),
+        Err(rustix::io::Errno::INVAL | rustix::io::Errno::NOSYS | rustix::io::Errno::NOTSUP) => {
+            Err(NO_SAFE_RENAME.to_owned())
+        }
+        Err(why) => Err(format!("it could not be moved ({why})")),
+    };
+    #[cfg(not(any(
+        target_os = "linux",
+        target_os = "android",
+        target_os = "macos",
+        target_os = "ios"
+    )))]
+    {
+        let _ = (from_at, from_leaf, to_at, to_leaf);
+        Err(NO_SAFE_RENAME.to_owned())
     }
-    if statat(to_at, to_leaf, AtFlags::SYMLINK_NOFOLLOW).is_ok() {
-        return Err("something of its name is already where it goes".to_owned());
-    }
-    rustix::fs::renameat(from_at, from_leaf, to_at, to_leaf)
-        .map_err(|why| format!("it could not be moved ({why})"))
 }
+
+/// Why a move is refused where the filesystem cannot rename without replacing.
+#[cfg(unix)]
+const NO_SAFE_RENAME: &str = "this disk cannot move it without the risk of replacing what is \
+     already where it goes, so purlis does not move it";
 
 /// **Moves the entry at `from`, under `from_root`, to `to`, under `to_root`**, never over
 /// anything there and following no link on either way; folders of `to` from the `make_from`th on
@@ -163,29 +172,44 @@ pub fn move_between(
             "it is not a plain folder or file, so purlis does not move it".to_owned(),
         ));
     }
+    // A file with a second name (a hard link) reaches past its folder as a link does: moved
+    // and committed, it would carry a file from outside the plane (the SK-36 readers refuse it).
+    if kind == FileType::RegularFile && looked.st_nlink > 1 {
+        return Err(Unmoved::Nothing(
+            "it is a file with another name too (a hard link), so purlis does not move it"
+                .to_owned(),
+        ));
+    }
     let to_at = open_dir(to_root, &to_dirs, make_from).map_err(|why| {
         Unmoved::Nothing(format!("the folder it goes into could not be made ({why})"))
     })?;
     #[cfg(test)]
-    hook::before_rename(from, to);
+    hook::at(hook::Moment::BeforeRename, from, to);
     rename_new(&from_at, &from_leaf, &to_at, &to_leaf).map_err(Unmoved::Nothing)?;
-    let same = statat(&to_at, to_leaf.as_str(), AtFlags::SYMLINK_NOFOLLOW).is_ok_and(|moved| {
-        moved.st_dev == looked.st_dev
-            && moved.st_ino == looked.st_ino
-            && FileType::from_raw_mode(moved.st_mode) == kind
-    });
-    if same {
-        return Ok(());
-    }
     #[cfg(test)]
-    hook::before_rename(to, from);
+    hook::at(hook::Moment::AfterRename, from, to);
+    let not_it = match statat(&to_at, to_leaf.as_str(), AtFlags::SYMLINK_NOFOLLOW) {
+        Ok(moved)
+            if moved.st_dev == looked.st_dev
+                && moved.st_ino == looked.st_ino
+                && FileType::from_raw_mode(moved.st_mode) == kind =>
+        {
+            return Ok(());
+        }
+        Ok(_) => "it changed as it was moved",
+        Err(rustix::io::Errno::NOENT) => {
+            return Err(Unmoved::Stranded(
+                "it was gone from where it was moved, so nothing could be put back".to_owned(),
+            ));
+        }
+        Err(_) => "it could not be looked at once moved",
+    };
+    #[cfg(test)]
+    hook::at(hook::Moment::BeforeRename, to, from);
     match rename_new(&to_at, &to_leaf, &from_at, &from_leaf) {
-        Ok(()) => Err(Unmoved::Nothing(
-            "it changed as it was moved, so it was put back".to_owned(),
-        )),
+        Ok(()) => Err(Unmoved::Nothing(format!("{not_it}, so it was put back"))),
         Err(why) => Err(Unmoved::Stranded(format!(
-            "it changed as it was moved and could not be put back ({why}): what took its \
-             place is at {}",
+            "{not_it} and could not be put back ({why}): what is there now is at {}",
             shown(to_root, to)
         ))),
     }
@@ -224,49 +248,8 @@ pub fn move_skill(plane: &Path, from: &Path, to: &Path, make_from: usize) -> Res
     Ok(())
 }
 
-/// A test's way in between the look at the leaf and its rename: the instant a swap would land.
-///
-/// Thread-local, so it fires only in the test that set it: `cargo test` runs tests on a pool.
 #[cfg(test)]
-pub(crate) mod hook {
-    use std::cell::RefCell;
-    use std::path::Path;
-
-    type Hook = Box<dyn FnMut(&Path, &Path)>;
-
-    thread_local! {
-        static BEFORE_RENAME: RefCell<Option<Hook>> = const { RefCell::new(None) };
-    }
-
-    /// Run `f(from, to)` after the leaf is looked at and before it is renamed, for every
-    /// [`super::move_between`] on this thread until the returned guard drops.
-    pub(crate) fn set(f: impl FnMut(&Path, &Path) + 'static) -> Unset {
-        BEFORE_RENAME.with(|h| *h.borrow_mut() = Some(Box::new(f)));
-        Unset
-    }
-
-    pub(crate) struct Unset;
-
-    impl Drop for Unset {
-        fn drop(&mut self) {
-            BEFORE_RENAME.with(|h| *h.borrow_mut() = None);
-        }
-    }
-
-    pub(crate) fn before_rename(from: &Path, to: &Path) {
-        let taken = BEFORE_RENAME.with(|h| h.borrow_mut().take());
-        let Some(mut f) = taken else {
-            return;
-        };
-        f(from, to);
-        BEFORE_RENAME.with(|h| {
-            let mut slot = h.borrow_mut();
-            if slot.is_none() {
-                *slot = Some(f);
-            }
-        });
-    }
-}
+pub(crate) mod hook;
 
 #[cfg(test)]
 mod tests;

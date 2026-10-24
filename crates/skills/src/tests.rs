@@ -651,8 +651,8 @@ fn share_whose_folder_cannot_be_put_back_says_what_moved() {
     skill(&plane.project_local(), "notes", &whole("notes"));
     std::os::unix::fs::symlink(&outside, plane.project_local().join("notes.toml")).unwrap();
     let back_to = plane.project_local().join("notes");
-    let _hook = crate::moving::hook::set(move |_, to| {
-        if to == back_to {
+    let _hook = crate::moving::hook::set(move |moment, _, to| {
+        if moment == crate::moving::hook::Moment::BeforeRename && to == back_to {
             std::fs::create_dir(to).unwrap();
         }
     });
