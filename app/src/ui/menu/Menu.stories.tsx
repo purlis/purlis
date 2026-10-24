@@ -329,6 +329,32 @@ export const ASubmenu: Story = {
   },
 };
 
+/**
+ * **A submenu pressed at once** (#3074): a press that is not the pointer's (a screen reader's,
+ * `element.click()`) opens the menu and, before the menu has taken the keyboard, its submenu
+ * row. The submenu stays open with the keyboard in it, and its row runs on the first click.
+ * A smoke check of that path in a real browser; the regression guard is `Menu.test.tsx`'s. The
+ * picture is `ASubmenu`'s.
+ */
+export const ASubmenuPressedAtOnce: Story = {
+  render: () => <WithASubmenu />,
+  play: async ({ canvas, userEvent }) => {
+    canvas.getByRole("button", { name: "Chat steward 4" }).click();
+    // As soon as each is drawn: before the frame the menu's own hand-on of the keyboard waits
+    // for, as a waitFor's check runs as the page changes.
+    const menu = await waitFor(() => screen.getByRole("menu", { name: "Chat steward 4" }));
+    within(menu).getByRole("menuitem", { name: /Ask/ }).click();
+    const sub = await waitFor(() => screen.getByRole("menu", { name: "Ask" }));
+    // The keyboard is in the submenu (React Aria hands a submenu a press like this opened to the
+    // submenu itself), and the submenu stays.
+    await waitFor(() => expect(sub).toContainElement(document.activeElement as HTMLElement));
+    await expect(sub).toBeInTheDocument();
+    await userEvent.click(within(sub).getByRole("menuitem", { name: /devops/ }));
+    await waitFor(() => expect(canvas.getByRole("status")).toHaveTextContent("Asked devops"));
+  },
+  parameters: { screenshot: false },
+};
+
 /** **A context menu on a row**: Shift+F10 opens it on its first row, Escape closes it. */
 function OnARow() {
   const [said, setSaid] = useState("Nothing chosen");
