@@ -312,6 +312,40 @@ pub struct Studio {
     pub harnesses: Vec<StudioHarness>,
     /// Every skill from outside the plane that has the name of a skill a chat gets, by name.
     pub clashes: Vec<StudioClash>,
+    /// What it offers to start from (SK-22, #2785): the core's `skills::first_open`.
+    pub first: StudioFirst,
+}
+
+/// **What the studio offers when it opens** (SK-22, #2785; decision 42), as the core works it
+/// out (`purlis_core::skills::first_open`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Type)]
+pub struct StudioFirst {
+    /// Whether the project has no skill of its own, so the three starts are offered: make one
+    /// with a chat, browse skill sources, start blank.
+    pub starts: bool,
+    /// Where the project's skills are still where only some chat programs read them: how many,
+    /// and the doctor's fix that moves them (SK-21).
+    pub unmoved: Option<StudioUnmoved>,
+}
+
+/// The project's skills still to move into the studio's.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct StudioUnmoved {
+    pub skills: u32,
+    /// The doctor's fix that moves them, by its id (`planeDoctorFix`).
+    pub fix: String,
+}
+
+impl From<purlis_core::skills::first_open::FirstOpen> for StudioFirst {
+    fn from(first: purlis_core::skills::first_open::FirstOpen) -> Self {
+        StudioFirst {
+            starts: first.starts,
+            unmoved: first.unmoved.map(|unmoved| StudioUnmoved {
+                skills: u32::try_from(unmoved.skills).unwrap_or(u32::MAX),
+                fix: unmoved.fix.id().to_owned(),
+            }),
+        }
+    }
 }
 
 /// The studio of the project at `root`, for a chat at its root (`workspace` `None`) or in
@@ -337,6 +371,7 @@ pub(crate) fn studio(
             skills: Vec::new(),
             harnesses: Vec::new(),
             clashes: Vec::new(),
+            first: StudioFirst::default(),
         };
     }
     let off = workspace
@@ -353,6 +388,7 @@ pub(crate) fn studio(
         persona.as_deref(),
         env,
     );
+    let first = purlis_core::skills::first_open::first_open(root, &rows).into();
     let skills = rows
         .into_iter()
         .map(|row| {
@@ -407,6 +443,7 @@ pub(crate) fn studio(
         skills,
         harnesses,
         clashes,
+        first,
     }
 }
 
