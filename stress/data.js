@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792883521249,
+  "lastUpdate": 1792883536885,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -14220,6 +14220,42 @@ window.BENCHMARK_DATA = {
             "value": 677.1,
             "unit": "MB",
             "extra": "median of 6 samples: 628.7, 668.2, 673.5, 680.7, 681.8, 781.5 MB; window 419.9 MB, session host 257.2 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2c854c37a9ccb1e15c68676eb5c0d037eae5bced",
+          "message": "persona-skill-changes e2e waits for the persona's skills line after a move (#3170) (#3183)\n\nThe move puts the folder in place before it writes the persona's\nskills: line, so reading persona.md as soon as SKILL.md appears could\nland between the two. The spec now waits for the line to name the skill.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-25T01:52:31+04:00",
+          "tree_id": "344518b2afbf25e7a201450355a5528a20ba9070",
+          "url": "https://github.com/purlis/purlis/commit/2c854c37a9ccb1e15c68676eb5c0d037eae5bced"
+        },
+        "date": 1792883534808,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1670.5,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1601.8, 1670.5, 1778.6 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 713.8,
+            "unit": "MB",
+            "extra": "median of 6 samples: 680.9, 701.6, 710.8, 716.8, 717.3, 808.2 MB; window 427.1 MB, session host 286.7 MB"
           }
         ]
       }
