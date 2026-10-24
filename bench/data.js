@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792875824803,
+  "lastUpdate": 1792877600802,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -24150,6 +24150,48 @@ window.BENCHMARK_DATA = {
             "value": 101.088688,
             "unit": "ms",
             "extra": "median of 5 runs: 100.965, 101.002, 101.089, 101.254, 101.401 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5e7a02597370d31e6a593330879fff93f64a482f",
+          "message": "A save commits a file only under the one name it has on disk (#3165)\n\n* A save commits a file only under the one name it has on disk\n\nEvery plane save (skill changes, purlis save, the window's Save, autosave,\nworkspace rename) and every repo save now looks at each staged path that\nis not a deletion once the add is done. A regular file with a second name\n(a hard link) is refused, as the file readers already refuse it, and so is\na file that changed or went away after it was staged, or one git is told\nnot to look at on disk. Each is named, taken out of the index again, and\nno commit is made.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* The macOS profiles limit file-link to the folders a chat may write\n\nThe full profile denies file-link and allows it only within the same\nroots it allows writes in, and every rule that keeps a path from being\nread or written also denies file-link, the floor's included. The Linux\nprofile reader accepts the operation: its supervisor already judges a\nlink as a write of the file it names.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Check only the held file is unstaged after a refused save\n\nA refused save leaves the rest of what it staged as it was; the tests\nnow ask that the file held back is the one taken out of the index.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* A refused save leaves none of the refused file in the object store (#3175)\n\n* A refused save leaves none of the refused file in the object store\n\nBefore the add, the files the add would take are listed and one with a\nsecond name refuses the save with nothing staged. After the add, the\nblob of each row held back is read from the index before it is\nunstaged, and removed once unstaged where it is a loose object that no\nref, reflog or index reaches. A save of named paths stages each regular\nfile from one descriptor opened without following a link and checked\nto have one name, hashing that descriptor's bytes into the index.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* A brokered commit and a resolved rebase stage each file under its one name (#3179)\n\n* A brokered commit and a resolved rebase stage each file under its one name\n\nThe commit the app makes for a sandboxed chat in its branch folder, and the\nfiles `purlis worktree update --continue` stages once a conflict is resolved,\nnow hold to the same rule as a save (`planegit::ondisk`): a named file with a\nsecond name is refused before anything is staged, and once staged, a row that\nis not the file on disk now is refused, put back, and its loose, unreachable\nblob taken out of the object store. A resolved file refused during a rebase is\nmarked as conflicted again rather than reset to HEAD, so the paused commit\nkeeps its change.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Continue on a save conflict stages each file under its one name; a held-back row leaves before the secret check (#3181)\n\n* Continue on a save conflict stages each file under its one name, and a save takes a held-back row out before its secret check\n\nContinue in the window now asks of each settled file what pieceupdate's\n--continue asks: a second name before the add, and once staged whether\neach is the file on disk with one name. A file refused then is marked as\nconflicted again and its blob taken out of the object store; the\nexisting \"changed while purlis was checking\" refusal does the same\nthrough the same helper. The settled file is read from one descriptor\nopened without following a link, and one with a second name is refused.\n\nA plane save and a repo save now take a held-back row out of the index,\nand its blob out of the object store, right after it is found and before\nthe secret check reads any staged blob. What they say is in the same\norder as before.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* A save's secret check still reads a row that is gone or that git does not look at\n\nOnly a row with a second name, or one changed since it was staged, is\ntaken out of the index and its blob out of the object store before the\nsecret check. A row that is gone, or marked skip-worktree or\nassume-unchanged, holds what was staged under its own name: the check\nreads it and names what it finds, as before, and the row is taken out\nafter it. What the refusal says is one block, as before.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* A gone row leaves before the secret check, and a Continue git could not check forgets what it put back\n\nA staged row that is gone from disk is now unstaged, and its blob taken\nout of the object store, before the save's secret check, as a row with a\nsecond name or one changed since it was staged is. It is named from the\nrow alone. Only a row git is told not to look at waits for the check.\n\nWhere git could not say whether a resolved file is the file on disk,\nContinue puts every staged file back in conflict as before, and now also\ntakes the blobs they were staged as out of the object store where\nnothing else reaches them.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\n\n* Publishing a project commits a file only under its one name (#3176)\n\n* Publishing a project commits a file only under its one name\n\nA publish stages and commits the whole project outside a save, so it\nnow runs the save's checks around its add: a file with a second name is\nrefused before anything is staged, and what is staged is asked again\nbefore the commit, with the refused rows unstaged and their loose blobs\ntaken out of the store. A new project's first commit and a doctor fix's\ncommit go through the same helper.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Format the new project's one-name test\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\n\n* A held file is rewritten only under the one name it has on disk (#3174)\n\nrewrite::replace writes a temp file and renames it over the target. For a\nMode::Secret write (a plain-file vault, the local vault registry, a key\nfile), a target that is a regular file with more than one name is now\nrefused before any temp is made: the rename would give this name new bytes\nand leave the old ones under the other. The error says \"<file> has a second\nname, so purlis does not rewrite it in place\", and the file is left as it\nwas. Other modes are unchanged.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\n\n* Link the manifests, which a chat reads, into its folder under each profile (#3171)\n\nThe floor case linked from a folder the profile also keeps from being\nread, and ln looks at its source before it links, so that link was\nrefused before file-link was ever asked. The project's manifest and a\nworkspace's are read under the same profile first, then linked into the\nfolder the chat works in: each link is refused, and no second name is\nleft behind.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-25T01:32:01+04:00",
+          "tree_id": "eeb1961f4d2b7a9c45f60cc1b4747d90b9958d8b",
+          "url": "https://github.com/purlis/purlis/commit/5e7a02597370d31e6a593330879fff93f64a482f"
+        },
+        "date": 1792877598702,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.30289750000000004,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.297, 0.300, 0.303, 0.316, 0.318 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.727219,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.115, 16.639, 16.727, 16.751, 16.771 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.603204,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.113, 101.147, 101.603, 101.631, 101.651 ms"
           }
         ]
       }
