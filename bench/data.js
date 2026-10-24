@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792821185521,
+  "lastUpdate": 1792822997067,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -23352,6 +23352,48 @@ window.BENCHMARK_DATA = {
             "value": 101.48188149999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.511, 100.568, 101.482, 101.898, 102.758 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0d06c839353cecf8ff90b4c47cd2706f7b293076",
+          "message": "Four-corner activity bars and the bottom panel halves (#3061)\n\n* Four-corner activity bars and the bottom panel halves (#2917)\n\nThe left bar is tabs across the side panel's top (N36, R116): Chats,\nExplorer and Search, then Branch folders and Changes at the row's end;\na press of the open tab leaves the side out (R121), and its header\nnames the view (R123). The right bar is a 44px column (R117): its top\nicons toggle a 300px right panel with a title and a × (R124, R125), its\nbottom icons open their half of the bottom panel, 34% tall with a 160px\nfloor, each half headed by its label and a × (R126, R127).\n\nOnly the part that appears moves: the right panel over duration.open,\na bottom half over duration.reveal, a side view's list over\nduration.swap; closing has no motion (R122, R128, R150, R151).\n\nThe activity family (ui/activity, N17): item, icon, count and\nindicator parts in the tab and bar variants, manifest version 10,\npurlis/activity-family at error. Purlis draws its default; Purlis\nClassic keeps its square items and accent edge through its own parts.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* The bottom row starts at 30% in a short window, and a slot's start is read once (#2917)\n\nThe work's 30rem least height could not hold together with the Panel's\n160px floor in an 800px window, so the Panel was drawn under its floor.\nThe upper region's least goes back to 20%, and the bottom row starts at\nR126's 34% from a 900px-tall window up and at 30% below (D-2917-17). Its\n160px floor holds at every height.\n\nA slot's starting length depends on the window (the right panel's 300px\nor its share of the row, the bottom row's share by height), so it is read\nonce at launch: a defaultSize that followed the window would re-register\nthe panel.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Activity parts beside the tabs family: Classic's sheet, the manifest's digest and its families (#2917)\n\nOver #3037, Purlis Classic names its tabs' strip look and its activity\nitems' look; the stories' built-in themes carry both. The manifest at\nversion 10 has the tabs and editor families and the activity family,\nand its digest is pinned again.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* An arrival is heard as it starts, and the right panel's end on its own box (#2917)\n\nThe corner scenario recorded animationstart names before each press and\nasserts purlis-open and purlis-reveal, since an arrival's mark comes off\nwhen its animation ends. The right panel's animationend is heard on the\nbox inside the panel that carries its class and its animation, so its\narrival ends; a unit test fires it there. The switch-of-view case now\nswitches the view, the half's case takes its box out and puts it back,\nand a side list's fade drops its listener whenever its mark comes off.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Over the project rail: one duration.reveal, and the manifest at 10 after the rail's 9 (#2917)\n\nThe rail (#2915) brought slide, reveal and leave; the corners keep open\nand swap beside them, and a bottom half rises over the rail's reveal,\n220ms in both built-ins. The manifest lists the rail and then the\nactivity family, its digest is pinned again, and the schema follows.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* The row of regions is the window less the project rail too (#2917)\n\nThe right panel's 20% is of the row it sits in, and with the rail\n(#2915) at the window's left that row is narrower by the rail's drawn\nwidth. rowWidth takes it off where the rail is drawn, and the corner\nscenario measures the panel against the row itself.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* A spec reads a hint once the scroll that brought its row into view has landed (#2917)\n\nA tooltip closes when what holds its trigger scrolls, and the engine\nsays so a moment after the scroll. The bottom half is shorter under its\nheader line, so the Todos view's second row is scrolled into view before\nit is focused; the helper now lets that scroll land first.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-24T10:21:30+04:00",
+          "tree_id": "c99de5d6b0b9bf64fe66e3f959e6a4d13ea579d7",
+          "url": "https://github.com/purlis/purlis/commit/0d06c839353cecf8ff90b4c47cd2706f7b293076"
+        },
+        "date": 1792822995123,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5273559999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.505, 0.521, 0.527, 0.543, 0.563 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.8616445,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.305, 16.570, 16.862, 17.092, 17.132 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.84013149999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.993, 102.688, 103.840, 104.606, 105.459 ms"
           }
         ]
       }
