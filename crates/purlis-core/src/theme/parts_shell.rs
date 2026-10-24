@@ -75,6 +75,7 @@ pub(super) const PANEL: Family = Family {
     words: &[],
     corner_most: None,
     around: &[],
+    fills: &[],
 };
 
 /// **The panel's colours as `app/src/ui/panel/panel.css` draws them**: the base surface, the
@@ -134,6 +135,7 @@ pub(super) const PANEL_SECTION: Family = Family {
     words: &[],
     corner_most: None,
     around: &[],
+    fills: &[],
 };
 
 /// **A section's colours as `panel.css` draws them**: no ground of its own, its title in the
@@ -210,6 +212,7 @@ pub(super) const EMPTY_STATE: Family = Family {
     words: &[],
     corner_most: None,
     around: &[],
+    fills: &[],
 };
 
 /// **An empty state's colours as `empty-state.css` draws them**: no ground, its sentence and its
@@ -299,6 +302,7 @@ pub(super) const STATUS_ITEM: Family = Family {
     words: &[],
     corner_most: None,
     around: &[],
+    fills: &[],
 };
 
 /// **A status item's colours as `app/src/ui/status/status.css` draws them**, at rest and under
@@ -403,6 +407,7 @@ pub(super) const RAIL: Family = Family {
     words: &[("badge", "state.waiting")],
     corner_most: None,
     around: &[],
+    fills: &[],
 };
 
 /// **A rail button's colours as `app/src/ui/rail/rail.css` draws them.** A project's are its own

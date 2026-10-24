@@ -45,6 +45,8 @@ describe("the motion layer", () => {
         "--motion-duration-slide",
         "--motion-duration-reveal",
         "--motion-duration-leave",
+        "--motion-duration-open",
+        "--motion-duration-swap",
         "--motion-easing-standard",
         "--motion-easing-enter",
         "--motion-easing-steady",
@@ -61,6 +63,9 @@ describe("the motion layer", () => {
         expect({ name, value }).toEqual({ name, value: expect.stringMatching(/^\d+ms$/) });
         const ms = Number.parseFloat(value);
         if (read.reduced) expect(ms).toBe(0);
+        // Purlis Classic keeps its motion as it was (#2917): a side view's list changes with
+        // none, so its `duration.swap` is the 0 a theme turns a motion off with.
+        else if (name === "--motion-duration-swap") expect(ms).toBeGreaterThanOrEqual(0);
         else expect(ms).toBeGreaterThan(0);
       } else {
         expect({ name, value }).toEqual({ name, value: expect.stringMatching(/^cubic-bezier\(/) });

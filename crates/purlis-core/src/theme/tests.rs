@@ -80,7 +80,8 @@ fn every_built_in_appearance_holds_an_id_a_tag_colours_and_motion_and_no_geometr
     let file: Value = serde_json::from_str(CLASSIC_FILE).unwrap();
     let mut keys: Vec<&String> = file.as_object().unwrap().keys().collect();
     keys.sort();
-    // Its parts are the strip look its tabs keep (#2914): the family defaults draw Purlis.
+    // Its parts are the looks its tabs (#2914) and its activity items (#2917) keep: the family
+    // defaults draw Purlis.
     assert_eq!(keys, ["$schema", "appearances", "name", "parts"]);
     for one in file["appearances"].as_array().unwrap() {
         let mut keys: Vec<&String> = one.as_object().unwrap().keys().collect();

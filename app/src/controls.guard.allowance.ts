@@ -14,9 +14,6 @@
  */
 // prettier-ignore
 export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
-  "ActivityBar.tsx": [
-    "<button className=\"activity-tab\">",
-  ],
   "ActivityTab.tsx": [
     "<button className=\"vault-secret\">",
   ],

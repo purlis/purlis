@@ -42,7 +42,7 @@ type Body = {
 /** Each activity bar's views, by their names, and the one each has open. */
 async function bars(): Promise<{ bar: string; views: string[]; open: string | null }[]> {
   return browser.execute(() =>
-    [...document.querySelectorAll('.activity-bar [role="tablist"]')].map((list) => {
+    [...document.querySelectorAll('.activity-bar[role="tablist"]')].map((list) => {
       const tabs = [...list.querySelectorAll('[role="tab"]')];
       return {
         bar: list.getAttribute("aria-label") ?? "",
@@ -60,7 +60,7 @@ async function bars(): Promise<{ bar: string; views: string[]; open: string | nu
 async function pressIcon(bar: string, view: string): Promise<void> {
   const found = await browser.execute(
     (named: string, called: string) => {
-      const list = [...document.querySelectorAll('.activity-bar [role="tablist"]')].find(
+      const list = [...document.querySelectorAll('.activity-bar[role="tablist"]')].find(
         (one) => one.getAttribute("aria-label") === named,
       );
       const tab = list?.querySelector<HTMLElement>(`[role="tab"][aria-label="${called}"]`);
@@ -77,7 +77,7 @@ async function pressIcon(bar: string, view: string): Promise<void> {
 async function isOpen(bar: string, view: string): Promise<boolean> {
   return browser.execute(
     (named: string, called: string) => {
-      const list = [...document.querySelectorAll('.activity-bar [role="tablist"]')].find(
+      const list = [...document.querySelectorAll('.activity-bar[role="tablist"]')].find(
         (one) => one.getAttribute("aria-label") === named,
       );
       return (
@@ -95,7 +95,7 @@ async function isOpen(bar: string, view: string): Promise<boolean> {
 async function panelOf(bar: string, view: string): Promise<Body | null> {
   return browser.execute(
     (named: string, called: string) => {
-      const list = [...document.querySelectorAll('.activity-bar [role="tablist"]')].find(
+      const list = [...document.querySelectorAll('.activity-bar[role="tablist"]')].find(
         (one) => one.getAttribute("aria-label") === named,
       );
       const tab = list?.querySelector(`[role="tab"][aria-label="${called}"]`);

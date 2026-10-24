@@ -158,7 +158,8 @@ export const SLOTS: Record<SlotId, { least: number; most: number; floor?: string
   right: { least: 10, most: 45 },
   // **The Panel's height** (P-12): 30% of the window by default (its halves' catalogue size), at
   // most 70%, and never under 120px, whatever the window's height.
-  panel: { least: 10, most: 70, floor: "120px" },
+  // R126 (#2917): the prototype's `minmax(160px, 34%)` row.
+  panel: { least: 10, most: 70, floor: "160px" },
 };
 
 /** The least a slot may be dragged to, as its panel is told: its floor where it has one. */
@@ -184,6 +185,14 @@ export type Definition = {
   name: string;
   /** How big its slot is when nothing has been dragged, as a percentage of the group. */
   size: number;
+  /** **Its slot's size before anything is dragged, as a fixed length** where it is one rather
+   *  than a share of the window: the right panel's 300px (R124, #2917). A drag keeps a share
+   *  ({@link size}'s unit) from then on. */
+  length?: string;
+  /** **Its own tabs never put it away** (R121, #2917): the side panel's tabs are across its own
+   *  top, so a press of the open view does nothing, where any other bar's puts its region away.
+   *  Its key (⌘B) and the palette still do. */
+  stays?: true;
   /** The views it switches between with an activity bar, in the bar's order. A region without
    *  them draws its content alone. */
   views?: readonly OwnViewId[];
@@ -215,6 +224,8 @@ export const CATALOGUE: Record<RegionId, Definition> = {
     // Search since #1676. Changes, which holds what the bottom region drew (B-7), was here
     // too until it moved to the Panel's left half (#1739, P-2).
     views: ["chats", "explorer", "search"],
+    // Its bar is tabs across its own top (N36, R116), so pressing the open one leaves it out.
+    stays: true,
   },
   // The right is "for you" (ADR 0038 as amended 2026-10-10, B-13): what is asking for you,
   // each a view, opening on the Inbox, first on its bar (P-2, #1738); the extensions' panels
@@ -222,16 +233,18 @@ export const CATALOGUE: Record<RegionId, Definition> = {
   aside: {
     name: "Attention",
     size: 20,
+    // 300px between the work and the right bar until it is dragged (R124).
+    length: "300px",
     views: RIGHT_SIDEBAR_VIEWS,
     panels: true,
   },
   // **The Panel's halves** (spec #1736, P-1, P-2): Repos in the left one, out of Explorer
   // (#1737), and Changes after it, out of the left sidebar (#1739); Memory, Todos and Sessions in
   // the right one, out of the right sidebar (#1738), and opening on Memory (P-14). A half with no
-  // views is never drawn. 30 is the Panel's height (P-12), not a width; how the halves share the
+  // views is never drawn. 34 is the Panel's height (P-12, R126), not a width; how the halves share the
   // width is {@link SPLIT}.
-  "panel-left": { name: "Panel, left half", size: 30, views: ["repos", "changes"], half: true },
-  "panel-right": { name: "Panel, right half", size: 30, views: RIGHT_HALF_VIEWS, half: true },
+  "panel-left": { name: "Panel, left half", size: 34, views: ["repos", "changes"], half: true },
+  "panel-right": { name: "Panel, right half", size: 34, views: RIGHT_HALF_VIEWS, half: true },
 };
 
 /** Every region there is, in a fixed order, so anything iterating them is deterministic. */
@@ -744,6 +757,8 @@ export function picked(
   const region = regionOf(view, arrangement);
   const was = arrangement.find((one) => one.id === region);
   if (was !== undefined && !was.collapsed && openView(was, panels) === view) {
+    // The side panel's own tabs never put it away (R121): the press is nothing.
+    if (CATALOGUE[region].stays === true) return arrangement;
     return arrangement.map((one) => (one.id === region ? { ...one, collapsed: true } : one));
   }
   return showing(arrangement, view);
@@ -1329,4 +1344,67 @@ export function slotSize(side: SlotId, placed: Placement[]): number {
  */
 export function startingSize(side: SlotId, placed: Placement[]): number {
   return shownIn(placed).length === 0 ? 0 : slotSize(side, placed);
+}
+
+/** The right bar's width beside the row of regions (`ui/activity`, R117). */
+const RIGHT_BAR = 44;
+
+/**
+ * **The width the row of regions has**, which a side's share is of: the window less the project
+ * rail where it is drawn (`ui/rail`, #2915), the right bar and the gutter at each end of the row
+ * (`App.css`, `.regions`). The gutter is the theme's and the rail's width is as drawn, both read
+ * from the document.
+ */
+export function rowWidth(window: number = globalThis.innerWidth ?? 0): number {
+  if (window <= 0) return 0;
+  let gutter = 0;
+  let rail = 0;
+  try {
+    gutter = Number.parseFloat(
+      getComputedStyle(document.documentElement).getPropertyValue("--window-gutter"),
+    );
+    rail =
+      document.querySelector('[data-scope="rail"][data-part="slot"]')?.getBoundingClientRect()
+        .width ?? 0;
+  } catch {
+    // No document to read: the row is the window less the bar.
+  }
+  const edges = 2 * (Number.isFinite(gutter) ? gutter : 0) + (Number.isFinite(rail) ? rail : 0);
+  return Math.max(0, window - RIGHT_BAR - edges);
+}
+
+/** The least window height the bottom row starts at its R126 share in, and its share below
+ *  (D-2917-17). */
+const TALL_ENOUGH = 900;
+const SHORT_PANEL = 30;
+
+/**
+ * **How big a slot is drawn, as a length its panel takes**: {@link slotSize}'s share, or the
+ * catalogue's fixed {@link Definition.length} while nothing has been dragged and the row has
+ * room for it (the right panel's 300px, R124; its 20% of a row under 1500px).
+ */
+export function slotLength(
+  side: SlotId,
+  placed: Placement[],
+  row: number = rowWidth(),
+  height: number = globalThis.innerHeight ?? 0,
+): string {
+  const first = shownIn(placed)[0] ?? placed[0];
+  const share = slotSize(side, placed);
+  // **A short window starts the bottom row lower** (D-2917-17): R126's 34% where the window is
+  // tall enough, and 30% below that, so a pane's line and its Notice fit in the window purlis
+  // opens at (1280×800, `tauri.conf.json`). Its 160px floor holds at every height.
+  if (side === "panel" && first?.size === undefined && height > 0 && height < TALL_ENOUGH)
+    return `${Math.min(share, SHORT_PANEL)}%`;
+  const fixed = first === undefined ? undefined : CATALOGUE[first.id].length;
+  if (first?.size !== undefined || fixed === undefined) return `${share}%`;
+  // **Never more than its share of the row** (#2917): in a row too narrow for the fixed length,
+  // the catalogue's share, so the work beside it keeps the room it had.
+  const px = Number.parseFloat(fixed);
+  return row > 0 && (px / row) * 100 > share ? `${share}%` : fixed;
+}
+
+/** {@link startingSize} as a length: nothing for a slot with nothing drawn in it. */
+export function startingLength(side: SlotId, placed: Placement[]): string {
+  return shownIn(placed).length === 0 ? "0%" : slotLength(side, placed);
 }
