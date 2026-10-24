@@ -279,3 +279,28 @@ fn bare_docs_is_the_same_command_as_docs_generate() {
         ran.err
     );
 }
+
+/// SK-47: the BRANCH / NOTE column is the last of `status`, which nothing pads. A branch name
+/// is whatever somebody pushed, and git takes a bidi override in one, so it is shown escaped.
+#[test]
+fn a_branch_name_that_reorders_its_line_is_shown_escaped_in_status() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = plane(tmp.path().join("plane"), &["alpha"]);
+    let clone = root.join("workspaces/alpha/app");
+    std::fs::create_dir_all(&clone).unwrap();
+    let init = std::process::Command::new("git")
+        .args(["init", "-q", "-b", "fix\u{202e}enod", "."])
+        .current_dir(&clone)
+        .output()
+        .unwrap();
+    assert!(
+        init.status.success(),
+        "{}",
+        String::from_utf8_lossy(&init.stderr)
+    );
+
+    let ran = run(&root, &["status", "-w", "alpha"]);
+
+    assert!(!ran.out.contains('\u{202e}'), "{:?}", ran.out);
+    assert!(ran.out.contains("fix⟦U+202E⟧enod · "), "{}", ran.out);
+}

@@ -335,6 +335,18 @@ pub fn pad(text: &str, w: usize, align: Align) -> String {
     fit(&escaped_line(text), w, align)
 }
 
+/// One table row of **text**: each `(cell, width)` [`pad`]ded, then `last` — the column nothing
+/// pads, because nothing is to its right — escaped the same way and left its natural width.
+///
+/// The last column is where an unpadded cell used to slip through raw (SK-47): a branch name,
+/// a memory's title, a log line. It is text from the same places the padded cells are, and a
+/// `\x1b[8m` in it would hide every row printed after it, so it takes the same rule.
+pub fn row(cells: &[(&str, usize)], last: &str) -> String {
+    let mut out: String = cells.iter().map(|(c, w)| pad(c, *w, Align::Left)).collect();
+    out.push_str(&escaped_line(last));
+    out
+}
+
 /// Fit markup `s` to exactly `w` visible columns (truncate long, pad short): `charter/tui.py`'s
 /// `pad`, for purlis's own markup.
 ///

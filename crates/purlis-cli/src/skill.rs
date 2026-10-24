@@ -1043,12 +1043,12 @@ fn runs_table(runs: &[purlis_core::skills::StudioRun], name: Option<&str>) -> St
         .map(|i| voice::column(lines.iter().map(|l| l[i].as_str()).chain([heads[i]])))
         .collect();
     let line = |cells: [&str; 6]| {
-        let mut text = String::new();
-        for (i, width) in widths.iter().enumerate() {
-            text.push_str(&voice::pad(cells[i], *width));
-            text.push_str("  ");
-        }
-        text.push_str(&esc(cells[5]));
+        let padded: Vec<(&str, usize)> = cells
+            .iter()
+            .zip(&widths)
+            .map(|(c, w)| (*c, w + 2))
+            .collect();
+        let mut text = purlis_core::tui::row(&padded, cells[5]);
         text.push('\n');
         text
     };

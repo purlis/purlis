@@ -195,3 +195,39 @@ fn skill_list_says_the_studio_is_not_on_while_its_flag_is_off_and_writes_nothing
     assert!(stdout(&out).is_empty());
     assert!(!project.root().join(".claude").exists());
 }
+
+/// SK-47: the project's own skills table pads a name as it is shown. The padding escapes it, so
+/// a name that reorders or hides its own characters cannot disguise its row, and the next column
+/// still starts where every other row's does.
+#[test]
+fn a_project_skill_named_with_bidi_and_zero_width_characters_is_listed_escaped_and_lined_up() {
+    let project = Project::new();
+    let dir = project.root().join("skills/sly");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("SKILL.md"),
+        "---\nname: sly\u{202e}e\u{200b}man\ndescription: Sly.\n---\n\nbody\n",
+    )
+    .unwrap();
+
+    let out = project.run(&["skill", "list"], "1");
+
+    assert!(out.status.success(), "{}", stderr(&out));
+    let text = stdout(&out);
+    assert!(!text.contains(['\u{202e}', '\u{200b}']), "{text:?}");
+    let shown = "sly⟦U+202E⟧e⟦U+200B⟧man";
+    let find = |start: &str| {
+        text.lines()
+            .find(|line| line.starts_with(start))
+            .unwrap_or_else(|| panic!("{start} listed: {text}"))
+    };
+    let level = |line: &str, name: &str| {
+        let name = name.chars().count();
+        name + line.chars().skip(name).position(|c| c != ' ').unwrap()
+    };
+    assert_eq!(
+        level(find(shown), shown),
+        level(find("deploy "), "deploy"),
+        "{text}"
+    );
+}

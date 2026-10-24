@@ -268,3 +268,23 @@ fn a_stack_is_its_children_top_to_bottom_each_clamped_on_its_own() {
     let node = Node::stack(["one".to_string(), "two\nthree".to_string()]);
     assert_eq!(node.render(4), vec!["one", "two", "thr…"]);
 }
+
+/// SK-47's accepted cost, pinned: a cell is shown character by character, so an emoji built
+/// with a zero-width joiner or a variation selector shows those as marks rather than joining.
+/// A name is something a reader has to read back, and the joiner is exactly what can hide.
+#[test]
+fn a_joined_emoji_or_a_variation_selector_in_a_cell_shows_its_marks() {
+    assert_eq!(pad("👨\u{200d}👩", 12, Align::Left), "👨⟦U+200D⟧👩");
+    assert_eq!(pad("👍\u{fe0f}", 10, Align::Left), "👍⟦U+FE0F⟧");
+}
+
+/// The column nothing pads is the same text as the rest of the row, so it takes the same rule:
+/// a conceal in it would hide every row printed after it.
+#[test]
+fn a_row_escapes_its_last_unpadded_column_as_it_pads_the_others() {
+    assert_eq!(
+        row(&[("a", 3), ("b\u{202e}", 11)], "end \x1b[8mhid\u{200b}den"),
+        "a  b⟦U+202E⟧  end ⟦U+001B⟧[8mhid⟦U+200B⟧den"
+    );
+    assert_eq!(row(&[], "plain"), "plain");
+}
