@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792857101703,
+  "lastUpdate": 1792858752785,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -23856,6 +23856,48 @@ window.BENCHMARK_DATA = {
             "value": 104.68075400000001,
             "unit": "ms",
             "extra": "median of 5 runs: 102.511, 103.193, 104.681, 106.050, 108.493 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "df9d2fa03ae3daf842e74b2a4fd8eed20cc98cc6",
+          "message": "SK-28: the doctor finds an older LIVE block without the skills lines (#3141)\n\n* SK-28: the doctor finds an older LIVE block without the skills lines\n\nA new `live skills` row names each LIVE workspace whose block lacks its\nskills pair and each level's skills.local/ ignore line the .gitignore\nlacks (by the one level rule, a persona's included). The `live-skills`\nfix adds exactly those lines and nothing else.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-28: rustfmt\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-28: the live skills row says plainly that the .gitignore is older\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Recorded behaviour: doctor rows name an older LIVE block's skills lines\n\nThe 26 doctor- rows from CI's recorded-behaviour-blessed artifact (run\n40084807004), held by tools/recorded-bless-check.mjs to stdout.text: the\ndaily fixture's LIVE block predates SK-4, so each gains the live skills row.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-28 review: every project's local skills lines, git's reading, CRLF kept\n\n- The skills.local/ ignore lines are asked of every project, LIVE\n  workspace or not; only the block pair is asked of LIVE workspaces.\n- One block iterator reads lines as git does (split on \\n, one \\r and\n  trailing spaces off, leading whitespace kept), with one workspace_of\n  helper for live_line and the insertion.\n- A LIVE name git reads as a pattern gets no skills pair, from the fix or\n  the block's writer, and the row names it.\n- The fix reads the file back and says any line still missing.\n- with_appended ends what it adds as the body's lines end.\n- One sentence for a linked .gitignore; publish, not share; pub(crate).\n- Tests: no LIVE workspace, patterns, git's reading, CRLF, a linked,\n  non-UTF-8 and unreadable .gitignore, live-skills on a linked manifest.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-28 review: the hint offers the fix only where it helps; a pattern row has no fix\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Recorded behaviour: doctor rows name the skills lines an older .gitignore lacks\n\nThe 30 doctor- rows from CI's recorded-behaviour-blessed artifact (run\n40096734577), held by tools/recorded-bless-check.mjs to stdout.text: the\ndaily fixture lacks the LIVE skills pair and the local skills lines, the\nminimal fixture the local skills lines.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-28: the unreadable-.gitignore test opens by shedding the shell's steering\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-28 re-verify: every .gitignore appender reads lines as git does\n\n- git_lines moves to scaffold::text; with_appended and ensure_gitignore\n  count a line present only as git reads it, so init, reinit, guard,\n  local-ignore and live-skills agree, and an indented or \\r-joined copy\n  is added again.\n- The live-skills fix says \"✓ added\" only of lines the read-back shows.\n- Tests: the fix on an indented and a lone-\\r .gitignore; init and\n  reinit keep CRLF and add a line git does not read.\n- plane-format.md says what the appender does, CRLF included; live_line's\n  doc says the line is git's.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-24T20:15:50+04:00",
+          "tree_id": "9dfafffaebfb62fce65b194a40d73bcdf06c9975",
+          "url": "https://github.com/purlis/purlis/commit/df9d2fa03ae3daf842e74b2a4fd8eed20cc98cc6"
+        },
+        "date": 1792858750873,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.31397450000000005,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.304, 0.305, 0.314, 0.318, 0.328 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.667495,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.128, 16.613, 16.667, 16.669, 16.742 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.4575205,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.278, 101.373, 101.458, 101.725, 102.349 ms"
           }
         ]
       }
