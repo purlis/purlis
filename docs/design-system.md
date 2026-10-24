@@ -2269,12 +2269,13 @@ run's old rule from W10 and FR-4 (#603), *"never ask where the plane goes"*. The
 ### Nothing purlis says covers what a chat wrote
 
 **A pane's Notices take a row of the pane, above its terminal, and never draw over it**
-(#1647). The terminal is what the person reads to answer a question, so a question drawn over
+(#1647, #3142). The terminal is what the person reads to answer a question, so a question drawn over
 it hides what it asks about: the operator's screenshot of 2026-10-10 had three Notices stacked
 in a pane's corner over the conversation. Two stand in the row and the rest wait behind "+N
 more", the band's rule (V91i), so purlis's own questions cost a chat at most two Notices' height
-of terminal. Only the chat at a glance, one short line of chips, stays in the corner over the
-terminal. The shape and the rules are in `docs/ui-primitives.md` ("The Notice is a house piece
+of terminal. Since #3142 nothing is over the terminal at all: the band and the chat at a glance
+(the pane's header) each take a row inside the pane, and the terminal is pinned to its bottom.
+The shape and the rules are in `docs/ui-primitives.md` ("The Notice is a house piece
 too").
 
 ## What it costs

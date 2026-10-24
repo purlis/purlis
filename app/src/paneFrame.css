@@ -1,0 +1,300 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **A chat's pane: the band, the header, then the terminal** (#3142, the operator's variant A of
+   2026-10-24, `LayoutPanes.tsx`). Three rows, each with one job, all inside the pane and on the
+   terminal's own fill:
+
+   1. **the band** (`NoticePaneRow`): the pane's warnings as washed cards, the words above their
+      ways out, two at most and the rest behind "+N more" on a row of its own;
+   2. **the header** (`PaneHead`): the chat at a glance at its start, the pane's own controls at
+      its end;
+   3. **the terminal**, which has the room the two leave and is pinned to its bottom.
+
+   **Nothing sits between a tab and its pane, and nothing draws over the terminal.** The band was
+   a row above the pane, on the panel's ground, and broke the chosen tab's join; the chips and
+   the controls floated in the pane's corners over the terminal's first lines. Now the top of a
+   pane is always the terminal's fill, so the chosen tab and its flares join the terminal, never
+   a warning.
+
+   **The notice family's parts are named beside today's classes** (`:is(…)`): the band is the
+   pane's row of the family (#2912) once that lands, and these rules place it the same way.
+
+   In the `components` layer (`styles.css`), above `App.css` and the families' defaults: this file
+   places the families inside a pane and draws none of them anywhere else. */
+
+/* ---------------------------------------------------------------------------------------------
+   The pane.
+   --------------------------------------------------------------------------------------------- */
+
+/* A pane with a chat, or with a task that is away, is the terminal's fill from edge to edge. A
+   view's pane keeps its own ground. */
+.pane-frame.pane-headed {
+  background-color: var(--terminal-background);
+}
+
+/* **The band and the header together never take more than about half the pane** (rule 6): past
+   that the band gives way and its warnings scroll inside it, and the header never does. */
+.pane-top {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  min-block-size: 0;
+  max-block-size: 46%;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   The band.
+   --------------------------------------------------------------------------------------------- */
+
+/* **On the pane's own fill, with no ground, edge or line of its own.** Its top padding is the
+   runway: the top 8px of a pane is the terminal's fill, warning or none (rule 2). */
+.pane-top > :is(.pane-notice-row, [data-scope="notice-row"][data-part="root"]) {
+  flex: 0 1 auto;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+  min-block-size: 0;
+  max-block-size: none;
+  padding: var(--space-4) var(--space-4) 0;
+  border: 0;
+  background-color: transparent;
+}
+
+/* The warnings, one under another and each the band's width; past the band's room they scroll
+   inside it, so a warning's ways out are always reachable. */
+.pane-top
+  > :is(.pane-notice-row, [data-scope="notice-row"][data-part="root"])
+  > :is(.pane-notices, [data-scope="notice-row"][data-part="stack"]) {
+  flex: 0 1 auto;
+  align-items: stretch;
+  gap: var(--space-2);
+  max-inline-size: none;
+  min-block-size: 0;
+  overflow-y: auto;
+}
+
+/* **"+N more" on a row of its own, at its start, its width reserved** (rule 5) for the longest
+   thing it says, so "+1 more", "+12 more" and "Show fewer" move nothing beside it. */
+.pane-top
+  > :is(.pane-notice-row, [data-scope="notice-row"][data-part="root"])
+  > :is(.notice-more-pane, [data-way="more"]) {
+  align-self: flex-start;
+  min-inline-size: 11ch;
+  justify-content: flex-start;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   A warning.
+   --------------------------------------------------------------------------------------------- */
+
+/* **A wash, with no edge or hairline** (rule 7): `wash.warning`, or `danger.wash` for trouble,
+   in the warnings' corner (rule 8: `radius.lg`, 10 in Purlis). The words in the primary tier
+   (rule 10); a long one wraps in place and breaks a path anywhere (rule 13). Its mark stands in
+   its own column at the start, and the words and their ways out share the rest. */
+.pane-top :is(.notice-pane-box, [data-scope="notice"][data-part="root"][data-placement="pane"]) {
+  --pane-warn-mark-size: var(--font-size-md);
+  position: relative;
+  inline-size: auto;
+  max-inline-size: none;
+  padding-block: var(--space-4);
+  padding-inline: calc(var(--space-5) + var(--pane-warn-mark-size) + var(--space-3)) var(--space-5);
+  border: 0;
+  border-radius: var(--radius-lg);
+  background-color: var(--wash-warning);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-body);
+  overflow-wrap: anywhere;
+}
+
+.pane-top
+  :is(.notice-pane-box:has(> .notice-trouble), [data-scope="notice"][data-variant="trouble"]) {
+  background-color: var(--danger-wash);
+}
+
+/* **A consent is a question, not trouble**: an answer that grants (Allow) is on it. The warning
+   wash, and the lock in the accent. */
+.pane-top
+  :is(.notice-pane-box, [data-scope="notice"][data-placement="pane"]):has([data-variant="grants"]) {
+  background-color: var(--wash-warning);
+}
+
+/* The mark: a warning's triangle, trouble's octagon, a consent's lock, drawn in its tone. */
+.pane-top
+  :is(.notice-pane-box, [data-scope="notice"][data-part="root"][data-placement="pane"])::before {
+  content: "";
+  position: absolute;
+  inset-block-start: calc(var(--space-4) + var(--space-1) / 2);
+  inset-inline-start: var(--space-5);
+  inline-size: var(--pane-warn-mark-size);
+  block-size: var(--pane-warn-mark-size);
+  background-color: var(--state-waiting);
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z'/%3E%3Cpath d='M12 9v4M12 17h.01'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+}
+
+.pane-top
+  :is(
+    .notice-pane-box:has(> .notice-trouble),
+    [data-scope="notice"][data-variant="trouble"]
+  )::before {
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7.9 2h8.2L22 7.9v8.2L16.1 22H7.9L2 16.1V7.9z'/%3E%3Cpath d='M12 8v4M12 16h.01'/%3E%3C/svg%3E");
+  background-color: var(--danger-base);
+}
+
+.pane-top
+  :is(.notice-pane-box, [data-scope="notice"][data-placement="pane"]):has(
+    [data-variant="grants"]
+  )::before {
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='4' y='11' width='16' height='10' rx='2'/%3E%3Cpath d='M8 11V7a4 4 0 0 1 8 0v4'/%3E%3C/svg%3E");
+  background-color: var(--accent-base);
+}
+
+/* **The words above their ways out** (variant A): the sentence takes the line's whole first
+   row, and the ways out wrap under it, side by side while they fit and under one another when
+   they do not (rule 13). */
+.pane-top :is(.notice-pane-box, [data-scope="notice"][data-placement="pane"]) > [role="status"] {
+  gap: var(--space-3) var(--space-2);
+  margin: 0;
+  padding: 0;
+}
+
+.pane-top
+  :is(.notice-pane-box, [data-scope="notice"][data-placement="pane"])
+  > [role="status"]
+  > :is(.notice-says, [data-scope="notice"][data-part="message"]) {
+  flex: 1 1 100%;
+  min-inline-size: 0;
+}
+
+/* A path or a command in the words is a quiet step down, never a box of its own. */
+.pane-top
+  :is(.notice-pane-box, [data-scope="notice"][data-placement="pane"])
+  :is(.notice-says, [data-scope="notice"][data-part="message"])
+  code {
+  color: var(--text-secondary);
+  opacity: 1;
+}
+
+/* What a way out opened stays under the line, at the warning's width. */
+.pane-top
+  :is(.notice-pane-box, [data-scope="notice"][data-placement="pane"])
+  > :is(.notice-under-pane, [data-scope="notice"][data-part="under"]) {
+  padding-inline: 0;
+}
+
+/* **A consent's Allow stands apart from Keep blocked** (rule 9): the first plain answer after
+   one that grants has a gap before it, so the two are never one row of equals. Neither is the
+   primary look (ADR 0097 §6): the grants variant and the plain one, as the button family draws
+   them. */
+.pane-top
+  :is(.notice-pane-box, [data-scope="notice"][data-placement="pane"])
+  > [role="status"]
+  > [data-variant="grants"]
+  + :not([data-variant="grants"]) {
+  margin-inline-start: var(--space-6);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   The header.
+   --------------------------------------------------------------------------------------------- */
+
+/* **One slim row**: the chat at a glance at its start, the pane's controls at its end. With no
+   band above it, it keeps half the runway, so a chip's top is where a warning's would be. */
+.pane-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-3);
+  min-inline-size: 0;
+  min-block-size: var(--size-chrome);
+  padding-block: var(--space-2);
+  padding-inline: var(--space-5) var(--space-3);
+}
+
+.pane-top > :is(.pane-notice-row-empty, [data-empty]) + .pane-head {
+  margin-block-start: var(--space-2);
+}
+
+/* The chips take the room the controls leave, and give way in it; the line's own rules decide
+   what gives way first (`App.css`, `.pane-chips:has(.pane-crumbs)`). The room the controls take
+   is the header's flex row now, so the line reserves none of its own. */
+.pane-head > .pane-chips {
+  flex: 1 1 auto;
+  align-items: center;
+  min-inline-size: 0;
+  max-inline-size: none;
+  margin-inline-end: 0;
+}
+
+/* **A chip is words, not a box** (no hairlines; a control never takes a border): quiet on the
+   pane's fill, the pointer's ground under it when it is pressable. */
+.pane-head
+  > .pane-chips
+  > :is(.chat-gauge, .pane-from, .pane-harness, .pane-work-item, .pane-crumbs) {
+  border-color: transparent;
+  background-color: transparent;
+  opacity: 1;
+}
+
+.pane-head > .pane-chips > .pane-harness {
+  border-radius: var(--radius-md);
+  color: var(--text-quiet);
+}
+
+.pane-head > .pane-chips > .pane-harness:hover {
+  background-color: var(--surface-overlay);
+  color: var(--text-primary);
+}
+
+.pane-head > .pane-chips > .chat-gauge {
+  color: var(--text-muted);
+}
+
+/* **A pane's actions** (`PaneActions`, shared with a view's pane, #3147): split side by side,
+   split stacked and close, one cluster in its own place at the pane's top right. Plain marks in
+   the quiet tier with no box around them. When they are drawn is the window's rule (`App.css`,
+   `.pane-doing`). */
+.pane-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  margin-inline-start: auto;
+}
+
+.pane-actions > .pane-doing {
+  gap: var(--space-1);
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+}
+
+.pane-actions > .pane-doing button {
+  border-radius: var(--radius-md);
+  color: var(--text-quiet);
+}
+
+.pane-actions > .pane-doing button:hover:not(:disabled, [aria-disabled="true"]) {
+  background-color: var(--surface-overlay);
+  color: var(--text-primary);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   The terminal.
+   --------------------------------------------------------------------------------------------- */
+
+/* **Pinned to its bottom** (rule 4): the terminal is drawn from the pane's floor up, so while
+   its rows are fitted to the room a warning gave or took, what changes is its top. The last
+   line never moves, and the part of a row the fit cannot use is at the top, on the same fill. */
+.pane-frame.pane-headed .pane {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.pane-frame.pane-headed .pane > .xterm {
+  flex: none;
+  block-size: auto;
+}

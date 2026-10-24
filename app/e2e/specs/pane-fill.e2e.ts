@@ -62,7 +62,9 @@ async function measure(): Promise<Measured> {
     return {
       centre: { top: strip?.bottom ?? box?.top ?? Number.NaN, bottom: box?.bottom ?? Number.NaN },
       panes: [...document.querySelectorAll('[data-testid="pane"]')].map((pane) => {
-        const own = pane.getBoundingClientRect();
+        // The pane's frame: its band and its header are at its top, inside it (#3142), and the
+        // terminal is under them, down to the frame's bottom.
+        const own = (pane.closest(".pane-frame") ?? pane).getBoundingClientRect();
         const screen = pane.querySelector(".xterm-screen")?.getBoundingClientRect();
         const rows = pane.querySelector(".xterm-rows")?.children.length ?? 0;
         const height = screen?.height ?? 0;

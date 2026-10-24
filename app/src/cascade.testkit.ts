@@ -109,7 +109,7 @@ function rulesOf(css: string, layer = 0, from = 0): Rule[] {
 
 /** The window's cascade: `App.css`, and in the layer above it the collections, the control
  *  classes, the button family (#2904), the field family (#2905), the window's own families
- *  (#2913), the dialog family (#2910), the overlay surface, the tooltip family (#2908), the popover and menu families (#2909), the list family (#2911) and then the text roles,
+ *  (#2913), the dialog family (#2910), the overlay surface, the tooltip family (#2908), the popover and menu families (#2909), the list family (#2911), a chat's pane (#3142) and then the text roles,
  *  in the order `styles.css` imports them. */
 const COMPONENTS = [
   "primitives/collections.css",
@@ -125,6 +125,7 @@ const COMPONENTS = [
   "ui/popover/popover.css",
   "ui/menu/menu.css",
   "ui/list/list.css",
+  "paneFrame.css",
   "primitives/text.css",
 ].reduce<Rule[]>((rules, file) => [...rules, ...rulesOf(sheet(file), 1, rules.length)], []);
 const RULES = [...rulesOf(sheet("App.css"), 0), ...COMPONENTS];
