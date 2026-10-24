@@ -4,6 +4,7 @@
 import { useSyncExternalStore } from "react";
 import { CHAT_KEYBOARD } from "./actions";
 import { onAMac } from "./tabKeys";
+import { pressed } from "./keys/registry";
 import { atCreation, sayAboutThisMachine, type Reading } from "./windowprefs";
 import { DEFAULT_TEXT, drawWindowText, type TextSizes, type Which } from "./textDefaults";
 
@@ -195,6 +196,9 @@ export function whoseSize(target: EventTarget | null): Which {
     : "window";
 }
 
+/** The text size's acts in the key registry. */
+const SIZE_KEY_IDS = ["text.bigger", "text.smaller", "text.reset"];
+
 /**
  * Listens for the size keys on `on`, **captured**, so a pane's terminal never sees one: xterm
  * reads its own textarea, and a capturing listener on the window runs first. Answers the way to
@@ -202,8 +206,12 @@ export function whoseSize(target: EventTarget | null): Which {
  */
 export function listenForSizeKeys(on: Window): () => void {
   const key = (e: KeyboardEvent) => {
-    const asked = sizeKey(e);
-    if (asked === undefined) return;
+    // The keys are the key registry's (#2921), held back by nothing: a dialog's words too small
+    // to read are made bigger with them.
+    const hit = pressed(e, SIZE_KEY_IDS);
+    if (hit === undefined) return;
+    const asked: SizeKey =
+      hit.id === "text.reset" ? "reset" : hit.id === "text.bigger" ? "bigger" : "smaller";
     e.preventDefault();
     e.stopPropagation();
     const which = whoseSize(e.target);

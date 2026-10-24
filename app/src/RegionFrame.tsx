@@ -50,7 +50,8 @@ import { useArrived } from "./lib/arrived";
 import { HalfActions } from "./halfHead";
 import { lastUsed, narrowed, narrowPicked, useNarrow } from "./narrowPanel";
 import { useSidesOfTheFront } from "./railRoom";
-import { cycleOf, f6Of, stepped, STOPS, type Stop } from "./regionCycle";
+import { cycleOf, stepped, STOPS, type Stop } from "./regionCycle";
+import { pressed } from "./keys/registry";
 import { moveAlong, sequenceIn } from "./tabSequence";
 import { inADialog } from "./paneKeyboard";
 import { CHAT_KEYBOARD } from "./actions";
@@ -395,15 +396,15 @@ export function RegionFrame({
     if (!holdsKeys) return;
     const cycle = order.split(" ") as Stop[];
     const key = (e: KeyboardEvent) => {
-      const which = f6Of(e);
-      if (which === undefined || inADialog()) return;
-      const on = e.target;
-      if (on instanceof Element && on.closest(`[${CHAT_KEYBOARD}]`) !== null) return;
+      // The keys and their rules are the key registry's (#2921): not under a dialog, not from a
+      // chat's terminal.
+      const which = pressed(e, ["region.next", "region.previous"]);
+      if (which === undefined) return;
       const root = frame.current;
       if (root === null) return;
       e.preventDefault();
       e.stopPropagation();
-      stepIn(root, cycle, which.back);
+      stepIn(root, cycle, which.id === "region.previous");
     };
     window.addEventListener("keydown", key, true);
     return () => window.removeEventListener("keydown", key, true);

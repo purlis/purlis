@@ -5377,6 +5377,28 @@ button.show-more:focus-visible {
   padding: var(--space-5) var(--space-5) var(--space-5);
 }
 
+/* **The keyboard shortcuts** (#2921, `keys/ShortcutsView.tsx`): no heading of its own (the
+   operator's ruling of 2026-10-24, #3147), so the view starts on the ground its tab joins. Its
+   filter is its first row, and keeps the pane's corner (split, close) room at its end, as a
+   heading does; the list under it scrolls. */
+.shortcuts-view {
+  display: grid;
+  flex: 1 1 auto;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: var(--space-3);
+  min-height: 0;
+  padding: var(--space-4) var(--space-5) 0;
+}
+
+.shortcuts-view > .list-filter {
+  margin-inline-end: calc(var(--size-control) * 3 - var(--space-5));
+}
+
+.shortcuts-list {
+  min-height: 0;
+  overflow-y: auto;
+}
+
 /* The light editor (RC-5): a piece's files beside the file picked, or one file filling its
    tab. CodeMirror draws its own colours from `src/editor/look.ts`; only the layout is here. */
 .view-body:has(> .piece-files, > .piece-file) {
@@ -6357,6 +6379,38 @@ nav.piece-files-head {
    Only its opacity: the slot is its full size from the first frame, so the terminal beside it
    is refitted once and not on every frame of a slide. */
 .region-slot.arrived {
+  animation: charter-appear var(--motion-duration-enter) var(--motion-easing-enter);
+}
+
+/* **Focus mode** (#2921, N32, `keys/focusMode.ts`): the project rail, the activity bars, the side
+   panels, the bottom Panel and the status bar out of the flow, and the work alone in their room.
+   Nothing is unmounted and nothing is written: the regions' groups lay the editor out over the
+   room the others leave, and the same sizes come back. The handles between the regions go with
+   them. The title bar stays. */
+.window[data-focus-mode]
+  :is(
+    [data-scope="rail"][data-part="slot"],
+    .region-frame > .activity-column,
+    .region-slot.slot-left,
+    .region-slot.slot-right,
+    .region-slot.slot-panel,
+    :is(.region-row, .regions) > [data-separator],
+    footer[data-scope="status-bar"]
+  ) {
+  display: none;
+}
+
+/* **They come back with a fade**, once, as each arrives; they went at once, as a part that closes
+   does (R128). Reduced motion makes the duration nothing (`theme/motion.ts`). */
+.window[data-focus-back]
+  :is(
+    [data-scope="rail"][data-part="slot"],
+    .region-frame > .activity-column,
+    .region-slot.slot-left,
+    .region-slot.slot-right,
+    .region-slot.slot-panel,
+    footer[data-scope="status-bar"]
+  ) {
   animation: charter-appear var(--motion-duration-enter) var(--motion-easing-enter);
 }
 

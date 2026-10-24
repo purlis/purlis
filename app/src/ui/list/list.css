@@ -231,6 +231,25 @@
   white-space: normal;
 }
 
+/* **The key that does the same** (#2921), at the row's end in the meta role: read last, stood off
+   from what is before it, informational, so in the quiet tier. */
+:where([data-scope="list"], [data-scope="tree"], [data-scope="table"])[data-part="shortcut"] {
+  flex: none;
+  margin-inline-start: auto;
+  padding-inline-start: var(--space-4);
+  color: var(--text-quiet);
+  font-family: inherit;
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* After a trail, the trail keeps the room before it. */
+:where([data-scope="list"], [data-scope="tree"], [data-scope="table"])[data-part="trail"]
+  + [data-part="shortcut"] {
+  margin-inline-start: 0;
+}
+
 /* A row's tooltip is anchored to the whole row by a part that draws nothing and takes no
    pointer (`RowTip.tsx`). */
 :where([data-scope="list"], [data-scope="tree"], [data-scope="table"])[data-part="tip-anchor"] {

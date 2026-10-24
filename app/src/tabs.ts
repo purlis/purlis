@@ -80,6 +80,16 @@ export const SAVING_TITLE = "Saving";
 export const LICENCES_VIEW: ViewRef = { from: null, view: "licences", key: "" };
 
 /**
+ * **The keyboard shortcuts** (#2921, N25): the cheat sheet the key registry draws
+ * (`keys/ShortcutsView.tsx`), opened from the palette and by its key. One per project, about
+ * nothing in it.
+ */
+export const SHORTCUTS_VIEW: ViewRef = { from: null, view: "shortcuts", key: "" };
+
+/** What the shortcuts' tab is called. */
+export const SHORTCUTS_TITLE = "Keyboard shortcuts";
+
+/**
  * **Settings at a workspace's level** (SE-20, #1170; first a page of its own, charter-app#280):
  * the Settings tab keyed by the level and its target — the workspace — so there is one per
  * workspace, deduplicated by the same `viewKey` and filed on that workspace's strip. It keeps the

@@ -3,6 +3,7 @@
 
 import type { KeyboardEvent } from "react";
 import type { Offer } from "./actions";
+import { isKey } from "./keys/registry";
 
 /**
  * **Delete on a focused tab closes it** (charter-app#239): the optional key of the WAI-ARIA
@@ -57,8 +58,7 @@ export function closeOnDelete(
  */
 export function deletes(event: KeyboardEvent<HTMLElement>): boolean {
   if (event.target !== event.currentTarget) return false;
-  if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return false;
-  return event.key === "Delete" || (event.key === "Backspace" && onAMac());
+  return isKey(event.nativeEvent, "tab.close", onAMac());
 }
 
 /**
@@ -79,8 +79,7 @@ export function renameOnF2(
   onPress: (offer: Offer) => void,
 ) {
   if (offer === undefined || event.target !== event.currentTarget) return;
-  if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
-  if (event.key !== "F2") return;
+  if (!isKey(event.nativeEvent, "tab.rename", onAMac())) return;
   event.preventDefault();
   onPress(offer);
 }
