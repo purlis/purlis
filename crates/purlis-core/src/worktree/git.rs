@@ -1822,12 +1822,8 @@ pub(crate) fn run_capped(
             Some(Ok(None)) => Ok(None),
             Some(Err(why)) => Err(why.into()),
             None if over.load(Ordering::Relaxed) => Ok(None),
-            // Stopped at the deadline with nothing heard: no code, which no caller reads as
-            // a listing.
-            None if raw.code.is_none() => Ok(Some(RawRun {
-                out: Vec::new(),
-                ..raw
-            })),
+            // A reader that never answered, whether git exited, was stopped at the deadline or
+            // was ended by the pipe the dead reader closed (no code then either).
             None => Err(std::io::Error::other("git's listing was not read to its end").into()),
         }
     })
