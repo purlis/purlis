@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792825295668,
+  "lastUpdate": 1792825314061,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -13612,6 +13612,42 @@ window.BENCHMARK_DATA = {
             "value": 698.5,
             "unit": "MB",
             "extra": "median of 6 samples: 658.3, 684.5, 697, 700.1, 701.1, 782.9 MB; window 425 MB, session host 273.8 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "13c1229c88f98339caf1002a1b5c3b160cf3391c",
+          "message": "Bump undici from 6.29.0 to 6.29.1 in /app (#3102)\n\nBumps [undici](https://github.com/nodejs/undici) from 6.29.0 to 6.29.1.\n- [Release notes](https://github.com/nodejs/undici/releases)\n- [Commits](https://github.com/nodejs/undici/compare/v6.29.0...v6.29.1)\n\n---\nupdated-dependencies:\n- dependency-name: undici\n  dependency-version: 6.29.1\n  dependency-type: indirect\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>\nCo-authored-by: Aaron Yordanyan <aaron.yor@gmail.com>",
+          "timestamp": "2026-10-24T09:51:08+04:00",
+          "tree_id": "7a4ba4c83a993b8fb35ee284b02217451ff8728b",
+          "url": "https://github.com/purlis/purlis/commit/13c1229c88f98339caf1002a1b5c3b160cf3391c"
+        },
+        "date": 1792825311434,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1590.7,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1564, 1590.7, 1854.5 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 687.4,
+            "unit": "MB",
+            "extra": "median of 6 samples: 644.1, 679.2, 684.9, 689.9, 690.9, 767.6 MB; window 429 MB, session host 258.4 MB"
           }
         ]
       }
