@@ -1082,3 +1082,34 @@ fn a_live_name_git_reads_as_a_pattern_is_named_and_offers_no_fix() {
     );
     assert!(!found.hint.contains("--fix"), "{found:?}");
 }
+
+#[test]
+fn live_skills_says_added_only_of_lines_git_reads_afterwards() {
+    purlis_core::unsteered!();
+    let (_d, root) = baseline("schema = 1\n");
+    // An indented line, and two joined by a lone `\r`: git reads none of the three.
+    let older = "/workspaces/*/*\n!/workspaces/.gitkeep\n  /personas/*/skills.local/\n\
+                 /skills.local/\r/workspaces/*/skills.local/\n/skills.local.lock\n";
+    std::fs::write(root.join(".gitignore"), older).unwrap();
+    let found = live_skills(&root).expect("lines git does not read are missing");
+    for line in [
+        "/skills.local/",
+        "/workspaces/*/skills.local/",
+        "/personas/*/skills.local/",
+    ] {
+        assert!(found.detail.contains(line), "{line}: {found:?}");
+    }
+
+    let said = ran(&fix::apply(&root, FixId::LiveSkills)).to_vec();
+
+    let after = std::fs::read_to_string(root.join(".gitignore")).unwrap();
+    assert!(after.starts_with(older), "{after:?}");
+    assert!(
+        after.ends_with("/skills.local/\n/workspaces/*/skills.local/\n/personas/*/skills.local/\n"),
+        "{after:?}"
+    );
+    let ticked = said.iter().find(|l| l.starts_with('✓')).expect("a tick");
+    assert!(ticked.contains("/personas/*/skills.local/"), "{said:?}");
+    assert!(!said.iter().any(|l| l.starts_with('✗')), "{said:?}");
+    assert_eq!(live_skills(&root), None, "the row clears");
+}

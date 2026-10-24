@@ -1099,7 +1099,9 @@ fn ensure_gitignore(path: &Path) -> Result<bool, String> {
         return Ok(true);
     }
     let body = read_text(path)?;
-    let lines = text::stripped_lines(&body);
+    // Read as git reads them: an indented line, or one a lone `\r` joins to the last, ignores
+    // nothing, so it is not present.
+    let lines: Vec<&str> = text::git_lines(&body).map(|line| line.read).collect();
     // The state folder and the local settings under both their names (RN-2a).
     let states = state_ignores();
     let profiles = local_profiles_ignores();
@@ -1183,8 +1185,10 @@ fn read_text(path: &Path) -> Result<String, String> {
 /// block at the literal `!/workspaces/.gitkeep`, so a writer that rewrote or reordered would
 /// break live workspaces from across the codebase.
 ///
-/// Trailing line breaks are collapsed to the one blank line before the new block, as Python
-/// does; every other byte, CRLF endings included, is kept.
+/// A line counts as present only as git reads it ([`text::git_lines`]): an indented copy, or
+/// one a lone `\r` joins to the line before, is not, and is added. Trailing line breaks are
+/// collapsed to the one blank line before the new block, as Python does; every other byte is
+/// kept, and what is added is ended as the file's first line is, so a CRLF file stays CRLF.
 pub(crate) fn append_gitignore(
     path: &Path,
     lines: &[&str],
@@ -1209,7 +1213,7 @@ pub(crate) fn append_gitignore(
 /// Ended as `body` is: a file whose first line ends `\r\n` gets `\r\n` for the blank line,
 /// the header and each line, so a CRLF `.gitignore` is never left with bare `\n` in it.
 pub(crate) fn with_appended(body: &str, lines: &[&str], header: &str) -> (String, Vec<String>) {
-    let present = text::stripped_lines(body);
+    let present: Vec<&str> = text::git_lines(body).map(|line| line.read).collect();
     let missing: Vec<String> = lines
         .iter()
         .filter(|l| !present.contains(*l))

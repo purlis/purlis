@@ -56,6 +56,7 @@ use std::path::{Path, PathBuf};
 use crate::counts::{counted, plural};
 use crate::names;
 use crate::repocmd::{Say, Sink};
+use crate::scaffold::text::{GitLine, git_lines};
 
 pub mod create;
 pub mod drop;
@@ -120,8 +121,9 @@ fn live_in(text: &str) -> BTreeSet<String> {
 /// The workspace a line inside the managed block un-ignores, or `None`.
 ///
 /// Python's `re.match(r"!/workspaces/([^/]+)/workspace\.json", s)` — `match`, so a PREFIX,
-/// which is why the tail is only required to START with `workspace.json`. Faithful rather
-/// than tightened: the two implementations must read one plane's `.gitignore` the same way.
+/// which is why the tail is only required to START with `workspace.json`. The line is the one
+/// git reads ([`git_lines`], SK-28): an indented line, which git never honoured, marks no
+/// workspace LIVE, where Python's `strip()` once let it.
 fn live_line(line: &str) -> Option<String> {
     let (name, tail) = workspace_of(line).filter(|_| line.starts_with('!'))?;
     tail.starts_with("workspace.json").then(|| name.to_string())
@@ -295,31 +297,6 @@ fn skills_lines_in(text: &str) -> SkillsLines {
         .filter(|line| !present.contains(&line.as_str()))
         .collect();
     found
-}
-
-/// One line of a `.gitignore`, as git splits it.
-#[derive(Debug, Clone, Copy)]
-struct GitLine<'a> {
-    /// Where it is among the file's lines.
-    at: usize,
-    /// The line as it is in the file, its `\n` included.
-    raw: &'a str,
-    /// What git reads: the `\n` and one `\r` before it taken off, then trailing spaces. Leading
-    /// whitespace is kept, as git keeps it, so `  !/x` does not read as `!/x`.
-    read: &'a str,
-}
-
-/// Every line of `text`, split on `\n` as git splits a `.gitignore`.
-fn git_lines(text: &str) -> impl Iterator<Item = GitLine<'_>> {
-    text.split_inclusive('\n').enumerate().map(|(at, raw)| {
-        let line = raw.strip_suffix('\n').unwrap_or(raw);
-        let line = line.strip_suffix('\r').unwrap_or(line);
-        GitLine {
-            at,
-            raw,
-            read: line.trim_end_matches(' '),
-        }
-    })
 }
 
 /// **The one block iterator**: every line of `text` inside a managed block, markers left out.

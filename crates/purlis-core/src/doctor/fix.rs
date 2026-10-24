@@ -525,49 +525,60 @@ fn live_skills(root: &Path) -> Fixed {
         return Fixed::Refused(crate::scaffold::GITIGNORE_IS_A_LINK.to_owned());
     }
     let gitignore = super::fsx::path_field(&root.join(".gitignore"));
-    let added = match crate::wscmd::add_skills_lines(root) {
-        Ok(added) => added,
+    let wanted = match crate::wscmd::add_skills_lines(root) {
+        Ok(wanted) => wanted,
         Err(e) => return Fixed::Refused(format!("{gitignore}: {e}; nothing was written")),
     };
-    let mut said: Vec<String> = added
-        .unpublished
-        .iter()
-        .map(|(name, lines)| {
-            format!(
-                "✓ .gitignore now publishes {name}'s skills: added {}",
-                lines.join(", ")
-            )
-        })
-        .collect();
-    if !added.unignored.is_empty() {
-        said.push(format!(
-            "✓ .gitignore keeps local skills on this machine now: added {}",
-            added.unignored.join(", ")
-        ));
-    }
-    said.extend(added.patterns.iter().map(|name| pattern_said(name)));
-    if added.is_empty() {
-        said.insert(
-            0,
-            "✓ .gitignore has every skills line it needs — nothing to do.".to_owned(),
-        );
+    let patterns = wanted.patterns.iter().map(|name| pattern_said(name));
+    if wanted.is_empty() {
+        let mut said =
+            vec!["✓ .gitignore has every skills line it needs — nothing to do.".to_owned()];
+        said.extend(patterns);
         return Fixed::Ran {
             said,
             complete: true,
         };
     }
-    // Asked again, as git will read it: a fix that says it added a line that still is not
-    // read is the one answer this must never give.
+    // What was added is what git reads now that it did not before: asked of the file read back,
+    // never of what was meant to be written, so a "✓ added" is never said of a line that is not.
     let left = match crate::wscmd::skills_lines_missing(root) {
         Ok(left) => left,
         Err(e) => {
-            said.push(format!("✗ {gitignore} could not be read back: {e}"));
             return Fixed::Ran {
-                said,
+                said: vec![format!("✗ {gitignore} could not be read back: {e}")],
                 complete: false,
             };
         }
     };
+    let now_read = |line: &String, still: &[String]| !still.contains(line);
+    let mut said: Vec<String> = Vec::new();
+    for (name, lines) in &wanted.unpublished {
+        let still = left.unpublished.get(name).map_or(&[][..], Vec::as_slice);
+        let added: Vec<&str> = lines
+            .iter()
+            .filter(|line| now_read(line, still))
+            .map(String::as_str)
+            .collect();
+        if !added.is_empty() {
+            said.push(format!(
+                "✓ .gitignore now publishes {name}'s skills: added {}",
+                added.join(", ")
+            ));
+        }
+    }
+    let added: Vec<&str> = wanted
+        .unignored
+        .iter()
+        .filter(|line| now_read(line, &left.unignored))
+        .map(String::as_str)
+        .collect();
+    if !added.is_empty() {
+        said.push(format!(
+            "✓ .gitignore keeps local skills on this machine now: added {}",
+            added.join(", ")
+        ));
+    }
+    said.extend(patterns);
     let still: Vec<&str> = left
         .unpublished
         .values()

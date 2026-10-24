@@ -1102,9 +1102,14 @@ key refuses.
   - `charter/commands.py:1116` `_ensure_gitignore` (from `cmd_init`): writes
     `_GITIGNORE_BASELINE` verbatim when the file is absent (`charter/commands.py:1129`),
     otherwise appends only the missing whole lines through the one shared appender.
-  - `charter/util.py:472` `append_gitignore` — the single writer for additions. It appends
-    `"\n\n"`-separated: existing body `rstrip("\n") + "\n\n"`, then `# <header>\n`, then one
-    line each (`charter/util.py:499`). Headers seen: ``added by `purlis init` ``
+  - `charter/util.py:472` `append_gitignore` — the single writer for additions
+    (`crates/purlis-core/src/scaffold/mod.rs` `append_gitignore` / `with_appended`). It appends
+    only the lines git does not already read in the file: a line counts as present as git reads
+    it (split on `\n`, one `\r` before it and trailing spaces taken off, leading whitespace
+    kept), so an indented copy or one joined to the line before by a lone `\r` is added again.
+    The existing body has its trailing `\r` and `\n` taken off, then a blank line, then
+    `# <header>`, then one line each, every one ended as the body's first line is: `\r\n` in a
+    CRLF file, `\n` otherwise (Python wrote `\n` always; `charter/util.py:499`). Headers seen: ``added by `purlis init` ``
     (`charter/commands.py:1152`), ``added by `purlis guard --local` ``
     (`charter/commands.py:1792`), ``added by `purlis reinit` — harness profiles stay on this machine``
     (`charter/commands.py:1821`), ``added by `purlis doctor --fix live-skills` — local skills
