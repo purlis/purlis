@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792852696291,
+  "lastUpdate": 1792856520564,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -6750,6 +6750,42 @@ window.BENCHMARK_DATA = {
             "value": 333,
             "unit": "MB",
             "extra": "median of 6 samples: 412.8, 351.1, 329.5, 332.6, 333.5, 252.7 MB; window 209.5 MB, session host 123 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c527f1a19ffbe5fc4fb89a004aff5e2bd43969bb",
+          "message": "Wait for the shown project rail to reach 52px before reading it (#3154) (#3158)\n\nThe rail grows to its width over a transition; on WebKitGTK the test read\nit mid-way (7px). Taken from #3088.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-24T18:10:01+04:00",
+          "tree_id": "2c6e639518bc9cfe0b3c2894f8d5d6d2b09b8528",
+          "url": "https://github.com/purlis/purlis/commit/c527f1a19ffbe5fc4fb89a004aff5e2bd43969bb"
+        },
+        "date": 1792856517658,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 1248,
+            "unit": "MB",
+            "extra": "median of 3 samples: 827, 1248, 1293 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 323.7,
+            "unit": "MB",
+            "extra": "median of 6 samples: 386.4, 330.5, 332.9, 315.7, 316.9, 226.8 MB; window 203.5 MB, session host 120.2 MB"
           }
         ]
       }
