@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792819475066,
+  "lastUpdate": 1792821185521,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -23310,6 +23310,48 @@ window.BENCHMARK_DATA = {
             "value": 104.62066250000001,
             "unit": "ms",
             "extra": "median of 5 runs: 102.238, 103.667, 104.621, 105.007, 105.039 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "13c1229c88f98339caf1002a1b5c3b160cf3391c",
+          "message": "Bump undici from 6.29.0 to 6.29.1 in /app (#3102)\n\nBumps [undici](https://github.com/nodejs/undici) from 6.29.0 to 6.29.1.\n- [Release notes](https://github.com/nodejs/undici/releases)\n- [Commits](https://github.com/nodejs/undici/compare/v6.29.0...v6.29.1)\n\n---\nupdated-dependencies:\n- dependency-name: undici\n  dependency-version: 6.29.1\n  dependency-type: indirect\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>\nCo-authored-by: Aaron Yordanyan <aaron.yor@gmail.com>",
+          "timestamp": "2026-10-24T09:51:08+04:00",
+          "tree_id": "7a4ba4c83a993b8fb35ee284b02217451ff8728b",
+          "url": "https://github.com/purlis/purlis/commit/13c1229c88f98339caf1002a1b5c3b160cf3391c"
+        },
+        "date": 1792821183745,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4725335,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.460, 0.461, 0.473, 0.475, 0.487 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.7971055,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.125, 16.384, 16.797, 16.856, 16.926 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.48188149999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.511, 100.568, 101.482, 101.898, 102.758 ms"
           }
         ]
       }
