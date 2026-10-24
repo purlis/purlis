@@ -12,7 +12,7 @@ use std::path::Path;
 
 /// When the hook runs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Moment {
+pub enum Moment {
     /// Before a rename, the move's or its put-back's, of `from` to `to`.
     BeforeRename,
     /// After the move's rename of `from` to `to`, before the look at `to`.
@@ -27,12 +27,12 @@ thread_local! {
 
 /// Run `f(moment, from, to)` at each [`Moment`] of every [`super::move_between`] on this thread
 /// until the returned guard drops.
-pub(crate) fn set(f: impl FnMut(Moment, &Path, &Path) + 'static) -> Unset {
+pub fn set(f: impl FnMut(Moment, &Path, &Path) + 'static) -> Unset {
     HOOK.with(|h| *h.borrow_mut() = Some(Box::new(f)));
     Unset
 }
 
-pub(crate) struct Unset;
+pub struct Unset;
 
 impl Drop for Unset {
     fn drop(&mut self) {

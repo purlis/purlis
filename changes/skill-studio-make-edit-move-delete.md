@@ -5,7 +5,7 @@
   - **Edit** opens a skill in the light editor. A live lint says what would stop it from loading, and Save stays off until the skill is whole.
   - **Rename** also renames every persona's and skill's mention of it.
   - **Moving** a skill is done by dragging its row onto a level, or with Move to. Moving one into the project's skills asks where it reaches.
-  - **Delete** says who uses the skill first, and Restore brings it back.
+  - **Delete** says who uses the skill first, and Restore brings it back with its grant. Where the grant can't go with it, the skill stays where it was and you're told why.
   - **A project skill's grant**, and a workspace's switch to turn it off, are on its row. A workspace can't turn on a skill it wasn't granted, and is told which grant would reach it.
   - **Each change is one commit** of only that skill's files.
   - The same changes are on the command line: `purlis skill new`, `edit`, `mv`, `rm` and `restore`.
