@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { $, $$, browser, expect } from "@wdio/globals";
 import { projectRoot } from "../acting.js";
@@ -54,9 +54,15 @@ describe("the Skill studio's first open", function () {
   let plane = "";
   let wereOpen: string[] = [];
   let wereRunning: number[] = [];
+  /** Which of the old folder and its parent the spec made, so it takes away exactly those: a
+   *  clone copies the project's `.claude/skills` while it is there. */
+  let made: string[] = [];
 
   before(async () => {
     root = await projectRoot();
+    made = [join(root, ".claude"), join(root, ".claude", "skills")].filter(
+      (dir) => !existsSync(dir),
+    );
     await focusWorkspace("alpha");
     wereOpen = await tabNames();
     plane = await projectInFront();
@@ -69,6 +75,7 @@ describe("the Skill studio's first open", function () {
     await closeTheViewTabsOpenedSince(wereOpen);
     rmSync(join(root, "skills", BLANK), { recursive: true, force: true });
     rmSync(join(root, ".claude", "skills", OLD), { recursive: true, force: true });
+    for (const dir of [...made].reverse()) if (existsSync(dir)) rmdirSync(dir);
   });
 
   it("offers three starts in an empty studio, and Browse sources and Start blank work", async () => {

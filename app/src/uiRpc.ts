@@ -9723,8 +9723,8 @@ export type StudioFirst = {
 	 */
 	starts: boolean,
 	/**
-	 *  The first-party catalogue and the well-known skill sources the project does not browse
-	 *  yet, each taken up with one click through Add source.
+	 *  The first-party catalogue and the well-known skill sources, less those the project
+	 *  already browses, each taken up with one click through Add source.
 	 */
 	sources: OfferedSource[],
 	/**
