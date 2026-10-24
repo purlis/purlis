@@ -391,7 +391,11 @@ the theme matrix, and Storybook starts on the default's cell, which
 It has three appearances, `dark`, `light` and `dark-high-contrast` (dark, high contrast), each
 naming every token itself, so nothing in it is Purlis Classic's by falling back. Every
 combination clears the theme check with no warning and holds no consent floor, and a test keeps
-it so (`purlis_tests.rs`). Where its values come from:
+it so (`purlis_tests.rs`). **Light and high contrast ship as drawn** (the operator's ruling of
+2026-10-24, after seeing them beside dark and Classic, #2924). Each can be chosen in Settings, and
+Purlis chosen to follow the system draws light on a light system and high contrast where the
+system asks for more. With nothing chosen, Purlis draws its dark (its high contrast where more is
+asked for), whatever the system's appearance. Where its values come from:
 
 - **Dark is the foundation's.** Each colour the record proposes for a token is that token's.
   Where the record lacks a value, one rule derives it from the record's palette:
@@ -423,7 +427,12 @@ it so (`purlis_tests.rs`). Where its values come from:
   hue, chroma and alpha. A reflected colour that misses a floor of the check steps its
   lightness away from its ground by 0.01 until it clears: the comment and punctuation grey, on
   the editor's current line (`#7c7a84`), and the quiet and faint tiers on the row under the
-  pointer (`#61606c`, the placeholder too, and `#7c7a87`).
+  pointer (`#61606c`, the placeholder too, and `#7c7a87`). **A wash is not reflected** (#2924):
+  a hue reflected dark and laid thin on a light ground reads as grey, so `wash.warning`,
+  `danger.wash`, `diff.deleted` and `diff.inserted` are each their hue's purest colour, where
+  sRGB holds the most chroma for it, at dark's alpha: amber `#fdb0051f`, red `#fd04441f`, green
+  `#01fd781f`. Laid on any light ground, each keeps its hue within 40 degrees and at least 0.02 of
+  chroma, and a test holds that.
 - **High-contrast dark** moves each text step up one (primary to white, quiet to the muted
   `#a09eab`, faint to quiet's `#91909d`), each edge up to a text grey, and the accent to the
   record's lighter lavender `#c3baf5`. Its strong border and tree guides are the palette's

@@ -13,7 +13,7 @@ use serde_json::Value;
 use super::gallery::{self, Shelf};
 use super::levels::Reach;
 use super::*;
-use crate::extension::project::theme::Pick;
+use crate::extension::project::theme::{Pick, SYSTEM};
 
 fn no_survey() -> Arc<[Offered]> {
     Arc::from(Vec::new())
@@ -353,8 +353,10 @@ fn the_gallery_shows_it_first_as_the_default_and_purlis_classic_beside_it() {
 /// **The light appearance's rule, re-derived** (D-2336-12), so a change to dark cannot leave
 /// light behind: each colour's OKLCH lightness reflected about the foundation's deepest colour,
 /// hue, chroma and alpha kept (chroma given up in steps of 0.001 until it fits sRGB); the scrim,
-/// the shadow and the scrollbar's track kept as they are; and a reflected colour that misses a
-/// floor of the check stepped darker by 0.01 until it clears it.
+/// the shadow and the scrollbar's track kept as they are; a wash not reflected but drawn in its
+/// hue's purest colour at its alpha (#2924), since a hue reflected dark and laid thin on a light
+/// ground reads as grey; and a reflected colour that misses a floor of the check stepped darker by
+/// 0.01 until it clears it.
 mod light_rule {
     fn to_linear(c: f64) -> f64 {
         let c = c / 255.0;
@@ -449,6 +451,25 @@ mod light_rule {
         format!("{}{alpha}", oklch(1.0 - (lightness - deepest), chroma, hue))
     }
 
+    /// The wash `value` as light lays it: its hue's purest colour, the lightness (from 0.300 to
+    /// 0.985, in steps of 0.005) where sRGB holds the most chroma for that hue, its alpha kept.
+    pub(super) fn purest(value: &str) -> String {
+        let (body, alpha) = value.split_at(7);
+        let hue = oklch_of(body).2;
+        let mut best = (f64::MIN, String::new());
+        for step in 300..=985 {
+            if step % 5 != 0 {
+                continue;
+            }
+            let colour = oklch(f64::from(step) / 1000.0, 0.4, hue);
+            let chroma = oklch_of(&colour).1;
+            if chroma > best.0 {
+                best = (chroma, colour);
+            }
+        }
+        format!("{}{alpha}", best.1)
+    }
+
     /// `value` stepped darker by 0.01 of lightness until it clears `floor` on `ground`.
     pub(super) fn cleared(mut value: String, ground: &str, floor: f64) -> String {
         let (mut lightness, chroma, hue) = oklch_of(&value);
@@ -460,6 +481,44 @@ mod light_rule {
     }
 }
 
+/// `wash` laid over the opaque `ground`, as the window composites it.
+fn laid(wash: &str, ground: &str) -> String {
+    let byte = |hex: &str, at: usize| f64::from(u8::from_str_radix(&hex[at..at + 2], 16).unwrap());
+    let alpha = byte(wash, 7) / 255.0;
+    let one = |at: usize| {
+        let mixed = alpha * byte(wash, at) + (1.0 - alpha) * byte(ground, at);
+        (mixed + 0.5).floor() as u8
+    };
+    format!("#{:02x}{:02x}{:02x}", one(1), one(3), one(5))
+}
+
+#[test]
+fn a_light_wash_reads_in_its_own_hue_on_every_ground_it_is_laid_on() {
+    // The pane warnings' amber read as grey in light (#2924): each wash, laid on each ground,
+    // carries at least 0.02 of chroma, within 40 degrees of its hue in dark.
+    let theme = purlis();
+    let dark = theme.of(Appearance::Dark).unwrap();
+    let light = theme.of(Appearance::Light).unwrap();
+    for wash in [
+        "danger.wash",
+        "wash.warning",
+        "diff.deleted",
+        "diff.inserted",
+    ] {
+        let hue = light_rule::oklch_of(&dark.value(wash)[..7]).2;
+        for ground in ["surface.base", "surface.raised", "surface.overlay"] {
+            let drawn = laid(light.value(wash), light.value(ground));
+            let (_, chroma, drawn_hue) = light_rule::oklch_of(&drawn);
+            let apart = (drawn_hue - hue).rem_euclid(360.0);
+            let apart = apart.min(360.0 - apart);
+            assert!(
+                chroma >= 0.02 && apart <= 40.0,
+                "{wash} on {ground} is {drawn}: chroma {chroma:.3}, {apart:.0} degrees from its hue"
+            );
+        }
+    }
+}
+
 #[test]
 fn light_is_dark_reflected_by_its_one_rule() {
     let theme = purlis();
@@ -468,6 +527,13 @@ fn light_is_dark_reflected_by_its_one_rule() {
     // The foundation's deepest colour: what the window is drawn on, behind everything.
     let deepest = light_rule::oklch_of(dark.value("window.background")).0;
     let kept = ["overlay.scrim", "overlay.shadow", "scrollbar.track"];
+    // The washes: a hue laid thin over a ground, which reflected would read as grey (#2924).
+    let washes = [
+        "danger.wash",
+        "wash.warning",
+        "diff.deleted",
+        "diff.inserted",
+    ];
     // The pairs a reflected colour missed, and the ground it is stepped away from (#2700).
     let stepped = [
         ("syntax.comment", "surface.hover", 3.0),
@@ -483,6 +549,8 @@ fn light_is_dark_reflected_by_its_one_rule() {
         .map(|(token, value)| {
             let value = if kept.contains(token) {
                 value.clone()
+            } else if washes.contains(token) {
+                light_rule::purest(value)
             } else {
                 light_rule::reflect(value, deepest)
             };
@@ -500,6 +568,53 @@ fn light_is_dark_reflected_by_its_one_rule() {
     assert_eq!(light.typed, dark.typed);
     assert_eq!(light.geometry, dark.geometry);
     assert_eq!(light.motion, dark.motion);
+}
+
+#[test]
+fn light_and_high_contrast_ship_as_its_appearances_and_dark_stays_the_default() {
+    // The operator's ruling of 2026-10-24 (#2924): Purlis's light and high-contrast dark ship as
+    // drawn. Each can be chosen; Purlis chosen to follow the system draws light on a light system
+    // and high contrast where more contrast is asked for; and with nothing chosen it is dark,
+    // whatever the system's appearance.
+    let drawn = |choice: Option<Choice>, os: Appearance, contrast| {
+        let levels = Levels {
+            project_default: choice,
+            ..Levels::default()
+        };
+        let drawn = resolve_levels(
+            &LevelInputs {
+                levels: &levels,
+                folders: &Folders::of(None, None, None),
+                theirs: None,
+                on: On::Every,
+                system: os,
+                contrast,
+            },
+            no_survey,
+        );
+        let theme = drawn.theme.unwrap();
+        (theme.name.clone(), theme.id.clone())
+    };
+    let purlis = |appearance| Choice::new(PURLIS, Some(appearance));
+    let it = |id: &str| ("Purlis".to_owned(), id.to_owned());
+    for id in ["dark", "light", "dark-high-contrast"] {
+        let chosen = drawn(purlis(id), Appearance::Dark, Contrast::Standard);
+        assert_eq!(chosen, it(id), "{id} can be chosen");
+    }
+    let following = |os, contrast| drawn(purlis(SYSTEM), os, contrast);
+    assert_eq!(
+        following(Appearance::Light, Contrast::Standard),
+        it("light")
+    );
+    assert_eq!(following(Appearance::Dark, Contrast::Standard), it("dark"));
+    assert_eq!(
+        following(Appearance::Dark, Contrast::More),
+        it("dark-high-contrast")
+    );
+    assert_eq!(
+        drawn(None, Appearance::Light, Contrast::Standard),
+        it("dark")
+    );
 }
 
 #[test]
