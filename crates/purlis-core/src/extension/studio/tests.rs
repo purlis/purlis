@@ -476,7 +476,10 @@ fn the_macos_profile_reads_the_systems_programs_and_no_home() {
     assert!(!text.contains("user-preference-read"), "{text}");
     assert!(!text.contains("com.apple.FSEvents"), "{text}");
     assert!(!text.contains("opendirectoryd"), "{text}");
-    assert!(text.contains("(allow file-read* file-map-executable"), "{text}");
+    assert!(
+        text.contains("(allow file-read* file-map-executable"),
+        "{text}"
+    );
     // Of the person's home, only the extension's own folder is a subpath, and the home itself
     // only a literal its path resolves through.
     let homes: Vec<&str> = text
