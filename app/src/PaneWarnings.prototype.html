@@ -1,0 +1,718 @@
+<title>Pane Warnings Prototype</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;700&display=swap">
+<!--
+  PROTOTYPE, throwaway. Ticket: purlis/purlis#3142 (M66 UI system),
+  "Pane warnings and the pane's chips: a sticky band inside the pane that keeps the tab joined".
+  Question: where does a pane's warning live, and where do the pane's chips live,
+  so the tab stays joined and nothing covers the terminal?
+  Must respect: tabs docked on the content panel, chosen chat tab filled with terminal.background
+  (tabs.css, #2914); notice family (#2912, m66/2912-card-notice-badge); no hairlines; corners
+  7/8/10/12; washes .10-.14 (wash.warning, danger.wash); quiet/faint tiers; 2px lavender focus
+  ring; no pane borders; no state change moves a neighbour.
+  Variants: A band + slim chip header; B one header row, pill expands to band;
+  C chips in the tab, one-line band; D flush editor-notification bands, chips in a pane footer.
+  Side note (#3143): the resize separator's quiet hover is drawn the same in every variant.
+-->
+<style>
+/* Layout: page header (question, controls) over a two-column work area: the shell slice | the state readout + rules.
+   Tokens: Purlis theme.json (crates/purlis-core/src/theme/built-in/purlis), light appearance on :root, dark below. */
+:root {
+  --behind: #ffffff; --surface-base: #f7f7fd; --surface-raised: #eeeef5; --surface-overlay: #e4e4ec;
+  --surface-hover: #dbdce5; --control-base: #e4e4ec; --control-hover: #dbdce5;
+  --text-primary: #252329; --text-secondary: #3b3942; --text-muted: #5d5b67; --text-quiet: #61606c; --text-faint: #7c7a87;
+  --border-strong: #a9a7b5; --accent: #554691; --accent-surface: #dedcef; --focus-ring: #554691;
+  --tab-active: #e9e9f2; --list-selected: #dbdbec;
+  --term-bg: #e9e9f2; --term-fg: #252329; --term-scroll: #25232933;
+  --wash-warning: #5236011f; --danger-wash: #682e301f; --danger-base: #682e30; --danger-surface: #e1d4d9; --danger-text: #351c1c;
+  --state-waiting: #523601; --state-success: #20562f; --state-failed: #682f2a; --success-wash: #20562f24;
+  --ansi-red: #682f2a; --ansi-yellow: #523601; --ansi-green: #20562f; --ansi-claude: #b4532f; --ansi-link: #4d3f80;
+  --bar-bg: #252329; --bar-fg: #f7f7fd; --shadow: #00000033;
+  --font-ui: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  --r-control: 7px; --r-tab: 8px; --r-warn: 10px; --r-panel: 12px;
+  --gutter: 8px; --tabs-gap: 8px; --tabs-flare: 8px;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --behind: #121215; --surface-base: #17171b; --surface-raised: #1d1d22; --surface-overlay: #24242a;
+  --surface-hover: #2a2a31; --control-base: #24242a; --control-hover: #2a2a31;
+  --text-primary: #e6e4ec; --text-secondary: #c9c7d2; --text-muted: #a09eab; --text-quiet: #91909d; --text-faint: #74727f;
+  --border-strong: #55535f; --accent: #a99cf0; --accent-surface: #292735; --focus-ring: #a99cf0;
+  --tab-active: #202026; --list-selected: #2a2936;
+  --term-bg: #202026; --term-fg: #e6e4ec; --term-scroll: #e6e4ec33;
+  --wash-warning: #e5c08a1f; --danger-wash: #f0a9a81f; --danger-base: #f0a9a8; --danger-surface: #352b2f; --danger-text: #ffdcdb;
+  --state-waiting: #e5c08a; --state-success: #8fc79a; --state-failed: #f0aaa2; --success-wash: #8fc79a24;
+  --ansi-red: #fbb4ac; --ansi-yellow: #e2c589; --ansi-green: #8fc79a; --ansi-claude: #d77757; --ansi-link: #b3a8f2;
+  --bar-bg: #e6e4ec; --bar-fg: #17171b; --shadow: #00000099; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --behind: #121215; --surface-base: #17171b; --surface-raised: #1d1d22; --surface-overlay: #24242a;
+  --surface-hover: #2a2a31; --control-base: #24242a; --control-hover: #2a2a31;
+  --text-primary: #e6e4ec; --text-secondary: #c9c7d2; --text-muted: #a09eab; --text-quiet: #91909d; --text-faint: #74727f;
+  --border-strong: #55535f; --accent: #a99cf0; --accent-surface: #292735; --focus-ring: #a99cf0;
+  --tab-active: #202026; --list-selected: #2a2936;
+  --term-bg: #202026; --term-fg: #e6e4ec; --term-scroll: #e6e4ec33;
+  --wash-warning: #e5c08a1f; --danger-wash: #f0a9a81f; --danger-base: #f0a9a8; --danger-surface: #352b2f; --danger-text: #ffdcdb;
+  --state-waiting: #e5c08a; --state-success: #8fc79a; --state-failed: #f0aaa2; --success-wash: #8fc79a24;
+  --ansi-red: #fbb4ac; --ansi-yellow: #e2c589; --ansi-green: #8fc79a; --ansi-claude: #d77757; --ansi-link: #b3a8f2;
+  --bar-bg: #e6e4ec; --bar-fg: #17171b; --shadow: #00000099; color-scheme: dark; }
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--behind); color: var(--text-primary); font: 14px/1.4 var(--font-ui);
+  padding-block: 20px 96px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+svg { display: block; flex: none; }
+
+/* ---------- The page around the prototype ---------- */
+.head { max-width: 1240px; margin: 0 auto 14px; display: grid; gap: 10px; }
+.head h1 { margin: 0; font-size: 20px; font-weight: 600; text-wrap: balance; }
+.head .q { margin: 0; color: var(--text-secondary); max-width: 80ch; }
+.head .meta { margin: 0; color: var(--text-quiet); font-size: 12px; max-width: 100ch; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+.ctl { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-quiet); }
+.seg { display: inline-flex; gap: 2px; padding: 2px; border-radius: var(--r-tab); background: var(--control-base); }
+.seg button { border: 0; background: transparent; color: var(--text-muted); padding: 3px 9px; border-radius: 6px;
+  cursor: pointer; font-size: 12px; font-variant-numeric: tabular-nums; }
+.seg button:hover { background: var(--control-hover); color: var(--text-primary); }
+.seg button[aria-pressed="true"] { background: var(--accent-surface); color: var(--text-primary); }
+.plain { border: 0; background: var(--control-base); color: var(--text-primary); padding: 4px 10px; border-radius: var(--r-control);
+  cursor: pointer; font-size: 12px; }
+.plain:hover { background: var(--control-hover); }
+
+.work { max-width: 1240px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; align-items: start; }
+@media (max-width: 900px) { .work { grid-template-columns: minmax(0, 1fr); } }
+.side { display: grid; gap: 12px; min-width: 0; }
+.card { background: var(--surface-raised); border-radius: var(--r-panel); padding: 12px 14px; min-width: 0; }
+.card h2 { margin: 0 0 8px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-quiet); }
+.state { margin: 0; font: 11px/1.45 var(--font-mono); color: var(--text-muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+.rules { margin: 0; padding-left: 22px; display: grid; gap: 5px; font-size: 12px; color: var(--text-secondary); }
+.rules li::marker { color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.bet { font-size: 12px; color: var(--text-secondary); margin: 0; }
+.bet b { color: var(--text-primary); font-weight: 600; }
+.note { max-width: 1240px; margin: 8px auto 0; font-size: 12px; color: var(--text-quiet); }
+
+/* ---------- The shell slice ---------- */
+.stage { position: relative; background: var(--surface-base); border-radius: var(--r-panel); padding: var(--gutter); height: 600px; min-width: 0;
+  display: grid; grid-template-columns: var(--main-w, minmax(0, 1fr)) 8px minmax(40px, var(--right-w, 220px)); overflow: hidden; }
+.stage[data-narrow] { grid-template-columns: min(380px, calc(100% - 56px)) 8px minmax(40px, 1fr); }
+@media (max-width: 560px) { .stage { height: 560px; --right-w: 40px; } }
+.maincol { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+
+/* Separator (#3143 side note): quiet 2px bar on hover, lavender only as the keyboard's focus ring. */
+.sep { position: relative; cursor: col-resize; border-radius: 4px; touch-action: none; }
+.sep::after { content: ""; position: absolute; inset: 16px 3px; border-radius: 1px; background: transparent; }
+.sep:hover::after, .sep[data-drag]::after { background: var(--border-strong); }
+.sep:focus-visible { outline-offset: -2px; }
+
+.rightp { background: var(--surface-raised); border-radius: var(--r-panel); padding: 12px 14px; min-width: 0; overflow: hidden; }
+.rightp h3 { margin: 0 0 14px; font-size: 15px; font-weight: 600; white-space: nowrap; }
+.rightp .lbl { font-size: 11px; font-weight: 600; letter-spacing: .06em; color: var(--text-quiet); display: flex; gap: 6px; align-items: center; white-space: nowrap; }
+.rightp ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 2px; font-size: 13px; color: var(--text-secondary); }
+.rightp li { padding: 4px 6px; border-radius: var(--r-control); white-space: nowrap; }
+
+/* The strip: transparent, so the chosen tab reads as the top of the panel (tabs.css). */
+.strip { display: flex; align-items: flex-end; gap: var(--tabs-gap); flex: none; min-width: 0; padding-top: 2px; }
+.tab { position: relative; isolation: isolate; display: flex; align-items: center; gap: 8px; flex: 0 1 auto; min-width: 64px;
+  max-width: 240px; height: 31px; padding: 0 10px 0 12px; border-radius: var(--r-tab) var(--r-tab) 0 0;
+  color: var(--text-quiet); font-size: 13px; white-space: nowrap; }
+.tab > [role="tab"] { display: flex; flex: 1 1 auto; align-items: center; gap: 4px; min-width: 0; align-self: stretch; overflow: hidden;
+  padding: 0; border: 0; background: none; color: inherit; cursor: pointer; }
+.tab > [role="tab"]:focus-visible { outline: none; }
+.tab:has(> [role="tab"]:focus-visible) { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+.tab:hover { color: var(--text-primary); }
+.tab:not([data-selected]):hover::before { content: ""; position: absolute; inset: 3px 0 5px; z-index: -1; border-radius: var(--r-control);
+  background: var(--surface-overlay); }
+.tab[data-selected] { background: var(--term-bg); color: var(--text-primary); }
+.tab[data-selected]::before, .tab[data-selected]::after { content: ""; position: absolute; bottom: 0; width: var(--tabs-flare); height: var(--tabs-flare);
+  background: var(--term-bg); pointer-events: none; }
+.tab[data-selected]::before { left: calc(var(--tabs-flare) * -1);
+  mask-image: radial-gradient(circle at 0 0, transparent var(--tabs-flare), #000 calc(var(--tabs-flare) + .5px)); }
+.tab[data-selected]::after { right: calc(var(--tabs-flare) * -1);
+  mask-image: radial-gradient(circle at 100% 0, transparent var(--tabs-flare), #000 calc(var(--tabs-flare) + .5px)); }
+.tab[data-selected][data-first]::before { display: none; }
+.tlabel { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.pmark { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; background: var(--success-wash); color: var(--state-success); flex: none; }
+.mark { color: var(--text-faint); flex: none; }
+.dot { width: 10px; height: 10px; border-radius: 50%; background: var(--state-waiting); flex: none; margin-left: 2px; }
+.closer { display: grid; place-items: center; width: 16px; height: 16px; padding: 0; border: 0; border-radius: 3px; background: transparent;
+  color: var(--text-faint); cursor: pointer; flex: none; position: relative; }
+.closer::after { content: ""; position: absolute; inset: -4px; }
+.closer:hover { background: var(--danger-surface); color: var(--danger-text); }
+.closer:focus-visible { outline-offset: -2px; }
+.newtab { align-self: center; display: grid; place-items: center; width: 26px; height: 26px; border: 0; background: transparent;
+  color: var(--text-quiet); border-radius: var(--r-control); cursor: pointer; flex: none; margin-bottom: 2px; }
+.newtab:hover { background: var(--surface-overlay); color: var(--text-primary); }
+.strip-acts { margin-left: auto; display: flex; gap: 2px; align-self: center; padding-bottom: 2px; flex: none; }
+
+/* Chip in the tab (C): a fixed part of the tab at every state, so choosing never changes width. */
+.tabchip { display: inline-flex; align-items: center; gap: 3px; height: 20px; padding: 0 6px; border: 0; border-radius: 6px;
+  background: var(--surface-overlay); color: var(--text-muted); font-size: 11px; cursor: pointer; flex: none; font-variant-numeric: tabular-nums; }
+.tab[data-selected] .tabchip { background: var(--surface-raised); }
+.tabchip:hover { color: var(--text-primary); background: var(--surface-hover); }
+
+/* The content panel: no border, corners 12. Panes sit inside; split panes are parted by the window's gutter. */
+.panel { flex: 1 1 auto; min-height: 0; display: flex; gap: var(--gutter); border-radius: var(--r-panel); }
+.panel[data-split="rows"] { flex-direction: column; }
+.pane { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--term-bg);
+  border-radius: var(--r-panel); overflow: hidden; position: relative; }
+.pane[data-joined-left] { border-top-left-radius: 0; }
+
+/* The runway: the top 8px of the pane is always the terminal's own fill, so the chosen tab joins it. */
+.slot-top { flex: none; display: flex; flex-direction: column; min-height: 0; max-height: 46%; }
+.slot-top:empty { display: none; }
+.term { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; padding: 8px 6px 8px 14px; color: var(--term-fg);
+  font: 12px/17px var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; scrollbar-color: var(--term-scroll) transparent; }
+.term:focus-visible { outline-offset: -2px; border-radius: var(--r-panel); }
+.t-b { font-weight: 700; } .t-d { color: var(--text-muted); } .t-f { color: var(--text-faint); } .t-r { color: var(--ansi-red); }
+.t-y { color: var(--ansi-yellow); } .t-g { color: var(--ansi-green); } .t-c { color: var(--ansi-claude); } .t-l { color: var(--ansi-link); }
+.t-right { display: block; text-align: right; }
+.slot-bottom { flex: none; }
+
+/* Header row (A, B) and footer row (D): their own row, never over the terminal. */
+.prow { display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 6px 0 10px; flex: none; min-width: 0; }
+.chip { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 7px; border: 0; border-radius: var(--r-control);
+  background: transparent; color: var(--text-muted); font-size: 12px; cursor: pointer; white-space: nowrap; flex: none; font-variant-numeric: tabular-nums; }
+.chip:hover { background: var(--surface-overlay); color: var(--text-primary); }
+.chip.harness { color: var(--text-quiet); cursor: default; }
+.chip.harness:hover { background: transparent; color: var(--text-quiet); }
+.prow .grow { flex: 1 1 auto; min-width: 0; }
+.iconbtn { display: grid; place-items: center; width: 24px; height: 24px; border: 0; padding: 0; border-radius: var(--r-control);
+  background: transparent; color: var(--text-quiet); cursor: pointer; flex: none; }
+.iconbtn:hover { background: var(--surface-overlay); color: var(--text-primary); }
+.iconbtn[aria-pressed="true"] { color: var(--text-primary); background: var(--surface-overlay); }
+
+/* Warnings: a wash, no edge. Tones: warning (wash.warning), trouble (danger.wash). */
+.band { display: flex; flex-direction: column; gap: 4px; min-height: 0; padding: 8px 8px 0; }
+.band .stack { display: flex; flex-direction: column; gap: 4px; min-height: 0; overflow-y: auto; }
+.warn { display: flex; gap: 8px; min-width: 0; border-radius: var(--r-warn); background: var(--wash-warning); color: var(--text-primary);
+  font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; flex: none; }
+.warn[data-tone="trouble"] { background: var(--danger-wash); }
+.warn:focus-visible { outline-offset: -2px; }
+.wicon { color: var(--state-waiting); padding-top: 1px; }
+.warn[data-tone="trouble"] .wicon { color: var(--danger-base); }
+.warn[data-tone="consent"] .wicon { color: var(--accent); }
+.wmsg { min-width: 0; }
+.wmsg code { font: 11px var(--font-mono); color: var(--text-secondary); }
+.wunder { color: var(--text-quiet); margin-top: 2px; }
+.wacts { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.btn { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px; border: 0; border-radius: var(--r-control);
+  background: var(--control-base); color: var(--text-primary); font-size: 12px; white-space: nowrap; cursor: pointer; }
+.btn:hover { background: var(--control-hover); }
+.btn.ghost { background: transparent; color: var(--text-muted); }
+.btn.ghost:hover { background: var(--surface-hover); color: var(--text-primary); }
+.btn.grant .lock { color: var(--accent); }
+.btn.link { background: transparent; color: var(--ansi-link); padding: 0 4px; }
+.btn.link:hover { text-decoration: underline; background: transparent; }
+.apart { margin-left: 16px; }
+.more { align-self: flex-start; border: 0; background: transparent; color: var(--text-quiet); font-size: 12px; padding: 2px 6px;
+  border-radius: var(--r-control); cursor: pointer; min-width: 11ch; text-align: left; font-variant-numeric: tabular-nums; flex: none; }
+.more:hover { background: var(--surface-overlay); color: var(--text-primary); }
+
+/* A: card. Words on top, ways out under them. */
+[data-v="A"] .warn { flex-direction: row; padding: 8px 10px 8px 10px; }
+[data-v="A"] .warn .body { display: flex; flex-direction: column; gap: 6px; min-width: 0; flex: 1 1 auto; }
+/* B: header row holds the pill; the band opens under it. */
+.pill { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 6px 0 8px; border: 0; border-radius: var(--r-tab);
+  background: var(--wash-warning); color: var(--state-waiting); font-size: 12px; cursor: pointer; flex: none; white-space: nowrap;
+  font-variant-numeric: tabular-nums; }
+.pill[data-tone="trouble"] { background: var(--danger-wash); color: var(--danger-base); }
+.pill[data-tone="consent"] { background: var(--accent-surface); color: var(--accent); }
+.pill .plabel { color: var(--text-primary); min-width: 10ch; text-align: left; }
+.pill .chev { transition: transform 120ms ease-out; }
+.pill[aria-expanded="true"] .chev { transform: rotate(180deg); }
+[data-v="B"] .band { padding-top: 0; }
+[data-v="B"] .warn { padding: 8px 10px; }
+[data-v="B"] .warn .body { display: flex; flex-direction: column; gap: 6px; min-width: 0; flex: 1 1 auto; }
+/* C: one line, icon + words + ways out, wrapping only when narrow. */
+[data-v="C"] .band { padding: 8px 8px 0; }
+[data-v="C"] .warn { padding: 4px 6px 4px 10px; align-items: center; border-radius: var(--r-tab); }
+[data-v="C"] .warn .body { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; min-width: 0; flex: 1 1 auto; }
+[data-v="C"] .wmsg { flex: 1 1 26ch; }
+[data-v="C"] .wicon { padding-top: 0; }
+/* D: flush editor-notification bands under the runway, link actions, a close mark at the end. */
+[data-v="D"] .band { padding: 8px 0 0; gap: 2px; }
+[data-v="D"] .band .stack { gap: 2px; }
+[data-v="D"] .warn { border-radius: 0; padding: 5px 6px 5px 14px; align-items: center; }
+[data-v="D"] .warn .body { display: flex; flex-wrap: wrap; align-items: center; gap: 0 12px; min-width: 0; flex: 1 1 auto; }
+[data-v="D"] .wmsg { flex: 1 1 26ch; }
+[data-v="D"] .wicon { padding-top: 0; }
+[data-v="D"] .more { margin-left: 8px; }
+[data-v="D"] .prow { height: 28px; }
+
+.popover { position: absolute; z-index: 5; min-width: 220px; max-width: 280px; background: var(--surface-overlay); border-radius: var(--r-warn);
+  box-shadow: 0 8px 24px var(--shadow); padding: 8px; font-size: 12px; }
+.popover h4 { margin: 2px 6px 6px; font-size: 11px; font-weight: 600; color: var(--text-quiet); letter-spacing: .05em; text-transform: uppercase; }
+.popover ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; max-height: 220px; overflow: auto; }
+.popover li { padding: 3px 6px; border-radius: 5px; color: var(--text-secondary); }
+.popover li.missing { color: var(--state-waiting); }
+.popover .harn { margin: 6px 6px 2px; color: var(--text-quiet); }
+
+.enter { animation: enter 160ms ease-out both; }
+@keyframes enter { from { opacity: 0; transform: translateY(-3px); } }
+@media (prefers-reduced-motion: reduce) { .enter { animation: none; } .pill .chev { transition: none; } }
+
+/* The variant bar: not part of the design. */
+.protobar { position: fixed; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 4px; padding: 5px 6px; border-radius: 999px; background: var(--bar-bg); color: var(--bar-fg);
+  box-shadow: 0 4px 16px var(--shadow); z-index: 99; max-width: calc(100vw - 32px); }
+.protobar button { background: none; border: 0; padding: 4px 10px; cursor: pointer; border-radius: 999px; color: inherit; }
+.protobar .label { min-width: 24ch; text-align: center; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.protobar button:focus-visible { outline-color: var(--bar-fg); }
+</style>
+
+<header class="head">
+  <h1>Where does a pane's warning live, and where do its chips live?</h1>
+  <p class="q">So the chosen tab stays joined to its pane and nothing covers the terminal. Ticket #3142 (M66). Four structures below; switch with the bar or <kbd>←</kbd>/<kbd>→</kbd>.</p>
+  <p class="meta">Respects: tabs docked on the panel, chosen chat tab in the terminal's fill (#2914) · notice family (#2912) · no hairlines · corners 7/8/10/12 · washes .12 · quiet/faint tiers · 2px lavender focus ring · no pane borders · no state change moves a neighbour.</p>
+  <div class="controls" id="controls">
+    <div class="ctl">Warnings <div class="seg" data-ctl="count"><button data-val="0">0</button><button data-val="1">1</button><button data-val="2">2</button><button data-val="3">3</button><button data-val="5">5</button></div></div>
+    <div class="ctl">First <div class="seg" data-ctl="long"><button data-val="0">short</button><button data-val="1">long</button></div></div>
+    <div class="ctl">Consent <div class="seg" data-ctl="consent"><button data-val="0">off</button><button data-val="1">on</button></div></div>
+    <div class="ctl">Pane <div class="seg" data-ctl="narrow"><button data-val="0">wide</button><button data-val="1">narrow</button></div></div>
+    <div class="ctl">Split <div class="seg" data-ctl="split"><button data-val="off">off</button><button data-val="cols">side</button><button data-val="rows">stacked</button></div></div>
+    <div class="ctl">Theme <div class="seg" data-ctl="theme"><button data-val="system">system</button><button data-val="light">light</button><button data-val="dark">dark</button></div></div>
+    <button class="plain" id="stream">Stream output</button>
+    <button class="plain" id="reset">Bring warnings back</button>
+  </div>
+</header>
+
+<div class="work">
+  <div style="min-width:0">
+    <div class="stage" id="stage">
+      <div class="maincol">
+        <div class="strip" id="strip" role="tablist" aria-label="Chats"></div>
+        <div class="panel" id="panel"></div>
+      </div>
+      <div class="sep" id="sep" role="separator" aria-orientation="vertical" aria-label="Resize the side panel" tabindex="0" aria-valuenow="220"></div>
+      <aside class="rightp" aria-label="Side panel">
+        <h3>Vaults</h3>
+        <div class="lbl"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6M15.5 7.5l3 3L22 7l-3-3"/></svg>VAULTS · 3</div>
+        <ul><li>forge</li><li>reddit</li><li>devops</li></ul>
+      </aside>
+    </div>
+    <p class="note">Side note, #3143: hover the gap between the pane and the Vaults panel. The separator draws a quiet 2px bar in the strong border tier, the same in every variant; lavender appears only as the keyboard's focus ring. Drag it, or focus it and press ←/→ with Shift.</p>
+  </div>
+  <div class="side">
+    <section class="card"><h2>This variant bets on</h2><p class="bet" id="bet"></p></section>
+    <section class="card"><h2>State</h2><pre class="state" id="state" aria-live="polite"></pre></section>
+    <section class="card"><h2>Rules</h2>
+      <ol class="rules">
+        <li>Nothing sits between a tab and its pane. A pane's warning lives inside the pane.</li>
+        <li>The top 8px of a pane is always the terminal's own fill, so the chosen tab and its flares join the terminal, not a warning.</li>
+        <li>Nothing draws over the terminal. Chips and warnings each take a row of their own.</li>
+        <li>The terminal is pinned to its bottom. Showing or dismissing a warning grows or shrinks it from the top; the last line never moves.</li>
+        <li>At most two warnings show. The rest wait behind "+N more", which has its own row and a reserved width.</li>
+        <li>The warnings never take more than about half the pane; past that they scroll inside their band.</li>
+        <li>A warning is a wash (.12): wash.warning, or danger.wash for trouble. No edge, no hairline, no amber box.</li>
+        <li>Corners: 7 controls, 8 tabs and pills, 10 warnings, 12 panels and panes.</li>
+        <li>A consent warning has no Dismiss. Allow stands apart from Keep blocked, carries its open-lock mark, and neither is drawn as primary.</li>
+        <li>Text tiers: the warning's words primary, its detail quiet, marks faint.</li>
+        <li>Focus is a 2px lavender ring: inset inside a strip or a pane, outside a control.</li>
+        <li>The separator's hover is quiet (strong border tier, 2px), never lavender (#3143).</li>
+        <li>A long warning wraps in place and breaks a path anywhere. Its ways out drop under the words when they do not fit.</li>
+        <li>Esc on a focused warning dismisses it; focus moves to the next warning, or to the terminal.</li>
+        <li>No state change moves a neighbour: chips, pill, counts and chevrons hold fixed slots.</li>
+      </ol>
+    </section>
+  </div>
+</div>
+
+<nav class="protobar" aria-label="Prototype variants">
+  <button id="prev" aria-label="Previous variant">&larr;</button>
+  <span class="label" id="label"></span>
+  <button id="next" aria-label="Next variant">&rarr;</button>
+</nav>
+
+<script>
+const I = {
+  person: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>',
+  shield: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>',
+  x: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6 6 18M6 6l12 12"/></svg>',
+  plus: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>',
+  cols: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M12 4v16"/></svg>',
+  rows: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M3 12h18"/></svg>',
+  spark: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 15v4M17 17h4"/></svg>',
+  warn: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>',
+  stop: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7.9 2h8.2L22 7.9v8.2L16.1 22H7.9L2 16.1V7.9z"/><path d="M12 8v4M12 16h.01"/></svg>',
+  lock: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>',
+  lockOpen: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.8-1.2"/></svg>',
+  chev: '<svg class="chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m6 9 6 6 6-6"/></svg>',
+};
+const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+
+/* Real notices, as purlis words them (SkillsMissingNotice, McpFailedNotice, SkillsChangedNotice, StaleCloneNotices, HostFailingNotice, SandboxBlockNotice, VaultRefusedNotice). */
+const POOL = [
+  { id: 'skills-missing', tone: 'warning', html: 'This chat started without 1 skill steward names, not installed on this machine: <code>mattpocock-skills:grilling</code>.', acts: ['Open in Skill studio'] },
+  { id: 'mcp-failed', tone: 'trouble', html: 'MCP server <code>figma</code> did not start for steward.', under: 'Its error: <code>spawn npx ENOENT</code>', acts: ['Retry'] },
+  { id: 'skills-changed', tone: 'warning', html: 'Its skills changed since it started. It keeps the skills it started with until it restarts on the same conversation.', acts: ['Restart'] },
+  { id: 'stale-clone', tone: 'warning', html: 'This chat\'s clone of <code>purlis/purlis</code> is 14 commits behind <code>main</code>.', acts: ['Update the clone'] },
+  { id: 'host-failing', tone: 'trouble', html: 'Host <code>api.anthropic.com</code> is failing: 3 requests in the last minute ended in 529.', acts: ['Show the requests'] },
+];
+const LONG = { id: 'sandbox-block', tone: 'trouble', html: 'The sandbox refused 4 connections while <code>npm ci --prefer-offline --no-audit</code> ran in <code>/Users/aharon/Projects/purlis-plane/workspaces/smart-ide/clones/purlis/app/node_modules/.cache/purlis-e2e-fixtures/</code>: <code>registry.npmjs.org:443</code>, <code>objects.githubusercontent.com:443</code>, <code>codeload.github.com:443</code> and <code>nodejs.org:443</code>. The command failed, so nothing was installed. An Allow now tells the chat to run it again.', acts: ['Show what you can do'] };
+const CONSENT = { id: 'vault-refused', tone: 'consent', html: 'This chat runs as steward, and vault <code>forge</code> is tagged for devops, so purlis did not open it.', consent: true };
+const SKILLS = ['grilling (missing)', 'tdd', 'prototype', 'code-review', 'diagnosing-bugs', 'research', 'domain-modeling', 'codebase-design', 'pr', 'writing-for-agents', 'resolving-merge-conflicts'];
+
+const VARIANTS = [
+  { key: 'A', name: 'Band + chip header', bet: '<b>A sticky band at the top of the pane</b> holds the warnings as washed cards, words over their ways out. Under it, a slim header row holds the chips at the left and the pane\'s split and close at the right. Then the terminal. Three rows, each with one job.' },
+  { key: 'B', name: 'One header, pill', bet: '<b>One header row only.</b> Chips at the left, a compact warning pill at the right that says how many and how bad. A click opens the band under the header. A consent warning opens it by itself. The terminal gets the most room while nothing is asked.' },
+  { key: 'C', name: 'Chips in the tab', bet: '<b>The chips move into the tab</b> as one trailing chip (✦ 11; click it for the skills and the harness), and the pane\'s split and close move to the strip\'s end. The pane has no header: just the runway, a one-line band per warning (icon, words, ways out), and the terminal.' },
+  { key: 'D', name: 'Flush bands, footer', bet: '<b>The editor-notification pattern</b> (VS Code, JetBrains): each warning is a flush full-width band under the runway, with link-style ways out and a close mark at its end. The chips and pane actions go to a footer row under the terminal, where a status line lives in an IDE.' },
+];
+
+const TERM = {
+  s2: `<span class="t-f">aharon@mac smart-ide % git pull --ff-only</span>
+Updating 3c1e09a..5204ba7
+Fast-forward
+ skills/prototype-loop/CHECKLIST.md | 14 <span class="t-g">++++++++</span><span class="t-r">------</span>
+ skills/prototype-loop/SKILL.md     |  6 <span class="t-g">+++</span><span class="t-r">---</span>
+ 2 files changed, 11 insertions(+), 9 deletions(-)
+<span class="t-f">aharon@mac smart-ide % purlis chat steward</span>
+starting steward 2 in workspaces/smart-ide (sandbox on)
+
+<span class="t-c"> ▐▛███▜▌</span>   <span class="t-b">Claude Code</span> <span class="t-d">v2.1.310</span>
+<span class="t-c">▝▜█████▛▘</span>  <span class="t-d">Opus 5.5 · Claude Max</span>
+<span class="t-c">  ▘▘ ▝▝</span>    <span class="t-d">~/Projects/purlis-plane/workspaces/smart-ide</span>
+
+<span class="t-b">Updated to latest. Got 1 feature, 62 bugfixes, and 16 other changes.</span>
+<span class="t-d">code.claude.com/docs/en/changelog for details</span>
+
+  <span class="t-f">⎿</span>  SessionStart:startup hook error
+  <span class="t-f">⎿</span>  Failed with non-blocking status code: Error occurred while executing hook command:
+     Executable not found in $PATH: "node"
+
+<span class="t-l">&gt;</span> where should a pane's warning live so the tab stays joined?
+
+<span class="t-g">●</span> Read(app/src/ui/notice/notice.css)
+  <span class="t-f">⎿</span>  Read 214 lines
+
+<span class="t-g">●</span> The notice row sits between the strip and the panel, so the chosen tab's
+  flares land on the warning's edge instead of the terminal.
+
+<span class="t-right t-r">✗ Auto-update failed · Run <span class="t-b">claude doctor</span></span><span class="t-f">────────────────────────────────────────────────────────────</span>
+<span class="t-l">❯</span> <span class="t-f">Try "how do I log an error?"</span>
+<span class="t-f">────────────────────────────────────────────────────────────</span>
+  <span class="t-y">⏵⏵ auto mode on</span> <span class="t-f">(shift+tab to cycle)</span>`,
+  s11: `<span class="t-f">aharon@mac smart-ide % purlis chat steward</span>
+starting steward 11 in workspaces/smart-ide (sandbox on)
+
+<span class="t-c"> ▐▛███▜▌</span>   <span class="t-b">Claude Code</span> <span class="t-d">v2.1.310</span>
+<span class="t-c">▝▜█████▛▘</span>  <span class="t-d">Opus 5.5 · Claude Max</span>
+<span class="t-c">  ▘▘ ▝▝</span>    <span class="t-d">~/Projects/purlis-plane/workspaces/smart-ide</span>
+
+<span class="t-l">&gt;</span> watch main ci after the merge of #3139
+
+<span class="t-g">●</span> Bash(gh run watch --exit-status 18842201733)
+  <span class="t-f">⎿</span>  ✓ main ci · lint (2m 11s)
+     ✓ main ci · test-app (9m 48s)
+     <span class="t-y">*</span> main ci · e2e-webkit (running)
+
+<span class="t-g">●</span> Two jobs green, webkit e2e still running. I'll check again when it ends.
+
+<span class="t-f">────────────────────────────────────────────────────────────</span>
+<span class="t-l">❯</span> <span class="t-f">Try "refactor App.tsx"</span>
+<span class="t-f">────────────────────────────────────────────────────────────</span>
+  <span class="t-y">⏵⏵ auto mode on</span> <span class="t-f">(shift+tab to cycle)</span>`,
+};
+const STREAM = [
+  '<span class="t-g">●</span> Update(app/src/ui/notice/notice.css)',
+  '  <span class="t-f">⎿</span>  Updated app/src/ui/notice/notice.css with 6 additions and 3 removals',
+  '<span class="t-g">●</span> Bash(pnpm --filter app vitest run src/ui/notice)',
+  '  <span class="t-f">⎿</span>  ✓ src/ui/notice/Notice.test.tsx (24 tests) 412ms',
+  '<span class="t-g">●</span> The row now sits inside the pane, under 8px of the terminal\'s fill.',
+];
+
+const state = {
+  variant: 'A', theme: 'system', count: 1, long: 0, consent: 0, narrow: 0, split: 'off',
+  chosen: 's2', dismissed: [], expanded: false, pillOpen: false, chipFor: null, focus: '—', last: 'opened the page',
+};
+const shown = new Set();   // warnings drawn last render, for enter-once motion
+const terms = {};          // persistent terminals, one per chat
+const pinned = { s2: true, s11: true };
+let streamAt = 0;
+
+function warnings() {
+  let list = POOL.slice(0, state.count).map(w => ({ ...w }));
+  if (state.long && list.length) list[0] = { ...LONG };
+  if (state.consent) list.unshift({ ...CONSENT });
+  return list.filter(w => !state.dismissed.includes(w.id));
+}
+function chatWarnings(chat) { return chat === 's2' ? warnings() : []; }
+
+function makeTerm(chat) {
+  const t = document.createElement('div');
+  t.className = 'term'; t.tabIndex = 0; t.dataset.chat = chat; t.dataset.fk = 'term-' + chat;
+  t.setAttribute('aria-label', `Terminal of steward ${chat === 's2' ? 2 : 11}`);
+  t.innerHTML = TERM[chat];
+  t.addEventListener('scroll', () => { pinned[chat] = t.scrollTop + t.clientHeight >= t.scrollHeight - 2; });
+  new ResizeObserver(() => { if (pinned[chat]) t.scrollTop = t.scrollHeight; readout(); }).observe(t);
+  terms[chat] = t;
+}
+
+function actsHTML(w, v) {
+  if (w.consent) {
+    return `<div class="wacts"><button class="btn grant" data-act="allow" data-w="${w.id}" data-fk="allow-${w.id}"><span class="lock">${I.lockOpen}</span>Allow steward to use this vault</button>`
+      + `<button class="btn apart" data-act="keep" data-w="${w.id}" data-fk="keep-${w.id}">Keep blocked</button></div>`;
+  }
+  if (v === 'D') {
+    return `<div class="wacts">${w.acts.map(a => `<button class="btn link" data-act="fix" data-w="${w.id}" data-label="${a}" data-fk="fix-${w.id}">${a}</button>`).join('')}</div>`;
+  }
+  return `<div class="wacts">${w.acts.map(a => `<button class="btn" data-act="fix" data-w="${w.id}" data-label="${a}" data-fk="fix-${w.id}">${a}</button>`).join('')}`
+    + `<button class="btn ghost" data-act="dismiss" data-w="${w.id}" data-fk="dismiss-${w.id}">Dismiss</button></div>`;
+}
+function warnHTML(w, v) {
+  const icon = w.tone === 'consent' ? I.lock : w.tone === 'trouble' ? I.stop : I.warn;
+  const isNew = !shown.has(w.id);
+  const close = (v === 'D' && !w.consent) ? `<button class="iconbtn" data-act="dismiss" data-w="${w.id}" data-fk="dismiss-${w.id}" aria-label="Dismiss">${I.x}</button>` : '';
+  return `<div class="warn${isNew ? ' enter' : ''}" role="${w.consent ? 'alertdialog' : 'status'}" aria-label="${w.consent ? 'Vault refused' : 'Warning'}" data-tone="${w.tone}" data-w="${w.id}" tabindex="-1">`
+    + `<span class="wicon">${icon}</span><div class="body"><div class="wmsg">${w.html}${w.under ? `<div class="wunder">${w.under}</div>` : ''}</div>${actsHTML(w, v)}</div>${close}</div>`;
+}
+function bandHTML(list, v) {
+  if (!list.length) return '';
+  const cap = 2;
+  const vis = state.expanded ? list : list.slice(0, cap);
+  const hidden = list.length - vis.length;
+  let more = '';
+  if (list.length > cap) more = `<button class="more" data-act="more" data-fk="more" aria-expanded="${state.expanded}">${state.expanded ? 'Show fewer' : `+${hidden} more`}</button>`;
+  return `<div class="band" role="region" aria-label="Warnings for this pane"><div class="stack">${vis.map(w => warnHTML(w, v)).join('')}</div>${more}</div>`;
+}
+function chipsHTML(chat) {
+  return `<button class="chip" data-act="chips" data-chat="${chat}" data-fk="chips-${chat}" aria-haspopup="dialog">${I.spark}<span>11 skills</span></button>`
+    + `<span class="chip harness" title="Harness">Claude Code</span>`;
+}
+function paneActsHTML() {
+  return `<button class="iconbtn" data-act="split" data-val="cols" data-fk="pa-cols" aria-label="Split side by side" aria-pressed="${state.split === 'cols'}">${I.cols}</button>`
+    + `<button class="iconbtn" data-act="split" data-val="rows" data-fk="pa-rows" aria-label="Split stacked" aria-pressed="${state.split === 'rows'}">${I.rows}</button>`
+    + `<button class="iconbtn" data-act="inert" data-label="Close pane" data-fk="pa-close" aria-label="Close pane">${I.x}</button>`;
+}
+function pillHTML(list) {
+  if (!list.length) return '';
+  const tone = list.some(w => w.consent) ? 'consent' : list.some(w => w.tone === 'trouble') ? 'trouble' : 'warning';
+  const icon = tone === 'consent' ? I.lock : tone === 'trouble' ? I.stop : I.warn;
+  const n = list.length;
+  const label = tone === 'consent' ? 'Needs you' : `${n} warning${n === 1 ? '' : 's'}`;
+  return `<button class="pill" data-tone="${tone}" data-act="pill" data-fk="pill" aria-expanded="${state.pillOpen}">${icon}<span class="plabel">${label}</span>${I.chev}</button>`;
+}
+
+function paneEl(chat, joinedLeft) {
+  const v = state.variant;
+  const list = chatWarnings(chat);
+  const pane = document.createElement('section');
+  pane.className = 'pane'; pane.dataset.chat = chat;
+  pane.setAttribute('aria-label', `Pane: steward ${chat === 's2' ? 2 : 11}`);
+  if (joinedLeft) pane.dataset.joinedLeft = '';
+  const top = document.createElement('div'); top.className = 'slot-top';
+  const bottom = document.createElement('div'); bottom.className = 'slot-bottom';
+  if (v === 'A') {
+    top.innerHTML = bandHTML(list, v) + `<div class="prow">${chipsHTML(chat)}<span class="grow"></span>${paneActsHTML()}</div>`;
+    if (!list.length) top.firstElementChild.style.marginTop = '4px';
+  } else if (v === 'B') {
+    const open = state.pillOpen && list.length;
+    top.innerHTML = `<div class="prow" style="margin-top:4px">${chipsHTML(chat)}<span class="grow"></span>${pillHTML(list)}${paneActsHTML()}</div>` + (open ? bandHTML(list, v) : '');
+  } else if (v === 'C') {
+    top.innerHTML = bandHTML(list, v);
+  } else {
+    top.innerHTML = bandHTML(list, v);
+    bottom.innerHTML = `<div class="prow">${chipsHTML(chat)}<span class="grow"></span>${paneActsHTML()}</div>`;
+  }
+  pane.append(top, terms[chat], bottom);
+  return pane;
+}
+
+function tabHTML(chat, first) {
+  const sel = state.chosen === chat;
+  const name = chat === 's2' ? 'steward 2' : 'steward 11';
+  const chip = state.variant === 'C' ? `<button class="tabchip" data-act="chips" data-chat="${chat}" data-fk="tabchip-${chat}" aria-haspopup="dialog" aria-label="11 skills, Claude Code" title="11 skills · Claude Code">${I.spark}11</button>` : '';
+  return `<div class="tab" ${sel ? 'data-selected' : ''} ${first ? 'data-first' : ''}>`
+    + `<button role="tab" aria-selected="${sel}" data-act="tab" data-chat="${chat}" data-fk="tab-${chat}"><span class="pmark">${I.person}</span><span class="tlabel">${name}</span><span class="mark">${I.shield}</span><span class="dot" aria-label="waiting"></span></button>`
+    + chip + `<button class="closer" data-act="inert" data-label="Close chat ${name}" data-fk="close-${chat}" aria-label="Close ${name}">${I.x}</button></div>`;
+}
+
+function popoverEl() {
+  if (!state.chipFor) return null;
+  const anchor = document.querySelector(`[data-act="chips"][data-chat="${state.chipFor}"]`);
+  if (!anchor) return null;
+  const p = document.createElement('div');
+  p.className = 'popover enter'; p.setAttribute('role', 'dialog'); p.setAttribute('aria-label', 'Skills of this chat');
+  p.innerHTML = `<h4>11 skills · steward</h4><ul>${SKILLS.map(s => `<li class="${s.includes('missing') ? 'missing' : ''}">${s}</li>`).join('')}</ul><p class="harn">Harness: Claude Code v2.1.310</p>`;
+  const st = document.getElementById('stage').getBoundingClientRect();
+  const a = anchor.getBoundingClientRect();
+  const left = Math.max(8, Math.min(a.left - st.left, st.width - 240));
+  p.style.left = left + 'px';
+  if (state.variant === 'D') p.style.bottom = (st.bottom - a.top + 6) + 'px';
+  else p.style.top = (a.bottom - st.top + 6) + 'px';
+  return p;
+}
+
+function render() {
+  const fkBefore = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.fk : null;
+  const root = document.documentElement;
+  if (state.theme === 'system') root.removeAttribute('data-theme'); else root.dataset.theme = state.theme;
+  const stage = document.getElementById('stage');
+  stage.dataset.v = state.variant;
+  if (state.narrow) stage.dataset.narrow = ''; else delete stage.dataset.narrow;
+  const order = ['s11', 's2'];
+  const strip = document.getElementById('strip');
+  strip.innerHTML = order.map((c, i) => tabHTML(c, i === 0)).join('')
+    + `<button class="newtab" data-act="inert" data-label="New chat" data-fk="newtab" aria-label="New chat">${I.plus}</button>`
+    + (state.variant === 'C' ? `<span class="strip-acts">${paneActsHTML()}</span>` : '');
+  const panel = document.getElementById('panel');
+  const saved = {}; for (const c of Object.keys(terms)) saved[c] = terms[c].scrollTop;
+  panel.dataset.split = state.split;
+  const other = state.chosen === 's2' ? 's11' : 's2';
+  const chosenFirst = order[0] === state.chosen;
+  panel.replaceChildren(paneEl(state.chosen, chosenFirst));
+  if (state.split !== 'off') panel.append(paneEl(other, false));
+  stage.querySelectorAll('.popover').forEach(p => p.remove());
+  const pop = popoverEl(); if (pop) stage.append(pop);
+  for (const c of Object.keys(terms)) terms[c].scrollTop = pinned[c] ? terms[c].scrollHeight : saved[c];
+  shown.clear(); warnings().forEach(w => shown.add(w.id));
+  if (fkBefore) { const el = document.querySelector(`[data-fk="${fkBefore}"]`); if (el && el !== document.activeElement) el.focus({ preventScroll: true }); }
+  document.querySelectorAll('.seg').forEach(seg => {
+    const k = seg.dataset.ctl;
+    seg.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(String(state[k]) === b.dataset.val)));
+  });
+  const v = VARIANTS.find(v => v.key === state.variant);
+  document.getElementById('label').textContent = `${v.key} · ${v.name}`;
+  document.getElementById('bet').innerHTML = v.bet;
+  readout();
+}
+
+function readout() {
+  const list = warnings();
+  const cap = 2;
+  const visible = state.variant === 'B' && !state.pillOpen ? 0 : (state.expanded ? list.length : Math.min(cap, list.length));
+  const t = terms[state.chosen];
+  const lastGap = t ? Math.round(t.scrollHeight - t.scrollTop - t.clientHeight) : 0;
+  const s = {
+    variant: state.variant + ' · ' + VARIANTS.find(v => v.key === state.variant).name,
+    theme: state.theme,
+    chosen_tab: state.chosen === 's2' ? 'steward 2 (joined to its pane)' : 'steward 11 (joined to its pane)',
+    warnings: list.map(w => w.id),
+    shown: visible, behind_more: Math.max(0, list.length - visible) && !(state.variant === 'B' && !state.pillOpen) ? list.length - visible : 0,
+    more_open: state.expanded, pill_open: state.variant === 'B' ? state.pillOpen : 'n/a',
+    dismissed: state.dismissed, pane: state.narrow ? 'narrow (380px)' : 'wide', split: state.split,
+    terminal: pinned[state.chosen] ? `pinned to bottom, last line ${lastGap}px from the floor` : 'scrolled up by the reader',
+    chips_popover: state.chipFor || 'closed', focus: state.focus, last: state.last,
+  };
+  document.getElementById('state').textContent = JSON.stringify(s, null, 2);
+}
+
+function dismiss(id, how) {
+  const list = warnings();
+  const i = list.findIndex(w => w.id === id);
+  state.dismissed.push(id);
+  state.last = `${how} "${id}"; the terminal grew from the top, last line stayed put`;
+  const rest = warnings();
+  if (rest.length <= 2) state.expanded = false;
+  render();
+  const next = rest[Math.min(i, rest.length - 1)];
+  const target = next ? document.querySelector(`.warn[data-w="${next.id}"] button`) : terms[state.chosen];
+  if (target) target.focus();
+}
+
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-act]');
+  if (!b) {
+    if (state.chipFor && !e.target.closest('.popover')) { state.chipFor = null; state.last = 'closed the skills popover'; render(); }
+    return;
+  }
+  const act = b.dataset.act;
+  if (act === 'tab') { state.chosen = b.dataset.chat; state.chipFor = null; state.expanded = false; state.last = `chose ${b.textContent.trim()}`; }
+  else if (act === 'dismiss') { dismiss(b.dataset.w, 'dismissed'); return; }
+  else if (act === 'keep') { dismiss(b.dataset.w, 'kept blocked'); return; }
+  else if (act === 'allow') { dismiss(b.dataset.w, 'allowed steward to use vault forge'); return; }
+  else if (act === 'fix') { state.last = `pressed "${b.dataset.label}" on ${b.dataset.w} (opens its place; inert here)`; }
+  else if (act === 'more') { state.expanded = !state.expanded; state.last = state.expanded ? 'showed every warning' : 'showed the first two'; }
+  else if (act === 'pill') { state.pillOpen = !state.pillOpen; state.last = state.pillOpen ? 'opened the warning band' : 'closed the warning band'; }
+  else if (act === 'chips') { state.chipFor = state.chipFor === b.dataset.chat ? null : b.dataset.chat; state.last = state.chipFor ? 'opened the skills popover' : 'closed the skills popover'; }
+  else if (act === 'split') { state.split = state.split === b.dataset.val ? 'off' : b.dataset.val; state.last = `split: ${state.split}`; }
+  else if (act === 'inert') { state.last = `"${b.dataset.label}" is inert in this prototype`; }
+  render();
+});
+
+document.getElementById('controls').addEventListener('click', e => {
+  const b = e.target.closest('.seg button'); if (!b) return;
+  const k = b.closest('.seg').dataset.ctl; const val = b.dataset.val;
+  state[k] = ['count', 'long', 'consent', 'narrow'].includes(k) ? Number(val) : val;
+  if (['count', 'long', 'consent'].includes(k)) {
+    state.dismissed = []; state.expanded = false; state.chosen = 's2';
+    if (state.variant === 'B') state.pillOpen = !!state.consent;
+  }
+  state.last = `set ${k} to ${val}`;
+  render();
+});
+document.getElementById('stream').onclick = () => {
+  const t = terms.s2;
+  const lines = STREAM[streamAt % STREAM.length];
+  streamAt++;
+  const tail = t.innerHTML.lastIndexOf('<span class="t-right');
+  t.innerHTML = t.innerHTML.slice(0, tail) + lines + '\n\n' + t.innerHTML.slice(tail);
+  if (pinned.s2) t.scrollTop = t.scrollHeight;
+  state.last = 'streamed a line of output into steward 2'; readout();
+};
+document.getElementById('reset').onclick = () => {
+  state.dismissed = []; state.expanded = false;
+  if (state.variant === 'B') state.pillOpen = !!state.consent;
+  state.last = 'brought the dismissed warnings back'; render();
+};
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    const w = e.target.closest && e.target.closest('.warn');
+    if (w) {
+      if (w.dataset.tone === 'consent') { state.last = 'Esc does nothing on a consent: answer Allow or Keep blocked'; readout(); }
+      else dismiss(w.dataset.w, 'Esc dismissed');
+      e.preventDefault(); return;
+    }
+    if (state.chipFor) { state.chipFor = null; state.last = 'closed the skills popover'; render(); return; }
+  }
+  if (e.target.closest('input, textarea, select, [contenteditable]')) return;
+  if (e.target.id === 'sep') return;
+  if (e.key === 'ArrowLeft') step(-1);
+  if (e.key === 'ArrowRight') step(1);
+});
+document.addEventListener('focusin', e => {
+  const el = e.target;
+  let d = el.getAttribute('aria-label') || el.textContent.trim().slice(0, 40) || el.tagName.toLowerCase();
+  if (el.classList.contains('term')) d = 'terminal of ' + (el.dataset.chat === 's2' ? 'steward 2' : 'steward 11');
+  state.focus = d; readout();
+});
+
+function step(d) {
+  const i = VARIANTS.findIndex(v => v.key === state.variant);
+  state.variant = VARIANTS[(i + d + VARIANTS.length) % VARIANTS.length].key;
+  state.chipFor = null; state.expanded = false;
+  state.pillOpen = state.variant === 'B' ? !!state.consent : false;
+  state.last = `switched to variant ${state.variant}`;
+  render();
+}
+document.getElementById('prev').onclick = () => step(-1);
+document.getElementById('next').onclick = () => step(1);
+
+/* The separator: drag, or Shift+←/→ while focused. */
+(() => {
+  const sep = document.getElementById('sep'); const stage = document.getElementById('stage');
+  let w = 220;
+  const set = n => { w = Math.max(120, Math.min(420, n)); stage.style.setProperty('--right-w', w + 'px'); sep.setAttribute('aria-valuenow', w); };
+  sep.addEventListener('pointerdown', e => {
+    sep.setPointerCapture(e.pointerId); sep.dataset.drag = '';
+    const x0 = e.clientX, w0 = w;
+    const move = ev => set(w0 - (ev.clientX - x0));
+    const up = () => { delete sep.dataset.drag; sep.removeEventListener('pointermove', move); state.last = `resized the side panel to ${w}px`; readout(); };
+    sep.addEventListener('pointermove', move); sep.addEventListener('pointerup', up, { once: true });
+  });
+  sep.addEventListener('keydown', e => {
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      if (!e.shiftKey) return;
+      e.preventDefault(); set(w + (e.key === 'ArrowLeft' ? 16 : -16)); state.last = `resized the side panel to ${w}px`; readout();
+    }
+  });
+  sep.addEventListener('keydown', e => { if (!e.shiftKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) { e.stopPropagation(); step(e.key === 'ArrowLeft' ? -1 : 1); } });
+})();
+
+makeTerm('s2'); makeTerm('s11');
+render();
+</script>
