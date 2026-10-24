@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useEffect, useState } from "react";
-import * as Dialog from "./overlays/dialog";
 import { ApproveExtension } from "./ApproveExtension";
 import {
   commands,
@@ -46,11 +45,12 @@ import {
   theirThemeOnce,
 } from "./windowprefs";
 import { drawNatively, forgetNativeWindow } from "./theme/native";
-import { AnswerBar } from "./AnswerBar";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { yourEditor } from "./yourEditor";
 import { setDraftHere } from "./themeDrafts";
 import { Button } from "./ui/button/Button";
+import { Dialog } from "./ui/dialog/Dialog";
+import { ListFilter, noMatchSaid, useListFilter } from "./ui/dialog/ListFilter";
 
 /**
  * What has contributed what to this window, and the question charter asks before anything new
@@ -182,151 +182,183 @@ export function Extensions({ onClose }: { onClose: () => void }) {
     await reread();
   };
 
+  // **No dialog opens another** (#2910): a Review asks in place of this dialog, which comes back
+  // as it was once the question is answered.
+  if (asking)
+    return (
+      <ApproveExtension
+        ask={asking}
+        onApprove={(ask) => void approve(ask)}
+        onCancel={() => setAsking(null)}
+      />
+    );
+  const installed = listed?.extensions ?? [];
   return (
-    <Dialog.Root
-      open
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
+    <Dialog
+      onClose={onClose}
+      title="Extensions"
+      titleId="extensions"
+      className="extensions"
+      cancel={{ children: "Done" }}
     >
-      <Dialog.Portal>
-        <Dialog.Overlay className="ui-scrim" />
-        <Dialog.Content className="ui-dialog warning extensions" aria-labelledby="extensions">
-          <Dialog.Title id="extensions">Extensions</Dialog.Title>
-          {/* `tabIndex={0}` on every button in this dialog, per `docs/ui-primitives.md`
-              (charter-app#186), and this is the surface where it mattered most. Its controls
-              are `Add an extension…`, then a `Review` and a `Remove` per installed row, then
-              `Done` — so Radix's focus scope covered the first and the last, and every row's
-              two buttons sat in the middle, on an engine that will not tab to a `<button>`
-              whose `tabindex` is not written down. Reviewing or removing an extension was a
-              mouse-only act, on the one surface in the window that is about trust. */}
-          <Button onPress={() => void add()}>Add an extension…</Button>
+      {/* `tabIndex={0}` on every button in this dialog, per `docs/ui-primitives.md`
+          (charter-app#186): reviewing or removing an extension is never a mouse-only act, on the
+          one surface in the window that is about trust. */}
+      <Button onPress={() => void add()}>Add an extension…</Button>
 
-          {/* What went wrong, drawn as trouble (#630). Not yet a live region: `Notice.guard`
-              counts every one by file, and that guard is another lane's this round. */}
-          {went && <p className="trouble">{went}</p>}
+      {/* What went wrong, drawn as trouble (#630). Not yet a live region: `Notice.guard` counts
+          every one by file. */}
+      {went && <p className="trouble">{went}</p>}
 
-          {listed === null && !went && <p className="pending">Reading the installed extensions…</p>}
+      {listed === null && !went && <p className="pending">Reading the installed extensions…</p>}
 
-          {listed?.unreadable && (
-            <>
-              <p className="came-back">
-                purlis could not read this machine&rsquo;s extension record, so nothing an extension
-                declares is in force: {listed.unreadable}
-              </p>
-              {/* The sentence names the file; once it is mended, one press reads it again
-                  rather than closing and reopening the dialog (NO-8, #1233). Approving writes
-                  nothing over a record purlis could not read, so reading is the only fix, and
-                  Open in your editor is where it is mended (#1296). A row of their own under
-                  the sentence, not two buttons inside it (#1719). */}
-              <SettingActions>
-                <Button onPress={() => void reread()}>Read again</Button>
-                <Button onPress={() => void openRecord()}>Open in your editor</Button>
-              </SettingActions>
-            </>
-          )}
+      {listed?.unreadable && (
+        <>
+          <p className="came-back">
+            purlis could not read this machine&rsquo;s extension record, so nothing an extension
+            declares is in force: {listed.unreadable}
+          </p>
+          {/* The sentence names the file; once it is mended, one press reads it again rather
+              than closing and reopening the dialog (NO-8, #1233). Approving writes nothing over
+              a record purlis could not read, so reading is the only fix, and Open in your editor
+              is where it is mended (#1296). A row of their own under the sentence, not two
+              buttons inside it (#1719). */}
+          <SettingActions>
+            <Button onPress={() => void reread()}>Read again</Button>
+            <Button onPress={() => void openRecord()}>Open in your editor</Button>
+          </SettingActions>
+        </>
+      )}
 
-          <h3>purlis&rsquo;s own themes</h3>
+      <h3>purlis&rsquo;s own themes</h3>
+      <ul className="contributes">
+        {(listed?.built_in_themes ?? []).map((name) => (
+          <li key={name}>
+            <code>{name}</code>
+          </li>
+        ))}
+      </ul>
+
+      <h3>Installed</h3>
+      {/* A claim, then the way out as the window names it (`docs/ui-copy.md`, #630). */}
+      {listed && installed.length === 0 && (
+        <EmptyState
+          variant="panel"
+          headline="No extensions installed yet"
+          body="Add an extension… points purlis at the directory that holds one."
+        />
+      )}
+      <InstalledRows
+        rows={installed}
+        iconTrouble={iconTrouble}
+        onReview={setAsking}
+        onTurn={(id, on) => void turn(id, on)}
+        onForget={(id) => void forget(id)}
+      />
+
+      {(listed?.dropped ?? []).length > 0 && (
+        <>
+          <h3>Dropped from the record</h3>
           <ul className="contributes">
-            {(listed?.built_in_themes ?? []).map((name) => (
-              <li key={name}>
-                <code>{name}</code>
-              </li>
+            {listed?.dropped.map((why) => (
+              <li key={why}>{why}</li>
             ))}
           </ul>
+        </>
+      )}
+    </Dialog>
+  );
+}
 
-          <h3>Installed</h3>
-          {/* A claim, then the way out as the window names it (`docs/ui-copy.md`, #630). */}
-          {listed && listed.extensions.length === 0 && (
-            <EmptyState
-              variant="panel"
-              headline="No extensions installed yet"
-              body="Add an extension… points purlis at the directory that holds one."
-            />
-          )}
-          <ul className="extension-rows">
-            {(listed?.extensions ?? []).map((row) => (
-              <li key={row.id} data-standing={row.standing} data-source={row.source}>
-                <span className="name" id={`name-${row.id}`}>
-                  {row.name}
-                </span>
-                {row.source === "app" && <span className="built-in">built-in</span>}
-                <code className="where">{row.path}</code>
-                <span className="standing">
-                  {row.on
-                    ? standingReads(row.standing)
-                    : "off on this machine — contributing nothing"}
-                </span>
-                {/* Said as it arrives (#630): a row's trouble is read out, not only drawn. */}
-                {row.refused && (
-                  <span className="came-back" role="status">
-                    {row.refused}
-                  </span>
-                )}
-                {row.themes_in_force.length > 0 && (
-                  <span className="in-force">Drawing: {row.themes_in_force.join(", ")}</span>
-                )}
-                {/* Why the theme engine refused each colour theme, or what it left out (#2321). */}
-                {row.theme_trouble.map((trouble) => (
-                  <span key={trouble.name} className="came-back theme-trouble" role="status">
-                    {themeTroubleSaid(trouble)}
-                  </span>
-                ))}
-                {(iconTrouble.get(row.id) ?? []).map((trouble) => (
-                  <span key={trouble.name} className="came-back icon-trouble" role="status">
-                    {troubleSaid(trouble)}
-                  </span>
-                ))}
-                {row.ask && <Button onPress={() => setAsking(row.ask)}>Review</Button>}
-                {row.source === "app" ? (
-                  // On or off the moment it is turned: the settings set's switch (#1860), named
-                  // by the extension and the words beside it, which turn it too.
-                  <span className="extension-on">
-                    <Choice
-                      ids={{
-                        id: `on-${row.id}`,
-                        labelledBy: `name-${row.id} on-${row.id}-said`,
-                      }}
-                      kind="switch"
-                      checked={row.on}
-                      onCheckedChange={(on) => void turn(row.id, on)}
-                    />
-                    <label htmlFor={`on-${row.id}`} id={`on-${row.id}-said`}>
-                      On this machine
-                    </label>
-                  </span>
-                ) : (
-                  <Button onPress={() => void forget(row.id)}>Remove</Button>
-                )}
-              </li>
+/** What an extension is filtered by: its name. */
+const extensionName = (row: InstalledExtensions["extensions"][number]) => row.name;
+
+const EXTENSIONS = { one: "extension", many: "extensions" };
+
+/**
+ * **The installed extensions**, each with its standing and its answers; more than about seven
+ * are filtered by name (#2910).
+ */
+function InstalledRows({
+  rows,
+  iconTrouble,
+  onReview,
+  onTurn,
+  onForget,
+}: {
+  rows: InstalledExtensions["extensions"];
+  iconTrouble: ReadonlyMap<string, readonly IconTrouble[]>;
+  onReview: (ask: ExtensionAsk) => void;
+  onTurn: (id: string, on: boolean) => void;
+  onForget: (id: string) => void;
+}) {
+  const { query, setQuery, shown, filtered } = useListFilter(rows, extensionName);
+  return (
+    <>
+      {filtered && (
+        <ListFilter noun={EXTENSIONS} total={rows.length} query={query} onQuery={setQuery} />
+      )}
+      {filtered && shown.length === 0 && (
+        <p className="came-back" role="status">
+          {noMatchSaid(EXTENSIONS, query)}
+        </p>
+      )}
+      <ul className="extension-rows">
+        {shown.map((row) => (
+          <li key={row.id} data-standing={row.standing} data-source={row.source}>
+            <span className="name" id={`name-${row.id}`}>
+              {row.name}
+            </span>
+            {row.source === "app" && <span className="built-in">built-in</span>}
+            <code className="where">{row.path}</code>
+            <span className="standing">
+              {row.on ? standingReads(row.standing) : "off on this machine — contributing nothing"}
+            </span>
+            {/* Said as it arrives (#630): a row's trouble is read out, not only drawn. */}
+            {row.refused && (
+              <span className="came-back" role="status">
+                {row.refused}
+              </span>
+            )}
+            {row.themes_in_force.length > 0 && (
+              <span className="in-force">Drawing: {row.themes_in_force.join(", ")}</span>
+            )}
+            {/* Why the theme engine refused each colour theme, or what it left out (#2321). */}
+            {row.theme_trouble.map((trouble) => (
+              <span key={trouble.name} className="came-back theme-trouble" role="status">
+                {themeTroubleSaid(trouble)}
+              </span>
             ))}
-          </ul>
-
-          {(listed?.dropped ?? []).length > 0 && (
-            <>
-              <h3>Dropped from the record</h3>
-              <ul className="contributes">
-                {listed?.dropped.map((why) => (
-                  <li key={why}>{why}</li>
-                ))}
-              </ul>
-            </>
-          )}
-
-          {asking && (
-            <ApproveExtension
-              ask={asking}
-              onApprove={(ask) => void approve(ask)}
-              onCancel={() => setAsking(null)}
-            />
-          )}
-
-          <AnswerBar>
-            <Button onPress={onClose}>Done</Button>
-          </AnswerBar>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+            {(iconTrouble.get(row.id) ?? []).map((trouble) => (
+              <span key={trouble.name} className="came-back icon-trouble" role="status">
+                {troubleSaid(trouble)}
+              </span>
+            ))}
+            {row.ask && <Button onPress={() => onReview(row.ask as ExtensionAsk)}>Review</Button>}
+            {row.source === "app" ? (
+              // On or off the moment it is turned: the settings set's switch (#1860), named by
+              // the extension and the words beside it, which turn it too.
+              <span className="extension-on">
+                <Choice
+                  ids={{
+                    id: `on-${row.id}`,
+                    labelledBy: `name-${row.id} on-${row.id}-said`,
+                  }}
+                  kind="switch"
+                  checked={row.on}
+                  onCheckedChange={(on) => onTurn(row.id, on)}
+                />
+                <label htmlFor={`on-${row.id}`} id={`on-${row.id}-said`}>
+                  On this machine
+                </label>
+              </span>
+            ) : (
+              <Button onPress={() => onForget(row.id)}>Remove</Button>
+            )}
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }
 

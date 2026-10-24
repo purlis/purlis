@@ -4,8 +4,8 @@
 import { forwardRef, type ComponentPropsWithoutRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
 import { cleanup } from "@testing-library/react";
-import * as Radix from "@radix-ui/react-dialog";
-import * as Ours from "./overlays/dialog";
+import * as Radix from "@radix-ui/react-select";
+import * as Ours from "./overlays/select";
 import { PACKAGES, partsNotHeld } from "./overlaysHeld.testkit";
 
 /**
@@ -13,8 +13,9 @@ import { PACKAGES, partsNotHeld } from "./overlaysHeld.testkit";
  *
  * `projectShown.guard.test.tsx` holds each of the window's overlay files to it; here it is held
  * to the ways a file could hand on a part that draws over the window without asking whether its
- * project is shown, each written into a copy of the dialog's file. The menus and the popovers are
- * the menu and popover families now (`ui/`, #2909), held by `projectShown.guard.test.tsx`.
+ * project is shown, each written into a copy of the select's file, the one overlay left here. The
+ * dialogs, menus and popovers are their families now (`ui/`, #2910, #2909), held by
+ * `projectShown.guard.test.tsx`.
  */
 
 let reported: MockInstance;
@@ -28,12 +29,12 @@ afterEach(() => {
 });
 
 const check = (ours: Record<string, unknown>, real: Record<string, unknown> = Radix) =>
-  partsNotHeld({ ...PACKAGES.dialog, real }, ours);
+  partsNotHeld({ ...PACKAGES.select, real }, ours);
 
 /** A part written by hand around Radix's content, as a new overlay might be. */
 const Popup = forwardRef<HTMLDivElement, ComponentPropsWithoutRef<typeof Radix.Content>>(
   function Popup(props, ref) {
-    return <Radix.Content ref={ref} aria-describedby={undefined} {...props} />;
+    return <Radix.Content ref={ref} {...props} />;
   },
 );
 
@@ -49,25 +50,23 @@ describe("the overlays guard", () => {
 
   it("fails on a listed part that draws and is not held back while its project is behind", () => {
     expect(check({ ...Ours, Content: Popup })).toEqual([expect.stringContaining("Content")]);
-    expect(check({ ...Ours, Overlay: Radix.Overlay })).toEqual([
-      expect.stringContaining("Overlay"),
-    ]);
+    expect(check({ ...Ours, Portal: Radix.Portal })).toEqual([expect.stringContaining("Portal")]);
   });
 
   it("fails on a long name Radix gives a part, held back or not", () => {
-    expect(check({ ...Ours, DialogPortal: Radix.DialogPortal })).toEqual([
-      expect.stringContaining("DialogPortal"),
+    expect(check({ ...Ours, SelectPortal: Radix.SelectPortal })).toEqual([
+      expect.stringContaining("SelectPortal"),
     ]);
   });
 
   it("fails on a part the package gained that nobody has said whether it draws", () => {
     const Sheet = () => null;
-    expect(check(Ours, { ...Radix, Sheet, DialogSheet: Sheet })).toEqual([
+    expect(check(Ours, { ...Radix, Sheet, SelectSheet: Sheet })).toEqual([
       expect.stringContaining("Sheet"),
     ]);
   });
 
   it("fails on a part that does not draw handed on as something other than Radix's", () => {
-    expect(check({ ...Ours, Title: Popup })).toEqual([expect.stringContaining("Title")]);
+    expect(check({ ...Ours, Label: Popup })).toEqual([expect.stringContaining("Label")]);
   });
 });

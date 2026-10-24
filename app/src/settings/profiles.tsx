@@ -3,12 +3,11 @@
 
 import { useState, useSyncExternalStore } from "react";
 import { commands, type MachineProfileRemoval, type MachineProfileRow } from "../bindings";
-import * as AlertDialog from "../overlays/alert-dialog";
-import { AnswerBar } from "../AnswerBar";
 import { Choice, Field, SettingActions, SettingRow } from "./components";
 import type { LiveSetting, SettingsGroup } from "./groups";
 import { askProfileSignIn } from "./links";
 import { Button } from "../ui/button/Button";
+import { AlertDialog } from "../ui/dialog/Dialog";
 import { Form } from "../ui/field/Field";
 
 /**
@@ -346,7 +345,7 @@ const listed = (plane: string | undefined): LiveSetting => ({
 });
 
 /**
- * **Remove a profile?** Radix's `AlertDialog`, as every question whose answer destroys something
+ * **Remove a profile?** The family's `AlertDialog`, as every question whose answer destroys something
  * is: what goes, in the core's words and with each conversation named, then Cancel first and
  * the removal last at the trailing edge (D-1210-8). An adopted profile's question says its
  * folder stays.
@@ -362,40 +361,27 @@ export function RemoveProfile({
 }) {
   const conversations = removal.conversations ?? [];
   return (
-    <AlertDialog.Root
-      open
-      onOpenChange={(open) => {
-        if (!open) onCancel();
+    <AlertDialog
+      onClose={onCancel}
+      title={removal.adopted ? `Forget ${removal.name}?` : `Remove ${removal.name}?`}
+      description={<p className="came-back">{removal.says}</p>}
+      main={{
+        children: removal.adopted ? "Forget profile" : "Remove profile",
+        variant: "danger",
+        onPress: () => onRemove(removal),
       }}
     >
-      <AlertDialog.Portal>
-        <AlertDialog.Overlay className="ui-scrim" />
-        <AlertDialog.Content className="ui-dialog warning">
-          <AlertDialog.Title>
-            {removal.adopted ? `Forget ${removal.name}?` : `Remove ${removal.name}?`}
-          </AlertDialog.Title>
-          <AlertDialog.Description className="came-back">{removal.says}</AlertDialog.Description>
-          {!removal.adopted && conversations.length > 0 && (
-            <>
-              <h3>Conversations that go</h3>
-              <ul className="at-risk" aria-label={`Conversations of ${removal.name}`}>
-                {conversations.map((one) => (
-                  <li key={one}>{one}</li>
-                ))}
-              </ul>
-            </>
-          )}
-          <AnswerBar>
-            <AlertDialog.Cancel asChild>
-              <Button onPress={onCancel}>Cancel</Button>
-            </AlertDialog.Cancel>
-            <Button variant="danger" onPress={() => onRemove(removal)}>
-              {removal.adopted ? "Forget profile" : "Remove profile"}
-            </Button>
-          </AnswerBar>
-        </AlertDialog.Content>
-      </AlertDialog.Portal>
-    </AlertDialog.Root>
+      {!removal.adopted && conversations.length > 0 && (
+        <>
+          <h3>Conversations that go</h3>
+          <ul className="at-risk" aria-label={`Conversations of ${removal.name}`}>
+            {conversations.map((one) => (
+              <li key={one}>{one}</li>
+            ))}
+          </ul>
+        </>
+      )}
+    </AlertDialog>
   );
 }
 

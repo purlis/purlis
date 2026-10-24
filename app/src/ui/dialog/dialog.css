@@ -1,0 +1,259 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **The dialog family's default** (#2910, ADR 0103, ADR 0104): how `Dialog`, `AlertDialog` and
+   `DialogSurface` are drawn when a theme names none of their parts. Every rule is keyed on the
+   wrapper's attributes (`data-scope="dialog"`, `data-part`, `data-variant`, `data-size`), never on
+   a class, so a screen cannot reach a dialog's size or place and a theme's parts reach exactly
+   what this file draws.
+
+   **The dialog rules** (#2798, #2789, #2910):
+
+   - **Anchored at a fixed top**: the scrim lays the dialog out from its top edge, 24 px down
+     (`--space-7` at the default text size), so a change in its content moves only its bottom
+     edge.
+   - **At most the window less 48 px tall**: the scrim's 24 px above and below. A dialog given a
+     height takes the lesser of its own and that.
+   - **As wide as its size**, never as its content: standard 560 px, wide 780 px (a list beside
+     its details), each at most the window less a 16 px gutter on each side (`--space-6`).
+   - **Header, body, footer**: three rows, the body the only one that scrolls, so the footer and
+     its answers are always in view and a control the keyboard is on is never under it
+     (WCAG 2.4.11).
+
+   **In the `components` layer** (`styles.css`), above `App.css`: a view's rule (`.warning`, a
+   dialog's own class) cannot redraw the dialog's size, place or rows.
+
+   **The overlay surface** (#1845): the ground, border, corner and lift every overlay shares
+   (`primitives/overlays.css`), so a dialog reads as related to a popover and a menu. The rows
+   are the dialog rules' own, from the prototype that stands for every dialog (#2798): a title
+   at 16/600, the body padded, the footer under its rule.
+
+   **Only tokens** for colour, one `var()` per declaration (`contrast.test.ts`). The sizes the
+   rules give in px are written in px. */
+
+/* ---------------------------------------------------------------------------------------------
+   The scrim: the window dimmed behind a modal, and the frame the dialog is placed in.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="dialog"][data-part="scrim"] {
+  position: fixed;
+  inset: 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding-block: var(--space-7);
+  padding-inline: var(--space-6);
+  background-color: var(--overlay-scrim);
+}
+
+/* **Opening, it fades in**, scrim and dialog together, and does not move: a question should be
+   where the eye already is. Only as it opens (React Aria's `data-entering`), never as it is
+   drawn again or as it closes, which is at once; and none at all with reduced motion, whose
+   motion tokens are none. */
+[data-scope="dialog"][data-part="scrim"][data-entering] {
+  animation: charter-appear var(--motion-duration-enter) var(--motion-easing-enter);
+}
+
+/* React Aria's modal element holds the dialog and nothing of its own to draw: the dialog is laid
+   out by the scrim. */
+[data-scope="dialog"][data-part="modal"] {
+  display: contents;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   The root: the surface, its width by its size, its height up to the window's.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="dialog"][data-part="root"] {
+  box-sizing: border-box;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  flex: none;
+  inline-size: min(560px, 100%);
+  max-block-size: 100%;
+  min-block-size: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  color: var(--text-primary);
+  background-color: var(--surface-overlay);
+  box-shadow: var(--elevation-overlay);
+  font-size: var(--font-size-base);
+  outline: none;
+}
+
+[data-scope="dialog"][data-part="root"][data-size="wide"] {
+  inline-size: min(780px, 100%);
+}
+
+/* A height of its own, whatever its content: the lesser of it and the window's less 48 px. */
+[data-scope="dialog"][data-part="root"][data-fixed-height] {
+  block-size: min(var(--dialog-height), 100%);
+}
+
+/* A surface with an anatomy of its own (`DialogSurface`, the palette): a padded column it lays
+   out itself. */
+[data-scope="dialog"][data-part="root"][data-own-anatomy] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-6);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   The header: the title and the line under it.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="dialog"][data-part="header"] {
+  min-inline-size: 0;
+  padding-block: var(--space-6) var(--space-3);
+  padding-inline: var(--space-6);
+}
+
+[data-scope="dialog"][data-part="title"] {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-strong);
+  line-height: var(--line-height-tight);
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+
+[data-scope="dialog"][data-part="subtitle"] {
+  margin: var(--space-2) 0 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   The body and the footer: one form, two rows of the root.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="dialog"][data-part="form"] {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto auto;
+  min-block-size: 0;
+  margin: 0;
+}
+
+[data-scope="dialog"][data-part="body"] {
+  min-block-size: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding-block: var(--space-4) var(--space-6);
+  padding-inline: var(--space-6);
+  /* What the keyboard reaches is scrolled clear of the body's edges. */
+  scroll-padding-block: var(--space-6);
+}
+
+[data-scope="dialog"][data-part="body"] > :first-child {
+  margin-block-start: 0;
+}
+
+[data-scope="dialog"][data-part="body"] > :last-child {
+  margin-block-end: 0;
+}
+
+[data-scope="dialog"][data-part="description"] {
+  margin-block-end: var(--space-5);
+  color: var(--text-secondary);
+}
+
+[data-scope="dialog"][data-part="description"] > :first-child {
+  margin-block-start: 0;
+}
+
+[data-scope="dialog"][data-part="description"] > :last-child {
+  margin-block-end: 0;
+}
+
+/* The footer's rule: its own part, a line the width of the dialog, and never a control's border
+   (#2804). */
+[data-scope="dialog"][data-part="separator"] {
+  block-size: 1px;
+  background-color: var(--border-subtle);
+}
+
+[data-scope="dialog"][data-part="footer"] {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-inline-size: 0;
+  padding-block: var(--space-5) var(--space-6);
+  padding-inline: var(--space-6);
+}
+
+/* What the main action will do, leading, in the quiet tier; it never pushes the answers. */
+[data-scope="dialog"][data-part="summary"]:empty {
+  display: none;
+}
+
+[data-scope="dialog"][data-part="summary"] {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  color: var(--text-quiet);
+  font-size: var(--font-size-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The answers, at the trailing edge: Cancel, another, the main action, in that order whatever
+   the footer holds, so the main action is in the same place in every dialog. */
+[data-scope="dialog"][data-part="actions"] {
+  display: flex;
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  justify-content: flex-end;
+  margin-inline-start: auto;
+}
+
+/* A long answer ("Delete it anyway, discarding the work in svc") breaks its words inside the
+   dialog's width, which is its size's, rather than reaching past it. */
+[data-scope="dialog"][data-part="actions"] > [data-scope="button-row"] {
+  justify-content: flex-end;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   Text that changes with a choice (`Reserved.tsx`): every text it can show in one cell, the one
+   shown on top, so the cell keeps the room of the largest. The kept ones are drawn from their
+   `data-text`, hidden, so they take room and are never read.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="reserved"][data-part="root"] {
+  display: inline-grid;
+}
+
+div[data-scope="reserved"][data-part="root"] {
+  display: grid;
+}
+
+[data-scope="reserved"][data-part="shown"],
+[data-scope="reserved"][data-part="kept"] {
+  grid-area: 1 / 1;
+}
+
+[data-scope="reserved"][data-part="kept"] {
+  visibility: hidden;
+}
+
+[data-scope="reserved"][data-part="kept"]::before {
+  content: attr(data-text);
+}
+
+/* The room of a grant's lock on an answer that may be a grant (`reserveGrant`): held, not drawn. */
+[data-scope="reserved"][data-part="lock"] {
+  visibility: hidden;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   A list's filter (`ListFilter.tsx`): the list's main field, at the large size, across the list.
+   --------------------------------------------------------------------------------------------- */
+
+.dialog-filter {
+  inline-size: 100%;
+  margin-block-end: var(--space-4);
+}

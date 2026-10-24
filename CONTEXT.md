@@ -1663,6 +1663,18 @@ A new skill, or a change to one, waiting in the Skill studio for the person to a
 usually written by a chat.
 _Avoid_: pending skill, proposal
 
+**Try it** (of a draft skill):
+A scratch chat that has the built-in skills and the draft alone, started in a **throwaway
+piece** on the project's default harness profile or one the person picks. Closing it leaves
+nothing but the draft's skill run (#2772).
+_Avoid_: test run, preview chat
+
+**Throwaway piece**:
+A folder made for one chat, ignored by git and never saved, and removed when that chat closes. Try it
+starts its scratch chat in one, and grading's chats will too. On screen it is a **throwaway
+folder**.
+_Avoid_: scratch workspace, sandbox (for this), worktree (it is no branch)
+
 **Deprecated skill**:
 A skill that still works but points to a replacement and is shown less.
 

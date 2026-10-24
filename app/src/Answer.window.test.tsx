@@ -175,10 +175,10 @@ describe("Answer, from a task's row menu in the Chats list (#1551)", () => {
     render(<App />);
 
     const { dialog } = await opened();
-    const form = await within(dialog).findByRole("form", { name: ANSWER });
+    // The question, in the dialog's body; Send and Cancel are its footer's (#2910).
+    const box = await within(dialog).findByRole("textbox", { name: "Your answer" });
     // The chat's words, as text, with their line break.
-    expect(form.querySelector(".answer-asked")?.textContent).toBe(QUESTION);
-    const box = within(dialog).getByRole("textbox", { name: "Your answer" });
+    expect(dialog.querySelector(".answer-asked")?.textContent).toBe(QUESTION);
     await waitFor(() => expect(box).toHaveFocus());
     await userEvent.type(box, "Staging only.{Enter}");
 
@@ -205,7 +205,7 @@ describe("Answer, from a task's row menu in the Chats list (#1551)", () => {
     render(<App />);
 
     const { dialog } = await opened();
-    await within(dialog).findByRole("form", { name: ANSWER });
+    await within(dialog).findByRole("textbox", { name: "Your answer" });
     fireEvent.pointerDown(document.body);
     expect(screen.getByRole("dialog", { name: ANSWER })).toBeInTheDocument();
 

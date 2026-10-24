@@ -994,6 +994,58 @@ pub fn manifests_held(root: &Path, cwd: Option<&Path>) -> Vec<Denial> {
     out
 }
 
+/// **The skills of the project at `root` a chat is denied writing** (SK-9, #2772; ADR 0099 as
+/// amended 2026-10-22): every plane level's folder of skills, shared and local, at the project's
+/// root, in each workspace and in each persona's folder, whether or not it is there yet, and in
+/// any workspace or persona folder made later. A skill runs its `!` commands when it is used and
+/// reaches other chats, as `.claude/skills` does ([`PLANTED`]), so a chat's write of one becomes
+/// a draft skill the person tries and accepts ([`crate::skills::verbs::drafts`]).
+///
+/// The folders there now are held by their paths, and every workspace's and persona's, there now
+/// or made later, by a pattern too, a path with a [`ANY_NAME`] part, which Claude Code reads as a glob and purlis's own
+/// wrap as a regular expression ([`seatbelt::denial_rules`]). Where a backend cannot hold a
+/// pattern, the levels a chat could have made reach no chat while it runs
+/// ([`crate::skills::levels`]). A clone is never named `skills` or `skills.local`
+/// (`repocmd::clone::destination`), so no pattern holds a clone's root.
+pub fn skills_held(root: &Path) -> Vec<Denial> {
+    let levels = [purlis_skills::PROJECT_DIR, purlis_skills::LOCAL_DIR];
+    let mut owners: Vec<PathBuf> = vec![root.to_path_buf()];
+    for ws in crate::workspaces::Plane::open(root)
+        .workspaces()
+        .unwrap_or_default()
+    {
+        owners.push(root.join("workspaces").join(ws));
+    }
+    if let Ok(personas) = std::fs::read_dir(root.join("personas")) {
+        let mut found: Vec<PathBuf> = personas
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
+            .map(|entry| entry.path())
+            .collect();
+        found.sort();
+        owners.extend(found);
+    }
+    // Any level, made now or later, by its pattern too.
+    owners.push(root.join("workspaces").join(ANY_NAME));
+    owners.push(root.join("personas").join(ANY_NAME));
+    owners
+        .iter()
+        .flat_map(|owner| levels.iter().map(move |level| owner.join(level)))
+        .map(|path| Denial {
+            class: Class::LaterCode,
+            path,
+            access: Access::Write,
+            named: None,
+            reach: Reach::AndBelow,
+            any_case: false,
+        })
+        .collect()
+}
+
+/// **A part of a denied path that stands for any one name** (SK-9): `workspaces/*/skills` holds
+/// the skills of every workspace, made now or later. Only [`skills_held`] writes one.
+pub const ANY_NAME: &str = "*";
+
 /// A workspace's own manifest, `workspaces/<workspace>/workspace.json` (#2046): what the app
 /// reads of the workspace (its repos, its settings, what its sends to a runner leave out). A
 /// chat's sandbox never writes it, as it never writes the project's manifests; the app writes
@@ -1313,6 +1365,11 @@ impl Denied {
             reach: Reach::AndBelow,
             any_case: false,
         });
+        // …and the project's skills, wherever they reach chats (SK-9,
+        // #2772): a chat's write of one is a draft the person accepts, never the file itself.
+        if crate::skills::reach_chats_here(root) {
+            paths.extend(skills_held(root));
+        }
         // …and where Docker Desktop, OrbStack and Rancher Desktop link `docker` and its
         // credential helpers in the home folder (#2752), which purlis runs outside any sandbox
         // for a Docker pool ([`crate::dockerpool::Docker::on_this_machine`]): each `bin` folder

@@ -1,11 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useRef } from "react";
-import * as AlertDialog from "./overlays/alert-dialog";
 import type { AtRisk, Refused } from "./bindings";
-import { AnswerBar } from "./AnswerBar";
-import { Button } from "./ui/button/Button";
+import { AlertDialog } from "./ui/dialog/Dialog";
 
 /**
  * Deleting a workspace: what goes, what charter can see that would be lost with it, and two
@@ -67,10 +64,8 @@ export function DeleteWorkspace({
   onDelete: (force: boolean) => void;
   onCancel: () => void;
 }) {
-  // Cancel, focused by the primitive itself. Kept as a ref so the reason is written down where
-  // somebody might otherwise "tidy" it: this dialog deletes clones, and it is never what a
-  // stray Return key finds.
-  const cancel = useRef<HTMLButtonElement>(null);
+  // Cancel has the keyboard as it opens, as every alert dialog's does: this dialog deletes
+  // clones, and it is never what a stray Return key finds.
   /**
    * What is about to be lost, as the newest reading of the guard says it.
    *
@@ -81,110 +76,81 @@ export function DeleteWorkspace({
    * the list and the sentence come to name different clones.
    */
   const risky = refusal?.at_risk ?? atRisk ?? [];
+  // **Before a refusal there is one answer, and it does not force.** After one there is a
+  // different answer, and it says what it costs. Never both: a dialog offering "Delete" beside
+  // "Delete anyway" is offering to force to somebody who has read nothing. **And forcing is
+  // offered only when the guard is what refused**, which is exactly when the refusal carries a
+  // list (charter-app#182). A name that is not a workspace, a `workspaces/<ws>` that links out of
+  // the plane, a `remove_dir_all` that failed — `--force` gets past none of them, and a button
+  // offering to force past one would be a lie about what the next press does. The plain answer
+  // stays there instead, because retrying is the only thing that could help.
+  const forces = refusal !== undefined && risky.length > 0;
   return (
-    <AlertDialog.Root
-      open
-      onOpenChange={(open) => {
-        if (!open) onCancel();
+    <AlertDialog
+      onClose={onCancel}
+      title={`Delete workspace ${workspace}?`}
+      description={
+        <p className="came-back">
+          This deletes workspace {workspace} and everything in it: every repo cloned there, every
+          branch folder made in it, its memory and its todos. There is no undo.
+        </p>
+      }
+      main={{
+        children: deleting ? "Deleting…" : forces ? discarding(risky) : "Delete workspace",
+        variant: "danger",
+        isDisabled: deleting,
+        onPress: () => onDelete(forces),
       }}
     >
-      <AlertDialog.Portal>
-        <AlertDialog.Overlay className="ui-scrim" />
-        <AlertDialog.Content
-          className="ui-dialog warning"
-          onOpenAutoFocus={(event) => {
-            event.preventDefault();
-            cancel.current?.focus();
-          }}
-        >
-          <AlertDialog.Title>Delete workspace {workspace}?</AlertDialog.Title>
-          <AlertDialog.Description className="came-back">
-            This deletes workspace {workspace} and everything in it: every repo cloned there, every
-            branch folder made in it, its memory and its todos. There is no undo.
-          </AlertDialog.Description>
+      {/* The three lines below are **about the preview**, so they stop being drawn the moment
+          there has been an attempt: after one, what is on screen is the core's own reading and a
+          sentence about how the guess was taken is noise at best and a contradiction at worst —
+          "purlis found no uncommitted work in it" above a refusal listing two dirty clones
+          (charter-app#182). */}
 
-          {/* The three lines below are **about the preview**, so they stop being drawn the
-              moment there has been an attempt: after one, what is on screen is the core's own
-              reading and a sentence about how the guess was taken is noise at best and a
-              contradiction at worst — "purlis found no uncommitted work in it" above a
-              refusal listing two dirty clones (charter-app#182). */}
+      {/* Still reading. Said rather than drawn as an empty list: "nothing is at risk" is a claim
+          about every clone in the workspace, and purlis has not made it yet. */}
+      {refusal === undefined && atRisk === undefined && unreadable === undefined && (
+        <p className="pending">Asking git what is in it…</p>
+      )}
 
-          {/* Still reading. Said rather than drawn as an empty list: "nothing is at risk" is a
-              claim about every clone in the workspace, and purlis has not made it yet. */}
-          {refusal === undefined && atRisk === undefined && unreadable === undefined && (
-            <p className="pending">Asking git what is in it…</p>
-          )}
+      {refusal === undefined && unreadable !== undefined && (
+        <p className="trouble" role="alert">
+          purlis could not read what is in it before asking: {unreadable}. Delete still checks — the
+          refusal you would get is the one that decides.
+        </p>
+      )}
 
-          {refusal === undefined && unreadable !== undefined && (
-            <p className="trouble" role="alert">
-              purlis could not read what is in it before asking: {unreadable}. Delete still checks —
-              the refusal you would get is the one that decides.
-            </p>
-          )}
+      {refusal === undefined && atRisk !== undefined && risky.length === 0 && (
+        <p className="came-back">
+          purlis found no uncommitted or unpushed work in it. It checks again when you press Delete,
+          against the workspace as it is then.
+        </p>
+      )}
 
-          {refusal === undefined && atRisk !== undefined && risky.length === 0 && (
-            <p className="came-back">
-              purlis found no uncommitted or unpushed work in it. It checks again when you press
-              Delete, against the workspace as it is then.
-            </p>
-          )}
+      {risky.length > 0 && (
+        <>
+          <h3>What purlis would discard</h3>
+          {/* The core's sentences, one per row, and never a count. `svc: 2 unpushed commit(s)` is
+              what a terminal shows and what the refusal repeats — and once there has been a
+              refusal these rows ARE the refusal's own list. */}
+          <ul className="at-risk" data-testid="at-risk">
+            {risky.map((risk) => (
+              <li key={risk.what}>{risk.said}</li>
+            ))}
+          </ul>
+        </>
+      )}
 
-          {risky.length > 0 && (
-            <>
-              <h3>What purlis would discard</h3>
-              {/* The core's sentences, one per row, and never a count. `svc: 2 unpushed
-                  commit(s)` is what a terminal shows and what the refusal repeats — and once
-                  there has been a refusal these rows ARE the refusal's own list. */}
-              <ul className="at-risk" data-testid="at-risk">
-                {risky.map((risk) => (
-                  <li key={risk.what}>{risk.said}</li>
-                ))}
-              </ul>
-            </>
-          )}
-
-          {/* The refusal, verbatim. It names the repair — push or commit first — and an
-              operator shown a reworded version of it can neither follow that repair nor search
-              for the sentence. */}
-          {refusal && (
-            <p className="trouble" role="alert">
-              {refusal.said}
-            </p>
-          )}
-
-          <AnswerBar>
-            <AlertDialog.Cancel asChild>
-              <Button ref={cancel} onPress={onCancel}>
-                Cancel
-              </Button>
-            </AlertDialog.Cancel>
-            {/* **Before a refusal there is one answer, and it does not force.** After one there
-                is a different answer, and it says what it costs. Never both: a dialog offering
-                "Delete" beside "Delete anyway" is offering to force to somebody who has read
-                nothing.
-                **And forcing is offered only when the guard is what refused**, which is exactly
-                when the refusal carries a list (charter-app#182). A name that is not a
-                workspace, a `workspaces/<ws>` that links out of the plane, a `remove_dir_all`
-                that failed — `--force` gets past none of them, and a button offering to force
-                past one would be a lie about what the next press does. The plain answer stays
-                there instead, because retrying is the only thing that could help. */}
-            {/* `tabIndex={0}` on both, per `docs/ui-primitives.md` (charter-app#186): WebKit
-                leaves a `<button>` out of the tab sequence unless its `tabindex` is written
-                down. These two are the scope's edges, so Radix reached them anyway — but only
-                in one direction, and only for as long as there are exactly two. */}
-            {refusal === undefined || risky.length === 0 ? (
-              <Button variant="danger" isDisabled={deleting} onPress={() => onDelete(false)}>
-                {deleting ? "Deleting…" : "Delete workspace"}
-              </Button>
-            ) : (
-              <Button variant="danger" isDisabled={deleting} onPress={() => onDelete(true)}>
-                {deleting ? "Deleting…" : discarding(risky)}
-              </Button>
-            )}
-          </AnswerBar>
-        </AlertDialog.Content>
-      </AlertDialog.Portal>
-    </AlertDialog.Root>
+      {/* The refusal, verbatim. It names the repair — push or commit first — and an operator
+          shown a reworded version of it can neither follow that repair nor search for the
+          sentence. */}
+      {refusal && (
+        <p className="trouble" role="alert">
+          {refusal.said}
+        </p>
+      )}
+    </AlertDialog>
   );
 }
 

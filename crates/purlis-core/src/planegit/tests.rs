@@ -276,6 +276,82 @@ fn a_save_never_commits_a_levels_local_skills_even_where_nothing_ignores_them() 
     assert!(!tree.contains("skills.local"), "{tree}");
 }
 
+/// SK-9 (#2772): `git add -A` with an exclude pathspec leaves an untracked file named beside it
+/// unstaged, so a save of named paths passes the excludes only where a named folder could hold
+/// what they keep out. A new file named alone, a new file named beside a changed one, and a new
+/// file named beside a new folder, are each committed whole; a path inside what is never staged
+/// is never named.
+#[test]
+fn a_save_of_named_paths_commits_each_new_file_it_names() {
+    let fixture = Fixture::plane();
+    let root = &fixture.root;
+    std::fs::write(
+        root.join("charter.toml"),
+        "[plane]\nname = \"fixture\"\nmode = \"commit\"\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(root.join("skills/deploy")).unwrap();
+    std::fs::write(root.join("skills/deploy/SKILL.md"), "one\n").unwrap();
+    run(root, &["add", "-A"]);
+    run(root, &["commit", "-q", "-m", "base"]);
+
+    std::fs::write(root.join("skills/deploy/SKILL.md"), "two\n").unwrap();
+    std::fs::write(root.join("skills/deploy/check.sh"), "check\n").unwrap();
+    std::fs::write(root.join("skills/deploy/notes.md"), "mine\n").unwrap();
+    std::fs::create_dir_all(root.join("skills/triage/scripts")).unwrap();
+    std::fs::write(root.join("skills/triage/SKILL.md"), "new\n").unwrap();
+    std::fs::write(root.join("skills/triage/scripts/sort.sh"), "sort\n").unwrap();
+    std::fs::create_dir_all(root.join("skills.local/mine")).unwrap();
+    std::fs::write(root.join("skills.local/mine/SKILL.md"), "mine\n").unwrap();
+    let paths: Vec<String> = [
+        "skills/deploy/SKILL.md",
+        "skills/deploy/check.sh",
+        "skills/triage",
+        "skills.local/mine/SKILL.md",
+    ]
+    .iter()
+    .map(|one| (*one).to_owned())
+    .collect();
+    let mut said = String::new();
+    let code = save_paths(
+        &Request {
+            root,
+            message: Some("named"),
+            sign: false,
+            no_push: true,
+            cwd: root,
+            provenance: None,
+        },
+        Trigger::Skill(crate::skills::verbs::By::Window),
+        &paths,
+        &mut |line: Say| {
+            said.push_str(&line.to_string());
+            said.push('\n');
+        },
+    );
+    assert_eq!(code, 0, "{said}");
+    let mut committed: Vec<String> = run(
+        root,
+        &["show", "--no-renames", "--name-only", "--format=", "HEAD"],
+    )
+    .lines()
+    .filter(|line| !line.is_empty())
+    .map(str::to_owned)
+    .collect();
+    committed.sort();
+    assert_eq!(
+        committed,
+        [
+            "skills/deploy/SKILL.md",
+            "skills/deploy/check.sh",
+            "skills/triage/SKILL.md",
+            "skills/triage/scripts/sort.sh",
+        ],
+        "{said}"
+    );
+    assert!(ask(root, &["status", "--porcelain"]).contains("skills/deploy/notes.md"));
+}
+
 // --------------------------------------------------------------------------------------- //
 // the two trees `save` refuses to commit                                                    //
 // --------------------------------------------------------------------------------------- //

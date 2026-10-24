@@ -23,7 +23,6 @@
  */
 /// <reference types="node" />
 import { readFileSync } from "node:fs";
-import { RADIX_FROM } from "../guards.testkit";
 import { join } from "node:path";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -1360,17 +1359,25 @@ const openDialogs = () =>
   );
 
 /**
- * Every source file that draws a dialog: one that uses Radix's dialog or alert dialog, the
- * popover family's popovers (#2909), or writes the role itself. Read from the files, so a dialog added tomorrow is held here.
+ * Every source file that draws a dialog: one that uses the dialog family, the popover family's
+ * popovers (#2909), or writes the role itself. Read from the files, so a dialog added tomorrow is
+ * held here.
  */
 const FILES_WITH_DIALOGS = Object.keys(
-  // Not `overlays/`, which draws none: it is Radix's packages under the window's own name.
-  import.meta.glob(["../**/*.tsx", "!../**/*.test.tsx", "!../overlays/**"]),
+  // Not `overlays/`, which draws none: it is Radix's packages under the window's own name. Nor
+  // the families' own files and stories, which draw what every dialog is drawn with.
+  import.meta.glob([
+    "../**/*.tsx",
+    "!../**/*.test.tsx",
+    "!../**/*.stories.tsx",
+    "!../overlays/**",
+    "!../ui/**",
+  ]),
 )
   .map((path) => path.slice("../".length))
   .filter((path) =>
     new RegExp(
-      String.raw`from "${RADIX_FROM}(?:alert-dialog|dialog|popover)"|from "(?:\.\.?\/)+ui\/popover\/Popover"|role="(?:alert)?dialog"`,
+      String.raw`import \{[^}]*\b(?:Dialog|AlertDialog|DialogSurface|DialogInPlace)\b[^}]*\} from "(?:\.\.?\/)+ui\/dialog\/Dialog"|from "(?:\.\.?\/)+ui\/popover\/Popover"|role="(?:alert)?dialog"`,
     ).test(readFileSync(join(process.cwd(), "src", path), "utf8")),
   )
   .sort();

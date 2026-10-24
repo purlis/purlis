@@ -152,8 +152,8 @@ describe("the new-vault dialog", () => {
       "password",
     );
     expect(within(dialog).queryByLabelText("1Password vault")).not.toBeInTheDocument();
-    expect(within(dialog).queryByRole("button", { name: /Create/ })).not.toBeInTheDocument();
-    expect(within(dialog).queryByRole("button", { name: "Test sign-in" })).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: /Create/ })).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "Test sign-in" })).toBeDisabled();
     expect(create).not.toHaveBeenCalled();
   });
 
@@ -279,7 +279,7 @@ describe("setting up how a 1Password vault signs in", () => {
     const { made, dialog } = draw();
     await giveTheToken(dialog);
     await pickIn(within(dialog).getByLabelText("1Password vault"), "Engineering");
-    expect(within(dialog).queryByRole("button", { name: /Create/ })).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: /Create/ })).toBeDisabled();
 
     await userEvent.click(within(dialog).getByRole("button", { name: "Test sign-in" }));
 
@@ -329,6 +329,7 @@ describe("setting up how a 1Password vault signs in", () => {
 
       expect(await within(dialog).findByRole("alert")).toHaveTextContent(why);
       expect(within(dialog).queryByRole("status")).not.toBeInTheDocument();
+      // The main action says it creates anyway, in the place Create vault stood.
       expect(
         within(dialog).queryByRole("button", { name: "Create vault" }),
       ).not.toBeInTheDocument();
@@ -350,7 +351,7 @@ describe("setting up how a 1Password vault signs in", () => {
 
     await pickIn(within(dialog).getByLabelText("1Password vault"), "Ops");
 
-    expect(within(dialog).queryByRole("button", { name: /Create/ })).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: /Create/ })).toBeDisabled();
     expect(within(dialog).queryByRole("status")).not.toBeInTheDocument();
   });
 
@@ -521,7 +522,7 @@ describe("setting up how a 1Password vault signs in", () => {
 
     await userEvent.type(within(dialog).getByLabelText("Name"), "-2");
 
-    expect(within(dialog).queryByRole("button", { name: /Create/ })).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: /Create/ })).toBeDisabled();
     expect(within(dialog).queryByRole("status")).not.toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "Test sign-in" })).toBeEnabled();
     await userEvent.click(within(dialog).getByRole("button", { name: "Test sign-in" }));
@@ -542,8 +543,8 @@ describe("setting up how a 1Password vault signs in", () => {
       "1Password refused the sign-in with this token.",
     );
     expect(within(dialog).queryByLabelText("1Password vault")).not.toBeInTheDocument();
-    expect(within(dialog).queryByRole("button", { name: /Test/ })).not.toBeInTheDocument();
-    expect(within(dialog).queryByRole("button", { name: /Create/ })).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: /Test/ })).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: /Create/ })).toBeDisabled();
     // The way on is another token.
     await userEvent.click(within(dialog).getByRole("button", { name: "Give another token" }));
     expect(asked.at(-1)?.cmd).toBe("vault_setup_cancel");

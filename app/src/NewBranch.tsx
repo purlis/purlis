@@ -1,11 +1,9 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useRef, useState } from "react";
-import * as Dialog from "./overlays/dialog";
-import { Field, SettingActions, SettingRow } from "./settings/components";
-import { Button } from "./ui/button/Button";
-import { Form } from "./ui/field/Field";
+import { useState } from "react";
+import { Field, SettingRow } from "./settings/components";
+import { Dialog } from "./ui/dialog/Dialog";
 
 /**
  * **New branch**, from a repo's row (GL-1, ADR 0072 §4).
@@ -41,72 +39,45 @@ export function NewBranch({
   onCancel: () => void;
 }) {
   const [name, setName] = useState("");
-  // The dialog, so the box can be found in it on opening: the row draws the box, and a
-  // setting's field takes no ref.
-  const content = useRef<HTMLDivElement>(null);
   const cut = () => {
     if (!making) onCut(name.trim() === "" ? null : name.trim());
   };
+  // The keyboard starts in the box, the dialog's first field; ⏎ there is Create branch.
   return (
-    <Dialog.Root
-      open
-      onOpenChange={(open) => {
-        if (!open) onCancel();
+    <Dialog
+      onClose={onCancel}
+      title="New branch"
+      titleId="new-branch"
+      // Where the branch is cut, said with the title (#1719).
+      subtitle={
+        <>
+          In <code>{repo}</code>
+        </>
+      }
+      main={{
+        children: making ? "Creating…" : "Create branch",
+        reserve: ["Create branch", "Creating…"],
+        isDisabled: making,
+        onPress: cut,
       }}
     >
-      <Dialog.Portal>
-        <Dialog.Overlay className="ui-scrim" />
-        <Dialog.Content
-          ref={content}
-          className="ui-dialog warning"
-          aria-labelledby="new-branch"
-          // A click outside answers nothing, as in every dialog here (`docs/ui-primitives.md`).
-          onInteractOutside={(e) => e.preventDefault()}
-          onOpenAutoFocus={(e) => {
-            e.preventDefault();
-            content.current?.querySelector("input")?.focus();
-          }}
-        >
-          <Dialog.Title id="new-branch">New branch</Dialog.Title>
-          {/* The dialog's description (#1719): where the branch is cut, said with the title. */}
-          <Dialog.Description className="where">
-            In <code>{repo}</code>
-          </Dialog.Description>
+      <SettingRow
+        label="Name"
+        help={
+          <>
+            Optional. Left empty, purlis names it chat-1, chat-2 and on. It is cut from what{" "}
+            <code>{repo}</code> has checked out, in a folder of its own, and new chats start on it
+            until you pick somewhere else.
+          </>
+        }
+        control={(ids) => <Field ids={ids} kind="text" value={name} onChange={setName} />}
+      />
 
-          <Form
-            onSubmit={(event) => {
-              event.preventDefault();
-              cut();
-            }}
-          >
-            <SettingRow
-              label="Name"
-              help={
-                <>
-                  Optional. Left empty, purlis names it chat-1, chat-2 and on. It is cut from what{" "}
-                  <code>{repo}</code> has checked out, in a folder of its own, and new chats start
-                  on it until you pick somewhere else.
-                </>
-              }
-              control={(ids) => <Field ids={ids} kind="text" value={name} onChange={setName} />}
-            />
-
-            {trouble && (
-              <p className="trouble" role="alert">
-                {trouble}
-              </p>
-            )}
-
-            {/* `tabIndex={0}` on both, per `docs/ui-primitives.md` (charter-app#186). */}
-            <SettingActions>
-              <Button variant="primary" type="submit" isDisabled={making}>
-                {making ? "Creating…" : "Create branch"}
-              </Button>
-              <Button onPress={onCancel}>Cancel</Button>
-            </SettingActions>
-          </Form>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+      {trouble && (
+        <p className="trouble" role="alert">
+          {trouble}
+        </p>
+      )}
+    </Dialog>
   );
 }

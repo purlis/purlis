@@ -84,6 +84,7 @@ impl Plane {
                 built_in: None,
                 kept_local: Some(kept),
                 harness: None,
+                made_since: None,
             },
             &Chat {
                 workspace,
@@ -619,6 +620,7 @@ fn a_workspace_or_local_skill_never_takes_a_built_in_skills_name() {
             built_in: Some(&built_in),
             kept_local: Some(&|_| Ok(())),
             harness: None,
+            made_since: None,
         },
         &Chat {
             workspace: Some("smart-ide"),
@@ -772,6 +774,7 @@ impl Plane {
                 built_in,
                 kept_local: Some(&|_| Ok(())),
                 harness,
+                made_since: None,
             },
             &Chat {
                 workspace,
@@ -1252,6 +1255,7 @@ fn a_built_in_skill_never_loses_to_a_repo_or_harness_copy_of_its_name_on_any_rou
                 built_in: Some(&built_in),
                 kept_local: Some(&|_| Ok(())),
                 harness: None,
+                made_since: None,
             },
             &Chat {
                 workspace: None,

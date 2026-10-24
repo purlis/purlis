@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useRef, useState } from "react";
-import * as Dialog from "./overlays/dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { commands, type ForgeAccountRow, type ForgeTokenHelp } from "./bindings";
-import { Choice, Field, SettingActions, SettingRow } from "./settings/components";
+import { Choice, Field, SettingRow } from "./settings/components";
 import { Button } from "./ui/button/Button";
-import { Form, TextField } from "./ui/field/Field";
+import { Dialog } from "./ui/dialog/Dialog";
+import { TextField } from "./ui/field/Field";
 
 /** The forges a token signs in to, and the host each defaults to. */
 export const FORGES = [
@@ -109,121 +109,99 @@ export function ForgeTokenSignIn({
   };
 
   return (
-    <Dialog.Root
-      open
-      onOpenChange={(open) => {
+    <Dialog
+      onClose={() => {
         // Not while the forge is being asked: the answer would land where nobody is looking.
-        if (!open && !checking) onCancel();
+        if (!checking) onCancel();
+      }}
+      title="Sign in with a token"
+      subtitle="for this machine; the token is kept in your system keychain"
+      cancel={{ isDisabled: checking, onPress: onCancel }}
+      main={{
+        children: checking ? "Checking…" : "Sign in",
+        reserve: ["Sign in", "Checking…"],
+        isDisabled: checking || help === undefined,
+        onPress: () => void signIn(),
       }}
     >
-      <Dialog.Portal>
-        <Dialog.Overlay className="ui-scrim" />
-        <Dialog.Content
-          className="ui-dialog warning"
-          aria-describedby={undefined}
-          // A click outside answers nothing (`docs/ui-primitives.md`). Escape is Cancel.
-          onInteractOutside={(e) => e.preventDefault()}
-        >
-          <Dialog.Title>Sign in with a token</Dialog.Title>
-          <p className="where">for this machine; the token is kept in your system keychain</p>
+      <SettingRow
+        label="Forge"
+        grouped
+        control={(ids) => (
+          <Choice
+            kind="radio"
+            ids={ids}
+            options={FORGES.map((one) => ({
+              value: one.value,
+              label: one.label,
+              says: one.says,
+            }))}
+            value={forge}
+            onValueChange={chooseForge}
+            disabled={checking}
+          />
+        )}
+      />
 
-          <Form
-            onSubmit={(event) => {
-              event.preventDefault();
-              void signIn();
+      <SettingRow
+        label="Host"
+        help="The forge's address. Change it for a GitHub Enterprise server or a self-managed GitLab."
+        error={hostTrouble === undefined ? undefined : [hostTrouble]}
+        control={(ids) => (
+          <Field
+            kind="text"
+            ids={ids}
+            value={host}
+            placeholder="git.example.com"
+            disabled={checking}
+            onChange={(to) => {
+              setHost(to);
+              setHostTyped(true);
             }}
-          >
-            <SettingRow
-              label="Forge"
-              grouped
-              control={(ids) => (
-                <Choice
-                  kind="radio"
-                  ids={ids}
-                  options={FORGES.map((one) => ({
-                    value: one.value,
-                    label: one.label,
-                    says: one.says,
-                  }))}
-                  value={forge}
-                  onValueChange={chooseForge}
-                  disabled={checking}
-                />
-              )}
-            />
+          />
+        )}
+      />
 
-            <SettingRow
-              label="Host"
-              help="The forge's address. Change it for a GitHub Enterprise server or a self-managed GitLab."
-              error={hostTrouble === undefined ? undefined : [hostTrouble]}
-              control={(ids) => (
-                <Field
-                  kind="text"
-                  ids={ids}
-                  value={host}
-                  placeholder="git.example.com"
-                  disabled={checking}
-                  onChange={(to) => {
-                    setHost(to);
-                    setHostTyped(true);
-                  }}
-                />
-              )}
-            />
+      {help !== undefined && (
+        <div className="ui-setting-help" aria-live="polite">
+          <p>
+            Make a token on {help.host} with {help.scopes.length === 1 ? "the scope" : "the scopes"}{" "}
+            {help.scopes.map((scope, i) => (
+              <span key={scope}>
+                {i > 0 && (i === help.scopes.length - 1 ? " and " : ", ")}
+                <code>{scope}</code>
+              </span>
+            ))}
+            .{" "}
+            <Button onPress={() => void openUrl(help.create_at)} className="ui-setting-reset">
+              Make a token on {help.host}
+            </Button>
+          </p>
+        </div>
+      )}
 
-            {help !== undefined && (
-              <div className="ui-setting-help" aria-live="polite">
-                <p>
-                  Make a token on {help.host} with{" "}
-                  {help.scopes.length === 1 ? "the scope" : "the scopes"}{" "}
-                  {help.scopes.map((scope, i) => (
-                    <span key={scope}>
-                      {i > 0 && (i === help.scopes.length - 1 ? " and " : ", ")}
-                      <code>{scope}</code>
-                    </span>
-                  ))}
-                  .{" "}
-                  <Button onPress={() => void openUrl(help.create_at)} className="ui-setting-reset">
-                    Make a token on {help.host}
-                  </Button>
-                </p>
-              </div>
-            )}
+      <SettingRow
+        label="Token"
+        help="It goes to purlis once, is checked with the forge, and is kept in your system keychain. It never reaches a chat."
+        control={(ids) => (
+          <TextField
+            inputRef={box}
+            id={ids.id}
+            className="ui-setting-box"
+            type="password"
+            placeholder="Paste the token"
+            isDisabled={checking}
+            aria-labelledby={ids.labelledBy}
+            aria-describedby={ids.describedBy}
+          />
+        )}
+      />
 
-            <SettingRow
-              label="Token"
-              help="It goes to purlis once, is checked with the forge, and is kept in your system keychain. It never reaches a chat."
-              control={(ids) => (
-                <TextField
-                  inputRef={box}
-                  id={ids.id}
-                  className="ui-setting-box"
-                  type="password"
-                  placeholder="Paste the token"
-                  isDisabled={checking}
-                  aria-labelledby={ids.labelledBy}
-                  aria-describedby={ids.describedBy}
-                />
-              )}
-            />
-
-            {trouble !== undefined && (
-              <p className="trouble" role="alert">
-                {trouble}
-              </p>
-            )}
-
-            <SettingActions>
-              <Button variant="primary" type="submit" isDisabled={checking || help === undefined}>
-                {checking ? "Checking…" : "Sign in"}
-              </Button>
-              <Button isDisabled={checking} onPress={onCancel}>
-                Cancel
-              </Button>
-            </SettingActions>
-          </Form>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+      {trouble !== undefined && (
+        <p className="trouble" role="alert">
+          {trouble}
+        </p>
+      )}
+    </Dialog>
   );
 }

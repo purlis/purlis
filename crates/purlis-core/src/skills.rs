@@ -37,6 +37,7 @@ pub mod verbs;
 
 use crate::harness::{Harness, Kit};
 
+pub mod levels;
 mod on_machine;
 pub mod persona;
 
@@ -934,12 +935,17 @@ fn ask(
         .zip(persona)
         .map(|(at, persona)| names_of(at.plane, persona))
         .unwrap_or_default();
+    // A workspace or persona folder a running sandboxed chat could have made (SK-9).
+    let made = plane.map(|at| levels::made_since(at.plane));
     let set = purlis_skills::skill_set(
         plane.map(|at| at.plane),
         &Machine {
             built_in,
             kept_local: Some(&kept),
             harness,
+            made_since: made
+                .as_deref()
+                .map(|made| made as &purlis_skills::MadeSince<'_>),
         },
         &Chat {
             workspace: plane.and_then(|at| at.workspace),
@@ -1490,6 +1496,9 @@ pub struct StudioRow {
     /// For a skill from outside the plane (SK-6, #2769): whose it is, and how its harness can
     /// leave it out. `None` for the plane's and the built-in skills.
     pub outside: Option<OutsideRow>,
+    /// For a skill left out because a chat could have made its level's folder (SK-9): that
+    /// folder, relative to the plane, which the person may accept ([`levels::accept`]).
+    pub accept: Option<String>,
     /// Its compatibility badge on each harness that would load it (SK-8, #2771): every harness
     /// for a skill a chat gets from purlis, its own harness for one from outside the plane, and
     /// none for a skill left out.
@@ -1555,6 +1564,7 @@ pub fn outside_rows(harness: &HarnessInTheStudio, plane: &Path) -> Vec<StudioRow
                     owner: found.owner.clone(),
                     switch: found.switch.clone(),
                 }),
+                accept: None,
                 compat,
                 lint,
                 lifecycle: Lifecycle::Active,
@@ -1754,6 +1764,7 @@ pub fn studio_rows(set: &SkillSet, plane: &Path, names: &[Reference]) -> Vec<Stu
                 written,
                 unchecked: false,
                 outside: None,
+                accept: None,
                 compat: badges(&e.skill.path, e.origin, &Harness::ALL),
                 lint: Vec::new(),
                 lifecycle: e
@@ -1777,6 +1788,7 @@ pub fn studio_rows(set: &SkillSet, plane: &Path, names: &[Reference]) -> Vec<Stu
                 written,
                 unchecked: !h.checked,
                 outside: None,
+                accept: None,
                 compat: Vec::new(),
                 lint: Vec::new(),
                 lifecycle: Lifecycle::Active,
@@ -1803,6 +1815,9 @@ pub fn studio_rows(set: &SkillSet, plane: &Path, names: &[Reference]) -> Vec<Stu
                 written,
                 unchecked: false,
                 outside: None,
+                accept: matches!(l.reason, Reason::MadeWhileAChatRan(_))
+                    .then(|| levels::to_accept(plane, &l.folder))
+                    .flatten(),
                 compat: Vec::new(),
                 lint: Vec::new(),
                 lifecycle: if matches!(l.reason, Reason::Archived) {

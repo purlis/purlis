@@ -83,6 +83,10 @@
   --focus-ring-offset: 2px;
   --focus-ring-inset: -2px;
 
+  /* The line around a pane (#2914): Classic's hairline, drawn in the accent on the focused pane;
+     Purlis draws none, its panes being the content panel itself. Hairline-scale, so px. */
+  --pane-border-width: 1px;
+
   /* Elevation. The shape is core; the colour is the theme's `overlay.shadow`. A bar floating
      over a pane is raised; everything the window draws over itself (a dialog, a popover, a menu,
      a tooltip) is one overlay, at one lift (#1845). */

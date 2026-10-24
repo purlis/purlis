@@ -448,6 +448,8 @@ import {
   type State,
 } from "./chatState";
 import { fitting, LEAST, LEAST_CHIP, LEAST_ROOT, leastAt, useRoom, useWidth } from "./fits";
+import { tabPanelOf, tabsPart } from "./ui/tabs/Tabs";
+import { panelRoot } from "./ui/panel/Panel";
 import { oneChatMidTurn, type Ending } from "./QuitWarning";
 import { asksMoved } from "./asks";
 import { useTextSizes } from "./textSize";
@@ -469,6 +471,7 @@ import { enterSettings, placeOfView } from "./settings/entering";
 import { onceTheKeyboardIsBack } from "./keyboardBack";
 import { SessionOffersLent } from "./sessionOffers";
 import { WorkspaceStrip } from "./WorkspaceStrip";
+import { SKILL_CHAT, type SkillChatAsk } from "./skillDraftAsks";
 import { ChatStrip, NO_ENDED, NO_ROWS } from "./ChatStrip";
 import { type FirstChat, type PlaneReport, type WindowDoing } from "./planeReport";
 import { Doer, Pin } from "./StripMarks";
@@ -2703,7 +2706,12 @@ export const PlaneView = memo(function PlaneView({
    * what is left: it is never one of the things that collapse. The show-more button is a
    * sibling at the right end of the bar, and appears only once the strip is full.
    */
-  const { strip: measured, controls: chatControls, width: room } = useRoom(onStrip.length);
+  const {
+    strip: measured,
+    controls: chatControls,
+    width: room,
+    gap: chatGap,
+  } = useRoom(onStrip.length);
   /** The chat tabs' ids, which the strip's tablist owns them by (#1204). */
   const chatTabId = useTabIds();
   /** Whether chat tab `id` is drawn as its name box rather than as a tab: it is being renamed
@@ -2726,8 +2734,22 @@ export const PlaneView = memo(function PlaneView({
     [measured],
   );
   const { shown, hidden } = useMemo(
-    () => fitting(onStrip, tabs.inFront, room, chatLeast, { is: isBackground, width: chipWidth }),
-    [onStrip, room, tabs.inFront, chatLeast, isBackground, chipWidth],
+    // Each tab and chip costs the room between it and the next too (the theme's gap, #2914),
+    // the last one's before the `+`.
+    () =>
+      fitting(onStrip, tabs.inFront, room, chatLeast + chatGap, {
+        is: isBackground,
+        width: chipWidth + chatGap,
+      }),
+    [onStrip, room, tabs.inFront, chatLeast, chatGap, isBackground, chipWidth],
+  );
+  /** Where the tab in front is drawn on the strip, or -1 where it is not (or is a name box). */
+  const frontAt = tabs.inFront === undefined ? -1 : shown.indexOf(tabs.inFront);
+  const frontPlace = frontAt >= 0 && !nameBoxFor(shown[frontAt]) ? frontAt : -1;
+  /** The id of the tab in front, which names the panel under it. */
+  const panelNamedBy = useMemo(
+    () => (frontPlace >= 0 ? chatTabId(frontPlace) : undefined),
+    [chatTabId, frontPlace],
   );
 
   /**
@@ -5053,6 +5075,44 @@ export const PlaneView = memo(function PlaneView({
   }, [change, plane]);
 
   /**
+   * **The Skill studio's "Ask a chat to draft a skill" and Try it** (SK-9, #2772): the core opens
+   * the chat with its prompt typed and never sent (Try it's in a throwaway folder, with the
+   * built-in skills and the draft alone), and its tab goes on the strip it is filed under, in
+   * front. A refusal is the core's sentence.
+   */
+  useEffect(() => {
+    const asked = (event: Event) => {
+      const wanted = (event as CustomEvent<SkillChatAsk>).detail;
+      if (wanted.plane !== plane) return;
+      const starting =
+        wanted.kind === "draft"
+          ? commands.skillDraftChat(plane, wanted.level, STARTING_SIZE.columns, STARTING_SIZE.rows)
+          : commands.skillDraftTry(
+              plane,
+              wanted.id,
+              wanted.profile,
+              STARTING_SIZE.columns,
+              STARTING_SIZE.rows,
+            );
+      void starting
+        .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
+        .then((started) => {
+          if (started.status === "error") {
+            setReport({ from: "skill-chat", refused: true, words: started.error });
+            return;
+          }
+          const chat = started.data;
+          setStartedIn((was) => ({ ...was, [chat.session]: chat.workspace ?? OUTSIDE }));
+          change((tabs) =>
+            openTab(tabs, chat.session, chat.name, whoOf(chat.persona, chat.harness), chat.label),
+          );
+        });
+    };
+    window.addEventListener(SKILL_CHAT, asked);
+    return () => window.removeEventListener(SKILL_CHAT, asked);
+  }, [change, plane]);
+
+  /**
    * **"Start a chat here"** on a file or folder row (FM-9): a chat the core starts on the
    * project's default profile in the branch's folder, with a reference to the row typed as its
    * first prompt once its harness has started, and never sent. Its tab goes on the strip it is
@@ -5836,8 +5896,7 @@ export const PlaneView = memo(function PlaneView({
     };
     setForgetting({ id, name, busy: false });
   }, []);
-  const afterForgetAsk = useCallback((event: Event) => {
-    event.preventDefault();
+  const afterForgetAsk = useCallback(() => {
     const { notice, band, forgot } = forgetAsked.current;
     const back = [...(notice?.querySelectorAll<HTMLElement>("button") ?? [])].find(
       (button) => button.textContent === FORGET_THIS_CHAT,
@@ -5877,8 +5936,7 @@ export const PlaneView = memo(function PlaneView({
     approveAsked.current = { id, approved: false };
     setApproving({ id, name, approval, busy: false });
   }, []);
-  const afterApproveAsk = useCallback((event: Event) => {
-    event.preventDefault();
+  const afterApproveAsk = useCallback(() => {
     const { id, approved } = approveAsked.current;
     const notice = [...document.querySelectorAll("[data-cause]")].find(
       (one) => one.getAttribute("data-cause") === `chat-did-not-start:${id}`,
@@ -8898,7 +8956,7 @@ export const PlaneView = memo(function PlaneView({
              2026-10-12). The session strip is the centre's own tab bar, directly above the chat
              it shows, as an editor's tabs are; the workspaces stay the full-width row above every
              region. Splits live inside a tab, so one centre has one strip. */
-            <div className="editor">
+            <div className="editor" {...tabsPart("layout")}>
               {/* The chat strip is the focused workspace's, so it is drawn in that workspace's colour
               (charter-app#281): its shade, its selected tab and its accent.
 
@@ -8976,7 +9034,9 @@ export const PlaneView = memo(function PlaneView({
                 chat. `asChild` again: the panes' box is measured, and it must not gain a
                 wrapper, so the editor's column is outside it and not between it and the panes. */}
               <Menued on={{ on: "pane" }} offers={found} onPress={press}>
-                <div className="panes">
+                {/* The content panel, which the chosen tab joins (`ui/tabs`): the tab panel of
+                  the chosen tab, named by it, while it is drawn on the strip. */}
+                <div className="panes" {...panelRoot("content")} {...tabPanelOf(panelNamedBy)}>
                   {frontTab ? (
                     <TaskEndContext.Provider value={taskEndHand}>
                       <LayoutPanes
@@ -9400,7 +9460,7 @@ export const PlaneView = memo(function PlaneView({
               busy={forgetting.busy}
               onAnswer={() => void forgetChat(forgetting.id, forgetting.name)}
               onCancel={() => setForgetting(undefined)}
-              onCloseAutoFocus={afterForgetAsk}
+              afterClose={afterForgetAsk}
             />
           )}
           {approving && (
@@ -9412,7 +9472,7 @@ export const PlaneView = memo(function PlaneView({
               busy={approving.busy}
               onAnswer={() => void approveWaiting(approving)}
               onCancel={() => setApproving(undefined)}
-              onCloseAutoFocus={afterApproveAsk}
+              afterClose={afterApproveAsk}
             >
               {/* The picker's own sentence, line and mark (`ProfileApproval.tsx`, ruling V69). */}
               <ApprovalSentence row={approving.approval} />

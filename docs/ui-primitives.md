@@ -116,13 +116,12 @@ What keeps it from becoming the library this file forbids:
   says), interrupts (Restart now, Close now) or throws a record away (Start fresh). An act
   purlis can take back, or that only opens or closes something, is not marked, even when it
   changes a lot. The mark is a warning about the answer, so it is never the button Return
-  finds (`docs/design-system.md`, the answer bar). A dialog's answer bar (a question with a way out
-  and an act or two, and nothing to fill in, like the quit warning or a delete's confirm) is an
-  `AnswerBar` (`app/src/AnswerBar.tsx`, #1210): a row, not a settings piece. A confirm whose only
-  field is the typed name of what it ends is a question too, and ends in the bar with the delete
-  last (D-1210-8, Delete vault), so no dialog puts an `ends-it` act in `SettingActions`;
-  `answerBar.guard.test.ts` holds that. Its keyboard lands in the name box, not on the delete
-  (D-1210-9).
+  finds (`docs/design-system.md`, the dialog's footer). A dialog's answers are its footer's
+  ([the dialog family](#the-dialog-family), #2910): a question's way out and its act or two, and a
+  form's. A confirm whose only field is the typed name of what it ends is a question too, and its
+  delete is the footer's main action, last (D-1210-8, Delete vault), so no dialog puts a `danger`
+  act in `SettingActions`; `dialogAnswers.guard.test.ts` holds that. Its keyboard lands in the
+  name box, not on the delete (D-1210-9).
 - **A box the set's `Field` cannot hold goes in the row's control slot as a native element.**
   A `Field` is controlled; a secret's value is never held in React state (a vault's value box),
   so that box is a native `<input type="password">` drawn with `ui-field`, in a `SettingRow`.
@@ -486,8 +485,8 @@ own `min-width: max-content` beside the class.
 - **A row of buttons takes one size** (`ButtonRow`): every button in it is the row's size,
   whatever it asks for, so a mixed row cannot be built. A row wraps by default (#1855): the
   buttons go onto as many lines as they need, and one wider than the row breaks its words. A
-  Notice's line is a small `ButtonRow`, and a dialog's answers (`AnswerBar`) and a form's
-  (`SettingActions`) are buttons of the family.
+  Notice's line is a small `ButtonRow`, and a dialog's answers (its footer, drawn by the dialog
+  family) and a form's (`SettingActions`) are buttons of the family.
 - **An answer that grants is `variant="grants"`** (ADR 0097 §6): as plain as Keep blocked beside
   it, on the control's own ground, edged in the accent and led by an open lock the family draws
   itself, hidden from a screen reader so the button's name stays its words. Allow never takes the
@@ -717,6 +716,70 @@ the old classes until the select family moves (#2906).
   `projectShown.guard.test.tsx` draws each member under a project behind.
 - **Stories hold it** (`Menu.stories.tsx`, `Popover.stories.tsx`, `docs/component-stories.md`).
 
+## The dialog family
+
+**Every dialog and alert dialog is `Dialog` or `AlertDialog`** (`app/src/ui/dialog/Dialog.tsx`,
+#2910, ADR 0104), on React Aria's `ModalOverlay`, `Modal` and `Dialog`. No screen writes
+`role="dialog"` or `role="alertdialog"` itself: `eslint.config.js` refuses it
+(`purlis/dialog-family`, an error). A surface with an anatomy of its own, the palette, is
+`DialogSurface`: the family's modal, fixed top, width and height, and its own rows inside.
+
+**The dialog rules** (#2798, #2789, the operator's ruling in #2910), each held by the family:
+
+| Rule | How |
+| --- | --- |
+| **Header, body, footer** | Three rows: the title and the line under it, the body, which is the only part that scrolls, and the footer with the answers, always in view. A control the keyboard is on is never under the footer (WCAG 2.4.11): the two never overlap. |
+| **Width by size, never by content** | `size="standard"`, 560 px, or `size="wide"`, 780 px, only for a list beside its details; each at most the window's width less 16 px a side. |
+| **Height** | At most the window less 48 px; `height` gives a dialog one of its own, and it takes the lesser of the two whatever it holds. |
+| **A fixed top** | 24 px under the window's top edge, so a change in its content moves only its bottom edge. |
+| **Text that changes with a choice keeps its room** | `Reserved` (`ui/dialog/Reserved.tsx`) lays every text a place can show in one cell, and an answer's `reserve` lists every word it can say (`Create`, `Creating…`), so nothing moves or resizes when a choice or a state changes. |
+| **A list over about seven items gets a filter** | `useListFilter` and `ListFilter` (`ui/dialog/ListFilter.tsx`): from eight items, a filter field at the large size over the list, its total in its placeholder ("Filter 28 personas"), a case-insensitive substring of each item's name, and "No persona is called “x”." where nothing matches. |
+| **At most three answers, each in its place** | `cancel` leads, `main` trails, and one `alternative` may stand between them. They are props, not children, so a fourth, or a main action anywhere but last, cannot be written. The main action is in the same place in every dialog. |
+| **⏎ and Esc** | The body and the footer are one form, so Return in a field is the main action and a button with the keyboard is pressed by its own Return. An answer that grants (`grants`) is pressed, never found by Return, from a field or a checkbox, and `byReturn` cannot say otherwise. An act that cannot be taken back (`danger`), or one that says so (`byReturn: false`, Start a chat), is pressed, never found by Return from a field. Esc closes, as `onClose`. A click outside answers nothing. |
+| **No dialog opens another** | One opened while another is up says so (`console.error`). A question about a dialog's row is asked in its place (Extensions' Review), and the dialog comes back once it is answered. |
+| **It starts on the right thing** | A dialog on its first field, else on the first thing it holds the keyboard can reach; an alert dialog on its safe answer, Cancel (#2980), or on the dialog itself while Cancel cannot be pressed, never on its main action. A grant never takes the keyboard as a dialog opens, even named by `initialFocus` (`grantFocus.guard.test.ts` holds every grant call site to it). `initialFocus` names another: an answer, a field, or the dialog itself while what it holds is read. Two alert dialogs start on another answer by ruling: Close a chat (ADR 0064) and Stop a task (V100-18). Closed, the keyboard goes back to what had it as it opened; `afterClose` may send it on. |
+
+| Prop | Says |
+| --- | --- |
+| `title`, `subtitle` | the header: the title names the dialog, the line under it (where it is, what it is about) describes it |
+| `description` | what the question is, said first in the body; it describes the dialog too |
+| `cancel`, `main`, `alternative` | the answers: a button of the family each, its words as `children`, `variant` (`main` is `primary` unless it says `danger` or `grants`), `isDisabled`, `onPress`, `reserve`, and `reserveGrant` for an answer that is a grant for some choices only, which holds the lock's room in every look |
+| `summary` | what the footer says before its answers, in the quiet tier |
+| `size`, `height` | the width's size, and a height of its own |
+| `className` | a hook for what is inside it and for the tests, never its size or place |
+
+- **Answers a part of the body owns** (a guided sign-in's Test and Create, `VaultSignIn`) are
+  drawn by it with `DialogAnswers`, in the footer, in their places, instead of the dialog's own.
+- **Over the window, and only its project's** (`projectShown.tsx`): a dialog is drawn only while
+  the project it is under is in front, and React Aria makes the rest of the window unreachable
+  while it is up. A menu or a popover opened in a dialog is React Aria's too, and stands over it;
+  a select's list is drawn in the window's top layer (`overlays/topLayer.ts`), which React Aria
+  keeps reachable. Esc closes the layer the keyboard is in, one at a time.
+- **Drawn by its parts** (ADR 0103): the scrim, the root (`data-variant` `dialog` or `alert`,
+  `data-size`), the header, title, subtitle, description, body, separator, footer, summary and
+  actions, each `data-scope="dialog"` with its `data-part`. `ui/dialog/dialog.css` draws the
+  family default, on the overlay surface's ground, border, corner and lift, and a theme's parts
+  reach the root, the title, the subtitle, the description, the separator and the summary.
+- **Drawn in place for a picture**: `DialogInPlace`, the same rows with no modal, is the theme
+  specimen's dialog and the family's stories'.
+- **Stories hold it** (`Dialog.stories.tsx`): a form, Esc, a question, a dialog longer than the
+  window with every field walked and never under the footer, and a list beside its details
+  whose choice moves nothing, in Chromium and WebKit, with axe.
+## The session tabs are drawn by the tabs family's parts (#2914)
+
+The chat strip's tabs are drawn by `app/src/ui/tabs`: `TabCell` is one tab's cell (its
+`data-variant`, `data-selected`, `data-hovered` for a mouse and `data-first`), `tabsPart` marks the
+column (`layout`), the strip and the panel under it (`body`), `tabPart` the label, the `×` and a
+count, and `editorToolbar` the bar over a file. `tabs.css` draws Purlis's docked tabs from those
+attributes; a theme's `tabs.*` parts reach the same ones (`crates/purlis-core/docs/themes.md`,
+Session tabs). The strip keeps its behaviour where it was: the roving focus, the drag, the
+tablist that owns the tabs (`StripTablist`) and the collapse into show-more (`fits.ts`, which
+now counts the theme's gap between tabs). Choosing a tab changes its colour and fill only
+(`tabs.guard.test.ts`; the Docked story measures every tab before and after each choice). The
+other tab strips (projects, workspaces, the activity tabs) move to the family with their own
+shell tickets.
+
+
 ## The control classes
 
 **Each kind of control is one CSS class, drawn only from the tokens** (ADR 0094 §4, #1834). The
@@ -872,19 +935,30 @@ and its rows).
 | Scrim   | `.ui-scrim`                                   | Radix Dialog's or AlertDialog's `Overlay`                  |
 | Dialog  | `.ui-dialog`                                  | Radix Dialog's or AlertDialog's `Content`                  |
 | Popover | the popover family's surface ([above](#the-menu-and-popover-families)) | `AnchoredPopover`, `HeldPopover`, `PopoverDialog` |
+
+(`--elevation-overlay`), so they read as related. A dialog is [the dialog
+family's](#the-dialog-family), drawn on that surface by `app/src/ui/dialog/dialog.css`; the other
+classes are in `app/src/primitives/overlays.css`, after the control classes in the same
+`components` layer, and the menu's surface is this one (`.ui-menu` keeps only its inset and its
+rows).
+
+| Overlay | Class                                         | On                                                         |
+| ------- | --------------------------------------------- | ---------------------------------------------------------- |
+| Dialog  | the dialog family's parts (`data-scope="dialog"`) | `Dialog`, `AlertDialog`, `DialogSurface`               |
+| Popover | `.ui-popover`; its arrow `.ui-overlay-arrow`  | Radix Popover's `Content` and `Arrow`                      |
 | Tooltip | the tooltip family's `root` part ([the tooltip family](#the-tooltip-family)) | React Aria's `Tooltip`, wrapped in `app/src/ui/tooltip` |
 | Menu    | the popover family's surface, its `menu` variant | `Menu`, a context menu's too                      |
 
-- **The look is the class's, the place is the view's.** A view places and sizes its overlay with a
-  class of its own: `.warning` centres a dialog and caps its size (`.warning.update`,
-  `.warning.doctor` and the palette change the cap or the place), `.row-card` caps a popover,
-  `.more-menu` sets a menu's width. None of them draws a ground, a border, a corner, a shadow or a
-  padding. The one size a view may hand the surface is `--ui-dialog-padding-end`: Ask {persona}
-  keeps its answers at its bottom edge while it scrolls, so it takes its own bottom padding away.
-- **Inside, the shared controls.** Every button in a dialog or a popover is a `Button`: the
-  form's submit, a question's default answer and Smart close are `variant="primary"`, an answer
-  that ends something (D-1719-3) is `variant="danger"`, and the rest are secondary. A field is the field family's, in a dialog's settings row too, so a dialog's fields
-  never differ from one another, and ⌘⏎ sends the dialog's form.
+- **The look is the class's, the place is the view's.** A view places and sizes a popover or a
+  menu with a class of its own: `.row-card` caps a popover, `.more-menu` sets a menu's width. None
+  of them draws a ground, a border, a corner, a shadow or a padding. A dialog's place and size are
+  the dialog family's alone.
+- **Inside, the shared controls.** Every button in a dialog or a popover is a `Button`: a
+  dialog's main action is `primary` unless it ends something (D-1719-3, `danger`) or grants
+  (`grants`), and the rest are secondary. A field is the field family's, in a dialog's settings
+  row too, so a dialog's fields never differ from one another; the dialog's body and footer are
+  the field family's `Form`, so its fields are checked before it is sent and ⌘⏎ sends its main
+  action.
 - **A Notice is not an overlay.** It stands in its pane's row or in the Inbox, never over
   anything (#1647), so it has no lift and no overlay ground. It is the **inline surface** instead
   (#1855): `.ui-inline-surface` draws the overlay's border and the control's corner on the page's
@@ -900,6 +974,7 @@ dialog is still named by its title, keeps the keyboard and leaves on Escape, and
 opens from the keyboard. It reads every component's source too: each Radix overlay part wears its
 class, every button inside an overlay's content is the button family and every field its
 field class, and `App.css` draws no overlay surface and lifts nothing by a shadow of its own.
+The dialog family's own tests hold a dialog's rows (`ui/dialog/Dialog.test.tsx`).
 
 ## Text roles
 
@@ -995,6 +1070,10 @@ portal (#24, accepted). Neither library is what makes that true, but the smaller
 to add to it.
 
 ## What is already converted
+
+_History: the dialogs below moved from Radix's `Dialog` and `AlertDialog` onto [the dialog
+family](#the-dialog-family) in #2910. What follows records why each was drawn as it was; the
+rules it states hold, kept by the family._
 
 `StartChat`, `QuitWarning`, `ApprovePlane` and `Palette` — every modal surface the window has.
 The terminal panes are xterm.js and are not a candidate.

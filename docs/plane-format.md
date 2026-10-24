@@ -210,6 +210,7 @@ prose under another heading, which is why every store gets a heading or a row.
 - [Workspaces](#workspaces)
   - [`workspaces/`](#workspaces-1)
   - [`workspaces/.default`](#workspacesdefault)
+  - [`workspaces/.throwaway/purlis-try-<id>/`](#workspacesthrowawaypurlis-try-id)
   - [`workspaces/<ws>/`](#workspacesws)
   - [`workspaces/<ws>/workspace.md` — the living charter](#workspaceswsworkspacemd--the-living-charter)
   - [`workspaces/<ws>/workspace.json` — the committed manifest](#workspaceswsworkspacejson--the-committed-manifest)
@@ -338,6 +339,10 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`save-branch.json`](#save-branchjson)
   - [`save-journal.jsonl`](#save-journaljsonl)
   - [`skills-deleted/<stamp>-<name>/`](#skills-deletedstamp-name)
+  - [`skill-drafts/<id>/`](#skill-draftsid)
+  - [`skill-tries/<id>/`](#skill-triesid)
+  - [`skill-levels/<chat id>.json`](#skill-levelschat-idjson)
+  - [`chat-settings/<chat id>.json`](#chat-settingschat-idjson)
   - [`ws-edit-nudge/<sid>-<workspace>`](#ws-edit-nudgesid-workspace)
   - [`ws-autosave/<workspace>`](#ws-autosaveworkspace)
   - [`workspace-tab-order`](#workspace-tab-order)
@@ -1368,6 +1373,12 @@ outside the project and removes it when the flow ends, so it adds none of them (
   removes it from git, and Restore brings it back from that commit. A skill git does not track
   is kept in [`skills-deleted/`](#skills-deletedstamp-name) instead. When a chat runs
   `purlis skill` to write, it is refused: a chat's change becomes a draft the person accepts (SK-9).
+  **A chat never writes a skill's files** (SK-9, #2772): while the `skill-studio` flag is on, a
+  sandboxed chat is denied writing every level's `skills/` and `skills.local/` (at the root, in
+  each workspace and in each persona's folder, `sandbox::skills_held`), and a chat's `Write`,
+  `Edit` or `MultiEdit` of a skill's file, or its `purlis propose` of one, is kept as a
+  [draft skill](#skill-draftsid) instead. Accept writes the draft's files here as one commit of
+  exactly those files.
 - **Read by:** `purlis-skills`' `skill_set` (`crates/skills/src/lib.rs`), the one place a
   chat's skills are worked out, for every chat purlis starts and for `purlis skill list` and
   `show` and the Skill studio. A project skill is in the set of a chat at the plane root; a chat
@@ -1628,6 +1639,25 @@ Two rules hold for the whole area and are not repeated per file:
   `workspace.chosen` (`charter/workspace.py:646`) and of `workspace.source`
   (`charter/workspace.py:676`).
 - **Git:** committed.
+
+### `workspaces/.throwaway/purlis-try-<id>/`
+
+- **Format:** a folder, made new and `0700`, holding whatever a Try it's scratch chat wrote
+  (SK-9, #2772): the **throwaway piece** that chat starts in. `<id>` is its try's, in
+  [`skill-tries/<id>/`](#skill-triesid). Inside the project because a sandboxed chat starts
+  only in a folder of the project; a sandboxed scratch chat writes this folder alone. A dot-name
+  below `workspaces/` is no workspace (`workspaces::Plane::workspaces` skips it).
+- **Status:** **internal**, **experimental** behind the `skill-studio` flag (#2772).
+- **Tier:** Clone state, transient — it lasts as long as its chat.
+- **Written by:** `purlis_core::skills::verbs::drafts::try_out` makes it; the scratch chat writes
+  in it.
+- **Removed by:** the app once the chat closes (`drafts::end_try_at`), and each time it writes its
+  record of open chats for one no chat on it stands in, two minutes after it was laid out
+  (`drafts::sweep_tries`), so a launch removes every one a quit or a crash left. Only folders
+  named `purlis-try-<16 hex>` are removed, through the handle of `workspaces/.throwaway/`, and no
+  link is followed.
+- **Git:** ignored by `/workspaces/*/*`, and never staged by a save whatever the `.gitignore`
+  says (`planegit::NEVER_STAGED`).
 - **Encoding details:** exactly `name + "\n"` (`charter/workspace.py:512`). On read the
   value is `.strip()`ed and re-checked with `valid_name`; a `contain.file_refusal` (symlink,
   FIFO, oversized) makes it read as absent (`charter/workspace.py:488`).
@@ -6961,6 +6991,79 @@ rewritten.
   Deleted ⇒ those skills cannot be restored. A committed skill whose delete was committed is
   never kept here: git keeps it. Every read, write and removal here goes through folders held
   open with `O_NOFOLLOW`.
+- **Git:** gitignored, under the state directory.
+
+### `skill-drafts/<id>/`
+- **Format:** one folder per draft skill (SK-9, #2772): a chat's write to a skill's files, kept
+  for the person to try, accept or reject in the Skill studio. `<id>` is sixteen hex characters
+  of a SHA-256 over the level's folder and the skill's folder name, so a skill has one draft and a
+  second write adds to it. It holds `draft.json` (`level`: the level's folder relative to the
+  plane, `skills` or `workspaces/ops/skills.local`; `folder`: the skill's folder name; `chat`: the
+  number of the chat that wrote it last; `bases`: each file the draft changed, below the skill's
+  folder, with the SHA-256 of what the project held there when the draft first changed it, `null`
+  for nothing) and `files/`, each drafted file at its path below the skill's folder. Folders are
+  private to the person, as the state directory is.
+- **Status:** **internal**, **experimental** behind the `skill-studio` flag (#2772).
+- **Tier:** Clone state — this machine's. A draft is never committed: Accept writes its files into
+  the skill's folder and commits exactly those (a local skill's are only written), and Reject
+  deletes the folder.
+- **Written by:** the app, as `purlis_core::skills::verbs::drafts::take`, for a chat's `Write`,
+  `Edit` or `MultiEdit` of a plane skill's file (its `pretooluse-edit` hook) or its `purlis
+  propose` of one, which reach the app as a proposed change does. Never by a chat.
+- **Read by:** `drafts::list`, for the Skill studio's Draft skills and the chat's "Draft ready in
+  Skill studio". Deleted ⇒ the drafts are lost; nothing in the project changes. Every read, write
+  and removal goes through folders held open with `O_NOFOLLOW`.
+- **Git:** gitignored, under the state directory.
+
+### `skill-tries/<id>/`
+- **Format:** one folder per Try it of a draft skill (SK-9, #2772), `<id>` sixteen random hex
+  characters. `skills/<name>/` holds the skill as the draft makes it: the project's files of the
+  skill, with the draft's over them. `piece` names the try's **throwaway piece**: a folder
+  `workspaces/.throwaway/purlis-try-<id>` made new, `0700`, inside the project (a sandboxed chat
+  starts only in a folder of the project), which the scratch chat starts in. A dot-name below
+  `workspaces/` is no workspace, git ignores it with every LOCAL workspace's files
+  (`/workspaces/*/*`), and a save never stages it (`planegit::SAVE_STAGES`).
+  A chat started in that folder is armed with the built-in skills and this one skill alone, as if
+  `skill-tries/<id>/` were a project of its own (`drafts::tried`).
+- **Status:** **internal**, **experimental** behind the `skill-studio` flag (#2772).
+- **Tier:** Clone state, transient — it lasts as long as its chat.
+- **Written by:** `drafts::try_out`, from the studio's Try it.
+- **Removed by:** with its [throwaway piece](#workspacesthrowawaypurlis-try-id), the same way and
+  at the same moments. What is left is the skill run the chat recorded, under the skill's name.
+- **Git:** gitignored, under the state directory; the piece is ignored and never staged.
+
+### `chat-settings/<chat id>.json`
+- **Format:** a Claude Code chat's `--settings` JSON, as purlis armed it (SK-9, #2772), where it is
+  longer than one word of a command line carries (`hoststart::SETTINGS_IN_A_WORD`, 96 KiB, under
+  Linux's 128 KiB): the chat is started with `--settings <this file>` instead. `0600` in a
+  private folder.
+- **Status:** **internal**.
+- **Tier:** Clone state, transient — it lasts as long as its chat.
+- **Written by:** the session host as it starts the chat (`hoststart::settings_in_a_file`),
+  through folder handles, no link followed. No chat writes the state folder.
+- **Read by:** Claude Code, at the chat's start.
+- **Removed by:** the app, each time it writes its record of open chats, for a chat not on it,
+  two minutes after it was written (`hoststart::sweep_settings`).
+- **Git:** gitignored, under the state directory.
+
+### `skill-levels/<chat id>.json`
+- **Format:** JSON, one file per sandboxed chat that is running (SK-9, #2772): `name`, the chat's
+  number as its tab says it, and `levels`, the workspace and persona folders there when it
+  started, relative to the plane (`workspaces/ops`, `personas/steward`).
+- **Status:** **internal**, **experimental** behind the `skill-studio` flag (#2772).
+- **Tier:** Clone state, transient — it lasts as long as its chat.
+- **Written by:** the session host as it starts a sandboxed chat (`skills::levels::note`); a
+  restart keeps the record it has. A workspace or persona the person makes, in the window or from
+  their own terminal, is added to every record (`skills::levels::vouch`); one the app makes on a
+  chat's request is not. No chat writes the state folder. `unaccepted.json` beside the records
+  (`levels`, folders relative to the plane) keeps every folder a swept record's chat could have
+  made, until the person accepts it in the Skill studio (`skills::levels::accept`).
+- **Read by:** every skill set: a workspace's or persona's skills whose folder is not in a record,
+  or is in `unaccepted.json`, reach no chat, with "accept it in the Skill studio", until the person
+  does.
+- **Removed by:** the app, each time it writes its record of open chats
+  ([`app/reopen.json`](#appreopenjson)), for a chat not on it, two minutes after it was written,
+  moving what it could have made to `unaccepted.json` first (`skills::levels::sweep`).
 - **Git:** gitignored, under the state directory.
 
 ### `save-journal.jsonl`

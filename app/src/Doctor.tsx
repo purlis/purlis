@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import * as Dialog from "./overlays/dialog";
 import { Check, LoaderCircle, Stethoscope, TriangleAlert, X, type LucideIcon } from "lucide-react";
 import { Notice } from "./Notice";
 import { landSettingsFocus } from "./settings/entering";
@@ -19,9 +18,9 @@ import {
   type DoctorRow,
   type PlaneId,
 } from "./bindings";
-import { AnswerBar } from "./AnswerBar";
 import { said, useSwitches } from "./switchClock";
 import { Button } from "./ui/button/Button";
+import { Dialog } from "./ui/dialog/Dialog";
 import { StatusItem, StatusVerdict } from "./ui/status/StatusItem";
 
 /**
@@ -647,156 +646,146 @@ export function Health({
   const ours = report?.app_rows ?? [];
 
   return (
-    <Dialog.Root
-      open={open}
-      onOpenChange={(now) => {
-        setOpen(now);
-        // Opening it is the operator asking, which is the one thing that may probe a harness.
-        if (now) run(true);
-        else doctor.forget?.();
-      }}
-    >
-      <Dialog.Trigger asChild>
-        <StatusItem
-          data-testid="status-doctor"
-          tone={tone === "unknown" ? "quiet" : undefined}
-          aria-label={label}
-          tooltip={label}
-          icon={
-            running ? (
-              // It is running: this is the state the spin is for, *still happening*.
-              <LoaderCircle aria-hidden="true" className="spinning" />
-            ) : (
-              <Stethoscope aria-hidden="true" />
-            )
-          }
-        >
-          Doctor
-          {/* The count, in its verdict's colour and in words, so the colour is never the only
-              thing that says it; nothing at all when nothing is wrong (qw357). */}
-          {said !== undefined && (
-            <StatusVerdict tone={tone === "fail" ? "failed" : "waiting"}>{said}</StatusVerdict>
-          )}
-        </StatusItem>
-      </Dialog.Trigger>
-      <Dialog.Portal>
-        <Dialog.Overlay className="ui-scrim" />
-        <Dialog.Content
-          className="ui-dialog warning doctor"
-          aria-describedby="doctor-depth"
-          onCloseAutoFocus={(event) => {
-            // A row's "Fix it in Settings" sent the keyboard into Settings: Radix would hand it
-            // back to the doctor's button (#1206).
-            if (landSettingsFocus()) event.preventDefault();
-          }}
-        >
-          <Dialog.Title>Doctor</Dialog.Title>
-          <p className="honest" id="doctor-depth">
-            {/* Work in progress says what is being done (`docs/ui-copy.md`, #630). */}
-            {report === undefined
-              ? running
-                ? "Running the doctor…"
-                : "The doctor has not answered yet."
-              : report.full
-                ? "Every check, with each harness profile probed. It runs inside this app, so every answer is the app's own environment."
-                : "The preflight every chat start runs. The harness profiles are not probed. It runs inside this app, so every answer is the app's own environment."}
-            {report !== undefined && running && " Checking again…"}
+    <>
+      <StatusItem
+        data-testid="status-doctor"
+        tone={tone === "unknown" ? "quiet" : undefined}
+        aria-label={label}
+        tooltip={label}
+        aria-haspopup="dialog"
+        onPress={() => {
+          setOpen(true);
+          // Opening it is the operator asking, which is the one thing that may probe a harness.
+          run(true);
+        }}
+        icon={
+          running ? (
+            // It is running: this is the state the spin is for, *still happening*.
+            <LoaderCircle aria-hidden="true" className="spinning" />
+          ) : (
+            <Stethoscope aria-hidden="true" />
+          )
+        }
+      >
+        Doctor
+        {/* The count, in its verdict's colour and in words, so the colour is never the only
+            thing that says it; nothing at all when nothing is wrong (qw357). */}
+        {said !== undefined && (
+          <StatusVerdict tone={tone === "fail" ? "failed" : "waiting"}>{said}</StatusVerdict>
+        )}
+      </StatusItem>
+      <Dialog
+        isOpen={open}
+        onClose={() => {
+          setOpen(false);
+          doctor.forget?.();
+        }}
+        title="Doctor"
+        className="doctor"
+        aria-describedby="doctor-depth"
+        // A row's "Fix it in Settings" sent the keyboard into Settings, rather than back to the
+        // doctor's button (#1206).
+        afterClose={() => void landSettingsFocus()}
+        cancel={{ children: "Close" }}
+        main={{
+          children: "Check again",
+          variant: "secondary",
+          isDisabled: running,
+          onPress: () => run(true),
+        }}
+      >
+        <p className="honest" id="doctor-depth">
+          {/* Work in progress says what is being done (`docs/ui-copy.md`, #630). */}
+          {report === undefined
+            ? running
+              ? "Running the doctor…"
+              : "The doctor has not answered yet."
+            : report.full
+              ? "Every check, with each harness profile probed. It runs inside this app, so every answer is the app's own environment."
+              : "The preflight every chat start runs. The harness profiles are not probed. It runs inside this app, so every answer is the app's own environment."}
+          {report !== undefined && running && " Checking again…"}
+        </p>
+        {trouble !== undefined && (
+          <p className="honest doctor-trouble" role="alert">
+            The doctor could not run: {trouble}
           </p>
-          {trouble !== undefined && (
-            <p className="honest doctor-trouble" role="alert">
-              The doctor could not run: {trouble}
-            </p>
-          )}
-          {fixed !== undefined && (
-            <section
-              aria-label="Fix"
-              className={`doctor-fixed${fixed.complete ? "" : " doctor-trouble"}`}
-              role="status"
-              ref={fixedAt}
-              tabIndex={-1}
-            >
-              {fixed.refused !== null ? (
-                <p className="honest">
-                  Fix {fixed.fix} was refused: {fixed.refused}
-                </p>
-              ) : (
-                <ul className="doctor-fixed-lines">
-                  {fixed.said.map((line, i) => (
-                    <li key={i}>{line}</li>
-                  ))}
-                </ul>
-              )}
-            </section>
-          )}
-          {ours.length > 0 && (
-            <section aria-label="This app">
-              <h3>This app</h3>
-              {/* Said rather than left to be noticed: an operator comparing this with
-                  `purlis doctor` in a terminal has to know why one row is not there. */}
+        )}
+        {fixed !== undefined && (
+          <section
+            aria-label="Fix"
+            className={`doctor-fixed${fixed.complete ? "" : " doctor-trouble"}`}
+            role="status"
+            ref={fixedAt}
+            tabIndex={-1}
+          >
+            {fixed.refused !== null ? (
               <p className="honest">
-                What the chats this window starts can do. <code>purlis doctor</code> does not print
-                these.
+                Fix {fixed.fix} was refused: {fixed.refused}
               </p>
-              <Rows rows={ours} onOpenSettings={settings} />
-            </section>
-          )}
-          {groups && (
-            <>
-              {groups.blockers.length > 0 && (
-                <section aria-label="Blockers">
-                  <h3>Blockers</h3>
-                  <Rows rows={groups.blockers} fixer={fixer} onOpenSettings={settings} />
-                </section>
-              )}
-              {groups.warnings.length > 0 && (
-                <section aria-label="Warnings">
-                  <h3>Warnings</h3>
-                  <Rows rows={groups.warnings} fixer={fixer} onOpenSettings={settings} />
-                </section>
-              )}
-              {groups.passed.length > 0 && (
-                <section aria-label="Passed">
-                  <h3>Passed</h3>
-                  <Rows rows={groups.passed} fixer={fixer} onOpenSettings={settings} />
-                </section>
-              )}
-              {groups.unchecked.length > 0 && (
-                <details className="doctor-unchecked">
-                  <summary>Not checked by this build ({groups.unchecked.length})</summary>
-                  {/* The one hint every deferred row carries, once. */}
-                  <p className="doctor-hint">{groups.unchecked[0].hint}</p>
-                  <Rows rows={groups.unchecked} />
-                </details>
-              )}
-            </>
-          )}
-          <SwitchesTimed />
-          {report && (
-            <p className="doctor-path">
-              <span className="ui-text-meta">This app&apos;s PATH</span>{" "}
-              {report.path === null ? (
-                <span className="none">none — the app was started with no PATH at all</span>
-              ) : (
-                <code>{report.path}</code>
-              )}
+            ) : (
+              <ul className="doctor-fixed-lines">
+                {fixed.said.map((line, i) => (
+                  <li key={i}>{line}</li>
+                ))}
+              </ul>
+            )}
+          </section>
+        )}
+        {ours.length > 0 && (
+          <section aria-label="This app">
+            <h3>This app</h3>
+            {/* Said rather than left to be noticed: an operator comparing this with
+              `purlis doctor` in a terminal has to know why one row is not there. */}
+            <p className="honest">
+              What the chats this window starts can do. <code>purlis doctor</code> does not print
+              these.
             </p>
-          )}
-          {/* `tabIndex={0}` on both, per `docs/ui-primitives.md` (charter-app#186). This
-              dialog has three tabbables when a row is unchecked — the `<summary>` above,
-              `Close`, and `Check again` — and `Check again` once sat between the two edges Radix's
-              focus scope handles, on an engine that leaves a `<button>` out of the tab
-              sequence unless its `tabindex` says otherwise. It could not be reached at all. */}
-          <AnswerBar>
-            <Dialog.Close asChild>
-              <Button>Close</Button>
-            </Dialog.Close>
-            <Button isDisabled={running} onPress={() => run(true)}>
-              Check again
-            </Button>
-          </AnswerBar>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+            <Rows rows={ours} onOpenSettings={settings} />
+          </section>
+        )}
+        {groups && (
+          <>
+            {groups.blockers.length > 0 && (
+              <section aria-label="Blockers">
+                <h3>Blockers</h3>
+                <Rows rows={groups.blockers} fixer={fixer} onOpenSettings={settings} />
+              </section>
+            )}
+            {groups.warnings.length > 0 && (
+              <section aria-label="Warnings">
+                <h3>Warnings</h3>
+                <Rows rows={groups.warnings} fixer={fixer} onOpenSettings={settings} />
+              </section>
+            )}
+            {groups.passed.length > 0 && (
+              <section aria-label="Passed">
+                <h3>Passed</h3>
+                <Rows rows={groups.passed} fixer={fixer} onOpenSettings={settings} />
+              </section>
+            )}
+            {groups.unchecked.length > 0 && (
+              <details className="doctor-unchecked">
+                <summary>Not checked by this build ({groups.unchecked.length})</summary>
+                {/* The one hint every deferred row carries, once. */}
+                <p className="doctor-hint">{groups.unchecked[0].hint}</p>
+                <Rows rows={groups.unchecked} />
+              </details>
+            )}
+          </>
+        )}
+        <SwitchesTimed />
+        {report && (
+          <p className="doctor-path">
+            <span className="ui-text-meta">This app&apos;s PATH</span>{" "}
+            {report.path === null ? (
+              <span className="none">none — the app was started with no PATH at all</span>
+            ) : (
+              <code>{report.path}</code>
+            )}
+          </p>
+        )}
+      </Dialog>
+    </>
   );
 }
 
