@@ -100,7 +100,7 @@ fn a_skill_of_the_projects_own_at_any_level_takes_the_starts_away() {
 fn every_offered_source_is_offered_until_the_project_browses_it() {
     let tmp = plane();
     let all = offered();
-    assert_eq!(opened(tmp.path(), None, None).sources, all);
+    assert_eq!(offered_here(tmp.path()), all);
 
     let first = &all[0].source;
     // Listed with the URL spelt another way: a trailing `.git`, a capital, a slash.
@@ -110,7 +110,7 @@ fn every_offered_source_is_offered_until_the_project_browses_it() {
         format!("schema = 1\n\n[[skill_sources]]\nurl = \"{spelt}\"\nfolder = \"skills\"\n"),
     )
     .unwrap();
-    let left = opened(tmp.path(), None, None).sources;
+    let left = offered_here(tmp.path());
     assert_eq!(left.len(), all.len() - 1);
     assert!(left.iter().all(|one| one.source.remote != first.remote));
 }
@@ -123,7 +123,7 @@ fn a_project_whose_sources_cannot_be_read_is_offered_none() {
         "schema = 1\n\n[[skill_sources]]\nurl = \"https://example.com/a\"\nbogus = 1\n",
     )
     .unwrap();
-    assert!(opened(tmp.path(), None, None).sources.is_empty());
+    assert!(offered_here(tmp.path()).is_empty());
 }
 
 #[test]

@@ -60,13 +60,14 @@ const ANTHROPIC = {
   },
 };
 
-const NOTHING_FIRST = { starts: false, sources: [], unmoved: null };
+const NOTHING_FIRST = { starts: false, unmoved: null };
 
 /** A core whose studio offers `first`, records every other ask, and answers it with
  *  `answers[cmd]`, or a change with no notes. */
 function core(
   first: unknown,
   answers: Record<string, (args: Record<string, unknown>) => unknown> = {},
+  offered: unknown[] = [],
 ) {
   const asked: { cmd: string; args: Record<string, unknown> }[] = [];
   mockIPC((cmd, args) => {
@@ -87,6 +88,7 @@ function core(
     const answer = answers[cmd];
     if (answer !== undefined) return answer(given);
     if (cmd === "skills_deleted" || cmd === "skill_drafts" || cmd === "skill_sources") return [];
+    if (cmd === "skill_sources_offered") return offered;
     if (cmd === "skill_updates") return { offers: [], unconfirmed: [], unasked: [] };
     if (cmd === "skill_templates") return [{ id: "blank", label: "Blank", about: "Empty." }];
     return { notes: [] };
@@ -134,7 +136,7 @@ describe("the empty Skill studio", () => {
 
 describe("the offered skill sources", () => {
   it("fills in Add source with one click, asks first, and only adds it", async () => {
-    const asked = core({ ...NOTHING_FIRST, sources: [ANTHROPIC] });
+    const asked = core(NOTHING_FIRST, {}, [ANTHROPIC]);
     const user = userEvent.setup();
     render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
 

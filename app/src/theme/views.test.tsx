@@ -865,7 +865,7 @@ const ORDINARY: Answers = {
   skill_studio: {
     on: true,
     workspace: null,
-    first: { starts: false, sources: [], unmoved: null },
+    first: { starts: false, unmoved: null },
     workspaces: ["alpha"],
     levels: [],
     skills: [
@@ -1347,7 +1347,7 @@ const STATES: State[] = [
       skill_studio: {
         on: true,
         workspace: null,
-        first: { starts: true, sources: [], unmoved: null },
+        first: { starts: true, unmoved: null },
         workspaces: [],
         levels: [],
         skills: [],

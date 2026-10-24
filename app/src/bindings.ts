@@ -1872,6 +1872,14 @@ export const commands = {
 	skillLevelAccept: (plane: PlaneId, folder: string) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_level_accept", { plane, folder })),
 	/**  The project's skill sources. */
 	skillSources: (plane: PlaneId) => typedError<SkillSource[], string>(__TAURI_INVOKE("skill_sources", { plane })),
+	/**
+	 *  **The sources the studio offers** (SK-22, #2785; decision 42): the first-party catalogue and
+	 *  the well-known skill sources the project does not browse, each with why it is on the list
+	 *  (`purlis_core::skills::first_open::offered_here`). Read beside [`skill_sources`] and not with
+	 *  the studio, since reading the project's sources asks git whether this machine's settings are
+	 *  ignored.
+	 */
+	skillSourcesOffered: (plane: PlaneId) => typedError<OfferedSource[], string>(__TAURI_INVOKE("skill_sources_offered", { plane })),
 	/**  **Adds a skill source**, shared with the project or kept on this machine. */
 	skillSourceAdd: (plane: PlaneId, source: SkillSource) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_source_add", { plane, source })),
 	/**  **Takes a skill source out** of the project's. Skills installed from it stay. */
@@ -7961,7 +7969,7 @@ export type OfferedSkill = {
 };
 
 /**
- *  **A skill source the studio offers**: its name, why it is on the list, and the source Add
+ *  **A skill source the studio offers** (SK-22, #2785): its name, why it is on the list, and the source Add
  *  source starts filled in with, kept with the project unless the person picks this machine.
  */
 export type OfferedSource = {
@@ -11545,11 +11553,6 @@ export type StudioFirst = {
 	 *  with a chat, browse skill sources, start blank.
 	 */
 	starts: boolean,
-	/**
-	 *  The first-party catalogue and the well-known skill sources, less those the project
-	 *  already browses, each taken up with one click through Add source.
-	 */
-	sources: OfferedSource[],
 	/**
 	 *  Where the project's skills are still where only some chat programs read them: how many,
 	 *  and the doctor's fix that moves them (SK-21).

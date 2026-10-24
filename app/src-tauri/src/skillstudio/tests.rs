@@ -356,9 +356,9 @@ fn a_skills_totals_name_what_it_ran_on_as_a_person_calls_it_and_say_a_start_that
 }
 
 #[test]
-fn a_studio_with_only_built_in_skills_lists_them_and_offers_the_starts_and_the_sources() {
+fn a_studio_with_only_built_in_skills_lists_them_and_offers_the_starts() {
     // SK-22 (#2785): the built-in skills are listed, but they are not the project's, so the
-    // three starts are offered beside them, with every offered source the project lacks.
+    // three starts are offered beside them.
     let tmp = tempfile::tempdir().unwrap();
     let built_in = tmp.path().join("plugin/skills");
     let root = tmp.path().join("plane");
@@ -373,19 +373,6 @@ fn a_studio_with_only_built_in_skills_lists_them_and_offers_the_starts_and_the_s
 
     assert_eq!(studio.skills.len(), 1);
     assert!(studio.first.starts);
-    let anthropic = studio
-        .first
-        .sources
-        .iter()
-        .find(|one| one.source.remote.url == "https://github.com/anthropics/skills")
-        .expect("Anthropic's skills are offered");
-    assert_eq!(anthropic.offering, SourceOffering::WellKnown);
-    assert_eq!(anthropic.source.folder.as_deref(), Some("skills"));
-    assert_eq!(
-        anthropic.source.kept,
-        crate::skillsources::SourceKept::Shared
-    );
-    assert!(!anthropic.why.is_empty());
     assert_eq!(studio.first.unmoved, None);
 
     skill(

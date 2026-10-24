@@ -323,42 +323,9 @@ pub struct StudioFirst {
     /// Whether the project has no skill of its own, so the three starts are offered: make one
     /// with a chat, browse skill sources, start blank.
     pub starts: bool,
-    /// The first-party catalogue and the well-known skill sources, less those the project
-    /// already browses, each taken up with one click through Add source.
-    pub sources: Vec<OfferedSource>,
     /// Where the project's skills are still where only some chat programs read them: how many,
     /// and the doctor's fix that moves them (SK-21).
     pub unmoved: Option<StudioUnmoved>,
-}
-
-/// Whose list an offered source is on.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
-#[serde(rename_all = "kebab-case")]
-pub enum SourceOffering {
-    /// purlis's own first-party catalogue.
-    Catalogue,
-    /// A collection someone else keeps that people use widely.
-    WellKnown,
-}
-
-impl From<purlis_core::skills::first_open::Offering> for SourceOffering {
-    fn from(offering: purlis_core::skills::first_open::Offering) -> Self {
-        use purlis_core::skills::first_open::Offering;
-        match offering {
-            Offering::Catalogue => Self::Catalogue,
-            Offering::WellKnown => Self::WellKnown,
-        }
-    }
-}
-
-/// **A skill source the studio offers**: its name, why it is on the list, and the source Add
-/// source starts filled in with, kept with the project unless the person picks this machine.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
-pub struct OfferedSource {
-    pub offering: SourceOffering,
-    pub name: String,
-    pub why: String,
-    pub source: crate::skillsources::SkillSource,
 }
 
 /// The project's skills still to move into the studio's.
@@ -373,19 +340,6 @@ impl From<purlis_core::skills::first_open::FirstOpen> for StudioFirst {
     fn from(first: purlis_core::skills::first_open::FirstOpen) -> Self {
         StudioFirst {
             starts: first.starts,
-            sources: first
-                .sources
-                .into_iter()
-                .map(|one| OfferedSource {
-                    offering: one.offering.into(),
-                    name: one.name,
-                    why: one.why,
-                    source: crate::skillsources::SkillSource::of(
-                        one.source,
-                        purlis_core::settings::Which::Shared,
-                    ),
-                })
-                .collect(),
             unmoved: first.unmoved.map(|unmoved| StudioUnmoved {
                 skills: u32::try_from(unmoved.skills).unwrap_or(u32::MAX),
                 fix: unmoved.fix.id().to_owned(),

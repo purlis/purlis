@@ -9,10 +9,12 @@
 //!   project has no skill of its own at any level (its own, a workspace's or a persona's). The
 //!   built-in skills and the skills a chat program finds itself are listed still, but they are
 //!   not the project's, so they do not make it a studio with something in it.
-//! - **The offered sources**: the first-party catalogue and the well-known skill sources
-//!   ([`offered`], the committed list `first_open/offered.toml`), less every one the project
-//!   already browses. Taking one up is SK-10's Add source, filled in and asked first, and an
-//!   install from it is still its own review: an offer never adds or installs anything.
+//! - **The offered sources** ([`offered_here`]): the first-party catalogue and the well-known
+//!   skill sources ([`offered`], the committed list `first_open/offered.toml`), less every one the
+//!   project already browses. Taking one up is SK-10's Add source, filled in and asked first, and
+//!   an install from it is still its own review: an offer never adds or installs anything. They
+//!   are read apart from [`first_open`], with the project's sources, because reading those asks
+//!   git whether this machine's settings are ignored: the studio's own read stays on the disk.
 //! - **The move SK-21 left for here**: a project whose skills are still in the folder only some
 //!   chat programs read (`.claude/skills`) is offered `purlis doctor --fix project-skills`.
 
@@ -117,8 +119,6 @@ pub(crate) fn offered() -> Vec<OfferedSource> {
 pub struct FirstOpen {
     /// Whether the project has no skill of its own, so the three starts are offered.
     pub starts: bool,
-    /// The offered sources, less those the project already browses.
-    pub sources: Vec<OfferedSource>,
     /// Where the project's skills are still in the old folder: how many, and the fix that moves
     /// them.
     pub unmoved: Option<Unmoved>,
@@ -132,7 +132,8 @@ pub struct Unmoved {
     pub fix: FixId,
 }
 
-/// **What the studio of the project at `plane` offers**, with `rows` the skills it lists.
+/// **What the studio of the project at `plane` offers**, with `rows` the skills it lists. It
+/// reads the disk alone.
 pub fn first_open(plane: &Path, rows: &[StudioRow]) -> FirstOpen {
     let owned = rows.iter().any(|row| {
         matches!(
@@ -142,18 +143,18 @@ pub fn first_open(plane: &Path, rows: &[StudioRow]) -> FirstOpen {
     });
     FirstOpen {
         starts: !owned,
-        sources: not_browsed(plane, offered()),
         unmoved: unmoved(plane),
     }
 }
 
-/// `offered`, less every source the project at `plane` browses already. None where the project's
-/// sources cannot be read: the studio's sources section says why, and an add would be refused.
-fn not_browsed(plane: &Path, offered: Vec<OfferedSource>) -> Vec<OfferedSource> {
+/// **The sources the studio offers the project at `plane`**: [`offered`], less every source it
+/// browses already. None where the project's sources cannot be read: the studio's sources section
+/// says why, and an add would be refused.
+pub fn offered_here(plane: &Path) -> Vec<OfferedSource> {
     let Ok(listed) = sources(plane) else {
         return Vec::new();
     };
-    offered
+    offered()
         .into_iter()
         .filter(|one| {
             !listed

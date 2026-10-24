@@ -57,7 +57,6 @@ export function SkillSources({
   busy,
   change,
   changed,
-  offered = [],
   headingRef,
 }: {
   plane: string;
@@ -67,12 +66,12 @@ export function SkillSources({
   busy: boolean;
   change: (label: string, run: () => Promise<Answer>) => void;
   changed: number;
-  /** The sources offered with one click, as the core lists them (`skills::first_open`). */
-  offered?: readonly OfferedSource[];
   /** The section's heading, which the empty studio's Browse sources moves to. */
   headingRef?: Ref<HTMLHeadingElement>;
 }) {
   const [sources, setSources] = useState<readonly SkillSource[]>([]);
+  /** The sources offered with one click, as the core lists them (`skills::first_open`). */
+  const [offered, setOffered] = useState<readonly OfferedSource[]>([]);
   const [unread, setUnread] = useState<string>();
   const [updates, setUpdates] = useState<SkillUpdates>();
   const [open, setOpen] = useState<Open>();
@@ -88,6 +87,12 @@ export function SkillSources({
           setSources(answer.data);
           setUnread(undefined);
         } else if (answer.status === "error") setUnread(answer.error);
+      })
+      .catch(() => undefined);
+    void commands
+      .skillSourcesOffered(plane)
+      .then((answer) => {
+        if (live && answer.status === "ok" && Array.isArray(answer.data)) setOffered(answer.data);
       })
       .catch(() => undefined);
     void commands

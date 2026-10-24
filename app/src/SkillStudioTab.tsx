@@ -497,7 +497,6 @@ export function SkillStudioTab({
       busy={busy}
       change={change}
       changed={changed + done}
-      offered={studio.first.sources}
       headingRef={sourcesHeading}
     />
   );

@@ -970,6 +970,7 @@ export const commands = {
 	skillDraftTry: __WINDOW_ONLY_RESULT,
 	skillLevelAccept: __WINDOW_ONLY_RESULT,
 	skillSources: __WINDOW_ONLY_RESULT,
+	skillSourcesOffered: __WINDOW_ONLY_RESULT,
 	skillSourceAdd: __WINDOW_ONLY_RESULT,
 	skillSourceRemove: __WINDOW_ONLY_RESULT,
 	skillSourceConfirm: __WINDOW_ONLY_RESULT,
@@ -6143,7 +6144,7 @@ export type OfferedSkill = {
 };
 
 /**
- *  **A skill source the studio offers**: its name, why it is on the list, and the source Add
+ *  **A skill source the studio offers** (SK-22, #2785): its name, why it is on the list, and the source Add
  *  source starts filled in with, kept with the project unless the person picks this machine.
  */
 export type OfferedSource = {
@@ -9727,11 +9728,6 @@ export type StudioFirst = {
 	 *  with a chat, browse skill sources, start blank.
 	 */
 	starts: boolean,
-	/**
-	 *  The first-party catalogue and the well-known skill sources, less those the project
-	 *  already browses, each taken up with one click through Add source.
-	 */
-	sources: OfferedSource[],
 	/**
 	 *  Where the project's skills are still where only some chat programs read them: how many,
 	 *  and the doctor's fix that moves them (SK-21).
