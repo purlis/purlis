@@ -1211,7 +1211,7 @@ describe("a session record's tab", () => {
     core();
     render(<App />);
     const panel = await showThePanel("Sessions");
-    await userEvent.click(await within(panel).findByRole("button", { name: /Ship the rollout/ }));
+    await userEvent.click(await within(panel).findByRole("row", { name: /Ship the rollout/ }));
     await screen.findByTestId("session-record");
 
     const made = screen.getByRole("region", { name: "Dispatches this chat made" });

@@ -4,7 +4,7 @@
 import { ChatsToPick, type ChatHere, type Referenced } from "./references";
 import { picksSaid } from "./referencesMany";
 import { Dialog } from "./ui/dialog/Dialog";
-import { ListFilter, noMatchSaid, useListFilter } from "./ui/dialog/ListFilter";
+import { ListFilter, noMatchSaid, useListFilter } from "./ui/list/ListFilter";
 
 /**
  * **"Add to a chat's context" from a file or folder row** (FM-9, #1151): the project's chats,

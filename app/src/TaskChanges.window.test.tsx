@@ -295,8 +295,8 @@ describe("what a task changed", () => {
     expect(reads.length).toBeGreaterThan(0);
     for (const read of reads) expect(read).toEqual({ plane: PLANE, id: ON_ITS_BRANCH.id });
     const files = within(tab)
-      .getAllByRole("button", { name: /\.(rs|md)$/ })
-      .map((one) => one.textContent);
+      .getAllByRole("row", { name: /\.(rs|md)$/ })
+      .map((one) => one.getAttribute("aria-label"));
     expect(files).toEqual(["src/queue.rs", "src/retry.rs"]);
     expect(within(tab).queryByText("docs/guide.md")).toBeNull();
     expect(tab).toHaveTextContent(`It worked on its own branch, ${BRANCH} in api.`);
@@ -313,7 +313,7 @@ describe("what a task changed", () => {
 
     const tab = await openChangesOf("Changes of tidy the docs");
 
-    expect(within(tab).getByRole("button", { name: "docs/guide.md" })).toBeInTheDocument();
+    expect(within(tab).getByRole("row", { name: "docs/guide.md" })).toBeInTheDocument();
     expect(tab).toHaveTextContent("also written by fix the queue");
     // What it cannot see is said, not left for the person to assume.
     expect(tab).toHaveTextContent(

@@ -215,7 +215,7 @@ describe("a task's own Changes tab, merged and discarded", function () {
 
     const files = await browser.execute(
       (pane: string) =>
-        [...document.querySelectorAll(`${pane} .task-changes-files li`)].map(
+        [...document.querySelectorAll(`${pane} .task-changes-files [data-part="root"]`)].map(
           (one) => one.textContent ?? "",
         ),
       changesTab,

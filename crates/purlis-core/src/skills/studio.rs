@@ -549,26 +549,22 @@ fn skill_files(plane: &Path, name: &str) -> Vec<HandedFile> {
             bytes: text.into_bytes(),
             executable: false,
         }];
-        for file in purlis_skills::other_files(&skill_md) {
-            // Opened through no link, at the instant of the open, and read no further than a
-            // question carries: a file swapped for a link after the folder was listed is not read.
-            let Ok(open) = crate::contain::open_no_link(&folder, &file) else {
-                continue;
-            };
-            let mut bytes = Vec::new();
-            let limit = wire::MOST_HANDED_BYTES as u64 + 1;
-            if std::io::Read::read_to_end(&mut std::io::Read::take(open, limit), &mut bytes)
-                .is_err()
-                || bytes.len() as u64 >= limit
-            {
-                continue;
+        // Read through the skill's folder held from the project's root, never through a link
+        // (SK-36), and no further than a question carries.
+        if let Ok(held) = purlis_skills::SkillFolder::open(plane, &skill_md) {
+            for entry in held.entries() {
+                let purlis_skills::Entry::File(rel) = entry else {
+                    continue;
+                };
+                let Some(text) = held.read(&rel, wire::MOST_HANDED_BYTES as u64) else {
+                    continue;
+                };
+                files.push(SkillFile {
+                    path: rel.to_string_lossy().into_owned(),
+                    bytes: text.into_bytes(),
+                    executable: false,
+                });
             }
-            let shown = file.strip_prefix(&folder).unwrap_or(&file);
-            files.push(SkillFile {
-                path: shown.to_string_lossy().into_owned(),
-                bytes,
-                executable: false,
-            });
         }
         return wire::handed(&files);
     }

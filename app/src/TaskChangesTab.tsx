@@ -27,7 +27,8 @@ import {
   SHARED_SAID,
 } from "./taskChanges";
 import { Button } from "./ui/button/Button";
-import { Tooltip } from "./ui/tooltip/Tooltip";
+import { List, ListRow } from "./ui/list/List";
+import { RowLabel, RowLead, RowTrail } from "./ui/list/Row";
 
 /** A file's mark, as the explorer says it. */
 const MARKS: Record<TaskFile["mark"], string> = {
@@ -270,31 +271,37 @@ function Place({
         {place.base !== null && <span className="none"> · against {place.base}</span>}
       </h3>
       {place.unread !== null && <p className="trouble">{place.unread}</p>}
-      <ul className="task-changes-files">
+      {/* Rows that act (`ui/list`, #2911): a press or Enter shows what changed in the file. */}
+      <List
+        className="task-changes-files"
+        aria-label={`Files changed in ${placeSaid(place)}`}
+        onAction={(key) =>
+          onOpenView(pieceDiffView(where, String(key)), pieceDiffTitle(where, String(key)))
+        }
+      >
         {place.files.map((file) => (
-          <li key={file.path} data-mark={file.mark}>
-            <Tooltip tip="Show what changed">
-              <button
-                type="button"
-                className="vault-secret"
-                tabIndex={0}
-                onClick={() =>
-                  onOpenView(pieceDiffView(where, file.path), pieceDiffTitle(where, file.path))
-                }
-              >
-                <GitCompare className="node-icon" aria-hidden="true" />
-                {file.path}
-              </button>
-            </Tooltip>
-            <span className="outcome"> {MARKS[file.mark]}</span>
-            {file.from !== null && <span className="none"> from {file.from}</span>}
-            {file.uncommitted && <span className="none"> · not committed</span>}
-            {file.also.length > 0 && (
-              <span className="honest"> · also written by {file.also.join(", ")}</span>
-            )}
-          </li>
+          <ListRow
+            key={file.path}
+            id={file.path}
+            textValue={file.path}
+            data-mark={file.mark}
+            tip="Show what changed"
+          >
+            <RowLead>
+              <GitCompare className="node-icon" aria-hidden="true" />
+            </RowLead>
+            <RowLabel>{file.path}</RowLabel>
+            <RowTrail>
+              <span className="outcome">{MARKS[file.mark]}</span>
+              {file.from !== null && <span className="none"> from {file.from}</span>}
+              {file.uncommitted && <span className="none"> · not committed</span>}
+              {file.also.length > 0 && (
+                <span className="honest"> · also written by {file.also.join(", ")}</span>
+              )}
+            </RowTrail>
+          </ListRow>
         ))}
-      </ul>
+      </List>
       {place.refused.length > 0 && (
         // **Named, and never opened** (#704): a path the engine refuses to read is drawn as text
         // with its mark and why. No row of it is a control, so nothing opens, compares or

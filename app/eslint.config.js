@@ -19,7 +19,7 @@ const PRIMITIVES = ["react-aria-components", "react-aria", "react-stately"];
  * their role.
  */
 const OTHER_FAMILIES = {
-  roles: ["tab", "option", "switch", "radio", "checkbox", "treeitem", "row", "link"],
+  roles: ["tab", "switch", "radio", "checkbox", "treeitem", "row", "link"],
   classes: [
     // Rows of a list, a tree or a table, a segment.
     "ui-row",
@@ -47,7 +47,6 @@ const OTHER_FAMILIES = {
     "plane-root",
     // The cards: the welcome's doors, a recent project, a repo.
     "welcome-door",
-    "recent-project",
     "repo-card",
     // The settings nav, and the files a settings page is edited as.
     "ui-settings-nav-item",
@@ -105,6 +104,8 @@ export default tseslint.config(
       "purlis/status-item-family": "error",
       "purlis/rail-family": "error",
       "purlis/activity-family": "error",
+      // Every list is the list family's, since #2911.
+      "purlis/list-family": "error",
     },
   },
   // The select's list is drawn in the old menu classes until the select family moves (#2906).

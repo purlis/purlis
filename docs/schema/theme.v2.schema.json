@@ -393,7 +393,7 @@
       }
     },
     "parts": {
-      "description": "Component parts (manifest version 10): keys <family>.<part>[.<variant>][.<state>].<property>, the state at rest implied. A property not named is the family default. Inside a state only fill, text, border-colour and shadow may be set, and a tab's flare and hover inset: a state never changes a part's size. `purlis theme parts` lists every family, part, state and property with its bounds.",
+      "description": "Component parts (manifest version 11): keys <family>.<part>[.<variant>][.<state>].<property>, the state at rest implied. A property not named is the family default. Inside a state only fill, text, border-colour and shadow may be set, and a tab's flare and hover inset: a state never changes a part's size. `purlis theme parts` lists every family, part, state and property with its bounds.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -5430,6 +5430,177 @@
         },
         "activity.indicator.bar.focused.fill": {
           "$ref": "#/$defs/part-fill"
+        },
+        "list.root.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "list.root.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.root.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "list.root.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "list.root.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "list.root.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "list.root.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "list.root.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "list.root.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "list.root.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "list.root.height": {
+          "$ref": "#/$defs/part-height"
+        },
+        "list.root.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "list.root.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.root.hover.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "list.root.hover.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "list.root.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "list.root.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.root.focused.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "list.root.focused.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "list.root.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "list.root.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.root.selected.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "list.root.selected.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "list.root.disabled.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "list.root.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.root.disabled.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "list.root.disabled.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "list.body.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "list.body.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "list.lead.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.lead.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "list.lead.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.lead.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.lead.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.lead.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.label.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.label.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "list.label.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "list.label.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.label.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.label.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.label.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.description.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.description.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "list.description.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.description.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.description.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.description.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.trail.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.trail.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "list.trail.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.trail.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.trail.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.trail.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.header.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.header.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "list.header.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
         }
       }
     }

@@ -1,9 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { HeldPopover } from "./ui/popover/Popover";
-import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
 import clsx from "clsx";
 import {
   CircleDashed,
@@ -20,12 +19,12 @@ import {
 import { PersonaMark } from "./PersonaMark";
 import type { Offer } from "./actions";
 import type { PanelEmpty, PanelRow, RowAction } from "./bindings";
-import { byDay, isDated, type Day } from "./dayGroups";
+import { byDay, isDated } from "./dayGroups";
 import { EmptyState } from "./ui/empty-state/EmptyState";
-import { useTabStop } from "./roving";
 import { Button } from "./ui/button/Button";
 import { TextField } from "./ui/field/Field";
-import { Tooltip } from "./ui/tooltip/Tooltip";
+import { List, ListRow, ListRowSection, type RowMenu } from "./ui/list/List";
+import { RowBelow, RowDescription, RowLabel, RowLead, RowTrail } from "./ui/list/Row";
 
 /**
  * The list a panel is drawn from, and the one the operator asked for by name.
@@ -97,7 +96,7 @@ const MARKS: Record<string, React.ComponentType<{ className?: string }>> = {
 };
 
 /**
- * A context menu around a row, supplied by the panel drawing it.
+ * A context menu on a row, supplied by the panel drawing it.
  *
  * **A panel's and not this component's, because a menu names what the row is ABOUT.**
  * `Menus.tsx` takes `{ on: "persona", persona }`, and there is no way to derive that from a row:
@@ -106,7 +105,7 @@ const MARKS: Record<string, React.ComponentType<{ className?: string }>> = {
  * asymmetry `purlis_core::panel`'s header names, one notch smaller, and is written down here
  * rather than in a comment on the day somebody notices.
  */
-export type RowMenu = (row: PanelRow, item: ReactNode) => ReactNode;
+export type MenuOfRow = (row: PanelRow) => RowMenu | undefined;
 
 export function PanelList({
   rows,
@@ -118,7 +117,8 @@ export function PanelList({
   onRun,
   onAct,
   actsOff,
-  wrap,
+  menuOf,
+  besideRow,
   page = PAGE,
   testid,
   offerFor,
@@ -152,8 +152,10 @@ export function PanelList({
    * nothing.
    */
   actsOff?: string;
-  /** A context menu around each row, where the panel can name what the row is about. */
-  wrap?: RowMenu;
+  /** A context menu on each row, where the panel can name what the row is about. */
+  menuOf?: MenuOfRow;
+  /** A sentence under a row, inside it, where the core refused something about it (#474). */
+  besideRow?: (row: PanelRow) => string | undefined;
   page?: number;
   testid?: string;
   /**
@@ -191,23 +193,13 @@ export function PanelList({
   const drawn = ordered.slice(0, limit);
   const days = dated ? byDay(drawn, noteOf, now) : undefined;
   const more = matching.length - drawn.length;
-  const dayIds = useId();
   // **Once there is more than a page**, which is the operator's own rule. Against the whole
   // list and never the filtered one: a box that vanished when a search narrowed the list to
   // eight rows would take away the control being used.
   const searchable = rows.length > page;
-  // The rows are ONE Tab stop, and Up and Down move along them (charter-app#189, `roving.ts`):
-  // the row whose card is open, or the first that does anything. A read-only row is a `<span>`
-  // and is no stop at all.
-  // An extension's row actions are items of the same group (charter-app#341): Down walks from a
-  // row to its actions and on to the next row, and the list stays one Tab stop.
-  const stop = useTabStop(open, [
-    ...drawn.filter((row) => row.detail !== null || row.runs !== null).map((row) => row.key),
-    ...(onAct === undefined
-      ? []
-      : drawn.flatMap((row) => row.actions.map((action) => actionStop(row, action)))),
-  ]);
-
+  // The rows are ONE Tab stop, and Up and Down move along them (charter-app#189): the list
+  // family's (`ui/list`, #2911), which comes back in on the row last left. An extension's row
+  // actions are in their row, and ← and → reach them (charter-app#341).
   function drawRow(row: PanelRow) {
     return (
       <Row
@@ -220,7 +212,8 @@ export function PanelList({
         onRun={onRun}
         onAct={onAct}
         actsOff={actsOff}
-        wrap={wrap}
+        menu={menuOf?.(row)}
+        refused={besideRow?.(row)}
         titleOnly={titleOnly}
       />
     );
@@ -278,56 +271,36 @@ export function PanelList({
         // those are different facts about a panel whose rows the reader can still get back.
         <p className="none ui-text-secondary">Nothing here matches “{query.trim()}”.</p>
       ) : (
-        <RovingFocusGroup.Root asChild orientation="vertical" {...stop}>
-          {days === undefined ? (
-            <ul className="panel-rows" aria-label={label}>
-              {drawn.map(drawRow)}
-            </ul>
-          ) : (
-            /* One scroll for the whole list and one roving group across its days: Down walks
-               from the last row of Today to the first of Yesterday. */
-            <div className="panel-rows panel-days" role="group" aria-label={label}>
-              {days.map(({ day, items }) => (
-                <DayRows key={day} day={day} id={`${dayIds}-${day}`}>
+        <List aria-label={label} className="panel-rows" size="sm">
+          {days === undefined
+            ? drawn.map(drawRow)
+            : /* One scroll for the whole list and one Tab stop across its days: Down walks from
+                 the last row of Today to the first of Yesterday. */
+              days.map(({ day, items }) => (
+                <ListRowSection key={day} id={day} title={day} named>
                   {items.map(drawRow)}
-                </DayRows>
+                </ListRowSection>
               ))}
-            </div>
-          )}
-        </RovingFocusGroup.Root>
+        </List>
       )}
 
       {more > 0 && (
-        <button
-          type="button"
-          className="ui-row panel-more"
-          // #190: WebKit leaves a button out of the tab sequence without this.
-          tabIndex={0}
-          onClick={() => setLimit((was) => was + page)}
+        // Load more, at the list's foot: the way to see the rest is where the list ends.
+        <Button
+          variant="ghost"
+          size="sm"
+          className="panel-more"
+          onPress={() => setLimit((was) => was + page)}
         >
           {`Show ${Math.min(more, page)} more`}
           <span className="note ui-text-meta">{` · ${more} left`}</span>
-        </button>
+        </Button>
       )}
     </div>
   );
 }
 
 const noteOf = (row: PanelRow) => row.note;
-
-/** One day's heading and the rows written on it. */
-function DayRows({ day, id, children }: { day: Day; id: string; children: ReactNode }) {
-  return (
-    <>
-      <h3 className="panel-day" id={id}>
-        {day}
-      </h3>
-      <ul className="panel-day-rows" aria-labelledby={id}>
-        {children}
-      </ul>
-    </>
-  );
-}
 
 /**
  * A panel's sentence with each `` `…` `` span drawn in code font (#1156): the core writes a
@@ -340,12 +313,6 @@ export function codeSpans(text: string): ReactNode {
   return parts.map((part, at) => (at % 2 === 1 ? <code key={at}>{part}</code> : part));
 }
 
-/** The roving-focus id of one of a row's actions: its row's key and its id, which a row's key
- *  alone can never equal. */
-function actionStop(row: PanelRow, action: RowAction): string {
-  return `${row.key}\u0000${action.id}`;
-}
-
 /** The card a row opens when the panel does not supply a richer one: the row's own words. */
 function defaultDetail(row: PanelRow): ReactNode {
   if (row.detail === null) return null;
@@ -355,9 +322,10 @@ function defaultDetail(row: PanelRow): ReactNode {
 /**
  * One row: a mark, one line of words, a quiet note — and a card, when there is one to open.
  *
- * **A button exactly when it does something**, which is what keeps a list of read-only rows out
- * of the tab sequence. A row with neither a card nor a catalogue row is a `<span>`, and a
- * screen reader is not told it can be pressed.
+ * **A row of the list family** (`ui/list`, #2911): it runs its catalogue verb, or opens its
+ * card, by a press or Enter; a row that does neither runs nothing. Its own actions stand at its
+ * end, and what a search matched in its body, or what the core refused about it, is a line under
+ * its words, inside it.
  */
 function Row({
   row,
@@ -368,7 +336,8 @@ function Row({
   onRun,
   onAct,
   actsOff,
-  wrap,
+  menu,
+  refused,
   titleOnly,
 }: {
   row: PanelRow;
@@ -383,7 +352,10 @@ function Row({
   onAct?: (row: PanelRow, action: RowAction) => void;
   /** Why the row's actions are off: {@link PanelList}'s `actsOff`. */
   actsOff?: string;
-  wrap?: RowMenu;
+  /** Its context menu: {@link PanelList}'s `menuOf`. */
+  menu?: RowMenu;
+  /** What the core refused about it: {@link PanelList}'s `besideRow`. */
+  refused?: string;
 }) {
   const Mark = MARKS[row.mark] ?? Circle;
   // **A persona's row wears that persona's mark** (#1449). Told by the row it runs, which only
@@ -392,93 +364,115 @@ function Row({
   const persona = row.runs?.startsWith(SHOWS_PERSONA) ? row.runs.slice(SHOWS_PERSONA.length) : null;
   const shortened = shorten(row.text);
   // **A row that runs opens something that holds the whole of it** — a persona's tab, a
-  // memory's (SI-9b, ADR 0065 Q4) — so it carries no native tooltip repeating its words over
-  // the row below. A row whose card is a popover keeps one, for the reader who does not click.
-  const tooltip = row.runs === null && row.text !== shortened ? row.text : undefined;
+  // memory's (SI-9b, ADR 0065 Q4) — so it carries no tooltip repeating its words over the row
+  // below. A row whose card is a popover keeps one, for the reader who does not click.
+  const whole = row.runs === null && row.text !== shortened ? row.text : undefined;
   // **On the right side the note is the hover** (#1674): the date a memory was written, how
-  // much a persona remembers. On the whole row, so it is the row's description too.
+  // much a persona remembers. On the whole row.
   const hover =
     titleOnly && row.note !== null
       ? row.text !== shortened
         ? `${row.text}\n${row.note}`
         : row.note
       : undefined;
-  const body = (
-    <>
-      {persona ? (
-        <PersonaMark persona={persona} className="node-icon" />
-      ) : (
-        <Mark className="node-icon" />
-      )}
-      <Tooltip tip={hover === undefined ? tooltip : undefined}>
-        <span className={clsx("row-text ui-text-body", row.tone === "default" && "ui-text-strong")}>
-          {shortened}
-        </span>
-      </Tooltip>
-      {row.note !== null && !titleOnly && (
-        <span className="row-note ui-text-meta">{` · ${row.note}`}</span>
-      )}
-      {row.tone === "default" && <Star className="node-icon" />}
-    </>
-  );
 
   // **The catalogue row runs on the way open and never on the way shut.** A persona row's
   // `persona.show:<name>` is the same verb the palette and a context menu run (charter-app#174),
   // so the three are one state rather than three that look alike — and running it again on
   // dismissal would re-open what was just closed.
-  /** The row's button, which its card stands beside. */
-  const own = useRef<HTMLButtonElement>(null);
+  /** The row, which its card stands beside. */
+  const own = useRef<HTMLDivElement>(null);
   const opened = (opening: boolean) => {
     onOpen(opening);
     if (opening && row.runs !== null) onRun?.(row.runs);
   };
+  const hasCard = detail !== null && row.runs === null;
 
-  const inner =
-    detail === null && row.runs === null ? (
-      <Tooltip tip={hover}>
-        <span className="ui-row row">{body}</span>
-      </Tooltip>
-    ) : row.runs !== null ? (
-      /* **A row that does something is a plain button that does it, and opens no card.** A
-         persona's row opens that persona's tab (`persona.show:<name>`, the operator's ruling of
-         2026-09-23), and a memory's opens the memory's (SI-9b, ADR 0065 Q4): a card beside the
-         row as well would be two surfaces for one thing. Its detail, where it has one, is what
-         the search reads. A double-click keeps what the first click previewed. */
-      <RovingFocusGroup.Item asChild tabStopId={row.key}>
-        <Tooltip tip={hover}>
-          <button
-            type="button"
-            className="ui-row row"
-            onClick={() => {
-              if (row.runs !== null) onRun?.(row.runs);
-            }}
-            onDoubleClick={() => {
+  // **A row that does something does it, and opens no card** when it runs a verb. A persona's row
+  // opens that persona's tab (`persona.show:<name>`, the operator's ruling of 2026-09-23), and a
+  // memory's opens the memory's (SI-9b, ADR 0065 Q4): a card beside the row as well would be two
+  // surfaces for one thing. A double-click keeps what the first click previewed.
+  const action =
+    row.runs !== null
+      ? () => {
+          if (row.runs !== null) onRun?.(row.runs);
+        }
+      : hasCard
+        ? () => opened(!open)
+        : undefined;
+
+  return (
+    <ListRow
+      ref={own}
+      id={row.key}
+      textValue={row.text}
+      className={clsx("panel-row", row.tone !== "plain" && `is-${row.tone}`)}
+      data-testid={`panel-row-${row.key}`}
+      data-open={hasCard && open ? "" : undefined}
+      onAction={action}
+      onDoubleClick={
+        row.runs === null
+          ? undefined
+          : () => {
               if (row.runs !== null) onRun?.(row.runs, true);
-            }}
-          >
-            {body}
-          </button>
-        </Tooltip>
-      </RovingFocusGroup.Item>
-    ) : (
-      <>
-        <RovingFocusGroup.Item asChild tabStopId={row.key} active={open}>
-          <Tooltip tip={hover}>
-            <button
-              type="button"
-              ref={own}
-              className="ui-row row"
-              aria-haspopup="dialog"
-              aria-expanded={open}
-              onClick={() => opened(!open)}
-            >
-              {body}
-            </button>
-          </Tooltip>
-        </RovingFocusGroup.Item>
-        {/* `side="left"` is where it opens from in the default arrangement and no more than
-            that: a region MOVES (ADR 0038), and the popover flips to the other side when
-            there is no room, which is what makes naming a side safe. */}
+            }
+      }
+      menu={menu}
+      tip={hover ?? whole}
+    >
+      <RowLead>
+        {persona ? (
+          <PersonaMark persona={persona} className="node-icon" />
+        ) : (
+          <Mark className="node-icon" />
+        )}
+      </RowLead>
+      <RowLabel
+        className={clsx("row-text ui-text-body", row.tone === "default" && "ui-text-strong")}
+      >
+        {shortened}
+      </RowLabel>
+      {row.note !== null && !titleOnly && (
+        <RowDescription className="row-note ui-text-meta">{` · ${row.note}`}</RowDescription>
+      )}
+      {(row.tone === "default" || (onAct !== undefined && row.actions.length > 0)) && (
+        <RowTrail className="row-actions">
+          {row.tone === "default" && <Star className="node-icon" />}
+          {/* **The extension's own actions, at the row's end** (charter-app#341): pressing the
+              row opens its card, and pressing an action asks the extension's program — two
+              different things a click could mean, so they are two different controls, which ←
+              and → reach. The titles and the asking are the manifest's. */}
+          {onAct !== undefined &&
+            row.actions.map((action) => (
+              <Button
+                key={action.id}
+                size="sm"
+                aria-disabled={actsOff !== undefined || undefined}
+                tooltip={actsOff}
+                onPress={actsOff === undefined ? () => onAct(row, action) : undefined}
+                className="row-action"
+              >
+                {action.title}
+              </Button>
+            ))}
+        </RowTrail>
+      )}
+      {snippet !== undefined && (
+        <RowBelow className="row-snippet ui-text-meta" data-testid={`row-snippet-${row.key}`}>
+          {snippet.before}
+          <mark>{snippet.match}</mark>
+          {snippet.after}
+        </RowBelow>
+      )}
+      {refused !== undefined && (
+        <RowBelow className="row-refusal trouble">
+          <span role="alert">{refused}</span>
+        </RowBelow>
+      )}
+      {hasCard && (
+        /* `side="left"` is where it opens from in the default arrangement and no more than
+           that: a region MOVES (ADR 0038), and the popover flips to the other side when
+           there is no room, which is what makes naming a side safe. */
         <HeldPopover
           triggerRef={own}
           isOpen={open}
@@ -493,46 +487,9 @@ function Row({
         >
           {detail}
         </HeldPopover>
-      </>
-    );
-
-  // **The extension's own actions, beside the row and never inside its button** (charter-app#341):
-  // pressing the row opens its card, and pressing an action asks the extension's program — two
-  // different things a click could mean, so they are two different controls. The titles and the
-  // asking are the manifest's, which the core put on the row.
-  const acts =
-    onAct !== undefined && row.actions.length > 0 ? (
-      <span className="row-actions">
-        {row.actions.map((action) => (
-          <RovingFocusGroup.Item key={action.id} asChild tabStopId={actionStop(row, action)}>
-            <Button
-              size="sm"
-              aria-disabled={actsOff !== undefined || undefined}
-              tooltip={actsOff}
-              onPress={actsOff === undefined ? () => onAct(row, action) : undefined}
-              className="row-action"
-            >
-              {action.title}
-            </Button>
-          </RovingFocusGroup.Item>
-        ))}
-      </span>
-    ) : null;
-
-  const item = (
-    <li className={clsx("panel-row", row.tone !== "plain" && `is-${row.tone}`)}>
-      {inner}
-      {acts}
-      {snippet !== undefined && (
-        <p className="row-snippet ui-text-meta" data-testid={`row-snippet-${row.key}`}>
-          {snippet.before}
-          <mark>{snippet.match}</mark>
-          {snippet.after}
-        </p>
       )}
-    </li>
+    </ListRow>
   );
-  return <>{wrap ? wrap(row, item) : item}</>;
 }
 
 /** The part of a row's body a search matched: the match, and a little either side of it. */

@@ -12,6 +12,8 @@ import { PAGE, snippetOf } from "./PanelList";
 import { SettingActions } from "./settings/components";
 import { OffWhenReadOnly } from "./ReadOnlyLine";
 import { Button } from "./ui/button/Button";
+import { ListBox, ListOption } from "./ui/list/List";
+import { RowBelow, RowDescription, RowLabel } from "./ui/list/Row";
 import { TextField } from "./ui/field/Field";
 
 /**
@@ -190,9 +192,20 @@ export function MemoryArchiveTab({
         // Not the empty state: the archive holds memories, and the search found none of them.
         <p className="none">Nothing here matches “{query.trim()}”.</p>
       ) : (
-        <ul
+        // A list to choose from (`ui/list`, #2911): one memory chosen at a time, and chosen
+        // again to put it away; its text and Restore are drawn under the list.
+        <ListBox
           className="panel-rows memory-archive-rows"
+          size="sm"
           aria-label={`Archived memories in ${scopeWord(scope)}`}
+          selectionMode="single"
+          selectionBehavior="toggle"
+          selectedKeys={chosen === undefined ? [] : [chosen]}
+          onSelectionChange={(picked) => {
+            const [key] = picked === "all" ? [] : [...picked];
+            setChosen(key === undefined ? undefined : String(key));
+            setOutcome(undefined);
+          }}
         >
           {drawn.map((memory) => {
             const snippet = snippetOf(
@@ -209,44 +222,38 @@ export function MemoryArchiveTab({
               wanted,
             );
             return (
-              <li key={memory.archived} className="panel-row">
-                <button
-                  type="button"
-                  // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
-                  tabIndex={0}
-                  className="ui-row row"
-                  aria-pressed={memory.archived === chosen}
-                  onClick={() => {
-                    setChosen(memory.archived === chosen ? undefined : memory.archived);
-                    setOutcome(undefined);
-                  }}
-                >
-                  <span className="row-text">{memory.title}</span>
-                  {memory.stamp !== "" && <span className="row-note">{` · ${memory.stamp}`}</span>}
-                </button>
+              <ListOption
+                key={memory.archived}
+                id={memory.archived}
+                textValue={memory.title}
+                className="panel-row"
+              >
+                <RowLabel className="row-text">{memory.title}</RowLabel>
+                {memory.stamp !== "" && (
+                  <RowDescription className="row-note">{` · ${memory.stamp}`}</RowDescription>
+                )}
                 {snippet !== undefined && (
-                  <p className="row-snippet" data-testid={`row-snippet-${memory.archived}`}>
+                  <RowBelow className="row-snippet" data-testid={`row-snippet-${memory.archived}`}>
                     {snippet.before}
                     <mark>{snippet.match}</mark>
                     {snippet.after}
-                  </p>
+                  </RowBelow>
                 )}
-              </li>
+              </ListOption>
             );
           })}
-        </ul>
+        </ListBox>
       )}
       {more > 0 && (
-        <button
-          type="button"
-          className="ui-row panel-more"
-          // #190: WebKit leaves a button out of the tab sequence without this.
-          tabIndex={0}
-          onClick={() => setLimit((was) => was + PAGE)}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="panel-more"
+          onPress={() => setLimit((was) => was + PAGE)}
         >
           {`Show ${Math.min(more, PAGE)} more`}
           <span className="note">{` · ${more} left`}</span>
-        </button>
+        </Button>
       )}
       {shown !== undefined && (
         <section className="memory-archived" aria-label={shown.title}>

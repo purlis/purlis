@@ -44,9 +44,11 @@ pub mod compat;
 mod declared;
 mod grant;
 pub mod handed;
+mod held;
 pub mod lifecycle;
 pub mod lint;
 mod load;
+pub mod moving;
 mod read;
 mod reference;
 pub mod review;
@@ -63,11 +65,14 @@ pub use grant::{Grant, grant_file, grant_of, set_grant};
 pub use handed::{Frontmatter, MOST_BYTES, Refusal, read_skill_md};
 pub use lifecycle::{About, Deprecated, Lifecycle, about_of, set_lifecycle, set_owners};
 pub use lint::{BuiltInLints, Finding, Lint, Severity, SkillFiles, SkillLint};
-pub use load::{Loaded, Narrowing, POINTER, by_name, find, load, other_files};
-pub use read::{DIR_IN_BUNDLE, FILE, frontmatter, in_bundle, listing, parsed, read, scan};
+pub use load::{Entry, Loaded, Narrowing, POINTER, SkillFolder, by_name, find, load};
+pub use moving::{move_between, move_skill};
+pub use read::{
+    DIR_IN_BUNDLE, FILE, frontmatter, in_bundle, listing, parsed, read, scan, scan_dir,
+};
 use reference::Seen;
 pub use reference::{BUILT_IN_PREFIXES, OnMachine, Reference};
-pub use share::{named, share};
+pub use share::{Shared, named, named_at, share};
 pub use stamp::{Reload, Stamp};
 
 /// A skill, as a chat is told about it: a folder in the open SKILL.md format.
@@ -229,6 +234,10 @@ impl std::fmt::Debug for Machine<'_> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Effective {
     pub skill: Skill,
+    /// The folder its level is reached from without following a link (SK-36): the plane's root,
+    /// or the bundle's plugin folder for a built-in skill. A load opens every folder below it
+    /// through the handle of the one above ([`load`]).
+    pub root: PathBuf,
     /// How the chat's harness is handed it.
     pub route: Route,
     pub origin: Origin,
@@ -302,6 +311,11 @@ pub enum Missing {
     Name,
     /// Its `SKILL.md`'s frontmatter names no `description`.
     Description,
+    /// It, its `SKILL.md`, or the level's folder it is in is a link, which purlis never reads
+    /// through (SK-36).
+    Link,
+    /// Its `SKILL.md` is larger than purlis reads ([`MOST_BYTES`]).
+    TooLarge,
 }
 
 impl std::fmt::Display for Reason {
@@ -316,6 +330,12 @@ impl std::fmt::Display for Reason {
             Self::NotASkill(Missing::Description) => {
                 f.write_str("not a skill: its SKILL.md names no `description`")
             }
+            Self::NotASkill(Missing::Link) => f.write_str("a link, so purlis doesn't read it"),
+            Self::NotASkill(Missing::TooLarge) => write!(
+                f,
+                "its SKILL.md is larger than purlis reads ({} KiB)",
+                MOST_BYTES / 1024
+            ),
             Self::NotGranted => f.write_str(
                 "not granted to this workspace: a project skill is for chats at the project's root \
                  until the project grants it",
@@ -390,6 +410,9 @@ pub struct FromHarness {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutsideSkill {
     pub skill: Skill,
+    /// The folder it is reached from (SK-36): a repo skill's clone, whose every folder below is
+    /// opened without following a link; the person's own skill's folder itself, read as it is.
+    pub root: PathBuf,
     /// [`Origin::Harness`] or [`Origin::Repo`].
     pub origin: Origin,
     /// The name the harness knows it by, which a project turns it off by: its `name`, or
@@ -568,6 +591,7 @@ impl SkillSet {
                 });
             } else {
                 self.effective.push(Effective {
+                    root: one.root,
                     skill: Skill {
                         name: one.id,
                         ..one.skill
@@ -745,23 +769,36 @@ pub fn skill_set(plane: Option<&Path>, machine: &Machine<'_>, chat: &Chat<'_>) -
     let mut set = SkillSet::default();
     let route = chat.harness.route;
     if let Some(dir) = machine.built_in {
-        level(&mut set, dir, (Origin::BuiltIn, false), route, |_| None);
+        let root = dir.parent().unwrap_or(dir);
+        level(
+            &mut set,
+            (root, dir),
+            (Origin::BuiltIn, false),
+            route,
+            |_| None,
+        );
     }
     if let Some(plane) = plane {
         if let Some(persona) = chat.persona {
             for local in [true, false] {
                 if let Some(dir) = persona_dir(plane, persona, local) {
                     let made = made_since(machine, &plane.join("personas").join(persona));
-                    level(&mut set, &dir, (Origin::Persona, local), route, |skill| {
-                        if let Some(why) = &made {
-                            return Some(Reason::MadeWhileAChatRan(why.clone()));
-                        }
-                        if local {
-                            kept_here(machine, folder_of_skill(skill))
-                        } else {
-                            None
-                        }
-                    });
+                    level(
+                        &mut set,
+                        (plane, &dir),
+                        (Origin::Persona, local),
+                        route,
+                        |skill| {
+                            if let Some(why) = &made {
+                                return Some(Reason::MadeWhileAChatRan(why.clone()));
+                            }
+                            if local {
+                                kept_here(machine, folder_of_skill(skill))
+                            } else {
+                                None
+                            }
+                        },
+                    );
                 }
             }
         }
@@ -770,16 +807,22 @@ pub fn skill_set(plane: Option<&Path>, machine: &Machine<'_>, chat: &Chat<'_>) -
             for local in [true, false] {
                 if let Some(dir) = level_dir(plane, &Whose::Workspace(ws.to_owned()), local) {
                     let made = made_since(machine, &plane.join(WORKSPACES_DIR).join(ws));
-                    level(&mut set, &dir, (Origin::Workspace, local), route, |skill| {
-                        if let Some(why) = &made {
-                            return Some(Reason::MadeWhileAChatRan(why.clone()));
-                        }
-                        if local {
-                            kept_here(machine, folder_of_skill(skill))
-                        } else {
-                            None
-                        }
-                    });
+                    level(
+                        &mut set,
+                        (plane, &dir),
+                        (Origin::Workspace, local),
+                        route,
+                        |skill| {
+                            if let Some(why) = &made {
+                                return Some(Reason::MadeWhileAChatRan(why.clone()));
+                            }
+                            if local {
+                                kept_here(machine, folder_of_skill(skill))
+                            } else {
+                                None
+                            }
+                        },
+                    );
                 }
             }
         }
@@ -787,19 +830,25 @@ pub fn skill_set(plane: Option<&Path>, machine: &Machine<'_>, chat: &Chat<'_>) -
             let Some(dir) = level_dir(plane, &Whose::Project, local) else {
                 continue;
             };
-            level(&mut set, &dir, (Origin::Project, local), route, |skill| {
-                let folder = folder_of_skill(skill);
-                if local && let Some(why) = kept_here(machine, folder) {
-                    return Some(why);
-                }
-                // A persona brings what it names into every workspace, whatever the workspace
-                // was granted or turned off (ADR 0099 as amended 2026-10-21).
-                if chat.names.iter().any(|one| one.names_plane(&skill.name)) {
-                    return None;
-                }
-                chat.workspace
-                    .and_then(|ws| reach(folder, ws, chat.turned_off, &skill.name))
-            });
+            level(
+                &mut set,
+                (plane, &dir),
+                (Origin::Project, local),
+                route,
+                |skill| {
+                    let folder = folder_of_skill(skill);
+                    if local && let Some(why) = kept_here(machine, folder) {
+                        return Some(why);
+                    }
+                    // A persona brings what it names into every workspace, whatever the workspace
+                    // was granted or turned off (ADR 0099 as amended 2026-10-21).
+                    if chat.names.iter().any(|one| one.names_plane(&skill.name)) {
+                        return None;
+                    }
+                    chat.workspace
+                        .and_then(|ws| reach(folder, ws, chat.turned_off, &skill.name))
+                },
+            );
         }
     }
     named_elsewhere(&mut set, machine, chat.names);
@@ -933,14 +982,20 @@ fn widest_first(left_out: &mut [LeftOut]) {
 /// skill of its name is already in the set or `held` says why not; every other folder left out
 /// with its reason. Folders are taken in the order of their names, so a tie inside one level
 /// always goes the same way.
+///
+/// `dir` is under `root`, the folder it is reached from without following a link
+/// ([`read::scan`]): the plane's root, or the bundle's plugin folder for the built-in skills.
 fn level(
     set: &mut SkillSet,
-    dir: &Path,
+    (root, dir): (&Path, &Path),
     (origin, local): (Origin, bool),
     route: Route,
     held: impl Fn(&Skill) -> Option<Reason>,
 ) {
-    let mut folders = read::scan(dir);
+    let Ok(rel) = dir.strip_prefix(root) else {
+        return;
+    };
+    let mut folders = read::scan(root, rel);
     folders.sort_by(|a, b| folder_of(a).cmp(folder_of(b)));
     for folder in folders {
         let skill = match folder {
@@ -997,6 +1052,7 @@ fn level(
         match taken.or_else(|| held(&skill)) {
             None => set.effective.push(Effective {
                 skill,
+                root: root.to_path_buf(),
                 route,
                 origin,
                 local,

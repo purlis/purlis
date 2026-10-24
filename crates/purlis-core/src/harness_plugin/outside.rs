@@ -45,7 +45,13 @@ pub fn harness_skills(
         };
         for skill in skills_in(&held, &dir, Links::Followed) {
             let owner = plugin.clone().map_or(Owner::You, Owner::Plugin);
-            let one = outside(adapter, choices, skill, Origin::Harness, owner);
+            // The person's own folder is read as it is, a link an installer left included.
+            let root = skill
+                .path
+                .parent()
+                .map(Path::to_path_buf)
+                .unwrap_or_default();
+            let one = outside(adapter, choices, (skill, root), Origin::Harness, owner);
             if !out.iter().any(|had| had.id == one.id) {
                 out.push(one);
             }
@@ -72,7 +78,19 @@ pub fn repo_skills(
             };
             for skill in skills_in(&dir, &clone.path.join(rel), Links::Named) {
                 let owner = Owner::Repo(clone.name.clone());
-                out.push(outside(adapter, choices, skill, Origin::Repo, owner));
+                // A clone is the chat's to write: read from the folder it sits in, the clone's
+                // own folder and every one below opened through held folders (SK-36).
+                let root = clone
+                    .path
+                    .parent()
+                    .map_or_else(|| clone.path.clone(), Path::to_path_buf);
+                out.push(outside(
+                    adapter,
+                    choices,
+                    (skill, root),
+                    Origin::Repo,
+                    owner,
+                ));
             }
         }
     }
@@ -84,7 +102,7 @@ pub fn repo_skills(
 fn outside(
     adapter: &dyn Adapter,
     choices: &Choices,
-    skill: Skill,
+    (skill, root): (Skill, PathBuf),
     origin: Origin,
     owner: Owner,
 ) -> OutsideSkill {
@@ -99,6 +117,7 @@ fn outside(
             .map_or(Switch::Alone, Switch::Not),
         id,
         skill,
+        root,
         origin,
         owner,
     }

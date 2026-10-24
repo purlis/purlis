@@ -1095,16 +1095,6 @@ pub fn chat_is_sandboxed_in(env: &dyn Fn(&str) -> Option<String>) -> bool {
     env(crate::hookwire::SANDBOXED_ENV).as_deref() == Some("1")
 }
 
-/// The harness [`crate::hookwire::HARNESS_ENV`] names: the profile's registry name
-/// (`claude-code`, `codex`, `opencode`; [`crate::profiles::KINDS`]), which is what a chat's start
-/// puts there, and not the kind word a profile is written with.
-pub fn harness_of_registry(registry: &str) -> Option<Harness> {
-    crate::profiles::KINDS
-        .iter()
-        .find(|kind| kind.registry == registry)
-        .and_then(|kind| Harness::of_kind(kind.word))
-}
-
 /// What started this process: a command the chat ran, or the harness itself.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Started {
@@ -1152,8 +1142,9 @@ pub fn writes_are_sandboxed_in(env: &dyn Fn(&str) -> Option<String>, started: St
     }
     match started {
         Started::ByTheChat => true,
-        Started::ByTheHarness => env(crate::hookwire::HARNESS_ENV)
-            .and_then(|registry| harness_of_registry(&registry))
+        Started::ByTheHarness => crate::hookwire::chat_harness(env)
+            .as_deref()
+            .and_then(Harness::of_registry_or_kind)
             .is_some_and(|harness| harness.adapter().sandbox_holds_what_it_starts()),
     }
 }
