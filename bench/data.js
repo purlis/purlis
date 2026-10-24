@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792849846080,
+  "lastUpdate": 1792851512362,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -23688,6 +23688,48 @@ window.BENCHMARK_DATA = {
             "value": 101.783174,
             "unit": "ms",
             "extra": "median of 5 runs: 100.850, 101.100, 101.783, 101.829, 102.319 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c527f1a19ffbe5fc4fb89a004aff5e2bd43969bb",
+          "message": "Wait for the shown project rail to reach 52px before reading it (#3154) (#3158)\n\nThe rail grows to its width over a transition; on WebKitGTK the test read\nit mid-way (7px). Taken from #3088.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-24T18:10:01+04:00",
+          "tree_id": "2c6e639518bc9cfe0b3c2894f8d5d6d2b09b8528",
+          "url": "https://github.com/purlis/purlis/commit/c527f1a19ffbe5fc4fb89a004aff5e2bd43969bb"
+        },
+        "date": 1792851510347,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.275826,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.271, 0.276, 0.276, 0.280, 0.282 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4105645,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.374, 16.401, 16.411, 16.416, 16.519 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.621388,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.382, 101.451, 101.621, 101.638, 101.714 ms"
           }
         ]
       }
