@@ -6,6 +6,7 @@ import process from "node:process";
 import { $, $$, browser, expect } from "@wdio/globals";
 import { LAUNCHDS_LIMIT, READY, THE_APPS_STARTING_LIMIT, built } from "../harness.js";
 import { answerTheAsk, pressAndStart } from "../opening.js";
+import { goToWorkspaceAt, workspacesListed } from "../titleBarWorkspaces.js";
 import {
   type Sample,
   appProcesses,
@@ -137,29 +138,12 @@ async function closeButtons(): Promise<WebdriverIO.Element[]> {
   return [...(await $$('[data-strip="Tabs"] button[aria-label^="End chat "]').getElements())];
 }
 
-/** The workspaces on the strip above the tabs (ADR 0036). */
-async function workspaceTabs(): Promise<WebdriverIO.Element[]> {
-  return [...(await $$('[data-strip="Workspaces"] [role="tab"]').getElements())];
-}
-
-/** What a strip tab is called: its drawn name, or — the plane root's icon tab (SI-1) — its
- *  accessible one. */
-async function tabName(tab: WebdriverIO.Element): Promise<string> {
-  const drawn = await tab.$(".workspace-name");
-  return (await drawn.isExisting())
-    ? drawn.getText()
-    : ((await tab.getAttribute("aria-label")) ?? "");
-}
-
-/** Focuses a workspace by the name on its strip tab. */
+/** Focuses a workspace by its name, from the title bar's ⌄ (#2916): whether it was listed. */
 async function focusWorkspace(name: string): Promise<boolean> {
-  for (const tab of await workspaceTabs()) {
-    if ((await tabName(tab)) === name) {
-      await tab.click();
-      return true;
-    }
-  }
-  return false;
+  const at = (await workspacesListed()).findIndex((one) => one.name === name);
+  if (at < 0) return false;
+  await goToWorkspaceAt(at);
+  return true;
 }
 
 /** The show-more button on the chat strip, when the strip is hiding anything. */
@@ -187,8 +171,7 @@ async function hiddenTabs(): Promise<number> {
  * `harnessesRunning() === 0` underneath.
  */
 async function closeEveryTab(most = TABS): Promise<void> {
-  const names: string[] = [];
-  for (const tab of await workspaceTabs()) names.push(await tabName(tab));
+  const names = (await workspacesListed()).map((one) => one.name);
   for (const name of names.length > 0 ? names : [""]) {
     if (name !== "" && !(await focusWorkspace(name))) continue;
     // Bounded, so a close that never takes shows up as a failure and not as a hang.

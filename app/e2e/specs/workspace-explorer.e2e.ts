@@ -12,7 +12,8 @@ import { harnessRowsDrawn, pressAndStart, pressOnly, showView } from "../opening
 import { textOfEach } from "../reading.js";
 import { ask } from "../switching.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
-import { tabNames } from "../reach.js";
+import { focusWorkspace, tabNames } from "../reach.js";
+import { workspacesListed } from "../titleBarWorkspaces.js";
 import { runningIn } from "../running.js";
 import { endChatById, paneInFront, startAChat } from "../started.js";
 
@@ -40,8 +41,8 @@ import { endChatById, paneInFront, startAChat } from "../started.js";
  *  screen, and WebdriverIO's Tauri service keeps ONE app process for the whole run, so a
  *  chat another spec started would otherwise land in this list. */
 async function listed(): Promise<string[]> {
-  // In one pass: the strip is drawn while it is polled (charter#506, `reading.ts`).
-  return textOfEach('[data-strip="Workspaces"] [role="tab"] .workspace-name');
+  // The title bar's ⌄ lists them (#2916), each read in one pass (`titleBarWorkspaces.ts`).
+  return (await workspacesListed()).map((one) => one.name).filter((name) => name !== "Plane root");
 }
 
 /** Waits until the strip has read the plane, and says what it found if it never does. */
@@ -98,25 +99,9 @@ async function showFilesOf(piece: string): Promise<void> {
   });
 }
 
-/**
- * Focuses a workspace from the strip, which is the axis.
- *
- * By the tab's own `.workspace-name` and not by `button=<name>`: a strip tab carries counts
- * beside its name, the explorer carries a workspace row of its own, and a text match across
- * the window would pick whichever came first.
- */
+/** Focuses a workspace from the title bar's ⌄, by its row's own name (#2916). */
 async function focus(workspace: string): Promise<void> {
-  const tabs = await $$(
-    // Not the plane root's icon tab (SI-1), which has no drawn name to compare.
-    '[data-strip="Workspaces"] [role="tab"]:not(.plane-root)',
-  ).getElements();
-  for (const tab of tabs) {
-    if ((await tab.$(".workspace-name").getText()) === workspace) {
-      await tab.click();
-      return;
-    }
-  }
-  throw new Error(`no ${workspace} on the strip; it lists ${(await listed()).join(", ")}`);
+  await focusWorkspace(workspace);
 }
 
 /**
@@ -834,7 +819,7 @@ describe("the explorer", () => {
     // The plane root is not a workspace: the heading says where the strip is, and the tree is
     // the project's own files (issue 1916), or the sentence that says why they are not listed.
     // Never a workspace's repo.
-    await $('[data-strip="Workspaces"] [role="tab"].plane-root').click();
+    await focusWorkspace("Plane root");
     await untilFilesOf("Plane root");
     await $(
       '[data-testid="explorer"] [role="tree"][aria-label="Files of Plane root"]',
@@ -846,14 +831,14 @@ describe("the explorer", () => {
     await $('[data-testid="files-svc"]').waitForExist({ timeout: 20_000 });
   });
 
-  it("has one thing called Workspaces in the window, and it is the strip", async () => {
+  it("has no two things called Workspaces in the window", async () => {
     // Two `[aria-label="Workspaces"]` broke a spec when the second appeared. The old left
-    // sidebar was that second one.
+    // sidebar was that second one, and the workspace strip the first until its workspaces
+    // moved to the title bar (#2916).
     await untilListed(["alpha", "beta"]);
 
     const named = await $$('[aria-label="Workspaces"]').getElements();
-    expect(named.length).toBe(1);
-    await expect(named[0]).toHaveAttribute("role", "tablist");
+    expect(named.length).toBeLessThanOrEqual(1);
   });
 
   it("follows the focus to another workspace", async () => {

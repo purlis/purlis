@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! **The window's own families** (#2913, spec #2897): the region panel, a panel's section, an
-//! empty state, a status item and the project rail (#2915), each declared once here and once in its wrapper under
+//! empty state, a status item, the project rail (#2915) and the title bar's pinned workspaces
+//! (#2916), each declared once here and once in its wrapper under
 //! `app/src/ui/`, whose stylesheet draws the defaults [`super::Look`] holds a copy of.
 //!
 //! A panel, a section and an empty state are boxes as tall as what they hold (`height: None`):
@@ -430,5 +431,112 @@ fn rail_look(variant: &str, states: &[State]) -> Look {
         },
         text: "text.muted",
         border: TRANSPARENT,
+    }
+}
+
+/// **The title bar's pinned workspaces** (#2916, R101–R105, R140, N17): a chip per pinned
+/// workspace of the project in front, after its name, and the dashed chip that pins the current
+/// workspace while it is not pinned. A chip is 28px with corners of 8 and quiet words (R101); the
+/// current one takes the card's fill and the primary words, and its waiting count is the amber
+/// one (R101).
+///
+/// The family's root is the chip (`titlebar.workspace.*`, as the prototype's part keys name it):
+/// the strip around the chips lays them out and scrolls, and is no part a theme keys.
+pub(super) const TITLEBAR: Family = Family {
+    name: "titlebar",
+    description: "The title bar's pinned workspaces: a chip per pin, and the chip that pins the current one.",
+    since: 12,
+    parts: &[
+        Part {
+            name: "workspace",
+            since: 12,
+            description: "A workspace's chip: its fill, edge, corners and size.",
+            properties: ALL,
+        },
+        Part {
+            name: "count",
+            since: 12,
+            description: "How many things wait on the person in the workspace, after its name.",
+            properties: &[Prop::Fill, Prop::Text],
+        },
+        Part {
+            name: "crumb",
+            since: 12,
+            description: "The project's crumb while the rail is hidden, which opens the switcher.",
+            properties: &[Prop::Fill, Prop::Text, Prop::CornerRadius],
+        },
+        Part {
+            name: "all",
+            since: 12,
+            description: "The ⌄ at the strip's end, which opens every workspace.",
+            properties: &[Prop::Fill, Prop::Text, Prop::CornerRadius],
+        },
+        Part {
+            name: "pin",
+            since: 12,
+            description: "A switcher row's pin toggle: its icon, faint at rest and the accent while pinned.",
+            properties: &[Prop::Fill, Prop::Text, Prop::CornerRadius],
+        },
+        Part {
+            name: "row",
+            since: 12,
+            description: "A switcher's row: a workspace or a project to go to.",
+            properties: &[Prop::Fill, Prop::Text, Prop::CornerRadius],
+        },
+    ],
+    variants: &[
+        Variant {
+            name: "pinned",
+            since: 12,
+            description: "A pinned workspace: quiet words, the card's fill while it is current.",
+            consent: None,
+        },
+        Variant {
+            name: "unpinned",
+            since: 12,
+            description: "The current workspace while it is not pinned: a dashed edge, and a press pins it.",
+            consent: None,
+        },
+    ],
+    // On the title bar, which is the window's frame.
+    grounds: &["surface.deep"],
+    keeps_size: &[],
+    sized_apart: &[],
+    height: Some(Length::Number(28.0)),
+    font_size: "font-size.md",
+    line_height: 1.0,
+    border_width: 0.0,
+    defaults: titlebar_look,
+    // What its wrapper marks: under the pointer, the current workspace, the keyboard's focus.
+    states: &[State::Hover, State::Selected, State::Focused],
+    focused: "[data-focus-visible]",
+    words: &[("count", "state.waiting")],
+    corner_most: None,
+    around: &[],
+    fills: &[],
+};
+
+/// **A chip's colours as `app/src/ui/titlebar/titlebar.css` draws them.** Quiet words with no box
+/// at rest; the card's fill and the primary words under the pointer and while current. The
+/// unpinned chip's words are muted, its edge the window's subtle line, dashed, and it is lit only
+/// under the pointer.
+fn titlebar_look(variant: &str, states: &[State]) -> Look {
+    // The unpinned chip is always current, and draws no fill for it: only the pointer lights it.
+    let lit = states.contains(&State::Hover)
+        || (variant != "unpinned" && states.contains(&State::Selected));
+    Look {
+        fill: if lit { "surface.overlay" } else { TRANSPARENT },
+        text: if lit {
+            "text.primary"
+        } else if variant == "unpinned" {
+            "text.muted"
+        } else {
+            "text.quiet"
+        },
+        border: if variant == "unpinned" {
+            "border.subtle"
+        } else {
+            TRANSPARENT
+        },
     }
 }

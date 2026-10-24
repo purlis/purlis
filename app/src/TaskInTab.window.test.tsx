@@ -29,7 +29,7 @@ import { cardOf as cardOfRow } from "./chatCard.testkit";
 import { forgetKeyboard } from "./paneKeyboard";
 import { REFERENCE_TYPE } from "./references";
 import { forgetThisLaunch } from "./regions";
-import { stripNamed } from "./test-strips";
+import { chipSays, rowSays, stripNamed } from "./test-strips";
 import { askOfBlock, askOfDispatch } from "./test-asks";
 import { forgetInboxOpen, inboxAwayAtLaunch } from "./test-inbox";
 
@@ -543,12 +543,6 @@ afterEach(() => {
 
 /** What the workspace strip's tab for `workspace` says of its counts (`CountPill`): its one
  *  accessible name, or nothing where it draws no pill. */
-function countsOn(workspace: string): string | null {
-  const tab = [
-    ...document.querySelectorAll<HTMLElement>('[data-strip="Workspaces"] [role="tab"]'),
-  ].find((one) => one.querySelector(".workspace-name")?.textContent === workspace);
-  return tab?.querySelector(".count-pill")?.getAttribute("aria-label") ?? null;
-}
 
 describe("pressing a task", () => {
   it("shows it in its session's tab and adds no tab", async () => {
@@ -1296,9 +1290,9 @@ describe("a task that needs you and is not on screen", () => {
 
     // probe works in beta, and is a task of steward 1 in alpha: that tab, on alpha's strip.
     expect(handSays("steward 1")).toBe("probe needs you");
-    // And alpha's tab on the workspace strip counts it, where beta's has no tab that wears it.
-    expect(countsOn("alpha")).toMatch(/, 1 needs you$/);
-    expect(countsOn("beta") ?? "").not.toMatch(/you/);
+    // And alpha's chip in the title bar counts it, where beta's row has no tab that wears it.
+    expect(chipSays("alpha")).toBe("alpha, 1 waiting");
+    expect(await rowSays("beta")).toBe("beta");
   });
 });
 

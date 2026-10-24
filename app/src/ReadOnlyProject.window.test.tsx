@@ -3,13 +3,13 @@
 
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render as renderBare, screen, waitFor } from "@testing-library/react";
+import { cleanup, render as renderBare, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { ReadOnlyProject } from "./bindings";
 import { forgetThisLaunch } from "./regions";
-import { tipOf } from "./ui/tooltip/tooltip.testkit";
+import { openAllWorkspaces } from "./test-strips";
 
 /**
  * **A project this purlis opens read-only says why once, on its tab, and its write buttons are
@@ -83,7 +83,9 @@ afterEach(() => {
   clearMocks();
 });
 
-const newWorkspace = () => screen.findByRole("button", { name: "New workspace…" });
+/** New workspace…, the last row of the title bar's ⌄ (#2916, R108). */
+const newWorkspace = async () =>
+  within(await openAllWorkspaces()).getByRole("option", { name: "New workspace…" });
 
 describe("a project this purlis opens read-only (#826)", () => {
   it("says why once, on the project's tab", async () => {
@@ -96,7 +98,7 @@ describe("a project this purlis opens read-only (#826)", () => {
     expect(screen.getAllByRole("note", { name: "Read-only project" })).toHaveLength(1);
   });
 
-  it("turns off the workspace strip's + with that sentence", async () => {
+  it("turns off the title bar's New workspace… with that sentence", async () => {
     core(READ_ONLY);
     render(<App />);
     await screen.findByRole("note", { name: "Read-only project" });
@@ -104,8 +106,7 @@ describe("a project this purlis opens read-only (#826)", () => {
     await waitFor(async () =>
       expect(await newWorkspace()).toHaveAttribute("aria-disabled", "true"),
     );
-    // Its name, then why, as an icon button's tooltip draws them; why is its description too.
-    expect(tipOf(await newWorkspace())).toBe(`New workspace…${READ_ONLY.sentence}`);
+    // Why is its description.
     expect(await newWorkspace()).toHaveAccessibleDescription(READ_ONLY.sentence);
   });
 
@@ -120,11 +121,11 @@ describe("a project this purlis opens read-only (#826)", () => {
     await waitFor(() => expect(palette.textContent).toContain(READ_ONLY.sentence));
   });
 
-  it("draws no line and keeps the + for a project this purlis may write", async () => {
+  it("draws no line and keeps New workspace… for a project this purlis may write", async () => {
     core(null);
     render(<App />);
 
-    await waitFor(async () => expect(await newWorkspace()).toBeEnabled());
+    await waitFor(async () => expect(await newWorkspace()).not.toHaveAttribute("aria-disabled"));
     expect(screen.queryByRole("note", { name: "Read-only project" })).toBeNull();
   });
 });

@@ -7,7 +7,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { Moved, OpenChat } from "./bindings";
 import type { State } from "./chatState";
-import { stripNamed } from "./test-strips";
+import { chipSays, stripNamed } from "./test-strips";
 
 /**
  * **A chat moving re-renders that chat's row and nothing else** (SC-3, research 02 §5.6).
@@ -150,10 +150,8 @@ afterEach(() => {
 /** What the workspace strip's tab for `workspace` says of its counts (`CountPill`): its one
  *  accessible name, or nothing where it draws no pill. */
 function countsOn(workspace: string): string | null {
-  const tab = [
-    ...document.querySelectorAll<HTMLElement>('[data-strip="Workspaces"] [role="tab"]'),
-  ].find((one) => one.querySelector(".workspace-name")?.textContent === workspace);
-  return tab?.querySelector(".count-pill")?.getAttribute("aria-label") ?? null;
+  // The chip of the workspace in front, in the title bar (#2916).
+  return chipSays(workspace);
 }
 
 describe("a chat moving", () => {
@@ -201,17 +199,17 @@ describe("a chat moving", () => {
 
     move(moving(3, "waiting", 10, [3]));
 
-    // The workspace's tab counts it, and so does the title bar's ✋.
-    expect(countsOn("ide")).toMatch(/, 1 needs you$/);
+    // The workspace's chip counts it, and so does the title bar's ✋.
+    expect(countsOn("ide")).toBe("ide, 1 waiting");
     expect(screen.getByTestId("needs-you-button").textContent).toBe("1");
 
     move(moving(4, "waiting", 11, [3, 4]));
-    expect(countsOn("ide")).toMatch(/, 2 need you$/);
+    expect(countsOn("ide")).toBe("ide, 2 waiting");
     expect(screen.getByTestId("needs-you-button").textContent).toBe("2");
     expect(drawn.panes).toEqual([]);
 
     move(moving(3, "running", 12, [4]));
-    expect(countsOn("ide")).toMatch(/, 1 needs you$/);
+    expect(countsOn("ide")).toBe("ide, 1 waiting");
     expect(screen.getByTestId("needs-you-button").textContent).toBe("1");
     expect(drawn.panes).toEqual([]);
   });

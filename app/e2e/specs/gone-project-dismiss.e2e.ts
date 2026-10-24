@@ -8,6 +8,7 @@ import { anAnswerIsWaiting, noAnswerWaits, theNextFolderPickAnswers } from "../d
 import { anEmptyRecord, copyFixturePlane } from "../harness.js";
 import { closeProject } from "../opening.js";
 import { PROJECTS, ask, inFront, openFromTheStrip } from "../switching.js";
+import { ALL_WORKSPACES } from "../titleBarWorkspaces.js";
 
 /**
  * **A dismissed "project gone" line stays dismissed for the run, and Locate… lets it go**
@@ -35,7 +36,6 @@ import { PROJECTS, ask, inFront, openFromTheStrip } from "../switching.js";
  * the store's entries forgotten, and the launch's project put back in front.
  */
 
-const WORKSPACES = '[data-strip="Workspaces"]';
 const TABS = '[data-strip="Tabs"]';
 const LEVEL = '[role="radiogroup"][aria-label="Level"]';
 const OPEN_ONE = `${PROJECTS} button[aria-label="Open a project…"]`;
@@ -138,7 +138,7 @@ async function backTo(first: string): Promise<void> {
 /** Opens `path` through the strip, as a person does, and closes it again by its ×. */
 async function openAndClose(path: string): Promise<void> {
   await openFromTheStrip(path);
-  await $(`${WORKSPACES} [role="tab"].plane-root`).waitForExist({ timeout: 30_000 });
+  await $(ALL_WORKSPACES).waitForExist({ timeout: 30_000 });
   await closeProject(`${PROJECTS} [role="tab"][aria-label="${basename(path)}"]`);
   await browser.waitUntil(async () => !(await ask<string[]>("open_planes")).includes(path), {
     timeout: 20_000,

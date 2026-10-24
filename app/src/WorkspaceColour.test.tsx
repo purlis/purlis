@@ -2,12 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, configure, render, screen, waitFor, within } from "@testing-library/react";
-import { userEvent } from "@testing-library/user-event";
+import { cleanup, configure, render, waitFor } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import { DEFAULT_THEME, drawIn, drawTint, inForce, property, tinted } from "./theme/theme";
-import { stripNamed } from "./test-strips";
+import { goToWorkspace, stripNamed } from "./test-strips";
 import { themeInForce } from "./theme/inForce.testkit";
 import { PURLIS_LIGHT } from "./theme/handed.testkit";
 
@@ -104,11 +103,6 @@ function core() {
   return { asked };
 }
 
-const workspaceTab = (name: string) =>
-  within(stripNamed("Workspaces")).getByRole("tab", {
-    name: new RegExp(name),
-  });
-
 const root = () => document.documentElement.style;
 
 describe("a workspace's theme and colour", () => {
@@ -120,7 +114,7 @@ describe("a workspace's theme and colour", () => {
       asked.some((one) => one.cmd === "project_theme_drawn" && one.args.workspace === "alpha"),
     ).toBe(true);
 
-    await userEvent.click(await screen.findByRole("tab", { name: /beta/ }));
+    await goToWorkspace("beta");
     await waitFor(() => expect(inForce()).toBe(DEFAULT_THEME));
   });
 
@@ -138,7 +132,7 @@ describe("a workspace's theme and colour", () => {
       PURLIS_LIGHT.values["text.primary"],
     );
 
-    await userEvent.click(workspaceTab("beta"));
+    await goToWorkspace("beta");
     await waitFor(() =>
       expect(root().getPropertyValue(property("accent.base"))).toBe(
         DEFAULT_THEME.values["accent.base"],
@@ -156,31 +150,7 @@ describe("a workspace's theme and colour", () => {
       expect(bar?.style.getPropertyValue(property("layer.chat"))).toBe(teal.values["layer.chat"]),
     );
 
-    await userEvent.click(workspaceTab("beta"));
+    await goToWorkspace("beta");
     await waitFor(() => expect(bar?.style.getPropertyValue(property("layer.chat"))).toBe(""));
-  });
-
-  it("marks each workspace tab with its own colour, in front or not", async () => {
-    core();
-    render(<App />);
-    await waitFor(() => expect(inForce()).toBe(PURLIS_LIGHT));
-    await userEvent.click(workspaceTab("beta"));
-    await waitFor(() => expect(inForce()).toBe(DEFAULT_THEME));
-
-    // alpha is behind beta now, and still says it is teal: its shade and its mark are its own.
-    const alpha = workspaceTab("alpha");
-    expect(alpha).toHaveAttribute("aria-selected", "false");
-    expect(alpha).toHaveAttribute("data-colour", "teal");
-    expect(alpha.style.getPropertyValue(property("layer.workspace"))).toBe(
-      tinted(DEFAULT_THEME, "teal").values["layer.workspace"],
-    );
-    expect(alpha.querySelector(".workspace-mark")).not.toBeNull();
-
-    const beta = workspaceTab("beta");
-    expect(beta).not.toHaveAttribute("data-colour");
-    expect(beta.querySelector(".workspace-mark")).toBeNull();
-    // A grey tints nothing, so it draws no mark that would say it did.
-    expect(workspaceTab("gamma")).not.toHaveAttribute("data-colour");
-    expect(workspaceTab("gamma").querySelector(".workspace-mark")).toBeNull();
   });
 });

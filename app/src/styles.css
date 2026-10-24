@@ -118,6 +118,7 @@
 @import "./ui/tabs/tabs.css" layer(components);
 @import "./ui/rail/rail.css" layer(components);
 @import "./ui/activity/activity.css" layer(components);
+@import "./ui/titlebar/titlebar.css" layer(components);
 @import "./primitives/overlays.css" layer(components);
 @import "./ui/tooltip/tooltip.css" layer(components);
 @import "./ui/popover/popover.css" layer(components);

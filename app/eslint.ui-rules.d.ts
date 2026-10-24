@@ -24,7 +24,8 @@ export const purlisUi: {
     | "list-family"
     | "rail-family"
     | "activity-family"
-    | "tabs-family",
+    | "tabs-family"
+    | "titlebar-family",
     Rule.RuleModule
   >;
 };

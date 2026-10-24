@@ -8,6 +8,7 @@ import { anAnswerIsWaiting, noAnswerWaits, theNextFolderPickAnswers } from "../d
 import { anEmptyRecord, copyFixturePlane } from "../harness.js";
 import { closeProject, openThroughTheTrustQuestion } from "../opening.js";
 import { ask } from "../switching.js";
+import { ALL_WORKSPACES } from "../titleBarWorkspaces.js";
 
 /**
  * **Locate… re-points a remembered project that moved** (#1291's third line; NO-5 #1237 and
@@ -33,7 +34,6 @@ import { ask } from "../switching.js";
  */
 
 const PROJECTS = '[data-strip="Projects"]';
-const WORKSPACES = '[data-strip="Workspaces"]';
 const TABS = '[data-strip="Tabs"]';
 const LEVEL = '[role="radiogroup"][aria-label="Level"]';
 
@@ -97,7 +97,7 @@ describe("Locate… for a remembered project that moved", function () {
       timeout: 30_000,
       timeoutMsg: "this spec's project never opened",
     });
-    await $(`${WORKSPACES} [role="tab"].plane-root`).waitForExist({ timeout: 30_000 });
+    await $(ALL_WORKSPACES).waitForExist({ timeout: 30_000 });
 
     // Let go of it, and move it while nothing holds it.
     const closer = `${PROJECTS} [role="tab"][aria-label="${basename(mine)}"]`;
