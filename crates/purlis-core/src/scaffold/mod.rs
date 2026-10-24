@@ -613,6 +613,12 @@ pub fn init(place: &Place, args: &InitArgs) -> Outcome {
     run.outcome(code)
 }
 
+/// Why a fix that adds a `.gitignore` line refuses where the file is a symbolic link: the
+/// `local-ignore` and `live-skills` fixes say it in these words.
+pub(crate) const GITIGNORE_IS_A_LINK: &str = "this project's .gitignore is a symbolic link, \
+     which git does not read, so a line added to it would change nothing; nothing was written. \
+     Replace the link with a real .gitignore, then run the fix again.";
+
 /// Whether the project's `.gitignore` is a symbolic link. git does not read one, so a line
 /// written through it changes nothing git does: the `local-ignore` fix is neither offered nor
 /// applied there.
@@ -1093,7 +1099,9 @@ fn ensure_gitignore(path: &Path) -> Result<bool, String> {
         return Ok(true);
     }
     let body = read_text(path)?;
-    let lines = text::stripped_lines(&body);
+    // Read as git reads them: an indented line, or one a lone `\r` joins to the last, ignores
+    // nothing, so it is not present.
+    let lines: Vec<&str> = text::git_lines(&body).map(|line| line.read).collect();
     // The state folder and the local settings under both their names (RN-2a).
     let states = state_ignores();
     let profiles = local_profiles_ignores();
@@ -1177,8 +1185,10 @@ fn read_text(path: &Path) -> Result<String, String> {
 /// block at the literal `!/workspaces/.gitkeep`, so a writer that rewrote or reordered would
 /// break live workspaces from across the codebase.
 ///
-/// Trailing line breaks are collapsed to the one blank line before the new block, as Python
-/// does; every other byte, CRLF endings included, is kept.
+/// A line counts as present only as git reads it ([`text::git_lines`]): an indented copy, or
+/// one a lone `\r` joins to the line before, is not, and is added. Trailing line breaks are
+/// collapsed to the one blank line before the new block, as Python does; every other byte is
+/// kept, and what is added is ended as the file's first line is, so a CRLF file stays CRLF.
 pub(crate) fn append_gitignore(
     path: &Path,
     lines: &[&str],
@@ -1189,23 +1199,40 @@ pub(crate) fn append_gitignore(
     } else {
         String::new()
     };
-    let present = text::stripped_lines(&body);
+    let (next, missing) = with_appended(&body, lines, header);
+    if missing.is_empty() {
+        return Ok(missing);
+    }
+    replace_text(path, &next)?;
+    Ok(missing)
+}
+
+/// [`append_gitignore`]'s text, without the write: `body` with the `lines` it is missing
+/// appended under a `# header`, and the lines that were. `body` itself when none is.
+///
+/// Ended as `body` is: a file whose first line ends `\r\n` gets `\r\n` for the blank line,
+/// the header and each line, so a CRLF `.gitignore` is never left with bare `\n` in it.
+pub(crate) fn with_appended(body: &str, lines: &[&str], header: &str) -> (String, Vec<String>) {
+    let present: Vec<&str> = text::git_lines(body).map(|line| line.read).collect();
     let missing: Vec<String> = lines
         .iter()
         .filter(|l| !present.contains(*l))
         .map(|l| (*l).to_owned())
         .collect();
     if missing.is_empty() {
-        return Ok(missing);
+        return (body.to_owned(), missing);
     }
-    let prefix = if crate::memstore::py_strip(&body).is_empty() {
+    let end = match body.find('\n') {
+        Some(at) if body[..at].ends_with('\r') => "\r\n",
+        _ => "\n",
+    };
+    let prefix = if crate::memstore::py_strip(body).is_empty() {
         String::new()
     } else {
-        format!("{}\n\n", body.trim_end_matches(['\n', '\r']))
+        format!("{}{end}{end}", body.trim_end_matches(['\n', '\r']))
     };
-    let block: String = missing.iter().map(|l| format!("{l}\n")).collect();
-    replace_text(path, &format!("{prefix}# {header}\n{block}"))?;
-    Ok(missing)
+    let block: String = missing.iter().map(|l| format!("{l}{end}")).collect();
+    (format!("{prefix}# {header}{end}{block}"), missing)
 }
 
 /// An ask rule `init` writes by default, in each harness's own syntax (#363 D11).

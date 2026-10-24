@@ -284,9 +284,10 @@ describe("a harness's capability card", function () {
      * a workspace's tab, then on the project's own: whichever holds the off rows.
      */
     it("puts the card's label under the Curate rows that cannot run, and opens its tab from there", async () => {
+      // A workspace's chip in the title bar (#2916), then the project's own button on the rail.
       const tabs = [
-        '[data-strip="Workspaces"] [role="tab"]:not(.plane-root)',
-        '[data-strip="Workspaces"] [role="tab"].plane-root',
+        '[data-testid="title-bar"] [data-scope="titlebar"][data-part="workspace"]',
+        '[data-strip="Projects"] [role="tab"][aria-selected="true"]',
       ];
       let seen: string[] = [];
       let last = "no attempt finished";

@@ -76,7 +76,7 @@ use super::{Complaint, ResolvedTheme, stringify};
 
 /// **The manifest's version**: it grows when a family, a part, a variant or a property is added,
 /// and never takes one away.
-pub const VERSION: u32 = 11;
+pub const VERSION: u32 = 12;
 
 /// The least height a control keeps, in px at the default text size: WCAG 2.2's target size.
 pub const LEAST_TARGET: f64 = 24.0;
@@ -1080,6 +1080,8 @@ pub const MANIFEST: &[Family] = &[
     shell::RAIL,
     activity::ACTIVITY,
     collection::LIST,
+    // **The title bar's pinned workspaces** (#2916): a chip per pin of the project in front.
+    shell::TITLEBAR,
 ];
 
 /// The popover and menu families (#2909): the surface a popover and a menu stand on, and a
@@ -1088,7 +1090,7 @@ pub const MANIFEST: &[Family] = &[
 mod overlay;
 
 /// The window's own families (#2913): the region panel, its sections, an empty state and a
-/// status item; and the project rail (#2915).
+/// status item; the project rail (#2915) and the title bar's pinned workspaces (#2916).
 #[path = "parts_shell.rs"]
 mod shell;
 

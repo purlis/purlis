@@ -243,6 +243,29 @@
           ]
         }
       },
+      "glyphs": {
+        "braces": {
+          "paths": [
+            "M8.25 4.5C5.7 4.5 6.9 10.5 3.9 12c3 1.5 1.8 7.5 4.35 7.5",
+            "M15.75 4.5c2.55 0 1.35 6 4.35 7.5-3 1.5-1.8 7.5-4.35 7.5"
+          ]
+        },
+        "spark": {
+          "paths": [
+            "M12 2.7v18.6",
+            "M2.7 12h18.6",
+            "m5.4 5.4 13.2 13.2",
+            "m18.6 5.4-13.2 13.2"
+          ]
+        },
+        "terminal": {
+          "paths": [
+            "M6 3.9h12a3.3 3.3 0 0 1 3.3 3.3v9.6a3.3 3.3 0 0 1-3.3 3.3H6a3.3 3.3 0 0 1-3.3-3.3V7.2A3.3 3.3 0 0 1 6 3.9Z",
+            "m6.9 9.6 3.3 2.4-3.3 2.4",
+            "M12.9 15h4.2"
+          ]
+        }
+      },
       "geometry": {
         "comfortable": {
           "--elevation-overlay": "0 calc(8rem / 14) calc(24rem / 14) var(--overlay-shadow)",
@@ -781,6 +804,29 @@
           ]
         }
       },
+      "glyphs": {
+        "braces": {
+          "paths": [
+            "M8.25 4.5C5.7 4.5 6.9 10.5 3.9 12c3 1.5 1.8 7.5 4.35 7.5",
+            "M15.75 4.5c2.55 0 1.35 6 4.35 7.5-3 1.5-1.8 7.5-4.35 7.5"
+          ]
+        },
+        "spark": {
+          "paths": [
+            "M12 2.7v18.6",
+            "M2.7 12h18.6",
+            "m5.4 5.4 13.2 13.2",
+            "m18.6 5.4-13.2 13.2"
+          ]
+        },
+        "terminal": {
+          "paths": [
+            "M6 3.9h12a3.3 3.3 0 0 1 3.3 3.3v9.6a3.3 3.3 0 0 1-3.3 3.3H6a3.3 3.3 0 0 1-3.3-3.3V7.2A3.3 3.3 0 0 1 6 3.9Z",
+            "m6.9 9.6 3.3 2.4-3.3 2.4",
+            "M12.9 15h4.2"
+          ]
+        }
+      },
       "geometry": {
         "comfortable": {
           "--elevation-overlay": "0 calc(8rem / 14) calc(24rem / 14) var(--overlay-shadow)",
@@ -1100,10 +1146,10 @@
         "danger.base": "#682e30",
         "danger.surface": "#e1d4d9",
         "danger.text": "#351c1c",
-        "danger.wash": "#682e301f",
-        "diff.deleted": "#682e301f",
+        "danger.wash": "#fd04441f",
+        "diff.deleted": "#fd04441f",
         "diff.deleted-text": "#682e3055",
-        "diff.inserted": "#20562f1f",
+        "diff.inserted": "#01fd781f",
         "diff.inserted-text": "#20562f55",
         "focus.ring": "#554691",
         "icon.blue": "#15466d",
@@ -1200,7 +1246,7 @@
         "text.quiet": "#61606c",
         "text.secondary": "#3b3942",
         "tree.guide": "#a9a7b5",
-        "wash.warning": "#5236011f",
+        "wash.warning": "#fdb0051f",
         "window.background": "#ffffff"
       },
       "motion": {
@@ -1316,6 +1362,29 @@
             "m2 21 9.6-9.6",
             "m7.5 15.5 2.3 2.3a1 1 0 0 1 0 1.4l-2.1 2.1a1 1 0 0 1-1.4 0L4 19",
             "M10 7.5A5.5 5.5 0 1 0 21 7.5A5.5 5.5 0 1 0 10 7.5Z"
+          ]
+        }
+      },
+      "glyphs": {
+        "braces": {
+          "paths": [
+            "M8.25 4.5C5.7 4.5 6.9 10.5 3.9 12c3 1.5 1.8 7.5 4.35 7.5",
+            "M15.75 4.5c2.55 0 1.35 6 4.35 7.5-3 1.5-1.8 7.5-4.35 7.5"
+          ]
+        },
+        "spark": {
+          "paths": [
+            "M12 2.7v18.6",
+            "M2.7 12h18.6",
+            "m5.4 5.4 13.2 13.2",
+            "m18.6 5.4-13.2 13.2"
+          ]
+        },
+        "terminal": {
+          "paths": [
+            "M6 3.9h12a3.3 3.3 0 0 1 3.3 3.3v9.6a3.3 3.3 0 0 1-3.3 3.3H6a3.3 3.3 0 0 1-3.3-3.3V7.2A3.3 3.3 0 0 1 6 3.9Z",
+            "m6.9 9.6 3.3 2.4-3.3 2.4",
+            "M12.9 15h4.2"
           ]
         }
       },
@@ -1784,6 +1853,7 @@
         }
       },
       "icons": {},
+      "glyphs": {},
       "geometry": {
         "comfortable": {
           "--elevation-overlay": "0 calc(8rem / 14) calc(24rem / 14) var(--overlay-shadow)",
@@ -2184,6 +2254,7 @@
         }
       },
       "icons": {},
+      "glyphs": {},
       "geometry": {
         "comfortable": {
           "--elevation-overlay": "0 calc(8rem / 14) calc(24rem / 14) var(--overlay-shadow)",

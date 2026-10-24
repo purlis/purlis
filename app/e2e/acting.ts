@@ -5,6 +5,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { $, browser } from "@wdio/globals";
 import { ask } from "./switching.js";
+import { goToWorkspaceAt, workspacesListed } from "./titleBarWorkspaces.js";
 
 /**
  * **Acting in the built window the way a person does, written for the engine CI drives it on.**
@@ -99,25 +100,19 @@ export async function closeTab(name: string): Promise<void> {
   });
 }
 
-/** Focuses the workspace `name` from the workspace strip, by the name its tab draws. */
+/** Focuses the workspace `name` from the title bar's ⌄, by the name its row draws (#2916). */
 export async function focusWorkspace(name: string): Promise<void> {
-  const selected = () =>
-    browser.execute((wanted: string) => {
-      const tab = [
-        ...document.querySelectorAll<HTMLElement>(
-          '[data-strip="Workspaces"] [role="tab"]:not(.plane-root)',
-        ),
-      ].find((one) => one.querySelector(".workspace-name")?.textContent?.trim() === wanted);
-      if (tab === undefined) return "absent";
-      if (tab.getAttribute("aria-selected") === "true") return "selected";
-      tab.click();
-      return "pressed";
-    }, name);
-  await browser.waitUntil(async () => (await selected()) === "selected", {
-    timeout: 30_000,
-    interval: 250,
-    timeoutMsg: `the workspace strip never focused ${name}`,
-  });
+  let at = -1;
+  await browser.waitUntil(
+    async () => {
+      const listed = await workspacesListed();
+      at = listed.findIndex((one) => one.name === name);
+      if (at >= 0 && listed[at].selected) return true;
+      if (at >= 0) await goToWorkspaceAt(at);
+      return false;
+    },
+    { timeout: 30_000, interval: 250, timeoutMsg: `the title bar never focused ${name}` },
+  );
 }
 
 /**

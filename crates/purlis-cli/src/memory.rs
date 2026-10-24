@@ -597,10 +597,8 @@ pub fn recall(here: &crate::Here, args: RecallArgs) -> Result<Code, String> {
             String::new()
         };
         let line = format!(
-            "  {}{}{}{tag}",
-            voice::pad(date, dw),
-            voice::pad(&hit.label, lw),
-            hit.title
+            "  {}{tag}",
+            purlis_core::tui::row(&[(date, dw), (&hit.label, lw)], &hit.title)
         );
         out.push_str(voice::py_rstrip(&line));
         out.push('\n');

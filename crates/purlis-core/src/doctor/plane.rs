@@ -346,3 +346,75 @@ pub(super) fn behind_the_layout(d: &Doctor) -> Option<Row> {
         .fixed_by(super::fix::FixId::WorkspaceReinit),
     )
 }
+
+/// `live skills` (SK-28, #2875): an older `.gitignore` without the skills lines. One written
+/// before a LIVE workspace published its `skills/` (SK-4) keeps that workspace's skills on this
+/// machine, and one written before the local skills of a project, workspace or persona were
+/// ignored lacks that line, so those local skills are not read. One reading with the fix
+/// ([`crate::wscmd::skills_lines_missing`]), so the row names exactly the lines the fix adds.
+///
+/// **No row unless a line is missing**, or the LIVE block names a pattern ([`super::fix::pattern_said`]),
+/// so a project at the current lines prints what it printed before. None where the `.gitignore` is a link,
+/// which git does not read, so its block shares nothing either way.
+pub(super) fn live_skills(d: &Doctor) -> Option<Row> {
+    const NAME: &str = "live skills";
+    if !d.has_plane || crate::scaffold::gitignore_is_a_link(&d.root) {
+        return None;
+    }
+    let path = d.root.join(".gitignore");
+    let missing = match crate::wscmd::skills_lines_missing(&d.root) {
+        Ok(missing) => missing,
+        Err(e) if e.kind() == std::io::ErrorKind::InvalidData => {
+            return Some(Row::not_checked(
+                NAME,
+                format!("{} is not UTF-8 text", super::fsx::path_field(&path)),
+            ));
+        }
+        Err(e) => return Some(Row::not_checked(NAME, super::fsx::py_os_error(&e, &path))),
+    };
+    if missing.is_empty() && missing.patterns.is_empty() {
+        return None;
+    }
+    let mut found: Vec<String> = missing
+        .unpublished
+        .iter()
+        .map(|(name, lines)| {
+            format!(
+                "the LIVE block does not publish {name}'s skills ({})",
+                lines.join(", ")
+            )
+        })
+        .collect();
+    if !missing.unignored.is_empty() {
+        found.push(format!(
+            "local skills are not ignored ({})",
+            missing.unignored.join(", ")
+        ));
+    }
+    found.extend(missing.patterns.iter().map(|name| {
+        super::fix::pattern_said(name)
+            .trim_start_matches("• ")
+            .to_owned()
+    }));
+    let mut hint = "A LIVE workspace's skills reach the team only through its LIVE block, and \
+                    the local skills of a project, workspace or persona are read only while git \
+                    ignores them."
+        .to_owned();
+    if !missing.is_empty() {
+        hint.push_str(" `purlis doctor --fix live-skills` adds these lines and nothing else.");
+    }
+    if !missing.patterns.is_empty() {
+        hint.push_str(" A pattern in the LIVE block is yours to correct by hand.");
+    }
+    let row = Row::warn(
+        NAME,
+        format!("an older .gitignore: {}", found.join("; ")),
+        hint,
+    );
+    // A pattern alone is nothing the fix can add a line for.
+    Some(if missing.is_empty() {
+        row
+    } else {
+        row.fixed_by(super::fix::FixId::LiveSkills)
+    })
+}

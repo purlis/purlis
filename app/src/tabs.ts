@@ -387,8 +387,9 @@ export function openTab(
  */
 export function renameTab(tabs: Tabs, id: number, label: string | null): Tabs {
   const tab = tabs.byId[id];
-  if (!tab || chatOf(tabs, id) === undefined) return tabs;
-  return { ...tabs, byId: { ...tabs.byId, [id]: { ...tab, name: label ?? tab.defaultName } } };
+  const name = label ?? tab?.defaultName;
+  if (!tab || chatOf(tabs, id) === undefined || tab.name === name) return tabs;
+  return { ...tabs, byId: { ...tabs.byId, [id]: { ...tab, name } } };
 }
 
 /**
@@ -459,6 +460,10 @@ export function openView(tabs: Tabs, view: ViewRef, name: string, workspace: str
   const open = findView(tabs, view);
   if (open) {
     const tab = tabs.byId[open.tab];
+    const shown = panes(tab.layout).find((one) => one.pane === open.pane)?.content;
+    const waits = shown?.kind === "view" && shown.waits === true;
+    // In front, focused and not waiting already: nothing changes, so `tabs` itself.
+    if (!waits && tab.focused === open.pane && tabs.inFront === tab.id) return tabs;
     // Opening it is the operator asking for it, so a tab that was waiting for a press has had
     // one (`Content.waits`).
     const layout = replace(tab.layout, open.pane, (found) =>
@@ -1055,12 +1060,19 @@ export function showWorkspace(
   // The strip's order, so "its first" is the tab the operator can see first — which is a
   // pinned one where there is one.
   const here = tabsIn(tabs, workspace, filedIn, pinned);
-  if (here.length === 0) return { ...tabs, inFront: undefined };
-  return { ...tabs, inFront: prefer !== undefined && here.includes(prefer) ? prefer : here[0] };
+  const inFront =
+    here.length === 0
+      ? undefined
+      : prefer !== undefined && here.includes(prefer)
+        ? prefer
+        : here[0];
+  // `tabs` itself when that tab is in front already, so a caller can tell nothing moved.
+  return inFront === tabs.inFront ? tabs : { ...tabs, inFront };
 }
 
+/** Brings tab `id` to the front: `tabs` itself when it is in front already, as {@link focusPane}. */
 export function selectTab(tabs: Tabs, id: number): Tabs {
-  return id in tabs.byId ? { ...tabs, inFront: id } : tabs;
+  return id in tabs.byId && tabs.inFront !== id ? { ...tabs, inFront: id } : tabs;
 }
 
 /** Focuses a pane of the tab in front, so the next split or close acts on it. The very tabs

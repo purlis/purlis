@@ -507,6 +507,7 @@ impl Doctor {
         ]
         .into_iter()
         .chain(plane::behind_the_layout(self))
+        .chain(plane::live_skills(self))
         .filter_map(|row| row.fix)
         .collect();
         ids.sort();
@@ -547,6 +548,7 @@ impl Doctor {
         rows.push(clones::workspace_clones(self));
         rows.extend(clones::hidden_agents_md(self));
         rows.extend(plane::behind_the_layout(self));
+        rows.extend(plane::live_skills(self));
         rows.push(layer::workspace_layer(self));
         rows.extend(themes::themes(self));
         rows.push(changes::changes(self));

@@ -35,6 +35,8 @@ const OWN_SVG: Record<string, string> = {
   "ChatGauge.tsx": "a gauge drawn to its numbers, not an icon",
   "ui/popover/Popover.tsx": "a popover's point toward what opened it, in the surface's ground",
   "editor/imagePreview.ts": "a one-pixel SVG decoded as bytes to ask the webview, never drawn",
+  "ui/harness-icon/HarnessIcon.tsx":
+    "a theme's harness glyphs and a person's own icon, rebuilt from checked path data and shapes",
 };
 
 /** The one icon package. */

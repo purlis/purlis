@@ -31,12 +31,13 @@ describe("the story matrix (#2945)", () => {
     ]);
   });
 
-  it("takes pictures of both themes, dark and light, at the default density", () => {
+  it("pictures both themes' dark and light, and Purlis's high contrast", () => {
     const pictured = cellsOf(THEMES as BuiltInThemes, PICTURED)
       .filter((cell) => cell.pictured)
       .map((cell) => cell.name);
     expect(pictured).toEqual([
       "purlis_dark",
+      "purlis_dark-high-contrast",
       "purlis_light",
       "purlis-classic_dark",
       "purlis-classic_light",

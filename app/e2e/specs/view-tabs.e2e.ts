@@ -12,6 +12,7 @@ import {
 import { dirname, join } from "node:path";
 import { $, $$, browser, expect } from "@wdio/globals";
 import { copyFixturePlane } from "../harness.js";
+import { focusWorkspace } from "../reach.js";
 import { openThroughTheTrustQuestion, showView } from "../opening.js";
 
 /**
@@ -312,22 +313,9 @@ describe("view tabs", function () {
       return file === undefined ? undefined : join(dir, file);
     };
 
-    /** Focuses alpha from the workspace strip, by the tab's own name. */
+    /** Focuses alpha from the title bar's ⌄, by its row's own name (#2916). */
     async function onAlpha(): Promise<void> {
-      await browser.waitUntil(
-        async () =>
-          (await $$('[data-strip="Workspaces"] .workspace-name').getElements()).length >= 2,
-        { timeout: 30_000, timeoutMsg: "the workspace strip was never drawn" },
-      );
-      for (const tab of await $$(
-        '[data-strip="Workspaces"] [role="tab"]:not(.plane-root)',
-      ).getElements()) {
-        if ((await tab.$(".workspace-name").getText()) === "alpha") {
-          await tab.click();
-          return;
-        }
-      }
-      throw new Error("no alpha on the workspace strip");
+      await focusWorkspace("alpha");
     }
 
     /** Waits until the Memory section's text does, or does not, include `words`. */

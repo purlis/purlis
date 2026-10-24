@@ -73,6 +73,7 @@ function core(
         on: true,
         workspace,
         persona: (given.persona as string | null) ?? null,
+        first: { starts: false, unmoved: null },
         workspaces: ["ops", "web"],
         levels: LEVELS,
         harnesses: [],

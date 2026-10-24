@@ -703,6 +703,12 @@ export type Now = {
    */
   profiles?: readonly string[];
   /**
+   * Whether screen-reader mode is on (DS-6, #629), from the store a render follows
+   * (`useScreenReaderMode`), so the row is built again when it turns. Read from the store
+   * where it is not given.
+   */
+  screenReader?: boolean;
+  /**
    * The plane's vaults, by name (`vault_list`), one row each: a vault opens its own tab. A
    * vault is the plane's, so these rows are the same whichever workspace is focused.
    */
@@ -1742,7 +1748,7 @@ export function catalogue(now: Now): Offer[] {
   // **Screen-reader mode** (DS-6, #629): one row whose words say what pressing it does now.
   // It needs no chat in front: it is every terminal's, the ones up now and every one after.
   {
-    const on = screenReaderMode();
+    const on = now.screenReader ?? screenReaderMode();
     offers.push({
       ...can(SCREEN_READER_ID, `Turn screen-reader mode ${on ? "off" : "on"}`, {
         verb: "screenReader",

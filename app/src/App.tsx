@@ -2,7 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { saidOfLate, useLateAnswers } from "./answerWatch";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { Menued } from "./Menus";
 import { listen } from "./here";
 import { afterDrop } from "./reorder";
 import "./styles.css";
@@ -51,6 +60,7 @@ import {
   type Ran,
   type Said,
 } from "./actions";
+import { useScreenReaderMode } from "./screenReader";
 import { useLatestSaid } from "./latestSaid";
 import { useAlerts } from "./alerts";
 import type { InboxAlertsDo, WindowAlerts } from "./InboxAlerts";
@@ -90,6 +100,9 @@ import { switched } from "./switchClock";
 import { withSessionRows } from "./sessionOffers";
 import type { FirstChat, PlaneReport, WindowDoing } from "./planeReport";
 import { TitleBar, useTitleBarRoom } from "./TitleBar";
+import { TitleBarSwitch, type SwitchDoes, type SwitchProject } from "./TitleBarSwitch";
+import { slideTowards } from "./workspaceSlide";
+import { pinsChanged } from "./workspacePins";
 import type { Needing, Quiet } from "./NeedsYou";
 import { useAsks } from "./asks";
 import { landsOn, useNotificationLanding, type Landing } from "./askNotices";
@@ -1680,6 +1693,7 @@ function App() {
 
   /** Every action a window with no project in front can do. The project's own catalogue is
    *  `PlaneView`'s; this is the one for the opener, and its refusals are #111's. */
+  const screenReader = useScreenReaderMode();
   const openerOffers = useMemo(
     () =>
       catalogue({
@@ -1690,8 +1704,9 @@ function App() {
         pinned: { chats: [], workspaces: [], projects: pinnedProjects },
         nameOf: String,
         split,
+        screenReader,
       }),
-    [drawn, pinnedProjects, split],
+    [drawn, pinnedProjects, split, screenReader],
   );
 
   const run = useCallback(
@@ -1960,6 +1975,121 @@ function App() {
     [elsewhereSaid, pressNeeding, openInboxOf],
   );
 
+  /** Every project as the title bar's switchers list it (#2916): its name, what waits in it
+   *  and its workspaces, as its view reports them. */
+  const switchProjects = useMemo<SwitchProject[]>(
+    () =>
+      drawn.map((project) => ({
+        plane: project.plane,
+        name: calledOn(project.plane),
+        waiting: registry.held[project.plane]?.length ?? askingIn(project),
+        workspaces: reports[project.plane]?.workspaces,
+        cannotCreate: (() => {
+          const create = reports[project.plane]?.offers.find(
+            (one) => one.id === "workspace.create",
+          );
+          return create === undefined || create.available ? undefined : create.reason;
+        })(),
+      })),
+    // `calledOn` and `askingIn` read `drawn`, `reports` and the registry, named here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [drawn, registry.held, reports],
+  );
+  /** What the title bar's switchers do (#2916): each is a row of the project's own catalogue,
+   *  run by the project, so the words, the refusals and the pins are the catalogue's. */
+  const switchDoes = useMemo<SwitchDoes>(() => {
+    const runOf = (
+      plane: string,
+      id: string,
+      fits?: (offer: Offer) => boolean,
+      first?: () => void,
+    ) => {
+      const report = reports[plane];
+      const offer = report?.offers.find((one) => one.id === id);
+      if (report === undefined || offer === undefined || !offer.available) return;
+      if (fits !== undefined && !fits(offer)) return;
+      // What goes with the row, only once it is sure to run (a step's slide).
+      first?.();
+      void report.run(offer);
+    };
+    return {
+      go: (plane, workspace, step) => {
+        if (plane === inFront)
+          return runOf(plane, `workspace.focus:${workspace}`, undefined, () => {
+            if (step !== undefined) slideTowards(step);
+          });
+        // Another project: brought to the front first, and its workspace focused once it is
+        // there and has put back what it had open, which would otherwise take the front back.
+        windowDoes.selectProject(plane);
+        setGoingTo({ plane, workspace, from: inFront });
+      },
+      choose: (plane) => windowDoes.selectProject(plane),
+      pin: (plane, workspace, pinned) => {
+        if (plane === inFront)
+          return runOf(
+            plane,
+            `workspace.pin:${workspace}`,
+            (offer) => offer.does.verb === "pinWorkspace" && offer.does.pinned === pinned,
+          );
+        // A project behind the one in front builds no catalogue: its pin is written to the
+        // store, and its view reads its pins again (`workspacePins.ts`).
+        void commands
+          .pinWorkspace(plane, workspace, pinned)
+          .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
+          .then((said) => {
+            if (said.status === "error")
+              setReport({ from: "workspace.pin", refused: true, words: said.error });
+            pinsChanged(plane);
+            machineChanged();
+          });
+      },
+      create: (plane) => {
+        if (plane !== inFront) windowDoes.selectProject(plane);
+        runOf(plane, "workspace.create");
+      },
+    };
+  }, [inFront, reports, windowDoes]);
+  /** A workspace of another project the switcher went to, focused once that project is in
+   *  front and settled (`switchDoes.go`). */
+  const [goingTo, setGoingTo] = useState<{
+    plane: string;
+    workspace: string;
+    /** The project in front when it was asked: the one the window is leaving. */
+    from: string | undefined;
+  }>();
+  // Forgotten once the person goes somewhere else before it is reached.
+  if (goingTo !== undefined && inFront !== goingTo.plane && inFront !== goingTo.from)
+    setGoingTo(undefined);
+  useEffect(() => {
+    if (goingTo === undefined || goingTo.plane !== inFront) return;
+    const report = reports[goingTo.plane];
+    // Its catalogue is built once it is in front: until its focus row is there, it waits.
+    const offer = report?.offers.find((one) => one.id === `workspace.focus:${goingTo.workspace}`);
+    if (report?.settled !== true || offer === undefined) return;
+    setGoingTo(undefined);
+    if (offer.available) void report.run(offer);
+  }, [goingTo, inFront, reports]);
+  /** The project in front's rows by id, for a chip's context menu: the workspace's own rows. */
+  const inFrontFound = useMemo(
+    () => catalogued(inFront === undefined ? [] : (reports[inFront]?.offers ?? [])),
+    [inFront, reports],
+  );
+  const workspaceMenu = useCallback(
+    (workspace: string, chip: ReactNode) =>
+      inFront === undefined ? (
+        chip
+      ) : (
+        <Menued
+          on={{ on: "workspace", workspace }}
+          offers={inFrontFound}
+          onPress={(offer) => void reports[inFront]?.run(offer)}
+        >
+          {chip}
+        </Menued>
+      ),
+    [inFront, inFrontFound, reports],
+  );
+
   return (
     <main className="window">
       {/* The window's own title bar (ADR 0054): on macOS it IS the title bar — the system's
@@ -1981,12 +2111,17 @@ function App() {
                   onPress={showRail}
                 />
               )}
-              {/* The project in front, as the prototype's title bar says it: its name, quiet.
-                  The "/" before its workspaces comes with them (#2916). */}
+              {/* The project in front and its workspaces (#2916): its name, a slash and its pins
+                  as chips; with the rail hidden, the name is the switcher of every project. */}
               {inFront !== undefined && (
-                <span className="title-bar-crumb" data-testid="title-project">
-                  <span className="title-bar-project">{calledOn(inFront)}</span>
-                </span>
+                <TitleBarSwitch
+                  projects={switchProjects}
+                  inFront={inFront}
+                  railShown={railMode !== "auto"}
+                  held={paletteOpen}
+                  does={switchDoes}
+                  menuOf={workspaceMenu}
+                />
               )}
             </>
           ) : undefined

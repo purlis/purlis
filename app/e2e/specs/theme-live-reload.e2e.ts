@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 import { $$, browser, expect } from "@wdio/globals";
 import { focusWorkspace, projectRoot } from "../acting.js";
 import { ask } from "../switching.js";
+import { workspacesListed } from "../titleBarWorkspaces.js";
 
 /**
  * **Saving a theme folder repaints the window** (#2324, spec #2313), against the real app: a
@@ -27,7 +28,8 @@ const DRAWN_WITHIN = 10_000;
 
 async function untilTheStripIsRead(): Promise<void> {
   await browser.waitUntil(
-    async () => (await $$('[data-strip="Workspaces"] [role="tab"]').getElements()).length > 0,
+    async () =>
+      (await $$('[data-testid="title-bar"] [data-titlebar-all]').getElements()).length > 0,
     { timeout: 30_000, interval: 250, timeoutMsg: "the strip never listed the fixture plane" },
   );
 }
@@ -72,32 +74,15 @@ async function note(step: string, plane: string): Promise<void> {
   console.log(`theme-live-reload: ${line}`);
 }
 
-/** The workspace in front by the name its tab draws, or `null` at the plane root. */
+/** The workspace in front by its name, or `null` at the plane root (#2916: the title bar's ⌄). */
 async function workspaceInFront(): Promise<string | null> {
-  return browser.execute(() => {
-    const tab = document.querySelector<HTMLElement>(
-      '[data-strip="Workspaces"] [role="tab"][aria-selected="true"]',
-    );
-    if (tab === null || tab.classList.contains("plane-root")) return null;
-    return tab.querySelector(".workspace-name")?.textContent?.trim() ?? null;
-  });
+  const front = (await workspacesListed()).find((one) => one.selected);
+  return front === undefined || front.name === "Plane root" ? null : front.name;
 }
 
-/** Back to the plane root, from its tab. */
+/** Back to the plane root, by its row in the title bar's ⌄. */
 async function focusThePlaneRoot(): Promise<void> {
-  await browser.waitUntil(
-    async () =>
-      browser.execute(() => {
-        const root = document.querySelector<HTMLElement>(
-          '[data-strip="Workspaces"] [role="tab"].plane-root',
-        );
-        if (root === null) return false;
-        if (root.getAttribute("aria-selected") === "true") return true;
-        root.click();
-        return false;
-      }),
-    { timeout: 30_000, interval: 250, timeoutMsg: "the plane root was never in front again" },
-  );
+  await focusWorkspace("Plane root");
 }
 
 /**

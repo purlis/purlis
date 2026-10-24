@@ -62,7 +62,11 @@ pub fn column<'a>(cells: impl IntoIterator<Item = &'a str>) -> usize {
     purlis_core::tui::column("", cells, 2, None)
 }
 
-/// `tui.pad(text, w)` for a column [`column`] sized: sanitized, then fitted to `w`.
+/// `tui.pad(text, w)` for a column [`column`] sized: escaped, then fitted to `w`.
+///
+/// `text` is a cell of untrusted text, and the padding is where it is made safe to show: every
+/// control, bidi, zero-width and tag character comes out as `⟦U+XXXX⟧`, measured as shown
+/// ([`purlis_core::tui::pad`], SK-47). A caller does not escape a cell first.
 pub fn pad(text: &str, w: usize) -> String {
     purlis_core::tui::pad(text, w, purlis_core::tui::Align::Left)
 }
@@ -92,13 +96,4 @@ pub fn unread(root: &Path, unread: &purlis_core::memstore::Unread) {
 pub use purlis_core::memstore::uncheckable_fix;
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_column_is_its_widest_cell_and_a_gap() {
-        assert_eq!(column(["2026-03-02", "—"]), 12);
-        assert_eq!(pad("—", 12), "—           ");
-        assert_eq!(pad("\x1b[32mok\x1b[0m", 4), "\x1b[32mok\x1b[0m  ");
-    }
-}
+mod tests;

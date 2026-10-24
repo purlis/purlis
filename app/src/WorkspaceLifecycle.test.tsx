@@ -16,7 +16,7 @@ import { menuNames } from "./menus.testkit";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import { forgetRepoClones } from "./repoClones";
-import { stripNamed } from "./test-strips";
+import { chipName, openAllWorkspaces, workspaceChips, workspaceInFront } from "./test-strips";
 
 /**
  * Making a workspace and deleting one, from the window.
@@ -208,21 +208,15 @@ function core(
   return { asked, calls: (cmd: string) => asked.filter((one) => one.cmd === cmd) };
 }
 
-/** The workspaces, as the strip lists them — after the plane root's tab, which is first on
- *  every strip and tested on its own (`Workspaces.test.tsx`, SI-1). */
-const strip = () =>
-  within(stripNamed("Workspaces"))
-    .getAllByRole("tab")
-    .filter((tab) => !tab.classList.contains("plane-root"))
-    .map((tab) => tab.querySelector(".workspace-name")?.textContent);
+/** The workspaces, as the title bar's chips list them (#2916): the pins, then the one you are
+ *  in when it is not pinned. */
+const strip = () => workspaceChips().map(chipName);
 
-/** Right-clicks a workspace tab and waits for charter's own menu. */
+/** Right-clicks a workspace's chip in the title bar and waits for charter's own menu. */
 async function menuOn(workspace: string) {
-  const tab = within(stripNamed("Workspaces"))
-    .getAllByRole("tab")
-    .find((one) => one.querySelector(".workspace-name")?.textContent === workspace);
-  if (!tab) throw new Error(`no ${workspace} on the strip; it lists ${strip().join(", ")}`);
-  fireEvent.contextMenu(tab);
+  const chip = workspaceChips().find((one) => chipName(one) === workspace);
+  if (!chip) throw new Error(`no ${workspace} in the title bar; it lists ${strip().join(", ")}`);
+  fireEvent.contextMenu(chip);
   return await screen.findByRole("menu");
 }
 
@@ -506,7 +500,7 @@ describe("making a workspace", () => {
     return await screen.findByRole("dialog");
   }
 
-  it("is reached from the strip's own `+`, in the shape the project strip has", async () => {
+  it("is reached from the title bar's ⌄, as its last row (R108)", async () => {
     // charter-app#193, the operator: *"also no new workspace button in workspaces tab — it
     // should be like projects tabs buttons"*. `workspace.create` has been a catalogue row
     // since #172, with the dialog behind it — the palette runs it and the tab's menu lists
@@ -515,21 +509,8 @@ describe("making a workspace", () => {
     render(<App />);
     await settled();
 
-    // Right after the last tab, inside the strip, as Chrome draws its `+` (DS-7, #1839) — and
-    // not among the tabs: it is no `role="tab"`, the tablist does not own it (#1204), and it
-    // is not one of the things the collapse hides (`fits.useRoom` takes its width off first).
-    const strip = stripNamed("Workspaces");
-    const plus = within(strip).getByRole("button", { name: "New workspace…" });
-    const tabs = within(strip).getAllByRole("tab");
-    expect(
-      tabs[tabs.length - 1].compareDocumentPosition(plus) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-    expect(plus).not.toHaveAttribute("role", "tab");
-    // Icon-only, like the project strip's two: the catalogue's words are its `aria-label`,
-    // which is what a screen reader reads and what this test just found it by.
-    expect(plus.textContent).toBe("");
-    expect(plus.querySelector("svg.lucide-plus")).not.toBeNull();
-
+    // The last row of the title bar's ⌄ (#2916, R108), where every workspace is listed.
+    const plus = within(await openAllWorkspaces()).getByRole("option", { name: "New workspace…" });
     await userEvent.click(plus);
     const dialog = await screen.findByRole("dialog");
     await userEvent.type(within(dialog).getByLabelText("Name"), "gamma");
@@ -620,8 +601,11 @@ describe("a plane with no workspace yet", () => {
 
     const empty = await screen.findByTestId("empty-plane");
     expect(empty).toHaveTextContent("No workspaces yet");
-    const row = stripNamed("Workspaces").parentElement as HTMLElement;
-    expect(within(row).getByRole("button", { name: "New workspace…" })).toBeInTheDocument();
+    // And New workspace…, the last row of the title bar's ⌄ (#2916, R108).
+    expect(
+      within(await openAllWorkspaces()).getByRole("option", { name: "New workspace…" }),
+    ).toBeInTheDocument();
+    await userEvent.keyboard("{Escape}");
 
     await userEvent.click(within(empty).getByRole("button", { name: "Create a workspace" }));
     const dialog = await screen.findByRole("dialog");
@@ -723,12 +707,8 @@ describe("a workspace's settings (charter-app#280, SE-20)", () => {
         workspace: "beta",
       }),
     );
-    // Filed on beta's strip, which is now the one in front.
-    expect(
-      within(stripNamed("Workspaces")).getByRole("tab", {
-        selected: true,
-      }),
-    ).toHaveTextContent("beta");
+    // Filed on beta, which is now the one in front.
+    expect(workspaceInFront()).toBe("beta");
   });
 
   it("untick a repo to remove it, and show the core's refusal when it holds work", async () => {
