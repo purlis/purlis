@@ -77,10 +77,18 @@ export default tseslint.config(
       "no-restricted-imports": [
         "error",
         {
-          paths: PRIMITIVES.map((name) => ({
-            name,
-            message: "Screens draw from the component layer in `src/ui`, never the primitives.",
-          })),
+          paths: [
+            ...PRIMITIVES.map((name) => ({
+              name,
+              message: "Screens draw from the component layer in `src/ui`, never the primitives.",
+            })),
+            // Every resize handle is the panel separator family's (#3143).
+            {
+              name: "react-resizable-panels",
+              importNames: ["Separator"],
+              message: "A resize handle is `Separator` from `ui/panel/Separator` (#3143).",
+            },
+          ],
           patterns: PRIMITIVES.map((name) => ({
             group: [`${name}/*`],
             message: "Screens draw from the component layer in `src/ui`, never the primitives.",
@@ -106,6 +114,7 @@ export default tseslint.config(
       "purlis/activity-family": "error",
       // Every list is the list family's, since #2911.
       "purlis/list-family": "error",
+      "purlis/panel-separator-family": "error",
     },
   },
   // The select's list is drawn in the old menu classes until the select family moves (#2906).

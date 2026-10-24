@@ -2626,15 +2626,12 @@ button.show-more:focus-visible {
   fill: var(--text-muted);
 }
 
-/* The handle between two panes: thin, and easier to hit than it looks. */
+/* The handle between two panes: thin, and easier to hit than it looks. Its look under the
+   pointer and while it is dragged is the panel separator family's (`ui/panel/panel.css`, #3143),
+   which a theme's `panel-separator` parts set. */
 [data-separator] {
   background: var(--border-subtle);
   flex: 0 0 1px;
-}
-
-[data-separator]:hover,
-[data-separator][data-dragging] {
-  background: var(--accent-base);
 }
 
 .xterm {
@@ -2679,8 +2676,8 @@ button.show-more:focus-visible {
 }
 
 /* Each boundary between two regions is the gutter's width, and draws no line of its own: a
-   side's line is its slot's border. Its handle shows under the pointer as a line along its
-   middle, no wider than the gutter, so a flush window's handles draw nothing, as before. */
+   side's line is its slot's border. Under the pointer its handle shows its grip at its middle
+   (`ui/panel/panel.css`, #3143), never a line the window's length. */
 .region-row > [data-separator] {
   width: var(--window-gutter);
   background-color: transparent;
@@ -2689,24 +2686,6 @@ button.show-more:focus-visible {
 .regions > [data-separator] {
   height: var(--window-gutter);
   background-color: transparent;
-}
-
-.region-row > [data-separator]:hover,
-.region-row > [data-separator][data-dragging] {
-  background-color: transparent;
-  background-image: linear-gradient(var(--accent-base), var(--accent-base));
-  background-position: center;
-  background-size: min(var(--window-gutter), var(--focus-ring-width)) 100%;
-  background-repeat: no-repeat;
-}
-
-.regions > [data-separator]:hover,
-.regions > [data-separator][data-dragging] {
-  background-color: transparent;
-  background-image: linear-gradient(var(--accent-base), var(--accent-base));
-  background-position: center;
-  background-size: 100% min(var(--window-gutter), var(--focus-ring-width));
-  background-repeat: no-repeat;
 }
 
 /* The row above the Panel fills its panel's inner box, as a slot's content does. */
@@ -2744,19 +2723,6 @@ button.show-more:focus-visible {
     (max(var(--panel-border-width), var(--window-gutter)) - var(--panel-border-width)) / 2
   );
   background-clip: content-box;
-}
-
-/* Under the pointer the line is the accent, as wide as the focus ring where there is a gutter to
-   draw it in. */
-.panel-halves > [data-separator]:hover,
-.panel-halves > [data-separator][data-dragging] {
-  padding-inline: calc(
-    (
-        max(var(--panel-border-width), var(--window-gutter)) -
-          max(var(--panel-border-width), min(var(--window-gutter), var(--focus-ring-width)))
-      ) /
-      2
-  );
 }
 
 /* And each half keeps what it holds the same step clear of that line. */

@@ -51,6 +51,9 @@
  *   (`listbox`, `option`), its old class (`ui-list`) and its `data-scope`. A list to choose from
  *   is the family's `ListBox`, a list of rows that act its `List` (`ui/list/List`); a list of
  *   words (a sentence's bullets) is no collection and stays a `<ul>`.
+ * - `purlis/panel-separator-family` (error: every resize handle is the family's, #3143):
+ *   `data-scope="panel-separator"` written by hand. The panel library's own `Separator` is
+ *   refused outside `src/ui` by `no-restricted-imports`, in `eslint.config.js`.
  *
  * The primitives library itself is refused outside `src/ui` by `no-restricted-imports`, in
  * `eslint.config.js`: one wrapper per primitive, and screens never import it.
@@ -562,6 +565,13 @@ const listFamily = moved({
     "a list: draw it as `<ListBox>` and `<ListOption>` (a list to choose from) or `<List>` and `<ListRow>` (rows that act), with the row's slots, from `ui/list/List` (#2911).",
 });
 
+const panelSeparatorFamily = moved({
+  description: "A resize handle between two panels is the shared panel separator family",
+  scopes: ["panel-separator"],
+  classes: [],
+  message: "a resize handle: draw it as `<Separator>` from `ui/panel/Separator` (#3143).",
+});
+
 export const purlisUi = {
   meta: { name: "purlis-ui" },
   rules: {
@@ -579,5 +589,6 @@ export const purlisUi = {
     "rail-family": railFamily,
     "activity-family": activityFamily,
     "list-family": listFamily,
+    "panel-separator-family": panelSeparatorFamily,
   },
 };

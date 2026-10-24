@@ -2175,7 +2175,7 @@ fn theme_parts_prints_every_family_part_state_and_property_as_json() {
     assert_eq!(ran.code, 0, "{}", ran.err);
     let json = ran.json();
     assert_eq!(json["schema"], 1);
-    assert_eq!(json["version"], 11);
+    assert_eq!(json["version"], 12);
     assert_eq!(
         json["theme_schema"]
             .as_str()
@@ -2195,7 +2195,7 @@ fn theme_parts_prints_every_family_part_state_and_property_as_json() {
         .iter()
         .filter_map(|one| one["name"].as_str())
         .collect();
-    // And the activity items of the four corners (#2917).
+    // And the activity items of the four corners (#2917), and the resize handles (#3143).
     for family in [
         "panel",
         "panel-section",
@@ -2207,6 +2207,7 @@ fn theme_parts_prints_every_family_part_state_and_property_as_json() {
         "rail",
         "activity",
         "list",
+        "panel-separator",
     ] {
         assert!(names.contains(&family), "{family}: {names:?}");
     }

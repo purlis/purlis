@@ -35,7 +35,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Markdown, { type Components } from "react-markdown";
 import { Group, Panel, type Layout } from "react-resizable-panels";
-import { Separator } from "../shownSeparator";
+import { Separator } from "../ui/panel/Separator";
 import { FileText, LoaderCircle, Pause, Play } from "lucide-react";
 import { EmptyState } from "../ui/empty-state/EmptyState";
 import { ExternalLink } from "../ReleaseNotes";
