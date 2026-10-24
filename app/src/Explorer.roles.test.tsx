@@ -117,7 +117,7 @@ describe("the Explorer's words, each on its text role", () => {
   it("heads the Files section with the one section label, and what it is of beside it as data", async () => {
     core({ "one:": [entry("src", { kind: "folder" }), entry("README.md")] });
     const drawn = draw({ spot: PICKED });
-    await screen.findByRole("treeitem", { name: /README\.md/ });
+    await screen.findByRole("row", { name: /README\.md/ });
 
     const head = drawn.querySelector('[data-section="files"] .explorer-section-head');
     wears(head, "label", "the Files heading");
@@ -138,23 +138,32 @@ describe("the Explorer's words, each on its text role", () => {
     });
   });
 
-  it("draws a file's and a folder's name as a body, from the Explorer's root", async () => {
+  it("draws a file's and a folder's name at the body's size, in a tree row's tier", async () => {
     core({ "one:": [entry("src", { kind: "folder" }), entry("README.md")] });
     const drawn = draw({ spot: PICKED });
-    const file = await screen.findByRole("treeitem", { name: /README\.md/ });
-    const folder = await screen.findByRole("treeitem", { name: /^src/ });
+    const file = await screen.findByRole("row", { name: /README\.md/ });
+    const folder = await screen.findByRole("row", { name: /^src/ });
 
     expect(drawn.querySelector(".explorer")).toHaveClass("ui-text-body");
-    drawnAs(file.querySelector(".spot-name"), "body", "a file's name");
-    drawnAs(folder.querySelector(".spot-name"), "body", "a folder's name");
+    // The words are the row's: the body's size and weight from the Explorer's root, in the
+    // secondary tier at rest and the primary once chosen, as every row of a tree (#2911, R19).
+    for (const row of [file, folder]) {
+      expect(row.querySelector(".spot-name")).not.toBeNull();
+      expect(drawnWith(row, "color")).toBe("var(--text-secondary)");
+      expect(drawnWith(row, "font-size")).toBeUndefined();
+    }
   });
 
-  it("says an empty folder as a secondary line, not a dimmed body", async () => {
+  it("says an empty folder as a line of the tree in the quiet tier, not a dimmed body", async () => {
     core({ "one:": [] });
     const drawn = draw({ spot: PICKED });
-    const none = await within(drawn).findByText("Nothing here");
-    wears(none, "secondary", "Nothing here");
-    expect(drawnWith(none, "opacity")).toBeUndefined();
+    const none = (await within(drawn).findByText("Nothing here")).closest<HTMLElement>(
+      '[data-part="root"]',
+    );
+    // Informational words, so the quiet tier (#2911): a line of the tree family.
+    expect(none).toHaveAttribute("data-line");
+    expect(drawnWith(none as HTMLElement, "color")).toBe("var(--text-quiet)");
+    expect(drawnWith(none as HTMLElement, "opacity")).toBeUndefined();
   });
 
   it("draws the Repos view's rows on the roles: names, where, counts and marks", () => {

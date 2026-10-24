@@ -168,7 +168,7 @@ describe("Explorer in sections (#1677)", () => {
     core();
     render(<App />);
     await showTheExplorer();
-    await explorer().findByRole("tree", { name: "Files of alpha" });
+    await explorer().findByRole("treegrid", { name: "Files of alpha" });
 
     expect(
       explorer()
@@ -183,11 +183,11 @@ describe("Explorer in sections (#1677)", () => {
     core();
     render(<App />);
     await showTheExplorer();
-    await explorer().findByRole("tree", { name: "Files of alpha" });
+    await explorer().findByRole("treegrid", { name: "Files of alpha" });
 
     expect(explorer().queryByRole("tree", { name: "Workspaces of this project" })).toBeNull();
     expect(explorer().queryByRole("button", { name: "Workspaces" })).toBeNull();
-    expect(explorer().queryByRole("treeitem", { name: /^beta/ })).toBeNull();
+    expect(explorer().queryByRole("row", { name: /^beta/ })).toBeNull();
     // What its rows carried is the title bar's (#2916): which workspace is in front, and the ⌄
     // to go to another.
     expect(workspaceInFront()).toBe("alpha");
@@ -197,16 +197,16 @@ describe("Explorer in sections (#1677)", () => {
     const asked = core();
     render(<App />);
     await showTheExplorer();
-    const alphas = await explorer().findByRole("tree", { name: "Files of alpha" });
-    expect(await within(alphas).findByRole("treeitem", { name: /^svc/ })).toBeVisible();
+    const alphas = await explorer().findByRole("treegrid", { name: "Files of alpha" });
+    expect(await within(alphas).findByRole("row", { name: /^svc/ })).toBeVisible();
 
     await goTo("beta");
 
-    const betas = await explorer().findByRole("tree", { name: "Files of beta" });
-    expect(await within(betas).findByRole("treeitem", { name: /^web/ })).toBeVisible();
-    expect(within(betas).queryByRole("treeitem", { name: /^svc/ })).toBeNull();
+    const betas = await explorer().findByRole("treegrid", { name: "Files of beta" });
+    expect(await within(betas).findByRole("row", { name: /^web/ })).toBeVisible();
+    expect(within(betas).queryByRole("row", { name: /^svc/ })).toBeNull();
     expect(explorer().getByRole("button", { name: "Files beta" })).toBeVisible();
-    expect(explorer().queryByRole("tree", { name: "Files of alpha" })).toBeNull();
+    expect(explorer().queryByRole("treegrid", { name: "Files of alpha" })).toBeNull();
     await reposView().findByTestId("clone-web");
     // The extensions heard it, as ever from the strip (charter-app#343).
     expect(
@@ -218,16 +218,16 @@ describe("Explorer in sections (#1677)", () => {
     const asked = core();
     render(<App />);
     await showTheExplorer();
-    await explorer().findByRole("tree", { name: "Files of alpha" });
+    await explorer().findByRole("treegrid", { name: "Files of alpha" });
     const before = asked.length;
 
     await goTo("Plane root");
 
     await explorer().findByRole("button", { name: "Files Plane root" });
-    const tree = within(await explorer().findByRole("tree", { name: "Files of Plane root" }));
+    const tree = within(await explorer().findByRole("treegrid", { name: "Files of Plane root" }));
     // The project's own top folder, folders first; what git ignores is hidden until asked for.
-    await tree.findByRole("treeitem", { name: "README.md" });
-    expect(tree.getAllByRole("treeitem").map((row) => row.textContent?.trim())).toEqual([
+    await tree.findByRole("row", { name: "README.md" });
+    expect(tree.getAllByRole("row").map((row) => row.textContent?.trim())).toEqual([
       "docs",
       "workspaces",
       "README.md",
@@ -246,11 +246,11 @@ describe("Explorer in sections (#1677)", () => {
     ).toEqual([]);
 
     await userEvent.click(explorer().getByRole("button", { name: "Show ignored files" }));
-    await tree.findByRole("treeitem", { name: "target" });
+    await tree.findByRole("row", { name: "target" });
 
     // And back on a workspace, its files again.
     await goTo("alpha");
-    await explorer().findByRole("tree", { name: "Files of alpha" });
+    await explorer().findByRole("treegrid", { name: "Files of alpha" });
   });
 
   it("opens a file of the plane root through the window's own read (#1916)", async () => {
@@ -258,9 +258,9 @@ describe("Explorer in sections (#1677)", () => {
     render(<App />);
     await showTheExplorer();
     await goTo("Plane root");
-    const tree = within(await explorer().findByRole("tree", { name: "Files of Plane root" }));
+    const tree = within(await explorer().findByRole("treegrid", { name: "Files of Plane root" }));
 
-    await userEvent.click(await tree.findByRole("treeitem", { name: "README.md" }));
+    await userEvent.click(await tree.findByRole("row", { name: "README.md" }));
 
     await waitFor(() =>
       expect(asked.some((one) => one.cmd === "plane_file" && one.args.path === "README.md")).toBe(
@@ -273,7 +273,7 @@ describe("Explorer in sections (#1677)", () => {
     expect(within(tab).queryByRole("button", { name: "Copy path" })).toBeNull();
     expect(within(tab).queryByRole("button", { name: /your editor/i })).toBeNull();
     // A row of the plane root is read, never dragged onto a chat.
-    expect(tree.getByRole("treeitem", { name: "README.md" })).not.toHaveAttribute("draggable");
+    expect(tree.getByRole("row", { name: "README.md" })).not.toHaveAttribute("draggable");
   });
 
   it("draws a workspace's repo as one row that brings that workspace forward (#1916)", async () => {
@@ -281,11 +281,11 @@ describe("Explorer in sections (#1677)", () => {
     render(<App />);
     await showTheExplorer();
     await goTo("Plane root");
-    const tree = within(await explorer().findByRole("tree", { name: "Files of Plane root" }));
-    await userEvent.click(await tree.findByRole("treeitem", { name: "workspaces" }));
-    await userEvent.click(await tree.findByRole("treeitem", { name: "beta" }));
+    const tree = within(await explorer().findByRole("treegrid", { name: "Files of Plane root" }));
+    await userEvent.click(await tree.findByRole("row", { name: "workspaces" }));
+    await userEvent.click(await tree.findByRole("row", { name: "beta" }));
 
-    const repo = await tree.findByRole("treeitem", { name: /^web/ });
+    const repo = await tree.findByRole("row", { name: /^web/ });
     // One row, never a folder that opens here: it says whose it is.
     expect(repo).not.toHaveAttribute("aria-expanded");
     expect(repo).not.toHaveAttribute("aria-disabled");
@@ -295,7 +295,7 @@ describe("Explorer in sections (#1677)", () => {
     await userEvent.click(repo);
 
     await waitFor(() => expect(workspaceInFront()).toBe("beta"));
-    await explorer().findByRole("tree", { name: "Files of beta" });
+    await explorer().findByRole("treegrid", { name: "Files of beta" });
   });
 
   it("draws the picked branch's files in Files, and each repo's own folder before one is picked", async () => {
@@ -304,8 +304,8 @@ describe("Explorer in sections (#1677)", () => {
     await showTheExplorer();
     await reposView().findByTestId("clone-svc");
 
-    const before = explorer().getByRole("tree", { name: "Files of alpha" });
-    expect(await within(before).findByRole("treeitem", { name: /^svc/ })).toHaveAttribute(
+    const before = explorer().getByRole("treegrid", { name: "Files of alpha" });
+    expect(await within(before).findByRole("row", { name: /^svc/ })).toHaveAttribute(
       "aria-expanded",
       "false",
     );
@@ -313,8 +313,8 @@ describe("Explorer in sections (#1677)", () => {
     // Picked in the Repos view, which is what Files lists (P-10).
     await userEvent.click(await reposView().findByRole("treeitem", { name: /^one/ }));
 
-    const after = await explorer().findByRole("tree", { name: "Files of one in svc" });
-    expect(await within(after).findByRole("treeitem", { name: /^lib\.rs/ })).toBeVisible();
+    const after = await explorer().findByRole("treegrid", { name: "Files of one in svc" });
+    expect(await within(after).findByRole("row", { name: /^lib\.rs/ })).toBeVisible();
     // A branch is one row of Repos and branches: its files are drawn once, in Files.
     expect(
       within(reposView().getByRole("tree", { name: "Repos and branches" })).queryByRole(
@@ -330,8 +330,8 @@ describe("Explorer in sections (#1677)", () => {
     const asked = core();
     render(<App />);
     await showTheExplorer();
-    const tree = await explorer().findByRole("tree", { name: "Files of alpha" });
-    await within(tree).findByRole("treeitem", { name: /^svc/ });
+    const tree = await explorer().findByRole("treegrid", { name: "Files of alpha" });
+    await within(tree).findByRole("row", { name: /^svc/ });
     const heading = explorer().getByRole("button", { name: /^Files/ });
 
     await userEvent.click(heading);
@@ -392,7 +392,7 @@ describe("Explorer in sections (#1677)", () => {
     render(<App />);
     await showTheExplorer();
 
-    const tree = await explorer().findByRole("tree", { name: "Files of alpha" });
+    const tree = await explorer().findByRole("treegrid", { name: "Files of alpha" });
     expect(tree).toBeVisible();
     expect(explorer().getByRole("button", { name: /^Files/ })).toHaveAttribute(
       "aria-expanded",
@@ -434,7 +434,7 @@ describe("Explorer in sections (#1677)", () => {
 
     await waitFor(() =>
       expect(document.activeElement).toBe(
-        within(explorer().getByRole("tree", { name: "Files of alpha" })).getByRole("treeitem", {
+        within(explorer().getByRole("treegrid", { name: "Files of alpha" })).getByRole("row", {
           name: /^svc/,
         }),
       ),

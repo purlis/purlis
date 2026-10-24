@@ -27,11 +27,17 @@
  *   it is a `TreeLine` that says so.
  * - **Indented in steps** (R129, 14 px a level at the default text size), each level above
  *   drawing one straight guide, at most four steps deep (`--tree-depth`, set on each row).
- * - **Drag with a way that is not a drag**: `dragAndDropHooks` (`ui/list/drag.ts`); whatever a
- *   drag does, a row's menu or a button does too.
+ * - **Drag with a way that is not a drag** (`draggable`): a row that `carries` something is
+ *   dragged out with it, by the pointer and by the keyboard (its drag button, which a reader
+ *   names); whatever a drag does, a row's menu or a button does too.
+ * - **Rows its owner chooses** (`chosen`, and `choosesMany`): the file a tab shows, or a branch's
+ *   files picked to hand a chat at once (#1151), are said and drawn as chosen while a press on a
+ *   row still runs it (opens the file), which React Aria's own choosing, where a press chooses,
+ *   would not let it.
  */
 import {
   createContext,
+  useCallback,
   useContext,
   useMemo,
   type CSSProperties,
@@ -48,20 +54,23 @@ import {
   TreeItem as AriaTreeItem,
   TreeItemContent as AriaTreeItemContent,
   TreeSection as AriaTreeSection,
+  useDragAndDrop,
   useSlottedContext,
   type Key,
+  type PressEvent,
   type Selection,
   type TreeItemContentRenderProps,
   type TreeProps as AriaTreeProps,
 } from "react-aria-components";
-import { mergeProps, useLocale } from "react-aria";
+import { mergeProps, mergeRefs, useLocale } from "react-aria";
 import { ChevronRight } from "lucide-react";
 import { rowHolds, useCollectionElement, useRowMenu, type RowMenu } from "../list/List";
 import { RowScope, type RowSize } from "../list/Row";
 import { useRowTip } from "../list/RowTip";
+import type { Carried } from "../list/drag";
 import type { Tip } from "../tooltip/Tooltip";
 
-export type { Key, Selection };
+export type { Key, PressEvent, Selection };
 export { Collection };
 
 /** Where a row's twist is drawn: in the step before its words, or as a toggle at its end. */
@@ -97,6 +106,13 @@ export interface TreeProps<T extends object> extends Omit<
   empty?: ReactNode;
   /** The keys the tree answers to beside the arrows, said to a reader. */
   "aria-keyshortcuts"?: string;
+  /** Its rows are dragged out with what each `carries` (`ui/list/drag.ts`). */
+  draggable?: boolean;
+  /** Its owner chooses several of its rows at once (`chosen` on a row). */
+  choosesMany?: boolean;
+  /** **A key the owner takes before the tree's own**: true where it took it (Shift and the
+   *  arrows picking rows). */
+  onRowKey?: (event: KeyboardEvent<HTMLElement>) => boolean;
   ref?: Ref<HTMLDivElement>;
   /** `data-*` attributes reach the element as they are. */
   [data: `data-${string}`]: string | number | boolean | undefined;
@@ -145,9 +161,17 @@ function parentOf(row: HTMLElement): HTMLElement | undefined {
  *
  * A key on a row's own control (focus inside the row) is React Aria's: it walks the controls.
  */
-function useTreeKeys(fixed: boolean) {
+function useTreeKeys(
+  fixed: boolean,
+  owner: ((event: KeyboardEvent<HTMLElement>) => boolean) | undefined,
+) {
   const { direction } = useLocale();
   return (event: KeyboardEvent<HTMLElement>) => {
+    if (owner?.(event)) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
     if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
     const row = rowOf(event.target);
     if (row === null) return;
@@ -168,6 +192,40 @@ function useTreeKeys(fixed: boolean) {
   };
 }
 
+/** What a row is to React Aria: what it carries when it is dragged. */
+interface Value {
+  carries?: Carried;
+}
+
+/**
+ * **An attribute React Aria does not write, written on the element**: a tree whose owner chooses
+ * several rows says it is multiselectable, and a chosen row that it is selected, as a tree whose
+ * press chooses says them. Nothing where `value` is undefined.
+ */
+function useSaid<E extends HTMLElement>(
+  name: string,
+  value: string | undefined,
+  given: Ref<E> | undefined,
+) {
+  // It takes back only what it wrote, which it marks: React Aria writes the same attributes on
+  // a tree whose press chooses.
+  const says = useCallback(
+    (element: E | null) => {
+      if (element === null) return;
+      const mark = `data-said-${name}`;
+      if (value !== undefined) {
+        element.setAttribute(name, value);
+        element.setAttribute(mark, "");
+      } else if (element.hasAttribute(mark)) {
+        element.removeAttribute(name);
+        element.removeAttribute(mark);
+      }
+    },
+    [name, value],
+  );
+  return useMemo(() => mergeRefs<E>(says, given ?? null), [says, given]);
+}
+
 /**
  * **A tree**: rows that may hold rows under them, which fold open and closed (or never, `fixed`),
  * may be chosen (`selectionMode`), and run something (`onAction`).
@@ -180,13 +238,22 @@ export function Tree<T extends object>({
   style,
   empty,
   "aria-keyshortcuts": keys,
+  draggable = false,
+  choosesMany = false,
+  onRowKey,
   ref,
   onExpandedChange,
   ...rest
 }: TreeProps<T>) {
-  const own = useCollectionElement(keys, ref);
-  const onKeyDownCapture = useTreeKeys(fixed);
+  const said = useSaid("aria-multiselectable", choosesMany ? "true" : undefined, ref);
+  const own = useCollectionElement(keys, said);
+  const onKeyDownCapture = useTreeKeys(fixed, onRowKey);
   const drawing = useMemo(() => ({ size, twist, fixed }), [size, twist, fixed]);
+  // What a dragged row carries is its own (`carries`, its value to React Aria).
+  const drag = useDragAndDrop<Value>({
+    getItems: (_keys, items) => items.flatMap((item) => (item?.carries ? [item.carries] : [])),
+    getAllowedDropOperations: () => ["copy"],
+  }).dragAndDropHooks;
   return (
     // An element around the tree that draws nothing, so its keys are heard before React Aria's
     // row hears them (`useTreeKeys`).
@@ -195,9 +262,13 @@ export function Tree<T extends object>({
         <TreeDrawing.Provider value={drawing}>
           <AriaTree
             {...rest}
+            // React Aria takes a tree's drag hooks once: a tree that starts or stops dragging
+            // (the plane root's files after a workspace's) is another tree.
+            key={draggable ? "drags" : "still"}
             // A tree that never folds keeps what its owner says is open.
             onExpandedChange={fixed ? undefined : onExpandedChange}
             ref={own}
+            dragAndDropHooks={draggable ? drag : undefined}
             className={className}
             style={style}
             data-scope="tree"
@@ -226,6 +297,28 @@ function Twist() {
 }
 
 /**
+ * **A row's drag button** (React Aria's `drag` slot): the keyboard's and a reader's way to drag
+ * the row out, named "Drag ‹the row›", drawn as nothing; the pointer drags the row itself.
+ */
+function Drag() {
+  return (
+    <AriaButton slot="drag" data-scope="tree" data-part="drag">
+      {""}
+    </AriaButton>
+  );
+}
+
+/**
+ * **A row of a dragging tree that carries nothing** (a line, a refused file): no drag button.
+ * React Aria looks for one and warns of a row with none; the slot's ref is held by an element
+ * that draws nothing, as {@link HeldOpen} holds the twist's.
+ */
+function NoDrag() {
+  const slot = useSlottedContext(AriaButtonContext, "drag");
+  return <span ref={slot?.ref as Ref<HTMLSpanElement>} data-part="no-drag" hidden />;
+}
+
+/**
  * **A fixed tree's row with rows under it**: it is open and says so, and has no twist to press.
  * React Aria looks for a row's toggle and warns of a row with none; the slot's ref is held by an
  * element that draws nothing and takes no pointer or key.
@@ -250,6 +343,18 @@ export interface TreeRowProps {
   onAction?: () => void;
   /** It cannot be used. */
   isDisabled?: boolean;
+  /**
+   * **It cannot be run now, and says so** (`aria-disabled`, the muted words): it keeps the
+   * keyboard, so its tip, which says why, is read (a file purlis will not open).
+   */
+  unavailable?: boolean;
+  /** **Chosen by its owner**: said (`aria-selected`) and drawn as chosen; `false` for a row that
+   *  can be chosen and is not, nothing for one that cannot be. */
+  chosen?: boolean;
+  /** What it carries when it is dragged out of a `draggable` tree. */
+  carries?: Carried;
+  /** A press on it begins: its modifier keys, before its action runs. */
+  onPressStart?: (event: PressEvent) => void;
   /** Its context menu: a right-click, Shift+F10 or the menu key opens it. */
   menu?: RowMenu;
   /** What it says that its words do not, beside it: under the pointer, and while the keyboard
@@ -271,16 +376,26 @@ export function TreeRow<T extends object>({
   children,
   menu,
   tip,
+  unavailable = false,
+  chosen,
+  carries,
   className,
   style,
+  ref,
   ...rest
 }: TreeRowProps) {
   const { size, twist, fixed } = useContext(TreeDrawing);
   const owned = useRowMenu(menu);
   const tipped = useRowTip(tip);
+  const selected = useSaid("aria-selected", chosen === undefined ? undefined : String(chosen), ref);
+  const shown = useSaid("data-selected", chosen ? "true" : undefined, selected);
+  const element = useSaid("aria-disabled", unavailable ? "true" : undefined, shown);
   return (
     <AriaTreeItem<T>
       {...mergeProps(rest, owned.handlers, tipped.hover)}
+      ref={element}
+      value={{ carries } as T}
+      data-unavailable={unavailable || undefined}
       className={className}
       // How deep it is, which its steps and guides are drawn from (`tree.css`).
       style={({ level }) => ({ ...style, "--tree-depth": level - 1 }) as CSSProperties}
@@ -296,11 +411,20 @@ export function TreeRow<T extends object>({
               {twist === "lead" && toggle}
               {rowHolds(content, owned.menu, tipped)(state)}
               {twist === "trail" && toggle}
+              {state.allowsDragging && (carries === undefined ? <NoDrag /> : <Drag />)}
             </>
           );
         }}
       </AriaTreeItemContent>
-      {children}
+      {children ??
+        // **A row whose rows are not drawn yet still has rows under it** (a folder not read):
+        // React Aria knows a row has children by the rows in its collection, so it holds one
+        // that is never drawn while the row is closed, and the owner's once it opens.
+        (rest.hasChildItems && (
+          <AriaTreeItem id={`${String(rest.id)}\u0000unread`} textValue="">
+            {null}
+          </AriaTreeItem>
+        ))}
     </AriaTreeItem>
   );
 }

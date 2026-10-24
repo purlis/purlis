@@ -169,9 +169,25 @@
   outline-offset: var(--focus-ring-inset);
 }
 
-/* **A row that cannot be used**: its words in the faint tier, on no ground. */
-[data-scope="tree"][data-part="root"][data-disabled] {
+/* **A row that cannot be used**: its words in the faint tier, on no ground. A row that keeps
+   the keyboard to say why it cannot be run (`unavailable`: a file purlis will not open) is drawn
+   so too. */
+[data-scope="tree"][data-part="root"][data-disabled],
+[data-scope="tree"][data-part="root"][data-unavailable] {
   color: var(--text-faint);
+}
+
+/* A row's drag button is the keyboard's and a reader's: drawn as nothing, where it stands. */
+[data-scope="tree"][data-part="drag"] {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 /* **A line that is not a row to act on** (`TreeLine`: "Reading…", "12 more not shown"):

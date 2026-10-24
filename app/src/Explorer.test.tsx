@@ -174,7 +174,7 @@ describe("the explorer", () => {
       "aria-expanded",
       "true",
     );
-    expect(screen.getByRole("tree", { name: "Files of alpha" })).toBeInTheDocument();
+    expect(screen.getByRole("treegrid", { name: "Files of alpha" })).toBeInTheDocument();
   });
 
   it("follows the strip: the files are of whichever workspace it selects", () => {
@@ -196,17 +196,17 @@ describe("the explorer", () => {
     const { rerender } = render(of("alpha", ["svc", "tool"]));
     const names = () =>
       within(screen.getByTestId("files"))
-        .getAllByRole("treeitem")
+        .getAllByRole("row")
         .map((one) => one.textContent?.trim());
-    expect(screen.getByRole("tree", { name: "Files of alpha" })).toBeInTheDocument();
+    expect(screen.getByRole("treegrid", { name: "Files of alpha" })).toBeInTheDocument();
     expect(names()).toEqual(["svc", "tool"]);
 
     // The strip moved to beta: the same view, beta's files, and nothing of alpha's.
     rerender(of("beta", ["web"]));
 
     expect(screen.getByRole("button", { name: "Files beta" })).toBeInTheDocument();
-    expect(screen.getByRole("tree", { name: "Files of beta" })).toBeInTheDocument();
-    expect(screen.queryByRole("tree", { name: "Files of alpha" })).toBeNull();
+    expect(screen.getByRole("treegrid", { name: "Files of beta" })).toBeInTheDocument();
+    expect(screen.queryByRole("treegrid", { name: "Files of alpha" })).toBeNull();
     expect(names()).toEqual(["web"]);
   });
 

@@ -123,9 +123,9 @@ afterEach(() => {
 });
 
 /** The tab's tree, and a row of it by name. */
-const tree = () => screen.findByRole("tree", { name: "Files of fix-it" });
+const tree = () => screen.findByRole("treegrid", { name: "Files of fix-it" });
 const row = async (name: string, timeout?: number) =>
-  within(await tree()).findByRole("treeitem", { name }, { timeout });
+  within(await tree()).findByRole("row", { name }, { timeout });
 
 describe("a branch's files", () => {
   it("draws the branch as a tree, folder by folder, and opens a file in the preview", async () => {
@@ -136,7 +136,7 @@ describe("a branch's files", () => {
     render(<PieceFilesTab plane={PLANE} cut={CUT} onOpenView={() => undefined} />);
 
     expect(await row("src")).toHaveAttribute("aria-expanded", "false");
-    expect(within(await tree()).queryByRole("treeitem", { name: "lib.rs" })).toBeNull();
+    expect(within(await tree()).queryByRole("row", { name: "lib.rs" })).toBeNull();
     await userEvent.click(await row("src"));
     await userEvent.click(await row("lib.rs"));
 
@@ -175,7 +175,7 @@ describe("a branch's files", () => {
 
     await row("f599.txt", 20_000);
 
-    expect(within(await tree()).getAllByRole("treeitem")).toHaveLength(600);
+    expect(within(await tree()).getAllByRole("row")).toHaveLength(600);
     // Six hundred rows through jsdom take seconds on a busy runner; the default 5 is for one.
   }, 30_000);
 

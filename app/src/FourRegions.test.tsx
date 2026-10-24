@@ -1153,7 +1153,7 @@ describe("the Panel", () => {
     await userEvent.click(await within(reposView()).findByRole("treeitem", { name: /^one/ }));
 
     expect(
-      await within(screen.getByRole("navigation", { name: "Explorer" })).findByRole("tree", {
+      await within(screen.getByRole("navigation", { name: "Explorer" })).findByRole("treegrid", {
         name: /^Files of one/,
       }),
     ).toBeInTheDocument();

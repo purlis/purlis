@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { LiveMark } from "./LiveDialog";
-import { NamedNotRead } from "./ExplorerRefused";
+import { NamedNotReadWords, namedNotRead, namedNotReadSaid } from "./ExplorerRefused";
 import { Notice } from "./Notice";
 import {
   useEffect,
@@ -11,7 +11,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type DragEvent,
   type KeyboardEvent,
   type ReactNode,
 } from "react";
@@ -48,7 +47,7 @@ import {
   type StatusRead,
 } from "./branchStatus";
 import { PLANE_ROOT, isPlaneRoot, type Place } from "./pieceViews";
-import { Menued } from "./Menus";
+import { catalogueMenu, Menued } from "./Menus";
 import { NotClonedHere, type Cloning } from "./NotCloned";
 import { WorktreeMark } from "./Worktree";
 import { OUTSIDE_TITLE } from "./actions";
@@ -58,7 +57,7 @@ import { keepTreeFolds, keptTreeFolds } from "./explorerFolds";
 import type { WorkspaceState } from "./workspaceState";
 import { useTabStop } from "./roving";
 import { Breadcrumb, CockpitHeader, focusStands, useAheadBehind } from "./Cockpit";
-import { dragReference, type Referenced } from "./references";
+import { carriedReference, type Referenced } from "./references";
 import { pickable, useFilePicks, type Pickable } from "./filePicks";
 import { useLastRead } from "./editor/lastRead";
 import { touchingIn, touchSaid, useTouching, type Touching } from "./touching";
@@ -68,6 +67,8 @@ import { PanelSectionTitle } from "./ui/panel/Panel";
 import { Count } from "./ui/badge/Badge";
 import { HeadActions } from "./viewHead";
 import { Tooltip } from "./ui/tooltip/Tooltip";
+import { Tree, TreeLine, TreeRow, type Key, type PressEvent } from "./ui/tree/Tree";
+import type { RowMenu } from "./ui/list/List";
 
 /**
  * The left region: the repo and worktree **explorer** (ADR 0038).
@@ -434,10 +435,11 @@ export function Explorer({
     picked,
     drawnOf(placeRows).map((row) => row.id),
   );
-  const filesStop = useTabStop(
-    undefined,
-    drawnOf(fileRows).map((row) => row.id),
-  );
+  /** What a file tree hands the tree family: the folders open in it, and a fold it asks for. */
+  const fileFolds = {
+    expandedKeys: openFileRows(fileRows),
+    onExpandedChange: foldFileRows(fileRows, (key, open) => fold(key, open)),
+  };
 
   /** Opens or closes a clone or a branch's folder: the one fold state of each, whether a click
    *  or a key asked. A clone is open until folded; a folder is closed until opened. */
@@ -554,17 +556,6 @@ export function Explorer({
   /** Steps back out of the cockpit to the whole workspace. */
   const leave = () => onFocus?.(undefined);
 
-  /** A file tree's keys: Shift and Up or Down picks rows, and Esc lets the picks go (#1151);
-   *  every other key is the tree's. */
-  const onFilesKey = (event: KeyboardEvent<HTMLElement>) => {
-    if (picks.key(event)) {
-      event.preventDefault();
-      event.stopPropagation();
-      return;
-    }
-    onTreeKey(fileRows)(event);
-  };
-
   /** Left, Right and type-ahead (#238) on one of the trees, by its rows. Up, Down, Home and End
    *  are the roving focus's. */
   const onTreeKey = (rows: Row[]) => (event: KeyboardEvent<HTMLElement>) => {
@@ -593,8 +584,6 @@ export function Explorer({
       place: PLANE_ROOT,
       files,
       fold,
-      treeitem,
-      isDrawn,
       onOpenFile,
       icons,
       onGoToWorkspace,
@@ -622,23 +611,19 @@ export function Explorer({
             {filesTop !== undefined && rootLevel !== undefined && (
               <>
                 <FilesFilter filter={filter} onFilter={setFilter} />
-                <RovingFocusGroup.Root asChild orientation="vertical" {...filesStop}>
-                  <div
-                    className="ui-tree"
-                    role="tree"
-                    aria-label={`Files of ${OUTSIDE_TITLE}`}
-                    data-testid="files"
-                    onKeyDown={onTreeKey(fileRows)}
-                  >
-                    {"pending" in rootLevel ? (
-                      <Pending>Reading the project’s files…</Pending>
-                    ) : "trouble" in rootLevel ? (
-                      <FolderRefused>{rootLevel.trouble}</FolderRefused>
-                    ) : (
-                      <FolderEntries branch={filesTop} level={rootLevel} at={rootRows} />
-                    )}
-                  </div>
-                </RovingFocusGroup.Root>
+                <Tree
+                  aria-label={`Files of ${OUTSIDE_TITLE}`}
+                  data-testid="files"
+                  size="sm"
+                  {...fileFolds}
+                >
+                  <TopItems
+                    top={filesTop}
+                    level={rootLevel}
+                    reading="Reading the project’s files…"
+                    at={rootRows}
+                  />
+                </Tree>
                 <div className="files-toggles">
                   <ToggleButton
                     size="sm"
@@ -677,20 +662,28 @@ export function Explorer({
     place: { workspace, repo: filesTop?.repo ?? "", piece: filesTop?.piece ?? null },
     files,
     fold,
-    treeitem,
-    isDrawn,
     onOpenFile,
     onPress: pressFile,
     icons,
     pick: onAddToChat === undefined ? undefined : picks,
   };
+  /** What a file tree of a workspace's branches takes beside its folds: its rows dragged onto a
+   *  chat (FM-9), and picked several at once where they can be handed (#1151). */
+  const fileTree = {
+    ...fileFolds,
+    draggable: plane !== undefined,
+    choosesMany: onAddToChat !== undefined,
+    onRowKey: onAddToChat === undefined ? undefined : picks.key,
+  };
   /** A branch's *Files* row, and its folders under it as they are opened. */
-  const filesOf = (repo: string, piece: string | null, name?: string) => (
+  const filesOf = (repo: string, piece: string | null, testid: string, name?: string) => (
     <FilesRow
+      key={testid}
       branch={{ repo, piece, folder: "" }}
       name={name}
       repo={name !== undefined}
       at={{ ...at, place: { workspace, repo, piece } }}
+      data-testid={testid}
     />
   );
   const filterBox = open.length > 0 && (
@@ -788,21 +781,9 @@ export function Explorer({
           </ReadRefused>
         )}
         {filterBox}
-        <RovingFocusGroup.Root asChild orientation="vertical" {...filesStop}>
-          <div
-            className="ui-tree"
-            role="tree"
-            aria-label={`Files of ${name}`}
-            aria-multiselectable={onAddToChat === undefined ? undefined : true}
-            onKeyDown={onFilesKey}
-          >
-            <ul className="files" role="group">
-              <li role="none" data-testid={`files-${ref.repo}-${ref.piece}`}>
-                {filesOf(ref.repo, ref.piece)}
-              </li>
-            </ul>
-          </div>
-        </RovingFocusGroup.Root>
+        <Tree aria-label={`Files of ${name}`} size="sm" {...fileTree}>
+          {filesOf(ref.repo, ref.piece, `files-${ref.repo}-${ref.piece}`)}
+        </Tree>
         {pickedBar}
         {toggles}
       </nav>
@@ -873,32 +854,19 @@ export function Explorer({
           project={plane}
         >
           {filterBox}
-          <RovingFocusGroup.Root asChild orientation="vertical" {...filesStop}>
-            <div
-              className="ui-tree"
-              role="tree"
-              aria-label={`Files of ${filesName}`}
-              data-testid="files"
-              aria-multiselectable={onAddToChat === undefined ? undefined : true}
-              onKeyDown={onFilesKey}
-            >
-              {filesTop === undefined || topLevel === undefined ? (
-                <ul className="files" role="group">
-                  {clones.map((repo) => (
-                    <li key={repo} role="none" data-testid={`files-${repo}`}>
-                      {filesOf(repo, null, repo)}
-                    </li>
-                  ))}
-                </ul>
-              ) : "pending" in topLevel ? (
-                <Pending>Reading the files of {filesName}…</Pending>
-              ) : "trouble" in topLevel ? (
-                <FolderRefused>{topLevel.trouble}</FolderRefused>
-              ) : (
-                <FolderEntries branch={filesTop} level={topLevel} at={at} />
-              )}
-            </div>
-          </RovingFocusGroup.Root>
+          <Tree aria-label={`Files of ${filesName}`} data-testid="files" size="sm" {...fileTree}>
+            {filesTop === undefined || topLevel === undefined
+              ? clones.map((repo) => filesOf(repo, null, `files-${repo}`, repo))
+              : [
+                  <TopItems
+                    key="top"
+                    top={filesTop}
+                    level={topLevel}
+                    reading={`Reading the files of ${filesName}…`}
+                    at={at}
+                  />,
+                ]}
+          </Tree>
           {pickedBar}
           {toggles}
         </Section>
@@ -1345,18 +1313,6 @@ function ReadRefused({
   );
 }
 
-/** A folder of a branch's tree that could not be read, said in the tree where its entries
- *  would be: a row's own refusal, not a standing line about the window (folding the folder and
- *  opening it again reads it again). The icon is decorative and Lucide hides it. */
-function FolderRefused({ children }: { children: ReactNode }) {
-  return (
-    <p className="trouble" role="alert">
-      <TriangleAlert className="node-icon" />
-      <span>{children}</span>
-    </p>
-  );
-}
-
 /** Something charter is still reading.
  *
  *  **The one place in this region an animation earns its place.** A spinner here means "this
@@ -1533,11 +1489,7 @@ const MARK_SAID: Record<Marked["mark"], string> = {
  *  screen reader and a hover. */
 function ChangeBadge({ marked, folder }: { marked: Marked | undefined; folder: boolean }) {
   if (marked === undefined) return null;
-  const said = folder
-    ? `${marked.count ?? 0} ${marked.count === 1 ? "change" : "changes"}`
-    : marked.from
-      ? `renamed from ${marked.from}`
-      : MARK_SAID[marked.mark];
+  const said = markSaid(marked, folder);
   return (
     <Tooltip tip={said}>
       <span className="change-mark" data-mark={marked.mark} aria-label={said}>
@@ -1545,6 +1497,34 @@ function ChangeBadge({ marked, folder }: { marked: Marked | undefined; folder: b
       </span>
     </Tooltip>
   );
+}
+
+/** What a file's or a folder's mark says, in words. */
+function markSaid(marked: Marked, folder: boolean): string {
+  return folder
+    ? `${marked.count ?? 0} ${marked.count === 1 ? "change" : "changes"}`
+    : marked.from
+      ? `renamed from ${marked.from}`
+      : MARK_SAID[marked.mark];
+}
+
+/**
+ * **A file or folder row's name to a reader**: its name, then what a chat is doing in it and
+ * what the branch changed in it, as its marks say them; typing still finds it by its name.
+ */
+function rowSaid(
+  name: string,
+  touchedBy: readonly string[] | undefined,
+  marked: Marked | undefined,
+  folder: boolean,
+  refused?: string,
+): string {
+  return [
+    name,
+    ...(touchedBy !== undefined && touchedBy.length > 0 ? [touchSaid(touchedBy)] : []),
+    ...(marked === undefined ? [] : [markSaid(marked, folder)]),
+    ...(refused === undefined ? [] : [refused]),
+  ].join(" ");
 }
 
 /** The live mark on a file or folder a chat is touching right now (FM-6): a dot, and on hover
@@ -1560,8 +1540,7 @@ function TouchMark({ names }: { names: readonly string[] | undefined }) {
 }
 
 /** Everything a branch's file rows share: the branch they are of, what the tree knows about
- *  its folders, and what a row does to the tree and to a screen reader. The file tab (FM-2) draws
- *  its tree out of the same rows. */
+ *  its folders, and what a row does. The file tab (FM-2) draws its tree out of the same rows. */
 export type FileRows = {
   /** The project the rows are of: what a row dragged onto a chat names (FM-9). No drag
    *  without it. */
@@ -1569,8 +1548,6 @@ export type FileRows = {
   place: Place;
   files: FilesOf;
   fold: (key: string, open: boolean) => void;
-  treeitem: (id: string) => TreeItem;
-  isDrawn: (id: string) => boolean;
   onOpenFile?: (place: Place, path: string) => void;
   /** The project's icon theme (FM-3), which every file and folder row is drawn from. */
   icons: IconTheme;
@@ -1588,43 +1565,35 @@ export type FileRows = {
 const NO_CATALOGUE: Catalogued = new Map();
 
 /**
- * A file or folder row with its menu (FM-10): the rows `actions.fileRows` builds for it — never
- * listed in the catalogue — and nothing that creates, renames, moves or deletes (ADR 0081). The row is drawn as it was when the tree
- * has no way to carry a row out.
+ * **A file or folder row's menu** (FM-10): the rows `actions.fileRows` builds for it — never
+ * listed in the catalogue — and nothing that creates, renames, moves or deletes (ADR 0081).
+ * None where the tree has no way to carry a row out. `line` is where its preview was last read
+ * (#1143), so *Open in your editor* opens there.
  */
-function FileMenu({ on, at, children }: { on: FileOn; at: FileRows; children: ReactNode }) {
-  // Where its preview was last read, so *Open in your editor* opens there (#1143).
-  const line = useLastRead(at.plane, at.place, on.at.path);
-  if (at.onPress === undefined) return <>{children}</>;
+function fileMenu(on: FileOn, at: FileRows, line?: number): RowMenu | undefined {
+  if (at.onPress === undefined) return undefined;
   // The rows picked with it, where two or more are (#1151): its *Add to a chat's context* hands
   // them all when it is one of them (`actions.fileRows`).
   const picks = at.pick?.picks ?? [];
   const picked = picks.length > 1 ? { picked: picks.map(refOf) } : {};
-  return (
-    <Menued
-      on={on.kind === "file" ? { ...on, line, ...picked } : { ...on, ...picked }}
-      offers={NO_CATALOGUE}
-      onPress={at.onPress}
-    >
-      {children}
-    </Menued>
+  return catalogueMenu(
+    on.kind === "file" ? { ...on, line, ...picked } : { ...on, ...picked },
+    NO_CATALOGUE,
+    at.onPress,
   );
 }
 
 /**
- * What makes a file or folder row draggable onto a chat (FM-9): it carries the row's branch and
- * path, which the core places and renders in the chat's own syntax. Nothing on a refused row,
- * or where the tree does not know its project.
+ * What a file or folder row carries when it is dragged onto a chat (FM-9): the row's branch and
+ * path, which the core places and renders in the chat's own syntax. Nothing on a refused row, or
+ * where the tree does not know its project.
  */
-function draggedAs(at: FileRows, path: string, folder: boolean, refused?: string) {
+function carriedBy(at: FileRows, path: string, folder: boolean, refused?: string) {
   const plane = at.plane;
   // A reference names a branch and a path in it, which a file of the plane root has not.
-  if (isPlaneRoot(at.place)) return {};
-  if (plane === undefined || refused !== undefined || path === "") return {};
-  return {
-    draggable: true,
-    onDragStart: (event: DragEvent) => dragReference(event, { plane, ...at.place, path, folder }),
-  };
+  if (isPlaneRoot(at.place)) return undefined;
+  if (plane === undefined || refused !== undefined || path === "") return undefined;
+  return carriedReference({ plane, ...at.place, path, folder });
 }
 
 /** A row as it can be picked (#1151): nothing on a refused row, the branch's own *Files* row, or
@@ -1646,10 +1615,10 @@ function refOf({ workspace, repo, piece, path, folder }: Pickable): FileRef {
   return { at: { workspace, repo, piece, path }, folder };
 }
 
-/** What a row says of its pick: whether it is picked, where rows can be (#1151). */
+/** What a row says of its pick (#1151): the reference it is picked by, and whether it is. */
 function pickedAs(at: FileRows, r: Pickable | undefined) {
   if (at.pick === undefined || r === undefined) return {};
-  return { ...pickable(r), "aria-selected": at.pick.isPicked(r) };
+  return { ...pickable(r), chosen: at.pick.isPicked(r) };
 }
 
 /** A file row's path in the branch, as its menu names it. */
@@ -1657,13 +1626,37 @@ function pathOn(at: FileRows, path: string): BranchPath {
   return { ...at.place, path };
 }
 
-/** A branch folder's *Files* row, or a folder's row, with what it holds under it once opened. */
+/**
+ * **A press on a row picks it, where Cmd, Ctrl or Shift is held** (#1151), else runs it: its
+ * modifier keys are heard as the press begins, before its action runs.
+ */
+function usePickingPress(at: FileRows, picked: Pickable | undefined, run: () => void) {
+  const held = useRef<PressEvent>(undefined);
+  return {
+    onPressStart: (event: PressEvent) => {
+      held.current = event;
+    },
+    onAction: () => {
+      const press = held.current;
+      held.current = undefined;
+      if (press !== undefined && at.pick?.press(press, picked)) return;
+      run();
+    },
+  };
+}
+
+/**
+ * **A branch folder's *Files* row, or a folder's row**, with what it holds under it once opened:
+ * a row of the tree family that folds (`fold`), unless it is one of *Changed only*'s, which is
+ * always open.
+ */
 function FilesRow({
   branch,
   name = "Files",
   always = false,
   repo = false,
   at,
+  ...data
 }: {
   branch: BranchFolderRef;
   /** A repo's own folder, drawn as the repo, in the *Files* section. */
@@ -1674,6 +1667,8 @@ function FilesRow({
   /** Always open: a folder of *Changed only*'s, which does not fold. */
   always?: boolean;
   at: FileRows;
+  /** `data-*` attributes reach the row as they are. */
+  [attribute: `data-${string}`]: string | undefined;
 }) {
   const id = fileRow(branch);
   const key = fileFold(at.place.workspace, branch);
@@ -1682,217 +1677,330 @@ function FilesRow({
   const marked = at.files.indexes.get(branchKey(branch))?.marks.get(branch.folder);
   const touchedBy = at.files.touching?.get(branchKey(branch))?.get(branch.folder);
   const picked = pickOf(at, branch.folder, true);
-  const row = (
-    <RovingFocusGroup.Item asChild tabStopId={id} focusable={at.isDrawn(id)}>
-      <button
-        type="button"
-        className="ui-row ui-tree-row file-node"
-        {...at.treeitem(id)}
-        {...draggedAs(at, branch.folder, true)}
-        {...pickedAs(at, picked)}
-        onClick={(event) => {
-          if (at.pick?.click(event, picked)) return;
-          if (!always) at.fold(key, !open);
-        }}
-      >
-        <span className="ui-tree-twist twisty" aria-hidden="true">
-          <ChevronRight />
-        </span>
-        {/* The branch's own folder is the *Files* row, or a repo's own folder by its name in
-            the *Files* section; a folder under either is drawn by name. */}
-        {branch.folder === "" ? (
-          repo ? (
-            <FolderGit2 className="node-icon" />
-          ) : (
-            <Files className="node-icon" />
-          )
-        ) : (
-          <FileIcon symbol={iconFor(at.icons, { name, folder: true, open })} />
-        )}
-        <span className="spot-name">{name}</span>
-        {/* A space, so a screen reader says the mark as its own word; flex drops it. */}{" "}
-        <TouchMark names={touchedBy} />
-        <ChangeBadge marked={marked} folder />
-      </button>
-    </RovingFocusGroup.Item>
-  );
+  const press = usePickingPress(at, picked, () => {
+    if (!always) at.fold(key, !open);
+  });
   return (
-    <>
-      {/* A folder's menu (FM-10). The branch's own *Files* row has one too (#1143): its
-          folder placed whole, the rows its branch's row offers (`actions.fileRows`). */}
-      <FileMenu on={{ on: "file", at: pathOn(at, branch.folder), kind: "folder" }} at={at}>
-        {row}
-      </FileMenu>
-      {level !== undefined && (
-        <div className="tree-held" role="none" {...heldUnder(at.treeitem(id))}>
-          {"pending" in level ? (
-            <Pending>Reading…</Pending>
-          ) : "trouble" in level ? (
-            <FolderRefused>{level.trouble}</FolderRefused>
+    <TreeRow
+      {...data}
+      {...press}
+      {...pickedAs(at, picked)}
+      id={id}
+      textValue={rowSaid(name, touchedBy, marked, true)}
+      className="file-node"
+      data-row={id}
+      data-mark={marked?.mark}
+      hasChildItems
+      // A folder's menu (FM-10). The branch's own *Files* row has one too (#1143): its folder
+      // placed whole, the rows its branch's row offers (`actions.fileRows`).
+      menu={fileMenu({ on: "file", at: pathOn(at, branch.folder), kind: "folder" }, at)}
+      carries={carriedBy(at, branch.folder, true)}
+      content={
+        <>
+          {/* The branch's own folder is the *Files* row, or a repo's own folder by its name in
+              the *Files* section; a folder under either is drawn by name. */}
+          {branch.folder === "" ? (
+            repo ? (
+              <FolderGit2 className="node-icon" />
+            ) : (
+              <Files className="node-icon" />
+            )
           ) : (
-            <FolderEntries branch={branch} level={level} at={at} />
+            <FileIcon symbol={iconFor(at.icons, { name, folder: true, open })} />
           )}
-        </div>
-      )}
-    </>
+          <span className="spot-name">{name}</span>
+          {/* A space, so a screen reader says the mark as its own word; flex drops it. */}{" "}
+          <TouchMark names={touchedBy} />
+          <ChangeBadge marked={marked} folder />
+        </>
+      }
+    >
+      {level === undefined ? null : <FolderItems branch={branch} level={level} at={at} />}
+    </TreeRow>
   );
 }
 
-/** What one opened folder holds, a row each: folders that open in turn, and files; and how many
- *  more it holds than the core lists. */
-export function FolderEntries({
+/**
+ * **What one opened folder holds, a row each**: folders that open in turn, and files; the lines
+ * that say it is still being read, could not be, holds nothing or more than the core lists; and
+ * what its branch names and does not read, under its top. Each a row of the tree family, in
+ * the order it is drawn.
+ */
+export function FolderItems({
   branch,
   level,
   at,
 }: {
   branch: BranchFolderRef;
-  level: { children: Child[]; more: number; narrowed: boolean };
+  level: Level;
   at: FileRows;
 }) {
+  return <>{folderItems(branch, level, at)}</>;
+}
+
+function folderItems(branch: BranchFolderRef, level: Level, at: FileRows): ReactNode[] {
+  const line = (what: string) => `${fileRow(branch)}#${what}`;
+  if ("pending" in level)
+    return [
+      <TreeLine key="pending" id={line("pending")} textValue="Reading…" className="pending">
+        <LoaderCircle className="node-icon spinning" />
+        <span>Reading…</span>
+      </TreeLine>,
+    ];
+  if ("trouble" in level)
+    return [
+      // A folder of a branch's tree that could not be read, said in the tree where its entries
+      // would be: a row's own refusal, not a standing line about the window (folding the folder
+      // and opening it again reads it again).
+      <TreeLine key="trouble" id={line("trouble")} textValue={level.trouble} className="trouble">
+        <TriangleAlert className="node-icon" />
+        <span role="alert">{level.trouble}</span>
+      </TreeLine>,
+    ];
   const { children: entries, more, narrowed } = level;
   // What the branch changed and purlis names and does not read (#704), under its top only.
   const refused =
     branch.folder === "" ? (at.files.indexes.get(branchKey(branch))?.status.refused ?? []) : [];
-  const named = refused.length > 0 && (
-    <NamedNotRead refused={refused} filter={at.files.filter} said={MARK_SAID} />
-  );
+  const named = namedNotRead(refused, at.files.filter);
+  const namedLines = [
+    ...named.drawn.map((one) => (
+      <TreeLine
+        key={`named-${one.path}`}
+        id={line(`named:${one.path}`)}
+        textValue={namedNotReadSaid(one, MARK_SAID)}
+        className="none"
+        data-mark={one.mark}
+        data-testid="explorer-refused-row"
+      >
+        <NamedNotReadWords one={one} said={MARK_SAID} />
+      </TreeLine>
+    )),
+    ...(named.past > 0
+      ? [
+          <TreeLine
+            key="named-more"
+            id={line("named-more")}
+            textValue={`${named.past.toLocaleString("en")} more named and not read`}
+            className="none"
+          >
+            <span>{`${named.past.toLocaleString("en")} more named and not read`}</span>
+          </TreeLine>,
+        ]
+      : []),
+  ];
   const unwatched = at.files.changedOnly ? undefined : unwatchedHere(at.files.reads, branch);
-  const note = unwatched !== undefined && (
-    <p className="none ui-text-secondary" data-testid="unwatched">
-      {unwatched === "branch"
-        ? "Changes on disk are not shown yet: purlis watches this branch again once it can read it."
-        : "Changes on disk in this folder are not shown: the system would not watch it. Close and open it to try again."}
-    </p>
-  );
+  const unwatchedSaid =
+    unwatched === "branch"
+      ? "Changes on disk are not shown yet: purlis watches this branch again once it can read it."
+      : "Changes on disk in this folder are not shown: the system would not watch it. Close and open it to try again.";
+  const note =
+    unwatched === undefined
+      ? []
+      : [
+          <TreeLine
+            key="unwatched"
+            id={line("unwatched")}
+            textValue={unwatchedSaid}
+            className="none"
+            data-testid="unwatched"
+          >
+            <span>{unwatchedSaid}</span>
+          </TreeLine>,
+        ];
   if (entries.length === 0 && more === 0) {
     // A folder the filter emptied says nothing: the rows that match say where to look.
-    if (narrowed) return note || named || null;
+    if (narrowed) return [...note, ...namedLines];
     // A branch whose only changes are paths it names and does not read did change something.
     const nothing = !(at.files.changedOnly && refused.length > 0);
-    return (
-      <>
-        {note}
-        {nothing && (
-          <p className="none ui-text-secondary">
-            {at.files.changedOnly && branch.folder === "" ? "Nothing changed" : "Nothing here"}
-          </p>
-        )}
-        {named}
-      </>
-    );
+    const said = at.files.changedOnly && branch.folder === "" ? "Nothing changed" : "Nothing here";
+    return [
+      ...note,
+      ...(nothing
+        ? [
+            <TreeLine key="nothing" id={line("nothing")} textValue={said} className="none">
+              <span>{said}</span>
+            </TreeLine>,
+          ]
+        : []),
+      ...namedLines,
+    ];
   }
+  const rows = entries.map((entry) => {
+    const path = joined(branch.folder, entry.name);
+    const here = { ...branch, folder: path };
+    if (entry.expands)
+      return (
+        <FilesRow
+          key={`d${entry.name}`}
+          branch={here}
+          name={entry.name}
+          always={entry.always}
+          at={at}
+          data-ignored={entry.ignored ? "" : undefined}
+        />
+      );
+    if (entry.workspace !== undefined)
+      return (
+        <WorkspaceRow
+          key={`w${entry.name}`}
+          here={here}
+          name={entry.name}
+          of={entry.workspace}
+          at={at}
+        />
+      );
+    return <FileRow key={`f${entry.name}`} branch={branch} entry={entry} at={at} />;
+  });
+  // A folder of tens of thousands of generated files is drawn as its first entries; the rest
+  // are counted, never drawn.
+  const counted = `${more.toLocaleString("en")} ${at.files.changedOnly ? "more changes" : "more"} not shown`;
+  return [
+    ...note,
+    ...rows,
+    ...(more > 0
+      ? [
+          <TreeLine key="more" id={line("more")} textValue={counted} className="none">
+            <span>{counted}</span>
+          </TreeLine>,
+        ]
+      : []),
+    ...namedLines,
+  ];
+}
+
+/**
+ * **The first level of a file tree whose top is no row** (the *Files* section of one branch, the
+ * plane root's, a file tab's): the top folder's own rows, or the line that says it is still
+ * being read, in the tree's own words.
+ */
+export function TopItems({
+  top,
+  level,
+  reading,
+  at,
+}: {
+  top: BranchFolderRef;
+  level: Level;
+  reading: string;
+  at: FileRows;
+}) {
+  if (!("pending" in level)) return <FolderItems branch={top} level={level} at={at} />;
   return (
-    <>
-      {note}
-      <ul className="files" role="group">
-        {entries.map((entry) => {
-          const path = joined(branch.folder, entry.name);
-          const here = { ...branch, folder: path };
-          if (entry.expands) {
-            return (
-              <li
-                key={`d${entry.name}`}
-                role="none"
-                data-ignored={entry.ignored || undefined}
-                data-mark={entry.marked?.mark}
-              >
-                <FilesRow branch={here} name={entry.name} always={entry.always} at={at} />
-              </li>
-            );
-          }
-          const id = fileRow(here);
-          const ofWorkspace = entry.workspace;
-          if (ofWorkspace !== undefined) {
-            // A workspace's repo, at the plane root (issue 1916, ruling F2): one row with the
-            // workspace's mark, which selects that workspace's tab and never opens here.
-            const said = `A repo of workspace ${ofWorkspace}: its files are on that workspace's tab`;
-            return (
-              <li key={`w${entry.name}`} role="none" data-workspace={ofWorkspace}>
-                <RovingFocusGroup.Item asChild tabStopId={id} focusable={at.isDrawn(id)}>
-                  <Tooltip tip={said}>
-                    <button
-                      type="button"
-                      className="ui-row ui-tree-row file-node"
-                      {...at.treeitem(id)}
-                      onClick={() => at.onGoToWorkspace?.(ofWorkspace)}
-                    >
-                      <Folders className="node-icon" />
-                      <span className="spot-name">{entry.name}</span>{" "}
-                      <span className="spot-what ui-text-secondary">{`workspace ${ofWorkspace}`}</span>
-                    </button>
-                  </Tooltip>
-                </RovingFocusGroup.Item>
-              </li>
-            );
-          }
-          const refused = entry.refused;
-          const touchedBy = at.files.touching?.get(branchKey(branch))?.get(path);
-          // Refused and linked files keep their own marks: what they say is that this row is
-          // not an ordinary file, which matters more than what kind of file it would be.
-          const Mark = refused !== undefined ? FileX : entry.kind === "link" ? FileSymlink : null;
-          const picked = pickOf(at, path, false, refused);
-          return (
-            <li
-              key={`f${entry.name}`}
-              role="none"
-              data-ignored={entry.ignored || undefined}
-              data-mark={entry.marked?.mark}
-            >
-              <FileMenu
-                on={{
-                  on: "file",
-                  at: pathOn(at, path),
-                  kind: entry.kind,
-                  refused,
-                }}
-                at={at}
-              >
-                <RovingFocusGroup.Item asChild tabStopId={id} focusable={at.isDrawn(id)}>
-                  <Tooltip tip={refused ?? path}>
-                    <button
-                      type="button"
-                      className="ui-row ui-tree-row file-node"
-                      data-refused={refused !== undefined || undefined}
-                      aria-disabled={refused !== undefined || undefined}
-                      {...at.treeitem(id)}
-                      {...draggedAs(at, path, false, refused)}
-                      {...pickedAs(at, picked)}
-                      onClick={(event) => {
-                        if (at.pick?.click(event, picked)) return;
-                        if (refused === undefined) at.onOpenFile?.(at.place, path);
-                      }}
-                    >
-                      {Mark === null ? (
-                        <FileIcon symbol={iconFor(at.icons, { name: entry.name, folder: false })} />
-                      ) : (
-                        <Mark className="node-icon" />
-                      )}
-                      <span className="spot-name">{entry.name}</span>{" "}
-                      <TouchMark names={touchedBy} />
-                      <ChangeBadge marked={entry.marked} folder={false} />
-                      {/* Why it does not open, said beside it — an ignored file's too, which is
-                      drawn only once the operator asked to see what git ignores. */}
-                      {refused !== undefined && (
-                        <span className="spot-what ui-text-secondary">{refused}</span>
-                      )}
-                    </button>
-                  </Tooltip>
-                </RovingFocusGroup.Item>
-              </FileMenu>
-            </li>
-          );
-        })}
-      </ul>
-      {more > 0 && (
-        // A folder of tens of thousands of generated files is drawn as its first entries; the
-        // rest are counted, never drawn.
-        <p className="none ui-text-secondary">
-          {`${more.toLocaleString("en")} ${at.files.changedOnly ? "more changes" : "more"} not shown`}
-        </p>
-      )}
-      {named}
-    </>
+    <TreeLine id={`${fileRow(top)}#pending`} textValue={reading} className="pending">
+      <LoaderCircle className="node-icon spinning" />
+      <span>{reading}</span>
+    </TreeLine>
   );
+}
+
+/**
+ * A workspace's repo, at the plane root (issue 1916, ruling F2): one row with the workspace's
+ * mark, which selects that workspace's tab and never opens here.
+ */
+function WorkspaceRow({
+  here,
+  name,
+  of,
+  at,
+}: {
+  here: BranchFolderRef;
+  name: string;
+  of: string;
+  at: FileRows;
+}) {
+  const id = fileRow(here);
+  return (
+    <TreeRow
+      // Its own key, never a folder's: the same path drawn as a folder before the core said
+      // whose repo it is is another row.
+      id={`${id}#workspace`}
+      textValue={`${name}, workspace ${of}`}
+      className="file-node"
+      data-row={id}
+      data-workspace={of}
+      tip={`A repo of workspace ${of}: its files are on that workspace's tab`}
+      onAction={() => at.onGoToWorkspace?.(of)}
+      content={
+        <>
+          <Folders className="node-icon" />
+          <span className="spot-name">{name}</span>{" "}
+          <span className="spot-what ui-text-secondary">{`workspace ${of}`}</span>
+        </>
+      }
+    />
+  );
+}
+
+/** A file's row: it opens in its file tab, unless purlis will not open it, which it says. */
+function FileRow({ branch, entry, at }: { branch: BranchFolderRef; entry: Child; at: FileRows }) {
+  const path = joined(branch.folder, entry.name);
+  const id = fileRow({ ...branch, folder: path });
+  const refused = entry.refused;
+  // Where its preview was last read, so *Open in your editor* opens there (#1143).
+  const line = useLastRead(at.plane, at.place, path);
+  const touchedBy = at.files.touching?.get(branchKey(branch))?.get(path);
+  // Refused and linked files keep their own marks: what they say is that this row is not an
+  // ordinary file, which matters more than what kind of file it would be.
+  const Mark = refused !== undefined ? FileX : entry.kind === "link" ? FileSymlink : null;
+  const picked = pickOf(at, path, false, refused);
+  const press = usePickingPress(at, picked, () => {
+    if (refused === undefined) at.onOpenFile?.(at.place, path);
+  });
+  return (
+    <TreeRow
+      {...press}
+      {...pickedAs(at, picked)}
+      id={id}
+      textValue={rowSaid(entry.name, touchedBy, entry.marked, false, refused)}
+      className="file-node"
+      data-row={id}
+      data-refused={refused !== undefined || undefined}
+      data-ignored={entry.ignored ? "" : undefined}
+      data-mark={entry.marked?.mark}
+      unavailable={refused !== undefined}
+      tip={refused ?? path}
+      menu={fileMenu({ on: "file", at: pathOn(at, path), kind: entry.kind, refused }, at, line)}
+      carries={carriedBy(at, path, false, refused)}
+      content={
+        <>
+          {Mark === null ? (
+            <FileIcon symbol={iconFor(at.icons, { name: entry.name, folder: false })} />
+          ) : (
+            <Mark className="node-icon" />
+          )}
+          <span className="spot-name">{entry.name}</span> <TouchMark names={touchedBy} />
+          <ChangeBadge marked={entry.marked} folder={false} />
+          {/* Why it does not open, said beside it — an ignored file's too, which is drawn only
+              once the operator asked to see what git ignores. */}
+          {refused !== undefined && <span className="spot-what ui-text-secondary">{refused}</span>}
+        </>
+      }
+    />
+  );
+}
+
+/**
+ * **The folders open in a file tree, as the tree family names them**: each folder row whose
+ * fold is open, whatever it holds yet (a folder still being read holds its "Reading…" line), and
+ * every folder of *Changed only*'s, which is always open.
+ */
+export function openFileRows(rows: readonly Row[]): string[] {
+  return rows.filter((row) => row.fold?.open ?? row.parents).map((row) => row.id);
+}
+
+/**
+ * **A fold the tree family asks for** (→, ←, a twist pressed), handed to `fold` by the row's
+ * fold key: each folder row whose open state `keys` changes.
+ */
+export function foldFileRows(
+  rows: readonly Row[],
+  fold: (key: string, open: boolean) => void,
+): (keys: Set<Key>) => void {
+  return (keys) => {
+    for (const row of rows)
+      if (row.fold !== undefined && keys.has(row.id) !== row.fold.open)
+        fold(row.fold.key, keys.has(row.id));
+  };
 }
 
 /** Whether an entry is a folder that opens onto what it holds: one charter does not refuse. */

@@ -138,7 +138,7 @@ describe("the branch cockpit in the window (FM-5)", () => {
     await waitFor(() => expect(said(asked).at(-1)).toEqual(ONE));
 
     screen
-      .getByRole("tree", { name: "Files of one" })
+      .getByRole("treegrid", { name: "Files of one" })
       .querySelector<HTMLElement>("[data-row]")
       ?.focus();
     await userEvent.keyboard("{Escape}");

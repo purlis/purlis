@@ -261,3 +261,103 @@ describe("a row's look as the cascade draws it", () => {
     expect(drawnWith(one, "color")).toBe("var(--text-quiet)");
   });
 });
+
+describe("a tree whose owner reads, chooses and drags its rows", () => {
+  /** A branch's top: `lib` not read yet, `a.txt` and `b.txt`, and `away` that will not open. */
+  function Owned({ onRun }: { onRun: (key: string) => void }) {
+    const [open, setOpen] = useState<Set<Key>>(new Set());
+    const [chosen, setChosen] = useState<string[]>([]);
+    const file = (id: string, extra: Partial<Parameters<typeof TreeRow>[0]> = {}) => (
+      <TreeRow
+        id={id}
+        textValue={id}
+        content={<RowLabel>{id}</RowLabel>}
+        chosen={chosen.includes(id)}
+        carries={{ "text/plain": id }}
+        onAction={() => onRun(id)}
+        {...extra}
+      />
+    );
+    return (
+      <Tree
+        aria-label="Files of one"
+        draggable
+        choosesMany
+        expandedKeys={open}
+        onExpandedChange={setOpen}
+        onRowKey={(event) => {
+          if (event.key !== "x") return false;
+          const at = (event.target as HTMLElement).getAttribute("aria-label") ?? "";
+          setChosen((was) => [...was, at]);
+          return true;
+        }}
+      >
+        <TreeRow id="lib" textValue="lib" content={<RowLabel>lib</RowLabel>} hasChildItems>
+          {open.has("lib") ? (
+            <TreeLine id="lib-reading" textValue="Reading…">
+              <RowLabel>Reading…</RowLabel>
+            </TreeLine>
+          ) : null}
+        </TreeRow>
+        {file("a.txt")}
+        {file("b.txt")}
+        {file("away", { unavailable: true, carries: undefined, chosen: undefined })}
+      </Tree>
+    );
+  }
+
+  it("says a folder not read yet is closed, and opens it on →, into the owner's rows", async () => {
+    render(<Owned onRun={() => {}} />);
+    expect(row("lib")).toHaveAttribute("aria-expanded", "false");
+    // The row React Aria holds under it is never drawn while it is closed.
+    expect(screen.getAllByRole("row")).toHaveLength(4);
+    await userEvent.tab();
+    await userEvent.keyboard("{ArrowRight}");
+    expect(row("lib")).toHaveAttribute("aria-expanded", "true");
+    await userEvent.keyboard("{ArrowRight}");
+    expect(row("Reading…")).toHaveFocus();
+  });
+
+  it("says a multiselectable tree's chosen rows, and a press on a chosen row still runs it", async () => {
+    const ran: string[] = [];
+    render(<Owned onRun={(key) => ran.push(key)} />);
+    expect(screen.getByRole("treegrid")).toHaveAttribute("aria-multiselectable", "true");
+    expect(row("a.txt")).toHaveAttribute("aria-selected", "false");
+    act(() => row("a.txt").focus());
+    // The owner's key, heard before the tree's.
+    await userEvent.keyboard("x");
+    expect(row("a.txt")).toHaveAttribute("aria-selected", "true");
+    expect(row("a.txt")).toHaveAttribute("data-selected", "true");
+    expect(row("away")).not.toHaveAttribute("aria-selected");
+    await userEvent.click(row("a.txt"));
+    expect(ran).toEqual(["a.txt"]);
+  });
+
+  it("keeps a row that cannot run on the keyboard, and says it cannot", async () => {
+    const ran: string[] = [];
+    render(<Owned onRun={(key) => ran.push(key)} />);
+    expect(row("away")).toHaveAttribute("aria-disabled", "true");
+    expect(row("away")).toHaveAttribute("data-unavailable");
+    await userEvent.tab();
+    await userEvent.keyboard("{End}");
+    expect(row("away")).toHaveFocus();
+  });
+
+  it("drags a row out with what it carries, and draws a drag button only where it carries", () => {
+    render(<Owned onRun={() => {}} />);
+    expect(within(row("a.txt")).getByRole("button", { name: /Drag/ })).toHaveAttribute(
+      "data-part",
+      "drag",
+    );
+    expect(within(row("away")).queryByRole("button")).toBeNull();
+    const set: Record<string, string> = {};
+    const dataTransfer = {
+      items: { add: (value: string, type: string) => (set[type] = value) },
+      clearData: () => {},
+      setDragImage: () => {},
+      effectAllowed: "all",
+    };
+    fireEvent.dragStart(row("b.txt"), { dataTransfer });
+    expect(set["text/plain"]).toBe("b.txt");
+  });
+});

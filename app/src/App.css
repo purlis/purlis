@@ -2846,7 +2846,7 @@ body {
 }
 
 /* What git ignores, shown on request: there, and plainly not the branch's own work. */
-.explorer [data-ignored] > .file-node {
+.explorer .file-node[data-ignored] {
   opacity: 0.55;
 }
 
@@ -2946,26 +2946,26 @@ body {
 }
 
 .explorer .change-mark,
-.explorer [data-mark] > .file-node > .spot-name {
+.explorer .file-node[data-mark] .spot-name {
   color: var(--state-waiting);
 }
 
 .explorer .change-mark[data-mark="added"],
-.explorer [data-mark="added"] > .file-node > .spot-name {
+.explorer .file-node[data-mark="added"] .spot-name {
   color: var(--state-success);
 }
 
 .explorer .change-mark[data-mark="deleted"],
-.explorer [data-mark="deleted"] > .file-node > .spot-name {
+.explorer .file-node[data-mark="deleted"] .spot-name {
   color: var(--danger-base);
 }
 
 .explorer .change-mark[data-mark="renamed"],
-.explorer [data-mark="renamed"] > .file-node > .spot-name {
+.explorer .file-node[data-mark="renamed"] .spot-name {
   color: var(--accent-base);
 }
 
-.explorer [data-mark="deleted"] > .file-node > .spot-name {
+.explorer .file-node[data-mark="deleted"] .spot-name {
   text-decoration: line-through;
 }
 
@@ -3051,8 +3051,8 @@ body {
   border-color: var(--state-unreadable);
 }
 
-.explorer .none,
-.explorer .pending {
+/* A sentence of the region's. A line of a tree of the tree family is laid out as its rows are. */
+.explorer :where(.none, .pending):not([data-part="root"]) {
   display: flex;
   gap: var(--space-3);
   align-items: center;
@@ -3145,7 +3145,16 @@ body {
   gap: var(--space-3);
   align-items: flex-start;
   color: var(--state-failed);
+}
+
+.explorer .trouble:where(:not([data-part="root"])) {
   margin: var(--space-2) 0;
+}
+
+/* A folder that could not be read, a line of the file tree (#2911): its words and its mark in the
+   failed colour, on the line the tree family draws. */
+.explorer .trouble[data-part="root"] :is([role="alert"], .node-icon) {
+  color: var(--state-failed);
 }
 
 /* The mark is on the sentence's first line, not centred on a paragraph that wraps to three. */

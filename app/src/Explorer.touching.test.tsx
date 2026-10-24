@@ -138,8 +138,8 @@ const markOnTheBranch = () =>
   undefined;
 
 async function openSrc() {
-  await userEvent.click(await within(document.body).findByRole("treeitem", { name: /^src/ }));
-  await screen.findByRole("treeitem", { name: /^lib\.rs/ });
+  await userEvent.click(await within(document.body).findByRole("row", { name: /^src/ }));
+  await screen.findByRole("row", { name: /^lib\.rs/ });
 }
 
 describe("the file a chat is touching", () => {
@@ -192,7 +192,7 @@ describe("the file a chat is touching", () => {
   it("marks a folder that is closed, so a touch deep in it still shows", async () => {
     core();
     draw();
-    await screen.findByRole("treeitem", { name: /^src/ });
+    await screen.findByRole("row", { name: /^src/ });
 
     await touch(3, "src/deep/inside/x.rs");
 
@@ -202,7 +202,7 @@ describe("the file a chat is touching", () => {
   it("marks the files in the branch's cockpit", async () => {
     core();
     draw({ workspace: "alpha", repo: "svc", piece: "one" });
-    await screen.findByRole("treeitem", { name: /^README\.md/ });
+    await screen.findByRole("row", { name: /^README\.md/ });
 
     await touch(3, "README.md");
 

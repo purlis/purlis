@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useState, type KeyboardEvent, type MouseEvent } from "react";
+import { useState, type KeyboardEvent } from "react";
 import type { Referenced } from "./references";
 
 /**
@@ -44,9 +44,17 @@ const branchOf = (r: Pickable) => JSON.stringify([r.plane, r.workspace, r.repo, 
 const same = (a: Pickable, b: Pickable) =>
   branchOf(a) === branchOf(b) && a.path === b.path && a.folder === b.folder;
 
+/** The keys held as a row is pressed, and the row. */
+export interface Pressed {
+  shiftKey: boolean;
+  metaKey: boolean;
+  ctrlKey: boolean;
+  target: Element;
+}
+
 /** The pickable rows of the tree `el` is in, in the order they are drawn. */
 function rowsAround(el: Element): { el: Element; r: Pickable }[] {
-  const tree = el.closest('[role="tree"]');
+  const tree = el.closest('[role="treegrid"]');
   if (tree === null) return [];
   return [...tree.querySelectorAll(`[${PICK}]`)].flatMap((one) => {
     const r = readPick(one);
@@ -83,14 +91,14 @@ export function useFilePicks(at: string) {
   const isPicked = (r: Pickable) => picks.some((one) => same(one, r));
 
   /**
-   * A click on a pickable row: true where it picked (Cmd, Ctrl or Shift held), and the row's
-   * own act is not done; false for a plain click, which only marks where a range counts from.
+   * A press on a pickable row: true where it picked (Cmd, Ctrl or Shift held), and the row's
+   * own act is not done; false for a plain press, which only marks where a range counts from.
    */
-  const click = (event: MouseEvent<Element>, r: Pickable | undefined): boolean => {
+  const press = (event: Pressed, r: Pickable | undefined): boolean => {
     if (r === undefined) return event.metaKey || event.ctrlKey || event.shiftKey;
     if (event.shiftKey) {
       const from = anchor !== undefined && branchOf(anchor) === branchOf(r) ? anchor : undefined;
-      setState({ at, picks: range(event.currentTarget, from, r), anchor: from ?? r });
+      setState({ at, picks: range(event.target, from, r), anchor: from ?? r });
       return true;
     }
     if (event.metaKey || event.ctrlKey) {
@@ -142,5 +150,5 @@ export function useFilePicks(at: string) {
 
   const clear = () => setState({ at, picks: [] });
 
-  return { picks, isPicked, click, key, inOrder, clear };
+  return { picks, isPicked, press, key, inOrder, clear };
 }

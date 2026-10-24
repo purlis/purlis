@@ -93,7 +93,7 @@ async function showFilesOf(piece: string): Promise<void> {
   const row = await $(inExplorer(`[data-testid="piece-svc-${piece}"] .spot`));
   await row.waitForExist({ timeout: 20_000 });
   await row.click();
-  await $(inExplorer(`[role="tree"][aria-label^="Files of ${piece}"]`)).waitForExist({
+  await $(inExplorer(`[role="treegrid"][aria-label^="Files of ${piece}"]`)).waitForExist({
     timeout: 20_000,
     timeoutMsg: `Files never showed the files of ${piece}`,
   });
@@ -463,7 +463,7 @@ describe("the explorer", () => {
       writeFileSync(join(branch, "README.md"), readme);
       rmSync(join(branch, "agent-marked.md"), { force: true });
     }
-    await $(inExplorer('li[data-mark] > [data-row="file:svc/fix-login:README.md"]')).waitForExist({
+    await $(inExplorer('[data-row="file:svc/fix-login:README.md"][data-mark]')).waitForExist({
       timeout: 60_000,
       reverse: true,
       timeoutMsg: "README.md is still marked after the agent put it back",
@@ -478,7 +478,7 @@ describe("the explorer", () => {
     // `.claude` holds a file git tracks, is closed, and the branch has changed nothing in it.
     const folder = await explorerRow("fix-login", ".claude");
     await expect(folder).toHaveAttribute("aria-expanded", "false");
-    await $(inExplorer('li[data-mark] > [data-row="file:svc/fix-login:.claude"]')).waitForExist({
+    await $(inExplorer('[data-row="file:svc/fix-login:.claude"][data-mark]')).waitForExist({
       timeout: 20_000,
       reverse: true,
       timeoutMsg: ".claude is marked before anything was written in it",
@@ -608,7 +608,7 @@ describe("the explorer", () => {
 
   it("expands a repo into the repo's own files", async () => {
     await onAlpha();
-    const files = await $('[data-testid="files-tool"] .file-node');
+    const files = await $('.file-node[data-testid="files-tool"]');
     await files.waitForExist({ timeout: 20_000 });
 
     await files.click();
@@ -821,7 +821,7 @@ describe("the explorer", () => {
     await focusWorkspace("Plane root");
     await untilFilesOf("Plane root");
     await $(
-      '[data-testid="explorer"] [role="tree"][aria-label="Files of Plane root"]',
+      '[data-testid="explorer"] [role="treegrid"][aria-label="Files of Plane root"]',
     ).waitForExist({ timeout: 20_000 });
     await expect($('[data-testid="explorer"] [data-testid="files-svc"]')).not.toBeExisting();
 
@@ -906,11 +906,11 @@ describe("the explorer", () => {
     if (chat === null) throw new Error("no chat's row was drawn to measure");
 
     await showView("Explorer");
-    const file = await $('[data-testid="files-tool"] .file-node');
+    const file = await $('.file-node[data-testid="files-tool"]');
     await file.waitForExist({ timeout: 20_000 });
     const fileHeight = await browser.execute(
       () =>
-        document.querySelector('[data-testid="files-tool"] .file-node')?.getBoundingClientRect()
+        document.querySelector('.file-node[data-testid="files-tool"]')?.getBoundingClientRect()
           .height ?? 0,
     );
 
@@ -1065,7 +1065,7 @@ describe("the explorer", () => {
     const files = ["picked-a.md", "picked-b.md"];
     // The Explorer view's *Files*, the one tree whose rows are picked: the Repos view draws no
     // picks, and a modified click there would open the file instead.
-    const PICKING = '[data-testid="explorer"] [role="tree"][aria-multiselectable="true"]';
+    const PICKING = '[data-testid="explorer"] [role="treegrid"][aria-multiselectable="true"]';
     const rows = paneRows;
     // By the number the core gave it, which the dialog's row carries (#1796).
     const chat = await aRawPromptChat(plane);
@@ -1490,7 +1490,7 @@ describe("the explorer's rows, in a region too narrow for them", () => {
    */
   it("draws a folding row's chevron in the middle of the row, closed or open", async () => {
     await onAlpha();
-    const tool = await $('[data-testid="files-tool"] .file-node');
+    const tool = await $('.file-node[data-testid="files-tool"]');
     await tool.waitForExist({ timeout: 20_000 });
     // One repo's own folder open and the other closed, whatever an earlier spec left.
     const wanted: [string, string][] = [
@@ -1498,7 +1498,7 @@ describe("the explorer's rows, in a region too narrow for them", () => {
       ["files-svc", "false"],
     ];
     for (const [testid, expanded] of wanted) {
-      const row = await $(`[data-testid="${testid}"] .file-node`);
+      const row = await $(`.file-node[data-testid="${testid}"]`);
       await row.waitForExist({ timeout: 20_000 });
       if ((await row.getAttribute("aria-expanded")) !== expanded) await row.click();
       await browser.waitUntil(async () => (await row.getAttribute("aria-expanded")) === expanded, {
@@ -1512,10 +1512,13 @@ describe("the explorer's rows, in a region too narrow for them", () => {
     const twists = await browser.execute(() =>
       [
         ...document.querySelectorAll<HTMLElement>(
-          ':is([data-testid="explorer"], [data-testid="repos-view"]) .ui-tree-row',
+          ':is([data-testid="explorer"], [data-testid="repos-view"]) :is(.ui-tree-row, [data-scope="tree"][data-part="root"])',
         ),
       ].flatMap((row) => {
-        const icon = row.querySelector<SVGElement>(":scope > .ui-tree-twist > svg");
+        // The Repos tree's twist (`.ui-tree-twist`), or the tree family's (`[data-part="twist"]`).
+        const icon = row.querySelector<SVGElement>(
+          ':scope > .ui-tree-twist > svg, [data-part="twist"] > svg',
+        );
         const box = row.getBoundingClientRect();
         // A row not drawn (its view is not the one shown) has no box to measure.
         if (icon === null || box.height === 0) return [];
@@ -1594,9 +1597,7 @@ async function explorerRow(
 
 /** Waits until a file's row in a branch's folder in the explorer carries `mark`. */
 async function marked(piece: string, path: string, mark: string): Promise<void> {
-  await $(
-    inExplorer(`li[data-mark="${mark}"] > [data-row="file:svc/${piece}:${path}"]`),
-  ).waitForExist({
+  await $(inExplorer(`[data-row="file:svc/${piece}:${path}"][data-mark="${mark}"]`)).waitForExist({
     // FSEvents gives no bound on when it delivers on a busy Mac (#577), so the wait is long.
     timeout: 60_000,
     timeoutMsg: `the explorer never marked ${path} as ${mark}`,

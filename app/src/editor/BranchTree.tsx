@@ -1,9 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
-import { LoaderCircle } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { useBranchFolders, type BranchFolderRef } from "../branchFolders";
 import { branchKey, type Indexed, type StatusRead } from "../branchStatus";
 import {
@@ -11,20 +9,20 @@ import {
   fileFold,
   fileRow,
   fileTreeRows,
-  FolderEntries,
+  foldFileRows,
   levelOf,
-  treeKey,
+  openFileRows,
+  TopItems,
   type FilesOf,
-  type TreeItem,
 } from "../Explorer";
 import type { Offer } from "../actions";
 import { commands, type OpenChat, type PlaneId } from "../bindings";
 import { useFileIcons } from "../projectTheme";
 import { placeName, type Place } from "../pieceViews";
-import { useTabStop } from "../roving";
 import { useReferenceChats } from "../references";
 import { touchingIn, useTouching, type Touching, type Touches } from "../touching";
 import { ToggleButton } from "../ui/button/Button";
+import { Tree } from "../ui/tree/Tree";
 
 /**
  * **A branch's files as a tree, in its file tab** (FM-2, #1103 F3): the explorer's own file rows
@@ -32,10 +30,10 @@ import { ToggleButton } from "../ui/button/Button";
  * reasons and *Show ignored files* — with the branch's folder as the root rather than a *Files*
  * row under a branch.
  *
- * It is the WAI-ARIA "Tree View" pattern the explorer is: one Tab stop (`roving.ts`), Up, Down,
- * Home and End from the roving focus, Right opening a folder or moving into it, Left closing it
- * or moving to its parent, and type-ahead. Enter or a click on a file picks it, and the file
- * picked is the tree's `aria-selected` row and where the keyboard comes back in.
+ * It is the tree family's (`ui/tree`, #2911), the WAI-ARIA "Tree View" pattern: one Tab stop,
+ * Up, Down, Home and End, Right opening a folder or moving into it, Left closing it or moving
+ * to its parent, and type-ahead. Enter or a click on a file picks it, and the file picked is the
+ * tree's chosen row (`aria-selected`).
  *
  * **The file picked is revealed** (#1137): when the pick comes from outside the tree (a search
  * jump, `fileJump.ts`), the folders above it are opened and its row is scrolled into view once it
@@ -106,25 +104,32 @@ export function BranchTree({
     touching: touching.size === 0 ? undefined : new Map([[branchKey(place), touching]]),
   };
   const rows = fileTreeRows(workspace, top, files);
-  const drawn = rows.filter((row) => row.drawn);
   const pickedRow = picked === undefined ? undefined : fileRow({ ...top, folder: picked });
-  const stop = useTabStop(
-    pickedRow,
-    drawn.map((row) => row.id),
-  );
-  const byId = new Map(rows.map((row) => [row.id, row]));
   const treeRef = useRef<HTMLDivElement>(null);
   /** The reveal last scrolled to, so a redraw does not scroll the tree under the operator. */
   const scrolled = useRef<string>(undefined);
-  const pickedDrawn = pickedRow !== undefined && drawn.some((row) => row.id === pickedRow);
+  const pickedDrawn = pickedRow !== undefined && rows.some((row) => row.id === pickedRow);
   useEffect(() => {
     if (!pickedDrawn || asked === undefined || scrolled.current === asked) return;
-    scrolled.current = asked;
-    // `block: "nearest"` moves the list only when the row is off screen. Optional because jsdom
-    // has no layout, and so no `scrollIntoView`.
-    [...(treeRef.current?.querySelectorAll<HTMLElement>("[data-row]") ?? [])]
-      .find((el) => el.dataset.row === pickedRow)
-      ?.scrollIntoView?.({ block: "nearest" });
+    // The tree family draws a row a moment after it knows of it (React Aria builds its
+    // collection first): looked for until it is drawn, a few frames at most.
+    let tries = 0;
+    let soon = 0;
+    const look = () => {
+      const row = [...(treeRef.current?.querySelectorAll<HTMLElement>("[data-row]") ?? [])].find(
+        (el) => el.dataset.row === pickedRow,
+      );
+      if (row === undefined) {
+        if ((tries += 1) < 20) soon = window.setTimeout(look, 16);
+        return;
+      }
+      scrolled.current = asked;
+      // `block: "nearest"` moves the list only when the row is off screen. Optional because
+      // jsdom has no layout, and so no `scrollIntoView`.
+      row.scrollIntoView?.({ block: "nearest" });
+    };
+    look();
+    return () => window.clearTimeout(soon);
   }, [asked, pickedDrawn, pickedRow]);
 
   const fold = (key: string, open: boolean) =>
@@ -136,73 +141,53 @@ export function BranchTree({
       return now;
     });
 
-  const treeitem = (id: string): TreeItem => {
-    const row = byId.get(id);
-    return {
-      role: "treeitem",
-      "aria-level": row?.level,
-      "aria-posinset": row?.posinset,
-      "aria-setsize": row?.setsize,
-      "aria-expanded": row?.fold?.open,
-      // A file is selectable and says whether it is the one shown; a folder only opens.
-      "aria-selected": row !== undefined && row.fold === undefined ? id === pickedRow : undefined,
-      "data-row": id,
-    };
-  };
-
-  const onKey = (event: KeyboardEvent<HTMLElement>) => {
-    if (event.altKey || event.ctrlKey || event.metaKey) return;
-    const to = treeKey(drawn, (event.target as HTMLElement).dataset.row, event.key);
-    if (to === "not-mine") return;
-    event.preventDefault();
-    if (to === "stay") return;
-    if ("fold" in to) fold(to.fold, to.open);
-    else
-      [...event.currentTarget.querySelectorAll<HTMLElement>("[data-row]")]
-        .find((el) => el.dataset.row === to.focus)
-        ?.focus();
-  };
-
   const level = levelOf(files, top);
   return (
     <div className="explorer piece-files-tree ui-text-body">
-      <RovingFocusGroup.Root asChild orientation="vertical" {...stop}>
-        <div
-          ref={treeRef}
-          className="ui-tree"
-          role="tree"
-          aria-label={`Files of ${placeName(place)}`}
-          data-testid="piece-files-tree"
-          onKeyDown={onKey}
-        >
-          {"pending" in level ? (
-            <p className="pending" aria-busy="true">
-              <LoaderCircle className="node-icon spinning" />
-              Reading…
-            </p>
-          ) : "trouble" in level ? (
-            <p className="trouble" role="alert" data-testid="piece-files-trouble">
-              {level.trouble}
-            </p>
-          ) : (
-            <FolderEntries
-              branch={top}
-              level={level}
-              at={{
-                plane,
-                place,
-                files,
-                fold,
-                treeitem,
-                isDrawn: (id) => byId.get(id)?.drawn ?? false,
-                onOpenFile: (_place, path) => onPick(path),
-                icons,
-                onPress,
-              }}
-            />
-          )}
-        </div>
-      </RovingFocusGroup.Root>
+      <Tree
+        ref={treeRef}
+        aria-label={`Files of ${placeName(place)}`}
+        data-testid="piece-files-tree"
+        size="sm"
+        expandedKeys={openFileRows(rows)}
+        onExpandedChange={foldFileRows(rows, fold)}
+        // **The file shown is the tree's one choice** (FM-2): a press on a file chooses it, the
+        // arrows never do, and the keyboard comes back in on it. A folder is never chosen: a
+        // press on one opens or closes it.
+        selectionMode="single"
+        selectionBehavior="toggle"
+        disallowEmptySelection
+        selectedKeys={pickedRow === undefined ? [] : [pickedRow]}
+        disabledKeys={rows.filter((row) => row.fold !== undefined).map((row) => row.id)}
+        disabledBehavior="selection"
+        onSelectionChange={(keys) => {
+          const key = keys === "all" ? undefined : [...keys][0];
+          const path = key === undefined ? undefined : pathOfRow(top, String(key));
+          if (path !== undefined) onPick(path);
+        }}
+      >
+        {"trouble" in level ? null : (
+          <TopItems
+            top={top}
+            level={level}
+            reading="Reading…"
+            at={{
+              plane,
+              place,
+              files,
+              fold,
+              onOpenFile: (_place, path) => onPick(path),
+              icons,
+              onPress,
+            }}
+          />
+        )}
+      </Tree>
+      {"trouble" in level && (
+        <p className="trouble" role="alert" data-testid="piece-files-trouble">
+          {level.trouble}
+        </p>
+      )}
       <ToggleButton
         size="sm"
         isSelected={showIgnored}
@@ -351,6 +336,12 @@ function openUnder(
   };
   walk(top);
   return out;
+}
+
+/** The path in `top`'s branch a file's row names, or none for a row of another branch. */
+function pathOfRow(top: BranchFolderRef, row: string): string | undefined {
+  const own = fileRow({ ...top, folder: "" });
+  return row.startsWith(`${own}`) && row.length > own.length ? row.slice(own.length) : undefined;
 }
 
 /** The fold keys of the folders above `path` in `top`'s branch, outermost first. */
