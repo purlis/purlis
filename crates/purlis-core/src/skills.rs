@@ -1715,6 +1715,36 @@ fn badge_named(rows: &mut [StudioRow], found: &[(Harness, &[OutsideSkill])], pla
     }
 }
 
+/// **Everything the Skill studio lists for one chat** (SK-34, #3008): the rows of the plane's
+/// and the built-in skills ([`studio_rows`], each badged on the harnesses that find a copy of
+/// it), and each harness with the skills it finds itself ([`harnesses_in_the_studio`], whose
+/// rows [`outside_rows`] draws). What the window and `purlis skill list` both list, so the two
+/// never disagree (spec #2762 decision 26).
+pub struct StudioList {
+    pub rows: Vec<StudioRow>,
+    pub harnesses: Vec<HarnessInTheStudio>,
+}
+
+/// **The studio's list for a chat in the plane at `plane`** (SK-34): at its root or in
+/// `workspace`, as `persona` or on none, with the built-in skills in `built_in` and `env` read
+/// for where each harness keeps its own. Read only.
+pub fn studio_list(
+    built_in: Option<&Path>,
+    plane: &Path,
+    workspace: Option<&str>,
+    persona: Option<&str>,
+    env: &crate::harness_plugin::Env<'_>,
+) -> StudioList {
+    let set = in_the_studio(built_in, plane, workspace, persona);
+    let names = persona
+        .map(|persona| names_of(plane, persona))
+        .unwrap_or_default();
+    let harnesses = harnesses_in_the_studio(&set, plane, workspace, env);
+    let mut rows = studio_rows(&set, plane, &names);
+    with_harness_badges(&mut rows, &harnesses, plane);
+    StudioList { rows, harnesses }
+}
+
 /// What is said of a harness skill a persona names that purlis could not check this machine for
 /// ([`StudioRow::unchecked`]): its plugin is installed, and its skills cannot be listed.
 pub const UNCHECKED: &str =

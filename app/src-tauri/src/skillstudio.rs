@@ -307,7 +307,7 @@ pub struct Studio {
 
 /// The studio of the project at `root`, for a chat at its root (`workspace` `None`) or in
 /// `workspace`, as `persona` or on none, with the built-in skills in `built_in`: nothing while
-/// the flag is off. Its rows are the command line's (`purlis_core::skills::studio_rows`).
+/// the flag is off. Its list is the command line's (`purlis_core::skills::studio_list`).
 pub(crate) fn studio(
     root: &std::path::Path,
     built_in: Option<&std::path::Path>,
@@ -330,23 +330,17 @@ pub(crate) fn studio(
             clashes: Vec::new(),
         };
     }
-    let set = purlis_core::skills::in_the_studio(
-        built_in,
-        root,
-        workspace.as_deref(),
-        persona.as_deref(),
-    );
-    let names = persona
-        .as_deref()
-        .map(|persona| purlis_core::skills::names_of(root, persona))
-        .unwrap_or_default();
     let off = workspace
         .as_deref()
         .map(|ws| purlis_core::skills::turned_off(root, ws))
         .unwrap_or_default();
-    let all = purlis_core::skills::harnesses_in_the_studio(&set, root, workspace.as_deref(), env);
-    let mut rows = purlis_core::skills::studio_rows(&set, root, &names);
-    purlis_core::skills::with_harness_badges(&mut rows, &all, root);
+    let purlis_core::skills::StudioList { rows, harnesses: all } = purlis_core::skills::studio_list(
+        built_in,
+        root,
+        workspace.as_deref(),
+        persona.as_deref(),
+        env,
+    );
     let skills = rows
         .into_iter()
         .map(|row| {
