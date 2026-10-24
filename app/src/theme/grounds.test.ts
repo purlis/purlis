@@ -660,10 +660,7 @@ const CLASSLESS: readonly string[] = [
  * under it; a class inside the `:has(…)` is another element's and is not read as a ground. Each
  * is listed so a new one is looked at.
  */
-const WITHIN: readonly string[] = [
-  ".chats-section li:has(> .ui-row[data-revealed])",
-  '.workspaces-strip .workspace:has([aria-selected="true"])',
-];
+const WITHIN: readonly string[] = [".chats-section li:has(> .ui-row[data-revealed])"];
 
 // --- The tests ------------------------------------------------------------------------------
 

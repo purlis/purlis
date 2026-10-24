@@ -2,29 +2,23 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { StrictMode } from "react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render as renderBare, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, render as renderBare, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
-import { LEAST, leastAt } from "./fits";
-import { DEFAULT_TEXT } from "./textSize";
 import type { Moved, OpenChat } from "./bindings";
+import { chipName, openAllWorkspaces, workspaceChips } from "./test-strips";
 
 /**
- * A show-more button carries the needs-you count of what it hides (ADR 0054, charter-app#392).
+ * **What waits on you in a workspace is never hidden** (ADR 0054, charter-app#392): the
+ * operator's constraint, stated before anything else was settled. The workspace strip's
+ * show-more carried it until the workspaces moved to the title bar (#2916): now each pinned
+ * workspace's chip says what waits in it, and every workspace's row in the ⌄'s popover does,
+ * so a workspace with no chip still says its count where it is listed.
  *
- * **The operator's constraint, stated before anything else was settled: hiding a workspace
- * must never hide a chat that needs you.** A strip that draws only some of its workspaces or
- * projects puts the rest behind its show-more button, so that button is now an attention
- * surface as well as an overflow — and a defect that hides its count hides a chat that is
- * waiting. The record asks for the count to be tested in its own right, not as a side effect
- * of the tab counts, and these are those tests.
- *
- * Against the whole `App`, observed only through what the operator reads: the button's words
- * and the rows of its menu. What the strips measure is stubbed, because jsdom lays nothing
- * out (#149): each strip answers `clientWidth` by its own name, and a strip nobody sized
- * answers zero, which draws everything.
+ * Against the whole `App`, observed only through what the operator reads: a chip's and a row's
+ * names and counts.
  */
 
 vi.mock("./SessionPane", () => ({
@@ -39,34 +33,6 @@ declare global {
   interface Window {
     __TAURI_INTERNALS__: { runCallback: (id: number, payload: unknown) => void };
   }
-}
-
-/**
- * Gives each named strip room for exactly `room[name]` tabs, and every other element none.
- *
- * Read on attach and whenever a strip holds a different number of things (`fits.useRoom`),
- * so a width set before the render is the width the strip fits by. Answers the stub it
- * replaced to `restore`, so one file's widths are not every later file's.
- */
-function roomFor(room: { Workspaces?: number }): { restore: () => void } {
-  const least = {
-    Workspaces: leastAt(LEAST.workspace, DEFAULT_TEXT.window),
-  };
-  const was = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
-  Object.defineProperty(HTMLElement.prototype, "clientWidth", {
-    configurable: true,
-    get(this: HTMLElement) {
-      const name = this.getAttribute("data-strip");
-      if (name !== "Workspaces") return 0;
-      return (room[name] ?? 0) * least[name];
-    },
-  });
-  return {
-    restore: () => {
-      if (was) Object.defineProperty(HTMLElement.prototype, "clientWidth", was);
-      else Reflect.deleteProperty(HTMLElement.prototype, "clientWidth");
-    },
-  };
 }
 
 /** A chat the core says a project has open, with everything not under test left plain. */
@@ -170,34 +136,16 @@ function asking(plane: string, session: number, queue: number[], sequence: numbe
   };
 }
 
-/** The strip's show-more button, by its words. */
-const showMore = (noun: string) =>
-  screen.getByRole("button", { name: new RegExp(`^Show \\d+ ${noun}s? the strip is not showing`) });
-
-/** What the open show-more menu lists, top to bottom, by the name each row carries. */
-const menuRows = (name: string) =>
-  within(screen.getByRole("menu"))
-    .getAllByRole("menuitem")
-    .map((row) => row.querySelector(name)?.textContent);
-
 const PLANE = "/home/dev/plane";
 const at = (workspace: string) => `${PLANE}/workspaces/${workspace}`;
 
-let room: { restore: () => void } | undefined;
-
 afterEach(() => {
-  room?.restore();
-  room = undefined;
   cleanup();
   clearMocks();
 });
 
-describe("the workspace strip's show-more button", () => {
-  beforeEach(() => {
-    room = roomFor({ Workspaces: 1 });
-  });
-
-  /** One project with three workspaces and room to draw one: alpha, in front. */
+describe("what waits in a workspace, in the title bar (#2916)", () => {
+  /** One project with three workspaces, alpha in front and pinned beta. */
   function threeWorkspaces() {
     return core(
       {
@@ -214,30 +162,28 @@ describe("the workspace strip's show-more button", () => {
     );
   }
 
-  it("counts a chat that needs you in a workspace it is hiding", async () => {
+  /** The ⌄'s row for `name`, by its name and what waits in it. */
+  const row = async (name: RegExp) =>
+    within(await openAllWorkspaces()).getByRole("option", { name });
+
+  it("counts a chat that needs you in a workspace with no chip, on its row in the ⌄", async () => {
     const { move } = threeWorkspaces();
     render(<App />);
-    await waitFor(() => expect(showMore("workspace")).toBeInTheDocument());
+    await waitFor(() => expect(workspaceChips().map(chipName)).toEqual(["alpha"]));
 
     move(asking(PLANE, 6, [6], 1));
 
-    expect(
-      await screen.findByRole("button", {
-        name: "Show 2 workspaces the strip is not showing, where 1 chat needs you",
-      }),
-    ).toBeInTheDocument();
+    await waitFor(async () => expect(await row(/^gamma/)).toHaveAccessibleDescription("1 waiting"));
   });
 
   it("drops the count when that chat is ignored", async () => {
-    // The count is read from the same queue as the tabs', so it goes down when they do — and
-    // with nothing hidden needing you, the button says only how many it hides.
+    // The count is read from the same queue as the tabs', so it goes down when they do.
     const { asked, move } = threeWorkspaces();
     render(<App />);
-    await waitFor(() => expect(showMore("workspace")).toBeInTheDocument());
+    await waitFor(() => expect(workspaceChips().map(chipName)).toEqual(["alpha"]));
     move(asking(PLANE, 6, [6], 1));
-    await screen.findByRole("button", {
-      name: "Show 2 workspaces the strip is not showing, where 1 chat needs you",
-    });
+    await waitFor(async () => expect(await row(/^gamma/)).toHaveAccessibleDescription("1 waiting"));
+    await userEvent.keyboard("{Escape}");
 
     // The palette's row: the hand's list that had the ✕ retired into the Inbox (#1695).
     await userEvent.keyboard("{Meta>}k{/Meta}");
@@ -247,67 +193,16 @@ describe("the workspace strip's show-more button", () => {
     // What the core answers an ignore with: the chat still waiting, and a queue without it.
     move(asking(PLANE, 6, [], 2));
 
-    expect(
-      await screen.findByRole("button", { name: "Show 2 workspaces the strip is not showing" }),
-    ).toBeInTheDocument();
+    await waitFor(async () => expect(await row(/^gamma/)).toHaveAccessibleName("gamma"));
   });
 
-  it("opens on Down on its first row and on Up on its last, as a menu's trigger does", async () => {
-    threeWorkspaces();
-    render(<App />);
-    await waitFor(() => expect(showMore("workspace")).toBeInTheDocument());
-    showMore("workspace").focus();
-    await userEvent.keyboard("{ArrowDown}");
-    const rows = within(await screen.findByRole("menu")).getAllByRole("menuitem");
-    await waitFor(() => expect(rows[0]).toHaveFocus());
-    await userEvent.keyboard("{Escape}");
-    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
-    await waitFor(() => expect(showMore("workspace")).toHaveFocus());
-    await userEvent.keyboard("{ArrowUp}");
-    const again = within(await screen.findByRole("menu")).getAllByRole("menuitem");
-    await waitFor(() => expect(again[again.length - 1]).toHaveFocus());
-  });
-
-  it("lists the workspaces that need you first", async () => {
-    // beta comes before gamma on the strip, and gamma is the one asking.
+  it("counts what waits in the workspace in front on its chip", async () => {
     const { move } = threeWorkspaces();
     render(<App />);
-    await waitFor(() => expect(showMore("workspace")).toBeInTheDocument());
-    move(asking(PLANE, 6, [6], 1));
+    await waitFor(() => expect(workspaceChips().map(chipName)).toEqual(["alpha"]));
 
-    await userEvent.click(
-      await screen.findByRole("button", {
-        name: "Show 2 workspaces the strip is not showing, where 1 chat needs you",
-      }),
-    );
+    move(asking(PLANE, 1, [1], 1));
 
-    expect(menuRows(".workspace-name")).toEqual(["gamma", "beta"]);
-  });
-
-  it("lists the rest most recently active first", async () => {
-    // Nothing needs you, and gamma's chat moved last: the menu's own rule (ADR 0039).
-    const { move } = threeWorkspaces();
-    render(<App />);
-    await waitFor(() => expect(showMore("workspace")).toBeInTheDocument());
-    move(asking(PLANE, 6, [], 1));
-
-    await userEvent.click(showMore("workspace"));
-
-    expect(menuRows(".workspace-name")).toEqual(["gamma", "beta"]);
-  });
-
-  it("adds up every hidden workspace's count", async () => {
-    const { move } = threeWorkspaces();
-    render(<App />);
-    await waitFor(() => expect(showMore("workspace")).toBeInTheDocument());
-
-    move(asking(PLANE, 5, [5], 1));
-    move(asking(PLANE, 6, [5, 6], 2));
-
-    expect(
-      await screen.findByRole("button", {
-        name: "Show 2 workspaces the strip is not showing, where 2 chats need you",
-      }),
-    ).toBeInTheDocument();
+    await waitFor(() => expect(workspaceChips()[0]).toHaveAccessibleDescription("1 waiting"));
   });
 });

@@ -1,8 +1,9 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { browser, expect, $, $$ } from "@wdio/globals";
+import { browser, expect, $ } from "@wdio/globals";
 import { untilTheStripLists } from "../reading.js";
+import { goToWorkspace } from "../titleBarWorkspaces.js";
 import { showView } from "../opening.js";
 import { bringSideBack, putSideAway } from "../sides.js";
 import { tooltipOf } from "../tooltips.js";
@@ -39,22 +40,9 @@ async function untilSays(testid: string, want: string | RegExp): Promise<void> {
   }
 }
 
-/** Focuses a workspace from the strip, which is the axis (ADR 0036).
- *
- *  By the tab's own `.workspace-name`: a strip tab carries counts beside its name, and a
- *  `button=<name>` match across the window would pick whichever came first. */
+/** Focuses a workspace from the title bar's ⌄ (#2916), by its row's own name. */
 async function focus(workspace: string): Promise<void> {
-  const tabs = await $$(
-    // Not the plane root's icon tab (SI-1), which has no drawn name to compare.
-    '[data-strip="Workspaces"] [role="tab"]:not(.plane-root)',
-  ).getElements();
-  for (const tab of tabs) {
-    if ((await tab.$(".workspace-name").getText()) === workspace) {
-      await tab.click();
-      return;
-    }
-  }
-  throw new Error(`no ${workspace} on the workspace strip`);
+  await goToWorkspace(workspace);
 }
 
 /**

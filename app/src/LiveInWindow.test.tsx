@@ -7,7 +7,7 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import { SettingsTab } from "./settings/SettingsTab";
-import { findStripNamed } from "./test-strips";
+import { chipName, findTheWorkspaces, goToWorkspace, workspaceChips } from "./test-strips";
 
 /**
  * LIVE and LOCAL, from the window (charter-app#301): a LIVE workspace is marked where it is
@@ -69,22 +69,22 @@ function core() {
   return asked;
 }
 
-describe("LIVE and LOCAL, in the window", () => {
-  it("marks a LIVE workspace's tab and leaves a LOCAL one unmarked", async () => {
-    core();
-    render(<App />);
-    const strip = await findStripNamed("Workspaces");
-    const alpha = await within(strip).findByRole("tab", { name: /alpha/ });
-    const beta = within(strip).getByRole("tab", { name: /beta/ });
-    expect(within(alpha).getByRole("img", { name: "Live" })).toBeTruthy();
-    expect(within(beta).queryByRole("img", { name: "Live" })).toBeNull();
+/** beta's chip in the title bar, once it is drawn. */
+const betaChip = () =>
+  waitFor(() => {
+    const chip = workspaceChips().find((one) => chipName(one) === "beta");
+    if (chip === undefined) throw new Error("no beta chip yet");
+    return chip;
   });
 
+describe("LIVE and LOCAL, in the window", () => {
   it("asks before making a workspace live, from the workspace's own menu", async () => {
     const asked = core();
     render(<App />);
-    const strip = await findStripNamed("Workspaces");
-    fireEvent.contextMenu(await within(strip).findByRole("tab", { name: /beta/ }));
+    // beta in front, so its chip is in the title bar with the workspace's menu (#2916).
+    await findTheWorkspaces();
+    await goToWorkspace("beta");
+    fireEvent.contextMenu(await betaChip());
     const menu = await screen.findByRole("menu");
     await userEvent.click(within(menu).getByRole("menuitem", { name: "Make live…" }));
 
@@ -97,8 +97,10 @@ describe("a switch whose save did not happen", () => {
   it("opens the project's Saving tab from the dialog (NO-8, #1296)", async () => {
     core();
     render(<App />);
-    const strip = await findStripNamed("Workspaces");
-    fireEvent.contextMenu(await within(strip).findByRole("tab", { name: /beta/ }));
+    // beta in front, so its chip is in the title bar with the workspace's menu (#2916).
+    await findTheWorkspaces();
+    await goToWorkspace("beta");
+    fireEvent.contextMenu(await betaChip());
     await userEvent.click(
       within(await screen.findByRole("menu")).getByRole("menuitem", { name: "Make live…" }),
     );

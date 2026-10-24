@@ -8,7 +8,7 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { Curating, Curations } from "./bindings";
-import { stripNamed } from "./test-strips";
+import { stripNamed, workspaceInFront } from "./test-strips";
 
 /**
  * A curation action, chosen in the window, opens a chat (ADR 0061).
@@ -175,11 +175,8 @@ describe("choosing a curation action", () => {
     await runFromThePalette("Curate alpha: Safe remove");
 
     await waitFor(() => expect(tabNames()).toContain("Safe remove · alpha"));
-    expect(
-      within(stripNamed("Workspaces")).getByRole("tab", {
-        name: "Plane root",
-      }),
-    ).toHaveAttribute("aria-selected", "true");
+    // At the plane root, so no workspace's chip is current (#2916).
+    expect(workspaceInFront()).toBeUndefined();
   });
 
   it("says the core's refusal and opens no tab", async () => {

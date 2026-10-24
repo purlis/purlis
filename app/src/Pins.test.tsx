@@ -7,7 +7,13 @@ import { cleanup, render as renderBare, screen, waitFor, within } from "@testing
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
-import { stripNamed } from "./test-strips";
+import {
+  chipName,
+  goToWorkspace,
+  stripNamed,
+  workspaceChips,
+  workspacesListed,
+} from "./test-strips";
 import { forgetInboxOpen, inboxOpenAtLaunch } from "./test-inbox";
 
 /**
@@ -179,12 +185,12 @@ const namesIn = (name: string, inside: string) =>
     .filter((tab) => !tab.classList.contains("plane-root"))
     .map((tab) => tab.querySelector(inside)?.textContent);
 const chatNames = () => namesIn("Tabs", ".tab-name");
-const workspaceNames = () => namesIn("Workspaces", ".workspace-name");
-/** What the open show-more menu lists, top to bottom. */
-const menuNames = () =>
-  within(screen.getByRole("menu"))
-    .getAllByRole("menuitem")
-    .map((row) => row.querySelector(".workspace-name")?.textContent);
+/** The title bar's chips (#2916): the pins in their order, then the one in front when it is not
+ *  pinned. */
+const workspaceNames = () => workspaceChips().map(chipName);
+/** How many of the chips are pins rather than the dashed chip of the one in front. */
+const pinChips = () =>
+  workspaceChips().filter((chip) => chip.getAttribute("data-variant") === "pinned").length;
 const pinned = () => screen.queryAllByRole("img", { name: /^pinned / }).map((one) => one.ariaLabel);
 const asked = (asks: Asked[], cmd: string) => asks.filter((one) => one.cmd === cmd);
 
@@ -263,14 +269,14 @@ describe("a pinned chat", () => {
 });
 
 describe("a pinned workspace", () => {
-  it("is drawn first on the workspace strip, in the order it was pinned in", async () => {
+  it("is drawn first in the title bar, in the order it was pinned in", async () => {
     core([chat(1, "one", "alpha")], { project: false, workspaces: ["gamma", "beta"], missing: [] });
     render(<App />);
 
-    // `gamma` before `beta` although the plane lists them the other way round: the strip
-    // draws pins in the order they were pinned in (ADR 0054, charter#402).
+    // `gamma` before `beta` although the plane lists them the other way round: the title bar
+    // draws pins in the order they were pinned in (ADR 0054, charter#402, R110).
     await vi.waitFor(() => expect(workspaceNames()).toEqual(["gamma", "beta", "alpha"]));
-    expect(pinned().filter((one) => one === "pinned workspace")).toHaveLength(2);
+    expect(pinChips()).toBe(2);
   });
 
   it("pinned after the others is drawn after them", async () => {
@@ -494,21 +500,16 @@ describe("a pinned workspace", () => {
   });
 });
 
-describe("the workspace strip", () => {
-  // ADR 0054: the strip draws the pinned workspaces and the one you are in, and nothing else.
-  // Nobody has measured the strip here (jsdom lays nothing out), which draws everything that
-  // is ON the strip — so what is missing below is missing because it is not pinned, never
-  // because there was no room for it.
+describe("the title bar's pins (#2916)", () => {
+  // ADR 0054 as amended 2026-10-24: the chips are the pins and the one you are in, and every
+  // workspace is in the ⌄'s popover.
 
-  it("puts an unpinned workspace you are not in behind show-more", async () => {
+  it("lists an unpinned workspace you are not in in the ⌄, and draws no chip for it", async () => {
     core([chat(1, "one", "alpha")]);
     render(<App />);
 
     await waitFor(() => expect(workspaceNames()).toEqual(["alpha"]));
-    await userEvent.click(
-      screen.getByRole("button", { name: "Show 2 workspaces the strip is not showing" }),
-    );
-    expect(menuNames()).toEqual(["beta", "gamma"]);
+    expect(await workspacesListed()).toEqual(["Plane root", "alpha", "beta", "gamma"]);
   });
 
   it("draws the workspace you are in after the pins, and lets it go when you leave", async () => {
@@ -516,35 +517,25 @@ describe("the workspace strip", () => {
     render(<App />);
     await waitFor(() => expect(workspaceNames()).toEqual(["beta", "alpha"]));
 
-    await userEvent.click(
-      screen.getByRole("button", { name: "Show 1 workspace the strip is not showing" }),
-    );
-    await userEvent.click(screen.getByRole("menuitem", { name: /gamma/ }));
+    await goToWorkspace("gamma");
 
     await waitFor(() => expect(workspaceNames()).toEqual(["beta", "gamma"]));
-    await userEvent.click(
-      screen.getByRole("button", { name: "Show 1 workspace the strip is not showing" }),
-    );
-    expect(menuNames()).toEqual(["alpha"]);
   });
 
-  it("pins a workspace made from the window, so it is on the strip", async () => {
+  it("pins a workspace made from the window, so it is a chip", async () => {
     // You just made it in order to work in it (ADR 0054). The chat in front keeps you in
-    // alpha, so the new workspace is on the strip only because it is pinned.
+    // alpha, so the new workspace is a chip only because it is pinned.
     core([chat(1, "one", "alpha")]);
     render(<App />);
     await waitFor(() => expect(workspaceNames()).toEqual(["alpha"]));
 
-    const row = strip("Workspaces").parentElement as HTMLElement;
-    await userEvent.click(within(row).getByRole("button", { name: "New workspace…" }));
-    const dialog = await screen.findByRole("dialog");
+    await goToWorkspace("New workspace…");
+    const dialog = await screen.findByRole("dialog", { name: /workspace/i });
     await userEvent.type(within(dialog).getByLabelText("Name"), "delta");
     await userEvent.click(within(dialog).getByRole("button", { name: "Create workspace" }));
 
     await waitFor(() => expect(workspaceNames()).toEqual(["delta", "alpha"]));
-    expect(
-      within(strip("Workspaces")).getByRole("img", { name: "pinned workspace" }),
-    ).toBeInTheDocument();
+    expect(pinChips()).toBe(1);
   });
 });
 

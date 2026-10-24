@@ -24,6 +24,7 @@ import {
   queryStripNamed,
   stripNamed,
   closeFromTheRail,
+  goToWorkspace,
 } from "./test-strips";
 import { DEFAULT_THEME, drawIn, inForce, onDrawn, type Theme } from "./theme/theme";
 import { KEPT_DRAWN } from "./projectShown";
@@ -1048,10 +1049,9 @@ describe("a project that is not in front stays drawn, off the window", () => {
     const { secondLaunch, planes } = holding(2);
     render(<App />);
     await waitFor(() => expect(chatTabs()).toEqual(["p0.1"]));
-    fireEvent.click(
-      within(stripNamed("Workspaces")).getByRole("button", { name: "New workspace…" }),
-    );
-    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    // New workspace…, the last row of the title bar's ⌄ (#2916).
+    await goToWorkspace("New workspace…");
+    expect(await screen.findByRole("dialog", { name: /workspace/i })).toBeInTheDocument();
 
     // By a way that needs no press under the dialog: a second launch naming the other project.
     act(() => secondLaunch(planes[1]));

@@ -9,7 +9,14 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import { forgetThisLaunch } from "./regions";
 import type { Moved, OpenChat } from "./bindings";
-import { stripNamed } from "./test-strips";
+import {
+  goToWorkspace,
+  openAllWorkspaces,
+  rowSays,
+  stripNamed,
+  workspaceInFront,
+  workspacesListed,
+} from "./test-strips";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
@@ -177,19 +184,11 @@ function core(opened: ReturnType<typeof chat>[] = [], waiting: number[] = []) {
   };
 }
 
-/** What a workspace tab is called: its drawn name, or — the plane root's tab, which draws
- *  only an icon — what it says to a screen reader. */
-const called = (tab: HTMLElement) =>
-  tab.querySelector(".workspace-name")?.textContent ?? tab.getAttribute("aria-label");
+/** The workspaces, as the title bar's ⌄ lists them (#2916): the plane root first. */
+const strip = () => workspacesListed();
 
-/** The workspaces, as the strip lists them. */
-const strip = () => within(stripNamed("Workspaces")).getAllByRole("tab").map(called);
-
-const focused = () =>
-  within(stripNamed("Workspaces"))
-    .getAllByRole("tab")
-    .filter((tab) => tab.getAttribute("aria-selected") === "true")
-    .map(called);
+/** The workspace in front, as the title bar's chips say it; the plane root's, by its name. */
+const focused = () => [workspaceInFront() ?? "Plane root"];
 
 /** The chats, as the strip under the workspaces lists them. */
 const chatTabs = () =>
@@ -205,13 +204,9 @@ async function openAChat() {
   await userEvent.click(await screen.findByRole("button", { name: "Start" }));
 }
 
-/** Focuses a workspace from the strip, which is the axis. */
+/** Focuses a workspace from the title bar's ⌄ (#2916), which is the axis. */
 async function focus(workspace: string) {
-  const tab = within(stripNamed("Workspaces"))
-    .getAllByRole("tab")
-    .find((one) => called(one) === workspace);
-  if (!tab) throw new Error(`no ${workspace} on the strip; it lists ${strip().join(", ")}`);
-  await userEvent.click(tab);
+  await goToWorkspace(workspace);
 }
 
 describe("the workspace strip", () => {
@@ -219,7 +214,7 @@ describe("the workspace strip", () => {
     core();
     render(<App />);
 
-    await vi.waitFor(() => expect(strip()).toEqual(["Plane root", "alpha", "beta"]));
+    expect(await strip()).toEqual(["Plane root", "alpha", "beta"]);
     expect(focused()).toEqual(["alpha"]);
   });
 
@@ -230,24 +225,13 @@ describe("the workspace strip", () => {
    * redrawing on every chat move, so for a strip read once there is no next render, and the
    * inline rule hid the stylesheet's own transition (`motion.e2e.ts`).
    */
-  it("leaves a resting workspace tab's transition to the stylesheet", async () => {
-    core();
-    render(<App />);
-
-    await vi.waitFor(() => expect(strip()).toEqual(["Plane root", "alpha", "beta"]));
-    await waitFor(() => {
-      for (const tab of within(stripNamed("Workspaces")).getAllByRole("tab"))
-        expect(tab.style.transition).toBe("");
-    });
-  });
-
   it("starts a chat in the focused workspace, and shows it there at once", async () => {
     // The plane is read fresh a tick later; until it answers, charter still knows where it
     // put the chat, because it chose the directory. A tab missing from the strip the
     // operator is looking at, even for a frame, is the tab going missing.
     const { asked } = core();
     render(<App />);
-    await vi.waitFor(() => expect(strip()).toEqual(["Plane root", "alpha", "beta"]));
+    expect(await strip()).toEqual(["Plane root", "alpha", "beta"]);
 
     await openAChat();
 
@@ -258,7 +242,7 @@ describe("the workspace strip", () => {
   it("shows the focused workspace's chats and no others", async () => {
     core();
     render(<App />);
-    await vi.waitFor(() => expect(strip()).toEqual(["Plane root", "alpha", "beta"]));
+    expect(await strip()).toEqual(["Plane root", "alpha", "beta"]);
     await openAChat();
     await focus("beta");
     await openAChat();
@@ -277,7 +261,7 @@ describe("the workspace strip", () => {
     // never a teardown. Fifty chats in `alpha` must survive a glance at `beta`.
     const { asked } = core();
     render(<App />);
-    await vi.waitFor(() => expect(strip()).toEqual(["Plane root", "alpha", "beta"]));
+    expect(await strip()).toEqual(["Plane root", "alpha", "beta"]);
     await openAChat();
 
     await focus("beta");
@@ -291,7 +275,7 @@ describe("the workspace strip", () => {
     // the window never waits for it — so the strip has moved before anything answers.
     const { asked } = core();
     render(<App />);
-    await waitFor(() => expect(strip()).toEqual(["Plane root", "alpha", "beta"]));
+    expect(await strip()).toEqual(["Plane root", "alpha", "beta"]);
 
     await focus("beta");
 
@@ -306,7 +290,7 @@ describe("the workspace strip", () => {
   it("says a workspace has no chats rather than leaving another workspace's on screen", async () => {
     core();
     render(<App />);
-    await vi.waitFor(() => expect(strip()).toEqual(["Plane root", "alpha", "beta"]));
+    expect(await strip()).toEqual(["Plane root", "alpha", "beta"]);
     await openAChat();
 
     await focus("beta");
@@ -318,7 +302,7 @@ describe("the workspace strip", () => {
   it("comes back to the chat that was in front on that strip", async () => {
     core();
     render(<App />);
-    await vi.waitFor(() => expect(strip()).toEqual(["Plane root", "alpha", "beta"]));
+    expect(await strip()).toEqual(["Plane root", "alpha", "beta"]);
     await openAChat();
     await openAChat();
     // The second chat is in front in `alpha`. Go away, and come back.
@@ -334,7 +318,7 @@ describe("the workspace strip", () => {
     // pane whose tab it says is not there.
     core();
     render(<App />);
-    await vi.waitFor(() => expect(strip()).toEqual(["Plane root", "alpha", "beta"]));
+    expect(await strip()).toEqual(["Plane root", "alpha", "beta"]);
     await openAChat();
     await focus("beta");
     await openAChat();
@@ -354,7 +338,7 @@ describe("the workspace strip", () => {
     core([chat(9, "stray", "/tmp/elsewhere", { in_front: true })]);
     render(<App />);
 
-    await vi.waitFor(() => expect(strip()).toEqual(["Plane root", "alpha", "beta"]));
+    expect(await strip()).toEqual(["Plane root", "alpha", "beta"]);
     // And the window opens on it, because that is where the chat in front is.
     expect(focused()).toEqual(["Plane root"]);
     expect(chatTabs()).toEqual(["steward stray"]);
@@ -370,36 +354,22 @@ describe("the workspace strip", () => {
     expect(chatTabs()).toEqual(["steward 5"]);
   });
 
-  it("says how many chats are in a workspace that is not on screen", async () => {
-    core([chat(5, "5", BETA), chat(6, "6", BETA)]);
-    render(<App />);
-    await vi.waitFor(() => expect(strip()).toEqual(["Plane root", "alpha", "beta"]));
-
-    const beta = within(stripNamed("Workspaces"))
-      .getAllByRole("tab")
-      .find((tab) => tab.querySelector(".workspace-name")?.textContent === "beta");
-
-    expect(beta?.querySelector(".count-pill-chats")?.textContent).toBe("2");
-  });
-
-  it("says on a workspace tab that a chat over there is asking for you", async () => {
-    // The hole scoping the chats opens, and the one thing that must not be lost. It is the
-    // same mark a project tab carries one scope up, for the same reason: a chat waiting on
-    // the operator behind a strip nobody is looking at is a chat they never come back to.
+  it("says on a workspace's row that a chat over there is asking for you", async () => {
+    // The hole scoping the chats opens, and the one thing that must not be lost: a chat waiting
+    // on the operator in a workspace nobody is looking at. Its row in the title bar's ⌄ says it
+    // (#2916, R96), and the row of a workspace where nothing waits says nothing.
     core([chat(5, "5", BETA)], [5]);
     render(<App />);
-    await vi.waitFor(() => expect(strip()).toEqual(["Plane root", "alpha", "beta"]));
+    expect(await strip()).toEqual(["Plane root", "alpha", "beta"]);
 
-    const tabs = within(stripNamed("Workspaces")).getAllByRole("tab");
-    const beta = tabs.find((tab) => tab.querySelector(".workspace-name")?.textContent === "beta");
-    const alpha = tabs.find((tab) => tab.querySelector(".workspace-name")?.textContent === "alpha");
-
-    await vi.waitFor(() => expect(beta?.querySelector(".count-pill-needs")?.textContent).toBe("1"));
-    // One pill, with one name for both of its counts.
-    expect(within(beta as HTMLElement).getByLabelText("1 chat, 1 needs you")).toBeTruthy();
-    // And not on a workspace where nothing is waiting: a mark on everything is a mark on
-    // nothing.
-    expect(alpha?.querySelector(".count-pill-needs")).toBeNull();
+    await vi.waitFor(async () =>
+      expect(
+        within(await openAllWorkspaces()).getByRole("option", { name: /^beta/ }),
+      ).toHaveAccessibleDescription("1 waiting"),
+    );
+    expect(
+      within(await openAllWorkspaces()).getByRole("option", { name: /^alpha/ }),
+    ).toHaveAccessibleName("alpha");
   });
 
   it("goes to a chat in another workspace from the Inbox the hand opens, and its workspace with it (charter-app#249, #1695)", async () => {
@@ -450,17 +420,14 @@ describe("the workspace strip", () => {
     expect(asking).not.toHaveAttribute("data-tone");
   });
 
-  it("takes the count off a workspace tab when its chat is ignored (charter-app#248)", async () => {
+  it("takes the count off a workspace's row when its chat is ignored (charter-app#248)", async () => {
     registry = [5];
     const { asked, move } = core([chat(5, "5", BETA)], [5]);
     render(<App />);
-    await waitFor(() => expect(strip()).toEqual(["Plane root", "alpha", "beta"]));
-    const needs = () =>
-      within(stripNamed("Workspaces"))
-        .getAllByRole("tab")
-        .find((tab) => tab.querySelector(".workspace-name")?.textContent === "beta")
-        ?.querySelector(".count-pill-needs")?.textContent;
-    await waitFor(() => expect(needs()).toBe("1"));
+    expect(await strip()).toEqual(["Plane root", "alpha", "beta"]);
+    // beta's row in the title bar's ⌄ says what waits there (#2916).
+    const needs = () => rowSays("beta");
+    await waitFor(async () => expect(await needs()).toBe("beta, 1 waiting"));
 
     await userEvent.click(await screen.findByRole("button", { name: "1 thing waits on you" }));
     const inbox = await screen.findByRole("tabpanel", { name: "Inbox" });
@@ -480,7 +447,7 @@ describe("the workspace strip", () => {
       children: [],
     });
 
-    await waitFor(() => expect(needs()).toBeUndefined());
+    await waitFor(async () => expect(await needs()).toBe("beta"));
   });
 });
 
@@ -488,7 +455,7 @@ describe("the chat strip at fifty chats (charter-app#130)", () => {
   it("names a tab by the persona its chat adopted, not by a number alone", async () => {
     core();
     render(<App />);
-    await vi.waitFor(() => expect(strip()).toEqual(["Plane root", "alpha", "beta"]));
+    expect(await strip()).toEqual(["Plane root", "alpha", "beta"]);
 
     await openAChat();
 
@@ -501,7 +468,7 @@ describe("the chat strip at fifty chats (charter-app#130)", () => {
     // undo an operator tidying up was ending fifty live harnesses.
     core();
     render(<App />);
-    await vi.waitFor(() => expect(strip()).toEqual(["Plane root", "alpha", "beta"]));
+    expect(await strip()).toEqual(["Plane root", "alpha", "beta"]);
     await openAChat();
 
     const closer = screen.getByRole("button", { name: "End chat steward 1" });
@@ -527,7 +494,7 @@ describe("the chat strip at fifty chats (charter-app#130)", () => {
     try {
       core();
       render(<App />);
-      await vi.waitFor(() => expect(strip()).toEqual(["Plane root", "alpha", "beta"]));
+      expect(await strip()).toEqual(["Plane root", "alpha", "beta"]);
 
       await openAChat();
 
@@ -535,7 +502,10 @@ describe("the chat strip at fifty chats (charter-app#130)", () => {
         selected: true,
       });
       expect(front).toBeInTheDocument();
-      expect(into).not.toHaveBeenCalled();
+      // Nothing on the chat strip was scrolled to. (The title bar's ⌄ keeps its chosen row in
+      // sight, which is a list's and not a strip's.)
+      const scrolled = into.mock.contexts as Element[];
+      expect(scrolled.filter((one) => one.closest('[data-strip="Tabs"]') !== null)).toEqual([]);
     } finally {
       Reflect.deleteProperty(Element.prototype, "scrollIntoView");
     }
@@ -617,7 +587,7 @@ describe("the strip that is drawn", () => {
   it("follows the chat in front when the plane refiles it under another workspace", async () => {
     const plane = movingPlane([chat(1, "one", DEEP, { in_front: true }), chat(2, "two", ALPHA)]);
     render(<App />);
-    await vi.waitFor(() => expect(strip()).toEqual(["Plane root", "alpha", "beta"]));
+    expect(await strip()).toEqual(["Plane root", "alpha", "beta"]);
     expect(focused()).toEqual(["alpha"]);
     expect(chatTabs()).toEqual(["steward one", "steward two"]);
 
@@ -633,7 +603,10 @@ describe("the strip that is drawn", () => {
       ),
     );
 
-    await vi.waitFor(() => expect(strip()).toEqual(["Plane root", "alpha", "beta", "gamma"]));
+    await vi.waitFor(
+      async () => expect(await strip()).toEqual(["Plane root", "alpha", "beta", "gamma"]),
+      { timeout: 5000 },
+    );
     // The pane on screen is chat one's, so the strip drawn has to be chat one's too.
     expect(panes()).toEqual(["session 1"]);
     expect(focused()).toEqual(["gamma"]);
@@ -641,51 +614,34 @@ describe("the strip that is drawn", () => {
   });
 });
 
-describe("the plane root's tab (SI-1)", () => {
-  /** The root tab itself. */
-  const rootTab = () =>
-    within(stripNamed("Workspaces")).getByRole("tab", {
-      name: "Plane root",
-    });
-
-  it("is always the strip's first tab, with no chat anywhere near it", async () => {
+describe("the plane root (SI-1)", () => {
+  it("is always the ⌄'s first row, with no chat anywhere near it", async () => {
     core();
     render(<App />);
 
-    await vi.waitFor(() => expect(strip()).toEqual(["Plane root", "alpha", "beta"]));
+    expect(await strip()).toEqual(["Plane root", "alpha", "beta"]);
     // The launch still lands on the first workspace, as it did before there was a root tab.
     expect(focused()).toEqual(["alpha"]);
   });
 
-  it("draws an icon and no name, and says what it is in its tooltip", async () => {
+  it("is a house and its name in the ⌄, and never a chip", async () => {
     core();
     render(<App />);
-
-    const tab = await waitFor(rootTab);
-    expect(tab.querySelector(".workspace-name")).toBeNull();
-    expect(tab.querySelector("svg")).not.toBeNull();
-    // Its name, then what chats there start in.
-    expect(tipOf(tab)).toBe("Plane rootProject — chats here start at the project root");
-  });
-
-  it("cannot be dragged: it carries none of a sortable tab's instructions", async () => {
-    core();
-    render(<App />);
-
-    const tab = await waitFor(rootTab);
-    expect(tab.getAttribute("aria-describedby")).toBeNull();
-    const alpha = within(stripNamed("Workspaces"))
-      .getAllByRole("tab")
-      .find((one) => called(one) === "alpha");
-    expect(alpha?.getAttribute("aria-describedby")).not.toBeNull();
+    const list = await openAllWorkspaces();
+    const root = await within(list).findByRole("option", { name: "Plane root" });
+    expect(root.querySelector("svg")).not.toBeNull();
+    await userEvent.click(root);
+    await waitFor(() => expect(focused()).toEqual(["Plane root"]));
+    // No chip is current at the root: it is not a workspace, and it is never a pin.
+    expect(workspaceInFront()).toBeUndefined();
   });
 
   it("starts a new chat at the plane root once it is focused", async () => {
     const { asked } = core();
     render(<App />);
-    await vi.waitFor(() => expect(strip()).toEqual(["Plane root", "alpha", "beta"]));
+    expect(await strip()).toEqual(["Plane root", "alpha", "beta"]);
 
-    await userEvent.click(rootTab());
+    await focus("Plane root");
     await waitFor(() => expect(focused()).toEqual(["Plane root"]));
     await openAChat();
 
@@ -697,9 +653,9 @@ describe("the plane root's tab (SI-1)", () => {
   it("says the Todos box is a workspace's, and offers none, while it is focused", async () => {
     core();
     render(<App />);
-    await vi.waitFor(() => expect(strip()).toEqual(["Plane root", "alpha", "beta"]));
+    expect(await strip()).toEqual(["Plane root", "alpha", "beta"]);
 
-    await userEvent.click(rootTab());
+    await focus("Plane root");
 
     const panels = await screen.findByRole("tabpanel", { name: "Memory" });
     await waitFor(() =>
