@@ -11,31 +11,68 @@ import type { StudioScope } from "./skillStudio";
  */
 
 /** The project's shared skills. */
-export const PROJECT: SkillLevel = { workspace: null, local: false };
+export const PROJECT: SkillLevel = { at: "project", local: false };
 
 /** The level a row of the studio is at, or `null` for one the studio's changes do not move. A
- *  workspace's row is the workspace the studio shows. */
-export function levelOf(skill: StudioSkill, workspace: string | null): SkillLevel | null {
+ *  workspace's row is the workspace the studio shows, and a persona's row the persona it shows
+ *  (SK-32, #3003). */
+export function levelOf(skill: StudioSkill, scope: StudioScope): SkillLevel | null {
   switch (skill.level) {
     case "project":
-      return { workspace: null, local: skill.local };
+      return { at: "project", local: skill.local };
     case "workspace":
-      return workspace === null ? null : { workspace, local: skill.local };
+      return scope.at === "workspace"
+        ? { at: "workspace", name: scope.name, local: skill.local }
+        : null;
+    case "persona":
+      return scope.at === "persona"
+        ? { at: "persona", name: scope.name, local: skill.local }
+        : null;
     default:
-      // A built-in skill is never changed, and a persona's skill (SK-5) is its own persona's.
+      // A built-in, harness or repo skill is never changed here.
       return null;
   }
 }
 
 /** **The level a new skill lands at: where the person came from** (decision 37): the workspace
- *  the studio shows, or the project's skills at its root. */
-export function levelFrom(scope: StudioScope): SkillLevel {
-  return scope.at === "workspace" ? { workspace: scope.name, local: false } : PROJECT;
+ *  or the persona the studio shows, or the project's skills at its root. A persona the project
+ *  lists no level for (one made as one file keeps no skills) starts at the project's. */
+export function levelFrom(scope: StudioScope, levels: readonly StudioLevel[]): SkillLevel {
+  const from: SkillLevel =
+    scope.at === "root"
+      ? PROJECT
+      : scope.at === "workspace"
+        ? { at: "workspace", name: scope.name, local: false }
+        : { at: "persona", name: scope.name, local: false };
+  const listed = from.at !== "persona" || levels.some((one) => sameLevel(one.level, from));
+  return listed ? from : PROJECT;
+}
+
+/** **The levels the studio offers from `scope`** (SK-32): the project's, each workspace's, and
+ *  the persona's it shows. Another persona's skills are changed from that persona's studio. */
+export function levelsFor(levels: readonly StudioLevel[], scope: StudioScope): StudioLevel[] {
+  return levels.filter(
+    (one) =>
+      one.level.at !== "persona" || (scope.at === "persona" && one.level.name === scope.name),
+  );
 }
 
 /** Whether two levels are one. */
 export function sameLevel(a: SkillLevel, b: SkillLevel): boolean {
-  return a.workspace === b.workspace && a.local === b.local;
+  if (a.at !== b.at || a.local !== b.local) return false;
+  if (a.at === "project" || b.at === "project") return true;
+  return a.name === b.name;
+}
+
+/** A level's key among the studio's drop targets: `project`, `ops-local`, `persona-reviewer`. */
+export function levelKey(level: SkillLevel): string {
+  const at =
+    level.at === "project"
+      ? "project"
+      : level.at === "workspace"
+        ? level.name
+        : `persona-${level.name}`;
+  return `${at}${level.local ? "-local" : ""}`;
 }
 
 /** A level's words, as the core gives them in `levels`. */

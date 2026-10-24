@@ -652,7 +652,7 @@ fn share_moves_a_local_project_skill_and_its_grant_into_the_shared_folder() {
     )
     .unwrap();
 
-    let moved = share(&plane.root, None, "scratch").unwrap();
+    let moved = share(&plane.root, &Whose::Project, "scratch").unwrap();
 
     assert_eq!(moved, plane.project().join("scratch-folder"));
     assert!(moved.join("SKILL.md").is_file());
@@ -677,7 +677,7 @@ fn share_moves_a_local_workspace_skill_into_that_workspaces_skills() {
         &whole("notes"),
     );
 
-    let moved = share(&plane.root, Some("smart-ide"), "notes").unwrap();
+    let moved = share(&plane.root, &Whose::Workspace("smart-ide".into()), "notes").unwrap();
 
     assert_eq!(moved, plane.workspace("smart-ide").join("notes"));
     assert_eq!(
@@ -692,7 +692,7 @@ fn share_refuses_when_the_shared_folder_is_taken_and_moves_nothing() {
     skill(&plane.project_local(), "deploy", &whole("deploy"));
     skill(&plane.project(), "deploy", &whole("deploy"));
 
-    let refused = share(&plane.root, None, "deploy").unwrap_err();
+    let refused = share(&plane.root, &Whose::Project, "deploy").unwrap_err();
 
     assert_eq!(
         refused,
@@ -708,11 +708,11 @@ fn share_of_a_name_no_local_skill_has_says_so() {
     skill(&plane.project(), "deploy", &whole("deploy"));
 
     assert_eq!(
-        share(&plane.root, None, "deploy").unwrap_err(),
+        share(&plane.root, &Whose::Project, "deploy").unwrap_err(),
         "no local skill is named \"deploy\" at the project's root"
     );
     assert_eq!(
-        share(&plane.root, Some("smart-ide"), "deploy").unwrap_err(),
+        share(&plane.root, &Whose::Workspace("smart-ide".into()), "deploy").unwrap_err(),
         "no local skill is named \"deploy\" in workspace smart-ide"
     );
 }

@@ -1553,7 +1553,14 @@ whole file in one sentence, and nothing installed changes.
   On a same-name tie the narrowest copy wins: persona over workspace over project, and local
   over shared at one level. The copy left out says which copy hid it, and the studio lists both.
 - **Tier:** Plane when LIVE, Clone state when LOCAL — a workspace's, as its other files are; a persona's is committed with the persona, in the Plane tier
-- **Written by:** the person, Share (as at the plane root), and the Skill studio from #2770.
+- **Written by:** the person, Share (as at the plane root), and the Skill studio's and `purlis
+  skill`'s new, edit, rename, move, delete and restore, at a workspace's level from #2770 and at a
+  persona's from #3003 (`-p <persona>`), each one commit as at the plane root. Only a persona with
+  a folder of its own has a level: one made as one `personas/<name>.md` file is refused. A move of
+  a persona's own skill into the project's `skills/` also adds its name to that persona's
+  `skills:` list, which brings it into every workspace, and a move into a persona's `skills/`
+  takes its name out of that persona's list; that persona definition is in the move's commit. A
+  chat's write to a persona's skill becomes a [draft skill](#skill-draftsid) (#3048).
 - **Read by:** `purlis_skills::skill_set`: a workspace's `skills/` and `skills.local/`, for a
   chat in that workspace and for the studio filtered to it. Its `skills.local/` is read under
   the same git rule as the plane root's. A persona's `skills/` and `skills.local/`, for every
@@ -6983,7 +6990,7 @@ rewritten.
   track (a local skill, or one in a workspace that is not LIVE), or a committed one in a project
   that could not commit it then (no save mode yet, saving off, or something else staged). It
   holds the skill's folder as it was, the `<folder>.toml` beside it where there was one, and `from`: one line naming the level it came from, relative to the
-  plane (`skills.local`, `workspaces/ops/skills`). `<stamp>` is when it was deleted, in
+  plane (`skills.local`, `workspaces/ops/skills`, `personas/reviewer/skills.local`). `<stamp>` is when it was deleted, in
   milliseconds since the epoch. Folders are `0700` and `from` is `0600`.
 - **Status:** **internal**, **experimental** behind the `skill-studio` flag (#2770).
 - **Tier:** Clone state — this machine's, as the skill was.
@@ -7001,7 +7008,7 @@ rewritten.
   for the person to try, accept or reject in the Skill studio. `<id>` is sixteen hex characters
   of a SHA-256 over the level's folder and the skill's folder name, so a skill has one draft and a
   second write adds to it. It holds `draft.json` (`level`: the level's folder relative to the
-  plane, `skills` or `workspaces/ops/skills.local`; `folder`: the skill's folder name; `chat`: the
+  plane, `skills`, `workspaces/ops/skills.local` or `personas/reviewer/skills`; `folder`: the skill's folder name; `chat`: the
   number of the chat that wrote it last; `bases`: each file the draft changed, below the skill's
   folder, with the SHA-256 of what the project held there when the draft first changed it, `null`
   for nothing) and `files/`, each drafted file at its path below the skill's folder. Folders are

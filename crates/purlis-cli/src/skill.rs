@@ -79,8 +79,8 @@ pub enum SkillCommand {
         #[arg(long, group = "switch", requires = "workspace")]
         on: bool,
     },
-    /// Make a skill from a template, at the project's root or, with `-w`, in a workspace; with
-    /// `--local`, kept on this machine. A project skill starts granted to the root alone.
+    /// Make a skill from a template, at the project's root or, with `-w`, in a workspace, or,
+    /// with `-p`, a persona's own; with `--local`, kept on this machine. A project skill starts granted to the root alone.
     New {
         /// Its name: lowercase letters, digits and hyphens.
         name: String,
@@ -104,9 +104,10 @@ pub enum SkillCommand {
         #[command(flatten)]
         at: At,
     },
-    /// Rename a skill (`--name`), or move it to another level (`--to`), or both. A rename
-    /// changes every persona and skill that names it; a move into the project's skills says
-    /// where it reaches with `--grant`.
+    /// Rename a skill (`--name`), or move it to another level (`--to`, or `--to-persona`), or
+    /// both. A rename changes every persona and skill that names it; a move into the project's
+    /// skills says where it reaches with `--grant`. A persona's own skill moved into the
+    /// project's is added to the persona's skills, so its chats keep it.
     Mv {
         /// The skill's name, as `purlis skill list` prints it.
         name: String,
@@ -114,10 +115,13 @@ pub enum SkillCommand {
         #[arg(long = "name", value_name = "NEW")]
         new: Option<String>,
         /// The level it moves to: `root` (the project's) or a workspace's name.
-        #[arg(long, value_name = "LEVEL")]
+        #[arg(long, value_name = "LEVEL", group = "dest")]
         to: Option<String>,
+        /// The persona whose own skill it becomes.
+        #[arg(long, value_name = "PERSONA", group = "dest")]
+        to_persona: Option<String>,
         /// Keep it on this machine at the level it moves to.
-        #[arg(long, requires = "to")]
+        #[arg(long, requires = "dest")]
         to_local: bool,
         /// Where it reaches once it is a project skill: `root`, `all`, or workspace names.
         #[arg(long, num_args = 1.., requires = "to")]
@@ -139,13 +143,17 @@ pub enum SkillCommand {
         name: Option<String>,
     },
     /// Share a local skill: move it from `skills.local/` into `skills/` at its level, so the
-    /// next save commits it and the team gets it. With `-w`, that workspace's local skill.
+    /// next save commits it and the team gets it. With `-w`, that workspace's local skill; with
+    /// `-p`, that persona's.
     Share {
         /// The local skill's name, as `purlis skill list` prints it.
         name: String,
         /// The workspace whose local skill to share (default: the project's root).
-        #[arg(short = 'w', long = "workspace")]
+        #[arg(short = 'w', long = "workspace", conflicts_with = "persona")]
         workspace: Option<String>,
+        /// The persona whose local skill to share.
+        #[arg(short = 'p', long = "persona")]
+        persona: Option<String>,
     },
     /// Install skills from a skill source, a git repository of skill folders: prints the review
     /// (the scripts each runs, the network hosts its files name, its `!` commands and its writes
@@ -293,12 +301,15 @@ pub enum SkillCommand {
     },
 }
 
-/// The level a skill is at: the project's root, or a workspace; shared, or local.
+/// The level a skill is at: the project's root, a workspace or a persona; shared, or local.
 #[derive(Args)]
 pub struct At {
     /// The workspace whose skill it is (default: the project's).
-    #[arg(short = 'w', long = "workspace")]
+    #[arg(short = 'w', long = "workspace", conflicts_with = "persona")]
     workspace: Option<String>,
+    /// The persona whose own skill it is (SK-32).
+    #[arg(short = 'p', long = "persona")]
+    persona: Option<String>,
     /// A local skill, kept on this machine.
     #[arg(long)]
     local: bool,
@@ -306,9 +317,10 @@ pub struct At {
 
 impl At {
     fn level(&self) -> Level {
-        match &self.workspace {
-            None => Level::project(),
-            Some(ws) => Level::workspace(ws),
+        match (&self.workspace, &self.persona) {
+            (Some(ws), _) => Level::workspace(ws),
+            (None, Some(persona)) => Level::persona(persona),
+            (None, None) => Level::project(),
         }
         .local(self.local)
     }
@@ -464,13 +476,15 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             name,
             new,
             to,
+            to_persona,
             to_local,
             grant,
             at,
         } => {
-            if new.is_none() && to.is_none() {
+            if new.is_none() && to.is_none() && to_persona.is_none() {
                 voice::err(
-                    "Say what changes: --name <new> renames it, --to <root|workspace> moves it.",
+                    "Say what changes: --name <new> renames it, --to <root|workspace> or \
+                     --to-persona <persona> moves it.",
                 );
                 return Ok(2);
             }
@@ -483,10 +497,11 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 }
                 name = new;
             }
-            let Some(to) = to else {
-                return Ok(0);
+            let target = match (to, to_persona) {
+                (_, Some(persona)) => Level::persona(&persona).local(to_local),
+                (Some(to), None) => level_to(&to, to_local),
+                (None, None) => return Ok(0),
             };
-            let target = level_to(&to, to_local);
             let grant = if grant.is_empty() {
                 None
             } else {
@@ -593,8 +608,17 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 }
             }
         }
-        SkillCommand::Share { name, workspace } => {
-            match verbs::share(&mut cx, workspace.as_deref(), &name) {
+        SkillCommand::Share {
+            name,
+            workspace,
+            persona,
+        } => {
+            let at = match (workspace, persona) {
+                (Some(ws), _) => verbs::At::Workspace(ws),
+                (None, Some(persona)) => verbs::At::Persona(persona),
+                (None, None) => verbs::At::Project,
+            };
+            match verbs::share(&mut cx, &at, &name) {
                 Ok(_) => Ok(0),
                 Err(why) => {
                     voice::err(&why);
@@ -1349,6 +1373,12 @@ fn say_users(users: &verbs::Users) {
         reach.push("chats at the project's root".to_owned());
     }
     reach.extend(users.workspaces.iter().map(|ws| format!("chats in {ws}")));
+    reach.extend(
+        users
+            .persona
+            .iter()
+            .map(|persona| format!("chats as {persona}, in every workspace")),
+    );
     if !reach.is_empty() {
         voice::info(&format!("Used by {}", reach.join(", ")));
     }

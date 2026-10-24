@@ -145,12 +145,12 @@ fn skill_name(skill: &str) -> &str {
 /// `workspace`): `None` for a copy with no folder of the plane's levels a history is kept of (a
 /// persona's, a built-in or a harness skill), and for a plane git does not keep.
 fn content_of(root: &Path, name: &str, level: Level, workspace: Option<&str>) -> Option<Content> {
-    let ws = match level.origin {
-        purlis_skills::Origin::Project => None,
-        purlis_skills::Origin::Workspace => Some(workspace?),
+    let at = match level.origin {
+        purlis_skills::Origin::Project => purlis_skills::Whose::Project,
+        purlis_skills::Origin::Workspace => purlis_skills::Whose::Workspace(workspace?.to_owned()),
         _ => return None,
     };
-    let dir = purlis_skills::level_dir(root, ws, level.local)?;
+    let dir = purlis_skills::level_dir(root, &at, level.local)?;
     let folder = purlis_skills::named(&dir, name)?;
     let rel = folder
         .strip_prefix(root)

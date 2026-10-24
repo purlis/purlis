@@ -87,10 +87,11 @@ impl SkillFile {
 }
 
 /// **Whether `path` is a file of a skill at a plane level** of the project at `root`
-/// (`skills/`, `skills.local/`, a workspace's `skills/` or `skills.local/`), judged on its
-/// lexical path and on the disk: which skill and which of its files, or `None`. Never a
-/// dot-name, a package manifest or a hooks folder below the skill's folder; never a level of a
-/// workspace that is not there; and never a path with a link in it.
+/// (`skills/`, `skills.local/`, a workspace's or a persona's `skills/` or `skills.local/`),
+/// judged on its lexical path and on the disk: which skill and which of its files, or `None`.
+/// Never a dot-name, a package manifest or a hooks folder below the skill's folder; never a
+/// level of a workspace that is not there, or of a persona with no folder of its own (SK-32,
+/// #3048); and never a path with a link in it.
 pub fn draftable(root: &Path, path: &Path) -> Option<SkillFile> {
     let rel = relative_to(root, path)?;
     let parts: Vec<&str> = rel
@@ -98,7 +99,7 @@ pub fn draftable(root: &Path, path: &Path) -> Option<SkillFile> {
         .map(|part| part.to_str())
         .collect::<Option<_>>()?;
     let at = match parts.first().copied()? {
-        "workspaces" => 3,
+        "workspaces" | "personas" => 3,
         _ => 1,
     };
     if parts.len() < at + 2 || parts.len() > at + 1 + DEEPEST {
@@ -115,6 +116,15 @@ pub fn draftable(root: &Path, path: &Path) -> Option<SkillFile> {
     }
     if let Some(ws) = level.workspace_name()
         && !root.join("workspaces").join(ws).is_dir()
+    {
+        return None;
+    }
+    if let Some(persona) = level.persona_name()
+        && !root
+            .join("personas")
+            .join(persona)
+            .join("persona.md")
+            .is_file()
     {
         return None;
     }
@@ -867,10 +877,12 @@ pub fn alone_on(
 /// starts where `level`'s skills are reached from (the project's root, or its workspace's
 /// folder): one line, which the person ends with what the skill is for.
 pub fn asking(level: &Level) -> String {
-    let dir = if level.local {
-        purlis_skills::LOCAL_DIR
-    } else {
-        purlis_skills::PROJECT_DIR
+    let dir = match level.persona_name() {
+        // A persona's draft chat starts at the project's root (SK-32, #3048), so it is told the
+        // persona's folder in full.
+        Some(_) => level.rel().unwrap_or_default(),
+        None if level.local => purlis_skills::LOCAL_DIR.to_owned(),
+        None => purlis_skills::PROJECT_DIR.to_owned(),
     };
     format!(
         "Draft a skill as {dir}/<name>/SKILL.md, with name and description frontmatter (where \

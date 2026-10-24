@@ -137,6 +137,51 @@ fn only_a_file_below_a_plane_levels_skill_is_draftable() {
     );
 }
 
+#[test]
+fn a_personas_skill_is_drafted_and_accepted_as_one_commit_of_its_files() {
+    // SK-32 (#3048): a persona with a folder of its own; a one-file persona keeps no skills.
+    let tmp = plane();
+    let root = tmp.path();
+    std::fs::create_dir_all(root.join("personas/reviewer")).unwrap();
+    std::fs::write(
+        root.join("personas/reviewer/persona.md"),
+        "---\nname: reviewer\n---\n\nReviews.\n",
+    )
+    .unwrap();
+    std::fs::write(root.join("personas/flat.md"), "---\nname: flat\n---\n").unwrap();
+    run(root, &["add", "-A"]);
+    run(root, &["commit", "-q", "-m", "personas"]);
+
+    assert_eq!(
+        draftable(
+            root,
+            &root.join("personas/reviewer/skills.local/x/SKILL.md")
+        )
+        .map(|f| f.level),
+        Some(Level::persona("reviewer").local(true))
+    );
+    assert_eq!(
+        draftable(root, &root.join("personas/flat/skills/x/SKILL.md")),
+        None
+    );
+    assert_eq!(
+        draftable(root, &root.join("personas/reviewer/persona.md")),
+        None
+    );
+
+    let id = drafted(
+        root,
+        "personas/reviewer/skills/lint/SKILL.md",
+        &whole(&skill_text("lint", "Lints the change under review.")),
+    );
+    let (answer, _) = accepted(root, &id);
+    answer.unwrap();
+    let (subject, paths) = last_commit(root);
+    assert!(subject.ends_with("skill new lint"), "{subject}");
+    assert_eq!(paths, ["personas/reviewer/skills/lint/SKILL.md"]);
+    assert!(asking(&Level::persona("reviewer")).contains("personas/reviewer/skills/<name>"));
+}
+
 #[cfg(unix)]
 #[test]
 fn a_skill_folder_that_is_a_link_is_never_draftable() {

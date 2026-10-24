@@ -594,39 +594,57 @@ pub const PROJECT_DIR: &str = "skills";
 /// The folder, beside a level's [`PROJECT_DIR`], its local skills sit in (ADR 0099 §1).
 pub const LOCAL_DIR: &str = "skills.local";
 
+/// **Who a plane level's skills belong to** (ADR 0099 §1): the project, one workspace, or one
+/// persona. With shared or local, it is the whole of a level; [`level_rel`] is where its folder
+/// is.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum Whose {
+    /// The project's: the plane root's `skills/`.
+    Project,
+    /// One workspace's, by its folder's name.
+    Workspace(String),
+    /// One persona's, by its name (SK-5, #2768; SK-32, #3003).
+    Persona(String),
+}
+
 /// The folder of the persona `persona`'s skills in the plane at `plane`: its `skills/`, or its
 /// `skills.local/` where `local` (SK-5, ADR 0099 §1). `None` for a name that is not one plain
 /// name, which is no folder of the plane's.
 pub fn persona_dir(plane: &Path, persona: &str, local: bool) -> Option<PathBuf> {
-    let dir = if local { LOCAL_DIR } else { PROJECT_DIR };
-    plain(persona).then(|| plane.join("personas").join(persona).join(dir))
+    level_dir(plane, &Whose::Persona(persona.to_owned()), local)
 }
 
-/// The folder of a plane level's skills: the plane root's for `workspace` `None`, the
-/// workspace's otherwise; its `skills.local/` where `local`. `None` for a workspace name that is
-/// not one plain name, which is no folder of the plane's.
-pub fn level_dir(plane: &Path, workspace: Option<&str>, local: bool) -> Option<PathBuf> {
-    level_rel(workspace, local).map(|rel| plane.join(rel))
+/// The folder of the plane level `at`'s skills: its `skills.local/` where `local`. `None` for a
+/// workspace or persona name that is not one plain name, which is no folder of the plane's.
+pub fn level_dir(plane: &Path, at: &Whose, local: bool) -> Option<PathBuf> {
+    level_rel(at, local).map(|rel| plane.join(rel))
 }
 
 /// The folder the plane's workspaces sit in.
 const WORKSPACES_DIR: &str = "workspaces";
 
+/// The folder the plane's personas sit in.
+const PERSONAS_DIR: &str = "personas";
+
 /// **The one rule for where a plane level's skills are**, relative to the plane with `/` between
-/// the parts: `skills`, `skills.local`, `workspaces/<ws>/skills`, `workspaces/<ws>/skills.local`.
-/// `None` for a workspace name that is not one plain name. [`level_dir`] is it under a plane, and
-/// [`level_of_rel`] reads it back.
-pub fn level_rel(workspace: Option<&str>, local: bool) -> Option<String> {
+/// the parts: `skills`, `skills.local`, `workspaces/<ws>/skills`, `workspaces/<ws>/skills.local`,
+/// `personas/<p>/skills`, `personas/<p>/skills.local`. `None` for a workspace or persona name
+/// that is not one plain name. [`level_dir`] is it under a plane, and [`level_of_rel`] reads it
+/// back.
+pub fn level_rel(at: &Whose, local: bool) -> Option<String> {
     let dir = if local { LOCAL_DIR } else { PROJECT_DIR };
-    match workspace {
-        None => Some(dir.to_owned()),
-        Some(ws) => plain(ws).then(|| format!("{WORKSPACES_DIR}/{ws}/{dir}")),
+    match at {
+        Whose::Project => Some(dir.to_owned()),
+        Whose::Workspace(ws) => plain(ws).then(|| format!("{WORKSPACES_DIR}/{ws}/{dir}")),
+        Whose::Persona(persona) => {
+            plain(persona).then(|| format!("{PERSONAS_DIR}/{persona}/{dir}"))
+        }
     }
 }
 
-/// The level whose skills folder `rel` is, as [`level_rel`] spells it: its workspace (`None` for
-/// the project's) and whether it is local. `None` for any other path.
-pub fn level_of_rel(rel: &str) -> Option<(Option<String>, bool)> {
+/// The level whose skills folder `rel` is, as [`level_rel`] spells it: whose it is, and whether
+/// it is local. `None` for any other path.
+pub fn level_of_rel(rel: &str) -> Option<(Whose, bool)> {
     let local = |name: &str| match name {
         PROJECT_DIR => Some(false),
         LOCAL_DIR => Some(true),
@@ -634,8 +652,13 @@ pub fn level_of_rel(rel: &str) -> Option<(Option<String>, bool)> {
     };
     let parts: Vec<&str> = rel.split('/').collect();
     match parts.as_slice() {
-        [one] => Some((None, local(one)?)),
-        [WORKSPACES_DIR, ws, one] if plain(ws) => Some((Some((*ws).to_owned()), local(one)?)),
+        [one] => Some((Whose::Project, local(one)?)),
+        [WORKSPACES_DIR, ws, one] if plain(ws) => {
+            Some((Whose::Workspace((*ws).to_owned()), local(one)?))
+        }
+        [PERSONAS_DIR, persona, one] if plain(persona) => {
+            Some((Whose::Persona((*persona).to_owned()), local(one)?))
+        }
         _ => None,
     }
 }
@@ -698,7 +721,7 @@ pub fn skill_set(plane: Option<&Path>, machine: &Machine<'_>, chat: &Chat<'_>) -
         let workspace = chat.workspace.filter(|ws| plain(ws));
         if let Some(ws) = workspace {
             for local in [true, false] {
-                if let Some(dir) = level_dir(plane, Some(ws), local) {
+                if let Some(dir) = level_dir(plane, &Whose::Workspace(ws.to_owned()), local) {
                     let made = made_since(machine, &plane.join(WORKSPACES_DIR).join(ws));
                     level(&mut set, &dir, (Origin::Workspace, local), route, |skill| {
                         if let Some(why) = &made {
@@ -714,7 +737,7 @@ pub fn skill_set(plane: Option<&Path>, machine: &Machine<'_>, chat: &Chat<'_>) -
             }
         }
         for local in [true, false] {
-            let Some(dir) = level_dir(plane, None, local) else {
+            let Some(dir) = level_dir(plane, &Whose::Project, local) else {
                 continue;
             };
             level(&mut set, &dir, (Origin::Project, local), route, |skill| {

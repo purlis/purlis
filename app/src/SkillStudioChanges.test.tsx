@@ -41,13 +41,22 @@ const deploy = {
   unchecked: null,
 };
 
-/** The levels the core lists for a project with workspaces `ops` and `web`. */
-const LEVELS = [null, "ops", "web"].flatMap((workspace) =>
-  [false, true].map((local) => ({
-    level: { workspace, local },
-    label: `${local ? "local " : ""}${workspace === null ? "project" : `workspace ${workspace}`}`,
+/** The levels the core lists for a project with workspaces `ops` and `web` and personas
+ *  `reviewer` and `steward`. */
+const LEVELS = [
+  ...[false, true].map((local) => ({
+    level: { at: "project" as const, local },
+    label: `${local ? "local " : ""}project`,
   })),
-);
+  ...(["workspace", "persona"] as const).flatMap((at) =>
+    (at === "workspace" ? ["ops", "web"] : ["reviewer", "steward"]).flatMap((name) =>
+      [false, true].map((local) => ({
+        level: { at, name, local },
+        label: `${local ? "local " : ""}${at} ${name}`,
+      })),
+    ),
+  ),
+];
 
 /** A core that answers the studio with `skills` in `workspace`, records every other ask, and
  *  answers it with `answers[cmd]` (a function of its arguments), or a change with no notes. */
@@ -101,12 +110,19 @@ describe("the Skill studio's changes", () => {
     await waitFor(() => expect(asked.some((one) => one.cmd === "skill_new")).toBe(true));
     expect(asked.find((one) => one.cmd === "skill_new")?.args).toMatchObject({
       plane: "p",
-      level: { workspace: "ops", local: false },
+      level: { at: "workspace", name: "ops", local: false },
       name: "triage",
       description: "Sorts issues.",
       template: "blank",
     });
-    expect(levelFrom(AT_THE_ROOT)).toEqual(PROJECT);
+    expect(levelFrom(AT_THE_ROOT, LEVELS)).toEqual(PROJECT);
+    expect(levelFrom(asPersona("reviewer"), LEVELS)).toEqual({
+      at: "persona",
+      name: "reviewer",
+      local: false,
+    });
+    // A persona made as one file keeps no skills: the project's is where a new one lands.
+    expect(levelFrom(asPersona("flat"), LEVELS)).toEqual(PROJECT);
   });
 
   it("renames a skill", async () => {
@@ -122,7 +138,7 @@ describe("the Skill studio's changes", () => {
 
     await waitFor(() =>
       expect(asked.find((one) => one.cmd === "skill_rename")?.args).toMatchObject({
-        level: { workspace: null, local: false },
+        level: { at: "project", local: false },
         name: "deploy",
         to: "ship",
       }),
@@ -142,8 +158,7 @@ describe("the Skill studio's changes", () => {
       lint: [],
     };
     const asked = core([triage], "ops", {
-      skill_move_needs_grant: (args) =>
-        (args.to as { workspace: string | null }).workspace === null,
+      skill_move_needs_grant: (args) => (args.to as { at: string }).at === "project",
     });
     const user = userEvent.setup();
     render(<SkillStudioTab plane="p" scope={inWorkspace("ops")} changed={0} />);
@@ -158,9 +173,9 @@ describe("the Skill studio's changes", () => {
 
     await waitFor(() =>
       expect(asked.find((one) => one.cmd === "skill_move")?.args).toMatchObject({
-        from: { workspace: "ops", local: false },
+        from: { at: "workspace", name: "ops", local: false },
         name: "triage",
-        to: { workspace: null, local: false },
+        to: { at: "project", local: false },
         grant: { to: "all" },
       }),
     );
@@ -168,14 +183,20 @@ describe("the Skill studio's changes", () => {
 
   it("says who uses a skill before deleting it, and offers it back", async () => {
     const asked = core([deploy], null, {
-      skill_users: () => ({ root: true, workspaces: ["ops"], personas: ["steward"], skills: [] }),
+      skill_users: () => ({
+        root: true,
+        workspaces: ["ops"],
+        persona: null,
+        personas: ["steward"],
+        skills: [],
+      }),
       skills_deleted: () =>
         asked.some((one) => one.cmd === "skill_delete")
           ? [
               {
                 id: "abc:skills/deploy",
                 name: "deploy",
-                level: { workspace: null, local: false },
+                level: { at: "project", local: false },
                 label: "project",
               },
             ]
@@ -270,6 +291,91 @@ describe("the Skill studio's changes", () => {
         { plane: "p", persona: "ops", written: "lint", change: "remove" },
         { plane: "p", persona: "ops", written: "triage", change: "add" },
       ]),
+    );
+  });
+
+  it("changes a persona's own skill from its studio, and offers its levels alone", async () => {
+    // SK-32 (#3003): a persona's own row is at the persona the studio shows.
+    const lint = {
+      ...deploy,
+      name: "lint",
+      level: "persona",
+      label: "persona",
+      grant: null,
+      granted: null,
+      folder: "personas/reviewer/skills/lint",
+      written: "lint",
+      named: false,
+    };
+    const asked = core([lint], null, {
+      skill_move_needs_grant: (args) => (args.to as { at: string }).at === "project",
+      skill_users: () => ({
+        root: false,
+        workspaces: [],
+        persona: "reviewer",
+        personas: [],
+        skills: [],
+      }),
+    });
+    const user = userEvent.setup();
+    render(<SkillStudioTab plane="p" scope={asPersona("reviewer")} changed={0} />);
+
+    const row = await screen.findByTestId("skill-lint");
+    expect(row).toHaveAttribute("draggable", "true");
+    // Its own skill needs no name in its skills.
+    expect(within(row).queryByRole("button", { name: "Add lint to reviewer" })).toBeNull();
+    expect(screen.getByTestId("level-persona-reviewer")).toBeInTheDocument();
+    expect(screen.queryByTestId("level-persona-steward")).toBeNull();
+
+    await user.click(within(row).getByRole("button", { name: "Rename lint" }));
+    const box = screen.getByLabelText("New name");
+    await user.clear(box);
+    await user.type(box, "check");
+    await user.click(screen.getByRole("button", { name: "Rename" }));
+    await waitFor(() =>
+      expect(asked.find((one) => one.cmd === "skill_rename")?.args).toMatchObject({
+        level: { at: "persona", name: "reviewer", local: false },
+        name: "lint",
+        to: "check",
+      }),
+    );
+
+    await pickIn(await screen.findByLabelText("Move lint to"), /^project$/, user);
+    const prompt = await screen.findByRole("region", { name: "Move lint to the project skills" });
+    expect(within(prompt).getByTestId("persona-keeps")).toHaveTextContent(
+      "reviewer keeps it in every workspace",
+    );
+    await user.click(within(prompt).getByRole("button", { name: "Move" }));
+    await waitFor(() =>
+      expect(asked.find((one) => one.cmd === "skill_move")?.args).toMatchObject({
+        from: { at: "persona", name: "reviewer", local: false },
+        name: "lint",
+        to: { at: "project", local: false },
+        grant: { to: "root" },
+      }),
+    );
+
+    await user.click(within(row).getByRole("button", { name: "Delete lint" }));
+    expect(await screen.findByTestId("skill-users")).toHaveTextContent(
+      "Used by chats as reviewer, in every workspace.",
+    );
+  });
+
+  it("makes a new skill at the persona the studio shows", async () => {
+    const asked = core([deploy], null);
+    const user = userEvent.setup();
+    render(<SkillStudioTab plane="p" scope={asPersona("reviewer")} changed={0} />);
+
+    await user.click(await screen.findByRole("button", { name: "New skill" }));
+    await user.type(screen.getByLabelText("Name"), "triage");
+    await user.type(screen.getByLabelText("What it does and when to use it"), "Sorts issues.");
+    await user.click(screen.getByRole("button", { name: "Make it" }));
+
+    await waitFor(() =>
+      expect(asked.find((one) => one.cmd === "skill_new")?.args).toMatchObject({
+        level: { at: "persona", name: "reviewer", local: false },
+        name: "triage",
+      }),
     );
   });
 
