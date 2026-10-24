@@ -335,3 +335,47 @@ fn a_repo_skills_control_and_bidi_characters_are_escaped_in_list_and_show() {
         stdout(&show)
     );
 }
+
+/// SK-47 (#3150): the table pads a name as it is shown, so a name that reorders or hides its own
+/// characters is escaped by the padding itself, and its row still lines up with the others.
+#[test]
+fn a_skill_named_with_bidi_and_zero_width_characters_is_listed_escaped_and_lined_up() {
+    let project = Project::new();
+    write_skill(&project.clone_skills(), "sly", "Sly.");
+    let path = project.clone_skills().join("sly/SKILL.md");
+    std::fs::write(
+        &path,
+        "---\nname: sly\u{202e}e\u{200b}man\ndescription: Sly.\n---\n\nbody\n",
+    )
+    .unwrap();
+
+    let out = project.run(&["skill", "list", "-w", "alpha"]);
+
+    assert!(out.status.success(), "{}", stderr(&out));
+    let text = stdout(&out);
+    assert!(
+        !text.contains(['\u{202e}', '\u{200b}']),
+        "no character reorders or hides the table: {text:?}"
+    );
+    let claude = section(&text, "Claude Code finds these itself, read only:");
+    let shown = "sly⟦U+202E⟧e⟦U+200B⟧man";
+    let sly = claude
+        .iter()
+        .find(|line| line.starts_with(shown))
+        .unwrap_or_else(|| panic!("{shown} listed: {claude:#?}"));
+    let tool = claude
+        .iter()
+        .find(|line| line.starts_with("tool "))
+        .unwrap_or_else(|| panic!("tool listed: {claude:#?}"));
+    // Every character here is one column wide, so a column starts at the same character count:
+    // the width was measured on the escaped name, not on the one the file holds.
+    let level = |line: &str, name: &str| {
+        let name = name.chars().count();
+        name + line.chars().skip(name).position(|c| c != ' ').unwrap()
+    };
+    assert_eq!(
+        level(sly, shown),
+        level(tool, "tool"),
+        "the LEVEL column lines up:\n{sly}\n{tool}"
+    );
+}

@@ -13,7 +13,10 @@
 //! That guarantee is about the terminal, so it cannot be computed from a string the terminal
 //! reads differently: **SGR is the only escape this module passes through**, and [`sanitize`]
 //! drops everything else — a cursor move, an erase, an OSC title string, a bare control
-//! character — before anything is measured or clamped (charter #326).
+//! character — before anything is measured or clamped (charter #326). What is left that could
+//! reorder or hide text, a bidi override or a zero-width character, is shown as `⟦U+XXXX⟧`.
+//! A table cell is not markup at all: [`pad`] and [`column`] take untrusted text and escape
+//! every one of those characters, escape included, before they measure it (SK-47).
 //!
 //! # A column is what Python says it is, character for character
 //!
@@ -66,6 +69,7 @@ pub mod tables;
 use std::borrow::Cow;
 use std::sync::LazyLock;
 
+use purlis_skills::review::{escaped, escaped_line};
 use regex::{Captures, Regex};
 
 /// SGR "everything off", appended by [`truncate`] so an open style cannot bleed past a cut.
@@ -131,7 +135,32 @@ static MARKUP_OR_CONTROL: LazyLock<Regex> = LazyLock::new(|| {
 /// codepoint the pattern matches is one `str.isprintable` calls unprintable, so a string that
 /// takes Python's fast path is one this regex leaves unchanged. Reproducing the test would
 /// mean carrying Unicode general categories for no behavioural difference at all.
+///
+/// **Then what is left is shown, not obeyed (SK-47, #3150) — a step past `charter/tui.py`.**
+/// Markup is purlis's own, but the values spliced into it are not: a workspace, a skill or a
+/// repo name can carry a bidi override (U+202A..U+202E, U+2066..U+2069) that reorders the rest
+/// of the line, or a zero-width character that hides inside it. Neither is a control code, so
+/// the pattern above passes them. Outside the SGR spans, every character
+/// `purlis_skills::review::escaped` marks is written as `⟦U+XXXX⟧`, the same mark the install
+/// review shows, and it is measured as those eight columns. ASCII has nothing left to mark.
 pub fn sanitize(s: &str) -> Cow<'_, str> {
+    let s = without_controls(s);
+    if s.is_ascii() {
+        return s;
+    }
+    let mut shown = String::with_capacity(s.len());
+    let mut from = 0;
+    for sgr in SGR.find_iter(&s) {
+        shown.push_str(&escaped(&s[from..sgr.start()]));
+        shown.push_str(sgr.as_str());
+        from = sgr.end();
+    }
+    shown.push_str(&escaped(&s[from..]));
+    if shown == *s { s } else { Cow::Owned(shown) }
+}
+
+/// [`sanitize`]'s first half: every escape but SGR, and every control character, gone.
+fn without_controls(s: &str) -> Cow<'_, str> {
     MARKUP_OR_CONTROL.replace_all(s, |caps: &Captures| {
         if let Some(sgr) = caps.get(1) {
             return sgr.as_str().to_owned();
@@ -289,11 +318,29 @@ pub enum Align {
     Center,
 }
 
-/// Fit markup `s` to exactly `w` visible columns (truncate long, pad short).
+/// Fit one table cell of **text** to exactly `w` visible columns (truncate long, pad short).
+///
+/// **A cell is untrusted text, never markup (SK-47, #3150).** Every table purlis prints pads
+/// names it did not choose — skills, repos, workspaces, vault keys, memory headings — so the
+/// padding itself is where untrusted text is made safe to show, and no table has to remember
+/// to: [`purlis_skills::review::escaped_line`] writes every control (an escape included), bidi,
+/// zero-width and tag character, and every line end and tab, as `⟦U+XXXX⟧` before the cell is
+/// measured or cut. A colour in the text is therefore shown as text, not obeyed — a conceal
+/// (`\x1b[8m`) could otherwise hide the rest of the row. [`column`] measures the same escaped
+/// text, so the column fits what is printed.
+///
+/// purlis's own styling is markup, and markup goes through a [`Cell`] of a [`Node::Row`],
+/// which keeps its SGR and pads outside it.
+pub fn pad(text: &str, w: usize, align: Align) -> String {
+    fit(&escaped_line(text), w, align)
+}
+
+/// Fit markup `s` to exactly `w` visible columns (truncate long, pad short): `charter/tui.py`'s
+/// `pad`, for purlis's own markup.
 ///
 /// Padding is plain spaces appended outside any colour span, so a style such as underline
 /// never leaks into the padding.
-pub fn pad(s: &str, w: usize, align: Align) -> String {
+fn fit(s: &str, w: usize, align: Align) -> String {
     let s = truncate(s, w);
     let fill = w.saturating_sub(width(&s));
     if fill == 0 {
@@ -318,16 +365,19 @@ pub fn pad(s: &str, w: usize, align: Align) -> String {
 /// then adding spaces. A `cap` bounds the content (never the gap) for a column whose values
 /// are prose; leave it `None` where the reader has to be able to read the value back off the
 /// row, because a clipped name is one they cannot go and act on.
+///
+/// Each cell is measured as [`pad`] shows it, escaped, so the column fits what is printed.
 pub fn column<'a>(
     header: &str,
     cells: impl IntoIterator<Item = &'a str>,
     gap: usize,
     cap: Option<usize>,
 ) -> usize {
+    let shown = |cell: &str| width(&escaped_line(cell));
     let w = cells
         .into_iter()
-        .map(width)
-        .fold(width(header), std::cmp::max);
+        .map(shown)
+        .fold(shown(header), std::cmp::max);
     let content = match cap {
         Some(cap) => w.min(cap),
         None => w,
@@ -504,7 +554,7 @@ impl Node {
                     .iter()
                     .map(|c| match c.width {
                         None => c.markup.clone(),
-                        Some(w) => pad(&c.markup, w, c.align),
+                        Some(w) => fit(&c.markup, w, c.align),
                     })
                     .collect();
                 vec![finish(&truncate(&parts.join(gap), width))]
@@ -556,7 +606,7 @@ fn render_columns(columns: &[(Block, Option<usize>)], gap: &str, width: usize) -
             let row = blocks
                 .iter()
                 .zip(&widths)
-                .map(|(block, w)| pad(block.get(i).map_or("", String::as_str), *w, Align::Left))
+                .map(|(block, w)| fit(block.get(i).map_or("", String::as_str), *w, Align::Left))
                 .collect::<Vec<_>>()
                 .join(gap);
             finish(&truncate(&row, width))

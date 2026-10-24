@@ -1048,7 +1048,7 @@ fn runs_table(runs: &[purlis_core::skills::StudioRun], name: Option<&str>) -> St
             text.push_str(&voice::pad(cells[i], *width));
             text.push_str("  ");
         }
-        text.push_str(cells[5]);
+        text.push_str(&esc(cells[5]));
         text.push('\n');
         text
     };
@@ -1490,8 +1490,8 @@ fn table(rows: &[StudioRow]) -> String {
             .to_owned();
     }
     let states: Vec<String> = rows.iter().map(|row| esc(&state(row))).collect();
-    let names: Vec<String> = rows.iter().map(|row| esc(&row.name)).collect();
-    let name_w = voice::column(names.iter().map(String::as_str).chain(["SKILL"]));
+    let names: Vec<&str> = rows.iter().map(|row| row.name.as_str()).collect();
+    let name_w = voice::column(names.iter().copied().chain(["SKILL"]));
     let levels: Vec<String> = rows.iter().map(level).collect();
     let level_w = voice::column(levels.iter().map(String::as_str).chain(["LEVEL"]));
     let mut text = format!(
@@ -1523,20 +1523,21 @@ fn outside_json(harness: Harness, row: &StudioRow) -> Value {
 }
 
 /// The skills one harness finds itself, with whose each is: read only. A repo's names are the
-/// least trusted text here, so every cell is escaped before it is measured.
+/// least trusted text here; [`voice::pad`] escapes every padded cell before it is measured, and
+/// the last column, which nothing pads, is escaped here.
 fn outside_table(rows: &[StudioRow]) -> String {
-    let names: Vec<String> = rows.iter().map(|row| esc(&row.name)).collect();
+    let names: Vec<&str> = rows.iter().map(|row| row.name.as_str()).collect();
     let owners: Vec<String> = rows
         .iter()
         .map(|row| {
             row.outside
                 .as_ref()
-                .map(|o| esc(&o.owner.to_string()))
+                .map(|o| o.owner.to_string())
                 .unwrap_or_default()
         })
         .collect();
     let levels: Vec<String> = rows.iter().map(level).collect();
-    let name_w = voice::column(names.iter().map(String::as_str).chain(["SKILL"]));
+    let name_w = voice::column(names.iter().copied().chain(["SKILL"]));
     let level_w = voice::column(levels.iter().map(String::as_str).chain(["LEVEL"]));
     let owner_w = voice::column(owners.iter().map(String::as_str).chain(["OWNER"]));
     let mut text = format!(

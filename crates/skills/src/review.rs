@@ -185,9 +185,23 @@ pub struct Unseen {
 /// `⟦U+XXXX⟧`, so nothing the model reads is hidden from the person, and no control character
 /// reaches a terminal.
 pub fn escaped(text: &str) -> String {
+    marked(text, |c| Invisible::of(c).is_some())
+}
+
+/// **`text` as one line of a terminal shows it**: [`escaped`], and its line ends and tabs
+/// marked too, since in a table cell a line end or a tab shears every column below it.
+///
+/// This is purlis's one rule for untrusted text in terminal output (SK-47): the shared padding,
+/// `purlis_core::tui::pad`, applies it to every cell, so no table has to remember to.
+pub fn escaped_line(text: &str) -> String {
+    marked(text, |c| matches!(c, '\n' | '\t') || Invisible::of(c).is_some())
+}
+
+/// `text` with each character `hidden` names written as `⟦U+XXXX⟧`.
+fn marked(text: &str, hidden: impl Fn(char) -> bool) -> String {
     let mut out = String::with_capacity(text.len());
     for c in text.chars() {
-        if Invisible::of(c).is_some() {
+        if hidden(c) {
             out.push_str(&format!("⟦U+{:04X}⟧", u32::from(c)));
         } else {
             out.push(c);
