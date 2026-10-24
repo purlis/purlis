@@ -910,6 +910,8 @@ pub struct WindowTheme {
     pub motion: WindowMotion,
     /// The theme's icon set, by view id: empty when the rails draw the window's own marks.
     pub icons: std::collections::BTreeMap<String, WindowIcon>,
+    /// The harness glyphs of its icon set, by name (#2922): empty when the window draws its own.
+    pub glyphs: std::collections::BTreeMap<String, WindowIcon>,
     /// The geometry's custom properties, written by the engine, for each density (#2326).
     pub geometry: WindowGeometry,
     /// The UI, mono and terminal fonts (#2326).
@@ -965,6 +967,23 @@ pub struct WindowHue {
 #[derive(Debug, Clone, PartialEq, serde::Serialize, specta::Type)]
 pub struct WindowIcon {
     pub paths: Vec<String>,
+}
+
+/// One map of a theme's icon set as the window is handed it, by name.
+fn window_icons(
+    symbols: &std::collections::BTreeMap<&'static str, purlis_core::theme::Symbol>,
+) -> std::collections::BTreeMap<String, WindowIcon> {
+    symbols
+        .iter()
+        .map(|(name, symbol)| {
+            (
+                (*name).to_owned(),
+                WindowIcon {
+                    paths: symbol.paths.clone(),
+                },
+            )
+        })
+        .collect()
 }
 
 /// A theme's geometry as the custom properties the window writes, for each density: the
@@ -1069,19 +1088,8 @@ impl From<&purlis_core::theme::ResolvedTheme> for WindowTheme {
                     .map(|(key, curve)| ((*key).to_owned(), *curve))
                     .collect(),
             },
-            icons: theme
-                .icons
-                .views
-                .iter()
-                .map(|(view, symbol)| {
-                    (
-                        (*view).to_owned(),
-                        WindowIcon {
-                            paths: symbol.paths.clone(),
-                        },
-                    )
-                })
-                .collect(),
+            icons: window_icons(&theme.icons.views),
+            glyphs: window_icons(&theme.icons.glyphs),
             geometry: WindowGeometry {
                 comfortable: written(&theme.geometry),
                 compact: written(&theme.compact),

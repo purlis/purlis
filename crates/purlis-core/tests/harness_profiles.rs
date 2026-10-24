@@ -135,13 +135,13 @@ fn a_key_a_profile_does_not_have_refuses_that_profile_rather_than_being_ignored(
     assert_eq!(
         why(&set, "typo-env"),
         "profile 'typo-env' has enviroment, which purlis does not read — a profile is \
-         kind, command and env. Remove it."
+         kind, command, env and icon. Remove it."
     );
     assert_eq!(
         why(&set, "typo-env.enviroment"),
         "[harness.typo-env] holds a table enviroment, which purlis reads neither way — \
-         enviroment is not a key a profile has (kind, command and env), and if a profile \
-         named 'typo-env.enviroment' was meant, a profile's name is letters, digits, '_' \
+         enviroment is not a key a profile has (kind, command, env and icon), and if a \
+         profile named 'typo-env.enviroment' was meant, a profile's name is letters, digits, '_' \
          and '-', with no dot — the plane format fixes that alphabet. Rename the key, or \
          give that profile a name of its own."
     );
@@ -1180,4 +1180,47 @@ fn two_profiles_that_differ_only_in_kind_never_share_an_approval_line() {
         purlis_core::profiletrust::approval_needed(dir.path(), &codex),
         None
     );
+}
+
+#[test]
+fn a_profile_names_its_icon_and_purlis_keeps_it_as_written() {
+    purlis_core::unsteered!();
+    // #2922, ruling #2866 ·2: a glyph's name or an SVG file's, read where the profile is drawn.
+    let dir = plane(
+        "",
+        "[harness.work]\nkind = \"codex\"\ncommand = [\"codex\"]\nicon = \"spark\"\n\
+         [harness.mine]\nkind = \"claude\"\ncommand = [\"claude\"]\nicon = \"mine.svg\"\n\
+         [harness.plain]\nkind = \"claude\"\ncommand = [\"claude\"]\n",
+    );
+
+    let set = profiles::derive(dir.path());
+
+    assert!(set.refused.is_empty(), "{:?}", set.refused);
+    assert_eq!(set.icon_of("work"), Some("spark"));
+    assert_eq!(set.icon_of("mine"), Some("mine.svg"));
+    assert_eq!(set.icon_of("plain"), None);
+    assert_eq!(set.icon_of("claude"), None);
+}
+
+#[test]
+fn an_icon_that_is_not_a_name_refuses_the_profile() {
+    purlis_core::unsteered!();
+    for icon in ["3", "\"\"", "[\"spark\"]", "\"a\\u0007b\""] {
+        let dir = plane(
+            "",
+            &format!("[harness.work]\nkind = \"claude\"\ncommand = [\"claude\"]\nicon = {icon}\n"),
+        );
+
+        let set = profiles::derive(dir.path());
+
+        assert!(set.get("work").is_none(), "{icon}");
+        assert_eq!(
+            why(&set, "work"),
+            "profile 'work' has an icon purlis does not read — icon is the name of a glyph \
+             (spark, braces, terminal) or of an .svg file in purlis's icons folder, such as \
+             icon = \"mine.svg\". Write it that way.",
+            "{icon}"
+        );
+        assert_eq!(set.icon_of("work"), None, "{icon}");
+    }
 }

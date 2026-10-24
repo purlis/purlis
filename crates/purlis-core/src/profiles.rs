@@ -73,7 +73,7 @@ fn the_products_own(name: &str) -> bool {
 const DEFAULT: &str = "default";
 
 /// Everything a profile's table may hold.
-const PROFILE_KEYS: [&str; 3] = ["kind", "command", "env"];
+const PROFILE_KEYS: [&str; 4] = ["kind", "command", "env", "icon"];
 
 /// A harness kind: the word typed after `charter` and the name the registry calls it. What a
 /// built-in profile of the kind runs and where its operator logs in are facts of the harness,
@@ -234,6 +234,9 @@ pub struct ProfileSet {
     pub default_from: Option<String>,
     /// A `default` that named no profile this machine has, kept so a surface can say so.
     pub default_refused: Option<String>,
+    /// The icon each declared profile names, as written (#2922): what
+    /// [`crate::harness_icon::of`] draws it with.
+    icons: std::collections::BTreeMap<String, String>,
 }
 
 impl ProfileSet {
@@ -255,6 +258,13 @@ impl ProfileSet {
 
     fn take(&mut self, name: &str) {
         self.profiles.retain(|p| p.name != name);
+        self.icons.remove(name);
+    }
+
+    /// The icon the profile `name`'s definition names (#2922): a glyph's name or an SVG file's,
+    /// as written. None for a profile that names none, which shows its kind's glyph or monogram.
+    pub fn icon_of(&self, name: &str) -> Option<&str> {
+        self.icons.get(name).map(String::as_str)
     }
 }
 
@@ -636,8 +646,8 @@ pub fn derive_with(
                 set.refused.push(Refused {
                     reason: format!(
                         "[harness.{parent}] holds a table {child}, which purlis reads \
-                         neither way — {child} is not a key a profile has (kind, command \
-                         and env), and if a profile named '{dotted}' was meant, a profile's \
+                         neither way — {child} is not a key a profile has (kind, command, \
+                         env and icon), and if a profile named '{dotted}' was meant, a profile's \
                          name is letters, digits, '_' and '-', with no dot — the plane \
                          format fixes that alphabet. Rename the key, or give that profile a \
                          name of its own."
@@ -685,6 +695,10 @@ pub fn derive_with(
                     })
                     .unwrap_or_default();
                 env.sort();
+                match inner.get("icon").and_then(toml::Value::as_str) {
+                    Some(icon) => set.icons.insert(name.clone(), icon.to_owned()),
+                    None => set.icons.remove(name),
+                };
                 set.put(Profile {
                     name: name.clone(),
                     kind: word.to_owned(),
@@ -998,6 +1012,23 @@ pub(crate) fn refusals_of(
             ),
         ));
     }
+    if let Some(icon) = inner.get("icon")
+        && !icon.as_str().is_some_and(|icon| {
+            !icon.is_empty()
+                && icon.len() <= crate::harness_icon::MOST_NAME
+                && !icon.chars().any(char::is_control)
+        })
+    {
+        out.push((
+            "icon",
+            format!(
+                "profile '{shown_name}' has an icon purlis does not read — icon is the name of \
+                 a glyph ({}) or of an .svg file in purlis's icons folder, such as \
+                 icon = \"mine.svg\". Write it that way.",
+                crate::theme::vocabulary::GLYPHS.join(", ")
+            ),
+        ));
+    }
     if let Some(key) = inner
         .keys()
         .find(|key| !PROFILE_KEYS.contains(&key.as_str()))
@@ -1006,7 +1037,7 @@ pub(crate) fn refusals_of(
             "",
             format!(
                 "profile '{shown_name}' has {}, which purlis does not read — a profile is \
-                 kind, command and env. Remove it.",
+                 kind, command, env and icon. Remove it.",
                 shown::short(key)
             ),
         ));

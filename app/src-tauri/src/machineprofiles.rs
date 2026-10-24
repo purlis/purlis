@@ -60,6 +60,9 @@ pub struct MachineProfileRow {
     /// Where the commands its chats run can read its sign-in (#2037, ADR 0095 §5): the profile
     /// page's warning, in the core's words; null where its harness keeps the sign-in from them.
     pub commands_can_read_sign_in: Option<String>,
+    /// What it is drawn with (#2922): its harness's glyph where it stands for the built-in, else
+    /// its kind's monogram.
+    pub icon: crate::harnessicon::HarnessIconRow,
 }
 
 /// A plan a profile is signed in to, by the provider id its harness takes.
@@ -107,6 +110,7 @@ impl From<&profilestore::MachineProfile> for MachineProfileRow {
             commands_can_read_sign_in: purlis_core::sandbox::signin::commands_can_read(
                 &record.harness,
             ),
+            icon: crate::harnessicon::of_kind(&record.name, &record.harness),
         }
     }
 }
