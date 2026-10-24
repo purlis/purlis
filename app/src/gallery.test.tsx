@@ -398,15 +398,16 @@ describe("the gallery by keyboard", () => {
     // A row's reset and Undo, on Space and on Enter.
     expect(await doing(() => press("button", "Reset name", " "))).toContain("reset");
     expect(await doing(() => press("button", "Undo", "{Enter}"))).toContain("undo");
-    // A select opens on Enter, and an arrow and Enter pick past the option out of reach.
-    expect(
-      await doing(async () => {
-        selectNamed("Shell").focus();
-        await user.keyboard("{Enter}");
-        await screen.findByRole("listbox");
-        await user.keyboard("{ArrowDown}{ArrowDown}{Enter}");
-      }),
-    ).toContain("select=b");
+    // A select opens on Enter; the arrows reach the option out of reach, which says why and
+    // picks nothing on Enter (D-2906-11), and an arrow back and Enter pick.
+    const picked = await doing(async () => {
+      selectNamed("Shell").focus();
+      await user.keyboard("{Enter}");
+      await screen.findByRole("listbox");
+      await user.keyboard("{ArrowDown}{ArrowDown}{Enter}{ArrowUp}{Enter}");
+    });
+    expect(picked).toContain("select=b");
+    expect(picked).not.toContain("select=c");
     // A toggle, a switch and a box of a few, on Space.
     expect(await doing(() => press("checkbox", "Push after saving", " "))).toContain("toggle=true");
     expect(await doing(() => press("switch", "Play a sound", " "))).toEqual(["switch=true"]);

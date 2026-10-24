@@ -143,6 +143,8 @@ tester.run("purlis/select-family", purlisUi.rules["select-family"], {
     // A role held in a value is a selector, not a combobox drawn by hand.
     { code: `<div data-role="combobox">x</div>` },
     { code: `<button aria-haspopup="menu">More</button>` },
+    // A role decided at run time is no hand-written combobox.
+    { code: `<div role={kind} />` },
   ],
   invalid: [
     { code: `<select value={x} />`, errors: [{ messageId: "raw" }] },
@@ -150,6 +152,9 @@ tester.run("purlis/select-family", purlisUi.rules["select-family"], {
     { code: `<input role="combobox" />`, errors: [{ messageId: "role" }] },
     { code: `<TextField role="combobox" value={q} />`, errors: [{ messageId: "role" }] },
     { code: `<div aria-haspopup="listbox">Pick</div>`, errors: [{ messageId: "role" }] },
+    { code: `<input role={"combobox"} />`, errors: [{ messageId: "role" }] },
+    { code: "<div role={`combobox`} />", errors: [{ messageId: "role" }] },
+    { code: `<div aria-haspopup={"listbox"}>Pick</div>`, errors: [{ messageId: "role" }] },
     { code: `<button className="ui-select wide" />`, errors: [{ messageId: "oldClass" }] },
   ],
 });

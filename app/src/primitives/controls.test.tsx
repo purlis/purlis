@@ -75,10 +75,6 @@ describe("the primitives stylesheet", () => {
     const own = new Set([...CSS.matchAll(/^\s+(--[\w-]+):/gm)].map((hit) => hit[1]));
     const fromViews = new Set<string>();
     for (const name of fromViews) expect(sheet("App.css")).toContain(`${name}:`);
-    const fromRadix = new Set([
-      "--radix-select-trigger-width",
-      "--radix-select-content-available-height",
-    ]);
     const read = [...CSS.matchAll(/var\((--[\w-]+)/g)].map((hit) => hit[1]);
     expect(read.length).toBeGreaterThan(0);
     expect(
@@ -88,10 +84,7 @@ describe("the primitives stylesheet", () => {
           !motion.has(name) &&
           !isGeometry(name) &&
           !own.has(name) &&
-          !fromViews.has(name) &&
-          // What Radix measures for the primitive it draws: a select's trigger width and room,
-          // named one at a time as `theme/literals.test.ts` lists them, so a typo still fails.
-          !fromRadix.has(name),
+          !fromViews.has(name),
       ),
     ).toEqual([]);
   });

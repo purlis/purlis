@@ -98,7 +98,8 @@ async function offered(select: HTMLElement, user: ReturnType<typeof userEvent.se
   const list = await screen.findByRole("listbox");
   const options = within(list).getAllByRole("option");
   const read = options.map((one) => ({
-    words: one.textContent ?? "",
+    // Its words, without the line under them that says why it is out of reach.
+    words: (one.querySelector('[data-part="label"]') ?? one).textContent ?? "",
     value: one.getAttribute("data-value") ?? "",
   }));
   await user.keyboard("{Escape}");

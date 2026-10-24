@@ -99,7 +99,7 @@ export default tseslint.config(
       // The menu, context menu and popover families have moved (#2909).
       "purlis/menu-family": "error",
       "purlis/dialog-family": "error",
-      "purlis/tooltip-family": ["error", { handsOn: ["Select"] }],
+      "purlis/tooltip-family": "error",
       "purlis/panel-family": "error",
       "purlis/panel-section-family": "error",
       "purlis/empty-state-family": "error",
@@ -107,10 +107,5 @@ export default tseslint.config(
       "purlis/rail-family": "error",
       "purlis/activity-family": "error",
     },
-  },
-  // The select's list is drawn in the old menu classes until the select family moves (#2906).
-  {
-    files: ["src/primitives/Select.tsx"],
-    rules: { "purlis/menu-family": "off" },
   },
 );

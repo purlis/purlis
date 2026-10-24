@@ -13,6 +13,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { expect, screen, waitFor, within } from "storybook/test";
 import { expectFocusInSight, untilFocused } from "../../stories.testkit";
+import { Button } from "../button/Button";
 import { ComboBox } from "./ComboBox";
 import { FILTERED_FROM, SELECT_SIZES, Select, type SelectOption, type SelectProps } from "./Select";
 
@@ -93,9 +94,9 @@ export const Placeholder: Story = {
 };
 
 /**
- * **Its list, from the keyboard**: Enter opens it on what it holds, the arrows move and stop at
- * the ends past an option out of reach, Escape closes it and leaves the value, Enter picks; the
- * baseline shows it open on its last option.
+ * **Its list, from the keyboard**: Enter opens it on what it holds, Escape closes it and leaves
+ * the value, the arrows move and stop at the end, on an option out of reach that says why under
+ * its words, where Enter picks nothing (D-2906-11); the baseline shows it open on that option.
  */
 export const ItsList: Story = {
   play: async ({ canvas, userEvent }) => {
@@ -114,12 +115,14 @@ export const ItsList: Story = {
     await expect(canvas.getByRole("status")).toHaveTextContent("Holds claude");
     await userEvent.keyboard("{Enter}");
     const again = await screen.findByRole("listbox");
-    await userEvent.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}");
-    // Aider is out of reach: OpenCode is the last option the arrows stop on.
-    await untilFocused(
-      () => within(again).getByRole("option", { name: "OpenCode" }),
-      "Its list: the arrows stop at the last option in reach",
-    );
+    await userEvent.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}");
+    // Aider is out of reach and says why: the arrows stop on it, at the end of the list.
+    const aider = within(again).getByRole("option", { name: "Aider" });
+    await untilFocused(() => aider, "Its list: the arrows stop on the last option");
+    await expect(aider).toHaveAccessibleDescription("Aider is not installed");
+    await userEvent.keyboard("{Enter}");
+    await expect(screen.getByRole("listbox")).toBeVisible();
+    await expect(canvas.getByRole("status")).toHaveTextContent("Holds claude");
     expectFocusInSight();
   },
 };
@@ -141,7 +144,8 @@ export const Picks: Story = {
 
 /**
  * **A long list is filtered** ({@link FILTERED_FROM} options or more): it opens with its filter
- * holding the keyboard, and what is typed narrows it; the baseline shows it narrowed.
+ * holding the keyboard, and what is typed narrows it; Escape from the filter closes the list,
+ * leaves the value and gives the keyboard back; the baseline shows it narrowed.
  */
 export const Filtered: Story = {
   args: { "aria-label": "Workspace", options: WORKSPACES, start: "" },
@@ -150,18 +154,26 @@ export const Filtered: Story = {
     const select = theSelect(canvas, "Workspace");
     await userEvent.tab();
     await untilFocused(() => select, "Filtered: Tab onto the select");
-    await userEvent.keyboard("{Enter}");
-    const filter = await screen.findByRole("textbox", { name: "Filter" });
-    await untilFocused(() => filter, "Filtered: the filter takes the keyboard");
-    await userEvent.keyboard("de");
-    const list = screen.getByRole("listbox");
-    await waitFor(() =>
-      expect(
-        within(list)
-          .getAllByRole("option")
-          .map((one) => one.textContent),
-      ).toEqual(["devops", "design"]),
-    );
+    const narrowed = async (step: string) => {
+      await userEvent.keyboard("{Enter}");
+      const filter = await screen.findByRole("textbox", { name: "Filter" });
+      await untilFocused(() => filter, `Filtered: the filter takes the keyboard (${step})`);
+      await userEvent.keyboard("dev");
+      const list = screen.getByRole("listbox");
+      await waitFor(() =>
+        expect(
+          within(list)
+            .getAllByRole("option")
+            .map((one) => one.textContent),
+        ).toEqual(["devops"]),
+      );
+    };
+    await narrowed("first");
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull(), CLOSES);
+    await untilFocused(() => select, "Filtered: Escape gives the keyboard back");
+    await expect(canvas.getByRole("status")).toHaveTextContent("Holds nothing");
+    await narrowed("again");
     await userEvent.keyboard("{ArrowDown}");
     expectFocusInSight();
   },
@@ -289,10 +301,43 @@ export const Suggestions: Story = {
     await userEvent.keyboard("purlis");
     const list = await screen.findByRole("listbox");
     await waitFor(() => expect(within(list).getAllByRole("option")).toHaveLength(2));
-    await userEvent.keyboard("{ArrowDown}{ArrowDown}{Enter}");
+    // Escape closes the suggestions and keeps what was typed, the keyboard still in the box.
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull(), CLOSES);
+    await expect(box).toHaveValue("purlis");
+    await untilFocused(() => box, "Suggestions: Escape keeps the keyboard in the box");
+    await userEvent.keyboard("{ArrowDown}");
+    await screen.findByRole("listbox");
+    await userEvent.keyboard("{ArrowDown}{Enter}");
     await waitFor(() => expect(box).toHaveValue("purlis:persona"));
     await userEvent.keyboard("{Backspace>7/}");
     await waitFor(() => expect(screen.getByRole("listbox")).toBeVisible());
     expectFocusInSight();
+  },
+};
+
+/** **An unavailable combobox**: its words and its chevron in the faint tier, out of the Tab
+ *  sequence, and nothing moves. */
+export const UnavailableSuggestions: Story = {
+  render: () => (
+    <div style={{ display: "grid", gap: "var(--space-4)", inlineSize: "20rem" }}>
+      <ComboBox
+        label="Add a skill"
+        suggestions={["purlis:handoff"]}
+        value="purlis:handoff"
+        onChange={() => {}}
+        isDisabled
+      />
+      <Button>After</Button>
+    </div>
+  ),
+  play: async ({ canvas, userEvent }) => {
+    const box = canvas.getByRole("combobox", { name: "Add a skill" });
+    await expect(box).toBeDisabled();
+    await userEvent.tab();
+    await untilFocused(
+      () => canvas.getByRole("button", { name: "After" }),
+      "Unavailable: Tab passes it",
+    );
   },
 };

@@ -26,7 +26,13 @@
  *   way they read a field's value.
  * - **Drawn only while its project is in front**: its list is the popover family's surface.
  */
-import { useState, type ComponentPropsWithRef, type ReactNode } from "react";
+import {
+  useId,
+  useState,
+  type ComponentPropsWithRef,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 import {
   Autocomplete,
   Button as AriaButton,
@@ -113,7 +119,10 @@ export function Select({
       {...aria}
       value={held ? into(value) : null}
       onChange={(key) => {
-        if (key !== null) onValueChange(outOf(key as Key));
+        if (key === null) return;
+        const to = outOf(key as Key);
+        // An option out of reach that says why is in the arrows' way, and is never picked.
+        if (!options.some((one) => one.value === to && saysWhy(one))) onValueChange(to);
       }}
       isDisabled={isDisabled}
       placeholder={placeholder ?? ""}
@@ -215,24 +224,72 @@ function OptionList({ options, none }: { options: readonly SelectOption[]; none?
   );
 }
 
+/** The handlers a press reaches an option by, which an option out of reach never hears. */
+const PRESSES = [
+  "onPointerDown",
+  "onPointerUp",
+  "onMouseDown",
+  "onMouseUp",
+  "onClick",
+  "onTouchStart",
+  "onTouchEnd",
+] as const;
+
+/** Whether an option is out of reach and says why: it stays in the arrows' way, saying so. */
+const saysWhy = (one: SelectOption): boolean =>
+  one.isDisabled === true && one.tooltip !== undefined;
+
+/**
+ * **An option**: the menu family's row, its tick at its end while it is picked. One out of reach
+ * with a reason (`isDisabled` and `tooltip`) is the menu's row that cannot run (D-2906-11): it
+ * stays in the arrows' way, in the faint tier, with why on the line under its words, which is
+ * its description, and a press or Enter on it picks nothing. One out of reach with no reason is
+ * passed over. An option in reach with a hint shows it as its tooltip.
+ */
 function Option({ one }: { one: SelectOption }): ReactNode {
+  const why = useId();
+  const unavailable = saysWhy(one);
   return (
     <ListBoxItem
       id={into(one.value)}
       textValue={one.label}
-      isDisabled={one.isDisabled}
+      isDisabled={one.isDisabled === true && !unavailable}
       data-scope="menu"
       data-part="root"
       data-variant="default"
       data-value={one.value}
+      data-unavailable={unavailable ? "" : undefined}
       render={
-        one.tooltip === undefined
-          ? undefined
-          : (dom) => (
-              <Tooltip tip={one.tooltip}>
-                <div {...(dom as object)} />
-              </Tooltip>
-            )
+        unavailable
+          ? (dom) => {
+              const own = Object.fromEntries(
+                Object.entries(dom as ComponentPropsWithRef<"div">).filter(
+                  ([key]) => !(PRESSES as readonly string[]).includes(key),
+                ),
+              ) as Record<string, unknown>;
+              const keyDown = own.onKeyDown as ((event: KeyboardEvent) => void) | undefined;
+              const keyUp = own.onKeyUp as ((event: KeyboardEvent) => void) | undefined;
+              return (
+                <div
+                  {...own}
+                  aria-disabled="true"
+                  aria-describedby={why}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter" && event.key !== " ") keyDown?.(event);
+                  }}
+                  onKeyUp={(event) => {
+                    if (event.key !== "Enter" && event.key !== " ") keyUp?.(event);
+                  }}
+                />
+              );
+            }
+          : one.tooltip === undefined
+            ? undefined
+            : (dom) => (
+                <Tooltip tip={one.tooltip}>
+                  <div {...(dom as object)} />
+                </Tooltip>
+              )
       }
     >
       {({ isSelected }) => (
@@ -241,6 +298,12 @@ function Option({ one }: { one: SelectOption }): ReactNode {
             <span data-scope="menu" data-part="label">
               {one.label}
             </span>
+            {unavailable && (
+              // Its description and not its name: heard after the name, as why.
+              <span data-scope="menu" data-part="description" id={why} aria-hidden="true">
+                {one.tooltip}
+              </span>
+            )}
           </span>
           <span data-scope="menu" data-part="indicator" data-indicator="check" aria-hidden="true">
             {isSelected && <Check />}
