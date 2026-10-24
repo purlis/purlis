@@ -1158,7 +1158,17 @@ fn plain_file(root: &Path, path: &Path, most: Option<u64>) -> Result<(std::fs::F
 /// A manifest's text, as a manifest, or why it is not one: read with the capabilities this
 /// machine knows ([`Capability::known`]).
 fn parse(text: &str) -> Result<Manifest, String> {
-    parse_knowing(text, &Capability::known())
+    // This machine's flag is read only for a manifest that names a studio word: every other one
+    // reads the same either way, and a launch reads many manifests.
+    let names_studio = Capability::STUDIO
+        .iter()
+        .any(|word| text.contains(&format!("\"{}\"", word.as_str())));
+    let known = if names_studio {
+        Capability::known()
+    } else {
+        Capability::known_where(false)
+    };
+    parse_knowing(text, &known)
 }
 
 /// [`parse`], knowing the capabilities `known`.
