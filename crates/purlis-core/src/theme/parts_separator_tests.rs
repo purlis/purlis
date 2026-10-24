@@ -288,10 +288,12 @@ fn the_grip_s_defaults_are_what_panel_css_draws() {
     let css = css_of(include_str!("../../../../app/src/ui/panel/panel.css"));
     let grip = |state: &str| format!("{ROOT}{state} > {GRIP}");
     assert_eq!(fill_of(&css, GRIP), parts::separator_fill_of(1, &[]));
-    // The two marks the hover state is keyed on, each a rule of its own.
+    // The two marks the hover state is keyed on, each a rule of its own. The library marks a
+    // handle with the keyboard on it `focus`, so only the second can hold with the keyboard, and
+    // it gives way to it.
     for hover in [
         "[data-separator=\"hover\"]",
-        "[data-separator=\"focus\"]:hover",
+        "[data-separator=\"focus\"]:hover:not(:focus-visible)",
     ] {
         assert_eq!(
             fill_of(&css, &grip(hover)),
@@ -306,6 +308,15 @@ fn the_grip_s_defaults_are_what_panel_css_draws() {
     assert_eq!(
         fill_of(&css, &grip(":focus-visible")),
         parts::separator_fill_of(1, &[parts::State::Focused])
+    );
+    // Under the pointer with the keyboard on it: the focus rule, which no hover rule outranks.
+    assert_eq!(
+        fill_of(&css, &grip(":focus-visible")),
+        parts::separator_fill_of(1, &[parts::State::Hover, parts::State::Focused])
+    );
+    assert!(
+        !css.contains(&format!("{ROOT}[data-separator=\"focus\"]:hover > {GRIP}")),
+        "{css}"
     );
     // The handle draws no fill of its own: its line at rest is the regions' (`App.css`).
     for state in [HOVER, "[data-separator=\"active\"]", ":focus-visible"] {
@@ -344,11 +355,11 @@ fn purlis_draws_a_quiet_grip_and_never_the_accent() {
     // the handle's whole length.
     assert_eq!(
         parts::separator_fill_of(1, &[parts::State::Focused]),
-        "accent.base"
+        "focus.ring"
     );
     assert_eq!(
         parts::separator_fill_of(1, &[parts::State::Hover, parts::State::Focused]),
-        "accent.base"
+        "focus.ring"
     );
     // Quiet under the pointer, clear while dragged: two tiers, the faint one first.
     assert_eq!(
@@ -396,7 +407,7 @@ fn a_handle_with_the_keyboard_on_it_that_draws_nothing_draws_its_default() {
     assert!(one.floor.contains("keyboard"), "{one:?}");
     assert!(
         sheet.contains(&format!(
-            ":where({ROOT}:focus-visible {GRIP}) {{ background-color: var(--accent-base); }}"
+            ":where({ROOT}:focus-visible {GRIP}) {{ background-color: var(--focus-ring); }}"
         )),
         "{sheet}"
     );

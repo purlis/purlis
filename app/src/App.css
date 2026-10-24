@@ -2711,11 +2711,39 @@ button.show-more:focus-visible {
   --separator-room: max(var(--panel-border-width), var(--window-gutter));
   align-self: stretch;
   /* The line is the handle's content box, `panel.border-width` wide in the middle of its box
-     (`--separator-box`, the family's): the hairline where the halves sit flush, nothing where
-     they float. */
+     (`--separator-box`, the family's): Purlis Classic's hairline, and nothing in Purlis, whose
+     `panel.border-width` is 0. */
   padding-inline: calc((var(--separator-box) - var(--panel-border-width)) / 2);
   background-color: var(--border-subtle);
   background-clip: content-box;
+}
+
+/* **Two panes in a split part as two regions do** (#3143, D-3143-8): by the window's gutter, a gap
+   in the window's own colour, where a theme floats its panels (Purlis), and by the hairline
+   between two flush regions where it does not (Purlis Classic: `panel.border-width`, 1). The
+   handle takes that room and draws both, centred along it: the gap as an image the gutter's
+   width (none in a flush window), the hairline as its content box, as the halves draw theirs. */
+.pane-split {
+  --separator-room: max(var(--window-gutter), var(--panel-border-width));
+  background-color: var(--border-subtle);
+  background-image: linear-gradient(var(--surface-deep), var(--surface-deep)), none;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-clip: border-box, content-box;
+}
+
+.pane-split[aria-orientation="vertical"] {
+  padding-inline: calc((var(--separator-box) - var(--panel-border-width)) / 2);
+  background-size:
+    var(--window-gutter) 100%,
+    auto;
+}
+
+.pane-split[aria-orientation="horizontal"] {
+  padding-block: calc((var(--separator-box) - var(--panel-border-width)) / 2);
+  background-size:
+    100% var(--window-gutter),
+    auto;
 }
 
 /* And each half keeps what it holds the same step clear of that line. */

@@ -90,8 +90,9 @@ pub(super) fn separator_look(_variant: &str, _states: &[State]) -> Look {
 
 /// **Each part's fill as `panel.css` draws it while `states` hold** (#3143): the handle draws
 /// none; the grip is none at rest, the faint tier under the pointer, the muted tier while it is
-/// dragged, and the accent while the keyboard is on it: a quiet mark, a clear one, and the
-/// window's focus colour as a short mark rather than a ring the handle's whole length.
+/// dragged, and the window's focus colour (`focus.ring`) while the keyboard is on it, under the
+/// pointer too: a quiet mark, a clear one, and the focus colour as a short mark rather than a
+/// ring the handle's whole length.
 pub(super) fn separator_fill(part: usize, states: &[State]) -> &'static str {
     if part == 0 {
         return TRANSPARENT;
@@ -99,7 +100,7 @@ pub(super) fn separator_fill(part: usize, states: &[State]) -> &'static str {
     if states.contains(&State::Pressed) {
         "text.muted"
     } else if states.contains(&State::Focused) {
-        "accent.base"
+        "focus.ring"
     } else if states.contains(&State::Hover) {
         "text.faint"
     } else {

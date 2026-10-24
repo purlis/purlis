@@ -22,8 +22,10 @@ function Regions() {
       <Group className="regions" orientation="vertical">
         <Panel id="upper" className="region-upper">
           <Group className="region-row" orientation="horizontal">
+            {/* The left slot as the window draws it: Purlis Classic's hairline on its edge. */}
             <Panel
               id="side"
+              className="region-slot slot-left"
               defaultSize="35%"
               {...panelRoot("side")}
               role="region"
@@ -37,7 +39,7 @@ function Regions() {
                 <Panel id="talk">
                   <p style={{ margin: "var(--space-3)" }}>talk</p>
                 </Panel>
-                <Separator aria-label="Resize the split" />
+                <Separator className="pane-split" aria-label="Resize the split" />
                 <Panel id="review">
                   <p style={{ margin: "var(--space-3)" }}>review</p>
                 </Panel>
@@ -97,22 +99,52 @@ function expectAQuietMark(handle: HTMLElement) {
   expect(grip !== drawnAs("transparent") || line === accent).toBe(true);
 }
 
-/** **The keyboard is on `handle`**: its box is drawn, and its grip or its line says so in the accent. */
+/**
+ * **The keyboard is on `handle`**: its box is drawn, and its grip says so in the window's focus
+ * colour (Purlis), or its line in the accent (Purlis Classic).
+ */
 function expectFocusShown(handle: HTMLElement) {
   const box = handle.getBoundingClientRect();
   expect(Math.min(box.width, box.height)).toBeGreaterThanOrEqual(2);
   expectFocusInSight();
-  const accent = drawnAs("var(--accent-base)");
   const grip = getComputedStyle(gripOf(handle) as HTMLElement).backgroundColor;
-  expect(grip === accent || getComputedStyle(handle).backgroundColor === accent).toBe(true);
+  const line = getComputedStyle(handle).backgroundColor;
+  expect(grip === drawnAs("var(--focus-ring)") || line === drawnAs("var(--accent-base)")).toBe(
+    true,
+  );
 }
 
-/** **At rest**: no grip, and no line of its own between two panes. */
+/** A length the window's geometry gives where `at` is drawn, in px: `--window-gutter`, … */
+function lengthOf(at: Element, property: string) {
+  return parseFloat(getComputedStyle(at).getPropertyValue(property)) || 0;
+}
+
+/**
+ * **The handles give back all the room their boxes take**: the side and the work sit one gutter
+ * apart, and the two panes the split's room apart (the gutter where the panels float, the
+ * hairline where they sit flush), as if no box were there.
+ */
+function expectTheRoomsKept(canvas: Canvas) {
+  const region = canvas.getByRole("region", { name: "Side" });
+  const gutter = lengthOf(region, "--window-gutter");
+  const side = region.getBoundingClientRect();
+  const work = canvas.getByRole("region", { name: "Content" }).getBoundingClientRect();
+  expect(work.left - side.right).toBeCloseTo(gutter, 1);
+  const talk = (canvas.getByText("talk").parentElement as HTMLElement).getBoundingClientRect();
+  const review = (canvas.getByText("review").parentElement as HTMLElement).getBoundingClientRect();
+  expect(review.top - talk.bottom).toBeCloseTo(
+    Math.max(gutter, lengthOf(region, "--panel-border-width")),
+    1,
+  );
+}
+
+/** **At rest**: no grip; two panes part by the gutter in Purlis and by the hairline in Classic. */
 export const AtRest: Story = {
   play: async ({ canvas }) => {
     const edge = edgeOf(canvas);
     await expect(edge).toHaveAttribute("data-scope", "panel-separator");
     await expect(edge).toHaveAttribute("data-part", "root");
+    expectTheRoomsKept(canvas);
     await expect(getComputedStyle(gripOf(edge) as HTMLElement).backgroundColor).toBe(
       drawnAs("transparent"),
     );
@@ -199,6 +231,7 @@ export const WithTheKeyboard: Story = {
     await userEvent.keyboard("{ArrowRight}");
     await waitFor(() => expect(side.getBoundingClientRect().width).toBeGreaterThan(was));
     await expect(edge).toHaveFocus();
+    expectTheRoomsKept(canvas);
   },
 };
 
@@ -220,5 +253,6 @@ export const SplitWithTheKeyboard: Story = {
     await userEvent.keyboard("{ArrowDown}");
     await waitFor(() => expect(talk.getBoundingClientRect().height).toBeGreaterThan(was));
     await expect(split).toHaveFocus();
+    expectTheRoomsKept(canvas);
   },
 };

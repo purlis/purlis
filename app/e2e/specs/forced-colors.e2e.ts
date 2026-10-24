@@ -87,8 +87,19 @@ describe("forced colours", () => {
     for (const query of found.queries)
       expect(query).toEqual({ text: "(forced-colors: active)", known: true, active: false });
     const lower = (value: string | undefined) => (value ?? "").toLowerCase();
-    const focus = found.rules.find((rule) => rule.selector.includes(":focus-visible"));
+    // The window's focus rule: the one that draws the ring, not a resize handle's grip (#3143).
+    const focus = found.rules.find(
+      (rule) => rule.selector.includes(":focus-visible") && rule.style["outline-color"],
+    );
     expect(lower(focus?.style["outline-color"])).toBe("highlight");
+    // A resize handle's grip: the words' colour under the pointer, the highlight while it is
+    // dragged or has the keyboard.
+    const grip = (state: string) =>
+      found.rules.find(
+        (rule) => rule.selector.includes('[data-part="grip"]') && rule.selector.includes(state),
+      );
+    expect(lower(grip('[data-separator="hover"]')?.style["background-color"])).toBe("canvastext");
+    expect(lower(grip('[data-separator="active"]')?.style["background-color"])).toBe("highlight");
     const tab = found.rules.find((rule) =>
       rule.selector.includes('[role="tab"][aria-selected="true"]'),
     );

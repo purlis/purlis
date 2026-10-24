@@ -135,7 +135,8 @@
 }
 
 /* **Purlis's quiet hover, clear drag and focus**: under the pointer the grip is the faint tier, a
-   mark held at 3:1; while it is dragged, the muted tier; with the keyboard on it, the accent.
+   mark held at 3:1; while it is dragged, the muted tier; with the keyboard on it, the window's
+   focus colour (`focus.ring`), over the pointer's grip.
    Never a line the panels' whole length. The library marks the handle under the pointer, in a
    hit area wider than the handle, except one a press has given the keyboard, which it marks
    `focus`: that one is under the pointer when its own box is. */
@@ -144,14 +145,14 @@
   background-color: var(--text-faint);
 }
 
-[data-scope="panel-separator"][data-part="root"][data-separator="focus"]:hover
+[data-scope="panel-separator"][data-part="root"][data-separator="focus"]:hover:not(:focus-visible)
   > [data-scope="panel-separator"][data-part="grip"] {
   background-color: var(--text-faint);
 }
 
 [data-scope="panel-separator"][data-part="root"]:focus-visible
   > [data-scope="panel-separator"][data-part="grip"] {
-  background-color: var(--accent-base);
+  background-color: var(--focus-ring);
 }
 
 [data-scope="panel-separator"][data-part="root"][data-separator="active"]

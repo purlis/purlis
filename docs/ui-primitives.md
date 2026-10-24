@@ -570,11 +570,12 @@ spec #2897, ADR 0104), each one wrapper under `app/src/ui/` and its own lint rul
 - **A section's title** is the label's capitals in the secondary tier, its mark in the title's
   colour. Where it sits (its margin) is its view's; the line between two sections is a separator.
 - **A resize handle is a panel separator** (#3143): the room it takes and its line at rest are
-  the regions' (`App.css`, `--separator-room`); its box is never thinner than the keyboard's ring
+  the regions' (`App.css`, `--separator-room`): the gutter at a region's edge, and between two
+  panes in a split the gutter in the window's colour, or the hairline where the panels sit flush; its box is never thinner than the keyboard's ring
   and straddles that room with a negative margin, so Tab always lands on something drawn and
   nothing moves. Under the pointer, while dragged and with the keyboard it shows its grip, a
   short mark at its middle drawn over the panels either side. Purlis's grip is the faint tier
-  under the pointer, the muted tier while dragged and the accent with the keyboard on it, in
+  under the pointer, the muted tier while dragged and `focus.ring` with the keyboard on it, in
   place of the window's ring; Purlis Classic keeps its accent line through its theme's parts.
   Forced colours draw the grip in `CanvasText` and `Highlight`, and the ring comes back.
 - **The status bar follows its contribution model** (N28, `ui/status/StatusBar.tsx`): every item,

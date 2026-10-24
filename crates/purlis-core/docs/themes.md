@@ -417,10 +417,12 @@ Each takes only `fill`, in the states `hover`, `pressed` (dragged) and `focused`
 on it), keyed on the panel library's own marks and `:focus-visible` (the manifest's
 `attributes`), not React Aria's. It is drawn in marks (the manifest's `marks`): what it draws in
 a state is held at 3:1 on its grounds as a non-text mark, a focused handle draws a mark of its
-own, and a part that breaks either draws its family default there. Its line at rest is the
-window's hairline. Purlis draws the family default: no grip at rest, a faint grip under the
-pointer, a muted one while dragged and the accent's with the keyboard on it, in place of a ring
-the handle's length. Purlis Classic's own `parts` draw its accent line in all three and no grip
+own, and a part that breaks either draws its family default there. At rest a handle parts its
+panels as the regions part: by the window's gutter where a theme floats its panels (two panes in
+a split sit `window.gutter` apart, in the window's colour), and by the hairline
+(`panel.border-width`) where they sit flush. Purlis draws the family default: no grip at rest, a
+faint grip under the pointer, a muted one while dragged and one in `focus.ring` with the keyboard
+on it, in place of a ring the handle's length. Purlis Classic's own `parts` draw its accent line in all three and no grip
 (`panel-separator.root.hover.fill: accent.base`, `panel-separator.grip.hover.fill: transparent`,
 and the same for `pressed` and `focused`).
 

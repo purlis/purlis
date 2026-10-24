@@ -747,7 +747,7 @@ export function LayoutPanes({
          * A split has exactly two children and they never swap, so the side IS the identity.
          */
         <Fragment key={side}>
-          {side === 1 && <Separator aria-label="Resize the split" />}
+          {side === 1 && <Separator className="pane-split" aria-label="Resize the split" />}
           <Panel>
             <LayoutPanes
               plane={plane}

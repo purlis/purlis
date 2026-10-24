@@ -169,7 +169,7 @@
   [data-scope="panel-separator"][data-part="root"]:is(
       [data-separator="hover"],
       [data-separator="focus"]:hover
-    )
+    ):not(:focus-visible)
     > [data-scope="panel-separator"][data-part="grip"] {
     background-color: CanvasText;
   }
