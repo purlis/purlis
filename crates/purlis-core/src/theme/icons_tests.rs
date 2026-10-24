@@ -9,7 +9,7 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 
-use super::vocabulary::RAIL_VIEWS;
+use super::vocabulary::{GLYPHS, RAIL_VIEWS};
 use super::*;
 
 /// Purlis's own icon set, as the Purlis theme folder ships it.
@@ -440,4 +440,102 @@ fn the_schema_names_icons_as_a_path() {
     assert_eq!(icons["type"], "string");
     assert_eq!(icons["minLength"], 1);
     assert_eq!(icons["maxLength"], 256);
+}
+
+/// **Harness glyphs are part of the icon set** (#2922, ruling #2866 ·4): Purlis draws every one,
+/// and an icon pack redraws them, held to the same checks as a view.
+#[test]
+fn purlis_s_icon_set_draws_every_harness_glyph_in_the_grammar() {
+    let dir = tempfile::tempdir().unwrap();
+    folder(
+        dir.path(),
+        "purlis",
+        &naming("Purlis", json!("icons/icons.json")),
+        &[("icons/icons.json", PURLIS_ICONS)],
+    );
+    let loaded = Library::new().load_folder(dir.path(), "purlis");
+    assert_eq!(said(&loaded), Vec::<String>::new());
+    let glyphs: Vec<&str> = loaded.theme.first().icons.glyphs.keys().copied().collect();
+    let mut every: Vec<&str> = GLYPHS.to_vec();
+    every.sort_unstable();
+    assert_eq!(glyphs, every);
+}
+
+#[test]
+fn an_icon_pack_may_draw_only_glyphs() {
+    let loaded = dusk_with(&json!({ "glyphs": { "spark": { "paths": ["M1 1h2"] } } }).to_string());
+    assert_eq!(said(&loaded), Vec::<String>::new());
+    let icons = &loaded.theme.first().icons;
+    assert!(icons.views.is_empty());
+    assert_eq!(icons.glyphs["spark"].paths, ["M1 1h2"]);
+}
+
+#[test]
+fn a_glyph_purlis_does_not_have_is_left_out_and_said() {
+    let loaded = dusk_with(
+        &json!({ "glyphs": { "spark": { "paths": ["M1 1"] }, "comet": { "paths": ["M1 1"] } } })
+            .to_string(),
+    );
+    assert!(!loaded.refused);
+    assert_eq!(
+        said(&loaded),
+        ["comet in icons/icons.json is not a purlis glyph, so it is left out"]
+    );
+    assert_eq!(loaded.theme.first().icons.glyphs.len(), 1);
+}
+
+#[test]
+fn a_glyph_is_checked_like_any_icon() {
+    for (icons, why) in [
+        (
+            json!({ "glyphs": { "braces": { "paths": ["url(#x)"] } } }),
+            "path 1 of braces in icons/icons.json is not path data: a move, then path commands \
+             and numbers",
+        ),
+        (
+            json!({ "glyphs": { "braces": { "paths": ["M1 1"], "fill": "red" } } }),
+            "fill is not a key of an icon (braces in icons/icons.json)",
+        ),
+        (
+            json!({ "glyphs": [] }),
+            "glyphs in icons/icons.json is an object of glyph names to icons",
+        ),
+        (json!({}), "icons/icons.json names no views or glyphs"),
+    ] {
+        let loaded = dusk_with(&icons.to_string());
+        assert!(loaded.refused, "{icons}");
+        assert_eq!(said(&loaded), [why], "{icons}");
+    }
+}
+
+#[test]
+fn a_child_s_set_draws_over_its_parent_s_glyph_by_glyph() {
+    let dir = tempfile::tempdir().unwrap();
+    folder(
+        dir.path(),
+        "base",
+        &naming("Base", json!("icons.json")),
+        &[(
+            "icons.json",
+            &json!({ "glyphs": { "spark": { "paths": ["M1 1"] }, "braces": { "paths": ["M2 2"] } } })
+                .to_string(),
+        )],
+    );
+    folder(
+        dir.path(),
+        "kid",
+        &json!({ "name": "Kid", "extends": "base", "icons": "icons.json" }),
+        &[(
+            "icons.json",
+            &json!({ "glyphs": { "braces": { "paths": ["M3 3"] } } }).to_string(),
+        )],
+    );
+    let library = Library::new()
+        .with_folder(dir.path(), "base")
+        .with_folder(dir.path(), "kid");
+    let kid = library.load_id("kid");
+    assert_eq!(said(&kid), Vec::<String>::new());
+    let glyphs = &kid.theme.first().icons.glyphs;
+    assert_eq!(glyphs["spark"].paths, ["M1 1"]);
+    assert_eq!(glyphs["braces"].paths, ["M3 3"]);
 }

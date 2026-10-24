@@ -391,6 +391,9 @@ export type Theme = {
    *  checked, for `RailIcon` to stroke. A view it does not draw, and every view of a theme
    *  without one, is the window's own mark (`VIEW_MARKS`). */
   icons?: Readonly<Record<string, RailSymbol>>;
+  /** The harness glyphs of its icon set (#2922), by name (`spark`, `braces`, `terminal`), drawn
+   *  as a view's icon is. A glyph it does not draw is the window's own (`harnessGlyphs.ts`). */
+  glyphs?: Readonly<Record<string, RailSymbol>>;
   /** The geometry's custom properties for each density, written by the engine from the theme's
    *  numbers (#2326, `purlis_core::theme::geometry`). */
   geometry?: Record<Density, Record<string, string>>;
@@ -608,6 +611,7 @@ export function sameTheme(a: Theme, b: Theme): boolean {
   if (a.name !== b.name || a.appearance !== b.appearance) return false;
   if (TOKENS.some((token) => a.values[token] !== b.values[token])) return false;
   if (JSON.stringify(a.icons ?? {}) !== JSON.stringify(b.icons ?? {})) return false;
+  if (JSON.stringify(a.glyphs ?? {}) !== JSON.stringify(b.glyphs ?? {})) return false;
   if (JSON.stringify(a.tint) !== JSON.stringify(b.tint)) return false;
   return (
     JSON.stringify(a.typed) === JSON.stringify(b.typed) &&
