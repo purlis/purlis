@@ -122,12 +122,6 @@
    States.
    --------------------------------------------------------------------------------------------- */
 
-/* A value the form refuses: the danger colour on its edge, as a field's. */
-[data-scope="select"][data-part="root"][data-invalid],
-[data-scope="combobox"][data-part="root"][data-invalid] {
-  border-color: var(--danger-base);
-}
-
 /* Unavailable: its words and its chevron in the faint tier, on its own ground and edge, so
    nothing moves. */
 [data-scope="select"][data-part="root"][data-disabled],

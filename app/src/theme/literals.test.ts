@@ -461,17 +461,12 @@ describe("the stylesheet and the vocabulary agree", () => {
    * `ui/select/select.css`, #2906). The primitive sets each on the element it draws, so no
    * stylesheet can declare it; listed by hand, one at a time, as the window's are.
    */
-  const fromRadix = [
-    "--trigger-width",
-    // A menu is never taller than the room beside what opened it (`primitives/controls.css`).
-    "--radix-context-menu-content-available-height",
-    "--radix-dropdown-menu-content-available-height",
-  ];
+  const fromThePrimitives = ["--trigger-width"];
 
   it("every custom property the stylesheet reads is a token, its own, a primitive's, or the window's", () => {
     // A `var(--typo)` resolves to nothing and the rule silently disappears, which is the one
     // failure mode of a token layer that no screenshot catches.
-    const known = new Set([...declared, ...ownProperties, ...fromTheWindow, ...fromRadix]);
+    const known = new Set([...declared, ...ownProperties, ...fromTheWindow, ...fromThePrimitives]);
     expect([...used].filter((name) => !known.has(name))).toEqual([]);
   });
 

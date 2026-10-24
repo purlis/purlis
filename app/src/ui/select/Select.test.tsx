@@ -11,6 +11,7 @@ import { act, cleanup, render, screen, waitFor, within } from "@testing-library/
 import { userEvent } from "@testing-library/user-event";
 import { useState } from "react";
 import { drawnWith } from "../../cascade.testkit";
+import { Dialog } from "../dialog/Dialog";
 import { FILTERED_FROM, Select, type SelectOption } from "./Select";
 import { chosenIn, offeredIn, pickIn, selectNamed } from "./select.testkit";
 
@@ -115,7 +116,8 @@ describe("the select", () => {
     await user.keyboard("{ArrowDown}{ArrowDown}{Enter}");
     expect(picked).toHaveBeenLastCalledWith("beta");
     await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull());
-    expect(select).toHaveFocus();
+    // The keyboard is handed back once the list has gone, which is after its exit.
+    await waitFor(() => expect(select).toHaveFocus());
   });
 
   it("stops at the ends of its list and does not wrap", async () => {
@@ -144,6 +146,72 @@ describe("the select", () => {
     await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull());
     expect(picked).not.toHaveBeenCalled();
     expect(chosenIn(select)).toBe("alpha");
+  });
+
+  it("hands Escape on to what it stands in while its list is closed (D-2906-7)", async () => {
+    const user = userEvent.setup();
+    const heard = vi.fn();
+    render(
+      <div onKeyDown={(event) => heard(event.key)}>
+        <Filter start="alpha" />
+      </div>,
+    );
+    act(() => selectNamed("Filter by workspace").focus());
+    await user.keyboard("{Escape}");
+    expect(heard).toHaveBeenCalledWith("Escape");
+  });
+
+  it("closes only its list on Escape inside a dialog, and the dialog on the next", async () => {
+    const user = userEvent.setup();
+    const closed = vi.fn();
+    render(
+      <Dialog onClose={closed} title="New workspace">
+        <Filter start="alpha" />
+      </Dialog>,
+    );
+    const select = selectNamed("Filter by workspace");
+    await waitFor(() => expect(select).toHaveFocus());
+    await user.keyboard("{Enter}");
+    await screen.findByRole("listbox");
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull());
+    expect(closed).not.toHaveBeenCalled();
+    await waitFor(() => expect(select).toHaveFocus());
+    await user.keyboard("{Escape}");
+    expect(closed).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps an option out of reach with a reason in the arrows' way, saying why, and never picks it (D-2906-11)", async () => {
+    const user = userEvent.setup();
+    const picked = vi.fn();
+    render(
+      <Filter
+        start="alpha"
+        onPick={picked}
+        options={[
+          { value: "alpha", label: "alpha" },
+          { value: "aider", label: "Aider", isDisabled: true, tooltip: "Aider is not installed" },
+        ]}
+      />,
+    );
+    const select = selectNamed("Filter by workspace");
+    act(() => select.focus());
+    await user.keyboard("{Enter}");
+    const list = await screen.findByRole("listbox");
+    const aider = within(list).getByRole("option", { name: "Aider" });
+    expect(aider).toHaveAttribute("aria-disabled", "true");
+    expect(aider).toHaveAccessibleDescription("Aider is not installed");
+    await user.keyboard("{ArrowDown}");
+    await waitFor(() => expect(aider).toHaveFocus());
+    await user.keyboard("{Enter}");
+    await user.click(aider);
+    expect(picked).not.toHaveBeenCalled();
+    // Still open on it: nothing was picked, and Escape puts the list away.
+    expect(screen.getByRole("listbox")).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull());
+    expect(chosenIn(select)).toBe("alpha");
+    await expect(offeredIn(select)).resolves.toEqual(["alpha", "Aider"]);
   });
 
   it("draws its list on the menu's surface, each option a menu row with its tick", async () => {

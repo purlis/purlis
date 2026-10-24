@@ -322,6 +322,19 @@ function combobox(node) {
   return role?.type === "Literal" && role.value === "combobox";
 }
 
+/** The string an attribute's value is, written as a literal, in braces or as a template with
+ *  nothing in it; `undefined` for one decided at run time. */
+function literalOf(value) {
+  if (!value) return undefined;
+  if (value.type === "Literal") return value.value;
+  if (value.type !== "JSXExpressionContainer") return undefined;
+  const inner = value.expression;
+  if (inner.type === "Literal") return inner.value;
+  if (inner.type === "TemplateLiteral" && inner.expressions.length === 0)
+    return inner.quasis[0]?.value.cooked;
+  return undefined;
+}
+
 /** The select family's old styling classes: `ui-select` and `ui-select-list`. */
 const SELECT_CLASS = /(?:^|\s)(ui-select(?:-list)?)(?=\s|$)/;
 
@@ -349,7 +362,8 @@ const selectFamily = {
           }
           return;
         }
-        const value = node.value?.type === "Literal" ? node.value.value : undefined;
+        // `role="combobox"`, and `role={"combobox"}` or `` role={`combobox`} ``, alike.
+        const value = literalOf(node.value);
         if (
           (name === "role" && value === "combobox") ||
           (name === "aria-haspopup" && value === "listbox")

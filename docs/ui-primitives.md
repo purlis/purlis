@@ -592,8 +592,10 @@ refuses all four (`purlis/select-family`, an error).
 - **Sizes**: `sm` 24, `md` 28 (the default), `lg` 32, as the text input's; one size for a row of
   controls (the browser bar's page size is `sm`).
 - **Keyboard first**: Tab reaches a select (`tabIndex` 0 for WebKit, #190); Enter, Space, ↑ or ↓
-  open it on what it holds; ↑ and ↓ move and stop at the ends, passing an option out of reach;
-  Enter picks; Escape closes the list and leaves the value as it was, and on a closed select
+  open it on what it holds; ↑ and ↓ move and stop at the ends, passing an option out of reach
+  with no reason; **an option out of reach that says why** (`isDisabled` with `tooltip`) is the
+  menu's row that cannot run: it stays in the arrows' way in the faint tier, with why on the line
+  under its words as its description, and a press or Enter on it picks nothing; Enter picks; Escape closes the list and leaves the value as it was, and on a closed select
   goes on to what it stands in (a form that closes). A letter typed goes to the first option it
   starts. **A long list is filtered**: from `FILTERED_FROM` (10) options a select's list opens
   with the popover's filter row holding the keyboard, and what is typed narrows it while ↑ and ↓
@@ -2024,15 +2026,12 @@ A part of a project's view is therefore mounted while nobody can see it. What th
   would stand over the project in front: a delete asked in one, answered over another. And it
   need not be open as the project leaves: a part still sets its own state while its project is
   behind, so the answer to something it asked the core can open its confirm then. So **every
-  overlay is written through `overlays/`**, never from the Radix package: the same parts, with
-  the portal, the content and the scrim drawn only while their project is in front
-  (`onlyWhileShown`). Nothing of a project behind is ever mounted over the window, so nothing a
+  overlay is a family's**, on React Aria (#2906): the surface a popover, a menu or a select's list
+  stands on, a dialog and a tooltip each ask `useProjectShown()` and draw nothing while their
+  project is behind. Nothing of a project behind is ever mounted over the window, so nothing a
   dialog does to the document as it mounts happens either, and what opened it is there when
-  the person is back. Each file hands on Radix's parts by their short names alone
-  (`Content`, never `DialogContent`, which is the same part with nothing asked of it).
-  `projectShown.guard.test.tsx` fails for an overlay imported from the package, for a kind with
-  no file in `overlays/`, for a part that draws handed on as it is under any name, and for a new
-  `createPortal`. Behind that
+  the person is back. `projectShown.guard.test.tsx` fails for a Radix package that draws over the
+  window and for a new `createPortal`. Behind that
   stands one backstop: a project that leaves the front with anything still over the window once
   the press is over (`drawnOverTheWindow`) is not kept.
 - **A prop that says the project is in front** is the last one the part was drawn with while
