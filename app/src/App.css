@@ -8318,6 +8318,32 @@ nav.piece-files-head {
   padding-left: var(--space-5);
 }
 
+/* The empty studio's three starts (SK-22): side by side where they fit, stacked where not. */
+.skill-starts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: var(--space-3);
+  max-width: 48rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  text-align: left;
+}
+
+.skill-starts > li {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.skill-starts p {
+  margin: 0;
+  font-size: var(--font-size-sm);
+}
+
 /* Skill sources (SK-10): the install review leads with its summary, risky items marked. */
 .skill-sources,
 .skill-review {

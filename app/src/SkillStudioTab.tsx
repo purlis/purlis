@@ -1,8 +1,15 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { lazy, Suspense, useEffect, useState, type DragEvent } from "react";
-import { LoaderCircle, MessageSquarePlus, Plus, Sparkles } from "lucide-react";
+import { lazy, Suspense, useEffect, useRef, useState, type DragEvent } from "react";
+import {
+  FilePlus,
+  FolderGit2,
+  LoaderCircle,
+  MessageSquarePlus,
+  Plus,
+  Sparkles,
+} from "lucide-react";
 import {
   commands,
   type DeletedSkill,
@@ -88,6 +95,12 @@ const DRAGGED = "application/x-purlis-skill";
  * to), deleted after the studio says who uses it, and restored. New skill starts one from a
  * template at the level the person came from. A project skill's grant, and in a workspace its
  * turn-off, are set on its row. Each change is one commit (the core's `skills::verbs`).
+ *
+ * **What it offers when it opens** (SK-22, #2785; decision 42) is the core's
+ * (`skills::first_open`): while the project has no skill of its own, three starts above the
+ * skills it lists (make one with a chat, browse sources, start blank); the offered skill sources
+ * in its sources section; and, where the project's skills are still where only Claude Code reads
+ * them, the move into the studio, which is the doctor's `project-skills` fix (SK-21).
  */
 export function SkillStudioTab({
   plane,
@@ -111,6 +124,8 @@ export function SkillStudioTab({
   const [busy, setBusy] = useState(false);
   const [deleted, setDeleted] = useState<readonly DeletedSkill[]>([]);
   const [switched, setSwitched] = useState(0);
+  const [moveLater, setMoveLater] = useState(false);
+  const sourcesHeading = useRef<HTMLHeadingElement>(null);
   const { workspace, persona } = whoseChats(scope);
   const on = studio?.on === true;
   const drafts = useSkillDrafts(plane, changed + done);
@@ -243,6 +258,95 @@ export function SkillStudioTab({
       : { tone: "news", label: "Skill deleted", text: `${name} is deleted.`, restore: one.id };
   };
 
+  /** Moves the project's skills into the studio's: the doctor's fix, said as it said it. */
+  const moveSkills = (fix: string) => {
+    setBusy(true);
+    void commands
+      .planeDoctorFix(plane, fix)
+      .then((answer) => {
+        if (answer.status === "error")
+          setSaid({ tone: "trouble", label: "The skills were not moved", text: answer.error });
+        else if (answer.data.refused !== null)
+          setSaid({
+            tone: "trouble",
+            label: "The skills were not moved",
+            text: answer.data.refused,
+          });
+        else
+          setSaid({
+            tone: answer.data.complete ? "news" : "trouble",
+            label: "Skills moved",
+            text: answer.data.said.join(" "),
+          });
+      })
+      .catch((err: unknown) =>
+        setSaid({ tone: "trouble", label: "The skills were not moved", text: String(err) }),
+      )
+      .finally(() => {
+        setBusy(false);
+        setDone((n) => n + 1);
+      });
+  };
+  const unmoved = studio.first.unmoved;
+  const move = unmoved !== null && !moveLater && (
+    <Notice
+      cause="skill-move"
+      tone="news"
+      label="Skills to move"
+      fixes={[{ label: "Move them", busy, onPress: () => moveSkills(unmoved.fix) }]}
+      onDismiss={() => setMoveLater(true)}
+    >
+      <span data-testid="skill-studio-unmoved">
+        {`This project keeps ${counted(unmoved.skills, "skill", "skills")} where only Claude Code reads its skills. Moving them gives every chat each one, on Claude Code, Codex and opencode alike, in one commit that can be undone.`}
+      </span>
+    </Notice>
+  );
+  /** The three starts of a project with no skill of its own (decision 42). */
+  const starts = studio.first.starts && doing === undefined && (
+    <EmptyState
+      headline="This project has no skills of its own yet"
+      body="Every chat still gets the skills listed here. Start one of the project's own:"
+      mark={Sparkles}
+      testid="skill-studio-empty"
+      action={
+        <ul className="skill-starts" aria-label="Ways to start a skill">
+          <li>
+            <Button
+              icon={<MessageSquarePlus aria-hidden="true" />}
+              onPress={() => askSkillChat({ plane, kind: "draft", level: levelFrom(scope) })}
+            >
+              Make one with a chat
+            </Button>
+            <p className="honest">
+              Say what you want in a chat. Its draft comes back here to try and accept.
+            </p>
+          </li>
+          <li>
+            <Button
+              icon={<FolderGit2 aria-hidden="true" />}
+              onPress={() => {
+                const heading = sourcesHeading.current;
+                heading?.scrollIntoView?.({ block: "start" });
+                heading?.focus();
+              }}
+            >
+              Browse sources
+            </Button>
+            <p className="honest">Install a reviewed copy of a skill from a git repository.</p>
+          </li>
+          <li>
+            <Button
+              icon={<FilePlus aria-hidden="true" />}
+              onPress={() => setDoing({ what: "new" })}
+            >
+              Start blank
+            </Button>
+            <p className="honest">Write one yourself, from a blank template.</p>
+          </li>
+        </ul>
+      }
+    />
+  );
   const picker = (
     <div className="vault-tools">
       <Select
@@ -364,33 +468,10 @@ export function SkillStudioTab({
       busy={busy}
       change={change}
       changed={changed + done}
+      offered={studio.first.sources}
+      headingRef={sourcesHeading}
     />
   );
-  if (studio.skills.length === 0)
-    return (
-      <div className="skill-studio">
-        {picker}
-        {notice}
-        {panel}
-        {drafted}
-        {doing === undefined && (
-          <EmptyState
-            headline="This project has no skills yet"
-            body="The skills this project's chats get are listed here, with any that are left out and why. New skill starts one."
-            mark={Sparkles}
-            testid="skill-studio-empty"
-          />
-        )}
-        <SkillStudioHarnesses
-          plane={plane}
-          workspace={workspace}
-          harnesses={studio.harnesses}
-          onSwitched={() => setSwitched((n) => n + 1)}
-        />
-        {sourcesSection}
-        {restorable}
-      </div>
-    );
   // The first row of a name is the copy the chat gets, or its only copy; each row after it is a
   // copy that one hides.
   const seen = new Map<string, number>();
@@ -418,8 +499,10 @@ export function SkillStudioTab({
         {persona !== null && " A persona brings its skills into every workspace."}
       </p>
       {notice}
+      {move}
       {panel}
       {drafted}
+      {starts}
       <div
         className="skill-levels"
         role="group"
@@ -439,231 +522,236 @@ export function SkillStudioTab({
           </span>
         ))}
       </div>
-      <table className="ui-table" aria-label="Skills">
-        <thead>
-          <tr>
-            <th scope="col">Skill</th>
-            <th scope="col">Level</th>
-            <th scope="col">Granted to</th>
-            <th scope="col">In a chat</th>
-            <th scope="col">What it does</th>
-            <th scope="col">Works on</th>
-            <th scope="col">Change</th>
-          </tr>
-        </thead>
-        <tbody>
-          {studio.skills.map((skill) => {
-            const level = levelOf(skill, workspace);
-            return (
-              <tr
-                key={`${skill.level}\u0000${skill.folder}`}
-                data-testid={testid(skill.name)}
-                draggable={level !== null}
-                onDragStart={(event) => {
-                  if (level === null) return;
-                  event.dataTransfer.setData(
-                    DRAGGED,
-                    JSON.stringify({ name: skill.name, from: level }),
-                  );
-                  event.dataTransfer.effectAllowed = "move";
-                }}
-              >
-                <td>
-                  {onOpenView === undefined ? (
-                    <code>{skill.name}</code>
-                  ) : (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      aria-label={`Open ${skill.name}`}
-                      onPress={() => onOpenView(skillView(skill.name), skill.name)}
-                    >
+      {studio.skills.length > 0 && (
+        <table className="ui-table" aria-label="Skills">
+          <thead>
+            <tr>
+              <th scope="col">Skill</th>
+              <th scope="col">Level</th>
+              <th scope="col">Granted to</th>
+              <th scope="col">In a chat</th>
+              <th scope="col">What it does</th>
+              <th scope="col">Works on</th>
+              <th scope="col">Change</th>
+            </tr>
+          </thead>
+          <tbody>
+            {studio.skills.map((skill) => {
+              const level = levelOf(skill, workspace);
+              return (
+                <tr
+                  key={`${skill.level}\u0000${skill.folder}`}
+                  data-testid={testid(skill.name)}
+                  draggable={level !== null}
+                  onDragStart={(event) => {
+                    if (level === null) return;
+                    event.dataTransfer.setData(
+                      DRAGGED,
+                      JSON.stringify({ name: skill.name, from: level }),
+                    );
+                    event.dataTransfer.effectAllowed = "move";
+                  }}
+                >
+                  <td>
+                    {onOpenView === undefined ? (
                       <code>{skill.name}</code>
-                    </Button>
-                  )}
-                </td>
-                <td>
-                  {skill.label}
-                  {skill.local && (
-                    <>
-                      {" "}
+                    ) : (
                       <Button
-                        onPress={() => share(skill)}
-                        tooltip="Give it to the team: it is committed with the project"
-                      >
-                        Share
-                      </Button>
-                    </>
-                  )}
-                </td>
-                <td>
-                  {!skill.granted ? (
-                    ""
-                  ) : (
-                    <GrantPicker
-                      label={`Where ${skill.name} reaches`}
-                      workspaces={studio.workspaces}
-                      now={skill.granted}
-                      disabled={busy}
-                      onPick={(grant) =>
-                        change("The grant was not changed", () =>
-                          commands.skillGrant(plane, skill.name, grant),
-                        )
-                      }
-                    />
-                  )}
-                </td>
-                <td>
-                  {skill.on ? (skill.unchecked ?? "On") : `Left out: ${skill.left_out ?? ""}`}
-                  {skill.on && skill.level === "built-in" && (
-                    <span className="honest"> It ships with purlis, and cannot be turned off.</span>
-                  )}
-                  {studio.clashes
-                    .filter(
-                      (clash) =>
-                        clash.name === skill.name &&
-                        clash.level === skill.level &&
-                        clash.local === skill.local,
-                    )
-                    .map((clash) => (
-                      <span
-                        key={`${clash.harness}\u0000${clash.outcome}`}
-                        className="honest"
-                        data-testid={`clash-${skill.name}`}
-                      >
-                        {` Also: ${clashSaid(clash)}. `}
-                        {level !== null && (
-                          <Button
-                            size="sm"
-                            isDisabled={busy}
-                            onPress={() => setDoing({ what: "rename", skill, level })}
-                          >
-                            Rename the project's copy
-                          </Button>
-                        )}
-                      </span>
-                    ))}
-                  {typeof skill.accept === "string" && (
-                    <>
-                      {" "}
-                      <Button
+                        variant="ghost"
                         size="sm"
-                        isDisabled={busy}
-                        onPress={() => {
-                          const folder = skill.accept;
-                          if (typeof folder === "string")
-                            change("The folder was not accepted", () =>
-                              commands.skillLevelAccept(plane, folder),
-                            );
-                        }}
+                        aria-label={`Open ${skill.name}`}
+                        onPress={() => onOpenView(skillView(skill.name), skill.name)}
                       >
-                        Accept its folder
+                        <code>{skill.name}</code>
                       </Button>
-                    </>
-                  )}
-                  {skill.not_granted !== null && (
-                    <span className="honest" data-testid={`not-granted-${skill.name}`}>
-                      {" "}
-                      {skill.not_granted}
-                    </span>
-                  )}
-                  {workspace !== null &&
-                    skill.level === "project" &&
-                    skill.not_granted === null && (
+                    )}
+                  </td>
+                  <td>
+                    {skill.label}
+                    {skill.local && (
+                      <>
+                        {" "}
+                        <Button
+                          onPress={() => share(skill)}
+                          tooltip="Give it to the team: it is committed with the project"
+                        >
+                          Share
+                        </Button>
+                      </>
+                    )}
+                  </td>
+                  <td>
+                    {!skill.granted ? (
+                      ""
+                    ) : (
+                      <GrantPicker
+                        label={`Where ${skill.name} reaches`}
+                        workspaces={studio.workspaces}
+                        now={skill.granted}
+                        disabled={busy}
+                        onPick={(grant) =>
+                          change("The grant was not changed", () =>
+                            commands.skillGrant(plane, skill.name, grant),
+                          )
+                        }
+                      />
+                    )}
+                  </td>
+                  <td>
+                    {skill.on ? (skill.unchecked ?? "On") : `Left out: ${skill.left_out ?? ""}`}
+                    {skill.on && skill.level === "built-in" && (
+                      <span className="honest">
+                        {" "}
+                        It ships with purlis, and cannot be turned off.
+                      </span>
+                    )}
+                    {studio.clashes
+                      .filter(
+                        (clash) =>
+                          clash.name === skill.name &&
+                          clash.level === skill.level &&
+                          clash.local === skill.local,
+                      )
+                      .map((clash) => (
+                        <span
+                          key={`${clash.harness}\u0000${clash.outcome}`}
+                          className="honest"
+                          data-testid={`clash-${skill.name}`}
+                        >
+                          {` Also: ${clashSaid(clash)}. `}
+                          {level !== null && (
+                            <Button
+                              size="sm"
+                              isDisabled={busy}
+                              onPress={() => setDoing({ what: "rename", skill, level })}
+                            >
+                              Rename the project's copy
+                            </Button>
+                          )}
+                        </span>
+                      ))}
+                    {typeof skill.accept === "string" && (
                       <>
                         {" "}
                         <Button
                           size="sm"
                           isDisabled={busy}
-                          onPress={() =>
-                            change(
-                              skill.on
-                                ? "The skill was not turned off"
-                                : "The skill was not turned on",
-                              () => commands.skillTurn(plane, workspace, skill.name, !skill.on),
-                            )
-                          }
+                          onPress={() => {
+                            const folder = skill.accept;
+                            if (typeof folder === "string")
+                              change("The folder was not accepted", () =>
+                                commands.skillLevelAccept(plane, folder),
+                              );
+                          }}
                         >
-                          {skill.on ? `Turn off in ${workspace}` : `Turn on in ${workspace}`}
+                          Accept its folder
                         </Button>
                       </>
                     )}
-                </td>
-                <td>{skill.description}</td>
-                <td>
-                  <SkillCompatBadges name={skill.name} compat={skill.compat} lint={skill.lint} />
-                </td>
-                <td>
-                  <SkillRowActions
-                    actions={[
-                      ...(level === null
-                        ? []
-                        : [
-                            {
-                              id: "edit",
-                              label: "Edit",
-                              name: `Edit ${skill.name}`,
-                              disabled: busy,
-                              onPress: () => open(skill, level),
-                            },
-                            {
-                              id: "rename",
-                              label: "Rename",
-                              name: `Rename ${skill.name}`,
-                              disabled: busy,
-                              onPress: () => setDoing({ what: "rename", skill, level }),
-                            },
-                          ]),
-                      // A persona's own list (SK-5, #2768), one more pair of the row's actions.
-                      ...(persona === null
-                        ? []
-                        : [
-                            skill.named
-                              ? {
-                                  id: "persona-remove",
-                                  label: "Remove",
-                                  name: `Remove ${skill.written} from ${persona}`,
-                                  disabled: busy,
-                                  onPress: () => personaSkill(persona, skill.written, "remove"),
-                                }
-                              : {
-                                  id: "persona-add",
-                                  label: `Add to ${persona}`,
-                                  name: `Add ${skill.written} to ${persona}`,
-                                  disabled: busy,
-                                  onPress: () => personaSkill(persona, skill.written, "add"),
-                                },
-                          ]),
-                      ...(level === null
-                        ? []
-                        : [
-                            {
-                              id: "delete",
-                              label: "Delete",
-                              name: `Delete ${skill.name}`,
-                              disabled: busy,
-                              danger: true,
-                              onPress: () => askDelete(skill, level),
-                            },
-                          ]),
-                    ]}
-                    extra={
-                      level === null ? undefined : (
-                        <LevelPicker
-                          label={`Move ${skill.name} to`}
-                          levels={levels.filter((to) => !sameLevel(to.level, level))}
-                          disabled={busy}
-                          onPick={(to) => moveTo(skill, level, to)}
-                        />
-                      )
-                    }
-                  />
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+                    {skill.not_granted !== null && (
+                      <span className="honest" data-testid={`not-granted-${skill.name}`}>
+                        {" "}
+                        {skill.not_granted}
+                      </span>
+                    )}
+                    {workspace !== null &&
+                      skill.level === "project" &&
+                      skill.not_granted === null && (
+                        <>
+                          {" "}
+                          <Button
+                            size="sm"
+                            isDisabled={busy}
+                            onPress={() =>
+                              change(
+                                skill.on
+                                  ? "The skill was not turned off"
+                                  : "The skill was not turned on",
+                                () => commands.skillTurn(plane, workspace, skill.name, !skill.on),
+                              )
+                            }
+                          >
+                            {skill.on ? `Turn off in ${workspace}` : `Turn on in ${workspace}`}
+                          </Button>
+                        </>
+                      )}
+                  </td>
+                  <td>{skill.description}</td>
+                  <td>
+                    <SkillCompatBadges name={skill.name} compat={skill.compat} lint={skill.lint} />
+                  </td>
+                  <td>
+                    <SkillRowActions
+                      actions={[
+                        ...(level === null
+                          ? []
+                          : [
+                              {
+                                id: "edit",
+                                label: "Edit",
+                                name: `Edit ${skill.name}`,
+                                disabled: busy,
+                                onPress: () => open(skill, level),
+                              },
+                              {
+                                id: "rename",
+                                label: "Rename",
+                                name: `Rename ${skill.name}`,
+                                disabled: busy,
+                                onPress: () => setDoing({ what: "rename", skill, level }),
+                              },
+                            ]),
+                        // A persona's own list (SK-5, #2768), one more pair of the row's actions.
+                        ...(persona === null
+                          ? []
+                          : [
+                              skill.named
+                                ? {
+                                    id: "persona-remove",
+                                    label: "Remove",
+                                    name: `Remove ${skill.written} from ${persona}`,
+                                    disabled: busy,
+                                    onPress: () => personaSkill(persona, skill.written, "remove"),
+                                  }
+                                : {
+                                    id: "persona-add",
+                                    label: `Add to ${persona}`,
+                                    name: `Add ${skill.written} to ${persona}`,
+                                    disabled: busy,
+                                    onPress: () => personaSkill(persona, skill.written, "add"),
+                                  },
+                            ]),
+                        ...(level === null
+                          ? []
+                          : [
+                              {
+                                id: "delete",
+                                label: "Delete",
+                                name: `Delete ${skill.name}`,
+                                disabled: busy,
+                                danger: true,
+                                onPress: () => askDelete(skill, level),
+                              },
+                            ]),
+                      ]}
+                      extra={
+                        level === null ? undefined : (
+                          <LevelPicker
+                            label={`Move ${skill.name} to`}
+                            levels={levels.filter((to) => !sameLevel(to.level, level))}
+                            disabled={busy}
+                            onPick={(to) => moveTo(skill, level, to)}
+                          />
+                        )
+                      }
+                    />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
       <SkillStudioHarnesses
         plane={plane}
         workspace={workspace}

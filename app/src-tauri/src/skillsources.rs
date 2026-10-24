@@ -114,7 +114,7 @@ impl SkillSource {
         }
     }
 
-    fn of(source: Source, which: Which) -> SkillSource {
+    pub(crate) fn of(source: Source, which: Which) -> SkillSource {
         SkillSource {
             label: esc(&source.to_string()),
             remote: (&source.remote).into(),

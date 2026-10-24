@@ -1,0 +1,39 @@
+# The skill sources the Skill studio offers with one click (SK-22, #2785; ADR 0100 §1, as
+# amended 2026-10-24). Read by `skills::first_open::offered`, into a closed shape: a line purlis
+# does not read takes the whole list away, and a test fails the build first.
+#
+# A source is on this list when all of these hold:
+#
+# - it is a public https:// git repository of SKILL.md folders, read the way any skill source is
+#   read (no index, no name resolved: this file is the whole of what purlis offers);
+# - it is kept by the maker of a chat program purlis runs, or it is a collection that people use
+#   widely across those programs, and it is still maintained;
+# - its skills are general, not one company's or one product's.
+#
+# Being on the list vouches for nothing. Adding one still asks first, and each install is still
+# its own review of the exact files, summary first (ADR 0100 §3).
+#
+# `offering` is `catalogue` for purlis's own first-party catalogue (PE-44) or `well-known` for a
+# collection someone else keeps. purlis publishes no catalogue repository yet, so none is listed;
+# when it does, it is one more table here.
+
+[[source]]
+offering = "well-known"
+name = "Anthropic's skills"
+url = "https://github.com/anthropics/skills"
+folder = "skills"
+why = "The collection the open skill format began with, kept by the makers of Claude Code: documents, design, building with Claude and more."
+
+[[source]]
+offering = "well-known"
+name = "OpenAI's curated skills"
+url = "https://github.com/openai/skills"
+folder = "skills/.curated"
+why = "The skills OpenAI curates for Codex, kept by its makers."
+
+[[source]]
+offering = "well-known"
+name = "Superpowers"
+url = "https://github.com/obra/superpowers"
+folder = "skills"
+why = "A widely used collection of engineering skills that works with Claude Code, Codex and opencode: planning, debugging, test-first work, code review."
