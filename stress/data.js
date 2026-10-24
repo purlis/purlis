@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792813203692,
+  "lastUpdate": 1792816541732,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -6464,6 +6464,42 @@ window.BENCHMARK_DATA = {
             "value": 292.1,
             "unit": "MB",
             "extra": "median of 6 samples: 304.8, 301, 301.3, 282.1, 283.1, 188.1 MB; window 156.7 MB, session host 126.2 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2942d82bd5322b6aec5a0ca1ed084e7bbf83c1ca",
+          "message": "SK-20: skill observability: curation starts, totals by harness, persona and workspace, exporter attributes (#3085)\n\n* SK-20: curation starts, run stats by harness, persona and workspace, skill attributes for the exporter\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-20: regenerate bindings, format\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-20: clippy, and the unheard start row's record says its harness\n\nRe-recorded from CI's recorded-behaviour-blessed artifact, that row alone:\nposttooluse-skill-records-its-run-where-no-host-listens now logs harness\n\"claude\". The artifact's other six rows differ only in key order, so they\nwere not taken.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-20: the theme views test answers the skill's totals\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-20: the skill's totals are served on a link, as its runs are\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-20: review fixes\n\nCuration prompts are held before the chat starts; theme chats are no\ncuration; a live workspace's name never reaches the committed skill log;\nPrompted's Debug says nothing of the prompt; tidier stats types.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-20: the unheard start row in a live workspace names no workspace\n\nRe-recorded from CI's blessed artifact, that row alone: the fixture's alpha\nis a live workspace, so its name and copy stay out of the committed log.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-20: a draft skill's chat starts no curation runs\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-20: a LOCAL workspace's name stays out of the committed log, a LIVE one's is kept\n\nLIVE is the committed, shared kind; the condition was inverted. The\nrecorded row goes back to naming alpha, a LIVE workspace, as CI blessed it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-20: the MCP server tests' workspaces are LIVE, as shared ones are\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-24T07:16:01+04:00",
+          "tree_id": "2a84698086fabac8ad388800d7c5083329dae129",
+          "url": "https://github.com/purlis/purlis/commit/2942d82bd5322b6aec5a0ca1ed084e7bbf83c1ca"
+        },
+        "date": 1792816538697,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 1145,
+            "unit": "MB",
+            "extra": "median of 3 samples: 932, 1145, 1265 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 320.5,
+            "unit": "MB",
+            "extra": "median of 6 samples: 371.8, 326.7, 325.8, 313.9, 315.1, 198.2 MB; window 205.4 MB, session host 115 MB"
           }
         ]
       }
