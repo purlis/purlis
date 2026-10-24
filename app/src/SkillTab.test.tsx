@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { SkillTab } from "./SkillTab";
+import type { Offer } from "./actions";
 
 afterEach(() => {
   cleanup();
@@ -29,7 +30,7 @@ const COLUMNS = [
 /** purlis's Runs panel, as the core answers it: a sentence and the table of runs. */
 function runsPanel(rows: { key: string; cells: string[] }[]) {
   return {
-    key: "runs",
+    key: { kind: "runs" },
     title: "Runs",
     by: null,
     refused: null,
@@ -109,6 +110,31 @@ describe("a skill's Runs panel", () => {
       "No runs of deploy yet",
     );
   });
+
+  it("offers a new chat where there are no runs, as the catalogue's own row", async () => {
+    const pressed: string[] = [];
+    const panel = runsPanel([]);
+    const table = panel.blocks[panel.blocks.length - 1] as { empty: { offer: string | null } };
+    table.empty.offer = "chat.new";
+    mockIPC((cmd) => {
+      if (cmd === "skill_panels") return [panel];
+      throw new Error(`unexpected ${cmd}`);
+    });
+    const newTab = { id: "chat.new", title: "New tab", available: true } as unknown as Offer;
+    render(
+      <SkillTab
+        plane="p"
+        name="deploy"
+        changed={0}
+        offerFor={(id) => (id === "chat.new" ? newTab : undefined)}
+        onPress={(offer) => pressed.push(offer.id)}
+      />,
+    );
+
+    const empty = await screen.findByTestId("table-empty");
+    within(empty).getByRole("button", { name: "New tab" }).click();
+    expect(pressed).toEqual(["chat.new"]);
+  });
 });
 
 describe("a panel an extension adds to a skill's tab", () => {
@@ -118,14 +144,14 @@ describe("a panel an extension adds to a skill's tab", () => {
         return [
           runsPanel([]),
           {
-            key: "ext/house/checks",
+            key: { kind: "extension", extension: "house", panel: "checks" },
             title: "Checks",
             by: "House rules",
             refused: null,
             blocks: [{ kind: "note", text: "Two checks passed review.", tone: "plain" }],
           },
           {
-            key: "ext/house/broken",
+            key: { kind: "extension", extension: "house", panel: "broken" },
             title: "Broken",
             by: "House rules",
             refused: "'house' did not answer within 5 seconds, so purlis stopped it.",
@@ -136,10 +162,10 @@ describe("a panel an extension adds to a skill's tab", () => {
     });
     render(<SkillTab plane="p" name="deploy" changed={0} />);
 
-    const checks = await screen.findByTestId("skill-panel-ext/house/checks");
+    const checks = await screen.findByTestId("skill-panel-house/checks");
     expect(within(checks).getByRole("heading").textContent).toBe("Checks · House rules");
     expect(checks.textContent).toContain("Two checks passed review.");
-    const broken = screen.getByTestId("skill-panel-ext/house/broken");
+    const broken = screen.getByTestId("skill-panel-house/broken");
     expect(within(broken).getByTestId("skill-panel-refused").textContent).toContain(
       "did not answer within 5 seconds",
     );

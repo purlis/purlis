@@ -129,6 +129,9 @@ fn studio(ask: &serde_json::Value) -> serde_json::Value {
 /// - `write <path>`: write a file.
 /// - `connect <address:port>`: connect to an address directly, past any proxy.
 /// - `link <from> <to>` and `symlink <from> <to>`: make a link at `<to>` to `<from>`.
+/// - `hello <host> <name>`: ask its proxy for a tunnel to `<host>:443`, send a TLS ClientHello
+///   naming `<name>` through it, and say whether anything came back.
+/// - `environ <pid>`: what `ps -wwE` shows of another process's command and environment.
 /// - `proxy <host>`: ask its proxy (`HTTPS_PROXY`) for a tunnel to `<host>:443`, and say the
 ///   proxy's status line.
 pub fn tried(words: &[String]) -> String {
@@ -161,6 +164,12 @@ pub fn tried(words: &[String]) -> String {
             .map(|()| "ok".to_owned())
             .map_err(|why| why.kind().to_string()),
         [verb, host] if verb == "proxy" => through_the_proxy(host),
+        [verb, host, named] if verb == "hello" => hello_through_the_proxy(host, named),
+        [verb, pid] if verb == "environ" => std::process::Command::new("ps")
+            .args(["-wwE", "-o", "command=", "-p", pid])
+            .output()
+            .map(|out| format!("ok, {}", String::from_utf8_lossy(&out.stdout).trim()))
+            .map_err(|why| why.kind().to_string()),
         _ => Err(format!("nothing to try in {words:?}")),
     };
     match said {
@@ -195,4 +204,76 @@ fn through_the_proxy(host: &str) -> Result<String, String> {
         "proxy said {}",
         String::from_utf8_lossy(&head).trim()
     ))
+}
+
+/// The proxy's status line for a tunnel to `host`, then whether anything came back once a TLS
+/// ClientHello naming `named` was sent through it.
+fn hello_through_the_proxy(host: &str, named: &str) -> Result<String, String> {
+    let proxy = std::env::var("HTTPS_PROXY").map_err(|_| "no proxy".to_owned())?;
+    let at = proxy
+        .strip_prefix("http://")
+        .ok_or_else(|| format!("a proxy that is not http: {proxy}"))?
+        .trim_end_matches('/');
+    let mut stream = std::net::TcpStream::connect(at).map_err(|why| why.kind().to_string())?;
+    let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(20)));
+    write!(
+        stream,
+        "CONNECT {host}:443 HTTP/1.1\r\nHost: {host}:443\r\n\r\n"
+    )
+    .map_err(|why| why.kind().to_string())?;
+    let mut head = Vec::new();
+    let mut byte = [0u8; 1];
+    while head.len() < 4096 && !head.ends_with(b"\r\n\r\n") {
+        match stream.read(&mut byte) {
+            Ok(1) => head.push(byte[0]),
+            _ => break,
+        }
+    }
+    let status = String::from_utf8_lossy(&head)
+        .lines()
+        .next()
+        .unwrap_or_default()
+        .to_owned();
+    if !status.contains(" 200 ") {
+        return Ok(format!("proxy said {status}"));
+    }
+    stream
+        .write_all(&client_hello(named))
+        .map_err(|why| why.kind().to_string())?;
+    let mut back = [0u8; 512];
+    let came = stream.read(&mut back).unwrap_or(0);
+    Ok(format!("proxy said {status}; {came} bytes came back"))
+}
+
+/// A TLS record holding a ClientHello naming `name`, as a client writes one.
+fn client_hello(name: &str) -> Vec<u8> {
+    let name = name.as_bytes();
+    let len = |n: usize| u16::try_from(n).unwrap_or(u16::MAX).to_be_bytes();
+    let mut list = Vec::new();
+    list.extend(len(3 + name.len()));
+    list.push(0);
+    list.extend(len(name.len()));
+    list.extend(name);
+    let mut extensions = Vec::new();
+    extensions.extend(43u16.to_be_bytes());
+    extensions.extend(5u16.to_be_bytes());
+    extensions.extend([4, 3, 4, 3, 3]);
+    extensions.extend(0u16.to_be_bytes());
+    extensions.extend(len(list.len()));
+    extensions.extend(list);
+    let mut hello = vec![3, 3];
+    hello.extend([7u8; 32]);
+    hello.push(0);
+    hello.extend(4u16.to_be_bytes());
+    hello.extend([0x13, 0x01, 0xc0, 0x2f]);
+    hello.extend([1, 0]);
+    hello.extend(len(extensions.len()));
+    hello.extend(extensions);
+    let mut handshake = vec![1, 0];
+    handshake.extend(len(hello.len()));
+    handshake.extend(hello);
+    let mut record = vec![0x16, 3, 1];
+    record.extend(len(handshake.len()));
+    record.extend(handshake);
+    record
 }

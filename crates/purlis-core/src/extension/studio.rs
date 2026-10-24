@@ -6,24 +6,26 @@
 //!
 //! A studio capability is one of six the Skill studio is built from: `skill-source`, `grader`,
 //! `skill-lint`, `skill-template`, `studio-panel` and `skill-router`. Each declares its shape in
-//! `contributes` under its own word, read here ([`Declared`]); each is asked in protocol 3 by
-//! [`crate::executor::Executor::studio`], with a question of its own ([`Ask`]) whose answer is
-//! read here too, failing closed with a sentence.
+//! `contributes` under its own word, read here ([`Declared`]). Four are asked now, in protocol 3,
+//! by [`crate::executor::Executor::studio`], each with a question of its own ([`Ask`]) whose
+//! answer is read here against a closed shape, failing closed with a sentence. The Grader and the
+//! SkillRouter are declared and confined now; their questions are SK-16's and SK-15's (#2779,
+//! #2778), as ADR 0101 §5 and ADR 0102 §6 say them: a grade's four messages (grade request,
+//! run-chat request, run-chat result, grade report), and a router's answer within 100 ms.
 //!
 //! **An extension that declares one is confined** (the operator's ruling of 2026-10-20, "confine
 //! first"), for every question its program is asked, not only its studio ones:
 //!
 //! - **It reads only its own folder and what purlis hands it.** The questions carry a skill's
-//!   files in the request itself, so nothing of the project is a path it is handed; it reads the
-//!   system's programs and libraries and nothing a person keeps
-//!   ([`crate::sandbox::seatbelt::confined_profile`]).
+//!   files in the request itself, so nothing of the project is a path it is handed; besides its
+//!   folder it reads the system's programs and libraries ([`crate::sandbox::confined`]).
 //! - **It writes only its state folder and a temporary folder of its own**, made for the question
-//!   and removed after it. So a manifest that also declares plane writes, or a folder in each
-//!   workspace, is refused: a confined program writes nothing of the project.
+//!   and removed after it. So a manifest that also declares paths it writes in the project, or a
+//!   folder in each workspace, is refused.
 //! - **Its network goes only to the hosts it declares** (top-level `hosts`), through a proxy of
-//!   its own made for the question ([`reachable`]); none where it declares none. **A host that
-//!   serves a model is never one of them** ([`model_host`]): the manifest is refused, and the proxy
-//!   leaves such a host out whatever the manifest says.
+//!   its own made for the question ([`crate::sandbox::egress::Serving::confined`]); none where it
+//!   declares none. **A host that serves a model is never one of them** ([`model_host`]): the
+//!   manifest is refused, and the proxy leaves such a host out whatever the manifest says.
 //! - **A program purlis cannot confine does not run** (ADR 0031): on a system with no sandbox
 //!   purlis can apply, the whole extension is refused at its read ([`refused_here`]), and where
 //!   the sandbox is missing at a question, nothing starts ([`Confined::start`]).
@@ -34,8 +36,11 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
+use serde::{Deserialize, Serialize};
+
 use super::capability::Capability;
 use crate::sandbox::Os;
+use crate::sandbox::hosts::Host;
 
 /// The most hosts one manifest declares. Each is named in the approval prompt, one by one.
 pub const MOST_HOSTS: usize = 16;
@@ -46,10 +51,10 @@ pub const MOST_TEMPLATES: usize = 16;
 /// The most panels one extension adds to a skill's tab.
 pub const MOST_PANELS: usize = 8;
 
-/// The keys a manifest's `hosts` sits beside: it is a top-level key.
+/// The top-level manifest key a confined extension names the hosts it reaches under.
 pub const HOSTS: &str = "hosts";
 
-/// What a studio capability's shape declares, read from `contributes.<word>`.
+/// What a studio capability's shape declares, read from `contributes.<word>`, and the hosts.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Declared {
     /// `skill-source`: its name, as the studio lists the source.
@@ -64,8 +69,8 @@ pub struct Declared {
     pub panels: Vec<Panel>,
     /// `skill-router`: its name.
     pub router: Option<String>,
-    /// The hosts its program reaches, through its own proxy, and no others.
-    pub hosts: Vec<String>,
+    /// The hosts its program reaches, through its own proxy, and no others: each one name.
+    pub hosts: Vec<Host>,
 }
 
 /// One template an extension offers.
@@ -99,8 +104,8 @@ pub fn refused_here(os: Os) -> Option<String> {
 
 /// **The studio capabilities' shapes in `contributes`, and the hosts in `doc`**, for a manifest
 /// that asks for `capabilities` and declares `program`, read on `os` — or why purlis will not
-/// read them: on a system purlis cannot confine a program on, none of the extension is read. `None`
-/// for a manifest that asks for no studio capability, which may then declare no hosts.
+/// read them: on a system purlis cannot confine a program on, none of the extension is read.
+/// `None` for a manifest that asks for no studio capability, which may then declare no hosts.
 pub(super) fn declared_of(
     doc: &serde_json::Map<String, serde_json::Value>,
     contributes: &serde_json::Map<String, serde_json::Value>,
@@ -260,7 +265,7 @@ fn only_keys(
 
 /// **The hosts a manifest declares**, or why not: each a name, never an address, a wildcard or a
 /// port, never a host that serves a model ([`model_host`]), and each once.
-fn hosts_of(value: &serde_json::Value) -> Result<Vec<String>, String> {
+fn hosts_of(value: &serde_json::Value) -> Result<Vec<Host>, String> {
     let list = value
         .as_array()
         .ok_or("has a 'hosts' that is not a list of hosts")?;
@@ -270,13 +275,13 @@ fn hosts_of(value: &serde_json::Value) -> Result<Vec<String>, String> {
             list.len()
         ));
     }
-    let mut out: Vec<String> = Vec::with_capacity(list.len());
+    let mut out: Vec<Host> = Vec::with_capacity(list.len());
     for raw in list {
         let typed = raw
             .as_str()
             .ok_or("has a 'hosts' entry that is not a host")?;
         let shown = crate::shown::readable(typed, 64);
-        let host = crate::sandbox::hosts::Host::parse(typed)
+        let host = Host::parse(typed)
             .map_err(|why| format!("declares the host {shown:?}, which is not one: {why}"))?;
         let name = host.to_string();
         if host.address().is_some() || host.port().is_some() || name.starts_with("*.") {
@@ -285,17 +290,17 @@ fn hosts_of(value: &serde_json::Value) -> Result<Vec<String>, String> {
                  address or port, reached on the ports a web address uses"
             ));
         }
-        if model_host(&name) {
+        if model_host(&host) {
             return Err(format!(
                 "declares the host {name}, which serves a model: a studio capability reaches a \
                  model only through a chat purlis runs for it, so purlis loads none of this \
                  extension"
             ));
         }
-        if out.contains(&name) {
+        if out.contains(&host) {
             return Err(format!("declares the host {name} twice"));
         }
-        out.push(name);
+        out.push(host);
     }
     Ok(out)
 }
@@ -352,9 +357,9 @@ pub const MODEL_DOMAINS: [&str; 41] = [
 
 /// **Whether `host` serves a model** (ADR 0101 §3): one of [`MODEL_DOMAINS`] or a name under one,
 /// a host the model-providers preset lists or a name under it, or Amazon Bedrock's runtime in any
-/// region. Compared as a lowered name with no final dot.
-pub fn model_host(host: &str) -> bool {
-    let host = host.trim().trim_end_matches('.').to_ascii_lowercase();
+/// region.
+pub fn model_host(host: &Host) -> bool {
+    let host = host.to_string();
     let under = |domain: &str| {
         let domain = domain.trim_start_matches("*.");
         host == domain
@@ -373,7 +378,7 @@ pub fn model_host(host: &str) -> bool {
 /// **The hosts a confined program's proxy carries**: `declared`, less every host that serves a
 /// model, whatever the manifest said ([`model_host`]). The manifest's own read refuses such a
 /// host, so this leaves one out only where [`MODEL_DOMAINS`] grew after the extension was approved.
-pub fn reachable(declared: &[String]) -> Vec<String> {
+pub fn reachable(declared: &[Host]) -> Vec<Host> {
     declared
         .iter()
         .filter(|host| !model_host(host))
@@ -384,8 +389,9 @@ pub fn reachable(declared: &[String]) -> Vec<String> {
 /// **What the approval prompt says of a confined extension**, in place of
 /// [`super::RUNS_AS_YOU`], which would be false of it (ADR 0101 §4): from the core, so the window
 /// cannot say something kinder or harsher than is true.
-pub fn confined_said(hosts: &[String]) -> String {
-    let reach = match hosts {
+pub(super) fn confined_said(hosts: &[Host]) -> String {
+    let names: Vec<String> = hosts.iter().map(ToString::to_string).collect();
+    let reach = match names.as_slice() {
         [] => "It reaches no host on the network".to_owned(),
         [one] => format!("It reaches only {one} on the network"),
         [rest @ .., last] => format!(
@@ -394,15 +400,18 @@ pub fn confined_said(hosts: &[String]) -> String {
         ),
     };
     format!(
-        "purlis runs this extension confined, because it declares a studio capability. It reads \
-         only its own folder, the system's programs and what purlis hands it with each \
-         question, never your projects or your home folder. It writes only its own state \
-         folder. {reach}, and never a host that serves a model. What is listed above is what it \
-         is LIMITED to, by the same sandbox a chat runs in."
+        "purlis runs this extension in the sandbox a chat runs in, because it declares a studio \
+         capability. It reads only its own folder, the system's programs and what purlis hands \
+         it with each question, never your projects or your home folder. It writes only its own \
+         state folder. {reach}, through a proxy that carries a connection only when its \
+         encryption names that host, and never to a host that serves a model or to an address \
+         of a private network. A host it names can still pass on what it is sent. The list above \
+         is what it can do, not only what it says it does."
     )
 }
 
-/// The prompt's line about its hosts.
+/// **What the prompt lists of a studio extension**: each template it offers, each panel it adds,
+/// and the hosts it reaches.
 pub(super) fn declares(declared: &Declared) -> Vec<String> {
     let mut out = Vec::new();
     for template in &declared.templates {
@@ -417,10 +426,11 @@ pub(super) fn declares(declared: &Declared) -> Vec<String> {
             panel.title
         ));
     }
-    out.push(if declared.hosts.is_empty() {
+    let hosts: Vec<String> = declared.hosts.iter().map(ToString::to_string).collect();
+    out.push(if hosts.is_empty() {
         "hosts it reaches: none".to_owned()
     } else {
-        format!("hosts it reaches: {}", declared.hosts.join(", "))
+        format!("hosts it reaches: {}", hosts.join(", "))
     });
     out
 }
@@ -432,8 +442,8 @@ pub(super) fn writes_nothing_of_the_project(
 ) -> Option<String> {
     if !writes.is_empty() {
         return Some(
-            "declares plane paths it writes and a studio capability: an extension that declares \
-             a studio capability runs confined and writes nothing of the project"
+            "declares paths it writes in the project and a studio capability: an extension that \
+             declares a studio capability runs confined and writes nothing of the project"
                 .to_owned(),
         );
     }
@@ -458,7 +468,8 @@ pub(crate) struct Confined {
     pub(crate) env: Vec<(OsString, OsString)>,
     /// Its own temporary folder, removed when the question is over.
     _tmp: tempfile::TempDir,
-    /// Its proxy, stopped when the question is over; none where it declares no host.
+    /// Its proxy, stopped when the question is over, its ports kept for the rest of the run;
+    /// none where it declares no host.
     _proxy: Option<crate::sandbox::egress::Proxy>,
 }
 
@@ -490,11 +501,19 @@ impl Confined {
             .tempdir()
             .map_err(|why| could_not(&why))?;
         let tmp_path = crate::sandbox::real(tmp.path());
-        let hosts = reachable(&declared.hosts);
+        let hosts: Vec<String> = reachable(&declared.hosts)
+            .iter()
+            .map(ToString::to_string)
+            .collect();
         let proxy = if hosts.is_empty() {
             None
         } else {
-            Some(crate::sandbox::egress::Proxy::start(hosts).map_err(|why| could_not(&why))?)
+            Some(
+                crate::sandbox::egress::Proxy::serving(crate::sandbox::egress::Serving::confined(
+                    hosts,
+                ))
+                .map_err(|why| could_not(&why))?,
+            )
         };
         let mut writes = vec![tmp_path.clone()];
         if let Some(state) = &found.manifest.state {
@@ -505,7 +524,7 @@ impl Confined {
             .as_ref()
             .map(|proxy| vec![proxy.port(), proxy.socks_port()])
             .unwrap_or_default();
-        let profile = crate::sandbox::seatbelt::confined_profile(
+        let profile = crate::sandbox::confined::profile(
             os,
             &[crate::sandbox::real(&found.path)],
             &writes,
@@ -598,15 +617,25 @@ pub const MOST_REVISION_BYTES: usize = 128;
 
 /// One file of a skill, as a question hands it and a source answers it: its path inside the
 /// skill's folder, `/` between the parts, and its text.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct HandedFile {
     pub path: String,
     pub text: String,
     pub executable: bool,
 }
 
-/// **A studio question**, by the capability it asks.
+/// One file of a skill as purlis read it, to hand a question ([`handed`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SkillFile {
+    /// Its path inside the skill's folder, `/` between the parts.
+    pub path: String,
+    pub bytes: Vec<u8>,
+    pub executable: bool,
+}
+
+/// **A studio question**, as its request line carries it under `ask`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "ask", rename_all = "kebab-case")]
 pub enum Ask<'a> {
     /// A source's listing: its revision, and the skills it offers at it.
     Skills,
@@ -642,17 +671,6 @@ impl Ask<'_> {
         }
     }
 
-    /// The keys its answer may carry beside `charter` and `error`.
-    pub(crate) fn answered_keys(&self) -> &'static [&'static str] {
-        match self {
-            Self::Skills => &["revision", "skills"],
-            Self::Files { .. } => &["revision", "files"],
-            Self::Findings { .. } => &["findings"],
-            Self::Template { .. } => &["text"],
-            Self::Panel { .. } => &["blocks"],
-        }
-    }
-
     /// Why `declared` does not offer what this asks for, or `None`.
     pub(crate) fn unoffered(&self, extension: &str, declared: &Declared) -> Option<String> {
         match self {
@@ -670,60 +688,20 @@ impl Ask<'_> {
 
     /// Its `ask` in the request line.
     pub(crate) fn line(&self) -> serde_json::Value {
-        let files_of = |files: &[HandedFile]| -> serde_json::Value {
-            files
-                .iter()
-                .map(|file| {
-                    serde_json::json!({
-                        "path": file.path,
-                        "text": file.text,
-                        "executable": file.executable,
-                    })
-                })
-                .collect()
-        };
-        match self {
-            Self::Skills => serde_json::json!({ "ask": "skills" }),
-            Self::Files { skill, revision } => {
-                serde_json::json!({ "ask": "files", "skill": skill, "revision": revision })
-            }
-            Self::Findings { skill, files } => {
-                serde_json::json!({ "ask": "findings", "skill": skill, "files": files_of(files) })
-            }
-            Self::Template {
-                template,
-                name,
-                description,
-            } => serde_json::json!({
-                "ask": "template",
-                "template": template,
-                "name": name,
-                "description": description,
-            }),
-            Self::Panel {
-                panel,
-                skill,
-                files,
-            } => serde_json::json!({
-                "ask": "panel",
-                "panel": panel,
-                "skill": skill,
-                "files": files_of(files),
-            }),
-        }
+        serde_json::to_value(self).unwrap_or(serde_json::Value::Null)
     }
 }
 
-/// **A skill's files to hand a question**, of `files` (each a path inside its folder and its
-/// bytes): the text files, in path order, until [`MOST_HANDED_FILES`] or [`MOST_HANDED_BYTES`],
-/// so a question is bounded however large the skill.
-pub fn handed(files: &[(String, Vec<u8>, bool)]) -> Vec<HandedFile> {
-    let mut sorted: Vec<&(String, Vec<u8>, bool)> = files.iter().collect();
-    sorted.sort_by(|a, b| a.0.cmp(&b.0));
+/// **A skill's files to hand a question**, of `files`: the text files, in path order, until
+/// [`MOST_HANDED_FILES`] or [`MOST_HANDED_BYTES`], so a question is bounded however large the
+/// skill.
+pub fn handed(files: &[SkillFile]) -> Vec<HandedFile> {
+    let mut sorted: Vec<&SkillFile> = files.iter().collect();
+    sorted.sort_by(|a, b| a.path.cmp(&b.path));
     let mut out = Vec::new();
     let mut bytes = 0usize;
-    for (path, body, executable) in sorted {
-        let Ok(text) = std::str::from_utf8(body) else {
+    for file in sorted {
+        let Ok(text) = std::str::from_utf8(&file.bytes) else {
             continue;
         };
         if out.len() == MOST_HANDED_FILES || bytes + text.len() > MOST_HANDED_BYTES {
@@ -731,20 +709,46 @@ pub fn handed(files: &[(String, Vec<u8>, bool)]) -> Vec<HandedFile> {
         }
         bytes += text.len();
         out.push(HandedFile {
-            path: path.clone(),
+            path: file.path.clone(),
             text: text.to_owned(),
-            executable: *executable,
+            executable: file.executable,
         });
     }
     out
 }
 
+/// `doc`, an answer read as far as every answer is, as `T`: every key `T` knows and none it does
+/// not, failing closed with a sentence naming the extension.
+fn answer_of<T: for<'de> Deserialize<'de>>(
+    extension: &str,
+    doc: &serde_json::Map<String, serde_json::Value>,
+    what: &str,
+) -> Result<T, String> {
+    let mut doc = doc.clone();
+    doc.remove("charter");
+    serde_json::from_value(serde_json::Value::Object(doc)).map_err(|why| {
+        format!(
+            "'{extension}' answered {what} purlis cannot read: {}",
+            crate::shown::readable(&why.to_string(), 300)
+        )
+    })
+}
+
+/// One skill a source offers, as its listing answers it.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OfferedSkill {
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+}
+
 /// What a source offers at one revision.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Offered {
     pub revision: String,
-    /// Each skill by its name and description.
-    pub skills: Vec<(String, String)>,
+    pub skills: Vec<OfferedSkill>,
 }
 
 /// **A source's listing**, read from its answer `doc`, or why not.
@@ -752,50 +756,57 @@ pub fn offered_of(
     extension: &str,
     doc: &serde_json::Map<String, serde_json::Value>,
 ) -> Result<Offered, String> {
-    let revision = revision_of(extension, doc.get("revision"))?;
-    let list = doc
+    if doc
         .get("skills")
         .and_then(serde_json::Value::as_array)
-        .ok_or_else(|| format!("'{extension}' answered no list of 'skills'"))?;
-    if list.len() > MOST_OFFERED {
+        .is_some_and(|list| list.len() > MOST_OFFERED)
+    {
         return Err(format!(
             "'{extension}' offers more than {MOST_OFFERED} skills, the most purlis reads of one \
              skill source"
         ));
     }
-    let mut skills: Vec<(String, String)> = Vec::with_capacity(list.len());
-    for raw in list {
-        let object = raw
-            .as_object()
-            .ok_or_else(|| format!("'{extension}' answered a skill that is not an object"))?;
-        only_keys(object, &["name", "description"], "a skill it offers")
-            .map_err(|why| format!("'{extension}' {why}"))?;
-        let name = object
-            .get("name")
-            .and_then(serde_json::Value::as_str)
-            .ok_or_else(|| format!("'{extension}' answered a skill with no name"))?;
+    let offered: Offered = answer_of(extension, doc, "a listing")?;
+    revision_ok(extension, &offered.revision)?;
+    let mut seen: Vec<&str> = Vec::with_capacity(offered.skills.len());
+    for skill in &offered.skills {
+        let name = skill.name.as_str();
         if let Some(why) = purlis_skills::change::name_problem(name) {
             return Err(format!(
                 "'{extension}' offers {:?}, which cannot be a skill's name: {why}",
                 crate::shown::readable(name, 64)
             ));
         }
-        let description = object
-            .get("description")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or_default();
-        if description.contains(crate::panel::undrawable) || description.len() > 1024 {
+        if skill.description.contains(crate::panel::undrawable) || skill.description.len() > 1024 {
             return Err(format!(
                 "'{extension}' offers {name} with a description purlis will not draw: it is \
                  longer than 1024 bytes or holds a control or invisible formatting character"
             ));
         }
-        if skills.iter().any(|(seen, _)| seen == name) {
+        if seen.contains(&name) {
             return Err(format!("'{extension}' offers {name} twice"));
         }
-        skills.push((name.to_owned(), description.to_owned()));
+        seen.push(name);
     }
-    Ok(Offered { revision, skills })
+    Ok(offered)
+}
+
+/// One file of a skill, as a source answers it.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AnsweredFile {
+    path: String,
+    text: String,
+    #[serde(default)]
+    executable: bool,
+}
+
+/// A source's answer for one skill's files.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Files {
+    revision: String,
+    files: Vec<AnsweredFile>,
 }
 
 /// **One skill's files**, read from a source's answer `doc` to a question at `revision`: each a
@@ -806,34 +817,27 @@ pub fn files_of(
     revision: &str,
     doc: &serde_json::Map<String, serde_json::Value>,
 ) -> Result<Vec<HandedFile>, String> {
-    let answered = revision_of(extension, doc.get("revision"))?;
-    if answered != revision {
-        return Err(format!(
-            "'{extension}' answered the files of another revision than the one purlis asked for, \
-             so purlis reads none of them"
-        ));
-    }
-    let list = doc
+    if doc
         .get("files")
         .and_then(serde_json::Value::as_array)
-        .ok_or_else(|| format!("'{extension}' answered no list of 'files'"))?;
-    if list.len() > purlis_skills::tree::MOST_FILES {
+        .is_some_and(|list| list.len() > purlis_skills::tree::MOST_FILES)
+    {
         return Err(format!(
             "'{extension}' answered more than {} files, the most a skill purlis installs may hold",
             purlis_skills::tree::MOST_FILES
         ));
     }
-    let mut out: Vec<HandedFile> = Vec::with_capacity(list.len());
-    for raw in list {
-        let object = raw
-            .as_object()
-            .ok_or_else(|| format!("'{extension}' answered a file that is not an object"))?;
-        only_keys(object, &["path", "text", "executable"], "a file")
-            .map_err(|why| format!("'{extension}' {why}"))?;
-        let path = object
-            .get("path")
-            .and_then(serde_json::Value::as_str)
-            .ok_or_else(|| format!("'{extension}' answered a file with no path"))?;
+    let answered: Files = answer_of(extension, doc, "a skill's files")?;
+    revision_ok(extension, &answered.revision)?;
+    if answered.revision != revision {
+        return Err(format!(
+            "'{extension}' answered the files of another revision than the one purlis asked for, \
+             so purlis reads none of them"
+        ));
+    }
+    let mut out: Vec<HandedFile> = Vec::with_capacity(answered.files.len());
+    for file in answered.files {
+        let path = file.path.as_str();
         let plain = !path.starts_with('/')
             && !path.ends_with('/')
             && !path.contains("//")
@@ -851,26 +855,13 @@ pub fn files_of(
                 crate::shown::readable(path, 64)
             ));
         }
-        let text = object
-            .get("text")
-            .and_then(serde_json::Value::as_str)
-            .ok_or_else(|| format!("'{extension}' answered {path} with no text"))?;
-        let executable = match object.get("executable") {
-            None => false,
-            Some(serde_json::Value::Bool(it)) => *it,
-            Some(_) => {
-                return Err(format!(
-                    "'{extension}' answered an 'executable' for {path} that is not true or false"
-                ));
-            }
-        };
         if out.iter().any(|it| it.path == path) {
             return Err(format!("'{extension}' answered {path} twice"));
         }
         out.push(HandedFile {
-            path: path.to_owned(),
-            text: text.to_owned(),
-            executable,
+            path: file.path,
+            text: file.text,
+            executable: file.executable,
         });
     }
     if !out.iter().any(|it| it.path == purlis_skills::FILE) {
@@ -883,10 +874,7 @@ pub fn files_of(
 }
 
 /// A revision, as an answer names it: present, bounded, and letters, digits and `.-_:+`.
-fn revision_of(extension: &str, value: Option<&serde_json::Value>) -> Result<String, String> {
-    let revision = value
-        .and_then(serde_json::Value::as_str)
-        .ok_or_else(|| format!("'{extension}' answered no 'revision'"))?;
+fn revision_ok(extension: &str, revision: &str) -> Result<(), String> {
     if revision.is_empty()
         || revision.len() > MOST_REVISION_BYTES
         || !revision
@@ -899,7 +887,21 @@ fn revision_of(extension: &str, value: Option<&serde_json::Value>) -> Result<Str
             crate::shown::readable(revision, 64)
         ));
     }
-    Ok(revision.to_owned())
+    Ok(())
+}
+
+/// One finding, as a lint answers it.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AnsweredFinding {
+    says: String,
+}
+
+/// A lint's answer.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Findings {
+    findings: Vec<AnsweredFinding>,
 }
 
 /// **A lint's findings**, read from its answer `doc`: each one line of words, bounded, that
@@ -908,29 +910,27 @@ pub fn findings_of(
     extension: &str,
     doc: &serde_json::Map<String, serde_json::Value>,
 ) -> Result<Vec<String>, String> {
-    let list = doc
+    if doc
         .get("findings")
         .and_then(serde_json::Value::as_array)
-        .ok_or_else(|| format!("'{extension}' answered no list of 'findings'"))?;
-    if list.len() > MOST_FINDINGS {
+        .is_some_and(|list| list.len() > MOST_FINDINGS)
+    {
         return Err(format!(
             "'{extension}' answered more than {MOST_FINDINGS} findings, the most purlis shows \
              from one lint"
         ));
     }
-    list.iter()
-        .map(|raw| {
-            let object = raw
-                .as_object()
-                .ok_or_else(|| format!("'{extension}' answered a finding that is not an object"))?;
-            only_keys(object, &["says"], "a finding")
-                .map_err(|why| format!("'{extension}' {why}"))?;
-            let says = object
-                .get("says")
-                .and_then(serde_json::Value::as_str)
-                .map(str::trim)
-                .filter(|it| !it.is_empty())
-                .ok_or_else(|| format!("'{extension}' answered a finding that says nothing"))?;
+    let answered: Findings = answer_of(extension, doc, "findings")?;
+    answered
+        .findings
+        .into_iter()
+        .map(|finding| {
+            let says = finding.says.trim();
+            if says.is_empty() {
+                return Err(format!(
+                    "'{extension}' answered a finding that says nothing"
+                ));
+            }
             if says.len() > MOST_FINDING_BYTES || says.contains(crate::panel::undrawable) {
                 return Err(format!(
                     "'{extension}' answered a finding purlis will not draw: it is longer than \
@@ -943,6 +943,13 @@ pub fn findings_of(
         .collect()
 }
 
+/// A template's answer.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TemplateText {
+    text: String,
+}
+
 /// **A template's text** for the new skill `name`, read from its answer `doc`: bounded, and a
 /// whole skill that keeps its name, as any new skill's text is held to.
 pub fn template_of(
@@ -950,22 +957,27 @@ pub fn template_of(
     name: &str,
     doc: &serde_json::Map<String, serde_json::Value>,
 ) -> Result<String, String> {
-    let text = doc
-        .get("text")
-        .and_then(serde_json::Value::as_str)
-        .ok_or_else(|| format!("'{extension}' answered no 'text' for the new skill"))?;
+    let answered: TemplateText = answer_of(extension, doc, "a template")?;
+    let text = answered.text;
     if text.len() > MOST_TEMPLATE_BYTES {
         return Err(format!(
             "'{extension}' answered a template longer than {} KiB",
             MOST_TEMPLATE_BYTES >> 10
         ));
     }
-    if let Some(problem) = purlis_skills::change::check(text, name).first() {
+    if let Some(problem) = purlis_skills::change::check(&text, name).first() {
         return Err(format!(
             "'{extension}' answered a template that is not a whole skill: {problem}"
         ));
     }
-    Ok(text.to_owned())
+    Ok(text)
+}
+
+/// A panel's answer.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Blocks {
+    blocks: serde_json::Value,
 }
 
 /// **A panel's blocks**, read from its answer `doc` against the panel vocabulary.
@@ -973,61 +985,9 @@ pub fn blocks_of(
     extension: &str,
     doc: &serde_json::Map<String, serde_json::Value>,
 ) -> Result<Vec<crate::panel::Block>, String> {
-    let blocks = doc
-        .get("blocks")
-        .ok_or_else(|| format!("'{extension}' answered no 'blocks' for its panel"))?;
-    crate::panel::answered(blocks).map_err(|why| format!("'{extension}' {why}"))
+    let answered: Blocks = answer_of(extension, doc, "a panel")?;
+    crate::panel::answered(&answered.blocks).map_err(|why| format!("'{extension}' {why}"))
 }
-
-// ---------------------------------------------------------------------------------------
-// The Grader's and the SkillRouter's contracts (ADR 0101 §5, ADR 0102)
-// ---------------------------------------------------------------------------------------
-
-/// **The arms a grade compares** (decision 43): a fixture with the skill, without it, and against
-/// its previous version.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum Arm {
-    With,
-    Without,
-    Previous,
-}
-
-/// **The four messages of a grade** (ADR 0101 §5): their names, who sends each, and what it is
-/// for. Their fields and wire spelling are SK-16's (#2779), which asks the first Grader; this is
-/// the contract a Grader is written against until then, so the manifest word means one thing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GradeMessage {
-    /// purlis to the Grader: what to grade, the skill at a commit, its fixtures, the harness and
-    /// model, and the [`Arm`]s to compare.
-    GradeRequest,
-    /// The Grader to purlis: one chat to run, for an arm or as the judge. purlis runs it, on a
-    /// scratch workspace under the chat sandbox, with the cost shown first.
-    RunChatRequest,
-    /// purlis to the Grader: what that chat did, its run, transcript, skills used and cost.
-    RunChatResult,
-    /// The Grader to purlis: the scores, per fixture, arm and run, and a summary per arm.
-    GradeReport,
-}
-
-impl GradeMessage {
-    /// Every message, in the order a grade sends them.
-    pub const ALL: [GradeMessage; 4] = [
-        Self::GradeRequest,
-        Self::RunChatRequest,
-        Self::RunChatResult,
-        Self::GradeReport,
-    ];
-
-    /// Whether purlis sends it, rather than the Grader.
-    pub fn from_purlis(self) -> bool {
-        matches!(self, Self::GradeRequest | Self::RunChatResult)
-    }
-}
-
-/// **How long a SkillRouter has per prompt**, its confined start included (ADR 0102 §6): past
-/// it, the prompt goes on with purlis's own choice. Its first asker is SK-15 (#2778).
-pub const ROUTER_DEADLINE: std::time::Duration = std::time::Duration::from_millis(100);
 
 #[cfg(test)]
 mod tests;

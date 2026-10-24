@@ -27,7 +27,8 @@ use std::path::{Path, PathBuf};
 
 use purlis_core::executor::Executor;
 use purlis_core::extension::{self, project::Choices};
-use purlis_core::skills::studio::{Studio, Templates};
+use purlis_core::skills::studio::{PanelKey, Studio, Templates};
+use purlis_core::skills::{Template, TemplateId};
 use purlis_skills::change::SkillTemplate as _;
 use purlis_skills::{Lint, SkillLint as _};
 
@@ -148,11 +149,22 @@ fn it_adds_a_template_a_lint_a_panel_and_a_source() {
     let templates = Templates {
         studio: Some(studio),
     };
-    let offered: Vec<String> = templates.offered().into_iter().map(|it| it.id).collect();
-    assert_eq!(offered, ["blank", "steps", "studio-probe/probe"]);
+    let offered: Vec<TemplateId> = templates.offered().into_iter().map(|it| it.id).collect();
+    let probes = TemplateId::Extension {
+        extension: ID.to_owned(),
+        template: "probe".to_owned(),
+    };
+    assert_eq!(
+        offered,
+        [
+            TemplateId::BuiltIn(Template::Blank),
+            TemplateId::BuiltIn(Template::Steps),
+            probes.clone()
+        ]
+    );
     let text = templates
         .text(
-            "studio-probe/probe",
+            &probes,
             "made-here",
             "Made from the probe's template, for a test.",
         )
@@ -182,8 +194,17 @@ fn it_adds_a_template_a_lint_a_panel_and_a_source() {
 
     // A panel on a skill's tab, after purlis's own Runs panel.
     let panels = studio.panels(&probe.plane(), "deploy");
-    let keys: Vec<&str> = panels.iter().map(|it| it.key.as_str()).collect();
-    assert_eq!(keys, ["runs", "ext/studio-probe/probe"]);
+    let keys: Vec<PanelKey> = panels.iter().map(|it| it.key.clone()).collect();
+    assert_eq!(
+        keys,
+        [
+            PanelKey::Runs,
+            PanelKey::Extension {
+                extension: ID.to_owned(),
+                panel: "probe".to_owned(),
+            }
+        ]
+    );
     let blocks = panels[1]
         .blocks
         .as_ref()
@@ -233,7 +254,7 @@ fn the_approval_says_it_runs_confined_and_names_its_hosts() {
         prompt
             .declares
             .iter()
-            .any(|it| it == "hosts it reaches: probe.invalid"),
+            .any(|it| it.starts_with("hosts it reaches: probe.invalid, example.com")),
         "{:?}",
         prompt.declares
     );
@@ -346,7 +367,7 @@ fn it_reaches_its_declared_host_and_no_other() {
         declared.contains("502"),
         "its declared host is carried: {declared}"
     );
-    let undeclared = probe.tried(&["proxy", "example.com"]);
+    let undeclared = probe.tried(&["proxy", "example.org"]);
     assert!(
         undeclared.contains("403"),
         "an undeclared host is refused by its proxy: {undeclared}"
@@ -373,6 +394,119 @@ fn it_reaches_no_model_provider() {
         &probe.tried(&["connect", "160.79.104.10:443"]),
         "a model provider's address past the proxy",
     );
+}
+
+/// Whether this machine looks `name` up to `address`: what a test through the network needs
+/// before it can say anything of the proxy.
+fn resolves_to(name: &str, address: &str) -> bool {
+    use std::net::ToSocketAddrs;
+    let wanted: std::net::IpAddr = address.parse().expect("an address");
+    (name, 443)
+        .to_socket_addrs()
+        .is_ok_and(|mut found| found.any(|at| at.ip() == wanted))
+}
+
+fn a_declared_name_that_resolves_to_a_private_network_is_not_reached() {
+    let probe = Probe::approved();
+    for (name, address) in [
+        ("10.0.0.1.sslip.io", "10.0.0.1"),
+        ("100.64.0.1.sslip.io", "100.64.0.1"),
+        ("fd00--1.sslip.io", "fd00::1"),
+    ] {
+        if !resolves_to(name, address) {
+            eprintln!("{name} does not resolve to {address} here, so it is not tried");
+            continue;
+        }
+        let said = probe.tried(&["proxy", name]);
+        assert!(
+            said.contains("403"),
+            "{name} ({address}) was reached: {said}"
+        );
+    }
+}
+
+fn a_tunnel_is_carried_only_where_its_hello_names_its_host() {
+    use std::net::ToSocketAddrs;
+    let probe = Probe::approved();
+    if ("example.com", 443).to_socket_addrs().is_err() {
+        eprintln!("example.com does not resolve here, so the tunnel is not tried");
+        return;
+    }
+    let named = probe.tried(&["hello", "example.com", "example.com"]);
+    assert!(
+        named.contains(" 200 ") && !named.ends_with("; 0 bytes came back"),
+        "a hello naming the tunnel's own host was not carried: {named}"
+    );
+    for other in ["api.anthropic.com", "api.openai.com"] {
+        let fronted = probe.tried(&["hello", "example.com", other]);
+        assert!(
+            fronted.ends_with("; 0 bytes came back") || !fronted.contains(" 200 "),
+            "a hello naming {other} through example.com's tunnel was carried: {fronted}"
+        );
+    }
+}
+
+fn it_reads_no_other_process_s_arguments_or_environment() {
+    let probe = Probe::approved();
+    let said = probe.tried(&["environ", &std::process::id().to_string()]);
+    assert!(
+        !said.contains(purlis_core::skills::STUDIO_ENV),
+        "it read this process's environment: {said}"
+    );
+}
+
+fn it_reads_no_package_managers_configuration_or_state() {
+    let probe = Probe::approved();
+    let mut tried = 0;
+    for folder in [
+        "/opt/homebrew/etc",
+        "/opt/homebrew/var",
+        "/usr/local/etc",
+        "/usr/local/var",
+    ] {
+        let Some(file) = first_file(Path::new(folder), 3) else {
+            continue;
+        };
+        tried += 1;
+        refused(
+            &probe.tried(&["read", &shown(&file)]),
+            &format!("reading {}", file.display()),
+        );
+    }
+    let bin = [
+        "/opt/homebrew/bin/brew",
+        "/usr/local/bin/brew",
+        "/usr/bin/env",
+    ]
+    .into_iter()
+    .find(|it| Path::new(it).exists())
+    .expect("a program in a prefix");
+    let said = probe.tried(&["read", bin]);
+    assert!(said.starts_with("ok"), "it reads {bin}: {said}");
+    eprintln!("{tried} configuration and state folders were tried");
+}
+
+/// The first plain file under `folder` this test can read, at most `depth` folders down.
+fn first_file(folder: &Path, depth: usize) -> Option<PathBuf> {
+    let mut entries: Vec<PathBuf> = std::fs::read_dir(folder)
+        .ok()?
+        .flatten()
+        .map(|entry| entry.path())
+        .collect();
+    entries.sort();
+    for entry in &entries {
+        let plain = std::fs::symlink_metadata(entry).is_ok_and(|kind| kind.is_file());
+        if plain && std::fs::File::open(entry).is_ok() {
+            return Some(entry.clone());
+        }
+    }
+    if depth == 0 {
+        return None;
+    }
+    entries
+        .iter()
+        .filter(|entry| std::fs::symlink_metadata(entry).is_ok_and(|kind| kind.is_dir()))
+        .find_map(|entry| first_file(entry, depth - 1))
 }
 
 // ---------------------------------------------------------------------------------------
@@ -409,6 +543,22 @@ const TESTS: &[(&str, fn())] = &[
         it_reaches_its_declared_host_and_no_other,
     ),
     ("it_reaches_no_model_provider", it_reaches_no_model_provider),
+    (
+        "a_declared_name_that_resolves_to_a_private_network_is_not_reached",
+        a_declared_name_that_resolves_to_a_private_network_is_not_reached,
+    ),
+    (
+        "a_tunnel_is_carried_only_where_its_hello_names_its_host",
+        a_tunnel_is_carried_only_where_its_hello_names_its_host,
+    ),
+    (
+        "it_reads_no_other_process_s_arguments_or_environment",
+        it_reads_no_other_process_s_arguments_or_environment,
+    ),
+    (
+        "it_reads_no_package_managers_configuration_or_state",
+        it_reads_no_package_managers_configuration_or_state,
+    ),
 ];
 
 fn main() {

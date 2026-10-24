@@ -13,7 +13,7 @@ use specta::Type;
 use purlis_core::repocmd::Say;
 use purlis_core::skills::studio::Templates;
 use purlis_core::skills::verbs::{self, By, Level};
-use purlis_core::skills::{Grant, SkillTemplate as Offers};
+use purlis_core::skills::{Grant, SkillTemplate as Offers, Template, TemplateId};
 
 /// A level of the project's, as the studio names one: the project's root (`workspace` null) or a
 /// workspace's, shared or kept on this machine.
@@ -74,35 +74,55 @@ impl From<SkillGrant> for Grant {
     }
 }
 
-/// One template, as the New skill form offers it: purlis's own (`blank`, `steps`), then each
-/// extension's that declares `skill-template`, by `<extension>/<template>` (ADR 0101).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
-pub struct SkillTemplate {
-    /// What the New skill form hands back to make the skill from.
-    pub id: String,
-    pub label: String,
-    pub about: String,
+/// Which template a new skill starts from, as the window names it: one of purlis's own, or one
+/// an extension offers, by its id and the template's (ADR 0101).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum SkillTemplateId {
+    Blank,
+    Steps,
+    Extension { extension: String, template: String },
 }
 
-/// **What the Skill studio asks extensions with, in the project at `root`**, and runs `with` on
-/// it (ADR 0101): the app's executor and this machine's record. With no config home, purlis's own
-/// alone.
-pub(crate) fn with_studio<T>(
-    executor: &purlis_core::executor::Executor,
-    root: &std::path::Path,
-    with: impl FnOnce(Option<purlis_core::skills::studio::Studio<'_>>) -> T,
-) -> T {
-    let config = purlis_core::machine::config_root();
-    let choices = purlis_core::extension::project::Choices::read(root);
-    with(
-        config
-            .as_deref()
-            .map(|config_root| purlis_core::skills::studio::Studio {
-                executor,
-                config_root,
-                project: &choices,
-            }),
-    )
+impl From<SkillTemplateId> for TemplateId {
+    fn from(id: SkillTemplateId) -> TemplateId {
+        match id {
+            SkillTemplateId::Blank => TemplateId::BuiltIn(Template::Blank),
+            SkillTemplateId::Steps => TemplateId::BuiltIn(Template::Steps),
+            SkillTemplateId::Extension {
+                extension,
+                template,
+            } => TemplateId::Extension {
+                extension,
+                template,
+            },
+        }
+    }
+}
+
+impl From<TemplateId> for SkillTemplateId {
+    fn from(id: TemplateId) -> SkillTemplateId {
+        match id {
+            TemplateId::BuiltIn(Template::Blank) => SkillTemplateId::Blank,
+            TemplateId::BuiltIn(Template::Steps) => SkillTemplateId::Steps,
+            TemplateId::Extension {
+                extension,
+                template,
+            } => SkillTemplateId::Extension {
+                extension,
+                template,
+            },
+        }
+    }
+}
+
+/// One template, as the New skill form offers it: purlis's own, then each extension's that
+/// declares `skill-template` (ADR 0101).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct SkillTemplate {
+    pub id: SkillTemplateId,
+    pub label: String,
+    pub about: String,
 }
 
 /// What a change had to say beyond being done: that it was left for the next save, or that a
@@ -200,9 +220,11 @@ pub(crate) async fn skill_templates(
     let held = planes.held(&plane)?;
     let executor = views.executor();
     crate::off_the_window("reading the templates", move || {
-        Ok(with_studio(&executor, held.root(), |studio| {
-            templates(&Templates { studio })
-        }))
+        Ok(purlis_core::skills::studio::with_studio(
+            &executor,
+            held.root(),
+            |studio| templates(&Templates { studio }),
+        ))
     })
     .await
 }
@@ -213,7 +235,7 @@ fn templates(templates: &dyn Offers) -> Vec<SkillTemplate> {
         .offered()
         .into_iter()
         .map(|offer| SkillTemplate {
-            id: offer.id,
+            id: offer.id.into(),
             label: offer.label,
             about: offer.about,
         })
@@ -256,14 +278,18 @@ pub(crate) async fn skill_lint(
     crate::off_the_window("linting the skill", move || {
         // purlis's own lints, then each extension's that declares `skill-lint`, through the one
         // interface (ADR 0101).
-        Ok(with_studio(&executor, held.root(), |studio| {
-            let lints = studio.map(|studio| studio.lints()).unwrap_or_default();
-            let more: Vec<&dyn purlis_core::skills::SkillLint> = lints
-                .iter()
-                .map(|lint| lint as &dyn purlis_core::skills::SkillLint)
-                .collect();
-            findings(held.root(), &(&level).into(), &name, &text, &more)
-        }))
+        Ok(purlis_core::skills::studio::with_studio(
+            &executor,
+            held.root(),
+            |studio| {
+                let lints = studio.map(|studio| studio.lints()).unwrap_or_default();
+                let more: Vec<&dyn purlis_core::skills::SkillLint> = lints
+                    .iter()
+                    .map(|lint| lint as &dyn purlis_core::skills::SkillLint)
+                    .collect();
+                findings(held.root(), &(&level).into(), &name, &text, &more)
+            },
+        ))
     })
     .await
 }
@@ -298,13 +324,13 @@ pub(crate) async fn skill_new(
     level: SkillLevel,
     name: String,
     description: String,
-    template: String,
+    template: SkillTemplateId,
 ) -> Result<SkillChanged, String> {
     let held = planes.held(&plane)?;
     let executor = views.executor();
     crate::off_the_window("making the skill", move || {
         flag_on()?;
-        with_studio(&executor, held.root(), |studio| {
+        purlis_core::skills::studio::with_studio(&executor, held.root(), |studio| {
             heard(held.root(), |cx| {
                 verbs::create(
                     cx,
@@ -312,7 +338,7 @@ pub(crate) async fn skill_new(
                     &name,
                     &description,
                     &Templates { studio },
-                    &template,
+                    &template.clone().into(),
                 )
             })
         })

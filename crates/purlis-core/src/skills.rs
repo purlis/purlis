@@ -13,7 +13,9 @@
 
 use std::path::{Path, PathBuf};
 
-pub use purlis_skills::change::{BuiltInTemplates, Offer, Problem, SkillTemplate, Template, check};
+pub use purlis_skills::change::{
+    BuiltInTemplates, Offer, Problem, SkillTemplate, Template, TemplateId, check,
+};
 pub use purlis_skills::{
     Argument, At, BUILT_IN_PREFIXES, Budget, Chat, Clash, Compat, DIR_IN_BUNDLE, Declared,
     Effective, Field, Finding, Fit, FromHarness, Given, Grant, HarnessSkills, Honours, LOCAL_DIR,

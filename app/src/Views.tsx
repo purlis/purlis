@@ -620,6 +620,8 @@ export function ViewPane({
             plane={plane}
             {...skillOfView(view)}
             changed={changed + onDisk}
+            offerFor={offerFor}
+            onPress={onPress}
           />
         ) : isDispatches(view) ? (
           /* The project's dispatches (#1452), read from the app's own records. A row opens its
@@ -1217,7 +1219,13 @@ export function AnsweredBlocks({
         ) : block.kind === "facts" ? (
           <Facts key={at} facts={block} />
         ) : block.kind === "table" ? (
-          <Table key={at} table={block} current={current} />
+          <Table
+            key={at}
+            table={block}
+            current={current}
+            offerFor={onPress === undefined ? undefined : lookUp}
+            onPress={onPress}
+          />
         ) : (
           <Fragment key={at}>
             {listHead?.(at)}
@@ -1291,17 +1299,43 @@ export type TableBlock = Extract<PanelBlock, { kind: "table" }>;
  * cell with its column; the row the tab was opened on (`current`) is marked and scrolled to.
  * With no rows, the block's own claim and what to do, as a list's empty state says them.
  */
-export function Table({ table, current }: { table: TableBlock; current?: string }) {
+export function Table({
+  table,
+  current,
+  offerFor,
+  onPress,
+}: {
+  table: TableBlock;
+  current?: string;
+  /** The catalogue, for purlis's own tables: the empty state's way out is one of its rows. */
+  offerFor?: (id: string) => Offer | undefined;
+  onPress?: (offer: Offer) => void;
+}) {
   const shown = useRef<HTMLTableRowElement>(null);
   useEffect(() => {
     shown.current?.scrollIntoView?.({ block: "nearest" });
   }, [table, current]);
   if (table.rows.length === 0) {
+    // **The way out is the catalogue's row** (#1156), as a list's empty state's is: drawn only
+    // while the catalogue offers it.
+    const offer = table.empty.offer === null ? undefined : offerFor?.(table.empty.offer);
     return (
       <EmptyState
         variant="panel"
         headline={table.empty.headline}
         body={table.empty.body ?? undefined}
+        action={
+          offer === undefined || onPress === undefined ? undefined : (
+            <Button
+              variant="primary"
+              isDisabled={!offer.available}
+              tooltip={offer.available ? offer.note : offer.reason}
+              onPress={() => onPress(offer)}
+            >
+              {offer.title}
+            </Button>
+          )
+        }
         testid="table-empty"
       />
     );

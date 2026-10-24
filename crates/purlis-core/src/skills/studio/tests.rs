@@ -88,7 +88,7 @@ fn the_runs_panel_answers_as_every_studio_panel_does() {
     let runs = RunsPanel {
         plane: plane.path(),
     };
-    assert_eq!(runs.key(), RUNS_KEY);
+    assert_eq!(runs.key(), PanelKey::Runs);
     assert_eq!(runs.by(), None);
     let answered = Answered::of(&runs, "deploy");
     assert_eq!(answered.title, "Runs");
@@ -104,19 +104,43 @@ fn a_time_and_a_stamp_read_as_a_person_reads_them() {
     assert_eq!(said_at("yesterday"), "yesterday");
     assert_eq!(
         started_by_said(Some(StartedBy::McpLoad)),
-        "The chat loaded the skill"
+        "The chat loaded it through purlis"
     );
     assert_eq!(ended_said(None, false), "Running, or not recorded");
 }
 
 #[test]
 fn without_a_studio_the_templates_are_purlis_s_own() {
+    use purlis_skills::change::Template;
     let templates = Templates { studio: None };
-    let ids: Vec<String> = templates.offered().into_iter().map(|it| it.id).collect();
-    assert_eq!(ids, ["blank", "steps"]);
+    let ids: Vec<TemplateId> = templates.offered().into_iter().map(|it| it.id).collect();
+    assert_eq!(
+        ids,
+        [
+            TemplateId::BuiltIn(Template::Blank),
+            TemplateId::BuiltIn(Template::Steps)
+        ]
+    );
     let text = templates
-        .text("steps", "deploy", "Deploys the service when asked to.")
+        .text(
+            &TemplateId::BuiltIn(Template::Steps),
+            "deploy",
+            "Deploys the service when asked to.",
+        )
         .expect("a built-in");
     assert!(text.contains("## Steps"), "{text}");
-    assert!(templates.text("ext/one", "deploy", "D").is_err());
+    let elsewhere = TemplateId::Extension {
+        extension: "ext".to_owned(),
+        template: "one".to_owned(),
+    };
+    assert!(templates.text(&elsewhere, "deploy", "D").is_err());
+}
+
+#[test]
+fn an_empty_runs_panel_offers_a_new_chat() {
+    let blocks = runs_blocks(&[], "deploy");
+    let [Block::Table(table)] = blocks.as_slice() else {
+        panic!("{blocks:?}");
+    };
+    assert_eq!(table.empty.offer.as_deref(), Some("chat.new"));
 }

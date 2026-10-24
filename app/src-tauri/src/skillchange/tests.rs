@@ -36,14 +36,18 @@ fn the_lint_and_the_templates_are_the_cores() {
     assert_eq!(
         templates
             .iter()
-            .map(|one| one.id.as_str())
+            .map(|one| one.id.clone())
             .collect::<Vec<_>>(),
-        ["blank", "steps"]
+        [SkillTemplateId::Blank, SkillTemplateId::Steps]
     );
     let tmp = tempfile::tempdir().unwrap();
     for one in &templates {
         let text = purlis_core::skills::BuiltInTemplates
-            .text(&one.id, "deploy", "Ships it to staging and checks it.")
+            .text(
+                &one.id.clone().into(),
+                "deploy",
+                "Ships it to staging and checks it.",
+            )
             .unwrap();
         assert_eq!(
             findings(tmp.path(), &Level::project(), "deploy", &text, &[]),
@@ -84,7 +88,7 @@ fn a_change_left_for_the_next_save_says_so_and_a_done_line_is_not_repeated() {
             "deploy",
             "Ships it.",
             &purlis_core::skills::BuiltInTemplates,
-            "blank",
+            &TemplateId::BuiltIn(Template::Blank),
         )
     })
     .unwrap();
@@ -105,7 +109,7 @@ fn a_deleted_skill_handed_to_the_window_comes_back_whole_and_restores() {
             "deploy",
             "Ships it.",
             &purlis_core::skills::BuiltInTemplates,
-            "blank",
+            &TemplateId::BuiltIn(Template::Blank),
         )
     })
     .unwrap();
@@ -121,4 +125,16 @@ fn a_deleted_skill_handed_to_the_window_comes_back_whole_and_restores() {
 
     assert!(tmp.path().join("skills/deploy/SKILL.md").exists());
     assert_eq!(levels(tmp.path())[0].label, "project");
+}
+
+#[test]
+fn a_template_id_reads_back_as_the_core_s_both_ways() {
+    let extension = SkillTemplateId::Extension {
+        extension: "house".to_owned(),
+        template: "rules".to_owned(),
+    };
+    for id in [SkillTemplateId::Blank, SkillTemplateId::Steps, extension] {
+        let core: TemplateId = id.clone().into();
+        assert_eq!(SkillTemplateId::from(core), id);
+    }
 }

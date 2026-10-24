@@ -500,13 +500,36 @@ fn harnesses(
     (harnesses, clashes)
 }
 
+/// **Which panel on a skill's tab**, as the window holds it: purlis's Runs panel, or one an
+/// extension adds, by its id and the panel's.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum SkillPanelKey {
+    Runs,
+    Extension { extension: String, panel: String },
+}
+
+/// The word [`SkillPanelKey::Runs`] is told to the window by, which it names that panel by.
+pub(crate) const RUNS_PANEL: &str = "runs";
+
+impl From<purlis_core::skills::studio::PanelKey> for SkillPanelKey {
+    fn from(key: purlis_core::skills::studio::PanelKey) -> SkillPanelKey {
+        use purlis_core::skills::studio::PanelKey;
+        match key {
+            PanelKey::Runs => SkillPanelKey::Runs,
+            PanelKey::Extension { extension, panel } => {
+                SkillPanelKey::Extension { extension, panel }
+            }
+        }
+    }
+}
+
 /// **One panel on a skill's tab** (ADR 0101 §6), as the window draws it: purlis's Runs panel,
 /// then each panel an extension that declares `studio-panel` adds, each answered in panel blocks
 /// or refused with the core's sentence.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct SkillPanel {
-    /// What the window holds it by: `runs`, or `ext/<extension>/<panel>`.
-    pub key: String,
+    pub key: SkillPanelKey,
     pub title: String,
     /// The extension that adds it, by name, or null for purlis's own.
     pub by: Option<String>,
@@ -521,18 +544,10 @@ pub(crate) fn panels(
     skill: &str,
     studio: Option<purlis_core::skills::studio::Studio<'_>>,
 ) -> Vec<SkillPanel> {
+    use purlis_core::skills::studio::{Answered, RunsPanel};
     let answered = match studio {
         Some(studio) => studio.panels(root, skill),
-        None => {
-            use purlis_core::skills::studio::StudioPanel as _;
-            let runs = purlis_core::skills::studio::RunsPanel { plane: root };
-            vec![purlis_core::skills::studio::Answered {
-                key: runs.key(),
-                title: runs.title(),
-                by: runs.by(),
-                blocks: runs.blocks(skill),
-            }]
-        }
+        None => vec![Answered::of(&RunsPanel { plane: root }, skill)],
     };
     answered
         .into_iter()
@@ -545,7 +560,7 @@ pub(crate) fn panels(
                 Err(why) => (Vec::new(), Some(why)),
             };
             SkillPanel {
-                key: panel.key,
+                key: panel.key.into(),
                 title: panel.title,
                 by: panel.by,
                 blocks,
@@ -572,7 +587,7 @@ pub(crate) async fn skill_panels(
         if !purlis_core::skills::studio_on_here() {
             return Ok(Vec::new());
         }
-        Ok(crate::skillchange::with_studio(
+        Ok(purlis_core::skills::studio::with_studio(
             &executor,
             held.root(),
             |studio| panels(held.root(), &skill, studio),

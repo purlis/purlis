@@ -67,11 +67,11 @@ impl super::SkillSource for Asked<'_> {
             self.offered
                 .skills
                 .iter()
-                .map(|(name, description)| Found {
-                    name: name.clone(),
-                    description: description.clone(),
-                    folder: name.clone(),
-                    dir: vec![name.clone()],
+                .map(|skill| Found {
+                    name: skill.name.clone(),
+                    description: skill.description.clone(),
+                    folder: skill.name.clone(),
+                    dir: vec![skill.name.clone()],
                 })
                 .collect(),
             Vec::new(),

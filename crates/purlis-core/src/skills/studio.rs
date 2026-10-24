@@ -22,13 +22,13 @@
 
 use std::path::Path;
 
-use purlis_skills::change::{BuiltInTemplates, Offer, SkillTemplate};
+use purlis_skills::change::{BuiltInTemplates, Offer, SkillTemplate, TemplateId};
 use purlis_skills::{Finding, Lint, Severity, SkillFiles, SkillLint};
 
 use crate::executor::Executor;
 use crate::extension::capability::Capability;
 use crate::extension::project::Choices;
-use crate::extension::studio::{self as wire, Ask, HandedFile};
+use crate::extension::studio::{self as wire, Ask, HandedFile, SkillFile};
 use crate::panel::{Block, Empty, Table, TableRow, Tone};
 
 /// What the studio asks extensions with: the app's executor, this machine's record of
@@ -54,6 +54,23 @@ pub struct Asked {
     pub id: String,
     pub name: String,
     pub declared: wire::Declared,
+}
+
+/// **What the studio asks extensions with in the project at `root`, handed to `with`**: the
+/// executor, this machine's record of extensions and the project's choices, read once here for
+/// the window and the command line alike. With no config home, `None`: purlis's own alone.
+pub fn with_studio<T>(
+    executor: &Executor,
+    root: &Path,
+    with: impl FnOnce(Option<Studio<'_>>) -> T,
+) -> T {
+    let config = crate::machine::config_root();
+    let project = Choices::read(root);
+    with(config.as_deref().map(|config_root| Studio {
+        executor,
+        config_root,
+        project: &project,
+    }))
 }
 
 impl<'a> Studio<'a> {
@@ -138,8 +155,8 @@ impl<'a> Studio<'a> {
 // ---------------------------------------------------------------------------------------
 
 /// **Every template a new skill can start from**: purlis's own, then each extension's that
-/// declares `skill-template` ([`Studio::declaring`]), each by `<extension>/<template>`, so no
-/// extension's template answers to one of purlis's ids. With no studio, purlis's own alone.
+/// declares `skill-template` ([`Studio::declaring`]), each by its extension and its own id
+/// ([`TemplateId::Extension`]). With no studio, purlis's own alone.
 #[derive(Debug, Clone, Copy)]
 pub struct Templates<'a> {
     pub studio: Option<Studio<'a>>,
@@ -154,7 +171,10 @@ impl SkillTemplate for Templates<'_> {
         for asked in studio.declaring(Capability::SkillTemplate) {
             for template in &asked.declared.templates {
                 out.push(Offer {
-                    id: format!("{}/{}", asked.id, template.id),
+                    id: TemplateId::Extension {
+                        extension: asked.id.clone(),
+                        template: template.id.clone(),
+                    },
                     label: format!("{} · {}", template.title, asked.name),
                     about: template.about.clone(),
                 });
@@ -163,13 +183,17 @@ impl SkillTemplate for Templates<'_> {
         out
     }
 
-    fn text(&self, id: &str, name: &str, description: &str) -> Result<String, String> {
-        let Some((extension, template)) = id.split_once('/') else {
+    fn text(&self, id: &TemplateId, name: &str, description: &str) -> Result<String, String> {
+        let TemplateId::Extension {
+            extension,
+            template,
+        } = id
+        else {
             return BuiltInTemplates.text(id, name, description);
         };
         let studio = self
             .studio
-            .ok_or_else(|| format!("purlis has no template {id:?} here"))?;
+            .ok_or_else(|| format!("purlis has no template of the extension '{extension}' here"))?;
         let doc = studio.ask(
             extension,
             &Ask::Template {
@@ -203,10 +227,14 @@ impl SkillLint for ExtensionLint<'_> {
             text: skill.text.to_owned(),
             executable: false,
         }];
-        let others: Vec<(String, Vec<u8>, bool)> = skill
+        let others: Vec<SkillFile> = skill
             .others
             .iter()
-            .map(|(path, text)| (path.clone(), text.clone().into_bytes(), false))
+            .map(|(path, text)| SkillFile {
+                path: path.clone(),
+                bytes: text.clone().into_bytes(),
+                executable: false,
+            })
             .collect();
         files.extend(wire::handed(&others));
         let said = self
@@ -244,7 +272,7 @@ impl SkillLint for ExtensionLint<'_> {
 /// extension's answer through it.
 pub trait StudioPanel {
     /// What the window holds it by: unique across every contributor.
-    fn key(&self) -> String;
+    fn key(&self) -> PanelKey;
     fn title(&self) -> String;
     /// The extension that adds it, by name, or `None` for purlis's own.
     fn by(&self) -> Option<String>;
@@ -252,10 +280,18 @@ pub trait StudioPanel {
     fn blocks(&self, skill: &str) -> Result<Vec<Block>, String>;
 }
 
+/// **Which panel on a skill's tab**: purlis's Runs panel, or one an extension adds, by the
+/// extension's id and the panel's.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PanelKey {
+    Runs,
+    Extension { extension: String, panel: String },
+}
+
 /// One panel on a skill's tab, answered.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Answered {
-    pub key: String,
+    pub key: PanelKey,
     pub title: String,
     pub by: Option<String>,
     /// Its blocks, or the sentence saying why it has none.
@@ -263,7 +299,8 @@ pub struct Answered {
 }
 
 impl Answered {
-    fn of(panel: &dyn StudioPanel, skill: &str) -> Self {
+    /// `panel`'s answer for the skill `skill`.
+    pub fn of(panel: &dyn StudioPanel, skill: &str) -> Self {
         Self {
             key: panel.key(),
             title: panel.title(),
@@ -285,12 +322,9 @@ pub struct RunsPanel<'a> {
     pub plane: &'a Path,
 }
 
-/// The key the Runs panel is held by.
-pub const RUNS_KEY: &str = "runs";
-
 impl StudioPanel for RunsPanel<'_> {
-    fn key(&self) -> String {
-        RUNS_KEY.to_owned()
+    fn key(&self) -> PanelKey {
+        PanelKey::Runs
     }
 
     fn title(&self) -> String {
@@ -311,7 +345,7 @@ impl StudioPanel for RunsPanel<'_> {
 
 /// The Runs panel's blocks for `runs` of `skill`: a sentence on what a run is, then the table, or
 /// the empty table's claim and its way on.
-pub fn runs_blocks(runs: &[crate::skilluse::Run], skill: &str) -> Vec<Block> {
+fn runs_blocks(runs: &[crate::skilluse::Run], skill: &str) -> Vec<Block> {
     let mut out = Vec::new();
     if !runs.is_empty() {
         out.push(Block::Note {
@@ -333,7 +367,9 @@ pub fn runs_blocks(runs: &[crate::skilluse::Run], skill: &str) -> Vec<Block> {
                 key: run.id.clone().unwrap_or_else(|| format!("before-{at}")),
                 cells: vec![
                     said_at(&run.started),
-                    run.persona.clone().unwrap_or_else(|| "None".to_owned()),
+                    run.persona
+                        .clone()
+                        .unwrap_or_else(|| "No persona".to_owned()),
                     started_by_said(run.started_by).to_owned(),
                     ended_said(end.map(|end| end.ended), run.id.is_none()).to_owned(),
                     count(|end| end.tool_calls),
@@ -369,15 +405,19 @@ pub fn runs_blocks(runs: &[crate::skilluse::Run], skill: &str) -> Vec<Block> {
         empty: Empty {
             headline: format!("No runs of {skill} yet"),
             body: Some("A run starts when a chat uses the skill, and ends with its turn.".into()),
-            offer: None,
+            // A chat, where a skill is used: the catalogue's New tab.
+            offer: Some(NEW_CHAT.to_owned()),
         },
     }));
     out
 }
 
+/// The catalogue row that opens a new chat, the empty Runs panel's way out.
+const NEW_CHAT: &str = "chat.new";
+
 /// A stamp as a row says it: `2026-10-20 10:00 UTC` for a stamp written in UTC, as every run's
 /// is; the stamp itself for one this cannot read.
-pub fn said_at(stamp: &str) -> String {
+fn said_at(stamp: &str) -> String {
     let bytes = stamp.as_bytes();
     let digits = |range: std::ops::Range<usize>| {
         bytes
@@ -402,12 +442,12 @@ pub fn said_at(stamp: &str) -> String {
 }
 
 /// What started a run, as its row says it.
-pub fn started_by_said(started: Option<purlis_skills::runs::StartedBy>) -> &'static str {
+fn started_by_said(started: Option<purlis_skills::runs::StartedBy>) -> &'static str {
     use purlis_skills::runs::StartedBy;
     match started {
-        Some(StartedBy::SkillTool) => "The chat's Skill tool",
+        Some(StartedBy::SkillTool) => "The chat started it",
         Some(StartedBy::Read) => "The chat read the skill",
-        Some(StartedBy::McpLoad) => "The chat loaded the skill",
+        Some(StartedBy::McpLoad) => "The chat loaded it through purlis",
         Some(StartedBy::UseSkill) => "You, with Use skill…",
         None => "From before runs were recorded",
         Some(_) => "Not known",
@@ -415,7 +455,7 @@ pub fn started_by_said(started: Option<purlis_skills::runs::StartedBy>) -> &'sta
 }
 
 /// How a run ended, as its row says it: `from_before` for a use from before runs were recorded.
-pub fn ended_said(ended: Option<purlis_skills::runs::Ended>, from_before: bool) -> &'static str {
+fn ended_said(ended: Option<purlis_skills::runs::Ended>, from_before: bool) -> &'static str {
     use purlis_skills::runs::Ended;
     match ended {
         Some(Ended::Turn) => "With its turn",
@@ -428,7 +468,7 @@ pub fn ended_said(ended: Option<purlis_skills::runs::Ended>, from_before: bool) 
 }
 
 /// A run's time, as a person reads it: `850 ms`, `12 s`, `3 min 4 s`.
-pub fn time_said(ms: u64) -> String {
+fn time_said(ms: u64) -> String {
     if ms < 1000 {
         format!("{ms} ms")
     } else if ms < 60_000 {
@@ -448,8 +488,11 @@ struct ExtensionPanel<'a> {
 }
 
 impl StudioPanel for ExtensionPanel<'_> {
-    fn key(&self) -> String {
-        format!("ext/{}/{}", self.id, self.panel.id)
+    fn key(&self) -> PanelKey {
+        PanelKey::Extension {
+            extension: self.id.to_owned(),
+            panel: self.panel.id.clone(),
+        }
     }
 
     fn title(&self) -> String {
@@ -481,8 +524,11 @@ fn skill_files(plane: &Path, name: &str) -> Vec<HandedFile> {
             continue;
         };
         let skill_md = folder.join(purlis_skills::FILE);
-        let mut files: Vec<(String, Vec<u8>, bool)> =
-            vec![(purlis_skills::FILE.to_owned(), text.into_bytes(), false)];
+        let mut files: Vec<SkillFile> = vec![SkillFile {
+            path: purlis_skills::FILE.to_owned(),
+            bytes: text.into_bytes(),
+            executable: false,
+        }];
         for file in purlis_skills::other_files(&skill_md) {
             // Opened through no link, at the instant of the open, and read no further than a
             // question carries: a file swapped for a link after the folder was listed is not read.
@@ -498,7 +544,11 @@ fn skill_files(plane: &Path, name: &str) -> Vec<HandedFile> {
                 continue;
             }
             let shown = file.strip_prefix(&folder).unwrap_or(&file);
-            files.push((shown.to_string_lossy().into_owned(), bytes, false));
+            files.push(SkillFile {
+                path: shown.to_string_lossy().into_owned(),
+                bytes,
+                executable: false,
+            });
         }
         return wire::handed(&files);
     }

@@ -298,3 +298,9 @@ fn the_studio_lists_each_harnesss_own_skills_and_plugins_and_marks_a_clash_with_
         "opencode's plugins"
     );
 }
+
+#[test]
+fn the_runs_panel_is_told_to_the_window_by_the_word_the_window_names_it_by() {
+    let told = serde_json::to_value(SkillPanelKey::Runs).unwrap();
+    assert_eq!(told["kind"], RUNS_PANEL);
+}

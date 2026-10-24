@@ -3,7 +3,8 @@
 
 import { useEffect, useId, useState } from "react";
 import { LoaderCircle } from "lucide-react";
-import { commands, type SkillPanel } from "./bindings";
+import { commands, SKILL_RUNS_PANEL, type SkillPanel, type SkillPanelKey } from "./bindings";
+import type { Offer } from "./actions";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { AnsweredBlocks } from "./Views";
 
@@ -19,12 +20,17 @@ export function SkillTab({
   name,
   run: wanted,
   changed,
+  offerFor,
+  onPress,
 }: {
   plane: string;
   name: string;
   /** The run the tab was opened on, from a run's chip: marked in the Runs panel. */
   run?: string;
   changed: number;
+  /** The catalogue, for the ways out purlis's own panels offer. */
+  offerFor?: (id: string) => Offer | undefined;
+  onPress?: (offer: Offer) => void;
 }) {
   const [panels, setPanels] = useState<SkillPanel[]>();
   const [refused, setRefused] = useState<string>();
@@ -56,32 +62,51 @@ export function SkillTab({
       ) : panels === undefined ? (
         <p className="pending" aria-busy="true">
           <LoaderCircle className="node-icon spinning" />
-          Reading the skill's runs…
+          Reading the skill's panels…
         </p>
       ) : (
         panels.map((panel) => (
-          <StudioPanelSection key={panel.key} panel={panel} name={name} current={wanted} />
+          <StudioPanelSection
+            key={keyOf(panel.key)}
+            panel={panel}
+            name={name}
+            current={wanted}
+            offerFor={panel.key.kind === SKILL_RUNS_PANEL ? offerFor : undefined}
+            onPress={panel.key.kind === SKILL_RUNS_PANEL ? onPress : undefined}
+          />
         ))
       )}
     </div>
   );
 }
 
-/** One panel on a skill's tab: its heading, who adds it, and its blocks or why it has none. */
+/** What a panel is held by: `runs`, or `<extension>/<panel>` for one an extension adds. */
+export function keyOf(key: SkillPanelKey): string {
+  return key.kind === "extension" ? `${key.extension}/${key.panel}` : key.kind;
+}
+
+/** One panel on a skill's tab: its heading, who adds it, and its blocks or why it has none. An
+ *  extension's panel is handed no catalogue: its blocks run no verb of purlis's. */
 function StudioPanelSection({
   panel,
   name,
   current,
+  offerFor,
+  onPress,
 }: {
   panel: SkillPanel;
   name: string;
   current?: string;
+  offerFor?: (id: string) => Offer | undefined;
+  onPress?: (offer: Offer) => void;
 }) {
   const heading = useId();
   return (
     <section
       aria-labelledby={heading}
-      data-testid={panel.key === "runs" ? "skill-runs" : `skill-panel-${panel.key}`}
+      data-testid={
+        panel.key.kind === SKILL_RUNS_PANEL ? "skill-runs" : `skill-panel-${keyOf(panel.key)}`
+      }
     >
       <h3 id={heading}>
         {panel.title}
@@ -95,7 +120,13 @@ function StudioPanelSection({
           testid="skill-panel-refused"
         />
       ) : (
-        <AnsweredBlocks blocks={panel.blocks} label={panel.title} current={current} />
+        <AnsweredBlocks
+          blocks={panel.blocks}
+          label={panel.title}
+          current={current}
+          offerFor={offerFor}
+          onPress={onPress}
+        />
       )}
     </section>
   );

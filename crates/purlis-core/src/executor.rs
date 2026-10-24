@@ -235,15 +235,21 @@ pub fn how_it_runs(manifest: &extension::Manifest) -> String {
     };
     // A confined program does not run as you do (ADR 0101 §4): what stops it outliving its
     // question is the sandbox's, said in the prompt's last sentence.
-    let after = if manifest.confined() {
-        "It runs inside its sandbox, and so does anything it starts."
-    } else {
-        "A program set on outliving that can, because it runs as you do."
-    };
+    // A confined program does not run as you do (ADR 0101 §4), and what it starts stays in its
+    // sandbox; what leaves its process group is not stopped with it, and is said so.
+    if manifest.confined() {
+        return format!(
+            "purlis starts it {when} — never at launch and never on a timer. Each time it is \
+             asked one question, given at most {} seconds to answer, and then stopped, with what \
+             it started in its process group. Anything it starts runs in the same sandbox, and \
+             one that leaves its process group can keep running there.",
+            DEADLINE.as_secs()
+        );
+    }
     format!(
         "purlis starts it {when} — never at launch and never on a timer. Each time it is \
          asked one question, given at most {} seconds to answer, and then stopped along with \
-         anything it started. {after}",
+         anything it started. A program set on outliving that can, because it runs as you do.",
         DEADLINE.as_secs()
     )
 }
@@ -849,9 +855,10 @@ impl Executor {
             }
         };
         let protocol = found.manifest.protocol;
-        if let Asked::Studio(ask) = asked {
-            let reply =
-                reply_of(extension, &line, protocol, ask.answered_keys()).map_err(with_report)?;
+        if let Asked::Studio(_) = asked {
+            // Every key but `charter` and `error` is the question's own answer, read against its
+            // closed shape by `extension::studio`, which refuses a key it does not know.
+            let reply = reply_open(extension, &line, protocol).map_err(with_report)?;
             return Ok(Put {
                 blocks: None,
                 reply: Some(reply),
@@ -2332,6 +2339,27 @@ fn read_answer(
         )),
         None => Ok(None),
     }
+}
+
+/// An answer line read as far as every kind of question shares ([`reply_of`]), its other keys
+/// left for the caller to read against the question's own shape: a studio question's.
+fn reply_open(
+    extension: &str,
+    line: &[u8],
+    protocol: u32,
+) -> Result<serde_json::Map<String, serde_json::Value>, String> {
+    let doc: serde_json::Value = serde_json::from_slice(line).map_err(|why| {
+        format!("'{extension}' answered something that is not one line of JSON: {why}")
+    })?;
+    let serde_json::Value::Object(doc) = doc else {
+        return Err(format!("'{extension}' answered JSON that is not an object"));
+    };
+    let keys: Vec<&str> = doc
+        .keys()
+        .map(String::as_str)
+        .filter(|key| *key != "charter" && *key != "error")
+        .collect();
+    reply_of(extension, line, protocol, &keys)
 }
 
 /// An answer line read as far as every kind of question shares: one JSON object, in the

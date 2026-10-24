@@ -698,7 +698,7 @@ const ORDINARY: Answers = {
   // The skill tab's panels, as the core answers them (ADR 0101 §6): the Runs panel's table.
   skill_panels: [
     {
-      key: "runs",
+      key: { kind: "runs" },
       title: "Runs",
       by: null,
       refused: null,
@@ -729,7 +729,7 @@ const ORDINARY: Answers = {
               cells: [
                 "2026-10-20 10:00 UTC",
                 "ops",
-                "The chat's Skill tool",
+                "The chat started it",
                 "With its turn",
                 "7",
                 "1",
@@ -1239,7 +1239,7 @@ const STATES: State[] = [
     answers: {
       skill_panels: [
         {
-          key: "runs",
+          key: { kind: "runs" },
           title: "Runs",
           by: null,
           refused: null,

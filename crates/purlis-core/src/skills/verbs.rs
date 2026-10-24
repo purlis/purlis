@@ -27,7 +27,7 @@
 
 use std::path::{Path, PathBuf};
 
-use purlis_skills::change::{self, SkillTemplate};
+use purlis_skills::change::{self, SkillTemplate, TemplateId};
 
 use super::{Grant, LINKED_PLUGIN, Origin, beside, grant_of, level_dir, named, set_grant};
 use crate::planegit::literally;
@@ -372,7 +372,7 @@ pub fn create(
     name: &str,
     description: &str,
     templates: &dyn SkillTemplate,
-    template: &str,
+    template: &TemplateId,
 ) -> Result<PathBuf, String> {
     let plane = cx.plane;
     crate::settings::writable(plane)?;
@@ -386,7 +386,7 @@ pub fn create(
     let text = templates.text(template, name, description)?;
     if let Some(problem) = change::check(&text, name).first() {
         return Err(format!(
-            "the template {template:?} does not make a whole skill: {problem}"
+            "that template does not make a whole skill: {problem}"
         ));
     }
     let dir = free_at(plane, level, name, name)?;

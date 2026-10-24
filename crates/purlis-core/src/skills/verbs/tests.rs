@@ -9,7 +9,7 @@ use std::path::Path;
 
 use super::*;
 use crate::testgit::run;
-use purlis_skills::change::BuiltInTemplates;
+use purlis_skills::change::{BuiltInTemplates, Template, TemplateId};
 
 /// A plane with a workspace `ops`, a persona `steward` that names `deploy`, and a project skill
 /// `deploy` that another project skill `release` names. No git repository: a change is made on
@@ -92,7 +92,7 @@ fn a_new_skill_from_a_template_lands_at_the_level_it_was_made_at() {
             "triage",
             "Sorts new issues.",
             &BuiltInTemplates,
-            "steps",
+            &TemplateId::BuiltIn(Template::Steps),
         )
     })
     .unwrap();
@@ -118,7 +118,7 @@ fn a_new_skill_is_refused_for_a_bad_name_a_taken_name_or_a_built_in_name() {
                 name,
                 "Does it.",
                 &BuiltInTemplates,
-                "blank",
+                &TemplateId::BuiltIn(Template::Blank),
             )
         })
         .0
@@ -143,7 +143,7 @@ fn a_new_skill_is_refused_for_a_bad_name_a_taken_name_or_a_built_in_name() {
             "x",
             "Does x.",
             &BuiltInTemplates,
-            "blank",
+            &TemplateId::BuiltIn(Template::Blank),
         )
     });
     assert!(
@@ -462,7 +462,7 @@ fn each_change_is_one_commit_of_its_own_paths_and_nothing_else() {
             "triage",
             "Sorts issues.",
             &BuiltInTemplates,
-            "blank",
+            &TemplateId::BuiltIn(Template::Blank),
         )
     })
     .unwrap();
@@ -597,7 +597,7 @@ fn a_save_of_some_paths_is_refused_while_something_else_is_staged() {
             "triage",
             "Sorts issues.",
             &BuiltInTemplates,
-            "blank",
+            &TemplateId::BuiltIn(Template::Blank),
         )
     });
 

@@ -1991,6 +1991,8 @@ export const PERSONA_SCOPE_KEY = "persona/" as const;
 
 export const SESSION_BUS_ANSWERS = "session-bus://answers" as const;
 
+export const SKILL_RUNS_PANEL = "runs" as const;
+
 export const SKILL_STUDIO_IN = "skills.studio:" as const;
 
 export const SPECIMEN_BUSY = "purlis is drawing another theme specimen, and draws one at a time: ask again in a moment" as const;
@@ -9228,8 +9230,7 @@ export type SkillLintLevel =
  *  or refused with the core's sentence.
  */
 export type SkillPanel = {
-	/**  What the window holds it by: `runs`, or `ext/<extension>/<panel>`. */
-	key: string,
+	key: SkillPanelKey,
 	title: string,
 	/**  The extension that adds it, by name, or null for purlis's own. */
 	by: string | null,
@@ -9237,6 +9238,12 @@ export type SkillPanel = {
 	/**  Why it has no blocks, in the core's words, or null where it answered. */
 	refused: string | null,
 };
+
+/**
+ *  **Which panel on a skill's tab**, as the window holds it: purlis's Runs panel, or one an
+ *  extension adds, by its id and the panel's.
+ */
+export type SkillPanelKey = { kind: "runs" } | { kind: "extension"; extension: string; panel: string };
 
 /**  A skill source as the studio shows and adds one. */
 export type SkillSource = {
@@ -9264,15 +9271,20 @@ export type SkillSwitch =
 { kind: "not"; why: string };
 
 /**
- *  One template, as the New skill form offers it: purlis's own (`blank`, `steps`), then each
- *  extension's that declares `skill-template`, by `<extension>/<template>` (ADR 0101).
+ *  One template, as the New skill form offers it: purlis's own, then each extension's that
+ *  declares `skill-template` (ADR 0101).
  */
 export type SkillTemplate = {
-	/**  What the New skill form hands back to make the skill from. */
-	id: string,
+	id: SkillTemplateId,
 	label: string,
 	about: string,
 };
+
+/**
+ *  Which template a new skill starts from, as the window names it: one of purlis's own, or one
+ *  an extension offers, by its id and the template's (ADR 0101).
+ */
+export type SkillTemplateId = { kind: "blank" } | { kind: "steps" } | { kind: "extension"; extension: string; template: string };
 
 /**  One newer commit offered for an installed skill. */
 export type SkillUpdateOffer = {

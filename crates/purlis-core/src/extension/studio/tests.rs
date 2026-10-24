@@ -33,6 +33,10 @@ fn read(text: &str, on: bool) -> Result<crate::extension::Manifest, String> {
     crate::extension::parse_knowing(text, &Capability::known_where(on))
 }
 
+fn host(name: &str) -> Host {
+    Host::parse(name).expect("a host")
+}
+
 fn lint_only() -> serde_json::Value {
     serde_json::json!({ "skill-lint": { "title": "House style" } })
 }
@@ -169,10 +173,14 @@ fn a_declared_host_is_one_name_never_a_wildcard_an_address_or_a_port() {
         lint_only(),
     );
     let read = read(&text, true).expect("names");
-    assert_eq!(
-        read.studio.expect("studio").hosts,
-        ["registry.example.com", "cdn.example.com"]
-    );
+    let hosts: Vec<String> = read
+        .studio
+        .expect("studio")
+        .hosts
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    assert_eq!(hosts, ["registry.example.com", "cdn.example.com"]);
 }
 
 #[test]
@@ -220,24 +228,24 @@ fn every_host_that_serves_a_model_is_refused_with_its_name() {
 
 #[test]
 fn a_model_host_is_the_domain_or_a_name_under_it_and_no_look_alike() {
-    assert!(model_host("api.anthropic.com"));
-    assert!(model_host("API.Anthropic.com."));
-    assert!(model_host("x.openai.azure.com"));
-    assert!(model_host("bedrock-runtime.eu-west-1.amazonaws.com"));
-    assert!(!model_host("s3.eu-west-1.amazonaws.com"));
-    assert!(!model_host("notanthropic.com"));
-    assert!(!model_host("anthropic.com.example.org"));
-    assert!(!model_host("registry.example.com"));
+    assert!(model_host(&host("api.anthropic.com")));
+    assert!(model_host(&host("API.Anthropic.com.")));
+    assert!(model_host(&host("x.openai.azure.com")));
+    assert!(model_host(&host("bedrock-runtime.eu-west-1.amazonaws.com")));
+    assert!(!model_host(&host("s3.eu-west-1.amazonaws.com")));
+    assert!(!model_host(&host("notanthropic.com")));
+    assert!(!model_host(&host("anthropic.com.example.org")));
+    assert!(!model_host(&host("registry.example.com")));
 }
 
 #[test]
 fn the_proxy_leaves_out_a_model_host_whatever_the_manifest_said() {
     let declared = vec![
-        "registry.example.com".to_owned(),
-        "api.anthropic.com".to_owned(),
-        "openrouter.ai".to_owned(),
+        host("registry.example.com"),
+        host("api.anthropic.com"),
+        host("openrouter.ai"),
     ];
-    assert_eq!(reachable(&declared), ["registry.example.com"]);
+    assert_eq!(reachable(&declared), [host("registry.example.com")]);
 }
 
 #[test]
@@ -300,13 +308,13 @@ fn templates_and_panels_are_read_against_an_allow_list() {
 #[test]
 fn the_approval_says_what_holds_it_from_the_core() {
     assert!(confined_said(&[]).contains("It reaches no host on the network"));
-    assert!(confined_said(&["a.example.com".to_owned()]).contains("only a.example.com"));
-    let two = confined_said(&["a.example.com".to_owned(), "b.example.com".to_owned()]);
+    assert!(confined_said(&[host("a.example.com")]).contains("only a.example.com"));
+    let two = confined_said(&[host("a.example.com"), host("b.example.com")]);
     assert!(
         two.contains("only a.example.com and b.example.com"),
         "{two}"
     );
-    assert!(two.contains("never a host that serves a model"), "{two}");
+    assert!(two.contains("never to a host that serves a model"), "{two}");
     assert!(!two.contains("runs as you do"), "{two}");
 }
 
@@ -317,7 +325,7 @@ fn the_approval_says_what_holds_it_from_the_core() {
 /// The profile for an extension at `ext` writing `state` and `tmp`, read as the Linux sandbox
 /// reads it: the same profile Seatbelt is handed on macOS, compiled once.
 fn held(ext: &Path, state: &Path, tmp: &Path) -> purlis_linux_sandbox::profile::Profile {
-    let text = crate::sandbox::seatbelt::confined_profile(
+    let text = crate::sandbox::confined::profile(
         Os::Linux,
         &[ext.to_path_buf()],
         &[state.to_path_buf(), tmp.to_path_buf()],
@@ -433,7 +441,7 @@ fn a_confined_program_reaches_its_proxy_and_no_other_address() {
         "a model provider, directly"
     );
     assert!(!reaches(&profile, "192.0.2.1", 443), "any host, directly");
-    let none = crate::sandbox::seatbelt::confined_profile(
+    let none = crate::sandbox::confined::profile(
         Os::Linux,
         &[PathBuf::from(EXT)],
         &[PathBuf::from(TMP)],
@@ -463,7 +471,7 @@ fn the_denial_classes_hold_inside_its_own_folder() {
 
 #[test]
 fn the_macos_profile_reads_the_systems_programs_and_no_home() {
-    let text = crate::sandbox::seatbelt::confined_profile(
+    let text = crate::sandbox::confined::profile(
         Os::MacOs,
         &[PathBuf::from("/Users/ada/ext/studio-x")],
         &[PathBuf::from("/private/var/folders/x/T/purlis-extension-1")],
@@ -555,14 +563,18 @@ fn each_question_says_what_it_asks_and_hands_a_skill_as_its_files() {
 
 #[test]
 fn a_question_hands_text_files_within_its_bounds() {
-    let mut files: Vec<(String, Vec<u8>, bool)> = (0..100)
-        .map(|n| (format!("f{n:03}.md"), b"words\n".to_vec(), false))
+    let file = |path: String, bytes: Vec<u8>| SkillFile {
+        path,
+        bytes,
+        executable: false,
+    };
+    let mut files: Vec<SkillFile> = (0..100)
+        .map(|n| file(format!("f{n:03}.md"), b"words\n".to_vec()))
         .collect();
-    files.push(("binary.png".to_owned(), vec![0xff, 0xfe, 0x00], false));
-    files.push((
+    files.push(file("binary.png".to_owned(), vec![0xff, 0xfe, 0x00]));
+    files.push(file(
         "z-big.md".to_owned(),
         vec![b'x'; MOST_HANDED_BYTES + 1],
-        false,
     ));
     let handed = handed(&files);
     assert_eq!(handed.len(), MOST_HANDED_FILES);
@@ -576,7 +588,13 @@ fn a_sources_listing_is_read_failing_closed() {
         &doc(serde_json::json!({ "revision": "r1", "skills": [{ "name": "deploy", "description": "D" }] })),
     )
     .expect("read");
-    assert_eq!(offered.skills, [("deploy".to_owned(), "D".to_owned())]);
+    assert_eq!(
+        offered.skills,
+        [OfferedSkill {
+            name: "deploy".to_owned(),
+            description: "D".to_owned(),
+        }]
+    );
     for bad in [
         serde_json::json!({ "skills": [] }),
         serde_json::json!({ "revision": "../r", "skills": [] }),
@@ -709,18 +727,195 @@ fn a_panels_blocks_are_read_against_the_panel_vocabulary() {
     }
 }
 
+// ---------------------------------------------------------------------------------------
+// What the review asked to be held (#3088)
+// ---------------------------------------------------------------------------------------
+
+/// The macOS profile for a program in `ext`, read as Linux's reader reads it, the one operation
+/// it has no word for set aside.
+fn held_on_macos(ext: &str) -> purlis_linux_sandbox::profile::Profile {
+    let text = crate::sandbox::confined::profile(
+        Os::MacOs,
+        &[PathBuf::from(ext)],
+        &[PathBuf::from("/opt/tmp/purlis-extension-1")],
+        &[40_001],
+    )
+    .expect("a profile");
+    purlis_linux_sandbox::profile::Profile::parse(&text.replace(" file-map-executable", ""))
+        .expect("read")
+}
+
 #[test]
-fn a_grade_is_four_messages_two_each_way() {
-    let from_purlis: Vec<GradeMessage> = GradeMessage::ALL
-        .into_iter()
-        .filter(|it| it.from_purlis())
-        .collect();
+fn a_package_managers_programs_are_read_and_its_configuration_and_state_are_not() {
+    let macos = held_on_macos("/Users/ada/ext/studio-x");
+    let linux = held(Path::new(EXT), Path::new(STATE), Path::new(TMP));
+    // Homebrew on Apple silicon and on Intel, and the system's own prefix.
+    for (profile, programs, kept) in [
+        (
+            &macos,
+            [
+                "/opt/homebrew/bin/python3",
+                "/opt/homebrew/Cellar/python@3.13/3.13.1/bin/python3",
+                "/opt/homebrew/opt/openssl@3/lib/libssl.3.dylib",
+                "/usr/local/bin/python3",
+                "/usr/local/Cellar/git/2.47.0/bin/git",
+                "/usr/lib/libSystem.B.dylib",
+            ],
+            [
+                "/opt/homebrew/etc/openssl@3/private/key.pem",
+                "/opt/homebrew/var/postgresql@16/postgresql.conf",
+                "/usr/local/etc/my.cnf",
+                "/usr/local/var/mysql/ibdata1",
+                "/usr/local/secrets.txt",
+            ],
+        ),
+        (
+            &linux,
+            [
+                "/usr/bin/python3",
+                "/usr/lib/x86_64-linux-gnu/libssl.so.3",
+                "/usr/local/bin/tool",
+                "/usr/local/lib/libtool.so",
+                "/usr/share/zoneinfo/UTC",
+                "/usr/libexec/tool",
+            ],
+            [
+                "/usr/local/etc/tool.conf",
+                "/usr/local/var/db/state",
+                "/usr/local/secrets.txt",
+                "/usr/local/var/log/x",
+                "/usr/local/etc/ssl/private.pem",
+            ],
+        ),
+    ] {
+        for read in programs {
+            assert!(reads(profile, read), "{read} is not read");
+        }
+        for kept in kept {
+            assert!(!reads(profile, kept), "{kept} is read");
+        }
+    }
+}
+
+#[test]
+fn no_other_process_is_read_through_the_systems_settings() {
+    let text = crate::sandbox::confined::profile(Os::MacOs, &[PathBuf::from(EXT)], &[], &[])
+        .expect("a profile");
+    assert!(
+        text.contains("(deny sysctl-read (sysctl-name-prefix \"kern.proc\"))"),
+        "{text}"
+    );
+}
+
+#[test]
+fn a_private_or_special_use_address_is_never_reached() {
+    use crate::sandbox::hosts::special_use;
+    let ip = |text: &str| text.parse::<std::net::IpAddr>().expect("an address");
+    for private in [
+        "10.1.2.3",
+        "172.16.0.1",
+        "172.31.255.254",
+        "192.168.1.1",
+        "100.64.0.1",
+        "100.127.255.254",
+        "127.0.0.1",
+        "169.254.169.254",
+        "0.0.0.0",
+        "192.0.2.10",
+        "198.18.0.1",
+        "198.51.100.1",
+        "203.0.113.1",
+        "224.0.0.1",
+        "240.0.0.1",
+        "255.255.255.255",
+        "::1",
+        "fc00::1",
+        "fd12:3456::1",
+        "fe80::1",
+        "2001:db8::1",
+        "100::1",
+        "::ffff:10.0.0.1",
+        "64:ff9b::a00:1",
+        "2002:a00:1::1",
+    ] {
+        assert!(special_use(ip(private)), "{private} is reached");
+    }
+    for public in [
+        "160.79.104.10",
+        "93.184.216.34",
+        "2606:4700::6810:84e5",
+        "100.128.0.1",
+    ] {
+        assert!(!special_use(ip(public)), "{public} is refused");
+    }
+}
+
+/// A TLS record holding a ClientHello naming `name`, as a client writes one.
+fn client_hello(name: &str) -> Vec<u8> {
+    let name = name.as_bytes();
+    let mut list = Vec::new();
+    list.extend(u16::try_from(3 + name.len()).expect("short").to_be_bytes());
+    list.push(0);
+    list.extend(u16::try_from(name.len()).expect("short").to_be_bytes());
+    list.extend(name);
+    let mut extensions = Vec::new();
+    extensions.extend(43u16.to_be_bytes());
+    extensions.extend(3u16.to_be_bytes());
+    extensions.extend([2, 3, 4]);
+    extensions.extend(0u16.to_be_bytes());
+    extensions.extend(u16::try_from(list.len()).expect("short").to_be_bytes());
+    extensions.extend(list);
+    let mut hello = vec![3, 3];
+    hello.extend([7u8; 32]);
+    hello.push(0);
+    hello.extend(2u16.to_be_bytes());
+    hello.extend([0x13, 0x01]);
+    hello.extend([1, 0]);
+    hello.extend(
+        u16::try_from(extensions.len())
+            .expect("short")
+            .to_be_bytes(),
+    );
+    hello.extend(extensions);
+    let mut handshake = vec![1, 0];
+    handshake.extend(u16::try_from(hello.len()).expect("short").to_be_bytes());
+    handshake.extend(hello);
+    let mut record = vec![0x16, 3, 1];
+    record.extend(u16::try_from(handshake.len()).expect("short").to_be_bytes());
+    record.extend(handshake);
+    record
+}
+
+#[test]
+fn a_tunnels_client_hello_is_read_for_the_one_host_it_names() {
+    use crate::sandbox::egress::hello_names;
     assert_eq!(
-        from_purlis,
-        [GradeMessage::GradeRequest, GradeMessage::RunChatResult]
+        hello_names(&client_hello("registry.example.com")).as_deref(),
+        Some("registry.example.com")
     );
     assert_eq!(
-        serde_json::to_value([Arm::With, Arm::Without, Arm::Previous]).expect("words"),
-        serde_json::json!(["with", "without", "previous"])
+        hello_names(&client_hello("api.anthropic.com.")).as_deref(),
+        Some("api.anthropic.com")
     );
+    // Not a handshake, cut short, or lengths that run past what was read.
+    let whole = client_hello("registry.example.com");
+    assert_eq!(hello_names(b"GET / HTTP/1.1\r\n\r\n"), None);
+    assert_eq!(hello_names(&whole[..whole.len() - 3]), None);
+    let mut lying = whole.clone();
+    lying[3] = 0xff;
+    assert_eq!(hello_names(&lying), None);
+    for cut in 0..whole.len() {
+        let _ = hello_names(&whole[..cut]);
+    }
+}
+
+#[test]
+fn an_answer_with_a_key_its_question_does_not_have_is_refused() {
+    let refused = findings_of(
+        "x",
+        &doc(serde_json::json!({ "findings": [], "notes": "more" })),
+    )
+    .expect_err("an unknown key");
+    assert!(refused.contains("cannot read"), "{refused}");
+    assert!(template_of("x", "made", &doc(serde_json::json!({}))).is_err());
 }

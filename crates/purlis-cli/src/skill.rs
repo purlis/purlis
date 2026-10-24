@@ -12,13 +12,12 @@
 
 use std::path::Path;
 
-use clap::{Args, Subcommand};
+use clap::{Args, Subcommand, ValueEnum};
 use purlis_core::executor::Executor;
 use purlis_core::skills::review::escaped as esc;
 use purlis_core::skills::source::{self, Remote, Source, VaultEntry};
-use purlis_core::skills::studio::Studio;
 use purlis_core::skills::verbs::{self, By, Level};
-use purlis_core::skills::{Grant, StudioRow};
+use purlis_core::skills::{Grant, StudioRow, Template, TemplateId};
 use serde_json::{Value, json};
 
 use purlis_core::counts::counted;
@@ -88,10 +87,18 @@ pub enum SkillCommand {
         /// What it does and when to use it, in one line.
         #[arg(long, short = 'd')]
         description: String,
-        /// What it starts from: `blank`, `steps`, or a template an extension offers, as
-        /// `<extension>/<template>`.
-        #[arg(long, default_value = "blank")]
-        template: String,
+        /// What it starts from, of purlis's own templates.
+        #[arg(
+            long,
+            value_enum,
+            default_value = "blank",
+            conflicts_with = "extension_template"
+        )]
+        template: TemplateArg,
+        /// Start from a template an extension offers instead: the extension's id, then the
+        /// template's.
+        #[arg(long, num_args = 2, value_names = ["EXTENSION", "TEMPLATE"])]
+        extension_template: Option<Vec<String>>,
         #[command(flatten)]
         at: At,
     },
@@ -239,6 +246,22 @@ impl At {
     }
 }
 
+/// One of purlis's own templates, as the command line names it.
+#[derive(Clone, Copy, ValueEnum)]
+pub enum TemplateArg {
+    Blank,
+    Steps,
+}
+
+impl From<TemplateArg> for Template {
+    fn from(arg: TemplateArg) -> Template {
+        match arg {
+            TemplateArg::Blank => Template::Blank,
+            TemplateArg::Steps => Template::Steps,
+        }
+    }
+}
+
 /// What a chat is told when it asks to change a skill: a chat's change becomes a draft the
 /// person accepts in the studio (spec #2762 decisions 26 and 38), never a write.
 const FROM_A_CHAT: &str = "A chat does not change skills itself: its change becomes a draft the \
@@ -338,28 +361,33 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             name,
             description,
             template,
+            extension_template,
             at,
         } => {
+            let template = match extension_template.as_deref() {
+                Some([extension, template]) => TemplateId::Extension {
+                    extension: extension.clone(),
+                    template: template.clone(),
+                },
+                _ => TemplateId::BuiltIn(template.into()),
+            };
             // purlis's own templates, and each extension's that declares `skill-template`, asked
             // through the executor's gate as the studio asks them (ADR 0101).
             let executor =
                 Executor::with_built_in(purlis_core::extension::BuiltIn::of_this_program());
-            let config_root = purlis_core::machine::config_root();
-            let choices = purlis_core::extension::project::Choices::read(root);
-            let templates = purlis_core::skills::studio::Templates {
-                studio: config_root.as_deref().map(|config_root| Studio {
-                    executor: &executor,
-                    config_root,
-                    project: &choices,
-                }),
-            };
-            done(verbs::create(
-                &mut cx,
-                &at.level(),
-                &name,
-                &description,
-                &templates,
-                &template,
+            done(purlis_core::skills::studio::with_studio(
+                &executor,
+                root,
+                |studio| {
+                    verbs::create(
+                        &mut cx,
+                        &at.level(),
+                        &name,
+                        &description,
+                        &purlis_core::skills::studio::Templates { studio },
+                        &template,
+                    )
+                },
             ))
         }
         SkillCommand::Edit { name, from, at } => {

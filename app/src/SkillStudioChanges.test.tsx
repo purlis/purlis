@@ -76,8 +76,8 @@ function core(
     if (cmd === "skills_deleted") return [];
     if (cmd === "skill_templates")
       return [
-        { id: "blank", label: "Blank", about: "Empty." },
-        { id: "steps", label: "Steps to follow", about: "Steps." },
+        { id: { kind: "blank" }, label: "Blank", about: "Empty." },
+        { id: { kind: "steps" }, label: "Steps to follow", about: "Steps." },
       ];
     return { notes: [] };
   });
@@ -104,7 +104,7 @@ describe("the Skill studio's changes", () => {
       level: { workspace: "ops", local: false },
       name: "triage",
       description: "Sorts issues.",
-      template: "blank",
+      template: { kind: "blank" },
     });
     expect(levelFrom(AT_THE_ROOT)).toEqual(PROJECT);
   });
