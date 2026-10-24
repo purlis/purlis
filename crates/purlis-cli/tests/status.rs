@@ -298,6 +298,29 @@ fn a_branch_name_that_reorders_its_line_is_shown_escaped_in_status() {
         "{}",
         String::from_utf8_lossy(&init.stderr)
     );
+    // A branch with a commit on it: an unborn one is `HEAD` to `rev-parse --abbrev-ref`.
+    let commit = std::process::Command::new("git")
+        .args([
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "first",
+        ])
+        .current_dir(&clone)
+        .output()
+        .unwrap();
+    assert!(
+        commit.status.success(),
+        "{}",
+        String::from_utf8_lossy(&commit.stderr)
+    );
 
     let ran = run(&root, &["status", "-w", "alpha"]);
 
