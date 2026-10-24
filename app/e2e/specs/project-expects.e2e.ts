@@ -136,10 +136,13 @@ async function noNotice(why: string): Promise<void> {
   });
 }
 
-/** Presses one of the Notice's own buttons. */
+/** Presses one of the Notice's own buttons. An answer that grants waits for the Notice to
+ *  settle where it is drawn (`SETTLE_MS`, 1.5 s, #1695, #3142), as the person reads it before
+ *  allowing it; a press before that allows nothing. */
 async function press(label: string): Promise<void> {
   const button = await $(`[data-cause="${CAUSE}"]`).$(`button=${label}`);
   await button.waitForClickable({ timeout: 20_000 });
+  if (label === ALLOW) await browser.pause(2_000);
   await button.click();
 }
 

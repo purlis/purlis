@@ -106,26 +106,21 @@ export function paneMenuOf(offerFor: (id: string) => Offer | undefined): Catalog
 }
 
 /**
- * One pane's frame: what purlis has to say of its chats, in a row of its own at the top
- * (`PaneNotices`, #1647), and under it the terminal, with what charter draws over it in the
- * pane's two corners — side by side with the terminal, so neither is ever a child of the
- * element xterm draws into.
+ * One pane's frame, three rows each with one job (#3142, the operator's variant A of
+ * 2026-10-24): **the band** of what purlis has to say of its chats (`PaneNotices`), **the
+ * pane's header** with the chat at a glance at its start and the pane's own controls at its end
+ * (`PaneHead`), then **the terminal**, which has the room the two leave.
  *
- * **Two corners, and neither thing in them places itself** (charter-app#193). The gauge is
- * top-left and the controls top-right — the operator: *"context status indicator in pane right
- * corner can be moved to left corner. to not make split and close buttons uggly"*. They shared
- * one row in the right corner before that, because each had been written as the thing in the
- * pane's top-right. A corner positions; its contents do not, so a third thing arriving here
- * collides in review rather than at runtime. The controls keep their hover rule; the gauge,
- * always drawn, is outside it.
- *
- * **Both corners float over the terminal and neither takes a row.** #207 gave the gauge a row
- * of its own, and a pane with a gauge was then a row shorter than one without — the operator:
- * *"its changing harness container sizes"*. A pane's size is the layout's business alone.
- *
- * **The Notices are the exception, and take a row** (#1647): they were in the start corner
- * (#1481), and three of them hid the conversation. A chip is one short line; a Notice is a
- * sentence and its answers, and what it covers is what the person has to read to answer it.
+ * - **All of it is inside the pane**, on the terminal's own fill, so the chosen tab joins the
+ *   pane as one piece whatever the band holds: nothing is drawn between a tab and its pane, and
+ *   the top of a pane is always the terminal's fill (`paneFrame.css`).
+ * - **Nothing is drawn over the terminal.** The chips and the controls floated in the pane's
+ *   two corners over its first lines (charter-app#193), and covered the harness's own banner;
+ *   the Notices had a row above the pane (#1647), between the tab and its pane. Each has a row
+ *   of its own now, inside the pane.
+ * - **The header is always there**, with a gauge or without, so a pane does not change height
+ *   when its first usage arrives (the operator's reason in #207). Only the band comes and goes,
+ *   and the terminal is pinned to its bottom: it grows or shrinks from the top.
  */
 export function PaneFrame({
   plane,
@@ -189,7 +184,7 @@ export function PaneFrame({
   return (
     <div
       ref={frame}
-      className="pane-frame"
+      className="pane-frame pane-headed"
       data-focused={focused || undefined}
       // A reference dropped on the chat's pane is typed into it, unsent (FM-9).
       onDragOver={overChat}
@@ -200,19 +195,15 @@ export function PaneFrame({
         lent.hand(r, session, "add");
       }}
     >
-      {/* **The Notices first**: they are the top of the pane, and the first thing read and
-          tabbed to (#1647). */}
-      <PaneNotices notices={notices} asked={asked} others={others} onShowChat={onShowChat} />
-      <div className="pane-body">
-        {/* **The corners before the terminal, in the document**, although they are drawn over
-          it: the tab order is the document's, and a terminal keeps Tab for its shell, so a
-          control written after it is one Tab never reaches (charter-app#189). The pane's own
-          controls are in its top corner, which is where reading order puts them anyway. */}
-        <div className="pane-corner at-start">
-          {/* The chat at a glance, on one row. */}
+      {/* **The band and the header first**: they are the top of the pane, and the first things
+          read and tabbed to (#1647); a terminal keeps Tab for its shell, so a control written
+          after it is one Tab never reaches (charter-app#189). */}
+      <div className="pane-top">
+        <PaneNotices notices={notices} asked={asked} others={others} onShowChat={onShowChat} />
+        <PaneHead doing={doing}>
           <div className="pane-chips">
             {/* **Which chat this is, while the tab shows a task** (#1486): first in the line, and
-              in no row of its own. */}
+            in no row of its own. */}
             {crumbs &&
               (crumbMenu === undefined ? (
                 <PaneCrumbs crumbs={crumbs} onShow={onShowChat} />
@@ -226,24 +217,58 @@ export function PaneFrame({
                 </Menued>
               ))}
             {/* **Brief** (#1494): what the task on screen was sent. Right after the breadcrumb,
-              before anything else the line holds for a task. */}
+            before anything else the line holds for a task. */}
             {crumbs && <BriefButton of={briefOfShown(crumbs)} />}
             {crumbs && ending}
-            <ChatGauge usage={usage} />
             {/* The chat's skills and its skill budget, and Use skill… for it (#2775). */}
             {/* Not beside a task's breadcrumb: that line is the fullest a pane has, and the
-                state in it is read whole before anything else (`pane-crumbs.e2e.ts`); nor in a
-                narrow pane, for the same line. The palette and the tab's menu still have Use
-                skill… there. */}
+              state in it is read whole before anything else (`pane-crumbs.e2e.ts`); nor in a
+              narrow pane, for the same line. The palette and the tab's menu still have Use
+              skill… there. */}
             {!crumbs && roomy && <SkillsChip session={session} />}
             {harness && <HarnessChip glance={harness} onOpen={() => onOpenCard(harness)} />}
             {from && <span className="pane-from">{from}</span>}
             {workItem && <span className="pane-work-item">{workItemSaid(workItem)}</span>}
+            {/* **The gauge last** (#3142, rule 15): it is drawn once the chat's first usage
+              arrives, and last on the line its arrival moves nothing already there. */}
+            <ChatGauge usage={usage} />
           </div>
-        </div>
-        <div className="pane-corner at-end">{doing}</div>
-        {children}
+        </PaneHead>
       </div>
+      <div className="pane-body">{children}</div>
+    </div>
+  );
+}
+
+/**
+ * **A pane's header** (#3142): one slim row under the band and over the terminal, the chat at a
+ * glance at its start (its `children`, the `.pane-chips` line: the breadcrumb, the skills, the
+ * harness, the gauge; written where it is drawn, so the line's guard reads it) and the pane's
+ * actions at its end (`PaneActions`). A row of its own, so neither covers what the terminal
+ * draws; the same row in every pane with a chat, so panes side by side line up. With no
+ * `children` it is the actions alone at the top right of a pane, as a view's pane draws them
+ * (#3147).
+ */
+export function PaneHead({ doing, children }: { doing: ReactNode; children?: ReactNode }) {
+  return (
+    <div className="pane-head">
+      {children}
+      {doing}
+    </div>
+  );
+}
+
+/**
+ * **A pane's actions** (#3142, #3147): split it side by side, split it stacked, and close it, as
+ * one cluster in its own place, the top right of the pane (`.pane-actions`, `paneFrame.css`).
+ * A chat's pane draws it at the end of its header; a view's pane draws the same component, so
+ * every pane's actions look and behave as one. What it offers is `PaneDoing`'s: the catalogue's
+ * own rows, and the window's rule for when they are drawn.
+ */
+export function PaneActions(props: Parameters<typeof PaneDoing>[0]) {
+  return (
+    <div className="pane-actions">
+      <PaneDoing {...props} />
     </div>
   );
 }
@@ -584,7 +609,7 @@ export function LayoutPanes({
     // session it is beside. The same line, so each side of a split says which chat it is.
     const path = crumb ?? placed[layout.pane];
     const doing = (
-      <PaneDoing
+      <PaneActions
         pane={layout.pane}
         offerFor={offerFor}
         closeOf={closeOf}
@@ -608,19 +633,19 @@ export function LayoutPanes({
       const last = gone.crumbs.path[gone.crumbs.path.length - 1].session;
       return (
         <div
-          className="pane-frame"
+          className="pane-frame pane-headed"
           data-focused={layout.pane === focused || undefined}
           onPointerDown={() => onFocus(layout.pane)}
         >
-          {/* As `PaneFrame` draws them: a row of their own, above what the pane shows. */}
-          <PaneNotices
-            notices={null}
-            asked={asked[layout.pane]}
-            others={hidden}
-            onShowChat={onShowChat}
-          />
-          <div className="pane-body">
-            <div className="pane-corner at-start">
+          {/* As `PaneFrame` draws them: the band and the header, above what the pane shows. */}
+          <div className="pane-top">
+            <PaneNotices
+              notices={null}
+              asked={asked[layout.pane]}
+              others={hidden}
+              onShowChat={onShowChat}
+            />
+            <PaneHead doing={doing}>
               <div className="pane-chips">
                 <PaneCrumbs
                   crumbs={gone.crumbs}
@@ -634,7 +659,7 @@ export function LayoutPanes({
                   gone={(session) => !hidden.some((other) => other.session === session)}
                 />
                 {/* A task that has ended is read by its finished row's record (#1494), and has
-                  no Brief here once that row is gone; one still running, by its chat. */}
+                no Brief here once that row is gone; one still running, by its chat. */}
                 {(gone.why !== "ended" || row !== undefined) && (
                   <BriefButton
                     of={
@@ -645,8 +670,9 @@ export function LayoutPanes({
                   />
                 )}
               </div>
-            </div>
-            <div className="pane-corner at-end">{doing}</div>
+            </PaneHead>
+          </div>
+          <div className="pane-body">
             <TaskAway
               away={gone}
               focused={layout.pane === focused}
@@ -857,27 +883,8 @@ export function PaneDoing({
     "pane.split.down",
     ...(task && !minimise ? [] : ["pane.close"]),
   ];
-  // **The pane's top line ends before these controls, whatever their number** (#1486): their
-  // width is measured and said to the pane's frame (`--pane-controls`, `App.css`), so the line
-  // reserves the room the controls drawn here take, not a count somebody remembered.
-  const at = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    const controls = at.current;
-    const frame = controls?.closest<HTMLElement>(".pane-frame");
-    if (!controls || !frame) return;
-    const say = () => {
-      const width = controls.offsetWidth;
-      // Nothing is laid out (a test's document): the stylesheet's own figure stands.
-      if (width > 0) frame.style.setProperty("--pane-controls", `${width}px`);
-    };
-    say();
-    if (typeof ResizeObserver === "undefined") return;
-    const watching = new ResizeObserver(say);
-    watching.observe(controls);
-    return () => watching.disconnect();
-  }, [rows.length]);
   return (
-    <div className="pane-doing" ref={at}>
+    <div className="pane-doing">
       {rows.map((id) => {
         const offer = id === "pane.close" ? closeOf(pane) : offerFor(id);
         if (!offer) return null;
