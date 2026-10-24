@@ -610,6 +610,12 @@ pub const WINDOW_ONLY: &[&str] = &[
     "skill_restore",
     "skill_grant",
     "skill_turn",
+    // A skill's tab (#2782): reverting it to a version, deprecating, archiving or restoring it,
+    // and naming its owners. Each is one commit to the project, the person's own press in their
+    // window.
+    "skill_revert",
+    "skill_lifecycle",
+    "skill_owners",
     // A chat's draft skills read, accepted or rejected, and a chat opened to draft one or to try
     // one (SK-9, #2772): a draft is what a chat wrote, read by the person in their window as a
     // proposed change is; an accept is one commit to the project, and a chat starts a program as
@@ -1019,8 +1025,11 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "session_record",
     "set_dismissed",
     "show_window_holding",
+    "skill_details",
+    "skill_diff",
     "skill_lint",
     "skill_move_needs_grant",
+    "skill_revert_widens",
     "skill_runs",
     "skill_stats",
     "skill_studio",

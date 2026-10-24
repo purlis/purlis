@@ -138,6 +138,7 @@ fn a_runs_start_and_end_read_back_as_one_run_with_its_signals_and_never_a_verdic
             copy: None,
             harness: None,
             workspace: None,
+            content: None,
             end: Some(End {
                 ended: Ended::Turn,
                 at: "2026-05-04T11:32:17+00:00".to_owned(),

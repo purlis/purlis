@@ -14,6 +14,7 @@ import {
 } from "./bindings";
 import { counted, saidAt } from "./dispatches";
 import { EmptyState } from "./ui/empty-state/EmptyState";
+import { SkillDetailsPanel } from "./SkillDetails";
 
 /** What started a run, as its row says it. */
 export function startedBySaid(started: RunStart | null): string {
@@ -59,6 +60,14 @@ export function timeSaid(ms: number | null): string {
   if (ms < 1000) return `${ms} ms`;
   if (ms < 60_000) return `${Math.floor(ms / 1000)} s`;
   return `${Math.floor(ms / 60_000)} min ${Math.floor((ms % 60_000) / 1000)} s`;
+}
+
+/** Where a run nests: the skill whose run it started inside, and the skills that ran inside it. */
+export function nestingSaid(run: StudioRun): string {
+  const parts: string[] = [];
+  if (run.inside !== null) parts.push(`Inside ${run.inside}`);
+  if (run.ran.length > 0) parts.push(`Ran ${run.ran.join(", ")}`);
+  return parts.join("; ");
 }
 
 /** Which group a totals row is of, as it says it: what it ran on, or a persona or a workspace
@@ -169,10 +178,11 @@ function signal(n: number | null): string {
 
 /**
  * **One skill's tab** (SK-3, #2766), opened from a skill run's chip or the Skill studio. Its
- * Runs panel lists every run of the skill, newest first, with what started it, what it ran on
- * and its signals: tool calls, tool errors, refusals, asks, tokens and time; its totals add them
- * up by what they ran on, by persona and by workspace (SK-20). Never a pass or a fail: those come
- * from grading.
+ * state, owners, history and uses come first (SK-19, #2782, `SkillDetailsPanel`); its totals add
+ * its runs up by what they ran on, by persona and by workspace (SK-20). Its Runs panel lists every
+ * run of the skill, newest first, with what started it, what it ran on and its signals: tool
+ * calls, tool errors, refusals, asks, tokens and time, and the skill run it nests in or holds.
+ * Never a pass or a fail: those come from grading.
  */
 export function SkillTab({
   plane,
@@ -211,6 +221,7 @@ export function SkillTab({
       <h2 className="skill-tab-name">
         <code>{name}</code>
       </h2>
+      <SkillDetailsPanel plane={plane} name={name} changed={changed} />
       <SkillTotals plane={plane} name={name} changed={changed} />
       <section aria-labelledby="skill-runs-heading" data-testid="skill-runs">
         <h3 id="skill-runs-heading">Runs</h3>
@@ -252,6 +263,7 @@ export function SkillTab({
                   <th scope="col">Asks</th>
                   <th scope="col">Tokens</th>
                   <th scope="col">Time</th>
+                  <th scope="col">Nested</th>
                 </tr>
               </thead>
               <tbody>
@@ -276,6 +288,7 @@ export function SkillTab({
                       <td>{signal(run.asks)}</td>
                       <td>{run.ended === null ? "" : (run.tokens ?? "Not reported")}</td>
                       <td>{timeSaid(run.ms)}</td>
+                      <td>{nestingSaid(run)}</td>
                     </tr>
                   );
                 })}

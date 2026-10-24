@@ -186,7 +186,7 @@ pub(crate) fn flag_on() -> Result<(), String> {
 }
 
 /// The built-in skills' directory of the plugin this app carries.
-fn built_in() -> Option<std::path::PathBuf> {
+pub(crate) fn built_in() -> Option<std::path::PathBuf> {
     crate::bundled_plugin_here().and_then(|plugin| purlis_core::skills::in_bundle(&plugin))
 }
 

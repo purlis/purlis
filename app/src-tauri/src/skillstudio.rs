@@ -582,13 +582,17 @@ pub struct StudioRun {
     pub asks: Option<u32>,
     /// Tokens spent inside it, where the harness reported them.
     pub tokens: Option<u32>,
+    /// The skill whose run this one started inside, where it is a child span (SK-19).
+    pub inside: Option<String>,
+    /// The skills whose runs started inside this one, each once (SK-19).
+    pub ran: Vec<String>,
     /// What it ran on, as a person calls it (`Claude Code`), or null where its start does not
     /// say.
     pub ran_on: Option<String>,
 }
 
 /// A count as the window's bindings carry it: at most `u32::MAX`.
-fn small(n: u64) -> u32 {
+pub(crate) fn small(n: u64) -> u32 {
     u32::try_from(n).unwrap_or(u32::MAX)
 }
 
@@ -596,9 +600,12 @@ fn small(n: u64) -> u32 {
 pub(crate) fn runs(root: &std::path::Path, skill: &str, limit: usize) -> Vec<StudioRun> {
     purlis_core::skills::studio_runs(root, Some(skill), limit)
         .into_iter()
-        .map(|run| {
+        .map(|nested| {
+            let run = &nested.run;
             let end = run.end.as_ref();
             StudioRun {
+                inside: nested.inside.clone(),
+                ran: nested.ran.clone(),
                 id: run.id.clone(),
                 skill: run.skill.clone(),
                 persona: run.persona.clone(),
@@ -653,35 +660,47 @@ pub struct SkillStats {
     pub by_workspace: Vec<StatsRow>,
 }
 
+/// **One totals row** of `group`'s `totals`, as the window draws it: a skill's totals by a
+/// grouping (SK-20), and one version's runs (SK-19).
+pub(crate) fn stats_row(group: StatsGroup, totals: purlis_core::skilluse::Totals) -> StatsRow {
+    StatsRow {
+        group,
+        runs: small(totals.runs),
+        ended: small(totals.ended),
+        tool_calls: small(totals.tool_calls),
+        tool_errors: small(totals.tool_errors),
+        refusals: small(totals.refusals),
+        asks: small(totals.asks),
+        tokens: (totals.tokens_said > 0).then(|| small(totals.tokens)),
+        ms: small(totals.ms),
+    }
+}
+
 /// The totals of every run of `skill` the project at `root` has recorded
 /// (`purlis_core::skilluse::stats`).
 pub(crate) fn stats(root: &std::path::Path, skill: &str) -> SkillStats {
     use purlis_core::skilluse::{By, Group};
-    let runs = purlis_core::skills::studio_runs(root, Some(skill), usize::MAX);
+    let runs: Vec<purlis_core::skilluse::Run> =
+        purlis_core::skills::studio_runs(root, Some(skill), usize::MAX)
+            .into_iter()
+            .map(|nested| nested.run)
+            .collect();
     let rows = |by: By| -> Vec<StatsRow> {
         purlis_core::skilluse::stats(&runs, by)
             .into_iter()
             .map(|row| {
-                let totals = row.totals;
                 let group = match by {
                     By::Harness => row.group.harness_titled(),
                     _ => row.group,
                 };
-                StatsRow {
-                    group: match group {
+                stats_row(
+                    match group {
                         Group::Named(name) => StatsGroup::Named(name),
                         Group::None => StatsGroup::None,
                         Group::NotRecorded => StatsGroup::NotRecorded,
                     },
-                    runs: small(totals.runs),
-                    ended: small(totals.ended),
-                    tool_calls: small(totals.tool_calls),
-                    tool_errors: small(totals.tool_errors),
-                    refusals: small(totals.refusals),
-                    asks: small(totals.asks),
-                    tokens: (totals.tokens_said > 0).then(|| small(totals.tokens)),
-                    ms: small(totals.ms),
-                }
+                    row.totals,
+                )
             })
             .collect()
     };

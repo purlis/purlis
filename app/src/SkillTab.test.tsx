@@ -16,6 +16,8 @@ afterEach(() => {
 
 const RUN = "01JB0000000000000000000001";
 
+const EMPTY_PAGE = { copies: [], uses: [], used_by: [], uses_cut: false };
+
 describe("a skill's Runs panel", () => {
   it("lists each run's signals, never a verdict, and marks the run the chip opened it on", async () => {
     mockIPC((cmd) => {
@@ -34,9 +36,12 @@ describe("a skill's Runs panel", () => {
             refusals: 2,
             asks: 1,
             tokens: null,
+            inside: null,
+            ran: [],
             ran_on: null,
           },
         ];
+      if (cmd === "skill_details") return EMPTY_PAGE;
       if (cmd === "skill_stats") return NO_TOTALS;
       throw new Error(`unexpected ${cmd}`);
     });
@@ -72,9 +77,12 @@ describe("a skill's Runs panel, for a use from before runs were recorded", () =>
             refusals: null,
             asks: null,
             tokens: null,
+            inside: null,
+            ran: [],
             ran_on: null,
           },
         ];
+      if (cmd === "skill_details") return EMPTY_PAGE;
       if (cmd === "skill_stats") return NO_TOTALS;
       throw new Error(`unexpected ${cmd}`);
     });
@@ -118,6 +126,7 @@ describe("a skill's totals", () => {
       ms: 65_000,
     });
     mockIPC((cmd) => {
+      if (cmd === "skill_details") return EMPTY_PAGE;
       if (cmd === "skill_runs") return [];
       if (cmd === "skill_stats")
         return {
@@ -146,6 +155,7 @@ describe("a skill's totals", () => {
 
   it("shows nothing to total before a skill has run", async () => {
     mockIPC((cmd) => {
+      if (cmd === "skill_details") return EMPTY_PAGE;
       if (cmd === "skill_runs") return [];
       if (cmd === "skill_stats") return NO_TOTALS;
       throw new Error(`unexpected ${cmd}`);

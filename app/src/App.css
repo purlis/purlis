@@ -8206,6 +8206,43 @@ nav.piece-files-head {
   background: var(--surface-hover);
 }
 
+/* A skill's state, owners, history and uses (SK-19, #2782). */
+.skill-details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin-block-end: var(--space-4);
+}
+
+.skill-state-acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--space-2);
+}
+
+.skill-copy-pick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.skill-diff {
+  max-height: 24rem;
+  overflow: auto;
+  margin: 0;
+  padding: var(--space-2);
+  background: var(--surface-sunken);
+  font-family: var(--font-mono);
+  white-space: pre;
+}
+
+/* Marked by weight (`ui-text-strong`) and a line through, never a colour of their own: the
+   diff reads in every theme, and in a theme with no colour at all. */
+.skill-diff [data-line="removed"] {
+  text-decoration: line-through;
+}
+
 /* The Skill studio's changes (SK-7, #2770): the panel a change opens under the toolbar, the
    levels a row is dropped on to move it, the editor's lint and the deleted skills. */
 .skill-change,

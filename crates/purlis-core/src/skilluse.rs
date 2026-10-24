@@ -86,7 +86,101 @@ pub fn started(
     if run.level.is_some() || run.harness.is_some() {
         row["workspace"] = run.workspace.into();
     }
+    // What the chat ran (SK-19): the tree git holds of the copy's folder, or that its folder held
+    // changes not committed, so the run is matched to its version by content, not by time.
+    if let Some(level) = run.level
+        && let Some(content) = content_of(root, skill_name(skill), level, run.workspace)
+    {
+        row["tree"] = content.word().into();
+    }
     crate::dispatch::append(&path_for(root, when, device), root, &row)
+}
+
+/// **What a run of a skill ran, by content** (SK-19): the tree git holds of its folder, or that
+/// the folder held changes git has not committed (or is no folder git has).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Content {
+    /// The folder's tree, as a whole hex id: the version whose folder has this tree.
+    Tree(String),
+    /// The folder held changes not committed, or git does not have it.
+    Uncommitted,
+}
+
+impl Content {
+    /// The word a run's start records: the tree's id, or `uncommitted`.
+    pub fn word(&self) -> &str {
+        match self {
+            Self::Tree(tree) => tree,
+            Self::Uncommitted => "uncommitted",
+        }
+    }
+
+    /// The content `word` says, or `None` for a word that is neither a whole hex id nor
+    /// `uncommitted`.
+    pub fn parse(word: &str) -> Option<Self> {
+        if word == "uncommitted" {
+            return Some(Self::Uncommitted);
+        }
+        let hex = matches!(word.len(), 40 | 64)
+            && word
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
+        hex.then(|| Self::Tree(word.to_owned()))
+    }
+}
+
+impl serde::Serialize for Content {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.word())
+    }
+}
+
+/// A run's skill by its name, without the namespace a harness started it by (`purlis:secrets`
+/// is `secrets`).
+fn skill_name(skill: &str) -> &str {
+    skill.split_once(':').map_or(skill, |(_, leaf)| leaf)
+}
+
+/// What the copy at `level` of the skill `name` holds, in the plane at `root` (a chat in
+/// `workspace`): `None` for a copy with no folder of the plane's levels a history is kept of (a
+/// persona's, a built-in or a harness skill), and for a plane git does not keep.
+fn content_of(root: &Path, name: &str, level: Level, workspace: Option<&str>) -> Option<Content> {
+    let ws = match level.origin {
+        purlis_skills::Origin::Project => None,
+        purlis_skills::Origin::Workspace => Some(workspace?),
+        _ => return None,
+    };
+    let dir = purlis_skills::level_dir(root, ws, level.local)?;
+    let folder = purlis_skills::named(&dir, name)?;
+    let rel = folder
+        .strip_prefix(root)
+        .ok()?
+        .to_string_lossy()
+        .replace('\\', "/");
+    let git = |args: &[&str]| {
+        crate::worktree::git::run(root, args, crate::worktree::git::READ)
+            .ok()
+            .filter(crate::worktree::git::Run::ok)
+            .map(|run| run.out)
+    };
+    git(&["rev-parse", "--is-inside-work-tree"])?;
+    let spec = crate::planegit::literally(&rel);
+    let pending = git(&[
+        "status",
+        "--porcelain",
+        "--untracked-files=all",
+        "--",
+        &spec,
+    ]);
+    if pending.is_none_or(|out| !out.trim().is_empty()) {
+        return Some(Content::Uncommitted);
+    }
+    let tree = git(&["rev-parse", "--verify", "-q", &format!("HEAD:{rel}")]);
+    Some(
+        tree.and_then(|out| Content::parse(out.trim()))
+            .filter(|content| matches!(content, Content::Tree(_)))
+            .unwrap_or(Content::Uncommitted),
+    )
 }
 
 /// A skill run's start, as [`started`] logs it: the run the event log's writer opened, or the
@@ -195,6 +289,9 @@ pub struct Run {
     /// Where the chat worked: `Some(None)` at the plane root, and `None` for a row that does not
     /// say.
     pub workspace: Option<Option<String>>,
+    /// What it ran, by content (SK-19), or `None` for a row that does not say (written before
+    /// SK-19, or of a copy no history is kept of).
+    pub content: Option<Content>,
     /// How it ended and what it counted, once its end is logged.
     pub end: Option<End>,
 }
@@ -218,11 +315,19 @@ impl Run {
     /// Whether this is a run of skill `name`: by its whole name, or by its name without the
     /// plugin's namespace a harness started it by (`purlis:secrets` is a run of `secrets`).
     pub fn is_of(&self, name: &str) -> bool {
-        self.skill == name
-            || self
-                .skill
-                .split_once(':')
-                .is_some_and(|(_, leaf)| leaf == name)
+        self.skill == name || self.skill_name() == name
+    }
+
+    /// Its skill by name, without the namespace a harness started it by.
+    pub fn skill_name(&self) -> &str {
+        skill_name(&self.skill)
+    }
+
+    /// When it started, in seconds since 1970, where its row's stamp can be read.
+    pub fn started_secs(&self) -> Option<u64> {
+        chrono::DateTime::parse_from_rfc3339(&self.started)
+            .ok()
+            .and_then(|at| u64::try_from(at.timestamp()).ok())
     }
 }
 
@@ -268,6 +373,7 @@ struct Row {
     tokens: Option<u64>,
     parent: Option<String>,
     level: Option<String>,
+    tree: Option<String>,
     harness: Option<String>,
     /// Present, null or not, only where the row says it.
     #[serde(deserialize_with = "said")]
@@ -330,6 +436,7 @@ pub fn runs(root: &Path) -> Vec<Run> {
                             }),
                         harness: row.harness.filter(|h| !h.is_empty()),
                         workspace,
+                        content: row.tree.as_deref().and_then(Content::parse),
                         end: None,
                     });
                 }
@@ -370,6 +477,9 @@ pub enum By {
     Harness,
     Persona,
     Workspace,
+    /// What the run ran, by content (SK-19): a tree's id is [`Group::Named`], a folder with changes
+    /// not committed [`Group::None`].
+    Version,
 }
 
 /// **The group a run is totalled in**: a name, none (no persona; the plane root), or a run whose
@@ -399,12 +509,17 @@ impl Group {
             By::Persona => named(&run.persona),
             By::Harness => run.harness.clone().map_or(Group::NotRecorded, Group::Named),
             By::Workspace => run.workspace.as_ref().map_or(Group::NotRecorded, named),
+            By::Version => match &run.content {
+                Some(Content::Tree(tree)) => Group::Named(tree.clone()),
+                Some(Content::Uncommitted) => Group::None,
+                None => Group::NotRecorded,
+            },
         }
     }
 }
 
 /// **What a group's runs add up to**: signals and tokens, never a pass or a fail (decision 24).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
 pub struct Totals {
     /// Runs started.
     pub runs: u64,

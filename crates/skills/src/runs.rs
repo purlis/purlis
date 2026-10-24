@@ -122,7 +122,7 @@ impl Ended {
 /// **Which copy of a skill a run is of**: its level, and whether it is the local copy (ADR 0099).
 /// With the workspace the chat worked in, it tells one copy's runs from another's of the same
 /// name, so a chat is shown the runs of its own copies alone.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Level {
     pub origin: Origin,
     pub local: bool,
