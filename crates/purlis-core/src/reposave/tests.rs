@@ -1340,12 +1340,18 @@ fn a_repo_save_refuses_a_file_with_a_second_name_as_the_plane_save_does() {
         );
         assert_eq!(f.head(), before, "{said}");
         assert_eq!(f.journal()[0]["outcome"], "blocked");
+        assert!(said.contains("Nothing was staged or committed."), "{said}");
         assert_eq!(
             run(&f.clone, &["diff", "--cached", "--name-only"]),
-            "a.md\n",
-            "only what is held back is unstaged"
+            "",
+            "refused before anything is staged"
         );
         let log = crate::testgit::run(&f.clone, &["log", "-p", "--all", "--text"]).out;
         assert!(!log.contains("canary-7c40e2"), "a commit carries the file");
+        let sha = run(&f.clone, &["hash-object", outside.to_str().unwrap()]);
+        assert!(
+            !crate::testgit::run(&f.clone, &["cat-file", "-e", sha.trim()]).ok(),
+            "the clone's object store holds the file"
+        );
     }
 }

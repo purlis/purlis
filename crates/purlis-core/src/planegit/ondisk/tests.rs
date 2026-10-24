@@ -87,3 +87,94 @@ fn a_file_given_a_second_name_after_it_was_staged_is_held_back() {
 
     assert_eq!(whys(&root), [("a.md".to_owned(), Why::SecondName)]);
 }
+
+#[test]
+fn a_named_file_is_staged_from_the_descriptor_that_was_checked() {
+    let (_dir, root) = staged();
+    std::fs::write(root.join("c.md"), "checked\n").unwrap();
+    let OnDisk::File(file, runs) = opened(&root, "c.md") else {
+        panic!("c.md is a regular file of one name");
+    };
+    // Another file takes the name once the descriptor is open.
+    std::fs::write(root.join("c.next"), "swapped in\n").unwrap();
+    std::fs::rename(root.join("c.next"), root.join("c.md")).unwrap();
+
+    stage_opened(&root, vec![("c.md".to_owned(), file, runs)]).unwrap();
+    run_ok(&root, &["update-index", "-q", "--refresh"]).unwrap();
+
+    assert_eq!(run(&root, &["show", ":c.md"]), "checked\n");
+    // What is on disk now is not what was staged, and the save refuses it.
+    assert!(whys(&root).contains(&("c.md".to_owned(), Why::Changed)));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_save_of_named_paths_stages_what_git_add_would_and_holds_a_second_name_back() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let (_dir, root) = staged();
+    run(&root, &["commit", "-q", "-m", "two"]);
+    let dir = root.join("d");
+    std::fs::create_dir_all(dir.join("local")).unwrap();
+    std::fs::write(dir.join("new.md"), "new\n").unwrap();
+    std::fs::write(dir.join("run.sh"), "#!/bin/sh\n").unwrap();
+    std::fs::set_permissions(dir.join("run.sh"), std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::os::unix::fs::symlink("new.md", dir.join("link")).unwrap();
+    std::fs::write(dir.join("local/kept.md"), "kept\n").unwrap();
+    std::fs::write(root.join("outside"), "outside\n").unwrap();
+    std::fs::hard_link(root.join("outside"), dir.join("twice.md")).unwrap();
+    std::fs::rename(root.join("a.md"), dir.join("moved.md")).unwrap();
+
+    let held = stage_named(&root, &[":(literal)d", ":(literal)a.md"], |path| {
+        path.starts_with("d/local")
+    })
+    .unwrap();
+
+    assert_eq!(
+        held,
+        [Held {
+            path: "d/twice.md".to_owned(),
+            why: Why::SecondName
+        }]
+    );
+    let rows = run(&root, &["ls-files", "-s", "--", "d", "a.md"]);
+    let rows: Vec<(&str, &str)> = rows
+        .lines()
+        .filter_map(|row| {
+            let (meta, path) = row.split_once('\t')?;
+            Some((meta.split(' ').next()?, path))
+        })
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            ("120000", "d/link"),
+            ("100644", "d/moved.md"),
+            ("100644", "d/new.md"),
+            ("100755", "d/run.sh"),
+        ]
+    );
+    assert_eq!(run(&root, &["show", ":d/moved.md"]), "staged\n");
+    assert_eq!(whys(&root), []);
+}
+
+#[test]
+fn only_a_loose_object_nothing_reaches_is_taken_out_of_the_store() {
+    let (_dir, root) = staged();
+    let committed = run(&root, &["rev-parse", "HEAD:README.md"]);
+    let in_index = run(&root, &["rev-parse", ":a.md"]);
+    std::fs::write(root.join("loose"), "nothing reaches this\n").unwrap();
+    let unreached = run(&root, &["hash-object", "-w", "loose"]);
+    let [committed, in_index, unreached] =
+        [committed, in_index, unreached].map(|sha| sha.trim().to_owned());
+
+    forget(
+        &root,
+        &[committed.clone(), in_index.clone(), unreached.clone()],
+    );
+
+    let there = |sha: &str| crate::testgit::run(&root, &["cat-file", "-e", sha]).ok();
+    assert!(there(&committed), "a committed blob was removed");
+    assert!(there(&in_index), "a staged blob was removed");
+    assert!(!there(&unreached), "an unreached loose blob is still there");
+}

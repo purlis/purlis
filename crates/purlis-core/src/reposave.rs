@@ -306,6 +306,23 @@ fn commit_push(
         return 0;
     }
 
+    // As the plane's save, before anything is staged: a file the add would take that has a
+    // second name refuses the save here, so its bytes never reach the clone's object store.
+    if let Some(refusal) =
+        planegit::ondisk::refused_ahead(&planegit::ondisk::second_names_ahead(clone, &[]))
+    {
+        say(Say::Fail(format!(
+            "Not saved: a file in {at} is not the one file on disk:"
+        )));
+        for line in refusal.named {
+            say(Say::Fail(format!("  {line}")));
+        }
+        say(Say::Info(format!("  {}", refusal.then)));
+        attempt.outcome = "blocked";
+        attempt.detail = planegit::ondisk::NOT_AS_STAGED.into();
+        attempt.commit = rev(clone, "HEAD");
+        return 1;
+    }
     // As the plane's save: the add's exit status decides, never the probe after it.
     // Untimed, as the plane's: an `add` killed at a deadline leaves `index.lock` behind.
     // The write that adds git's untracked cache to the index (FD-11, `git::UNTRACKED_CACHE`).

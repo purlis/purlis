@@ -451,7 +451,7 @@ fn a_scoped_stage_from_a_linked_worktree_is_still_allowed() {
             provenance: None,
         },
         &crate::planesave::Settings::read(&fixture.root).plane,
-        &["add", "--", "personas/steward/memory/m.md"],
+        super::Staging::Add(&["add", "--", "personas/steward/memory/m.md"]),
         &crate::forge::Caller::command(),
         &mut Attempt::default(),
         &mut say,
@@ -5421,6 +5421,13 @@ impl Fixture {
     fn staged(&self) -> String {
         ask(&self.root, &["diff", "--cached", "--name-only"])
     }
+
+    /// Whether the plane's object store holds the bytes of the file outside it, in any form.
+    fn stores_outside(&self) -> bool {
+        let outside = self.root.parent().unwrap().join("outside/notes.md");
+        let sha = run(&self.root, &["hash-object", outside.to_str().unwrap()]);
+        crate::testgit::run(&self.root, &["cat-file", "-e", sha.trim()]).ok()
+    }
 }
 
 fn skill_change(root: &Path, change: impl FnOnce(&mut crate::skills::verbs::Ctx<'_>)) -> String {
@@ -5498,12 +5505,10 @@ fn a_save_refuses_a_file_with_a_second_name_as_the_readers_already_do() {
                 .unwrap();
         });
         assert!(said.contains(named), "{said}");
-        assert!(said.contains("no longer staged"), "{said}");
+        // Refused before anything is staged: the skill's other file is not staged either.
+        assert!(said.contains("Nothing was staged or committed."), "{said}");
         assert_eq!(fixture.head(), before, "{said}");
-        assert!(
-            !fixture.staged().contains("notes.md"),
-            "it is left staged: {said}"
-        );
+        assert_eq!(fixture.staged(), "", "{said}");
 
         // A save of exactly its paths, and the whole plane's, by every trigger.
         let (code, said) = saved_paths(&fixture.root, &["workspaces/w/skills/s"]);
@@ -5520,6 +5525,7 @@ fn a_save_refuses_a_file_with_a_second_name_as_the_readers_already_do() {
         assert_eq!(fixture.head(), before);
         assert!(!fixture.staged().contains("notes.md"));
         assert!(!fixture.carries_outside(), "a commit carries the file");
+        assert!(!fixture.stores_outside(), "the object store holds the file");
     }
 }
 
@@ -5538,6 +5544,14 @@ fn a_file_staged_and_then_swapped_out_from_under_the_save_is_not_committed() {
     );
     std::fs::remove_file(fixture.root.join(local)).unwrap();
     std::fs::write(fixture.root.join(local), "one name\n").unwrap();
+    assert!(fixture.stores_outside(), "the fixture's own add stored it");
+    // A loose object nothing reaches that the save has nothing to do with.
+    let unrelated = fixture.root.parent().unwrap().join("unrelated");
+    std::fs::write(&unrelated, "not the save's\n").unwrap();
+    let unrelated = run(
+        &fixture.root,
+        &["hash-object", "-w", unrelated.to_str().unwrap()],
+    );
 
     let (code, said) = saved_as(&fixture.root, Trigger::Cli);
 
@@ -5551,4 +5565,9 @@ fn a_file_staged_and_then_swapped_out_from_under_the_save_is_not_committed() {
     assert_eq!(fixture.head(), before);
     assert!(!fixture.staged().contains("notes.md"), "{said}");
     assert!(!fixture.carries_outside(), "a commit carries the file");
+    assert!(!fixture.stores_outside(), "the object store still holds it");
+    assert!(
+        crate::testgit::run(&fixture.root, &["cat-file", "-e", unrelated.trim()]).ok(),
+        "an unrelated loose object was removed"
+    );
 }

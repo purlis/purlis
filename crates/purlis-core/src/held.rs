@@ -120,6 +120,18 @@ pub(crate) struct Entry {
 }
 
 impl Entry {
+    /// The entry `stat` describes.
+    // `st_nlink` is a u16 on macOS and a u64 on Linux, so the widening is a no-op on one of them.
+    #[allow(clippy::useless_conversion)]
+    fn of(stat: &rustix::fs::Stat) -> Self {
+        Self {
+            kind: FileType::from_raw_mode(stat.st_mode),
+            links: u64::from(stat.st_nlink),
+            size: stat.st_size as u64,
+            mode: Mode::from_raw_mode(stat.st_mode as rustix::fs::RawMode) & Mode::all(),
+        }
+    }
+
     /// A regular file with one name: the only kind of entry charter reads or writes through.
     pub(crate) fn plain(&self) -> bool {
         self.kind == FileType::RegularFile && self.links <= 1
@@ -428,19 +440,30 @@ impl Store {
     }
 
     /// What is at `name` in the store, as `lstat` sees it: `None` when nothing is.
-    // `st_nlink` is a u16 on macOS and a u64 on Linux, so the widening is a no-op on one of them.
-    #[allow(clippy::useless_conversion)]
     pub(crate) fn entry(&self, name: &str) -> Result<Option<Entry>, String> {
         match rustix::fs::statat(&self.fd, name, AtFlags::SYMLINK_NOFOLLOW) {
-            Ok(stat) => Ok(Some(Entry {
-                kind: FileType::from_raw_mode(stat.st_mode),
-                links: u64::from(stat.st_nlink),
-                size: stat.st_size as u64,
-                mode: Mode::from_raw_mode(stat.st_mode as rustix::fs::RawMode) & Mode::all(),
-            })),
+            Ok(stat) => Ok(Some(Entry::of(&stat))),
             Err(rustix::io::Errno::NOENT) => Ok(None),
             Err(e) => Err(self.failed(e)),
         }
+    }
+
+    /// `name` in the store opened to read, never through a link, with what its own descriptor
+    /// says it is: `Ok(None)` when nothing has that name, and the filesystem's refusal as it
+    /// gave it (a link is `LOOP`). For a reader that must use the very file it looked at, not
+    /// whatever has the name a moment later (a save staging a file, `planegit::ondisk`).
+    pub(crate) fn open_checked(
+        &self,
+        name: &str,
+    ) -> rustix::io::Result<Option<(std::fs::File, Entry)>> {
+        let flags = OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC;
+        let fd = match rustix::fs::openat(&self.fd, name, flags, Mode::empty()) {
+            Ok(fd) => fd,
+            Err(rustix::io::Errno::NOENT) => return Ok(None),
+            Err(e) => return Err(e),
+        };
+        let entry = Entry::of(&rustix::fs::fstat(&fd)?);
+        Ok(Some((std::fs::File::from(fd), entry)))
     }
 
     /// The name of every entry directly in the store, whatever it is, sorted.
