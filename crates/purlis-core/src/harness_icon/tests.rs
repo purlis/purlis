@@ -111,6 +111,18 @@ fn an_icon_file_is_named_inside_the_icons_folder_only() {
     assert!(!file_name_ok(&format!("{}.svg", "a".repeat(MOST_NAME))));
 }
 
+/// What [`read_file`] says of a file it does not read.
+const UNREAD: &str = "the icon file is not a plain file an icon may be read from";
+
+/// `read` run on a thread of its own, so a read that waited would fail the test rather than
+/// hang it.
+fn within_a_moment<T: Send + 'static>(read: impl FnOnce() -> T + Send + 'static) -> T {
+    let (sent, got) = std::sync::mpsc::channel();
+    std::thread::spawn(move || sent.send(read()));
+    got.recv_timeout(std::time::Duration::from_secs(10))
+        .expect("the read came back without waiting on the file")
+}
+
 #[cfg(unix)]
 #[test]
 fn an_icon_file_that_is_a_link_or_no_plain_file_is_not_read() {
@@ -119,14 +131,58 @@ fn an_icon_file_that_is_a_link_or_no_plain_file_is_not_read() {
     std::fs::write(&outside, PLAIN).unwrap();
     std::os::unix::fs::symlink(&outside, folder(dir.path()).join("link.svg")).unwrap();
     std::fs::create_dir(folder(dir.path()).join("dir.svg")).unwrap();
+    for name in ["link.svg", "dir.svg"] {
+        assert_eq!(
+            read_file(dir.path(), name).expect_err(name).0,
+            UNREAD,
+            "{name}"
+        );
+    }
     assert_eq!(
-        read_file(dir.path(), "link.svg").expect_err("a link").0,
-        "the icon file is not a plain file"
+        read_file(dir.path(), "missing.svg")
+            .expect_err("not there")
+            .0,
+        "the icon file is not there"
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn an_icons_folder_that_is_a_link_is_not_read() {
+    let dir = tempfile::tempdir().unwrap();
+    let elsewhere = dir.path().join("elsewhere");
+    std::fs::create_dir(&elsewhere).unwrap();
+    std::fs::write(elsewhere.join("mine.svg"), PLAIN).unwrap();
+    let config = crate::machine::dir(dir.path());
+    std::fs::create_dir_all(&config).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, folder(dir.path())).unwrap();
     assert_eq!(
-        read_file(dir.path(), "dir.svg").expect_err("a folder").0,
-        "the icon file is not a plain file"
+        read_file(dir.path(), "mine.svg").expect_err("a link").0,
+        UNREAD
     );
+}
+
+/// **A pipe in the icons folder is never waited on**: the file is opened without waiting and
+/// read only when it is a plain file, so the start options, which draw every profile's icon,
+/// still load.
+#[cfg(unix)]
+#[test]
+fn a_pipe_in_the_icons_folder_never_holds_up_the_read() {
+    let dir = home(&[]);
+    let pipe = folder(dir.path()).join("pipe.svg");
+    // `mkfifo(1)`, which macOS and Linux both have: rustix makes no pipe on macOS.
+    let made = std::process::Command::new("mkfifo")
+        .arg(&pipe)
+        .status()
+        .expect("mkfifo runs");
+    assert!(made.success(), "a pipe is made");
+    let root = dir.path().to_path_buf();
+    let said = within_a_moment(move || read_file(&root, "pipe.svg").map(drop));
+    assert_eq!(said.expect_err("a pipe").0, UNREAD);
+    let root = dir.path().to_path_buf();
+    let icon = within_a_moment(move || of("work", "claude", Some("pipe.svg"), Some(&root)));
+    assert_eq!((icon.glyph, icon.svg), (None, None));
+    assert_eq!(icon.monogram, "C");
 }
 
 #[test]
@@ -138,6 +194,6 @@ fn an_icon_file_past_the_cap_is_not_read() {
     let dir = home(&[("big.svg", &big)]);
     assert_eq!(
         read_file(dir.path(), "big.svg").expect_err("too big").0,
-        "the file is larger than an icon may be"
+        UNREAD
     );
 }

@@ -110,32 +110,28 @@ pub fn folder(config_root: &Path) -> PathBuf {
     crate::machine::dir(config_root).join(FOLDER)
 }
 
-/// **Reads the icon file `name`** from [`folder`]: a plain file there, not a link, at most
-/// [`safesvg::MOST_BYTES`], read as shapes.
+/// **Reads the icon file `name`** from [`folder`], from handles as a theme's files are read
+/// ([`crate::theme::opened`]): the config home's folder opened as trusted, `icons` opened from it
+/// refusing a link, and the file opened from that handle refusing a link and without waiting,
+/// then read only when the descriptor is a plain file of at most [`safesvg::MOST_BYTES`]. Read
+/// as shapes. Off unix nothing is read, and the profile shows its monogram.
 pub fn read_file(config_root: &Path, name: &str) -> Result<SafeSvg, Unfit> {
-    use std::io::Read;
     if !file_name_ok(name) {
         return Err(Unfit(
             "the icon is not the name of an .svg file in purlis's icons folder",
         ));
     }
-    let path = folder(config_root).join(name);
-    let found =
-        std::fs::symlink_metadata(&path).map_err(|_| Unfit("the icon file is not there"))?;
-    if !found.file_type().is_file() {
-        return Err(Unfit("the icon file is not a plain file"));
-    }
-    if found.len() > safesvg::MOST_BYTES {
-        return Err(Unfit("the file is larger than an icon may be"));
-    }
-    let mut bytes = Vec::new();
-    std::fs::File::open(&path)
-        .and_then(|file| {
-            file.take(safesvg::MOST_BYTES + 1)
-                .read_to_end(&mut bytes)
-                .map(drop)
-        })
-        .map_err(|_| Unfit("the icon file could not be read"))?;
+    let unread = |_| Unfit("the icon file is not a plain file an icon may be read from");
+    let held = crate::theme::opened::walk(
+        &crate::machine::dir(config_root),
+        Path::new(FOLDER),
+        "purlis's icons folder",
+    )
+    .map_err(unread)?
+    .ok_or(Unfit("the icon file is not there"))?;
+    let bytes = crate::theme::opened::bytes(&held, name, "the icon file", safesvg::MOST_BYTES)
+        .map_err(unread)?
+        .ok_or(Unfit("the icon file is not there"))?;
     safesvg::read(&bytes)
 }
 
