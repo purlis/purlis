@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792863794226,
+  "lastUpdate": 1792866053269,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -23982,6 +23982,48 @@ window.BENCHMARK_DATA = {
             "value": 105.2703845,
             "unit": "ms",
             "extra": "median of 5 runs: 103.784, 104.926, 105.270, 105.780, 106.381 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "eca0c287b3384628bcbe35dd5dcf4b5763f0192f",
+          "message": "SK-48: delete and restore move the grant file with the skill, or neither (#3166)\n\n* SK-48: delete and restore move the file beside the folder with it, or neither\n\n`move_skill` takes two held roots, so delete (plane to its state folder) and\nrestore (back) pair the `.toml` beside a skill's folder the way rename, move\nand share do: where the file cannot move, the folder is put back and the verb\nrefuses; where that put-back fails, it says the skill was deleted or restored\nonly in part. A delete that moved nothing takes its kept folder away again.\n\nCloses #3160\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-48: name the file beside the folder, and let a stranded delete be restored\n\nA move refused because the file beside the folder could not go with it now\nnames that file, never \"it\", which read as the skill. A delete left with its\nfolder kept and that file in the project says it is in this machine's deleted\nskills, and Restore offers it: a lone file beside the folder takes the place\nonly where the kept skill has one of its own to bring back over it.\n\n`moving::hook` is reachable from another crate's tests through purlis-skills'\n`test-support` feature, so delete's stranded case is tested in purlis-core.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-24T22:19:20+04:00",
+          "tree_id": "232dcbf447c4eb0dbc0f6239373dfb0818ce87a3",
+          "url": "https://github.com/purlis/purlis/commit/eca0c287b3384628bcbe35dd5dcf4b5763f0192f"
+        },
+        "date": 1792866051271,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4741305,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.461, 0.464, 0.474, 0.481, 0.486 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2169035,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.125, 16.217, 16.217, 16.230, 16.284 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.79147649999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.049, 100.286, 100.791, 100.804, 101.766 ms"
           }
         ]
       }
