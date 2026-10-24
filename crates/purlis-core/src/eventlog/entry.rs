@@ -94,6 +94,14 @@ pub enum Entry {
         number: u32,
         typed: crate::skillspan::Typed,
     },
+    /// A curation action or a trigger put a prompt in chat `number`, unsent (SK-20): the runs
+    /// the turn it is sent in opens are theirs ([`Recorder::skill_prompted`]). Nothing is
+    /// written until then.
+    SkillPrompted {
+        plane: PathBuf,
+        number: u32,
+        prompted: crate::skillspan::Prompted,
+    },
     /// What the window said of a browser (#2293): who drives it, that someone typed into it,
     /// or that it was handed to a chat, under chat `number` where it is a chat's
     /// ([`Recorder::browser`]).
@@ -209,6 +217,14 @@ impl Recorder {
                 typed,
             } => {
                 self.skill_typed(&plane, number, typed);
+                Ok(Vec::new())
+            }
+            Entry::SkillPrompted {
+                plane,
+                number,
+                prompted,
+            } => {
+                self.skill_prompted(&plane, number, prompted);
                 Ok(Vec::new())
             }
         }

@@ -273,7 +273,7 @@ pub(in crate::skills) fn level_is_there(plane: &Path, level: &Level) -> Result<P
 }
 
 /// The folder of the skill named `name` at `level`, or why there is none.
-fn find(plane: &Path, level: &Level, name: &str) -> Result<PathBuf, String> {
+pub(super) fn find(plane: &Path, level: &Level, name: &str) -> Result<PathBuf, String> {
     level
         .dir(plane)
         .and_then(|dir| named(&dir, name))
@@ -404,7 +404,7 @@ pub fn text_of(plane: &Path, level: &Level, name: &str) -> Result<(PathBuf, Stri
 }
 
 /// The paths under `folder` (plane-relative) with changes git has not committed, by their path.
-fn pending_in(plane: &Path, paths: &[&str]) -> Result<Vec<String>, String> {
+pub(super) fn pending_in(plane: &Path, paths: &[&str]) -> Result<Vec<String>, String> {
     let specs: Vec<String> = paths.iter().map(|path| literally(path)).collect();
     let mut args = vec!["status", "--porcelain", "-z", "--untracked-files=all", "--"];
     args.extend(specs.iter().map(String::as_str));
@@ -784,7 +784,7 @@ impl Deleted {
 }
 
 /// `git <args>` in the plane: its stdout, or what it said.
-fn git(plane: &Path, args: &[&str]) -> Result<String, String> {
+pub(super) fn git(plane: &Path, args: &[&str]) -> Result<String, String> {
     let run = crate::worktree::git::run(plane, args, crate::worktree::git::NETWORK)
         .map_err(|why| why.to_string())?;
     if run.ok() {

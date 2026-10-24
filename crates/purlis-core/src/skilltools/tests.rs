@@ -10,6 +10,12 @@ fn a_plane() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join(crate::plane::MANIFEST), "schema = 2\n").unwrap();
     std::fs::create_dir_all(dir.path().join("workspaces/alpha")).unwrap();
+    // Shared workspaces: LIVE, so their runs say where they ran (SK-20).
+    std::fs::write(
+        dir.path().join(".gitignore"),
+        crate::wscmd::live_block(dir.path(), ["alpha", "beta"]),
+    )
+    .unwrap();
     dir
 }
 
@@ -278,6 +284,7 @@ fn ran(plane: &Path, id: &str, skill: &str, workspace: Option<&str>, level: Opti
             started_by: StartedBy::McpLoad,
             workspace,
             level,
+            harness: None,
         },
         None,
         chrono::Utc::now(),

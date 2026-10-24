@@ -51,3 +51,20 @@
   changed, and which skills a persona names that no chat can get. It needs the Skill studio
   switched on to run, and refuses while the project has changes that are not committed or its git
   is in the middle of something.
+- **A skill's history, state, owners and uses** (Skill studio preview, #2782). A skill's tab
+  lists every saved version of it, newest first, with who saved it, the runs that started on it,
+  what it changed, and *Revert to this*, which puts the skill back as that version had it in one
+  commit. A skill can be **deprecated**, pointing to the skill to use instead: it still works, and
+  is listed after the others. A skill can be **archived**: it never loads, and *Restore* brings it
+  back. A skill no chat ran for 60 days suggests deprecating it. A skill can name its owners, for
+  people to know. The tab lists the skills a skill names, marking one that does not exist, and the
+  skills that name it, and a run that started inside another skill's run says so. `purlis skill
+  history | revert | deprecate | archive | owners | uses` do the same from a terminal.
+- **A skill's grant file that is a link is no longer followed** (#2782). purlis reads what it keeps
+  beside a skill's folder (its grant, and now its state and owners) only from a plain file: a link
+  in its place grants the skill nothing beyond the project's root, and a change to it is refused,
+  so a link can no longer widen where a skill reaches.
+- **A skill's tab totals its runs** (Skill studio preview, #2783): runs, tool calls, errors,
+  refusals, asks, tokens and time, by the program each chat ran on, by persona and by
+  workspace. Each run says what it ran on, and a run that a curation action's prompt started
+  says so, whichever way the chat's program started the skill.

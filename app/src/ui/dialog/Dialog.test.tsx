@@ -426,3 +426,59 @@ describe("a dialog opened twice", () => {
     said.mockRestore();
   });
 });
+
+describe("a dialog's close", () => {
+  it("calls the afterClose it was last drawn with, not the one it opened with", async () => {
+    const first = vi.fn();
+    const last = vi.fn();
+    const { rerender, unmount } = render(
+      <Dialog onClose={() => {}} afterClose={first} title="Rename workspace" />,
+    );
+    rerender(<Dialog onClose={() => {}} afterClose={last} title="Rename workspace" />);
+    unmount();
+    await act(async () => {});
+    expect(first).not.toHaveBeenCalled();
+    expect(last).toHaveBeenCalledOnce();
+  });
+});
+
+describe("a dialog closed as its window goes", () => {
+  // The window's `document` can go before a close's last step runs: a test's environment taken
+  // down, a webview torn down. What the close still does uses the document the dialog was drawn
+  // in, never the global one.
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it("lets React Aria's return go after it held it, with the global document gone", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const { unmount } = render(
+      <Dialog onClose={() => {}} returnFocus={() => false} title="Start a chat">
+        <p>A chat.</p>
+      </Dialog>,
+    );
+    unmount();
+    // The close's microtask: the keyboard is not handed back, and React Aria's return is held.
+    await act(async () => {});
+    vi.stubGlobal("document", undefined);
+    expect(() => vi.advanceTimersByTime(100)).not.toThrow();
+  });
+
+  it("hands the keyboard back and calls afterClose, with the global document gone", async () => {
+    const closed = vi.fn();
+    const { unmount } = render(
+      <Dialog onClose={() => {}} afterClose={closed} title="Rename workspace">
+        <p>A name.</p>
+      </Dialog>,
+    );
+    unmount();
+    // Gone before the close's microtask runs.
+    vi.stubGlobal("document", undefined);
+    vi.stubGlobal("HTMLElement", undefined);
+    await Promise.resolve();
+    await Promise.resolve();
+    vi.unstubAllGlobals();
+    expect(closed).toHaveBeenCalledOnce();
+  });
+});

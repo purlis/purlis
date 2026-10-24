@@ -877,6 +877,8 @@ pub async fn theme_chat(
             chosen,
             &shown,
             purlis_core::engine::Size { columns, rows },
+            // A theme chat is no curation action: its runs are the harness's own pick.
+            None,
         )
     })
     .await

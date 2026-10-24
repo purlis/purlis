@@ -1568,7 +1568,15 @@ pub struct Recorder {
     kill_switch_skipped: Option<(u64, std::time::SystemTime)>,
     /// Every skill run open, by the chat run it is a span of (SK-3, [`crate::skillspan`]).
     skills: crate::skillspan::Tracker,
+    /// The prompt a curation action or a trigger put in each chat, by project and number, until
+    /// the chat's next report hands it to its run ([`Recorder::skill_prompted`]): held from
+    /// before the chat starts, so it is there however soon the chat's first prompt comes.
+    prompted: HashMap<(PathBuf, u32), crate::skillspan::Prompted>,
 }
+
+/// How many chats' prompts [`Recorder::skill_prompted`] holds at most: a start that never
+/// reported is let go when there are more.
+const PROMPTED_HELD: usize = 256;
 
 /// One end of a tool call, heard and waiting for the other.
 #[derive(Debug, Clone, Copy)]
@@ -1647,6 +1655,7 @@ impl Recorder {
             kill_switch: None,
             kill_switch_skipped: None,
             skills: crate::skillspan::Tracker::default(),
+            prompted: HashMap::new(),
         }
     }
 
@@ -1715,9 +1724,9 @@ impl Recorder {
         {
             who.attributes.conversation = Some(id.to_owned());
         }
-        let persona = top.attributes.persona.clone();
+        let who = Who::of(&top.attributes);
         let under = self.under(top, report.agent.as_deref())?;
-        self.skills_heard_of_a_report(plane, &under, persona.as_deref(), report)?;
+        self.skills_heard_of_a_report(plane, &under, &who, report)?;
         let mut body = serde_json::json!({});
         if report.event == crate::state::Event::SessionStart {
             body["started"] = started(report.detail.started).into();
@@ -1787,9 +1796,9 @@ impl Recorder {
             let body = spooled_as(self.tool_body(call), spooled);
             return self.of_no_run(call.chat, &tool_kind(call), body);
         };
-        let persona = top.attributes.persona.clone();
+        let who = Who::of(&top.attributes);
         let under = self.under(top, call.agent.as_deref())?;
-        self.skills_heard_of_a_call(plane, &under, persona.as_deref(), call)?;
+        self.skills_heard_of_a_call(plane, &under, &who, call)?;
         let phase = phase(&call.tool_hook);
         let mut body = spooled_as(self.tool_body(call), spooled);
         if let Some(id) = &call.call {
@@ -2313,7 +2322,7 @@ impl Recorder {
         &mut self,
         plane: &Path,
         under: &Under,
-        persona: Option<&str>,
+        who: &Who,
         call: &crate::hookwire::ToolCall,
     ) -> io::Result<()> {
         let chat = under.chat.clone();
@@ -2323,27 +2332,34 @@ impl Recorder {
         else {
             return Ok(());
         };
-        self.skill_started(plane, under, persona, &opened)
+        self.skill_started(plane, under, who, &opened)
     }
 
     /// Says that skill run `opened` began, with a `skill.started`, and logs it in the plane's
-    /// skill log as it opens ([`crate::skilluse::started`]).
+    /// skill log as it opens ([`crate::skilluse::started`]), with the chat's persona and harness
+    /// (`who`). The `skill.started` says what started it and which copy of the skill it is of,
+    /// where that is known: with the `skill` and `skill_run` every entry inside it carries, the
+    /// attributes an exporter puts on the run's span (ADR 0083, amended 2026-10-23).
     fn skill_started(
         &mut self,
         plane: &Path,
         under: &Under,
-        persona: Option<&str>,
+        who: &Who,
         opened: &purlis_skills::runs::Open,
     ) -> io::Result<()> {
         let mut body = serde_json::json!({ "started_by": opened.started_by });
         if let Some(parent) = &opened.parent {
             body["parent_skill_run"] = parent.as_str().into();
         }
+        if let Some(level) = opened.whose.level {
+            body["skill_level"] = level.word().into();
+        }
         self.append(under, "skill.started", body)?;
+        let starting = crate::skilluse::Starting::of_open(opened, who.harness.as_deref());
         crate::skilluse::started(
             plane,
-            &opened.into(),
-            persona.filter(|persona| *persona != NONE && *persona != UNKNOWN),
+            &starting,
+            who.persona.as_deref(),
             chrono::Utc::now(),
             &self.log.device,
         );
@@ -2359,11 +2375,14 @@ impl Recorder {
         &mut self,
         plane: &Path,
         under: &Under,
-        persona: Option<&str>,
+        who: &Who,
         report: &crate::hookwire::Report,
     ) -> io::Result<()> {
         if under.parent.is_some() {
             return Ok(());
+        }
+        if let Some(prompted) = self.prompted.remove(&(plane.to_path_buf(), report.chat)) {
+            self.skills.prompted(&under.run, prompted);
         }
         let chat = under.chat.clone();
         let reported = self
@@ -2371,7 +2390,7 @@ impl Recorder {
             .report(&under.run, report, now_ms(), || tokens_of(plane, &chat));
         self.skills_closed(plane, under, reported.closed)?;
         for opened in &reported.opened {
-            self.skill_started(plane, under, persona, opened)?;
+            self.skill_started(plane, under, who, opened)?;
         }
         Ok(())
     }
@@ -2385,6 +2404,24 @@ impl Recorder {
         };
         let key = who.run.clone();
         self.skills.typed(&key, typed, now_ms());
+    }
+
+    /// **A curation action or a trigger put prompt `prompted` in chat `number` of `plane`**,
+    /// unsent (SK-20): the runs the turn it is sent in opens are theirs
+    /// ([`crate::skillspan::Tracker::prompted`]). Nothing is written now. It is held by the
+    /// chat's number, as it may come before the chat's run begins, and handed to its run at the
+    /// chat's next report.
+    pub fn skill_prompted(
+        &mut self,
+        plane: &Path,
+        number: u32,
+        prompted: crate::skillspan::Prompted,
+    ) {
+        if self.prompted.len() >= PROMPTED_HELD {
+            self.prompted.clear();
+        }
+        self.prompted
+            .insert((plane.to_path_buf(), number), prompted);
     }
 
     /// Closes every skill run open in `under`'s chat run as `ended`.
@@ -2708,6 +2745,26 @@ impl Recorder {
         self.write(Some(&who.chat), Some(&who.run), None, "run.started", body)?;
         self.chats.insert(key, who.clone());
         Ok(who)
+    }
+}
+
+/// The persona and harness of a chat's run, as a skill run's start logs them: each `None` where
+/// the run says none or does not know.
+struct Who {
+    persona: Option<String>,
+    harness: Option<String>,
+}
+
+impl Who {
+    fn of(attributes: &Attributes) -> Who {
+        let known = |v: &Option<String>| {
+            v.clone()
+                .filter(|v| !v.is_empty() && v != NONE && v != UNKNOWN)
+        };
+        Who {
+            persona: known(&attributes.persona),
+            harness: known(&attributes.harness),
+        }
     }
 }
 

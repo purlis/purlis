@@ -1738,6 +1738,12 @@ export const commands = {
 	 *  flag is off. On a blocking thread, as it reads the project's skill log.
 	 */
 	skillRuns: (plane: PlaneId, skill: string) => typedError<StudioRun[], string>(__TAURI_INVOKE("skill_runs", { plane, skill })),
+	/**
+	 *  The totals of skill `skill`'s runs in the project, by what they ran on, by persona and by
+	 *  workspace: none while the flag is off. On a blocking thread, as it reads the project's skill
+	 *  log.
+	 */
+	skillStats: (plane: PlaneId, skill: string) => typedError<SkillStats, string>(__TAURI_INVOKE("skill_stats", { plane, skill })),
 	/**  Whether the Skill studio is on in this window: this machine's flag, or the variable over it. */
 	skillStudioOn: () => typedError<boolean, string>(__TAURI_INVOKE("skill_studio_on")),
 	/**
@@ -1819,6 +1825,24 @@ export const commands = {
 	 *  grant that would reach the workspace.
 	 */
 	skillTurn: (plane: PlaneId, workspace: string, name: string, on: boolean) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_turn", { plane, workspace, name, on })),
+	/**
+	 *  **What a skill's tab shows beside its runs**: each copy's history, lifecycle state and
+	 *  owners, and the skills it names and that name it. Nothing while the flag is off.
+	 */
+	skillDetails: (plane: PlaneId, name: string) => typedError<SkillDetails, string>(__TAURI_INVOKE("skill_details", { plane, name })),
+	/**
+	 *  **What reverting a skill to one of its versions would bring back that widens a chat**: the
+	 *  sentence its confirm shows, or null where nothing widens.
+	 */
+	skillRevertWidens: (plane: PlaneId, level: SkillLevel, name: string, commit: string) => typedError<string | null, string>(__TAURI_INVOKE("skill_revert_widens", { plane, level, name, commit })),
+	/**  What one version of a skill changed. */
+	skillDiff: (plane: PlaneId, level: SkillLevel, name: string, commit: string) => typedError<SkillDiff, string>(__TAURI_INVOKE("skill_diff", { plane, level, name, commit })),
+	/**  **Puts a skill back as one of its versions has it**, as one commit. */
+	skillRevert: (plane: PlaneId, level: SkillLevel, name: string, commit: string) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_revert", { plane, level, name, commit })),
+	/**  **Deprecates, archives or restores a skill**, as one commit. */
+	skillLifecycle: (plane: PlaneId, level: SkillLevel, name: string, lifecycle: SkillLifecycle) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_lifecycle", { plane, level, name, lifecycle })),
+	/**  **Sets who looks after a skill**, as one commit. */
+	skillOwners: (plane: PlaneId, level: SkillLevel, name: string, owners: string[]) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_owners", { plane, level, name, owners })),
 	/**
 	 *  **Every draft skill of the project**, by name: what the studio lists, and what a chat's tab
 	 *  asks to say "draft ready in Skill studio". None while the flag is off.
@@ -10096,6 +10120,10 @@ export type RunStart =
 "mcp-load" | 
 /**  The person picked it in Use skill… and sent the prompt it was typed into. */
 "use-skill" | 
+/**  A curation action typed the prompt the person sent. */
+"curation" | 
+/**  A trigger sent the prompt. */
+"trigger" | 
 /**  A start a newer purlis wrote. */
 "unknown";
 
@@ -10974,6 +11002,47 @@ export type SkillCompat = {
 	says: string[],
 };
 
+/**  One copy of a skill's name, at one level of the project. */
+export type SkillCopy = {
+	level: SkillLevel,
+	/**  Its level as a person reads it: `project`, `local workspace ops`. */
+	label: string,
+	lifecycle: SkillLifecycle,
+	/**
+	 *  Whether its lifecycle state and owners could not be read: it is then taken as in use with
+	 *  no owners, and the tab says so.
+	 */
+	unread: boolean,
+	/**  Who looks after it, for people to know. */
+	owners: string[],
+	/**  How many days no chat ran it, where that is 60 or more: the tab suggests deprecating it. */
+	unused_days: number | null,
+	/**  Its versions, newest first. */
+	versions: SkillVersion[],
+	/**  What the runs on its folder while it held changes not committed add up to. */
+	uncommitted: StatsRow,
+};
+
+/**  What a skill's tab shows beside its runs: each copy's state, owners and history, and its uses. */
+export type SkillDetails = {
+	/**  Every copy of the name at the project's levels, the project's first. */
+	copies: SkillCopy[],
+	uses: SkillUse[],
+	/**  The project's skills that name it. */
+	used_by: string[],
+	/**  Whether the project holds more skills than the graph reads. */
+	uses_cut: boolean,
+};
+
+/**  One version's diff. */
+export type SkillDiff = {
+	text: string,
+	/**  Whether it was cut, being too long to show whole. */
+	cut: boolean,
+	/**  A line for each line of it that holds a character that draws as nothing. */
+	unseen: string[],
+};
+
 /**  One draft skill, as the studio lists it. */
 export type SkillDraft = {
 	/**  What Try it, Accept and Reject are handed back. */
@@ -11014,6 +11083,12 @@ export type SkillFit =
 /**  A skill purlis hands to no chat. */
 "refused";
 
+/**  A version's grade, once grading lands (SK-16): always null for now. */
+export type SkillGrade = {
+	passed: number,
+	fixtures: number,
+};
+
 /**  Where a project skill reaches, as the studio sets it. */
 export type SkillGrant = 
 /**  Chats at the project's root alone. */
@@ -11031,6 +11106,15 @@ export type SkillLevel = {
 	workspace: string | null,
 	local: boolean,
 };
+
+/**  A skill's lifecycle state, as its tab shows and sets it. */
+export type SkillLifecycle = 
+/**  In use. */
+{ state: "active" } | 
+/**  Still works, is shown after the rest, and names the skill to use instead. */
+{ state: "deprecated"; replacement: string | null } | 
+/**  Never loads, until it is restored. */
+{ state: "archived" };
 
 /**  One line of the live lint (SK-8, #2771). */
 export type SkillLintFinding = {
@@ -11062,6 +11146,13 @@ export type SkillSource = {
 export type SkillSourceUnconfirmed = {
 	remote: SourceRemote,
 	skills: string[],
+};
+
+/**  A skill's totals, by what it ran on, by persona and by workspace (SK-20). */
+export type SkillStats = {
+	by_harness: StatsRow[],
+	by_persona: StatsRow[],
+	by_workspace: StatsRow[],
 };
 
 /**  How a harness can leave one of its own skills out of a chat. */
@@ -11106,6 +11197,17 @@ export type SkillUpdates = {
 	unconfirmed: SkillSourceUnconfirmed[],
 };
 
+/**  A skill another skill names. */
+export type SkillUse = {
+	/**  As the text writes it: `skills:deploy`, `purlis:secrets`. */
+	said: string,
+	name: string,
+	/**  Whether it names one of the project's skills, not a built-in one. */
+	project: boolean,
+	/**  Whether no skill has that name. */
+	broken: boolean,
+};
+
 /**  Who uses a skill, as Delete shows before it deletes. */
 export type SkillUsers = {
 	/**  Whether chats at the project's root get it. */
@@ -11113,6 +11215,19 @@ export type SkillUsers = {
 	workspaces: string[],
 	personas: string[],
 	skills: string[],
+};
+
+/**  One version of a skill: one commit that changed it. */
+export type SkillVersion = {
+	/**  Its commit: what its diff and its revert are asked by. */
+	commit: string,
+	/**  When it was committed, as a timestamp. */
+	at: string,
+	author: string,
+	subject: string,
+	/**  What the runs that started on it add up to, as a skill's totals row says them (SK-20). */
+	runs: StatsRow,
+	grade: SkillGrade | null,
 };
 
 /**
@@ -11326,6 +11441,30 @@ export type StartedHere = {
 	copied: string | null,
 };
 
+/**  The group a skill's totals row is of (SK-20). */
+export type StatsGroup = 
+/**  A harness, as a person calls it; a persona or a workspace, by name. */
+{ kind: "named"; name: string } | 
+/**  No persona, or the project's root. */
+{ kind: "none" } | 
+/**  Runs whose start does not say. */
+{ kind: "not-recorded" };
+
+/**  One row of a skill's totals: a group's runs, their signals and their tokens (SK-20). */
+export type StatsRow = {
+	group: StatsGroup,
+	runs: number,
+	/**  Runs whose end is recorded: the ones the signals are counted from. */
+	ended: number,
+	tool_calls: number,
+	tool_errors: number,
+	refusals: number,
+	asks: number,
+	/**  Tokens spent inside them, or null where no run said its tokens. */
+	tokens: number | null,
+	ms: number,
+};
+
 /**  Where a chat's stop stands. */
 export type StopPhase = 
 /**  It is being stopped: waiting for the chats below it, or writing its last turn. */
@@ -11430,6 +11569,15 @@ export type StudioRun = {
 	asks: number | null,
 	/**  Tokens spent inside it, where the harness reported them. */
 	tokens: number | null,
+	/**  The skill whose run this one started inside, where it is a child span (SK-19). */
+	inside: string | null,
+	/**  The skills whose runs started inside this one, each once (SK-19). */
+	ran: string[],
+	/**
+	 *  What it ran on, as a person calls it (`Claude Code`), or null where its start does not
+	 *  say.
+	 */
+	ran_on: string | null,
 };
 
 /**  One skill the studio lists: [`purlis_core::skills::StudioRow`], for the window. */
