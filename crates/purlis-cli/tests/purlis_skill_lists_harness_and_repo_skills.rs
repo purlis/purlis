@@ -312,7 +312,7 @@ fn a_repo_skills_control_and_bidi_characters_are_escaped_in_list_and_show() {
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(
         dir.join("SKILL.md"),
-        "---\nname: \"sly\\e[31m\\u202Eeman\"\ndescription: \"Says\\u200B hi\\e[2J.\"\n---\n\nbody\n",
+        "---\nname: sly\u{1b}[31m\u{202e}eman\ndescription: Says\u{200b} hi\u{1b}[2J.\n---\n\nbody\n",
     )
     .unwrap();
     let name = "sly\u{1b}[31m\u{202e}eman";
