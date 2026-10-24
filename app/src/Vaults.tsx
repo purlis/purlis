@@ -4,14 +4,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { KeyRound } from "lucide-react";
 import { PanelList } from "./PanelList";
-import { Menued } from "./Menus";
+import { catalogueMenu } from "./Menus";
 import { HeadingOffer, PanelSection } from "./PanelSection";
 import { Notice } from "./Notice";
 import type { Catalogued, Offer } from "./actions";
 import { commands, type PanelRow, type VaultSummary } from "./bindings";
 import { providerName } from "./vaultProviders";
 import { Dialog } from "./ui/dialog/Dialog";
-import { ListFilter, noMatchSaid, useListFilter } from "./ui/dialog/ListFilter";
+import { ListFilter, noMatchSaid, useListFilter } from "./ui/list/ListFilter";
 
 /**
  * The plane's vaults, in the Attention region: each vault with its provider and how many
@@ -82,16 +82,7 @@ export function Vaults({
           }}
           // Right-click on a vault: open it, make another, delete it (SI-3). The rows are the
           // catalogue's (`menuOn`), so the menu and the palette say the same thing.
-          wrap={(row, item) => (
-            <Menued
-              key={row.key}
-              on={{ on: "vault", vault: row.key }}
-              offers={offers}
-              onPress={onPress}
-            >
-              {item}
-            </Menued>
-          )}
+          menuOf={(row) => catalogueMenu({ on: "vault", vault: row.key }, offers, onPress)}
         />
       )}
     </PanelSection>
@@ -158,8 +149,8 @@ export function OpenVault({
       title="Open vault"
       initialFocus={(dialog) =>
         filtered
-          ? dialog.querySelector<HTMLElement>(".dialog-filter input")
-          : dialog.querySelector<HTMLElement>("button.row")
+          ? dialog.querySelector<HTMLElement>(".list-filter input")
+          : dialog.querySelector<HTMLElement>('[data-scope="list"][data-part="root"]')
       }
     >
       {filtered && (

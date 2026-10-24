@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import type { RowMenu } from "./ui/list/List";
 import { useEffect, useId, type ReactNode } from "react";
 import { noteOf, type Catalogued, type MenuOn, type Offer } from "./actions";
 import { stateOf, useChatsHere, useChatsSelect } from "./chatState";
@@ -66,6 +67,23 @@ export function Menued({
       {children}
     </ContextMenu>
   );
+}
+
+/**
+ * **The catalogue's menu for a row a collection draws** (#2911): what `Menued` puts around an
+ * element, as a row's `menu` (`ui/list/List`), or none where the catalogue offers nothing.
+ */
+export function catalogueMenu(
+  on: MenuOn,
+  offers: Catalogued,
+  onPress: (offer: Offer) => void,
+): RowMenu | undefined {
+  if (menuIsEmpty(on, offers)) return undefined;
+  return {
+    menu: () => <CatalogueMenu on={on} offers={offers} onPress={onPress} />,
+    // A row that went into Settings sent the keyboard there, not back to the row (#1206).
+    onClosed: landSettingsFocus,
+  };
 }
 
 /**

@@ -261,13 +261,13 @@ const tabNames = () =>
 /** Opens steward's tab, and answers its list of memories. */
 async function personaTab() {
   const panel = await showThePanel("Personas");
-  await userEvent.click(within(panel).getByRole("button", { name: /steward/ }));
-  return screen.findByRole("list", { name: "steward" });
+  await userEvent.click(within(panel).getByRole("row", { name: /steward/ }));
+  return screen.findByRole("grid", { name: "steward" });
 }
 
 async function memoryRowIn(slug: string) {
   const list = await personaTab();
-  return within(list).getByRole("button", { name: new RegExp(TITLES[slug]) });
+  return within(list).getByRole("row", { name: new RegExp(TITLES[slug]) });
 }
 
 describe("a persona's memory row", () => {
@@ -407,7 +407,7 @@ describe("Delete, in the window", () => {
       archived: "never-pkill-2",
       restoreAs: "never-pkill",
     });
-    expect(await screen.findByRole("button", { name: /Never pkill by name/ })).toBeInTheDocument();
+    expect(await screen.findByRole("row", { name: /Never pkill by name/ })).toBeInTheDocument();
   });
 
   it("asks nothing first, because nothing is lost", async () => {

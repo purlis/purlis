@@ -1,0 +1,274 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **The list family's default** (#2911, ADR 0103, ADR 0104): how a list and its rows are drawn
+   when a theme names none of their parts. The list is `data-scope="list" data-part="body"`; a row
+   is the family's root (`data-part="root"`, its `data-size`) with React Aria's state attributes;
+   inside it its `lead`, `label`, `description` and `trail` (`Row.tsx`); a group's name is the
+   `header`. The tree's and the table's rows (`ui/tree`, `ui/table`) draw the same slots in their
+   own scope.
+
+   **In the `components` layer** (`styles.css`), above `App.css`: a view places a list (its height,
+   its grid area) and nothing it writes redraws a row. **Only tokens**, one `var()` per colour.
+
+   **A state never changes size** (#2800): the pointer's pill, the chosen row's wash and edge, and
+   the keyboard's ring change a colour, a ground, a shadow or an outline, never a padding, a
+   height or a weight. */
+
+/* ---------------------------------------------------------------------------------------------
+   The list. **Its rows stand in from its edges** (the operator's ruling): a row's pill is drawn
+   inside the list's own room, so it never touches the panel the list is joined to.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="list"][data-part="body"] {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  min-inline-size: 0;
+  /* The rows keep a hairline apart, so one row's pill never touches its neighbour's wash. */
+  gap: var(--space-1);
+  margin: 0;
+  padding: var(--space-2);
+  outline: none;
+}
+
+/* A list laid out as a grid of cards (`layout="grid"`): its columns are its view's. */
+[data-scope="list"][data-part="body"][data-layout="grid"] {
+  display: grid;
+  gap: var(--space-4);
+}
+
+/* An empty list takes the keyboard itself, and says so with a ring inside it. */
+[data-scope="list"][data-part="body"][data-focus-visible] {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-inset);
+}
+
+/* A group of rows lays its rows out as the list does. */
+[data-scope="list"][data-part="section"] {
+  display: flex;
+  flex-direction: column;
+  gap: inherit;
+}
+
+/* A group's name, in purlis's own words: the label role (R161), informational, in the quiet tier.
+   It cannot be chosen. */
+[data-scope="list"][data-part="header"] {
+  padding-block: var(--space-3) var(--space-1);
+  padding-inline: var(--space-4);
+  color: var(--text-quiet);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-strong);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* A group named by data (a file, a day, a project) is written as the name is: no capitals, which
+   are for purlis's own words. */
+[data-scope="list"][data-part="header"][data-named] {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-regular);
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   A row, at rest. **One line**: its words give way to an ellipsis and never wrap; its marks lead
+   and its counts and actions trail. In the secondary tier until it is chosen (R19, R21).
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="list"][data-part="root"] {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  column-gap: var(--space-4);
+  box-sizing: border-box;
+  min-inline-size: 0;
+  min-block-size: var(--size-control);
+  padding-block: var(--space-1);
+  padding-inline: var(--space-4);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-weight: var(--font-weight-regular);
+  text-align: start;
+  cursor: default;
+  outline: none;
+}
+
+/* **One size per list**: 24 px in a side view's dense list, 32 in a dialog's list beside its
+   details. */
+[data-scope="list"][data-part="root"][data-size="sm"] {
+  min-block-size: var(--size-chrome);
+  padding-block: 0;
+  padding-inline: var(--space-3);
+  column-gap: var(--space-3);
+}
+
+[data-scope="list"][data-part="root"][data-size="lg"] {
+  min-block-size: calc(var(--size-control) + var(--space-2));
+}
+
+/* **Under the pointer**: the pill, on the list's ground. */
+[data-scope="list"][data-part="root"][data-hovered]:not([data-disabled]):not([data-selected]) {
+  background-color: var(--surface-hover);
+}
+
+/* **Chosen** (R21): the wash in the accent's hue, the words in the primary tier, and an edge down
+   its start, so it is told by a shape and not by colour alone. The edge is a shadow, so choosing
+   moves nothing; it stays chosen under the pointer. */
+[data-scope="list"][data-part="root"][data-selected] {
+  color: var(--text-primary);
+  background-color: var(--list-selected);
+  box-shadow: inset var(--focus-ring-width) 0 0 var(--list-selected-edge);
+}
+
+[data-scope="list"][data-part="root"][data-selected]:dir(rtl) {
+  box-shadow: inset calc(-1 * var(--focus-ring-width)) 0 0 var(--list-selected-edge);
+}
+
+/* **The keyboard's place is a ring inside the row** (ADR 0104, 2026-10-22): rows sit edge to edge
+   and a scrolling list clips what is outside them. */
+[data-scope="list"][data-part="root"][data-focus-visible] {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-inset);
+}
+
+/* **A row that cannot be used**: its words in the faint tier, on no ground. An option that keeps
+   the keyboard to say why it cannot be chosen (`unavailable`) is drawn so too. */
+[data-scope="list"][data-part="root"][data-disabled],
+[data-scope="list"][data-part="root"][data-unavailable] {
+  color: var(--text-faint);
+}
+
+/* **A card of a grid** (`layout="grid"`, the theme gallery): a column of what it holds on the
+   window's ground, chosen by a ring all round it rather than an edge down its start. */
+[data-layout="grid"] > [data-scope="list"][data-part="root"] {
+  flex-direction: column;
+  align-items: stretch;
+  row-gap: var(--space-2);
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  background-color: var(--surface-base);
+}
+
+[data-layout="grid"]
+  > [data-scope="list"][data-part="root"][data-hovered]:not([data-disabled]):not([data-selected]) {
+  background-color: var(--surface-hover);
+}
+
+[data-layout="grid"]
+  > [data-scope="list"][data-part="root"][data-selected]:is(:dir(ltr), :dir(rtl)) {
+  background-color: var(--list-selected);
+  box-shadow: inset 0 0 0 var(--focus-ring-width) var(--list-selected-edge);
+}
+
+/* **A list a field aims at** (`AimedList.tsx`, the palette's): the pointer's pill under the
+   pointer, and the aimed row, where the field's keys are, in the aim's own fill (`control.aimed`,
+   quieter than a chosen row) with the keyboard's ring inside it. */
+[data-aimed-by="field"] > [data-scope="list"][data-part="root"]:hover:not([data-disabled]) {
+  background-color: var(--surface-hover);
+}
+
+/* The aim is where the keys are, which is focus and not a choice: the aim's own fill, quieter
+   than a chosen row, and the edge every chosen row draws, so the aim survives a display that
+   renders neither colour (D-1682-1). */
+[data-aimed-by="field"] > [data-scope="list"][data-part="root"][data-aimed] {
+  background-color: var(--control-aimed);
+  box-shadow: inset var(--focus-ring-width) 0 0 var(--list-selected-edge);
+}
+
+[data-aimed-by="field"] > [data-scope="list"][data-part="root"][data-aimed]:dir(rtl) {
+  box-shadow: inset calc(-1 * var(--focus-ring-width)) 0 0 var(--list-selected-edge);
+}
+
+/* A row that is dragged stays where it is, drawn as the one the pointer carries. */
+[data-scope="list"][data-part="root"][data-dragging] {
+  background-color: var(--surface-hover);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   Inside a row: the same slots in a list, a tree and a table. **One attribute's weight**
+   (`:where` for the scope), so a word's rank (`primitives/text.css`, after this sheet) still
+   sets a slot's size and tier.
+   --------------------------------------------------------------------------------------------- */
+
+:where([data-scope="list"], [data-scope="tree"], [data-scope="table"]):is(
+  [data-part="lead"],
+  [data-part="trail"]
+) {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+:where([data-scope="list"], [data-scope="tree"], [data-scope="table"])[data-part="trail"] {
+  margin-inline-start: auto;
+}
+
+:where([data-scope="list"], [data-scope="tree"], [data-scope="table"])[data-part="label"] {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* The one line about it: informational, in the quiet tier, and given way to before its words. */
+:where([data-scope="list"], [data-scope="tree"], [data-scope="table"])[data-part="description"] {
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text-quiet);
+  font-size: var(--font-size-xs);
+}
+
+/* A card's description wraps inside the card. */
+[data-layout="grid"] > [data-part="root"] [data-part="description"] {
+  white-space: normal;
+}
+
+/* A row's tooltip is anchored to the whole row by a part that draws nothing and takes no
+   pointer (`RowTip.tsx`). */
+:where([data-scope="list"], [data-scope="tree"], [data-scope="table"])[data-part="tip-anchor"] {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* A line under the row's words, inside the row: the row wraps onto it and keeps its own height
+   above it. */
+:where([data-scope="list"], [data-scope="tree"], [data-scope="table"]):has(> [data-part="below"]) {
+  flex-wrap: wrap;
+}
+
+:where([data-scope="list"], [data-scope="tree"], [data-scope="table"])[data-part="below"] {
+  flex: 1 0 100%;
+  min-inline-size: 0;
+  padding-block-end: var(--space-1);
+  color: var(--text-quiet);
+  font-size: var(--font-size-sm);
+}
+
+/* An icon in a slot is one line's height. */
+:where([data-scope="list"], [data-scope="tree"], [data-scope="table"]):is(
+    [data-part="lead"],
+    [data-part="trail"]
+  )
+  > svg {
+  flex: none;
+  inline-size: var(--font-size-md);
+  block-size: var(--font-size-md);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   A list's filter (`ListFilter.tsx`): the list's main field, at the large size, across the list.
+   --------------------------------------------------------------------------------------------- */
+
+.list-filter {
+  inline-size: 100%;
+  margin-block-end: var(--space-4);
+}

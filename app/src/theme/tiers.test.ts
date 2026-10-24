@@ -39,6 +39,9 @@ const FAINT: ReadonlySet<string> = new Set([
   '[data-scope="menu"][data-part="root"][data-disabled]',
   '[data-scope="menu"][data-part="root"][data-unavailable]',
   ".ui-menu-item[data-disabled]",
+  // A list's row that cannot be used (#2911).
+  '[data-scope="list"][data-part="root"][data-disabled]',
+  '[data-scope="list"][data-part="root"][data-unavailable]',
 ]);
 
 /** Informational words, each drawn in quiet: line numbers, placeholders, counts, paths, group
@@ -50,7 +53,8 @@ const QUIET: readonly string[] = [
   ".ui-level-count",
   // A status cell's word before its count (#2913).
   '[data-static]:has(> [data-part="count"]) > [data-scope="status-item"][data-part="label"]',
-  ".panel-day",
+  // A list's group name (#2911): a day, a file.
+  '[data-scope="list"][data-part="header"]',
   ".search-file-folder",
   ".search-file-rest",
   ".search-line-number",

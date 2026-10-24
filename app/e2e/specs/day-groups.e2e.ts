@@ -45,24 +45,19 @@ function aTodo(store: string, title: string, slug: string, when: Date): string {
 /** Each day heading the Todos view draws, with the titles under it, in order. */
 async function days(): Promise<{ day: string; rows: { text: string; hover: string }[] }[]> {
   // Each row's hover is its tooltip (#2908), read as the keyboard reads it, in document order.
-  const hovers = await tooltipsOf(`${TODOS} .panel-days .panel-row .row`);
+  // The rows are the list family's (#2911): each day is a group with its name as its header.
+  const hovers = await tooltipsOf(`${TODOS} .panel-rows .panel-row`);
   const drawn = await browser.execute((panel: string) => {
-    const list = document.querySelector(`${panel} .panel-days`);
+    const list = document.querySelector(`${panel} .panel-rows`);
     if (!list) return [];
-    const every = [...list.querySelectorAll(".panel-row .row")];
-    return [...list.querySelectorAll("h3.panel-day")].map((heading) => {
-      const rows = heading.nextElementSibling;
-      return {
-        day: heading.textContent ?? "",
-        rows: [...(rows?.querySelectorAll(".panel-row") ?? [])].map((row) => {
-          const own = row.querySelector(".row");
-          return {
-            text: row.querySelector(".row-text")?.textContent ?? "",
-            at: own === null ? -1 : every.indexOf(own),
-          };
-        }),
-      };
-    });
+    const every = [...list.querySelectorAll(".panel-row")];
+    return [...list.querySelectorAll('[data-part="section"]')].map((group) => ({
+      day: group.querySelector('[data-part="header"]')?.textContent ?? "",
+      rows: [...group.querySelectorAll(".panel-row")].map((row) => ({
+        text: row.querySelector(".row-text")?.textContent ?? "",
+        at: every.indexOf(row),
+      })),
+    }));
   }, TODOS);
   return drawn.map(({ day, rows }) => ({
     day,
@@ -153,18 +148,22 @@ describe("the right side's rows grouped by day", () => {
 
   it("puts the headings and their rows in one list that does not scroll sideways", async () => {
     const drawn = await browser.execute((panel: string) => {
-      const list = document.querySelector<HTMLElement>(`${panel} .panel-days`);
+      // One grid of rows (the list family's, #2911), each day a row group of it.
+      const list = document.querySelector<HTMLElement>(`${panel} .panel-rows`);
       return {
         role: list?.getAttribute("role") ?? "",
         sideways: list === null ? -1 : list.scrollWidth - list.clientWidth,
         // Each day's rows are named by their heading, so a screen reader says which day.
-        named: [...document.querySelectorAll(`${panel} ul.panel-day-rows`)].every((rows) => {
-          const by = rows.getAttribute("aria-labelledby");
-          return by !== null && document.getElementById(by)?.tagName === "H3";
-        }),
+        named: [...(list?.querySelectorAll('[data-part="section"]') ?? [])].every(
+          (rows) =>
+            rows.getAttribute("role") === "rowgroup" &&
+            (rows.getAttribute("aria-labelledby") ?? "")
+              .split(/\s+/)
+              .some((id) => document.getElementById(id)?.closest('[data-part="header"]') !== null),
+        ),
       };
     }, TODOS);
-    expect(drawn.role).toBe("group");
+    expect(drawn.role).toBe("grid");
     expect(drawn.sideways).toBeGreaterThanOrEqual(0);
     expect(drawn.sideways).toBeLessThanOrEqual(1);
     expect(drawn.named).toBe(true);

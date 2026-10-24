@@ -110,7 +110,11 @@ after look (`docs/component-stories.md`).
 
 The amendments to this decision are files of their own in [`0104/`](0104/), one per
 amendment, named `<yyyy-mm-dd>-<slug>.md`:
-[2026-10-22, the dialog family and the window's top layer](0104/2026-10-22-the-dialog-family-and-the-top-layer.md).
+
+- [2026-10-22, the field family](0104/2026-10-22-the-field-family.md)
+- [2026-10-22, a row draws its focus ring inset](0104/2026-10-22-a-row-draws-its-focus-ring-inset.md)
+- [2026-10-22, the dialog family and the window's top layer](0104/2026-10-22-the-dialog-family-and-the-top-layer.md)
+- [2026-10-24, a row of a collection carries its own menu and tooltip](0104/2026-10-24-a-row-carries-its-own-menu-and-tooltip.md)
 
 ## What was rejected
 

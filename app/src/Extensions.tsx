@@ -50,7 +50,7 @@ import { yourEditor } from "./yourEditor";
 import { setDraftHere } from "./themeDrafts";
 import { Button } from "./ui/button/Button";
 import { Dialog } from "./ui/dialog/Dialog";
-import { ListFilter, noMatchSaid, useListFilter } from "./ui/dialog/ListFilter";
+import { ListFilter, noMatchSaid, useListFilter } from "./ui/list/ListFilter";
 
 /**
  * What has contributed what to this window, and the question charter asks before anything new

@@ -446,7 +446,7 @@ describe("a panel", () => {
     const panel = screen.getByTestId("panel-ext-acme-reviews");
     expect(within(panel).getByRole("searchbox")).toBeInTheDocument();
     expect(within(panel).getByRole("button", { name: /Show \d+ more/ })).toBeInTheDocument();
-    expect(within(panel).getAllByRole("listitem").length).toBeLessThan(rows.length);
+    expect(within(panel).getAllByRole("row").length).toBeLessThan(rows.length);
   });
 
   it("runs a row's catalogue verb through the catalogue, and an unknown id through nothing", async () => {
@@ -465,7 +465,7 @@ describe("a panel", () => {
       ],
     });
 
-    await userEvent.click(within(screen.getByTestId("panel-ext-acme-reviews")).getByRole("button"));
+    await userEvent.click(within(screen.getByTestId("panel-ext-acme-reviews")).getByRole("row"));
 
     expect(pressed).toEqual([]);
   });
@@ -536,14 +536,14 @@ describe("charter's own panels", () => {
     // default persona keeps its star beside the name, and the word is the row's hover.
     draw();
 
-    const rows = within(screen.getByTestId("panel-personas")).getAllByRole("listitem");
+    const rows = within(screen.getByTestId("panel-personas")).getAllByRole("row");
     const [devops, steward] = rows;
     expect(devops).toHaveTextContent(/^devops$/);
     expect(steward).toHaveTextContent(/^steward$/);
     expect(within(screen.getByTestId("panel-personas")).queryByText(/memories/)).toBeNull();
     expect(steward).toHaveClass("is-default");
     expect(devops).not.toHaveClass("is-default");
-    expect(tipOf(within(steward).getByRole("button"))).toEqual("default · 2 memories");
+    expect(tipOf(steward)).toEqual("default · 2 memories");
   });
 });
 
@@ -560,23 +560,23 @@ describe("rows on the right are one line (#1674)", () => {
     draw();
 
     const todos = screen.getByTestId("panel-todos");
-    const todo = within(todos).getByRole("button", { name: "Review the rollout plan" });
+    const todo = within(todos).getByRole("row", { name: "Review the rollout plan" });
     expect(todo).toHaveTextContent(/^Review the rollout plan$/);
     expect(tipOf(todo)).toEqual("2026-03-02");
-    expect(within(todos).getByRole("heading", { name: "Yesterday" })).toBeInTheDocument();
-    expect(within(todos).getByRole("list", { name: "Yesterday" })).toContainElement(todo);
+    expect(within(todos).getByRole("rowheader", { name: "Yesterday" })).toBeInTheDocument();
+    expect(within(todos).getByRole("rowgroup", { name: "Yesterday" })).toContainElement(todo);
   });
 
   it("draws a memory as its title, its date on hover, under the day it was written", () => {
     draw({ state: withMemory(), offers: crudOffers() });
 
-    const memory = within(screen.getByTestId("panel-memory")).getByRole("button", {
+    const memory = within(screen.getByTestId("panel-memory")).getByRole("row", {
       name: "The API returns 418 on Mondays",
     });
     expect(memory).toHaveTextContent(/^The API returns 418 on Mondays$/);
     expect(tipOf(memory)).toEqual("2026-03-02 09:12");
     expect(
-      within(screen.getByTestId("panel-memory")).getByRole("heading", { name: "Yesterday" }),
+      within(screen.getByTestId("panel-memory")).getByRole("rowheader", { name: "Yesterday" }),
     ).toBeInTheDocument();
   });
 });
@@ -591,7 +591,7 @@ describe("a persona's row", () => {
     draw({ offers: everyOffer(), onPress: (offer) => pressed.push(offer) });
 
     await userEvent.click(
-      within(screen.getByTestId("panel-personas")).getByRole("button", { name: /devops/ }),
+      within(screen.getByTestId("panel-personas")).getByRole("row", { name: /devops/ }),
     );
 
     expect(pressed.map((offer) => offer.id)).toEqual(["persona.show:devops"]);
@@ -621,7 +621,7 @@ describe("a persona's row", () => {
 describe("a persona row's menu", () => {
   /** Right-clicks a row, the way a WebView's own pointer does. */
   function rightClick(testid: string, name: string) {
-    const row = within(screen.getByTestId(testid)).getByRole("button", {
+    const row = within(screen.getByTestId(testid)).getByRole("row", {
       name: new RegExp(name),
     });
     row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
@@ -722,7 +722,7 @@ function crudOffers(): Catalogued {
 
 function rightClickRow(testid: string, name: string) {
   within(screen.getByTestId(testid))
-    .getByRole("button", { name: new RegExp(name) })
+    .getByRole("row", { name: new RegExp(name) })
     .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
 }
 
@@ -934,7 +934,7 @@ describe("the workspace's Memory section", () => {
   it("previews a memory in its tab on a click, and keeps it on a double-click", async () => {
     const pressed: Offer[] = [];
     draw({ state: withMemory(), offers: crudOffers(), onPress: (offer) => pressed.push(offer) });
-    const memory = within(screen.getByTestId("panel-memory")).getByRole("button", {
+    const memory = within(screen.getByTestId("panel-memory")).getByRole("row", {
       name: /The API returns 418/,
     });
 
@@ -987,7 +987,7 @@ describe("the shared row in Personas", () => {
     const pressed: Offer[] = [];
     draw({ state: withMemory(), offers: crudOffers(), onPress: (offer) => pressed.push(offer) });
 
-    const shared = within(screen.getByTestId("panel-personas")).getByRole("button", {
+    const shared = within(screen.getByTestId("panel-personas")).getByRole("row", {
       name: /^shared/,
     });
     expect(shared).toHaveTextContent(/^shared$/);

@@ -265,9 +265,12 @@ describe("the right-hand region", () => {
     await showView("Personas");
     await untilSays("panel-personas", "steward");
     // A persona's row is its badge and its name (#1674); the default says so on hover.
-    const fallback = await $('[data-testid="panel-personas"] .is-default .row');
+    // The row is the list family's (#2911): its tooltip is the row's own.
+    const fallback = await $('[data-testid="panel-personas"] .panel-row.is-default');
     await fallback.waitForExist({ timeout: 30_000 });
-    expect(await tooltipOf('[data-testid="panel-personas"] .is-default .row')).toContain("default");
+    expect(await tooltipOf('[data-testid="panel-personas"] .panel-row.is-default')).toContain(
+      "default",
+    );
     // As the window was found: the sidebar on the Inbox, the right half on Memory.
     await showView("Inbox");
     await showView("Memory");

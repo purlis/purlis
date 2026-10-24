@@ -114,7 +114,7 @@ describe("the window's own lines", () => {
     );
 
     // A project comes back from the opener: the same line again, in its Inbox.
-    await userEvent.click(await screen.findByRole("button", { name: /^one/ }));
+    await userEvent.click(await screen.findByRole("row", { name: /^one/ }));
     await vi.waitFor(() => expect(projectTabs()).toEqual(["one"]));
     await vi.waitFor(() => expect(slowLine().closest(".inbox-window-lines")).not.toBeNull());
     expect(slowLine()).toBe(line);

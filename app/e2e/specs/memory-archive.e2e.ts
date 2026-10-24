@@ -34,7 +34,7 @@ import { showView } from "../opening.js";
 const PERSONA = "steward";
 const TAB = `Archived memory · ${PERSONA}`;
 const PANE = `section.view-pane[aria-label="${TAB}"]`;
-const ROWS = `${PANE} ul[aria-label="Archived memories in ${PERSONA}"] > li`;
+const ROWS = `${PANE} [role="listbox"][aria-label="Archived memories in ${PERSONA}"] [data-part="root"]`;
 const SEARCH = `${PANE} input[aria-label="Search archived memories in ${PERSONA}"]`;
 const PLAIN = Array.from({ length: 14 }, (_, n) => `vh-archived-${String(n + 1).padStart(2, "0")}`);
 
