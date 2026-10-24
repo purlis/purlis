@@ -52,6 +52,7 @@ import { lastUsed, narrowed, narrowPicked, useNarrow } from "./narrowPanel";
 import { useSidesOfTheFront } from "./railRoom";
 import { cycleOf, stepped, STOPS, type Stop } from "./regionCycle";
 import { pressed } from "./keys/registry";
+import { FOCUS_MODE, HIDDEN_IN_FOCUS } from "./keys/focusMode";
 import { moveAlong, sequenceIn } from "./tabSequence";
 import { inADialog } from "./paneKeyboard";
 import { CHAT_KEYBOARD } from "./actions";
@@ -906,7 +907,31 @@ const REGION_OF: Record<Stop, string> = {
 
 /** The keyboard to the region after the one holding it in `cycle`, or with `back` before. */
 function stepIn(root: HTMLElement, cycle: readonly Stop[], back: boolean) {
-  landIn(root, stepped(cycle, stopHolding(root, document.activeElement), back));
+  landIn(root, stepped(drawnCycle(root, cycle), stopHolding(root, document.activeElement), back));
+}
+
+/**
+ * **The regions of `cycle` drawn now** (#2921): F6 stops only where a person can see. A region
+ * the arrangement holds but the window does not draw is passed over: one focus mode hides
+ * (`keys/focusMode.ts`), one under `hidden` or `inert`, one whose own box or an ancestor's is
+ * `display: none`. The editor is always kept, as `cycleOf` keeps it.
+ */
+export function drawnCycle(root: HTMLElement, cycle: readonly Stop[]): Stop[] {
+  return cycle.filter((stop) => {
+    if (stop === "centre") return true;
+    const region = root.querySelector<HTMLElement>(REGION_OF[stop]);
+    return region !== null && isDrawn(region);
+  });
+}
+
+/** Whether `element` is drawn: not hidden, not inert, not out of the flow by focus mode or CSS. */
+function isDrawn(element: HTMLElement): boolean {
+  if (element.closest("[hidden], [inert]") !== null) return false;
+  if (element.closest(`[${FOCUS_MODE}]`) !== null && element.closest(HIDDEN_IN_FOCUS) !== null)
+    return false;
+  for (let at: Element | null = element; at !== null; at = at.parentElement)
+    if (getComputedStyle(at).display === "none") return false;
+  return true;
 }
 
 /**

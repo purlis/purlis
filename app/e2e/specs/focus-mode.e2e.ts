@@ -1,0 +1,163 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+import { browser, expect, $$ } from "@wdio/globals";
+import { READY } from "../harness.js";
+
+/**
+ * **Focus mode on the real window** (#2921, spec #2897 N32): ⌘⇧↩ (Ctrl+Shift+Enter off a Mac)
+ * hides the project rail, the activity columns, the side panels, the Panel and the status bar,
+ * and the work takes their room. The same key brings every one of them back at the size it had.
+ * The terminal in front is not drawn again: the same element with the same text.
+ *
+ * `keys/focusMode.test.tsx` and `RegionFrame.drawn.test.tsx` hold the toggle and F6 against
+ * jsdom; only a window that lays out can say what is drawn and where.
+ *
+ * **The key is dispatched from the page**, as `panel-toggle.e2e.ts` does a chord, since the
+ * driver does not hold a modifier across `browser.keys`; the keyboard is taken off any chat
+ * first. **It leaves the window as it found it**: focus mode off, whatever an assertion did.
+ */
+
+const MAC = process.platform === "darwin";
+const FRAME = ".region-frame[data-cycle]";
+const WINDOW = "main.window";
+
+/** What focus mode hides, as `keys/focusMode.ts` names it: read here, never imported. */
+const HIDDEN = {
+  rail: '[data-scope="rail"][data-part="slot"]',
+  columns: ".region-frame > .activity-column",
+  left: ".region-slot.slot-left",
+  right: ".region-slot.slot-right",
+  panel: ".region-slot.slot-panel",
+  status: 'footer[data-scope="status-bar"]',
+};
+
+/** Each part's box as drawn: its width and height, or `null` where it is not drawn. */
+type Boxes = Record<keyof typeof HIDDEN, { width: number; height: number } | null>;
+
+async function boxes(): Promise<Boxes> {
+  return browser.execute((parts: Record<string, string>) => {
+    const out: Record<string, { width: number; height: number } | null> = {};
+    for (const [name, selector] of Object.entries(parts)) {
+      const all = [...document.querySelectorAll<HTMLElement>(selector)];
+      const drawn = all.filter((one) => one.getClientRects().length > 0);
+      out[name] =
+        drawn.length === 0
+          ? null
+          : drawn
+              .map((one) => one.getBoundingClientRect())
+              .reduce(
+                (sum, box) => ({
+                  width: Math.round(sum.width + box.width),
+                  height: Math.round(sum.height + box.height),
+                }),
+                { width: 0, height: 0 },
+              );
+    }
+    return out;
+  }, HIDDEN) as Promise<Boxes>;
+}
+
+/** Whether the window is in focus mode. */
+async function inFocusMode(): Promise<boolean> {
+  return browser.execute(
+    (root: string) => document.querySelector(root)?.hasAttribute("data-focus-mode") === true,
+    WINDOW,
+  );
+}
+
+/** The editor region's width. */
+async function workWidth(): Promise<number> {
+  return browser.execute(
+    () => document.querySelector(".region-centre")?.getBoundingClientRect().width ?? 0,
+  );
+}
+
+/** Focus mode's key, from the page, until the window is `want`. */
+async function focusModeTo(want: boolean): Promise<void> {
+  await browser.execute(() => {
+    const on = document.activeElement;
+    if (on instanceof HTMLElement) on.blur();
+  });
+  await browser.execute((mac: boolean) => {
+    (document.activeElement ?? document.body).dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Enter",
+        code: "Enter",
+        shiftKey: true,
+        metaKey: mac,
+        ctrlKey: !mac,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  }, MAC);
+  await browser.waitUntil(async () => (await inFocusMode()) === want, {
+    timeout: 10_000,
+    timeoutMsg: `${MAC ? "⌘⇧↩" : "Ctrl+Shift+Enter"} did not turn focus mode ${want ? "on" : "off"}`,
+  });
+}
+
+/** The first pane's terminal: marked, so the same element can be found again; and its text. */
+async function terminalNow(): Promise<{ marked: boolean; text: string }> {
+  return browser.execute(() => {
+    const rows = document.querySelector<HTMLElement>('[data-testid="pane"] .xterm-rows');
+    if (rows === null) return { marked: false, text: "" };
+    const marked = rows.dataset.focusModeProbe === "kept";
+    rows.dataset.focusModeProbe = "kept";
+    return { marked, text: rows.textContent ?? "" };
+  });
+}
+
+describe("focus mode", function () {
+  this.timeout(180_000);
+
+  before(async () => {
+    await browser.$(FRAME).waitForExist({ timeout: 30_000 });
+    await browser.waitUntil(
+      async () => {
+        const panes = await $$('[data-testid="pane"]').getElements();
+        if (panes.length === 0) return false;
+        return (await panes[0].$(".xterm-rows").getText()).includes(READY);
+      },
+      { timeout: 60_000, interval: 250, timeoutMsg: `no pane showed ${READY}` },
+    );
+    if (await inFocusMode()) await focusModeTo(false);
+  });
+
+  after(async () => {
+    if (await inFocusMode()) await focusModeTo(false);
+  });
+
+  it("hides the rail, the bars and the panels, and brings each back at its size", async () => {
+    const before = await boxes();
+    const widthBefore = await workWidth();
+    const terminal = await terminalNow();
+    expect(terminal.text).toContain(READY);
+
+    await focusModeTo(true);
+    const hidden = await boxes();
+    for (const name of Object.keys(HIDDEN) as (keyof typeof HIDDEN)[])
+      expect({ [name]: hidden[name] }).toEqual({ [name]: null });
+    // The work has the room they left.
+    expect(await workWidth()).toBeGreaterThan(widthBefore);
+    // The terminal is the same element, still showing what it showed: wider, its lines may wrap
+    // differently, so its words are compared once it is back at its width.
+    const during = await terminalNow();
+    expect(during.marked).toBe(true);
+    expect(during.text).toContain(READY);
+
+    await focusModeTo(false);
+    // Each part is back at the size it had: nothing was written or resized.
+    await browser.waitUntil(async () => JSON.stringify(await boxes()) === JSON.stringify(before), {
+      timeout: 10_000,
+      timeoutMsg: "the window's parts did not come back at the sizes they had",
+    });
+    expect(Math.abs((await workWidth()) - widthBefore)).toBeLessThanOrEqual(1);
+    await browser.waitUntil(async () => (await terminalNow()).text === terminal.text, {
+      timeout: 10_000,
+      timeoutMsg: "the terminal's text is not what it was before focus mode",
+    });
+    expect((await terminalNow()).marked).toBe(true);
+  });
+});

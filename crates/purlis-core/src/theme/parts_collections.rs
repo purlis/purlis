@@ -68,7 +68,7 @@ pub(super) const LIST: Family = Family {
         },
         Part {
             name: "shortcut",
-            since: 13,
+            since: 18,
             description: "The key that does the same, at its end: a palette row's, a cheat sheet's.",
             properties: &[Prop::Text, Prop::FontSize],
         },
