@@ -44,6 +44,12 @@ export const NoticeWayGuard = createContext<(way: Element) => boolean>(() => tru
  * within {@link SETTLE_MS} of it moving does nothing, and says why. Where each Notice stands is
  * read after every change under `at` and again at the press: one that differs is a move.
  *
+ * **Where a Notice stands is read against the root itself**, never against the Notice's
+ * `offsetParent`: a box drawn with a position of its own (a pane warning's mark, #3142) would make
+ * itself that parent, and then a Notice going or arriving above another would read as no move
+ * at all. The place is the line's top less the root's, with what the boxes between them have
+ * scrolled added back, so scrolling a list is not a move and a layout change is.
+ *
  * `firstDrawn` says whether a Notice's first drawing counts as a move. In the Inbox it does, as
  * an ask's Allow waits on its first drawing. On a pane it does not: a Notice there arrives
  * where the person is already looking, and only a move (one above it going, say) can put a way
@@ -55,7 +61,10 @@ export function useNoticeSettle<T extends HTMLElement>(firstDrawn: "moves" | "st
   const [said, setSaid] = useState<string>();
   const look = useCallback(
     (one: Element) => {
-      const top = (one as HTMLElement).offsetTop ?? 0;
+      const root = at.current;
+      let top = one.getBoundingClientRect().top - (root?.getBoundingClientRect().top ?? 0);
+      for (let el = one.parentElement; el !== null && el !== root; el = el.parentElement)
+        top += el.scrollTop;
       const was = placed.current.get(one);
       if (was === undefined) {
         placed.current.set(one, { top, at: firstDrawn === "moves" ? now() : -Infinity });

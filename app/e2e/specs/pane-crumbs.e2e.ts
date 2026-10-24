@@ -210,7 +210,6 @@ async function lineOf(pane: number) {
     };
     return {
       frame: frames[at].getBoundingClientRect().width,
-      controls: getComputedStyle(line).getPropertyValue("--pane-controls"),
       line: said(line),
       on: [...line.children].map((child) => said(child as HTMLElement)),
       ways: [...line.querySelectorAll<HTMLElement>(".pane-task-ends > *")].map(said),
@@ -220,7 +219,7 @@ async function lineOf(pane: number) {
 
 /**
  * Adds one more control to pane `pane`'s own controls, standing for the ones other tickets add
- * there, and waits until the pane has said the width they now have. Answers how many are drawn.
+ * there, and waits until the header has laid them out. Answers how many are drawn.
  */
 async function oneMoreControl(pane: number): Promise<number> {
   const drawn = await browser.execute((at: number) => {
@@ -255,8 +254,8 @@ async function erase(): Promise<void> {
 
 /**
  * Makes pane `pane`'s own controls what a pane showing a task draws: the two splits, and no
- * close (`PaneDoing`, `task`). Then waits until the pane has said the width they now have
- * (`--pane-controls`), which is what its top line reserves. Answers how many are drawn.
+ * close (`PaneDoing`, `task`). Then waits until the header has laid them out, the line ending
+ * before them. Answers how many are drawn.
  */
 async function asATaskPane(pane: number): Promise<number> {
   const drawn = await browser.execute((at: number) => {
@@ -279,7 +278,8 @@ async function asATaskPane(pane: number): Promise<number> {
   return drawn;
 }
 
-/** Waits until pane `pane`'s frame says the width its controls have now. */
+/** Waits until pane `pane`'s header has laid out the controls it now has: the line ends
+ *  before them, in the header's own row (#3142). */
 async function untilReserved(pane: number): Promise<void> {
   await browser.waitUntil(
     async () =>
@@ -291,11 +291,11 @@ async function untilReserved(pane: number): Promise<void> {
         const controls = frame?.querySelector<HTMLElement>(
           ".pane-head > .pane-actions > .pane-doing",
         );
-        if (!frame || !controls) return false;
-        const said = Number.parseFloat(frame.style.getPropertyValue("--pane-controls"));
-        return Math.abs(said - controls.offsetWidth) <= 1;
+        const line = frame?.querySelector<HTMLElement>(".pane-head > .pane-chips");
+        if (!frame || !controls || !line) return false;
+        return line.getBoundingClientRect().right <= controls.getBoundingClientRect().left + 1;
       }, pane),
-    { timeout: 10_000, interval: 100, timeoutMsg: `pane ${pane} never said its controls' width` },
+    { timeout: 10_000, interval: 100, timeoutMsg: `pane ${pane} never laid out its controls` },
   );
 }
 
@@ -329,10 +329,6 @@ async function measured(pane: number) {
         .filter((one) => one !== crumbs)
         .map((one) => ({ what: one.className, box: box(one) })),
       controls: box(frame?.querySelector(".pane-head > .pane-actions > .pane-doing")),
-      // The width the pane says its controls have, which its top line reserves.
-      reserved: Number.parseFloat(
-        (frame as HTMLElement | undefined)?.style.getPropertyValue("--pane-controls") ?? "",
-      ),
       crumbs: box(crumbs),
       // Brief, beside the breadcrumb, and how wide it would be with all the room it wants.
       brief: box(brief),
@@ -369,7 +365,6 @@ function roomOf(seen: Awaited<ReturnType<typeof measured>>): string {
     state: span(seen.state as Box | null),
     where: w(seen.where as Box | null),
     names: seen.names.map((one) => w(one.box)),
-    reserved: seen.reserved,
     rem: seen.rem,
     others: seen.others.map((one) => [one.what, w(one.box)]),
   });
@@ -584,15 +579,9 @@ describe("a pane's breadcrumb, while its tab shows a task", () => {
           "is",
           false,
         );
-      // The pane's controls are there, and the room the line keeps is their width.
+      // The pane's controls are there, and the line ends before them, in the header's row.
       check("the pane draws no controls", seen.controls !== null, "is", true);
       if (seen.controls !== null) {
-        check(
-          "the line reserves less than the controls' width",
-          seen.reserved,
-          "atLeast",
-          seen.controls.width - 1,
-        );
         check(
           "the line ends under the controls",
           (seen.line as Box).right,

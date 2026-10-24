@@ -290,12 +290,16 @@ pane's actions at its end (`PaneActions`, the one cluster of split side by side,
 close, which a view's pane draws too, #3147); then the terminal, pinned to its bottom so a warning
 coming or going moves its top and never its last line. In the band each Notice is a washed card
 (`wash.warning`, `danger.wash` for trouble, no edge), its words above its ways out, a consent's
-Allow set apart from Keep blocked. Esc on a warning with a Dismiss puts it away, and the keyboard
-goes on to the next warning or to the terminal; a consent has no Dismiss and Esc leaves it. In the row they are stacked in `.pane-notices`, in the
+Allow set apart from Keep blocked and the only answer with an edge. The band is a `region`, "Warnings
+for this pane"; a card never shrinks in it, so past its room the cards scroll inside it whole. Esc
+on a warning with a Dismiss puts it away, and the keyboard goes on to the next warning or to the
+terminal, never onto an Allow: a consent is landed on by its line. A consent has no Dismiss and
+Esc leaves it. The press-settle guard (#1695) reads where each line is drawn against the band
+itself, scrolling aside, never its `offsetTop`, which a card positioned for its mark would pin. In the row they are stacked in `.pane-notices`, in the
 order the pane writes them: the shown chat's own, the one that waits for an answer before
 anything starts first, then each hidden chat's. **At most two stand, and the rest are behind
-"+N more"**, on a row of its own under them with its width reserved (it says Show fewer while
-open); it opens the rest in the band, closing on Escape (back on "+N more") or a press outside it.
+"+N more"**, on a row of its own under them, as wide as the longer of "+N more" and the Show
+fewer it says while open (both are drawn in one cell, the one not said hidden); it opens the rest in the band, closing on Escape (back on "+N more") or a press outside it.
 A Notice past two is `hidden` where it is drawn, never moved, so it keeps its state, and one the
 keyboard is on stays until the focus leaves it. The band and the header are never more than
 about half the pane, and inside it the stack is never wider or taller than the pane: the sentence has the row,

@@ -59,6 +59,7 @@ async function untilShows(index: number, text: string): Promise<void> {
 /** Draws a warning into pane `pane`'s band, as `Notice at="pane"` draws one, and waits until
  *  the band is drawn. */
 async function raise(pane: number, sentence: string, ways: string[]): Promise<void> {
+  const rowsBefore = (await measured(pane)).rowCount;
   const drawn = await browser.execute(
     (at: number, says: string, answers: string[]) => {
       const frames = [...document.querySelectorAll(".pane-frame")].filter((frame) =>
@@ -115,6 +116,8 @@ async function raise(pane: number, sentence: string, ways: string[]): Promise<vo
       }, pane),
     { timeout: 10_000, interval: 50, timeoutMsg: `pane ${pane} never drew its band` },
   );
+  // The terminal is fitted to the room the band left before anything is measured.
+  await untilRefitted(pane, rowsBefore);
 }
 
 async function lower(): Promise<void> {
@@ -150,6 +153,8 @@ async function measured(pane: number) {
       head: box(frame?.querySelector(".pane-head")),
       chips: [...(frame?.querySelectorAll(".pane-head > .pane-chips > *") ?? [])].map(box),
       screen: box(frame?.querySelector(".xterm-screen")),
+      // What the terminal draws on: its pane, which clips the grid until it is fitted.
+      terminal: box(frame?.querySelector('[data-testid="pane"]')),
       lastRow: box(rows?.lastElementChild),
       rowCount: rows?.children.length ?? 0,
       tab: box(tab),
@@ -181,9 +186,10 @@ function inside(inner: Box | null, outer: Box | null, what: string) {
   );
 }
 
-/** Nothing of the band or the header is drawn over the terminal's grid (rule 3). */
+/** Nothing of the band or the header is drawn over the terminal (rule 3): the box the terminal
+ *  draws in, which clips its grid while a refit is on its way. */
 function offTheTerminal(seen: Awaited<ReturnType<typeof measured>>) {
-  const screen = seen.screen as Box;
+  const screen = seen.terminal as Box;
   check("the band runs onto the terminal", (seen.band?.bottom ?? 0) <= screen.top + 1, seen);
   check("the header runs onto the terminal", (seen.head as Box).bottom <= screen.top + 1, seen);
   for (const chip of seen.chips)

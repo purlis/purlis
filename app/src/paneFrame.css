@@ -48,7 +48,8 @@
    --------------------------------------------------------------------------------------------- */
 
 /* **On the pane's own fill, with no ground, edge or line of its own.** Its top padding is the
-   runway: the top 8px of a pane is the terminal's fill, warning or none (rule 2). */
+   runway: the top 8px of a pane is the terminal's fill, warning or none (rule 2). A step at its
+   foot keeps "+N more" a whole target apart from the header's first chip. */
 .pane-top > :is(.pane-notice-row, [data-scope="notice-row"][data-part="root"]) {
   flex: 0 1 auto;
   flex-direction: column;
@@ -56,7 +57,7 @@
   gap: var(--space-2);
   min-block-size: 0;
   max-block-size: none;
-  padding: var(--space-4) var(--space-4) 0;
+  padding: var(--space-4) var(--space-4) var(--space-2);
   border: 0;
   background-color: transparent;
 }
@@ -74,15 +75,27 @@
   overflow-y: auto;
 }
 
-/* **"+N more" on a row of its own, at its start, its width reserved** (rule 5) for the longest
-   thing it says, so "+1 more", "+12 more" and "Show fewer" move nothing beside it. */
+/* **"+N more" on a row of its own, at its start, its width reserved** (rule 5) for the longer
+   of what it says: both are drawn in one cell, the one not said hidden (`NoticePaneRow`), so
+   "+1 more", "+12 more" and "Show fewer" move nothing beside it. */
 .pane-top
   > :is(.pane-notice-row, [data-scope="notice-row"][data-part="root"])
   > :is(.notice-more-pane, [data-way="more"]) {
   align-self: flex-start;
-  min-inline-size: 11ch;
-  justify-content: flex-start;
   font-variant-numeric: tabular-nums;
+}
+
+.notice-more-says {
+  display: inline-grid;
+  justify-items: start;
+}
+
+.notice-more-says > * {
+  grid-area: 1 / 1;
+}
+
+.notice-more-says > [data-off] {
+  visibility: hidden;
 }
 
 /* ---------------------------------------------------------------------------------------------
@@ -107,6 +120,16 @@
   font-size: var(--font-size-sm);
   line-height: var(--line-height-body);
   overflow-wrap: anywhere;
+}
+
+/* **A warning never shrinks in the band** (rule 6): past the band's room the stack scrolls,
+   whole warnings in it, rather than a warning cutting off its own ways out. */
+.pane-top
+  > :is(.pane-notice-row, [data-scope="notice-row"][data-part="root"])
+  > :is(.pane-notices, [data-scope="notice-row"][data-part="stack"])
+  > :is(.notice-pane-box, [data-scope="notice"][data-part="root"]) {
+  flex: none;
+  min-block-size: auto;
 }
 
 .pane-top
@@ -197,6 +220,24 @@
   margin-inline-start: var(--space-6);
 }
 
+/* **Its plain ways out are drawn without an edge**, as the prototype draws them; an answer that
+   grants keeps the edge the button family gives it, its consent mark (ADR 0097 §6). */
+.pane-top
+  :is(.notice-pane-box, [data-scope="notice"][data-placement="pane"])
+  > [role="status"]
+  > [data-variant="secondary"] {
+  border-color: transparent;
+}
+
+/* **Its detail in the quiet tier** (rule 10): the line a warning says under its words, such as
+   the error an MCP server gave. */
+.pane-top
+  :is(.notice-pane-box, [data-scope="notice"][data-placement="pane"])
+  > :is(.notice-under-pane, [data-scope="notice"][data-part="under"])
+  > p.ui-text-secondary {
+  color: var(--text-quiet);
+}
+
 /* ---------------------------------------------------------------------------------------------
    The header.
    --------------------------------------------------------------------------------------------- */
@@ -214,7 +255,7 @@
   padding-inline: var(--space-5) var(--space-3);
 }
 
-.pane-top > :is(.pane-notice-row-empty, [data-empty]) + .pane-head {
+.pane-top > :is(.pane-notice-row-empty, [data-scope="notice-row"][data-empty]) + .pane-head {
   margin-block-start: var(--space-2);
 }
 
@@ -241,7 +282,6 @@
 
 .pane-head > .pane-chips > .pane-harness {
   border-radius: var(--radius-md);
-  color: var(--text-quiet);
 }
 
 .pane-head > .pane-chips > .pane-harness:hover {

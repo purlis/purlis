@@ -14,11 +14,13 @@
  * harness's last lines in the terminal's own colours: what is held here is everything around it.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { Fragment, useState } from "react";
+import { Fragment, useState, type ReactNode } from "react";
 import { expect, waitFor, within } from "storybook/test";
-import { Columns2, Rows2, Sparkles, X } from "lucide-react";
+import { Sparkles, X } from "lucide-react";
 import { Notice, NoticePaneRow } from "../../Notice";
-import { PaneHead } from "../../LayoutPanes";
+import { NOTICE_MOVED_JUST_NOW } from "../../noticeSettle";
+import { PaneActions, PaneHead } from "../../LayoutPanes";
+import type { Offer } from "../../actions";
 import { ChatMark } from "../../NeedsYou";
 import { useTabIds, StripTablist } from "../../StripTablist";
 import { Button } from "../button/Button";
@@ -27,7 +29,41 @@ import { TabCell, tabPart, tabsPart } from "./Tabs";
 import { expectFocusInSight } from "../../stories.testkit";
 
 /** One warning the band can hold, as `ChatNotices` draws it. */
-type Warning = "skills-missing" | "mcp-failed" | "stale-clone" | "vault-refused" | "sandbox-long";
+type Warning =
+  | "skills-missing"
+  | "mcp-failed"
+  | "stale-clone"
+  | "vault-refused"
+  | "sandbox-long"
+  | "sandbox-ask";
+
+/** The pane's own rows of the catalogue, as the window's catalogue offers them for a chat. */
+const OFFERS: Record<string, Offer> = {
+  "pane.split.right": {
+    id: "pane.split.right",
+    title: "Split right",
+    available: true,
+    reason: "",
+    does: { verb: "split", direction: "row" },
+  },
+  "pane.split.down": {
+    id: "pane.split.down",
+    title: "Split down",
+    available: true,
+    reason: "",
+    does: { verb: "split", direction: "column" },
+  },
+  "pane.close": {
+    id: "pane.close",
+    title: "End this pane's chat",
+    available: true,
+    reason: "",
+    does: { verb: "closePane", ends: true },
+  },
+};
+
+/** The Allows pressed in a story that did something: a press the guard held adds nothing. */
+const allowed: string[] = [];
 
 /** The harness's last lines, as a terminal draws them under the header. */
 const LAST_LINES = [
@@ -49,78 +85,102 @@ const LAST_LINES = [
 function Warnings({ shown }: { shown: readonly Warning[] }) {
   const [away, setAway] = useState<readonly Warning[]>([]);
   const off = (one: Warning) => () => setAway((was) => [...was, one]);
-  const here = (one: Warning) => shown.includes(one) && !away.includes(one);
+  // Drawn in the order given: the band's order is the pane's.
+  const drawn: Record<Warning, ReactNode> = {
+    "vault-refused": (
+      <Notice
+        cause="vault-refused:2:forge"
+        at="pane"
+        tone="trouble"
+        label="Vault"
+        fixes={[
+          { label: "Allow steward to use this vault", onPress: () => undefined, allows: true },
+          { label: "Keep blocked", onPress: off("vault-refused") },
+        ]}
+      >
+        This chat runs as steward, and vault <code>forge</code> is tagged for devops, so purlis did
+        not open it.
+      </Notice>
+    ),
+    "sandbox-ask": (
+      <Notice
+        cause="sandbox-blocked:2:network:connect:chat"
+        at="pane"
+        tone="trouble"
+        label="Sandbox block"
+        fixes={[
+          {
+            label: "Allow registry.npmjs.org",
+            onPress: () => allowed.push("registry.npmjs.org"),
+            allows: true,
+          },
+          { label: "Keep blocked", onPress: off("sandbox-ask") },
+        ]}
+      >
+        The chat&apos;s command is waiting on <code>registry.npmjs.org:443</code>.
+      </Notice>
+    ),
+    "sandbox-long": (
+      <Notice
+        cause="sandbox-blocked:2:npm"
+        at="pane"
+        tone="trouble"
+        label="Sandbox block"
+        fixes={[{ label: "Show what you can do", onPress: () => undefined }]}
+        onDismiss={off("sandbox-long")}
+      >
+        The sandbox refused 4 connections while <code>npm ci --prefer-offline --no-audit</code> ran
+        in{" "}
+        <code>
+          /Users/aharon/Projects/purlis-plane/workspaces/smart-ide/clones/purlis/app/node_modules/.cache/purlis-e2e-fixtures/
+        </code>
+        : <code>registry.npmjs.org:443</code>, <code>objects.githubusercontent.com:443</code>,{" "}
+        <code>codeload.github.com:443</code> and <code>nodejs.org:443</code>.
+      </Notice>
+    ),
+    "skills-missing": (
+      <Notice
+        cause="skills-missing:2"
+        at="pane"
+        label="Skills missing"
+        fixes={[{ label: "Open in Skill studio", onPress: () => undefined }]}
+        onDismiss={off("skills-missing")}
+      >
+        This chat started without 1 skill steward names, not installed on this machine:{" "}
+        <code>mattpocock-skills:grilling</code>.
+      </Notice>
+    ),
+    "mcp-failed": (
+      <Notice
+        cause="mcp-failed:2:figma"
+        at="pane"
+        tone="trouble"
+        label="MCP server"
+        fixes={[{ label: "Retry", onPress: () => undefined }]}
+        onDismiss={off("mcp-failed")}
+      >
+        MCP server <code>figma</code> did not start for steward.
+      </Notice>
+    ),
+    "stale-clone": (
+      <Notice
+        cause="stale-clone:2"
+        at="pane"
+        label="Stale clone"
+        fixes={[{ label: "Update the clone", onPress: () => undefined }]}
+        onDismiss={off("stale-clone")}
+      >
+        This chat&apos;s clone of <code>purlis/purlis</code> is 14 commits behind <code>main</code>.
+      </Notice>
+    ),
+  };
   return (
     <>
-      {here("vault-refused") && (
-        <Notice
-          cause="vault-refused:2:forge"
-          at="pane"
-          tone="trouble"
-          label="Vault"
-          fixes={[
-            { label: "Allow steward to use this vault", onPress: () => undefined, allows: true },
-            { label: "Keep blocked", onPress: off("vault-refused") },
-          ]}
-        >
-          This chat runs as steward, and vault <code>forge</code> is tagged for devops, so purlis
-          did not open it.
-        </Notice>
-      )}
-      {here("sandbox-long") && (
-        <Notice
-          cause="sandbox-blocked:2:npm"
-          at="pane"
-          tone="trouble"
-          label="Sandbox block"
-          fixes={[{ label: "Show what you can do", onPress: () => undefined }]}
-          onDismiss={off("sandbox-long")}
-        >
-          The sandbox refused 4 connections while <code>npm ci --prefer-offline --no-audit</code>{" "}
-          ran in{" "}
-          <code>
-            /Users/aharon/Projects/purlis-plane/workspaces/smart-ide/clones/purlis/app/node_modules/.cache/purlis-e2e-fixtures/
-          </code>
-          : <code>registry.npmjs.org:443</code>, <code>objects.githubusercontent.com:443</code>,{" "}
-          <code>codeload.github.com:443</code> and <code>nodejs.org:443</code>.
-        </Notice>
-      )}
-      {here("skills-missing") && (
-        <Notice
-          cause="skills-missing:2"
-          at="pane"
-          label="Skills missing"
-          fixes={[{ label: "Open in Skill studio", onPress: () => undefined }]}
-          onDismiss={off("skills-missing")}
-        >
-          This chat started without 1 skill steward names, not installed on this machine:{" "}
-          <code>mattpocock-skills:grilling</code>.
-        </Notice>
-      )}
-      {here("mcp-failed") && (
-        <Notice
-          cause="mcp-failed:2:figma"
-          at="pane"
-          tone="trouble"
-          label="MCP server"
-          fixes={[{ label: "Retry", onPress: () => undefined }]}
-          onDismiss={off("mcp-failed")}
-        >
-          MCP server <code>figma</code> did not start for steward.
-        </Notice>
-      )}
-      {here("stale-clone") && (
-        <Notice
-          cause="stale-clone:2"
-          at="pane"
-          label="Stale clone"
-          fixes={[{ label: "Update the clone", onPress: () => undefined }]}
-          onDismiss={off("stale-clone")}
-        >
-          This chat&apos;s clone of <code>purlis/purlis</code> is 14 commits behind{" "}
-          <code>main</code>.
-        </Notice>
-      )}
+      {shown
+        .filter((one) => !away.includes(one))
+        .map((one) => (
+          <Fragment key={one}>{drawn[one]}</Fragment>
+        ))}
     </>
   );
 }
@@ -147,19 +207,12 @@ function Pane({
         </NoticePaneRow>
         <PaneHead
           doing={
-            <div className="pane-actions">
-              <div className="pane-doing">
-                {[
-                  { label: "Split right", icon: <Columns2 aria-hidden="true" /> },
-                  { label: "Split down", icon: <Rows2 aria-hidden="true" /> },
-                  { label: "End this pane's chat", icon: <X aria-hidden="true" /> },
-                ].map((one) => (
-                  <button key={one.label} type="button" tabIndex={0} aria-label={one.label}>
-                    {one.icon}
-                  </button>
-                ))}
-              </div>
-            </div>
+            <PaneActions
+              pane={0}
+              offerFor={(id) => OFFERS[id]}
+              closeOf={() => OFFERS["pane.close"]}
+              onPaneDoes={() => undefined}
+            />
           }
         >
           <div className="pane-chips">
@@ -316,7 +369,9 @@ async function heldInThePane(canvas: HTMLElement, name = "steward 2") {
     const at = boxOf(warning);
     expect(at.top).toBeGreaterThanOrEqual(pane.top + 6);
     expect(at.right).toBeLessThanOrEqual(pane.right + 1);
-    expect(at.bottom).toBeLessThanOrEqual(boxOf(head).top + 1);
+    // As far as the band shows it: past the band's room the warnings scroll inside it.
+    const stack = boxOf(warning.parentElement);
+    expect(Math.min(at.bottom, stack.bottom)).toBeLessThanOrEqual(boxOf(head).top + 1);
   }
   if (warnings.length > 0) expect(boxOf(band).bottom).toBeLessThanOrEqual(boxOf(head).top + 1);
   expect(boxOf(head).bottom).toBeLessThanOrEqual(boxOf(terminal).top + 1);
@@ -376,10 +431,10 @@ export const ConsentAndMore: Story = {
     const more = canvas.getByRole("button", { name: "+1 more" });
     const width = boxOf(more).width;
     await userEvent.click(more);
-    await waitFor(() => expect(more).toHaveTextContent("Show fewer"));
+    await waitFor(() => expect(more).toHaveAccessibleName("Show fewer"));
     expect(boxOf(more).width).toBeCloseTo(width, 0);
     await userEvent.click(more);
-    await waitFor(() => expect(more).toHaveTextContent("+1 more"));
+    await waitFor(() => expect(more).toHaveAccessibleName("+1 more"));
     atRest();
   },
 };
@@ -400,6 +455,54 @@ export const PutAway: Story = {
     await waitFor(() => expect(canvas.getByLabelText("Terminal of steward 2")).toHaveFocus());
     expect(canvas.queryAllByRole("status")).toHaveLength(0);
     atRest();
+  },
+};
+
+/**
+ * **A consent that moved holds its Allow** (#1693, #1695): the warning above it is put away, the
+ * consent moves up under the pointer, and a press on its Allow at once does nothing and says
+ * why. The keyboard is landed on the consent's line, never on its Allow. Measured in the real
+ * engine, where the warning's box is positioned for its mark: the guard reads where the line
+ * is drawn against the band, not its `offsetTop`.
+ */
+export const ConsentMoved: Story = {
+  args: { warnings: ["skills-missing", "sandbox-ask"] },
+  play: async ({ canvas, userEvent }) => {
+    allowed.length = 0;
+    const open = await canvas.findByRole("button", { name: "Open in Skill studio" });
+    open.focus();
+    await userEvent.keyboard("{Escape}");
+    const ask = await canvas.findByRole("status", { name: "Sandbox block" });
+    await waitFor(() => expect(ask).toHaveFocus());
+
+    await userEvent.click(within(ask).getByRole("button", { name: "Allow registry.npmjs.org" }));
+    expect(allowed).toEqual([]);
+    expect(await canvas.findByText(NOTICE_MOVED_JUST_NOW)).toBeVisible();
+    atRest();
+  },
+};
+
+/**
+ * **The pane's actions** (`PaneActions`, shared with a view's pane, #3147): split side by side,
+ * split stacked and close, one cluster at the pane's top right, drawn by the catalogue's own
+ * rows. Hidden at rest in the pane with the keyboard, drawn once the keyboard is on them.
+ */
+export const Actions: Story = {
+  args: { warnings: [] },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const split = canvas.getByRole("button", { name: "Split right" });
+    split.focus();
+    await waitFor(() => expect(split).toBeVisible());
+    await userEvent.tab();
+    expect(canvas.getByRole("button", { name: "Split down" })).toHaveFocus();
+    await userEvent.tab();
+    expect(canvas.getByRole("button", { name: "End this pane's chat" })).toHaveFocus();
+    expectFocusInSight();
+    // At the pane's top right, in the header's row.
+    const { frame, head } = rowsOf(canvasElement);
+    const actions = boxOf(head?.querySelector(".pane-actions"));
+    expect(boxOf(frame).right - actions.right).toBeLessThanOrEqual(16);
+    expect(actions.top - boxOf(frame).top).toBeLessThanOrEqual(16);
   },
 };
 
@@ -431,10 +534,16 @@ export const Narrow: Story = {
     await heldInThePane(canvasElement);
     const pane = boxOf(rowsOf(canvasElement).frame);
     const words = boxOf(block.firstElementChild);
+    const stack = block.parentElement?.parentElement as HTMLElement;
     for (const way of within(block).getAllByRole("button")) {
       expect(boxOf(way).top).toBeGreaterThanOrEqual(words.bottom - 1);
       expect(boxOf(way).right).toBeLessThanOrEqual(pane.right + 1);
+      // Whole, once the band is scrolled to it: never cut by its own warning (rule 6).
+      way.scrollIntoView({ block: "nearest" });
+      expect(boxOf(way).bottom).toBeLessThanOrEqual(boxOf(stack).bottom + 1);
+      expect(boxOf(way).top).toBeGreaterThanOrEqual(boxOf(stack).top - 1);
     }
+    stack.scrollTop = 0;
     expect(boxOf(block.parentElement).right).toBeLessThanOrEqual(pane.right + 1);
   },
 };

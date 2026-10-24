@@ -883,27 +883,8 @@ export function PaneDoing({
     "pane.split.down",
     ...(task && !minimise ? [] : ["pane.close"]),
   ];
-  // **The pane's top line ends before these controls, whatever their number** (#1486): their
-  // width is measured and said to the pane's frame (`--pane-controls`, `App.css`), so the line
-  // reserves the room the controls drawn here take, not a count somebody remembered.
-  const at = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    const controls = at.current;
-    const frame = controls?.closest<HTMLElement>(".pane-frame");
-    if (!controls || !frame) return;
-    const say = () => {
-      const width = controls.offsetWidth;
-      // Nothing is laid out (a test's document): the stylesheet's own figure stands.
-      if (width > 0) frame.style.setProperty("--pane-controls", `${width}px`);
-    };
-    say();
-    if (typeof ResizeObserver === "undefined") return;
-    const watching = new ResizeObserver(say);
-    watching.observe(controls);
-    return () => watching.disconnect();
-  }, [rows.length]);
   return (
-    <div className="pane-doing" ref={at}>
+    <div className="pane-doing">
       {rows.map((id) => {
         const offer = id === "pane.close" ? closeOf(pane) : offerFor(id);
         if (!offer) return null;

@@ -570,6 +570,14 @@ export function NoticePaneRow({ children }: { children: ReactNode }) {
       if (on !== null && on !== document.body) return;
       const left = shown();
       const next = left[Math.min(at, left.length - 1)];
+      // **Never onto an answer that grants** (ADR 0097 §6): a consent is landed on by its line,
+      // as "Show the request" lands on it, so an Enter after a Dismiss allows nothing.
+      const line = next?.querySelector<HTMLElement>(':scope > [role="status"]');
+      if (line && next?.querySelector('[data-variant="grants"]')) {
+        if (!line.hasAttribute("tabindex")) line.tabIndex = -1;
+        line.focus();
+        return;
+      }
       const to =
         next?.querySelector<HTMLElement>("button:not([disabled])") ??
         row.closest(".pane-frame")?.querySelector<HTMLElement>(".xterm-helper-textarea");
@@ -624,6 +632,9 @@ export function NoticePaneRow({ children }: { children: ReactNode }) {
   return (
     <div
       className={count === 0 ? "pane-notice-row pane-notice-row-empty" : "pane-notice-row"}
+      // The pane's warnings, named as one place (#3142), while it has any.
+      role={count === 0 ? undefined : "region"}
+      aria-label={count === 0 ? undefined : "Warnings for this pane"}
       ref={rowAt}
     >
       <div className="pane-notices" ref={stackAt}>
@@ -642,8 +653,16 @@ export function NoticePaneRow({ children }: { children: ReactNode }) {
           onPress={() => setOpen((was) => !was)}
           className="notice-more-pane"
         >
-          {/* Open, it says how to close it again (#3142); its width is reserved for either. */}
-          {open ? "Show fewer" : `+${behind} more`}
+          {/* Open, it says how to close it again (#3142). Both are drawn in one cell, the one
+              not said hidden, so the button is as wide as the longer whichever it says. */}
+          <span className="notice-more-says">
+            <span aria-hidden={open || undefined} data-off={open || undefined}>
+              +{behind} more
+            </span>
+            <span aria-hidden={!open || undefined} data-off={!open || undefined}>
+              Show fewer
+            </span>
+          </span>
         </Button>
       )}
     </div>

@@ -309,6 +309,8 @@ async function measured(pane: number) {
       more: box(frame?.querySelector(".pane-notice-row > .notice-more-pane")),
       moreSays: frame?.querySelector(".pane-notice-row > .notice-more-pane")?.textContent ?? null,
       stack: box(stack),
+      // The stack's width inside its scrollbar, which a card takes whole.
+      stackInside: stack ? stack.clientWidth : 0,
       stackScrolls: stack ? stack.scrollHeight > stack.clientHeight + 1 : false,
       notices,
     };
@@ -896,7 +898,6 @@ describe("a Notice in a pane", () => {
 
     const seen = await measured(0);
     const frame = seen.frame as Box;
-    const stack = seen.stack as Box;
     const [oneLine, long] = seen.notices;
 
     // Variant A: the words on their own row, every way out under them, side by side while
@@ -909,11 +910,11 @@ describe("a Notice in a pane", () => {
       expect(at.height).toBeLessThanOrEqual(button.line * 1.5 + button.chrome + 4);
     }
     expect(says.height).toBeLessThanOrEqual(oneLine.buttons[0].line * 1.5);
-    expect(Math.abs((oneLine.box as Box).width - stack.width)).toBeLessThanOrEqual(1);
+    expect(Math.abs((oneLine.box as Box).width - seen.stackInside)).toBeLessThanOrEqual(1);
 
     // The long one: inside the pane, the band's width, and what a way out opened under its line.
     inside(long.box, frame, "the long Notice in its pane");
-    expect(Math.abs((long.box as Box).width - stack.width)).toBeLessThanOrEqual(1);
+    expect(Math.abs((long.box as Box).width - seen.stackInside)).toBeLessThanOrEqual(1);
     expect((long.under as Box).top).toBeGreaterThanOrEqual((long.line as Box).bottom - 1);
     expect((long.under as Box).right).toBeLessThanOrEqual((long.box as Box).right + 1);
     for (const neighbour of seen.neighbours)

@@ -49,24 +49,34 @@ function Pane({ children }: { children: ReactNode }) {
 }
 
 /** Warnings a person can put away, as `ChatNotices` draws them, each gone once dismissed. */
-function Warnings({ causes, consent = false }: { causes: string[]; consent?: boolean }) {
+function Warnings({
+  causes,
+  consent = false,
+  consentLast = false,
+}: {
+  causes: string[];
+  consent?: boolean;
+  /** The consent under the others, as a refusal that arrived after them. */
+  consentLast?: boolean;
+}) {
   const [left, setLeft] = useState(causes);
+  const vault = consent && (
+    <Notice
+      cause="vault-refused:7:forge"
+      at="pane"
+      tone="trouble"
+      label="Vault"
+      fixes={[
+        { label: "Allow steward to use this vault", onPress: () => undefined, allows: true },
+        { label: "Keep blocked", onPress: () => undefined },
+      ]}
+    >
+      This chat runs as steward, and vault forge is tagged for devops.
+    </Notice>
+  );
   return (
     <Pane>
-      {consent && (
-        <Notice
-          cause="vault-refused:7:forge"
-          at="pane"
-          tone="trouble"
-          label="Vault"
-          fixes={[
-            { label: "Allow steward to use this vault", onPress: () => undefined, allows: true },
-            { label: "Keep blocked", onPress: () => undefined },
-          ]}
-        >
-          This chat runs as steward, and vault forge is tagged for devops.
-        </Notice>
-      )}
+      {!consentLast && vault}
       {left.map((cause) => (
         <Notice
           key={cause}
@@ -79,6 +89,7 @@ function Warnings({ causes, consent = false }: { causes: string[]; consent?: boo
           {cause} says something.
         </Notice>
       ))}
+      {consentLast && vault}
     </Pane>
   );
 }
@@ -160,18 +171,35 @@ describe("the band's keyboard", () => {
     expect(field).toHaveFocus();
   });
 
+  it("never lands the keyboard on an Allow: a consent next is landed on by its line", async () => {
+    const user = userEvent.setup();
+    render(<Warnings causes={["first"]} consent consentLast />);
+    await waitFor(() => expect(shown()).toEqual(["first", "Vault"]));
+
+    screen.getByRole("button", { name: "Fix first" }).focus();
+    await user.keyboard("{Escape}");
+
+    await waitFor(() => expect(shown()).toEqual(["Vault"]));
+    await waitFor(() => expect(screen.getByRole("status", { name: "Vault" })).toHaveFocus());
+  });
+
+  it("names the band as the pane's warnings while it has any", async () => {
+    render(<Warnings causes={["first"]} />);
+    expect(await screen.findByRole("region", { name: "Warnings for this pane" })).toBeTruthy();
+  });
+
   it("says Show fewer while every warning is open, and +N more again once closed", async () => {
     const user = userEvent.setup();
     render(<Warnings causes={["a", "b", "c", "d"]} />);
     const more = await screen.findByRole("button", { name: "+2 more" });
 
     await user.click(more);
-    expect(more).toHaveTextContent("Show fewer");
+    expect(more).toHaveAccessibleName("Show fewer");
     expect(more).toHaveAttribute("aria-expanded", "true");
     expect(shown()).toEqual(["a", "b", "c", "d"]);
 
     await user.click(more);
-    expect(more).toHaveTextContent("+2 more");
+    expect(more).toHaveAccessibleName("+2 more");
     await waitFor(() => expect(shown()).toEqual(["a", "b"]));
   });
 });
@@ -209,6 +237,22 @@ describe("the band, the header and the terminal, in a pane", () => {
     expect(drawnWith(box("first"), "border-radius")).toBe("var(--radius-lg)");
     // A consent is a question, not trouble, though its Notice's tone is trouble.
     expect(drawnWith(box("Vault"), "background-color")).toBe("var(--wash-warning)");
+  });
+
+  it("never shrinks a warning in the band: the stack scrolls instead (rule 6)", async () => {
+    render(<Warnings causes={["first"]} />);
+    await waitFor(() => expect(shown()).toEqual(["first"]));
+    const box = screen.getByRole("status", { name: "first" }).parentElement as HTMLElement;
+    expect(drawnWith(box, "flex")).toBe("none");
+    expect(drawnWith(box.parentElement as Element, "overflow-y")).toBe("auto");
+  });
+
+  it("draws a warning's plain ways out without an edge, and keeps a grant's", async () => {
+    render(<Warnings causes={["first"]} consent />);
+    const keep = await screen.findByRole("button", { name: "Keep blocked" });
+    expect(drawnWith(keep, "border-color")).toBe("transparent");
+    const allow = screen.getByRole("button", { name: "Allow steward to use this vault" });
+    expect(drawnWith(allow, "border-color")).toBe("var(--accent-base)");
   });
 
   it("puts the words above their ways out (variant A)", async () => {
@@ -252,7 +296,10 @@ describe("the pane's rules", () => {
   });
 
   it("reserves +N more's width on a row of its own (rules 5 and 15)", () => {
-    expect(css).toMatch(/:is\(\.notice-more-pane,[^)]*\)\s*\{[^}]*min-inline-size:\s*11ch/);
+    // Both of what it says in one cell, the one not said hidden: as wide as the longer.
+    expect(rule("\\.notice-more-says")).toMatch(/display:\s*inline-grid/);
+    expect(rule("\\.notice-more-says > \\*")).toMatch(/grid-area:\s*1 \/ 1/);
+    expect(rule("\\.notice-more-says > \\[data-off\\]")).toMatch(/visibility:\s*hidden/);
   });
 
   it("keeps the header one row that never gives way", () => {

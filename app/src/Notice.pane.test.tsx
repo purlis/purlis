@@ -487,15 +487,17 @@ describe("Ask {persona}'s rules", () => {
 
 describe("a granting Notice on a pane that just moved (#1695, train 54's review)", () => {
   it("does nothing for a press on its way out until it settles, and says so", async () => {
-    // jsdom lays nothing out: each Notice's box stands at its place among the stack's.
-    const offsetTop = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetTop");
-    Object.defineProperty(HTMLElement.prototype, "offsetTop", {
-      configurable: true,
-      get(this: HTMLElement) {
-        const box = this.closest(".pane-notices > *");
-        return box === null ? 0 : [...(box.parentElement?.children ?? [])].indexOf(box) * 40;
-      },
+    // jsdom lays nothing out: each Notice's box stands at its place among the stack's, and the
+    // row at the top. Its `offsetTop` says nothing, as a positioned box makes it say nothing in
+    // a real engine (#3142): the guard reads where each one is drawn.
+    const rect = vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: Element,
+    ) {
+      const box = this.closest(".pane-notices > *");
+      const top = box === null ? 0 : [...(box.parentElement?.children ?? [])].indexOf(box) * 40;
+      return DOMRect.fromRect({ x: 0, y: top, width: 100, height: 30 });
     });
+    const offset = vi.spyOn(HTMLElement.prototype, "offsetTop", "get").mockReturnValue(4);
     let clock = 1_000_000;
     const now = vi.spyOn(Date, "now").mockImplementation(() => clock);
     try {
@@ -543,7 +545,8 @@ describe("a granting Notice on a pane that just moved (#1695, train 54's review)
       expect(screen.queryByText(NOTICE_MOVED_JUST_NOW)).toBeNull();
     } finally {
       now.mockRestore();
-      if (offsetTop) Object.defineProperty(HTMLElement.prototype, "offsetTop", offsetTop);
+      rect.mockRestore();
+      offset.mockRestore();
     }
   });
 });
