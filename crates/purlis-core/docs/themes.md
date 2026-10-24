@@ -199,9 +199,11 @@ not a token: words with no size of their own (a list row's, a paragraph's) follo
 
 The project strip sits in the title bar, whose height no token reaches yet. **Still square,
 whatever `radius.*` says:** the project and workspace strip tabs, the settings gear on a strip,
-and every tree row. The session tabs and their `×` are rounded through their parts ([Session
-tabs](#session-tabs)), and a list's rows by `radius.control` (the list family, since manifest
-version 11; `radius.md` before #3177). **The focus ring tokens reach every focus ring**, the strip tabs', a tab's `×` closer's and
+and the tree rows still drawn by hand (the Explorer's and the Chats list's). The session tabs and
+their `×` are rounded through their parts ([Session tabs](#session-tabs)), a list's rows by
+`radius.control` (the list family, since manifest version 11; `radius.md` before #3177), and the
+tree family's rows by `radius.control` too (the Changes view's, since the next release's manifest
+version). **The focus ring tokens reach every focus ring**, the strip tabs', a tab's `×` closer's and
 the strip gear's among them; a ring that sits half as far out or in draws half the offset. Under
 forced colours the ring is drawn in the system's `Highlight` at the theme's width and offset:
 forced colours replace colour, not geometry.
@@ -299,6 +301,7 @@ an unknown token is.
 | `menu` (since version 6) | `root` (every property: a menu's row), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`), `shortcut` (`text`, `font-size`), `indicator` (`text`: a toggle's tick, a submenu's arrow) | `default`, `danger` (what cannot be undone) |
 | `dialog` (since version 7) | `root` (`fill`, `border-colour`, `border-width`, `corner-radius`, `shadow`), `title` (`text`, `font-size`, `font-weight`), `subtitle`, `description` and `summary` (`text`), `separator` (`fill`, the rule over the footer) | `dialog`, `alert` |
 | `list` (since version 11) | `root` (every property: a list's row), `body` (`padding`, `gap`: the list around the rows), `lead` and `trail` (`text`, `gap`: a row's marks and its end), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`), `header` (`text`, `font-size`, `font-weight`: a group's name) | none |
+| `tree` (since the next release's manifest version) | `root` (every property but `padding`, which is its indentation: a tree's row), `body` (`padding`, `gap`), `twist` (`text`: the chevron that opens a row's rows, a mark), `lead` and `trail` (`text`, `gap`), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`), `header` (`text`, `font-size`, `font-weight`) | none |
 
 A field is its label, its control (a `text-input` or a `textarea`), its help and its error, as
 one: `field.help.text` reaches a field's help line, `text-input.root.border-width` every one-line
@@ -421,8 +424,8 @@ no edge: `"tooltip.root.corner-radius": 8`, `"tooltip.root.border-width": 0`.
 `indicator`, the mark along a chosen item's edge. Purlis draws the family default; Purlis
 Classic's own `parts` give its square items and accent edge (`activity.indicator.selected.fill`).
 
-The strip tabs, a tab's `×` closer, the gear on a strip and the list and tree rows are not
-families with parts today: they are drawn as the note under [Geometry](#geometry) says.
+The strip tabs, a tab's `×` closer, the gear on a strip and the tree rows still drawn by hand are
+not families with parts today: they are drawn as the note under [Geometry](#geometry) says.
 
 ### Session tabs
 

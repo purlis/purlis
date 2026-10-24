@@ -395,6 +395,11 @@ under a tree's row (`.ui-row.ui-tree-row`), which the tree family takes next.
 
 ### Tree row
 
+**A tree is the tree family's** since #2911: [The tree family](#the-tree-family) below draws the
+Changes view. The trees still drawn by hand (a branch's files, the Explorer's three trees, the
+Chats list) keep the shared tree row below until each moves; `purlis/tree-family` is off for
+those files alone.
+
 ```html
 <ul class="ui-tree" role="tree">
   <li class="ui-row ui-tree-row" role="treeitem" aria-level="1" aria-expanded="true">
@@ -754,6 +759,50 @@ old `.ui-list` class: `eslint.config.js` refuses both (`purlis/list-family`, an 
 - **Stories hold it** (`List.stories.tsx`): a list to choose from under its filter, a list a field aims at, rows that act
   with a row's own button and its menu, a grid of cards, and an empty one, in
   Chromium and WebKit, with axe.
+
+## The tree family
+
+**A tree is the tree family** (`app/src/ui/tree/Tree.tsx`, #2911, ADR 0104 and [its
+amendment](adr/0104/2026-10-25-the-tree-family.md)), on React Aria's `Tree`. No screen says a
+tree's role (`tree`, `treeitem`, `treegrid`), wears the shared tree's old classes (`.ui-tree`,
+`.ui-tree-row`, `.ui-tree-twist`) or its `data-scope`: `eslint.config.js` refuses them
+(`purlis/tree-family`, an error), off by file only for the trees still drawn by hand.
+
+| Member | What it is |
+| --- | --- |
+| `Tree` | **A tree**: rows that may hold rows under them. `expandedKeys` and `onExpandedChange` say which are open (a folder is read when it opens); `selectionMode` lets rows be chosen; `onAction` runs one; `twist` puts the twist before a row's words (`"lead"`, the default, R129) or at its end (`"trail"`, #2799 rule 1); `fixed` is a tree that never folds (the Changes view): every row open, no twist, nothing to press |
+| `TreeRow` | **One row**, with the rows under it as its children: `content` is its slots (the list's `RowLead`, `RowLabel`, `RowDescription`, `RowTrail`, in the tree's scope), `textValue` what typing finds it by **and its name to a reader**, so the whole of what it says; `hasChildItems` for a folder not read yet; `menu` and `tip` as a list's row |
+| `TreeLine` | **A line that is not a row to act on**, in its place among the rows: "Reading…", why a folder could not be read, "12 more not shown". In the quiet tier; the keyboard reads it |
+| `TreeSection` | A group of rows under its name (`header`) |
+
+- **The keys are the WAI-ARIA tree's**: one Tab stop, the row last focused (the tree itself until
+  a row has had the keyboard, which hands it to its first row or its chosen one); ↑ ↓, Home and
+  End; → opens a closed row and moves into an open one's first child; ← closes an open row and
+  moves from a closed one to its parent; typing finds a row; Enter runs it; Shift+F10 or the menu
+  key opens its menu. In a tree that never folds, ← on an open row moves to its parent.
+- **A row is the list's row** (`ui/list/list.css` draws its slots in every collection's scope):
+  the pill under the pointer, the wash and edge when chosen, the ring inside it, the secondary
+  tier at rest. **Each level is a step in** (R129, `space.5` + `space.1`, 14 px at the default
+  text size), drawn at most four deep; each level above draws a guide (`tree.guide`) that reaches
+  into the hairline between rows, so it is one line. Where twists lead, every row stands one step
+  further in, the step a parent's twist hangs in, so a parent and a leaf start their words at one
+  place.
+- **The twist** is a chevron in the faint tier (R156), turned down while open (R43; a transform,
+  no motion, so opening moves nothing). It is React Aria's toggle, "Expand ‹row›" or "Collapse
+  ‹row›", never a Tab stop, and the arrows never land on it.
+- **Sizes**: `sm` (24 px, a side view's), `md` (28, the default), `lg` (32). A tree takes one.
+- **Drawn by its parts** (ADR 0103, [the tree family joins the
+  manifest](adr/0103/2026-10-25-the-tree-family-joins-the-manifest.md)): the tree is
+  `data-scope="tree" data-part="body"` (its `data-twist`), a row the family's root with
+  `data-size`, React Aria's state attributes, `data-level`, `data-expanded` and its depth
+  (`--tree-depth`); its `twist`, its slots and a group's `header`. `ui/tree/tree.css` draws the
+  family default; a theme's `tree.*` parts reach the same attributes, all but a row's padding,
+  which is its indentation.
+- **No virtualizer** until a tree is measured to need one: a folder's entries are capped by the
+  core.
+- **Stories hold it** (`Tree.stories.tsx`): a branch's files with a folder being read, the Changes
+  view's tree that never folds, twists that trail, and an empty tree, in Chromium and WebKit,
+  with axe.
 
 ## The dialog family
 

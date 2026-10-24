@@ -446,6 +446,8 @@ describe("the stylesheet and the vocabulary agree", () => {
    * - `--dialog-height`: the height a dialog of the family is given by its call site
    *   (`ui/dialog/Dialog.tsx`, `height`, #2910), at most the window's less 48 px. It differs from
    *   dialog to dialog.
+   * - `--tree-depth`: how deep a tree's row is, its level less one (`ui/tree/Tree.tsx`, #2911),
+   *   which React Aria knows once it has built the collection. It differs from row to row.
    *
    * Each is here rather than in `TOKENS` because neither is a colour and a theme has no
    * business with either, and neither is in `App.css` because the Rust that decides the number
@@ -453,7 +455,7 @@ describe("the stylesheet and the vocabulary agree", () => {
    * differ. Listed by hand, so that adding one is a decision somebody makes in this file
    * rather than a hole that opens quietly; the test below holds each to being really set.
    */
-  const fromTheWindow = ["--least", "--chip", "--window-controls", "--dialog-height"];
+  const fromTheWindow = ["--least", "--chip", "--window-controls", "--dialog-height", "--tree-depth"];
 
   /**
    * **What Radix measures and sets** on the content of a primitive it positions: a select's list

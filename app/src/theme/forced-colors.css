@@ -45,14 +45,16 @@
   [data-scope="menu"][data-part="root"][data-focused]:not([data-disabled]),
   [data-scope="menu"][data-part="root"][data-hovered]:not([data-disabled]),
   [data-scope="menu"][data-part="root"][data-open],
-  [data-scope="list"][data-part="root"][data-selected] {
+  [data-scope="list"][data-part="root"][data-selected],
+  [data-scope="tree"][data-part="root"][data-selected] {
     forced-color-adjust: none;
     color: SelectedItemText;
     background-color: SelectedItem;
   }
 
-  /* A chosen row of a list keeps its edge down its start: its shape (#2911). */
-  [data-scope="list"][data-part="root"][data-selected] {
+  /* A chosen row of a list or a tree keeps its edge down its start: its shape (#2911). */
+  [data-scope="list"][data-part="root"][data-selected],
+  [data-scope="tree"][data-part="root"][data-selected] {
     box-shadow: inset 2px 0 0 SelectedItemText;
   }
 
@@ -77,7 +79,8 @@
   .ui-menu-item[data-disabled],
   [data-scope="menu"][data-part="root"][data-disabled],
   [data-scope="menu"][data-part="root"][data-unavailable],
-  [data-scope="list"][data-part="root"][data-disabled] {
+  [data-scope="list"][data-part="root"][data-disabled],
+  [data-scope="tree"][data-part="root"][data-disabled] {
     color: GrayText;
   }
 

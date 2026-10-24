@@ -60,6 +60,11 @@
  * - `purlis/titlebar-family` (error: the title bar's workspaces are a family, #2916): the
  *   workspace strip's old classes (`workspaces`, `workspaces-strip`, `workspace`, `plane-root`,
  *   `workspace-name`, `workspace-mark`) and `data-scope="titlebar"` by hand.
+ * - `purlis/tree-family` (error: a tree is the tree family's, #2911): a tree's role written by
+ *   hand (`tree`, `treeitem`, `treegrid`), the shared tree's old classes (`ui-tree`,
+ *   `ui-tree-row`, `ui-tree-twist`) and its `data-scope`. A tree is the family's `Tree` and
+ *   `TreeRow` (`ui/tree/Tree`). The trees still drawn by hand are turned off by file in
+ *   `eslint.config.js`, each until its lane moves it.
  *
  * The primitives library itself is refused outside `src/ui` by `no-restricted-imports`, in
  * `eslint.config.js`: one wrapper per primitive, and screens never import it.
@@ -646,6 +651,15 @@ const titlebarFamily = moved({
     "the title bar's workspaces: draw them as `<WorkspaceChip>` and `<PinnedStrip>` from `ui/titlebar/TitleBarWorkspaces`, and a switcher's parts from `ui/titlebar/Switcher` (#2916).",
 });
 
+const treeFamily = moved({
+  description: "A tree is the shared tree family",
+  scopes: ["tree"],
+  classes: ["ui-tree", "ui-tree-row", "ui-tree-twist"],
+  roles: ["tree", "treeitem", "treegrid"],
+  message:
+    "a tree: draw it as `<Tree>` and `<TreeRow>`, with the row's slots, from `ui/tree/Tree` (#2911).",
+});
+
 export const purlisUi = {
   meta: { name: "purlis-ui" },
   rules: {
@@ -665,5 +679,6 @@ export const purlisUi = {
     "list-family": listFamily,
     "tabs-family": tabsFamily,
     "titlebar-family": titlebarFamily,
+    "tree-family": treeFamily,
   },
 };

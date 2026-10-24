@@ -146,9 +146,11 @@ tighter: `font-size.md` 14 fits comfortable (14 × 1.4 = 19.6, within 21) and fa
 (14 × 1.3 = 18.2, over 18). The check reports each line that does not fit, with its density.
 
 **Still square, whatever `radius.*` says:** the project and workspace strip tabs, the settings
-gear on a strip, and every tree row. Tell the person when they ask for rounder ones: the theme
-cannot round those yet. The session tabs (chats, views, files) and their `×` are rounded through
-their parts (`tabs.*`, below), and a list's rows by `radius.control` and the `list` family's parts. The
+gear on a strip, and the Explorer's and the Chats list's tree rows. Tell the person when they ask
+for rounder ones: the theme cannot round those yet. The session tabs (chats, views, files) and
+their `×` are rounded through their parts (`tabs.*`, below), a list's rows by `radius.control`
+and the `list` family's parts, and the Changes view's tree rows by `radius.control` and the
+`tree` family's. The
 focus ring tokens reach every focus ring, the strip tabs', the closer's and the gear's among them.
 
 **One part of one control** is a component part, in a top-level `parts` object:

@@ -1094,6 +1094,8 @@ pub const MANIFEST: &[Family] = &[
     collection::LIST,
     // **The title bar's pinned workspaces** (#2916): a chip per pin of the project in front.
     shell::TITLEBAR,
+    // **A tree's row** (#2911): the list's row, a level a step in, with its twist.
+    collection::TREE,
 ];
 
 /// The popover and menu families (#2909): the surface a popover and a menu stand on, and a

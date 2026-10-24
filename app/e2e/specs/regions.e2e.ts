@@ -175,7 +175,7 @@ describe("the Changes view", () => {
         const one = Number.isFinite(line) ? line : Number.parseFloat(css.fontSize) * 1.5;
         return one * 1.5 + 4 + Number.parseFloat(css.paddingTop) * 2;
       };
-      const naming = [...bar.querySelectorAll('[role="treeitem"]')].filter(
+      const naming = [...bar.querySelectorAll('[role="row"]')].filter(
         (row) => row.querySelector(".none, .unreadable") === null,
       );
       const rows = naming.map((row) => ({
