@@ -18,7 +18,9 @@ import { isPath } from "../../theme/icons";
  *    so it takes the colour of the text it sits in: muted at rest, accent on a chosen card.
  * 2. **The person's own SVG**, as the core read it: checked shapes, never markup
  *    (`purlis_core::safesvg`). Each shape is drawn with this component's own element, and only
- *    the attributes it knows are passed on, each checked again here.
+ *    the attributes it knows are passed on, each checked again here, within the same budget.
+ *    It is drawn in the text's colour alone, whatever colours the file named, so it never
+ *    passes for a coloured status mark.
  * 3. **The monogram** of the harness kind (`C`, `OC`, `CX`), in the text's colour. Never a blank.
  *
  * **Decorative beside a name, named alone.** With no `label` it is hidden from assistive
@@ -26,6 +28,10 @@ import { isPath } from "../../theme/icons";
  * name, for a place it stands without words.
  *
  * Sized at 14 px by `harness-icon.css` (R29), and never sized by its caller.
+ *
+ * **Never on a consent or ask surface.** A profile's icon is the person's to choose, and a chat
+ * can write the file that names it, so it is drawn only where a profile is listed beside its
+ * name: never on an Allow, an Accept, a grant or a question purlis asks.
  */
 export function HarnessIcon({
   icon,
@@ -78,8 +84,13 @@ export function HarnessIcon({
   );
 }
 
-/** The monogram of `kind` where the core sent none: its first letter or digit, upper case. */
+/** The built-in kinds' monograms, as the core writes them (`harness_icon::monogram`). */
+const MONOGRAMS: Readonly<Record<string, string>> = { claude: "C", opencode: "OC", codex: "CX" };
+
+/** The monogram of `kind` where the core sent none, as the core makes it: the built-ins' own,
+ *  and any other kind's first letter or digit, upper case. */
 export function monogramOf(kind: string): string {
+  if (Object.prototype.hasOwnProperty.call(MONOGRAMS, kind)) return MONOGRAMS[kind];
   return /[a-z0-9]/i.exec(kind)?.[0].toUpperCase() ?? "?";
 }
 
@@ -128,6 +139,13 @@ const ATTRIBUTES: Readonly<Record<string, string>> = {
 /** A value that could name anything outside the icon, which no attribute here may hold. */
 const REFERS = /url\s*\(|script|[<>"'`&\\]/i;
 
+/** The most a person's icon may come to, every tag, attribute name and value counted: the core's
+ *  own budget (`purlis_core::safesvg::MOST_OUTPUT`), held again here. */
+export const MOST_OUTPUT = 64 * 1024;
+
+/** A fill or stroke as an icon draws it: `none`, or the text's colour whatever the answer says. */
+const paint = (value: string) => (value === "none" ? "none" : "currentColor");
+
 /** Four numbers. */
 const VIEW_BOX = /^\s*-?[\d.e+-]+(?:[\s,]+-?[\d.e+-]+){3}\s*$/i;
 
@@ -135,6 +153,13 @@ const VIEW_BOX = /^\s*-?[\d.e+-]+(?:[\s,]+-?[\d.e+-]+){3}\s*$/i;
  *  this list does not know, whatever the answer holds. None where nothing is left to draw. */
 function ownSvg(svg: SvgIcon): ReactNode | undefined {
   if (!VIEW_BOX.test(svg.view_box)) return undefined;
+  let spent = 0;
+  for (const shape of svg.shapes) {
+    spent += shape.tag.length;
+    for (const [name, value] of Object.entries(shape.attributes))
+      spent += name.length + (typeof value === "string" ? value.length : 0);
+    if (spent > MOST_OUTPUT) return undefined;
+  }
   const shapes = svg.shapes.flatMap((shape, at) => {
     if (!SHAPES.has(shape.tag)) return [];
     const props: Record<string, string | number> = { key: at };
@@ -144,7 +169,7 @@ function ownSvg(svg: SvgIcon): ReactNode | undefined {
         : undefined;
       if (prop === undefined || typeof value !== "string" || REFERS.test(value)) continue;
       if (name === "d" && !isPath(value)) continue;
-      props[prop] = value;
+      props[prop] = name === "fill" || name === "stroke" ? paint(value) : value;
     }
     return [createElement(shape.tag, props)];
   });

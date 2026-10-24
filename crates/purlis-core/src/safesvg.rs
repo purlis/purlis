@@ -10,13 +10,15 @@
 //! own elements, so nothing the file says is ever markup there.
 //!
 //! - **Bounded.** The file is at most [`MOST_BYTES`]; at most [`MOST_ELEMENTS`] elements are
-//!   read, nested at most [`MOST_DEPTH`] deep, and at most [`MOST_SHAPES`] shapes come out.
+//!   read, nested at most [`MOST_DEPTH`] deep, and at most [`MOST_SHAPES`] shapes come out,
+//!   which come to at most [`MOST_OUTPUT`] once the groups' attributes are carried onto them.
 //! - **Shapes only.** `path`, `circle`, `ellipse`, `rect`, `line`, `polyline` and `polygon`,
 //!   inside the root `svg` and its `g`s. Every other element is left out with all it holds.
-//! - **Geometry and paint only.** An attribute is kept where its value is in its grammar: a
-//!   number, a path ([`crate::theme::is_path`]), a list of points, a transform of the six SVG
-//!   functions, or a paint that is a colour. A paint that refers to anything (`url(…)`) is drawn
-//!   in the text's colour instead. Nothing that names another resource is ever kept.
+//! - **Geometry only, in the text's colour.** An attribute is kept where its value is in its
+//!   grammar: a number, a path ([`crate::theme::is_path`]), a list of points or a transform of
+//!   the six SVG functions. A fill or stroke is `none` or the text's colour (`currentColor`),
+//!   whatever colour the file names, so a person's mark draws as every icon does and never in a
+//!   colour of its own. Nothing that names another resource is ever kept.
 //! - **Flat.** A group's paint, opacity and transform are carried onto each shape it holds, so
 //!   the window draws one list.
 
@@ -37,8 +39,13 @@ pub const MOST_DEPTH: usize = 16;
 /// The most shapes one icon draws.
 pub const MOST_SHAPES: usize = 512;
 
-/// The longest value an attribute may hold.
+/// The longest value an attribute may hold, a transform joined from its groups' among them.
 const MOST_VALUE: usize = 16384;
+
+/// The most an icon's shapes may come to: every tag, attribute name and value kept, counted
+/// after the groups' attributes are carried onto their shapes. The window holds the same
+/// budget (`HarnessIcon.tsx`).
+pub const MOST_OUTPUT: usize = MOST_BYTES as usize;
 
 /// The shapes an icon may draw.
 pub const SHAPES: &[&str] = &[
@@ -146,6 +153,8 @@ pub fn read(bytes: &[u8]) -> Result<SafeSvg, Unfit> {
     let mut view_box: Option<String> = None;
     let mut shapes = Vec::new();
     let mut elements = 0usize;
+    // What the shapes kept so far come to, held to `MOST_OUTPUT`.
+    let mut spent = 0usize;
     loop {
         let event = reader
             .read_event()
@@ -179,7 +188,7 @@ pub fn read(bytes: &[u8]) -> Result<SafeSvg, Unfit> {
             let own = kept(&element);
             view_box = Some(view_box_of(&element).ok_or(Unfit("the SVG has no view box"))?);
             Open {
-                passed: Some(passed_on(&BTreeMap::new(), &own)),
+                passed: Some(passed_on(&BTreeMap::new(), &own)?),
             }
         } else {
             match open.last().and_then(|it| it.passed.as_ref()) {
@@ -187,7 +196,7 @@ pub fn read(bytes: &[u8]) -> Result<SafeSvg, Unfit> {
                 Some(above) => {
                     if name == "g" {
                         Open {
-                            passed: Some(passed_on(above, &kept(&element))),
+                            passed: Some(passed_on(above, &kept(&element))?),
                         }
                     } else if let Some(shape) = SHAPES.iter().copied().find(|it| *it == name) {
                         if shapes.len() >= MOST_SHAPES {
@@ -195,7 +204,15 @@ pub fn read(bytes: &[u8]) -> Result<SafeSvg, Unfit> {
                         }
                         let mut attributes = above.clone();
                         for (key, value) in kept(&element) {
-                            laid(&mut attributes, key, value);
+                            laid(&mut attributes, key, value)?;
+                        }
+                        spent += shape.len()
+                            + attributes
+                                .iter()
+                                .map(|(key, value)| key.len() + value.len())
+                                .sum::<usize>();
+                        if spent > MOST_OUTPUT {
+                            return Err(Unfit("the SVG draws more than an icon may"));
                         }
                         shapes.push(Shape {
                             tag: shape,
@@ -220,10 +237,20 @@ pub fn read(bytes: &[u8]) -> Result<SafeSvg, Unfit> {
 }
 
 /// `value` laid over what `attributes` holds for `key`: a transform follows the one above it,
-/// an opacity multiplies, and anything else replaces.
-fn laid(attributes: &mut BTreeMap<&'static str, String>, key: &'static str, value: String) {
+/// an opacity multiplies, and anything else replaces. A joined transform is held to the length
+/// of one value.
+fn laid(
+    attributes: &mut BTreeMap<&'static str, String>,
+    key: &'static str,
+    value: String,
+) -> Result<(), Unfit> {
     let joined = match (key, attributes.get(key)) {
-        ("transform", Some(above)) => format!("{above} {value}"),
+        ("transform", Some(above)) => {
+            if above.len() + 1 + value.len() > MOST_VALUE {
+                return Err(Unfit("the SVG nests more transforms than an icon may"));
+            }
+            format!("{above} {value}")
+        }
         ("opacity", Some(above)) => {
             let times = number(above).unwrap_or(1.0) * number(&value).unwrap_or(1.0);
             format!("{times}")
@@ -231,20 +258,21 @@ fn laid(attributes: &mut BTreeMap<&'static str, String>, key: &'static str, valu
         _ => value,
     };
     attributes.insert(key, joined);
+    Ok(())
 }
 
 /// What an element passes on to what it holds: `above`'s, with its own laid over.
 fn passed_on(
     above: &BTreeMap<&'static str, String>,
     own: &[(&'static str, String)],
-) -> BTreeMap<&'static str, String> {
+) -> Result<BTreeMap<&'static str, String>, Unfit> {
     let mut passed = above.clone();
     for (key, value) in own {
         if PASSED_ON.contains(key) || *key == "transform" || *key == "opacity" {
-            laid(&mut passed, key, value.clone());
+            laid(&mut passed, key, value.clone())?;
         }
     }
-    passed
+    Ok(passed)
 }
 
 /// Every attribute of `element` that [`ATTRIBUTES`] names and whose value is in its grammar,
@@ -311,24 +339,14 @@ fn number(value: &str) -> Option<f64> {
     bare.parse::<f64>().ok().filter(|n| n.is_finite())
 }
 
-/// A paint an icon draws: `none`, `currentColor`, a hex colour, a colour's name, or `rgb()` /
-/// `rgba()` of numbers. Anything else, a reference among them, is the text's colour.
+/// A paint as an icon draws it: `none`, or the text's colour whatever the file names.
 fn paint(value: &str) -> String {
-    let hex = value.strip_prefix('#').is_some_and(|digits| {
-        matches!(digits.len(), 3 | 4 | 6 | 8) && digits.bytes().all(|b| b.is_ascii_hexdigit())
-    });
-    let named = value.len() <= 24 && value.bytes().all(|b| b.is_ascii_alphabetic());
-    let function = ["rgb(", "rgba("].iter().any(|open| {
-        value.strip_prefix(open).is_some_and(|rest| {
-            rest.strip_suffix(')')
-                .is_some_and(|inner| inner.bytes().all(|b| b"0123456789.,% ".contains(&b)))
-        })
-    });
-    if hex || named || function {
-        value.to_owned()
+    if value == "none" {
+        "none"
     } else {
-        "currentColor".to_owned()
+        "currentColor"
     }
+    .to_owned()
 }
 
 /// Whether `value` is a transform list of SVG's six functions with numbers in them.

@@ -148,6 +148,21 @@ fn an_icon_file_that_is_a_link_or_no_plain_file_is_not_read() {
 
 #[cfg(unix)]
 #[test]
+fn an_icon_file_with_another_name_is_not_read() {
+    let dir = home(&[]);
+    let elsewhere = dir.path().join("elsewhere.svg");
+    std::fs::write(&elsewhere, PLAIN).unwrap();
+    std::fs::hard_link(&elsewhere, folder(dir.path()).join("linked.svg")).unwrap();
+    assert_eq!(
+        read_file(dir.path(), "linked.svg")
+            .expect_err("two names")
+            .0,
+        UNREAD
+    );
+}
+
+#[cfg(unix)]
+#[test]
 fn an_icons_folder_that_is_a_link_is_not_read() {
     let dir = tempfile::tempdir().unwrap();
     let elsewhere = dir.path().join("elsewhere");
