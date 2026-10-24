@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792803823203,
+  "lastUpdate": 1792807338868,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -23058,6 +23058,48 @@ window.BENCHMARK_DATA = {
             "value": 101.44316,
             "unit": "ms",
             "extra": "median of 5 runs: 100.654, 101.429, 101.443, 101.841, 102.476 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d1ff17cb2acad610a6c678e4c85a7c04f9266030",
+          "message": "Project rail with auto-hide (#3060)\n\n* Project rail with auto-hide (#2915)\n\nProjects are a rail at the window's far left: a 52px column of 36px\nbuttons, each a project's monogram in its own colour with its waiting\nbadge and its unsaved-work dot, the current one ringed, then + to open a\nproject and the rail's own hide at the bottom. Always shown or\nauto-hide, kept in layout.json under `rail`: hidden, the title bar's\nfirst control shows it again, and a rest at the window's left edge\npeeks it, where Keep the projects sidebar shown pins it. Hiding and\nshowing slide over duration.slide on the one ease, and each terminal\nfits once when the slide ends; the peek comes in over duration.reveal\nand goes over duration.leave; reduced motion has none. The project tabs\nstrip is gone (N22), and ADR 0054 is amended for it.\n\nThe rail is a family (ui/rail, rail.*, manifest version 9), with its\nlint rule as an error, stories and a scenario spec.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Project rail: the re-review's fixes (#2915)\n\nThe current project's focus ring is drawn inside the button, so the\nlist's clip and the next button leave it whole. The peek also goes on\nan out into nothing on the document, which WebKit says where the root's\npointerleave is not said. A rail gone mid-slide ends the slide, and a\npane gone before its end withdraws its refit. Tests tie the rail to the\nslide (start on a mode change, end on the column's transition or its\nlength, end on unmount) and cover the peek's leave and its reset on\nshow. The title bar's crumb is cut short in a narrow bar, and its \"/\"\nwaits for #2916. The ADR amendment lists the menu once, and says the\ncrumb is drawn here.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Project rail: on the docked tabs (#2915)\n\nThe rail's family takes the manifest's new `around` field, the tabs\ntest lists it after the dialog, and version 9 pins the manifest's digest\non top of version 8. The strip rules, tests and guards keep only the\nworkspace strip's, now that the chat tabs are the tabs family's and the\nprojects are the rail.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-24T05:59:57+04:00",
+          "tree_id": "f8f51c8fe4eaf7aa914009eafb4e365053928cb8",
+          "url": "https://github.com/purlis/purlis/commit/d1ff17cb2acad610a6c678e4c85a7c04f9266030"
+        },
+        "date": 1792807336998,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.31598800000000005,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.300, 0.304, 0.316, 0.322, 0.335 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6840325,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.092, 16.477, 16.684, 16.703, 16.760 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.1576645,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.341, 99.997, 100.158, 100.237, 102.389 ms"
           }
         ]
       }
