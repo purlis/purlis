@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792834391879,
+  "lastUpdate": 1792842515680,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -23520,6 +23520,48 @@ window.BENCHMARK_DATA = {
             "value": 104.52129000000001,
             "unit": "ms",
             "extra": "median of 5 runs: 103.043, 103.932, 104.521, 105.034, 106.244 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "61748066c166f624e55779345ff5b71798d7e8b5",
+          "message": "List family: every list is one family, on React Aria (#2911, 1/3) (#3112)\n\nA list to choose from (ListBox), a list of rows that act (List, a grid of one column) and a\nlist a field aims at (AimedList, the palette's), each row drawn from one anatomy (lead,\nlabel, description, trail, below) that the tree and table families share. An option is\nnamed by its label and described by its one line. Rows stand in from the list's edges and\na hairline apart, a chosen row keeps its size and its wash, and the keyboard's ring is\ninside the row. A row's menu and tooltip are its own, since a collection draws its rows\nitself. ListFilter moves here (R164). The palette's rows, the search hits and their chat\npicker, the theme gallery, every panel list, the memory archive, Use skill, Welcome's\nrecent projects, a task's changed files, Settings' repos not cloned here and Add to a chat\nare the family; the scenario specs read them by role and name; the list joins the parts\nmanifest; purlis/list-family is an error.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-24T15:47:08+04:00",
+          "tree_id": "ed2b75bf30b84dc9861e398a27aa28ec5e9eb680",
+          "url": "https://github.com/purlis/purlis/commit/61748066c166f624e55779345ff5b71798d7e8b5"
+        },
+        "date": 1792842513491,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5474954999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.497, 0.515, 0.547, 0.551, 0.552 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.081077,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.677, 17.046, 17.081, 17.205, 17.221 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.356586,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.720, 103.178, 103.357, 104.404, 104.793 ms"
           }
         ]
       }
