@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792822997067,
+  "lastUpdate": 1792824748032,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -23394,6 +23394,48 @@ window.BENCHMARK_DATA = {
             "value": 103.84013149999998,
             "unit": "ms",
             "extra": "median of 5 runs: 101.993, 102.688, 103.840, 104.606, 105.459 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "487bb0a162365f9c5dbb37577a0ad017774563c8",
+          "message": "Bump serialize-javascript from 7.1.2 to 7.1.4 in /app (#3103)\n\nBumps [serialize-javascript](https://github.com/yahoo/serialize-javascript) from 7.1.2 to 7.1.4.\n- [Release notes](https://github.com/yahoo/serialize-javascript/releases)\n- [Commits](https://github.com/yahoo/serialize-javascript/compare/v7.1.2...v7.1.4)\n\n---\nupdated-dependencies:\n- dependency-name: serialize-javascript\n  dependency-version: 7.1.4\n  dependency-type: indirect\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>\nCo-authored-by: Aaron Yordanyan <aaron.yor@gmail.com>",
+          "timestamp": "2026-10-24T10:34:23+04:00",
+          "tree_id": "b31a2667f1f538d020030faa076bfcff66f529a9",
+          "url": "https://github.com/purlis/purlis/commit/487bb0a162365f9c5dbb37577a0ad017774563c8"
+        },
+        "date": 1792824745198,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.2619945,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.257, 0.259, 0.262, 0.265, 0.272 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.477710000000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.455, 16.476, 16.478, 16.505, 16.581 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.23285150000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.278, 100.843, 101.233, 101.693, 101.901 ms"
           }
         ]
       }
