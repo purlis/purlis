@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { existsSync, mkdirSync, rmdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { $, $$, browser, expect } from "@wdio/globals";
 import { projectRoot } from "../acting.js";
@@ -22,15 +22,15 @@ import { projectInFront, runningIn } from "../running.js";
  * skills its chats already get, and each one works: *Ask a chat to draft a skill* opens a chat,
  * *Browse sources* moves to the skill sources, and *New skill* makes one from the blank template.
  * The offered sources are listed, and one click fills in Add source and asks before anything is
- * added; the spec cancels there, so nothing is fetched. A project whose skills are still in the
- * old folder is offered the move. What is offered when is the core's seam test
- * (`skills/first_open/tests.rs`).
+ * added; the spec cancels there, so nothing is fetched. What is offered when, the move of skills
+ * still in the old folder included, is the core's seam test (`skills/first_open/tests.rs`) and the
+ * studio's unit test: a clone copies that folder while it is there, so a spec that made it would
+ * reach the next spec's clones.
  *
  * **It leaves the window and the project as it found them.**
  */
 
 const BLANK = "e2e-started-blank";
-const OLD = "e2e-old-folder-probe";
 
 /** Types `text` into the box labelled `label`. */
 async function typeInto(label: string, text: string) {
@@ -54,15 +54,9 @@ describe("the Skill studio's first open", function () {
   let plane = "";
   let wereOpen: string[] = [];
   let wereRunning: number[] = [];
-  /** Which of the old folder and its parent the spec made, so it takes away exactly those: a
-   *  clone copies the project's `.claude/skills` while it is there. */
-  let made: string[] = [];
 
   before(async () => {
     root = await projectRoot();
-    made = [join(root, ".claude"), join(root, ".claude", "skills")].filter(
-      (dir) => !existsSync(dir),
-    );
     await focusWorkspace("alpha");
     wereOpen = await tabNames();
     plane = await projectInFront();
@@ -74,8 +68,6 @@ describe("the Skill studio's first open", function () {
     await focusWorkspace("alpha");
     await closeTheViewTabsOpenedSince(wereOpen);
     rmSync(join(root, "skills", BLANK), { recursive: true, force: true });
-    rmSync(join(root, ".claude", "skills", OLD), { recursive: true, force: true });
-    for (const dir of [...made].reverse()) if (existsSync(dir)) rmdirSync(dir);
   });
 
   it("offers three starts in an empty studio, and Browse sources and New skill work", async () => {
@@ -131,24 +123,5 @@ describe("the Skill studio's first open", function () {
     await expect($("aria/Repository")).toHaveValue("https://github.com/anthropics/skills");
     await (await $('form[aria-label="Add Anthropic\'s skills"]').$("button=Cancel")).click();
     await expect($('[data-testid="skill-source-offered"]')).toExist();
-  });
-
-  it("offers to move skills that are still in the old folder", async () => {
-    const folder = join(root, ".claude", "skills", OLD);
-    mkdirSync(folder, { recursive: true });
-    writeFileSync(
-      join(folder, "SKILL.md"),
-      `---\nname: ${OLD}\ndescription: Probes the move.\n---\n\nSay hello.\n`,
-    );
-    // A studio tab opened afresh reads the project again.
-    await focusWorkspace("alpha");
-    await closeTheViewTabsOpenedSince(wereOpen);
-    await runFromThePalette("Open Skill studio", "skills.studio");
-    const notice = await $('[data-testid="skill-studio-unmoved"]');
-    await notice.waitForExist({ timeout: 20_000 });
-    await expect(notice).toHaveText(
-      /This project keeps 1 skill where only some chat programs read them/,
-    );
-    await expect($("button=Move them")).toExist();
   });
 });
