@@ -967,9 +967,16 @@ fn heard_at(at: std::net::SocketAddr) -> String {
     let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(5)));
     let _ =
         stream.write_all(b"CONNECT probe.invalid:443 HTTP/1.1\r\nHost: probe.invalid:443\r\n\r\n");
-    let mut head = [0u8; 64];
-    let read = stream.read(&mut head).unwrap_or(0);
-    String::from_utf8_lossy(&head[..read]).into_owned()
+    // The whole status line, however the bytes arrive.
+    let mut head: Vec<u8> = Vec::new();
+    let mut byte = [0u8; 1];
+    while head.len() < 64 && !head.ends_with(b"\r\n") {
+        match stream.read(&mut byte) {
+            Ok(1) => head.push(byte[0]),
+            _ => break,
+        }
+    }
+    String::from_utf8_lossy(&head).into_owned()
 }
 
 #[test]
