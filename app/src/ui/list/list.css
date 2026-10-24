@@ -244,6 +244,17 @@
   white-space: nowrap;
 }
 
+/* A key's words, for a reader and nobody else: clipped to nothing where they stand. */
+:where([data-scope="list"], [data-scope="tree"], [data-scope="table"])[data-part="shortcut"]
+  > [data-heard-as] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 /* After a trail, the trail keeps the room before it. */
 :where([data-scope="list"], [data-scope="tree"], [data-scope="table"])[data-part="trail"]
   + [data-part="shortcut"] {

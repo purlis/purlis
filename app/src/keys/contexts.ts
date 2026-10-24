@@ -54,9 +54,16 @@ export function typedInto(target: EventTarget | null): boolean {
   return target.isContentEditable || target.tagName === "INPUT" || target.tagName === "TEXTAREA";
 }
 
-/** Whether the keystroke landed in a text editor (CodeMirror's), whose own keymap has it first. */
+/**
+ * **What a text editor's holder is marked with** (`editor/LightEditor.tsx`, `TextEditor.tsx`): the
+ * editor's own mark, not its engine's class, so this module (in the window's main bundle) names
+ * nothing of the editor, which loads lazily (`tools/main-chunk-has-no-codemirror.mjs`).
+ */
+export const EDITOR_HOLDER = "data-editor";
+
+/** Whether the keystroke landed in a text editor, whose own keymap has it first. */
 export function inAnEditor(target: EventTarget | null): boolean {
-  return target instanceof Element && target.closest(".cm-editor") !== null;
+  return target instanceof Element && target.closest(`[${EDITOR_HOLDER}]`) !== null;
 }
 
 /** Whether the keystroke landed on a chat's tab, where `F2` renames it (charter-app#254). */

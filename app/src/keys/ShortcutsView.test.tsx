@@ -39,7 +39,10 @@ describe("the cheat sheet (N25)", () => {
     for (const group of ["Go to", "Window", "Tabs and chats", "Palette", "Dialogs and forms"])
       expect(within(list).getByText(group)).toBeInTheDocument();
     const focus = within(list).getByRole("row", { name: /Focus mode/ });
-    expect(within(focus).getByText("⌘⇧↩")).toHaveAttribute("data-part", "shortcut");
+    const cap = focus.querySelector('[data-part="shortcut"]');
+    expect(cap).toHaveTextContent("⌘⇧↩");
+    // Heard as words, not as the symbols drawn.
+    expect(cap?.querySelector("[data-heard-as]")).toHaveTextContent("Command Shift Return");
     expect(screen.getByRole("searchbox", { name: "Filter shortcuts" })).toBeInTheDocument();
   });
 });

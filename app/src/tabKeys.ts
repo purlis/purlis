@@ -3,7 +3,6 @@
 
 import type { KeyboardEvent } from "react";
 import type { Offer } from "./actions";
-import { isKey } from "./keys/registry";
 
 /**
  * **Delete on a focused tab closes it** (charter-app#239): the optional key of the WAI-ARIA
@@ -57,8 +56,11 @@ export function closeOnDelete(
  * is the same key doing the same kind of thing to a list item.
  */
 export function deletes(event: KeyboardEvent<HTMLElement>): boolean {
+  // The key registry declares it (`keys/registry.ts`, `tab.close`) and holds it to this, which
+  // it reads: every module reads this one's `onAMac`, so it imports nothing of the registry's.
   if (event.target !== event.currentTarget) return false;
-  return isKey(event.nativeEvent, "tab.close", onAMac());
+  if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return false;
+  return event.key === "Delete" || (event.key === "Backspace" && onAMac());
 }
 
 /**
@@ -79,7 +81,8 @@ export function renameOnF2(
   onPress: (offer: Offer) => void,
 ) {
   if (offer === undefined || event.target !== event.currentTarget) return;
-  if (!isKey(event.nativeEvent, "tab.rename", onAMac())) return;
+  if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+  if (event.key !== "F2") return;
   event.preventDefault();
   onPress(offer);
 }

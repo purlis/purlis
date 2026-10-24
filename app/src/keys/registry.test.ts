@@ -9,11 +9,14 @@ import {
   keystroke,
   overlaps,
   pressed,
+  rowAriaKeys,
   rowKey,
   SCOPES,
   SHORTCUTS,
   shortcut,
+  spokenKeys,
   standsBackFor,
+  type Chord,
   type Platform,
   type Shortcut,
 } from "./registry";
@@ -23,6 +26,9 @@ import { sideKeysSaid } from "../sideKeys";
 import { taskKeySaid } from "../taskKeys";
 import { shellKeySaid } from "../shellKey";
 import { CHAT_KEYBOARD, RENAMES_ON_F2 } from "../actions";
+import { EDITOR_HOLDER } from "./contexts";
+import { defaultKeymap, historyKeymap } from "@codemirror/commands";
+import type { KeyBinding } from "@codemirror/view";
 
 const PLATFORMS: readonly Platform[] = ["mac", "other"];
 const keyed = SHORTCUTS.filter((one) => one.kind === "key");
@@ -256,7 +262,7 @@ describe("the context rules", () => {
   });
 
   it("leaves an editor its own ⌘/", () => {
-    const editor = landOn({}, { class: "cm-editor" });
+    const editor = landOn({}, { [EDITOR_HOLDER]: "" });
     expect(
       pressed(keystroke({ key: "/", meta: true }, editor), ["shortcuts.show"], { mac: true }),
     ).toBeUndefined();
@@ -295,5 +301,98 @@ describe("the key a row shows (N25)", () => {
   it("is nothing for a row with no key", () => {
     expect(rowKey("extensions.show", true)).toBeUndefined();
     expect(rowKey("tab.closed", true)).toBeUndefined();
+  });
+});
+
+/**
+ * A CodeMirror key (`Mod-Shift-k`) as a chord on a keyboard: `Mod` is ⌘ on a Mac and Ctrl
+ * elsewhere, as CodeMirror reads it.
+ */
+function editorChord(spec: string, mac: boolean): Chord {
+  const parts = spec.split(/-(?!$)/);
+  const key = parts.pop() ?? "";
+  const chord: Chord = { key: key === "Space" ? " " : key };
+  for (const part of parts) {
+    if (part === "Mod") chord[mac ? "meta" : "ctrl"] = true;
+    else if (part === "Cmd" || part === "Meta") chord.meta = true;
+    else if (part === "Ctrl") chord.ctrl = true;
+    else if (part === "Alt") chord.alt = true;
+    else if (part === "Shift") chord.shift = true;
+  }
+  return chord;
+}
+
+/** Every key the editors' keymaps bind on a keyboard (`editor/TextEditor.tsx` uses these two). */
+function editorKeys(mac: boolean): { spec: string; chord: Chord }[] {
+  return [...defaultKeymap, ...historyKeymap].flatMap((binding: KeyBinding) => {
+    const specs = mac
+      ? [binding.mac ?? binding.key]
+      : [binding.win ?? binding.key, binding.linux ?? binding.key];
+    return [...new Set(specs)].flatMap((spec) => {
+      if (spec === undefined) return [];
+      const chord = editorChord(spec, mac);
+      return binding.shift === undefined || chord.shift === true
+        ? [{ spec, chord }]
+        : [
+            { spec, chord },
+            { spec: `Shift-${spec}`, chord: { ...chord, shift: true } },
+          ];
+    });
+  });
+}
+
+/**
+ * **What the window has always taken from an editor**, each with why it stays: a key the
+ * editor's keymap binds that the window answers first. Each is a ticket's to settle, not this
+ * test's; a new one fails here.
+ */
+const TAKEN_FROM_THE_EDITOR = new Set([
+  // ⌘⇧K is CodeMirror's deleteLine; the palette has always opened on ⌘K with Shift held too.
+  "palette.open on Shift-Mod-k",
+  // A Mac's Ctrl+K is CodeMirror's deleteToLineEnd (Emacs's kill); the palette has always
+  // opened on Ctrl+K on a Mac as well as on ⌘K, so a person on one keyboard never lacks it.
+  "palette.open on Ctrl-k",
+  // Escape in an editor inside a dialog: CodeMirror's own Escape only narrows a selection, and
+  // takes the key only then; otherwise the dialog closes, which is the way out of it (WCAG 2.1.2).
+  "dialog.close on Escape",
+]);
+
+describe("the editors' own keys (CodeMirror's keymap)", () => {
+  it.each(PLATFORMS)("are the editor's where both apply, on a %s keyboard", (platform) => {
+    const mac = platform === "mac";
+    const editor = shortcut("file.find");
+    const found: string[] = [];
+    for (const { spec, chord } of editorKeys(mac)) {
+      const event = keystroke(chord);
+      for (const one of keyed) {
+        if (!overlaps(one.where, "editor") || one.where === "editor") continue;
+        if (one.matches?.(event, mac) !== true) continue;
+        if (standsBackFor(one, editor, platform, chord)) continue;
+        found.push(`${one.id} on ${spec}`);
+      }
+    }
+    expect(found.filter((one) => !TAKEN_FROM_THE_EDITOR.has(one))).toEqual([]);
+  });
+});
+
+describe("a key in words", () => {
+  it("says each symbol and each alternative as a reader hears it", () => {
+    expect(spokenKeys("⌘⇧↩", true)).toBe("Command Shift Return");
+    expect(spokenKeys("Ctrl+Shift+Enter", false)).toBe("Control Shift Enter");
+    expect(spokenKeys("⌘K · F2", true)).toBe("Command K or F2");
+    expect(spokenKeys("Ctrl+1–Ctrl+9", false)).toBe("Control 1 to Control 9");
+    expect(spokenKeys("⌘/", true)).toBe("Command Slash");
+    expect(spokenKeys("Ctrl+Shift+]", false)).toBe("Control Shift Right Bracket");
+    expect(spokenKeys("⌥⌘P", true)).toBe("Option Command P");
+    expect(spokenKeys("Esc", true)).toBe("Escape");
+  });
+});
+
+describe("the palette's keys are the window's", () => {
+  it("shows a row's key only where it works from anywhere in the window", () => {
+    expect(rowKey("tab.close:7", true, true)).toBeUndefined();
+    expect(rowKey("tab.rename:7", false, true)).toBeUndefined();
+    expect(rowKey("shell.new", true, true)).toBe("⌘⇧T");
+    expect(rowAriaKeys("tab.close:7", true, true)).toBeUndefined();
   });
 });

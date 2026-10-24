@@ -629,7 +629,8 @@ export function Palette({
           {rows.map((row, index) => {
             // The row's key, from the key registry (#2921, N25), drawn at its end; its note no
             // longer says it in words.
-            const key = rowKey(row.id, mac);
+            // Only a key that works from anywhere: a tab's own ⌫ and F2 do nothing here.
+            const key = rowKey(row.id, mac, true);
             const note =
               key === undefined || row.note === undefined
                 ? row.note
@@ -640,7 +641,7 @@ export function Palette({
                 id={`palette-row-${row.id}`}
                 aimed={index === aimed}
                 unavailable={!row.available}
-                keys={key === undefined ? undefined : rowAriaKeys(row.id, mac)}
+                keys={key === undefined ? undefined : rowAriaKeys(row.id, mac, true)}
                 onPress={() => runOffer(row)}
               >
                 {/* A project's name alone in the switcher: every row there is a switch, and

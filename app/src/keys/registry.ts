@@ -166,6 +166,8 @@ const ctl = (key: string, more: Omit<Chord, "key" | "ctrl"> = {}): Chord => ({
 const bare = (key: string, more: Omit<Chord, "key"> = {}): Chord => ({ key, ...more });
 /** The same chords on both keyboards. */
 const both = (...chords: Chord[]) => ({ mac: chords, other: chords });
+/** The keys every list, tree and menu walks its rows with (React Aria's). */
+const NAVIGATION = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End"];
 /** The same spelling on both keyboards. */
 const says = (word: string) => () => word;
 
@@ -661,6 +663,28 @@ export const SHORTCUTS: readonly Shortcut[] = [
     yields: [],
     matches: (e) => asksForAMenu(e),
   },
+  {
+    id: "row.move",
+    does: "Walk a list's rows, to its first and its last",
+    group: "Tabs and chats",
+    where: "row",
+    kind: "native",
+    chords: both(...NAVIGATION.map((key) => bare(key))),
+    said: says("↑ ↓ ← →"),
+    alsoSaid: () => ["Home", "End"],
+    yields: [],
+  },
+  {
+    id: "tab.move",
+    does: "Move along the tabs, to the first and the last",
+    group: "Tabs and chats",
+    where: "tab",
+    kind: "native",
+    chords: both(...["ArrowLeft", "ArrowRight", "Home", "End"].map((key) => bare(key))),
+    said: says("← →"),
+    alsoSaid: () => ["Home", "End"],
+    yields: [],
+  },
   // Palette
   {
     id: "palette.run",
@@ -765,7 +789,8 @@ export const SHORTCUTS: readonly Shortcut[] = [
     kind: "key",
     chords: both(bare("Enter")),
     said: (mac) => (mac ? "↩" : "Enter"),
-    yields: ["palette"],
+    // In an editor in a dialog, Enter is a new line (CodeMirror's insertNewline).
+    yields: ["palette", "editor"],
     matches: (e) => e.key === "Enter" && plain(e),
   },
   {
@@ -778,6 +803,17 @@ export const SHORTCUTS: readonly Shortcut[] = [
     said: says("Esc"),
     yields: ["menu", "palette"],
     matches: (e) => e.key === "Escape",
+  },
+  {
+    id: "menu.move",
+    does: "Walk a menu's rows; → opens a submenu, ← closes it",
+    group: "Dialogs and forms",
+    where: "menu",
+    kind: "native",
+    chords: both(...NAVIGATION.map((key) => bare(key))),
+    said: says("↑ ↓ ← →"),
+    alsoSaid: () => ["Home", "End"],
+    yields: [],
   },
   {
     id: "menu.close",
@@ -825,8 +861,9 @@ export function keySaid(id: string, mac: boolean = onAMac()): string {
  * (`MenuShortcuts`). A row has a key where an entry names its id, or a prefix of it ending in
  * `:` (each tab's `tab.close:<id>`). A key with no chord on this keyboard says nothing.
  */
-export function rowKey(row: string, mac: boolean = onAMac()): string | undefined {
+export function rowKey(row: string, mac: boolean = onAMac(), anywhere = false): string | undefined {
   for (const one of SHORTCUTS) {
+    if (anywhere && one.where !== "window") continue;
     const named = one.rows?.some((id) => (id.endsWith(":") ? row.startsWith(id) : row === id));
     if (!named || (one.chords[mac ? "mac" : "other"].length === 0 && one.kind !== "path")) continue;
     const said = one.said(mac);
@@ -835,7 +872,10 @@ export function rowKey(row: string, mac: boolean = onAMac()): string | undefined
   return undefined;
 }
 
-/** A chord as `aria-keyshortcuts` names it: `Meta+Shift+T`, `Control+Slash`… (WAI-ARIA 1.2). */
+/**
+ * A chord as `aria-keyshortcuts` names it (WAI-ARIA 1.2): the modifiers by their UI Events names,
+ * then the key by its value, as `Shift+Meta+T` or `Control+/`.
+ */
 export function ariaChord(chord: Chord): string {
   const key =
     chord.key === " " ? "Space" : chord.key.length === 1 ? chord.key.toUpperCase() : chord.key;
@@ -851,13 +891,72 @@ export function ariaChord(chord: Chord): string {
 }
 
 /** **The key a catalogue row shows, as a reader is told it** (`aria-keyshortcuts`). */
-export function rowAriaKeys(row: string, mac: boolean = onAMac()): string | undefined {
+export function rowAriaKeys(
+  row: string,
+  mac: boolean = onAMac(),
+  anywhere = false,
+): string | undefined {
   const platform = mac ? "mac" : "other";
-  const one = SHORTCUTS.find((entry) =>
-    entry.rows?.some((id) => (id.endsWith(":") ? row.startsWith(id) : row === id)),
+  const one = SHORTCUTS.find(
+    (entry) =>
+      (!anywhere || entry.where === "window") &&
+      entry.rows?.some((id) => (id.endsWith(":") ? row.startsWith(id) : row === id)),
   );
   const chords = one?.chords[platform] ?? [];
   return chords.length === 0 ? undefined : chords.map(ariaChord).join(" ");
+}
+
+/** How each symbol of a key's spelling is said, on a Mac and elsewhere. */
+const SYMBOL_WORDS: Readonly<Record<string, readonly [string, string]>> = {
+  "⌘": ["Command", "Command"],
+  "⇧": ["Shift", "Shift"],
+  "⌥": ["Option", "Alt"],
+  "⌃": ["Control", "Control"],
+  "↩": ["Return", "Enter"],
+  "⌫": ["Delete", "Backspace"],
+  "↑": ["Up Arrow", "Up Arrow"],
+  "↓": ["Down Arrow", "Down Arrow"],
+  "←": ["Left Arrow", "Left Arrow"],
+  "→": ["Right Arrow", "Right Arrow"],
+  "/": ["Slash", "Slash"],
+  "=": ["Equals", "Equals"],
+  "-": ["Minus", "Minus"],
+  ",": ["Comma", "Comma"],
+  "[": ["Left Bracket", "Left Bracket"],
+  "]": ["Right Bracket", "Right Bracket"],
+};
+
+/** How a word of a key's spelling is said. */
+const WORD_WORDS: Readonly<Record<string, string>> = {
+  Ctrl: "Control",
+  Esc: "Escape",
+};
+
+/**
+ * **A key's spelling as words**, for a reader to hear where the key is what is shown (the cheat
+ * sheet's caps): `⌘⇧↩` is "Command Shift Return", `Ctrl+1–Ctrl+9` "Control 1 to Control 9",
+ * `⌘K · F2` "Command K or F2".
+ */
+export function spokenKeys(said: string, mac: boolean = onAMac()): string {
+  const at = mac ? 0 : 1;
+  const chord = (one: string) =>
+    one
+      .split(/(?<=[^+])\+/)
+      .flatMap((part) => {
+        if (WORD_WORDS[part] !== undefined) return [WORD_WORDS[part]];
+        if (part.length > 1 && /^[A-Za-z][A-Za-z0-9]+$/.test(part)) return [part];
+        return [...part].map((symbol) => SYMBOL_WORDS[symbol]?.[at] ?? symbol.toUpperCase());
+      })
+      .join(" ");
+  return said
+    .split(" · ")
+    .map((alternative) =>
+      alternative
+        .split("–")
+        .map((end) => end.split(" ").filter(Boolean).map(chord).join(" "))
+        .join(" to "),
+    )
+    .join(" or ");
 }
 
 /**

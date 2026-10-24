@@ -87,16 +87,20 @@ export const RowBelow = slot("below");
 /**
  * **The key that does the same**, at the row's end and read last (#2921, N25): a palette row's,
  * from the key registry (`keys/registry.ts`). Drawn, and hidden from a reader, who hears the key
- * by its name from the row's `aria-keyshortcuts` instead of as symbols run onto its words; where
- * the key is what the row is about (the cheat sheet's), it is `heard`.
+ * by its name from the row's `aria-keyshortcuts` instead of as symbols run onto its words. Where
+ * the key is what the row is about (the cheat sheet's), it is `heard`: its symbols are drawn and
+ * its `spoken` words ("Command Shift Return") are what a reader hears.
  */
 export function RowShortcut({
   keys,
   heard = false,
+  spoken,
   className,
 }: {
   keys: string;
   heard?: boolean;
+  /** The key in words, heard in place of the symbols drawn. */
+  spoken?: string;
   className?: string;
 }) {
   const scope = useContext(RowScope);
@@ -107,7 +111,14 @@ export function RowShortcut({
       data-part="shortcut"
       aria-hidden={heard ? undefined : "true"}
     >
-      {keys}
+      {heard && spoken !== undefined ? (
+        <>
+          <span aria-hidden="true">{keys}</span>
+          <span data-heard-as="">{spoken}</span>
+        </>
+      ) : (
+        keys
+      )}
     </kbd>
   );
 }

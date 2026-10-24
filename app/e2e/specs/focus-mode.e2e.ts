@@ -160,4 +160,30 @@ describe("focus mode", function () {
     });
     expect((await terminalNow()).marked).toBe(true);
   });
+
+  it("leaves focus mode on a region's key, and changes no region out of sight", async () => {
+    const before = await boxes();
+    await focusModeTo(true);
+    // ⌘B (Ctrl+B off a Mac) in focus mode only leaves it (D-2921-19).
+    await browser.execute((mac: boolean) => {
+      document.body.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "b",
+          code: "KeyB",
+          metaKey: mac,
+          ctrlKey: !mac,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    }, MAC);
+    await browser.waitUntil(async () => !(await inFocusMode()), {
+      timeout: 10_000,
+      timeoutMsg: "the left sidebar's key did not leave focus mode",
+    });
+    await browser.waitUntil(async () => JSON.stringify(await boxes()) === JSON.stringify(before), {
+      timeout: 10_000,
+      timeoutMsg: "a region changed while focus mode hid it",
+    });
+  });
 });

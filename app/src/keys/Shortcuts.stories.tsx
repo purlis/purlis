@@ -38,6 +38,12 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+/** The list's act rows: a group's name is a row of the grid too, and is not an act. */
+const acts = (list: HTMLElement) =>
+  within(list)
+    .getAllByRole("row")
+    .filter((one) => one.getAttribute("data-part") === "root");
+
 /** The keyboard on the row with `name`, in the list. */
 const row = (list: HTMLElement, name: RegExp) => within(list).getByRole("row", { name });
 
@@ -59,9 +65,12 @@ export const TheCheatSheet: Story = {
     await untilFocused(() => filter, "The cheat sheet: Tab onto its filter");
     expectFocusInSight();
     await userEvent.keyboard("work alone");
-    await waitFor(() => expect(within(list).getAllByRole("row")).toHaveLength(1));
+    await waitFor(() => expect(acts(list)).toHaveLength(1));
     const focus = row(list, /Focus mode/);
-    expect(within(focus).getByText("⌘⇧↩")).toHaveAttribute("data-part", "shortcut");
+    const cap = focus.querySelector('[data-part="shortcut"]');
+    expect(cap).toHaveTextContent("⌘⇧↩");
+    // Heard as words, not as the symbols drawn.
+    expect(cap?.querySelector("[data-heard-as]")).toHaveTextContent("Command Shift Return");
     await userEvent.clear(filter);
     // A key finds its act too.
     await userEvent.keyboard("⌘/");

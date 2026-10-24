@@ -15,6 +15,7 @@
  * This module and everything it imports is its own chunk, loaded when the first file or diff
  * opens (`Views.tsx`), so a window that never opens one carries none of it (ADR 0086 row M2).
  */
+import { EDITOR_HOLDER } from "../keys/contexts";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { MergeView } from "@codemirror/merge";
 import { Compartment, EditorState, type Extension } from "@codemirror/state";
@@ -165,6 +166,8 @@ export function LightEditor({
     <>
       <div
         ref={host}
+        // The key registry's mark for "an editor has the keyboard here" (#2921).
+        {...{ [EDITOR_HOLDER]: "" }}
         className="light-editor"
         data-testid="light-editor"
         onKeyDown={find.onKeyDown}
@@ -222,6 +225,8 @@ export function MergeViewer({
     <>
       <div
         ref={host}
+        // The key registry's mark for "an editor has the keyboard here" (#2921).
+        {...{ [EDITOR_HOLDER]: "" }}
         role="group"
         aria-label={label ?? `What changed in ${path}`}
         className="light-editor merge"

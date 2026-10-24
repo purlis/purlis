@@ -21,7 +21,7 @@ import { ListFilter, noMatchSaid, useListFilter } from "../ui/list/ListFilter";
 import { RowDescription, RowLabel, RowShortcut } from "../ui/list/Row";
 import { SHORTCUTS_TITLE } from "../tabs";
 import { switcherKeySaid } from "../switcherKey";
-import { GROUPS, SHORTCUTS, type Scope, type Shortcut } from "./registry";
+import { GROUPS, SHORTCUTS, spokenKeys, type Scope, type Shortcut } from "./registry";
 
 /** Where an act applies, as its row says it: nothing for the whole window. */
 const placeSaid = (mac: boolean): Readonly<Record<Scope, string>> => ({
@@ -75,7 +75,8 @@ export function ShortcutsView({ mac = onAMac() }: { mac?: boolean }) {
   const nameOf = useCallback((row: SheetRow) => `${row.does} ${row.keys} ${row.where}`, []);
   const { query, setQuery, shown } = useListFilter(rows, nameOf);
   return (
-    <section className="shortcuts-view" aria-label={SHORTCUTS_TITLE} data-testid="shortcuts-view">
+    // Named once, by its list: the view's pane is named by its tab.
+    <div className="shortcuts-view" data-testid="shortcuts-view">
       <ListFilter
         noun={SHORTCUT}
         total={rows.length}
@@ -98,7 +99,7 @@ export function ShortcutsView({ mac = onAMac() }: { mac?: boolean }) {
                   <ListRow key={row.id} id={row.id} textValue={row.does}>
                     <RowLabel>{row.does}</RowLabel>
                     {row.where !== "" && <RowDescription>{row.where}</RowDescription>}
-                    <RowShortcut keys={row.keys} heard />
+                    <RowShortcut keys={row.keys} heard spoken={spokenKeys(row.keys, mac)} />
                   </ListRow>
                 ))}
               </ListRowSection>
@@ -106,6 +107,6 @@ export function ShortcutsView({ mac = onAMac() }: { mac?: boolean }) {
           })}
         </List>
       )}
-    </section>
+    </div>
   );
 }
