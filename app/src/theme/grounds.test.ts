@@ -668,6 +668,9 @@ const WITHIN: readonly string[] = [
   // fill, which the button family lists.
   '.pane-top\n  :is(.notice-pane-box, [data-scope="notice"][data-placement="pane"]):has([data-variant="grants"])',
   '.pane-top\n  :is(.notice-pane-box:has(> .notice-trouble), [data-scope="notice"][data-variant="trouble"])',
+  // And each one's mark, a pseudo-element no button is drawn on.
+  '.pane-top\n  :is(\n    .notice-pane-box:has(> .notice-trouble),\n    [data-scope="notice"][data-variant="trouble"]\n  )::before',
+  '.pane-top\n  :is(.notice-pane-box, [data-scope="notice"][data-placement="pane"]):has(\n    [data-variant="grants"]\n  )::before',
 ];
 
 // --- The tests ------------------------------------------------------------------------------

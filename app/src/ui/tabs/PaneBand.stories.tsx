@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * **A chat's pane: the band, the header, then the terminal** (#3142, the operator's variant A of
+ * **The chosen chat tab's pane: the band, the header, then the terminal** (#3142, the operator's variant A of
  * 2026-10-24): the session tabs docked on the content panel, the chosen tab joined to its pane,
  * and in the pane a sticky band of washed warning cards (words above their ways out), a slim
  * header with the chips at its start and the pane's controls at its end, then the terminal,
@@ -17,14 +17,14 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { Fragment, useState } from "react";
 import { expect, waitFor, within } from "storybook/test";
 import { Columns2, Rows2, Sparkles, X } from "lucide-react";
-import { Notice, NoticePaneRow } from "./Notice";
-import { PaneHead } from "./LayoutPanes";
-import { ChatMark } from "./NeedsYou";
-import { useTabIds, StripTablist } from "./StripTablist";
-import { Button } from "./ui/button/Button";
-import { panelRoot } from "./ui/panel/Panel";
-import { TabCell, tabPart, tabsPart } from "./ui/tabs/Tabs";
-import { expectFocusInSight } from "./stories.testkit";
+import { Notice, NoticePaneRow } from "../../Notice";
+import { PaneHead } from "../../LayoutPanes";
+import { ChatMark } from "../../NeedsYou";
+import { useTabIds, StripTablist } from "../../StripTablist";
+import { Button } from "../button/Button";
+import { panelRoot } from "../panel/Panel";
+import { TabCell, tabPart, tabsPart } from "./Tabs";
+import { expectFocusInSight } from "../../stories.testkit";
 
 /** One warning the band can hold, as `ChatNotices` draws it. */
 type Warning = "skills-missing" | "mcp-failed" | "stale-clone" | "vault-refused" | "sandbox-long";
