@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792868273799,
+  "lastUpdate": 1792872502482,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -24066,6 +24066,48 @@ window.BENCHMARK_DATA = {
             "value": 101.88683800000001,
             "unit": "ms",
             "extra": "median of 5 runs: 100.878, 100.955, 101.887, 101.994, 102.043 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "cac59f48eb136b9e78421c59ce52c39e7caa1c91",
+          "message": "Opening the palette redraws the window only when the profiles changed (SettingsWindow:92) (#3163)\n\n* Opening the palette redraws the window only when the profiles changed\n\nSettingsWindow.test.tsx:92 timed out under load. With #3156 and #3148\nin, the redraws it still paid for nothing were the palette's: every\nopening read the project's profiles into a new list, and the new list\ndrew the whole window again. The same names now keep the same list.\n\nThat redraw was also what kept the palette's screen-reader row right:\nthe catalogue read screen-reader mode from its store during the render\nand had no dependency on it. The catalogue is now given the mode, which\nPlaneView and the opener follow with useScreenReaderMode, so the row\nturns with the mode whatever else draws.\n\nGuards: profileNames keeps the very list for the same names; the hook\nfollows the mode; the catalogue titles the row by the mode it is given;\na window test that opening Settings while it is in front reads\nplane_sidebar no more.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Screen-reader mode's hook is the layout pref's own; Welcome waits for its row\n\nReview of #3163: useScreenReaderMode is SCREEN_READER.use(), as every\nother layout pref hook is, so it follows keep() as well as set(). The\nhook sits above the catalogue's doc comment, which is on `offers` again.\nA test covers the screen-reader row in the window with no project open.\n\nWelcome.test.tsx's recent-projects test found the region before its rows\nwere read and drawn, and then asked for a row at once; it waits for the\nrow.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-25T00:06:59+04:00",
+          "tree_id": "26fc327587db517fb50e90f4e7d746d7bf466bb5",
+          "url": "https://github.com/purlis/purlis/commit/cac59f48eb136b9e78421c59ce52c39e7caa1c91"
+        },
+        "date": 1792872499868,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.27555850000000004,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.271, 0.272, 0.276, 0.281, 0.291 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.591645,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.573, 16.585, 16.592, 16.640, 16.661 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.1475705,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.630, 100.838, 101.148, 101.584, 102.363 ms"
           }
         ]
       }
