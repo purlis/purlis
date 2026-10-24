@@ -1177,8 +1177,8 @@ pipelines with animation"_), and adding it on top of that shape would have multi
 
 ### The vocabulary
 
-`DURATIONS` and `EASINGS` in `app/src/theme/motion.ts`. Fourteen names, written to the document as
-`--motion-duration-*` and `--motion-easing-*` beside the colours. The built-ins are Purlis
+`DURATIONS` and `EASINGS` in `app/src/theme/motion.ts`. Fourteen names, written to the document
+as `--motion-duration-*` and `--motion-easing-*` beside the colours. The built-ins are Purlis
 Classic's; Purlis draws `duration.quick` at 150 ms and `easing.standard` and `easing.enter` on
 the shell's one ease (below):
 

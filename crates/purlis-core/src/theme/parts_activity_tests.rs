@@ -243,7 +243,8 @@ fn purlis_draws_the_family_default_and_classic_its_accent_edge() {
 #[test]
 fn the_shell_s_motions_are_tokens_in_both_built_ins() {
     // R150: the right panel, a bottom half and a side view, each named for the change it times.
-    for (id, open, reveal, swap) in [(PURLIS, 240, 220, 180), (CLASSIC, 160, 160, 0)] {
+    // A bottom half rises over the rail's `reveal` (#2915), the same in both built-ins.
+    for (id, open, reveal, swap) in [(PURLIS, 240, 220, 180), (CLASSIC, 160, 220, 0)] {
         let built = built_in(id).expect("a built-in");
         let durations = &built.motion.durations;
         assert_eq!(durations["duration.open"], open, "{id}");
