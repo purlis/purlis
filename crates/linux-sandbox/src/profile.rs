@@ -162,10 +162,13 @@ enum Filter {
     Unix(Option<PathBuf>),
 }
 
-/// Operations Linux has a counterpart of, and which this module judges.
-const JUDGED: [&str; 11] = [
+/// Operations Linux has a counterpart of, and which this module judges. `file-link` is read
+/// and names no operation asked here: the supervisor judges a link as a write of the file it
+/// names and a create of the new name, so the write rules beside it already decide it.
+const JUDGED: [&str; 12] = [
     "default",
     "file*",
+    "file-link",
     "file-read*",
     "file-read-data",
     "file-read-metadata",

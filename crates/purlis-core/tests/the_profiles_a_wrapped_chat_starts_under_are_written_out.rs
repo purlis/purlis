@@ -114,3 +114,102 @@ fn the_profiles_a_wrapped_chat_starts_under_are_written_out() {
     }
     assert_eq!(written, 4, "each wrapped harness at each level");
 }
+
+/// `/bin/ln from to` under `profile`: `Ok` where the link was made, else what `ln` said.
+#[cfg(target_os = "macos")]
+fn linked(profile: &str, from: &Path, to: &Path) -> Result<(), String> {
+    let done = purlis_core::forklock::output(
+        std::process::Command::new("/usr/bin/sandbox-exec")
+            .args(["-p", profile, "/bin/ln"])
+            .arg(from)
+            .arg(to),
+    )
+    .expect("sandbox-exec runs");
+    if done.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&done.stderr).into_owned())
+    }
+}
+
+/// **A second name is made only for a file in what a chat may write**: under the full sandbox's
+/// profile and the floor's, applied for real, `ln` from a folder held from the chat into the
+/// folder it works in is refused with `EPERM`, and from a folder the full sandbox does not let
+/// it write too, while a link inside the folder it works in is made as ever (git, cargo and npm
+/// make those in their own folders).
+#[cfg(target_os = "macos")]
+#[test]
+fn the_macos_profiles_limit_file_link_to_the_folders_a_chat_may_write() {
+    purlis_core::unsteered!();
+    let applies =
+        purlis_core::forklock::status(std::process::Command::new("/usr/bin/sandbox-exec").args([
+            "-p",
+            "(version 1)(allow default)",
+            "/usr/bin/true",
+        ]))
+        .is_ok_and(|status| status.success());
+    if !applies {
+        use std::io::Write as _;
+        let _ = writeln!(
+            std::io::stderr(),
+            "skipped: this process is already sandboxed, so no second profile applies"
+        );
+        return;
+    }
+    let scratch = tempfile::tempdir().expect("a folder");
+    let out = scratch.path().canonicalize().expect("a real folder");
+    let home = out.join("home");
+    let bin = out.join("bin");
+    let elsewhere = out.join("elsewhere");
+    fs::create_dir_all(&home).expect("a home");
+    fs::create_dir_all(&bin).expect("a folder on the PATH");
+    fs::create_dir_all(&elsewhere).expect("a folder no chat works in");
+    fs::write(elsewhere.join("notes.txt"), "elsewhere\n").expect("a file there");
+    let machine = Machine {
+        env: purlis_core::secrets::Env::of(&[("PATH", &bin.display().to_string())]),
+        home: Some(home),
+        os: Os::MacOs,
+    };
+    let refused = |said: Result<(), String>, what: &str| match said {
+        Ok(()) => panic!("{what}: the link was made"),
+        Err(said) => assert!(said.contains("Operation not permitted"), "{what}: {said}"),
+    };
+    for (level, name, manifest) in LEVELS {
+        let root = out.join(name).join("project");
+        let tmp = out.join(name).join("tmp");
+        lay_out(&root, manifest);
+        fs::create_dir_all(&tmp).expect("a temporary folder");
+        for (harness, called) in HARNESSES {
+            let (_, profile) = emitted(harness, &root, &tmp, &machine);
+            let what = format!("{called} at {name}");
+
+            let again = root.join("notes.again");
+            assert_eq!(
+                linked(&profile, &root.join("notes.json"), &again),
+                Ok(()),
+                "{what}: a link inside the folder it works in"
+            );
+            fs::remove_file(&again).expect("the link taken away");
+
+            refused(
+                linked(
+                    &profile,
+                    &root.join(".purlis/vaults/ops.json"),
+                    &root.join("ops.again"),
+                ),
+                &format!("{what}: a link from a held folder"),
+            );
+            assert!(!root.join("ops.again").exists(), "{what}");
+            if level == Level::Full {
+                refused(
+                    linked(
+                        &profile,
+                        &elsewhere.join("notes.txt"),
+                        &root.join("elsewhere.again"),
+                    ),
+                    &format!("{what}: a link from a folder it may not write"),
+                );
+            }
+        }
+    }
+}

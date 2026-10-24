@@ -465,7 +465,7 @@ fn a_codex_chats_run_is_denied_the_operators_codex_home_as_the_chat_is() {
         profile_on(&confines, &[], &[], &root.join("work"), &root, &[4242]).expect("a profile");
     assert!(
         profile.contains(&format!(
-            "(deny file-read* file-write* (subpath \"{}\"))",
+            "(deny file-read* file-write* file-link (subpath \"{}\"))",
             crate::sandbox::real(&codex_home).display()
         )),
         "{profile}"
@@ -902,7 +902,7 @@ fn the_childs_profile_gives_back_a_read_of_its_credential_file_alone() {
     .expect("a profile");
     let denied = profile
         .find(&format!(
-            "(deny file-read* file-write* (subpath \"{}\"))",
+            "(deny file-read* file-write* file-link (subpath \"{}\"))",
             crate::sandbox::real(&vaults).display()
         ))
         .expect("the vaults directory is denied");
@@ -3624,7 +3624,7 @@ fn a_login_s_private_folder_is_given_back_to_its_run_alone() {
     .expect("a profile");
     let denied = profile
         .find(&format!(
-            "(deny file-read* file-write* (subpath \"{}\"))",
+            "(deny file-read* file-write* file-link (subpath \"{}\"))",
             crate::sandbox::real(&vaults).display()
         ))
         .expect("the vaults directory is denied");

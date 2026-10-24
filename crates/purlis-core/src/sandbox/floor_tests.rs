@@ -1603,7 +1603,7 @@ fn no_chat_writes_a_workspaces_manifest_at_the_floor_or_in_the_full_sandbox() {
     // The floor, for Codex and opencode: `…/workspaces/<any>/workspace.json`, in any case.
     let profile = wrapped_floor(Harness::Codex, &root, &machine, &[], None);
     let rule = format!(
-        "(deny file-write* (regex {}))",
+        "(deny file-write* file-link (regex {}))",
         seatbelt::string(&seatbelt::workspace_manifests_regex()).expect("a string")
     );
     assert!(

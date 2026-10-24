@@ -560,7 +560,7 @@ fn a_chat_never_reads_or_writes_any_chats_hook_spool_or_its_keys() {
                 .expect("held above");
             for named in both_firmlink_names(super::real(folder)) {
                 let rule = format!(
-                    "(deny file-read* file-write* (subpath \"{}\"))",
+                    "(deny file-read* file-write* file-link (subpath \"{}\"))",
                     named.display()
                 );
                 assert!(profile.contains(&rule), "{rule} missing:\n{profile}");
@@ -632,7 +632,7 @@ fn every_harness_denies_a_chat_reading_or_writing_the_dispatch_records() {
     for store in &stores {
         for named in both_firmlink_names(super::real(store)) {
             let rule = format!(
-                "(deny file-read* file-write* (subpath \"{}\"))",
+                "(deny file-read* file-write* file-link (subpath \"{}\"))",
                 named.display()
             );
             assert!(profile.contains(&rule), "{rule} missing:\n{profile}");
@@ -936,7 +936,10 @@ fn every_harness_denies_a_chat_writing_the_persons_harness_approvals_or_the_decl
                 .expect("a profile");
                 for path in &held {
                     for named in both_firmlink_names(super::real(path)) {
-                        let rule = format!("(deny file-write* (subpath \"{}\"))", named.display());
+                        let rule = format!(
+                            "(deny file-write* file-link (subpath \"{}\"))",
+                            named.display()
+                        );
                         assert!(profile.contains(&rule), "{harness:?}: {rule} missing");
                     }
                 }
@@ -4347,7 +4350,7 @@ fn the_toolchains_preset_gives_a_chat_its_projects_own_caches_and_only_with_it()
                 seatbelt::escaped(&tree.display().to_string())
             );
             let planted = format!(
-                "(deny file-write* (regex {}))",
+                "(deny file-write* file-link (regex {}))",
                 seatbelt::string(&regex).expect("a string")
             );
             assert!(on.contains(&planted), "{harness:?}, {tree:?}:\n{on}");
@@ -4413,7 +4416,7 @@ fn a_cargo_bare_repository_is_written_inside_and_never_made_moved_or_run() {
         assert!(profile.contains(&inside), "{harness:?}:\n{profile}");
         let pin = format!("(deny file-write* (literal \"{}\"))", db.display());
         let run = format!(
-            "(deny file-write* (regex {}))",
+            "(deny file-write* file-link (regex {}))",
             seatbelt::string(&format!("^{escaped}/[^/]+/(config|hooks)(/.*)?$")).expect("a string")
         );
         for rule in [&pin, &run] {
@@ -5164,15 +5167,15 @@ fn charters_own_wrap_denies_a_path_and_pins_its_folders_under_both_firmlink_name
         let rules: Vec<&str> = profile
             .lines()
             .filter(|line| {
-                line.starts_with("(deny file-write* (subpath")
+                line.starts_with("(deny file-write* file-link (subpath")
                     || line.starts_with("(deny file-write* (literal")
             })
             .collect();
         assert_eq!(
             rules,
             [
-                "(deny file-write* (subpath \"/Users/op-1356/plane/tools/hook.sh\"))",
-                "(deny file-write* (subpath \"/System/Volumes/Data/Users/op-1356/plane/tools/hook.sh\"))",
+                "(deny file-write* file-link (subpath \"/Users/op-1356/plane/tools/hook.sh\"))",
+                "(deny file-write* file-link (subpath \"/System/Volumes/Data/Users/op-1356/plane/tools/hook.sh\"))",
                 "(deny file-write* (literal \"/Users/op-1356/plane\"))",
                 "(deny file-write* (literal \"/System/Volumes/Data/Users/op-1356/plane\"))",
                 "(deny file-write* (literal \"/Users/op-1356/tmp\"))",
@@ -6661,7 +6664,7 @@ fn a_pattern_denial_is_held_by_a_regular_expression_of_one_name_a_part() {
     assert!(
         rules.iter().any(|rule| rule
             == &format!(
-                "(deny file-write* (regex {}))",
+                "(deny file-write* file-link (regex {}))",
                 seatbelt::string(&format!("^{escaped}/[^/]+/skills(/.*)?$")).unwrap()
             )),
         "{rules:?}"
