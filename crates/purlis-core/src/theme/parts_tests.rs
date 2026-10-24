@@ -1080,9 +1080,9 @@ fn the_tree_family_default_is_what_its_stylesheet_draws() {
         parts::look_of("tree", "", &[Disabled])[1],
         token_of(declared(off, "color").unwrap())
     );
-    // The twist is a mark in the faint tier (R156).
+    // The twist is a mark in the quiet tier (R129).
     let twist = rule(css, "[data-scope=\"tree\"][data-part=\"twist\"]");
-    assert_eq!(token_of(declared(twist, "color").unwrap()), "text.faint");
+    assert_eq!(token_of(declared(twist, "color").unwrap()), "text.quiet");
 }
 
 // ---------------------------------------------------------------------------------------

@@ -787,7 +787,8 @@ tree's role (`tree`, `treeitem`, `treegrid`), wears the shared tree's old classe
   into the hairline between rows, so it is one line. Where twists lead, every row stands one step
   further in, the step a parent's twist hangs in, so a parent and a leaf start their words at one
   place.
-- **The twist** is a chevron in the faint tier (R156), turned down while open (R43; a transform,
+- **The twist** is a chevron in the quiet tier (R129, the Explorer's twisties, over R156's faint
+  chevrons, which are a select's and a nav's), turned down while open (R43; a transform,
   no motion, so opening moves nothing). It is React Aria's toggle, "Expand ‹row›" or "Collapse
   ‹row›", never a Tab stop, and the arrows never land on it.
 - **Sizes**: `sm` (24 px, a side view's), `md` (28, the default), `lg` (32). A tree takes one.

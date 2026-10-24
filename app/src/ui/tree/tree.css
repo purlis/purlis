@@ -192,8 +192,8 @@
 }
 
 /* ---------------------------------------------------------------------------------------------
-   The twist: only on a row with rows under it. **A chevron in the faint tier** (R156), pointing
-   at the words while closed and down while open (R43). Turning it is a transform, so opening
+   The twist: only on a row with rows under it. **A chevron in the quiet tier** (R129, the
+   Explorer's twisties), pointing at the words while closed and down while open (R43). Turning it is a transform, so opening
    moves nothing.
    --------------------------------------------------------------------------------------------- */
 
@@ -208,7 +208,7 @@
   border: 0;
   border-radius: var(--radius-sm);
   appearance: none;
-  color: var(--text-faint);
+  color: var(--text-quiet);
   background-color: transparent;
   outline: none;
 }

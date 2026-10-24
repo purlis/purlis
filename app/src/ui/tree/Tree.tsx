@@ -21,7 +21,7 @@
  *   before its words (`"lead"`, R129: a file tree's ▸/▾), or as a toggle of its own at its end
  *   (`"trail"`, #2799 rule 1: a row that is itself a page, whose twist must not be its press).
  *   The twist is a button a pointer and a reader's own cursor press, never a Tab stop, and the
- *   arrows never land on it. A tree whose rows never fold (`fixed`) draws none.
+ *   arrows never land on it; a mark in the quiet tier (R129). A tree whose rows never fold (`fixed`) draws none.
  * - **Folders read when opened** (`expandedKeys`, `onExpandedChange`): the tree says which rows
  *   are open and the owner reads what is under one when it opens; while it reads, the row under
  *   it is a `TreeLine` that says so.

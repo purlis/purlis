@@ -208,11 +208,11 @@ pub(super) const TREE: Family = Family {
     ],
     focused: "[data-focus-visible]",
     // Its words not in the row's colour: the line about it, a group's name, and the twist, a
-    // mark in the faint tier (R156).
+    // mark in the quiet tier (R129, the Explorer's twisties).
     words: &[
         ("description", "text.quiet"),
         ("header", "text.quiet"),
-        ("twist", "text.faint"),
+        ("twist", "text.quiet"),
     ],
     corner_most: None,
     around: &["body", "header"],

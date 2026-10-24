@@ -47,9 +47,8 @@ const FAINT: ReadonlySet<string> = new Set([
   // A list's row that cannot be used (#2911).
   '[data-scope="list"][data-part="root"][data-disabled]',
   '[data-scope="list"][data-part="root"][data-unavailable]',
-  // A tree's row that cannot be used, and its twist, a mark (#2911, R156).
+  // A tree's row that cannot be used (#2911).
   '[data-scope="tree"][data-part="root"][data-disabled]',
-  '[data-scope="tree"][data-part="twist"]',
 ]);
 
 /** Informational words, each drawn in quiet: line numbers, placeholders, counts, paths, group
