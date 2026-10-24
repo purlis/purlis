@@ -121,7 +121,12 @@ function core() {
 }
 
 const bar = () => screen.getByTestId("title-bar");
-const pins = () => within(bar()).getByRole("toolbar", { name: "Pinned workspaces" });
+/** The strip of pins, by its role and name; found in the DOM while a dialog hides the rest. */
+const pins = () =>
+  within(bar()).queryByRole("toolbar", { name: "Pinned workspaces" }) ??
+  (bar().querySelector<HTMLElement>(
+    '[role="toolbar"][aria-label="Pinned workspaces"]',
+  ) as HTMLElement);
 /** The chips' names, `*` on the current one, `+` on the dashed one. */
 const chips = () =>
   [...pins().querySelectorAll<HTMLElement>('[data-part="workspace"]')].map(
@@ -278,17 +283,20 @@ describe("the keys (the ruling of 2026-10-24)", () => {
     core();
     opened();
     await waitFor(() => expect(chips()).toEqual(["alpha*", "gamma"]));
-    const question = document.createElement("div");
-    question.setAttribute("role", "alertdialog");
-    document.body.append(question);
-    try {
-      switcherKey();
-      pinKey(2);
-      expect(screen.queryByRole("combobox", { name: /^Go to a workspace in / })).toBeNull();
-      expect(chips()).toEqual(["alpha*", "gamma"]);
-    } finally {
-      question.remove();
-    }
+    // The dialog family's own dialog, as New workspace… opens it from the ⌄.
+    await userEvent.click(within(pins()).getByRole("button", { name: "All workspaces" }));
+    await userEvent.click(
+      within(await screen.findByRole("listbox", { name: "Workspaces in one" })).getByRole(
+        "option",
+        { name: "New workspace…" },
+      ),
+    );
+    const dialog = await screen.findByRole("dialog", { name: /workspace/i });
+    switcherKey();
+    pinKey(2);
+    expect(screen.queryByRole("combobox", { name: /^Go to a workspace in / })).toBeNull();
+    expect(chips()).toEqual(["alpha*", "gamma"]);
+    expect(dialog).toBeInTheDocument();
   });
 });
 

@@ -518,9 +518,12 @@ pub(super) const TITLEBAR: Family = Family {
 
 /// **A chip's colours as `app/src/ui/titlebar/titlebar.css` draws them.** Quiet words with no box
 /// at rest; the card's fill and the primary words under the pointer and while current. The
-/// unpinned chip's words are muted and its edge the window's subtle line, dashed.
+/// unpinned chip's words are muted, its edge the window's subtle line, dashed, and it is lit only
+/// under the pointer.
 fn titlebar_look(variant: &str, states: &[State]) -> Look {
-    let lit = states.contains(&State::Hover) || states.contains(&State::Selected);
+    // The unpinned chip is always current, and draws no fill for it: only the pointer lights it.
+    let lit = states.contains(&State::Hover)
+        || (variant != "unpinned" && states.contains(&State::Selected));
     Look {
         fill: if lit { "surface.overlay" } else { TRANSPARENT },
         text: if lit {

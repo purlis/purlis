@@ -58,6 +58,11 @@ operator ruled instead that **⌘P stays the palette's finder of files and proje
 (FM-7 and FR-27 stand, ⌘P ⏎ back to the last project included, and the spec's G2 and L9 are still
 measured on it); **⌥⌘P** (Ctrl+Alt+Shift+P off a Mac) opens the title bar's workspace popover, or
 the two-column switcher while the rail hides itself; **⌘1–⌘9** go to the pins; and **⌘K** is the
-command palette. ⌥⌘P is read by its physical key, since ⌥ turns P into another letter on a Mac;
-xterm.js sends nothing for a ⌘ chord, nor for Ctrl+Shift with a letter, so it takes nothing from
-a chat. None of the title bar's keys acts while a dialog is up.
+command palette. ⌥⌘P is read by its physical key, since ⌥ turns P into another letter on a Mac.
+On a Mac it takes nothing from a chat: xterm.js sends nothing for a ⌘ chord. **Off a Mac it takes
+one chord from a chat, by the operator's decision of the same day**: xterm.js would send
+Ctrl+Alt+Shift+P to a focused terminal as `ESC ^P` (C-M-p), which bash, zsh and readline leave
+unbound and Emacs binds to backward-list; the window takes it, as VS Code takes its own app keys,
+so the key works from a chat too. AltGr (which Windows reports as Ctrl+Alt) is never the key, so a
+letter typed with AltGr+Shift+P is left alone. None of the title bar's keys acts while a dialog
+is up.
