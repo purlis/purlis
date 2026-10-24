@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792856520564,
+  "lastUpdate": 1792860248772,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -6786,6 +6786,42 @@ window.BENCHMARK_DATA = {
             "value": 323.7,
             "unit": "MB",
             "extra": "median of 6 samples: 386.4, 330.5, 332.9, 315.7, 316.9, 226.8 MB; window 203.5 MB, session host 120.2 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "3f4e475dcb51359100bf639506e9561f76cb4f67",
+          "message": "Title bar and workspace switching (#2916) (#3118)\n\n* Title bar and workspace switching (#2916)\n\nThe title bar names the project in front, a faint slash and its pinned\nworkspaces as chips: no limit, each with what waits in it, the current\none lit, a dashed chip that pins an unpinned current workspace, and the\n⌄ that opens every workspace with a filter, pin toggles and New\nworkspace…. ⌥⌘P opens it (⌘P stays the palette's finder, the operator's\nruling of 2026-10-24); ⌘1–⌘9 go to the pins; a sideways swipe over the\ntitle bar steps one pin per gesture. With the rail hidden the project's\nname is a crumb that opens the two-column switcher of every project and\nworkspace. A switch slides the workspace's regions in; the bars, the\nrail and the title bar stay still. Choosing a project lands on the\nworkspace it was last on.\n\nThe workspace strip under the title bar is gone, and ADR 0054 and ADR\n0036 are amended. The chips, the crumb, the ⌄, the pin toggle and the\nswitchers' rows are a family (ui/titlebar, titlebar.*), with its lint\nrule as an error, stories, scenario specs and its defaults held to its\nstylesheet.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* Title bar: keys held under every dialog, the chord's take recorded (#2916)\n\n- The title bar's keys (⌥⌘P, ⌘1–9) are held while the dialog family's\n  root or an alert dialog is up; the window test opens the real\n  New workspace… dialog.\n- Off a Mac, Ctrl+Alt+Shift+P is taken from a focused chat on purpose\n  and recorded so in workspaceSwitch.ts, ui-primitives.md and the\n  ADR 0054 amendment. AltGr (Windows' Ctrl+Alt) is never the key.\n- The workspace popover renders one list and one rule under each\n  filter; stale comments and the unused column rule are gone.\n- The dashed chip takes no fill for being current (CSS and the parts\n  default); the key cap is drawn in symbols off a Mac so the 320px\n  filter keeps its words. The changes note names manifest 11.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Title bar: the titlebar family joins the manifest at version 12 (#2916)\n\nThe list family took version 11 (#3112). The titlebar family's parts\nare `since: 12`, the digest is pinned beside v8–v11, and the published\nschema is regenerated.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-24T19:29:18+04:00",
+          "tree_id": "72dad19d6af6c6fe6876fca98ea0428f069c13db",
+          "url": "https://github.com/purlis/purlis/commit/3f4e475dcb51359100bf639506e9561f76cb4f67"
+        },
+        "date": 1792860246388,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 1213,
+            "unit": "MB",
+            "extra": "median of 3 samples: 946, 1213, 1323 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 329.3,
+            "unit": "MB",
+            "extra": "median of 6 samples: 358.8, 334.1, 333.6, 324.1, 325, 253.4 MB; window 208.8 MB, session host 120.1 MB"
           }
         ]
       }
