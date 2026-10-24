@@ -1043,8 +1043,8 @@ fn a_gitignore_that_is_not_text_is_not_checked_and_never_rewritten() {
 #[cfg(unix)]
 #[test]
 fn a_gitignore_this_charter_cannot_read_is_not_checked() {
-    use std::os::unix::fs::PermissionsExt;
     purlis_core::unsteered!();
+    use std::os::unix::fs::PermissionsExt;
     let (_d, root) = baseline("schema = 1\n");
     let path = root.join(".gitignore");
     std::fs::write(&path, OLDER_IGNORE).unwrap();
