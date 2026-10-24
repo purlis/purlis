@@ -283,11 +283,12 @@ describe("a chat's theme draft", () => {
         browser.execute(() => {
           const asking = document.querySelector('[role="alertdialog"]');
           if (!asking?.textContent?.includes("theme draft")) return false;
-          // The answer's words are its label's, which names the radio by its id.
+          // The answer's words are its radio's own (#2907): the label it is in.
           const label = [...asking.querySelectorAll<HTMLLabelElement>("label")].find(
-            (one) => one.textContent?.trim() === "Revert",
+            (one) =>
+              (one.querySelector('[data-part="label"]') ?? one).textContent?.trim() === "Revert",
           );
-          const revert = label === undefined ? null : document.getElementById(label.htmlFor);
+          const revert = label?.querySelector("input") ?? null;
           revert?.click();
           const close = [...asking.querySelectorAll<HTMLButtonElement>("button")].find(
             (one) => one.textContent?.trim() === "Close",

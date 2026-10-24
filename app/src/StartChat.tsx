@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Bot } from "lucide-react";
 import { PersonaMark } from "./PersonaMark";
 import { HarnessSummary } from "./HarnessCard";
 import { FirstOnHarness, noteHarness } from "./cardLink";
@@ -348,10 +349,12 @@ export function StartChat({
         control={(ids) => (
           <Choice
             ids={ids}
-            kind="radio"
+            kind="cards"
             options={options.profiles.map((row) => ({
               value: row.name,
               label: row.name,
+              // The harness's own glyph is #2922's; until then every card leads with one mark.
+              mark: <Bot />,
               says: <ProfileMeta row={row} />,
             }))}
             value={profile}

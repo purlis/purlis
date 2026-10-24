@@ -12,6 +12,7 @@ import App from "./App";
 import { forgetThisLaunch } from "./regions";
 import { sequenceIn } from "./tabSequence";
 import { showTheExplorer, stripNamed, closeFromTheRail } from "./test-strips";
+import { roleOf, wordsOf } from "./a11y.testkit";
 
 /**
  * **Where Tab goes in the window outside its dialogs** (charter-app#189).
@@ -357,8 +358,8 @@ async function theWholeWindow() {
 
 /** How a control reads to someone looking for it: its role, and the words it goes by. */
 function said(el: HTMLElement): string {
-  const role = el.getAttribute("role") ?? el.tagName.toLowerCase();
-  const named = el.getAttribute("aria-label") ?? el.textContent ?? "";
+  const role = roleOf(el);
+  const named = wordsOf(el);
   return `${role} ${named.trim()}`.trim();
 }
 
@@ -395,11 +396,11 @@ describe("the window's tab order", () => {
       "tab Repos",
       // The left region, top to bottom. The Chats view's scope switch beside its title
       // (#1679): ONE stop, the arrows between This tab, Workspace and All.
-      "radiogroup Show the chats of",
+      "radio Workspace",
       // The Chats list's filter (#1499): its box, then its
       // chips, needs you and working, which are ONE stop with the arrows between them.
       "input Filter chats by name, persona, workspace or state",
-      "input",
+      "checkbox needs you",
       // The project's chats (#1447): ONE stop, the row of the chat in front, which reads as
       // its name and its state's word (#1484), on its one line (#1675).
       "treeitem steward two running (no detail from Claude Code)",

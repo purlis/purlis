@@ -1,0 +1,653 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **The choice families' default** (#2907, ADR 0103, ADR 0104): how a checkbox, a radio, a
+   switch, a segmented control, a slider and an option card are drawn when a theme names none of
+   their parts. Every rule is keyed on the wrapper's attributes (`data-scope`, `data-part`,
+   `data-variant`, `data-size`) and React Aria's state attributes, never on a class, so a screen
+   cannot reach a choice's look and a theme's parts reach exactly what this file draws.
+
+   **Purlis draws first** (the Figma design, #3034): an option is ticked, picked or turned on in
+   the accent's fill with a mark in the window's colour on it, and a choice is told by a shape as
+   well as a colour (the tick, the dot, the thumb's place, a card's edge and check).
+
+   **It is in the `components` layer** (`styles.css`), above `App.css`: a view places a choice
+   (margin, width, flex, order) and nothing it writes redraws one.
+
+   **Only tokens.** Every colour is one `var()` per declaration, so `contrast.test.ts` reads each
+   pair a rule draws; every size is a core geometry token.
+
+   **A state never changes size** (#2800, R153): under the pointer, ticked, picked, focused or
+   unavailable, a choice changes a colour, a ground, an edge's colour or a ring, never a padding, a
+   border width, a height or a weight, and a mark that shows only in one state keeps its room in
+   every other. A thumb slides, and only as it is turned; never under reduced motion. */
+
+/* ---------------------------------------------------------------------------------------------
+   The checkbox: its row (the label), its box and its words.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="checkbox"][data-part="root"] {
+  display: inline-grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0 var(--space-4);
+  box-sizing: border-box;
+  min-block-size: max(var(--size-chrome), var(--space-7));
+  min-inline-size: 0;
+  color: var(--text-primary);
+  background-color: transparent;
+  cursor: default;
+}
+
+[data-scope="checkbox"][data-part="box"] {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  box-sizing: border-box;
+  /* 14px at the default text size: half a control. */
+  inline-size: calc(var(--size-control) / 2);
+  block-size: calc(var(--size-control) / 2);
+  border: 1px solid var(--text-faint);
+  border-radius: var(--radius-sm);
+  background-color: var(--surface-sunken);
+}
+
+/* The tick keeps its room whether it shows or not. */
+[data-scope="checkbox"][data-part="tick"] {
+  inline-size: calc(var(--size-control) * 5 / 14);
+  block-size: calc(var(--size-control) * 5 / 14);
+  stroke-width: 3;
+  visibility: hidden;
+}
+
+[data-scope="checkbox"][data-part="label"] {
+  min-inline-size: 0;
+}
+
+/* What it does, under its words: information, so the quiet tier (the palette rules). */
+[data-scope="checkbox"][data-part="description"] {
+  grid-column: 2;
+  color: var(--text-quiet);
+  font-size: var(--font-size-xs);
+}
+
+/* A group of boxes: one under another, or a row of chips that wraps. */
+[data-scope="checkbox-group"] {
+  display: grid;
+  gap: var(--space-1);
+  justify-items: start;
+}
+
+[data-scope="checkbox-group"][data-roving] {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+[data-scope="checkbox"][data-part="root"]:is([data-selected], [data-indeterminate])
+  [data-scope="checkbox"][data-part="box"] {
+  border-color: var(--accent-base);
+  color: var(--surface-base);
+  background-color: var(--accent-base);
+}
+
+[data-scope="checkbox"][data-part="root"]:is([data-selected], [data-indeterminate])
+  [data-scope="checkbox"][data-part="tick"] {
+  visibility: visible;
+}
+
+[data-scope="checkbox"][data-part="root"][data-hovered]:not([data-disabled]):not([data-selected])
+  [data-scope="checkbox"][data-part="box"] {
+  border-color: var(--text-muted);
+}
+
+/* **A chip** (#1687): one of a few, small and side by side over the list it narrows, on the
+   control's ground; on, on the accent's wash in the primary words with its tick in the slot it
+   always keeps. */
+[data-scope="checkbox"][data-part="root"][data-variant="chip"] {
+  display: inline-flex;
+  gap: var(--space-1);
+  min-block-size: max(var(--size-chrome), var(--space-7));
+  padding-inline: var(--space-4);
+  /* A field's corner, as the spec pairs fields and chips. */
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  background-color: var(--control-base);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+}
+
+[data-scope="checkbox"][data-part="root"][data-variant="chip"]
+  [data-scope="checkbox"][data-part="box"] {
+  inline-size: auto;
+  border: 0;
+  color: var(--accent-base);
+  background-color: transparent;
+}
+
+[data-scope="checkbox"][data-part="root"][data-variant="chip"][data-hovered]:not([data-disabled]) {
+  background-color: var(--control-hover);
+}
+
+[data-scope="checkbox"][data-part="root"][data-variant="chip"][data-selected] {
+  color: var(--text-primary);
+  background-color: var(--accent-surface);
+}
+
+[data-scope="checkbox"][data-part="root"][data-variant="chip"][data-selected]
+  [data-scope="checkbox"][data-part="box"] {
+  border-color: transparent;
+  background-color: transparent;
+}
+
+[data-scope="checkbox"][data-part="root"][data-variant="chip"][data-disabled] {
+  color: var(--text-faint);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   The radio group: a column of options, each its mark, its words and the line under them.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="radio-group"] {
+  display: grid;
+  gap: var(--space-1);
+  inline-size: 100%;
+}
+
+[data-scope="radio"][data-part="root"] {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0 var(--space-4);
+  box-sizing: border-box;
+  min-block-size: max(var(--size-chrome), var(--space-7));
+  color: var(--text-primary);
+  background-color: transparent;
+  cursor: default;
+}
+
+[data-scope="radio"][data-part="mark"] {
+  display: inline-grid;
+  place-items: center;
+  box-sizing: border-box;
+  inline-size: calc(var(--size-control) / 2);
+  block-size: calc(var(--size-control) / 2);
+  border: 1px solid var(--text-faint);
+  border-radius: var(--radius-full);
+  background-color: var(--surface-sunken);
+}
+
+/* The dot keeps its room whether it shows or not. */
+[data-scope="radio"][data-part="mark"]::after {
+  content: "";
+  inline-size: calc(var(--size-control) * 3 / 14);
+  block-size: calc(var(--size-control) * 3 / 14);
+  border-radius: var(--radius-full);
+  background-color: var(--surface-base);
+  visibility: hidden;
+}
+
+[data-scope="radio"][data-part="label"] {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-inline-size: 0;
+}
+
+/* An option with a line under it reads as a name over what it does: its words a step heavier,
+   in a radio and a checkbox alike, ticked or not. */
+[data-scope="radio"][data-part="root"]:has([data-part="description"])
+  [data-scope="radio"][data-part="label"],
+[data-scope="checkbox"][data-part="root"]:has([data-part="description"])
+  [data-scope="checkbox"][data-part="label"] {
+  font-weight: var(--font-weight-medium);
+}
+
+/* What it does, under its words: information, so the quiet tier (the palette rules). */
+[data-scope="radio"][data-part="description"] {
+  grid-column: 2;
+  color: var(--text-quiet);
+  font-size: var(--font-size-xs);
+}
+
+[data-scope="radio"][data-part="root"][data-selected] [data-scope="radio"][data-part="mark"] {
+  border-color: var(--accent-base);
+  background-color: var(--accent-base);
+}
+
+[data-scope="radio"][data-part="root"][data-selected]
+  [data-scope="radio"][data-part="mark"]::after {
+  visibility: visible;
+}
+
+[data-scope="radio"][data-part="root"][data-hovered]:not([data-disabled]):not([data-selected])
+  [data-scope="radio"][data-part="mark"] {
+  border-color: var(--text-muted);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   The switch (R63): a 34 x 20 pill, its 14px thumb, and its words.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="switch"][data-part="root"] {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  box-sizing: border-box;
+  min-block-size: max(var(--size-chrome), var(--space-7));
+  color: var(--text-primary);
+  background-color: transparent;
+  cursor: default;
+}
+
+[data-scope="switch"][data-part="track"] {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  box-sizing: border-box;
+  /* R63's anatomy, the switch's own and no theme's control height: 34 x 20 at the default text
+     size, growing only with the person's text size. */
+  inline-size: calc(34rem / 14);
+  block-size: calc(20rem / 14);
+  border-radius: var(--radius-full);
+  background-color: var(--control-hover);
+}
+
+/* A 14px thumb 3px in from the track's edge, off at its start and on at its end: it travels the
+   track less itself and both insets, 14px. */
+[data-scope="switch"][data-part="thumb"] {
+  --switch-travel: calc(14rem / 14);
+  display: block;
+  inline-size: calc(14rem / 14);
+  block-size: calc(14rem / 14);
+  border-radius: var(--radius-full);
+  background-color: var(--text-muted);
+  translate: calc(3rem / 14) 0;
+  /* The knob's own motion token (R150: `quick`, the chevron and the knob), 150ms on the shared
+     ease in Purlis (R63), with no multiplier of its own; 0 under reduced motion, which also stops
+     every transition. */
+  transition: translate var(--motion-duration-quick) var(--motion-easing-standard);
+}
+
+/* Right to left, the thumb starts at the right and slides left. */
+[data-scope="switch"][data-part="thumb"]:dir(rtl) {
+  translate: calc(-3rem / 14) 0;
+}
+
+[data-scope="switch"][data-part="root"][data-selected] [data-scope="switch"][data-part="track"] {
+  background-color: var(--accent-base);
+}
+
+[data-scope="switch"][data-part="root"][data-selected] [data-scope="switch"][data-part="thumb"] {
+  background-color: var(--surface-base);
+  translate: calc(3rem / 14 + var(--switch-travel)) 0;
+}
+
+[data-scope="switch"][data-part="root"][data-selected]
+  [data-scope="switch"][data-part="thumb"]:dir(rtl) {
+  translate: calc(-3rem / 14 - var(--switch-travel)) 0;
+}
+
+[data-scope="switch"][data-part="root"][data-hovered]:not([data-disabled]):not([data-selected])
+  [data-scope="switch"][data-part="track"] {
+  background-color: var(--control-count);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   States every small choice shares: unavailable, and the ring.
+   --------------------------------------------------------------------------------------------- */
+
+/* Unavailable (#2897, the palette rules): its words in the faint tier, its mark faint, on its
+   own ground, so nothing moves and it is still told by its shape. Disabled words are exempt from
+   the text floor (WCAG 1.4.3). */
+[data-scope="checkbox"][data-part="root"][data-disabled],
+[data-scope="radio"][data-part="root"][data-disabled],
+[data-scope="switch"][data-part="root"][data-disabled] {
+  color: var(--text-faint);
+}
+
+[data-scope="checkbox"][data-part="root"][data-disabled][data-selected]
+  [data-scope="checkbox"][data-part="box"],
+[data-scope="checkbox"][data-part="root"][data-disabled][data-indeterminate]
+  [data-scope="checkbox"][data-part="box"],
+[data-scope="radio"][data-part="root"][data-disabled][data-selected]
+  [data-scope="radio"][data-part="mark"] {
+  border-color: var(--text-faint);
+  background-color: var(--text-faint);
+}
+
+[data-scope="switch"][data-part="root"][data-disabled] [data-scope="switch"][data-part="thumb"] {
+  background-color: var(--text-faint);
+}
+
+[data-scope="switch"][data-part="root"][data-disabled][data-selected]
+  [data-scope="switch"][data-part="track"] {
+  background-color: var(--text-faint);
+}
+
+[data-scope="switch"][data-part="root"][data-disabled][data-selected]
+  [data-scope="switch"][data-part="thumb"] {
+  background-color: var(--surface-base);
+}
+
+/* The ring: from the keyboard only, 2px outside the mark (R162). */
+[data-scope="checkbox"][data-part="root"][data-variant="box"][data-focus-visible]
+  [data-scope="checkbox"][data-part="box"],
+[data-scope="checkbox"][data-part="root"][data-variant="chip"][data-focus-visible],
+[data-scope="radio"][data-part="root"][data-focus-visible] [data-scope="radio"][data-part="mark"],
+[data-scope="switch"][data-part="root"][data-focus-visible]
+  [data-scope="switch"][data-part="track"] {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   The segmented control: its segments side by side on the control's ground, sm 24 and md 28.
+   The chosen one stands on the window's ground with an edge under it, in the primary words (R39); its
+   weight never changes (#2800·2, #2868·18).
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="segmented-control"][data-part="root"] {
+  display: inline-flex;
+  flex: none;
+  align-items: stretch;
+  gap: var(--space-1);
+  box-sizing: border-box;
+  max-inline-size: 100%;
+  block-size: var(--size-control);
+  padding: var(--space-1);
+  /* A control's corner (7 in Purlis, R39). */
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  background-color: var(--control-base);
+}
+
+[data-scope="segmented-control"][data-part="root"][data-size="sm"] {
+  block-size: max(var(--size-chrome), var(--space-7));
+}
+
+[data-scope="segment"][data-part="root"] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  box-sizing: border-box;
+  min-inline-size: 0;
+  padding-inline: var(--space-5);
+  /* The ground's corner less its inset, so the two curves run together (5 in Purlis, R158). */
+  border-radius: calc(var(--radius-md) - var(--space-1));
+  color: var(--text-quiet);
+  background-color: transparent;
+  font-size: var(--font-size-base);
+  white-space: nowrap;
+  cursor: default;
+}
+
+[data-scope="segmented-control"][data-size="sm"] [data-scope="segment"][data-part="root"] {
+  padding-inline: var(--space-3);
+  font-size: var(--font-size-sm);
+}
+
+[data-scope="segment"][data-part="label"] {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+[data-scope="segment"][data-part="count"] {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+[data-scope="segment"][data-part="root"][data-hovered]:not([data-disabled]) {
+  color: var(--text-primary);
+  background-color: var(--control-hover);
+}
+
+[data-scope="segment"][data-part="root"][data-selected] {
+  color: var(--text-primary);
+  background-color: var(--surface-base);
+  /* Its lift: a 1px edge under it in the mark tier, held to 3:1 on the control's ground, so the
+     chosen segment is told by a shape as well as its ground, whatever the theme's elevation
+     (R39). */
+  box-shadow: 0 1px 0 var(--text-faint);
+}
+
+[data-scope="segment"][data-part="root"][data-disabled] {
+  color: var(--text-faint);
+}
+
+[data-scope="segment"][data-part="root"][data-focus-visible] {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   The slider: its track, the fill up to the value, its thumb and the value beside them.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="slider"][data-part="root"] {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-block-size: max(var(--size-chrome), var(--space-7));
+  min-inline-size: 0;
+  color: var(--text-secondary);
+}
+
+[data-scope="slider"][data-part="group"] {
+  display: contents;
+}
+
+/* Where a press lands: as tall as the thumb. */
+[data-scope="slider"][data-part="area"] {
+  position: relative;
+  display: flex;
+  flex: 1 1 calc(var(--space-8) * 4);
+  align-items: center;
+  min-inline-size: calc(var(--space-8) * 2);
+  block-size: calc(var(--size-control) / 2);
+}
+
+/* The line it moves along, 4px tall. */
+[data-scope="slider"][data-part="track"] {
+  position: relative;
+  flex: 1;
+  block-size: var(--space-2);
+  border-radius: var(--radius-full);
+  background-color: var(--control-hover);
+}
+
+[data-scope="slider"][data-part="fill"] {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  border-radius: var(--radius-full);
+  background-color: var(--accent-base);
+}
+
+[data-scope="slider"][data-part="thumb"] {
+  top: 50%;
+  box-sizing: border-box;
+  inline-size: calc(var(--size-control) / 2);
+  block-size: calc(var(--size-control) / 2);
+  border: 2px solid var(--surface-base);
+  border-radius: var(--radius-full);
+  background-color: var(--accent-base);
+}
+
+[data-scope="slider"][data-part="thumb"][data-focus-visible] {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* The value keeps the room of its widest, so nothing moves as it changes. */
+[data-scope="slider"][data-part="output"] {
+  display: inline-grid;
+  font-variant-numeric: tabular-nums;
+}
+
+[data-scope="slider"][data-part="room"],
+[data-scope="slider"][data-part="value"] {
+  grid-area: 1 / 1;
+  text-align: end;
+}
+
+[data-scope="slider"][data-part="room"] {
+  visibility: hidden;
+}
+
+[data-scope="slider"][data-part="root"][data-disabled] {
+  color: var(--text-faint);
+}
+
+[data-scope="slider"][data-part="root"][data-disabled] [data-scope="slider"][data-part="fill"],
+[data-scope="slider"][data-part="root"][data-disabled] [data-scope="slider"][data-part="thumb"] {
+  background-color: var(--text-faint);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   The option cards (R24): each a card as tall as the tallest, its icon and title on the first
+   line, its detail under them, its check at its end; no radio circle. The chosen card takes the
+   accent's wash, its edge and its check, never colour alone (WCAG 1.4.1).
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="option-cards"][data-variant="card"] {
+  display: grid;
+  grid-auto-rows: 1fr;
+  gap: var(--space-3);
+  inline-size: 100%;
+}
+
+[data-scope="option-cards"][data-variant="tile"] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+[data-scope="option-card"][data-part="root"] {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto 1fr;
+  align-items: center;
+  gap: var(--space-1) var(--space-4);
+  box-sizing: border-box;
+  /* 10 / 12 (R25). */
+  padding-block: calc(var(--space-4) + var(--space-1));
+  padding-inline: var(--space-5);
+  /* A 1.5px edge, always drawn, so the chosen card's accent edge moves nothing (R26). */
+  border: 1.5px solid transparent;
+  /* A card's corner, 10 in Purlis (R25). */
+  border-radius: var(--radius-lg);
+  color: var(--text-secondary);
+  background-color: var(--surface-base);
+  cursor: default;
+}
+
+[data-scope="option-card"][data-part="icon"] {
+  display: inline-flex;
+  grid-row: 1;
+  grid-column: 1;
+}
+
+[data-scope="option-card"][data-part="title"] {
+  grid-row: 1;
+  grid-column: 2;
+  min-inline-size: 0;
+  font-weight: var(--font-weight-medium);
+}
+
+/* Its check keeps its room whether it shows or not. */
+[data-scope="option-card"][data-part="check"] {
+  grid-row: 1 / span 2;
+  grid-column: 3;
+  inline-size: calc(var(--size-control) * 4 / 7);
+  block-size: calc(var(--size-control) * 4 / 7);
+  color: var(--accent-base);
+  visibility: hidden;
+}
+
+/* What it means, under its title: information, so the quiet tier. */
+[data-scope="option-card"][data-part="detail"] {
+  grid-row: 2;
+  grid-column: 1 / span 2;
+  align-self: start;
+  min-inline-size: 0;
+  color: var(--text-quiet);
+  font-size: var(--font-size-sm);
+}
+
+[data-scope="option-card"][data-part="root"][data-hovered]:not([data-disabled]):not(
+    [data-selected]
+  ) {
+  background-color: var(--control-base);
+}
+
+[data-scope="option-card"][data-part="root"][data-selected] {
+  border-color: var(--accent-base);
+  color: var(--text-primary);
+  background-color: var(--accent-surface);
+}
+
+[data-scope="option-card"][data-part="root"][data-selected]
+  [data-scope="option-card"][data-part="check"] {
+  visibility: visible;
+}
+
+/* The chosen card's mark turns the accent (R26). */
+[data-scope="option-card"][data-part="root"][data-selected]
+  [data-scope="option-card"][data-part="icon"] {
+  color: var(--accent-base);
+}
+
+[data-scope="option-card"][data-part="root"][data-disabled] {
+  color: var(--text-faint);
+}
+
+[data-scope="option-card"][data-part="root"][data-focus-visible] {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* **A tile**: a card that is only its icon, square at the control's height, named by its
+   `aria-label`. It has no ground of its own, under the pointer or chosen: chosen, it takes the
+   accent's edge and the primary words. */
+[data-scope="option-card"][data-part="root"][data-variant="tile"] {
+  display: inline-grid;
+  grid-template-columns: auto;
+  grid-template-rows: auto;
+  place-items: center;
+  inline-size: var(--size-control);
+  block-size: var(--size-control);
+  padding: 0;
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  background-color: transparent;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-strong);
+}
+
+[data-scope="option-card"][data-part="root"][data-variant="tile"]
+  [data-scope="option-card"][data-part="icon"] {
+  grid-row: auto;
+  grid-column: auto;
+}
+
+[data-scope="option-card"][data-part="root"][data-variant="tile"]:is(
+    [data-selected],
+    [data-hovered]:not([data-disabled])
+  ) {
+  color: var(--text-primary);
+}
+
+[data-scope="option-card"][data-part="root"][data-variant="tile"][data-disabled] {
+  color: var(--text-faint);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   The colour well: the platform draws it; the family gives it the window's ring.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="color-well"]:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}

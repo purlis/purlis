@@ -66,7 +66,8 @@ async function levelBecomes(want: string): Promise<void> {
       saw = await browser.execute(
         (selector: string) =>
           document
-            .querySelector(`${selector} [role="radio"][aria-checked="true"]`)
+            .querySelector(`${selector} input[type="radio"]:checked`)
+            ?.closest("label")
             ?.textContent?.trim() ?? "",
         LEVEL,
       );
@@ -138,8 +139,8 @@ describe("Locate… for a remembered project that moved", function () {
     });
     await $(LEVEL).waitForExist({ timeout: 30_000 });
     await browser.execute((selector: string) => {
-      [...document.querySelectorAll<HTMLElement>(`${selector} [role="radio"]`)]
-        .find((one) => one.textContent?.trim() === "You")
+      [...document.querySelectorAll<HTMLElement>(`${selector} input[type="radio"]`)]
+        .find((one) => one.closest("label")?.textContent?.trim() === "You")
         ?.click();
     }, LEVEL);
     await levelBecomes("You");

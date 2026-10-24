@@ -59,8 +59,9 @@ async function signRow(id: string) {
     ].find((one) => one.textContent?.trim() === "Reset");
     return {
       role: it?.getAttribute("role") ?? null,
-      checked: it?.getAttribute("aria-checked") ?? null,
-      box: it ? box(it) : null,
+      // A native switch in its own label (#2907): its state is the input's, its box the label's.
+      checked: it instanceof HTMLInputElement ? String(it.checked) : null,
+      box: it ? box(it.closest("label") ?? it) : null,
       reset: reset ? box(reset) : null,
     };
   }, id);
@@ -94,7 +95,8 @@ async function levelBecomes(want: string): Promise<void> {
       saw = await browser.execute(
         (selector: string) =>
           document
-            .querySelector(`${selector} [role="radio"][aria-checked="true"]`)
+            .querySelector(`${selector} input[type="radio"]:checked`)
+            ?.closest("label")
             ?.textContent?.trim() ?? "",
         LEVEL,
       );
@@ -186,7 +188,9 @@ describe("the settings gears, and ⌘, at the focused level", function () {
     });
     const before = await signRow(signId);
     expect(before).toMatchObject({ role: "switch", checked: "false", reset: null });
-    await $(`[id="${signId}"]`).click();
+    // A click on the switch's input itself: the WebView's driver clicks without a pointer, which
+    // React Aria reads as a virtual press, the input's to take and not its label's (#2907).
+    await browser.execute((id: string) => document.getElementById(id)?.click(), signId);
 
     // Shared by default, so it lands in the committed file and not in this machine's.
     await browser.waitUntil(

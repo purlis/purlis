@@ -60,6 +60,7 @@ import {
 import { LivesHere } from "../LivesHere";
 import { usePools } from "../pools";
 import { POOLS } from "./pools";
+import { ColorWell } from "../ui/choice/ColorWell";
 import { Button } from "../ui/button/Button";
 import { Menu, MenuItem, MenuSection, MenuTrigger, MenuWords } from "../ui/menu/Menu";
 import { MenuTip, useRested } from "../ui/menu/MenuTip";
@@ -1380,17 +1381,7 @@ function Colour({
       {custom && (
         <>
           <label htmlFor={well}>Custom colour</label>
-          <input
-            id={well}
-            type="color"
-            tabIndex={0}
-            value={dragged ?? value}
-            onChange={(event) => setDragged(event.currentTarget.value)}
-            ref={(element) => {
-              if (element) element.onchange = () => commit(element.value);
-            }}
-            onBlur={() => commit(dragged)}
-          />
+          <ColorWell id={well} value={dragged ?? value} onDraft={setDragged} onCommit={commit} />
         </>
       )}
     </>

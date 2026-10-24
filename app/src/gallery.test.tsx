@@ -20,6 +20,7 @@ import {
 import { drawnWith } from "./cascade.testkit";
 import { complaints } from "./theme/complaints.testkit";
 import { BUILT_IN, DEFAULT_THEME, drawIn } from "./theme/theme";
+import { roleOf, wordsOf } from "./a11y.testkit";
 
 /**
  * **The component set, drawn as one gallery** (DS-3 #626, line 2).
@@ -307,12 +308,8 @@ describe("the gallery by keyboard", () => {
       await user.tab();
       const at = document.activeElement;
       if (at === null || at === document.body) break;
-      const name =
-        at.getAttribute("aria-label") ??
-        (at.id ? document.querySelector(`label[for="${at.id}"]`)?.textContent : null) ??
-        at.textContent ??
-        "";
-      stops.push(`${at.getAttribute("role") ?? at.tagName.toLowerCase()} ${name.trim()}`);
+      const name = wordsOf(at);
+      stops.push(`${roleOf(at)} ${name.trim()}`);
     }
     return stops;
   }
@@ -340,7 +337,7 @@ describe("the gallery by keyboard", () => {
       "button Reset name",
       "button Undo",
       "textarea Hosts",
-      "input Size",
+      "slider Size",
       // A radio group is one stop, on its pick; Gamma is out of reach.
       "radio Alpha",
       // The select is Radix's: a combobox that opens its list (#1860).
@@ -351,7 +348,7 @@ describe("the gallery by keyboard", () => {
       "checkbox Beta",
       // The chips are one stop, whichever is ticked: a native box, named by the chip that
       // wraps it, which this reading of a stop's name does not follow.
-      "input ",
+      "checkbox needs you",
       "button Save",
       "button Delete",
       ...notice("inbox"),

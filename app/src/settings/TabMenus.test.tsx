@@ -123,7 +123,8 @@ function projectTab(name: string): HTMLElement {
 const level = () =>
   within(screen.getByRole("radiogroup", { name: /level/i }))
     .getAllByRole("radio")
-    .find((radio) => radio.getAttribute("aria-checked") === "true")
+    .find((radio) => (radio as HTMLInputElement).checked)
+    ?.closest("label")
     ?.textContent?.trim();
 
 /** Right-clicks `on` and presses the menu's row called `row`. */
