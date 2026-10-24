@@ -468,9 +468,47 @@ pub(crate) struct Confined {
     pub(crate) env: Vec<(OsString, OsString)>,
     /// Its own temporary folder, removed when the question is over.
     _tmp: tempfile::TempDir,
-    /// Its proxy, the extension's one for the whole run ([`proxy_for`]); none where it declares
-    /// no host.
-    _proxy: Option<std::sync::Arc<crate::sandbox::egress::Proxy>>,
+    /// Its proxy, the extension's one for the whole run ([`proxy_for`]), open while this question
+    /// is being answered; none where it declares no host.
+    _proxy: Option<Asking>,
+}
+
+/// **One question being answered through a confined extension's proxy**: the proxy carries
+/// connections only while one is ([`crate::sandbox::egress::Serving::asking`]), so a program its
+/// extension left running between questions reaches no host.
+struct Asking {
+    proxy: std::sync::Arc<crate::sandbox::egress::Proxy>,
+}
+
+impl Asking {
+    fn of(proxy: std::sync::Arc<crate::sandbox::egress::Proxy>) -> Self {
+        if let Some(asking) = proxy.asking() {
+            asking.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
+        Self { proxy }
+    }
+
+    fn proxy(&self) -> &crate::sandbox::egress::Proxy {
+        &self.proxy
+    }
+}
+
+impl Drop for Asking {
+    fn drop(&mut self) {
+        if let Some(asking) = self.proxy.asking() {
+            asking.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+}
+
+/// **Closes the extension `id`'s proxy for good**: it was turned off on this machine or removed.
+/// Its ports stay held for the rest of the run, so no other listener is given them
+/// ([`crate::sandbox::egress::Serving::confined`]); a later question opens a proxy of its own.
+pub(crate) fn close_proxy(id: &str) {
+    PROXIES
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .remove(id);
 }
 
 /// A confined extension's proxy, with the hosts it carries.
@@ -549,7 +587,9 @@ impl Confined {
         let proxy = if hosts.is_empty() {
             None
         } else {
-            Some(proxy_for(id, hosts).map_err(|why| could_not(&why))?)
+            Some(Asking::of(
+                proxy_for(id, hosts).map_err(|why| could_not(&why))?,
+            ))
         };
         let mut writes = vec![tmp_path.clone()];
         if let Some(state) = &found.manifest.state {
@@ -558,7 +598,7 @@ impl Confined {
         // The proxy's own two listening ports on the loopback, and no other port of this machine.
         let ports: Vec<u16> = proxy
             .as_ref()
-            .map(|proxy| vec![proxy.port(), proxy.socks_port()])
+            .map(|asking| vec![asking.proxy().port(), asking.proxy().socks_port()])
             .unwrap_or_default();
         let profile = crate::sandbox::confined::profile(
             os,
@@ -573,7 +613,10 @@ impl Confined {
             .filter(|(name, _)| name != "TMPDIR")
             .collect();
         match &proxy {
-            Some(proxy) => env.extend(crate::sandbox::seatbelt::env(&proxy.url(), &tmp_path)),
+            Some(asking) => env.extend(crate::sandbox::seatbelt::env(
+                &asking.proxy().url(),
+                &tmp_path,
+            )),
             None => env.push(("TMPDIR".to_owned(), tmp_path.display().to_string())),
         }
         let wrap = match os {

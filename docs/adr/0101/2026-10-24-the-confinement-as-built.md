@@ -10,9 +10,10 @@ A confined program reads its own folder, its state folder, its own temporary fol
 
 - **Only its declared hosts**, less any host that serves a model, checked at each question (§3).
 - **Only to a public address.** No connection reaches a private, shared or special-use address (RFC 1918, RFC 6598, `fc00::/7` and the rest of RFC 6890). The check is made after each lookup, at every connect, and covers an IPv6 address that carries an IPv4 one.
-- **A tunnel only where its TLS ClientHello names the host it was asked for.** The proxy reads the first TLS record, never decrypts anything, and refuses a tunnel whose server name is missing or names another host.
+- **A tunnel only where its TLS ClientHello names the host it was asked for.** The proxy reads the first TLS record, never decrypts anything, and refuses a tunnel whose server name is missing or names another host. A ClientHello that carries an encrypted ClientHello (ECH) is refused, since its real server name is inside it. That includes the GREASE ECH some clients send by default, so such a client fails closed until it is told not to send one.
 - **No SOCKS request.**
-- Its two ports stay purlis's own, and stay bound, for the rest of the run. No later listener on this machine is given them.
+- **Only while one of its questions is being answered.** Each extension has one proxy for the run, on one pair of ports. It carries nothing between questions, so a program left running then reaches no host. When the extension is turned off on this machine or removed, its proxy is closed for good.
+- Its ports stay purlis's own, and stay bound, for the rest of the run, on both loopbacks (`127.0.0.1` and `[::1]`). No other listener on this machine is given them.
 
 ## What it does not stop
 

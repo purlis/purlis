@@ -595,6 +595,10 @@ pub struct Serving {
     /// for as long as purlis runs, never handed to another listener ([`Proxy`]'s drop), so
     /// nothing its program left running can reach another proxy at them.
     pub confined: bool,
+    /// For a confined extension's proxy: how many of its questions are being answered now. The
+    /// proxy carries nothing while it is none, so a program left running between questions
+    /// reaches no host ([`Self::confined`]).
+    pub asking: Option<Arc<AtomicUsize>>,
 }
 
 impl Serving {
@@ -613,6 +617,7 @@ impl Serving {
             internal: None,
             left_out: Vec::new(),
             confined: false,
+            asking: None,
         }
     }
 
@@ -621,6 +626,7 @@ impl Serving {
     pub fn confined(hosts: Vec<String>) -> Self {
         Self {
             confined: true,
+            asking: Some(Arc::new(AtomicUsize::new(0))),
             ..Self::of(Reach::open(hosts))
         }
     }
@@ -648,6 +654,9 @@ pub struct Proxy {
     telling: Option<std::thread::JoinHandle<()>>,
     /// Whether its ports stay bound and purlis's own once it stops ([`Serving::confined`]).
     keep: bool,
+    /// The `[::1]` listeners on its ports, for a confined extension's proxy.
+    also: Vec<SocketAddr>,
+    asking: Option<Arc<AtomicUsize>>,
 }
 
 impl std::fmt::Debug for Proxy {
@@ -704,6 +713,27 @@ impl Proxy {
             }
         };
         let (http_addr, socks_addr) = (http.local_addr()?, socks.local_addr()?);
+        // A confined program may reach both loopbacks on its ports, as a sandbox rule says
+        // `localhost`: so its proxy holds `[::1]` on the same ports, and nothing else can.
+        let mut also: Vec<(TcpListener, Speaks)> = Vec::new();
+        if serving.confined {
+            for (addr, speaks) in [(http_addr, Speaks::Http), (socks_addr, Speaks::Socks)] {
+                match TcpListener::bind((std::net::Ipv6Addr::LOCALHOST, addr.port())) {
+                    Ok(listener) => also.push((listener, speaks)),
+                    // No IPv6 loopback here: nothing can listen on it either.
+                    Err(err) if err.kind() == io::ErrorKind::AddrNotAvailable => {}
+                    Err(err) => {
+                        super::localport::release(http_addr.port());
+                        super::localport::release(socks_addr.port());
+                        return Err(err);
+                    }
+                }
+            }
+        }
+        let also_addrs: Vec<SocketAddr> = also
+            .iter()
+            .filter_map(|(listener, _)| listener.local_addr().ok())
+            .collect();
         let stop = Arc::new(AtomicBool::new(false));
         let ports: Vec<u16> = serving
             .tunnel_ports
@@ -725,6 +755,7 @@ impl Proxy {
             internal: serving.internal,
             left_out: serving.left_out,
             confined: serving.confined,
+            asking: serving.asking.clone(),
             tally: Mutex::new(Tally::default()),
             teller: Teller::default(),
         });
@@ -754,6 +785,9 @@ impl Proxy {
         let keep = serving.confined;
         listen(http, Speaks::Http, &allowed, &open, &stop, limits, keep)?;
         listen(socks, Speaks::Socks, &allowed, &open, &stop, limits, keep)?;
+        for (listener, speaks) in also {
+            listen(listener, speaks, &allowed, &open, &stop, limits, keep)?;
+        }
         // Without its timer, a count is told at the next connection or at the stop, as before.
         let ticking = if allowed.reached.is_some() {
             let allowed = Arc::clone(&allowed);
@@ -786,7 +820,15 @@ impl Proxy {
             ticking,
             telling,
             keep,
+            also: also_addrs,
+            asking: serving.asking,
         })
+    }
+
+    /// How many questions to its extension are being answered now, for a confined extension's
+    /// proxy ([`Serving::asking`]); none for any other.
+    pub fn asking(&self) -> Option<Arc<AtomicUsize>> {
+        self.asking.clone()
     }
 
     /// Waits until the teller has told every refusal handed to it so far.
@@ -841,8 +883,8 @@ impl Drop for Proxy {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::SeqCst);
         // Wakes each accept, which then sees the stop and closes its listener.
-        for addr in [self.http, self.socks] {
-            let _ = TcpStream::connect_timeout(&addr, Duration::from_secs(1));
+        for addr in [self.http, self.socks].iter().chain(&self.also) {
+            let _ = TcpStream::connect_timeout(addr, Duration::from_secs(1));
         }
         if let Some(ticking) = self.ticking.take() {
             ticking.thread().unpark();
@@ -908,6 +950,16 @@ fn listen(
                     std::thread::sleep(BACKOFF);
                     continue;
                 };
+                // A confined extension's proxy carries nothing while none of its questions is
+                // being answered ([`Serving::asking`]).
+                if allowed
+                    .asking
+                    .as_ref()
+                    .is_some_and(|asking| asking.load(Ordering::SeqCst) == 0)
+                {
+                    let _ = stream.shutdown(Shutdown::Both);
+                    continue;
+                }
                 if open.fetch_add(1, Ordering::SeqCst) >= limits.connections {
                     open.fetch_sub(1, Ordering::SeqCst);
                     let _ = stream.set_write_timeout(Some(BACKOFF));
@@ -969,6 +1021,7 @@ struct Allowed {
     internal: Option<Internal>,
     left_out: Vec<u16>,
     confined: bool,
+    asking: Option<Arc<AtomicUsize>>,
     tally: Mutex<Tally>,
     teller: Teller,
 }
@@ -1011,7 +1064,7 @@ impl Allowed {
     fn carries(&self, host: &str, at: SocketAddr, own: Option<&[super::hosts::Network]>) -> bool {
         // A confined extension reaches no private or special-use address, whatever a name
         // resolved to, at this connect (ADR 0101 §2).
-        if self.confined && super::hosts::special_use(at.ip()) {
+        if self.confined && !carried_when_confined(at) {
             return false;
         }
         self.internal
@@ -1713,6 +1766,24 @@ pub(crate) fn connect_held(
             .map(Iterator::collect)
             .unwrap_or_default()
     };
+    connect_held_resolving(host, port, reach, own, carries, &resolve)
+}
+
+/// Whether a confined extension's proxy connects to `at`: never an address in a private or
+/// special-use range ([`super::hosts::special_use`]).
+pub(crate) fn carried_when_confined(at: SocketAddr) -> bool {
+    !super::hosts::special_use(at.ip())
+}
+
+/// [`connect_held`], looking `host` up by `resolve`.
+pub(crate) fn connect_held_resolving(
+    host: &str,
+    port: u16,
+    reach: &Reach,
+    own: &[std::net::IpAddr],
+    carries: &dyn Fn(SocketAddr) -> bool,
+    resolve: &dyn Fn(&str, u16) -> Vec<SocketAddr>,
+) -> Connected {
     // Looked up once at most: what answered is remembered, so an empty answer tells apart from
     // one with only addresses a chat never reaches.
     let answered = std::cell::Cell::new(true);

@@ -954,3 +954,82 @@ fn an_answer_with_a_key_its_question_does_not_have_is_refused() {
     assert!(refused.contains("cannot read"), "{refused}");
     assert!(template_of("x", "made", &doc(serde_json::json!({}))).is_err());
 }
+
+/// What a client connecting to `at` hears from a confined proxy asked for a tunnel to a declared
+/// host that never resolves: the proxy's status line, or nothing.
+fn heard_at(at: std::net::SocketAddr) -> String {
+    use std::io::{Read, Write};
+    let Ok(mut stream) =
+        std::net::TcpStream::connect_timeout(&at, std::time::Duration::from_secs(2))
+    else {
+        return String::new();
+    };
+    let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(5)));
+    let _ =
+        stream.write_all(b"CONNECT probe.invalid:443 HTTP/1.1\r\nHost: probe.invalid:443\r\n\r\n");
+    let mut head = [0u8; 64];
+    let read = stream.read(&mut head).unwrap_or(0);
+    String::from_utf8_lossy(&head[..read]).into_owned()
+}
+
+#[test]
+fn a_confined_proxy_carries_only_while_a_question_is_answered_and_never_once_turned_off() {
+    let proxy = proxy_for("gate-a", vec!["probe.invalid".to_owned()]).expect("a proxy");
+    let at = std::net::SocketAddr::from(([127, 0, 0, 1], proxy.port()));
+    assert!(
+        !heard_at(at).starts_with("HTTP/1.1"),
+        "between questions the proxy carried a connection"
+    );
+    let asking = Asking::of(std::sync::Arc::clone(&proxy));
+    assert!(
+        heard_at(at).starts_with("HTTP/1.1 502"),
+        "during a question the proxy did not carry"
+    );
+    // On the IPv6 loopback too, which a sandbox rule for the port lets the program reach.
+    if std::net::TcpListener::bind((std::net::Ipv6Addr::LOCALHOST, 0)).is_ok() {
+        let v6 = std::net::SocketAddr::from((std::net::Ipv6Addr::LOCALHOST, proxy.port()));
+        assert!(
+            heard_at(v6).starts_with("HTTP/1.1 502"),
+            "[::1] on the proxy's port was not the proxy's"
+        );
+    }
+    drop(asking);
+    assert!(
+        !heard_at(at).starts_with("HTTP/1.1"),
+        "after the question it carried"
+    );
+    // Turned off: its proxy is closed for good, its ports still held by nothing that answers.
+    let port = proxy.port();
+    drop(proxy);
+    close_proxy("gate-a");
+    let again = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+    assert!(
+        !heard_at(again).starts_with("HTTP/1.1"),
+        "after turn-off it carried"
+    );
+    assert!(
+        std::net::TcpListener::bind(again).is_err(),
+        "a closed proxy's port was given to another listener"
+    );
+}
+
+#[test]
+fn a_name_that_resolves_to_a_private_network_is_not_connected_to() {
+    use crate::sandbox::egress::{Connected, carried_when_confined, connect_held_resolving};
+    let reach = crate::sandbox::reach::Reach::open(vec!["registry.example.com".to_owned()]);
+    for private in ["[fd00::1]:443", "10.0.0.1:443", "100.64.0.1:443"] {
+        let at: std::net::SocketAddr = private.parse().expect("an address");
+        let connected = connect_held_resolving(
+            "registry.example.com",
+            443,
+            &reach,
+            &[],
+            &carried_when_confined,
+            &|_, _| vec![at],
+        );
+        assert!(
+            matches!(connected, Connected::OnlyLocal),
+            "{private} was connected to"
+        );
+    }
+}

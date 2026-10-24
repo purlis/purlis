@@ -2649,6 +2649,10 @@ pub fn approve(config_root: &Path, id: &str, at: &Path, fingerprint: &str) -> io
 /// **Only a built-in the running app ships**: an installed extension is removed, not turned off,
 /// and an off row written under its id would take the place of its row and its yes.
 pub fn set_on(config_root: &Path, built_in: &BuiltIn, id: &str, on: bool) -> io::Result<()> {
+    // A confined extension turned off reaches nothing more, through any proxy it was given.
+    if !on {
+        studio::close_proxy(id);
+    }
     supported()?;
     if !built_in.found().contains_key(id) {
         return Err(io::Error::new(
@@ -2679,6 +2683,8 @@ pub fn set_on(config_root: &Path, built_in: &BuiltIn, id: &str, on: bool) -> io:
 /// removes is the path and the approval, which is exactly what ADR 0034's test says deleting
 /// the store must cost — the arrangement and the approvals, and nothing else.
 pub fn forget(config_root: &Path, id: &str) -> io::Result<()> {
+    // A confined extension removed reaches nothing more, through any proxy it was given.
+    studio::close_proxy(id);
     update(config_root, |registry| {
         registry.entries.remove(id);
     })
