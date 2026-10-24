@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792807338868,
+  "lastUpdate": 1792809073432,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -23100,6 +23100,48 @@ window.BENCHMARK_DATA = {
             "value": 100.1576645,
             "unit": "ms",
             "extra": "median of 5 runs: 99.341, 99.997, 100.158, 100.237, 102.389 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f6443e834ce28c39cdab29b44fd00c64da57add1",
+          "message": "A submenu row runs on the first press (#3074) (#3096)\n\n* A submenu row runs on the first press (#3074)\n\nA press that is not the pointer's (a screen reader's, element.click(), a\ntest's fireEvent.click) moves no focus, and React Aria hands a menu opened\nby one the keyboard only after the page's transitions. A submenu row pressed\nbefore then opened its submenu, which closed again as the menu took the\nkeyboard back, so the row's click did nothing. A row pressed that way now\ntakes the keyboard itself, and the menu's late hand-on leaves it there.\n\nA unit test and a story play test press the trigger and the submenu row in\none frame.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* The pressed-at-once story waits for each menu to be drawn\n\nIn a real browser React draws the menu a task after the click, not within it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* A submenu a press like a screen reader's opened has the keyboard in it\n\nReact Aria hands a submenu opened by such a press the keyboard on the submenu\nitself, as it builds its rows after it first draws; the story and the test\ncheck the keyboard is in the submenu and the submenu stays.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Review: a menu that takes no keyboard keeps it where it was, and the words say what the fix does\n\nA test holds the guard that leaves a preview's keyboard alone. The row is\ncompared with its own document's active element. The change note says the\nkeyboard is in the submenu, the module doc says the row takes the keyboard\nonly on a press like a screen reader's in a menu that takes it, and the story\nsays it is a smoke check.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-24T06:29:44+04:00",
+          "tree_id": "a4cf24466cd832712b19eb26e874a11308017118",
+          "url": "https://github.com/purlis/purlis/commit/f6443e834ce28c39cdab29b44fd00c64da57add1"
+        },
+        "date": 1792809071427,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4735435,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.444, 0.463, 0.474, 0.477, 0.512 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3422755,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.173, 16.193, 16.342, 16.475, 16.636 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.5378025,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.154, 101.464, 101.538, 101.595, 102.711 ms"
           }
         ]
       }
