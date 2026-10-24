@@ -313,6 +313,7 @@ macro_rules! app_commands {
                 skilldrafts::skill_draft_try,
                 skilldrafts::skill_level_accept,
                 skillsources::skill_sources,
+                skillsources::skill_sources_offered,
                 skillsources::skill_source_add,
                 skillsources::skill_source_remove,
                 skillsources::skill_source_confirm,

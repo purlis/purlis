@@ -71,6 +71,32 @@ pub fn stripped_lines(text: &str) -> Vec<&str> {
         .collect()
 }
 
+/// One line of a `.gitignore`, as git splits it.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct GitLine<'a> {
+    /// Where it is among the file's lines.
+    pub(crate) at: usize,
+    /// The line as it is in the file, its `\n` included.
+    pub(crate) raw: &'a str,
+    /// What git reads: the `\n` and one `\r` before it taken off, then trailing spaces. Leading
+    /// whitespace is kept, as git keeps it, so `  !/x` does not read as `!/x`.
+    pub(crate) read: &'a str,
+}
+
+/// Every line of `text`, split on `\n` as git splits a `.gitignore`: what decides whether a
+/// line the operator already has counts as present, for every writer of that file.
+pub(crate) fn git_lines(text: &str) -> impl Iterator<Item = GitLine<'_>> {
+    text.split_inclusive('\n').enumerate().map(|(at, raw)| {
+        let line = raw.strip_suffix('\n').unwrap_or(raw);
+        let line = line.strip_suffix('\r').unwrap_or(line);
+        GitLine {
+            at,
+            raw,
+            read: line.trim_end_matches(' '),
+        }
+    })
+}
+
 /// `repr(s)` for a `str` — the quoting a Python f-string's `!r` puts round a value.
 ///
 /// **[`crate::pyrepr::repr_str`], and not a second port of it.** This module had its own,

@@ -3,6 +3,7 @@
 
 import { useState, useSyncExternalStore } from "react";
 import { commands, type MachineProfileRemoval, type MachineProfileRow } from "../bindings";
+import { HarnessIcon } from "../ui/harness-icon/HarnessIcon";
 import { Choice, Field, SettingActions, SettingRow } from "./components";
 import type { LiveSetting, SettingsGroup } from "./groups";
 import { askProfileSignIn } from "./links";
@@ -254,6 +255,7 @@ const listed = (plane: string | undefined): LiveSetting => ({
               <ul className="ui-machine-list">
                 {now.read.profiles.map((profile) => (
                   <li key={profile.name} className="ui-machine-entry">
+                    <HarnessIcon icon={profile.icon} kind={profile.kind} />
                     <span className="ui-machine-name">{profile.name}</span>
                     <span className="ui-machine-path">{profile.folder}</span>
                     <span className="ui-setting-badge">{note(profile)}</span>
