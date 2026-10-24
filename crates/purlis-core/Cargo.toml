@@ -43,6 +43,10 @@ dirs = "7"
 imagesize = { version = "0.15", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 # The same searcher vte uses to find these sequences in the same bytes.
 memchr = "2"
+# A profile's own SVG icon (#2922) is parsed, never handed on as text: the XML reader plist
+# already brings into this workspace's lockfile (MIT, its one dependency memchr), with no
+# features, so it adds no crate to the tree. It expands no entity but XML's five.
+quick-xml = "0.42"
 # An extension's declared plane-write paths (charter-app#341): one segment matched as a shell
 # matches it, `*` and `?`, never a leading dot. The rust-lang crate, already in this workspace's
 # lockfile, so it adds no crate to the tree.

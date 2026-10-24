@@ -497,6 +497,14 @@ the platform's own, as Purlis Classic's are, and brings its own styles.
   own mark, so Purlis Classic, which names no set, keeps today's icons. A view name purlis does
   not have is said and left out. Purlis's own set is Lucide's icons, converted
   (`app/src/theme/railIcons.vendor.ts`, with Lucide's licence in the folder).
+  The set may also draw the **harness glyphs** (#2922), under `glyphs`, by name: `spark` (Claude
+  Code), `braces` (opencode) and `terminal` (Codex), held to the same rules
+  (`{ "glyphs": { "spark": { "paths": ["M12 2.7v18.6"] } } }`). A set names views, glyphs or
+  both. They are what a harness and a profile that names a glyph are drawn with
+  (`app/src/ui/harness-icon/HarnessIcon.tsx`); a glyph no theme draws is the window's own
+  (`app/src/theme/harnessGlyphs.ts`), and Purlis's set ships the same three, drawn by purlis. A profile's icon, a glyph or the
+  person's own SVG (drawn in the text's colour alone), is drawn only beside the profile's name,
+  never on a consent or ask surface.
 - **`options`** are the theme's toggles and choices (#2325): each has an `id`, a `kind`
   (`toggle` or `choice`), a `label`, an optional `description` and a `default`. A toggle's `on`
   is a layer drawn when it is on; a choice has at least two named `values`, each a layer. A
@@ -1191,7 +1199,7 @@ the shell's one ease (below):
 | `duration.settle`  | 280 ms             | a mark arriving at an answer: a pipeline finished, a chat changed state |
 | `duration.spin`    | 900 ms             | one turn of _still running_                                             |
 | `duration.breathe` | 1600 ms            | one breath of _queued, not yet running_                                 |
-| `duration.slide`   | 260 ms             | the project rail hiding and showing, the work column gliding with it    |
+| `duration.slide`   | 260 ms             | the rail hiding and showing; a workspace switch sliding its regions in  |
 | `duration.reveal`  | 220 ms             | the rail's peek coming in from the window's edge, a bottom half rising  |
 | `duration.leave`   | 200 ms             | the peek going, and the rail fading out as it hides                     |
 | `duration.open`    | 160 ms             | a panel opening beside the work: the right panel (Purlis 240)           |
@@ -1207,7 +1215,9 @@ Purlis's `duration.quick`. Each of the shell's other steps is a duration token t
 the motion it times: `slide`, `reveal` and `leave` came with the project rail (#2915), at the same
 values in both built-ins; `open` and `swap` came with the four corners (#2917), and a bottom half
 rises over `reveal`. Each corner motion plays only on the part that just appeared. Nothing leaves
-with motion there: a part that closes is gone.
+with motion there: a part that closes is gone. A workspace
+switch slides the regions in on `slide` too (#2916): 28px from the side the switch went towards,
+fading in, with the activity bars, the rail and the title bar still.
 
 **Semantic, not a scale**, for the reason `needs-you.base` and `danger.base` are two tokens: a
 theme that wants arrivals quicker changes `duration.enter` and does not also speed up whatever

@@ -93,7 +93,7 @@ mod import;
 mod least;
 pub mod levels;
 mod native;
-mod opened;
+pub(crate) mod opened;
 mod options;
 pub mod parts;
 mod person;

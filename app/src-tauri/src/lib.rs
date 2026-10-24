@@ -70,6 +70,7 @@ mod goingaway;
 mod handoff;
 mod harness_plugins;
 mod harnessdecls;
+mod harnessicon;
 mod heard;
 mod hooks;
 mod host;
@@ -1339,12 +1340,22 @@ struct ProfileRow {
     /// (#2036). Always sent; optional for the same reason.
     #[specta(optional)]
     billed_to: Option<String>,
+    /// What it is drawn with (#2922): its glyph or its own SVG, and its kind's monogram. Always
+    /// sent; optional for the same reason.
+    #[specta(optional)]
+    icon: Option<harnessicon::HarnessIconRow>,
 }
 
 /// Everything the picker draws, read from the plane when it is opened.
 #[derive(Debug, Clone, serde::Serialize, specta::Type)]
 struct StartOptions {
     profiles: Vec<ProfileRow>,
+    /// The person's own SVG icons the rows name (#2922), each once, by its file name: what a
+    /// row's `icon.own` refers to. All of them together are held to one budget, and a row whose
+    /// file is past it shows its monogram. Always sent; optional in the window's type so a
+    /// picker drawn from an older answer reads it as none.
+    #[specta(optional)]
+    own_icons: Option<std::collections::BTreeMap<String, harnessicon::SvgIcon>>,
     /// Profiles charter read and will not use, by name and reason, so a row that is missing
     /// is never merely missing.
     refused: Vec<(String, String)>,
@@ -1470,31 +1481,36 @@ fn start_options_on(
                 .map(|said| (who.clone(), said))
         })
         .collect();
+    // Every row's icon, each person's SVG read once and held to one budget for the answer.
+    let mut icons = harnessicon::Icons::default();
+    let profiles = set
+        .profiles()
+        .iter()
+        .zip(sandboxes)
+        .map(|(p, sandbox)| ProfileRow {
+            name: p.name.clone(),
+            kind: p.kind.clone(),
+            shown: purlis_core::profiletrust::shown(root, p),
+            source: p.source.as_str().to_owned(),
+            is_default: set.default.as_deref() == Some(p.name.as_str()),
+            approval: purlis_core::profiletrust::approval_needed(root, p)
+                .map(|a| a.as_str().to_owned()),
+            ready_to_type: purlis_core::harness::Harness::of_kind(&p.kind)
+                .and_then(purlis_core::harness::Harness::ready_to_type)
+                .is_some(),
+            harness: cards
+                .iter()
+                .find(|card| card.name == p.kind)
+                .map(HarnessGlance::from),
+            sandbox,
+            model: Some(purlis_core::profilesignin::THE_HARNESS_DEFAULT.to_owned()),
+            billed_to: purlis_core::profilesignin::billed(p, &profiles_here, &passed),
+            icon: Some(icons.row(&p.name, &p.kind, set.icon_of(&p.name))),
+        })
+        .collect();
     Ok(StartOptions {
-        profiles: set
-            .profiles()
-            .iter()
-            .zip(sandboxes)
-            .map(|(p, sandbox)| ProfileRow {
-                name: p.name.clone(),
-                kind: p.kind.clone(),
-                shown: purlis_core::profiletrust::shown(root, p),
-                source: p.source.as_str().to_owned(),
-                is_default: set.default.as_deref() == Some(p.name.as_str()),
-                approval: purlis_core::profiletrust::approval_needed(root, p)
-                    .map(|a| a.as_str().to_owned()),
-                ready_to_type: purlis_core::harness::Harness::of_kind(&p.kind)
-                    .and_then(purlis_core::harness::Harness::ready_to_type)
-                    .is_some(),
-                harness: cards
-                    .iter()
-                    .find(|card| card.name == p.kind)
-                    .map(HarnessGlance::from),
-                sandbox,
-                model: Some(purlis_core::profilesignin::THE_HARNESS_DEFAULT.to_owned()),
-                billed_to: purlis_core::profilesignin::billed(p, &profiles_here, &passed),
-            })
-            .collect(),
+        profiles,
+        own_icons: Some(icons.svgs()),
         refused: set
             .refused
             .iter()

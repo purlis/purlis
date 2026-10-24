@@ -1,0 +1,37 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **A harness's icon** (#2922, `ui/harness-icon/HarnessIcon.tsx`): a 14 px mark (R29), a glyph
+   of the icon set, a person's own SVG or the harness kind's monogram, in the colour of the text
+   it sits in. Its box is the same whichever it draws, so a profile whose icon changes never
+   moves its name.
+
+   In the `components` layer (`styles.css`), above `App.css`. */
+
+.harness-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  /* 14 px at the base type size. */
+  inline-size: calc(var(--space-6) - var(--space-1));
+  block-size: calc(var(--space-6) - var(--space-1));
+  color: inherit;
+  vertical-align: middle;
+}
+
+.harness-icon > svg {
+  inline-size: 100%;
+  block-size: 100%;
+  overflow: hidden;
+}
+
+/* The monogram: one or two capitals at the smallest type size, strong, so "OC" stays inside the
+   mark's box. */
+.harness-icon[data-drawn="monogram"] > span {
+  font-family: var(--font-ui);
+  font-size: var(--font-size-2xs);
+  font-weight: var(--font-weight-strong);
+  line-height: var(--line-height-tight);
+  white-space: nowrap;
+}

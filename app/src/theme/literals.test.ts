@@ -435,8 +435,6 @@ describe("the stylesheet and the vocabulary agree", () => {
    * The custom properties the WINDOW sets rather than the stylesheet.
    *
    * - `--least`: how narrow a tab of a strip may be drawn (`src/fits.ts`).
-   * - `--root`: how wide the plane root's icon tab is drawn (`src/fits.ts`, `LEAST_ROOT`, SI-1) —
-   *   the same number the workspace strip's arithmetic takes off its room.
    * - `--chip`: how wide a wrapping-up chat's chip is drawn (`src/fits.ts`, `LEAST_CHIP`,
    *   SI-8f) — the same number the chat strip's arithmetic counts a chip at.
    * - `--window-controls`: how much of the title bar the operating system's own window
@@ -460,7 +458,6 @@ describe("the stylesheet and the vocabulary agree", () => {
    */
   const fromTheWindow = [
     "--least",
-    "--root",
     "--chip",
     "--window-controls",
     "--pane-controls",

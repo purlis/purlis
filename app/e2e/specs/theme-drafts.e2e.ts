@@ -13,6 +13,7 @@ import {
   type Started,
 } from "../started.js";
 import { ask } from "../switching.js";
+import { workspacesListed } from "../titleBarWorkspaces.js";
 
 /**
  * **A chat's theme draft, end to end** (#2332, spec #2313), against the real app: a draft in the
@@ -138,32 +139,15 @@ async function onStrip(words: string, events: string[] = ["click"]): Promise<voi
   if (!pressed) throw new Error(`the draft strip has no ${words}: "${await stripSays()}"`);
 }
 
-/** The workspace in front by the name its tab draws, or `null` at the plane root. */
+/** The workspace in front by its name, or `null` at the plane root (#2916: the title bar's ⌄). */
 async function workspaceInFront(): Promise<string | null> {
-  return browser.execute(() => {
-    const tab = document.querySelector<HTMLElement>(
-      '[data-strip="Workspaces"] [role="tab"][aria-selected="true"]',
-    );
-    if (tab === null || tab.classList.contains("plane-root")) return null;
-    return tab.querySelector(".workspace-name")?.textContent?.trim() ?? null;
-  });
+  const front = (await workspacesListed()).find((one) => one.selected);
+  return front === undefined || front.name === "Plane root" ? null : front.name;
 }
 
-/** Back to the plane root, from its tab. */
+/** Back to the plane root, by its row in the title bar's ⌄. */
 async function focusThePlaneRoot(): Promise<void> {
-  await browser.waitUntil(
-    async () =>
-      browser.execute(() => {
-        const root = document.querySelector<HTMLElement>(
-          '[data-strip="Workspaces"] [role="tab"].plane-root',
-        );
-        if (root === null) return false;
-        if (root.getAttribute("aria-selected") === "true") return true;
-        root.click();
-        return false;
-      }),
-    { timeout: 30_000, interval: 250, timeoutMsg: "the plane root was never in front again" },
-  );
+  await focusWorkspace("Plane root");
 }
 
 describe("a chat's theme draft", () => {

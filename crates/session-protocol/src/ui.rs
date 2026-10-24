@@ -632,6 +632,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     // a credential read from a vault, and an install or an update is one commit to the project.
     // The person's own press in their window, never a link's.
     "skill_sources",
+    "skill_sources_offered",
     "skill_source_add",
     "skill_source_remove",
     "skill_source_confirm",

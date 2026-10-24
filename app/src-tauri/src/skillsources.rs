@@ -606,6 +606,69 @@ pub(crate) async fn skill_sources(
     .await
 }
 
+/// Whose list an offered source is on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum SourceOffering {
+    /// purlis's own first-party catalogue.
+    Catalogue,
+    /// A collection someone else keeps that people use widely.
+    WellKnown,
+}
+
+impl From<purlis_core::skills::first_open::Offering> for SourceOffering {
+    fn from(offering: purlis_core::skills::first_open::Offering) -> Self {
+        use purlis_core::skills::first_open::Offering;
+        match offering {
+            Offering::Catalogue => Self::Catalogue,
+            Offering::WellKnown => Self::WellKnown,
+        }
+    }
+}
+
+/// **A skill source the studio offers** (SK-22, #2785): its name, why it is on the list, and the source Add
+/// source starts filled in with, kept with the project unless the person picks this machine.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct OfferedSource {
+    pub offering: SourceOffering,
+    pub name: String,
+    pub why: String,
+    pub source: SkillSource,
+}
+
+/// **The sources the studio offers** (SK-22, #2785; decision 42): the first-party catalogue and
+/// the well-known skill sources the project does not browse, each with why it is on the list
+/// (`purlis_core::skills::first_open::offered_here`). Read beside [`skill_sources`] and not with
+/// the studio, since reading the project's sources asks git whether this machine's settings are
+/// ignored.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_sources_offered(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+) -> Result<Vec<OfferedSource>, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("reading the offered skill sources", move || {
+        flag_on()?;
+        Ok(offered_shown(held.root()))
+    })
+    .await
+}
+
+/// The sources offered to the project at `root`, as the window draws them: each kept with the
+/// project unless the person picks this machine in Add source.
+fn offered_shown(root: &std::path::Path) -> Vec<OfferedSource> {
+    purlis_core::skills::first_open::offered_here(root)
+        .into_iter()
+        .map(|one| OfferedSource {
+            offering: one.offering.into(),
+            name: esc(&one.name),
+            why: esc(&one.why),
+            source: SkillSource::of(one.source, Which::Shared),
+        })
+        .collect()
+}
+
 /// **Adds a skill source**, shared with the project or kept on this machine.
 #[tauri::command]
 #[specta::specta]
@@ -845,3 +908,6 @@ pub(crate) async fn skill_update(
     })
     .await
 }
+
+#[cfg(test)]
+mod tests;
