@@ -405,6 +405,14 @@ pub fn sub_agent(agent_id: Option<&str>, env: &dyn Fn(&str) -> Option<String>) -
 /// The harness a chat runs, as charter put it into the chat's environment.
 pub const HARNESS_ENV: &str = "PURLIS_HARNESS";
 
+/// **The harness the chat's environment `env` names in [`HARNESS_ENV`]**, by the registry's
+/// name a chat's start puts there ([`crate::harness::Harness::of_registry`]): under either
+/// spelling of the variable ([`crate::envvar::lookup`]), and none where it is unset or empty.
+/// The one reader of it, so an empty one means the same to every hook and to the MCP server.
+pub fn chat_harness(env: &dyn Fn(&str) -> Option<String>) -> Option<String> {
+    crate::envvar::lookup(HARNESS_ENV, env).filter(|name| !name.is_empty())
+}
+
 /// Which conversation this report is of, and how well that is known.
 ///
 /// **The payload and the environment must AGREE, and this used to be an `or`.** That was

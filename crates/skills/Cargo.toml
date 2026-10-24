@@ -23,5 +23,10 @@ yaml-rust2 = { version = "0.13", default-features = false }
 # A grant is written beside the file and renamed over it, never half-written.
 tempfile.workspace = true
 
+# A skill's folder and its `SKILL.md` are opened through the handle of the folder above them,
+# never through a link (SK-36).
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1", features = ["fs"] }
+
 [lints]
 workspace = true

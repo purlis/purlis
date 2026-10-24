@@ -581,13 +581,9 @@ fn resuming_note(root: &Path, env: &dyn Fn(&str) -> Option<String>) -> Option<St
 fn retired_notes(ask: &Ask, persona: Option<&str>) -> Vec<String> {
     let mut notes = Vec::new();
     if let Some(name) = persona.filter(|name| exists(ask.root, name)) {
-        // The variable carries the registry's name for the harness (`claude-code`), which for
-        // the other two is also their kind.
-        let harness =
-            (ask.env)(crate::hookwire::HARNESS_ENV).and_then(|word| match word.as_str() {
-                "claude-code" => Some(crate::harness::Harness::ClaudeCode),
-                kind => crate::harness::Harness::of_kind(kind),
-            });
+        let harness = crate::hookwire::chat_harness(ask.env)
+            .as_deref()
+            .and_then(crate::harness::Harness::of_registry);
         let state = crate::personaverbs::state_dir(ask.root);
         notes.extend(
             crate::personaverbs::chatstart::told(ask.root, &state, name, harness)

@@ -254,7 +254,7 @@ fn instructions() -> String {
 
 /// The chat's harness, by the word the app named it with.
 fn this_harness() -> Option<String> {
-    purlis_core::envvar::var(purlis_core::hookwire::HARNESS_ENV).filter(|kind| !kind.is_empty())
+    purlis_core::hookwire::chat_harness(&purlis_core::envvar::var)
 }
 
 /// The route this chat's skills take, by its harness and the project's harness declarations.

@@ -15,30 +15,184 @@ pub const DIR_IN_BUNDLE: &str = "skills";
 /// A skill's file inside its folder.
 pub const FILE: &str = "SKILL.md";
 
-/// The skills directory inside the bundled plugin at `plugin`, when it is there.
+/// The skills directory inside the bundled plugin at `plugin`, when it is there as a folder of
+/// its own: a link there is never read through ([`scan`]).
 pub fn in_bundle(plugin: &Path) -> Option<PathBuf> {
-    Some(plugin.join(DIR_IN_BUNDLE)).filter(|dir| dir.is_dir())
+    Some(plugin.join(DIR_IN_BUNDLE))
+        .filter(|dir| std::fs::symlink_metadata(dir).is_ok_and(|meta| meta.is_dir()))
 }
 
 /// Every folder in `dir`: the skill it holds, or the folder and what it lacks to be one. A file
 /// beside the folders is neither. In the order the directory lists them.
+///
+/// **Nothing is read through a link** (SK-36): `dir` is opened without following a link at its
+/// last step, each folder in it and its `SKILL.md` through the handle of the folder above, so a
+/// link put in place after a look is never read through either. A folder that is a link to a
+/// folder is left out as a link ([`Missing::Link`]), and so is `dir` where it is one, whatever
+/// it leads to: what is listed of a skill, and every file a load names of it, is inside it.
 pub fn scan(dir: &Path) -> Vec<Result<Skill, (PathBuf, Missing)>> {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return Vec::new();
-    };
-    entries
-        .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        .filter(|folder| folder.is_dir())
-        .map(|folder| whole(&folder).map_err(|missing| (folder, missing)))
-        .collect()
+    held::scan(dir)
 }
 
-/// The skill in `folder`, or what it lacks.
-fn whole(folder: &Path) -> Result<Skill, Missing> {
-    let path = folder.join(FILE);
-    let text = std::fs::read_to_string(&path).map_err(|_| Missing::File)?;
-    parsed(&text, path)
+/// The text of a `SKILL.md` as [`scan`] reads it, or what it lacks: at most [`crate::MOST_BYTES`],
+/// and text.
+fn text_of(file: impl std::io::Read) -> Result<String, Missing> {
+    use std::io::Read as _;
+    let most = crate::MOST_BYTES;
+    let mut text = String::new();
+    file.take(most + 1)
+        .read_to_string(&mut text)
+        .map_err(|_| Missing::File)?;
+    if text.len() as u64 > most {
+        return Err(Missing::TooLarge);
+    }
+    Ok(text)
+}
+
+/// [`scan`], through folder handles.
+#[cfg(unix)]
+mod held {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt as _;
+    use std::path::{Path, PathBuf};
+
+    use rustix::fd::OwnedFd;
+    use rustix::fs::{AtFlags, FileType, Mode, OFlags};
+
+    use super::{FILE, parsed, text_of};
+    use crate::{Missing, Skill};
+
+    fn folder_flags() -> OFlags {
+        OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC
+    }
+
+    /// What `name` in `at` is, never following a link; or what it leads to where `follow`.
+    fn kind(at: &OwnedFd, name: &OsStr, follow: bool) -> Option<FileType> {
+        let flags = if follow {
+            AtFlags::empty()
+        } else {
+            AtFlags::SYMLINK_NOFOLLOW
+        };
+        let stat = rustix::fs::statat(at, name, flags).ok()?;
+        Some(FileType::from_raw_mode(stat.st_mode))
+    }
+
+    /// Whether `path` is a link, asked without following it.
+    fn is_link(path: &Path) -> bool {
+        std::fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_symlink())
+    }
+
+    pub(super) fn scan(dir: &Path) -> Vec<Result<Skill, (PathBuf, Missing)>> {
+        let top = match rustix::fs::open(dir, folder_flags(), Mode::empty()) {
+            Ok(top) => top,
+            Err(_) if is_link(dir) => return vec![Err((dir.to_path_buf(), Missing::Link))],
+            Err(_) => return Vec::new(),
+        };
+        let Ok(listing) = rustix::fs::Dir::read_from(&top) else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        for entry in listing.filter_map(Result::ok) {
+            let name = OsStr::from_bytes(entry.file_name().to_bytes()).to_owned();
+            if name == "." || name == ".." {
+                continue;
+            }
+            let path = dir.join(&name);
+            match kind(&top, &name, false) {
+                Some(FileType::Directory) => {}
+                // A link is told as one only where it leads to a folder: one to a file is a file
+                // beside the folders, which is nothing.
+                Some(FileType::Symlink) => {
+                    if kind(&top, &name, true) == Some(FileType::Directory) {
+                        out.push(Err((path, Missing::Link)));
+                    }
+                    continue;
+                }
+                _ => continue,
+            }
+            let folder = match rustix::fs::openat(&top, &name, folder_flags(), Mode::empty()) {
+                Ok(folder) => folder,
+                // It turned into a link since it was looked at.
+                Err(_) if kind(&top, &name, false) == Some(FileType::Symlink) => {
+                    out.push(Err((path, Missing::Link)));
+                    continue;
+                }
+                Err(_) => continue,
+            };
+            out.push(whole(&folder, path.join(FILE)).map_err(|missing| (path, missing)));
+        }
+        out
+    }
+
+    /// The skill in the folder held at `folder`, whose `SKILL.md` is said to be at `shown`.
+    fn whole(folder: &OwnedFd, shown: PathBuf) -> Result<Skill, Missing> {
+        let flags = OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC;
+        let file = match rustix::fs::openat(folder, FILE, flags, Mode::empty()) {
+            Ok(file) => std::fs::File::from(file),
+            Err(_) if kind(folder, OsStr::new(FILE), false) == Some(FileType::Symlink) => {
+                return Err(Missing::Link);
+            }
+            Err(_) => return Err(Missing::File),
+        };
+        let meta = file.metadata().map_err(|_| Missing::File)?;
+        if !meta.is_file() {
+            return Err(Missing::File);
+        }
+        if meta.len() > crate::MOST_BYTES {
+            return Err(Missing::TooLarge);
+        }
+        parsed(&text_of(file)?, shown)
+    }
+}
+
+/// [`scan`] off unix, by path, with the same answers where nothing changes in between.
+#[cfg(not(unix))]
+mod held {
+    use std::path::{Path, PathBuf};
+
+    use super::{FILE, parsed, text_of};
+    use crate::{Missing, Skill};
+
+    fn is_link(path: &Path) -> bool {
+        std::fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_symlink())
+    }
+
+    pub(super) fn scan(dir: &Path) -> Vec<Result<Skill, (PathBuf, Missing)>> {
+        if is_link(dir) {
+            return vec![Err((dir.to_path_buf(), Missing::Link))];
+        }
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        for path in entries.filter_map(Result::ok).map(|entry| entry.path()) {
+            if is_link(&path) {
+                if path.is_dir() {
+                    out.push(Err((path, Missing::Link)));
+                }
+                continue;
+            }
+            if !std::fs::symlink_metadata(&path).is_ok_and(|meta| meta.is_dir()) {
+                continue;
+            }
+            let file = path.join(FILE);
+            let found = if is_link(&file) {
+                Err(Missing::Link)
+            } else {
+                match std::fs::symlink_metadata(&file) {
+                    Ok(meta) if !meta.is_file() => Err(Missing::File),
+                    Ok(meta) if meta.len() > crate::MOST_BYTES => Err(Missing::TooLarge),
+                    Ok(_) => std::fs::File::open(&file)
+                        .map_err(|_| Missing::File)
+                        .and_then(text_of)
+                        .and_then(|text| parsed(&text, file)),
+                    Err(_) => Err(Missing::File),
+                }
+            };
+            out.push(found.map_err(|missing| (path, missing)));
+        }
+        out
+    }
 }
 
 /// **The skill a `SKILL.md` whose text is `text` holds**, at `path`, or what it lacks: by the

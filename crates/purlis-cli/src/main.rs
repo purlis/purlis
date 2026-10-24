@@ -1960,7 +1960,7 @@ fn tell_the_host_about_blocks(word: &str, payload: &str) -> Vec<purlis_core::san
     };
     let data: serde_json::Value = serde_json::from_str(payload).unwrap_or_default();
     let token = hookwire::ChatToken::from_env();
-    let harness = purlis_core::envvar::var(hookwire::HARNESS_ENV).filter(|it| !it.is_empty());
+    let harness = hookwire::chat_harness(&purlis_core::envvar::var);
     // A tool that ran nothing (a read of a background command's output): a quiet line (#1884).
     let read_back = purlis_core::sandboxblock::read_back(&data);
     for (block, target) in hooks::blocks(&data, &purlis_core::envvar::var) {

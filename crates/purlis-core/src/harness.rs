@@ -139,14 +139,20 @@ impl Harness {
     /// [`crate::profiles::Kind::registry`]) or by its kind's word. The one rule for a chat that
     /// names none: it is a terminal's own Claude Code, with purlis's plugin. A kind purlis ships
     /// no adapter for is none.
+    /// A chat that names an empty one names none ([`crate::hookwire::chat_harness`] reads it so).
     pub fn of_chat(kind: Option<&str>) -> Option<Self> {
-        let Some(kind) = kind else {
-            return Some(Self::ClaudeCode);
-        };
+        kind.map_or(Some(Self::ClaudeCode), Self::of_registry)
+    }
+
+    /// **The harness the registry's name `name` is** (`claude-code`, `codex`, `opencode`;
+    /// [`crate::profiles::Kind::registry`]), which is what a chat's start puts into
+    /// [`crate::hookwire::HARNESS_ENV`], or the kind's word a profile is written with. The one
+    /// rule from a registry's name to a harness; none for a name purlis ships no adapter for.
+    pub fn of_registry(name: &str) -> Option<Self> {
         let word = crate::profiles::KINDS
             .iter()
-            .find(|known| known.registry == kind)
-            .map_or(kind, |known| known.word);
+            .find(|known| known.registry == name)
+            .map_or(name, |known| known.word);
         Self::of_kind(word)
     }
 
@@ -619,6 +625,23 @@ fn words<const N: usize>(argv: [&str; N]) -> Vec<String> {
 mod tests {
     use super::*;
     use std::collections::BTreeMap;
+
+    #[test]
+    fn a_registry_name_and_a_kind_word_each_name_their_harness_and_none_is_claude_code() {
+        // SK-36: the one rule from the name a chat carries to a harness.
+        for kind in crate::profiles::KINDS {
+            let harness = Harness::of_registry(kind.registry).expect(kind.registry);
+            assert_eq!(Harness::of_registry(kind.word), Some(harness));
+            assert_eq!(Harness::of_chat(Some(kind.registry)), Some(harness));
+        }
+        assert_eq!(
+            Harness::of_registry("claude-code"),
+            Some(Harness::ClaudeCode)
+        );
+        assert_eq!(Harness::of_registry("no-such-harness"), None);
+        assert_eq!(Harness::of_registry(""), None);
+        assert_eq!(Harness::of_chat(None), Some(Harness::ClaudeCode));
+    }
 
     #[test]
     fn opencode_offers_level_3_through_its_own_acp_mode_and_the_others_wait_for_their_tickets() {

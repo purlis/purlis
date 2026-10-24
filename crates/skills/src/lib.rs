@@ -302,6 +302,11 @@ pub enum Missing {
     Name,
     /// Its `SKILL.md`'s frontmatter names no `description`.
     Description,
+    /// It, its `SKILL.md`, or the level's folder it is in is a link, which purlis never reads
+    /// through (SK-36).
+    Link,
+    /// Its `SKILL.md` is larger than purlis reads ([`MOST_BYTES`]).
+    TooLarge,
 }
 
 impl std::fmt::Display for Reason {
@@ -315,6 +320,10 @@ impl std::fmt::Display for Reason {
             }
             Self::NotASkill(Missing::Description) => {
                 f.write_str("not a skill: its SKILL.md names no `description`")
+            }
+            Self::NotASkill(Missing::Link) => f.write_str("a link, so purlis doesn't read it"),
+            Self::NotASkill(Missing::TooLarge) => {
+                f.write_str("not a skill: its SKILL.md is larger than purlis reads")
             }
             Self::NotGranted => f.write_str(
                 "not granted to this workspace: a project skill is for chats at the project's root \

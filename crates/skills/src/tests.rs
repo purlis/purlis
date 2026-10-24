@@ -1376,3 +1376,36 @@ fn a_lifecycle_word_purlis_does_not_know_leaves_the_skill_working() {
             .contains("none of \"active\", \"deprecated\" or \"archived\"")
     );
 }
+
+// ---- links (SK-36) --------------------------------------------------------------------------
+
+#[cfg(unix)]
+#[test]
+fn a_linked_skill_folder_on_any_level_is_left_out_saying_purlis_does_not_read_it() {
+    let plane = Plane::new();
+    let outside = plane._tmp.path().join("outside");
+    skill(&outside, "secret", &whole("secret"));
+    for dir in [
+        plane.project(),
+        plane.project_local(),
+        plane.workspace("smart-ide"),
+        plane.workspace_local("smart-ide"),
+    ] {
+        std::fs::create_dir_all(&dir).unwrap();
+        std::os::unix::fs::symlink(outside.join("secret"), dir.join("linked")).unwrap();
+    }
+
+    let set = plane.set(Some("smart-ide"));
+
+    assert!(set.effective.is_empty(), "{:?}", set.effective);
+    let link = "a link, so purlis doesn't read it".to_owned();
+    assert_eq!(
+        left_out(&set),
+        [
+            ("linked", Origin::Project, false, link.clone()),
+            ("linked", Origin::Project, true, link.clone()),
+            ("linked", Origin::Workspace, false, link.clone()),
+            ("linked", Origin::Workspace, true, link),
+        ]
+    );
+}

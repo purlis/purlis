@@ -380,6 +380,35 @@ fn with_no_host_to_tell_the_hook_logs_the_runs_start_itself_under_this_device_an
 }
 
 #[test]
+fn an_empty_harness_variable_names_no_harness_to_a_hook_as_to_the_mcp_server() {
+    // SK-36: an empty `PURLIS_HARNESS` is unset, so a chat that names none is Claude Code's here
+    // too, and its Skill tool starts a run; the MCP server reads the variable by the same reader.
+    let unset = Plane::new();
+    let empty = Plane::new().with_env(crate::hookwire::HARNESS_ENV, "");
+    let started = |plane: &Plane| {
+        plane
+            .ask(
+                skill_tool(serde_json::json!({"skill": "deploy"})),
+                skill_started,
+            )
+            .map(|started| (started.skill.clone(), started.started_by))
+    };
+    assert_eq!(started(&empty), started(&unset));
+    assert_eq!(
+        started(&empty).map(|(skill, _)| skill).as_deref(),
+        Some("deploy")
+    );
+    let named = |value: &'static str| {
+        move |name: &str| (name == crate::hookwire::HARNESS_ENV).then(|| value.to_owned())
+    };
+    assert_eq!(crate::hookwire::chat_harness(&named("")), None);
+    assert_eq!(
+        crate::hookwire::chat_harness(&named("codex")).as_deref(),
+        Some("codex")
+    );
+}
+
+#[test]
 fn opencodes_skill_tool_names_its_skill_as_name() {
     let p = Plane::new().with_env(crate::hookwire::HARNESS_ENV, "opencode");
     let started = p

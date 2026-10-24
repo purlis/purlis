@@ -432,10 +432,10 @@ fn handed_over_from(hook: &Hook) -> Option<(u32, PathBuf)> {
     if !hook.in_plane {
         return None;
     }
-    let harness = (hook.env)(crate::hookwire::HARNESS_ENV);
+    let harness = crate::hookwire::chat_harness(hook.env);
     if harness
         .as_deref()
-        .and_then(crate::sandbox::harness_of_registry)
+        .and_then(crate::harness::Harness::of_registry)
         != Some(crate::harness::Harness::ClaudeCode)
     {
         return None;
@@ -490,7 +490,7 @@ pub fn pretooluse_dispatch(hook: &Hook) -> Answer {
     // purlis's own dispatch tools, called from inside a sub-agent (#1436): refused here, where
     // the payload says who made the call. The chat's own call is the app's to decide.
     let agent_id = hook.text("agent_id");
-    let harness = (hook.env)(crate::hookwire::HARNESS_ENV);
+    let harness = crate::hookwire::chat_harness(hook.env);
     let caller = crate::handoffguard::Caller {
         agent_id: (!agent_id.is_empty()).then_some(agent_id),
         harness: harness.as_deref(),
@@ -949,7 +949,7 @@ pub fn posttooluse_skill(hook: &Hook) -> Answer {
 pub fn skill_started(hook: &Hook) -> Option<Box<crate::hookwire::SkillStarted>> {
     use crate::harness::{Harness, SkillStart};
     use purlis_skills::runs::StartedBy;
-    let kind = crate::envvar::lookup(crate::hookwire::HARNESS_ENV, hook.env);
+    let kind = crate::hookwire::chat_harness(hook.env);
     let adapter = Harness::of_chat(kind.as_deref())?.adapter();
     // A prompt the person sent started a skill (SK-12): only the start of a skill Use skill…
     // typed, which the host holds and alone opens; logged nowhere where no host listens.
@@ -1016,7 +1016,7 @@ pub fn started_unheard(hook: &Hook, started: &crate::hookwire::SkillStarted) {
         return;
     }
     let persona = hook.persona();
-    let kind = crate::envvar::lookup(crate::hookwire::HARNESS_ENV, hook.env);
+    let kind = crate::hookwire::chat_harness(hook.env);
     let harness = crate::harness::Harness::of_chat(kind.as_deref());
     let starting =
         crate::skilluse::Starting::of_started(started, harness.map(crate::harness::Harness::name));

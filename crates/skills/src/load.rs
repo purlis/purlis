@@ -166,7 +166,11 @@ pub fn load(effective: &Effective, honours: &crate::Honours) -> Result<Loaded, S
 /// and at most [`MOST_FILES`]. What a load names, and what the lint reads (SK-8).
 pub fn other_files(skill_md: &Path) -> Vec<PathBuf> {
     let mut files = Vec::new();
-    if let Some(folder) = skill_md.parent() {
+    // A folder that is a link names nothing: what it leads to is outside the skill (SK-36).
+    if let Some(folder) = skill_md
+        .parent()
+        .filter(|folder| std::fs::symlink_metadata(folder).is_ok_and(|meta| meta.is_dir()))
+    {
         others(folder, skill_md, 0, &mut files);
     }
     files.sort();
