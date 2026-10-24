@@ -104,6 +104,7 @@ pub mod handoffguard;
 pub mod harness;
 pub mod harness_card;
 pub mod harness_declaration;
+pub mod harness_icon;
 pub mod harness_plugin;
 #[cfg(unix)]
 pub(crate) mod held;
@@ -200,6 +201,7 @@ pub mod runnerlink;
 #[cfg(unix)]
 pub mod runners;
 pub mod runnerwrite;
+pub mod safesvg;
 pub mod sandbox;
 pub mod sandboxblock;
 pub mod savefix;

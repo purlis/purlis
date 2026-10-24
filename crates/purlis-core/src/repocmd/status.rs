@@ -224,11 +224,7 @@ fn for_workspace(
     // code paths that each believe they agree about the widths is the fastest way back to a
     // misaligned report (charter #508's own finding, one command over).
     let line = |repo: &str, stack: &str, note: &str| {
-        let row = format!(
-            "  {}{}{note}",
-            tui::pad(repo, nw, tui::Align::Left),
-            tui::pad(stack, sw, tui::Align::Left)
-        );
+        let row = format!("  {}", tui::row(&[(repo, nw), (stack, sw)], note));
         // Python's `.rstrip()`, not `tui.finish`: charter rstrips the plain string here, and
         // `finish` also removes whitespace hiding behind a trailing SGR — a difference no row
         // charter writes can show, and one this differential would.

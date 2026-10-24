@@ -865,6 +865,7 @@ const ORDINARY: Answers = {
   skill_studio: {
     on: true,
     workspace: null,
+    first: { starts: false, unmoved: null },
     workspaces: ["alpha"],
     levels: [],
     skills: [
@@ -1346,6 +1347,7 @@ const STATES: State[] = [
       skill_studio: {
         on: true,
         workspace: null,
+        first: { starts: true, unmoved: null },
         workspaces: [],
         levels: [],
         skills: [],
@@ -1353,7 +1355,7 @@ const STATES: State[] = [
         clashes: [],
       },
     },
-    drawn: /This project has no skills yet/,
+    drawn: /This project has no skills of its own yet/,
   },
   {
     name: "the project's dispatches, none yet",
