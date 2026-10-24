@@ -230,6 +230,11 @@ fn logged(
 #[test]
 fn a_runs_start_says_its_harness_and_its_workspace_null_at_the_plane_root() {
     let dir = a_plane();
+    std::fs::write(
+        dir.path().join(".gitignore"),
+        crate::wscmd::live_block(dir.path(), ["ops"]),
+    )
+    .unwrap();
     logged(
         dir.path(),
         "01JB0000000000000000000001",
@@ -251,8 +256,13 @@ fn a_runs_start_says_its_harness_and_its_workspace_null_at_the_plane_root() {
 }
 
 #[test]
-fn runs_are_totalled_by_harness_persona_and_workspace_with_their_signals_and_cost() {
+fn runs_are_totalled_by_harness_persona_and_workspace_with_their_signals_and_tokens() {
     let dir = a_plane();
+    std::fs::write(
+        dir.path().join(".gitignore"),
+        crate::wscmd::live_block(dir.path(), ["ops"]),
+    )
+    .unwrap();
     logged(
         dir.path(),
         "01JB0000000000000000000001",
@@ -328,14 +338,14 @@ fn runs_are_totalled_by_harness_persona_and_workspace_with_their_signals_and_cos
 }
 
 #[test]
-fn a_live_workspaces_name_is_never_written_into_the_committed_log() {
+fn a_local_workspaces_name_is_never_written_into_the_committed_log() {
     let dir = a_plane();
+    // `scratch` is not in the LIVE block: LOCAL, this machine's alone.
     std::fs::write(
         dir.path().join(".gitignore"),
-        crate::wscmd::live_block(dir.path(), ["scratch"]),
+        crate::wscmd::live_block(dir.path(), ["shared"]),
     )
     .unwrap();
-    assert!(crate::wscmd::live_workspaces(dir.path()).contains("scratch"));
     logged(
         dir.path(),
         "01JB0000000000000000000001",
@@ -348,6 +358,25 @@ fn a_live_workspaces_name_is_never_written_into_the_committed_log() {
     assert_eq!(runs[0].workspace, None, "it does not say where");
     assert_eq!(runs[0].harness.as_deref(), Some("claude"));
     assert_eq!(runs[0].copy, None);
+}
+
+#[test]
+fn a_live_workspaces_name_is_written_as_the_committed_shared_workspace_it_is() {
+    let dir = a_plane();
+    std::fs::write(
+        dir.path().join(".gitignore"),
+        crate::wscmd::live_block(dir.path(), ["shared"]),
+    )
+    .unwrap();
+    assert!(crate::wscmd::live_workspaces(dir.path()).contains("shared"));
+    logged(
+        dir.path(),
+        "01JB0000000000000000000001",
+        (Some("claude"), Some("shared"), None),
+        None,
+    );
+    let runs = runs(dir.path());
+    assert_eq!(runs[0].workspace, Some(Some("shared".to_owned())));
 }
 
 #[test]

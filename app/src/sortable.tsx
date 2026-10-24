@@ -12,7 +12,11 @@ import {
   type ScreenReaderInstructions,
   type UniqueIdentifier,
 } from "@dnd-kit/core";
-import { restrictToHorizontalAxis, restrictToParentElement } from "@dnd-kit/modifiers";
+import {
+  restrictToHorizontalAxis,
+  restrictToParentElement,
+  restrictToVerticalAxis,
+} from "@dnd-kit/modifiers";
 import { sortableKeyboardCoordinates, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
@@ -50,6 +54,9 @@ export const DRAG_AFTER_PX = 5;
 
 /** A tab moves along its strip and stays inside it. */
 export const ALONG_THE_STRIP = [restrictToHorizontalAxis, restrictToParentElement];
+
+/** A project moves up and down the rail and stays inside it (#2915). */
+export const DOWN_THE_RAIL = [restrictToVerticalAxis, restrictToParentElement];
 
 /** What the keyboard does once a tab is up: `dnd-kit`'s defaults, less picking one up with a
  *  bare Space, which selects (see this module). */

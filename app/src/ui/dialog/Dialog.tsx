@@ -214,10 +214,18 @@ function DialogKeyboard({
   root: RefObject<HTMLElement | null>;
   initialFocus: InitialFocus | undefined;
   alert: boolean;
-  /** Read as it goes: whether it goes because it closed, and what to call then. */
+  /**
+   * Read as it goes: whether it goes because it closed, and what to call then. One record for
+   * the dialog's life, its fields written by each render.
+   */
   closing: RefObject<{ gone: boolean; afterClose?: () => void; returnFocus?: () => boolean }>;
 }) {
-  const [opener] = useState(() => document.activeElement);
+  // What had the keyboard as it opened, if it can take it back: told as it opens, while the
+  // window's globals are surely there.
+  const [opener] = useState(() => {
+    const had = document.activeElement;
+    return had instanceof HTMLElement ? had : null;
+  });
   const [armed, setArmed] = useState(false);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- the one render after the first, when React Aria holds the keyboard (above)
   useLayoutEffect(() => setArmed(true), []);
@@ -267,29 +275,31 @@ function DialogKeyboard({
   const drawn = useRef(false);
   useEffect(() => {
     drawn.current = true;
+    // What the close reads as it goes: the modal's one record of it, whose fields its last
+    // render wrote (the record itself is never replaced), so they are the close's own.
+    const state = closing.current;
+    // **The document the dialog is drawn in**, kept for the close's last steps, which run after
+    // it has gone: the global `document` may be gone by then (a webview, a test's window, taken
+    // down). A document with no window left has nothing to hand the keyboard back to.
+    const doc = root.current?.ownerDocument ?? document;
     return () => {
       drawn.current = false;
-      const { gone, afterClose, returnFocus } = closing.current;
+      const { gone, afterClose, returnFocus } = state;
       queueMicrotask(() => {
-        if (drawn.current || !gone) return;
+        if (drawn.current || !gone || doc.defaultView === null) return;
         if (returnFocus?.() === false) {
           // Nor does React Aria's own return, a frame later.
           const keep = (event: Event) => event.preventDefault();
-          document.addEventListener(RESTORE_EVENT, keep, true);
-          setTimeout(() => document.removeEventListener(RESTORE_EVENT, keep, true), 100);
+          doc.addEventListener(RESTORE_EVENT, keep, true);
+          setTimeout(() => doc.removeEventListener(RESTORE_EVENT, keep, true), 100);
         } else {
-          const now = document.activeElement;
-          if (
-            (now === null || now === document.body) &&
-            opener instanceof HTMLElement &&
-            opener.isConnected
-          )
-            opener.focus();
+          const now = doc.activeElement;
+          if ((now === null || now === doc.body) && opener?.isConnected === true) opener.focus();
         }
         afterClose?.();
       });
     };
-  }, [closing, opener]);
+  }, [closing, opener, root]);
   return null;
 }
 
@@ -422,8 +432,10 @@ function DialogModal({
     afterClose?: () => void;
     returnFocus?: () => boolean;
   }>({ gone: true });
+  // Written in place, never replaced: the keyboard holds this one record from the start and
+  // reads it as it goes, so what it reads is the last render's.
   useLayoutEffect(() => {
-    closing.current = { gone: shown, afterClose, returnFocus };
+    Object.assign(closing.current, { gone: shown, afterClose, returnFocus });
   });
   if (!shown) return null;
   const style =

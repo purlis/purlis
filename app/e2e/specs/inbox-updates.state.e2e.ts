@@ -256,7 +256,7 @@ describe("the Inbox's bulk acts on updates, with an ask waiting", function () {
       await tried("ending the chat", () => endChatById(session, plane));
     }
     await tried("closing the project from its tab", () =>
-      closeProject(`${PROJECTS} button[aria-label="Close project ${NAME}"]`),
+      closeProject(`${PROJECTS} [role="tab"][aria-label="${NAME}"]`),
     );
     await tried("closing the project", async () => {
       if ((await ask<string[]>("open_planes")).includes(mine))

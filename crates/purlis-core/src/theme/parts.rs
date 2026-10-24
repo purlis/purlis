@@ -76,7 +76,7 @@ use super::{Complaint, ResolvedTheme, stringify};
 
 /// **The manifest's version**: it grows when a family, a part, a variant or a property is added,
 /// and never takes one away.
-pub const VERSION: u32 = 8;
+pub const VERSION: u32 = 9;
 
 /// The least height a control keeps, in px at the default text size: WCAG 2.2's target size.
 pub const LEAST_TARGET: f64 = 24.0;
@@ -1045,6 +1045,8 @@ pub const MANIFEST: &[Family] = &[
     overlay::POPOVER,
     overlay::MENU,
     dialog::DIALOG,
+    // **The project rail** (#2915): a button per project at the window's left.
+    shell::RAIL,
 ];
 
 /// The popover and menu families (#2909): the surface a popover and a menu stand on, and a
@@ -1053,7 +1055,7 @@ pub const MANIFEST: &[Family] = &[
 mod overlay;
 
 /// The window's own families (#2913): the region panel, its sections, an empty state and a
-/// status item.
+/// status item; and the project rail (#2915).
 #[path = "parts_shell.rs"]
 mod shell;
 

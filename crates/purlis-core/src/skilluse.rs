@@ -67,12 +67,13 @@ pub fn started(
     if let Some(harness) = run.harness {
         row["harness"] = harness.into();
     }
-    // A live workspace is this machine's alone: its name is never written into the committed
-    // log, nor the copy of it, which would say a workspace by its level (SK-20). Such a run says
-    // neither where it ran nor which copy it is of.
+    // A workspace that is not LIVE is LOCAL, this machine's alone: its name is never written
+    // into the committed log, nor the copy of it, which would say a workspace by its level
+    // (SK-20). Such a run says neither where it ran nor which copy it is of. A LIVE workspace is
+    // committed and shared, and its runs say both.
     let local = run
         .workspace
-        .is_some_and(|ws| crate::wscmd::live_workspaces(root).contains(ws));
+        .is_some_and(|ws| !crate::wscmd::live_workspaces(root).contains(ws));
     if local {
         return crate::dispatch::append(&path_for(root, when, device), root, &row);
     }

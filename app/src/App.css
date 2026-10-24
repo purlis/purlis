@@ -185,6 +185,25 @@ body {
   overflow: hidden;
 }
 
+/* Below the bar: the project rail at the far left (#2915), and the work beside it, which takes
+   whatever is left and glides as the rail's column opens and closes. The rail peeks over the
+   work from this row's left edge. */
+.window-below {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  background: var(--surface-deep);
+}
+
+.window-work {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
 /* **The three strips are tabs, and this is the shape all three share.**
 
    They were pill-shaped buttons floating on a bar with a gap between them, which is what the
@@ -241,7 +260,6 @@ body {
    strip's show-more button rather than scrolling away. `app/src/fits.ts` is the arithmetic and
    the argument; `--least` is set on the element from the same constant the arithmetic uses, so
    the stylesheet and the count cannot disagree. */
-.projects,
 .workspaces-strip {
   display: flex;
   align-items: stretch;
@@ -257,14 +275,6 @@ body {
   align-items: flex-end;
   gap: var(--tabs-gap);
   padding-inline-end: var(--space-4);
-}
-
-/* The projects this window holds, above everything one of them draws (ADR 0033), and the
-   widest tabs in the window, because a project is the thing that holds the other two. It is
-   drawn in the title bar (ADR 0054), so the bar's height is its height; the rest of how it sits
-   there is with the bar, at the end of this file. */
-.projects {
-  background: var(--layer-project);
 }
 
 /* The workspaces of the project in front: the middle of the three strips (ADR 0036). The first
@@ -399,7 +409,6 @@ body {
    rather than a measurement of fifty boxes. `fits.ts` holds the reasoning, the cost (two chats
    are drawn as two wide tabs) and the number itself, which is handed to this rule on the
    element rather than written here a second time. */
-.projects .project,
 .workspaces-strip .workspace {
   position: relative;
   display: flex;
@@ -413,7 +422,6 @@ body {
 /* A tab being dragged along its strip (SI-6) passes over its neighbours rather than under them.
    It keeps its own look: where it will land is the gap the others open for it, which says
    enough, and a second look for "being dragged" is one more thing to theme. */
-.projects .project[data-dragging],
 .workspaces-strip .workspace[data-dragging],
 .tabs .tab[data-dragging] {
   /* Over the selected workspace's cell too, which is raised over its row's line. */
@@ -436,16 +444,13 @@ body {
    selected tab"*. There was an accent-coloured edge under it as well, lit along the side facing
    what it selects; it went with the coloured rules, because it was one of the borders that
    were *"not feeling well"*, and a background is enough to say which tab you are on. */
-.projects .project:has([aria-selected="true"]),
 .workspaces-strip .workspace:has([aria-selected="true"]),
-.projects [role="tab"][aria-selected="true"],
 .workspaces-strip [role="tab"][aria-selected="true"] {
   background: var(--layer-selected);
 }
 
 /* The tab itself: flat, because the cell around it is the shape. Quiet until it is the one you
    are on, which on a strip of fifty is the only thing that may be loud. */
-.projects [role="tab"],
 .workspaces-strip [role="tab"] {
   display: flex;
   align-items: center;
@@ -482,7 +487,6 @@ body {
    workspace tab was its own cell until SE-23 gave it a gear, and a `min-width: 0` that also
    matched it took its floor away, so the strip squeezed eight workspaces into the room its
    arithmetic said four could have. Every strip's floor is now on its cell. */
-.projects .project > [role="tab"],
 .workspaces-strip .workspace > [role="tab"] {
   flex: 1 1 auto;
   min-width: 0;
@@ -490,13 +494,11 @@ body {
 
 /* Hover never touches the selected tab: it is already the loudest thing on the strip, and a
    pointer resting on it should not make it change. */
-.projects [role="tab"]:hover:not([aria-selected="true"]),
 .workspaces-strip [role="tab"]:hover:not([aria-selected="true"]) {
   background: var(--surface-hover);
   color: var(--text-primary);
 }
 
-.projects [role="tab"][aria-selected="true"],
 .workspaces-strip [role="tab"][aria-selected="true"] {
   color: var(--text-primary);
 }
@@ -514,36 +516,7 @@ body {
 }
 
 /* Inside the cell, because a ring outside it is clipped by the strip that scrolls. */
-.projects [role="tab"]:focus-visible,
 .workspaces-strip [role="tab"]:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: var(--focus-ring-inset);
-}
-
-/* A tab's `×`, which ENDS the chat. Flat like the tab it is part of, and it goes to the danger
-   surface on hover rather than lighting up like a close box — the glyph already reads lighter
-   than what it does (charter-app#130), and the one thing the look may not do is agree with the
-   glyph. The accessible name is still the catalogue's `End chat 3 steward`. */
-.project .closer {
-  display: flex;
-  align-items: center;
-  align-self: stretch;
-  flex: none;
-  padding: 0 var(--space-3);
-  border: 0;
-  border-radius: 0;
-  background: none;
-  color: var(--text-faint);
-  line-height: 1;
-  cursor: pointer;
-}
-
-.project .closer:hover {
-  background: var(--danger-surface);
-  color: var(--danger-text);
-}
-
-.project .closer:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: var(--focus-ring-inset);
 }
@@ -551,8 +524,7 @@ body {
 /* **A settings gear** (SE-23, V89i): on the project in front's tab and the focused workspace's,
    and quiet — invisible until its tab is under the pointer or the keyboard, the vault row's eye's
    rule (`.vault-reveal`). Flat like the `×` beside it, and it hovers as a view tab's `×` does:
-   it opens a tab and ends nothing. Two classes deep, so `.projects button` does not dress it. */
-.project .gear,
+   it opens a tab and ends nothing. */
 .workspace .gear {
   display: flex;
   align-items: center;
@@ -569,20 +541,16 @@ body {
   opacity: 0;
 }
 
-.project:hover .gear,
 .workspace:hover .gear,
-.project:has(:focus-visible) .gear,
 .workspace:has(:focus-visible) .gear {
   opacity: 1;
 }
 
-.project .gear:hover,
 .workspace .gear:hover {
   background: var(--surface-hover);
   color: var(--text-primary);
 }
 
-.project .gear:focus-visible,
 .workspace .gear:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: var(--focus-ring-inset);
@@ -690,7 +658,6 @@ body {
 
    `overflow: hidden` rather than `auto`, so the failure mode if the arithmetic is ever wrong
    is a clipped tab and not a scrollbar creeping back. */
-.projects,
 .workspaces-strip,
 .tabs {
   min-width: 0;
@@ -744,26 +711,6 @@ body {
 
 .bar .strip-doing button.bare {
   border-radius: calc(var(--radius-md) + 1px);
-}
-
-/* The strip's own buttons. A tab overrides every one of these from a more specific selector
-   above; what is left here is a button. */
-.projects button {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  color: var(--text-primary);
-  background: none;
-  border: 0;
-  border-radius: var(--radius-md);
-  padding: var(--space-1) var(--space-3);
-  font: inherit;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.projects button:hover:not(:disabled, [aria-disabled="true"]) {
-  background: var(--surface-hover);
 }
 
 /* The innermost of the three strips: the chats of the workspace above, **drawn as the editor's
@@ -848,7 +795,6 @@ body {
 /* The name, truncated rather than widening its tab. The whole of it is in the tab's `title`
    and in the palette, which is the surface for reading (ADR 0039). */
 .tab-name,
-.project-name,
 .workspace-name {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1034,7 +980,7 @@ body {
    box with a `+` in it.
 
    **And it says the whole of what it is, rather than the half the bar does not already say.**
-   It used to inherit `display`, `font` and `cursor` from `.bar button` or `.projects button`,
+   It used to inherit `display`, `font` and `cursor` from `.bar button`,
    which was true of the only two strips that had one — and then charter-app#193 put a `+` on
    the workspace strip, where there is no such rule, and the same class drew an inline box at
    the browser's own font with its icon off centre. A rule that works in two places because of
@@ -1069,7 +1015,7 @@ button.bare:focus-visible {
 /* **`N more` is one of the strip's own controls, and is drawn as one** — the operator's
    *"lets make 'N more' button looks like that buttons, to have all buttons in same style"*
    (charter-app#193). It was three different buttons: a bordered control box on the chat strip
-   (`.bar button`), a borderless one on the project strip (`.projects button`), and a third
+   (`.bar button`), a borderless one on the project strip, which is gone (#2915), and a third
    rule of its own on the workspace strip that drew a bordered box with a different padding
    from the chat strip's. Three looks for one control, and the difference was never anything
    about the control — it was which ancestor's rule happened to reach it.
@@ -1085,7 +1031,7 @@ button.bare:focus-visible {
    and no wider. `Doer`'s `iconOnly` is the other half of that distinction, in the JSX.
 
    **Written as `button.show-more`, for `button.bare`'s reason one rule up**: `.bar button`
-   dresses every button on the bar and `.projects button` every button on that strip, both at
+   dresses every button on the bar, at
    one class and one element, so a plain `.show-more` would lose to whichever of them reached
    it and this would still be three buttons. A tie on specificity is won by source order, and
    this is below both. */
@@ -5561,17 +5507,8 @@ button.show-more:focus-visible {
    title bar height whatever this element does, so a bar shorter than that would have them
    overlapping the workspace strip below. No padding above or below, so a project tab's cell
    is the whole height of the bar. `surface.deep` is the theme's colour for the top of the
-   window; the project strip in it draws `layer.project`, which both built-in themes set to the
-   same value, so the two read as one frame. A theme that parts them gets a strip a shade apart
-   from the bar around it, which is the depth signal `layer.*` exists to give.
-
-   **`--title-bar-drag` is the stretch of bar that is always left to grab.** Width the project
-   tabs cannot use is drag region already; this is the least of it, so a window full of
-   projects can still be moved. It is the strip's margin rather than a gap in the flex row,
-   because the strip measures its own box (`fits.useRoom`) and a margin is outside that box:
-   the tabs are fitted to what is left after it, and the arithmetic needs no copy of it. */
+   window. Everything of it that is not a control is drag region. */
 .title-bar {
-  --title-bar-drag: calc(var(--size-control) * 2.5);
   display: flex;
   flex: none;
   gap: var(--space-5);
@@ -5587,15 +5524,32 @@ button.show-more:focus-visible {
   /* Not selectable, like all chrome: see "Chrome is not selectable" near the top. */
 }
 
-/* The project strip, in the bar. It takes what the right-hand end and the drag stretch leave,
-   and gives way before either: `min-width: 0` lets it shrink below its tabs, and the tabs it
-   then has no room for go into its show-more menu. Its tabs keep the window's text size
-   rather than the bar's smaller one, because they are the outermost strip and not a caption. */
-.title-bar .projects {
-  flex: 1 1 auto;
-  align-self: stretch;
-  margin-inline-end: var(--title-bar-drag);
-  font-size: var(--font-size-base);
+/* The bar's first controls (#2915): the show for a rail that hides itself, first after the
+   window controls (R91). */
+.title-bar-leading {
+  display: flex;
+  flex: 0 1 auto;
+  gap: var(--space-2);
+  align-items: center;
+  min-width: 0;
+}
+
+/* The project in front, before the workspaces #2916 draws (the prototype's layout D): its name
+   in the quiet tier, a little heavier, cut short rather than pressing on the bar's middle. Its
+   "/" comes with what #2916 draws after it. */
+.title-bar-crumb {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  font-size: var(--font-size-sm);
+}
+
+.title-bar-project {
+  overflow: hidden;
+  color: var(--text-quiet);
+  font-weight: var(--font-weight-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* The right-hand end, which never gives way. At the far end whether or not there is a strip
@@ -7083,17 +7037,6 @@ nav.piece-files-head {
   border-radius: var(--radius-lg);
 }
 
-/* A project with unsaved work, on its tab (charter-app#302). */
-.project-unsaved {
-  width: 0.45rem;
-  height: 0.45rem;
-  border-radius: 50%;
-  background: var(--state-waiting);
-  flex: none;
-}
-.project-unsaved[data-stage="blocked"] {
-  background: var(--state-failed);
-}
 /* The LIVE mark (charter-app#301): a workspace published with the plane. */
 .live-mark {
   display: inline-flex;

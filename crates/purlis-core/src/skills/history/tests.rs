@@ -346,7 +346,11 @@ fn a_runs_start_records_the_folder_it_ran_or_that_it_held_changes_not_committed(
         .unwrap();
     };
     start("clean");
-    std::fs::write(root.join("skills/deploy/notes.md"), "changed, not committed\n").unwrap();
+    std::fs::write(
+        root.join("skills/deploy/notes.md"),
+        "changed, not committed\n",
+    )
+    .unwrap();
     start("dirty");
 
     let runs = crate::skilluse::runs(root);
@@ -359,7 +363,10 @@ fn a_runs_start_records_the_folder_it_ran_or_that_it_held_changes_not_committed(
         content("clean"),
         Some(crate::skilluse::Content::Tree(tree_at(root, "HEAD")))
     );
-    assert_eq!(content("dirty"), Some(crate::skilluse::Content::Uncommitted));
+    assert_eq!(
+        content("dirty"),
+        Some(crate::skilluse::Content::Uncommitted)
+    );
     let history = history(root, &Level::project(), "deploy").unwrap();
     assert_eq!(history.versions[0].runs.runs, 1);
     assert_eq!(history.uncommitted.runs, 1);

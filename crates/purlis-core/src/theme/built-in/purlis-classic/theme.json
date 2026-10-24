@@ -203,6 +203,9 @@
         "duration.settle": 280,
         "duration.spin": 900,
         "duration.breathe": 1600,
+        "duration.slide": 260,
+        "duration.reveal": 220,
+        "duration.leave": 200,
 
         "easing.standard": [0.2, 0, 0, 1],
         "easing.enter": [0, 0, 0.2, 1],
@@ -395,6 +398,9 @@
         "duration.settle": 280,
         "duration.spin": 900,
         "duration.breathe": 1600,
+        "duration.slide": 260,
+        "duration.reveal": 220,
+        "duration.leave": 200,
 
         "easing.standard": [0.2, 0, 0, 1],
         "easing.enter": [0, 0, 0.2, 1],
