@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792860524125,
+  "lastUpdate": 1792863794226,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -23940,6 +23940,48 @@ window.BENCHMARK_DATA = {
             "value": 101.1232125,
             "unit": "ms",
             "extra": "median of 5 runs: 100.328, 100.959, 101.123, 101.798, 102.004 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "cf5b636953a82b4737dbf881c297c11c2c2c6aa9",
+          "message": "Harness icons: purlis-drawn glyphs, a profile's own icon, the monogram (#2922) (#3135)\n\n* Harness icons: purlis-drawn glyphs, a profile's own icon, the monogram (#2922)\n\nThe theme's icon set gains `glyphs` (spark, braces, terminal), read and\nchecked as a view's icon is; the Purlis set ships them and the window\ndraws the same where a theme draws none. A profile names its icon in\n`purlis.local.toml` (a glyph, or an SVG in purlis's icons folder, read\nas checked shapes only); with none it shows its harness kind's\nmonogram, and the built-in's own row its glyph. One HarnessIcon\ncomponent draws it, decorative beside a name and named alone; Settings'\nprofile list draws it, and Start a chat's rows carry it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Harness icons: read a profile's SVG from handles, as theme files are (#2922)\n\nThe icons folder and the file are each opened refusing a link and\nwithout waiting, and the descriptor is read only when it is a plain file\nwithin the cap (theme::opened). Off macOS and Linux nothing is read and\nthe monogram shows. The key and its folder are recorded as the\noperator's ruling of 2026-10-24.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Harness icons: bound a person's icon, draw it in the text's colour (#2922)\n\nWhat a person's SVG comes to is held to a budget once its groups'\nattributes are carried onto its shapes, and a joined transform to one\nvalue's length; the window holds the same budget. Its fills and strokes\nare drawn in the text's colour alone, and a file with more than one name\nis not read. A profile's icon appears only beside its name, never on a\nconsent or ask surface. The window's fallback monogram mirrors the\ncore's.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Harness icons: the recorded refusal names icon; a pipe made through forklock (#2922)\n\nThe recorded `harness list` scenario says a profile is kind, command,\nenv and icon, as the loader now does: the contract moved with the new\nkey. The pipe test makes its pipe through forklock, as every test that\nstarts a program does.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* Harness icons: one budget for an answer's own icons; keep them off asks (#2922)\n\nAn answer that lists profiles reads each SVG a profile names once and\nsends it once, keyed by its file name, and holds all of them to one\nbudget; a row past it shows its monogram. The window holds the same\nbudget across a list it draws (ownIconsOf). The harness monogram's\ntype step is the geometry guard's second allowance, with its reason,\nand a guard keeps HarnessIcon out of every ask, answer, approval,\ngrant and consent surface.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Harness icons: an answer reads each icon once in any case; the consent guard follows imports (#2922)\n\nAn answer reads each named file once whatever its case, reads no more\nthan 64 files, and stops reading once its budget can hold no icon. The\nper-profile reader is gone: every caller draws through an answer. The\nconsent guard also names trust, confirm and accept surfaces, and follows\nimports with or without their extension and through re-exports.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-24T21:32:28+04:00",
+          "tree_id": "8c3b05e62d9dd51586a0625a40cfdf355aecf415",
+          "url": "https://github.com/purlis/purlis/commit/cf5b636953a82b4737dbf881c297c11c2c2c6aa9"
+        },
+        "date": 1792863791302,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.531957,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.525, 0.528, 0.532, 0.532, 0.541 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.008198,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.533, 16.880, 17.008, 17.090, 17.096 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 105.2703845,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.784, 104.926, 105.270, 105.780, 106.381 ms"
           }
         ]
       }
