@@ -275,17 +275,22 @@ fn keys(skill: &SkillFiles<'_>) -> Vec<Finding> {
 /// Each `<namespace>:<name>` in `text` that names no skill there is, once each: the broken
 /// uses of the one reader of references ([`crate::uses::uses_in`]).
 fn references(text: &str, lints: &BuiltInLints<'_>) -> Vec<Finding> {
-    crate::uses::uses_in(text, lints.namespace, lints.plane, lints.built_in)
-        .into_iter()
-        .filter(|one| one.broken)
-        .map(|one| {
-            warns(Lint::NoSuchSkill {
-                said: one.said,
-                name: one.name,
-                project: one.project,
-            })
+    let plane: std::collections::HashSet<&str> = lints.plane.iter().map(String::as_str).collect();
+    let built_in: std::collections::HashSet<&str> =
+        lints.built_in.iter().map(String::as_str).collect();
+    crate::uses::uses_in(text, lints.namespace, &|one| plane.contains(one), &|one| {
+        built_in.contains(one)
+    })
+    .into_iter()
+    .filter(|one| one.broken)
+    .map(|one| {
+        warns(Lint::NoSuchSkill {
+            said: one.said,
+            name: one.name,
+            project: one.project,
         })
-        .collect()
+    })
+    .collect()
 }
 
 /// Each program a `` !`command` `` in the skill's text or one of its scripts calls that this

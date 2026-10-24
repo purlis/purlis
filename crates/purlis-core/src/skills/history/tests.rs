@@ -78,13 +78,14 @@ fn stamp(at: u64) -> String {
     crate::dispatch::stamp(chrono::DateTime::from_timestamp(i64::try_from(at).unwrap(), 0).unwrap())
 }
 
-/// Logs a run of `skill` at `at` of the project copy, ended with `calls` tool calls.
-fn logged(root: &Path, id: &str, skill: &str, at: u64, calls: u64, level: &str) {
+/// Logs a run of `skill` at `at` of the copy at `level`, on the folder's `tree` (a tree id, or
+/// `uncommitted`), ended with `calls` tool calls.
+fn logged(root: &Path, id: &str, skill: &str, at: u64, calls: u64, level: &str, tree: &str) {
     let dir = root.join("personas/_skills");
     std::fs::create_dir_all(&dir).unwrap();
     let start = serde_json::json!({
         "run": id, "skill": skill, "started_by": "skill-tool", "ts": stamp(at),
-        "level": level, "workspace": null,
+        "level": level, "workspace": null, "tree": tree,
     });
     let end = serde_json::json!({
         "run": id, "ended": "turn", "ms": 1000, "tool_calls": calls, "tool_errors": 1,
@@ -95,35 +96,109 @@ fn logged(root: &Path, id: &str, skill: &str, at: u64, calls: u64, level: &str) 
     std::fs::write(dir.join("2026-06.box.jsonl"), text).unwrap();
 }
 
+/// The tree git holds of `deploy`'s folder at `commit`.
+fn tree_at(root: &Path, commit: &str) -> String {
+    run(root, &["rev-parse", &format!("{commit}:skills/deploy")]).line().to_owned()
+}
+
 #[test]
-fn the_history_lists_each_version_newest_first_with_the_runs_it_had() {
+fn each_version_counts_the_runs_whose_start_recorded_its_folder() {
     let tmp = plane();
     let root = tmp.path();
-    logged(root, "r1", "deploy", T1 + 10, 3, "project");
-    logged(root, "r2", "skills:deploy", T2 + 10, 4, "project");
-    logged(root, "r3", "deploy", T2 + 20, 5, "project");
-    // Another copy's run, and a run from before the skill was made, count on no version.
-    logged(root, "r4", "deploy", T2 + 30, 9, "local project");
-    logged(root, "r5", "deploy", T1 - 10, 9, "project");
+    let (first, second) = (tree_at(root, "HEAD~1"), tree_at(root, "HEAD"));
+    logged(root, "r1", "deploy", T1 + 10, 3, "project", &first);
+    logged(root, "r2", "skills:deploy", T2 + 10, 4, "project", &second);
+    logged(root, "r3", "deploy", T2 + 20, 5, "project", &second);
+    // A teammate who pulled the second version only later ran the first one after it was made:
+    // the run is the first version's, by what it ran, whenever it was.
+    logged(root, "r4", "deploy", T2 + 30, 6, "project", &first);
+    // A run on changes not committed is counted apart; another copy's counts on no version.
+    logged(root, "r5", "deploy", T2 + 40, 7, "project", "uncommitted");
+    logged(root, "r6", "deploy", T2 + 50, 9, "local project", &second);
 
-    let versions = history(root, &Level::project(), "deploy").unwrap();
+    let history = history(root, &Level::project(), "deploy").unwrap();
 
-    let seen: Vec<(&str, u64, u64, u64)> = versions
+    let seen: Vec<(&str, u64, u64, u64)> = history
+        .versions
         .iter()
         .map(|v| (v.subject.as_str(), v.at, v.runs.runs, v.runs.tool_calls))
         .collect();
-    assert_eq!(seen, [("second step", T2, 2, 9), ("make deploy", T1, 1, 3)]);
-    assert_eq!(versions[0].author, "Fixture");
-    assert_eq!(versions[0].runs.tool_errors, 2);
-    assert_eq!(versions[0].runs.ended, 2);
-    assert!(versions.iter().all(|v| v.grade.is_none()));
+    assert_eq!(seen, [("second step", T2, 2, 9), ("make deploy", T1, 2, 9)]);
+    assert_eq!(history.versions[0].author, "Fixture");
+    assert_eq!(history.versions[0].runs.tool_errors, 2);
+    assert_eq!(history.uncommitted.runs, 1);
+    assert_eq!(history.uncommitted.tool_calls, 7);
+    assert!(history.versions.iter().all(|v| v.grade.is_none()));
+}
+
+#[test]
+fn a_change_to_only_the_file_beside_the_folder_is_no_version() {
+    let tmp = plane();
+    let root = tmp.path();
+    std::fs::write(root.join("skills/deploy.toml"), "lifecycle = \"deprecated\"\n").unwrap();
+    run(root, &["add", "-A"]);
+    run(root, &["commit", "-q", "-m", "deprecate deploy"]);
+    let toml_only = run(root, &["rev-parse", "HEAD"]).line().to_owned();
+
+    let history = history(root, &Level::project(), "deploy").unwrap();
+
+    assert_eq!(history.versions.len(), 2);
+    assert!(history.versions.iter().all(|v| v.commit != toml_only));
+    let (answer, _) = did(root, |cx| revert(cx, &Level::project(), "deploy", &toml_only));
+    assert!(answer.unwrap_err().contains("no version"));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_revert_to_a_version_that_holds_a_link_is_refused_and_no_link_is_made() {
+    let tmp = plane();
+    let root = tmp.path();
+    // `notes.md` is a plain file in the second version: an older commit makes it a link.
+    std::fs::remove_file(root.join("skills/deploy/notes.md")).unwrap();
+    std::os::unix::fs::symlink("/etc/passwd", root.join("skills/deploy/notes.md")).unwrap();
+    run(root, &["add", "-A"]);
+    run(root, &["commit", "-q", "-m", "a link"]);
+    let linked = run(root, &["rev-parse", "HEAD"]).line().to_owned();
+    std::fs::remove_file(root.join("skills/deploy/notes.md")).unwrap();
+    std::fs::write(root.join("skills/deploy/notes.md"), "plain again\n").unwrap();
+    run(root, &["add", "-A"]);
+    run(root, &["commit", "-q", "-m", "plain"]);
+
+    let (answer, _) = did(root, |cx| revert(cx, &Level::project(), "deploy", &linked));
+
+    assert!(answer.unwrap_err().contains("holds a link (notes.md)"));
+    let meta = std::fs::symlink_metadata(root.join("skills/deploy/notes.md")).unwrap();
+    assert!(meta.is_file());
+}
+
+#[test]
+fn a_revert_to_a_version_that_widens_the_chat_says_so_before_it_is_made() {
+    let tmp = plane();
+    let root = tmp.path();
+    std::fs::write(
+        root.join("skills/deploy/SKILL.md"),
+        "---\nname: deploy\ndescription: Ships the build to production.\nallowed-tools: Bash\n---\n\nWide.\n",
+    )
+    .unwrap();
+    run(root, &["add", "-A"]);
+    run(root, &["commit", "-q", "-m", "wide"]);
+    let wide = run(root, &["rev-parse", "HEAD"]).line().to_owned();
+    std::fs::write(root.join("skills/deploy/SKILL.md"), V2).unwrap();
+    run(root, &["add", "-A"]);
+    run(root, &["commit", "-q", "-m", "narrow"]);
+    let narrow = run(root, &["rev-parse", "HEAD"]).line().to_owned();
+
+    let said = revert_widens(root, &Level::project(), "deploy", &wide).unwrap().unwrap();
+    assert!(said.starts_with("Widens the chat"), "{said}");
+    assert!(said.contains("leaves them out when it hands"), "{said}");
+    assert_eq!(revert_widens(root, &Level::project(), "deploy", &narrow), Ok(None));
 }
 
 #[test]
 fn a_versions_diff_shows_what_it_changed_and_names_an_invisible_character() {
     let tmp = plane();
     let root = tmp.path();
-    let versions = history(root, &Level::project(), "deploy").unwrap();
+    let versions = history(root, &Level::project(), "deploy").unwrap().versions;
 
     let diff = diff(root, &Level::project(), "deploy", &versions[0].commit).unwrap();
     assert!(diff.text.contains("-Step one."), "{}", diff.text);
@@ -168,7 +243,7 @@ fn a_revert_brings_the_folder_back_as_one_commit_and_keeps_the_file_beside_it() 
     std::fs::write(root.join("skills/deploy.toml"), "grant = \"all\"\n").unwrap();
     run(root, &["add", "-A"]);
     run(root, &["commit", "-q", "-m", "grant"]);
-    let versions = history(root, &Level::project(), "deploy").unwrap();
+    let versions = history(root, &Level::project(), "deploy").unwrap().versions;
     let first = versions.last().unwrap().commit.clone();
 
     let (answer, _) = did(root, |cx| revert(cx, &Level::project(), "deploy", &first));

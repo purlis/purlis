@@ -5,10 +5,11 @@ import { useEffect, useState } from "react";
 import { LoaderCircle } from "lucide-react";
 import {
   commands,
+  type SkillChanged,
   type SkillCopy,
+  type SkillDetails,
   type SkillDiff,
   type SkillLifecycle,
-  type SkillPage,
   type SkillVersion,
 } from "./bindings";
 import { counted, saidAt } from "./dispatches";
@@ -31,6 +32,17 @@ export function lifecycleSaid(name: string, lifecycle: SkillLifecycle): string {
   }
 }
 
+/** What a line of a diff is: added, removed, or neither (its headers and context). */
+export function diffLineKind(line: string): "added" | "removed" | undefined {
+  if (line.startsWith("+") && !line.startsWith("+++")) return "added";
+  if (line.startsWith("-") && !line.startsWith("---")) return "removed";
+  return undefined;
+}
+
+/** What a copy's state could not be read says, in the window's words. */
+export const UNREAD =
+  "purlis could not read what it keeps about this skill, so it is taken as in use with no owners. Deprecating or archiving it writes it again.";
+
 /** A version's runs, as its row says them: signals, never a verdict. */
 export function versionRunsSaid(version: SkillVersion): string {
   const runs = version.runs;
@@ -42,6 +54,9 @@ export function versionRunsSaid(version: SkillVersion): string {
   ].join(", ");
 }
 
+/** What a change answers: what it said beyond being done, or why it was not made. */
+type Changed = { status: "ok"; data: SkillChanged } | { status: "error"; error: string };
+
 /** The words a change that failed is said with, and what it said beyond being done. */
 type Said = { tone: "news" | "trouble"; label: string; text: string };
 
@@ -51,7 +66,7 @@ type Said = { tone: "news" | "trouble"; label: string; text: string };
  * history, with a diff and a revert per version and the runs that started on it; the skills it
  * names and that name it are the name's.
  */
-export function SkillLife({
+export function SkillDetailsPanel({
   plane,
   name,
   changed,
@@ -60,7 +75,7 @@ export function SkillLife({
   name: string;
   changed: number;
 }) {
-  const [page, setPage] = useState<SkillPage>();
+  const [page, setPage] = useState<SkillDetails>();
   const [refused, setRefused] = useState<string>();
   const [picked, setPicked] = useState(0);
   const [done, setDone] = useState(0);
@@ -68,7 +83,7 @@ export function SkillLife({
   const [said, setSaid] = useState<Said>();
   useEffect(() => {
     let live = true;
-    void commands.skillPage(plane, name).then((answer) => {
+    void commands.skillDetails(plane, name).then((answer) => {
       if (!live) return;
       if (answer.status === "ok") {
         setPage(answer.data);
@@ -85,7 +100,7 @@ export function SkillLife({
       <EmptyState
         headline={`purlis could not read the history of ${name}`}
         body={refused}
-        testid="skill-life-refused"
+        testid="skill-details-refused"
       />
     );
   if (page === undefined)
@@ -97,27 +112,24 @@ export function SkillLife({
     );
 
   const copy: SkillCopy | undefined = page.copies[Math.min(picked, page.copies.length - 1)];
-  const change = (
-    label: string,
-    act: () => Promise<{ status: string; data?: unknown; error?: unknown }>,
-  ) => {
+  const change = (label: string, act: () => Promise<Changed>) => {
     setBusy(true);
     void act().then((answer) => {
       setBusy(false);
       if (answer.status === "ok") {
-        const notes = (answer.data as { notes: string[] }).notes;
+        const notes = answer.data.notes;
         setSaid(
           notes.length > 0
             ? { tone: "news", label: "Skill changed", text: notes.join(" ") }
             : undefined,
         );
-      } else setSaid({ tone: "trouble", label, text: String(answer.error) });
+      } else setSaid({ tone: "trouble", label, text: answer.error });
       setDone((n) => n + 1);
     });
   };
 
   return (
-    <div className="skill-life" data-testid="skill-life">
+    <div className="skill-details" data-testid="skill-details">
       {said !== undefined && (
         <Notice
           cause="skill-change"
@@ -179,7 +191,7 @@ export function SkillLife({
           }
         />
       )}
-      <Uses name={name} page={page} />
+      <Uses name={name} details={page} />
     </div>
   );
 }
@@ -210,11 +222,7 @@ function CopyState({
     <section aria-labelledby="skill-state-heading" data-testid="skill-state">
       <h3 id="skill-state-heading">State</h3>
       <p data-testid="skill-lifecycle">{lifecycleSaid(name, copy.lifecycle)}</p>
-      {copy.unread !== null && (
-        <p className="honest">
-          Its state could not be read, so it is taken as in use: {copy.unread}
-        </p>
-      )}
+      {copy.unread && <p className="honest">{UNREAD}</p>}
       {copy.unused_days !== null && state === "active" && (
         <p className="honest" data-testid="skill-unused">
           No chat has run {name} for {counted(copy.unused_days, "day", "days")}. Deprecate it, so
@@ -293,6 +301,15 @@ function History({
 }) {
   const [open, setOpen] = useState<string>();
   const [diff, setDiff] = useState<SkillDiff | string>();
+  // The version a revert is asked for, and what it would bring back that widens a chat: null
+  // where nothing widens, undefined while it is read.
+  const [asked, setAsked] = useState<{ commit: string; widens?: string | null }>();
+  const ask = (commit: string) => {
+    setAsked({ commit });
+    void commands.skillRevertWidens(plane, copy.level, name, commit).then((answer) => {
+      setAsked({ commit, widens: answer.status === "ok" ? answer.data : null });
+    });
+  };
   const show = (commit: string) => {
     if (open === commit) {
       setOpen(undefined);
@@ -336,7 +353,13 @@ function History({
                 diff={open === version.commit ? diff : undefined}
                 busy={busy}
                 onShow={() => show(version.commit)}
-                onRevert={() => onRevert(version.commit)}
+                asked={asked?.commit === version.commit ? asked : undefined}
+                onAsk={() => ask(version.commit)}
+                onRevert={() => {
+                  setAsked(undefined);
+                  onRevert(version.commit);
+                }}
+                onCancel={() => setAsked(undefined)}
               />
             ))}
           </tbody>
@@ -353,7 +376,10 @@ function VersionRow({
   diff,
   busy,
   onShow,
+  asked,
+  onAsk,
   onRevert,
+  onCancel,
 }: {
   version: SkillVersion;
   newest: boolean;
@@ -361,7 +387,10 @@ function VersionRow({
   diff: SkillDiff | string | undefined;
   busy: boolean;
   onShow: () => void;
+  asked: { widens?: string | null } | undefined;
+  onAsk: () => void;
   onRevert: () => void;
+  onCancel: () => void;
 }) {
   return (
     <>
@@ -375,12 +404,42 @@ function VersionRow({
             {open ? "Hide changes" : "Show changes"}
           </Button>
           {!newest && (
-            <Button size="sm" isDisabled={busy} onPress={onRevert}>
+            <Button size="sm" isDisabled={busy || asked !== undefined} onPress={onAsk}>
               Revert to this
             </Button>
           )}
         </td>
       </tr>
+      {asked !== undefined && (
+        <tr data-testid="skill-revert-confirm">
+          <td colSpan={5}>
+            <p>Put the skill back as this version had it? The revert is saved as a new version.</p>
+            {asked.widens === undefined ? (
+              <p className="pending" aria-busy="true">
+                <LoaderCircle className="node-icon spinning" />
+                Reading the version…
+              </p>
+            ) : (
+              asked.widens !== null && (
+                <p className="honest" data-testid="skill-revert-widens">
+                  {asked.widens}
+                </p>
+              )
+            )}
+            <Button
+              size="sm"
+              variant="primary"
+              isDisabled={busy || asked.widens === undefined}
+              onPress={onRevert}
+            >
+              Revert
+            </Button>
+            <Button size="sm" variant="ghost" onPress={onCancel}>
+              Cancel
+            </Button>
+          </td>
+        </tr>
+      )}
       {open && (
         <tr>
           <td colSpan={5}>
@@ -402,18 +461,8 @@ function VersionRow({
                   {diff.text.split("\n").map((line, at) => (
                     <span
                       key={at}
-                      className={
-                        line.startsWith("+") && !line.startsWith("+++")
-                          ? "ui-text-strong"
-                          : undefined
-                      }
-                      data-line={
-                        line.startsWith("+") && !line.startsWith("+++")
-                          ? "added"
-                          : line.startsWith("-") && !line.startsWith("---")
-                            ? "removed"
-                            : undefined
-                      }
+                      className={diffLineKind(line) === "added" ? "ui-text-strong" : undefined}
+                      data-line={diffLineKind(line)}
                     >
                       {line}
                       {"\n"}
@@ -433,7 +482,7 @@ function VersionRow({
 }
 
 /** The skills this one names, and those that name it. */
-function Uses({ name, page }: { name: string; page: SkillPage }) {
+function Uses({ name, details: page }: { name: string; details: SkillDetails }) {
   return (
     <section aria-labelledby="skill-uses-heading" data-testid="skill-uses">
       <h3 id="skill-uses-heading">Uses and used by</h3>

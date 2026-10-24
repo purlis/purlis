@@ -43,6 +43,7 @@ pub fn uses_of(plane: &Path, built_in: Option<&Path>, name: &str) -> UsesOf {
     let mut skills: Vec<(String, String)> = Vec::new();
     'dirs: for dir in dirs {
         for skill in super::read(&dir) {
+            // One past the most, so the graph can say it was cut.
             if skills.len() > uses::MOST_SKILLS {
                 break 'dirs;
             }

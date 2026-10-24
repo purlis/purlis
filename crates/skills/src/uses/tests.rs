@@ -9,11 +9,13 @@ fn names(list: &[&str]) -> Vec<String> {
 
 #[test]
 fn a_skill_names_project_and_built_in_skills_and_a_missing_one_is_broken() {
+    let plane = names(&["deploy"]);
+    let built_in = names(&["secrets"]);
     let uses = uses_in(
         "Run skills:deploy, then skills:gone and purlis:secrets. Again skills:deploy.",
         "skills",
-        &names(&["deploy"]),
-        &names(&["secrets"]),
+        &|one| plane.iter().any(|known| known == one),
+        &|one| built_in.iter().any(|known| known == one),
     );
     let seen: Vec<(&str, bool, bool)> = uses
         .iter()
@@ -31,7 +33,12 @@ fn a_skill_names_project_and_built_in_skills_and_a_missing_one_is_broken() {
 
 #[test]
 fn a_namespace_inside_a_longer_word_is_no_reference() {
-    let uses = uses_in("myskills:deploy a/skills:deploy", "skills", &[], &[]);
+    let uses = uses_in(
+        "myskills:deploy a/skills:deploy",
+        "skills",
+        &|_| false,
+        &|_| false,
+    );
     assert!(uses.is_empty(), "{uses:?}");
 }
 
@@ -81,5 +88,8 @@ fn one_text_is_read_for_at_most_its_share_of_references() {
     let text: String = (0..MOST_REFERENCES + 10)
         .map(|n| format!("skills:s{n} "))
         .collect();
-    assert_eq!(uses_in(&text, "skills", &[], &[]).len(), MOST_REFERENCES);
+    assert_eq!(
+        uses_in(&text, "skills", &|_| false, &|_| false).len(),
+        MOST_REFERENCES
+    );
 }

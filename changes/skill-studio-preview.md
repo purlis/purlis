@@ -60,3 +60,7 @@
   people to know. The tab lists the skills a skill names, marking one that does not exist, and the
   skills that name it, and a run that started inside another skill's run says so. `purlis skill
   history | revert | deprecate | archive | owners | uses` do the same from a terminal.
+- **A skill's grant file that is a link is no longer followed** (#2782). purlis reads what it keeps
+  beside a skill's folder (its grant, and now its state and owners) only from a plain file: a link
+  in its place grants the skill nothing beyond the project's root, and a change to it is refused,
+  so a link can no longer widen where a skill reaches.

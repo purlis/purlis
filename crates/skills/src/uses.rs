@@ -20,7 +20,7 @@ pub const MOST_SKILLS: usize = 2000;
 pub const MOST_REFERENCES: usize = 200;
 
 /// One skill a skill's text names.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct Use {
     /// As the text writes it: `skills:deploy`, `purlis:secrets`.
     pub said: String,
@@ -54,18 +54,24 @@ fn named_in(text: &str, namespace: &str) -> Vec<String> {
 }
 
 /// **Every skill `text` names, once each**, in the order it names them: the project's by
-/// `namespace` (`skills`), checked against `plane`, and the built-in ones by their prefixes,
-/// checked against `built_in`. At most [`MOST_REFERENCES`].
-pub fn uses_in(text: &str, namespace: &str, plane: &[String], built_in: &[String]) -> Vec<Use> {
+/// `namespace` (`skills`), each asked of `plane` whether there is one of that name, and the
+/// built-in ones by their prefixes, asked of `built_in`. At most [`MOST_REFERENCES`], so the
+/// check that each is named once is over a bounded list.
+pub fn uses_in(
+    text: &str,
+    namespace: &str,
+    plane: &dyn Fn(&str) -> bool,
+    built_in: &dyn Fn(&str) -> bool,
+) -> Vec<Use> {
     let mut out: Vec<Use> = Vec::new();
-    let mut look = |prefix: &str, known: &[String], project: bool| {
+    let mut look = |prefix: &str, known: &dyn Fn(&str) -> bool, project: bool| {
         for name in named_in(text, prefix) {
             let said = format!("{prefix}:{name}");
             if out.len() >= MOST_REFERENCES || out.iter().any(|one| one.said == said) {
                 continue;
             }
             out.push(Use {
-                broken: !known.contains(&name),
+                broken: !known(&name),
                 said,
                 name,
                 project,
@@ -90,7 +96,8 @@ pub struct Node {
 /// **The uses / used-by graph of `skills`**, each a skill's name and its `SKILL.md`'s text, read
 /// against the built-in skills' names `built_in`: by name. Of two copies of a name, the uses of
 /// each are joined. At most [`MOST_SKILLS`] are read; the second answer says whether some were
-/// left out. O(skills + references).
+/// left out. Each name is looked up in a set, so the graph costs the skills' texts and their
+/// references, at most [`MOST_REFERENCES`] each.
 pub fn graph(
     skills: &[(String, String)],
     namespace: &str,
@@ -98,15 +105,13 @@ pub fn graph(
 ) -> (HashMap<String, Node>, bool) {
     let cut = skills.len() > MOST_SKILLS;
     let read = &skills[..skills.len().min(MOST_SKILLS)];
-    let plane: Vec<String> = read
-        .iter()
-        .map(|(name, _)| name.clone())
-        .collect::<HashSet<_>>()
-        .into_iter()
-        .collect();
+    let plane: HashSet<&str> = read.iter().map(|(name, _)| name.as_str()).collect();
+    let built_in: HashSet<&str> = built_in.iter().map(String::as_str).collect();
     let mut nodes: HashMap<String, Node> = HashMap::new();
     for (name, text) in read {
-        let uses = uses_in(text, namespace, &plane, built_in);
+        let uses = uses_in(text, namespace, &|one| plane.contains(one), &|one| {
+            built_in.contains(one)
+        });
         let node = nodes.entry(name.clone()).or_default();
         for one in uses {
             if !node.uses.iter().any(|had| had.said == one.said) {

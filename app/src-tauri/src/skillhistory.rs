@@ -14,6 +14,7 @@ use purlis_core::skills::verbs::Level;
 use purlis_core::skills::{Deprecated, Lifecycle, history, lifecycle};
 
 use crate::skillchange::{SkillChanged, SkillLevel, built_in, flag_on, heard};
+use crate::skillstudio::{StatsGroup, StatsRow, small, stats_row};
 
 /// A skill's lifecycle state, as its tab shows and sets it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -51,19 +52,6 @@ impl From<SkillLifecycle> for Lifecycle {
     }
 }
 
-/// What one version's runs counted: signals, never a verdict.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
-pub struct SkillVersionRuns {
-    pub runs: u32,
-    /// The runs whose end is recorded, which the counts are summed from.
-    pub ended: u32,
-    pub tool_calls: u32,
-    pub tool_errors: u32,
-    pub refusals: u32,
-    pub asks: u32,
-    pub ms: u32,
-}
-
 /// A version's grade, once grading lands (SK-16): always null for now.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
 pub struct SkillGrade {
@@ -80,7 +68,8 @@ pub struct SkillVersion {
     pub at: String,
     pub author: String,
     pub subject: String,
-    pub runs: SkillVersionRuns,
+    /// What the runs that started on it add up to, as a skill's totals row says them (SK-20).
+    pub runs: StatsRow,
     pub grade: Option<SkillGrade>,
 }
 
@@ -91,15 +80,17 @@ pub struct SkillCopy {
     /// Its level as a person reads it: `project`, `local workspace ops`.
     pub label: String,
     pub lifecycle: SkillLifecycle,
-    /// Why its lifecycle state and owners could not be read, where they could not: it is then
-    /// taken as in use with no owners.
-    pub unread: Option<String>,
+    /// Whether its lifecycle state and owners could not be read: it is then taken as in use with
+    /// no owners, and the tab says so.
+    pub unread: bool,
     /// Who looks after it, for people to know.
     pub owners: Vec<String>,
     /// How many days no chat ran it, where that is 60 or more: the tab suggests deprecating it.
     pub unused_days: Option<u32>,
     /// Its versions, newest first.
     pub versions: Vec<SkillVersion>,
+    /// What the runs on its folder while it held changes not committed add up to.
+    pub uncommitted: StatsRow,
 }
 
 /// A skill another skill names.
@@ -114,9 +105,9 @@ pub struct SkillUse {
     pub broken: bool,
 }
 
-/// What a skill's tab shows beside its runs.
+/// What a skill's tab shows beside its runs: each copy's state, owners and history, and its uses.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
-pub struct SkillPage {
+pub struct SkillDetails {
     /// Every copy of the name at the project's levels, the project's first.
     pub copies: Vec<SkillCopy>,
     pub uses: Vec<SkillUse>,
@@ -136,12 +127,8 @@ pub struct SkillDiff {
     pub unseen: Vec<String>,
 }
 
-fn small(n: u64) -> u32 {
-    u32::try_from(n).unwrap_or(u32::MAX)
-}
-
-/// [`skill_page`]'s answer for the project at `root`, at `now` (seconds since 1970).
-fn page(root: &std::path::Path, name: &str, now: u64) -> SkillPage {
+/// [`skill_details`]'s answer for the project at `root`, at `now` (seconds since 1970).
+fn details_of(root: &std::path::Path, name: &str, now: u64) -> SkillDetails {
     let unused = lifecycle::unused(root, now);
     let copies = Level::every(root)
         .into_iter()
@@ -150,25 +137,18 @@ fn page(root: &std::path::Path, name: &str, now: u64) -> SkillPage {
                 .dir(root)
                 .and_then(|dir| purlis_core::skills::named(&dir, name))?;
             let about = purlis_core::skills::about_of(&folder);
-            let versions = history::history(root, &level, name)
-                .unwrap_or_default()
+            let history = history::history(root, &level, name).unwrap_or_default();
+            let versions = history
+                .versions
                 .into_iter()
                 .map(|version| SkillVersion {
                     at: chrono::DateTime::from_timestamp(i64::try_from(version.at).unwrap_or(0), 0)
                         .map(purlis_core::dispatch::stamp)
                         .unwrap_or_default(),
+                    runs: stats_row(StatsGroup::Named(version.commit.clone()), version.runs),
                     commit: version.commit,
                     author: version.author,
                     subject: version.subject,
-                    runs: SkillVersionRuns {
-                        runs: small(version.runs.runs),
-                        ended: small(version.runs.ended),
-                        tool_calls: small(version.runs.tool_calls),
-                        tool_errors: small(version.runs.tool_errors),
-                        refusals: small(version.runs.refusals),
-                        asks: small(version.runs.asks),
-                        ms: small(version.runs.ms),
-                    },
                     grade: version.grade.map(|grade| SkillGrade {
                         passed: grade.passed,
                         fixtures: grade.fixtures,
@@ -181,6 +161,7 @@ fn page(root: &std::path::Path, name: &str, now: u64) -> SkillPage {
                     .iter()
                     .find(|one| one.name == name && one.level == level)
                     .map(|one| small(one.days)),
+                uncommitted: stats_row(StatsGroup::None, history.uncommitted),
                 level: (&level).into(),
                 lifecycle: about
                     .as_ref()
@@ -191,14 +172,14 @@ fn page(root: &std::path::Path, name: &str, now: u64) -> SkillPage {
                     .as_ref()
                     .map(|about| about.owners.clone())
                     .unwrap_or_default(),
-                unread: about.err(),
+                unread: about.is_err(),
                 versions,
             })
         })
         .collect();
     let built_in = built_in();
     let node = purlis_core::skills::graph::uses_of(root, built_in.as_deref(), name);
-    SkillPage {
+    SkillDetails {
         copies,
         uses: node
             .uses
@@ -219,11 +200,11 @@ fn page(root: &std::path::Path, name: &str, now: u64) -> SkillPage {
 /// owners, and the skills it names and that name it. Nothing while the flag is off.
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn skill_page(
+pub(crate) async fn skill_details(
     planes: tauri::State<'_, crate::planes::Planes>,
     plane: crate::planes::PlaneId,
     name: String,
-) -> Result<SkillPage, String> {
+) -> Result<SkillDetails, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reading the skill's history", move || {
         flag_on()?;
@@ -231,7 +212,7 @@ pub(crate) async fn skill_page(
             .duration_since(std::time::UNIX_EPOCH)
             .map(|at| at.as_secs())
             .unwrap_or_default();
-        Ok(page(held.root(), &name, now))
+        Ok(details_of(held.root(), &name, now))
     })
     .await
 }
@@ -254,6 +235,25 @@ pub(crate) async fn skill_diff(
             cut: diff.cut,
             unseen: diff.unseen,
         })
+    })
+    .await
+}
+
+/// **What reverting a skill to one of its versions would bring back that widens a chat**: the
+/// sentence its confirm shows, or null where nothing widens.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_revert_widens(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    level: SkillLevel,
+    name: String,
+    commit: String,
+) -> Result<Option<String>, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("reading the version", move || {
+        flag_on()?;
+        history::revert_widens(held.root(), &(&level).into(), &name, &commit)
     })
     .await
 }

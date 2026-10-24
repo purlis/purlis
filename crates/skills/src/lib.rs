@@ -37,6 +37,7 @@
 
 use std::path::{Path, PathBuf};
 
+mod beside;
 pub mod budget;
 pub mod change;
 pub mod compat;
@@ -101,7 +102,7 @@ pub enum Route {
 }
 
 /// Where a skill in a chat's set comes from: its level.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Origin {
     /// It ships inside purlis, in the bundled plugin's `skills/`. It cannot be turned off.
     BuiltIn,

@@ -8264,7 +8264,7 @@ nav.piece-files-head {
 }
 
 /* A skill's state, owners, history and uses (SK-19, #2782). */
-.skill-life {
+.skill-details {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);

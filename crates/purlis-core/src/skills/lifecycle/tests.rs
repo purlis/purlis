@@ -256,3 +256,30 @@ fn a_skill_no_chat_ran_for_sixty_days_is_suggested_and_a_recent_run_or_a_depreca
     .unwrap();
     assert!(names(later).is_empty());
 }
+
+#[test]
+fn archiving_a_narrower_copy_says_the_wider_one_now_loads() {
+    let tmp = plane();
+    let root = tmp.path();
+    skill(root, "workspaces/ops/skills/deploy", "deploy");
+    let mut lines = Vec::new();
+    let mut say = |line: Say| lines.push(line);
+    set(
+        &mut Ctx {
+            plane: root,
+            built_in: None,
+            by: By::Command,
+            say: &mut say,
+        },
+        &Level::workspace("ops"),
+        "deploy",
+        &Lifecycle::Archived,
+    )
+    .unwrap();
+    assert!(
+        lines
+            .iter()
+            .any(|line| matches!(line, Say::Info(text) if text.contains("The project copy of deploy now loads"))),
+        "{lines:?}"
+    );
+}

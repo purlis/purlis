@@ -695,7 +695,7 @@ const ORDINARY: Answers = {
   workspace_saving: REPO_SAVING,
   session_record: RECORD,
   dispatches: { rows: DISPATCHES, undrawn: 1 },
-  skill_page: {
+  skill_details: {
     copies: [
       {
         level: { workspace: null, local: false },

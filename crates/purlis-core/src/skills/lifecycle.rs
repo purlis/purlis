@@ -43,8 +43,16 @@ pub fn set(
     if was.as_ref() == Ok(lifecycle) {
         return Ok(false);
     }
-    purlis_skills::set_lifecycle(&folder, lifecycle)?;
+    purlis_skills::set_lifecycle(&folder, lifecycle).map_err(|why| not_kept(name, &why))?;
     let word = lifecycle.word();
+    if *lifecycle == Lifecycle::Archived
+        && let Some(wider) = wider_copy(plane, level, name)
+    {
+        // An archived copy takes no name, so the next copy out loads where this one did.
+        (cx.say)(crate::repocmd::Say::Info(format!(
+            "The {wider} copy of {name} now loads in its place, wherever it reaches."
+        )));
+    }
     cx.done(match lifecycle {
         Lifecycle::Active => format!("{name} is in use again"),
         Lifecycle::Deprecated(Deprecated {
@@ -58,6 +66,39 @@ pub fn set(
         &format!("skill {word} {name}"),
     );
     Ok(true)
+}
+
+/// What a person is told where what purlis keeps beside the skill `name` could not be changed:
+/// a sentence with no file in it, as the window's words are; what went wrong goes to the log.
+fn not_kept(name: &str, why: &str) -> String {
+    tracing::warn!(target: "purlis::skills", "what is kept beside {name} was not changed: {why}");
+    format!(
+        "What purlis keeps about {name} could not be changed, so nothing changed: it is not in a \
+         form purlis reads, or could not be written."
+    )
+}
+
+/// The nearest wider level than `level` that holds a skill named `name` in use: the copy that
+/// loads in its place once it is archived (ADR 0099 §3, narrowest first).
+fn wider_copy(plane: &Path, level: &Level, name: &str) -> Option<Level> {
+    let mut wider: Vec<Level> = Vec::new();
+    if level.workspace_name().is_some() && level.local {
+        wider.push(level.clone().local(false));
+    }
+    if level.workspace_name().is_some() {
+        wider.push(Level::project().local(true));
+    }
+    if level.workspace_name().is_some() || level.local {
+        wider.push(Level::project());
+    }
+    wider.into_iter().find(|one| {
+        one.dir(plane)
+            .and_then(|dir| named(&dir, name))
+            .is_some_and(|folder| {
+                purlis_skills::about_of(&folder)
+                    .map_or(true, |about| about.lifecycle != Lifecycle::Archived)
+            })
+    })
 }
 
 /// Refused where `other` cannot replace `name`: not a skill's name, the skill itself, or a name
@@ -99,7 +140,19 @@ pub fn set_owners(
     if purlis_skills::about_of(&folder).is_ok_and(|about| about.owners == owners) {
         return Ok(false);
     }
-    purlis_skills::set_owners(&folder, owners)?;
+    if let Some((owner, why)) = owners
+        .iter()
+        .find_map(|owner| purlis_skills::lifecycle::owner_problem(owner).map(|why| (owner, why)))
+    {
+        return Err(format!("{owner:?} cannot be an owner: {why}, so nothing changed"));
+    }
+    if owners.len() > purlis_skills::lifecycle::MOST_OWNERS {
+        return Err(format!(
+            "a skill names at most {} owners, so nothing changed",
+            purlis_skills::lifecycle::MOST_OWNERS
+        ));
+    }
+    purlis_skills::set_owners(&folder, owners).map_err(|why| not_kept(name, &why))?;
     cx.done(if owners.is_empty() {
         format!("{name} names no owners now")
     } else {
@@ -129,22 +182,13 @@ pub struct Unused {
 pub fn unused(plane: &Path, now: u64) -> Vec<Unused> {
     // The last run of each copy, by the skill's name without a harness's namespace, its level
     // and its workspace: one pass over the log.
-    let mut last: HashMap<(String, String, Option<String>), u64> = HashMap::new();
+    let mut last: HashMap<(String, purlis_skills::runs::Level, Option<String>), u64> =
+        HashMap::new();
     for run in crate::skilluse::runs(plane) {
-        let Some(copy) = &run.copy else {
+        let (Some(copy), Some(at)) = (&run.copy, run.started_secs()) else {
             continue;
         };
-        let Some(at) = chrono::DateTime::parse_from_rfc3339(&run.started)
-            .ok()
-            .and_then(|at| u64::try_from(at.timestamp()).ok())
-        else {
-            continue;
-        };
-        let leaf = run
-            .skill
-            .split_once(':')
-            .map_or(run.skill.as_str(), |(_, leaf)| leaf);
-        let key = (leaf.to_owned(), copy.level.word(), copy.workspace.clone());
+        let key = (run.skill_name().to_owned(), copy.level, copy.workspace.clone());
         let held = last.entry(key).or_insert(at);
         *held = (*held).max(at);
     }
@@ -170,7 +214,7 @@ pub fn unused(plane: &Path, now: u64) -> Vec<Unused> {
             let last_run = last
                 .get(&(
                     skill.name.clone(),
-                    copy.word(),
+                    copy,
                     level.workspace_name().map(str::to_owned),
                 ))
                 .copied();

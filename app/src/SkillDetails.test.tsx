@@ -4,7 +4,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { SkillLife, lifecycleSaid } from "./SkillLife";
+import { SkillDetailsPanel, diffLineKind, lifecycleSaid } from "./SkillDetails";
 
 afterEach(() => {
   cleanup();
@@ -13,6 +13,20 @@ afterEach(() => {
 
 const NEW = "a".repeat(40);
 const OLD = "b".repeat(40);
+
+function totals(group: unknown, runs: number) {
+  return {
+    group,
+    runs,
+    ended: runs,
+    tool_calls: runs * 2,
+    tool_errors: 0,
+    refusals: 0,
+    asks: 0,
+    tokens: null,
+    ms: 100,
+  };
+}
 
 function version(commit: string, subject: string, runs: number) {
   return {
@@ -40,10 +54,11 @@ function page(lifecycle: unknown, unused: number | null) {
         level: { workspace: null, local: false },
         label: "project",
         lifecycle,
-        unread: null,
+        unread: false,
         owners: ["alice"],
         unused_days: unused,
         versions: [version(NEW, "skill edit deploy", 2), version(OLD, "skill new deploy", 0)],
+        uncommitted: totals({ kind: "none" }, 0),
       },
     ],
     uses: [
@@ -60,7 +75,7 @@ describe("a skill's history, state and uses", () => {
     const asked: Array<{ cmd: string; args: unknown }> = [];
     mockIPC((cmd, args) => {
       asked.push({ cmd, args });
-      if (cmd === "skill_page") return page({ state: "active" }, null);
+      if (cmd === "skill_details") return page({ state: "active" }, null);
       if (cmd === "skill_diff")
         return {
           text: "--- a\n+++ b\n-Step one.\n+Step two.\n",
@@ -69,10 +84,12 @@ describe("a skill's history, state and uses", () => {
             "line 3 holds a character that draws as nothing (U+202E), shown by its code point",
           ],
         };
+      if (cmd === "skill_revert_widens")
+        return "Widens the chat: allowed-tools apply while it runs. purlis leaves them out when it hands this skill to a chat.";
       if (cmd === "skill_revert") return { notes: [] };
       throw new Error(`unexpected ${cmd}`);
     });
-    render(<SkillLife plane="p" name="deploy" changed={0} />);
+    render(<SkillDetailsPanel plane="p" name="deploy" changed={0} />);
 
     const newest = await screen.findByTestId(`skill-version-${NEW}`);
     expect(newest.textContent).toContain("2 runs, 4 tool calls, 0 errors");
@@ -87,6 +104,10 @@ describe("a skill's history, state and uses", () => {
     expect(screen.getByText(/U\+202E/)).toBeTruthy();
 
     fireEvent.click(screen.getByText("Revert to this"));
+    const widens = await screen.findByTestId("skill-revert-widens");
+    expect(widens.textContent).toContain("Widens the chat");
+    expect(asked.some((one) => one.cmd === "skill_revert")).toBe(false);
+    fireEvent.click(screen.getByText("Revert"));
     await waitFor(() => expect(asked.some((one) => one.cmd === "skill_revert")).toBe(true));
     const revert = asked.find((one) => one.cmd === "skill_revert")?.args as { commit: string };
     expect(revert.commit).toBe(OLD);
@@ -94,10 +115,10 @@ describe("a skill's history, state and uses", () => {
 
   it("names the uses, marks a broken one, and lists what uses it", async () => {
     mockIPC((cmd) => {
-      if (cmd === "skill_page") return page({ state: "active" }, null);
+      if (cmd === "skill_details") return page({ state: "active" }, null);
       throw new Error(`unexpected ${cmd}`);
     });
-    render(<SkillLife plane="p" name="deploy" changed={0} />);
+    render(<SkillDetailsPanel plane="p" name="deploy" changed={0} />);
 
     const uses = await screen.findByTestId("skill-uses");
     expect(uses.textContent).toContain("Uses ship");
@@ -109,11 +130,11 @@ describe("a skill's history, state and uses", () => {
     const asked: Array<{ cmd: string; args: unknown }> = [];
     mockIPC((cmd, args) => {
       asked.push({ cmd, args });
-      if (cmd === "skill_page") return page({ state: "active" }, 61);
+      if (cmd === "skill_details") return page({ state: "active" }, 61);
       if (cmd === "skill_lifecycle") return { notes: [] };
       throw new Error(`unexpected ${cmd}`);
     });
-    render(<SkillLife plane="p" name="deploy" changed={0} />);
+    render(<SkillDetailsPanel plane="p" name="deploy" changed={0} />);
 
     expect((await screen.findByTestId("skill-unused")).textContent).toContain("61 days");
     fireEvent.change(screen.getByLabelText("The skill to use instead"), {
@@ -127,14 +148,24 @@ describe("a skill's history, state and uses", () => {
 
   it("offers Restore for an archived skill and says it never loads", async () => {
     mockIPC((cmd) => {
-      if (cmd === "skill_page") return page({ state: "archived" }, 90);
+      if (cmd === "skill_details") return page({ state: "archived" }, 90);
       throw new Error(`unexpected ${cmd}`);
     });
-    render(<SkillLife plane="p" name="deploy" changed={0} />);
+    render(<SkillDetailsPanel plane="p" name="deploy" changed={0} />);
 
     expect((await screen.findByTestId("skill-lifecycle")).textContent).toContain("never loads");
     expect(screen.getByText("Restore")).toBeTruthy();
     expect(screen.queryByTestId("skill-unused")).toBeNull();
+  });
+});
+
+describe("diffLineKind", () => {
+  it("marks added and removed lines, and neither a file's header nor context", () => {
+    expect(diffLineKind("+Step two.")).toBe("added");
+    expect(diffLineKind("-Step one.")).toBe("removed");
+    expect(diffLineKind("+++ b/SKILL.md")).toBeUndefined();
+    expect(diffLineKind("--- a/SKILL.md")).toBeUndefined();
+    expect(diffLineKind(" context")).toBeUndefined();
   });
 });
 

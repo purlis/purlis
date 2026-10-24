@@ -212,6 +212,18 @@ pub(crate) enum NotRead {
     TooLarge,
 }
 
+/// The end of a sentence about the file: "it cannot be read (…)", "it is not a plain file", "it
+/// is too large". The one way a file [`read_plain`] read nothing is said.
+impl std::fmt::Display for NotRead {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unreadable(why) => write!(f, "it cannot be read ({why})"),
+            Self::NotPlain => f.write_str("it is not a plain file"),
+            Self::TooLarge => f.write_str("it is too large"),
+        }
+    }
+}
+
 /// **The text of the plain file at `path`, following no link**, of at most `most` bytes: refused
 /// where it is a link or no plain file, is larger, or changed from a plain file into something
 /// else while it was opened. The one reader of a skill's files and the file beside its folder.

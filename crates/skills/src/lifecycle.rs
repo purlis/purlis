@@ -36,9 +36,6 @@ pub const MOST_OWNERS: usize = 16;
 /// The longest owner's name, in characters.
 pub const MOST_OWNER: usize = 64;
 
-/// The most bytes of a `<folder>.toml` purlis reads: it holds a few short keys.
-pub const MOST_BESIDE: u64 = 64 * 1024;
-
 /// What a deprecated skill says: the skill to use instead, where it names one.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Deprecated {
@@ -58,6 +55,18 @@ pub enum Lifecycle {
 }
 
 impl Lifecycle {
+    /// **The state `word` names** (`active`, `deprecated`, `archived`), a deprecated one pointing
+    /// to `replacement`; `None` for a word purlis does not know. The one reading of the word, for
+    /// the file beside a skill and for every caller that is handed one.
+    pub fn from_word(word: &str, replacement: Option<String>) -> Option<Lifecycle> {
+        match word {
+            "active" => Some(Self::Active),
+            "deprecated" => Some(Self::Deprecated(Deprecated { replacement })),
+            "archived" => Some(Self::Archived),
+            _ => None,
+        }
+    }
+
     /// The word the file holds: `active`, `deprecated` or `archived`.
     pub fn word(&self) -> &'static str {
         match self {
@@ -75,45 +84,17 @@ pub struct About {
     pub owners: Vec<String>,
 }
 
-/// The table in the file beside `folder`, read without following a link, or `None` where there
-/// is no such file; why not, as the end of a sentence, where it cannot be read.
-pub(crate) fn beside_table(folder: &Path) -> Result<Option<toml::Table>, String> {
-    let file = crate::beside(folder);
-    if std::fs::symlink_metadata(&file).is_err_and(|why| why.kind() == std::io::ErrorKind::NotFound)
-    {
-        return Ok(None);
-    }
-    let text = crate::handed::read_plain(&file, MOST_BESIDE).map_err(|why| match why {
-        crate::handed::NotRead::Unreadable(why) => format!("it cannot be read ({why})"),
-        crate::handed::NotRead::NotPlain => "it is not a plain file".to_owned(),
-        crate::handed::NotRead::TooLarge => {
-            format!("it is larger than {} KiB", MOST_BESIDE / 1024)
-        }
-    })?;
-    text.parse::<toml::Table>().map(Some).map_err(|why| {
-        format!(
-            "it is not TOML: {}",
-            crate::grant::first_line(&why.to_string())
-        )
-    })
-}
-
 /// **What purlis knows about the skill in `folder`**: active with no owners where
 /// `<folder>.toml` is not there or names neither, or why it cannot be read. A reader treats an
 /// error as active with no owners: the skill keeps working, and the studio says why.
 pub fn about_of(folder: &Path) -> Result<About, String> {
-    let Some(table) = beside_table(folder)? else {
+    let Some(table) = crate::beside::table(folder)? else {
         return Ok(About::default());
     };
     Ok(About {
         lifecycle: lifecycle_in(&table)?,
         owners: owners_in(&table)?,
     })
-}
-
-/// Whether the skill in `folder` is archived. A file that cannot be read archives nothing.
-pub fn archived(folder: &Path) -> bool {
-    about_of(folder).is_ok_and(|about| about.lifecycle == Lifecycle::Archived)
 }
 
 /// The lifecycle state `table` holds, or why it holds none purlis knows.
@@ -131,15 +112,14 @@ fn lifecycle_in(table: &toml::Table) -> Result<Lifecycle, String> {
     };
     match table.get(LIFECYCLE) {
         None => Ok(Lifecycle::Active),
-        Some(toml::Value::String(word)) => match word.as_str() {
-            "active" => Ok(Lifecycle::Active),
-            "deprecated" => Ok(Lifecycle::Deprecated(Deprecated { replacement })),
-            "archived" => Ok(Lifecycle::Archived),
-            _ => Err(format!(
-                "{LIFECYCLE} is {word:?}, which is none of \"active\", \"deprecated\" or \
-                 \"archived\""
-            )),
-        },
+        Some(toml::Value::String(word)) => {
+            Lifecycle::from_word(word, replacement).ok_or_else(|| {
+                format!(
+                    "{LIFECYCLE} is {word:?}, which is none of \"active\", \"deprecated\" or \
+                     \"archived\""
+                )
+            })
+        }
         Some(other) => Err(format!("{LIFECYCLE} is {other}, which is no word")),
     }
 }
@@ -188,7 +168,7 @@ pub fn owner_problem(owner: &str) -> Option<String> {
 /// key of `<folder>.toml`. Active, the default, removes both keys; a deprecated skill with no
 /// replacement keeps none. Refused, and nothing written, where the file is not TOML.
 pub fn set_lifecycle(folder: &Path, lifecycle: &Lifecycle) -> Result<(), String> {
-    crate::grant::edit_beside(folder, |doc| {
+    crate::beside::edit(folder, |doc| {
         doc.remove(REPLACEMENT);
         match lifecycle {
             Lifecycle::Active => {
@@ -222,7 +202,7 @@ pub fn set_owners(folder: &Path, owners: &[String]) -> Result<(), String> {
             "{owner:?} cannot be an owner: {why}, so nothing changed"
         ));
     }
-    crate::grant::edit_beside(folder, |doc| {
+    crate::beside::edit(folder, |doc| {
         if owners.is_empty() {
             doc.remove(OWNERS);
         } else {

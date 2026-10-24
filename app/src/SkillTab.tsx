@@ -6,7 +6,7 @@ import { LoaderCircle, Sparkles } from "lucide-react";
 import { commands, type RunEnd, type RunStart, type StudioRun } from "./bindings";
 import { saidAt } from "./dispatches";
 import { EmptyState } from "./ui/empty-state/EmptyState";
-import { SkillLife } from "./SkillLife";
+import { SkillDetailsPanel } from "./SkillDetails";
 
 /** What started a run, as its row says it. */
 export function startedBySaid(started: RunStart | null): string {
@@ -65,7 +65,7 @@ function signal(n: number | null): string {
 
 /**
  * **One skill's tab** (SK-3, #2766), opened from a skill run's chip or the Skill studio. Its
- * state, owners, history and uses come first (SK-19, #2782, `SkillLife`). Its Runs panel lists
+ * state, owners, history and uses come first (SK-19, #2782, `SkillDetailsPanel`). Its Runs panel lists
  * every run of the skill, newest first, with what started it and its signals: tool calls, tool
  * errors, refusals, asks, tokens and time, and the skill run it nests in or holds. Never a pass
  * or a fail: those come from grading.
@@ -107,7 +107,7 @@ export function SkillTab({
       <h2 className="skill-tab-name">
         <code>{name}</code>
       </h2>
-      <SkillLife plane={plane} name={name} changed={changed} />
+      <SkillDetailsPanel plane={plane} name={name} changed={changed} />
       <section aria-labelledby="skill-runs-heading" data-testid="skill-runs">
         <h3 id="skill-runs-heading">Runs</h3>
         {refused !== undefined ? (

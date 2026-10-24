@@ -35,7 +35,7 @@ fn each_state_is_written_beside_the_folder_and_read_back_keeping_the_grant() {
     set_lifecycle(&folder, &Lifecycle::Archived).unwrap();
     assert_eq!(about_of(&folder).unwrap().lifecycle, Lifecycle::Archived);
     assert!(!beside_text(&folder).contains(REPLACEMENT));
-    assert!(archived(&folder));
+    assert_eq!(about_of(&folder).unwrap().lifecycle, Lifecycle::Archived);
 
     set_lifecycle(&folder, &Lifecycle::Active).unwrap();
     assert_eq!(beside_text(&folder), "# who gets it\ngrant = \"all\"\n");
@@ -85,7 +85,6 @@ fn a_file_that_is_not_an_allow_listed_value_is_refused_with_a_sentence() {
         std::fs::write(crate::beside(&folder), text).unwrap();
         let why = about_of(&folder).unwrap_err();
         assert!(why.contains(says), "{text:?}: {why}");
-        assert!(!archived(&folder));
     }
 }
 
@@ -94,11 +93,10 @@ fn a_file_too_large_to_be_one_is_not_read() {
     let (_tmp, folder) = folder();
     let big = format!(
         "# {}\nlifecycle = \"archived\"\n",
-        "x".repeat(MOST_BESIDE as usize)
+        "x".repeat(crate::beside::MOST as usize)
     );
     std::fs::write(crate::beside(&folder), big).unwrap();
-    assert!(about_of(&folder).unwrap_err().contains("larger than"));
-    assert!(!archived(&folder));
+    assert!(about_of(&folder).unwrap_err().contains("too large"));
 }
 
 #[cfg(unix)]

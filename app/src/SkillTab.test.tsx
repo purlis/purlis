@@ -37,7 +37,7 @@ describe("a skill's Runs panel", () => {
             ran: [],
           },
         ];
-      if (cmd === "skill_page") return EMPTY_PAGE;
+      if (cmd === "skill_details") return EMPTY_PAGE;
       throw new Error(`unexpected ${cmd}`);
     });
     render(<SkillTab plane="p" name="deploy" run={RUN} changed={0} />);
@@ -76,7 +76,7 @@ describe("a skill's Runs panel, for a use from before runs were recorded", () =>
             ran: [],
           },
         ];
-      if (cmd === "skill_page") return EMPTY_PAGE;
+      if (cmd === "skill_details") return EMPTY_PAGE;
       throw new Error(`unexpected ${cmd}`);
     });
 
