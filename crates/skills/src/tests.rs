@@ -1410,3 +1410,16 @@ fn every_levels_local_folder_is_spelled_by_the_one_rule() {
         assert!(!in_local_level(outside), "{outside}");
     }
 }
+
+#[test]
+fn an_owner_reads_as_you_its_plugin_or_its_repo() {
+    let shown: Vec<String> = [
+        Owner::You,
+        Owner::Plugin("figma".to_owned()),
+        Owner::Repo("app".to_owned()),
+    ]
+    .iter()
+    .map(ToString::to_string)
+    .collect();
+    assert_eq!(shown, ["you", "figma", "repo app"]);
+}

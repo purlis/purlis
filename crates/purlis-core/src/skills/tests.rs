@@ -1234,3 +1234,79 @@ fn a_harness_skill_a_persona_names_is_badged_and_marked_where_it_widens_the_chat
         rows[0].lint
     );
 }
+
+#[test]
+fn the_studio_list_of_a_workspace_chat_holds_its_rows_and_each_harnesss_own_with_their_rows() {
+    // SK-34 (#3008): the one list the window and `purlis skill list` draw. A workspace chat gets
+    // its workspace's skill; Codex finds one of the person's own and one in the workspace's
+    // clone, each row with whose it is and its badge on Codex.
+    let tmp = tempfile::tempdir().unwrap();
+    let plane = tmp.path().join("plane");
+    let ship = plane.join("workspaces/alpha/skills/ship");
+    std::fs::create_dir_all(&ship).unwrap();
+    std::fs::write(
+        ship.join("SKILL.md"),
+        "---\nname: ship\ndescription: Ships.\n---\n",
+    )
+    .unwrap();
+    std::fs::write(plane.join("charter.toml"), "[plane]\n").unwrap();
+    let clone = plane.join("workspaces/alpha/app");
+    std::fs::create_dir_all(clone.join(".git")).unwrap();
+    std::fs::create_dir_all(clone.join(".agents/skills/tool")).unwrap();
+    std::fs::write(
+        clone.join(".agents/skills/tool/SKILL.md"),
+        "---\nname: tool\ndescription: The repo's tool.\n---\n",
+    )
+    .unwrap();
+    let codex = tmp.path().join("codex-home");
+    std::fs::create_dir_all(codex.join("skills/mine")).unwrap();
+    std::fs::write(
+        codex.join("skills/mine/SKILL.md"),
+        "---\nname: mine\ndescription: Mine alone.\n---\n",
+    )
+    .unwrap();
+    let chat = [("CODEX_HOME".to_owned(), codex.display().to_string())];
+    let env = crate::harness_plugin::Env {
+        chat: &chat,
+        home: Some(tmp.path().join("home")),
+        process: false,
+    };
+
+    let list = studio_list(None, &plane, Some("alpha"), None, &env);
+
+    let plane_rows: Vec<(&str, Origin, bool)> = list
+        .rows
+        .iter()
+        .map(|row| (row.name.as_str(), row.origin, row.left_out.is_none()))
+        .collect();
+    assert_eq!(plane_rows, [("ship", Origin::Workspace, true)]);
+    let on_codex = list
+        .harnesses
+        .iter()
+        .find(|one| one.harness == Harness::Codex)
+        .expect("Codex listed");
+    let rows: Vec<(&str, Origin, Option<Owner>, bool)> = on_codex
+        .rows
+        .iter()
+        .map(|row| {
+            (
+                row.name.as_str(),
+                row.origin,
+                row.outside.as_ref().map(|o| o.owner.clone()),
+                row.compat.is_empty(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            ("mine", Origin::Harness, Some(Owner::You), false),
+            (
+                "tool",
+                Origin::Repo,
+                Some(Owner::Repo("app".to_owned())),
+                false
+            ),
+        ]
+    );
+}

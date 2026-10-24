@@ -217,6 +217,15 @@ pub enum SkillSwitch {
     Not { why: String },
 }
 
+impl From<purlis_core::skills::Switch> for SkillSwitch {
+    fn from(switch: purlis_core::skills::Switch) -> SkillSwitch {
+        match switch {
+            purlis_core::skills::Switch::Alone => SkillSwitch::Alone,
+            purlis_core::skills::Switch::Not(why) => SkillSwitch::Not { why },
+        }
+    }
+}
+
 /// What the project has a harness's plugin at.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
 #[serde(rename_all = "kebab-case")]
@@ -385,7 +394,7 @@ pub(crate) fn studio(
             lint: row.lint,
         })
         .collect();
-    let (harnesses, clashes) = harnesses(&all, root);
+    let (harnesses, clashes) = harnesses(&all);
     let workspaces = purlis_core::workspaces::Plane::open(root)
         .workspaces()
         .unwrap_or_default();
@@ -405,13 +414,9 @@ pub(crate) fn studio(
 /// its harness can leave it out.
 fn outside_shown(row: purlis_core::skills::StudioRow) -> StudioSkill {
     let (owner, switch) = match row.outside {
-        Some(purlis_core::skills::OutsideRow { owner, switch }) => (
-            Some(owner.into()),
-            Some(match switch {
-                purlis_core::skills::Switch::Alone => SkillSwitch::Alone,
-                purlis_core::skills::Switch::Not(why) => SkillSwitch::Not { why },
-            }),
-        ),
+        Some(purlis_core::skills::OutsideRow { owner, switch }) => {
+            (Some(owner.into()), Some(switch.into()))
+        }
         None => (None, None),
     };
     StudioSkill {
@@ -441,7 +446,6 @@ fn outside_shown(row: purlis_core::skills::StudioRow) -> StudioSkill {
 /// Each harness in the studio, and every clash, for a chat whose plane skills are `set`.
 fn harnesses(
     all: &[purlis_core::skills::HarnessInTheStudio],
-    root: &std::path::Path,
 ) -> (Vec<StudioHarness>, Vec<StudioClash>) {
     use purlis_core::harness_plugin;
     let mut clashes: Vec<StudioClash> = Vec::new();
@@ -487,10 +491,7 @@ fn harnesses(
                         pinned: it.pinned.map(str::to_owned),
                     })
                     .collect(),
-                skills: purlis_core::skills::outside_rows(one, root)
-                    .into_iter()
-                    .map(outside_shown)
-                    .collect(),
+                skills: one.rows.iter().cloned().map(outside_shown).collect(),
             }
         })
         .collect();
