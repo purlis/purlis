@@ -862,8 +862,8 @@ are `item` (the root), `icon`, `count` and `indicator`; both corners draw the `b
 - **The `tab` variant** (R116): 32×30 tabs across the top of a side panel, over a rule. No bar
   of the window draws it since #3144; it stays in the manifest, which never takes a variant
   away, for a theme that names it.
-- **Classic's accent edge** is drawn along each column's outer side: the left column's left
-  edge and the right bar's right edge.
+- **Classic's accent edge** is drawn along the left column's left edge, as the switcher
+  prototype draws it, and along the right bar's right edge, as #2917 drew it.
 - **Its states are colours** (R118): muted at rest, the card's fill under the pointer, the
   accent's wash while its view is open. The `indicator` is empty by default; Purlis Classic paints
   it as its accent edge through parts.

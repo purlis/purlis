@@ -417,10 +417,12 @@ describe("the pane Notice's rules", () => {
     // its line and answers keep their height, and what is under them scrolls, the brief
     // first.
     const box = rule("\\.notice-pane-box");
-    expect(box).toMatch(/flex-direction:\s*column/);
-    expect(box).toMatch(/min-height:\s*0/);
     expect(box).toMatch(/flex:\s*0 1 auto/);
-    expect(rule("\\.notice-pane")).toMatch(/flex:\s*none/);
+    // Two rows: the line as tall as its answers wrap to, and what it opened taking what is
+    // left, down to nothing; so the box is never shorter than its line (#3144).
+    expect(box).toMatch(/display:\s*grid/);
+    expect(box).toMatch(/grid-template-rows:\s*auto minmax\(0, auto\)/);
+    expect(box).toMatch(/min-height:\s*min-content/);
     const under = rule("\\.notice-under-pane");
     expect(under).toMatch(/min-height:\s*0/);
     expect(under).toMatch(/overflow-y:\s*auto/);

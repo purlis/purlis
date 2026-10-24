@@ -1347,14 +1347,15 @@ export function startingSize(side: SlotId, placed: Placement[]): number {
   return shownIn(placed).length === 0 ? 0 : slotSize(side, placed);
 }
 
-/** The right bar's width beside the row of regions (`ui/activity`, R117). */
-const RIGHT_BAR = 44;
+/** A side's bar beside the row of regions (`ui/activity`, R117): the right one at the window's
+ *  edge, the left one beside the project rail (#3144), each this wide at every width. */
+const BAR = 44;
 
 /**
  * **The width the row of regions has**, which a side's share is of: the window less the project
- * rail where it is drawn (`ui/rail`, #2915), the right bar and the gutter at each end of the row
- * (`App.css`, `.regions`). The gutter is the theme's and the rail's width is as drawn, both read
- * from the document.
+ * rail where it is drawn (`ui/rail`, #2915), the two bars, the gutter at each end of the row
+ * (`App.css`, `.regions`) and the one between the rail and the left bar (#3144). The gutter is
+ * the theme's and the rail's width is as drawn, both read from the document.
  */
 export function rowWidth(window: number = globalThis.innerWidth ?? 0): number {
   if (window <= 0) return 0;
@@ -1368,10 +1369,10 @@ export function rowWidth(window: number = globalThis.innerWidth ?? 0): number {
       document.querySelector('[data-scope="rail"][data-part="slot"]')?.getBoundingClientRect()
         .width ?? 0;
   } catch {
-    // No document to read: the row is the window less the bar.
+    // No document to read: the row is the window less the bars.
   }
-  const edges = 2 * (Number.isFinite(gutter) ? gutter : 0) + (Number.isFinite(rail) ? rail : 0);
-  return Math.max(0, window - RIGHT_BAR - edges);
+  const edges = 3 * (Number.isFinite(gutter) ? gutter : 0) + (Number.isFinite(rail) ? rail : 0);
+  return Math.max(0, window - 2 * BAR - edges);
 }
 
 /** The least window height the bottom row starts at its R126 share in, and its share below

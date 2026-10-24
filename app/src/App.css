@@ -1269,6 +1269,18 @@ button.show-more:focus-visible {
   flex-shrink: 1000000;
 }
 
+/* **An item of the line set aside** (`wholeWays.ts`, #3144): in the narrowest pane, once both
+   ways to end the task are, the gauge, the harness's name and Brief give up the padding they
+   were cut to, the last first, so the state word stays whole. It keeps its place on the line at
+   no width, drawn as nothing and out of the tab sequence, and comes back with the room. */
+.pane-chips:has(.pane-crumbs) > [data-away]:not(.pane-task-ends) {
+  flex: 0 0 0;
+  width: 0;
+  padding-inline: 0;
+  border-inline-width: 0;
+  visibility: hidden;
+}
+
 /* **What gives way inside the breadcrumb, in order.**
 
    - `in <workspace>` first, to nothing: it is in the tooltip.
@@ -2048,14 +2060,22 @@ button.show-more:focus-visible {
    surface edged in the waiting colour (`.ui-inline-surface-waiting`, #1855), so the two read as
    one thing; this places it. */
 /* **Never taller than the pane** (#1483's dispatch question in a short pane): the box may
-   shrink in the stack (`flex` and `min-height: 0`), the line and its answers never do, and
-   what a way out opened under them gives way first, its brief before anything else, then by
-   scrolling. Every answer stays whole and reachable, and nothing is drawn over another. */
+   shrink in the stack, the line and its answers never do, and what a way out opened under them
+   gives way first, its brief before anything else, then by scrolling. Every answer stays whole
+   and reachable, and nothing is drawn over another.
+
+   **The box is never shorter than its line** (#3144): two rows, the line as tall as its
+   answers wrap to and what was opened taking what is left, down to nothing. So the box's least
+   height (`min-content`) is the line's, a narrow pane whose answers wrap onto more rows makes
+   the box taller rather than drawing an answer past its edge, and past the row's height the
+   stack scrolls (`.pane-notices`). */
 .notice-pane-box {
-  display: flex;
-  flex-direction: column;
+  display: grid;
   flex: 0 1 auto;
-  min-height: 0;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, auto);
+  align-content: start;
+  min-height: min-content;
   min-width: 0;
   max-width: 100%;
   font-size: var(--font-size-xs);

@@ -453,6 +453,10 @@ describe("the left side's activity bar", () => {
     if (rail !== null && rail.width > 0) {
       expect(column?.left ?? -1).toBeGreaterThanOrEqual(rail.right - 1);
       expect(column?.left ?? Infinity).toBeLessThanOrEqual(rail.right + apart);
+    } else {
+      // The rail hidden (a narrow window, or auto-hide): the column is the window's first, one
+      // gutter from its edge, as the prototype's hidden rail leaves it (#3144).
+      expect(Math.abs((column?.left ?? Infinity) - (await gutter()))).toBeLessThanOrEqual(1);
     }
     expect(slot?.left ?? -1).toBeGreaterThanOrEqual((column?.right ?? 0) - 1);
     expect(slot?.right ?? Infinity).toBeLessThanOrEqual((centre?.left ?? 0) + 1);
@@ -970,6 +974,28 @@ describe("the Panel", () => {
         timeout: 20_000,
         timeoutMsg: "a wide window again did not draw both halves",
       });
+    });
+
+    it("puts the left column one gutter from the window's edge, the rail hidden (#3144)", async () => {
+      // The narrowest window: the rail hides itself (#3077), and the column it leaves is the
+      // window's first, as the prototype's variant D draws a hidden rail.
+      await browser.waitUntil(
+        async () =>
+          browser.execute(
+            () =>
+              (document
+                .querySelector('[data-scope="rail"][data-part="slot"]')
+                ?.getBoundingClientRect().width ?? 0) < 1,
+          ),
+        { timeout: 20_000, timeoutMsg: "the rail still takes room in the narrowest window" },
+      );
+      const left = await browser.execute(
+        () =>
+          document.querySelector(".activity-column[data-side='left']")?.getBoundingClientRect()
+            .left ?? null,
+      );
+      expect(left).not.toBeNull();
+      expect(Math.abs((left as number) - (await gutter()))).toBeLessThanOrEqual(1);
     });
 
     it("draws one half at a time, the other side's Lower icons switching it, and overflows nothing", async () => {

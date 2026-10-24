@@ -143,9 +143,9 @@
 }
 
 /* The mark along a chosen item's edge: none by default; a theme paints it (Purlis Classic's
-   accent edge). Under the tab; on a column, along the right bar's outer edge and the left
-   column's left edge, as the prototype draws Classic's (#3144). Always there, so painting it
-   moves nothing. */
+   accent edge). Under the tab; on the left column along its left edge, as the switcher
+   prototype draws Classic's (#3144); on the right bar along its outer edge, as #2917 drew it.
+   Always there, so painting it moves nothing. */
 [data-scope="activity"][data-part="indicator"] {
   position: absolute;
   background-color: transparent;

@@ -173,7 +173,15 @@ const pressedByTheKeyboard: Story["play"] = async ({ canvas, userEvent }) => {
  *  foot; Classic's accent edge along its left. */
 export const TheLeftColumn: Story = {
   args: { variant: "bar", side: "left" },
-  play: pressedByTheKeyboard,
+  play: async (context) => {
+    await pressedByTheKeyboard(context);
+    // The keyboard let go, so the picture shows the chosen item at rest: Classic's accent edge
+    // along its left, not under the focus ring.
+    const chosen = context.canvas.getAllByRole("button")[1];
+    chosen.blur();
+    await expect(chosen).not.toHaveAttribute("data-focus-visible");
+    await expect(chosen).toHaveAttribute("data-selected");
+  },
 };
 
 /** The `tab` variant, for a theme that names it: tabs across a side panel's top, the bottom group
