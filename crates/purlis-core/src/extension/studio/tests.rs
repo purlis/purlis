@@ -981,16 +981,18 @@ fn a_confined_proxy_carries_only_while_a_question_is_answered_and_never_once_tur
         "between questions the proxy carried a connection"
     );
     let asking = Asking::of(std::sync::Arc::clone(&proxy));
+    let during = heard_at(at);
     assert!(
-        heard_at(at).starts_with("HTTP/1.1 502"),
-        "during a question the proxy did not carry"
+        during.starts_with("HTTP/1.1 502"),
+        "during a question the proxy did not carry: {during:?}"
     );
     // On the IPv6 loopback too, which a sandbox rule for the port lets the program reach.
     if std::net::TcpListener::bind((std::net::Ipv6Addr::LOCALHOST, 0)).is_ok() {
         let v6 = std::net::SocketAddr::from((std::net::Ipv6Addr::LOCALHOST, proxy.port()));
+        let heard = heard_at(v6);
         assert!(
-            heard_at(v6).starts_with("HTTP/1.1 502"),
-            "[::1] on the proxy's port was not the proxy's"
+            heard.starts_with("HTTP/1.1 502"),
+            "[::1] on the proxy's port was not the proxy's: {heard:?}"
         );
     }
     drop(asking);
