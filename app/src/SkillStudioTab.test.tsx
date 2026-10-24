@@ -35,6 +35,7 @@ describe("the Skill studio", () => {
     answering({
       on: true,
       workspace: null,
+      first: { starts: false, sources: [], unmoved: null },
       workspaces: [],
       levels: [],
       harnesses: [],
@@ -122,6 +123,7 @@ describe("the Skill studio", () => {
       return {
         on: true,
         workspace: "alpha",
+        first: { starts: false, sources: [], unmoved: null },
         workspaces: ["alpha", "beta"],
         levels: [],
         harnesses: [],
@@ -201,6 +203,7 @@ describe("the Skill studio", () => {
       return {
         on: true,
         workspace: null,
+        first: { starts: false, sources: [], unmoved: null },
         workspaces: [],
         levels: [],
         harnesses: [],
@@ -246,6 +249,7 @@ describe("the Skill studio", () => {
     answering({
       on: false,
       workspace: null,
+      first: { starts: false, sources: [], unmoved: null },
       workspaces: [],
       skills: [],
       harnesses: [],
@@ -264,6 +268,7 @@ describe("the Skill studio", () => {
         on: true,
         workspace: null,
         persona: "ops",
+        first: { starts: false, sources: [], unmoved: null },
         workspaces: ["alpha"],
         levels: [],
         harnesses: [],
@@ -409,6 +414,7 @@ function withClaudeCode(offLangfuse: boolean) {
   return {
     on: true,
     workspace: null,
+    first: { starts: false, sources: [], unmoved: null },
     workspaces: [],
     levels: [],
     skills: [

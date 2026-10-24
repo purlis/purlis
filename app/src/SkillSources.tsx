@@ -1,11 +1,12 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type Ref } from "react";
 import { FolderGit2, TriangleAlert } from "lucide-react";
 import {
   commands,
   type InstallReview,
+  type OfferedSource,
   type ReviewSkill,
   type ReviewSummary,
   type SkillChanged,
@@ -30,7 +31,8 @@ type Answer = { status: "ok"; data: SkillChanged } | { status: "error"; error: s
 
 /** What the sources section has open. */
 type Open =
-  | { what: "add" }
+  /** Add source, empty, or filled in with an offered source (SK-22) for the person to confirm. */
+  | { what: "add"; offered?: OfferedSource }
   | { what: "browse"; source: SkillSource; browse: SourceBrowse }
   | { what: "install"; source: SkillSource; review: InstallReview }
   | { what: "update"; offer: SkillUpdateOffer; review: UpdateReview };
@@ -42,6 +44,11 @@ type Open =
  * an installed skill offered as a diff of its summary and files, applied only when the person
  * accepts it. What is marked, what is empty, each commit's short name and what accepting says
  * are the core's own.
+ *
+ * **The offered sources** (SK-22, #2785; decision 42): the first-party catalogue and the
+ * well-known sources the project does not browse yet, each with why it is offered. One click
+ * opens Add source filled in with it, which the person confirms; nothing is added or installed
+ * before that, and each install is still its own review.
  */
 export function SkillSources({
   plane,
@@ -50,6 +57,8 @@ export function SkillSources({
   busy,
   change,
   changed,
+  offered = [],
+  headingRef,
 }: {
   plane: string;
   levels: readonly StudioLevel[];
@@ -58,6 +67,10 @@ export function SkillSources({
   busy: boolean;
   change: (label: string, run: () => Promise<Answer>) => void;
   changed: number;
+  /** The sources offered with one click, as the core lists them (`skills::first_open`). */
+  offered?: readonly OfferedSource[];
+  /** The section's heading, which the empty studio's Browse sources moves to. */
+  headingRef?: Ref<HTMLHeadingElement>;
 }) {
   const [sources, setSources] = useState<readonly SkillSource[]>([]);
   const [unread, setUnread] = useState<string>();
@@ -130,7 +143,9 @@ export function SkillSources({
 
   return (
     <section className="skill-sources" aria-label="Skill sources" data-testid="skill-sources">
-      <h3>Skill sources</h3>
+      <h3 ref={headingRef} tabIndex={-1}>
+        Skill sources
+      </h3>
       <p className="honest">
         A skill source is a git repository of skills. An install copies a skill into this project,
         pinned to the commit you reviewed; a newer commit is offered here, and changes nothing until
@@ -191,6 +206,30 @@ export function SkillSources({
           or a folder on this machine.
         </p>
       )}
+      {offered.length > 0 && open?.what !== "add" && (
+        <section className="skill-offered" aria-label="Offered sources">
+          <h4>Sources to start from</h4>
+          <ul className="skill-source-list">
+            {offered.map((one) => (
+              <li
+                key={`${one.source.remote.url}\u0000${one.source.folder ?? ""}`}
+                data-testid="skill-source-offered"
+              >
+                <FolderGit2 className="node-icon" aria-hidden="true" /> <strong>{one.name}</strong>
+                {one.offering === "catalogue" && " · from purlis"}: {one.why}{" "}
+                <Button
+                  size="sm"
+                  isDisabled={busy}
+                  aria-label={`Add ${one.name}`}
+                  onPress={() => setOpen({ what: "add", offered: one })}
+                >
+                  Add…
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       <ul className="skill-source-list">
         {sources.map((source) => (
           <li
@@ -245,6 +284,7 @@ export function SkillSources({
       )}
       {open?.what === "add" && (
         <AddSource
+          offered={open.offered}
           busy={busy}
           onCancel={() => setOpen(undefined)}
           onAdd={(source) =>
@@ -317,19 +357,22 @@ export function SkillSources({
   );
 }
 
-/** Add source: its URL, and optionally its branch, its folder and its vault entry. */
+/** Add source: its URL, and optionally its branch, its folder and its vault entry. Filled in
+ *  with an offered source, it is the step that asks before that source is added. */
 function AddSource({
+  offered,
   busy,
   onCancel,
   onAdd,
 }: {
+  offered?: OfferedSource;
   busy: boolean;
   onCancel: () => void;
   onAdd: (source: SkillSource) => void;
 }) {
-  const [url, setUrl] = useState("");
-  const [branch, setBranch] = useState("");
-  const [folder, setFolder] = useState("");
+  const [url, setUrl] = useState(offered?.source.remote.url ?? "");
+  const [branch, setBranch] = useState(offered?.source.remote.branch ?? "");
+  const [folder, setFolder] = useState(offered?.source.folder ?? "");
   const [vault, setVault] = useState("");
   const [key, setKey] = useState("");
   const [local, setLocal] = useState(false);
@@ -337,7 +380,7 @@ function AddSource({
   return (
     <form
       className="skill-change"
-      aria-label="Add source"
+      aria-label={offered === undefined ? "Add source" : `Add ${offered.name}`}
       onSubmit={(event) => {
         event.preventDefault();
         onAdd({
@@ -350,6 +393,12 @@ function AddSource({
         });
       }}
     >
+      {offered !== undefined && (
+        <p className="honest" data-testid="skill-source-offered-asks">
+          Add {offered.name} to this project&apos;s skill sources? purlis then reads its list of
+          skills when you browse it. Nothing is installed until you review a skill from it.
+        </p>
+      )}
       <SettingRow
         label="Repository"
         help="An https:// URL, or a folder on this machine by its full path."
