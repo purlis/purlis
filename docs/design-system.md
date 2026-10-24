@@ -423,7 +423,12 @@ it so (`purlis_tests.rs`). Where its values come from:
   hue, chroma and alpha. A reflected colour that misses a floor of the check steps its
   lightness away from its ground by 0.01 until it clears: the comment and punctuation grey, on
   the editor's current line (`#7c7a84`), and the quiet and faint tiers on the row under the
-  pointer (`#61606c`, the placeholder too, and `#7c7a87`).
+  pointer (`#61606c`, the placeholder too, and `#7c7a87`). **A wash is not reflected** (#2924):
+  a hue reflected dark and laid thin on a light ground reads as grey, so `wash.warning`,
+  `danger.wash`, `diff.deleted` and `diff.inserted` are each their hue's purest colour, where
+  sRGB holds the most chroma for it, at dark's alpha: amber `#fdb0051f`, red `#fd04441f`, green
+  `#01fd781f`. Laid on any light ground, each keeps its hue within 40 degrees and at least 0.02 of
+  chroma, and a test holds that.
 - **High-contrast dark** moves each text step up one (primary to white, quiet to the muted
   `#a09eab`, faint to quiet's `#91909d`), each edge up to a text grey, and the accent to the
   record's lighter lavender `#c3baf5`. Its strong border and tree guides are the palette's

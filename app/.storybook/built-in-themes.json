@@ -1146,10 +1146,10 @@
         "danger.base": "#682e30",
         "danger.surface": "#e1d4d9",
         "danger.text": "#351c1c",
-        "danger.wash": "#682e301f",
-        "diff.deleted": "#682e301f",
+        "danger.wash": "#fd04441f",
+        "diff.deleted": "#fd04441f",
         "diff.deleted-text": "#682e3055",
-        "diff.inserted": "#20562f1f",
+        "diff.inserted": "#01fd781f",
         "diff.inserted-text": "#20562f55",
         "focus.ring": "#554691",
         "icon.blue": "#15466d",
@@ -1246,7 +1246,7 @@
         "text.quiet": "#61606c",
         "text.secondary": "#3b3942",
         "tree.guide": "#a9a7b5",
-        "wash.warning": "#5236011f",
+        "wash.warning": "#fdb0051f",
         "window.background": "#ffffff"
       },
       "motion": {
