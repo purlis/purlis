@@ -164,9 +164,7 @@ describe("the project rail", function () {
   });
 });
 
-describe("the project rail in a narrow window (#3077)", function () {
-  this.timeout(120_000);
-
+describe("the project rail in a narrow window (#3077)", () => {
   /** ADR 0054's narrowest window. */
   const NARROWEST = { width: 1024, height: 768 } as const;
 
