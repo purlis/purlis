@@ -609,7 +609,8 @@ fn a_first_commit_of_a_file_with_a_second_name_is_refused() {
         said.starts_with("Not created: a file in the new project is not the one file on disk"),
         "{said}"
     );
-    assert!(said.contains("notes.md has a second name (a hard link)"), "{said}");
+    let named = "notes.md has a second name (a hard link)";
+    assert!(said.contains(named), "{said}");
     assert!(said.contains("Nothing was staged or committed."), "{said}");
     assert!(
         !crate::testgit::run(&folder, &["rev-parse", "--verify", "--quiet", "HEAD"]).ok(),
