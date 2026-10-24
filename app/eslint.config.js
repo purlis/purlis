@@ -126,7 +126,7 @@ export default tseslint.config(
   },
   // **The trees still drawn by hand** (the shared tree's classes and roles), each until its lane
   // moves it onto the tree family (#2911): the Chats list with the browsers and finished tasks
-  // under a chat.
+  // under a chat (#3198).
   {
     files: [
       "src/ChatsSection.tsx",

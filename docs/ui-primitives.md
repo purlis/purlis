@@ -367,7 +367,7 @@ under a tree's row (`.ui-row.ui-tree-row`), which the tree family takes next.
 **A tree is the tree family's** since #2911: [The tree family](#the-tree-family) below draws the
 Changes view, every file tree (a file tab's, the Explorer's *Files* and a branch's cockpit) and
 the Explorer's *Repos and branches*. The Chats list, still drawn by hand, keeps the shared tree
-row below until it moves; `purlis/tree-family` is off for its files alone.
+row below until it moves (#3198); `purlis/tree-family` is off for its files alone.
 
 ```html
 <ul class="ui-tree" role="tree">
