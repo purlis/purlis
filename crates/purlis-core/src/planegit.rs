@@ -3254,6 +3254,10 @@ fn commit_push(
 
     attempt.files = staged.len();
     show_what_is_staged(root, &staged, say);
+    // Each staged file is the one name it has on disk, as the readers ask of a file: asked now,
+    // before the secret guard below reads a blob, and refused after it, so a save the guard
+    // refuses also takes such a file out of the index ([`ondisk`]).
+    let held = ondisk::not_as_staged(root);
 
     // The secret guard: refuse if any staged file looks like it holds a secret. Every file a
     // save stages is committed and pushed to a shared repository, so a credential in any of
@@ -3393,8 +3397,26 @@ fn commit_push(
             "Secrets belong in the vault (`purlis persona secret set`). Remove it, then retry."
                 .into(),
         ));
+        if let Some(refusal) = ondisk::refused(root, &held) {
+            for line in refusal.named {
+                say(Say::Fail(format!("  {line}")));
+            }
+            say(Say::Info(refusal.then));
+        }
         attempt.outcome = "blocked";
         attempt.detail = SECRET_REFUSED.into();
+        return 1;
+    }
+    if let Some(refusal) = ondisk::refused(root, &held) {
+        say(Say::Fail(
+            "Refusing to save — a staged file is not the one file on disk:".into(),
+        ));
+        for line in refusal.named {
+            say(Say::Fail(format!("  {line}")));
+        }
+        say(Say::Info(refusal.then));
+        attempt.outcome = "blocked";
+        attempt.detail = ondisk::NOT_AS_STAGED.into();
         return 1;
     }
 
@@ -3621,6 +3643,7 @@ pub fn push_saved(root: &Path, sign: bool, say: Sink) -> PushResult {
 
 mod blockedby;
 pub mod merging;
+pub(crate) mod ondisk;
 mod prsave;
 pub mod resolve;
 mod update;

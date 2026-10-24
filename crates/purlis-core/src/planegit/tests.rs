@@ -5374,3 +5374,178 @@ fn a_file_merged_without_markers_by_its_attributes_is_the_persons() {
     assert!(refused_with(&refused, "`a.md`"), "{refused:?}");
     assert!(refused_with(&refused, "terminal"), "{refused:?}");
 }
+
+// --------------------------------------------------------------------------------------- //
+// a save commits a file only as the one name it has on disk                                //
+// --------------------------------------------------------------------------------------- //
+
+/// What the file outside the plane holds: nothing the secret guard calls a secret, so only
+/// the one-name rule stands between it and a commit.
+const OUTSIDE: &str = "a line from outside the plane: canary-5d1e9b";
+
+impl Fixture {
+    /// This plane in commit mode, with a workspace `w` whose local skill `s` is a folder at
+    /// `skill` holding `notes.md`, a second name of a file outside the plane holding `text`.
+    fn with_a_second_name(&self, skill: &str, text: &[u8]) {
+        std::fs::write(
+            self.root.join("charter.toml"),
+            "[plane]\nname = \"fixture\"\nmode = \"commit\"\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(self.root.join("workspaces/w")).unwrap();
+        std::fs::write(self.root.join("workspaces/w/workspace.md"), "# w\n").unwrap();
+        run(&self.root, &["add", "-A"]);
+        run(&self.root, &["commit", "-q", "-m", "commit mode"]);
+        let local = self.root.join(skill);
+        std::fs::create_dir_all(&local).unwrap();
+        std::fs::write(
+            local.join("SKILL.md"),
+            "---\nname: s\ndescription: Keeps notes.\n---\n\nbody\n",
+        )
+        .unwrap();
+        let outside = self.root.parent().unwrap().join("outside");
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("notes.md"), text).unwrap();
+        std::fs::hard_link(outside.join("notes.md"), local.join("notes.md")).unwrap();
+    }
+
+    fn head(&self) -> String {
+        run(&self.root, &["rev-parse", "HEAD"]).trim().to_owned()
+    }
+
+    /// Whether any commit, on any ref, carries [`OUTSIDE`].
+    fn carries_outside(&self) -> bool {
+        ask(&self.root, &["log", "-p", "--all", "--text"]).contains("canary-5d1e9b")
+    }
+
+    fn staged(&self) -> String {
+        ask(&self.root, &["diff", "--cached", "--name-only"])
+    }
+}
+
+fn skill_change(root: &Path, change: impl FnOnce(&mut crate::skills::verbs::Ctx<'_>)) -> String {
+    let mut said = String::new();
+    let mut say = |line: Say| {
+        said.push_str(&line.to_string());
+        said.push('\n');
+    };
+    change(&mut crate::skills::verbs::Ctx {
+        plane: root,
+        built_in: None,
+        by: crate::skills::verbs::By::Command,
+        say: &mut say,
+    });
+    said
+}
+
+fn saved_paths(root: &Path, paths: &[&str]) -> (u8, String) {
+    let paths: Vec<String> = paths.iter().map(|path| (*path).to_owned()).collect();
+    let mut said = String::new();
+    let code = save_paths(
+        &Request {
+            root,
+            message: Some("named"),
+            sign: false,
+            no_push: true,
+            cwd: root,
+            provenance: None,
+        },
+        Trigger::Skill(crate::skills::verbs::By::Command),
+        &paths,
+        &mut |line: Say| {
+            said.push_str(&line.to_string());
+            said.push('\n');
+        },
+    );
+    (code, said)
+}
+
+fn saved_as(root: &Path, trigger: Trigger) -> (u8, String) {
+    let mut said = String::new();
+    let code = save_as(
+        &Request {
+            root,
+            message: None,
+            sign: false,
+            no_push: true,
+            cwd: root,
+            provenance: None,
+        },
+        trigger,
+        &mut |line: Say| {
+            said.push_str(&line.to_string());
+            said.push('\n');
+        },
+    );
+    (code, said)
+}
+
+#[test]
+fn a_save_refuses_a_file_with_a_second_name_as_the_readers_already_do() {
+    for text in [OUTSIDE.as_bytes().to_vec(), {
+        let mut binary = b"\0\x01\x02".to_vec();
+        binary.extend_from_slice(OUTSIDE.as_bytes());
+        binary
+    }] {
+        let fixture = Fixture::plane();
+        fixture.with_a_second_name("workspaces/w/skills.local/s", &text);
+        let before = fixture.head();
+        let named = "workspaces/w/skills/s/notes.md has a second name (a hard link)";
+
+        // The skill change that moves it into what the save commits.
+        let said = skill_change(&fixture.root, |cx| {
+            crate::skills::verbs::share(cx, &crate::skills::Whose::Workspace("w".into()), "s")
+                .unwrap();
+        });
+        assert!(said.contains(named), "{said}");
+        assert!(said.contains("no longer staged"), "{said}");
+        assert_eq!(fixture.head(), before, "{said}");
+        assert_eq!(fixture.staged(), "", "nothing is left staged: {said}");
+
+        // A save of exactly its paths, and the whole plane's, by every trigger.
+        let (code, said) = saved_paths(&fixture.root, &["workspaces/w/skills/s"]);
+        assert_eq!(code, 1, "{said}");
+        assert!(said.contains(named), "{said}");
+        for trigger in [Trigger::Cli, Trigger::Manual, Trigger::Quiet] {
+            let (code, said) = saved_as(&fixture.root, trigger);
+            assert_eq!(code, 1, "{said}");
+            assert!(said.contains(named), "{said}");
+            let line = journal(&fixture.root).pop().expect("a journal line");
+            assert_eq!(line["outcome"], "blocked", "{line}");
+        }
+
+        assert_eq!(fixture.head(), before);
+        assert_eq!(fixture.staged(), "");
+        assert!(!fixture.carries_outside(), "a commit carries the file");
+    }
+}
+
+#[test]
+fn a_file_staged_and_then_swapped_out_from_under_the_save_is_not_committed() {
+    let fixture = Fixture::plane();
+    fixture.with_a_second_name("workspaces/w/skills/s", OUTSIDE.as_bytes());
+    let before = fixture.head();
+    let local = "workspaces/w/skills/s/notes.md";
+    // Staged while it had its second name, git told to look no further at it, and then a
+    // file of one name in its place: the save's own `add` does not stage it again.
+    run(&fixture.root, &["add", local]);
+    run(
+        &fixture.root,
+        &["update-index", "--assume-unchanged", local],
+    );
+    std::fs::remove_file(fixture.root.join(local)).unwrap();
+    std::fs::write(fixture.root.join(local), "one name\n").unwrap();
+
+    let (code, said) = saved_as(&fixture.root, Trigger::Cli);
+
+    assert_eq!(code, 1, "{said}");
+    assert!(
+        said.contains(&format!(
+            "{local} is marked for git not to look at it on disk"
+        )),
+        "{said}"
+    );
+    assert_eq!(fixture.head(), before);
+    assert_eq!(fixture.staged(), "", "{said}");
+    assert!(!fixture.carries_outside(), "a commit carries the file");
+}

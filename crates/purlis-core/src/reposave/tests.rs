@@ -1317,3 +1317,35 @@ fn a_repos_merge_as_it_stands_refuses_another_commit_or_a_failure_after_the_look
     );
     assert_eq!(f.journal().len(), lines, "nothing was asked or kept");
 }
+
+#[test]
+fn a_repo_save_refuses_a_file_with_a_second_name_as_the_plane_save_does() {
+    for text in [
+        b"canary-7c40e2 from outside\n".to_vec(),
+        b"\0\x01canary-7c40e2\0".to_vec(),
+    ] {
+        let f = Fixture::new("[repos.widget]\nmode = \"commit\"\n");
+        let before = f.head();
+        let outside = f.plane.parent().unwrap().join("outside.md");
+        std::fs::write(&outside, &text).unwrap();
+        std::fs::hard_link(&outside, f.clone.join("notes.md")).unwrap();
+        std::fs::write(f.clone.join("a.md"), "a\n").unwrap();
+
+        let (code, said) = f.save();
+
+        assert_eq!(code, 1, "{said}");
+        assert!(
+            said.contains("notes.md has a second name (a hard link), so purlis does not save it"),
+            "{said}"
+        );
+        assert_eq!(f.head(), before, "{said}");
+        assert_eq!(f.journal()[0]["outcome"], "blocked");
+        assert_eq!(
+            run(&f.clone, &["diff", "--cached", "--name-only"]),
+            "a.md\n",
+            "only what is held back is unstaged"
+        );
+        let log = crate::testgit::run(&f.clone, &["log", "-p", "--all", "--text"]).out;
+        assert!(!log.contains("canary-7c40e2"), "a commit carries the file");
+    }
+}

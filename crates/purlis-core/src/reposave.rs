@@ -334,6 +334,10 @@ fn commit_push(
                     })
                     .unwrap_or_default();
             attempt.files = staged.len();
+            // Each staged file is the one name it has on disk, as the plane's save asks: asked
+            // before the secret check reads a blob, refused after it, so a save that check
+            // refuses also takes such a file out of the index (`planegit::ondisk`).
+            let held = planegit::ondisk::not_as_staged(clone);
             // What a save must never carry to a remote: a secret-shaped file, or a private key
             // or a live token in anything it stages (ADR 0051, for a repo). Asked of the index,
             // as the plane's guard asks it, and refused before the commit exists; what was
@@ -356,8 +360,27 @@ fn commit_push(
                      belong in a vault."
                         .into(),
                 ));
+                if let Some(refusal) = planegit::ondisk::refused(clone, &held) {
+                    for line in refusal.named {
+                        say(Say::Fail(format!("  {line}")));
+                    }
+                    say(Say::Info(format!("  {}", refusal.then)));
+                }
                 attempt.outcome = "blocked";
                 attempt.detail = why;
+                attempt.commit = rev(clone, "HEAD");
+                return 1;
+            }
+            if let Some(refusal) = planegit::ondisk::refused(clone, &held) {
+                say(Say::Fail(format!(
+                    "Not saved: a staged file in {at} is not the one file on disk:"
+                )));
+                for line in refusal.named {
+                    say(Say::Fail(format!("  {line}")));
+                }
+                say(Say::Info(format!("  {}", refusal.then)));
+                attempt.outcome = "blocked";
+                attempt.detail = planegit::ondisk::NOT_AS_STAGED.into();
                 attempt.commit = rev(clone, "HEAD");
                 return 1;
             }
