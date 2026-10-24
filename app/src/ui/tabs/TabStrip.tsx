@@ -45,6 +45,9 @@ import { Item } from "react-stately/Item";
 import { useTabListState, type TabListState } from "react-stately/useTabListState";
 import { Tooltip, type Tip } from "../tooltip/Tooltip";
 
+/** What React Aria's focus scope asks an element it gives the keyboard back to (`FocusScope`). */
+const RESTORING = "react-aria-focus-scope-restore";
+
 /** The keys that move along a strip: React Aria's, and no others (not Tab, not Escape). */
 const ALONG = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"]);
 
@@ -145,6 +148,19 @@ export function TabStripRow({
 }) {
   const own = useObjectRef(ref);
   const { state, home } = strip;
+  // **A dialog closing hands the keyboard back where it was, and the strip never takes it.**
+  // React Aria's focus scope asks the element it restores to whether a collection around it
+  // wants to restore focus itself (`react-aria-focus-scope-restore`), and a collection says yes
+  // and puts the keyboard on its own stop. The strip's cells hold more than its tabs (the `+`,
+  // a `×`), and its tabs are never reused for another, so the element itself takes it back:
+  // the `+` that opened Start a chat, not the new chat's tab.
+  useEffect(() => {
+    const row = own.current;
+    if (row === null) return;
+    const handBack = (event: Event) => event.stopPropagation();
+    row.addEventListener(RESTORING, handBack, true);
+    return () => row.removeEventListener(RESTORING, handBack, true);
+  }, [own]);
   const { tabListProps } = useTabList(
     { "aria-label": name, orientation, keyboardActivation: "manual" },
     state,

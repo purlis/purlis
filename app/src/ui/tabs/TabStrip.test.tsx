@@ -10,6 +10,7 @@ import { useState } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
+import { Button, Dialog, DialogTrigger, Modal } from "react-aria-components";
 import { StripTab, TabStripRow, useTabStrip } from "./TabStrip";
 
 afterEach(cleanup);
@@ -229,5 +230,58 @@ describe("a strip on React Aria", () => {
     expect(plus).toHaveFocus();
     await userEvent.tab({ shift: true });
     expect(tabs()[2]).toHaveFocus();
+  });
+
+  it("leaves the keyboard on the `+` when the dialog it opened closes on a new chosen tab", async () => {
+    // `use-skill.e2e`'s steps: the `+` opens Start a chat, Start starts a chat whose tab is
+    // chosen and closes the dialog, and the keyboard is handed back. F2 then has to reach the
+    // palette, not rename the new chat's tab.
+    function Starting() {
+      const [names, setNames] = useState(["one", "two"]);
+      const [chosen, setChosen] = useState("two");
+      const along = useTabStrip({ keys: names, selected: chosen });
+      return (
+        <TabStripRow strip={along} name="Tabs" ids={names.map((name) => `tab-${name}`)}>
+          {names.map((name) => (
+            <StripTab
+              key={name}
+              strip={along}
+              tabKey={name}
+              selected={name === chosen}
+              tip={undefined}
+              id={`tab-${name}`}
+            >
+              {name}
+            </StripTab>
+          ))}
+          <DialogTrigger>
+            <Button aria-label="New tab">+</Button>
+            <Modal>
+              <Dialog aria-label="Start a chat">
+                {({ close }) => (
+                  <Button
+                    onPress={() => {
+                      setNames((was) => [...was, "steward 42"]);
+                      setChosen("steward 42");
+                      close();
+                    }}
+                  >
+                    Start
+                  </Button>
+                )}
+              </Dialog>
+            </Modal>
+          </DialogTrigger>
+        </TabStripRow>
+      );
+    }
+    render(<Starting />);
+    const plus = screen.getByRole("button", { name: "New tab" });
+    await userEvent.click(plus);
+    await userEvent.click(await screen.findByRole("button", { name: "Start" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(stops()).toEqual(["-1", "-1", "0"]));
+    await waitFor(() => expect(plus).toHaveFocus());
+    expect(tabs().some((tab) => tab === document.activeElement)).toBe(false);
   });
 });
