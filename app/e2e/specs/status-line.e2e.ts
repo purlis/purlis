@@ -3,8 +3,9 @@
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { browser, expect, $, $$ } from "@wdio/globals";
+import { browser, expect, $ } from "@wdio/globals";
 import { untilTheStripLists } from "../reading.js";
+import { goToWorkspace } from "../titleBarWorkspaces.js";
 import { bringSideBack, putSideAway } from "../sides.js";
 import { tooltipOf } from "../tooltips.js";
 import { theWindowHoldsTheRail, WINDOW_1280, windowAt } from "../rail.js";
@@ -39,20 +40,9 @@ async function untilTheStripIsRead(): Promise<void> {
   await untilTheStripLists(["alpha", "beta"]);
 }
 
-/** Focuses a workspace from the strip, by the tab's own name rather than by its whole text —
- *  a strip tab carries counts beside its name. */
+/** Focuses a workspace from the title bar's ⌄ (#2916), by its row's own name. */
 async function focus(workspace: string): Promise<void> {
-  const tabs = await $$(
-    // Not the plane root's icon tab (SI-1), which has no drawn name to compare.
-    '[data-strip="Workspaces"] [role="tab"]:not(.plane-root)',
-  ).getElements();
-  for (const tab of tabs) {
-    if ((await tab.$(".workspace-name").getText()) === workspace) {
-      await tab.click();
-      return;
-    }
-  }
-  throw new Error(`no ${workspace} on the workspace strip`);
+  await goToWorkspace(workspace);
 }
 
 /** The plane the app says it is acting on — the copy this run was given, never the repo's. */
@@ -212,7 +202,7 @@ describe("the status line", () => {
     await untilTheStripIsRead();
     await $('[data-testid="status-doctor"]').waitForExist({ timeout: 30_000 });
     // The pointer off the line: an item under it is drawn on the hover's ground.
-    await $('[data-strip="Workspaces"]').moveTo();
+    await $('[data-testid="title-bar"]').moveTo();
 
     const found = await browser.execute(() => {
       const box = (selector: string) => {

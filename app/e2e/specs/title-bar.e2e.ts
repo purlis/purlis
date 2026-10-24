@@ -69,21 +69,26 @@ describe("the title bar", () => {
     expect((await rail.getLocation("y")) as number).toBeGreaterThanOrEqual(top + height - 1);
     expect((await rail.getLocation("x")) as number).toBeLessThanOrEqual(1);
     expect(await $(`[data-testid="title-bar"] ${PROJECTS}`).isExisting()).toBe(false);
-    // …and the workspace strip begins where the bar ends, rather than under it or over it.
-    const workspaces = await $('[data-strip="Workspaces"]');
-    expect((await workspaces.getLocation("y")) as number).toBeGreaterThanOrEqual(top + height - 1);
+    // …and the project's pinned workspaces are in the bar (#2916), where no strip of them is
+    // drawn under it any more.
+    expect(
+      await $(
+        '[data-testid="title-bar"] [role="toolbar"][aria-label="Pinned workspaces"]',
+      ).isExisting(),
+    ).toBe(true);
+    expect(await $('[data-strip="Workspaces"]').isExisting()).toBe(false);
   });
 
   it("is tall enough for the window controls macOS floats over it", async () => {
     // Under `titleBarStyle: "Overlay"` the traffic lights are drawn at the system's own title
     // bar height whatever this element does, so a bar shorter than that has them overlapping
-    // the workspace strip below. The bound is a floor with room in it, not a pin on a font
+    // the regions below. It is 40px, as the prototype draws it (R90). The bound is a floor with room in it, not a pin on a font
     // metric — and it holds on Linux too, where there is nothing floating over anything and a
     // one-line row is still the shape this is.
     await untilTheStripIsRead();
 
     const height = (await (await $('[data-testid="title-bar"]')).getSize("height")) as number;
-    expect(height).toBeGreaterThanOrEqual(26);
+    expect(height).toBeGreaterThanOrEqual(39);
     expect(height).toBeLessThanOrEqual(48);
   });
 

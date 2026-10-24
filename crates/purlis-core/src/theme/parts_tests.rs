@@ -1357,6 +1357,10 @@ const MANIFEST_DIGESTS: &[(u32, &str)] = &[
         11,
         "be280ba42efe49bf56ddae1aa28df6e1ee50ce46e77f4a3458af198b01077c39",
     ),
+    (
+        12,
+        "PENDING",
+    ),
 ];
 
 #[test]

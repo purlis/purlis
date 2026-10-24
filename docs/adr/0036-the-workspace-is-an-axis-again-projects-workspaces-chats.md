@@ -175,3 +175,6 @@ The amendments to this decision are files of their own in [`0036/`](0036/), one 
 amendment, named `<yyyy-mm-dd>-<slug>.md`. A new amendment is a new file there and never a
 section added to this record, so two pull requests that amend it do not touch the same lines
 (#1982).
+
+**Amended** by [the amendment of 2026-10-24](0036/2026-10-24-the-workspace-axis-is-the-title-bar-s.md):
+the workspaces are the title bar's chips, not a strip of their own (#2916).

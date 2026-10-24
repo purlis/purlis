@@ -4,6 +4,7 @@
 import { $, browser } from "@wdio/globals";
 import { projectInFront, runningIn } from "./running.js";
 import { endChatsStartedHere } from "./started.js";
+import { goToWorkspaceAt, workspacesListed } from "./titleBarWorkspaces.js";
 
 /**
  * **Getting somewhere in the window without trusting the driver's keys or its pointer**, for
@@ -22,7 +23,6 @@ import { endChatsStartedHere } from "./started.js";
 export { projectInFront };
 
 const TABS = '[data-strip="Tabs"]';
-const WORKSPACES = '[data-strip="Workspaces"]';
 const PALETTE = '[role="dialog"][aria-label="Command palette"]';
 
 /** The names on the tab strip, left to right. */
@@ -132,36 +132,23 @@ export async function closeTheViewTabsOpenedSince(before: readonly string[]): Pr
     });
 }
 
-/** The workspace strip's tabs, by what each says: the plane root's icon tab by its name. */
+/** Every workspace of the project in front, as the title bar's ⌄ lists them (#2916): the plane
+ *  root first (`Plane root`), the one in front `selected`. */
 export async function workspaceTabs(): Promise<{ name: string; selected: boolean }[]> {
-  return browser.execute(
-    (strip: string) =>
-      [...document.querySelectorAll<HTMLElement>(`${strip} [role="tab"]`)].map((tab) => ({
-        name:
-          tab.querySelector(".workspace-name")?.textContent ?? tab.getAttribute("aria-label") ?? "",
-        selected: tab.getAttribute("aria-selected") === "true",
-      })),
-    WORKSPACES,
-  );
+  return workspacesListed();
 }
 
-/** Focuses the workspace tab at `at` on the strip (the order {@link workspaceTabs} reads). */
+/** Focuses the workspace at `at` (the order {@link workspaceTabs} reads), by its row in the ⌄. */
 export async function focusWorkspaceAt(at: number): Promise<void> {
-  await browser.execute(
-    (strip: string, index: number) => {
-      document.querySelectorAll<HTMLElement>(`${strip} [role="tab"]`)[index]?.click();
-    },
-    WORKSPACES,
-    at,
-  );
+  await goToWorkspaceAt(at);
   await browser.waitUntil(async () => (await workspaceTabs())[at]?.selected === true, {
     timeout: 10_000,
     interval: 100,
-    timeoutMsg: `the workspace tab at ${at} never took the focus`,
+    timeoutMsg: `the workspace at ${at} never came to the front`,
   });
 }
 
-/** Focuses the workspace called `name`, once the strip lists it. */
+/** Focuses the workspace called `name`, once the project lists it. */
 export async function focusWorkspace(name: string): Promise<void> {
   let at = -1;
   await browser.waitUntil(
@@ -169,7 +156,7 @@ export async function focusWorkspace(name: string): Promise<void> {
       at = (await workspaceTabs()).findIndex((tab) => tab.name === name);
       return at >= 0;
     },
-    { timeout: 30_000, interval: 250, timeoutMsg: `the strip never listed ${name}` },
+    { timeout: 30_000, interval: 250, timeoutMsg: `the title bar never listed ${name}` },
   );
   await focusWorkspaceAt(at);
 }

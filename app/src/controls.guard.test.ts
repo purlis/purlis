@@ -746,12 +746,8 @@ export function componentHeights(source: string, from: StyleSource = {}): string
  */
 const HEIGHT_EXCEPTIONS: Record<string, Record<string, string>> = {
   "App.css": {
-    ".title-bar | min-height: 2.1rem (a strip)":
-      "the system's title bar: on macOS the traffic lights are placed at its own title bar's height whatever the page draws, and a shorter bar has them over the workspaces' row (ADR 0054); kept pending the operator's look at 28px in a dev build",
-    ".workspaces | min-height: var(--size-control) (a strip)":
-      "the main navigation row keeps control-height tabs (operator, 2026-10-17)",
-    ".workspaces-strip | min-height: var(--size-control) (a strip)":
-      "the main navigation row keeps control-height tabs (operator, 2026-10-17)",
+    ".title-bar | min-height: max(40px, 2.1rem) (a strip)":
+      "the system's title bar, 40px as the prototype draws it (R90): on macOS the traffic lights are placed at its own title bar's height whatever the page draws, and a shorter bar has them over the regions (ADR 0054)",
     ".pane-task-ends .task-end, .task-end-confirm button | height: var(--size-chrome) (a control)":
       "the confirm's two buttons take the place of the pane's ways to end a task, and under a Chats row are drawn the same, at the small control height",
     ".tasks-menu-place | height: var(--size-chrome) (a control)":

@@ -390,6 +390,42 @@ fn the_status_item_s_defaults_are_what_status_css_draws() {
     }
 }
 
+#[test]
+fn the_title_bar_chip_s_defaults_are_what_titlebar_css_draws() {
+    let css = css_of(include_str!("../../../../app/src/ui/titlebar/titlebar.css"));
+    let root = "[data-part=\"workspace\"][data-scope=\"titlebar\"]";
+    let base = rule(&css, root);
+    let lit = rule(
+        &css,
+        &format!("{root}[data-hovered],\n{root}[data-selected]"),
+    );
+    let unpinned = rule(&css, &format!("{root}[data-variant=\"unpinned\"]"));
+    // A pin: quiet words, no box, until the pointer reaches it or it is current (R101).
+    assert_eq!(
+        parts::look_of("titlebar", "pinned", &[]),
+        [
+            "transparent",
+            token(declared(base, "color").unwrap()).as_str(),
+            "transparent"
+        ]
+    );
+    for state in [parts::State::Hover, parts::State::Selected] {
+        assert_eq!(
+            parts::look_of("titlebar", "pinned", &[state]),
+            [
+                token(declared(lit, "background-color").unwrap()).as_str(),
+                token(declared(lit, "color").unwrap()).as_str(),
+                "transparent"
+            ],
+            "{state:?}"
+        );
+    }
+    // The dashed chip: muted words, the subtle line (R105).
+    let [_, text, border] = parts::look_of("titlebar", "unpinned", &[]);
+    assert_eq!(text, token(declared(unpinned, "color").unwrap()));
+    assert_eq!(border, token(declared(unpinned, "border-color").unwrap()));
+}
+
 // ---------------------------------------------------------------------------------------
 // The window's geometry (#2805)
 // ---------------------------------------------------------------------------------------

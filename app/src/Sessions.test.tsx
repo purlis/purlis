@@ -17,7 +17,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { SessionRecordRow } from "./bindings";
 import { heardFrom, lostOnResume, type Resuming } from "./sessions";
-import { stripNamed, showThePanel } from "./test-strips";
+import { goToWorkspace, showThePanel, stripNamed } from "./test-strips";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
@@ -446,12 +446,7 @@ describe("the plane root's tab", () => {
   it("shows the plane's own session records, and none of a workspace's", async () => {
     core();
     render(<App />);
-    const rootTab = await waitFor(() =>
-      within(stripNamed("Workspaces")).getByRole("tab", {
-        name: "Plane root",
-      }),
-    );
-    await userEvent.click(rootTab);
+    await goToWorkspace("Plane root");
 
     const sessions = await showThePanel("Sessions");
     await waitFor(() => expect(within(sessions).getByText("Tidy personas")).toBeTruthy());

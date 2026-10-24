@@ -193,3 +193,96 @@ export async function showThePanel(view: string, testid = `panel-${view.toLowerC
   const panel = await within(shown).findByTestId(testid);
   return inHalf ? (shown.closest(".panel-half") as HTMLElement) : panel;
 }
+
+/**
+ * **The title bar's workspace chips** (#2916): each pin of the project in front, and the one in
+ * front when it is not pinned (the dashed chip), in the bar's order.
+ */
+export function workspaceChips(): HTMLElement[] {
+  return [
+    ...screen
+      .getByTestId("title-bar")
+      .querySelectorAll<HTMLElement>('[data-scope="titlebar"][data-part="workspace"]'),
+  ];
+}
+
+/** A chip's workspace name, without its count. */
+export function chipName(chip: HTMLElement): string {
+  return chip.querySelector('[data-part="name"]')?.textContent ?? "";
+}
+
+/** The workspace in front, by its chip in the title bar; `undefined` at the plane root. */
+export function workspaceInFront(): string | undefined {
+  const current = workspaceChips().find((chip) => chip.getAttribute("aria-current") === "true");
+  return current === undefined ? undefined : chipName(current);
+}
+
+/**
+ * **Opens the title bar's ⌄** (#2916) and answers its list of the project's workspaces: the
+ * plane root first, then the pins, then the rest, then New workspace….
+ */
+export async function openAllWorkspaces(): Promise<HTMLElement> {
+  const open = screen.queryByRole("listbox", { name: /^Workspaces in / });
+  if (open) return open;
+  const strip = await findTheWorkspaces();
+  await userEvent.click(within(strip).getByRole("button", { name: "All workspaces" }));
+  return screen.findByRole("listbox", { name: /^Workspaces in / }, { timeout: 5000 });
+}
+
+/** The names the title bar's ⌄ lists, the plane root's as `Plane root`; the popover is closed
+ *  again by Escape in its filter, as a person closes it. */
+export async function workspacesListed(): Promise<string[]> {
+  const list = await openAllWorkspaces();
+  const names = within(list)
+    .getAllByRole("option")
+    .map((row) => row.querySelector("[data-titlebar-name]")?.textContent ?? "")
+    .filter((name) => name !== "New workspace…");
+  const filter = screen.queryByRole("combobox", { name: /^Go to a workspace in / });
+  if (filter) fireEvent.keyDown(filter, { key: "Escape" });
+  return names;
+}
+
+/** **Goes to the workspace `name`** from the title bar's ⌄ (`Plane root` for the root). */
+export async function goToWorkspace(name: string | RegExp): Promise<void> {
+  const list = await openAllWorkspaces();
+  const rows = within(list).getAllByRole("option");
+  const row = rows.find((one) => {
+    const said = one.querySelector("[data-titlebar-name]")?.textContent ?? "";
+    return typeof name === "string" ? said === name : name.test(said);
+  });
+  if (row === undefined) throw new Error(`the ⌄ lists no workspace ${String(name)}`);
+  await userEvent.click(row);
+}
+
+/** **The title bar's pinned workspaces**, once the project in front's plane is read (#2916):
+ *  the strip of chips, which is drawn only then. */
+export async function findTheWorkspaces(): Promise<HTMLElement> {
+  // The window reads its plane first, which a loaded runner takes its time over.
+  return screen.findByRole("toolbar", { name: "Pinned workspaces" }, { timeout: 5000 });
+}
+
+/** What waits in a chip or a row, as its count says it: ` , 2 waiting`, or nothing. */
+const waitingSaid = (one: Element) => {
+  const count = one.querySelector('[data-part="count"]')?.textContent;
+  return count ? `, ${count} waiting` : "";
+};
+
+/** What the chip of `workspace` says (#2916): its name, and what waits in it (`alpha, 2
+ *  waiting`), its count being its description; `null` where it has no chip. */
+export function chipSays(workspace: string): string | null {
+  const chip = workspaceChips().find((one) => chipName(one) === workspace);
+  if (chip === undefined) return null;
+  return `${chipName(chip)}${waitingSaid(chip)}`;
+}
+
+/** What the title bar's ⌄ says of `workspace`'s row: its name, and what waits in it. */
+export async function rowSays(workspace: string): Promise<string | null> {
+  const list = await openAllWorkspaces();
+  const row = within(list)
+    .getAllByRole("option")
+    .find((one) => one.querySelector("[data-titlebar-name]")?.textContent === workspace);
+  const said = row === undefined ? null : `${workspace}${waitingSaid(row)}`;
+  const filter = screen.queryByRole("combobox", { name: /^Go to a workspace in / });
+  if (filter) fireEvent.keyDown(filter, { key: "Escape" });
+  return said;
+}

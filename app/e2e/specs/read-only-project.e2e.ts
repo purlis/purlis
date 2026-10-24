@@ -7,8 +7,8 @@ import { dirname, join, relative, sep } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import { anEmptyRecord, copyFixturePlane } from "../harness.js";
 import { ask } from "../switching.js";
+import { ALL_WORKSPACES, closed } from "../titleBarWorkspaces.js";
 import { openThroughTheTrustQuestion } from "../opening.js";
-import { tooltipOf } from "../tooltips.js";
 
 /**
  * **A project this purlis opens read-only says why, and the window writes nothing to it**
@@ -26,7 +26,6 @@ import { tooltipOf } from "../tooltips.js";
  */
 
 const PROJECTS = '[data-strip="Projects"]';
-const WORKSPACES = '[data-strip="Workspaces"]';
 const LINE = '[role="note"][aria-label="Read-only project"]';
 
 /** The feature the project requires: a name no purlis will ever have. */
@@ -111,7 +110,7 @@ describe("a project this purlis opens read-only", function () {
       timeout: 30_000,
       timeoutMsg: "this spec's project never opened",
     });
-    await $(`${WORKSPACES} [role="tab"].plane-root`).waitForExist({ timeout: 30_000 });
+    await $(ALL_WORKSPACES).waitForExist({ timeout: 30_000 });
   });
 
   after(async () => {
@@ -133,32 +132,35 @@ describe("a project this purlis opens read-only", function () {
     ).toBe(1);
   });
 
-  it("turns off a button that would write a committed file, with that sentence", async () => {
+  it("turns off a row that would write a committed file, with that sentence", async () => {
     const said = await $(LINE).getText();
-    // The workspace strip's `+`, read in one pass: the catalogue's `workspace.create`.
-    const plus = await browser.execute(() => {
-      const button = document.querySelector<HTMLButtonElement>(
-        '.workspaces .strip-doing button[aria-label="New workspace…"]',
-      );
-      // Unavailable, and kept in reach so its reason can be read (#2908).
-      return button === null
-        ? null
-        : { disabled: button.disabled || button.getAttribute("aria-disabled") === "true" };
-    });
-    expect(plus).not.toBeNull();
-    expect(plus?.disabled).toBe(true);
-    // Its tooltip says its name and then why; why is its description for good (#2908).
-    const tip = await tooltipOf('.workspaces .strip-doing button[aria-label="New workspace…"]');
-    expect(tip).toContain(FEATURE);
-    const why = await browser.execute(() => {
-      const button = document.querySelector<HTMLButtonElement>(
-        '.workspaces .strip-doing button[aria-label="New workspace…"]',
-      );
-      const id = button?.getAttribute("aria-describedby") ?? "";
-      return id === "" ? null : (document.getElementById(id)?.textContent ?? null);
-    });
-    expect(why).toContain(FEATURE);
-    expect(said).toContain(why ?? "(no description)");
+    // New workspace…, the last row of the title bar's ⌄ (#2916, R108): the catalogue's
+    // `workspace.create`, read in one pass once the popover is open.
+    await browser.execute(
+      (all: string) => document.querySelector<HTMLElement>(all)?.click(),
+      ALL_WORKSPACES,
+    );
+    const row = await browser.waitUntil(
+      async () =>
+        browser.execute(() => {
+          const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+            (one) => one.querySelector("[data-titlebar-name]")?.textContent === "New workspace…",
+          );
+          if (option === undefined) return null;
+          const id = option.getAttribute("aria-describedby") ?? "";
+          return {
+            disabled: option.getAttribute("aria-disabled") === "true",
+            why: id === "" ? null : (document.getElementById(id)?.textContent ?? null),
+          };
+        }),
+      { timeout: 20_000, timeoutMsg: "the title bar's ⌄ listed no New workspace…" },
+    );
+    // Unavailable, and kept in reach so its reason can be read; why is its description.
+    expect(row.disabled).toBe(true);
+    expect(row.why).toContain(FEATURE);
+    expect(said).toContain(row.why ?? "(no description)");
+    // Closed by Escape in its filter, so no other spec finds its rows.
+    await closed();
   });
 
   it("writes no committed project file", async () => {

@@ -2115,6 +2115,13 @@ same two rows. They are read only in the palette's box, so they take nothing fro
 tab; the line under the files says them while a file is aimed. Keys and not buttons, because a
 listbox option's contents are presentational and a button inside one is not reachable.
 
+**The title bar's workspace key takes nothing either** (#2916, `workspaceSwitch.opensTheWorkspaces`,
+the operator's ruling of 2026-10-24): `⌥⌘P` on a Mac and `Ctrl+Alt+Shift+P` elsewhere open the
+workspace popover, read by the physical key (`KeyP`), since `⌥` turns P into another letter on a
+Mac. xterm.js 6.0.0 sends nothing for a `⌘` chord, nor for `Ctrl+Shift` with a letter. `⌘1`–`⌘9`
+go to the project's pins; off a Mac `Ctrl+1`–`9` is the chat's while it has the keyboard. None of
+them acts while a dialog is up.
+
 **Find in a pane is `⌘F` on a Mac and `Ctrl+Shift+F` elsewhere, and takes nothing either** (SI-4,
 `SessionPane.opensFind`). xterm.js 6.0.0 sends nothing for `⌘F`. It would send `\x06` for
 `Ctrl+F` — readline's forward-char — so off a Mac the chord adds `Shift`, as GNOME Terminal and
