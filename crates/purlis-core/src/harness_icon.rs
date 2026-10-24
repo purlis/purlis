@@ -113,7 +113,8 @@ pub fn folder(config_root: &Path) -> PathBuf {
 /// **Reads the icon file `name`** from [`folder`], from handles as a theme's files are read
 /// ([`crate::theme::opened`]): the config home's folder opened as trusted, `icons` opened from it
 /// refusing a link, and the file opened from that handle refusing a link and without waiting,
-/// then read only when the descriptor is a plain file of at most [`safesvg::MOST_BYTES`]. Read
+/// then read only when the descriptor is a plain file of one name, at most
+/// [`safesvg::MOST_BYTES`]. Read
 /// as shapes. Off unix nothing is read, and the profile shows its monogram.
 pub fn read_file(config_root: &Path, name: &str) -> Result<SafeSvg, Unfit> {
     if !file_name_ok(name) {
@@ -129,10 +130,49 @@ pub fn read_file(config_root: &Path, name: &str) -> Result<SafeSvg, Unfit> {
     )
     .map_err(unread)?
     .ok_or(Unfit("the icon file is not there"))?;
-    let bytes = crate::theme::opened::bytes(&held, name, "the icon file", safesvg::MOST_BYTES)
+    let bytes = sole_bytes(&held, name)
         .map_err(unread)?
         .ok_or(Unfit("the icon file is not there"))?;
     safesvg::read(&bytes)
+}
+
+/// **The bytes of the icon file `name` in `dir`**, as [`crate::theme::opened::bytes`] reads a
+/// theme's file (opened refusing a link and without waiting, read only from a descriptor that is
+/// a plain file under the cap), and refused too where the file has more than one name.
+#[cfg(unix)]
+fn sole_bytes(dir: &crate::theme::opened::Held, name: &str) -> Result<Option<Vec<u8>>, String> {
+    use std::io::Read;
+    use std::os::unix::fs::MetadataExt;
+
+    use rustix::fs::{Mode, OFlags, openat};
+    use rustix::io::Errno;
+
+    let flags = OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC;
+    let fd = match openat(dir, name, flags, Mode::empty()) {
+        Ok(fd) => fd,
+        Err(Errno::NOENT) => return Ok(None),
+        Err(why) => return Err(why.to_string()),
+    };
+    let mut open = std::fs::File::from(fd);
+    let found = open.metadata().map_err(|why| why.to_string())?;
+    if !found.file_type().is_file() || found.nlink() != 1 || found.len() > safesvg::MOST_BYTES {
+        return Err("not a plain file of an icon's size with one name".to_owned());
+    }
+    let mut bytes = Vec::new();
+    (&mut open)
+        .take(safesvg::MOST_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|why| why.to_string())?;
+    if bytes.len() as u64 > safesvg::MOST_BYTES {
+        return Err("larger than an icon may be".to_owned());
+    }
+    Ok(Some(bytes))
+}
+
+/// Off unix nothing is read ([`crate::theme::opened`]).
+#[cfg(not(unix))]
+fn sole_bytes(dir: &crate::theme::opened::Held, _name: &str) -> Result<Option<Vec<u8>>, String> {
+    match *dir {}
 }
 
 /// **What the profile `name` of `kind` is drawn with**, `icon` what its definition names, and

@@ -60,7 +60,12 @@ describe("a harness icon", () => {
 
   it("is never blank, even drawn from an answer that carries no icon", () => {
     const { container } = render(<HarnessIcon kind="codex" />);
-    expect(drawn(container)?.textContent).toBe("C");
+    expect(drawn(container)?.textContent).toBe("CX");
+    expect([monogramOf("claude"), monogramOf("opencode"), monogramOf("shelly")]).toEqual([
+      "C",
+      "OC",
+      "S",
+    ]);
     expect(monogramOf("-x")).toBe("X");
     expect(monogramOf("")).toBe("?");
   });
@@ -101,6 +106,38 @@ describe("a harness icon", () => {
     expect(refused.getAttribute("fill")).toBeNull();
     expect(container.querySelector("script, image")).toBeNull();
     expect(container.innerHTML).not.toMatch(/alert|example|url\(/);
+  });
+
+  it("draws a person's SVG in the text's colour alone", () => {
+    const icon: HarnessIconRow = {
+      glyph: null,
+      monogram: "C",
+      svg: {
+        view_box: "0 0 24 24",
+        shapes: [{ tag: "path", attributes: { d: "M1 1h4", fill: "gold", stroke: "teal" } }],
+      },
+    };
+    const { container } = render(<HarnessIcon icon={icon} kind="claude" />);
+    const path = container.querySelector("path");
+    expect(path?.getAttribute("fill")).toBe("currentColor");
+    expect(path?.getAttribute("stroke")).toBe("currentColor");
+  });
+
+  it("draws the monogram for an SVG past the budget", () => {
+    const icon: HarnessIconRow = {
+      glyph: null,
+      monogram: "C",
+      svg: {
+        view_box: "0 0 24 24",
+        shapes: Array.from({ length: 64 }, () => ({
+          tag: "path",
+          attributes: { d: "M0 0", transform: "rotate(1) ".repeat(120) },
+        })),
+      },
+    };
+    const { container } = render(<HarnessIcon icon={icon} kind="claude" />);
+    expect(drawn(container)?.getAttribute("data-drawn")).toBe("monogram");
+    expect(container.querySelector("path")).toBeNull();
   });
 
   it("draws the monogram for an SVG it cannot draw", () => {

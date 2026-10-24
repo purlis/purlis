@@ -73,7 +73,9 @@ command = ["ccs", "work"]
 **A profile can name its icon** (#2922): `icon = "spark"` (or `braces`, `terminal`) draws
 it with one of the harness glyphs, and `icon = "mine.svg"` with an SVG of your own in the
 `icons` folder of purlis's directory in your config home (`~/.config/purlis/icons/mine.svg`),
-which is never shipped or committed. purlis reads the SVG as shapes and nothing else. A
+which is never shipped or committed. purlis reads the SVG as shapes and nothing else, and
+draws it in the text's colour, as every icon is drawn. A profile's icon appears only beside
+its name, never where purlis asks you something. A
 profile that names no icon shows the monogram of its kind (`C`, `OC`, `CX`); the built-ins
 are drawn with the glyphs purlis draws for them, never a vendor's mark.
 

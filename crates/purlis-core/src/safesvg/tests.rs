@@ -37,7 +37,8 @@ fn a_plain_icon_is_its_view_box_and_its_shapes() {
     assert_eq!(svg.shapes[0].attributes["d"], "M1 1h22");
     // The root's paint is carried onto each shape.
     assert_eq!(svg.shapes[1].attributes["fill"], "none");
-    assert_eq!(svg.shapes[1].attributes["stroke"], "#123");
+    // A colour the file names is drawn in the text's colour.
+    assert_eq!(svg.shapes[1].attributes["stroke"], "currentColor");
 }
 
 #[test]
@@ -132,11 +133,11 @@ fn a_group_passes_its_paint_transform_and_opacity_on() {
     );
     assert_eq!(svg.view_box, "0 0 32 16");
     let path = &svg.shapes[0].attributes;
-    assert_eq!(path["fill"], "blue");
+    assert_eq!(path["fill"], "currentColor");
     assert_eq!(path["transform"], "translate(1,2) scale(2)");
     assert_eq!(path["opacity"], "0.25");
     let line = &svg.shapes[1].attributes;
-    assert_eq!(line["fill"], "red");
+    assert_eq!(line["fill"], "currentColor");
     assert_eq!(line["transform"], "translate(1,2)");
 }
 
@@ -227,4 +228,62 @@ fn a_prefixed_element_is_not_a_shape() {
     );
     assert_eq!(svg.shapes.len(), 1);
     assert_eq!(svg.shapes[0].attributes["d"], "M1 1");
+}
+
+#[test]
+fn a_person_s_mark_is_drawn_in_the_text_s_colour_alone() {
+    let svg = icon(
+        r##"<svg viewBox="0 0 10 10">
+          <path d="M1 1" fill="#e11" stroke="rgb(0, 200, 0)" style="fill: gold"/>
+          <path d="M2 2" fill="none" stroke="currentColor"/>
+        </svg>"##,
+    );
+    assert_eq!(svg.shapes[0].attributes["fill"], "currentColor");
+    assert_eq!(svg.shapes[0].attributes["stroke"], "currentColor");
+    assert_eq!(svg.shapes[1].attributes["fill"], "none");
+    let all = everything(&svg);
+    for word in ["e11", "rgb", "gold"] {
+        assert!(!all.contains(word), "{word} in {all}");
+    }
+}
+
+/// **What an icon comes to is bounded, not only what its file holds**: a group's attributes are
+/// carried onto every shape inside it, so nested groups over many shapes would make a small
+/// file a large answer.
+#[test]
+fn nested_groups_over_many_shapes_are_refused_past_the_output_budget() {
+    // A transform of a few kilobytes on each of a few groups, over every shape an icon may draw:
+    // well under the file's cap, far over the output's.
+    let long = "rotate(1) ".repeat(300);
+    let groups = 3;
+    let text = format!(
+        "<svg viewBox=\"0 0 24 24\">{}{}{}</svg>",
+        format!("<g transform=\"{long}\">").repeat(groups),
+        "<line x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"/>".repeat(MOST_SHAPES),
+        "</g>".repeat(groups),
+    );
+    assert!(text.len() as u64 <= MOST_BYTES, "the file is under its cap");
+    assert_eq!(
+        read(text.as_bytes()).expect_err("too much drawn").0,
+        "the SVG draws more than an icon may"
+    );
+
+    // One shape under groups whose transforms join past one value's length.
+    let deep = format!(
+        "<svg viewBox=\"0 0 24 24\">{}<path d=\"M0 0\"/>{}</svg>",
+        format!("<g transform=\"{}\">", "rotate(1) ".repeat(1200)).repeat(4),
+        "</g>".repeat(4),
+    );
+    assert!(deep.len() as u64 <= MOST_BYTES);
+    assert_eq!(
+        read(deep.as_bytes()).expect_err("too long a transform").0,
+        "the SVG nests more transforms than an icon may"
+    );
+
+    // What an icon may draw still reads.
+    let fine = format!(
+        "<svg viewBox=\"0 0 24 24\"><g transform=\"rotate(1)\">{}</g></svg>",
+        "<line x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"/>".repeat(64),
+    );
+    assert_eq!(icon(&fine).shapes.len(), 64);
 }

@@ -502,7 +502,9 @@ the platform's own, as Purlis Classic's are, and brings its own styles.
   (`{ "glyphs": { "spark": { "paths": ["M12 2.7v18.6"] } } }`). A set names views, glyphs or
   both. They are what a harness and a profile that names a glyph are drawn with
   (`app/src/ui/harness-icon/HarnessIcon.tsx`); a glyph no theme draws is the window's own
-  (`app/src/theme/harnessGlyphs.ts`), and Purlis's set ships the same three, drawn by purlis.
+  (`app/src/theme/harnessGlyphs.ts`), and Purlis's set ships the same three, drawn by purlis. A profile's icon, a glyph or the
+  person's own SVG (drawn in the text's colour alone), is drawn only beside the profile's name,
+  never on a consent or ask surface.
 - **`options`** are the theme's toggles and choices (#2325): each has an `id`, a `kind`
   (`toggle` or `choice`), a `label`, an optional `description` and a `default`. A toggle's `on`
   is a layer drawn when it is on; a choice has at least two named `values`, each a layer. A
