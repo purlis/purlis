@@ -69,9 +69,11 @@ export function AnswerQuestion(props: AnswerProps & { onCancel: () => void }) {
     );
   }
   return (
-    <Card className="answer-question" data-testid="answer-question">
+    <Card className="answer-question">
       <Form
         className="answer-form"
+        // The form is what is named and what a test finds: the card only stands it off the line.
+        data-testid="answer-question"
         aria-label={`Answer ${task}'s question`}
         onSubmit={(event) => {
           event.preventDefault();

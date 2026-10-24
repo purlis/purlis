@@ -2683,7 +2683,11 @@ fn held_from(
                     property.is_colour() && !edge_taken_off(rule, *property, *value)
                 })
         });
-        let drawn_in: &[ResolvedTheme] = if colours { &drawn_in } else { &drawn_in[..1] };
+        let drawn_in: &[ResolvedTheme] = if colours || every_tint() {
+            &drawn_in
+        } else {
+            &drawn_in[..1]
+        };
         // At rest and in each state the family names but disabled: a disabled control is
         // exempt, as WCAG has it, and cannot be answered.
         let singles: Vec<Vec<State>> = std::iter::once(Vec::new())
@@ -2738,6 +2742,34 @@ fn held_from(
         }
     }
     (rules, fell)
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Set by a test: every family is measured in every tint, skip or none.
+    static EVERY_TINT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Whether every family is measured in every tint: only ever, in a test, to hold the skip to it.
+fn every_tint() -> bool {
+    #[cfg(test)]
+    {
+        EVERY_TINT.with(std::cell::Cell::get)
+    }
+    #[cfg(not(test))]
+    {
+        false
+    }
+}
+
+/// **What falls of `theme` with every family measured in every tint**, for the test that holds a
+/// family measured as written alone to the same.
+#[cfg(test)]
+pub(super) fn fallen_in_every_tint(theme: &ResolvedTheme) -> Vec<Fell> {
+    EVERY_TINT.with(|one| one.set(true));
+    let fell = held(theme).1;
+    EVERY_TINT.with(|one| one.set(false));
+    fell
 }
 
 /// **Whether a rule's colour only takes an edge off a variant that carries no consent**: the same

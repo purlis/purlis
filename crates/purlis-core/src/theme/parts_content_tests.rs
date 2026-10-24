@@ -421,21 +421,28 @@ fn falls(parts: Value, look: &str) -> bool {
 
 #[test]
 fn a_notice_s_edge_that_would_not_show_draws_its_default() {
-    // No edge at all.
-    assert!(falls(
-        json!({ "notice.root.border-colour": "transparent" }),
-        "notice.root.news"
-    ));
+    // No edge at all, in either look.
+    for look in ["notice.root.news", "notice.root.trouble"] {
+        assert!(
+            falls(json!({ "notice.root.border-colour": "transparent" }), look),
+            "{look}"
+        );
+    }
     // An edge lost on a fill of its own colour.
     assert!(falls(
         json!({ "notice.root.fill": "border.subtle", "notice.root.border-colour": "border.subtle" }),
         "notice.root.news"
     ));
-    // An edge lost on its ground, through a fill of none.
-    assert!(falls(
-        json!({ "notice.root.fill": "transparent", "notice.root.border-colour": "surface.raised" }),
-        "notice.root.news"
-    ));
+    // An edge lost on its ground, through a fill of none, in either look.
+    for look in ["notice.root.news", "notice.root.trouble"] {
+        assert!(
+            falls(
+                json!({ "notice.root.fill": "transparent", "notice.root.border-colour": "surface.raised" }),
+                look
+            ),
+            "{look}"
+        );
+    }
 }
 
 #[test]
@@ -473,4 +480,35 @@ fn the_separator_s_colour_reaches_every_line_between_groups() {
         sheet.find("--separator-fill").unwrap() < sheet.find("var(--border-subtle)").unwrap(),
         "{sheet}"
     );
+}
+
+#[test]
+fn a_family_measured_as_written_alone_falls_as_it_would_in_every_tint() {
+    // The skip: a family whose rules set no colour, or only take an edge off a variant with no
+    // consent, is measured as written alone. What falls is what falls in every tint.
+    let themes = [
+        json!({}),
+        json!({ "button.root.primary.border-colour": "transparent", "button.root.secondary.border-colour": "transparent", "button.root.ghost.border-colour": "transparent" }),
+        json!({ "button.root.border-width": 2, "button.root.grants.border-width": 2 }),
+        json!({ "card.root.ask.border-width": 2, "notice.root.corner-radius": 4 }),
+        json!({ "button.root.corner-radius": "full", "button.root.padding": [2, 12] }),
+    ];
+    for parts in themes {
+        for theme in &load(&with_parts(parts.clone())).theme.appearances {
+            assert_eq!(
+                parts::fallen(theme),
+                parts::fallen_in_every_tint(theme),
+                "{parts} {}",
+                theme.id
+            );
+        }
+    }
+    for theme in &purlis().appearances {
+        assert_eq!(
+            parts::fallen(theme),
+            parts::fallen_in_every_tint(theme),
+            "Purlis {}",
+            theme.id
+        );
+    }
 }

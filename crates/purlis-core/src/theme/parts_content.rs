@@ -10,12 +10,13 @@
 //!
 //! - **A card and a Notice hold answers** (an ask's Allow, a Notice's fix), so their fill is one of
 //!   the grounds the button family is measured on ([`HOLDS_ANSWERS`]): an answer that grants is
-//!   held apart from the primary on exactly those, and a theme cannot stand it on another.
-//! - **An ask keeps its waiting edge** ([`super::Consent::Asks`]): the card that asks the person
-//!   something and a Notice's box are edged in the waiting colour whatever the theme says, as
-//!   Allow keeps its accent edge: an edge that would not show (none, or lost on its fill or its
-//!   ground) or that takes the accent's hue draws the family default, and no theme may take a
-//!   Notice's edge width.
+//!   held apart from the primary on exactly those. A fill of none stands it on the surface under
+//!   it, whose own fill a theme sets is held as that surface's family holds it (#3083).
+//! - **An ask keeps an edge that shows** ([`super::Consent::Asks`]): the card that asks the
+//!   person something and a Notice's box, as Allow keeps its accent edge. A theme may colour it,
+//!   but an edge that would not show (none, or lost on its fill or its ground) or that is drawn
+//!   nearer the accent than the family's own draws the family default, the waiting colour; and
+//!   no theme may take a Notice's edge width.
 //! - **A separator is its own part, never a control's border** (#2804, #2877): its colour is the
 //!   `separator` family's, its width the theme's `separator.width` geometry, 0 allowed.
 

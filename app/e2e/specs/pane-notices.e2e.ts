@@ -135,21 +135,30 @@ async function raise(
           return made;
         },
       ][0];
-      // The inline surface edged in the waiting colour, and a line that is the shared row of
-      // buttons that wraps (#1855), as `Notice` draws them.
-      const surface = "notice-pane-box ui-inline-surface ui-inline-surface-waiting";
-      const box = el("div", opened === null ? surface : `${surface} notice-opened`);
+      // The notice family's box in a pane (`ui/notice`, #2912), and a line that is the shared
+      // row of buttons that wraps (#1855), as `Notice` draws them.
+      const box = el("div", "");
+      Object.assign(box.dataset, {
+        scope: "notice",
+        part: "root",
+        variant: "trouble",
+        placement: "pane",
+      });
+      if (opened !== null) box.setAttribute("data-opened", "");
       box.dataset.raised = "pane-notices.e2e";
       // As `Notice` marks one with an answer besides Dismiss: what the pane's row stands first
       // (#1647), so a Notice this file raises is one of the two that stand.
       if (ways.some((way) => way !== "Dismiss")) box.setAttribute("data-asks", "");
       // The line is a small `ButtonRow` of the button family's buttons (#2904).
-      const line = el("div", "notice notice-pane notice-trouble");
+      const line = el("div", "");
       Object.assign(line.dataset, { scope: "button-row", size: "sm", wraps: "" });
       line.setAttribute("role", "status");
-      line.append(el("div", "notice-says", sentence));
+      const says = el("div", "", sentence);
+      Object.assign(says.dataset, { scope: "notice", part: "message" });
+      line.append(says);
       for (const way of ways) {
-        const button = el("button", "notice-fix");
+        const button = el("button", "");
+        button.dataset.way = way === "Dismiss" ? "dismiss" : "fix";
         Object.assign(button.dataset, {
           scope: "button",
           part: "root",
@@ -165,7 +174,8 @@ async function raise(
       }
       box.append(line);
       if (opened !== null) {
-        const under = el("div", "notice-under notice-under-pane");
+        const under = el("div", "");
+        Object.assign(under.dataset, { scope: "notice", part: "under" });
         if (also !== null) {
           // As `DispatchGrantNotice` draws it, above the brief: the house `Choice` of checks,
           // then the access line and the line about secrets.

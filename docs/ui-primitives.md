@@ -657,7 +657,7 @@ ADR 0104), each one wrapper under `app/src/ui/` and its own lint rule at error
   One that only parts two marks on a strip is `decorative`, hidden from a screen reader.
 - **Controls take no border in Purlis**: its theme draws the edge of the plain and the primary
   button, the text input and the textarea in no colour, at every size; Allow and danger, the
-  consent variants, keep theirs, and a refused field keeps its danger edge, drawn inside the box.
+  consent variants, keep theirs, and a refused field keeps its danger edge, drawn as an outline over the box's own edge that no part reaches (the focus ring takes its place while the field holds the caret).
 - **Stories hold them** (`Card.stories.tsx`, `Notice.stories.tsx`, `Badge.stories.tsx`,
   `Separator.stories.tsx`): an ask with Allow and Keep blocked, a pane's row with +N more, the
   Inbox's list, a Notice alone, every badge and count, the hosts' statuses, a badge's hint, and a
