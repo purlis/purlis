@@ -84,6 +84,12 @@ type Doing =
   | { what: "move"; skill: StudioSkill; from: SkillLevel; to: SkillLevel }
   | { what: "delete"; skill: StudioSkill; level: SkillLevel; users: SkillUsers };
 
+/** New skill's words, on the toolbar and on the empty studio's start alike: one act, one label. */
+const NEW_SKILL = "New skill";
+
+/** The words of the act that opens a chat to draft a skill, wherever it is offered. */
+const DRAFT_WITH_A_CHAT = "Ask a chat to draft a skill";
+
 /** The type a dragged row carries, so a drop from elsewhere is not read as a skill. */
 const DRAGGED = "application/x-purlis-skill";
 
@@ -98,9 +104,9 @@ const DRAGGED = "application/x-purlis-skill";
  *
  * **What it offers when it opens** (SK-22, #2785; decision 42) is the core's
  * (`skills::first_open`): while the project has no skill of its own, three starts above the
- * skills it lists (make one with a chat, browse sources, start blank); the offered skill sources
- * in its sources section; and, where the project's skills are still where only Claude Code reads
- * them, the move into the studio, which is the doctor's `project-skills` fix (SK-21).
+ * skills it lists (a chat's draft, browse sources, a new skill from the blank template); the
+ * offered skill sources in its sources section; and, where the project's skills are still where
+ * only some chat programs read them, the move into the studio, which is the doctor's `project-skills` fix (SK-21).
  */
 export function SkillStudioTab({
   plane,
@@ -275,7 +281,7 @@ export function SkillStudioTab({
         else
           setSaid({
             tone: answer.data.complete ? "news" : "trouble",
-            label: "Skills moved",
+            label: answer.data.complete ? "Skills moved" : "Some skills were not moved",
             text: answer.data.said.join(" "),
           });
       })
@@ -297,7 +303,7 @@ export function SkillStudioTab({
       onDismiss={() => setMoveLater(true)}
     >
       <span data-testid="skill-studio-unmoved">
-        {`This project keeps ${counted(unmoved.skills, "skill", "skills")} where only Claude Code reads its skills. Moving them gives every chat each one, on Claude Code, Codex and opencode alike, in one commit that can be undone.`}
+        {`This project keeps ${counted(unmoved.skills, "skill", "skills")} where only some chat programs read them. Moving them gives every chat each one, whichever program it runs on, in one commit that can be undone. The commit reaches everyone who works in the project, and a teammate on an older purlis opens the project read-only until they update.`}
       </span>
     </Notice>
   );
@@ -313,9 +319,10 @@ export function SkillStudioTab({
           <li>
             <Button
               icon={<MessageSquarePlus aria-hidden="true" />}
+              isDisabled={busy}
               onPress={() => askSkillChat({ plane, kind: "draft", level: levelFrom(scope) })}
             >
-              Make one with a chat
+              {DRAFT_WITH_A_CHAT}
             </Button>
             <p className="honest">
               Say what you want in a chat. Its draft comes back here to try and accept.
@@ -324,6 +331,7 @@ export function SkillStudioTab({
           <li>
             <Button
               icon={<FolderGit2 aria-hidden="true" />}
+              isDisabled={busy}
               onPress={() => {
                 // After the press is done with focus: WebKit hands it back to a pressed button.
                 window.setTimeout(() => {
@@ -340,9 +348,10 @@ export function SkillStudioTab({
           <li>
             <Button
               icon={<FilePlus aria-hidden="true" />}
+              isDisabled={busy}
               onPress={() => setDoing({ what: "new" })}
             >
-              Start blank
+              {NEW_SKILL}
             </Button>
             <p className="honest">Write one yourself, from a blank template.</p>
           </li>
@@ -381,13 +390,13 @@ export function SkillStudioTab({
         onPress={() => setDoing({ what: "new" })}
         isDisabled={doing?.what === "new"}
       >
-        New skill
+        {NEW_SKILL}
       </Button>
       <Button
         icon={<MessageSquarePlus aria-hidden="true" />}
         onPress={() => askSkillChat({ plane, kind: "draft", level: levelFrom(scope) })}
       >
-        Ask a chat to draft a skill
+        {DRAFT_WITH_A_CHAT}
       </Button>
     </div>
   );

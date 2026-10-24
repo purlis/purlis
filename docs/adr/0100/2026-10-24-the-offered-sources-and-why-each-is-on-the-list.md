@@ -20,7 +20,9 @@ A source is on the list when all of these hold: it is a public git repository of
 |---|---|---|
 | `https://github.com/anthropics/skills` | `skills` | Anthropic's collection, where the open skill format comes from, kept by the makers of Claude Code. |
 | `https://github.com/openai/skills` | `skills/.curated` | The skills OpenAI curates for Codex, kept by its makers. The `.system` folder beside it holds Codex's own built-in skills, so it is left out. |
-| `https://github.com/obra/superpowers` | `skills` | The most widely used community collection of engineering skills (about 300,000 stars in October 2026, MIT). It ships for Claude Code, Codex and opencode alike. |
+| `https://github.com/obra/superpowers` | `skills` | A widely used community collection of engineering skills, under the MIT licence. It ships for Claude Code, Codex and opencode alike. |
+
+**An entry comes off the list** in a pull request of its own once it stops meeting these rules: when it is no longer maintained, or when the repository changes hands. A new owner is someone the list never chose. Skills already installed from it keep their pins; only the offer goes.
 
 Being on the list vouches for nothing. The review is what stands for consent (§7), and it applies to these sources as much as to any other.
 

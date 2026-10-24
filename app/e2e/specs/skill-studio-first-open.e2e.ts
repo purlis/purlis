@@ -19,8 +19,8 @@ import { projectInFront, runningIn } from "../running.js";
  * app against the real core, with the `skill-studio` flag on for the run (`wdio.conf.ts`).
  *
  * The fixture project has no skill of its own, so the studio offers its three starts above the
- * skills its chats already get, and each one works: *Make one with a chat* opens a chat, *Browse
- * sources* moves to the skill sources, and *Start blank* makes a skill from the blank template.
+ * skills its chats already get, and each one works: *Ask a chat to draft a skill* opens a chat,
+ * *Browse sources* moves to the skill sources, and *New skill* makes one from the blank template.
  * The offered sources are listed, and one click fills in Add source and asks before anything is
  * added; the spec cancels there, so nothing is fetched. A project whose skills are still in the
  * old folder is offered the move. What is offered when is the core's seam test
@@ -78,7 +78,7 @@ describe("the Skill studio's first open", function () {
     for (const dir of [...made].reverse()) if (existsSync(dir)) rmdirSync(dir);
   });
 
-  it("offers three starts in an empty studio, and Browse sources and Start blank work", async () => {
+  it("offers three starts in an empty studio, and Browse sources and New skill work", async () => {
     await runFromThePalette("Open Skill studio", "skills.studio");
     const empty = await starts();
     await expect(empty).toHaveText(/This project has no skills of its own yet/);
@@ -92,7 +92,7 @@ describe("the Skill studio's first open", function () {
       { timeout: 10_000, timeoutMsg: "Browse sources did not move to the skill sources" },
     );
 
-    await (await empty.$("button=Start blank")).click();
+    await (await empty.$("button=New skill")).click();
     await typeInto("Name", BLANK);
     await typeInto("What it does and when to use it", "Probes starting a skill blank.");
     await (await $("button=Make it")).click();
@@ -103,16 +103,16 @@ describe("the Skill studio's first open", function () {
     rmSync(join(root, "skills", BLANK), { recursive: true, force: true });
   });
 
-  it("opens a chat from Make one with a chat", async () => {
+  it("opens a chat from the empty studio's Ask a chat to draft a skill", async () => {
     // A studio tab opened afresh reads the project again.
     await focusWorkspace("alpha");
     await closeTheViewTabsOpenedSince(wereOpen);
     await runFromThePalette("Open Skill studio", "skills.studio");
     const empty = await starts();
-    await (await empty.$("button=Make one with a chat")).click();
+    await (await empty.$("button=Ask a chat to draft a skill")).click();
     await browser.waitUntil(
       async () => (await runningIn(plane)).some((one) => !wereRunning.includes(one)),
-      { timeout: 30_000, timeoutMsg: "Make one with a chat started no chat" },
+      { timeout: 30_000, timeoutMsg: "Ask a chat to draft a skill started no chat" },
     );
     await endTheSessionsStartedSince(wereRunning);
   });
@@ -146,7 +146,9 @@ describe("the Skill studio's first open", function () {
     await runFromThePalette("Open Skill studio", "skills.studio");
     const notice = await $('[data-testid="skill-studio-unmoved"]');
     await notice.waitForExist({ timeout: 20_000 });
-    await expect(notice).toHaveText(/This project keeps 1 skill where only Claude Code reads/);
+    await expect(notice).toHaveText(
+      /This project keeps 1 skill where only some chat programs read them/,
+    );
     await expect($("button=Move them")).toExist();
   });
 });

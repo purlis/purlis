@@ -109,7 +109,7 @@ describe("the empty Skill studio", () => {
     const starts = within(empty).getByRole("list", { name: "Ways to start a skill" });
     expect(within(starts).getAllByRole("listitem")).toHaveLength(3);
 
-    await user.click(within(starts).getByRole("button", { name: "Make one with a chat" }));
+    await user.click(within(starts).getByRole("button", { name: "Ask a chat to draft a skill" }));
     window.removeEventListener(SKILL_CHAT, heard);
     expect(asks).toEqual([{ plane: "p", kind: "draft", level: PROJECT }]);
 
@@ -118,7 +118,7 @@ describe("the empty Skill studio", () => {
       expect(screen.getByRole("heading", { name: "Skill sources" })).toHaveFocus(),
     );
 
-    await user.click(within(starts).getByRole("button", { name: "Start blank" }));
+    await user.click(within(starts).getByRole("button", { name: "New skill" }));
     expect(await screen.findByRole("form", { name: "New skill" })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Starts from" })).toHaveTextContent("Blank");
     expect(screen.queryByTestId("skill-studio-empty")).not.toBeInTheDocument();
@@ -187,7 +187,7 @@ describe("skills still to move into the studio", () => {
     render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
 
     expect(await screen.findByTestId("skill-studio-unmoved")).toHaveTextContent(
-      "This project keeps 2 skills where only Claude Code reads its skills.",
+      "This project keeps 2 skills where only some chat programs read them.",
     );
     await user.click(screen.getByRole("button", { name: "Move them" }));
     await waitFor(() =>

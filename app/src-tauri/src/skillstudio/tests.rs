@@ -373,12 +373,19 @@ fn a_studio_with_only_built_in_skills_lists_them_and_offers_the_starts_and_the_s
 
     assert_eq!(studio.skills.len(), 1);
     assert!(studio.first.starts);
-    let offered = purlis_core::skills::first_open::offered();
-    assert_eq!(studio.first.sources.len(), offered.len());
-    let first = &studio.first.sources[0];
-    assert_eq!(first.name, offered[0].name);
-    assert_eq!(first.source.remote.url, offered[0].source.remote.url);
-    assert_eq!(first.source.kept, crate::skillsources::SourceKept::Shared);
+    let anthropic = studio
+        .first
+        .sources
+        .iter()
+        .find(|one| one.source.remote.url == "https://github.com/anthropics/skills")
+        .expect("Anthropic's skills are offered");
+    assert_eq!(anthropic.offering, SourceOffering::WellKnown);
+    assert_eq!(anthropic.source.folder.as_deref(), Some("skills"));
+    assert_eq!(
+        anthropic.source.kept,
+        crate::skillsources::SourceKept::Shared
+    );
+    assert!(!anthropic.why.is_empty());
     assert_eq!(studio.first.unmoved, None);
 
     skill(

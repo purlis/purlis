@@ -103,7 +103,7 @@ fn read(text: &str) -> Result<Vec<OfferedSource>, String> {
 
 /// **Every source the studio offers**, the first-party catalogue's first, in the list's order.
 /// None where the list cannot all be read: the build's own test reads it first.
-pub fn offered() -> Vec<OfferedSource> {
+pub(crate) fn offered() -> Vec<OfferedSource> {
     let mut all = read(OFFERED).unwrap_or_else(|why| {
         tracing::warn!(target: "purlis::skills", "no skill source is offered: {why}");
         Vec::new()

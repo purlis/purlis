@@ -211,7 +211,10 @@ export function SkillSources({
           <h4>Sources to start from</h4>
           <ul className="skill-source-list">
             {offered.map((one) => (
-              <li key={one.source.remote.url} data-testid="skill-source-offered">
+              <li
+                key={`${one.source.remote.url}\u0000${one.source.folder ?? ""}`}
+                data-testid="skill-source-offered"
+              >
                 <FolderGit2 className="node-icon" aria-hidden="true" /> <strong>{one.name}</strong>
                 {one.offering === "catalogue" && " · from purlis"}: {one.why}{" "}
                 <Button
@@ -220,7 +223,7 @@ export function SkillSources({
                   aria-label={`Add ${one.name}`}
                   onPress={() => setOpen({ what: "add", offered: one })}
                 >
-                  Add
+                  Add…
                 </Button>
               </li>
             ))}
