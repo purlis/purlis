@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792851512362,
+  "lastUpdate": 1792853457602,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -23730,6 +23730,48 @@ window.BENCHMARK_DATA = {
             "value": 101.621388,
             "unit": "ms",
             "extra": "median of 5 runs: 101.382, 101.451, 101.621, 101.638, 101.714 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4dde3ea831eeb7293f85d28c59f9d0bbceaa9d16",
+          "message": "SK-43: refuse a listing past the cap even when git exits first (#3146)\n\n* Move worktree::git's tests into git/tests.rs\n\nMove only: the inline `mod tests` of worktree/git.rs moves to its own\nfile, as CONTRIBUTING's \"Where tests live\" asks, and rustfmt dedents\nit. No test changes.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-43: refuse a listing past the cap even when git exits first\n\nrun_capped read its \"over the cap\" flag as soon as git exited. git can\nexit before the reader thread has counted its last chunk; the flag was\nstill false then, and the listing came back cut short as if whole. On a\nloaded runner that let the 50 001-entry source through to the skill\ncount, which refused it as \"more than 200 skills\" after 70 s instead of\n\"more than 50000 files\".\n\nThe reader's own answer now decides: the whole listing, None past the\ncap, or the read error that cut it short. An interrupted read is read\nagain. An exited git is heard in full, as wait_raw_until already does\nfor its readers, and a reader that never answers is an error, never an\nempty listing.\n\nA test-only hook beside run_capped runs before each read on the\nreader's thread, set per calling thread behind a drop guard. The tests\nstall the reader so git's exit beats the count, fail a read, interrupt\none and kill the reader; each goes red on the old behaviour.\n\nCloses #3115\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-43: a reader that never answers is an error, whatever git's code\n\nA dead reader closes the pipe, so git can end on SIGPIPE with no exit\ncode, the same as a call stopped at the deadline; the arm that let that\nthrough as an empty listing went red 7 times in 50 local runs. Any call\nwhose reader never answered, and that was not past the cap, is now an\nerror.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-43: an unread listing is said as one, not as git missing\n\nA failed read or a reader that never answered became GitUnavailable,\nwhich says \"purlis could not run git … Install git, or put it on PATH\",\nthough git ran. run_capped now answers such a call as one with no code,\nas for a call stopped at the deadline, its err saying the listing could\nnot be read; the skill-source listing refuses it as \"{remote}'s files\ncould not be listed\". The tests assert the sentence and that it never\nmentions installing git.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-24T18:49:41+04:00",
+          "tree_id": "d930bab4f8ca15004121889c6abaf94bc17cbc68",
+          "url": "https://github.com/purlis/purlis/commit/4dde3ea831eeb7293f85d28c59f9d0bbceaa9d16"
+        },
+        "date": 1792853455824,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4555965,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.449, 0.454, 0.456, 0.471, 0.526 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2572365,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.225, 16.231, 16.257, 16.280, 16.445 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.5351785,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.215, 101.450, 101.535, 101.693, 102.208 ms"
           }
         ]
       }
