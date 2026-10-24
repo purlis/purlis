@@ -31,18 +31,10 @@ describe("Card", () => {
     expect(drawnWith(card, "border-radius")).toBe("var(--radius-lg)");
   });
 
-  it("draws a raised card on the raised ground with the hairline, and a flush one with no room", () => {
-    render(
-      <>
-        <Card data-testid="raised">x</Card>
-        <Card flush data-testid="flush">
-          y
-        </Card>
-      </>,
-    );
+  it("draws a raised card on the raised ground with the hairline", () => {
+    render(<Card data-testid="raised">x</Card>);
     const raised = screen.getByTestId("raised");
     expect(drawnWith(raised, "background-color")).toBe("var(--surface-raised)");
     expect(drawnWith(raised, "border")).toBe("1px solid var(--border-subtle)");
-    expect(drawnWith(screen.getByTestId("flush"), "padding")).toBe("0");
   });
 });

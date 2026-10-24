@@ -7,7 +7,8 @@
   each host's status: "Waiting for you" on the amber wash until you confirm it, then
   "Confirmed". The line between two groups (a menu's sections, a dialog's footer, the rows of the
   Inbox's Notices) is its own part, as thick as the theme's `separator.width`, 0 for none, and in
-  Purlis no button or field draws a border; Allow keeps its accent edge. A theme sets these
+  Purlis a plain or primary button and a field draw no border at any size; Allow and a
+  destructive answer keep theirs. A theme sets these
   through `card.*`, `notice.*`, `badge.*`, `count.*` and `separator.*` parts, and `purlis theme
   parts` lists them; a card's or a Notice's fill is held to a ground an Allow on it is measured on
   (#2912).

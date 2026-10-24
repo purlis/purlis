@@ -37,7 +37,7 @@ fn sheet_of(parts: Value) -> String {
 // ---------------------------------------------------------------------------------------
 
 #[test]
-fn the_content_families_are_in_the_manifest_at_version_9() {
+fn the_content_families_are_in_the_manifest_at_version_10() {
     let manifest = parts::manifest_json();
     let families = manifest["families"].as_array().unwrap();
     let of = |name: &str| -> (Vec<String>, Vec<(String, bool)>) {
@@ -45,7 +45,7 @@ fn the_content_families_are_in_the_manifest_at_version_9() {
             .iter()
             .find(|one| one["name"] == name)
             .unwrap_or_else(|| panic!("{name} is in the manifest"));
-        assert_eq!(family["since"], 9, "{name}");
+        assert_eq!(family["since"], 10, "{name}");
         let parts = family["parts"]
             .as_array()
             .unwrap()
@@ -81,7 +81,7 @@ fn the_content_families_are_in_the_manifest_at_version_9() {
         of("notice"),
         (
             named(&["root", "message", "whose"]),
-            plain(&["news", "trouble"])
+            vec![("news".into(), true), ("trouble".into(), true)]
         )
     );
     assert_eq!(
@@ -260,26 +260,28 @@ fn the_separator_width_is_a_geometry_step_from_0_to_2_px() {
 // ---------------------------------------------------------------------------------------
 
 #[test]
-fn purlis_s_controls_take_no_border_and_allow_keeps_its_edge() {
+fn purlis_s_controls_take_no_border_at_any_size_and_allow_keeps_its_edge() {
     for theme in &purlis().appearances {
         let sheet = parts::stylesheet(theme);
-        for family in ["button", "text-input", "textarea"] {
-            assert!(
-                sheet.lines().any(|line| line
-                    .contains(&format!("[data-scope=\"{family}\"][data-part=\"root\"]"))
-                    && line.contains("border-width: 0px")),
-                "Purlis {}: {family}: {sheet}",
-                theme.id
-            );
-        }
-        assert!(
-            sheet
+        let roots = [
+            "[data-scope=\"button\"][data-part=\"root\"][data-variant=\"secondary\"]",
+            "[data-scope=\"button\"][data-part=\"root\"][data-variant=\"primary\"]",
+            "[data-scope=\"text-input\"][data-part=\"root\"]",
+            "[data-scope=\"textarea\"][data-part=\"root\"]",
+        ];
+        for root in roots {
+            // The edge is taken off by its colour, which reaches the small, the large and a
+            // wrapping row's controls as it reaches the default size.
+            let line = sheet
                 .lines()
-                .any(|line| line.contains("[data-variant=\"grants\"]")
-                    && line.contains("border-width: 1px")),
-            "Purlis {}: Allow keeps its edge: {sheet}",
-            theme.id
-        );
+                .find(|line| line.contains(&format!(":where({root})")))
+                .unwrap_or_else(|| panic!("Purlis {}: {root}: {sheet}", theme.id));
+            assert!(line.contains("border-color: transparent"), "{line}");
+            assert!(!line.contains(":not("), "{line}");
+        }
+        // Allow and danger, the consent variants, are untouched: each keeps the family's edge.
+        assert!(!sheet.contains("[data-variant=\"grants\"]"), "{sheet}");
+        assert!(!sheet.contains("[data-variant=\"danger\"]"), "{sheet}");
         assert!(
             sheet.contains(
                 ":where([data-scope=\"card\"][data-part=\"root\"]) { background-color: var(--surface-base); }"
@@ -400,4 +402,75 @@ fn the_content_families_defaults_are_what_their_stylesheets_draw() {
             assert_eq!(held[2], border, "{family} {variant}: border");
         }
     }
+}
+
+// ---------------------------------------------------------------------------------------
+// A Notice's waiting edge, an ask's hue and the separator's colour
+// ---------------------------------------------------------------------------------------
+
+/// Whether `parts` over Purlis Classic draw `look` as its family default in every appearance.
+fn falls(parts: Value, look: &str) -> bool {
+    let loaded = load(&with_parts(parts));
+    assert!(!loaded.refused, "{:?}", said(&loaded));
+    loaded
+        .theme
+        .appearances
+        .iter()
+        .all(|theme| parts::fallen(theme).iter().any(|one| one.part == look))
+}
+
+#[test]
+fn a_notice_s_edge_that_would_not_show_draws_its_default() {
+    // No edge at all.
+    assert!(falls(
+        json!({ "notice.root.border-colour": "transparent" }),
+        "notice.root.news"
+    ));
+    // An edge lost on a fill of its own colour.
+    assert!(falls(
+        json!({ "notice.root.fill": "border.subtle", "notice.root.border-colour": "border.subtle" }),
+        "notice.root.news"
+    ));
+    // An edge lost on its ground, through a fill of none.
+    assert!(falls(
+        json!({ "notice.root.fill": "transparent", "notice.root.border-colour": "surface.raised" }),
+        "notice.root.news"
+    ));
+}
+
+#[test]
+fn an_ask_s_edge_in_the_accent_draws_its_default() {
+    assert!(falls(
+        json!({ "card.root.ask.border-colour": "accent.base" }),
+        "card.root.ask"
+    ));
+    assert!(falls(
+        json!({ "notice.root.trouble.border-colour": "accent.base" }),
+        "notice.root.trouble"
+    ));
+}
+
+#[test]
+fn the_separator_s_colour_reaches_every_line_between_groups() {
+    let sheet = sheet_of(json!({ "separator.root.fill": "border.strong" }));
+    for line in [
+        "[data-scope=\"popover\"][data-part=\"rule\"]",
+        "[data-scope=\"dialog\"][data-part=\"separator\"]",
+        "[data-scope=\"status-bar\"][data-part=\"separator\"]",
+    ] {
+        assert!(sheet.contains(line), "{line}: {sheet}");
+    }
+    assert!(
+        sheet.contains(":root { --separator-fill: var(--border-strong); }"),
+        "{sheet}"
+    );
+    // A family's own key for its line is written after it, so it wins.
+    let sheet = sheet_of(json!({
+        "separator.root.fill": "border.strong",
+        "dialog.separator.fill": "border.subtle",
+    }));
+    assert!(
+        sheet.find("--separator-fill").unwrap() < sheet.find("var(--border-subtle)").unwrap(),
+        "{sheet}"
+    );
 }

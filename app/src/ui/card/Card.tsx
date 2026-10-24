@@ -14,8 +14,6 @@
  *   cannot take Allow's.
  * - **Purlis draws it the Figma way**: the window's fill on its panel, corners 10, no hairline
  *   (#2804, R25); Purlis Classic, on its raised ground with the subtle hairline.
- * - **`flush`** is a card whose rows run to its edges (a list of Notices, a table): no room
- *   inside it and no gap, the rows' own.
  * - **A place, never a look**: `className` gives it a margin, a width or an order.
  */
 import { createElement, type ComponentPropsWithRef, type ReactNode, type Ref } from "react";
@@ -30,15 +28,12 @@ type CardElement = "div" | "li" | "p" | "section" | "article";
 export function Card({
   as = "div",
   variant = "raised",
-  flush = false,
   children,
   ...rest
 }: Omit<ComponentPropsWithRef<"div">, "style" | "ref"> & {
   ref?: Ref<HTMLElement>;
   as?: CardElement;
   variant?: CardVariant;
-  /** Its rows run to its edges: no room inside it. */
-  flush?: boolean;
   children?: ReactNode;
 }) {
   return createElement(
@@ -48,7 +43,6 @@ export function Card({
       "data-scope": "card",
       "data-part": "root",
       "data-variant": variant,
-      "data-flush": flush ? "" : undefined,
     },
     children,
   );

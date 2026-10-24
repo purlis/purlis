@@ -9,6 +9,12 @@
 
    In the `components` layer (`styles.css`), above `App.css`. */
 
+/* The colour every line between groups reads, the separator's own, a row's edge included: a
+   theme's `separator.root.fill` sets it in the `parts` layer above. */
+:root {
+  --separator-fill: var(--border-subtle);
+}
+
 [data-scope="separator"][data-part="root"] {
   flex: none;
   box-sizing: content-box;

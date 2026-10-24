@@ -2547,6 +2547,19 @@ fn consent_broken(
                     ratio,
                 ));
             }
+            // It reads as waiting, never as the accent the primary is drawn in: never nearer the
+            // accent than the family's own edge is, once near it.
+            let from_accent = |border: &str| apart(theme, border, "accent.base");
+            let theirs = edge(&[], family, variant.name, &default_look).and_then(from_accent);
+            if let Some(distance) = own.and_then(from_accent)
+                && distance < super::DANGER_APART
+                && theirs.is_none_or(|theirs| distance < theirs - NO_NEARER)
+            {
+                return Some(Consented::Own(
+                    "an ask's waiting edge stays apart from the accent".to_owned(),
+                    None,
+                ));
+            }
         }
         Consent::Danger => {
             if apart(theme, look.words[0], "accent.base")
@@ -2658,6 +2671,19 @@ fn held_from(
                 });
             }
         }
+        // **A family whose rules set no colour is measured as written alone** (#2912): its
+        // consent variants are drawn in the family's own colours in every tint, which the
+        // token-level floors hold in each tint (`floors.rs`, #2526), and what the theme sets (an
+        // edge's width, a size) is the same in every tint. A family whose rules set a colour is
+        // measured in every tint, as before.
+        let colours = rules.iter().any(|rule| {
+            std::ptr::eq(rule.family, family)
+                && !rule.fallback
+                && rule.values.iter().any(|(property, value)| {
+                    property.is_colour() && !edge_taken_off(rule, *property, *value)
+                })
+        });
+        let drawn_in: &[ResolvedTheme] = if colours { &drawn_in } else { &drawn_in[..1] };
         // At rest and in each state the family names but disabled: a disabled control is
         // exempt, as WCAG has it, and cannot be answered.
         let singles: Vec<Vec<State>> = std::iter::once(Vec::new())
@@ -2677,7 +2703,7 @@ fn held_from(
                 held.readable(theme, states);
             }
             for states in &singles {
-                held.consented(&drawn_in, states);
+                held.consented(drawn_in, states);
             }
             // Then each set of states that hold at once whose look no state alone, nor another
             // set already measured, draws. A fallback can name a state, so the sets are read
@@ -2703,7 +2729,7 @@ fn held_from(
                 }
                 for states in &next {
                     held.readable(theme, states);
-                    held.consented(&drawn_in, states);
+                    held.consented(drawn_in, states);
                 }
             }
             if held.rules.len() == written {
@@ -2712,6 +2738,18 @@ fn held_from(
         }
     }
     (rules, fell)
+}
+
+/// **Whether a rule's colour only takes an edge off a variant that carries no consent**: the same
+/// in every tint, and it only stands that variant further from the answers the floors hold apart
+/// from it (#2912).
+fn edge_taken_off(rule: &Rule, property: Prop, value: PartValue) -> bool {
+    property == Prop::BorderColour
+        && value == PartValue::Colour(TRANSPARENT)
+        && rule
+            .variant
+            .and_then(|name| variant(rule.family.name, name))
+            .is_some_and(|one| one.consent.is_none())
 }
 
 /// The states `family` names but disabled, in the order the stylesheet writes them.
@@ -3349,6 +3387,28 @@ pub fn stylesheet(theme: &ResolvedTheme) -> String {
             }
         }
     }
+    // **The separator's colour reaches every line between groups** (#2912): the other families'
+    // own lines (a menu's rule, a dialog's footer rule, the status bar's line), written before
+    // the families' rules so a family's own key for its line wins, and the hairlines a
+    // stylesheet draws as a row's edge, which read `--separator-fill`.
+    if let Some(PartValue::Colour(token)) = rules
+        .iter()
+        .rev()
+        .filter(|rule| rule.family.name == "separator" && rule.part == 0 && rule.state.is_none())
+        .find_map(|rule| rule.values.get(&Prop::Fill))
+    {
+        let fill = if *token == TRANSPARENT {
+            TRANSPARENT.to_owned()
+        } else {
+            var(token)
+        };
+        let _ = writeln!(
+            sheet,
+            "  :where({}) {{ background-color: {fill}; }}",
+            SEPARATOR_LINES.join(", ")
+        );
+        let _ = writeln!(sheet, "  :root {{ --separator-fill: {fill}; }}");
+    }
     for rule in &rules {
         for sized in [false, true] {
             // Each target with what is drawn on it, in the order the properties are written.
@@ -3379,6 +3439,13 @@ pub fn stylesheet(theme: &ResolvedTheme) -> String {
     sheet.push_str("}\n");
     sheet
 }
+
+/// The other families' lines between groups, which the separator part's colour reaches too.
+const SEPARATOR_LINES: &[&str] = &[
+    "[data-scope=\"popover\"][data-part=\"rule\"]",
+    "[data-scope=\"dialog\"][data-part=\"separator\"]",
+    "[data-scope=\"status-bar\"][data-part=\"separator\"]",
+];
 
 // --- The manifest as JSON ----------------------------------------------------------------------
 

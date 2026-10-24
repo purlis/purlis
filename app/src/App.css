@@ -2219,7 +2219,7 @@ button.show-more:focus-visible {
   justify-content: space-between;
   margin-top: var(--space-1);
   padding: var(--space-2) var(--space-3) var(--space-1);
-  border-top: 1px solid var(--border-subtle);
+  border-top: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
   color: var(--text-secondary);
   font-size: var(--font-size-md);
 }
@@ -3273,7 +3273,7 @@ button.show-more:focus-visible {
 .explorer .cockpit-head {
   margin-block-end: var(--space-4);
   padding-block-end: var(--space-4);
-  border-block-end: 1px solid var(--border-subtle);
+  border-block-end: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
 .explorer .cockpit-name {
@@ -3468,7 +3468,7 @@ button.show-more:focus-visible {
 }
 
 .explorer .absent {
-  border-top: 1px solid var(--border-subtle);
+  border-top: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
   margin-top: var(--space-4);
   padding-top: var(--space-2);
   opacity: 0.7;
@@ -4097,7 +4097,7 @@ button.show-more:focus-visible {
   padding: var(--space-2) var(--space-5);
   font-size: var(--font-size-sm);
   background: var(--border-subtle);
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
 .came-back code {
@@ -4182,7 +4182,7 @@ button.show-more:focus-visible {
   gap: var(--space-3);
   align-items: baseline;
   padding: var(--space-1) 0;
-  border-top: 1px solid var(--border-subtle);
+  border-top: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
 .ending .what {
@@ -4397,7 +4397,7 @@ button.show-more:focus-visible {
   padding: var(--space-3) var(--space-3) var(--space-5);
 }
 .panels > section + section {
-  border-top: 1px solid var(--layer-divider);
+  border-top: var(--separator-width) solid var(--separator-fill, var(--layer-divider));
 }
 .panels ul {
   list-style: none;
@@ -4786,7 +4786,7 @@ button.show-more:focus-visible {
   display: flex;
   gap: var(--space-3);
   align-items: baseline;
-  border-top: 1px solid var(--border-subtle);
+  border-top: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
 .recents li button {
@@ -4816,7 +4816,7 @@ button.show-more:focus-visible {
 
 .first-run-found li {
   padding: var(--space-2) 0;
-  border-top: 1px solid var(--border-subtle);
+  border-top: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
 /* The harness setup tab (FR-29): one row per harness, its installer's command on a line of
@@ -4834,7 +4834,7 @@ button.show-more:focus-visible {
 
 .harness-setup-rows li {
   padding: var(--space-3) 0;
-  border-top: 1px solid var(--border-subtle);
+  border-top: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
 .harness-installer {
@@ -4847,7 +4847,7 @@ button.show-more:focus-visible {
    that looks pressable, as the refused profiles' is. */
 .advanced {
   margin-top: var(--space-6);
-  border-top: 1px solid var(--border-subtle);
+  border-top: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
   padding-top: var(--space-5);
 }
 
@@ -5068,7 +5068,7 @@ button.show-more:focus-visible {
   gap: var(--space-3);
   align-items: baseline;
   padding: var(--space-3) 0;
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
   overflow-wrap: anywhere;
 }
 
@@ -5854,7 +5854,7 @@ nav.piece-files-head {
   align-items: baseline;
   padding-block: var(--space-2);
   padding-inline-end: var(--space-3);
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
 .activity-at {
@@ -6199,7 +6199,7 @@ nav.piece-files-head {
   flex-direction: column;
   gap: var(--space-3);
   padding: var(--space-5) var(--space-5);
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 .persona-mark-shown {
   display: flex;
@@ -6872,7 +6872,7 @@ nav.piece-files-head {
 
 .memory-archived {
   padding-top: var(--space-5);
-  border-top: 1px solid var(--border-subtle);
+  border-top: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
 /* A memory's Move (KN-3): under the body, set apart from it by a rule. */
@@ -6880,7 +6880,7 @@ nav.piece-files-head {
   max-width: 60rem;
   margin-top: var(--space-7);
   padding-top: var(--space-5);
-  border-top: 1px solid var(--border-subtle);
+  border-top: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
 /* The repo's agent instructions, offered to a workspace's memory (FR-18a): each file whole, under
@@ -6943,7 +6943,7 @@ nav.piece-files-head {
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-4) var(--space-5);
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
 /* The box and its glass: the field family's (#2905). */
@@ -7102,7 +7102,7 @@ nav.piece-files-head {
   align-items: baseline;
   gap: var(--space-3) var(--space-5);
   padding-bottom: var(--space-4);
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
 /* **One segmented style** (#1696): a radio group drawn as one row of segments, the chosen one
@@ -7225,7 +7225,7 @@ nav.piece-files-head {
   gap: var(--space-1);
   margin-top: var(--space-3);
   padding-top: var(--space-3);
-  border-top: 1px solid var(--border-subtle);
+  border-top: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
 .ui-settings-raw-label {
@@ -7368,7 +7368,7 @@ nav.piece-files-head {
    (its padding and weight come from `.ui-table`, a layer above this one), so the name's own
    words carry the weight. */
 .dispatch-table .dispatch-grant-group {
-  border-block-end: 1px solid var(--border-subtle);
+  border-block-end: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
 .dispatch-grant-group > span:first-child {
@@ -7394,7 +7394,7 @@ nav.piece-files-head {
 }
 
 .dispatch-confirm-row td {
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
 .dispatch-confirm p {
@@ -7502,7 +7502,7 @@ nav.piece-files-head {
   display: grid;
   gap: var(--space-2);
   padding-block: var(--space-5);
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
 .ui-setting-line {

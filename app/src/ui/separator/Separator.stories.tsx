@@ -21,12 +21,10 @@ function Across() {
         background: "var(--surface-raised)",
       }}
     >
-      <Card flush aria-label="Hosts">
-        <p style={{ margin: 0, padding: "var(--space-4) var(--space-5)" }}>
-          Waiting for your Confirm · 2
-        </p>
+      <Card aria-label="Hosts">
+        <p style={{ margin: 0 }}>Waiting for your Confirm · 2</p>
         <Separator />
-        <p style={{ margin: 0, padding: "var(--space-4) var(--space-5)" }}>Confirmed · 17</p>
+        <p style={{ margin: 0 }}>Confirmed · 17</p>
       </Card>
     </div>
   );

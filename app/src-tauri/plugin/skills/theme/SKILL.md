@@ -177,7 +177,7 @@ both are drawn out of the tab's flow, so they move nothing. A heavier chosen tab
 draws a mark on the chosen tab's `top` or `bottom` edge, at most 6px tall. A file's tab joins the
 editor's toolbar (`editor.toolbar.fill`).
 
-Since version 9 the content families have parts too: `card`
+Since version 10 the content families have parts too: `card`
 (`raised`, and `ask`, which keeps its waiting edge), `notice` (its box, `message` and `whose`;
 `news` and `trouble`), `badge`, `count` (and its `group`) and `separator` (its colour; its width
 is the `separator.width` geometry, 0 for no lines). A card's and a Notice's fill must name a

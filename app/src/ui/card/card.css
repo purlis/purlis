@@ -32,13 +32,6 @@
   border-color: var(--state-waiting);
 }
 
-/* A card whose rows run to its edges: the rows hold their own room, and its corners clip them. */
-[data-scope="card"][data-part="root"][data-flush] {
-  gap: 0;
-  padding: 0;
-  overflow: hidden;
-}
-
 [data-scope="card"][data-part="title"] {
   margin: 0;
   color: var(--text-primary);

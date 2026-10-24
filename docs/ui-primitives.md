@@ -622,7 +622,7 @@ ADR 0104), each one wrapper under `app/src/ui/` and its own lint rule at error
 
 | Family | Wrapper | Parts | Variants |
 | --- | --- | --- | --- |
-| Card | `Card` (as a `div`, `li`, `p`, `section` or `article`; `flush` for rows that run to its edges), `CardTitle` (`ui/card/Card.tsx`) | `root`, `title` | `raised`, `ask` |
+| Card | `Card` (as a `div`, `li`, `p`, `section` or `article`), `CardTitle` (`ui/card/Card.tsx`) | `root`, `title` | `raised`, `ask` |
 | Notice | `Notice`, `NoticeList`, `NoticePaneRow` (`src/Notice.tsx`), drawn through `ui/notice/Notice.tsx` | `root`, `message`, `whose`, and `under` (what a way out opened) | `news`, `trouble` |
 | Badge | `Badge`, `HostStatus` (`ui/badge/Badge.tsx`) | `root` | `neutral`, `accent`, `waiting`, `ok` |
 | Count | `Count`, `CountGroup` (`ui/badge/Badge.tsx`) | `root`, `group` | `neutral`, `accent`, `waiting`, `hot` |
@@ -651,12 +651,13 @@ ADR 0104), each one wrapper under `app/src/ui/` and its own lint rule at error
   needs-you colours (`hot`). A badge with a hint is the tooltip's target and a Tab stop. A number
   inside a sentence or a segmented option ("Chats 3") is words, not a count.
 - **A separator is its own part, never a control's border** (#2804, #2877). Its colour is
-  `separator.root.fill`; its width is the theme's `separator.width`, 0 for none, which the menu's
-  rule, the dialog's footer rule, the status bar's line and the rows of the Inbox's list take too.
+  `separator.root.fill`; its width is the theme's `separator.width`, 0 for none. Both reach the
+  menu's rule, the dialog's footer rule, the status bar's line, the rows of the Inbox's list and
+  the hairlines between rows inside a surface (`--separator-fill`).
   One that only parts two marks on a strip is `decorative`, hidden from a screen reader.
-- **Controls take no border in Purlis**: its theme turns the button's, the text input's and the
-  textarea's off (`*.root.border-width: 0`); Allow keeps its accent edge, and a refused field its
-  danger edge, drawn inside the box.
+- **Controls take no border in Purlis**: its theme draws the edge of the plain and the primary
+  button, the text input and the textarea in no colour, at every size; Allow and danger, the
+  consent variants, keep theirs, and a refused field keeps its danger edge, drawn inside the box.
 - **Stories hold them** (`Card.stories.tsx`, `Notice.stories.tsx`, `Badge.stories.tsx`,
   `Separator.stories.tsx`): an ask with Allow and Keep blocked, a pane's row with +N more, the
   Inbox's list, a Notice alone, every badge and count, the hosts' statuses, a badge's hint, and a
