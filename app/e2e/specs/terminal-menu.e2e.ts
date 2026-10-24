@@ -4,6 +4,7 @@
 import { browser, expect } from "@wdio/globals";
 import { closeMenus, openMenuOn, pressMenuRow } from "../acting.js";
 import { endChatsStartedHere, startAChat, type Started } from "../started.js";
+import { theWindowHoldsTheRail, WINDOW_1280, windowAt } from "../rail.js";
 
 /**
  * **A terminal's menu, in the real WebView**: a right-click on a chat's terminal offers Copy,
@@ -62,6 +63,11 @@ async function drawn() {
 }
 
 describe("a terminal's menu", () => {
+  // At 1280×800, where this was held to fit before the default window grew (`rail.ts`,
+  // #3077); the project rail hides itself there beside both sidebars.
+  before(() => windowAt(WINDOW_1280));
+  after(() => theWindowHoldsTheRail());
+
   let mine: Started | undefined;
   const terminal = () => `[data-testid="pane"][data-session="${mine?.session}"] .xterm-screen`;
 

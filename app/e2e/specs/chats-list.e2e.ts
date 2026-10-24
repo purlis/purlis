@@ -7,6 +7,7 @@ import { browser, $ } from "@wdio/globals";
 import { READY } from "../harness.js";
 import { pressAndStart } from "../opening.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
+import { theWindowHoldsTheRail, WINDOW_1280, windowAt } from "../rail.js";
 
 /**
  * **The Chats list in a narrow sidebar, measured** (#1499, V100-50, #1675).
@@ -209,6 +210,11 @@ function whole(seen: Measured | null, least: number) {
 }
 
 describe("the Chats list in a narrow sidebar", () => {
+  // At 1280×800, where this was held to fit before the default window grew (`rail.ts`,
+  // #3077); the project rail hides itself there beside both sidebars.
+  before(() => windowAt(WINDOW_1280));
+  after(() => theWindowHoldsTheRail());
+
   /** The chats running when the file began, so only the ones it started are ended again. */
   let chatsBefore: Running = {};
 
