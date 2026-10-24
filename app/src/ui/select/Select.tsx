@@ -27,14 +27,20 @@
  * - **Drawn only while its project is in front**: its list is the popover family's surface.
  */
 import {
+  useContext,
   useId,
+  useLayoutEffect,
+  useRef,
   useState,
   type ComponentPropsWithRef,
   type KeyboardEvent,
   type ReactNode,
+  type Ref,
+  type RefObject,
 } from "react";
 import {
   Autocomplete,
+  AutocompleteStateContext,
   Button as AriaButton,
   ListBox,
   ListBoxItem,
@@ -121,7 +127,10 @@ export function Select({
       onChange={(key) => {
         if (key === null) return;
         const to = outOf(key as Key);
-        // An option out of reach that says why is in the arrows' way, and is never picked.
+        // An option out of reach that says why is in the arrows' way, and is never picked. **This
+        // is the lock** (D-2906-11): the row drops the press handlers it knows of, but a press
+        // React Aria reaches it by in a later version, typeahead on the closed button and the
+        // form's hidden select all end here, and pick nothing.
         if (!options.some((one) => one.value === to && saysWhy(one))) onValueChange(to);
       }}
       isDisabled={isDisabled}
@@ -187,6 +196,7 @@ export function Select({
 function FilteredList({ options }: { options: readonly SelectOption[] }) {
   const { contains } = useFilter({ sensitivity: "base" });
   const [typed, setTyped] = useState("");
+  const list = useRef<HTMLDivElement>(null);
   return (
     <Autocomplete filter={contains} inputValue={typed} onInputChange={setTyped}>
       <PopoverFilter>
@@ -200,15 +210,42 @@ function FilteredList({ options }: { options: readonly SelectOption[] }) {
           onChange={setTyped}
         />
       </PopoverFilter>
-      <OptionList options={options} none="Nothing matches what you typed." />
+      <OptionList options={options} none="Nothing matches what you typed." listRef={list} />
+      <HeldAim typed={typed} list={list} />
     </Autocomplete>
   );
 }
 
+/**
+ * **The filter never names an option that is not drawn** (D-2906-14). While a person types,
+ * React Aria's Autocomplete holds back moving its `aria-activedescendant` for a moment, so the
+ * letter typed is heard first; the option it still names may be one the typing has just filtered
+ * out, which is an id nothing in the page has. Until the move lands, it names none.
+ */
+function HeldAim({ typed, list }: { typed: string; list: RefObject<HTMLDivElement | null> }) {
+  const autocomplete = useContext(AutocompleteStateContext);
+  const aimed = autocomplete?.focusedNodeId ?? null;
+  useLayoutEffect(() => {
+    if (aimed === null) return;
+    const drawn = list.current?.querySelector(`[id="${CSS.escape(aimed)}"]`) ?? null;
+    if (drawn === null) autocomplete?.setFocusedNodeId(null);
+  }, [typed, aimed, list, autocomplete]);
+  return null;
+}
+
 /** **The options**: each one the menu family's row, its tick at its end while it is picked. */
-function OptionList({ options, none }: { options: readonly SelectOption[]; none?: string }) {
+function OptionList({
+  options,
+  none,
+  listRef,
+}: {
+  options: readonly SelectOption[];
+  none?: string;
+  listRef?: Ref<HTMLDivElement>;
+}) {
   return (
     <ListBox
+      ref={listRef}
       data-scope="popover"
       data-part="list"
       renderEmptyState={() => (
