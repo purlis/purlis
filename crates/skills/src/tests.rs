@@ -1379,6 +1379,11 @@ fn a_lifecycle_word_purlis_does_not_know_leaves_the_skill_working() {
 
 // ---- links (SK-36) --------------------------------------------------------------------------
 
+/// What a person is shown for a folder purlis left out as a link.
+fn link() -> String {
+    Reason::NotASkill(Missing::Link).to_string()
+}
+
 #[cfg(unix)]
 #[test]
 fn a_linked_skill_folder_on_any_level_is_left_out_saying_purlis_does_not_read_it() {
@@ -1398,14 +1403,43 @@ fn a_linked_skill_folder_on_any_level_is_left_out_saying_purlis_does_not_read_it
     let set = plane.set(Some("smart-ide"));
 
     assert!(set.effective.is_empty(), "{:?}", set.effective);
-    let link = "a link, so purlis doesn't read it".to_owned();
     assert_eq!(
         left_out(&set),
         [
-            ("linked", Origin::Project, false, link.clone()),
-            ("linked", Origin::Project, true, link.clone()),
-            ("linked", Origin::Workspace, false, link.clone()),
-            ("linked", Origin::Workspace, true, link),
+            ("linked", Origin::Project, false, link()),
+            ("linked", Origin::Project, true, link()),
+            ("linked", Origin::Workspace, false, link()),
+            ("linked", Origin::Workspace, true, link()),
         ]
+    );
+    assert_eq!(link(), "a link, so purlis doesn't read it");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_workspace_or_persona_folder_that_is_a_link_is_never_read_through() {
+    let plane = Plane::new();
+    let outside = plane._tmp.path().join("outside");
+    for dir in [PROJECT_DIR, LOCAL_DIR] {
+        skill(&outside.join(dir), "secret", &whole("secret"));
+    }
+    std::os::unix::fs::symlink(&outside, plane.root.join("workspaces/linked")).unwrap();
+    std::fs::create_dir_all(plane.root.join("personas")).unwrap();
+    std::os::unix::fs::symlink(&outside, plane.root.join("personas/linked")).unwrap();
+
+    let set = plane.as_persona(Some("linked"), "linked", &[], None, None);
+
+    assert!(set.effective.is_empty(), "{:?}", set.effective);
+    let reasons: Vec<(Origin, String)> = set
+        .left_out
+        .iter()
+        .map(|one| (one.origin, one.reason.to_string()))
+        .collect();
+    assert_eq!(reasons.len(), 4, "{reasons:?}");
+    assert!(
+        reasons.iter().all(|(origin, why)| {
+            matches!(origin, Origin::Persona | Origin::Workspace) && *why == link()
+        }),
+        "{reasons:?}"
     );
 }

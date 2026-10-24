@@ -1,9 +1,3 @@
 ### Security
 
-- **A skill folder that is a link is never read** (Skill studio preview, #3017). A folder in a
-  project's, workspace's or persona's skills that is a link, a `SKILL.md` that is one, and a
-  skills folder that is one itself are left out of every chat, and the Skill studio lists each
-  as "a link, so purlis doesn't read it". A chat that loads its own skills is never shown the
-  names of files a link leads to. A `SKILL.md` larger than purlis reads is left out too, and
-  says so. An empty choice of chat program now means the same to every part of purlis: the
-  chat is Claude Code's, as when none is named.
+- **A skill folder that is a link is never read** (Skill studio preview, #3017). purlis leaves out of every chat any skill whose folder is a link, whose `SKILL.md` is a link or a hard link, or whose skills folder, workspace or persona is a link. The Skill studio lists each one as "a link, so purlis doesn't read it". A chat that loads one of its skills is never shown a file a link leads to, even when a folder is swapped for a link after the chat's skills were read. A `SKILL.md` larger than purlis reads (256 KiB) is also left out, and the studio says so. An empty choice of chat program now means the same to every part of purlis: the chat is Claude Code's, as when none is named.

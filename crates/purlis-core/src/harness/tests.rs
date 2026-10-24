@@ -8,7 +8,9 @@ use std::collections::BTreeMap;
 fn a_registry_name_and_a_kind_word_each_name_their_harness_and_none_is_claude_code() {
     // SK-36: the one rule from the name a chat carries to a harness.
     for kind in crate::profiles::KINDS {
+        // #1421 review: `PURLIS_HARNESS` holds the registry name, so the adapter is found by it.
         let harness = Harness::of_registry_or_kind(kind.registry).expect(kind.registry);
+        assert_eq!(harness.name(), kind.word);
         assert_eq!(Harness::of_registry_or_kind(kind.word), Some(harness));
         assert_eq!(Harness::of_chat(Some(kind.registry)), Some(harness));
     }

@@ -184,11 +184,8 @@ fn a_skill_folder_that_is_a_link_out_of_the_level_is_left_out_as_a_link_and_neve
     // A link to a file beside the folders is a file, which is nothing.
     std::os::unix::fs::symlink(outside.join("secret.txt"), level.join("stray.md")).unwrap();
 
-    let mut scanned = scan(&level);
-    scanned.sort_by_key(|one| format!("{one:?}"));
-
     assert_eq!(
-        scanned,
+        scan(tmp.path(), Path::new("skills")),
         [
             Err((level.join("linked"), Missing::Link)),
             Ok(Skill {
@@ -200,41 +197,61 @@ fn a_skill_folder_that_is_a_link_out_of_the_level_is_left_out_as_a_link_and_neve
     );
     let names: Vec<String> = read(&level).into_iter().map(|s| s.name).collect();
     assert_eq!(names, ["whole"]);
-    // And were it handed on by its path, a load names nothing of what it leads to.
+    // And were it handed on by its path, nothing of what it leads to is named.
     assert!(crate::other_files(&level.join("linked/SKILL.md")).is_empty());
 }
 
 #[cfg(unix)]
 #[test]
-fn a_skill_md_that_is_a_link_is_left_out_as_a_link() {
+fn a_skill_md_that_is_a_link_or_has_a_second_name_is_left_out_as_a_link() {
     let tmp = tempfile::tempdir().unwrap();
     let outside = outside(tmp.path());
     let level = tmp.path().join("skills");
     std::fs::create_dir_all(level.join("borrowed")).unwrap();
     std::os::unix::fs::symlink(outside.join("SKILL.md"), level.join("borrowed/SKILL.md")).unwrap();
+    // A hard link reaches past the folder as a link does.
+    std::fs::create_dir_all(level.join("twinned")).unwrap();
+    std::fs::hard_link(outside.join("SKILL.md"), level.join("twinned/SKILL.md")).unwrap();
 
-    assert_eq!(scan(&level), [Err((level.join("borrowed"), Missing::Link))]);
+    assert_eq!(
+        scan(tmp.path(), Path::new("skills")),
+        [
+            Err((level.join("borrowed"), Missing::Link)),
+            Err((level.join("twinned"), Missing::Link)),
+        ]
+    );
+    assert_eq!(
+        crate::read_skill_md(&level.join("twinned/SKILL.md")),
+        Err(crate::Refusal::FileLink)
+    );
 }
 
 #[cfg(unix)]
 #[test]
-fn a_level_folder_that_is_a_link_is_left_out_as_a_link_whatever_it_leads_to() {
+fn a_level_any_part_of_whose_path_is_a_link_is_left_out_as_a_link_whatever_it_leads_to() {
     let tmp = tempfile::tempdir().unwrap();
     let elsewhere = tmp.path().join("elsewhere");
     skill(
-        &elsewhere,
+        &elsewhere.join("skills"),
         "far",
         "---\nname: far\ndescription: Far away.\n---\n",
     );
-    let level = tmp.path().join("skills");
-    std::os::unix::fs::symlink(&elsewhere, &level).unwrap();
+    let root = tmp.path().join("plane");
+    std::fs::create_dir_all(root.join("workspaces")).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, root.join("workspaces/linked")).unwrap();
+    std::os::unix::fs::symlink(elsewhere.join("skills"), root.join("skills")).unwrap();
 
-    assert_eq!(scan(&level), [Err((level.clone(), Missing::Link))]);
-    assert!(read(&level).is_empty());
+    for rel in ["skills", "workspaces/linked/skills"] {
+        assert_eq!(
+            scan(&root, Path::new(rel)),
+            [Err((root.join(rel), Missing::Link))],
+            "{rel}"
+        );
+    }
 
     let plugin = tmp.path().join("plugin");
     std::fs::create_dir_all(&plugin).unwrap();
-    std::os::unix::fs::symlink(&elsewhere, plugin.join(DIR_IN_BUNDLE)).unwrap();
+    std::os::unix::fs::symlink(elsewhere.join("skills"), plugin.join(DIR_IN_BUNDLE)).unwrap();
     assert_eq!(
         in_bundle(&plugin),
         None,
@@ -243,17 +260,21 @@ fn a_level_folder_that_is_a_link_is_left_out_as_a_link_whatever_it_leads_to() {
 }
 
 #[test]
-fn a_skill_md_larger_than_purlis_reads_is_left_out_as_too_large() {
+fn a_skill_md_larger_than_purlis_reads_is_left_out_saying_the_limit() {
     let tmp = tempfile::tempdir().unwrap();
     let body = "x".repeat(usize::try_from(crate::MOST_BYTES).unwrap());
     skill(
-        tmp.path(),
+        &tmp.path().join("skills"),
         "huge",
         &format!("---\nname: huge\ndescription: Huge.\n---\n{body}"),
     );
 
+    let scanned = scan(tmp.path(), Path::new("skills"));
     assert_eq!(
-        scan(tmp.path()),
-        [Err((tmp.path().join("huge"), Missing::TooLarge))]
+        scanned,
+        [Err((tmp.path().join("skills/huge"), Missing::TooLarge))]
     );
+    let said = crate::Reason::NotASkill(Missing::TooLarge).to_string();
+    assert!(said.contains("(256 KiB)"), "{said}");
+    assert!(!said.contains("not a skill"), "{said}");
 }

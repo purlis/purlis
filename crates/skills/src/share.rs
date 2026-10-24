@@ -15,7 +15,7 @@ use crate::{level_dir, read};
 /// The folder in `dir` whose skill is named `name`: its frontmatter's `name`, which is a
 /// skill's identity, never its folder's name. The first by folder name where two have one.
 pub fn named(dir: &Path, name: &str) -> Option<PathBuf> {
-    let mut found: Vec<PathBuf> = read::scan(dir)
+    let mut found: Vec<PathBuf> = read::scan_dir(dir)
         .into_iter()
         .filter_map(Result::ok)
         .filter(|skill| skill.name == name)

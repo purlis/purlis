@@ -183,80 +183,35 @@ impl Frontmatter {
 }
 
 /// **Reads the `SKILL.md` at `path`, following no link**: refused where its folder or the file
-/// is a link, the file is no plain file or is larger than [`MOST_BYTES`], or it changed from a
-/// plain file into something else while it was opened. The one reader of a skill's own file
-/// for what purlis hands, badges and lints (SK-8).
+/// is a link, the file is no plain file, has a second name or is larger than [`MOST_BYTES`]. The
+/// folder is opened without following a link and the file through its handle
+/// ([`crate::held::Folder`]), so a link put in place after a look is never read through. The one
+/// reader of a skill's own file for what purlis hands, badges and lints (SK-8).
 pub fn read_skill_md(path: &std::path::Path) -> Result<String, Refusal> {
-    if let Some(folder) = path.parent() {
-        let meta = std::fs::symlink_metadata(folder)
-            .map_err(|why| Refusal::Unreadable(why.to_string()))?;
-        if meta.file_type().is_symlink() || !meta.is_dir() {
-            return Err(Refusal::FolderLink);
+    use crate::held::{Folder, Opened};
+    let folder = match path.parent().map(Folder::at) {
+        Some(Opened::Folder(folder)) => folder,
+        Some(Opened::Link) => return Err(Refusal::FolderLink),
+        Some(Opened::Absent) | None => {
+            return Err(Refusal::Unreadable("its folder is not there".to_owned()));
         }
-    }
-    read_plain(path, MOST_BYTES).map_err(|why| match why {
+    };
+    let name = path.file_name().unwrap_or_default();
+    read_held(&folder, name)
+}
+
+/// The `SKILL.md` named `name` in the skill's folder held at `folder`, as [`read_skill_md`]
+/// reads one.
+pub(crate) fn read_held(
+    folder: &crate::held::Folder,
+    name: &std::ffi::OsStr,
+) -> Result<String, Refusal> {
+    use crate::held::NotRead;
+    folder.read(name, MOST_BYTES).map_err(|why| match why {
         NotRead::Unreadable(why) => Refusal::Unreadable(why),
         NotRead::NotPlain => Refusal::FileLink,
         NotRead::TooLarge => Refusal::TooLarge,
     })
-}
-
-/// Why [`read_plain`] read nothing.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum NotRead {
-    /// It could not be read: what the system said.
-    Unreadable(String),
-    /// It is a link or no plain file, or it changed into one while it was opened.
-    NotPlain,
-    /// It is larger than the most asked for.
-    TooLarge,
-}
-
-/// The end of a sentence about the file: "it cannot be read (…)", "it is not a plain file", "it
-/// is too large". The one way a file [`read_plain`] read nothing is said.
-impl std::fmt::Display for NotRead {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Unreadable(why) => write!(f, "it cannot be read ({why})"),
-            Self::NotPlain => f.write_str("it is not a plain file"),
-            Self::TooLarge => f.write_str("it is too large"),
-        }
-    }
-}
-
-/// **The text of the plain file at `path`, following no link**, of at most `most` bytes: refused
-/// where it is a link or no plain file, is larger, or changed from a plain file into something
-/// else while it was opened. The one reader of a skill's files and the file beside its folder.
-pub(crate) fn read_plain(path: &std::path::Path, most: u64) -> Result<String, NotRead> {
-    use std::io::Read as _;
-    let unreadable = |why: std::io::Error| NotRead::Unreadable(why.to_string());
-    let meta = std::fs::symlink_metadata(path).map_err(unreadable)?;
-    if !meta.is_file() {
-        return Err(NotRead::NotPlain);
-    }
-    if meta.len() > most {
-        return Err(NotRead::TooLarge);
-    }
-    let file = std::fs::File::open(path).map_err(unreadable)?;
-    let opened = file.metadata().map_err(unreadable)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt as _;
-        if (opened.dev(), opened.ino()) != (meta.dev(), meta.ino()) {
-            return Err(NotRead::NotPlain);
-        }
-    }
-    if !opened.is_file() {
-        return Err(NotRead::NotPlain);
-    }
-    let mut text = String::new();
-    file.take(most + 1)
-        .read_to_string(&mut text)
-        .map_err(unreadable)?;
-    if text.len() as u64 > most {
-        return Err(NotRead::TooLarge);
-    }
-    Ok(text)
 }
 
 /// Whether a boolean says yes, in any case: `true`, `yes`, `on` or `1`.

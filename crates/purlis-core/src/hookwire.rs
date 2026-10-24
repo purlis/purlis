@@ -4577,6 +4577,46 @@ mod tests {
     use std::sync::mpsc;
 
     #[test]
+    fn an_empty_harness_variable_reads_as_unset_to_every_reader_of_it() {
+        // SK-36: each reader goes through `chat_harness`, so an empty `PURLIS_HARNESS` is a chat
+        // that names none, to the hooks, the permission hook, the MCP server and the sandbox.
+        let unset = |_: &str| None::<String>;
+        let empty = |name: &str| (name == HARNESS_ENV).then(String::new);
+        let sandboxed = |name: &str| match name {
+            HARNESS_ENV => Some(String::new()),
+            crate::hookwire::SANDBOXED_ENV => Some("1".to_owned()),
+            _ => None,
+        };
+        let sandboxed_unset =
+            |name: &str| (name == crate::hookwire::SANDBOXED_ENV).then(|| "1".to_owned());
+        let read = |env: &dyn Fn(&str) -> Option<String>| {
+            let harness = chat_harness(env);
+            (
+                harness.clone(),
+                crate::harness::Harness::of_chat(harness.as_deref()),
+                crate::harness::hooked::Source::of_harness(harness.as_deref()),
+                crate::skills::route_of(harness.as_deref(), &Default::default()),
+                crate::sandboxblock::the_proxy_tells_hosts(harness.as_deref()),
+                sub_agent(Some("a1"), env),
+            )
+        };
+        assert_eq!(read(&empty), read(&unset));
+        assert_eq!(read(&empty).0, None);
+        assert_eq!(
+            read(&empty).1,
+            Some(crate::harness::Harness::ClaudeCode),
+            "a chat that names none is Claude Code's"
+        );
+        let by_the_harness = crate::sandbox::Started::ByTheHarness;
+        assert_eq!(
+            crate::sandbox::writes_are_sandboxed_in(&sandboxed, by_the_harness),
+            crate::sandbox::writes_are_sandboxed_in(&sandboxed_unset, by_the_harness)
+        );
+        let codex = |name: &str| (name == HARNESS_ENV).then(|| "codex".to_owned());
+        assert_eq!(chat_harness(&codex).as_deref(), Some("codex"));
+    }
+
+    #[test]
     fn an_opened_answer_says_no_row_and_reads_an_older_app_s_row_as_nothing() {
         // #1457: a handoff writes no row in the dispatch log now, so the answer carries none.
         // #1445: and what the app has to say about the profile it started on.

@@ -144,61 +144,79 @@ pub struct Loaded {
 
 /// **Loads `effective`, a skill of a chat's set, as a harness that reads `honours` is handed
 /// it**: the `SKILL.md` purlis writes for it ([`crate::handed_text`]), so a load shows what
-/// every other route hands, and the other files of its folder. Nothing is followed through a
-/// link ([`crate::handed::read_skill_md`]): a `SKILL.md` or a folder that is a link is refused,
-/// and a link inside the folder is not named, so a load never hands over a file outside the
-/// skill. Refused, with why, for a `SKILL.md` purlis cannot read or hands to no chat.
+/// every other route hands, and the other files of its folder.
+///
+/// **Nothing is read through a link** (SK-36): its folder is reached from its level's root
+/// ([`Effective::root`]) one part at a time, each opened through the handle of the folder above
+/// without following a link, and its `SKILL.md` and every file it names are read and listed
+/// through that held folder ([`crate::held::Folder`]). So a folder swapped for a link after the
+/// set was read is refused, and a load never reads or names a file outside the skill. Refused,
+/// with why, for a `SKILL.md` purlis cannot read or hands to no chat.
 pub fn load(effective: &Effective, honours: &crate::Honours) -> Result<Loaded, String> {
+    use crate::held::{Folder, Opened};
     let path = &effective.skill.path;
     let name = &effective.skill.name;
     let refused = |why: crate::Refusal| format!("the skill {name} could not be loaded: {why}");
-    let own = crate::handed::read_skill_md(path).map_err(refused)?;
+    let rel = path
+        .parent()
+        .and_then(|folder| folder.strip_prefix(&effective.root).ok());
+    let folder = match rel.map(|rel| Folder::walk(&effective.root, rel)) {
+        Some(Opened::Folder(folder)) => folder,
+        Some(Opened::Link) => return Err(refused(crate::Refusal::FolderLink)),
+        Some(Opened::Absent) | None => {
+            return Err(refused(crate::Refusal::Unreadable(
+                "its folder is not there".to_owned(),
+            )));
+        }
+    };
+    let own = crate::handed::read_held(&folder, crate::FILE.as_ref()).map_err(refused)?;
     let text = crate::handed_text(&own, honours).map_err(refused)?;
     Ok(Loaded {
         narrowing: narrowing(&text),
         text,
-        files: other_files(path),
+        files: files_in(&folder),
     })
 }
 
 /// **Every other file of the folder of the skill whose `SKILL.md` is at `skill_md`**, by its
 /// whole path, in order: plain files only, never one reached through a link, to [`MOST_DEPTH`]
-/// and at most [`MOST_FILES`]. What a load names, and what the lint reads (SK-8).
+/// and at most [`MOST_FILES`]. The folder is opened without following a link, and nothing in it
+/// is named for a folder that is one. What the lint reads (SK-8).
 pub fn other_files(skill_md: &Path) -> Vec<PathBuf> {
-    let mut files = Vec::new();
-    // A folder that is a link names nothing: what it leads to is outside the skill (SK-36).
-    if let Some(folder) = skill_md
-        .parent()
-        .filter(|folder| std::fs::symlink_metadata(folder).is_ok_and(|meta| meta.is_dir()))
-    {
-        others(folder, skill_md, 0, &mut files);
+    match skill_md.parent().map(crate::held::Folder::at) {
+        Some(crate::held::Opened::Folder(folder)) => files_in(&folder),
+        _ => Vec::new(),
     }
+}
+
+/// Every other file of the skill held at `folder`, as [`other_files`] names them.
+fn files_in(folder: &crate::held::Folder) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    others(folder, 0, &mut files);
     files.sort();
     files.truncate(MOST_FILES);
     files
 }
 
-/// Every plain file under `dir` but `skill_md`, into `files`, to [`MOST_DEPTH`] and at most
-/// [`MOST_FILES`]: never through a link, which is not named either.
-fn others(dir: &Path, skill_md: &Path, depth: usize, files: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    let mut paths: Vec<PathBuf> = entries.filter_map(Result::ok).map(|e| e.path()).collect();
-    paths.sort();
-    for path in paths {
+/// Every plain file under the held folder `dir` but a `SKILL.md`, into `files`, to
+/// [`MOST_DEPTH`] and at most [`MOST_FILES`]: each folder opened through the handle of the one
+/// above, never through a link, which is not named either.
+fn others(dir: &crate::held::Folder, depth: usize, files: &mut Vec<PathBuf>) {
+    use crate::held::{Kind, Opened};
+    for name in dir.names() {
         if files.len() >= MOST_FILES {
             return;
         }
-        let Ok(meta) = std::fs::symlink_metadata(&path) else {
-            continue;
-        };
-        // Only the top `SKILL.md` is the skill's: a nested one is no file of it a harness is
-        // handed, so it never reads as a skill of its own.
-        if meta.is_file() && path != skill_md && path.file_name() != Some(crate::FILE.as_ref()) {
-            files.push(path);
-        } else if meta.is_dir() && depth + 1 < MOST_DEPTH {
-            others(&path, skill_md, depth + 1, files);
+        match dir.kind(&name) {
+            // Only the top `SKILL.md` is the skill's: a nested one is no file of it a harness is
+            // handed, so it never reads as a skill of its own.
+            Some(Kind::File) if name != crate::FILE => files.push(dir.shown().join(&name)),
+            Some(Kind::Folder) if depth + 1 < MOST_DEPTH => {
+                if let Opened::Folder(inner) = dir.child(&name) {
+                    others(&inner, depth + 1, files);
+                }
+            }
+            _ => {}
         }
     }
 }
