@@ -10,7 +10,7 @@ import { forgetThisLaunch } from "../regions";
 import { GLOBAL } from "../windowprefs";
 import { forgetGroups } from "./links";
 import type { EntryWritten, SettingsFile, SettingsWhich } from "../bindings";
-import { pickIn } from "../primitives/select.testkit";
+import { pickIn } from "../ui/select/select.testkit";
 
 /**
  * **Settings › Sandbox's hosts** (#1341): the project's own hosts, kept in `charter.toml` and

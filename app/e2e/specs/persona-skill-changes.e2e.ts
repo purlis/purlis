@@ -130,7 +130,7 @@ describe("changing a persona's own skills", function () {
 
   it("moves it into the project's skills after asking its grant, and the persona keeps it", async () => {
     // Move to's first level is the project's shared skills.
-    const picker = `[role="combobox"][aria-label="Move ${RENAMED} to"]`;
+    const picker = `[data-scope="select"][data-part="root"][aria-label="Move ${RENAMED} to"]`;
     await $(picker).waitForExist({ timeout: 20_000 });
     await browser.execute((css: string) => {
       document.querySelector<HTMLElement>(css)?.click();

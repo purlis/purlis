@@ -157,14 +157,17 @@ refused if it tries. A button stays at least 24px tall with its words fitting, i
 and a geometry token is held to the same bounds at the value the theme draws it at. Whatever the
 theme changes, Allow (`grants`) keeps its accent edge and Keep blocked's fill, and no part draws
 Allow or danger nearer the primary than the family does: a look that would is drawn as the
-family default. The button, the fields, the tooltip and the dialog have parts so far: `field`
+family default. The button, the fields, the tooltip, the dialog and the selects have parts so
+far: `field`
 (its label, help and error), `text-input` (the one-line box and its glass), `textarea` and
 `tooltip` (its `root`, the surface: colours, edge, corners and shadow, no sizes; and `detail`, an
 icon button's second line), which have no variants, so a key names the part alone
 (`"text-input.root.border-width": 0` turns off every one-line box's edge); and `dialog`
 (`dialog.root.corner-radius`, `dialog.title.font-size`, `dialog.separator.fill`, …), whose size
 and rows are never a theme's, whose corner is drawn at most `space.6`, and whose quieter lines
-are held to 4.5:1 in their own tiers. The note above still holds for the strip tabs and rows.
+are held to 4.5:1 in their own tiers; and `select` and `combobox` (their `root`, drawn as the
+text input's box, and their `chevron`; a select's `placeholder` too), whose lists are a menu's
+surface and rows. The note above still holds for the strip tabs and rows.
 
 **The session tabs** are the `tabs` family. Purlis docks them on the content panel: the chosen
 tab takes the panel's fill and flares into it, an unchosen tab's hover is a pill inset from its

@@ -96,6 +96,9 @@ error from the ticket that moves its last call site:
   hand. The field family moved and its rule is an error, with the select and choice inputs split
   into rules of their own
   ([amended 2026-10-22](0104/2026-10-22-the-field-family.md)).
+- `purlis/select-family`, an error since #2906: a `<select>`, a `<datalist>`, a
+  `role="combobox"` or an `aria-haspopup="listbox"` written by hand, and the old `ui-select`
+  classes ([amended 2026-10-24](0104/2026-10-24-the-select-and-combobox-families.md)).
 
 A family's ticket takes its own role and classes out of the button rule's list as it moves.
 
@@ -110,7 +113,8 @@ after look (`docs/component-stories.md`).
 
 The amendments to this decision are files of their own in [`0104/`](0104/), one per
 amendment, named `<yyyy-mm-dd>-<slug>.md`:
-[2026-10-22, the dialog family and the window's top layer](0104/2026-10-22-the-dialog-family-and-the-top-layer.md).
+[2026-10-22, the dialog family and the window's top layer](0104/2026-10-22-the-dialog-family-and-the-top-layer.md);
+[2026-10-24, the select and combobox families, and no top layer](0104/2026-10-24-the-select-and-combobox-families.md).
 
 ## What was rejected
 

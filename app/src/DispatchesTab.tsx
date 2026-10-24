@@ -7,7 +7,7 @@ import { ChatAsk } from "./ChatAsk";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { Notice } from "./Notice";
 import { PersonaMark } from "./PersonaMark";
-import { Select } from "./primitives/Select";
+import { Select } from "./ui/select/Select";
 import { useTaskBranchActs, type BranchTold } from "./taskBranchActs";
 import {
   commands,

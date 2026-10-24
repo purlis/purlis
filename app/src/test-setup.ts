@@ -6,6 +6,7 @@
 import "./theme/handed.testkit";
 import "@testing-library/jest-dom/vitest";
 import { toHaveValue } from "@testing-library/jest-dom/matchers";
+import { configure } from "@testing-library/react";
 import { afterEach, expect } from "vitest";
 import { forgetKeptScopes } from "./chatsScope";
 import { forgetExtensionThemes } from "./Extensions";
@@ -51,21 +52,29 @@ if (typeof Range !== "undefined") {
   Range.prototype.getBoundingClientRect ??= () => new DOMRect(0, 0, 0, 0);
 }
 
-// jsdom lays nothing out and has no pointer capture: Radix Select (`primitives/Select.tsx`, every
-// select in the window) scrolls its chosen row into view and asks whether the pointer is held.
-// A real WebView has both.
+// jsdom lays nothing out and has no pointer capture: a list scrolls its chosen row into view and
+// asks whether the pointer is held. A real WebView has both.
 if (typeof Element !== "undefined") {
   Element.prototype.scrollIntoView ??= () => {};
   Element.prototype.hasPointerCapture ??= () => false;
   Element.prototype.releasePointerCapture ??= () => {};
 }
 
+// A select (`ui/select/Select.tsx`) keeps a native `<select>` beside its button, hidden from the
+// page and from a screen reader, for a form's autofill: its options are no words a person reads,
+// so no query finds them.
+configure({ defaultIgnore: 'script, style, [data-testid="hidden-select-container"] *' });
+
 // A select's value is the option it holds, as `toHaveValue` reads a native one's. Every select in
-// the window is Radix's (`primitives/Select.tsx`, #1860), a `<button>` whose trigger carries what
-// it holds as `data-value`, so the matcher reads that there and stays jest-dom's everywhere else.
+// the window is the select family's (`ui/select/Select.tsx`, #2906), a `<button>` that carries
+// what it holds as `data-value`, so the matcher reads that there and stays jest-dom's everywhere
+// else.
 expect.extend({
   toHaveValue(this: unknown, element: HTMLElement, expected?: unknown) {
-    if (!(element instanceof HTMLElement) || !element.matches('button[role="combobox"]'))
+    if (
+      !(element instanceof HTMLElement) ||
+      !element.matches('[data-scope="select"][data-part="root"]')
+    )
       return toHaveValue.call(this as never, element, expected as never);
     const held = element.getAttribute("data-value") ?? "";
     const pass = expected === undefined ? held !== "" : held === expected;

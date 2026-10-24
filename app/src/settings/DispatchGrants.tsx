@@ -360,7 +360,11 @@ export function DispatchGrantsList({
       buttons.find((one) => one.dataset.line === to.line) ??
       buttons[Math.min(to.at, buttons.length - 1)];
     // A workspace's list asks from inside its cell's wrapper: the list takes the focus.
-    (target?.querySelector<HTMLElement>('[role="combobox"]') ?? target ?? whole.current)?.focus();
+    (
+      target?.querySelector<HTMLElement>('[data-scope="select"][data-part="root"]') ??
+      target ??
+      whole.current
+    )?.focus();
   }, [asking]);
 
   /** How far down the table the buttons of `line` start. */
