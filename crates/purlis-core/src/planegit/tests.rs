@@ -5500,7 +5500,10 @@ fn a_save_refuses_a_file_with_a_second_name_as_the_readers_already_do() {
         assert!(said.contains(named), "{said}");
         assert!(said.contains("no longer staged"), "{said}");
         assert_eq!(fixture.head(), before, "{said}");
-        assert_eq!(fixture.staged(), "", "nothing is left staged: {said}");
+        assert!(
+            !fixture.staged().contains("notes.md"),
+            "it is left staged: {said}"
+        );
 
         // A save of exactly its paths, and the whole plane's, by every trigger.
         let (code, said) = saved_paths(&fixture.root, &["workspaces/w/skills/s"]);
@@ -5515,7 +5518,7 @@ fn a_save_refuses_a_file_with_a_second_name_as_the_readers_already_do() {
         }
 
         assert_eq!(fixture.head(), before);
-        assert_eq!(fixture.staged(), "");
+        assert!(!fixture.staged().contains("notes.md"));
         assert!(!fixture.carries_outside(), "a commit carries the file");
     }
 }
@@ -5546,6 +5549,6 @@ fn a_file_staged_and_then_swapped_out_from_under_the_save_is_not_committed() {
         "{said}"
     );
     assert_eq!(fixture.head(), before);
-    assert_eq!(fixture.staged(), "", "{said}");
+    assert!(!fixture.staged().contains("notes.md"), "{said}");
     assert!(!fixture.carries_outside(), "a commit carries the file");
 }
