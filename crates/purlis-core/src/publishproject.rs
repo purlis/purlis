@@ -456,11 +456,9 @@ impl Hands for OnThisMachine {
                 "make the project a repository",
             )?;
         }
-        git_in(
-            root,
-            &crate::planegit::SAVE_STAGES,
-            "add the project's files",
-        )?;
+        let stages = crate::planegit::save_stages();
+        let stages: Vec<&str> = stages.iter().map(String::as_str).collect();
+        git_in(root, &stages, "add the project's files")?;
         let born = git::run(
             root,
             &["rev-parse", "--verify", "--quiet", "HEAD"],

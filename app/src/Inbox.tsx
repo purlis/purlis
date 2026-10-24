@@ -810,6 +810,16 @@ function Ask({
         aria-labelledby={`${id}-says`}
         aria-describedby={`${id}-whose`}
       >
+        {/* **The card's top row** (R132): the chat's name in bold, the workspace quiet at its
+            right. */}
+        <p className="inbox-ask-top">
+          <span className="inbox-who ui-text-body ui-text-strong">{who}</span>
+          {where !== "" && (
+            <Tooltip tip={where}>
+              <span className="inbox-where inbox-secondary ui-text-meta">{where}</span>
+            </Tooltip>
+          )}
+        </p>
         <p className="inbox-says">
           <KindMark kind={kindOfAsk(ask.source)} />
           {/* The ask's words are the source's, drawn as text and never as a control. What an
@@ -822,11 +832,6 @@ function Ask({
               {shape.line}
             </span>
           </Tooltip>
-          {where !== "" && (
-            <Tooltip tip={where}>
-              <span className="inbox-where inbox-secondary ui-text-secondary">{where}</span>
-            </Tooltip>
-          )}
           <Tooltip tip={SOURCE_SAID[ask.source]}>
             <span className="inbox-meta ui-text-meta">
               <span id={`${id}-whose`} className="inbox-source">
@@ -861,7 +866,8 @@ function Ask({
             <Stop id={`${key}:go`}>
               <Button
                 size="sm"
-                variant="ghost"
+                // R132: the way on is the card's primary press; no answer is drawn this way.
+                variant={shape.answers ? "ghost" : "primary"}
                 aria-label={`Go to chat ${who}`}
                 onPress={onGo}
                 className="inbox-go"

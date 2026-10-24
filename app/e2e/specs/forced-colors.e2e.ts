@@ -133,7 +133,7 @@ describe("forced colours", () => {
         '<div><div data-p="option" role="option" aria-selected="true">option</div></div>',
         '<span data-p="needs" class="count-pill-needs">2</span>',
         '<button data-p="needs-number-pill" type="button" data-scope="status-item" data-part="root" data-variant="waiting"><span data-p="needs-number" data-scope="status-item" data-part="count">2</span></button>',
-        '<span data-p="needs-activity" class="activity-count" data-tone="needs-you">2</span>',
+        '<span data-p="needs-activity" data-scope="activity" data-part="count" data-tone="needs-you">2</span>',
         '<button data-p="danger" type="button" data-scope="button" data-part="root" data-variant="danger" data-size="md">end</button>',
         '<p data-p="trouble" class="trouble">trouble</p>',
         '<span data-p="running" class="state-running"></span>',

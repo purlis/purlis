@@ -277,49 +277,25 @@ fn keys(skill: &SkillFiles<'_>) -> Vec<Finding> {
     out
 }
 
-/// Each `<namespace>:<name>` in `text` that names no skill there is, once each.
+/// Each `<namespace>:<name>` in `text` that names no skill there is, once each: the broken
+/// uses of the one reader of references ([`crate::uses::uses_in`]).
 fn references(text: &str, lints: &BuiltInLints<'_>) -> Vec<Finding> {
-    let mut out: Vec<Finding> = Vec::new();
-    let mut seen: Vec<String> = Vec::new();
-    let mut look = |namespace: &str, known: &[String], project: bool| {
-        for name in named_in(text, namespace) {
-            let said = format!("{namespace}:{name}");
-            if known.contains(&name) || seen.contains(&said) {
-                continue;
-            }
-            seen.push(said.clone());
-            out.push(warns(Lint::NoSuchSkill {
-                said,
-                name,
-                project,
-            }));
-        }
-    };
-    look(lints.namespace, lints.plane, true);
-    for prefix in crate::BUILT_IN_PREFIXES {
-        look(prefix, lints.built_in, false);
-    }
-    out
-}
-
-/// The names `text` gives after `namespace:`, where the namespace is not the end of a longer
-/// word and a skill's name follows.
-fn named_in(text: &str, namespace: &str) -> Vec<String> {
-    let needle = format!("{namespace}:");
-    let word = |c: char| c.is_ascii_alphanumeric() || "_.-/".contains(c);
-    text.match_indices(&needle)
-        .filter(|(at, _)| !text[..*at].chars().next_back().is_some_and(word))
-        .filter_map(|(at, _)| {
-            let rest = &text[at + needle.len()..];
-            let name: String = rest
-                .chars()
-                .take_while(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == '-')
-                .collect();
-            let name = name.trim_end_matches('-');
-            (!name.is_empty() && crate::change::name_problem(name).is_none())
-                .then(|| name.to_owned())
+    let plane: std::collections::HashSet<&str> = lints.plane.iter().map(String::as_str).collect();
+    let built_in: std::collections::HashSet<&str> =
+        lints.built_in.iter().map(String::as_str).collect();
+    crate::uses::uses_in(text, lints.namespace, &|one| plane.contains(one), &|one| {
+        built_in.contains(one)
+    })
+    .into_iter()
+    .filter(|one| one.broken)
+    .map(|one| {
+        warns(Lint::NoSuchSkill {
+            said: one.said,
+            name: one.name,
+            project: one.project,
         })
-        .collect()
+    })
+    .collect()
 }
 
 /// Each program a `` !`command` `` in the skill's text or one of its scripts calls that this

@@ -3,14 +3,135 @@
 
 import { useEffect, useId, useState } from "react";
 import { LoaderCircle } from "lucide-react";
-import { commands, SKILL_RUNS_PANEL, type SkillPanel, type SkillPanelKey } from "./bindings";
+import {
+  commands,
+  SKILL_RUNS_PANEL,
+  type SkillPanel,
+  type SkillPanelKey,
+  type SkillStats,
+  type StatsGroup,
+  type StatsRow,
+} from "./bindings";
 import type { Offer } from "./actions";
+import { counted } from "./dispatches";
 import { EmptyState } from "./ui/empty-state/EmptyState";
+import { SkillDetailsPanel } from "./SkillDetails";
 import { AnsweredBlocks } from "./Views";
+
+/** A run's time, as a person reads it: `850 ms`, `12 s`, `3 min 4 s`. */
+export function timeSaid(ms: number | null): string {
+  if (ms === null) return "";
+  if (ms < 1000) return `${ms} ms`;
+  if (ms < 60_000) return `${Math.floor(ms / 1000)} s`;
+  return `${Math.floor(ms / 60_000)} min ${Math.floor((ms % 60_000) / 1000)} s`;
+}
+
+/** Which group a totals row is of, as it says it: what it ran on, or a persona or a workspace
+ *  by name, with `none` said in the grouping's own words. What a run ran on is never none: a
+ *  run says it, or its start does not. */
+export function groupSaid(group: StatsGroup, none?: string): string {
+  switch (group.kind) {
+    case "named":
+      return group.name;
+    case "none":
+      return none ?? "Not recorded";
+    default:
+      return "Not recorded";
+  }
+}
+
+/** The groupings a skill's totals are shown by, each with what its `none` group is. */
+const GROUPINGS: readonly {
+  key: keyof SkillStats;
+  heading: string;
+  column: string;
+  none?: string;
+}[] = [
+  { key: "by_harness", heading: "By what it ran on", column: "Ran on" },
+  { key: "by_persona", heading: "By persona", column: "Persona", none: "No persona" },
+  { key: "by_workspace", heading: "By workspace", column: "Workspace", none: "Project root" },
+];
+
+/**
+ * **A skill's totals** (SK-20, #2783): its runs, their signals and their tokens, by what they ran
+ * on, by persona and by workspace. Signals only, never a pass or a fail.
+ */
+function SkillTotals({ plane, name, changed }: { plane: string; name: string; changed: number }) {
+  const [stats, setStats] = useState<SkillStats>();
+  const [refused, setRefused] = useState<string>();
+  useEffect(() => {
+    let live = true;
+    void commands.skillStats(plane, name).then((answer) => {
+      if (!live) return;
+      if (answer.status === "ok") {
+        setStats(answer.data);
+        setRefused(undefined);
+      } else setRefused(answer.error);
+    });
+    return () => {
+      live = false;
+    };
+  }, [plane, name, changed]);
+  if (refused !== undefined)
+    return (
+      <EmptyState
+        headline={`purlis could not total the runs of ${name}`}
+        body={refused}
+        testid="skill-totals-refused"
+      />
+    );
+  if (stats === undefined || stats.by_persona.length === 0) return null;
+  return (
+    <section aria-labelledby="skill-totals-heading" data-testid="skill-totals">
+      <h3 id="skill-totals-heading">Totals</h3>
+      {GROUPINGS.map(({ key, heading, column, none }) => (
+        <table
+          key={key}
+          className="ui-table"
+          aria-label={`Runs of ${name}, ${heading.toLowerCase()}`}
+          data-testid={`skill-totals-${key}`}
+        >
+          <caption>{heading}</caption>
+          <thead>
+            <tr>
+              <th scope="col">{column}</th>
+              <th scope="col">Runs</th>
+              <th scope="col">Tool calls</th>
+              <th scope="col">Errors</th>
+              <th scope="col">Refused</th>
+              <th scope="col">Asks</th>
+              <th scope="col">Tokens</th>
+              <th scope="col">Time</th>
+            </tr>
+          </thead>
+          <tbody>
+            {stats[key].map((row: StatsRow) => (
+              <tr key={`${row.group.kind}:${row.group.kind === "named" ? row.group.name : ""}`}>
+                <th scope="row">{groupSaid(row.group, none)}</th>
+                <td>
+                  {counted(row.runs, "run", "runs")}
+                  {row.ended < row.runs ? `, ${row.ended} ended` : ""}
+                </td>
+                <td>{row.tool_calls}</td>
+                <td>{row.tool_errors}</td>
+                <td>{row.refusals}</td>
+                <td>{row.asks}</td>
+                <td>{row.tokens ?? "Not reported"}</td>
+                <td>{timeSaid(row.ms)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ))}
+    </section>
+  );
+}
 
 /**
  * **One skill's tab** (SK-3, #2766), opened from a skill run's chip or the Skill studio. Its
- * panels are studio panels (ADR 0101 §6), each answered in panel blocks by the core and drawn
+ * state, owners, history and uses come first (SK-19, #2782, `SkillDetailsPanel`), then its
+ * totals by what it ran on, by persona and by workspace (SK-20). Its other panels are studio
+ * panels (ADR 0101 §6), each answered in panel blocks by the core and drawn
  * here as any view's answer is: purlis's Runs panel first, which lists every run of the skill,
  * newest first, with what started it and its signals (tool calls, tool errors, refusals, asks,
  * tokens and time, never a pass or a fail), then each panel an extension adds.
@@ -53,6 +174,8 @@ export function SkillTab({
       <h2 className="skill-tab-name">
         <code>{name}</code>
       </h2>
+      <SkillDetailsPanel plane={plane} name={name} changed={changed} />
+      <SkillTotals plane={plane} name={name} changed={changed} />
       {refused !== undefined ? (
         <EmptyState
           headline={`purlis could not read the panels of ${name}`}

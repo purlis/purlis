@@ -33,8 +33,11 @@ import {
   grantLabel,
   labelOf,
   levelFrom,
+  levelKey,
   levelOf,
+  levelsFor,
   picking,
+  whoseOf,
   sameGrant,
   sameLevel,
 } from "./skillChanges";
@@ -188,10 +191,10 @@ export function SkillStudioTab({
         setDone((n) => n + 1);
       });
   };
-  const share = (skill: StudioSkill) =>
+  const share = (skill: StudioSkill, level: SkillLevel) =>
     change("The skill was not shared", () =>
       commands
-        .skillShare(plane, workspace, skill.name)
+        .skillShare(plane, whoseOf(level), skill.name)
         .then((answer): Answer =>
           answer.status === "ok" ? { status: "ok", data: { notes: [] } } : answer,
         ),
@@ -278,13 +281,21 @@ export function SkillStudioTab({
       </Button>
       <Button
         icon={<MessageSquarePlus aria-hidden="true" />}
-        onPress={() => askSkillChat({ plane, kind: "draft", level: levelFrom(scope) })}
+        onPress={() =>
+          askSkillChat({
+            plane,
+            kind: "draft",
+            level: levelFrom(scope, levelsFor(studio.levels, scope)),
+          })
+        }
       >
         Ask a chat to draft a skill
       </Button>
     </div>
   );
-  const levels = studio.levels;
+  // The project's, each workspace's and the persona's this studio shows (SK-32).
+  const levels = levelsFor(studio.levels, scope);
+  const start = levelFrom(scope, levels);
   const restoring = said?.restore;
   const notice = said !== undefined && (
     <Notice
@@ -360,7 +371,7 @@ export function SkillStudioTab({
     <SkillSources
       plane={plane}
       levels={levels}
-      start={levelFrom(scope)}
+      start={start}
       busy={busy}
       change={change}
       changed={changed + done}
@@ -405,7 +416,7 @@ export function SkillStudioTab({
     event.preventDefault();
     const { name, from } = JSON.parse(raw) as { name: string; from: SkillLevel };
     const skill = studio.skills.find((one) => {
-      const at = levelOf(one, workspace);
+      const at = levelOf(one, scope);
       return one.name === name && at !== null && sameLevel(at, from);
     });
     if (skill !== undefined) moveTo(skill, from, to);
@@ -429,7 +440,7 @@ export function SkillStudioTab({
           <span
             key={label}
             className="skill-level-target"
-            data-testid={`level-${level.workspace ?? "project"}${level.local ? "-local" : ""}`}
+            data-testid={`level-${levelKey(level)}`}
             onDragOver={(event) => {
               if (event.dataTransfer.types.includes(DRAGGED)) event.preventDefault();
             }}
@@ -453,7 +464,7 @@ export function SkillStudioTab({
         </thead>
         <tbody>
           {studio.skills.map((skill) => {
-            const level = levelOf(skill, workspace);
+            const level = levelOf(skill, scope);
             return (
               <tr
                 key={`${skill.level}\u0000${skill.folder}`}
@@ -484,11 +495,11 @@ export function SkillStudioTab({
                 </td>
                 <td>
                   {skill.label}
-                  {skill.local && (
+                  {skill.local && level !== null && (
                     <>
                       {" "}
                       <Button
-                        onPress={() => share(skill)}
+                        onPress={() => share(skill, level)}
                         tooltip="Give it to the team: it is committed with the project"
                       >
                         Share
@@ -614,8 +625,9 @@ export function SkillStudioTab({
                               onPress: () => setDoing({ what: "rename", skill, level }),
                             },
                           ]),
-                      // A persona's own list (SK-5, #2768), one more pair of the row's actions.
-                      ...(persona === null
+                      // A persona's own list (SK-5, #2768), one more pair of the row's actions. A
+                      // persona's own skill is in its skills already, and needs no name (SK-32).
+                      ...(persona === null || skill.level === "persona"
                         ? []
                         : [
                             skill.named
@@ -802,6 +814,7 @@ function UsedBy({ users }: { users: SkillUsers }) {
   const chats = [
     ...(users.root ? ["chats at the project's root"] : []),
     ...users.workspaces.map((ws) => `chats in ${ws}`),
+    ...(users.persona === null ? [] : [`chats as ${users.persona}, in every workspace`]),
   ];
   return (
     <ul className="skill-users" data-testid="skill-users">
@@ -848,7 +861,7 @@ function NewSkill({
   const [description, setDescription] = useState("");
   const [templates, setTemplates] = useState<readonly SkillTemplate[]>([]);
   const [template, setTemplate] = useState<SkillTemplateId>({ kind: "blank" });
-  const [level, setLevel] = useState<SkillLevel>(() => levelFrom(scope));
+  const [level, setLevel] = useState<SkillLevel>(() => levelFrom(scope, levels));
   useEffect(() => {
     let live = true;
     void commands
@@ -978,7 +991,7 @@ function GrantPrompt({
   onMove: (grant: SkillGrant) => void;
 }) {
   const [grant, setGrant] = useState<SkillGrant>(
-    from.workspace === null ? { to: "root" } : { to: "only", workspaces: [from.workspace] },
+    from.at === "workspace" ? { to: "only", workspaces: [from.name] } : { to: "root" },
   );
   return (
     <section
@@ -991,6 +1004,11 @@ function GrantPrompt({
         </strong>{" "}
         A project skill reaches only the chats its grant names. Where does it reach?
       </p>
+      {from.at === "persona" && (
+        <p className="honest" data-testid="persona-keeps">
+          {from.name} keeps it in every workspace: it is added to {from.name}'s skills.
+        </p>
+      )}
       <GrantPicker
         label={`Where ${name} will reach`}
         workspaces={workspaces}

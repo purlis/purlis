@@ -2806,7 +2806,9 @@ button.show-more:focus-visible {
   align-items: center;
   gap: var(--space-2);
   min-height: var(--size-chrome);
-  padding: var(--space-2) var(--space-3) var(--space-2);
+  /* R127: the prototype's 10/10/6/14 around the label and its ×. */
+  padding: calc(var(--space-4) + var(--space-1)) calc(var(--space-4) + var(--space-1))
+    var(--space-3) calc(var(--space-5) + var(--space-1));
 }
 
 .half-head > h2 {
@@ -2841,127 +2843,73 @@ button.show-more:focus-visible {
   min-height: 0;
 }
 
-/* **A side's icon column** (#1737): its activity bars the window's whole height, the sidebar's
-   at the top and the **Lower icons** (its half of the Panel's) at the bottom, below a divider.
-   The deep surface the title bar and the status line are drawn on, because it is the window's
-   frame and not a region's content; a hairline toward the regions. */
-.activity-column {
-  display: flex;
-  flex: none;
-  flex-direction: column;
-  width: 2.5rem;
-  padding-block: var(--space-2);
-  background: var(--surface-deep);
-}
-
-.activity-column[data-side="left"] {
-  border-inline-end: var(--panel-border-width) solid var(--border-subtle);
-}
-
+/* **The right bar** (#2917, R117): the activity family's column (`ui/activity`) at the window's
+   edge, the window's whole height; a hairline toward the regions where a theme draws one. The
+   left bar is tabs across the side panel's own top (N36, R116), drawn inside its slot. */
 .activity-column[data-side="right"] {
   border-inline-start: var(--panel-border-width) solid var(--border-subtle);
 }
 
-/* The line between a side's own icons and its Lower icons, which it pushes to the bottom of
-   the column, beside the Panel they switch. */
-.activity-divider {
-  flex: none;
-  height: 1px;
-  margin: auto var(--space-3) var(--space-2);
-  background: var(--border-subtle);
+/* **The left bar while its side panel is away** (D-2917-18): a column at the window's edge. */
+.activity-column[data-side="left"] {
+  border-inline-end: var(--panel-border-width) solid var(--border-subtle);
 }
 
-/* **A side's activity bar** (`ActivityBar.tsx`): VS Code's strip of view icons, in the window's
-   own tokens, in its side's column. */
-.activity-bar {
-  display: flex;
-  flex: none;
-  flex-direction: column;
-}
-
-.activity-bar [role="tablist"] {
+/* **A side panel's body**: what it draws above its views (its tabs and header on the left, its
+   title and × on the right), then the open view, which takes the rest and scrolls inside itself. */
+.slot-body {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
+  height: 100%;
+  min-height: 0;
 }
 
-.activity-tab {
-  position: relative;
-  display: inline-flex;
+.slot-body > .region-views {
+  flex: 1 1 0;
+  height: auto;
+  min-height: 0;
+}
+
+/* **The side panel's header** (R123): the open view's name in the label's capitals. Chats draws
+   its own, with the workspace and, quiet, the project (R155). */
+.side-head {
+  display: flex;
+  flex: none;
   align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 2.5rem;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--text-muted);
-  font: inherit;
-  cursor: pointer;
+  gap: var(--space-2);
+  min-height: var(--size-chrome);
+  padding: calc(var(--space-4) + var(--space-1)) calc(var(--space-4) + var(--space-1))
+    var(--space-1) calc(var(--space-5) + var(--space-1));
 }
 
-.activity-tab svg {
-  width: 1.25rem;
-  height: 1.25rem;
-}
-
-.activity-tab:hover {
-  color: var(--text-primary);
-}
-
-.activity-tab:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: var(--focus-ring-inset);
-}
-
-/* **The open view: the icon at full strength and the accent edge toward the side it opens**,
-   VS Code's mark. Nothing is selected while the side is away, so a bar alone says whether
-   the side is out. */
-.activity-tab[aria-selected="true"] {
-  color: var(--text-primary);
-}
-
-.activity-bar[data-side="left"] .activity-tab[aria-selected="true"] {
-  box-shadow: inset 2px 0 0 var(--accent-base);
-}
-
-.activity-bar[data-side="right"] .activity-tab[aria-selected="true"] {
-  box-shadow: inset -2px 0 0 var(--accent-base);
-}
-
-/* A count on a view's tab (B-8): the project and workspace tabs' pill, small, at the icon's
-   corner. In the needs-you colours for the chats that need you, the plain count's otherwise. */
-.activity-count {
-  position: absolute;
-  inset-block-end: var(--space-1);
-  inset-inline-end: var(--space-1);
-  min-width: 1rem;
-  padding: 0 var(--space-2);
-  border-radius: var(--radius-full);
-  background: var(--control-count);
-  color: var(--text-primary);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-strong);
-  line-height: var(--line-height-tight);
-  font-variant-numeric: tabular-nums;
-  /* Repos' count is two numbers (#1739): one line, never wrapped under the icon. */
-  white-space: nowrap;
-  text-align: center;
-}
-
-.activity-count[data-tone="needs-you"] {
-  background: var(--needs-you-base);
-  color: var(--needs-you-text);
-}
-
-/* What the count says, for the tab's description: read out, not drawn. */
-.activity-said {
-  position: absolute;
-  width: 1px;
-  height: 1px;
+.side-head > h2 {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
-  clip-path: inset(50%);
   white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* **The right panel's header** (R125): a 13px title and the 24px × that closes it. */
+.side-head[data-side="right"] {
+  padding: var(--space-5) calc(var(--space-4) + var(--space-1)) var(--space-4)
+    calc(var(--space-5) + var(--space-1));
+}
+
+.side-title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-strong);
+}
+
+/* The project after the workspace on Chats' title (R123): its own words, quiet and not
+   capitalised. */
+.side-head-project {
+  color: var(--text-quiet);
+  font-weight: var(--font-weight-regular);
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 /* A region's views fill its slot, one shown at a time; the others are `hidden`. */
@@ -3086,21 +3034,55 @@ button.show-more:focus-visible {
 .inbox-chain[data-part="title"] {
   margin: 0 0 var(--space-3);
 }
-/* An ask is a card: its words, then its answers (the shared button), its reply (the shared field
-   and button), and Go to chat and Ignore as small ghost buttons side by side at its foot
-   (DS-12). */
+/* **An ask is a card** (R132, #2917): the card's fill, the card corner (`radius.lg`, 10 in
+   Purlis), no edge. Its top row is the chat's name in bold with the workspace quiet at the right,
+   then its status line in amber, its words, its answers (the shared button), its reply (the
+   shared field and button), and its ways on at its foot (DS-12). */
 .inbox-ask {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--state-waiting);
-  border-radius: var(--radius-md);
-  background: var(--surface-raised);
+  padding: calc(var(--space-4) + var(--space-1)) var(--space-5);
+  border-radius: var(--radius-lg);
+  background: var(--surface-overlay);
 }
 .inbox-ask + .inbox-ask {
   margin-top: var(--space-2);
 }
+/* **An ask card's top row** (R132): the chat's name, then the workspace at the row's end. */
+.inbox-ask-top {
+  display: flex;
+  gap: var(--space-4);
+  align-items: baseline;
+  justify-content: space-between;
+  min-width: 0;
+  margin: 0;
+}
+.inbox-ask-top > .inbox-who,
+.inbox-ask-top > .inbox-where {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inbox-ask-top > .inbox-where {
+  flex: none;
+  max-width: 50%;
+}
+/* **Its status line** (R132): what it waits on and since when, in the waiting amber, over its
+   words. */
+.inbox-ask > .inbox-says > .inbox-meta {
+  grid-area: 1 / 1 / auto / -1;
+  justify-content: flex-start;
+}
+.inbox-ask > .inbox-says > .inbox-meta > .inbox-source {
+  color: var(--state-waiting);
+}
+.inbox-ask > .inbox-says > .inbox-kind,
+.inbox-ask > .inbox-says > .inbox-primary {
+  grid-row: 2;
+}
+
 /* **A row's words, in three ranks** (qw359, `InboxRow.tsx`): its kind's mark and what needs you
    on the first line; where it is and, trailing, its kind and age on the second. The second
    line's two halves share it: the meta takes at most its share and is cut, never the where
@@ -3527,6 +3509,15 @@ button.show-more:focus-visible {
    the same. Added takes `state-success` and deleted `danger-base`, the editor's diff gutters'
    marks; changed takes `state-waiting` and renamed `accent-base`. Each is held on the window,
    the row under the pointer and the selected row in the engine's contrast pairs (#2392). */
+/* **Explorer's tree** (R129, #2917): 14px a level, its twisties in the quiet tier. */
+.explorer .ui-tree {
+  --ui-tree-step: calc(var(--space-5) + var(--space-1));
+}
+
+.explorer .ui-tree-twist {
+  color: var(--text-quiet);
+}
+
 .explorer .change-mark {
   margin-inline-start: auto;
   padding-inline: var(--space-2);
@@ -6883,6 +6874,50 @@ nav.piece-files-head {
   animation: charter-appear var(--motion-duration-enter) var(--motion-easing-enter);
 }
 
+/* **The right panel arrives from the side** (R124): 24px in with a fade over `duration.open`,
+   only when it was closed. Switching its view does not replay it, and closing it has no motion:
+   it is gone (R128). */
+@keyframes purlis-open {
+  from {
+    opacity: 0;
+    translate: 24px 0;
+  }
+}
+
+.region-slot.slot-right.arrived {
+  animation: purlis-open var(--motion-duration-open) var(--motion-easing-enter);
+}
+
+/* **The Panel's slot does not arrive; each half does, on its own opening** (R127): 16px up with
+   a fade over `duration.reveal`, and the other half never replays. */
+.region-slot.slot-panel.arrived {
+  animation: none;
+}
+
+@keyframes purlis-reveal {
+  from {
+    opacity: 0;
+    translate: 0 16px;
+  }
+}
+
+/* **A side view's list taking another's place** (R122): 4px up with a fade over `duration.swap`,
+   once (`RegionFrame`'s `swapIn`). */
+@keyframes purlis-swap {
+  from {
+    opacity: 0;
+    translate: 0 var(--space-2);
+  }
+}
+
+.region-view[data-swapped] {
+  animation: purlis-swap var(--motion-duration-swap) var(--motion-easing-enter);
+}
+
+.panel-half.arrived {
+  animation: purlis-reveal var(--motion-duration-reveal) var(--motion-easing-enter);
+}
+
 /* **A popover or a menu opening** — the show-more menus, the context menus, the persona card,
    and whatever anchored surface is added next, because the rule hangs off Radix's own popper
    wrapper rather than off a class. It comes a quarter of a rem out of the side it is anchored
@@ -8204,6 +8239,43 @@ nav.piece-files-head {
 /* A skill's tab (SK-3): the run its chip opened it on stands out in its Runs panel. */
 .skill-tab .ui-table tr[data-wanted] {
   background: var(--surface-hover);
+}
+
+/* A skill's state, owners, history and uses (SK-19, #2782). */
+.skill-details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin-block-end: var(--space-4);
+}
+
+.skill-state-acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--space-2);
+}
+
+.skill-copy-pick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.skill-diff {
+  max-height: 24rem;
+  overflow: auto;
+  margin: 0;
+  padding: var(--space-2);
+  background: var(--surface-sunken);
+  font-family: var(--font-mono);
+  white-space: pre;
+}
+
+/* Marked by weight (`ui-text-strong`) and a line through, never a colour of their own: the
+   diff reads in every theme, and in a theme with no colour at all. */
+.skill-diff [data-line="removed"] {
+  text-decoration: line-through;
 }
 
 /* The Skill studio's changes (SK-7, #2770): the panel a change opens under the toolbar, the

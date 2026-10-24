@@ -78,6 +78,7 @@ mod machineprofiles;
 mod personaskills;
 mod skillchange;
 mod skilldrafts;
+mod skillhistory;
 mod skillrun;
 mod skillsources;
 mod skillstudio;

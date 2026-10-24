@@ -6,28 +6,50 @@ use super::*;
 #[test]
 fn a_level_the_studio_names_is_the_cores_level_and_back() {
     for level in [
-        SkillLevel {
-            workspace: None,
-            local: false,
-        },
-        SkillLevel {
-            workspace: Some("ops".to_owned()),
+        SkillLevel::Project { local: false },
+        SkillLevel::Workspace {
+            name: "ops".to_owned(),
             local: true,
+        },
+        SkillLevel::Persona {
+            name: "reviewer".to_owned(),
+            local: false,
         },
     ] {
         let core: Level = (&level).into();
         assert_eq!(SkillLevel::from(&core), level);
     }
     assert!(skill_move_needs_grant(
-        SkillLevel {
-            workspace: Some("ops".to_owned()),
+        SkillLevel::Workspace {
+            name: "ops".to_owned(),
             local: false
         },
-        SkillLevel {
-            workspace: None,
-            local: true
+        SkillLevel::Project { local: true },
+    ));
+    // Promoting a persona's own skill to the project asks for its grant too (SK-32).
+    assert!(skill_move_needs_grant(
+        SkillLevel::Persona {
+            name: "reviewer".to_owned(),
+            local: false
+        },
+        SkillLevel::Project { local: false },
+    ));
+    assert!(!skill_move_needs_grant(
+        SkillLevel::Project { local: false },
+        SkillLevel::Persona {
+            name: "reviewer".to_owned(),
+            local: false
         },
     ));
+    // As the window sends it.
+    assert_eq!(
+        serde_json::from_str::<SkillLevel>(r#"{"at":"persona","name":"reviewer","local":true}"#)
+            .unwrap(),
+        SkillLevel::Persona {
+            name: "reviewer".to_owned(),
+            local: true
+        }
+    );
 }
 
 #[test]

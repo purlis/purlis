@@ -18,10 +18,15 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { RailIcon } from "./FileIcon";
+import {
+  ActivityCount,
+  ActivityGroup,
+  ActivityItem,
+  type ActivityVariant,
+} from "./ui/activity/ActivityItem";
 import { useTabStop } from "./roving";
 import { useRailIcons } from "./theme/railIcons";
 import type { OwnViewId, PanelViewId, Side, ViewId } from "./regions";
-import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /** A view as its tab draws it: its id, what it is called and its mark. */
 export type Tabbed = { view: ViewId; name: string; mark: LucideIcon };
@@ -33,15 +38,16 @@ export type PanelTab = Tabbed & { view: PanelViewId };
  * **A side's activity bar: a strip of icons, one per view, that switches the side between them**
  * (ADR 0038 as amended 2026-10-10, B-1, #1673).
  *
- * VS Code's, in the window's own primitives. **It is a tab list, vertical**: the tabs are the
- * views, the selected tab is the open view, and the arrows, Home and End move along it with one
- * Tab stop (`roving.ts`, the strips' own `RovingFocusGroup`). Enter or Space presses the tab the
- * keyboard is on, and so does a click: activation is manual, as an editor's is, so walking the
- * bar with the arrows opens nothing. **The tab list owns tabs and nothing else** (#1204): each
- * tab's badge is inside its own tab.
+ * Each item is the activity family's (`ui/activity`, #2917). **It is a tab list**: a row across
+ * the side panel's top on the left (N36), a column at the window's edge on the right, the tabs
+ * the views and the selected tab the open view; the arrows along it, Home and End move with one
+ * Tab stop (`roving.ts`). Enter or Space presses the tab the keyboard is on, and so does a click:
+ * activation is manual, so walking the bar opens nothing. **The tab list owns tabs and nothing
+ * else** (#1204): each tab's count is inside its own tab.
  *
  * **What a press does is the arrangement's** (`regions.picked`): a press of the open view puts
- * the side away, any other opens. This draws and says; it decides nothing.
+ * its region away, except the side panel's own tabs, which never do (R121); any other opens.
+ * This draws and says; it decides nothing.
  *
  * **Icons, and the words are still there** (`docs/design-system.md` §Icons): each tab is its
  * view's mark, the view's name is its `aria-label`, and the tooltip says what pressing does,
@@ -55,6 +61,7 @@ export type PanelTab = Tabbed & { view: PanelViewId };
  */
 export function ActivityBar({
   side,
+  variant,
   region,
   name,
   away,
@@ -69,13 +76,18 @@ export function ActivityBar({
 }: {
   /** Which edge of the window it is drawn on. */
   side: Side;
+  /** How its items are drawn (`ui/activity`): tabs across the top of the side panel, or icons in
+   *  the right bar's column. A row of tabs is walked by the left and right arrows, a column by up
+   *  and down. */
+  variant: ActivityVariant;
   /** The region whose bar it is, said on the bar for the stylesheet and the scenarios. */
   region?: string;
   /** The region's name, which is the tab list's. */
   name: string;
   /** What the open view's tooltip says a press does, where "Put the <name> region away" does
-   *  not read: a half of the Panel's (#1737). */
-  away?: string;
+   *  not read: a half of the Panel's (#1737). `null`: a press of the open view does nothing,
+   *  and its tooltip names the view alone (the side panel's own tabs, R121). */
+  away?: string | null;
   /** The views, in the bar's order, each with its name and mark. */
   views: readonly Tabbed[];
   /** The open view, or nothing while the side is put away. */
@@ -98,85 +110,64 @@ export function ActivityBar({
     views.map((one) => one.view),
   );
   const iconOf = useRailIcons();
+  const orientation = variant === "tab" ? "horizontal" : "vertical";
   return (
-    <div className="activity-bar" data-side={side} data-region={region}>
-      <RovingFocusGroup.Root asChild orientation="vertical" loop={false} {...stop}>
-        <div role="tablist" aria-orientation="vertical" aria-label={name}>
-          {views.map(({ view, name: called, mark: Mark }) => {
-            const selected = view === open;
-            const icon = iconOf(view);
-            const key = keys?.[view];
-            const badge = badges?.[view];
-            const described = `${tabOf(view)}-badge`;
-            const tab = (
-              <RovingFocusGroup.Item asChild tabStopId={view} active={selected}>
-                <Tooltip
-                  tip={
-                    (selected
-                      ? (away ?? `Put the ${name} region away`)
-                      : `Show the ${called} view`) + (key === undefined ? "" : ` (${key})`)
-                  }
-                >
-                  <button
-                    type="button"
-                    role="tab"
-                    id={tabOf(view)}
-                    className="activity-tab"
-                    aria-selected={selected}
-                    aria-controls={panelOf(view)}
-                    aria-label={called}
-                    aria-describedby={badge === undefined ? undefined : described}
-                    onClick={() => onPick(view)}
-                  >
-                    {icon ? (
-                      <RailIcon view={view} paths={icon.paths} />
-                    ) : (
-                      <Mark aria-hidden="true" />
-                    )}
-                    {badge !== undefined && (
-                      <span id={described} className="activity-badge">
-                        {badge}
-                      </span>
-                    )}
-                  </button>
-                </Tooltip>
-              </RovingFocusGroup.Item>
-            );
-            return <Fragment key={view}>{menu === undefined ? tab : menu(view, tab)}</Fragment>;
-          })}
-        </div>
-      </RovingFocusGroup.Root>
-    </div>
+    <RovingFocusGroup.Root asChild orientation={orientation} loop={false} {...stop}>
+      <ActivityGroup
+        role="tablist"
+        aria-orientation={orientation}
+        aria-label={name}
+        className="activity-bar"
+        data-side={side}
+        data-region={region}
+      >
+        {views.map(({ view, name: called, mark: Mark }) => {
+          const selected = view === open;
+          const icon = iconOf(view);
+          const key = keys?.[view];
+          const badge = badges?.[view];
+          const described = `${tabOf(view)}-badge`;
+          const said =
+            selected && away === null
+              ? called
+              : selected
+                ? (away ?? `Put the ${name} region away`)
+                : `Show the ${called} view`;
+          const tab = (
+            <RovingFocusGroup.Item asChild tabStopId={view} active={selected}>
+              <ActivityItem
+                variant={variant}
+                selected={selected}
+                tip={said + (key === undefined ? "" : ` (${key})`)}
+                role="tab"
+                id={tabOf(view)}
+                aria-selected={selected}
+                aria-controls={panelOf(view)}
+                aria-label={called}
+                aria-describedby={badge === undefined ? undefined : described}
+                onClick={() => onPick(view)}
+                icon={icon ? <RailIcon view={view} paths={icon.paths} /> : <Mark />}
+                count={
+                  badge === undefined ? undefined : (
+                    // Hidden from the item's name, which is its view's (axe's label-content-name
+                    // match); read as its description through `aria-describedby`.
+                    <span id={described} className="activity-badge" aria-hidden="true">
+                      {badge}
+                    </span>
+                  )
+                }
+              />
+            </RovingFocusGroup.Item>
+          );
+          return <Fragment key={view}>{menu === undefined ? tab : menu(view, tab)}</Fragment>;
+        })}
+      </ActivityGroup>
+    </RovingFocusGroup.Root>
   );
 }
 
-/**
- * **A count on a view's tab** (B-8): the number drawn, and the sentence a screen reader is told
- * as the tab's description, since the tab's name is the view's. The needs-you tone is the one
- * the project and workspace tabs' counts are drawn in, and it is only ever the count's, never a
- * word's (`docs/design-system.md` §Icons). Nothing is drawn for nothing: a zero is not a badge.
- */
-export function ActivityCount({
-  count,
-  said,
-  tone,
-  drawn,
-}: {
-  count: number;
-  said: string;
-  tone?: "needs-you";
-  /** What is drawn in place of the bare number, where one number does not say it: Repos'
-   *  commits behind and ahead (#1739). Still nothing at all for a zero `count`. */
-  drawn?: string;
-}) {
-  if (count <= 0) return null;
-  return (
-    <span className="activity-count" data-tone={tone}>
-      <span aria-hidden="true">{drawn ?? count}</span>
-      <span className="activity-said">{said}</span>
-    </span>
-  );
-}
+/** A count on a view's tab (B-8, R119, R120): the activity family's own (`ui/activity`). */
+export { ActivityCount };
 
 /**
  * Each of purlis's own views' mark, by what it IS. A `Record` over `OwnViewId`, so a view added

@@ -14,6 +14,11 @@
 //! declares and what it does, and the Skill studio and `purlis skill runs` read its runs
 //! ([`runs`]).
 //!
+//! **Each start says where the run happened** (SK-20, #2783): the harness the chat ran on, the
+//! workspace it worked in (null at the plane root), and the persona. What a skill's tab totals
+//! its runs by ([`stats`]): the one reading of the log's runs into totals, by harness, persona or
+//! workspace, that every surface showing them draws.
+//!
 //! **The rows written before runs were recorded** were `{persona, skill, ts}`, one per use of a
 //! skill. They are read as runs too, each a run of its own with no start and no signals
 //! ([`Run::started_by`] `None`): the log stays append-only and nothing is rewritten.
@@ -59,13 +64,131 @@ pub fn started(
         "started_by": run.started_by,
         "ts": crate::dispatch::stamp(when),
     });
+    if let Some(harness) = run.harness {
+        row["harness"] = harness.into();
+    }
+    // A workspace that is not LIVE is LOCAL, this machine's alone: its name is never written
+    // into the committed log, nor the copy of it, which would say a workspace by its level
+    // (SK-20). Such a run says neither where it ran nor which copy it is of. A LIVE workspace is
+    // committed and shared, and its runs say both.
+    let local = run
+        .workspace
+        .is_some_and(|ws| !crate::wscmd::live_workspaces(root).contains(ws));
+    if local {
+        return crate::dispatch::append(&path_for(root, when, device), root, &row);
+    }
     // Which copy it is of, where the start knew it (SK-13): its level, and the workspace the
-    // chat worked in, null at the plane root.
+    // chat worked in, null at the plane root. The workspace is said wherever the start knew the
+    // chat's harness too (SK-20), so a total by workspace counts every run that says where.
     if let Some(level) = run.level {
         row["level"] = level.word().into();
+    }
+    if run.level.is_some() || run.harness.is_some() {
         row["workspace"] = run.workspace.into();
     }
+    // What the chat ran (SK-19): the tree git holds of the copy's folder, or that its folder held
+    // changes not committed, so the run is matched to its version by content, not by time.
+    if let Some(level) = run.level
+        && let Some(content) = content_of(root, skill_name(skill), level, run.workspace, persona)
+    {
+        row["tree"] = content.word().into();
+    }
     crate::dispatch::append(&path_for(root, when, device), root, &row)
+}
+
+/// **What a run of a skill ran, by content** (SK-19): the tree git holds of its folder, or that
+/// the folder held changes git has not committed (or is no folder git has).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Content {
+    /// The folder's tree, as a whole hex id: the version whose folder has this tree.
+    Tree(String),
+    /// The folder held changes not committed, or git does not have it.
+    Uncommitted,
+}
+
+impl Content {
+    /// The word a run's start records: the tree's id, or `uncommitted`.
+    pub fn word(&self) -> &str {
+        match self {
+            Self::Tree(tree) => tree,
+            Self::Uncommitted => "uncommitted",
+        }
+    }
+
+    /// The content `word` says, or `None` for a word that is neither a whole hex id nor
+    /// `uncommitted`.
+    pub fn parse(word: &str) -> Option<Self> {
+        if word == "uncommitted" {
+            return Some(Self::Uncommitted);
+        }
+        let hex = matches!(word.len(), 40 | 64)
+            && word
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
+        hex.then(|| Self::Tree(word.to_owned()))
+    }
+}
+
+impl serde::Serialize for Content {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.word())
+    }
+}
+
+/// A run's skill by its name, without the namespace a harness started it by (`purlis:secrets`
+/// is `secrets`).
+fn skill_name(skill: &str) -> &str {
+    skill.split_once(':').map_or(skill, |(_, leaf)| leaf)
+}
+
+/// What the copy at `level` of the skill `name` holds, in the plane at `root` (a chat in
+/// `workspace`, as `persona`): `None` for a copy with no folder of the plane's levels a history
+/// is kept of (a built-in or a harness skill), and for a plane git does not keep. A persona's
+/// copy has its history as the other levels' do (SK-32, #3124).
+fn content_of(
+    root: &Path,
+    name: &str,
+    level: Level,
+    workspace: Option<&str>,
+    persona: Option<&str>,
+) -> Option<Content> {
+    let at = match level.origin {
+        purlis_skills::Origin::Project => purlis_skills::Whose::Project,
+        purlis_skills::Origin::Workspace => purlis_skills::Whose::Workspace(workspace?.to_owned()),
+        purlis_skills::Origin::Persona => purlis_skills::Whose::Persona(persona?.to_owned()),
+        _ => return None,
+    };
+    let dir = purlis_skills::level_dir(root, &at, level.local)?;
+    let folder = purlis_skills::named(&dir, name)?;
+    let rel = folder
+        .strip_prefix(root)
+        .ok()?
+        .to_string_lossy()
+        .replace('\\', "/");
+    let git = |args: &[&str]| {
+        crate::worktree::git::run(root, args, crate::worktree::git::READ)
+            .ok()
+            .filter(crate::worktree::git::Run::ok)
+            .map(|run| run.out)
+    };
+    git(&["rev-parse", "--is-inside-work-tree"])?;
+    let spec = crate::planegit::literally(&rel);
+    let pending = git(&[
+        "status",
+        "--porcelain",
+        "--untracked-files=all",
+        "--",
+        &spec,
+    ]);
+    if pending.is_none_or(|out| !out.trim().is_empty()) {
+        return Some(Content::Uncommitted);
+    }
+    let tree = git(&["rev-parse", "--verify", "-q", &format!("HEAD:{rel}")]);
+    Some(
+        tree.and_then(|out| Content::parse(out.trim()))
+            .filter(|content| matches!(content, Content::Tree(_)))
+            .unwrap_or(Content::Uncommitted),
+    )
 }
 
 /// A skill run's start, as [`started`] logs it: the run the event log's writer opened, or the
@@ -79,28 +202,36 @@ pub struct Starting<'a> {
     pub workspace: Option<&'a str>,
     /// The copy of the skill, by its level, where the start knew it.
     pub level: Option<Level>,
+    /// The harness the chat ran on, by the word the plane calls it (`claude`, `codex`), where
+    /// the start knew it.
+    pub harness: Option<&'a str>,
 }
 
-impl<'a> From<&'a Open> for Starting<'a> {
-    fn from(open: &'a Open) -> Self {
+impl<'a> Starting<'a> {
+    /// The start of run `open`, the event log's writer opened, in a chat on `harness`.
+    pub fn of_open(open: &'a Open, harness: Option<&'a str>) -> Self {
         Starting {
             id: &open.id,
             skill: &open.skill,
             started_by: open.started_by,
             workspace: open.whose.workspace.as_deref(),
             level: open.whose.level,
+            harness,
         }
     }
-}
 
-impl<'a> From<&'a crate::hookwire::SkillStarted> for Starting<'a> {
-    fn from(started: &'a crate::hookwire::SkillStarted) -> Self {
+    /// The start `started` a hook or purlis's MCP server records itself, in a chat on `harness`.
+    pub fn of_started(
+        started: &'a crate::hookwire::SkillStarted,
+        harness: Option<&'a str>,
+    ) -> Self {
         Starting {
             id: &started.run,
             skill: &started.skill,
             started_by: started.started_by,
             workspace: started.workspace.as_deref(),
             level: started.level,
+            harness,
         }
     }
 }
@@ -160,19 +291,51 @@ pub struct Run {
     /// Which copy of the skill it is of, and where it ran, or `None` for a row that does not say
     /// (written before SK-13, or by a start that could not tell): such a run is no copy's.
     pub copy: Option<RunCopy>,
+    /// The harness the chat ran on, or `None` for a row that does not say (written before
+    /// SK-20, or by a start that could not tell).
+    pub harness: Option<String>,
+    /// Where the chat worked: `Some(None)` at the plane root, and `None` for a row that does not
+    /// say.
+    pub workspace: Option<Option<String>>,
+    /// What it ran, by content (SK-19), or `None` for a row that does not say (written before
+    /// SK-19, or of a copy no history is kept of).
+    pub content: Option<Content>,
     /// How it ended and what it counted, once its end is logged.
     pub end: Option<End>,
 }
 
+/// **What a harness is called**, by the word a run's start records it by (`claude`): its
+/// declaration's title (`Claude Code`) for one purlis ships, and the word itself for one a project
+/// declares.
+pub fn harness_title(word: &str) -> String {
+    crate::harness::Harness::of_kind(word).map_or_else(
+        || word.to_owned(),
+        |harness| harness.declared().title.clone(),
+    )
+}
+
 impl Run {
+    /// What it ran on, as a person calls it ([`harness_title`]), where its start says.
+    pub fn ran_on(&self) -> Option<String> {
+        self.harness.as_deref().map(harness_title)
+    }
+
     /// Whether this is a run of skill `name`: by its whole name, or by its name without the
     /// plugin's namespace a harness started it by (`purlis:secrets` is a run of `secrets`).
     pub fn is_of(&self, name: &str) -> bool {
-        self.skill == name
-            || self
-                .skill
-                .split_once(':')
-                .is_some_and(|(_, leaf)| leaf == name)
+        self.skill == name || self.skill_name() == name
+    }
+
+    /// Its skill by name, without the namespace a harness started it by.
+    pub fn skill_name(&self) -> &str {
+        skill_name(&self.skill)
+    }
+
+    /// When it started, in seconds since 1970, where its row's stamp can be read.
+    pub fn started_secs(&self) -> Option<u64> {
+        chrono::DateTime::parse_from_rfc3339(&self.started)
+            .ok()
+            .and_then(|at| u64::try_from(at.timestamp()).ok())
     }
 }
 
@@ -218,7 +381,18 @@ struct Row {
     tokens: Option<u64>,
     parent: Option<String>,
     level: Option<String>,
-    workspace: Option<String>,
+    tree: Option<String>,
+    harness: Option<String>,
+    /// Present, null or not, only where the row says it.
+    #[serde(deserialize_with = "said")]
+    workspace: Option<Option<String>>,
+}
+
+/// A field a row says, null or not: `Some` of what it says, where a field left out is `None`.
+fn said<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Option<String>>, D::Error> {
+    serde::Deserialize::deserialize(deserializer).map(Some)
 }
 
 /// **Every skill run the plane's skill log holds**, newest first: each start with its end
@@ -251,23 +425,29 @@ pub fn runs(root: &Path) -> Vec<Run> {
                 continue;
             };
             match (row.skill.filter(|s| !s.is_empty()), row.run, row.ended) {
-                (Some(skill), id, _) => runs.push(Run {
-                    id,
-                    skill,
-                    persona: row.persona.filter(|p| !p.is_empty()),
-                    started_by: row.started_by,
-                    started: row.ts.unwrap_or_default(),
-                    device: device.clone(),
-                    copy: row
-                        .level
-                        .as_deref()
-                        .and_then(Level::parse)
-                        .map(|level| RunCopy {
-                            workspace: row.workspace.filter(|ws| !ws.is_empty()),
-                            level,
-                        }),
-                    end: None,
-                }),
+                (Some(skill), id, _) => {
+                    let workspace = row.workspace.map(|ws| ws.filter(|ws| !ws.is_empty()));
+                    runs.push(Run {
+                        id,
+                        skill,
+                        persona: row.persona.filter(|p| !p.is_empty()),
+                        started_by: row.started_by,
+                        started: row.ts.unwrap_or_default(),
+                        device: device.clone(),
+                        copy: row
+                            .level
+                            .as_deref()
+                            .and_then(Level::parse)
+                            .map(|level| RunCopy {
+                                workspace: workspace.clone().flatten(),
+                                level,
+                            }),
+                        harness: row.harness.filter(|h| !h.is_empty()),
+                        workspace,
+                        content: row.tree.as_deref().and_then(Content::parse),
+                        end: None,
+                    });
+                }
                 (None, Some(id), Some(ended)) => {
                     ends.insert(
                         id,
@@ -295,6 +475,117 @@ pub fn runs(root: &Path) -> Vec<Run> {
     }
     runs.sort_by(|a, b| b.started.cmp(&a.started).then(b.id.cmp(&a.id)));
     runs
+}
+
+/// **What a skill's runs are totalled by** (SK-20): the harness its chat ran on, the persona,
+/// or the workspace. One reading, [`stats`], for every grouping a surface shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum By {
+    Harness,
+    Persona,
+    Workspace,
+    /// What the run ran, by content (SK-19): a tree's id is [`Group::Named`], a folder with changes
+    /// not committed [`Group::None`].
+    Version,
+}
+
+/// **The group a run is totalled in**: a name, none (no persona; the plane root), or a run whose
+/// row does not say (one written before its start said where).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum Group {
+    Named(String),
+    /// No persona, or the plane root: a fact, not a gap.
+    None,
+    /// The row does not say.
+    NotRecorded,
+}
+
+impl Group {
+    /// This group as a person calls it where it is a harness: its declaration's title
+    /// ([`harness_title`]).
+    pub fn harness_titled(self) -> Group {
+        match self {
+            Group::Named(word) => Group::Named(harness_title(&word)),
+            other => other,
+        }
+    }
+
+    fn of(run: &Run, by: By) -> Group {
+        let named = |name: &Option<String>| name.clone().map_or(Group::None, Group::Named);
+        match by {
+            By::Persona => named(&run.persona),
+            By::Harness => run.harness.clone().map_or(Group::NotRecorded, Group::Named),
+            By::Workspace => run.workspace.as_ref().map_or(Group::NotRecorded, named),
+            By::Version => match &run.content {
+                Some(Content::Tree(tree)) => Group::Named(tree.clone()),
+                Some(Content::Uncommitted) => Group::None,
+                None => Group::NotRecorded,
+            },
+        }
+    }
+}
+
+/// **What a group's runs add up to**: signals and tokens, never a pass or a fail (decision 24).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
+pub struct Totals {
+    /// Runs started.
+    pub runs: u64,
+    /// Runs whose end is logged: the ones the signals are counted from.
+    pub ended: u64,
+    pub tool_calls: u64,
+    pub tool_errors: u64,
+    pub refusals: u64,
+    pub asks: u64,
+    /// Tokens spent inside them, as the harness said them.
+    pub tokens: u64,
+    /// Runs whose harness said their tokens, of [`Totals::ended`].
+    pub tokens_said: u64,
+    /// Time inside them, in milliseconds.
+    pub ms: u64,
+}
+
+impl Totals {
+    fn add(&mut self, run: &Run) {
+        self.runs += 1;
+        let Some(end) = &run.end else {
+            return;
+        };
+        self.ended += 1;
+        self.tool_calls = self.tool_calls.saturating_add(end.tool_calls);
+        self.tool_errors = self.tool_errors.saturating_add(end.tool_errors);
+        self.refusals = self.refusals.saturating_add(end.refusals);
+        self.asks = self.asks.saturating_add(end.asks);
+        self.ms = self.ms.saturating_add(end.ms);
+        if let Some(tokens) = end.tokens {
+            self.tokens = self.tokens.saturating_add(tokens);
+            self.tokens_said += 1;
+        }
+    }
+}
+
+/// One group's totals ([`stats`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Stats {
+    pub group: Group,
+    pub totals: Totals,
+}
+
+/// **The totals of `runs` by `by`** (SK-20): one row per group, the most runs first, then by
+/// group, named groups by name before none and the runs that do not say. The one reading a
+/// skill's tab, and any other surface that totals runs, draws.
+pub fn stats(runs: &[Run], by: By) -> Vec<Stats> {
+    let mut groups: std::collections::BTreeMap<Group, Totals> = std::collections::BTreeMap::new();
+    for run in runs {
+        groups.entry(Group::of(run, by)).or_default().add(run);
+    }
+    let mut rows: Vec<Stats> = groups
+        .into_iter()
+        .map(|(group, totals)| Stats { group, totals })
+        .collect();
+    // Stable, so groups with as many runs keep the map's order.
+    rows.sort_by_key(|row| std::cmp::Reverse(row.totals.runs));
+    rows
 }
 
 #[cfg(test)]

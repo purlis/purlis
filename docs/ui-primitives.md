@@ -780,6 +780,31 @@ other tab strips (projects, workspaces, the activity tabs) move to the family wi
 shell tickets.
 
 
+## The activity family: the four corners
+
+**A view's icon on a side's bar is an `ActivityItem`** (#2917, spec #2897 R116–R120, N17,
+`ui/activity/ActivityItem.tsx`), with the lint rule `purlis/activity-family` at error. Its parts
+are `item` (the root), `icon`, `count` and `indicator`; its variants are the two corners.
+
+- **`tab`, the left bar** (N36, R116): 32×30 tabs across the top of the side panel, over a rule,
+  the side panel's views first and its half of the bottom panel's (Branch folders, Changes) at
+  the row's end. A press switches the view; a press of the open one does nothing (R121), and ⌘B
+  is still the way to put the side away. While it is away, the same icons stand as a narrow
+  column at the window's edge, and a press brings the side back on that view.
+- **`bar`, the right bar** (R117): a 44px column of 36px icons at the window's edge, its own
+  views at the top (a press toggles the 300px right panel, whose header has a × that closes it)
+  and its half of the bottom panel's at its foot.
+- **Its states are colours** (R118): muted at rest, the card's fill under the pointer, the
+  accent's wash while its view is open. The `indicator` is empty by default; Purlis Classic paints
+  it as its accent edge through parts.
+- **A count** (`ActivityCount`, R119) sits at the item's top right, ringed in its bar's ground;
+  what waits on the person is drawn hot, in the needs-you colours (R120), which a theme's count
+  colours never reach.
+- **Only the part that appears moves** (R122, R124, R127, R128): the right panel comes 24px in
+  over `duration.open`, a bottom half 16px up over `duration.reveal`, a side view's list 4px up
+  over `duration.swap`. A view switch inside an open panel replays nothing, and closing has no
+  motion.
+
 ## The control classes
 
 **Each kind of control is one CSS class, drawn only from the tokens** (ADR 0094 §4, #1834). The

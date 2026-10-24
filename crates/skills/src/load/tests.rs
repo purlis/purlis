@@ -31,6 +31,7 @@ fn skill(dir: &Path, name: &str, description: &str, more: &str) -> Effective {
         route: Route::Mcp,
         origin: Origin::Project,
         local: false,
+        deprecated: None,
     }
 }
 

@@ -10,7 +10,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::{level_dir, read};
+use crate::{Whose, level_dir, read};
 
 /// The folder in `dir` whose skill is named `name`: its frontmatter's `name`, which is a
 /// skill's identity, never its folder's name. The first by folder name where two have one.
@@ -25,18 +25,19 @@ pub fn named(dir: &Path, name: &str) -> Option<PathBuf> {
     found.into_iter().next()
 }
 
-/// **Shares the local skill named `name`** at the plane root (`workspace` `None`) or in
-/// `workspace`: moves its folder from the level's `skills.local/` into its `skills/`, and its
+/// **Shares the local skill named `name`** at the level `at` (the plane root's, a workspace's
+/// or a persona's): moves its folder from the level's `skills.local/` into its `skills/`, and its
 /// `<folder>.toml` with it, and says where the folder now is. Refused, moving nothing, where
 /// the level has no local skill of that name or its `skills/` already holds that folder's name.
-pub fn share(plane: &Path, workspace: Option<&str>, name: &str) -> Result<PathBuf, String> {
-    let at = match workspace {
-        None => "at the project's root".to_owned(),
-        Some(ws) => format!("in workspace {ws}"),
+pub fn share(plane: &Path, at: &Whose, name: &str) -> Result<PathBuf, String> {
+    let said = match at {
+        Whose::Project => "at the project's root".to_owned(),
+        Whose::Workspace(ws) => format!("in workspace {ws}"),
+        Whose::Persona(persona) => format!("of persona {persona}"),
     };
-    let none = || format!("no local skill is named {name:?} {at}");
-    let local = level_dir(plane, workspace, true).ok_or_else(none)?;
-    let shared = level_dir(plane, workspace, false).ok_or_else(none)?;
+    let none = || format!("no local skill is named {name:?} {said}");
+    let local = level_dir(plane, at, true).ok_or_else(none)?;
+    let shared = level_dir(plane, at, false).ok_or_else(none)?;
     let from = named(&local, name).ok_or_else(none)?;
     let folder = from.file_name().unwrap_or_default().to_os_string();
     let to = shared.join(&folder);

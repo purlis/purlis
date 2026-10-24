@@ -345,7 +345,7 @@ impl StudioPanel for RunsPanel<'_> {
 
 /// The Runs panel's blocks for `runs` of `skill`: a sentence on what a run is, then the table, or
 /// the empty table's claim and its way on.
-fn runs_blocks(runs: &[crate::skilluse::Run], skill: &str) -> Vec<Block> {
+fn runs_blocks(runs: &[super::StudioRun], skill: &str) -> Vec<Block> {
     let mut out = Vec::new();
     if !runs.is_empty() {
         out.push(Block::Note {
@@ -359,7 +359,8 @@ fn runs_blocks(runs: &[crate::skilluse::Run], skill: &str) -> Vec<Block> {
     let rows = runs
         .iter()
         .enumerate()
-        .map(|(at, run)| {
+        .map(|(at, nested)| {
+            let run = &nested.run;
             let end = run.end.as_ref();
             let count =
                 |of: fn(&crate::skilluse::End) -> u64| end.map(of).map(small).unwrap_or_default();
@@ -370,6 +371,7 @@ fn runs_blocks(runs: &[crate::skilluse::Run], skill: &str) -> Vec<Block> {
                     run.persona
                         .clone()
                         .unwrap_or_else(|| "No persona".to_owned()),
+                    run.ran_on().unwrap_or_else(|| "Not recorded".to_owned()),
                     started_by_said(run.started_by).to_owned(),
                     ended_said(end.map(|end| end.ended), run.id.is_none()).to_owned(),
                     count(|end| end.tool_calls),
@@ -381,6 +383,7 @@ fn runs_blocks(runs: &[crate::skilluse::Run], skill: &str) -> Vec<Block> {
                         Some(end) => end.tokens.map_or_else(|| "Not reported".to_owned(), small),
                     },
                     end.map(|end| time_said(end.ms)).unwrap_or_default(),
+                    nesting_said(nested),
                 ],
             }
         })
@@ -390,6 +393,7 @@ fn runs_blocks(runs: &[crate::skilluse::Run], skill: &str) -> Vec<Block> {
         columns: [
             "Started",
             "Persona",
+            "Ran on",
             "Started by",
             "Ended",
             "Tool calls",
@@ -398,6 +402,7 @@ fn runs_blocks(runs: &[crate::skilluse::Run], skill: &str) -> Vec<Block> {
             "Asks",
             "Tokens",
             "Time",
+            "Nested",
         ]
         .map(str::to_owned)
         .to_vec(),
@@ -410,6 +415,19 @@ fn runs_blocks(runs: &[crate::skilluse::Run], skill: &str) -> Vec<Block> {
         },
     }));
     out
+}
+
+/// Where a run nests (SK-19): the skill whose run it started inside, and the skills that ran
+/// inside it.
+fn nesting_said(nested: &super::StudioRun) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(inside) = &nested.inside {
+        parts.push(format!("Inside {inside}"));
+    }
+    if !nested.ran.is_empty() {
+        parts.push(format!("Ran {}", nested.ran.join(", ")));
+    }
+    parts.join("; ")
 }
 
 /// The catalogue row that opens a new chat, the empty Runs panel's way out.
@@ -449,6 +467,8 @@ fn started_by_said(started: Option<purlis_skills::runs::StartedBy>) -> &'static 
         Some(StartedBy::Read) => "The chat read the skill",
         Some(StartedBy::McpLoad) => "The chat loaded it through purlis",
         Some(StartedBy::UseSkill) => "You, with Use skill…",
+        Some(StartedBy::Curation) => "A curation action",
+        Some(StartedBy::Trigger) => "A trigger",
         None => "From before runs were recorded",
         Some(_) => "Not known",
     }

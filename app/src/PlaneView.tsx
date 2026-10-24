@@ -220,7 +220,7 @@ import { DoctorNotices, useDoctor } from "./Doctor";
 import { StaleCloneNotices } from "./StaleCloneNotices";
 import { BrowsersAtQuitNotice } from "./BrowsersAtQuitNotice";
 import { usePin } from "./Updates";
-import { StatusLine, runningIn, todoCount, type Alerts } from "./StatusLine";
+import { StatusLine, projectName, runningIn, todoCount, type Alerts } from "./StatusLine";
 import {
   byLastActivity,
   closeChat,
@@ -8726,6 +8726,13 @@ export const PlaneView = memo(function PlaneView({
                   browsers={chatBrowsersShown}
                   kept={keptShown}
                   onBrowser={openChatBrowser}
+                  // The side panel's header (R123): the workspace, then the project, quiet.
+                  heading={
+                    <>
+                      {ofWorkspace ?? OUTSIDE_TITLE}{" "}
+                      <span className="side-head-project">· {projectName(plane)}</span>
+                    </>
+                  }
                 />
               </WaitingTaskWaysContext.Provider>
             ),
@@ -8914,7 +8921,6 @@ export const PlaneView = memo(function PlaneView({
                     said={
                       queue.length === 1 ? "1 chat needs you" : `${queue.length} chats need you`
                     }
-                    tone="needs-you"
                   />
                 )}
               </QueueRead>
@@ -8943,6 +8949,8 @@ export const PlaneView = memo(function PlaneView({
           }}
           keys={SIDE_KEYS_SAID}
           onPick={pickSideView}
+          // The side panel's header (R123): Chats draws its own; Explorer names the workspace.
+          heads={{ chats: null, explorer: ofWorkspace ?? OUTSIDE_TITLE }}
           // Right-click on a view's icon (#1740): its move, the catalogue's fourth reader.
           menu={(view, to, tab) => (
             <Menued on={{ on: "view", view, to }} offers={found} onPress={press}>

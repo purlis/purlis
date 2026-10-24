@@ -522,7 +522,7 @@ function AddTodo({
           value={text}
           aria-label={`New todo in ${workspace}`}
           error={trouble}
-          placeholder={`Add a todo to ${workspace}…`}
+          placeholder="Add a todo…"
           // Read-only rather than disabled while it is sent: a disabled box drops the keyboard,
           // and the next todo is typed into the same box.
           isReadOnly={busy}

@@ -67,9 +67,17 @@ impl Project {
 
     /// The names a chat at the root (`None`) or in a workspace gets.
     fn gets(&self, workspace: Option<&str>) -> Vec<String> {
+        self.gets_as(workspace, None)
+    }
+
+    /// The names a chat at the root (`None`) or in a workspace gets, as `persona`.
+    fn gets_as(&self, workspace: Option<&str>, persona: Option<&str>) -> Vec<String> {
         let mut args = vec!["skill", "list", "--json"];
         if let Some(ws) = workspace {
             args.extend(["-w", ws]);
+        }
+        if let Some(persona) = persona {
+            args.extend(["-p", persona]);
         }
         let out = self.run(&args);
         assert!(out.status.success(), "{}", stderr(&out));
@@ -228,4 +236,94 @@ fn a_chat_does_not_change_a_skill_itself() {
     assert_eq!(out.status.code(), Some(1));
     assert!(stderr(&out).contains("draft"), "{}", stderr(&out));
     assert!(!project.root().join("skills/deploy").exists());
+}
+
+#[test]
+fn a_personas_own_skill_is_made_moved_deleted_restored_and_shared_with_p() {
+    // SK-32 (#3003): every verb at a persona's level, named with `-p`.
+    let project = Project::new();
+    let made = project.run(&["skill", "new", "lint", "-d", "Lints it.", "-p", "steward"]);
+    assert!(made.status.success(), "{}", stderr(&made));
+    assert!(
+        project
+            .root()
+            .join("personas/steward/skills/lint/SKILL.md")
+            .exists()
+    );
+    assert_eq!(project.gets_as(Some("alpha"), Some("steward")), ["lint"]);
+    assert!(project.gets(Some("alpha")).is_empty());
+
+    let out = project.run(&["skill", "new", "x", "-d", "Does x.", "-p", "nobody"]);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(stderr(&out).contains("no persona"), "{}", stderr(&out));
+
+    // Promoting it asks for a grant; the persona keeps it in every workspace by its list.
+    let out = project.run(&["skill", "mv", "lint", "-p", "steward", "--to", "root"]);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(stderr(&out).contains("--grant"), "{}", stderr(&out));
+    let out = project.run(&[
+        "skill", "mv", "lint", "-p", "steward", "--to", "root", "--grant", "root",
+    ]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(project.root().join("skills/lint/SKILL.md").exists());
+    assert!(
+        std::fs::read_to_string(project.root().join("personas/steward/persona.md"))
+            .unwrap()
+            .contains("skills: deploy, lint")
+    );
+    assert_eq!(project.gets_as(Some("alpha"), Some("steward")), ["lint"]);
+    assert!(project.gets(Some("alpha")).is_empty());
+
+    // And back: the persona's own again, and out of its list.
+    let out = project.run(&["skill", "mv", "lint", "--to-persona", "steward"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(
+        project
+            .root()
+            .join("personas/steward/skills/lint/SKILL.md")
+            .exists()
+    );
+    assert!(
+        std::fs::read_to_string(project.root().join("personas/steward/persona.md"))
+            .unwrap()
+            .contains("skills: deploy\n")
+    );
+
+    let out = project.run(&["skill", "rm", "lint", "-p", "steward"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(
+        stderr(&out).contains("chats as steward, in every workspace"),
+        "{}",
+        stderr(&out)
+    );
+    assert!(project.gets_as(None, Some("steward")).is_empty());
+    let out = project.run(&["skill", "restore"]);
+    assert!(
+        String::from_utf8_lossy(&out.stdout).contains("lint  persona steward"),
+        "{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    let out = project.run(&["skill", "restore", "lint"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(project.gets_as(None, Some("steward")), ["lint"]);
+
+    let out = project.run(&[
+        "skill",
+        "new",
+        "notes",
+        "-d",
+        "Keeps notes.",
+        "-p",
+        "steward",
+        "--local",
+    ]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    let out = project.run(&["skill", "share", "notes", "-p", "steward"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(
+        project
+            .root()
+            .join("personas/steward/skills/notes/SKILL.md")
+            .exists()
+    );
 }

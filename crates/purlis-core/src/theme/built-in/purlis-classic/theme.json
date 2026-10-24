@@ -15,7 +15,12 @@
     "tabs.tab.hover.inset": 0,
     "tabs.tab.selected.fill": "layer.selected",
     "tabs.tab.selected.flare": 0,
-    "tabs.closer.corner-radius": 0
+    "tabs.closer.corner-radius": 0,
+    "activity.item.corner-radius": 0,
+    "activity.item.hover.fill": "transparent",
+    "activity.item.selected.fill": "transparent",
+    "activity.item.selected.text": "text.primary",
+    "activity.indicator.selected.fill": "accent.base"
   },
   "appearances": [
     {
@@ -206,6 +211,8 @@
         "duration.slide": 260,
         "duration.reveal": 220,
         "duration.leave": 200,
+        "duration.open": 160,
+        "duration.swap": 0,
 
         "easing.standard": [0.2, 0, 0, 1],
         "easing.enter": [0, 0, 0.2, 1],
@@ -401,6 +408,8 @@
         "duration.slide": 260,
         "duration.reveal": 220,
         "duration.leave": 200,
+        "duration.open": 160,
+        "duration.swap": 0,
 
         "easing.standard": [0.2, 0, 0, 1],
         "easing.enter": [0, 0, 0.2, 1],

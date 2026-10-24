@@ -500,6 +500,259 @@ fn harnesses(
     (harnesses, clashes)
 }
 
+/// What started a skill run, as the Runs panel draws it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum RunStart {
+    /// The chat's own Skill tool.
+    SkillTool,
+    /// The chat read the skill's `SKILL.md`.
+    Read,
+    /// The chat loaded the skill with purlis's `skill_load` tool.
+    McpLoad,
+    /// The person picked it in Use skill… and sent the prompt it was typed into.
+    UseSkill,
+    /// A curation action typed the prompt the person sent.
+    Curation,
+    /// A trigger sent the prompt.
+    Trigger,
+    /// A start a newer purlis wrote.
+    Unknown,
+}
+
+impl From<purlis_core::skills::runs::StartedBy> for RunStart {
+    fn from(started_by: purlis_core::skills::runs::StartedBy) -> RunStart {
+        use purlis_core::skills::runs::StartedBy;
+        match started_by {
+            StartedBy::SkillTool => RunStart::SkillTool,
+            StartedBy::Read => RunStart::Read,
+            StartedBy::McpLoad => RunStart::McpLoad,
+            StartedBy::UseSkill => RunStart::UseSkill,
+            StartedBy::Curation => RunStart::Curation,
+            StartedBy::Trigger => RunStart::Trigger,
+            _ => RunStart::Unknown,
+        }
+    }
+}
+
+/// How a skill run ended, as the Runs panel draws it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "lowercase")]
+pub enum RunEnd {
+    /// With its turn.
+    Turn,
+    /// A new prompt came first.
+    Interrupted,
+    /// The chat ended under it.
+    Session,
+    /// An end a newer purlis wrote.
+    Unknown,
+}
+
+impl From<purlis_core::skills::runs::Ended> for RunEnd {
+    fn from(ended: purlis_core::skills::runs::Ended) -> RunEnd {
+        use purlis_core::skills::runs::Ended;
+        match ended {
+            Ended::Turn => RunEnd::Turn,
+            Ended::Interrupted => RunEnd::Interrupted,
+            Ended::Session => RunEnd::Session,
+            _ => RunEnd::Unknown,
+        }
+    }
+}
+
+/// One skill run, as a skill's Runs panel lists it (SK-3): what started it and its signals,
+/// never a pass or a fail.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct StudioRun {
+    /// Its id, or null for a use from before runs were recorded.
+    pub id: Option<String>,
+    pub skill: String,
+    pub persona: Option<String>,
+    /// What started it, or null for a use from before runs were recorded.
+    pub started_by: Option<RunStart>,
+    /// When it started.
+    pub started: String,
+    /// How it ended, or null while no end is recorded.
+    pub ended: Option<RunEnd>,
+    pub ms: Option<u32>,
+    pub tool_calls: Option<u32>,
+    pub tool_errors: Option<u32>,
+    pub refusals: Option<u32>,
+    pub asks: Option<u32>,
+    /// Tokens spent inside it, where the harness reported them.
+    pub tokens: Option<u32>,
+    /// The skill whose run this one started inside, where it is a child span (SK-19).
+    pub inside: Option<String>,
+    /// The skills whose runs started inside this one, each once (SK-19).
+    pub ran: Vec<String>,
+    /// What it ran on, as a person calls it (`Claude Code`), or null where its start does not
+    /// say.
+    pub ran_on: Option<String>,
+}
+
+/// A count as the window's bindings carry it: at most `u32::MAX`.
+pub(crate) fn small(n: u64) -> u32 {
+    u32::try_from(n).unwrap_or(u32::MAX)
+}
+
+/// Every run of `skill` the project at `root` has recorded, newest first, at most `limit`.
+pub(crate) fn runs(root: &std::path::Path, skill: &str, limit: usize) -> Vec<StudioRun> {
+    purlis_core::skills::studio_runs(root, Some(skill), limit)
+        .into_iter()
+        .map(|nested| {
+            let run = &nested.run;
+            let end = run.end.as_ref();
+            StudioRun {
+                inside: nested.inside.clone(),
+                ran: nested.ran.clone(),
+                id: run.id.clone(),
+                skill: run.skill.clone(),
+                persona: run.persona.clone(),
+                started_by: run.started_by.map(RunStart::from),
+                started: run.started.clone(),
+                ended: end.map(|end| RunEnd::from(end.ended)),
+                ms: end.map(|end| small(end.ms)),
+                tool_calls: end.map(|end| small(end.tool_calls)),
+                tool_errors: end.map(|end| small(end.tool_errors)),
+                refusals: end.map(|end| small(end.refusals)),
+                asks: end.map(|end| small(end.asks)),
+                tokens: end.and_then(|end| end.tokens).map(small),
+                ran_on: run.ran_on(),
+            }
+        })
+        .collect()
+}
+
+/// The group a skill's totals row is of (SK-20).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[serde(tag = "kind", content = "name", rename_all = "kebab-case")]
+pub enum StatsGroup {
+    /// A harness, as a person calls it; a persona or a workspace, by name.
+    Named(String),
+    /// No persona, or the project's root.
+    None,
+    /// Runs whose start does not say.
+    NotRecorded,
+}
+
+/// One row of a skill's totals: a group's runs, their signals and their tokens (SK-20).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct StatsRow {
+    pub group: StatsGroup,
+    pub runs: u32,
+    /// Runs whose end is recorded: the ones the signals are counted from.
+    pub ended: u32,
+    pub tool_calls: u32,
+    pub tool_errors: u32,
+    pub refusals: u32,
+    pub asks: u32,
+    /// Tokens spent inside them, or null where no run said its tokens.
+    pub tokens: Option<u32>,
+    pub ms: u32,
+}
+
+/// A skill's totals, by what it ran on, by persona and by workspace (SK-20).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Type)]
+pub struct SkillStats {
+    pub by_harness: Vec<StatsRow>,
+    pub by_persona: Vec<StatsRow>,
+    pub by_workspace: Vec<StatsRow>,
+}
+
+/// **One totals row** of `group`'s `totals`, as the window draws it: a skill's totals by a
+/// grouping (SK-20), and one version's runs (SK-19).
+pub(crate) fn stats_row(group: StatsGroup, totals: purlis_core::skilluse::Totals) -> StatsRow {
+    StatsRow {
+        group,
+        runs: small(totals.runs),
+        ended: small(totals.ended),
+        tool_calls: small(totals.tool_calls),
+        tool_errors: small(totals.tool_errors),
+        refusals: small(totals.refusals),
+        asks: small(totals.asks),
+        tokens: (totals.tokens_said > 0).then(|| small(totals.tokens)),
+        ms: small(totals.ms),
+    }
+}
+
+/// The totals of every run of `skill` the project at `root` has recorded
+/// (`purlis_core::skilluse::stats`).
+pub(crate) fn stats(root: &std::path::Path, skill: &str) -> SkillStats {
+    use purlis_core::skilluse::{By, Group};
+    let runs: Vec<purlis_core::skilluse::Run> =
+        purlis_core::skills::studio_runs(root, Some(skill), usize::MAX)
+            .into_iter()
+            .map(|nested| nested.run)
+            .collect();
+    let rows = |by: By| -> Vec<StatsRow> {
+        purlis_core::skilluse::stats(&runs, by)
+            .into_iter()
+            .map(|row| {
+                let group = match by {
+                    By::Harness => row.group.harness_titled(),
+                    _ => row.group,
+                };
+                stats_row(
+                    match group {
+                        Group::Named(name) => StatsGroup::Named(name),
+                        Group::None => StatsGroup::None,
+                        Group::NotRecorded => StatsGroup::NotRecorded,
+                    },
+                    row.totals,
+                )
+            })
+            .collect()
+    };
+    SkillStats {
+        by_harness: rows(By::Harness),
+        by_persona: rows(By::Persona),
+        by_workspace: rows(By::Workspace),
+    }
+}
+
+/// The totals of skill `skill`'s runs in the project, by what they ran on, by persona and by
+/// workspace: none while the flag is off. On a blocking thread, as it reads the project's skill
+/// log.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_stats(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    skill: String,
+) -> Result<SkillStats, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("reading the skill's runs", move || {
+        if !purlis_core::skills::studio_on_here() {
+            return Ok(SkillStats::default());
+        }
+        Ok(stats(held.root(), &skill))
+    })
+    .await
+}
+
+/// How many runs a skill's Runs panel lists at most.
+const RUNS_SHOWN: usize = 200;
+
+/// The runs of skill `skill` in the project, newest first, for its Runs panel: none while the
+/// flag is off. On a blocking thread, as it reads the project's skill log.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_runs(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    skill: String,
+) -> Result<Vec<StudioRun>, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("reading the skill's runs", move || {
+        if !purlis_core::skills::studio_on_here() {
+            return Ok(Vec::new());
+        }
+        Ok(runs(held.root(), &skill, RUNS_SHOWN))
+    })
+    .await
+}
+
 /// **Which panel on a skill's tab**, as the window holds it: purlis's Runs panel, or one an
 /// extension adds, by its id and the panel's.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
@@ -647,14 +900,14 @@ pub(crate) async fn skill_studio(
     .await
 }
 
-/// **Share** (#2767): moves the local skill `name` of the project's root (`workspace` `None`) or
-/// of `workspace` into that level's `skills/`, committed (#2770), or says why not.
+/// **Share** (#2767): moves the local skill `name` of `whose` (the project's root, a workspace
+/// or a persona) into that level's `skills/`, committed (#2770), or says why not.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_share(
     planes: tauri::State<'_, crate::planes::Planes>,
     plane: crate::planes::PlaneId,
-    workspace: Option<String>,
+    whose: crate::skillchange::SkillWhose,
     name: String,
 ) -> Result<(), String> {
     let held = planes.held(&plane)?;
@@ -662,7 +915,7 @@ pub(crate) async fn skill_share(
         if !purlis_core::skills::studio_on_here() {
             return Err("The Skill studio is not turned on on this machine.".to_owned());
         }
-        crate::skillchange::share(held.root(), workspace.as_deref(), &name)
+        crate::skillchange::share(held.root(), &(&whose).into(), &name)
     })
     .await
 }

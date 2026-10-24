@@ -1,20 +1,28 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+use super::super::StudioRun;
 use super::*;
 use crate::skilluse::{End, Run};
 use purlis_skills::runs::{Ended, StartedBy};
 
-fn run(id: Option<&str>, started_by: Option<StartedBy>, end: Option<End>) -> Run {
-    Run {
-        id: id.map(str::to_owned),
-        skill: "deploy".to_owned(),
-        persona: id.map(|_| "ops".to_owned()),
-        started_by,
-        started: "2026-10-20T10:00:05+00:00".to_owned(),
-        device: "d".to_owned(),
-        copy: None,
-        end,
+fn run(id: Option<&str>, started_by: Option<StartedBy>, end: Option<End>) -> StudioRun {
+    StudioRun {
+        inside: None,
+        ran: Vec::new(),
+        run: Run {
+            id: id.map(str::to_owned),
+            skill: "deploy".to_owned(),
+            persona: id.map(|_| "ops".to_owned()),
+            started_by,
+            started: "2026-10-20T10:00:05+00:00".to_owned(),
+            device: "d".to_owned(),
+            copy: None,
+            harness: id.map(|_| "claude".to_owned()),
+            workspace: None,
+            content: None,
+            end,
+        },
     }
 }
 
@@ -44,12 +52,13 @@ fn the_runs_panel_is_a_table_of_each_runs_signals_and_never_a_verdict() {
     };
     assert!(text.contains("never a verdict"), "{text}");
     assert_eq!(table.caption, "Runs of deploy");
-    assert_eq!(table.columns.len(), 10);
+    assert_eq!(table.columns.len(), 12);
     assert_eq!(
         table.rows[0].cells,
         [
             "2026-10-20 10:00 UTC",
             "ops",
+            "Claude Code",
             "The chat read the skill",
             "Interrupted",
             "7",
@@ -58,12 +67,13 @@ fn the_runs_panel_is_a_table_of_each_runs_signals_and_never_a_verdict() {
             "1",
             "Not reported",
             "3 s",
+            "",
         ]
     );
     assert_eq!(table.rows[0].key, "01JB");
     assert_eq!(table.rows[1].key, "before-1");
-    assert_eq!(table.rows[1].cells[2], "From before runs were recorded");
-    assert_eq!(table.rows[1].cells[3], "Not recorded");
+    assert_eq!(table.rows[1].cells[3], "From before runs were recorded");
+    assert_eq!(table.rows[1].cells[4], "Not recorded");
     let every: String = table.rows.iter().flat_map(|it| it.cells.clone()).collect();
     let every = every.to_lowercase();
     assert!(
