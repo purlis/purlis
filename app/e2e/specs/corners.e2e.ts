@@ -126,10 +126,11 @@ describe("the four corners", function () {
 
     await hear(".slot-right");
     await press(tab(ATTENTION, "Inbox"));
-    // 300px where the window has room, else its 20% (R124).
-    const wide = await browser.execute(() => document.documentElement.clientWidth);
+    // 300px where the row of regions has room, else its 20% of that row (R124): the row is the
+    // window less the project rail, the bars and the gutters.
+    const row = (await boxOf(".region-row"))?.width ?? 0;
     await browser.waitUntil(
-      async () => ((await boxOf(".slot-right"))?.width ?? 0) >= Math.min(300, wide * 0.2) - 24,
+      async () => ((await boxOf(".slot-right"))?.width ?? 0) >= Math.min(300, row * 0.2) - 24,
       { timeout: 10_000, timeoutMsg: "the right panel never opened" },
     );
     await browser.waitUntil(async () => (await started(".slot-right")).includes("purlis-open"), {

@@ -823,6 +823,25 @@ describe("the open view of a side (#1673)", () => {
     expect(slotLength("right", right, rowWidth(1600))).toBe("300px");
   });
 
+  it("takes the project rail off the row where it is drawn (#2915)", () => {
+    const right = inSlots(DEFAULT_ARRANGEMENT).right;
+    const rail = document.createElement("div");
+    rail.dataset.scope = "rail";
+    rail.dataset.part = "slot";
+    rail.getBoundingClientRect = () => ({ width: 52 }) as DOMRect;
+    document.body.append(rail);
+    try {
+      expect(rowWidth(1550)).toBe(1550 - 44 - 52);
+      // A 1550px window with the rail drawn: 300px is more than 20% of its 1454px row.
+      expect(slotLength("right", right, rowWidth(1550))).toBe("20%");
+    } finally {
+      rail.remove();
+    }
+    // Without it the row is 1506px, and 300px fits in its 20%.
+    expect(rowWidth(1550)).toBe(1550 - 44);
+    expect(slotLength("right", right, rowWidth(1550))).toBe("300px");
+  });
+
   it("leaves the side panel out on a pick of its view already open (R121)", () => {
     const { result } = renderHook(() => useArrangement("/one"));
     const before = result.current.arrangement;

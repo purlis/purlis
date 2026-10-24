@@ -1350,21 +1350,27 @@ export function startingSize(side: SlotId, placed: Placement[]): number {
 const RIGHT_BAR = 44;
 
 /**
- * **The width the row of regions has**, which a side's share is of: the window less the right
- * bar and the gutter at each end of the row (`App.css`, `.regions`). The gutter is the theme's,
- * read from the document.
+ * **The width the row of regions has**, which a side's share is of: the window less the project
+ * rail where it is drawn (`ui/rail`, #2915), the right bar and the gutter at each end of the row
+ * (`App.css`, `.regions`). The gutter is the theme's and the rail's width is as drawn, both read
+ * from the document.
  */
 export function rowWidth(window: number = globalThis.innerWidth ?? 0): number {
   if (window <= 0) return 0;
   let gutter = 0;
+  let rail = 0;
   try {
     gutter = Number.parseFloat(
       getComputedStyle(document.documentElement).getPropertyValue("--window-gutter"),
     );
+    rail =
+      document.querySelector('[data-scope="rail"][data-part="slot"]')?.getBoundingClientRect()
+        .width ?? 0;
   } catch {
     // No document to read: the row is the window less the bar.
   }
-  return Math.max(0, window - RIGHT_BAR - 2 * (Number.isFinite(gutter) ? gutter : 0));
+  const edges = 2 * (Number.isFinite(gutter) ? gutter : 0) + (Number.isFinite(rail) ? rail : 0);
+  return Math.max(0, window - RIGHT_BAR - edges);
 }
 
 /** The least window height the bottom row starts at its R126 share in, and its share below
