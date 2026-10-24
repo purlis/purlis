@@ -13,7 +13,7 @@ use serde_json::Value;
 use super::gallery::{self, Shelf};
 use super::levels::Reach;
 use super::*;
-use crate::extension::project::theme::Pick;
+use crate::extension::project::theme::{Pick, SYSTEM};
 
 fn no_survey() -> Arc<[Offered]> {
     Arc::from(Vec::new())
@@ -568,6 +568,53 @@ fn light_is_dark_reflected_by_its_one_rule() {
     assert_eq!(light.typed, dark.typed);
     assert_eq!(light.geometry, dark.geometry);
     assert_eq!(light.motion, dark.motion);
+}
+
+#[test]
+fn light_and_high_contrast_ship_as_its_appearances_and_dark_stays_the_default() {
+    // The operator's ruling of 2026-10-24 (#2924): Purlis's light and high-contrast dark ship as
+    // drawn. Each can be chosen; Purlis chosen to follow the system draws light on a light system
+    // and high contrast where more contrast is asked for; and with nothing chosen it is dark,
+    // whatever the system's appearance.
+    let drawn = |choice: Option<Choice>, os: Appearance, contrast| {
+        let levels = Levels {
+            project_default: choice,
+            ..Levels::default()
+        };
+        let drawn = resolve_levels(
+            &LevelInputs {
+                levels: &levels,
+                folders: &Folders::of(None, None, None),
+                theirs: None,
+                on: On::Every,
+                system: os,
+                contrast,
+            },
+            no_survey,
+        );
+        let theme = drawn.theme.unwrap();
+        (theme.name.clone(), theme.id.clone())
+    };
+    let purlis = |appearance| Choice::new(PURLIS, Some(appearance));
+    let it = |id: &str| ("Purlis".to_owned(), id.to_owned());
+    for id in ["dark", "light", "dark-high-contrast"] {
+        let chosen = drawn(purlis(id), Appearance::Dark, Contrast::Standard);
+        assert_eq!(chosen, it(id), "{id} can be chosen");
+    }
+    let following = |os, contrast| drawn(purlis(SYSTEM), os, contrast);
+    assert_eq!(
+        following(Appearance::Light, Contrast::Standard),
+        it("light")
+    );
+    assert_eq!(following(Appearance::Dark, Contrast::Standard), it("dark"));
+    assert_eq!(
+        following(Appearance::Dark, Contrast::More),
+        it("dark-high-contrast")
+    );
+    assert_eq!(
+        drawn(None, Appearance::Light, Contrast::Standard),
+        it("dark")
+    );
 }
 
 #[test]

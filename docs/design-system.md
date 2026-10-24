@@ -391,7 +391,11 @@ the theme matrix, and Storybook starts on the default's cell, which
 It has three appearances, `dark`, `light` and `dark-high-contrast` (dark, high contrast), each
 naming every token itself, so nothing in it is Purlis Classic's by falling back. Every
 combination clears the theme check with no warning and holds no consent floor, and a test keeps
-it so (`purlis_tests.rs`). Where its values come from:
+it so (`purlis_tests.rs`). **Light and high contrast ship as drawn** (the operator's ruling of
+2026-10-24, after seeing them beside dark and Classic, #2924). Each can be chosen in Settings, and
+Purlis chosen to follow the system draws light on a light system and high contrast where the
+system asks for more. With nothing chosen, Purlis draws its dark (its high contrast where more is
+asked for), whatever the system's appearance. Where its values come from:
 
 - **Dark is the foundation's.** Each colour the record proposes for a token is that token's.
   Where the record lacks a value, one rule derives it from the record's palette:
