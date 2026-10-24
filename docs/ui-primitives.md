@@ -797,12 +797,34 @@ The chat strip's tabs are drawn by `app/src/ui/tabs`: `TabCell` is one tab's cel
 column (`layout`), the strip and the panel under it (`body`), `tabPart` the label, the `×` and a
 count, and `editorToolbar` the bar over a file. `tabs.css` draws Purlis's docked tabs from those
 attributes; a theme's `tabs.*` parts reach the same ones (`crates/purlis-core/docs/themes.md`,
-Session tabs). The strip keeps its behaviour where it was: the roving focus, the drag, the
-tablist that owns the tabs (`StripTablist`) and the collapse into show-more (`fits.ts`, which
-now counts the theme's gap between tabs). Choosing a tab changes its colour and fill only
-(`tabs.guard.test.ts`; the Docked story measures every tab before and after each choice). The
-other tab strips (projects, workspaces, the activity tabs) move to the family with their own
-shell tickets.
+Session tabs). Choosing a tab changes its colour and fill only (`tabs.guard.test.ts`; the Docked
+story measures every tab before and after each choice).
+
+**The strip is on React Aria's tabs** (#3042, `app/src/ui/tabs/TabStrip.tsx`): `useTabStrip`
+holds the strip's tabs as React Aria does (`useTabListState`), `TabStripRow` is the row that holds
+the cells and its tablist (`useTabList`), and `StripTab` is one tab (`useTab`). They follow the
+WAI-ARIA "Tabs" pattern:
+
+- **The keyboard along it**: Left and Right move to the tab beside, wrapping past either end, Home
+  and End to the first and the last, the direction following the locale. Only these keys are
+  React Aria's, and only pressed on a tab: a `×` or a chip beside a tab keeps its own, Tab goes
+  on to the next stop in the document (the `+`), and a key the tab has taken is its own (a lifted
+  tab's arrows are the drag's).
+- **Manual activation**: moving is not choosing; Enter or Space chooses, through the strip's own
+  press (`tab.select:<id>`), which can do what React Aria's selection cannot: a press on the tab in
+  front showing a task goes back to its chat, and a drag's release is no press.
+- **One Tab stop**: the tab the keyboard is on while it is inside, the chosen tab once it leaves
+  (or the first drawn when the chosen one is collapsed), and the chosen tab again when the tab
+  with the keyboard goes.
+- **Still the strip's own**: the tablist that owns the tabs by id and nothing else (below), the
+  drag along it (`dnd-kit`, `sortable.tsx`; React Aria's drag and drop is for list boxes, grids,
+  tables and trees) and the collapse into show-more (`fits.ts`, which counts the theme's gap
+  between tabs).
+
+`purlis/tabs-family` (an error) refuses a `tab`, `tablist` or `tabpanel` role written by hand,
+the old hand-made tablist (`StripTablist`) and `data-scope="tabs"` outside `src/ui`. The tablists
+still drawn by hand (the workspace strip, the activity bars, the project rail's) are turned off by
+file in `eslint.config.js` until their own tickets move them.
 
 
 ## The activity family: the four corners
@@ -1781,12 +1803,14 @@ chat's `×`, fresh mark and task chip, every strip's own `+`), so the `tablist` 
 element that holds them.
 
 - **The strip element** (`.projects`, `.workspaces-strip`, `.tabs`) has no role. It is marked
-  `data-strip="Projects" | "Workspaces" | "Tabs"`, and keeps its cells, its `RovingFocusGroup.Root`
-  (the arrows, Home and End read the order from the document, not from a role), its `DndContext`
-  and the ref `useRoom` measures.
+  `data-strip="Projects" | "Workspaces" | "Tabs"`, and keeps its cells, its keyboard (React Aria's
+  on the chat strip, `TabStripRow`; a `RovingFocusGroup.Root` on the others, whose arrows, Home and
+  End read the order from the document, not from a role), its `DndContext` and the ref `useRoom`
+  measures.
 - **The tablist** is an empty `<span role="tablist" aria-label=…>` first inside it
-  (`StripTablist.tsx`), owning the tabs drawn by id, in order. The stylesheet lays it over the
-  strip with `pointer-events: none`, so it takes no room and no press.
+  (`TabStripRow` on the chat strip, `StripTablist.tsx` on the others), owning the tabs drawn by
+  id, in order. The stylesheet lays it over the strip with `pointer-events: none`, so it takes no
+  room and no press.
 - **Reaching a strip's tabs**: code, the stylesheet and the scenario specs go through
   `[data-strip="…"]`; a vitest finds the tablist by its role and name and takes the strip around
   it with `stripNamed` (`test-strips.ts`), which also holds the tablist to owning exactly the tabs
