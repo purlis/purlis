@@ -165,11 +165,7 @@ pub fn tried(words: &[String]) -> String {
             .map_err(|why| why.kind().to_string()),
         [verb, host] if verb == "proxy" => through_the_proxy(host),
         [verb, host, named] if verb == "hello" => hello_through_the_proxy(host, named),
-        [verb, pid] if verb == "environ" => std::process::Command::new("ps")
-            .args(["-wwE", "-o", "command=", "-p", pid])
-            .output()
-            .map(|out| format!("ok, {}", String::from_utf8_lossy(&out.stdout).trim()))
-            .map_err(|why| why.kind().to_string()),
+        [verb, pid] if verb == "environ" => environ(pid),
         _ => Err(format!("nothing to try in {words:?}")),
     };
     match said {
@@ -276,4 +272,22 @@ fn client_hello(name: &str) -> Vec<u8> {
     record.extend(len(handshake.len()));
     record.extend(handshake);
     record
+}
+
+/// Another process's command and environment, as this system shows them: `ps -wwE` on macOS,
+/// which reads them through the system's settings, and its `/proc` files on Linux.
+fn environ(pid: &str) -> Result<String, String> {
+    if cfg!(target_os = "macos") {
+        return std::process::Command::new("ps")
+            .args(["-wwE", "-o", "command=", "-p", pid])
+            .output()
+            .map(|out| format!("ok, {}", String::from_utf8_lossy(&out.stdout).trim()))
+            .map_err(|why| why.kind().to_string());
+    }
+    let read = |name: &str| {
+        std::fs::read(format!("/proc/{pid}/{name}"))
+            .map(|bytes| String::from_utf8_lossy(&bytes).replace('\0', " "))
+            .map_err(|why| why.kind().to_string())
+    };
+    Ok(format!("ok, {} {}", read("cmdline")?, read("environ")?))
 }

@@ -396,6 +396,13 @@ fn it_reaches_no_model_provider() {
     );
 }
 
+/// Whether a test may pass over what this machine lacks (the network, a package manager's
+/// folders): never on CI, whose runners have both, where a lack is a failure to say.
+fn may_skip(why: &str) {
+    assert!(std::env::var_os("CI").is_none(), "on CI, {why}");
+    eprintln!("{why}, so it is not tried");
+}
+
 /// Whether this machine looks `name` up to `address`: what a test through the network needs
 /// before it can say anything of the proxy.
 fn resolves_to(name: &str, address: &str) -> bool {
@@ -414,7 +421,7 @@ fn a_declared_name_that_resolves_to_a_private_network_is_not_reached() {
         ("fd00--1.sslip.io", "fd00::1"),
     ] {
         if !resolves_to(name, address) {
-            eprintln!("{name} does not resolve to {address} here, so it is not tried");
+            may_skip(&format!("{name} does not resolve to {address} here"));
             continue;
         }
         let said = probe.tried(&["proxy", name]);
@@ -429,7 +436,7 @@ fn a_tunnel_is_carried_only_where_its_hello_names_its_host() {
     use std::net::ToSocketAddrs;
     let probe = Probe::approved();
     if ("example.com", 443).to_socket_addrs().is_err() {
-        eprintln!("example.com does not resolve here, so the tunnel is not tried");
+        may_skip("example.com does not resolve here");
         return;
     }
     let named = probe.tried(&["hello", "example.com", "example.com"]);
@@ -448,10 +455,19 @@ fn a_tunnel_is_carried_only_where_its_hello_names_its_host() {
 
 fn it_reads_no_other_process_s_arguments_or_environment() {
     let probe = Probe::approved();
-    let said = probe.tried(&["environ", &std::process::id().to_string()]);
+    let pid = std::process::id().to_string();
+    let said = probe.tried(&["environ", &pid]);
     assert!(
         !said.contains(purlis_core::skills::STUDIO_ENV),
         "it read this process's environment: {said}"
+    );
+    // The same ask, made outside the sandbox, prints this test's own line and environment: so
+    // the probe asks as it should, and the confined answer lacks them because it was refused.
+    let unconfined = studio_probe::tried(&["environ".to_owned(), pid]);
+    assert!(
+        unconfined.contains("a_studio_extension_is_confined")
+            && unconfined.contains(purlis_core::skills::STUDIO_ENV),
+        "the ask did not print this test's own line: {unconfined}"
     );
 }
 
@@ -463,6 +479,8 @@ fn it_reads_no_package_managers_configuration_or_state() {
         "/opt/homebrew/var",
         "/usr/local/etc",
         "/usr/local/var",
+        "/home/linuxbrew/.linuxbrew/etc",
+        "/home/linuxbrew/.linuxbrew/var",
     ] {
         let Some(file) = first_file(Path::new(folder), 3) else {
             continue;
@@ -483,7 +501,9 @@ fn it_reads_no_package_managers_configuration_or_state() {
     .expect("a program in a prefix");
     let said = probe.tried(&["read", bin]);
     assert!(said.starts_with("ok"), "it reads {bin}: {said}");
-    eprintln!("{tried} configuration and state folders were tried");
+    if tried == 0 {
+        may_skip("no package manager's configuration or state folder is here");
+    }
 }
 
 /// The first plain file under `folder` this test can read, at most `depth` folders down.

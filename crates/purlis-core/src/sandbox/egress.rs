@@ -1782,6 +1782,9 @@ fn reachable_from(
         .collect()
 }
 
+/// The TLS extension that carries an encrypted ClientHello (ECH).
+const ENCRYPTED_CLIENT_HELLO: usize = 0xfe0d;
+
 /// The most a TLS record may hold: 2^14 bytes of plaintext and the record's own overhead.
 const MOST_TLS_RECORD: usize = (1 << 14) + 2048;
 
@@ -1824,7 +1827,8 @@ fn hello_naming(
 }
 
 /// **The server name a TLS record holding a whole ClientHello names** (RFC 8446 §4.1.2, RFC
-/// 6066 §3), read within the record's bounds, or `None` for anything else.
+/// 6066 §3), read within the record's bounds, or `None` for anything else: one carrying an
+/// encrypted ClientHello among them, whose real server name is inside it.
 pub(crate) fn hello_names(record: &[u8]) -> Option<String> {
     let take = |at: &mut usize, n: usize, from: &[u8]| -> Option<std::ops::Range<usize>> {
         let range = *at..at.checked_add(n)?;
@@ -1866,7 +1870,13 @@ pub(crate) fn hello_names(record: &[u8]) -> Option<String> {
         let kind = take(&mut at, 2, extensions)?;
         let size = take(&mut at, 2, extensions)?;
         let data = take(&mut at, len16(extensions, size), extensions)?;
-        if len16(extensions, kind) != 0 {
+        // An encrypted ClientHello (ECH) names its real server inside, where the proxy does not
+        // read: the outer name says nothing of where the tunnel goes, so none is carried.
+        let kind = len16(extensions, kind);
+        if kind == ENCRYPTED_CLIENT_HELLO {
+            return None;
+        }
+        if kind != 0 {
             continue;
         }
         // One server_name extension, holding one host name.

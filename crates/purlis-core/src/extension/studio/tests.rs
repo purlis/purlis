@@ -852,6 +852,11 @@ fn a_private_or_special_use_address_is_never_reached() {
 
 /// A TLS record holding a ClientHello naming `name`, as a client writes one.
 fn client_hello(name: &str) -> Vec<u8> {
+    client_hello_with(name, false)
+}
+
+/// [`client_hello`], carrying an encrypted ClientHello (ECH) after its server name where `ech`.
+fn client_hello_with(name: &str, ech: bool) -> Vec<u8> {
     let name = name.as_bytes();
     let mut list = Vec::new();
     list.extend(u16::try_from(3 + name.len()).expect("short").to_be_bytes());
@@ -865,6 +870,11 @@ fn client_hello(name: &str) -> Vec<u8> {
     extensions.extend(0u16.to_be_bytes());
     extensions.extend(u16::try_from(list.len()).expect("short").to_be_bytes());
     extensions.extend(list);
+    if ech {
+        extensions.extend(0xfe0du16.to_be_bytes());
+        extensions.extend(4u16.to_be_bytes());
+        extensions.extend([0, 0, 1, 0]);
+    }
     let mut hello = vec![3, 3];
     hello.extend([7u8; 32]);
     hello.push(0);
@@ -907,6 +917,31 @@ fn a_tunnels_client_hello_is_read_for_the_one_host_it_names() {
     for cut in 0..whole.len() {
         let _ = hello_names(&whole[..cut]);
     }
+    // An encrypted ClientHello names its real server inside: the outer name is not believed.
+    assert_eq!(
+        hello_names(&client_hello_with("registry.example.com", true)),
+        None
+    );
+}
+
+#[test]
+fn each_confined_extension_is_given_one_pair_of_ports_for_the_whole_run() {
+    let hosts = vec!["registry.example.com".to_owned()];
+    let first = proxy_for("one-pair-a", hosts.clone()).expect("a proxy");
+    let again = proxy_for("one-pair-a", hosts.clone()).expect("the same proxy");
+    assert_eq!(
+        (first.port(), first.socks_port()),
+        (again.port(), again.socks_port()),
+        "a second question is asked through the same ports"
+    );
+    let before = proxies_held();
+    for _ in 0..20 {
+        let _ = proxy_for("one-pair-a", hosts.clone()).expect("the same proxy");
+    }
+    assert_eq!(proxies_held(), before, "asking again holds no more ports");
+    let other = proxy_for("one-pair-b", hosts).expect("another extension's proxy");
+    assert_ne!(other.port(), first.port());
+    assert_eq!(proxies_held(), before + 1);
 }
 
 #[test]

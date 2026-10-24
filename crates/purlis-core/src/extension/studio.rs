@@ -468,9 +468,50 @@ pub(crate) struct Confined {
     pub(crate) env: Vec<(OsString, OsString)>,
     /// Its own temporary folder, removed when the question is over.
     _tmp: tempfile::TempDir,
-    /// Its proxy, stopped when the question is over, its ports kept for the rest of the run;
-    /// none where it declares no host.
-    _proxy: Option<crate::sandbox::egress::Proxy>,
+    /// Its proxy, the extension's one for the whole run ([`proxy_for`]); none where it declares
+    /// no host.
+    _proxy: Option<std::sync::Arc<crate::sandbox::egress::Proxy>>,
+}
+
+/// A confined extension's proxy, with the hosts it carries.
+type Held = (Vec<String>, std::sync::Arc<crate::sandbox::egress::Proxy>);
+
+/// **Each confined extension's one proxy for the run**, by its id, with the hosts it carries.
+/// Every question to an extension is asked through the same pair of ports, so a confined program
+/// is only ever given one pair per extension, and those never go to another listener while purlis
+/// runs. A proxy whose hosts changed (a manifest the person approved again) is replaced, and the
+/// one it replaces keeps its ports bound ([`crate::sandbox::egress::Serving::confined`]).
+static PROXIES: std::sync::Mutex<std::collections::BTreeMap<String, Held>> =
+    std::sync::Mutex::new(std::collections::BTreeMap::new());
+
+/// The extension `id`'s proxy carrying `hosts`: the one it already has where it carries the same
+/// hosts, or a new one, kept for the rest of the run.
+fn proxy_for(
+    id: &str,
+    hosts: Vec<String>,
+) -> std::io::Result<std::sync::Arc<crate::sandbox::egress::Proxy>> {
+    let mut held = PROXIES
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some((carried, proxy)) = held.get(id)
+        && *carried == hosts
+    {
+        return Ok(std::sync::Arc::clone(proxy));
+    }
+    let proxy = std::sync::Arc::new(crate::sandbox::egress::Proxy::serving(
+        crate::sandbox::egress::Serving::confined(hosts.clone()),
+    )?);
+    held.insert(id.to_owned(), (hosts, std::sync::Arc::clone(&proxy)));
+    Ok(proxy)
+}
+
+/// How many confined extensions hold a proxy now.
+#[cfg(test)]
+fn proxies_held() -> usize {
+    PROXIES
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .len()
 }
 
 impl Confined {
@@ -508,12 +549,7 @@ impl Confined {
         let proxy = if hosts.is_empty() {
             None
         } else {
-            Some(
-                crate::sandbox::egress::Proxy::serving(crate::sandbox::egress::Serving::confined(
-                    hosts,
-                ))
-                .map_err(|why| could_not(&why))?,
-            )
+            Some(proxy_for(id, hosts).map_err(|why| could_not(&why))?)
         };
         let mut writes = vec![tmp_path.clone()];
         if let Some(state) = &found.manifest.state {
