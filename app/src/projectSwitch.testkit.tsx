@@ -164,7 +164,7 @@ function core(shape: Shape): Asked[] {
 function projectTab(name: string): HTMLElement {
   const tab = within(stripNamed("Projects"))
     .getAllByRole("tab")
-    .find((one) => one.querySelector(".project-name")?.textContent === name);
+    .find((one) => one.getAttribute("aria-label") === name);
   if (!tab) throw new Error(`no project tab called ${name}`);
   return tab;
 }
@@ -173,7 +173,7 @@ const inFront = () =>
   within(stripNamed("Projects"))
     .getAllByRole("tab")
     .find((tab) => tab.getAttribute("aria-selected") === "true")
-    ?.querySelector(".project-name")?.textContent;
+    ?.getAttribute("aria-label");
 
 /** Everything the window has started has settled: nothing new was asked for a while. */
 async function settled(asked: Asked[]): Promise<void> {

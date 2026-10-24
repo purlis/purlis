@@ -315,6 +315,8 @@ describe("the `+` right after the last tab", function () {
         const selected = strip?.querySelector('.workspace:has([aria-selected="true"])') ?? null;
         return {
           window: window.innerWidth,
+          // The project rail's column at the window's left (#2915): the row begins after it.
+          rail: box(document.querySelector('[data-scope="rail"][data-part="slot"]')),
           row: box(row),
           line: line && {
             width: line.borderBottomWidth,
@@ -339,12 +341,12 @@ describe("the `+` right after the last tab", function () {
         };
       });
 
-      // One hairline under the row, the row's whole width, which is the window's.
+      // One hairline under the row, the row's whole width: the window's, after the rail.
       expect(at.row).not.toBeNull();
       expect(at.line?.width).toBe("1px");
       expect(at.line?.style).toBe("solid");
       expect(at.line?.colour).not.toBe("rgba(0, 0, 0, 0)");
-      expect((at.row as Box).left).toBeLessThanOrEqual(1);
+      expect((at.row as Box).left).toBeLessThanOrEqual((at.rail?.right ?? 0) + 1);
       expect((at.row as Box).right).toBeGreaterThanOrEqual(at.window - 1);
       expect(at.line?.start).toBe("0px");
       expect(at.line?.end).toBe("0px");

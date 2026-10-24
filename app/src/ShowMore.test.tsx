@@ -48,17 +48,16 @@ declare global {
  * so a width set before the render is the width the strip fits by. Answers the stub it
  * replaced to `restore`, so one file's widths are not every later file's.
  */
-function roomFor(room: { Workspaces?: number; Projects?: number }): { restore: () => void } {
+function roomFor(room: { Workspaces?: number }): { restore: () => void } {
   const least = {
     Workspaces: leastAt(LEAST.workspace, DEFAULT_TEXT.window),
-    Projects: leastAt(LEAST.project, DEFAULT_TEXT.window),
   };
   const was = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
   Object.defineProperty(HTMLElement.prototype, "clientWidth", {
     configurable: true,
     get(this: HTMLElement) {
       const name = this.getAttribute("data-strip");
-      if (name !== "Workspaces" && name !== "Projects") return 0;
+      if (name !== "Workspaces") return 0;
       return (room[name] ?? 0) * least[name];
     },
   });
@@ -310,89 +309,5 @@ describe("the workspace strip's show-more button", () => {
         name: "Show 2 workspaces the strip is not showing, where 2 chats need you",
       }),
     ).toBeInTheDocument();
-  });
-});
-
-describe("the project strip's show-more button", () => {
-  beforeEach(() => {
-    room = roomFor({ Projects: 1 });
-  });
-
-  const ONE = "/home/dev/one";
-  const TWO = "/home/dev/two";
-  const THREE = "/home/dev/three";
-
-  /** Three projects and room to draw one: `one`, in front. Every project numbers its chats
-   *  from one, so a count that ignored which plane a move was about would be wrong here. */
-  function threeProjects() {
-    const project = (root: string) => ({
-      workspaces: ["alpha"],
-      chats: [chat(1, `${root.split("/").pop()}.1`, `${root}/workspaces/alpha`)],
-    });
-    return core(
-      { [ONE]: project(ONE), [TWO]: project(TWO), [THREE]: project(THREE) },
-      { planes: [ONE, TWO, THREE], active: 0 },
-    );
-  }
-
-  it("counts a chat that needs you in a project it is hiding", async () => {
-    const { move } = threeProjects();
-    render(<App />);
-    await waitFor(() => expect(showMore("project")).toBeInTheDocument());
-
-    move(asking(THREE, 1, [1], 1));
-
-    expect(
-      await screen.findByRole("button", {
-        name: "Show 2 projects the strip is not showing, where 1 chat needs you",
-      }),
-    ).toBeInTheDocument();
-  });
-
-  it("drops the count when that chat is ignored", async () => {
-    const { move } = threeProjects();
-    render(<App />);
-    await waitFor(() => expect(showMore("project")).toBeInTheDocument());
-    move(asking(THREE, 1, [1], 1));
-    await screen.findByRole("button", {
-      name: "Show 2 projects the strip is not showing, where 1 chat needs you",
-    });
-
-    // Ignored in three's own Inbox, where its chat is listed (#1695): what the core answers an
-    // ignore with is the queue without it.
-    move(asking(THREE, 1, [], 2));
-
-    expect(
-      await screen.findByRole("button", { name: "Show 2 projects the strip is not showing" }),
-    ).toBeInTheDocument();
-  });
-
-  it("lists the projects that need you first", async () => {
-    // two comes before three on the strip, and three is the one asking.
-    const { move } = threeProjects();
-    render(<App />);
-    await waitFor(() => expect(showMore("project")).toBeInTheDocument());
-    move(asking(THREE, 1, [1], 1));
-
-    await userEvent.click(
-      await screen.findByRole("button", {
-        name: "Show 2 projects the strip is not showing, where 1 chat needs you",
-      }),
-    );
-
-    expect(menuRows(".project-name")).toEqual(["three", "two"]);
-  });
-
-  it("with no project needing you, lists hidden projects most recently active first", async () => {
-    // two comes before three on the strip, and three's chat moved last (charter#401).
-    const { move } = threeProjects();
-    render(<App />);
-    await waitFor(() => expect(showMore("project")).toBeInTheDocument());
-    move({ ...asking(TWO, 1, [], 1), state: "running" });
-    move({ ...asking(THREE, 1, [], 2), state: "running" });
-
-    await userEvent.click(showMore("project"));
-
-    expect(menuRows(".project-name")).toEqual(["three", "two"]);
   });
 });

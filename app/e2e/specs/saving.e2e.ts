@@ -89,7 +89,7 @@ describe("saving the project from the title bar", function () {
   })();
 
   after(async () => {
-    const selector = `${PROJECTS} button[aria-label="Close project saving-plane"]`;
+    const selector = `${PROJECTS} [role="tab"][aria-label="saving-plane"]`;
     const closer = await $(selector);
     if (!(await closer.isExisting())) return;
     await closeProject(selector);

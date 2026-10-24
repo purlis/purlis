@@ -181,7 +181,7 @@ describe("the guided steps", function () {
     )
       await browser.keys(["Escape"]);
     if (local !== "") {
-      const closer = `${PROJECTS} button[aria-label="Close project ${basename(local)}"]`;
+      const closer = `${PROJECTS} [role="tab"][aria-label="${basename(local)}"]`;
       if (await $(closer).isExisting()) await closeProject(closer);
     }
     for (const plane of (await ask<string[]>("open_planes")).filter((one) => one !== first))

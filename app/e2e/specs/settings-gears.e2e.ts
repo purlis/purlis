@@ -4,6 +4,7 @@
 import { existsSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
+import { openMenuOn } from "../acting.js";
 import { anEmptyRecord, copyFixturePlane } from "../harness.js";
 import { closeProject, openThroughTheTrustQuestion } from "../opening.js";
 
@@ -135,7 +136,7 @@ describe("the settings gears, and ⌘, at the focused level", function () {
   after(async () => {
     // The window as it was found: this spec's project closed from its own tab, which takes its
     // Settings tab with it and brings the launch's project back to the front.
-    const closer = `${PROJECTS} button[aria-label="Close project ${basename(mine)}"]`;
+    const closer = `${PROJECTS} [role="tab"][aria-label="${basename(mine)}"]`;
     if (await $(closer).isExisting()) {
       await closeProject(closer);
       await browser.waitUntil(async () => !(await $(closer).isExisting()), {
@@ -161,11 +162,9 @@ describe("the settings gears, and ⌘, at the focused level", function () {
     // before this one did with the pointer. So the gear is pressed as it is, and its quiet is
     // `SettingsGears.test.tsx`'s to hold: the stylesheet's rules, and that a Tab from the strip
     // reaches it (D-SE23f). What this holds is the path from that press to the file.
-    const gear = await $(`${PROJECTS} button.gear[aria-label^="Project settings"]`);
-    await gear.waitForExist({ timeout: 20_000 });
-    await browser.execute((selector: string) => {
-      document.querySelector<HTMLElement>(`${selector} button.gear`)?.click();
-    }, PROJECTS);
+    // The rail has no gear (#2915): its project's menu has the same row.
+    await openMenuOn(`${PROJECTS} [role="tab"][aria-selected="true"]`);
+    await $('[role="menu"]').$('[role="menuitem"]*=Settings').click();
 
     await levelBecomes("Project");
 
