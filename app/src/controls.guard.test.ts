@@ -752,8 +752,6 @@ const HEIGHT_EXCEPTIONS: Record<string, Record<string, string>> = {
       "the main navigation row keeps control-height tabs (operator, 2026-10-17)",
     ".workspaces-strip | min-height: var(--size-control) (a strip)":
       "the main navigation row keeps control-height tabs (operator, 2026-10-17)",
-    ".activity-tab | height: 2.5rem (a control)":
-      "a square as wide as the side's icon column (`.activity-column`, 2.5rem, #1737)",
     ".pane-task-ends .task-end, .task-end-confirm button | height: var(--size-chrome) (a control)":
       "the confirm's two buttons take the place of the pane's ways to end a task, and under a Chats row are drawn the same, at the small control height",
     ".tasks-menu-place | height: var(--size-chrome) (a control)":

@@ -393,7 +393,7 @@
       }
     },
     "parts": {
-      "description": "Component parts (manifest version 9): keys <family>.<part>[.<variant>][.<state>].<property>, the state at rest implied. A property not named is the family default. Inside a state only fill, text, border-colour and shadow may be set, and a tab's flare and hover inset: a state never changes a part's size. `purlis theme parts` lists every family, part, state and property with its bounds.",
+      "description": "Component parts (manifest version 10): keys <family>.<part>[.<variant>][.<state>].<property>, the state at rest implied. A property not named is the family default. Inside a state only fill, text, border-colour and shadow may be set, and a tab's flare and hover inset: a state never changes a part's size. `purlis theme parts` lists every family, part, state and property with its bounds.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -5052,6 +5052,384 @@
         },
         "rail.unsaved.action.focused.fill": {
           "$ref": "#/$defs/part-fill"
+        },
+        "activity.item.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "activity.item.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "activity.item.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "activity.item.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "activity.item.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "activity.item.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "activity.item.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "activity.item.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "activity.item.hover.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "activity.item.hover.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "activity.item.pressed.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "activity.item.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "activity.item.pressed.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "activity.item.pressed.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "activity.item.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "activity.item.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "activity.item.selected.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "activity.item.selected.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "activity.item.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "activity.item.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "activity.item.focused.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "activity.item.focused.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "activity.item.tab.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "activity.item.tab.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "activity.item.tab.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "activity.item.tab.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "activity.item.tab.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "activity.item.tab.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "activity.item.tab.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "activity.item.tab.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "activity.item.tab.hover.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "activity.item.tab.hover.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "activity.item.tab.pressed.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "activity.item.tab.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "activity.item.tab.pressed.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "activity.item.tab.pressed.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "activity.item.tab.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "activity.item.tab.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "activity.item.tab.selected.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "activity.item.tab.selected.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "activity.item.tab.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "activity.item.tab.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "activity.item.tab.focused.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "activity.item.tab.focused.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "activity.item.bar.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "activity.item.bar.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "activity.item.bar.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "activity.item.bar.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "activity.item.bar.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "activity.item.bar.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "activity.item.bar.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "activity.item.bar.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "activity.item.bar.hover.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "activity.item.bar.hover.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "activity.item.bar.pressed.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "activity.item.bar.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "activity.item.bar.pressed.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "activity.item.bar.pressed.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "activity.item.bar.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "activity.item.bar.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "activity.item.bar.selected.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "activity.item.bar.selected.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "activity.item.bar.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "activity.item.bar.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "activity.item.bar.focused.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "activity.item.bar.focused.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "activity.icon.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "activity.icon.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "activity.icon.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "activity.icon.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "activity.icon.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "activity.icon.tab.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "activity.icon.tab.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "activity.icon.tab.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "activity.icon.tab.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "activity.icon.tab.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "activity.icon.bar.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "activity.icon.bar.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "activity.icon.bar.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "activity.icon.bar.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "activity.icon.bar.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "activity.count.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "activity.count.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "activity.count.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "activity.count.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "activity.count.pressed.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "activity.count.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "activity.count.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "activity.count.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "activity.count.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "activity.count.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "activity.count.tab.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "activity.count.tab.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "activity.count.tab.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "activity.count.tab.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "activity.count.tab.pressed.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "activity.count.tab.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "activity.count.tab.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "activity.count.tab.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "activity.count.tab.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "activity.count.tab.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "activity.count.bar.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "activity.count.bar.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "activity.count.bar.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "activity.count.bar.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "activity.count.bar.pressed.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "activity.count.bar.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "activity.count.bar.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "activity.count.bar.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "activity.count.bar.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "activity.count.bar.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "activity.indicator.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "activity.indicator.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "activity.indicator.pressed.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "activity.indicator.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "activity.indicator.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "activity.indicator.tab.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "activity.indicator.tab.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "activity.indicator.tab.pressed.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "activity.indicator.tab.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "activity.indicator.tab.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "activity.indicator.bar.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "activity.indicator.bar.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "activity.indicator.bar.pressed.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "activity.indicator.bar.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "activity.indicator.bar.focused.fill": {
+          "$ref": "#/$defs/part-fill"
         }
       }
     }
@@ -5916,6 +6294,18 @@
           "maximum": 10000
         },
         "duration.leave": {
+          "description": "Milliseconds; 0 turns it off.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "duration.open": {
+          "description": "Milliseconds; 0 turns it off.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "duration.swap": {
           "description": "Milliseconds; 0 turns it off.",
           "type": "integer",
           "minimum": 0,

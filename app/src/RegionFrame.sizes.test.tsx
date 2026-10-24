@@ -159,6 +159,8 @@ describe("how big a slot starts", () => {
     render(<Harness from={DEFAULT_ARRANGEMENT} />);
 
     expect(given.get("region-left")?.defaultSize).toBe("16%");
+    // The right panel is 300px until it is dragged (R124), never more than its 20%: jsdom's
+    // window is 1024px wide.
     expect(given.get("region-right")?.defaultSize).toBe("20%");
     // Nothing along the bottom since #1676: the panes are the window's whole height.
     expect(given.has("region-bottom")).toBe(false);
@@ -308,16 +310,30 @@ describe("remembering how big a slot was left", () => {
 
 /** The Panel's slot (#1737, P-12): 30% of the window by default, 120px to 70%. */
 describe("the Panel's height", () => {
-  it("starts at 30%, held between 120px and 70%, and collapses to nothing", () => {
+  it("starts at its share, held between 160px and 70% (R126), and collapses to nothing", () => {
     render(<Harness from={DEFAULT_ARRANGEMENT} />);
 
     expect(constraints(given.get("region-panel"))).toEqual({
       collapsedSize: "0%",
       collapsible: true,
+      // jsdom's window is 768px tall: the short window's 30% (34% from 900px up, D-2917-17).
       defaultSize: "30%",
-      minSize: "120px",
+      minSize: "160px",
       maxSize: "70%",
     });
+  });
+
+  it("keeps the length it started at when the window changes after launch", async () => {
+    const tall = vi.spyOn(window, "innerHeight", "get").mockReturnValue(768);
+    render(<Harness from={DEFAULT_ARRANGEMENT} to={DEFAULT_ARRANGEMENT.slice()} />);
+    expect(given.get("region-panel")?.defaultSize).toBe("30%");
+
+    // Taller now, and drawn again: a starting length that followed would re-register the panel.
+    tall.mockReturnValue(1000);
+    await rearrange();
+
+    expect(given.get("region-panel")?.defaultSize).toBe("30%");
+    tall.mockRestore();
   });
 
   it("starts at nothing when every half of it was put away", () => {
@@ -346,7 +362,7 @@ describe("the Panel's height", () => {
     expect(onResized).toHaveBeenCalledWith({ panel: 42 });
   });
 
-  it("goes back to 30% on a double-click of its handle, charter's and not the library's", async () => {
+  it("goes back to its default on a double-click of its handle, charter's and not the library's", async () => {
     render(
       <Harness
         from={[...DEFAULT_ARRANGEMENT.slice(0, 2), { ...on("panel-left", "left"), size: 55 }]}

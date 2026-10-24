@@ -30,7 +30,7 @@ describe("a skill in the light editor", () => {
     const { rerender } = render(
       <SkillEditor
         plane="p"
-        level={{ workspace: null, local: false }}
+        level={{ at: "project", local: false }}
         name="deploy"
         was={WHOLE}
         saving={false}
@@ -46,7 +46,7 @@ describe("a skill in the light editor", () => {
     rerender(
       <SkillEditor
         plane="p"
-        level={{ workspace: null, local: false }}
+        level={{ at: "project", local: false }}
         name="deploy"
         was={WHOLE}
         saving={true}
@@ -68,7 +68,7 @@ describe("a skill in the light editor", () => {
     const { container } = render(
       <SkillEditor
         plane="p"
-        level={{ workspace: null, local: false }}
+        level={{ at: "project", local: false }}
         name="deploy"
         was={WHOLE}
         saving={false}

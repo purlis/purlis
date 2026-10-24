@@ -94,6 +94,7 @@ pub(super) const POPOVER: Family = Family {
     words: &[],
     corner_most: None,
     around: &[],
+    fills: &[],
 };
 
 pub(super) const MENU: Family = Family {
@@ -172,6 +173,7 @@ pub(super) const MENU: Family = Family {
     ],
     corner_most: None,
     around: &[],
+    fills: &[],
 };
 
 /// **The popover's colours as `app/src/ui/popover/popover.css` draws them**: one surface for a

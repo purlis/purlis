@@ -76,7 +76,7 @@ use super::{Complaint, ResolvedTheme, stringify};
 
 /// **The manifest's version**: it grows when a family, a part, a variant or a property is added,
 /// and never takes one away.
-pub const VERSION: u32 = 9;
+pub const VERSION: u32 = 10;
 
 /// The least height a control keeps, in px at the default text size: WCAG 2.2's target size.
 pub const LEAST_TARGET: f64 = 24.0;
@@ -478,6 +478,9 @@ pub struct Family {
     /// column that holds the strip and the panel its tabs attach to. Each is reached by its own
     /// attributes alone, and takes no variant and no state.
     pub around: &'static [&'static str],
+    /// The fill of a part that is not the root's, by the part's name: an activity item's count on
+    /// its own pill (#2917). Its words are held to this fill, and a fallback draws it again.
+    fills: &'static [(&'static str, &'static str)],
 }
 
 impl Family {
@@ -498,6 +501,15 @@ impl Family {
         } else {
             self.variants.iter().map(|one| one.name).collect()
         }
+    }
+
+    /// The fill `part` is drawn on by default, when it has one of its own.
+    fn own_fill(&self, part: usize) -> Option<&'static str> {
+        let name = self.parts.get(part)?.name;
+        self.fills
+            .iter()
+            .find(|(one, _)| *one == name)
+            .map(|(_, token)| *token)
     }
 
     /// The colour `part`'s words are drawn in by default, when it is not the root's.
@@ -666,6 +678,7 @@ pub const MANIFEST: &[Family] = &[
         words: &[],
         corner_most: None,
         around: &[],
+        fills: &[],
     },
     Family {
         name: "field",
@@ -729,6 +742,7 @@ pub const MANIFEST: &[Family] = &[
         words: &[("help", "text.quiet"), ("error", "danger.text")],
         corner_most: None,
         around: &[],
+        fills: &[],
     },
     Family {
         name: "text-input",
@@ -800,6 +814,7 @@ pub const MANIFEST: &[Family] = &[
         words: &[],
         corner_most: None,
         around: &[],
+        fills: &[],
     },
     Family {
         name: "textarea",
@@ -852,6 +867,7 @@ pub const MANIFEST: &[Family] = &[
         words: &[],
         corner_most: None,
         around: &[],
+        fills: &[],
     },
     Family {
         name: "tabs",
@@ -963,6 +979,7 @@ pub const MANIFEST: &[Family] = &[
         words: &[],
         around: &["strip", "layout"],
         corner_most: None,
+        fills: &[],
     },
     Family {
         name: "editor",
@@ -1000,6 +1017,7 @@ pub const MANIFEST: &[Family] = &[
         words: &[],
         around: &[],
         corner_most: None,
+        fills: &[],
     },
     shell::PANEL,
     shell::PANEL_SECTION,
@@ -1041,12 +1059,14 @@ pub const MANIFEST: &[Family] = &[
         words: &[("detail", "text.secondary")],
         corner_most: None,
         around: &[],
+        fills: &[],
     },
     overlay::POPOVER,
     overlay::MENU,
     dialog::DIALOG,
     // **The project rail** (#2915): a button per project at the window's left.
     shell::RAIL,
+    activity::ACTIVITY,
 ];
 
 /// The popover and menu families (#2909): the surface a popover and a menu stand on, and a
@@ -1064,6 +1084,10 @@ mod shell;
 mod dialog;
 #[cfg(test)]
 pub(super) use dialog::DIALOG_TIERS;
+
+/// The activity item family (#2917): a view's icon on a side's bar.
+#[path = "parts_activity.rs"]
+mod activity;
 
 /// **A field's colours as `app/src/ui/field/field.css` draws them**: no ground and no edge of
 /// its own, its label in the primary tier. Its help's and its error's words are the family's
@@ -1422,6 +1446,15 @@ pub(super) fn look_of(family_name: &str, variant: &str, states: &[State]) -> [&'
 pub(super) fn look_pair_of(family: &str, variant: &str, state: Option<State>) -> (String, String) {
     let look = (self::family(family).expect("a family").defaults)(variant, state.as_slice());
     (look.fill.to_owned(), look.text.to_owned())
+}
+
+/// The activity item's colours while its view is open, for the test that holds them to
+/// `activity.css`.
+#[cfg(test)]
+pub(super) fn activity_selected_json() -> Value {
+    let family = family("activity").expect("the activity family");
+    let chosen = (family.defaults)("tab", &[State::Selected]);
+    json!({ "fill": chosen.fill, "text": chosen.text })
 }
 
 /// The family `name` names.
@@ -2168,18 +2201,57 @@ struct Drawn {
     fill: &'static str,
     border: &'static str,
     words: Vec<&'static str>,
+    /// What each part's words are read on: its own fill where it has one, else the root's.
+    grounds: Vec<&'static str>,
 }
 
 fn drawn(rules: &[Rule], family: &Family, variant: &str, states: &[State]) -> Drawn {
     let colour = |part, property| drawn_colour(rules, family, part, variant, states, property);
     let root_text = colour(0, Prop::Text).unwrap_or("text.primary");
+    let fill = colour(0, Prop::Fill).unwrap_or(TRANSPARENT);
     Drawn {
-        fill: colour(0, Prop::Fill).unwrap_or(TRANSPARENT),
+        fill,
         border: colour(0, Prop::BorderColour).unwrap_or(TRANSPARENT),
         words: (0..family.parts.len())
             .map(|part| colour(part, Prop::Text).unwrap_or(root_text))
             .collect(),
+        grounds: (0..family.parts.len())
+            .map(|part| {
+                // A part with no words of its own (an indicator) is read as the root is.
+                if part == 0 || !family.parts[part].properties.contains(&Prop::Text) {
+                    return fill;
+                }
+                part_fill(rules, family, part, variant, states)
+                    .or_else(|| family.own_fill(part))
+                    .unwrap_or(fill)
+            })
+            .collect(),
     }
+}
+
+/// The fill a theme's rules give a part that is not the root, for `variant` while `states` hold,
+/// as the stylesheet's order resolves them; `None` when nothing sets it.
+fn part_fill(
+    rules: &[Rule],
+    family: &Family,
+    part: usize,
+    variant: &str,
+    states: &[State],
+) -> Option<&'static str> {
+    let mut ordered: Vec<&Rule> = rules
+        .iter()
+        .filter(|rule| {
+            std::ptr::eq(rule.family, family) && rule.part == part && rule.reaches(variant, states)
+        })
+        .collect();
+    ordered.sort_by_key(|rule| rule.order());
+    ordered
+        .iter()
+        .rev()
+        .find_map(|rule| match rule.values.get(&Prop::Fill) {
+            Some(PartValue::Colour(token)) => Some(*token),
+            _ => None,
+        })
 }
 
 /// A token's colour in `theme`, `None` for `transparent` and for one the platform draws.
@@ -2306,7 +2378,7 @@ fn unreadable(
     for (at, part) in family.parts.iter().enumerate() {
         // With more contrast asked for, the reading floors are raised (#2925).
         let floor = theme.least.floor(floor_of(part));
-        if let Some(ratio) = lowest(theme, family, look.fill, look.words[at])
+        if let Some(ratio) = lowest(theme, family, look.grounds[at], look.words[at])
             && ratio < floor
         {
             let what = if part.name == "icon" {
@@ -2482,7 +2554,14 @@ fn held_from(
     // As written, and tinted by every colour a workspace can name: each of the theme's own and
     // every whole degree a workspace's own colour can take (#2526).
     let mut drawn_in = vec![theme.clone()];
-    if !theme.tint.tabs().is_empty() {
+    // Only the consent floors are held in every tint: a theme whose parts reach no family with a
+    // consent variant (Purlis Classic's activity items, #2917) is measured as written, and costs
+    // a launch nothing more.
+    let consents = MANIFEST.iter().any(|family| {
+        family.variants.iter().any(|one| one.consent.is_some())
+            && rules.iter().any(|rule| std::ptr::eq(rule.family, family))
+    });
+    if consents && !theme.tint.tabs().is_empty() {
         drawn_in.extend(
             theme
                 .tint
@@ -2492,6 +2571,8 @@ fn held_from(
         );
         drawn_in.extend((0..360).map(|degree| tint::tinted_at(theme, f64::from(degree))));
     }
+    #[cfg(test)]
+    DRAWN_IN.with(|it| it.set(drawn_in.len()));
     for family in MANIFEST {
         if !rules.iter().any(|rule| std::ptr::eq(rule.family, family)) {
             continue;
@@ -2746,6 +2827,16 @@ fn fallback(family: &'static Family, variant: &'static str, state: Option<State>
         });
     }
     for part in 1..family.parts.len() {
+        if let Some(fill) = family.own_fill(part) {
+            rules.push(Rule {
+                family,
+                part,
+                variant,
+                state,
+                values: BTreeMap::from([(Prop::Fill, PartValue::Colour(fill))]),
+                fallback: true,
+            });
+        }
         if family.parts[part].properties.contains(&Prop::Text) {
             let words = family.own_words(part).unwrap_or(look.text);
             rules.push(Rule {
@@ -2828,6 +2919,19 @@ fn held_once(theme: &ResolvedTheme) -> Arc<Measured> {
 thread_local! {
     /// The passes [`held`] made on this thread, for the tests that hold the sharing.
     static PASSES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+thread_local! {
+    /// How many looks the last [`held`] on this thread measured the consent floors in: the theme
+    /// as written, and each tint where its parts reach a consent family (#2917).
+    static DRAWN_IN: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// The looks the last measurement on this thread held the consent floors in.
+#[cfg(test)]
+pub(super) fn drawn_in() -> usize {
+    DRAWN_IN.with(std::cell::Cell::get)
 }
 
 /// The passes over a theme's tints made on this thread so far.
@@ -3116,14 +3220,26 @@ fn selector(rule: &Rule, sized: bool) -> String {
     let reached: Vec<String> = if rule.part == 0 {
         roots
     } else {
+        let name = rule.family.parts[rule.part].name;
+        // A toned part keeps its tone's colours whatever a theme sets (#2917): the needs-you
+        // count stays hot (R120).
+        let untoned = if TONED.contains(&(rule.family.name, name)) {
+            ":not([data-tone])"
+        } else {
+            ""
+        };
         let part = format!(
-            "[data-scope=\"{}\"][data-part=\"{}\"]",
-            rule.family.name, rule.family.parts[rule.part].name
+            "[data-scope=\"{}\"][data-part=\"{}\"]{untoned}",
+            rule.family.name, name
         );
         roots.iter().map(|root| format!("{root} {part}")).collect()
     };
     format!(":where({})", reached.join(", "))
 }
+
+/// The parts whose tone (`data-tone`) is drawn by the family alone: a theme's colours reach them
+/// only where no tone is set (the activity item's count, whose needs-you tone is hot, R120).
+const TONED: &[(&str, &str)] = &[("activity", "count")];
 
 /// Whether a property changes a control's size: what the roots at another of the family's sizes
 /// and in a wrapping row keep as their own.

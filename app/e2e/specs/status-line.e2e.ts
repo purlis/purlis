@@ -371,7 +371,7 @@ describe("the status line", () => {
     const found = await browser.execute(() => ({
       onTheLine: document.querySelectorAll('[data-testid="status-line"] [aria-pressed]').length,
       onTheBar: document.querySelectorAll("header.bar button[aria-pressed]").length,
-      bars: [...document.querySelectorAll('.activity-bar [role="tablist"]')].map((one) =>
+      bars: [...document.querySelectorAll('.activity-bar[role="tablist"]')].map((one) =>
         one.getAttribute("aria-label"),
       ),
     }));

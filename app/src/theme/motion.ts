@@ -51,10 +51,14 @@
  *
  * - `slide` — the rail hiding or showing, and a workspace switch sliding the work across (260).
  *   A token since the rail (#2915), as are `reveal` and `leave`.
- * - `panel` — the right panel arriving (240).
- * - `reveal` — a hidden surface coming in: the rail's peek, a bottom half (220).
+ * - `open` — a panel opening beside the work: the right panel arriving from the side (240).
+ * - `reveal` — a hidden surface coming in: the rail's peek, a bottom half rising into place
+ *   (220).
  * - `leave` — the peek going, and the rail fading out (200).
- * - `view` — a side view's list changing (180).
+ * - `swap` — one view's list taking another's place in a side panel (180).
+ *
+ * Each names the kind of change it times, never the surface, as `quick`, `enter` and `settle`
+ * do. Nothing leaves with `open`, `reveal` or `swap`: a part that closes is simply gone (R128).
  *
  * `quick` is the chevron turning and a switch's knob sliding (150 in Purlis).
  */
@@ -67,6 +71,8 @@ export const DURATIONS = [
   "duration.slide",
   "duration.reveal",
   "duration.leave",
+  "duration.open",
+  "duration.swap",
 ] as const;
 
 /**

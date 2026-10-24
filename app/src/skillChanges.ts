@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import type { SkillGrant, SkillLevel, StudioLevel, StudioSkill } from "./bindings";
+import type { SkillGrant, SkillLevel, SkillWhose, StudioLevel, StudioSkill } from "./bindings";
 import type { StudioScope } from "./skillStudio";
 
 /**
@@ -11,31 +11,87 @@ import type { StudioScope } from "./skillStudio";
  */
 
 /** The project's shared skills. */
-export const PROJECT: SkillLevel = { workspace: null, local: false };
+export const PROJECT: SkillLevel = { at: "project", local: false };
 
 /** The level a row of the studio is at, or `null` for one the studio's changes do not move. A
- *  workspace's row is the workspace the studio shows. */
-export function levelOf(skill: StudioSkill, workspace: string | null): SkillLevel | null {
+ *  workspace's row is the workspace the studio shows, and a persona's row the persona it shows
+ *  (SK-32, #3003). */
+export function levelOf(skill: StudioSkill, scope: StudioScope): SkillLevel | null {
   switch (skill.level) {
     case "project":
-      return { workspace: null, local: skill.local };
+      return { at: "project", local: skill.local };
     case "workspace":
-      return workspace === null ? null : { workspace, local: skill.local };
+      return scope.at === "workspace"
+        ? { at: "workspace", name: scope.name, local: skill.local }
+        : null;
+    case "persona":
+      return scope.at === "persona"
+        ? { at: "persona", name: scope.name, local: skill.local }
+        : null;
     default:
-      // A built-in skill is never changed, and a persona's skill (SK-5) is its own persona's.
+      // A built-in, harness or repo skill is never changed here.
       return null;
   }
 }
 
 /** **The level a new skill lands at: where the person came from** (decision 37): the workspace
- *  the studio shows, or the project's skills at its root. */
-export function levelFrom(scope: StudioScope): SkillLevel {
-  return scope.at === "workspace" ? { workspace: scope.name, local: false } : PROJECT;
+ *  or the persona the studio shows, or the project's skills at its root. A persona the project
+ *  lists no level for (one made as one file keeps no skills) starts at the project's. */
+export function levelFrom(scope: StudioScope, levels: readonly StudioLevel[]): SkillLevel {
+  let from: SkillLevel;
+  switch (scope.at) {
+    case "root":
+      return PROJECT;
+    case "workspace":
+      from = { at: "workspace", name: scope.name, local: false };
+      break;
+    case "persona":
+      from = { at: "persona", name: scope.name, local: false };
+      break;
+  }
+  const listed = from.at !== "persona" || levels.some((one) => sameLevel(one.level, from));
+  return listed ? from : PROJECT;
+}
+
+/** **The levels the studio offers from `scope`** (SK-32): the project's, each workspace's, and
+ *  the persona's it shows. Another persona's skills are changed from that persona's studio. */
+export function levelsFor(levels: readonly StudioLevel[], scope: StudioScope): StudioLevel[] {
+  return levels.filter(
+    (one) =>
+      one.level.at !== "persona" || (scope.at === "persona" && one.level.name === scope.name),
+  );
 }
 
 /** Whether two levels are one. */
 export function sameLevel(a: SkillLevel, b: SkillLevel): boolean {
-  return a.workspace === b.workspace && a.local === b.local;
+  if (a.at !== b.at || a.local !== b.local) return false;
+  if (a.at === "project" || b.at === "project") return true;
+  return a.name === b.name;
+}
+
+/** A level's key among the studio's drop targets: `project`, `ops-local`, `persona-reviewer`. */
+export function levelKey(level: SkillLevel): string {
+  const local = level.local ? "-local" : "";
+  switch (level.at) {
+    case "project":
+      return `project${local}`;
+    case "workspace":
+      return `${level.name}${local}`;
+    case "persona":
+      return `persona-${level.name}${local}`;
+  }
+}
+
+/** Whose skills `level` is, without shared or local: what Share takes. */
+export function whoseOf(level: SkillLevel): SkillWhose {
+  switch (level.at) {
+    case "project":
+      return { at: "project" };
+    case "workspace":
+      return { at: "workspace", name: level.name };
+    case "persona":
+      return { at: "persona", name: level.name };
+  }
 }
 
 /** A level's words, as the core gives them in `levels`. */

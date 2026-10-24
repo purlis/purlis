@@ -270,10 +270,11 @@ function WithViews({
 const bar = () => screen.getByRole("tablist", { name: "Navigation" });
 
 describe("the activity bar of a region with views (#1673)", () => {
-  it("is a vertical tab list beside the side, one tab per view, each named and with a tooltip", () => {
+  it("is a row of tabs across the side panel's top, one tab per view, each named and with a tooltip", () => {
     render(<WithViews from={DEFAULT_ARRANGEMENT} />);
 
-    expect(bar()).toHaveAttribute("aria-orientation", "vertical");
+    // N36, R116: tabs across the side panel, so a row.
+    expect(bar()).toHaveAttribute("aria-orientation", "horizontal");
     const tabs = within(bar()).getAllByRole("tab");
     expect(tabs.map((tab) => tab.getAttribute("aria-label"))).toEqual([
       "Chats",
@@ -281,8 +282,10 @@ describe("the activity bar of a region with views (#1673)", () => {
       "Search",
     ]);
     for (const tab of tabs) expect(tipOf(tab)).toBeTruthy();
-    // Outside the slot, so it stays when the slot is put away.
-    expect(slot("left").contains(bar())).toBe(false);
+    // Inside the side panel, at its top.
+    expect(slot("left").contains(bar())).toBe(true);
+    // The open view's tab names the view: pressing it again does nothing (R121).
+    expect(tipOf(within(bar()).getByRole("tab", { name: "Chats" }))).toEqual("Chats");
   });
 
   it("selects the open view's tab and shows that view alone, the other mounted and hidden", () => {
@@ -329,14 +332,14 @@ describe("the activity bar of a region with views (#1673)", () => {
     render(<WithViews from={DEFAULT_ARRANGEMENT} onPick={onPick} />);
 
     screen.getByRole("tab", { name: "Chats" }).focus();
-    await userEvent.keyboard("{ArrowDown}");
+    await userEvent.keyboard("{ArrowRight}");
     expect(screen.getByRole("tab", { name: "Explorer" })).toHaveFocus();
     await userEvent.keyboard("{Enter}");
 
     expect(onPick).toHaveBeenCalledWith("explorer");
   });
 
-  it("keeps the views mounted when the side is put away, and selects no tab", async () => {
+  it("keeps the views mounted when the side is put away by its key, its tabs a column at the edge", async () => {
     render(
       <WithViews
         from={DEFAULT_ARRANGEMENT}
@@ -349,6 +352,8 @@ describe("the activity bar of a region with views (#1673)", () => {
 
     expect(screen.getByTestId("v-chats")).toBe(chats);
     expect(within(slot("left")).queryByRole("tabpanel")).toBeNull();
+    // D-2917-18: the tabs stand at the window's edge as a column, none of them chosen.
+    expect(bar().closest(".activity-column")).toHaveAttribute("data-side", "left");
     expect(within(bar()).queryAllByRole("tab", { selected: true })).toEqual([]);
   });
 
@@ -368,7 +373,7 @@ describe("the activity bar of a region with views (#1673)", () => {
   it("draws a view's badge on its tab, and the tab is described by it", () => {
     render(
       <WithViews
-        from={[on("navigation", "left", 0, true), on("aside", "right")]}
+        from={[on("navigation", "left", 0, false), on("aside", "right")]}
         badge={<ActivityCount count={2} said="2 chats need you" tone="needs-you" />}
       />,
     );
@@ -445,7 +450,7 @@ describe("the right side's activity bar (#1678)", () => {
 describe("the Panel (#1737)", () => {
   const lower = () => screen.getByRole("tablist", { name: "Panel, left half" });
 
-  it("puts the Lower icons below the left bar's own, after a divider, Repos and Changes", () => {
+  it("puts the Lower icons below the left bar's own, at the side panel's tab row's end, Repos and Changes", () => {
     render(<WithViews from={DEFAULT_ARRANGEMENT} />);
 
     expect(
@@ -453,14 +458,16 @@ describe("the Panel (#1737)", () => {
         .getAllByRole("tab")
         .map((tab) => tab.getAttribute("aria-label")),
     ).toEqual(["Repos", "Changes"]);
-    // One icon column per side: the upper group, the divider, then the lower group.
-    const column = bar().closest(".activity-column");
-    expect(column).toHaveAttribute("data-side", "left");
-    expect(column).toContainElement(lower());
-    const order = [...(column?.children ?? [])].map((one) =>
-      one.classList.contains("activity-divider") ? "divider" : one.getAttribute("data-region"),
+    // The left bar is tabs across the side panel's top (N36, R116): its own group, the gap, then
+    // the Lower icons at the row's end.
+    const row = bar().closest('[data-scope="activity-bar"][data-part="root"]');
+    expect(row).toHaveAttribute("data-variant", "tab");
+    expect(row?.closest(".slot-left")).not.toBeNull();
+    expect(row).toContainElement(lower());
+    const order = [...(row?.querySelector('[data-part="items"]')?.children ?? [])].map((one) =>
+      one.getAttribute("data-part") === "gap" ? "gap" : one.getAttribute("data-region"),
     );
-    expect(order).toEqual(["navigation", "divider", "panel-left"]);
+    expect(order).toEqual(["navigation", "gap", "panel-left"]);
     expect(tipOf(within(lower()).getByRole("tab", { name: "Repos" }))).toEqual(
       "ReposPut the panel's left half away",
     );
@@ -530,7 +537,7 @@ describe("the Panel's right half (#1738)", () => {
       .getByTestId("region-panel")
       .querySelector(`.panel-half[data-side="${side}"]`) as HTMLElement;
 
-  it("puts Memory, Todos and Sessions on the right bar's Lower icons, after a divider", () => {
+  it("puts Memory, Todos and Sessions on the right bar's Lower icons, at its foot", () => {
     render(<WithViews from={DEFAULT_ARRANGEMENT} />);
 
     expect(
@@ -540,10 +547,11 @@ describe("the Panel's right half (#1738)", () => {
     ).toEqual(["Memory", "Todos", "Sessions"]);
     const column = lowerRight().closest(".activity-column");
     expect(column).toHaveAttribute("data-side", "right");
-    const order = [...(column?.children ?? [])].map((one) =>
-      one.classList.contains("activity-divider") ? "divider" : one.getAttribute("data-region"),
+    expect(column).toHaveAttribute("data-variant", "bar");
+    const order = [...(column?.querySelector('[data-part="items"]')?.children ?? [])].map((one) =>
+      one.getAttribute("data-part") === "gap" ? "gap" : one.getAttribute("data-region"),
     );
-    expect(order).toEqual(["aside", "divider", "panel-right"]);
+    expect(order).toEqual(["aside", "gap", "panel-right"]);
     expect(tipOf(within(lowerRight()).getByRole("tab", { name: "Memory" }))).toEqual(
       "MemoryPut the panel's right half away",
     );
@@ -909,19 +917,15 @@ describe("the right bar in Tab order (#1686, D-1686-2)", () => {
       await userEvent.tab();
       forward.push(said());
     }
-    expect(forward).toEqual([
-      "tab Inbox",
-      "tab Memory",
-      "separator over the Panel",
-      "separator between the halves",
-    ]);
+    // The right panel's × first (R125), then its bar.
+    expect(forward).toEqual(["button", "tab Inbox", "tab Memory", "separator over the Panel"]);
 
     const back: string[] = [];
     for (let press = 0; press < 3; press++) {
       await userEvent.tab({ shift: true });
       back.push(said());
     }
-    expect(back).toEqual(["separator over the Panel", "tab Memory", "tab Inbox"]);
+    expect(back).toEqual(["tab Memory", "tab Inbox", "button"]);
     await userEvent.tab({ shift: true });
     expect(said()).toBe("separator in the row");
   });

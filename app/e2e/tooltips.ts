@@ -25,7 +25,12 @@ export async function tooltipsOf(selector: string): Promise<(string | null)[]> {
     for (const element of document.querySelectorAll<HTMLElement>(within)) {
       // The last one gone altogether, its leaving drawn too, so what is read is this one's.
       await until(() => document.querySelector(HINT) === null);
+      // Brought into view first, and its scroll let land: a tooltip closes when what holds its
+      // trigger scrolls, and the engine says so a moment after the scroll itself.
+      const before = element.getBoundingClientRect().top;
       element.scrollIntoView({ block: "nearest" });
+      if (element.getBoundingClientRect().top !== before)
+        await new Promise((resolve) => setTimeout(resolve, 150));
       // The keyboard is what moves the focus now, as React Aria tells it from the pointer.
       document.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true }));
       document.dispatchEvent(new KeyboardEvent("keyup", { key: "Tab", bubbles: true }));

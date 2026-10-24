@@ -211,7 +211,7 @@ pub(crate) async fn skill_draft_chat(
         crate::skillchange::flag_on()?;
         let root = held.root().to_path_buf();
         let level: purlis_core::skills::verbs::Level = (&level).into();
-        let cwd = match level.workspace_name() {
+        let cwd = match level.at.workspace() {
             None => root.clone(),
             Some(ws) => purlis_core::workspaces::Plane::open(&root)
                 .workspace(ws)
@@ -271,7 +271,7 @@ pub(crate) async fn skill_draft_try(
         // project's root), else the project's default.
         let chats_open = held.chats().open_now();
         let at_level = |one: &&crate::chats::Open| {
-            one.workspace.as_deref() == draft.level.workspace_name() && one.profile.is_some()
+            one.workspace.as_deref() == draft.level.at.workspace() && one.profile.is_some()
         };
         let of_level = chats_open
             .iter()

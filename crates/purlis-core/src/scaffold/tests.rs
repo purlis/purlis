@@ -1083,7 +1083,7 @@ fn reinit_on_a_bare_manifest_adds_everything_and_lists_nothing_as_present() {
 
     let mut added = "personas/, inventory/, workspaces/, .gitignore (/.charter/, /.purlis/), \
                      .gitignore (/charter.local.toml, /purlis.local.toml), \
-                     .gitignore (/sessions/), .gitignore (/skills.local/, /workspaces/*/skills.local/, /skills.local.lock), .gitattributes (merge rules), .claude/settings.json (env), \
+                     .gitignore (/sessions/), .gitignore (/skills.local/, /workspaces/*/skills.local/, /personas/*/skills.local/, /skills.local.lock), .gitattributes (merge rules), .claude/settings.json (env), \
                      .claude/settings.json (ask: charter report --yes), opencode.json (ask: \
                      charter report --yes), .claude/settings.json (ask: charter ws todo \
                      promote), opencode.json (ask: charter ws todo promote), \
@@ -1139,7 +1139,7 @@ fn reinit_names_a_file_where_a_baseline_directory_goes_and_still_heals_the_rest(
     let mut created =
         "workspaces/, .gitignore (/.charter/, /.purlis/), .gitignore (/charter.local.toml, \
          /purlis.local.toml), .gitignore (/sessions/), .gitignore \
-         (/skills.local/, /workspaces/*/skills.local/, /skills.local.lock), .gitattributes (merge rules), \
+         (/skills.local/, /workspaces/*/skills.local/, /personas/*/skills.local/, /skills.local.lock), .gitattributes (merge rules), \
          .claude/settings.json (env), .claude/settings.json (ask: charter report --yes), \
          opencode.json (ask: charter report --yes), .claude/settings.json (ask: charter ws \
          todo promote), opencode.json (ask: charter ws todo promote), \
@@ -1280,7 +1280,7 @@ fn a_gitignore_with_every_rule_is_left_byte_for_byte() {
     let path = dir.path().join(".gitignore");
     let body = "build/\n!/workspaces/.gitkeep\nkeep/.charter/out\nkeep/.purlis/out\n\
                 /.claude/settings.local.json\n/charter.local.toml\n/purlis.local.toml\n\
-                /sessions/\n/skills.local/\n/workspaces/*/skills.local/\n/skills.local.lock\n";
+                /sessions/\n/skills.local/\n/workspaces/*/skills.local/\n/personas/*/skills.local/\n/skills.local.lock\n";
     std::fs::write(&path, body).expect("a .gitignore");
 
     assert_eq!(ensure_gitignore(&path), Ok(false));
@@ -1305,7 +1305,7 @@ fn a_gitignore_missing_the_local_files_gets_only_those_appended() {
         std::fs::read_to_string(&path).expect("read"),
         "node_modules/\n!/workspaces/.gitkeep\n/.charter/\n\n# added by `charter \
          init`\n/.purlis/\n/.claude/settings.local.json\n/charter.local.toml\n\
-         /purlis.local.toml\n/sessions/\n/skills.local/\n/workspaces/*/skills.local/\n/skills.local.lock\n"
+         /purlis.local.toml\n/sessions/\n/skills.local/\n/workspaces/*/skills.local/\n/personas/*/skills.local/\n/skills.local.lock\n"
     );
 }
 
@@ -1319,7 +1319,7 @@ fn a_gitignore_missing_the_workspace_anchor_gets_both_workspace_lines() {
         &path,
         "# no .charter/ or .purlis/ here, please\n/.claude/settings.local.json\n\
          /charter.local.toml\n/purlis.local.toml\n/sessions/\n/skills.local/\n\
-         /workspaces/*/skills.local/\n/skills.local.lock\n",
+         /workspaces/*/skills.local/\n/personas/*/skills.local/\n/skills.local.lock\n",
     )
     .expect("a .gitignore");
 
@@ -1328,7 +1328,7 @@ fn a_gitignore_missing_the_workspace_anchor_gets_both_workspace_lines() {
         std::fs::read_to_string(&path).expect("read"),
         "# no .charter/ or .purlis/ here, please\n/.claude/settings.local.json\n\
          /charter.local.toml\n/purlis.local.toml\n/sessions/\n/skills.local/\n\
-         /workspaces/*/skills.local/\n/skills.local.lock\n\n# added by `charter init`\n/workspaces/*/*\n\
+         /workspaces/*/skills.local/\n/personas/*/skills.local/\n/skills.local.lock\n\n# added by `charter init`\n/workspaces/*/*\n\
          !/workspaces/.gitkeep\n"
     );
 }
@@ -1360,7 +1360,7 @@ fn a_gitignore_missing_the_plane_roots_session_records_gets_that_line_appended()
         std::fs::read_to_string(&path).expect("read"),
         format!(
             "{body}\n# added by `charter init`\n/sessions/\n/skills.local/\n\
-             /workspaces/*/skills.local/\n/skills.local.lock\n"
+             /workspaces/*/skills.local/\n/personas/*/skills.local/\n/skills.local.lock\n"
         )
     );
 }
@@ -1886,17 +1886,18 @@ fn the_first_clone_is_named_after_origin_unless_origin_ends_in_no_name() {
 /// plane root's and every workspace's `skills.local/`.
 #[test]
 fn a_fresh_plane_keeps_every_levels_local_skills_on_this_machine() {
-    for line in SKILLS_LOCAL_IGNORES {
+    for line in skills_local_ignores() {
         assert!(
             GITIGNORE_BASELINE.lines().any(|one| one == line),
             "{line}: {GITIGNORE_BASELINE}"
         );
     }
     assert_eq!(
-        SKILLS_LOCAL_IGNORES,
+        skills_local_ignores(),
         [
             "/skills.local/",
             "/workspaces/*/skills.local/",
+            "/personas/*/skills.local/",
             "/skills.local.lock"
         ]
     );
@@ -1908,7 +1909,7 @@ fn reinit_keeps_every_levels_local_skills_on_this_machine_and_adds_the_lines_onc
     let (_dir, root) = empty_plane();
     init(&at(&root, false), &plain());
     let mut old = GITIGNORE_BASELINE.to_owned();
-    for line in SKILLS_LOCAL_IGNORES {
+    for line in skills_local_ignores() {
         old = old.replace(&format!("{line}\n"), "");
     }
     std::fs::write(root.join(".gitignore"), &old).expect("an old .gitignore");
@@ -1920,7 +1921,8 @@ fn reinit_keeps_every_levels_local_skills_on_this_machine_and_adds_the_lines_onc
     assert!(
         text.ends_with(
             "\n\n# added by `charter reinit` — local skills stay on this machine\n\
-             /skills.local/\n/workspaces/*/skills.local/\n/skills.local.lock\n"
+             /skills.local/\n/workspaces/*/skills.local/\n/personas/*/skills.local/\n\
+             /skills.local.lock\n"
         ),
         "{text}"
     );

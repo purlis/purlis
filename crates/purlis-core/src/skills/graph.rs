@@ -12,7 +12,7 @@ use purlis_skills::uses;
 pub use purlis_skills::uses::{MOST_SKILLS, Use};
 
 use super::verbs::Level;
-use super::{LINKED_PLUGIN, built_in_names, persona_dir};
+use super::{LINKED_PLUGIN, built_in_names};
 
 /// One skill's place in the graph, as its tab draws it.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -29,17 +29,11 @@ pub struct UsesOf {
 /// skill of the project (its own and each workspace's and persona's, shared and local) by
 /// following no link, at most [`uses::MOST_SKILLS`], against the built-in skills in `built_in`.
 pub fn uses_of(plane: &Path, built_in: Option<&Path>, name: &str) -> UsesOf {
-    let mut dirs: Vec<std::path::PathBuf> = Level::every(plane)
+    // Every level, each persona's among them (SK-32).
+    let dirs: Vec<std::path::PathBuf> = Level::every(plane)
         .iter()
         .filter_map(|level| level.dir(plane))
         .collect();
-    for persona in crate::personaverbs::names(plane) {
-        dirs.extend(
-            [true, false]
-                .into_iter()
-                .filter_map(|local| persona_dir(plane, &persona, local)),
-        );
-    }
     let mut skills: Vec<(String, String)> = Vec::new();
     'dirs: for dir in dirs {
         for skill in super::read(&dir) {

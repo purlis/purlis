@@ -241,14 +241,18 @@ fn a_save_never_commits_a_levels_local_skills_even_where_nothing_ignores_them() 
     // ADR 0099 §1, #2767: `skills.local/` is this machine's own. This plane's `.gitignore` has
     // no line for it, as an older plane's does not, and the save still leaves it out.
     let fixture = Fixture::plane();
+    let stages = save_stages();
     assert!(
-        stages_the_whole_tree(&SAVE_STAGES),
+        stages_the_whole_tree(&stages.iter().map(String::as_str).collect::<Vec<_>>()),
         "the save is still a whole-tree stage"
     );
     for path in [
         "skills/shared/SKILL.md",
         "skills.local/mine/SKILL.md",
         "workspaces/alpha/skills.local/notes/SKILL.md",
+        // A persona's local skills too (SK-32, #3124).
+        "personas/reviewer/skills.local/scratch/SKILL.md",
+        "personas/reviewer/skills/shared/SKILL.md",
     ] {
         let file = fixture.root.join(path);
         std::fs::create_dir_all(file.parent().unwrap()).unwrap();
@@ -273,7 +277,26 @@ fn a_save_never_commits_a_levels_local_skills_even_where_nothing_ignores_them() 
     assert_eq!(code, 0, "{said}");
     let tree = run(&fixture.root, &["ls-tree", "-r", "--name-only", "HEAD"]);
     assert!(tree.contains("skills/shared/SKILL.md"), "{tree}");
+    assert!(
+        tree.contains("personas/reviewer/skills/shared/SKILL.md"),
+        "{tree}"
+    );
     assert!(!tree.contains("skills.local"), "{tree}");
+}
+
+#[test]
+fn a_save_of_named_paths_never_names_a_personas_local_skill() {
+    // SK-32 (#3124): a skill change that names a persona's local folder leaves it out.
+    assert!(kept_out("personas/reviewer/skills.local/scratch"));
+    assert!(kept_out("personas/reviewer/skills.local"));
+    assert!(!kept_out("personas/reviewer/skills/scratch"));
+    assert!(kept_out("workspaces/ops/skills.local/x"));
+    assert!(kept_out("skills.local.lock"));
+    assert!(
+        never_staged()
+            .iter()
+            .any(|spec| spec == ":(exclude,glob)personas/*/skills.local/**")
+    );
 }
 
 /// SK-9 (#2772): `git add -A` with an exclude pathspec leaves an untracked file named beside it

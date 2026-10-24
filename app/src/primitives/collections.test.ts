@@ -51,7 +51,7 @@ function value(body: string, name: string): string | undefined {
 const css = read("primitives/collections.css");
 
 /** The condition a stacking table's room is queried with (#1859). */
-const STACKS_UNDER = "@container ui-table (max-width: 29rem)";
+const STACKS_UNDER = "@container ui-table (max-width: 32rem)";
 const all = rules(css);
 
 /** The rule with exactly this selector. */

@@ -304,8 +304,8 @@ describe("the limits' lines and the set's native controls, in the real WebView",
       await $('table[aria-label="Dispatch limits"]').waitForDisplayed({ timeout: 20_000 });
       const seen = await theLimitsStacked();
       if (seen === null) throw new Error("the limits table is not drawn");
-      // The room is under the width the table stacks at (29rem, at the default text size).
-      expect(seen.room.width).toBeLessThanOrEqual(464);
+      // The room is under the width the table stacks at (32rem, at the default text size).
+      expect(seen.room.width).toBeLessThanOrEqual(512);
       expect(seen.headings).toBe("none");
       expect(seen.scrolls).toBe(false);
       expect(seen.rows.length).toBeGreaterThanOrEqual(1);

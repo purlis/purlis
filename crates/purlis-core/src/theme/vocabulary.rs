@@ -147,6 +147,8 @@ pub const DURATIONS: &[&str] = &[
     "duration.slide",
     "duration.reveal",
     "duration.leave",
+    "duration.open",
+    "duration.swap",
 ];
 
 /// How each kind of change moves, as the four numbers of a cubic Bézier.

@@ -10,12 +10,28 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::{level_dir, read};
+use crate::{Whose, level_dir, level_rel, read};
 
 /// The folder in `dir` whose skill is named `name`: its frontmatter's `name`, which is a
 /// skill's identity, never its folder's name. The first by folder name where two have one.
 pub fn named(dir: &Path, name: &str) -> Option<PathBuf> {
-    let mut found: Vec<PathBuf> = read::scan_dir(dir)
+    first_named(read::scan_dir(dir), name)
+}
+
+/// [`named`] in the level `at`'s `skills.local/` where `local`, reached from the plane's root
+/// without following a link (SK-36): a workspace's or persona's folder that is a link holds no
+/// skill of the plane's, so nothing is found there.
+fn named_at(plane: &Path, at: &Whose, local: bool, name: &str) -> Option<PathBuf> {
+    let rel = level_rel(at, local)?;
+    first_named(read::scan(plane, Path::new(&rel)), name)
+}
+
+/// The folder of the first skill named `name` among `found`, by folder name.
+fn first_named(
+    found: Vec<Result<crate::Skill, (PathBuf, crate::Missing)>>,
+    name: &str,
+) -> Option<PathBuf> {
+    let mut found: Vec<PathBuf> = found
         .into_iter()
         .filter_map(Result::ok)
         .filter(|skill| skill.name == name)
@@ -25,19 +41,21 @@ pub fn named(dir: &Path, name: &str) -> Option<PathBuf> {
     found.into_iter().next()
 }
 
-/// **Shares the local skill named `name`** at the plane root (`workspace` `None`) or in
-/// `workspace`: moves its folder from the level's `skills.local/` into its `skills/`, and its
+/// **Shares the local skill named `name`** at the level `at` (the plane root's, a workspace's
+/// or a persona's): moves its folder from the level's `skills.local/` into its `skills/`, and its
 /// `<folder>.toml` with it, and says where the folder now is. Refused, moving nothing, where
 /// the level has no local skill of that name or its `skills/` already holds that folder's name.
-pub fn share(plane: &Path, workspace: Option<&str>, name: &str) -> Result<PathBuf, String> {
-    let at = match workspace {
-        None => "at the project's root".to_owned(),
-        Some(ws) => format!("in workspace {ws}"),
+pub fn share(plane: &Path, at: &Whose, name: &str) -> Result<PathBuf, String> {
+    let said = match at {
+        Whose::Project => "at the project's root".to_owned(),
+        Whose::Workspace(ws) => format!("in workspace {ws}"),
+        Whose::Persona(persona) => format!("of persona {persona}"),
     };
-    let none = || format!("no local skill is named {name:?} {at}");
-    let local = level_dir(plane, workspace, true).ok_or_else(none)?;
-    let shared = level_dir(plane, workspace, false).ok_or_else(none)?;
-    let from = named(&local, name).ok_or_else(none)?;
+    let none = || format!("no local skill is named {name:?} {said}");
+    let shared = level_dir(plane, at, false).ok_or_else(none)?;
+    // Found by a walk from the plane's root, so a level's folder that is a link moves nothing
+    // of what it leads to (SK-36).
+    let from = named_at(plane, at, true, name).ok_or_else(none)?;
     let folder = from.file_name().unwrap_or_default().to_os_string();
     let to = shared.join(&folder);
     let shown = to

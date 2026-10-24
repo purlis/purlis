@@ -188,7 +188,11 @@ describe("the Skill studio", () => {
     mockIPC((cmd, args) => {
       calls.push(cmd);
       if (cmd === "skill_share") {
-        expect(args).toMatchObject({ plane: "p", workspace: null, name: "scratch" });
+        expect(args).toMatchObject({
+          plane: "p",
+          whose: { at: "project" },
+          name: "scratch",
+        });
         shared = true;
         return null;
       }
