@@ -235,7 +235,7 @@ pub struct ProfileSet {
     /// A `default` that named no profile this machine has, kept so a surface can say so.
     pub default_refused: Option<String>,
     /// The icon each declared profile names, as written (#2922): what
-    /// [`crate::harness_icon::of`] draws it with.
+    /// [`crate::harness_icon::Answer::drawn`] draws it with.
     icons: std::collections::BTreeMap<String, String>,
 }
 

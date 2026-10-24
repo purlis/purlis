@@ -30,18 +30,6 @@ pub const FOLDER: &str = "icons";
 /// The longest name a profile's `icon` may be.
 pub const MOST_NAME: usize = 128;
 
-/// **What one profile is drawn with**: the glyph or the SVG it is drawn with, if any, and the
-/// monogram that stands in for either.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-pub struct HarnessIcon {
-    /// A glyph of [`crate::theme::vocabulary::GLYPHS`].
-    pub glyph: Option<&'static str>,
-    /// The person's own SVG, as shapes.
-    pub svg: Option<SafeSvg>,
-    /// The harness kind's monogram: `C`, `OC`, `CX`. Always present.
-    pub monogram: String,
-}
-
 /// What a profile's `icon` names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Named<'a> {
@@ -180,6 +168,13 @@ fn sole_bytes(dir: &crate::theme::opened::Held, _name: &str) -> Result<Option<Ve
 /// name one. The window holds the same budget across a list (`HarnessIcon.tsx`).
 pub const MOST_ANSWER: usize = 4 * safesvg::MOST_OUTPUT;
 
+/// The most icon files one answer reads, kept or not.
+pub const MOST_FILES: usize = 64;
+
+/// The least an icon comes to: a view box and one shape. Once less than this is left of an
+/// answer's budget, nothing more is read.
+const LEAST_ICON: usize = "0 0 1 1".len() + "path".len() + "dM0 0".len();
+
 /// **What one profile of an answer is drawn with**: its glyph, the file name of its own SVG in
 /// the answer's [`Answer::svgs`], and the monogram that stands in for either.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -197,8 +192,9 @@ pub struct Drawn {
 pub struct Answer {
     /// The SVGs the answer carries, by file name.
     pub svgs: std::collections::BTreeMap<String, SafeSvg>,
-    /// Every file asked for, read or not, so none is read twice.
-    asked: std::collections::BTreeSet<String>,
+    /// Every file asked for, read or not, by its name in lower case, to the key its SVG is under
+    /// when it was kept: so none is read twice, whatever case a row spells it in.
+    asked: std::collections::BTreeMap<String, Option<String>>,
     /// What [`Self::svgs`] come to.
     spent: usize,
 }
@@ -228,45 +224,32 @@ impl Answer {
         }
     }
 
-    /// The key of `file` in [`Self::svgs`], read the first time it is asked for and kept while
-    /// the answer's budget holds it.
+    /// The key of `file` in [`Self::svgs`], read the first time it is asked for in any case, and
+    /// kept while the answer's budget holds it. No file is read once [`MOST_FILES`] have been, or
+    /// once what is left of the budget could hold no icon.
     fn own(&mut self, file: &str, config_root: Option<&Path>) -> Option<String> {
-        if self.asked.insert(file.to_owned())
-            && let Some(svg) = config_root.and_then(|root| read_file(root, file).ok())
-            && self.spent + svg.size() <= MOST_ANSWER
-        {
-            self.spent += svg.size();
-            self.svgs.insert(file.to_owned(), svg);
+        let folded = file.to_ascii_lowercase();
+        if let Some(kept) = self.asked.get(&folded) {
+            return kept.clone();
         }
-        self.svgs.contains_key(file).then(|| file.to_owned())
+        if self.asked.len() >= MOST_FILES || MOST_ANSWER - self.spent < LEAST_ICON {
+            return None;
+        }
+        let kept = config_root
+            .and_then(|root| read_file(root, file).ok())
+            .filter(|svg| self.spent + svg.size() <= MOST_ANSWER)
+            .map(|svg| {
+                self.spent += svg.size();
+                self.svgs.insert(file.to_owned(), svg);
+                file.to_owned()
+            });
+        self.asked.insert(folded, kept.clone());
+        kept
     }
 
     /// What the answer's SVGs come to.
     pub fn spent(&self) -> usize {
         self.spent
-    }
-}
-
-/// **What the profile `name` of `kind` is drawn with**, `icon` what its definition names, and
-/// `config_root` the config home its own SVG is read from.
-pub fn of(name: &str, kind: &str, icon: Option<&str>, config_root: Option<&Path>) -> HarnessIcon {
-    let monogram = monogram(kind);
-    let drawn = |glyph, svg| HarnessIcon {
-        glyph,
-        svg,
-        monogram: monogram.clone(),
-    };
-    match icon.map(named) {
-        Some(Named::Glyph(glyph)) => drawn(Some(glyph), None),
-        Some(Named::File(file)) => drawn(
-            None,
-            config_root.and_then(|root| read_file(root, file).ok()),
-        ),
-        Some(Named::Neither) => drawn(None, None),
-        // A profile that names no icon: the built-in's own row, or one standing in its place
-        // under its name, is drawn as its harness; any other shows the monogram.
-        None if name == kind => drawn(glyph_of_kind(kind), None),
-        None => drawn(None, None),
     }
 }
 

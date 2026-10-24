@@ -5,6 +5,24 @@
 
 use super::*;
 
+/// One profile drawn alone, as an answer of one row draws it.
+struct Lone {
+    glyph: Option<&'static str>,
+    svg: Option<SafeSvg>,
+    monogram: String,
+}
+
+/// What the profile `name` of `kind` is drawn with in an answer of its own.
+fn of(name: &str, kind: &str, icon: Option<&str>, config_root: Option<&Path>) -> Lone {
+    let mut answer = Answer::default();
+    let drawn = answer.drawn(name, kind, icon, config_root);
+    Lone {
+        glyph: drawn.glyph,
+        svg: drawn.own.and_then(|key| answer.svgs.remove(&key)),
+        monogram: drawn.monogram,
+    }
+}
+
 const PLAIN: &str = r#"<svg viewBox="0 0 24 24"><path d="M1 1h22"/></svg>"#;
 
 /// A config home whose icons folder holds `files`.
@@ -289,4 +307,40 @@ fn an_answer_draws_a_built_in_and_a_glyph_as_a_lone_profile_is_drawn() {
     let named = answer.drawn("work", "opencode", Some("terminal"), None);
     assert_eq!(named.glyph, Some("terminal"));
     assert_eq!(answer.drawn("w", "opencode", None, None).monogram, "OC");
+}
+
+/// **An answer reads each file once, whatever case a row spells it in, and stops reading once
+/// it can hold no more** (#2922).
+#[test]
+fn an_answer_reads_a_file_once_in_any_case_and_no_more_than_it_may() {
+    let dir = home(&[("Mine.svg", PLAIN)]);
+    let mut answer = Answer::default();
+    let spellings = ["Mine.svg", "mine.svg", "MINE.SVG", "mInE.sVg"];
+    let rows: Vec<Drawn> = spellings
+        .iter()
+        .map(|file| answer.drawn("work", "claude", Some(file), Some(dir.path())))
+        .collect();
+    assert_eq!(answer.svgs.len(), 1, "one file, read and sent once");
+    assert_eq!(answer.asked.len(), 1);
+    // The first row's spelling is the key; on a disk that tells case apart the others name no
+    // file of their own, and on one that does not they are the same file: either way, one read.
+    assert_eq!(rows[0].own.as_deref(), Some("Mine.svg"));
+    for row in &rows[1..] {
+        assert_eq!(row.own, rows[0].own);
+    }
+
+    // Past the most files an answer reads, a row names none and nothing more is read.
+    let mut answer = Answer::default();
+    for at in 0..(MOST_FILES + 10) {
+        answer.drawn("w", "codex", Some(&format!("f{at}.svg")), Some(dir.path()));
+    }
+    assert_eq!(answer.asked.len(), MOST_FILES);
+
+    // A spent budget reads nothing more.
+    let mut answer = Answer {
+        spent: MOST_ANSWER,
+        ..Answer::default()
+    };
+    let row = answer.drawn("w", "codex", Some("Mine.svg"), Some(dir.path()));
+    assert_eq!((row.own, answer.asked.len()), (None, 0));
 }
