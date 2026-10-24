@@ -355,7 +355,7 @@ describe("a chat's browsers counted on its tab", () => {
     await opened();
 
     const count = await screen.findByRole("img", { name: "2 browsers" });
-    expect(count).toHaveClass("count-pill");
+    expect(count).toHaveAttribute("data-scope", "count");
     expect(count.closest(".tab")).not.toBeNull();
   });
 });

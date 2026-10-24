@@ -447,9 +447,11 @@ describe("Ask a persona from a chat's tab", () => {
 describe("a refused vault, on a pane whose chat has already asked that persona", () => {
   /** The pane's Notices, top to bottom, by their accessible names. */
   const said = () =>
-    [...document.querySelectorAll(".pane-notices > .notice-pane-box > [role='status']")].map(
-      (one) => one.getAttribute("aria-label"),
-    );
+    [
+      ...document.querySelectorAll(
+        "[data-scope=notice-row][data-part=stack] > [data-scope=notice][data-placement=pane] > [role='status']",
+      ),
+    ].map((one) => one.getAttribute("aria-label"));
 
   it("draws the request that waits for an answer first, above what purlis only reports", async () => {
     await aStewardChat({ refusals: [REFUSED], dispatches: [HELD] });
@@ -461,10 +463,9 @@ describe("a refused vault, on a pane whose chat has already asked that persona",
     const corner = document.querySelector(".pane-corner.at-start");
     expect([...(corner?.children ?? [])].map((one) => one.className)).toEqual(["pane-chips"]);
     const frame = corner?.closest(".pane-frame");
-    expect([...(frame?.children ?? [])].map((one) => one.className)).toEqual([
-      "pane-notice-row",
-      "pane-body",
-    ]);
+    expect(
+      [...(frame?.children ?? [])].map((one) => one.getAttribute("data-scope") ?? one.className),
+    ).toEqual(["notice-row", "pane-body"]);
   });
 
   it("reads the request top to bottom: the sentence, the answers in order, then the brief", async () => {
@@ -482,7 +483,7 @@ describe("a refused vault, on a pane whose chat has already asked that persona",
     // The brief is under the answers, in the same box, in a box of its own that scrolls.
     const brief = screen.getByRole("region", { name: "Brief from the chat" });
     expect(request.nextElementSibling).toContainElement(brief);
-    expect(request.nextElementSibling).toHaveClass("notice-under-pane");
+    expect(request.nextElementSibling).toHaveAttribute("data-part", "under");
     expect(brief.querySelector("pre")).toHaveClass("block-report-draft", "block-report-brief");
     expect(brief.querySelector("pre")).toHaveTextContent("# Verify the release on prod");
   });

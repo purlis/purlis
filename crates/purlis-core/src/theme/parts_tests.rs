@@ -94,14 +94,20 @@ fn a_theme_that_names_no_parts_draws_exactly_as_today() {
         );
         assert!(parts::fallen(theme).is_empty());
     }
-    // Purlis names its panels' fill (#2913), the one its docked tabs join by default (#2914), and
-    // no more: its tabs are the family default and cost nothing to measure.
+    // Purlis names its panels' fill (#2913), the one its docked tabs join by default (#2914), its
+    // tooltip's, its cards' and its controls' borders (#2912), and no more: its tabs are the
+    // family default and cost nothing to measure.
     let purlis = built_in("purlis").expect("Purlis");
     assert!(
-        purlis
-            .parts
-            .keys()
-            .all(|key| key.family == "panel" || key.family == "tooltip"),
+        purlis.parts.keys().all(|key| [
+            "panel",
+            "tooltip",
+            "card",
+            "button",
+            "text-input",
+            "textarea"
+        ]
+        .contains(&key.family)),
         "{:?}",
         purlis.parts.keys().collect::<Vec<_>>()
     );

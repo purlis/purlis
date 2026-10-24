@@ -28,7 +28,7 @@ import { railHidden } from "../rail.js";
  *
  * **What is raised is the shape, not the cause.** A vault refusal and a held dispatch need a
  * persona chat and a core holding them, which this suite's fake harness has no way to make. So
- * a Notice is drawn into the pane's own stack (`.pane-notices`, which `PaneFrame` draws for
+ * a Notice is drawn into the pane's own stack (`[data-scope=notice-row][data-part=stack]`, which `PaneFrame` draws for
  * every pane) with the elements and classes `Notice at="pane"` draws, and the dialog with the
  * ones `AskPersona` draws. `Notice.pane.test.tsx` and `AskPersona.window.test.tsx` hold the
  * components to those shapes; this file holds the stylesheet to what they must look like. A
@@ -121,7 +121,9 @@ async function raise(
       const frames = [...document.querySelectorAll(".pane-frame")].filter((frame) =>
         frame.querySelector('[data-testid="pane"]'),
       );
-      const stack = frames[at]?.querySelector(".pane-notice-row > .pane-notices");
+      const stack = frames[at]?.querySelector(
+        "[data-scope=notice-row][data-part=root] > [data-scope=notice-row][data-part=stack]",
+      );
       if (!stack) return false;
       // Held in a list, not bound by name: the spec's bundler wraps a named function in a
       // `__name` call the page does not have (`gauge.e2e.ts`, `view-tabs.e2e.ts`).
@@ -222,7 +224,7 @@ async function raise(
         const frames = [...document.querySelectorAll(".pane-frame")].filter((frame) =>
           frame.querySelector('[data-testid="pane"]'),
         );
-        const row = frames[at]?.querySelector(".pane-notice-row");
+        const row = frames[at]?.querySelector("[data-scope=notice-row][data-part=root]");
         return row !== null && row !== undefined && getComputedStyle(row).display !== "none";
       }, pane),
     { timeout: 10_000, interval: 50, timeoutMsg: `pane ${pane} never drew its row of Notices` },
@@ -251,15 +253,15 @@ async function measured(pane: number) {
       frame.querySelector('[data-testid="pane"]'),
     );
     const frame = frames[at];
-    const stack = frame?.querySelector<HTMLElement>(".pane-notices");
+    const stack = frame?.querySelector<HTMLElement>("[data-scope=notice-row][data-part=stack]");
     const notices = [...(frame?.querySelectorAll('[data-raised="pane-notices.e2e"]') ?? [])].map(
       (raised) => {
-        const line = raised.querySelector(".notice-pane");
+        const line = raised.querySelector("[data-placement=pane] > [data-scope=button-row]");
         const pre = raised.querySelector<HTMLElement>("pre");
         return {
           box: box(raised),
           line: box(line),
-          says: box(raised.querySelector(".notice-says")),
+          says: box(raised.querySelector("[data-scope=notice][data-part=message]")),
           buttons: [...(line?.querySelectorAll("button") ?? [])].map((button) => {
             const css = getComputedStyle(button);
             const lineHeight = Number.parseFloat(css.lineHeight);
@@ -281,7 +283,7 @@ async function measured(pane: number) {
                 Number.parseFloat(css.borderBottomWidth),
             };
           }),
-          under: box(raised.querySelector(".notice-under-pane")),
+          under: box(raised.querySelector("[data-scope=notice][data-part=under]")),
           also: box(raised.querySelector(".dispatch-also")),
           options: [...raised.querySelectorAll(".dispatch-also .ui-choice-option")].map(
             (option) => ({
@@ -305,10 +307,12 @@ async function measured(pane: number) {
       rem: Number.parseFloat(getComputedStyle(document.documentElement).fontSize),
       frame: box(frame),
       neighbours: frames.filter((one) => one !== frame).map((one) => box(one)),
-      row: box(frame?.querySelector(".pane-notice-row")),
+      row: box(frame?.querySelector("[data-scope=notice-row][data-part=root]")),
       terminal: box(frame?.querySelector('[data-testid="pane"]')),
-      more: box(frame?.querySelector(".pane-notice-row > .notice-more-pane")),
-      moreSays: frame?.querySelector(".pane-notice-row > .notice-more-pane")?.textContent ?? null,
+      more: box(frame?.querySelector("[data-scope=notice-row][data-part=root] > [data-way=more]")),
+      moreSays:
+        frame?.querySelector("[data-scope=notice-row][data-part=root] > [data-way=more]")
+          ?.textContent ?? null,
       stack: box(stack),
       stackScrolls: stack ? stack.scrollHeight > stack.clientHeight + 1 : false,
       notices,
@@ -412,7 +416,7 @@ async function briefInTheBoxUnder(pane: number) {
       frame.querySelector('[data-testid="pane"]'),
     );
     const raised = frames[at]?.querySelector('[data-raised="pane-notices.e2e"]');
-    const under = raised?.querySelector<HTMLElement>(".notice-under-pane");
+    const under = raised?.querySelector<HTMLElement>("[data-scope=notice][data-part=under]");
     const pre = raised?.querySelector<HTMLElement>("pre");
     if (under && pre)
       under.scrollTop += pre.getBoundingClientRect().top - under.getBoundingClientRect().top;
@@ -806,7 +810,7 @@ describe("a Notice in a pane", () => {
 
     // Opened, every one is in the row, one under another in the order raised, the row scrolls
     // inside the pane, and the last one's last button is reached there.
-    await $("button.notice-more-pane").click();
+    await $("button[data-way=more]").click();
     await browser.waitUntil(async () => (await measured(0)).notices.every((one) => one.shown), {
       timeout: 10_000,
       interval: 100,
@@ -824,7 +828,7 @@ describe("a Notice in a pane", () => {
     }
     const reached = await browser.execute(() => {
       const buttons = document.querySelectorAll<HTMLElement>(
-        '[data-raised="pane-notices.e2e"] .notice-pane > button',
+        '[data-raised="pane-notices.e2e"] [data-placement=pane] > [data-scope=button-row] > button',
       );
       const last = buttons[buttons.length - 1];
       last?.focus();
@@ -935,7 +939,9 @@ describe("a Notice in a pane", () => {
     /** What is drawn at the middle of the Notice's sentence: the Notice, or something over it. */
     const atTheNotice = () =>
       browser.execute(() => {
-        const says = document.querySelector('[data-raised="pane-notices.e2e"] .notice-says');
+        const says = document.querySelector(
+          '[data-raised="pane-notices.e2e"] [data-scope=notice][data-part=message]',
+        );
         if (!says) return "(no Notice)";
         const box = says.getBoundingClientRect();
         const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
@@ -981,7 +987,9 @@ describe("a Notice in a pane", () => {
     await windowIs(1024, 768);
     expect(await raise(0, { sentence: ASKS, ways: FIVE_WAYS, opened: BRIEF })).toBe(true);
     const drawn = await browser.execute((workspace: string) => {
-      const under = document.querySelector('[data-raised="pane-notices.e2e"] .notice-under-pane');
+      const under = document.querySelector(
+        '[data-raised="pane-notices.e2e"] [data-scope=notice][data-part=under]',
+      );
       if (!under) return false;
       const choice = document.createElement("div");
       choice.className = "dispatch-within my-1 min-w-0 max-w-full text-xs wrap-anywhere";
@@ -1021,7 +1029,7 @@ describe("a Notice in a pane", () => {
         },
       ][0];
       const under = document.querySelector<HTMLElement>(
-        '[data-raised="pane-notices.e2e"] .notice-under-pane',
+        '[data-raised="pane-notices.e2e"] [data-scope=notice][data-part=under]',
       );
       const choice = document.querySelector<HTMLElement>(
         '[data-raised="pane-notices.e2e"] .dispatch-within',
@@ -1031,7 +1039,11 @@ describe("a Notice in a pane", () => {
       return {
         under: box(under),
         underScrolls: under ? under.scrollHeight > under.clientHeight + 1 : false,
-        line: box(document.querySelector('[data-raised="pane-notices.e2e"] .notice-pane')),
+        line: box(
+          document.querySelector(
+            '[data-raised="pane-notices.e2e"] [data-placement=pane] > [data-scope=button-row]',
+          ),
+        ),
         pre: box(document.querySelector('[data-raised="pane-notices.e2e"] pre')),
         choice: box(choice),
         says: box(choice?.querySelector("p")),

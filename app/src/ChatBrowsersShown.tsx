@@ -11,6 +11,7 @@ import { THUMBNAIL_ACROSS, useBrowserOrigin, useBrowserWatch, useWindowSeen } fr
 import { useProjectShown } from "./projectShown";
 import { onAMac } from "./tabKeys";
 import { Button } from "./ui/button/Button";
+import { Count } from "./ui/badge/Badge";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
@@ -119,12 +120,10 @@ export function TabBrowsers({
   return (
     <span className="tab-browsers">
       <Tooltip tip={said}>
-        <span className="count-pill tab-browsers-count" role="img" aria-label={said}>
+        <Count role="img" aria-label={said}>
           <Globe aria-hidden="true" />
-          <span className="count-pill-chats" aria-hidden="true">
-            {used.length}
-          </span>
-        </span>
+          <span aria-hidden="true">{used.length}</span>
+        </Count>
       </Tooltip>
       {used.map((shown) => (
         <TabBrowser key={shown.browser.program} shown={shown} onOpen={onOpen} />

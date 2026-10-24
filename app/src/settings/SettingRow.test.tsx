@@ -118,10 +118,10 @@ describe("the badge", () => {
     render(<Page />);
 
     expect(
-      within(rowOf("Mode")).getByText("This machine", { selector: ".ui-setting-badge" }),
+      within(rowOf("Mode")).getByText("This machine", { selector: "[data-scope=badge]" }),
     ).toBeVisible();
     expect(
-      within(rowOf("Branch")).queryByText("This machine", { selector: ".ui-setting-badge" }),
+      within(rowOf("Branch")).queryByText("This machine", { selector: "[data-scope=badge]" }),
     ).toBeNull();
     // Beside the name, never inside it: the control is still named by its label alone.
     expect(screen.getByRole("combobox", { name: "Mode" })).toBeInTheDocument();
@@ -131,7 +131,7 @@ describe("the badge", () => {
     const user = userEvent.setup();
     render(<Page />);
     const badge = within(rowOf("Mode")).getByText("This machine", {
-      selector: ".ui-setting-badge",
+      selector: "[data-scope=badge]",
     });
 
     // The row's info mark comes first, then the badge.
@@ -152,7 +152,7 @@ describe("the badge", () => {
     // The pointer comes onto the badge from the page.
     await user.hover(document.body);
     await user.hover(
-      within(rowOf("Mode")).getByText("This machine", { selector: ".ui-setting-badge" }),
+      within(rowOf("Mode")).getByText("This machine", { selector: "[data-scope=badge]" }),
     );
 
     expect(await screen.findByRole("tooltip")).toHaveTextContent(SAYS);

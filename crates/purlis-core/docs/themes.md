@@ -178,6 +178,7 @@ over the appearance as its colours are.
 | `window.gutter` | px | 0–16 | 0 | 0 | the gap between the window's regions, and around them inside the frame |
 | `panel.corner-radius` | px | 0–24 | 0 | 0 | a region panel's corners: the sides, the content and the bottom panel's halves |
 | `panel.border-width` | px | 0–2 | 1 | 1 | the hairline between two regions, drawn only while they sit flush (no gutter) |
+| `separator.width` | px | 0–2 | 1 | 1 | the separator part: the line between two groups inside a surface (a menu's sections, a dialog's footer, the rows of the Inbox's Notices), 0 for none; its colour is `separator.root.fill` |
 | `focus-ring.width` | px | 1–4 | 2 | 2 | every focus ring, and the selected row's edge |
 | `focus-ring.offset` | px | 0–4 | 2 | 2 | a ring outside its element: a control's, a card's |
 | `focus-ring.inset` | px | −4–0 | −2 | −2 | a ring inside its element: a list row's, a tab's, a segment's |
@@ -285,6 +286,11 @@ an unknown token is.
 | `popover` (since version 6) | `root` (`fill`, `text`, `border-colour`, `border-width`, `corner-radius`, `shadow`: the surface a popover and a menu stand on), `filter` (`fill`, `padding`), `rule` (`fill`), `list` (`padding`, `gap`), `header` (`text`, `font-size`, `font-weight`), `footer` (`fill`, `text`, `padding`, `font-size`), `key` (`fill`, `text`, `corner-radius`) | `popover`, `menu` |
 | `menu` (since version 6) | `root` (every property: a menu's row), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`), `shortcut` (`text`, `font-size`), `indicator` (`text`: a toggle's tick, a submenu's arrow) | `default`, `danger` (what cannot be undone) |
 | `dialog` (since version 7) | `root` (`fill`, `border-colour`, `border-width`, `corner-radius`, `shadow`), `title` (`text`, `font-size`, `font-weight`), `subtitle`, `description` and `summary` (`text`), `separator` (`fill`, the rule over the footer) | `dialog`, `alert` |
+| `card` (since version 9) | `root` (`fill`, `text`, `border-colour`, `border-width`, `corner-radius`, `shadow`, `padding`, `gap`), `title` (`text`, `font-size`, `font-weight`) | `raised`, `ask` (a card that asks the person something) |
+| `notice` (since version 9) | `root` (`fill`, `text`, `border-colour`, `corner-radius`, `padding`, `gap`: a Notice's box, in a pane's row, the Inbox's list or on a page), `message` (`text`, `font-size`), `whose` (`text`, `font-weight`) | `news`, `trouble` |
+| `badge` (since version 9) | `root` (`fill`, `text`, `border-colour`, `border-width`, `corner-radius`, `padding`, `font-size`, `font-weight`) | `neutral`, `accent`, `waiting`, `ok` |
+| `count` (since version 9) | `root` (as the badge's), `group` (`corner-radius`: counts drawn as one pill) | `neutral`, `accent`, `waiting`, `hot` (what needs the person now) |
+| `separator` (since version 9) | `root` (`fill`: the line's colour; its width is the `separator.width` geometry) | none |
 
 A field is its label, its control (a `text-input` or a `textarea`), its help and its error, as
 one: `field.help.text` reaches a field's help line, `text-input.root.border-width` every one-line
@@ -294,6 +300,15 @@ help to the quiet tier and its error to the danger colour.
 
 A dialog's size, height, place and rows are the dialog rules', never a theme's: a dialog key for
 its height or its padding is said and left out.
+
+**A card and a Notice hold answers**, an ask's Allow and a Notice's fix, so they are consent
+surfaces (ADR 0097 §6): their `root.fill` names one of the grounds the button family is measured
+on (or `transparent`), and a theme that names another is refused, so an Allow on them is always
+held apart from the primary. A Notice's edge width is no theme's, and a card's `ask` keeps its
+waiting edge: `card.root.ask.border-width: 0` is refused, and a theme that turns every card's
+border off still draws the ask's. A separator has no words, so none is measured on it; a badge's
+and a count's words are measured on their own fill. None of the five is a target: each is as
+tall as what it holds.
 
 The states are `hover`, `pressed`, `selected` (chosen, or a toggle that is on), `focused` (the
 keyboard is on it; a field whenever it holds the caret), `disabled` and `open`. A family names

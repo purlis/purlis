@@ -203,7 +203,7 @@ afterEach(() => {
 
 /** The Inbox's Notices, top to bottom, by cause. */
 const listed = () =>
-  [...document.querySelectorAll(".notice-list [data-cause]")].map((one) =>
+  [...document.querySelectorAll("[data-scope=notice-list] [data-cause]")].map((one) =>
     one.getAttribute("data-cause"),
   );
 /** The Inbox, shown: pressed only where it is not, since a press on the view in front puts it
@@ -458,7 +458,9 @@ describe("the Notices in the Inbox (#1695)", () => {
     expect(within(shown).getByRole("region", { name: "Notices" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /more$/ })).toBeNull();
     // Each is a whole Notice, with its ways out.
-    const listedOne = document.querySelector('.notice-list [data-cause="pin-dormant:baker"]');
+    const listedOne = document.querySelector(
+      '[data-scope=notice-list] [data-cause="pin-dormant:baker"]',
+    );
     expect(within(listedOne as HTMLElement).getByRole("button", { name: "Forget" })).toBeTruthy();
     // And nothing stands under the strip any more.
     expect(document.querySelector(".notice-band-stack")).toBeNull();

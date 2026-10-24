@@ -9,6 +9,7 @@ import { askProfileSignIn } from "./links";
 import { Button } from "../ui/button/Button";
 import { AlertDialog } from "../ui/dialog/Dialog";
 import { Form } from "../ui/field/Field";
+import { Badge } from "../ui/badge/Badge";
 
 /**
  * **You › Profiles** (#2034, ADR 0095): this machine's own profiles, each available in every
@@ -256,7 +257,7 @@ const listed = (plane: string | undefined): LiveSetting => ({
                   <li key={profile.name} className="ui-machine-entry">
                     <span className="ui-machine-name">{profile.name}</span>
                     <span className="ui-machine-path">{profile.folder}</span>
-                    <span className="ui-setting-badge">{note(profile)}</span>
+                    <Badge variant="accent">{note(profile)}</Badge>
                     <span className="ui-setting-help">{signedIn(profile)}</span>
                     {profile.origin === "made" &&
                       (plane === undefined ? (
@@ -284,7 +285,7 @@ const listed = (plane: string | undefined): LiveSetting => ({
                           onClick={() => askProfileSignIn(plane, profile.name)}
                         />
                       ))}
-                    <span className="ui-setting-badge">{pinNote(profile)}</span>
+                    <Badge variant="accent">{pinNote(profile)}</Badge>
                     {offeredVersion(profile) !== undefined && (
                       <EntryButton
                         label="Update the pin"

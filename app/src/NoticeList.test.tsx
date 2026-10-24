@@ -16,7 +16,7 @@ import { Notice, NoticeList } from "./Notice";
 afterEach(cleanup);
 
 const listed = () =>
-  [...document.querySelectorAll(".notice-list [data-cause]")].map((one) =>
+  [...document.querySelectorAll("[data-scope=notice-list] [data-cause]")].map((one) =>
     one.getAttribute("data-cause"),
   );
 

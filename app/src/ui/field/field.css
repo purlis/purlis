@@ -150,9 +150,12 @@
    States.
    --------------------------------------------------------------------------------------------- */
 
-/* A value the field refuses: the danger colour on its edge, beside the words that say why. */
+/* A value the field refuses: the danger colour on its edge, beside the words that say why. The
+   edge is drawn inside the box too, so a theme whose controls take no border (Purlis, #2912)
+   still marks it. */
 :is([data-scope="text-input"], [data-scope="textarea"])[data-part="root"][data-invalid] {
   border-color: var(--danger-base);
+  box-shadow: inset 0 0 0 1px var(--danger-base);
 }
 
 /* Unavailable: its words in the faint tier, on its own ground and edge, so nothing moves. */

@@ -121,6 +121,9 @@ export type CollectionEntry = {
   name?: string;
   /** Whether it waits for Confirm (#1341): your own sandbox host, not yet confirmed here. */
   confirm?: boolean;
+  /** Its status, where its collection says one beside each entry (R66): your own hosts, each
+   *  "Waiting for you" until confirmed here, then "Confirmed". */
+  status?: "waiting" | "confirmed";
 };
 
 /** One field of a collection's Add form, written to the entry's key `field`. */

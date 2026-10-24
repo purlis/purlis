@@ -305,7 +305,10 @@ const comeBack = (at: number) =>
 
 const summary = () => document.querySelector<HTMLElement>('[data-cause="away-summary"]');
 const said = (notice: HTMLElement) =>
-  notice.querySelector(".notice-says")?.textContent?.replace(/\s+/g, " ").trim();
+  notice
+    .querySelector("[data-scope=notice][data-part=message]")
+    ?.textContent?.replace(/\s+/g, " ")
+    .trim();
 const theSummary = () =>
   waitFor(() => {
     const found = summary();
@@ -389,7 +392,7 @@ describe("while you were away (#1514)", () => {
     const notice = await theSummary();
     expect(said(notice)).toBe("While you were away: 7 tasks done, 1 failed, 2 waiting on you");
     // In the Inbox, one for the project; never focused, so nothing typed goes astray.
-    expect(notice.closest(".pane-notices")).toBeNull();
+    expect(notice.closest("[data-scope=notice-row][data-part=stack]")).toBeNull();
     expect(notice.contains(document.activeElement)).toBe(false);
   });
 

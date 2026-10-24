@@ -1467,6 +1467,7 @@ are no geometry token: they are the window's own family and its one monospace fa
 | `--window-gutter`       | 0px                                                          |
 | `--panel-corner-radius` | 0px                                                          |
 | `--panel-border-width`  | 1px                                                          |
+| `--separator-width`    | 1px                                                          |
 | `--focus-ring-width`    | 2px                                                          |
 | `--focus-ring-offset`   | 2px                                                          |
 | `--focus-ring-inset`    | -2px                                                         |
@@ -1513,6 +1514,7 @@ engine's (`purlis_core::theme::geometry::STEPS`), which the published schema car
 | `window.gutter` | `--window-gutter` | 0 to 16 px | 0 | 0 |
 | `panel.corner-radius` | `--panel-corner-radius` | 0 to 24 px | 0 | 0 |
 | `panel.border-width` | `--panel-border-width` | 0 to 2 px | 1 | 1 |
+| `separator.width` | `--separator-width` | 0 to 2 px | 1 | 1 |
 | `focus-ring.width` | `--focus-ring-width` | 1 to 4 px | 2 | 2 |
 | `focus-ring.offset` | `--focus-ring-offset` | 0 to 4 px | 2 | 2 |
 | `focus-ring.inset` | `--focus-ring-inset` | -4 to 0 px | -2 | -2 |

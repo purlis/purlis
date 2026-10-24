@@ -169,7 +169,7 @@
    something. A part of its own: no control takes a border. */
 [data-scope="popover"][data-part="rule"] {
   flex: none;
-  block-size: 1px;
+  block-size: var(--separator-width);
   background-color: var(--border-subtle);
 }
 

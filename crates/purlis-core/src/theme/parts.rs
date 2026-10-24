@@ -407,6 +407,16 @@ pub enum Consent {
     Grants,
     /// What cannot be undone: its danger colour contrasts with its fill.
     Danger,
+    /// A card that asks the person something (#2912): its waiting edge stays, 3:1 on its fill,
+    /// whatever the theme says, as an ask contrasts with its surface (ADR 0097 §6).
+    Asks,
+}
+
+impl Consent {
+    /// Whether its root keeps its edge: an answer that grants, and an ask.
+    fn keeps_edge(self) -> bool {
+        matches!(self, Self::Grants | Self::Asks)
+    }
 }
 
 /// One variant of a family.
@@ -1067,6 +1077,11 @@ pub const MANIFEST: &[Family] = &[
     // **The project rail** (#2915): a button per project at the window's left.
     shell::RAIL,
     activity::ACTIVITY,
+    content::CARD,
+    content::NOTICE,
+    content::BADGE,
+    content::COUNT,
+    content::SEPARATOR,
 ];
 
 /// The popover and menu families (#2909): the surface a popover and a menu stand on, and a
@@ -1082,6 +1097,11 @@ mod shell;
 /// The dialog family (#2910).
 #[path = "parts_dialog.rs"]
 mod dialog;
+
+/// The families that hold what the window says (#2912): a card, a Notice, a badge, a count and a
+/// separator.
+#[path = "parts_content.rs"]
+mod content;
 #[cfg(test)]
 pub(super) use dialog::DIALOG_TIERS;
 
@@ -1833,7 +1853,9 @@ pub(super) fn read(
         };
         match value(&key, raw) {
             Ok(parsed) => {
-                if let Some(said) = edge_removed(&key, &parsed) {
+                if let Some(said) =
+                    edge_removed(&key, &parsed).or_else(|| off_the_grounds(&key, &parsed))
+                {
                     complaints.push(Complaint::said(said));
                     continue;
                 }
@@ -1882,19 +1904,47 @@ fn joined(parts: &mut Parts) {
     }
 }
 
-/// Why `key` would take a consent part's mark away, if it would: a border width of 0 on Allow.
+/// Why `key` would take a consent part's mark away, if it would: a border width of 0 on Allow,
+/// or on an ask (#2912).
 fn edge_removed(key: &Key, value: &PartValue) -> Option<String> {
     let consent = key
         .variant
         .and_then(|name| variant(key.family, name))
-        .and_then(|one| one.consent);
-    (consent == Some(Consent::Grants)
+        .and_then(|one| one.consent)?;
+    (consent.keeps_edge()
         && key.property == Prop::BorderWidth
         && *value == PartValue::Length(Length::Number(0.0)))
     .then(|| {
+        let what = if consent == Consent::Asks {
+            "an ask keeps its waiting edge"
+        } else {
+            "an answer that grants keeps its accent edge and its lock"
+        };
+        format!("parts.{key} is refused: {what}, so a theme can never disguise a consent decision")
+    })
+}
+
+/// Why `key` would stand answers on a ground they are not measured on, if it would (#2912): a
+/// card's or a Notice's fill is one of the grounds the button family is held on, so an answer
+/// that grants stays apart from the primary wherever it is drawn (ADR 0103 §7).
+fn off_the_grounds(key: &Key, value: &PartValue) -> Option<String> {
+    let PartValue::Colour(token) = value else {
+        return None;
+    };
+    if key.part != "root"
+        || key.property != Prop::Fill
+        || !content::HOLDS_ANSWERS.contains(&key.family)
+        || *token == TRANSPARENT
+    {
+        return None;
+    }
+    let held = family("button")?.grounds;
+    (!held.contains(token)).then(|| {
         format!(
-            "parts.{key} is refused: an answer that grants keeps its accent edge and its lock, \
-             so a theme can never disguise a consent decision"
+            "parts.{key} is refused: {token} is not a ground the answers a {} holds are measured \
+             on, so an Allow on it could not be held apart from the primary; name one of {}",
+            key.family,
+            held.join(", ")
         )
     })
 }
@@ -2488,6 +2538,16 @@ fn consent_broken(
                 ));
             }
         }
+        Consent::Asks => {
+            let own = edge(rules, family, variant.name, &look);
+            let ratio = own.and_then(|border| lowest(theme, family, look.fill, border));
+            if ratio.is_none_or(|ratio| ratio < 3.0) {
+                return Some(Consented::Own(
+                    "an ask keeps its waiting edge, 3:1 on its fill".to_owned(),
+                    ratio,
+                ));
+            }
+        }
         Consent::Danger => {
             if apart(theme, look.words[0], "accent.base")
                 .is_some_and(|distance| distance < super::DANGER_APART)
@@ -2577,11 +2637,12 @@ fn held_from(
         if !rules.iter().any(|rule| std::ptr::eq(rule.family, family)) {
             continue;
         }
-        // A theme that turns borders off still draws the edge of an answer that grants.
+        // A theme that turns borders off still draws the edge of an answer that grants, and an
+        // ask's.
         for variant in family
             .variants
             .iter()
-            .filter(|one| one.consent == Some(Consent::Grants))
+            .filter(|one| one.consent.is_some_and(Consent::keeps_edge))
         {
             if !has_border(&rules, family, variant.name) {
                 rules.push(Rule {

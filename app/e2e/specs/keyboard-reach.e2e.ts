@@ -143,7 +143,9 @@ describe("the window's keyboard reach", () => {
         terminal === inFrame.length - 1 &&
         inFrame
           .slice(0, terminal)
-          .every((el) => el.closest(".pane-corner, .pane-notice-row") !== null) &&
+          .every(
+            (el) => el.closest(".pane-corner, [data-scope=notice-row][data-part=root]") !== null,
+          ) &&
         inFrame.some((el) => el.closest(".pane-doing") !== null);
       return { tabbed, laidOut, controlsFirst };
     });

@@ -114,6 +114,10 @@
 @import "./ui/panel/panel.css" layer(components);
 @import "./ui/empty-state/empty-state.css" layer(components);
 @import "./ui/status/status.css" layer(components);
+@import "./ui/card/card.css" layer(components);
+@import "./ui/notice/notice.css" layer(components);
+@import "./ui/badge/badge.css" layer(components);
+@import "./ui/separator/separator.css" layer(components);
 @import "./ui/dialog/dialog.css" layer(components);
 @import "./ui/tabs/tabs.css" layer(components);
 @import "./ui/rail/rail.css" layer(components);

@@ -275,6 +275,7 @@ pub const GEOMETRY: &[&str] = &[
     "--window-gutter",
     "--panel-corner-radius",
     "--panel-border-width",
+    "--separator-width",
     "--focus-ring-width",
     "--focus-ring-offset",
     "--focus-ring-inset",
