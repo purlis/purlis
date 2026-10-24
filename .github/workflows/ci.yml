@@ -854,7 +854,11 @@ jobs:
       # What Seatbelt refused while the probe ran, from the system's log, for a red run's reader.
       - name: What the sandbox refused
         if: failure() && steps.scope.outputs.run == 'true'
-        run: log show --last 15m --style compact --predicate 'process == "studio-probe" OR eventMessage CONTAINS "studio-probe"' | tail -300 || true
+        run: |
+          log show --last 15m --style compact --predicate 'process == "studio-probe" OR eventMessage CONTAINS "studio-probe"' | tail -100 || true
+          for report in $(ls -t ~/Library/Logs/DiagnosticReports/studio-probe*.ips 2>/dev/null | head -1); do
+            grep -E '"termination"|"exception"|"indicator"|"namespace"|"reasons"|"details"|"code"|"signal"|"subtype"|"type"' -A3 "$report" | head -60
+          done
 
   # What the Python charter answered, frozen: every scenario the old differential ran, and the
   # generated cases of the shell reader and the plane-root guards, replayed against this build
