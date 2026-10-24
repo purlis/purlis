@@ -51,6 +51,9 @@
  *   (`listbox`, `option`), its old class (`ui-list`) and its `data-scope`. A list to choose from
  *   is the family's `ListBox`, a list of rows that act its `List` (`ui/list/List`); a list of
  *   words (a sentence's bullets) is no collection and stays a `<ul>`.
+ * - `purlis/titlebar-family` (error: the title bar's workspaces are a family, #2916): the
+ *   workspace strip's old classes (`workspaces`, `workspaces-strip`, `workspace`, `plane-root`,
+ *   `workspace-name`, `workspace-mark`) and `data-scope="titlebar"` by hand.
  *
  * The primitives library itself is refused outside `src/ui` by `no-restricted-imports`, in
  * `eslint.config.js`: one wrapper per primitive, and screens never import it.
@@ -562,6 +565,21 @@ const listFamily = moved({
     "a list: draw it as `<ListBox>` and `<ListOption>` (a list to choose from) or `<List>` and `<ListRow>` (rows that act), with the row's slots, from `ui/list/List` (#2911).",
 });
 
+const titlebarFamily = moved({
+  description: "The title bar's workspaces are the shared title bar family",
+  scopes: ["titlebar"],
+  classes: [
+    "workspaces",
+    "workspaces-strip",
+    "workspace",
+    "plane-root",
+    "workspace-name",
+    "workspace-mark",
+  ],
+  message:
+    "the title bar's workspaces: draw them as `<WorkspaceChip>` and `<PinnedStrip>` from `ui/titlebar/TitleBarWorkspaces`, and a switcher's parts from `ui/titlebar/Switcher` (#2916).",
+});
+
 export const purlisUi = {
   meta: { name: "purlis-ui" },
   rules: {
@@ -579,5 +597,6 @@ export const purlisUi = {
     "rail-family": railFamily,
     "activity-family": activityFamily,
     "list-family": listFamily,
+    "titlebar-family": titlebarFamily,
   },
 };

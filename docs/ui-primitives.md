@@ -2091,6 +2091,17 @@ same two rows. They are read only in the palette's box, so they take nothing fro
 tab; the line under the files says them while a file is aimed. Keys and not buttons, because a
 listbox option's contents are presentational and a button inside one is not reachable.
 
+**The title bar's workspace key takes one chord from a chat, off a Mac, on purpose** (#2916,
+`workspaceSwitch.opensTheWorkspaces`, the operator's rulings of 2026-10-24): `⌥⌘P` on a Mac and
+`Ctrl+Alt+Shift+P` elsewhere open the workspace popover, read by the physical key (`KeyP`), since
+`⌥` turns P into another letter on a Mac. xterm.js 6.0.0 sends nothing for a `⌘` chord, so on a
+Mac nothing is taken. Off a Mac it would send `ESC ^P` (C-M-p) to a focused chat, which bash, zsh
+and readline leave unbound and Emacs binds to backward-list: the window takes it, as VS Code takes
+its own app keys, so the key works from a chat too. AltGr, which Windows reports as Ctrl+Alt, is
+not the key: a letter typed with AltGr+Shift+P is left alone. `⌘1`–`⌘9`
+go to the project's pins; off a Mac `Ctrl+1`–`9` is the chat's while it has the keyboard. None of
+them acts while a dialog is up.
+
 **Find in a pane is `⌘F` on a Mac and `Ctrl+Shift+F` elsewhere, and takes nothing either** (SI-4,
 `SessionPane.opensFind`). xterm.js 6.0.0 sends nothing for `⌘F`. It would send `\x06` for
 `Ctrl+F` — readline's forward-char — so off a Mac the chord adds `Shift`, as GNOME Terminal and

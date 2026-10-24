@@ -82,16 +82,6 @@ export const LEAST = {
 export type Least = (typeof LEAST)[keyof typeof LEAST];
 
 /**
- * The plane root's tab (SI-1): an icon, not a share of the strip. The least it is drawn, in
- * pixels at the default text size: its icon inside a tab's own padding. `PlaneView` hands it to
- * the stylesheet as `--root`, and takes the tab's measured width ({@link useWidth}) off the
- * workspace strip's room before the named workspaces share the rest, or this where it is not
- * measured yet. Measured, because the tab also wears its count pill (qw337), and a pill is as
- * wide as its digits.
- */
-export const LEAST_ROOT = 36;
-
-/**
  * A chip (SI-8f): a tab in the background while its chat wraps up, drawn as the chat's icon and
  * the breathing mark with no name. It is exactly this wide, in pixels at the default text size,
  * not a share of the strip: `PlaneView` hands it to the stylesheet as `--chip` and to

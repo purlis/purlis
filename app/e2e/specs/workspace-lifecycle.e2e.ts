@@ -16,6 +16,13 @@ import { menuNames, ROW } from "../menus.js";
 import { anEmptyRecord, cloneTheFixtureRepos, copyFixturePlane } from "../harness.js";
 import { openThroughTheTrustQuestion } from "../opening.js";
 import { pinsSaid, stripSeen } from "../reading.js";
+import {
+  ALL_WORKSPACES,
+  closed,
+  CURRENT_CHIP,
+  goToAWorkspace,
+  workspacesListed,
+} from "../titleBarWorkspaces.js";
 
 /**
  * Making a workspace and deleting one, in the built app, against the real core.
@@ -42,7 +49,6 @@ import { pinsSaid, stripSeen } from "../reading.js";
  */
 
 const PROJECTS = '[data-strip="Projects"]';
-const WORKSPACES = '[data-strip="Workspaces"]';
 const PALETTE = '[role="dialog"][aria-label="Command palette"]';
 
 /** This spec's own project: the fixture plane, with its repos made into real ones. */
@@ -79,17 +85,10 @@ async function ask<T>(command: string, args: Record<string, unknown> = {}): Prom
   return answer.ok as T;
 }
 
-/** The workspaces the strip is showing, left to right — after the plane root's tab, which is
- *  first on every strip and is not a workspace (SI-1). */
+/** The project's workspaces, as the title bar's ⌄ lists them (#2916), after the plane root,
+ *  which is first and is not a workspace (SI-1). */
 async function stripNames(): Promise<string[]> {
-  return browser.execute(
-    (selector: string) =>
-      [
-        ...(document.querySelector(selector)?.querySelectorAll('[role="tab"]:not(.plane-root)') ??
-          []),
-      ].map((tab) => tab.querySelector(".workspace-name")?.textContent ?? ""),
-    WORKSPACES,
-  );
+  return (await workspacesListed()).map((one) => one.name).filter((name) => name !== "Plane root");
 }
 
 async function stripBecomes(want: string[]): Promise<void> {
@@ -239,7 +238,9 @@ describe("making a workspace and deleting one", function () {
     // the real core behind it. `Menus.test.tsx` owns the rows.
     // A workspace's tab, not the plane root's icon tab first on the strip (SI-1), whose menu
     // is its own and deletes nothing.
-    const sent = await sendContextMenu(`${WORKSPACES} [role="tab"]:not(.plane-root)`);
+    // Its chip in the title bar (#2916), once it is in front.
+    await goToAWorkspace();
+    const sent = await sendContextMenu(CURRENT_CHIP);
     expect(sent).toBe(true);
 
     const menu = await $('[role="menu"]');
@@ -252,32 +253,27 @@ describe("making a workspace and deleting one", function () {
   });
 
   /**
-   * **The strip's own `+`, in the shipped window** (charter-app#193).
-   *
-   * The operator: *"also no new workspace button in workspaces tab — it should be like
-   * projects tabs buttons."* `WorkspaceLifecycle.test.tsx` owns what pressing it does, where
-   * jsdom can watch the command go out; what only a scenario can say is that the control
-   * survives the Vite build and is really on the element in the running app — the same half
-   * `picker.e2e.ts` keeps for `tabindex` (`docs/ui-primitives.md`).
-   *
-   * **Found by its `aria-label` and not by its text**, because it has no text: that is the
-   * whole shape the operator asked for, and the label is what a screen reader reads. The match
-   * is a prefix so the selector stays ASCII, for `runRow`'s reason one function up — the
-   * catalogue's title ends in an ellipsis, and nothing here should turn on one surviving a
-   * round trip through a driver.
+   * **New workspace… is the last row of the title bar's ⌄** (#2916, R108), in the shipped
+   * window: the catalogue's row, which `TitleBarSwitch.window.test.tsx` presses where jsdom can
+   * watch the command go out.
    */
-  it("carries a `+` on the workspace strip, named by the catalogue and drawn as an icon", async () => {
-    const plus = await $(`${WORKSPACES} .strip-doing button[aria-label^="New workspace"]`);
-    await plus.waitForDisplayed({ timeout: 20_000 });
-
-    // No words in it, and a mark inside it. An icon-only button with no icon is an empty box.
-    expect((await plus.getText()).trim()).toBe("");
-    expect(await plus.$("svg").isExisting()).toBe(true);
-
-    // And it is not a tab: it sits right after the last tab (DS-7, #1839), and its width is
-    // taken off the room first, so nothing the strip collapses can take it away
-    // (charter-app#130/#131).
-    expect(await plus.getAttribute("role")).toBe(null);
+  it("offers New workspace… as the last row of the title bar's ⌄", async () => {
+    await browser.execute(
+      (all: string) => document.querySelector<HTMLElement>(all)?.click(),
+      ALL_WORKSPACES,
+    );
+    const list = await $('[role="listbox"][aria-label^="Workspaces in "]');
+    await list.waitForDisplayed({ timeout: 20_000 });
+    const rows = await browser.execute(() =>
+      [
+        ...document.querySelectorAll(
+          '[role="listbox"][aria-label^="Workspaces in "] [role="option"]',
+        ),
+      ].map((row) => row.querySelector("[data-titlebar-name]")?.textContent ?? ""),
+    );
+    expect(rows.at(-1)).toBe("New workspace…");
+    // Closed by Escape in its filter, so no other spec finds its rows.
+    await closed();
   });
 
   it("makes a workspace with the baseline charter gives it, and puts it on the strip", async () => {

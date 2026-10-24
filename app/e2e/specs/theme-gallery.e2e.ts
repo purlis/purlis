@@ -5,6 +5,8 @@ import { mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from
 import { basename, dirname, join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import { openMenuOn } from "../acting.js";
+import { ALL_WORKSPACES } from "../titleBarWorkspaces.js";
+import { focusWorkspace } from "../reach.js";
 import { anEmptyRecord, copyFixturePlane } from "../harness.js";
 import { closeProject, openThroughTheTrustQuestion } from "../opening.js";
 
@@ -28,7 +30,6 @@ import { closeProject, openThroughTheTrustQuestion } from "../opening.js";
  */
 
 const PROJECTS = '[data-strip="Projects"]';
-const WORKSPACES = '[data-strip="Workspaces"]';
 const LEVEL = '[role="radiogroup"][aria-label="Level"]';
 const CARD = '[data-theme-card="e2e-dusk"]';
 
@@ -145,8 +146,8 @@ describe("Settings › Theme's hover preview", function () {
       timeout: 30_000,
       timeoutMsg: "this spec's project never opened",
     });
-    await $(`${WORKSPACES} [role="tab"].plane-root`).waitForExist({ timeout: 30_000 });
-    await $(`${WORKSPACES} [role="tab"].plane-root`).click();
+    await $(ALL_WORKSPACES).waitForExist({ timeout: 30_000 });
+    await focusWorkspace("Plane root");
     // The rail has no gear (#2915): its project's menu has the same row.
     await openMenuOn(`${PROJECTS} [role="tab"][aria-selected="true"]`);
     await $('[role="menu"]').$('[role="menuitem"]*=Settings').click();

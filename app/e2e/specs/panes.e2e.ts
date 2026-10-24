@@ -340,7 +340,8 @@ describe("the window", function () {
     // The floor is read off the element, so this and the app cannot disagree about the number.
     const squeezed = await browser.execute(() => {
       // The projects are the rail (#2915), a column of fixed buttons with no floor to squeeze.
-      const strips = ["Workspaces", "Tabs"];
+      // The workspaces are the title bar's chips (#2916), which scroll and have no floor either.
+      const strips = ["Tabs"];
       const narrow: string[] = [];
       for (const named of strips) {
         const strip = document.querySelector(`[data-strip="${named}"]`);

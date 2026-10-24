@@ -5,6 +5,7 @@ import { existsSync, readFileSync, realpathSync, renameSync, writeFileSync } fro
 import { basename, dirname, join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import { openMenuOn } from "../acting.js";
+import { ALL_WORKSPACES, goToAWorkspace, goToWorkspace } from "../titleBarWorkspaces.js";
 import { anEmptyRecord, copyFixturePlane } from "../harness.js";
 import { closeProject, openThroughTheTrustQuestion } from "../opening.js";
 
@@ -32,7 +33,6 @@ import { closeProject, openThroughTheTrustQuestion } from "../opening.js";
  */
 
 const PROJECTS = '[data-strip="Projects"]';
-const WORKSPACES = '[data-strip="Workspaces"]';
 const LEVEL = '[role="radiogroup"][aria-label="Level"]';
 
 const mine = (() => {
@@ -130,7 +130,7 @@ describe("the settings gears, and ⌘, at the focused level", function () {
       timeout: 30_000,
       timeoutMsg: "this spec's project never opened",
     });
-    await $(`${WORKSPACES} [role="tab"].plane-root`).waitForExist({ timeout: 30_000 });
+    await $(ALL_WORKSPACES).waitForExist({ timeout: 30_000 });
   });
 
   after(async () => {
@@ -153,7 +153,7 @@ describe("the settings gears, and ⌘, at the focused level", function () {
 
   it("opens Project settings from the gear on the project in front, and writes charter.toml", async () => {
     // The plane root is not a workspace, so nothing narrower than the project is focused.
-    await $(`${WORKSPACES} [role="tab"].plane-root`).click();
+    await goToWorkspace("Plane root");
 
     // Quiet until its tab is under the pointer or the keyboard, and neither can be made to show
     // it from here: a WebDriver pointer move does not make WebKit match `:hover` (macOS and
@@ -214,13 +214,7 @@ describe("the settings gears, and ⌘, at the focused level", function () {
   });
 
   it("opens the focused workspace's level on the app menu's Settings…", async () => {
-    await $(`${WORKSPACES} [role="tab"]:not(.plane-root)`).click();
-    const focused = await browser.execute(
-      (selector: string) =>
-        document.querySelector(`${selector} [role="tab"][aria-selected="true"] .workspace-name`)
-          ?.textContent ?? "",
-      WORKSPACES,
-    );
+    const focused = await goToAWorkspace();
     expect(focused).not.toBe("");
 
     await browser.executeAsync((done: () => void) => {

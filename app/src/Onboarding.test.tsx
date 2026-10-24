@@ -145,9 +145,9 @@ async function openRepoByPath(path: string) {
   return person;
 }
 
-/** Whether the project is drawn: its workspace strip is on screen. */
+/** Whether the project is drawn: its pinned workspaces are in the title bar (#2916). */
 function projectDrawn(): boolean {
-  return document.querySelector('[data-strip="Workspaces"]') !== null;
+  return document.querySelector('[role="toolbar"][aria-label="Pinned workspaces"]') !== null;
 }
 
 describe("a fresh machine", () => {

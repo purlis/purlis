@@ -106,6 +106,7 @@ export default tseslint.config(
       "purlis/activity-family": "error",
       // Every list is the list family's, since #2911.
       "purlis/list-family": "error",
+      "purlis/titlebar-family": "error",
     },
   },
   // The select's list is drawn in the old menu classes until the select family moves (#2906).

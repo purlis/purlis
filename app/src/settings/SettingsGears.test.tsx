@@ -1,8 +1,6 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
@@ -11,7 +9,13 @@ import { emit } from "@tauri-apps/api/event";
 import App from "../App";
 import { forgetThisLaunch } from "../regions";
 import { GLOBAL } from "../windowprefs";
-import { stripNamed } from "../test-strips";
+import {
+  chipName,
+  goToWorkspace,
+  stripNamed,
+  workspaceChips,
+  workspaceInFront,
+} from "../test-strips";
 
 /**
  * **The quiet gears, and ⌘, at the focused level** (SE-23, #1173; V89g, V89i on #558).
@@ -98,7 +102,6 @@ function core(plane: string | null) {
 }
 
 const projects = () => stripNamed("Projects");
-const workspaces = () => stripNamed("Workspaces");
 const chatTabs = () => within(stripNamed("Tabs")).queryAllByRole("tab");
 const inFront = () =>
   within(stripNamed("Tabs"))
@@ -129,7 +132,7 @@ describe("⌘, opens Settings at the focused level", () => {
   it("opens the focused workspace's level when a workspace is focused", async () => {
     core(PLANE);
     render(<App />);
-    await userEvent.click(await screen.findByRole("tab", { name: /alpha/ }));
+    await goToWorkspace("alpha");
     await settled();
 
     await menuSettings();
@@ -141,10 +144,9 @@ describe("⌘, opens Settings at the focused level", () => {
   it("opens the project's level when no workspace is focused", async () => {
     core(PLANE);
     render(<App />);
-    await screen.findByRole("tab", { name: /alpha/ });
-    // The plane root, first on the strip, is not a workspace.
-    await userEvent.click(within(workspaces()).getAllByRole("tab")[0]);
-    expect(within(workspaces()).getAllByRole("tab")[0]).toHaveAttribute("aria-selected", "true");
+    // The plane root, first in the title bar's ⌄ (#2916), is not a workspace.
+    await goToWorkspace("Plane root");
+    await waitFor(() => expect(workspaceInFront()).toBeUndefined());
     await settled();
 
     await menuSettings();
@@ -170,7 +172,7 @@ describe("⌘, opens Settings at the focused level", () => {
   it("brings the tab already open forward rather than opening a second", async () => {
     core(PLANE);
     render(<App />);
-    await userEvent.click(await screen.findByRole("tab", { name: /alpha/ }));
+    await goToWorkspace("alpha");
     await settled();
 
     await menuSettings();
@@ -185,7 +187,7 @@ describe("Your settings…, in the palette", () => {
   it("opens You while a workspace is focused, where Settings… would open the workspace's", async () => {
     core(PLANE);
     render(<App />);
-    await userEvent.click(await screen.findByRole("tab", { name: /alpha/ }));
+    await goToWorkspace("alpha");
 
     await userEvent.keyboard("{F2}");
     await screen.findByRole("dialog", { name: "Command palette" });
@@ -196,90 +198,24 @@ describe("Your settings…, in the palette", () => {
   });
 });
 
-describe("the workspace gear", () => {
-  it("is on the focused workspace's tab only, and opens Settings at its level", async () => {
-    core(PLANE);
-    render(<App />);
-    await userEvent.click(await screen.findByRole("tab", { name: /alpha/ }));
-    const gears = within(workspaces()).getAllByRole("button", { name: "Workspace settings…" });
-    expect(gears).toHaveLength(1);
-    // On alpha's own cell, beside its tab.
-    expect(gears[0].parentElement).toContainElement(
-      within(workspaces()).getByRole("tab", { name: /alpha/ }),
-    );
-    await userEvent.click(gears[0]);
-
-    await waitFor(() => expect(level()).toBe("Workspace"));
-    expect(inFront()).toHaveTextContent("Settings · alpha");
-  });
-
-  it("has no gear on the plane root, which is not a workspace", async () => {
-    core(PLANE);
-    render(<App />);
-    await screen.findByRole("tab", { name: /alpha/ });
-
-    await userEvent.click(within(workspaces()).getAllByRole("tab")[0]);
-
-    expect(within(workspaces()).getAllByRole("tab")[0]).toHaveAttribute("aria-selected", "true");
-    expect(
-      within(workspaces()).queryByRole("button", { name: /Workspace settings/ }),
-    ).not.toBeInTheDocument();
-  });
-
-  it("is one Tab away from the focused workspace's tab", async () => {
-    core(PLANE);
-    render(<App />);
-    await userEvent.click(await screen.findByRole("tab", { name: /alpha/ }));
-
-    within(workspaces()).getByRole("tab", { selected: true }).focus();
-    await userEvent.tab();
-
-    expect(within(workspaces()).getByRole("button", { name: "Workspace settings…" })).toHaveFocus();
-  });
-});
-
-/**
- * **Quiet: drawn only under the pointer or the keyboard.** jsdom lays nothing out and computes
- * no cascade, so this holds the stylesheet's claim, as `StripMarks.test.tsx` does for the strips:
- * a gear is invisible by default, and every rule that shows it is a hover or a keyboard focus.
- */
-describe("the gears' look", () => {
-  const css = readFileSync(join(process.cwd(), "src/App.css"), "utf8").replace(
-    /\/\*[\s\S]*?\*\//g,
-    "",
-  );
-  const rules = [...css.matchAll(/([^{}]*)\{([^{}]*)\}/g)].map((hit) => ({
-    selectors: hit[1].split(",").map((one) => one.trim()),
-    body: hit[2],
-  }));
-
-  it("hides a gear until its tab is under the pointer or the keyboard", () => {
-    const base = rules.find((rule) => rule.selectors.includes(".workspace .gear"));
-    expect(base?.body).toMatch(/opacity:\s*0;/);
-    const shown = rules.filter(
-      (rule) =>
-        /opacity:\s*1;/.test(rule.body) && rule.selectors.some((one) => one.includes(".gear")),
-    );
-    expect(shown.length).toBeGreaterThan(0);
-    for (const rule of shown)
-      for (const one of rule.selectors) expect(one).toMatch(/:hover|:focus-visible/);
-  });
-});
-
 /**
  * **The context-menu key still opens a tab's menu** (SE-23 review). The menu's trigger is the
- * tab itself and not the cell that holds it and its gear: the family's context menu (`ui/menu/ContextMenu.tsx`) opens only
+ * tab itself and not the cell that holds it: the family's context menu (`ui/menu/ContextMenu.tsx`) opens only
  * when the trigger itself has the keyboard, so a trigger on the cell never opened from it.
  */
 describe("a tab's menu, from the keyboard", () => {
   for (const key of [{ key: "F10", shiftKey: true }, { key: "ContextMenu" }]) {
     const said = key.shiftKey ? "Shift+F10" : "the menu key";
 
-    it(`opens a workspace tab's menu on ${said}`, async () => {
+    it(`opens a workspace chip's menu on ${said}`, async () => {
       core(PLANE);
       render(<App />);
-      const tab = await screen.findByRole("tab", { name: /alpha/ });
-      await userEvent.click(tab);
+      // alpha's chip in the title bar (#2916), whose menu is the workspace's.
+      const tab = await waitFor(() => {
+        const chip = workspaceChips().find((one) => chipName(one) === "alpha");
+        if (chip === undefined) throw new Error("no alpha chip yet");
+        return chip;
+      });
       tab.focus();
 
       fireEvent.keyDown(tab, key);
@@ -291,7 +227,7 @@ describe("a tab's menu, from the keyboard", () => {
     it(`opens the project tab's menu on ${said}`, async () => {
       core(PLANE);
       render(<App />);
-      await screen.findByRole("tab", { name: /alpha/ });
+      await waitFor(() => expect(workspaceChips().map(chipName)).toContain("alpha"));
       const tab = within(projects()).getByRole("tab", { selected: true });
       tab.focus();
 
