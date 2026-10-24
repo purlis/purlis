@@ -83,12 +83,7 @@ impl Source {
     /// that names another harness than its own shows the person a different ask, which they
     /// answer or not, and prints its harness a decision it cannot read.
     pub fn of_harness(harness: Option<&str>) -> Option<Self> {
-        match harness {
-            None | Some("claude-code") => Some(Self::ClaudeCode),
-            Some("codex") => Some(Self::Codex),
-            Some("opencode") => Some(Self::Opencode),
-            Some(_) => None,
-        }
+        crate::harness::Harness::of_chat(harness).map(Self::of)
     }
 }
 

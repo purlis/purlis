@@ -153,3 +153,131 @@ fn no_built_in_skill_asks_for_what_would_widen_a_chat_and_each_is_handed_whole()
         );
     }
 }
+
+// ---- links (SK-36) --------------------------------------------------------------------------
+
+/// A folder outside every skill, holding a whole `SKILL.md` and a file a load would name.
+#[cfg(unix)]
+fn outside(dir: &Path) -> PathBuf {
+    let outside = dir.join("outside");
+    skill(
+        dir,
+        "outside",
+        "---\nname: outside\ndescription: Not a skill here.\n---\n",
+    );
+    std::fs::write(outside.join("secret.txt"), "no\n").unwrap();
+    outside
+}
+
+#[cfg(unix)]
+#[test]
+fn a_skill_folder_that_is_a_link_out_of_the_level_is_left_out_as_a_link_and_never_read() {
+    let tmp = tempfile::tempdir().unwrap();
+    let outside = outside(tmp.path());
+    let level = tmp.path().join("skills");
+    skill(
+        &level,
+        "whole",
+        "---\nname: whole\ndescription: Does it.\n---\n",
+    );
+    std::os::unix::fs::symlink(&outside, level.join("linked")).unwrap();
+    // A link to a file beside the folders is a file, which is nothing.
+    std::os::unix::fs::symlink(outside.join("secret.txt"), level.join("stray.md")).unwrap();
+
+    assert_eq!(
+        scan(tmp.path(), Path::new("skills")),
+        [
+            Err((level.join("linked"), Missing::Link)),
+            Ok(Skill {
+                name: "whole".to_owned(),
+                description: "Does it.".to_owned(),
+                path: level.join("whole/SKILL.md"),
+            }),
+        ]
+    );
+    let names: Vec<String> = read(&level).into_iter().map(|s| s.name).collect();
+    assert_eq!(names, ["whole"]);
+    // And were it handed on by its path, nothing of what it leads to is named.
+    assert_eq!(
+        crate::SkillFolder::open(tmp.path(), &level.join("linked/SKILL.md")).err(),
+        Some(crate::Refusal::FolderLink)
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_skill_md_that_is_a_link_or_has_a_second_name_is_left_out_as_a_link() {
+    let tmp = tempfile::tempdir().unwrap();
+    let outside = outside(tmp.path());
+    let level = tmp.path().join("skills");
+    std::fs::create_dir_all(level.join("borrowed")).unwrap();
+    std::os::unix::fs::symlink(outside.join("SKILL.md"), level.join("borrowed/SKILL.md")).unwrap();
+    // A hard link reaches past the folder as a link does.
+    std::fs::create_dir_all(level.join("twinned")).unwrap();
+    std::fs::hard_link(outside.join("SKILL.md"), level.join("twinned/SKILL.md")).unwrap();
+
+    assert_eq!(
+        scan(tmp.path(), Path::new("skills")),
+        [
+            Err((level.join("borrowed"), Missing::Link)),
+            Err((level.join("twinned"), Missing::Link)),
+        ]
+    );
+    assert_eq!(
+        crate::read_skill_md(tmp.path(), &level.join("twinned/SKILL.md")),
+        Err(crate::Refusal::FileLink)
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_level_any_part_of_whose_path_is_a_link_is_left_out_as_a_link_whatever_it_leads_to() {
+    let tmp = tempfile::tempdir().unwrap();
+    let elsewhere = tmp.path().join("elsewhere");
+    skill(
+        &elsewhere.join("skills"),
+        "far",
+        "---\nname: far\ndescription: Far away.\n---\n",
+    );
+    let root = tmp.path().join("plane");
+    std::fs::create_dir_all(root.join("workspaces")).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, root.join("workspaces/linked")).unwrap();
+    std::os::unix::fs::symlink(elsewhere.join("skills"), root.join("skills")).unwrap();
+
+    for rel in ["skills", "workspaces/linked/skills"] {
+        assert_eq!(
+            scan(&root, Path::new(rel)),
+            [Err((root.join(rel), Missing::Link))],
+            "{rel}"
+        );
+    }
+
+    let plugin = tmp.path().join("plugin");
+    std::fs::create_dir_all(&plugin).unwrap();
+    std::os::unix::fs::symlink(elsewhere.join("skills"), plugin.join(DIR_IN_BUNDLE)).unwrap();
+    assert_eq!(
+        in_bundle(&plugin),
+        None,
+        "a bundle's linked skills folder is not read"
+    );
+}
+
+#[test]
+fn a_skill_md_larger_than_purlis_reads_is_left_out_saying_the_limit() {
+    let tmp = tempfile::tempdir().unwrap();
+    let body = "x".repeat(usize::try_from(crate::MOST_BYTES).unwrap());
+    skill(
+        &tmp.path().join("skills"),
+        "huge",
+        &format!("---\nname: huge\ndescription: Huge.\n---\n{body}"),
+    );
+
+    let scanned = scan(tmp.path(), Path::new("skills"));
+    assert_eq!(
+        scanned,
+        [Err((tmp.path().join("skills/huge"), Missing::TooLarge))]
+    );
+    let said = crate::Reason::NotASkill(Missing::TooLarge).to_string();
+    assert!(said.contains("(256 KiB)"), "{said}");
+    assert!(!said.contains("not a skill"), "{said}");
+}

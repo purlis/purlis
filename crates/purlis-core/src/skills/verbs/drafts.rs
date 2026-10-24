@@ -470,7 +470,7 @@ pub fn accept(cx: &mut Ctx<'_>, id: &str) -> Result<PathBuf, String> {
     let dir = level_is_there(plane, &level)?;
     if draft.new {
         cx.not_built_in(&name)?;
-        if crate::skills::named(&dir, &name).is_some() {
+        if level.named(plane, &name).is_some() {
             return Err(format!(
                 "the {level} skills already have one named {name}: reject the draft, or rename \
                  that one"

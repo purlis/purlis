@@ -29,9 +29,10 @@ use std::path::{Path, PathBuf};
 
 use purlis_skills::change::{self, Template};
 
-use super::{Grant, LINKED_PLUGIN, Origin, beside, grant_of, level_dir, named, set_grant};
+use super::{Grant, LINKED_PLUGIN, Origin, beside, grant_of, level_dir, set_grant};
 use crate::planegit::literally;
 use crate::repocmd::{Say, Sink};
+use purlis_skills::{move_between, move_skill};
 
 pub mod drafts;
 
@@ -89,6 +90,12 @@ impl Level {
     /// Its folder in the plane at `plane`, or `None` for a workspace name that names no folder.
     pub fn dir(&self, plane: &Path) -> Option<PathBuf> {
         level_dir(plane, &self.at, self.local)
+    }
+
+    /// The folder of its skill named `name` in the plane at `plane`, found by a walk from the
+    /// plane's root that follows no link ([`purlis_skills::named_at`], SK-36), or `None`.
+    pub fn named(&self, plane: &Path, name: &str) -> Option<PathBuf> {
+        purlis_skills::named_at(plane, &self.at, self.local, name)
     }
 
     /// Its folder relative to the plane, `/` between the parts, by the one rule
@@ -325,8 +332,7 @@ pub(in crate::skills) fn level_is_there(plane: &Path, level: &Level) -> Result<P
 /// The folder of the skill named `name` at `level`, or why there is none.
 pub(super) fn find(plane: &Path, level: &Level, name: &str) -> Result<PathBuf, String> {
     level
-        .dir(plane)
-        .and_then(|dir| named(&dir, name))
+        .named(plane, name)
         .ok_or_else(|| format!("no {level} skill is named {name:?}"))
 }
 
@@ -338,7 +344,7 @@ pub(in crate::skills) fn free_at(
     folder: &str,
 ) -> Result<PathBuf, String> {
     let dir = level_is_there(plane, level)?;
-    if named(&dir, name).is_some() {
+    if level.named(plane, name).is_some() {
         return Err(format!(
             "the {level} skills already have one named {name}: pick another name, or change that \
              one"
@@ -538,7 +544,7 @@ pub fn rename(cx: &mut Ctx<'_>, level: &Level, old: &str, new: &str) -> Result<P
     let renames_folder = folder_name(&from) != new;
     if renames_folder {
         free_at(plane, level, new, new)?;
-    } else if level.dir(plane).and_then(|dir| named(&dir, new)).is_some() {
+    } else if level.named(plane, new).is_some() {
         return Err(format!("the {level} skills already have one named {new}"));
     }
     let what = format!("{old}'s instructions");
@@ -564,7 +570,7 @@ pub fn rename(cx: &mut Ctx<'_>, level: &Level, old: &str, new: &str) -> Result<P
     cx.done(format!("{old} is renamed {new}"));
     let still = Level::every(plane)
         .into_iter()
-        .find(|other| other.dir(plane).and_then(|dir| named(&dir, old)).is_some());
+        .find(|other| other.named(plane, old).is_some());
     match still {
         Some(other) => cx.warn(format!(
             "the personas and skills that name {old} are left as they are: a {other} skill is \
@@ -1175,7 +1181,7 @@ fn taken_again(plane: &Path, level: &Level, name: &str, folder: &str) -> bool {
     let held = at.join("SKILL.md").symlink_metadata().is_ok()
         || beside(&at).symlink_metadata().is_ok()
         || (at.symlink_metadata().is_ok() && tracked(plane, &rel(plane, &at)));
-    held || named(&dir, name).is_some()
+    held || level.named(plane, name).is_some()
 }
 
 /// **Restores the deleted skill `deleted`** to the level it came from: from the commit that
@@ -1260,10 +1266,8 @@ pub fn switch(cx: &mut Ctx<'_>, workspace: &str, name: &str, on: bool) -> Result
 /// persona (`at`) moved into its level's `skills/`, committed (#2770).
 pub fn share(cx: &mut Ctx<'_>, at: &Whose, name: &str) -> Result<PathBuf, String> {
     let plane = cx.plane;
-    let from = level_dir(plane, at, true)
-        .and_then(|dir| named(&dir, name))
-        .ok_or_else(|| format!("no local skill is named {name:?} there"))?;
-    let folder = super::share_here(plane, at, name)?;
+    // What is committed is what the share moved, never a folder looked up again by path.
+    let super::Shared { from, to: folder } = super::share_here(plane, at, name)?;
     cx.done(format!(
         "{name} is shared: it is in {} now",
         rel(plane, &folder)
@@ -1279,97 +1283,6 @@ pub fn share(cx: &mut Ctx<'_>, at: &Whose, name: &str) -> Result<PathBuf, String
     Ok(folder)
 }
 
-/// Moves a skill's folder, and the file beside it, from `from` to `to`, both in the plane.
-fn move_skill(plane: &Path, from: &Path, to: &Path, make_from: usize) -> Result<(), String> {
-    move_between(plane, from, plane, to, make_from)?;
-    let (toml_from, toml_to) = (beside(from), beside(to));
-    if toml_from.symlink_metadata().is_ok()
-        && let Err(why) = move_between(plane, &toml_from, plane, &toml_to, usize::MAX)
-    {
-        // The folder moved and the file beside it did not: put the folder back.
-        let _ = move_between(plane, to, plane, from, usize::MAX);
-        return Err(why);
-    }
-    Ok(())
-}
-
-/// The names of `path`'s folders under `root`, and its own name, or why it is no plain path
-/// under it.
-fn steps(root: &Path, path: &Path) -> Result<(Vec<String>, String), String> {
-    let inside = path
-        .strip_prefix(root)
-        .map_err(|_| "it is outside where it may be".to_owned())?;
-    let mut names = Vec::new();
-    for part in inside.components() {
-        match part {
-            std::path::Component::Normal(name) => names.push(name.to_string_lossy().into_owned()),
-            _ => return Err("its path is not a plain one".to_owned()),
-        }
-    }
-    let leaf = names
-        .pop()
-        .ok_or_else(|| "its path names nothing".to_owned())?;
-    Ok((names, leaf))
-}
-
-/// Moves the entry at `from`, under `from_root`, to `to`, under `to_root`, never over anything
-/// there and following no link on either way; folders of `to` from the `make_from`th on are made
-/// where they are not there.
-#[cfg(unix)]
-fn move_between(
-    from_root: &Path,
-    from: &Path,
-    to_root: &Path,
-    to: &Path,
-    make_from: usize,
-) -> Result<(), String> {
-    use rustix::fs::{AtFlags, FileType, statat};
-    let (from_dirs, from_leaf) = steps(from_root, from)?;
-    let (to_dirs, to_leaf) = steps(to_root, to)?;
-    let from_at = store::open_dir(from_root, &from_dirs, usize::MAX)
-        .map_err(|why| format!("its folder could not be opened ({why})"))?;
-    let stat = statat(&from_at, from_leaf.as_str(), AtFlags::SYMLINK_NOFOLLOW)
-        .map_err(|why| format!("it is not there ({why})"))?;
-    let kind = FileType::from_raw_mode(stat.st_mode);
-    if kind != FileType::Directory && kind != FileType::RegularFile {
-        return Err("it is not a plain folder or file, so purlis does not move it".to_owned());
-    }
-    let to_at = store::open_dir(to_root, &to_dirs, make_from)
-        .map_err(|why| format!("the folder it goes into could not be made ({why})"))?;
-    #[cfg(any(
-        target_os = "linux",
-        target_os = "android",
-        target_os = "macos",
-        target_os = "ios"
-    ))]
-    match rustix::fs::renameat_with(
-        &from_at,
-        from_leaf.as_str(),
-        &to_at,
-        to_leaf.as_str(),
-        rustix::fs::RenameFlags::NOREPLACE,
-    ) {
-        Ok(()) => return Ok(()),
-        Err(rustix::io::Errno::EXIST) => {
-            return Err("something of its name is already where it goes".to_owned());
-        }
-        Err(rustix::io::Errno::INVAL | rustix::io::Errno::NOSYS | rustix::io::Errno::NOTSUP) => {}
-        Err(why) => return Err(format!("it could not be moved ({why})")),
-    }
-    if statat(&to_at, to_leaf.as_str(), AtFlags::SYMLINK_NOFOLLOW).is_ok() {
-        return Err("something of its name is already where it goes".to_owned());
-    }
-    rustix::fs::renameat(&from_at, from_leaf.as_str(), &to_at, to_leaf.as_str())
-        .map_err(|why| format!("it could not be moved ({why})"))
-}
-
-/// [`move_between`] where no folder can be held open: refused, as a skill is never moved by a
-/// path a link could redirect.
-#[cfg(not(unix))]
-fn move_between(_: &Path, _: &Path, _: &Path, _: &Path, _: usize) -> Result<(), String> {
-    Err("a skill is moved only where its folders can be held open".to_owned())
-}
-
 /// **This machine's kept deletes, through handles** (#2770): every folder opened one component
 /// at a time with `O_NOFOLLOW`, every file made new with `O_EXCL | O_NOFOLLOW`, read only where it
 /// is one plain file, and nothing removed but the names a kept delete is made of.
@@ -1379,38 +1292,10 @@ pub(in crate::skills) mod store {
     use std::path::Path;
 
     use rustix::fd::OwnedFd;
-    use rustix::fs::{AtFlags, CWD, FileType, Mode, OFlags, fstat, mkdirat, openat, unlinkat};
+    use rustix::fs::{AtFlags, FileType, Mode, OFlags, fstat, mkdirat, openat, unlinkat};
 
-    pub(in crate::skills) const FOLDER: OFlags = OFlags::RDONLY
-        .union(OFlags::DIRECTORY)
-        .union(OFlags::CLOEXEC)
-        .union(OFlags::NOFOLLOW);
-
-    /// The folder `names` names under `root`, opened one component at a time following no
-    /// link, making those from the `make_from`th on (counting from 1) that are not there.
-    pub(in crate::skills) fn open_dir(
-        root: &Path,
-        names: &[String],
-        make_from: usize,
-    ) -> rustix::io::Result<OwnedFd> {
-        let mut at = openat(
-            CWD,
-            root,
-            FOLDER.difference(OFlags::NOFOLLOW),
-            Mode::empty(),
-        )?;
-        for (index, name) in names.iter().enumerate() {
-            at = match openat(&at, name.as_str(), FOLDER, Mode::empty()) {
-                Ok(next) => next,
-                Err(rustix::io::Errno::NOENT) if index + 1 >= make_from => {
-                    mkdirat(&at, name.as_str(), Mode::from_raw_mode(0o755))?;
-                    openat(&at, name.as_str(), FOLDER, Mode::empty())?
-                }
-                Err(why) => return Err(why),
-            };
-        }
-        Ok(at)
-    }
+    /// The one opener of a skill's folders, following no link (SK-36): the skills crate's.
+    pub(in crate::skills) use purlis_skills::moving::{FOLDER, open_dir};
 
     /// Makes the folder `names` names under `root`, `0700`, its parents being there: one
     /// already there is taken where `there_is_fine`, and only as a folder.

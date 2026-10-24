@@ -220,7 +220,7 @@ impl Report {
                 unattended: crate::floorguard::unattended(field("permission_mode").as_deref()),
                 // Only a `Stop` of the chat's own can end its turn, so only there is it asked.
                 helpers_at_work: event == Event::Stop
-                    && env(HARNESS_ENV).as_deref() == Some(BACKGROUND_TASKS_HARNESS)
+                    && chat_harness(env).as_deref() == Some(BACKGROUND_TASKS_HARNESS)
                     && helpers_at_work(read.as_ref()),
                 // Only a `Notification` is a nudge (#1626).
                 idle: event == Event::Notification
@@ -391,7 +391,7 @@ pub fn helpers_at_work(payload: Option<&serde_json::Value>) -> bool {
 /// The sub-agent a payload's `agent_id` names, only on a harness where that field was measured
 /// to mean one ([`crate::handoffguard::Caller::from_a_subagent`]): elsewhere it is no agent.
 pub fn sub_agent(agent_id: Option<&str>, env: &dyn Fn(&str) -> Option<String>) -> Option<String> {
-    let harness = env(HARNESS_ENV);
+    let harness = chat_harness(env);
     let caller = crate::handoffguard::Caller {
         agent_id,
         harness: harness.as_deref(),
@@ -404,6 +404,14 @@ pub fn sub_agent(agent_id: Option<&str>, env: &dyn Fn(&str) -> Option<String>) -
 
 /// The harness a chat runs, as charter put it into the chat's environment.
 pub const HARNESS_ENV: &str = "PURLIS_HARNESS";
+
+/// **The harness the chat's environment `env` names in [`HARNESS_ENV`]**, by the registry's
+/// name a chat's start puts there ([`crate::harness::Harness::of_registry_or_kind`]): under either
+/// spelling of the variable ([`crate::envvar::lookup`]), and none where it is unset or empty.
+/// The one reader of it, so an empty one means the same to every hook and to the MCP server.
+pub fn chat_harness(env: &dyn Fn(&str) -> Option<String>) -> Option<String> {
+    crate::envvar::lookup(HARNESS_ENV, env).filter(|name| !name.is_empty())
+}
 
 /// Which conversation this report is of, and how well that is known.
 ///
@@ -4567,6 +4575,46 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
     use std::sync::Arc;
     use std::sync::mpsc;
+
+    #[test]
+    fn an_empty_harness_variable_reads_as_unset_to_every_reader_of_it() {
+        // SK-36: each reader goes through `chat_harness`, so an empty `PURLIS_HARNESS` is a chat
+        // that names none, to the hooks, the permission hook, the MCP server and the sandbox.
+        let unset = |_: &str| None::<String>;
+        let empty = |name: &str| (name == HARNESS_ENV).then(String::new);
+        let sandboxed = |name: &str| match name {
+            HARNESS_ENV => Some(String::new()),
+            crate::hookwire::SANDBOXED_ENV => Some("1".to_owned()),
+            _ => None,
+        };
+        let sandboxed_unset =
+            |name: &str| (name == crate::hookwire::SANDBOXED_ENV).then(|| "1".to_owned());
+        let read = |env: &dyn Fn(&str) -> Option<String>| {
+            let harness = chat_harness(env);
+            (
+                harness.clone(),
+                crate::harness::Harness::of_chat(harness.as_deref()),
+                crate::harness::hooked::Source::of_harness(harness.as_deref()),
+                crate::skills::route_of(harness.as_deref(), &Default::default()),
+                crate::sandboxblock::the_proxy_tells_hosts(harness.as_deref()),
+                sub_agent(Some("a1"), env),
+            )
+        };
+        assert_eq!(read(&empty), read(&unset));
+        assert_eq!(read(&empty).0, None);
+        assert_eq!(
+            read(&empty).1,
+            Some(crate::harness::Harness::ClaudeCode),
+            "a chat that names none is Claude Code's"
+        );
+        let by_the_harness = crate::sandbox::Started::ByTheHarness;
+        assert_eq!(
+            crate::sandbox::writes_are_sandboxed_in(&sandboxed, by_the_harness),
+            crate::sandbox::writes_are_sandboxed_in(&sandboxed_unset, by_the_harness)
+        );
+        let codex = |name: &str| (name == HARNESS_ENV).then(|| "codex".to_owned());
+        assert_eq!(chat_harness(&codex).as_deref(), Some("codex"));
+    }
 
     #[test]
     fn an_opened_answer_says_no_row_and_reads_an_older_app_s_row_as_nothing() {
