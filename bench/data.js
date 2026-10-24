@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792845365229,
+  "lastUpdate": 1792847494998,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -23604,6 +23604,48 @@ window.BENCHMARK_DATA = {
             "value": 100.951226,
             "unit": "ms",
             "extra": "median of 5 runs: 100.685, 100.844, 100.951, 101.014, 101.139 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "30e2b56f67e6d86a27c2b736fd2231cdbe6e872a",
+          "message": "Session strip on React Aria's tabs, with a tabs lint rule (#3042) (#3132)\n\n* Session strip on React Aria's tabs, with the tabs-family lint rule (#3042)\n\nThe chat strip's tablist is the tabs family on React Aria (useTabStrip,\nTabStripRow, StripTab in ui/tabs/TabStrip.tsx): the WAI-ARIA keyboard\nwith manual activation and wrap, one Tab stop that comes back to the\nchosen tab, and the hand-made tablist that owns the tabs by id. The\nstrip's press, its dnd-kit drag and its collapse into show-more stay\nits own. A tab's cell takes React Aria's useHover. purlis/tabs-family\nis an error; the tablists still drawn by hand are off by file until\ntheir tickets move them.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Tab strip: never take the keyboard when the tab it was on goes (#3042)\n\nA tab removed with the keyboard on it sends no blur, so React Aria\nkept the strip focused and moved the keyboard onto the next stop,\naway from the palette or a terminal. The tab now lets the keyboard\ngo as it leaves, and the stop alone comes back to the chosen tab.\n\nA tab's cell keeps its own mouse enter and leave rather than React\nAria's useHover, which also ends a hover on any pointerover outside\nthe cell. The tabs-family rule names TabStripRow, and catches a role\nin braces, a template or either branch of a condition.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Tab strip: a dialog closing never hands the keyboard to a tab (#3042)\n\nReact Aria's focus scope asks the element it restores focus to whether\na collection around it restores focus itself, and React Aria's\ncollection said yes and put the keyboard on its stop. So the `+` that\nopened Start a chat lost the keyboard to the new chat's tab, where F2\nrenamed it rather than opening the palette. The strip's row now lets\nthe element take the keyboard back itself.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-24T16:53:21+04:00",
+          "tree_id": "dd483895d66a978093d323291567a56da6b171f6",
+          "url": "https://github.com/purlis/purlis/commit/30e2b56f67e6d86a27c2b736fd2231cdbe6e872a"
+        },
+        "date": 1792847492792,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.44324949999999996,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.437, 0.441, 0.443, 0.447, 0.467 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.546392,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.461, 16.503, 16.546, 16.582, 16.646 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.840025,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.125, 101.318, 101.840, 102.240, 102.437 ms"
           }
         ]
       }
