@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792872502482,
+  "lastUpdate": 1792875824803,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -24108,6 +24108,48 @@ window.BENCHMARK_DATA = {
             "value": 101.1475705,
             "unit": "ms",
             "extra": "median of 5 runs: 100.630, 100.838, 101.148, 101.584, 102.363 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b5f42c7485ae13202fe5cd210fac2ee288709432",
+          "message": "Purlis light and high contrast ship as its appearances (#2924) (#3169)\n\n* Purlis light keeps its washes' hue; picture high contrast (#2924)\n\nLight was dark reflected by one rule, and a wash reflected became a dark\nhue laid thin on a light ground, which read as grey (the pane warnings'\namber). A wash is now its hue's purest colour at dark's alpha, and a test\nholds that each wash keeps its hue on every light ground.\n\nThe stories now picture Purlis's dark high contrast too, so the derived\nappearances can be seen beside dark and Classic before either ships.\n\nRefs #2924\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* stories: redraw Purlis light's status and title-bar pictures (#2924)\n\nTheir washes changed by less than the picture comparison notices, so\nthe baselines are removed for update-baselines to draw them again from\nthe current light appearance.\n\nRefs #2924\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* pictured.json: one cell a line, as prettier writes it (#2924)\n\nRefs #2924\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Purlis light and high contrast ship as its appearances (#2924)\n\nThe operator's ruling of 2026-10-24, after the look: light and high\ncontrast ship as drawn. Each can be chosen, Purlis chosen to follow the\nsystem draws light on a light system and high contrast where more is\nasked for, and with nothing chosen it stays dark. A test holds the\nruling; the design notes and the change note record it.\n\nCloses #2924\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-25T01:02:25+04:00",
+          "tree_id": "f07dfa5f861dd8e3b4895ca0aa3f5f0b30790841",
+          "url": "https://github.com/purlis/purlis/commit/b5f42c7485ae13202fe5cd210fac2ee288709432"
+        },
+        "date": 1792875821790,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.2645745,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.259, 0.264, 0.265, 0.281, 0.287 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.447368499999996,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.361, 16.446, 16.447, 16.459, 16.489 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.088688,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.965, 101.002, 101.089, 101.254, 101.401 ms"
           }
         ]
       }
