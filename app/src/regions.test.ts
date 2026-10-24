@@ -846,8 +846,9 @@ describe("the open view of a side (#1673)", () => {
   it("takes the left bar's gutter off the row with the other two (#3144)", () => {
     document.documentElement.style.setProperty("--window-gutter", "8px");
     try {
-      // The bars, a gutter at each end of the row and one between the rail and the left bar.
-      expect(rowWidth(1600)).toBe(1600 - 44 - 44 - 3 * 8);
+      // The bars, a gutter at each end of the row and one and a half between the rail and the
+      // left bar (D-3144-13).
+      expect(rowWidth(1600)).toBe(1600 - 44 - 44 - 2 * 8 - 12);
     } finally {
       document.documentElement.style.removeProperty("--window-gutter");
     }

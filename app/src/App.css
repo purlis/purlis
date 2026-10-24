@@ -2576,12 +2576,17 @@ button.show-more:focus-visible {
 }
 
 /* **The left bar** (#3144): the same column, the frame's first, beside the project rail, as the
-   switcher prototype's variant D draws it ("Bar: column"). The theme's gutter parts it from the
-   rail, as the prototype's 8px do (Purlis Classic's 0 sits it flush), and its hairline toward
-   the regions is drawn where a theme draws one. It stands whether or not the side panel is out,
-   so nothing moves when the side comes or goes. */
+   switcher prototype's variant D draws it ("Bar: column"). It stands whether or not the side
+   panel is out, so nothing moves when the side comes or goes, and its hairline toward the
+   regions is drawn where a theme draws one.
+
+   **Half as far again from the rail as the regions are apart** (the operator, 2026-10-24: the
+   two columns of icons read as almost one, D-3144-13): the theme's gutter and half of it, 12px
+   in Purlis. Purlis Classic's gutter is 0, so it stays flush there, as everything in Classic
+   is; its icons are still 12px apart, inside their two columns. The side panel stays one
+   gutter from the column, as every region is from the next. */
 .activity-column[data-side="left"] {
-  margin-inline-start: var(--window-gutter);
+  margin-inline-start: calc(var(--window-gutter) + var(--window-gutter) / 2);
   border-inline-end: var(--panel-border-width) solid var(--border-subtle);
 }
 

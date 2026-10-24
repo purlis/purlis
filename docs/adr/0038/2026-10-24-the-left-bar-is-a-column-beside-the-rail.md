@@ -9,7 +9,9 @@ the running app and turned it down; the column is the layout he approved.
 
 - **The rail is the window's first column and the left bar its second**: 44px, its 36px icons
   centred down it, the side panel's views at the top (Chats, Explorer, Search) and its half of
-  the bottom panel's (Repos, Changes) at its foot, the theme's gutter between it and the rail.
+  the bottom panel's (Repos, Changes) at its foot. Between it and the rail is the theme's
+  gutter and half of it again (12px in Purlis, flush in Classic, whose gutter is 0): the
+  operator, the same day, found the two columns of icons read as almost one at one gutter.
   The side panel to its right shows the view whose icon is marked.
 - **The column stands whether or not its side is out.** The amendment of 2026-10-10 kept a bar
   at the edge while its side was away; with the row of tabs that bar changed shape when the side

@@ -849,7 +849,8 @@ are `item` (the root), `icon`, `count` and `indicator`; both corners draw the `b
 (#3144, the operator's ruling of 2026-10-24, ADR 0038 as amended that day).
 
 - **The left bar** (#3144): a 44px column of 36px icons, the frame's first column, beside the
-  project rail and the theme's gutter from it, as the switcher prototype's variant D draws it
+  project rail, a gutter and a half from it (12px in Purlis, flush in Classic, D-3144-13), as
+  the switcher prototype's variant D draws it
   with "Bar: column". The side panel's views at the top (Chats, Explorer, Search), its half of
   the bottom panel's (Repos, Changes) at its foot. A press switches the view; a press of the
   open one does nothing (R121), and ⌘B is the way to put the side away. The column stands

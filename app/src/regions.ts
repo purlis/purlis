@@ -1354,7 +1354,7 @@ const BAR = 44;
 /**
  * **The width the row of regions has**, which a side's share is of: the window less the project
  * rail where it is drawn (`ui/rail`, #2915), the two bars, the gutter at each end of the row
- * (`App.css`, `.regions`) and the one between the rail and the left bar (#3144). The gutter is
+ * (`App.css`, `.regions`) and the gutter and a half between the rail and the left bar (#3144). The gutter is
  * the theme's and the rail's width is as drawn, both read from the document.
  */
 export function rowWidth(window: number = globalThis.innerWidth ?? 0): number {
@@ -1371,7 +1371,8 @@ export function rowWidth(window: number = globalThis.innerWidth ?? 0): number {
   } catch {
     // No document to read: the row is the window less the bars.
   }
-  const edges = 3 * (Number.isFinite(gutter) ? gutter : 0) + (Number.isFinite(rail) ? rail : 0);
+  // Two at the row's ends, and one and a half between the rail and the left bar (D-3144-13).
+  const edges = 3.5 * (Number.isFinite(gutter) ? gutter : 0) + (Number.isFinite(rail) ? rail : 0);
   return Math.max(0, window - 2 * BAR - edges);
 }
 

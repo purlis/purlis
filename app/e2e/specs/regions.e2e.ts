@@ -442,21 +442,21 @@ describe("the left side's activity bar", () => {
     await $('[data-testid="chats-section"]').waitForDisplayed({ timeout: 20_000 });
 
     // The window's edge is the project rail's, where it is shown (#2915); the bar is the next
-    // column, 44px, the theme's gutter from the rail, and the side panel after it (#3144).
+    // column, 44px, and the side panel after it (#3144).
     const rail = await box('[data-scope="rail"][data-part="slot"]');
     const column = await box(".activity-column[data-side='left']");
     const slot = await box('[data-panel][id="region-left"]');
     const centre = await box('[data-panel][id="region-centre"]');
-    const apart = (await gutter()) + 1;
+    // A gutter and a half from the rail (D-3144-13): 12px in Purlis, flush in Classic.
+    const fromRail = ((await gutter()) * 3) / 2;
     expect(column).not.toBeNull();
     expect(column?.width).toBe(44);
     if (rail !== null && rail.width > 0) {
-      expect(column?.left ?? -1).toBeGreaterThanOrEqual(rail.right - 1);
-      expect(column?.left ?? Infinity).toBeLessThanOrEqual(rail.right + apart);
+      expect(Math.abs((column?.left ?? Infinity) - rail.right - fromRail)).toBeLessThanOrEqual(1);
     } else {
-      // The rail hidden (a narrow window, or auto-hide): the column is the window's first, one
-      // gutter from its edge, as the prototype's hidden rail leaves it (#3144).
-      expect(Math.abs((column?.left ?? Infinity) - (await gutter()))).toBeLessThanOrEqual(1);
+      // The rail hidden (a narrow window, or auto-hide): the column is the window's first, a
+      // gutter and a half from its edge, as from the rail (#3144, D-3144-13).
+      expect(Math.abs((column?.left ?? Infinity) - fromRail)).toBeLessThanOrEqual(1);
     }
     expect(slot?.left ?? -1).toBeGreaterThanOrEqual((column?.right ?? 0) - 1);
     expect(slot?.right ?? Infinity).toBeLessThanOrEqual((centre?.left ?? 0) + 1);
@@ -976,7 +976,7 @@ describe("the Panel", () => {
       });
     });
 
-    it("puts the left column one gutter from the window's edge, the rail hidden (#3144)", async () => {
+    it("puts the left column a gutter and a half from the window's edge, the rail hidden (#3144)", async () => {
       // The narrowest window: the rail hides itself (#3077), and the column it leaves is the
       // window's first, as the prototype's variant D draws a hidden rail.
       await browser.waitUntil(
@@ -995,7 +995,7 @@ describe("the Panel", () => {
             .left ?? null,
       );
       expect(left).not.toBeNull();
-      expect(Math.abs((left as number) - (await gutter()))).toBeLessThanOrEqual(1);
+      expect(Math.abs((left as number) - ((await gutter()) * 3) / 2)).toBeLessThanOrEqual(1);
     });
 
     it("draws one half at a time, the other side's Lower icons switching it, and overflows nothing", async () => {
