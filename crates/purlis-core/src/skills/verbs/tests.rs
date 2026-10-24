@@ -394,6 +394,69 @@ fn a_deleted_skill_whose_name_is_taken_again_is_not_offered_back() {
     assert!(deleted(root).is_empty());
 }
 
+/// The file beside a deleted skill's folder that cannot be put away (a link in its place): the
+/// folder comes back, nothing is kept, and the delete says it was not deleted (SK-48).
+#[cfg(unix)]
+#[test]
+fn a_delete_whose_file_beside_the_folder_cannot_move_puts_the_folder_back_and_refuses() {
+    let tmp = plane();
+    let root = tmp.path();
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::write(outside.path().join("deploy.toml"), "grant = \"all\"\n").unwrap();
+    std::os::unix::fs::symlink(
+        outside.path().join("deploy.toml"),
+        root.join("skills/deploy.toml"),
+    )
+    .unwrap();
+
+    let refused = did(root, |cx| delete(cx, &Level::project(), "deploy")).unwrap_err();
+
+    assert!(refused.starts_with("deploy was not deleted: "), "{refused}");
+    assert!(root.join("skills/deploy/SKILL.md").is_file());
+    assert!(root.join("skills/deploy.toml").is_symlink());
+    assert!(deleted(root).is_empty());
+    assert_eq!(
+        std::fs::read_dir(crate::plane::state_dir(root).join(DELETED_DIR))
+            .map(|kept| kept.count())
+            .unwrap_or(0),
+        0,
+        "nothing is kept of a delete that did not happen"
+    );
+}
+
+/// The kept file beside a deleted skill's folder that cannot come back (a link in its place):
+/// the folder stays kept, the skill is still offered back, and the restore says it was not
+/// restored, never a skill back without its grant (SK-48).
+#[cfg(unix)]
+#[test]
+fn a_restore_whose_file_beside_the_folder_cannot_move_keeps_the_folder_and_refuses() {
+    let tmp = plane();
+    let root = tmp.path();
+    crate::skills::grant(root, "deploy", &Grant::All).unwrap();
+    did(root, |cx| delete(cx, &Level::project(), "deploy")).unwrap();
+    let kept_dir = std::fs::read_dir(crate::plane::state_dir(root).join(DELETED_DIR))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let kept_toml = kept_dir.join("deploy.toml");
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::rename(&kept_toml, outside.path().join("deploy.toml")).unwrap();
+    std::os::unix::fs::symlink(outside.path().join("deploy.toml"), &kept_toml).unwrap();
+    let listed = deleted(root);
+
+    let refused = did(root, |cx| restore(cx, &listed[0])).unwrap_err();
+
+    assert!(
+        refused.starts_with("deploy was not restored: "),
+        "{refused}"
+    );
+    assert!(!root.join("skills/deploy").exists());
+    assert!(kept_dir.join("deploy/SKILL.md").is_file());
+    assert_eq!(deleted(root), listed);
+}
+
 /// A plane that is a git repository with an identity and a save mode that commits and never
 /// pushes, holding [`plane`]'s files in one commit.
 fn committed_plane() -> tempfile::TempDir {

@@ -224,24 +224,32 @@ pub fn move_between(_: &Path, _: &Path, _: &Path, _: &Path, _: usize) -> Result<
     ))
 }
 
-/// **Moves a skill's folder, and the file beside it** ([`beside`]), from `from` to `to`, both in
-/// the plane, each by [`move_between`]. Where the file beside it cannot be moved (a link, say),
-/// the folder is put back the same way and nothing is moved; where that put-back fails too,
+/// **Moves a skill's folder, and the file beside it** ([`beside`]), from `from` under
+/// `from_root` to `to` under `to_root`, each by [`move_between`]: within the plane (rename, move,
+/// share) the two roots are the plane, and delete and restore cross from the plane to its state
+/// folder and back. Where the file beside it cannot be moved (a link, say), the folder is put
+/// back the same way and nothing is moved; where that put-back fails too,
 /// [`Unmoved::Stranded`] says the folder is where it went and the file is where it was.
-pub fn move_skill(plane: &Path, from: &Path, to: &Path, make_from: usize) -> Result<(), Unmoved> {
-    move_between(plane, from, plane, to, make_from)?;
+pub fn move_skill(
+    from_root: &Path,
+    from: &Path,
+    to_root: &Path,
+    to: &Path,
+    make_from: usize,
+) -> Result<(), Unmoved> {
+    move_between(from_root, from, to_root, to, make_from)?;
     let (toml_from, toml_to) = (beside(from), beside(to));
     if toml_from.symlink_metadata().is_ok()
-        && let Err(why) = move_between(plane, &toml_from, plane, &toml_to, usize::MAX)
+        && let Err(why) = move_between(from_root, &toml_from, to_root, &toml_to, usize::MAX)
     {
         // The folder moved and the file beside it did not: put the folder back.
-        return match (move_between(plane, to, plane, from, usize::MAX), why) {
+        return match (move_between(to_root, to, from_root, from, usize::MAX), why) {
             (Ok(()), why) => Err(why),
             (Err(back), why) => Err(Unmoved::Stranded(format!(
                 "its folder was moved to {} and could not be put back ({back}), and {} was not \
                  moved ({why})",
-                shown(plane, to),
-                shown(plane, &toml_from)
+                shown(to_root, to),
+                shown(from_root, &toml_from)
             ))),
         };
     }

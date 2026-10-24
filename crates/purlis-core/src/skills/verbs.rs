@@ -32,7 +32,7 @@ use purlis_skills::change::{self, Template};
 use super::{Grant, LINKED_PLUGIN, Origin, beside, grant_of, level_dir, set_grant};
 use crate::planegit::literally;
 use crate::repocmd::{Say, Sink};
-use purlis_skills::{Unmoved, move_between, move_skill};
+use purlis_skills::{Unmoved, move_skill};
 
 pub mod drafts;
 
@@ -556,7 +556,7 @@ pub fn rename(cx: &mut Ctx<'_>, level: &Level, old: &str, new: &str) -> Result<P
     write(plane, &file, &what, Some(&text), &renamed, usize::MAX)?;
     let to = if renames_folder {
         let to = from.with_file_name(new);
-        match move_skill(plane, &from, &to, usize::MAX) {
+        match move_skill(plane, &from, plane, &to, usize::MAX) {
             Ok(()) => {}
             Err(Unmoved::Nothing(why)) => {
                 // The folder stayed where it was: put its name back.
@@ -713,7 +713,7 @@ pub fn move_to(
     let folder_is = folder_name(&folder);
     let dir = free_at(plane, to, name, &folder_is)?;
     let moved = dir.join(&folder_is);
-    move_skill(plane, &folder, &moved, to.depth()).map_err(|unmoved| match unmoved {
+    move_skill(plane, &folder, plane, &moved, to.depth()).map_err(|unmoved| match unmoved {
         Unmoved::Nothing(why) => format!("{name} was not moved: {why}"),
         Unmoved::Stranded(what) => format!("{name} was moved only in part: {what}"),
     })?;
@@ -1058,12 +1058,17 @@ fn keep_here(plane: &Path, level: &Level, folder: &Path) -> Result<String, Unmov
     )
     .map_err(|why| Unmoved::Nothing(why.to_string()))?;
     let into = state.join(DELETED_DIR).join(&kept).join(&folder_is);
-    move_between(plane, folder, &state, &into, usize::MAX)?;
-    let toml = beside(folder);
-    if toml.symlink_metadata().is_ok() {
-        let _ = move_between(plane, &toml, &state, &beside(&into), usize::MAX);
+    // The folder and the file beside it go together, or neither does (SK-48).
+    match move_skill(plane, folder, &state, &into, usize::MAX) {
+        Ok(()) => Ok(kept),
+        Err(Unmoved::Nothing(why)) => {
+            // Nothing moved: the kept folder made for it, and its `from`, are taken away again.
+            store::put_away(&state, DELETED_DIR, &kept, KEPT_FROM);
+            Err(Unmoved::Nothing(why))
+        }
+        // Its folder is kept and named by its `from`, so it is still listed and comes back.
+        Err(stranded) => Err(stranded),
     }
-    Ok(kept)
 }
 
 /// How many deleted skills from git [`deleted`] lists at most, newest first.
@@ -1231,7 +1236,8 @@ pub fn restore(cx: &mut Ctx<'_>, deleted: &Deleted) -> Result<PathBuf, String> {
         Source::Here(kept) => {
             let state = crate::plane::state_dir(plane);
             let from = state.join(DELETED_DIR).join(kept).join(&deleted.folder);
-            move_between(&state, &from, plane, &folder, deleted.level.depth()).map_err(
+            // The folder and the file beside it come back together, or neither does (SK-48).
+            move_skill(&state, &from, plane, &folder, deleted.level.depth()).map_err(
                 |unmoved| match unmoved {
                     Unmoved::Nothing(why) => format!("{name} was not restored: {why}"),
                     // It left the kept folder and could not go back (SK-45): say so.
@@ -1240,10 +1246,6 @@ pub fn restore(cx: &mut Ctx<'_>, deleted: &Deleted) -> Result<PathBuf, String> {
                     }
                 },
             )?;
-            let toml = beside(&from);
-            if toml.symlink_metadata().is_ok() {
-                let _ = move_between(&state, &toml, plane, &beside(&folder), usize::MAX);
-            }
             // Its `from` and the folder it kept, now empty, and nothing else.
             store::put_away(&state, DELETED_DIR, kept, KEPT_FROM);
         }
