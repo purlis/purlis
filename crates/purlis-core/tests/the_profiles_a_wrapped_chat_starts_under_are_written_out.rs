@@ -132,11 +132,29 @@ fn linked(profile: &str, from: &Path, to: &Path) -> Result<(), String> {
     }
 }
 
+/// `/bin/cat path` under `profile`: whether the file was read.
+#[cfg(target_os = "macos")]
+fn read_under(profile: &str, path: &Path) -> bool {
+    purlis_core::forklock::output(
+        std::process::Command::new("/usr/bin/sandbox-exec")
+            .args(["-p", profile, "/bin/cat"])
+            .arg(path),
+    )
+    .expect("sandbox-exec runs")
+    .status
+    .success()
+}
+
 /// **A second name is made only for a file in what a chat may write**: under the full sandbox's
 /// profile and the floor's, applied for real, `ln` from a folder held from the chat into the
 /// folder it works in is refused with `EPERM`, and from a folder the full sandbox does not let
 /// it write too, while a link inside the folder it works in is made as ever (git, cargo and npm
 /// make those in their own folders).
+///
+/// A file the chat reads but may not write, the project's manifest and a workspace's, is given
+/// no second name in the folder it works in either. `ln` looks at its source before it links,
+/// so a source held from reading is refused before any link is asked for; these sources are
+/// read under the same profile first, so the refusal is the link rule's.
 #[cfg(target_os = "macos")]
 #[test]
 fn the_macos_profiles_limit_file_link_to_the_folders_a_chat_may_write() {
@@ -179,6 +197,9 @@ fn the_macos_profiles_limit_file_link_to_the_folders_a_chat_may_write() {
         let tmp = out.join(name).join("tmp");
         lay_out(&root, manifest);
         fs::create_dir_all(&tmp).expect("a temporary folder");
+        let workspace = root.join("workspaces/demo");
+        fs::create_dir_all(&workspace).expect("a workspace");
+        fs::write(workspace.join("workspace.json"), "{}\n").expect("its manifest");
         for (harness, called) in HARNESSES {
             let (_, profile) = emitted(harness, &root, &tmp, &machine);
             let what = format!("{called} at {name}");
@@ -209,6 +230,19 @@ fn the_macos_profiles_limit_file_link_to_the_folders_a_chat_may_write() {
                     ),
                     &format!("{what}: a link from a folder it may not write"),
                 );
+            }
+
+            for (held, kept) in [
+                (root.join("purlis.toml"), "the project's manifest"),
+                (workspace.join("workspace.json"), "a workspace's manifest"),
+            ] {
+                assert!(read_under(&profile, &held), "{what}: {kept} is read");
+                let again = root.join("x");
+                refused(
+                    linked(&profile, &held, &again),
+                    &format!("{what}: a link from {kept}"),
+                );
+                assert!(!again.exists(), "{what}: no second name for {kept}");
             }
         }
     }
