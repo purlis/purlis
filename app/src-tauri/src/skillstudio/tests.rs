@@ -353,3 +353,29 @@ fn a_skills_totals_name_what_it_ran_on_as_a_person_calls_it_and_say_a_start_that
     assert_eq!(runs[0].started_by, Some(RunStart::Curation));
     assert_eq!(runs[0].ran_on.as_deref(), Some("Claude Code"));
 }
+
+#[test]
+fn the_window_spells_an_owner_and_a_switch_as_the_command_line_does() {
+    use purlis_core::skills::{Owner as CoreOwner, Switch as CoreSwitch};
+    for owner in [
+        CoreOwner::You,
+        CoreOwner::Plugin("figma".to_owned()),
+        CoreOwner::Repo("app".to_owned()),
+    ] {
+        assert_eq!(
+            serde_json::to_value(Owner::from(owner.clone())).unwrap(),
+            serde_json::to_value(&owner).unwrap(),
+            "{owner:?}"
+        );
+    }
+    for switch in [
+        CoreSwitch::Alone,
+        CoreSwitch::Not("only with its plugin".to_owned()),
+    ] {
+        assert_eq!(
+            serde_json::to_value(SkillSwitch::from(switch.clone())).unwrap(),
+            serde_json::to_value(&switch).unwrap(),
+            "{switch:?}"
+        );
+    }
+}
