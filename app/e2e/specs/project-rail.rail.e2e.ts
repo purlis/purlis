@@ -3,6 +3,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { $, browser, expect } from "@wdio/globals";
+import { DEFAULT_WINDOW, theWindowHoldsTheRail, windowAt } from "../rail.js";
 
 /**
  * **The project rail, both modes, its peek and what it remembers** (#2915, spec #2897 R76–R89),
@@ -16,8 +17,14 @@ import { $, browser, expect } from "@wdio/globals";
  *   the content; further than 70px away it goes; its last button keeps the rail shown.
  * - **Remembered**: the mode is written to the layout file under `rail` (`auto`, and nothing
  *   for always shown), which the next launch hands the window before it draws.
+ * - **Never crowding the work** (#3077): at the narrowest window the rail hides itself, peeks
+ *   as on auto-hide, and comes back as the window widens, with nothing written; a rail the person
+ *   shows there stays shown, and one they hide stays hidden in a wide window.
  *
- * Every test leaves the rail shown, which is what every spec after this one expects.
+ * **A run of its own** (`wdio.rail.conf.ts`): a show the person presses holds over the window's
+ * own hide for the rest of the launch, and the base run's specs measure narrow windows with the
+ * rail as the window draws it, in the one app process a run keeps. The narrow window comes first
+ * here, before anything has been shown. Every test leaves the rail shown.
  */
 
 const RAIL = '[data-scope="rail"][data-part="slot"]';
@@ -86,14 +93,116 @@ async function shownAgain() {
   });
 }
 
-describe("the project rail", function () {
-  this.timeout(120_000);
+/** Runs `step`, and goes on whatever it threw: a clean-up that fails leaves the next one to run. */
+async function tried(step: () => Promise<unknown>): Promise<void> {
+  try {
+    await step();
+  } catch {
+    // The next step still runs.
+  }
+}
+
+describe("the project rail in a narrow window (#3077)", () => {
+  /** ADR 0054's narrowest window. */
+  const NARROWEST = { width: 1024, height: 768 } as const;
+
+  /** Waits until the rail's column is `width` px wide. */
+  async function columnIs(width: number, why: string) {
+    await browser.waitUntil(async () => Math.round((await seen()).width) === width, {
+      timeout: 10_000,
+      timeoutMsg: why,
+    });
+  }
 
   before(async () => {
     await $(`${PROJECTS} [role="tab"][aria-selected="true"]`).waitForExist({ timeout: 30_000 });
   });
 
-  afterEach(shownAgain);
+  afterEach(async () => {
+    await tried(theWindowHoldsTheRail);
+    await tried(shownAgain);
+  });
+
+  it("hides itself at the narrowest window, still peeks, and comes back as it widens, writing nothing", async () => {
+    await theWindowHoldsTheRail();
+    await shownAgain();
+    await keptBecomes(undefined);
+
+    await windowAt(NARROWEST);
+    await columnIs(0, "the rail kept its column at the narrowest window");
+    const narrow = await seen();
+    expect(narrow.hidden).toBe(true);
+    expect(narrow.show).toBe(true);
+    // The edge still peeks it, as on auto-hide.
+    await pointerAt(2);
+    await browser.waitUntil(async () => (await seen()).peek, {
+      timeout: 5_000,
+      timeoutMsg: "the pointer at the edge never peeked the rail in the narrow window",
+    });
+    await pointerAt(200);
+    await browser.waitUntil(async () => !(await seen()).peek, { timeout: 5_000 });
+
+    await windowAt(DEFAULT_WINDOW);
+    await columnIs(52, "the rail never came back as the window widened");
+    expect((await seen()).show).toBe(false);
+    // The window's hide was never the person's: the layout file says nothing of it.
+    expect(await kept()).toBeUndefined();
+  });
+
+  it("stays shown when the window narrows once the person pinned it in a wide one", async () => {
+    await theWindowHoldsTheRail();
+    await $(`${RAIL} [data-rail-toggle="hide"]`).click();
+    await columnIs(0, "the rail's own hide never closed its column");
+    // The pin (R88): kept shown from its peek, in a window with room for it.
+    await pointerAt(2);
+    await browser.waitUntil(async () => (await seen()).peek, { timeout: 5_000 });
+    await $('[data-peek] [data-rail-toggle="keep"]').click();
+    await columnIs(52, "Keep the projects sidebar shown never showed the rail");
+    await windowAt(NARROWEST);
+    // The window's hide gives way to the person's pin, and goes on giving way: read again over
+    // a second, so a hide that came late would be seen.
+    for (let reading = 0; reading < 5; reading++) {
+      const now = await seen();
+      expect(Math.round(now.width)).toBe(52);
+      expect(now.hidden).toBe(false);
+      await browser.pause(250);
+    }
+    await keptBecomes(undefined);
+  });
+
+  it("never overrides the person: shown in a narrow window it stays, hidden in a wide one it stays", async () => {
+    // Hidden by the person, then narrowed: the title bar's show is the way back.
+    await theWindowHoldsTheRail();
+    await $(`${RAIL} [data-rail-toggle="hide"]`).click();
+    await columnIs(0, "the rail's own hide never closed its column");
+    await windowAt(NARROWEST);
+
+    // Shown by the person in the narrow window: it stays, however the window moves after.
+    await $(SHOW).click();
+    await columnIs(52, "the title bar's show never showed the rail in the narrow window");
+    await windowAt(DEFAULT_WINDOW);
+    await windowAt(NARROWEST);
+    await columnIs(52, "the window hid a rail the person had shown");
+    expect(await kept()).toBeUndefined();
+
+    // Hidden by the person: written, and it stays hidden in a window with room for it.
+    await $(`${RAIL} [data-rail-toggle="hide"]`).click();
+    await columnIs(0, "the rail's own hide never closed its column");
+    await keptBecomes("auto");
+    await windowAt(DEFAULT_WINDOW);
+    const wide = await seen();
+    expect(Math.round(wide.width)).toBe(0);
+    expect(wide.hidden).toBe(true);
+    expect(await kept()).toBe("auto");
+  });
+});
+
+describe("the project rail", () => {
+  before(async () => {
+    await $(`${PROJECTS} [role="tab"][aria-selected="true"]`).waitForExist({ timeout: 30_000 });
+  });
+
+  afterEach(() => tried(shownAgain));
 
   it("is a 52px column of 36px buttons at the window's left, the project in front selected", async () => {
     await shownAgain();

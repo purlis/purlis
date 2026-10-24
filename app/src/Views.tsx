@@ -67,7 +67,7 @@ import {
 } from "./bindings";
 import { MemoryTab } from "./MemoryTab";
 import { MemoryArchiveTab } from "./MemoryArchiveTab";
-import { Menued } from "./Menus";
+import { catalogueMenu } from "./Menus";
 import {
   ARCHIVE_VIEW,
   DRAFT,
@@ -1234,37 +1234,17 @@ function AnsweredBlocks({
                       if (offer) onPress(kept ? toKeep(offer) : offer);
                     }
               }
-              wrap={
-                onPress === undefined && besideRow === undefined
+              // A Land's refusal beside its member's row (#474), under its words.
+              besideRow={besideRow}
+              menuOf={(row) => {
+                // A refused row says why and offers nothing else.
+                if (besideRow?.(row) !== undefined) return undefined;
+                const memory = onPress === undefined ? undefined : memoryKeyRun(row.runs);
+                return memory === undefined || onPress === undefined
                   ? undefined
-                  : (row, item) => {
-                      const refused = besideRow?.(row);
-                      if (refused !== undefined) {
-                        return (
-                          <Fragment key={row.key}>
-                            {item}
-                            <li className="row-refusal trouble" role="alert">
-                              {refused}
-                            </li>
-                          </Fragment>
-                        );
-                      }
-                      const memory = onPress === undefined ? undefined : memoryKeyRun(row.runs);
-                      return memory === undefined || onPress === undefined ? (
-                        item
-                      ) : (
-                        /* Open, Edit | Delete (ADR 0065 Q12): this memory's rows. */
-                        <Menued
-                          key={row.key}
-                          on={{ on: "memory", key: memory }}
-                          offers={memories}
-                          onPress={onPress}
-                        >
-                          {item}
-                        </Menued>
-                      );
-                    }
-              }
+                  : /* Open, Edit | Delete (ADR 0065 Q12): this memory's rows. */
+                    catalogueMenu({ on: "memory", key: memory }, memories, onPress);
+              }}
               // A tab has the room a side region does not, so a page is twenty rather than twelve.
               page={20}
             />

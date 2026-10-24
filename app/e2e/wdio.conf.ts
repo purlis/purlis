@@ -20,6 +20,7 @@ import { browser } from "@wdio/globals";
 import { coveredIn, whatCovers } from "./covers.js";
 import { theWindowIsDrawn } from "./drawn.js";
 import { noDialogIsLeftUp } from "./opening.js";
+import { theWindowHoldsTheRail } from "./rail.js";
 import { LOGS, PANIC_LOG, collectEvidence } from "./processes.js";
 import { type Evidence, coreLogTail, recordFailure } from "./failures.js";
 import { aSessionBegins, aSessionEnds, recordTiming } from "./timings.js";
@@ -114,6 +115,8 @@ export const config: WebdriverIO.Config = {
     // The upgrade spec needs an old install on disk before the app starts, and an app that
     // migrates at launch (`wdio.upgrade.conf.ts`).
     "./specs/**/*.upgrade.e2e.ts",
+    // The rail's show and keep hold over its own hide for the launch (`wdio.rail.conf.ts`).
+    "./specs/**/*.rail.e2e.ts",
     ...(process.env.STRESS === "1" ? [] : ["./specs/stress.e2e.ts"]),
   ],
   maxInstances: 1,
@@ -147,6 +150,10 @@ export const config: WebdriverIO.Config = {
   // them waits too.
   async before() {
     await theWindowIsDrawn();
+    // The default window, wide enough for the project rail beside both sidebars, whatever an
+    // earlier spec left (`rail.ts`, #3077). A spec that measures a narrower window, where the
+    // rail hides itself to leave the work its room, sets that size itself.
+    await theWindowHoldsTheRail();
     // A dialog an earlier spec left up would cover every control of this one, and fifty specs
     // would fail for the one that left it (#1949's scenario stall).
     await noDialogIsLeftUp();

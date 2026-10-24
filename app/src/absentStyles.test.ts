@@ -49,11 +49,9 @@ describe("the stylesheet for repos that are not cloned here", () => {
     expect(declared(".explorer .absent-actions .ui-setting-actions")).toContain("margin: 0");
   });
 
-  it("draws Settings' list as plain lines, its Remove on each line", () => {
-    const list = declared(".absent-list");
-    expect(list).toContain("list-style: none");
-    expect(list).toContain("padding: 0");
-    expect(declared(".absent-list li")).toContain("display: flex");
+  it("draws Settings' list as the list family's rows, its Remove at each row's end", () => {
+    // The rows are the list family's (`ui/list/list.css`, #2911); only the actions' margin is
+    // the view's.
     expect(declared(".absent-list .ui-setting-actions")).toContain("margin: 0");
   });
 

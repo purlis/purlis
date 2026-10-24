@@ -7,6 +7,7 @@ import { browser, expect, $, $$ } from "@wdio/globals";
 import { untilTheStripLists } from "../reading.js";
 import { bringSideBack, putSideAway } from "../sides.js";
 import { tooltipOf } from "../tooltips.js";
+import { theWindowHoldsTheRail, WINDOW_1280, windowAt } from "../rail.js";
 
 /**
  * **charter's status line**, against the real app (`app/src/StatusLine.tsx`).
@@ -128,6 +129,11 @@ async function untilItSays(want: string | RegExp): Promise<void> {
 }
 
 describe("the status line", () => {
+  // At 1280×800, where this was held to fit before the default window grew (`rail.ts`,
+  // #3077); the project rail hides itself there beside both sidebars.
+  before(() => windowAt(WINDOW_1280));
+  after(() => theWindowHoldsTheRail());
+
   it("is the last thing in the window, under the regions", async () => {
     await untilTheStripIsRead();
     await $('.region-views[data-region="aside"]').waitForExist({ timeout: 20_000 });

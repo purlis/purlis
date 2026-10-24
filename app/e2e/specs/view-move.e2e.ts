@@ -4,6 +4,7 @@
 import { $, browser, expect } from "@wdio/globals";
 import { closeMenus } from "../acting.js";
 import { pressMenuPath, ROW } from "../menus.js";
+import { theWindowHoldsTheRail, WINDOW_1280, windowAt } from "../rail.js";
 
 /**
  * **A view moved to its half of the Panel from the keyboard** (#1752, #1740, P-3), in the built
@@ -115,6 +116,11 @@ async function showChatsAgain(): Promise<void> {
 }
 
 describe("moving a view from its icon's menu, by keyboard", function () {
+  // At 1280×800, where this was held to fit before the default window grew (`rail.ts`,
+  // #3077); the project rail hides itself there beside both sidebars.
+  before(() => windowAt(WINDOW_1280));
+  after(() => theWindowHoldsTheRail());
+
   this.timeout(180_000);
 
   before(async () => {

@@ -6,6 +6,7 @@ import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLef
 import { browser, expect, $, $$ } from "@wdio/globals";
 import { READY } from "../harness.js";
 import { harnessesRunning, logLine } from "../processes.js";
+import { theWindowHoldsTheRail, WINDOW_1280, windowAt } from "../rail.js";
 
 /**
  * The skeleton, driven the way a person drives it: buttons, tabs and typing, against the real
@@ -191,6 +192,11 @@ async function stopOpening(): Promise<void> {
 }
 
 describe("the window", function () {
+  // At 1280×800, where this was held to fit before the default window grew (`rail.ts`,
+  // #3077); the project rail hides itself there beside both sidebars.
+  before(() => windowAt(WINDOW_1280));
+  after(() => theWindowHoldsTheRail());
+
   // **The fifty-sessions test's time is an allowance for each session it opens** (#2157), never
   // one fixed total that a slower runner, or a slower start, crosses with nothing wrong. On the
   // describe, where WebdriverIO reads it (`budget.test.ts`); every other test here bounds each

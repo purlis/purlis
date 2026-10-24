@@ -89,7 +89,7 @@ async function untilThePersonasAreListed(): Promise<void> {
 
 /** A persona's row in the right-hand region, by its own name. */
 async function personaRow(persona: string) {
-  const rows = await $$('[data-testid="panel-personas"] button').getElements();
+  const rows = await $$('[data-testid="panel-personas"] [role="row"]').getElements();
   for (const row of rows) {
     if ((await row.getText()).startsWith(persona)) return row;
   }
@@ -236,7 +236,8 @@ describe("view tabs", function () {
       await (await personaRow("devops")).click();
       const persona = await theView("devops", MEMORY);
 
-      await (await persona.$(`button*=${MEMORY}`)).click();
+      // The memory's row is the list family's (#2911), by its name.
+      await (await persona.$(`[role="row"][aria-label^="${MEMORY}"]`)).click();
 
       const body = await $('[data-testid="memory-body"]');
       await body.waitForExist({ timeout: 20_000 });
@@ -382,7 +383,7 @@ describe("view tabs", function () {
       expect(readFileSync(file ?? "", "utf8")).toContain(BODY);
 
       // Open: the row brings the memory's tab forward, read off the plane.
-      await (await $(SECTION).$(`button*=${TITLE}`)).click();
+      await (await $(SECTION).$(`[role="row"][aria-label^="${TITLE}"]`)).click();
       const body = await $('[data-testid="memory-body"]');
       await body.waitForExist({ timeout: 20_000 });
       await browser.waitUntil(async () => (await body.getText()).includes(BODY), {

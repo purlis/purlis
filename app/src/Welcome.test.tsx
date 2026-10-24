@@ -288,7 +288,7 @@ describe("the welcome's way in by path and recents", () => {
     });
 
     render(<App />);
-    await userEvent.setup().click(await screen.findByRole("button", { name: /one/ }));
+    await userEvent.setup().click(await screen.findByRole("row", { name: /one/ }));
 
     expect(asked.find((one) => one.cmd === "open_plane")?.args).toEqual({ path: "/home/dev/one" });
     // The row for a project nobody has approved says so, and the approved one does not.
@@ -593,7 +593,7 @@ describe("the welcome's way in by path and recents", () => {
     await person.click(await screen.findByRole("button", { name: OPEN_DOOR }));
     expect(await screen.findByRole("alert")).toHaveTextContent("could not be opened");
 
-    await person.click(screen.getByRole("button", { name: /elsewhere/ }));
+    await person.click(screen.getByRole("row", { name: /elsewhere/ }));
     await vi.waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("is not a plane"));
     expect(screen.getByRole("alert")).not.toHaveTextContent("could not be opened");
   });
@@ -714,7 +714,7 @@ describe("the welcome's doors (#1812)", () => {
     render(<App />);
 
     const recents = await screen.findByRole("region", { name: "Recent projects" });
-    expect(within(recents).getByRole("button", { name: /elsewhere/ })).toBeInTheDocument();
+    expect(within(recents).getByRole("row", { name: /elsewhere/ })).toBeInTheDocument();
     expect(screen.queryByText("No recent projects yet")).not.toBeInTheDocument();
   });
 

@@ -7,7 +7,7 @@ import { showView } from "../opening.js";
 import { bringSideBack, putSideAway } from "../sides.js";
 import { tooltipOf } from "../tooltips.js";
 import { gutter } from "../gutter.js";
-import { railHidden } from "../rail.js";
+import { theWindowHoldsTheRail, WINDOW_1280, windowAt } from "../rail.js";
 
 /**
  * The right region and the Changes view (ADR 0038; the bottom region until #1676, the left
@@ -265,9 +265,12 @@ describe("the right-hand region", () => {
     await showView("Personas");
     await untilSays("panel-personas", "steward");
     // A persona's row is its badge and its name (#1674); the default says so on hover.
-    const fallback = await $('[data-testid="panel-personas"] .is-default .row');
+    // The row is the list family's (#2911): its tooltip is the row's own.
+    const fallback = await $('[data-testid="panel-personas"] .panel-row.is-default');
     await fallback.waitForExist({ timeout: 30_000 });
-    expect(await tooltipOf('[data-testid="panel-personas"] .is-default .row')).toContain("default");
+    expect(await tooltipOf('[data-testid="panel-personas"] .panel-row.is-default')).toContain(
+      "default",
+    );
     // As the window was found: the sidebar on the Inbox, the right half on Memory.
     await showView("Inbox");
     await showView("Memory");
@@ -993,9 +996,10 @@ describe("the Panel", () => {
  * really lays out.
  */
 describe("the layout as data", () => {
-  // The work measured with the project rail hidden (`rail.ts`, #2915).
-  before(() => railHidden(true));
-  after(() => railHidden(false));
+  // At 1280×800, both sidebars open, where the project rail hides itself to leave the work its
+  // room (`rail.ts`, #3077): measured with the rail as the window draws it.
+  before(() => windowAt(WINDOW_1280));
+  after(() => theWindowHoldsTheRail());
 
   it("draws each region in the slot the arrangement names", async () => {
     await untilTheStripIsRead();

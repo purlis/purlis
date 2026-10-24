@@ -1,8 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
-import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   commands,
   type GalleryCard,
@@ -15,7 +14,6 @@ import {
 import { drawWhatIsInForce, THEME_FOLDERS_CHANGED } from "../Extensions";
 import { listen } from "../here";
 import { projectThemeChanged } from "../projectTheme";
-import { useTabStop } from "../roving";
 import { ask, putBack, putBackSoon, showWhileOn } from "../theme/hoverPreview";
 import {
   OLD_PICKS,
@@ -36,6 +34,8 @@ import { OptionsList } from "./themeOptions";
 import { useOnScreen, useSpecimen } from "./themeSpecimens";
 import { Button } from "../ui/button/Button";
 import { Tooltip } from "../ui/tooltip/Tooltip";
+import { ListBox, ListOption } from "../ui/list/List";
+import { RowDescription, RowLabel } from "../ui/list/Row";
 
 /**
  * **Settings › Theme is a gallery** (spec #2313, #2331): a card per theme a choice at this level
@@ -473,10 +473,6 @@ function Cards({
     focus: GalleryCard | null;
     aimed: string | null;
   }>({ pointer: null, focus: null, aimed: null });
-  const stop = useTabStop(
-    chosen?.key,
-    (gallery?.cards ?? []).map((card) => card.key),
-  );
   if (gallery === undefined)
     return (
       <p id={ids.id} className="ui-setting-help" role="status">
@@ -485,11 +481,6 @@ function Cards({
           : "Reading the themes…"}
       </p>
     );
-  const keyed = (card: GalleryCard) => (event: KeyboardEvent<HTMLElement>) => {
-    if (event.key !== "Enter" && event.key !== " ") return;
-    event.preventDefault();
-    onPick(card);
-  };
   // One preview for the pointer and the keyboard: the card the pointer is on, else the one
   // the focus is on; the person's theme goes back only when neither is on a card.
   const aim = () => {
@@ -516,64 +507,69 @@ function Cards({
           (gallery.theirs !== null ? theirsSaid(gallery.theirs) : "your own theme.json")}{" "}
         <SourceBadge badge={badge} />
       </p>
-      <RovingFocusGroup.Root asChild loop {...stop}>
-        <div
-          ref={list}
-          id={ids.id}
-          role="listbox"
-          aria-labelledby={ids.labelledBy}
-          aria-describedby={ids.describedBy}
-          className="grid grid-cols-2 gap-3"
-          onPointerLeave={() => point(null)}
-        >
-          {gallery.cards.map((card) => {
-            const isChosen = card.key === chosen?.key;
-            const marks = [
-              // A built-in theme that is not the default yet says so (#2336).
-              card.preview ? "Preview" : undefined,
-              isChosen ? (gallery.yours !== null ? "Chosen here" : "Drawn here") : undefined,
-              card.refused
-                ? "Refused"
-                : card.warnings.length > 0
-                  ? `${card.warnings.length} ${card.warnings.length === 1 ? "warning" : "warnings"}`
-                  : undefined,
-            ].filter((one): one is string => one !== undefined);
-            return (
-              <RovingFocusGroup.Item key={card.key} asChild tabStopId={card.key}>
-                <div
-                  role="option"
-                  aria-selected={isChosen}
-                  aria-disabled={card.refused || undefined}
-                  aria-describedby={card.refused ? `${ids.id}-${card.key}-refused` : undefined}
-                  data-theme-card={card.id}
-                  data-theme-level={card.level ?? undefined}
-                  className={
-                    "flex flex-col gap-1 rounded-md border border-border-subtle p-2 " +
-                    "hover:bg-surface-hover aria-selected:border-accent-base"
-                  }
-                  onPointerEnter={() => point(card)}
-                  onFocus={() => focus(card)}
-                  onBlur={() => focus(null)}
-                  // A refused theme draws Purlis: there is nothing to choose.
-                  onClick={card.refused ? undefined : () => onPick(card)}
-                  onKeyDown={card.refused ? undefined : keyed(card)}
-                >
-                  <Pictures
-                    at={at}
-                    card={card}
-                    yours={gallery.yours}
-                    refusedId={`${ids.id}-${card.key}-refused`}
-                  />
-                  <span className="text-text-primary">{card.name}</span>
-                  <span className="text-sm text-text-secondary">
-                    {[fromSaid(card), ...marks].join(" · ")}
-                  </span>
-                </div>
-              </RovingFocusGroup.Item>
-            );
-          })}
-        </div>
-      </RovingFocusGroup.Root>
+      {/* One list of cards to choose from (#2911): the arrows walk the grid and preview the
+          card they reach, a press, Enter or Space chooses it, and the list is one Tab stop. */}
+      <ListBox
+        ref={list}
+        id={ids.id}
+        aria-labelledby={ids.labelledBy}
+        aria-describedby={ids.describedBy}
+        layout="grid"
+        className="grid grid-cols-2"
+        items={gallery.cards}
+        selectionMode="single"
+        // The arrows preview; a press, Enter or Space chooses (each card's own press). A refused
+        // card keeps the keyboard, so why it is refused is read, and a press on it chooses
+        // nothing.
+        selectionBehavior="toggle"
+        disallowEmptySelection
+        selectedKeys={chosen === undefined ? [] : [chosen.key]}
+      >
+        {(card) => {
+          const isChosen = card.key === chosen?.key;
+          const marks = [
+            // A built-in theme that is not the default yet says so (#2336).
+            card.preview ? "Preview" : undefined,
+            isChosen ? (gallery.yours !== null ? "Chosen here" : "Drawn here") : undefined,
+            card.refused
+              ? "Refused"
+              : card.warnings.length > 0
+                ? `${card.warnings.length} ${card.warnings.length === 1 ? "warning" : "warnings"}`
+                : undefined,
+          ].filter((one): one is string => one !== undefined);
+          return (
+            <ListOption
+              id={card.key}
+              textValue={card.name}
+              unavailable={card.refused}
+              data-theme-card={card.id}
+              data-theme-level={card.level ?? undefined}
+              onHoverStart={() => point(card)}
+              onHoverEnd={() => point(null)}
+              onFocus={() => focus(card)}
+              onBlur={() => focus(null)}
+              // A press, Enter or Space chooses it: the one already drawn too, to choose it here.
+              onPress={() => {
+                if (!card.refused) onPick(card);
+              }}
+            >
+              <Pictures at={at} card={card} yours={gallery.yours} />
+              <RowLabel className="text-text-primary">{card.name}</RowLabel>
+              {/* Where it comes from and what it found is the card's description; a refused
+                  card's is why it is refused, under its pictures' place. */}
+              {card.refused ? (
+                <span className="text-sm text-text-secondary">
+                  {[fromSaid(card), ...marks].join(" · ")}
+                </span>
+              ) : (
+                <RowDescription className="text-sm text-text-secondary">
+                  {[fromSaid(card), ...marks].join(" · ")}
+                </RowDescription>
+              )}
+            </ListOption>
+          );
+        }}
+      </ListBox>
     </div>
   );
 }
@@ -599,22 +595,20 @@ function Pictures({
   at,
   card,
   yours,
-  refusedId,
 }: {
   at: ThemeAt | null;
   card: GalleryCard;
   /** The person's choice here: a card of its theme is pictured with its values. */
   yours: YourTheme | null;
-  /** The id of the line saying why a refused card is refused: the card's description. */
-  refusedId: string;
 }) {
   // Only a card on screen is pictured (#2614): the rest are asked for as they scroll in.
   const [box, seen] = useOnScreen();
   if (card.refused)
     return (
-      <p id={refusedId} className="text-sm text-text-secondary">
+      // Why it is refused is the card's description, which a reader hears after its name.
+      <RowDescription className="text-sm text-text-secondary">
         {card.said[0] ?? "purlis refused it"}
-      </p>
+      </RowDescription>
     );
   const shown = card.appearances.slice(0, MOST_PICTURES);
   const more = card.appearances.length - shown.length;

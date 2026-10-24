@@ -47,7 +47,8 @@ on:
       # The spec, the helpers it drives the window with, and every other scenario spec:
       # STRESS=1 adds it to the WHOLE scenario run, in the same app process, after whatever
       # the others left open. The benchmark, the state run, the Finder run, the layout run, the
-      # picked-theme run and the upgrade run are other configurations this job never starts.
+      # picked-theme run, the rail run and the upgrade run are other configurations this job
+      # never starts.
       - app/e2e/**
       - '!app/e2e/bench/**'
       - '!app/e2e/wdio.bench.conf.ts'
@@ -55,12 +56,14 @@ on:
       - '!app/e2e/wdio.finder.conf.ts'
       - '!app/e2e/wdio.layout.conf.ts'
       - '!app/e2e/wdio.picked.conf.ts'
+      - '!app/e2e/wdio.rail.conf.ts'
       - '!app/e2e/wdio.upgrade.conf.ts'
       - '!app/e2e/upgrade.ts'
       - '!app/e2e/specs/*.state.e2e.ts'
       - '!app/e2e/specs/*.finder.e2e.ts'
       - '!app/e2e/specs/*.layout.e2e.ts'
       - '!app/e2e/specs/*.picked.e2e.ts'
+      - '!app/e2e/specs/*.rail.e2e.ts'
       - '!app/e2e/specs/*.upgrade.e2e.ts'
       # The process it measures, all of it: a thread started anywhere in the app counts.
       - app/src-tauri/**

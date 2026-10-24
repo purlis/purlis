@@ -143,6 +143,7 @@ mod sandboxchoose;
 mod sandboxing;
 mod savefix;
 mod saving;
+mod screenfit;
 mod searchfiles;
 #[cfg(unix)]
 mod sessionhost;
@@ -3589,7 +3590,7 @@ pub fn run() {
             // native appearance and colour of the theme its first frame draws
             // (`nativewindow.rs`), and nothing else. First in `setup`, which is exactly where
             // Tauri would have built it.
-            let main = app
+            let mut main = app
                 .config()
                 .app
                 .windows
@@ -3597,6 +3598,8 @@ pub fn run() {
                 .find(|window| window.label == lifecycle::WINDOW)
                 .cloned()
                 .ok_or("tauri.conf.json declares no main window")?;
+            // The default size, or the screen's usable size where that is smaller (`screenfit.rs`).
+            screenfit::fit_to_the_screen(app.handle(), &mut main, None);
             let config_root = purlis_core::machine::config_root();
             // The working directory, resolved ONCE (`planes::at_launch` below takes this
             // answer): the plane it names is the one the window opens on, and its theme levels

@@ -123,7 +123,8 @@ export async function focusWorkspace(name: string): Promise<void> {
 /**
  * Presses the first enabled button inside `within` whose words, or whose accessible name, are
  * `words`, start with them (a row whose note follows its words) or contain them (a row whose
- * mark draws letters before its words), waiting until there is one.
+ * mark draws letters before its words), waiting until there is one; else a collection's row
+ * whose name does.
  */
 export async function press(
   within: string,
@@ -135,22 +136,40 @@ export async function press(
     async () =>
       browser.execute(
         (scope: string, said: string, way: string) => {
-          const button = [
-            ...document.querySelectorAll<HTMLButtonElement>(
+          const fits = (text: string | null) =>
+            way === "starting"
+              ? (text ?? "").trim().startsWith(said)
+              : way === "containing"
+                ? (text ?? "").includes(said)
+                : (text ?? "").trim() === said;
+          const usable = (one: Element) =>
+            !one.hasAttribute("disabled") && one.getAttribute("aria-disabled") !== "true";
+          // **A row's name, not its whole text** (#2911): a row of a list, a tree or a table is
+          // pressed as a button is, by its name (`aria-label`, or the words it is labelled by),
+          // and its own buttons come first, so a row's action is pressed by its words and never
+          // the row that holds it.
+          const nameOf = (one: Element) =>
+            one.getAttribute("aria-label") ??
+            (one.getAttribute("aria-labelledby") ?? "")
+              .split(/\s+/)
+              .map((id) => document.getElementById(id)?.textContent ?? "")
+              .join(" ");
+          const buttons = [
+            ...document.querySelectorAll<HTMLElement>(
               `${scope} button, ${scope} [role="menuitem"]`,
             ),
-          ].find(
-            (one) =>
-              !one.hasAttribute("disabled") &&
-              one.getAttribute("aria-disabled") !== "true" &&
-              [one.textContent, one.getAttribute("aria-label")].some((text) =>
-                way === "starting"
-                  ? (text ?? "").trim().startsWith(said)
-                  : way === "containing"
-                    ? (text ?? "").includes(said)
-                    : (text ?? "").trim() === said,
-              ),
+          ].filter(
+            (one) => usable(one) && [one.textContent, one.getAttribute("aria-label")].some(fits),
           );
+          const rows = [
+            ...document.querySelectorAll<HTMLElement>(
+              [
+                `${scope} :is([role="row"], [role="option"])[data-part="root"]`,
+                `${scope}:is([role="row"], [role="option"])[data-part="root"]`,
+              ].join(", "),
+            ),
+          ].filter((one) => usable(one) && fits(nameOf(one)));
+          const button = buttons[0] ?? rows[0];
           button?.click();
           return button !== undefined;
         },
@@ -179,9 +198,24 @@ export async function openMenuOn(selector: string, words?: string): Promise<void
           const element =
             said === null
               ? document.querySelector<HTMLElement>(css)
-              : ([...document.querySelectorAll<HTMLElement>(`${css} button`)].find((one) =>
-                  (one.textContent ?? "").trim().startsWith(said),
-                ) ?? null);
+              : ([
+                  ...document.querySelectorAll<HTMLElement>(
+                    // A collection's row (#2911) by its name, or a button by its words.
+                    `${css} button, ${css} :is([role="row"], [role="option"])[data-part="root"]`,
+                  ),
+                ].find((one) => {
+                  // A row by its name, as `press` reads it: `aria-label`, else what labels it.
+                  const by = one.getAttribute("aria-labelledby");
+                  const name =
+                    one.getAttribute("aria-label") ??
+                    (by === null
+                      ? one.textContent
+                      : by
+                          .split(/\s+/)
+                          .map((id) => document.getElementById(id)?.textContent ?? "")
+                          .join(" "));
+                  return (name ?? "").trim().startsWith(said);
+                }) ?? null);
           if (element === null) return false;
           const box = element.getBoundingClientRect();
           element.dispatchEvent(
@@ -290,7 +324,13 @@ export async function focusOn(selector: string): Promise<void> {
   const took = await browser.execute((css: string) => {
     const element = document.querySelector<HTMLElement>(css);
     element?.focus();
-    return element !== null && document.activeElement === element;
+    // A collection (#2911) hands the keyboard on to its row: that is it taking the keyboard.
+    return (
+      element !== null &&
+      (document.activeElement === element ||
+        (element.matches('[role="grid"], [role="listbox"], [role="treegrid"]') &&
+          element.contains(document.activeElement)))
+    );
   }, selector);
   if (!took) throw new Error(`${selector} did not take the keyboard`);
 }

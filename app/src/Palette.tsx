@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { AimedList, AimedOption } from "./ui/list/AimedList";
+import { RowLabel, RowLead, RowTrail } from "./ui/list/Row";
 import { DialogSurface } from "./ui/dialog/Dialog";
 import {
   aim,
@@ -606,40 +608,36 @@ export function Palette({
             : "No action matches what you typed."}
         </p>
       ) : (
-        <ul
+        // The list family's list a field aims at (#2911): the box keeps the keyboard and moves
+        // the aim; a press runs a row.
+        <AimedList
           id="palette-rows"
           className="palette-rows"
-          role="listbox"
           aria-label={switcher ? "Projects" : "Actions"}
         >
           {rows.map((row, index) => (
-            <li
+            <AimedOption
               key={row.id}
               id={`palette-row-${row.id}`}
-              role="option"
-              aria-selected={index === aimed}
-              aria-disabled={row.available ? undefined : true}
-              className={
-                (index === aimed ? "palette-row aimed" : "palette-row") +
-                (row.available ? "" : " refused")
-              }
-              onClick={() => runOffer(row)}
+              aimed={index === aimed}
+              unavailable={!row.available}
+              onPress={() => runOffer(row)}
             >
               {/* A project's name alone in the switcher: every row there is a switch, and
                     `Switch to project` ten times over is ten times the same three words. */}
-              <span className="palette-title">
+              <RowLabel className="palette-title">
                 {switcher ? (row.name ?? row.title) : row.title}
-              </span>
+              </RowLabel>
               {/* The reason, as words. Dimming is decoration; this is the meaning, and it
                     is what a screen reader and a monochrome display both get. */}
-              {!row.available && <span className="palette-why">{row.reason}</span>}
+              {!row.available && <RowTrail className="palette-why">{row.reason}</RowTrail>}
               {/* What a row that CAN run costs, where its title cannot fit it: ending a
                     chat ends the program it runs, and nothing said so (charter-app#130).
                     In the same slot as the reason, because a row has one or the other. */}
-              {row.available && row.note && <span className="palette-why">{row.note}</span>}
-            </li>
+              {row.available && row.note && <RowTrail className="palette-why">{row.note}</RowTrail>}
+            </AimedOption>
           ))}
-        </ul>
+        </AimedList>
       )}
 
       {/* ⌘P's files (FM-7): a group of their own after the projects, never ranked into
@@ -678,31 +676,31 @@ export function Palette({
             </p>
           )}
           {fileRows.length > 0 && (
-            <ul id="palette-files" className="palette-rows" role="listbox" aria-label="Files">
+            <AimedList id="palette-files" className="palette-rows" aria-label="Files">
               {fileRows.map((file, at) => {
                 const index = rows.length + at;
                 const { marks } = hitSaid(file, files.nameOf);
                 return (
-                  <li
+                  <AimedOption
                     key={`${file.plane}\n${file.workspace}\n${file.repo}\n${file.piece ?? ""}\n${file.path}`}
                     id={`palette-file-${at}`}
-                    role="option"
-                    aria-selected={index === aimed}
-                    className={index === aimed ? "palette-row aimed" : "palette-row"}
-                    onClick={() => openFile(file)}
+                    aimed={index === aimed}
+                    onPress={() => openFile(file)}
                   >
-                    <FoundIcon file={file} />
-                    <span className="palette-title">
+                    <RowLead>
+                      <FoundIcon file={file} />
+                    </RowLead>
+                    <RowLabel className="palette-title">
                       <Marked parts={marks.name} />
-                    </span>
-                    <span className="palette-why">
+                    </RowLabel>
+                    <RowTrail className="palette-why">
                       <Marked parts={marks.folder} />
                       {marks.after}
-                    </span>
-                  </li>
+                    </RowTrail>
+                  </AimedOption>
                 );
               })}
-            </ul>
+            </AimedList>
           )}
           {/* The aimed file's two keys, said while there is a file to act on (#1143). */}
           {aimedFile && (

@@ -18,6 +18,8 @@ import { useNewerTrouble } from "./pickTrouble";
 import { Field, SettingActions, SettingRow } from "./settings/components";
 import { Button } from "./ui/button/Button";
 import { Form } from "./ui/field/Field";
+import { List, ListRow } from "./ui/list/List";
+import { RowDescription, RowLabel, RowTrail } from "./ui/list/Row";
 
 /** The pages behind the welcome's doors. The welcome itself is the absence of one. */
 export type Door = "create" | "get" | "sign-in";
@@ -546,24 +548,26 @@ export function Welcome({
       {planes.length > 0 && (
         <section className="welcome-recents" aria-labelledby={`${ids}-recents`}>
           <h2 id={`${ids}-recents`}>Recent projects</h2>
-          <ul className="recents">
+          {/* Rows that act (`ui/list`, #2911): a press or Enter opens the project. */}
+          <List
+            className="recents"
+            aria-labelledby={`${ids}-recents`}
+            onAction={(key) => open(String(key))}
+          >
             {planes.map((plane) => (
-              <li key={plane.path}>
-                <button
-                  type="button"
-                  className="recent-project"
-                  tabIndex={0}
-                  onClick={() => open(plane.path)}
-                >
-                  <span className="tab-name">{plane.name}</span>
+              <ListRow key={plane.path} id={plane.path} textValue={plane.name}>
+                <RowLabel className="tab-name">{plane.name}</RowLabel>
+                <RowDescription>
                   <code className="where">{plane.path}</code>
-                </button>
+                </RowDescription>
                 {/* What the store holds, and nothing more: whether this project still
                     contributes what was approved is asked when it is opened. */}
-                {!plane.approved && <span className="value">purlis will ask about this one</span>}
-              </li>
+                {!plane.approved && (
+                  <RowTrail className="value">purlis will ask about this one</RowTrail>
+                )}
+              </ListRow>
             ))}
-          </ul>
+          </List>
         </section>
       )}
       {nothingRecent && (

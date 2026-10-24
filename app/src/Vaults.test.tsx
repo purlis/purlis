@@ -79,9 +79,9 @@ describe("the Vaults section", () => {
 
     draw();
 
-    const list = await screen.findByRole("list", { name: "Vaults" });
+    const list = await screen.findByRole("grid", { name: "Vaults" });
     const rows = within(list)
-      .getAllByRole("listitem")
+      .getAllByRole("row")
       .map((row) => row.textContent);
     // Each provider by the name New vault offers it under, not its id (#1719).
     expect(rows).toEqual([
@@ -103,9 +103,9 @@ describe("the Vaults section", () => {
   it("opens a vault's tab when its row is pressed, by the catalogue's own row", async () => {
     core([vault("ops")]);
     const { pressed } = draw();
-    const list = await screen.findByRole("list", { name: "Vaults" });
+    const list = await screen.findByRole("grid", { name: "Vaults" });
 
-    await userEvent.click(within(list).getByRole("button", { name: /ops/ }));
+    await userEvent.click(within(list).getByRole("row", { name: /ops/ }));
 
     expect(pressed.map((offer) => offer.id)).toEqual(["vault.open:ops"]);
     expect(pressed[0].does).toEqual({
@@ -134,8 +134,8 @@ describe("the Vaults section", () => {
       }),
     ]);
     draw();
-    const list = await screen.findByRole("list", { name: "Vaults" });
-    const row = within(list).getByRole("listitem");
+    const list = await screen.findByRole("grid", { name: "Vaults" });
+    const row = within(list).getByRole("row");
     expect(row).toHaveClass("is-trouble");
     // No card: the tab says why, at the top, where the operator is looking when it matters.
     expect(screen.queryByText("op CLI not found")).not.toBeInTheDocument();
@@ -155,11 +155,9 @@ describe("the Vaults section", () => {
   it("is one Tab stop, and Up and Down move between vaults (charter-app#189)", async () => {
     core([vault("files", { provider: "plain-file", count: 1 }), vault("ops")]);
     draw();
-    const list = await screen.findByRole("list", { name: "Vaults" });
-    const [first, second] = within(list).getAllByRole("button");
-    expect([first, second].map((one) => one.getAttribute("tabindex"))).toEqual(["0", "-1"]);
-
-    first.focus();
+    const list = await screen.findByRole("grid", { name: "Vaults" });
+    const [first, second] = within(list).getAllByRole("row");
+    act(() => first.focus());
     await userEvent.keyboard("{ArrowDown}");
     await waitFor(() => expect(second).toHaveFocus());
   });
@@ -235,7 +233,7 @@ describe("the vault picker", () => {
     const { pressed, cancel } = pick([vault("files", { provider: "plain-file" }), vault("ops")]);
     const dialog = await screen.findByRole("dialog", { name: "Open vault" });
 
-    await userEvent.click(within(dialog).getByRole("button", { name: /ops/ }));
+    await userEvent.click(within(dialog).getByRole("row", { name: /ops/ }));
 
     expect(pressed.map((offer) => offer.id)).toEqual(["vault.open:ops"]);
     expect(cancel).toHaveBeenCalled();
@@ -243,7 +241,7 @@ describe("the vault picker", () => {
 
   it("puts the keyboard on the first vault, so Enter opens it", async () => {
     const { pressed } = pick([vault("files"), vault("ops")]);
-    const first = await screen.findByRole("button", { name: /files/ });
+    const first = await screen.findByRole("row", { name: /files/ });
     await waitFor(() => expect(first).toHaveFocus());
 
     await userEvent.keyboard("{ArrowDown}{Enter}");

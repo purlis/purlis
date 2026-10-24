@@ -70,6 +70,36 @@ function draw(
   render(<Window />);
 }
 
+/** The rows of the list, in order: the list family's (`ui/list`, #2911). */
+function rowsShown(name = "Todos"): HTMLElement[] {
+  return within(screen.getByRole("grid", { name }))
+    .getAllByRole("row")
+    .filter((one) => one.getAttribute("data-part") === "root");
+}
+
+/** The one row of a list of one. */
+function theRow(): HTMLElement {
+  const [only, ...more] = rowsShown();
+  expect(more).toEqual([]);
+  return only;
+}
+
+/** The rows under a day's name. */
+function under(day: string): string[] {
+  const group = screen.getByRole("rowgroup", { name: day });
+  return within(group)
+    .getAllByRole("row")
+    .filter((one) => one.getAttribute("data-part") === "root")
+    .map((one) => one.querySelector(".row-text")?.textContent ?? "");
+}
+
+/** The days a dated list is drawn under, in order. */
+function daysShown(): string[] {
+  return screen
+    .queryAllByRole("rowgroup")
+    .map((one) => within(one).getByRole("rowheader").textContent ?? "");
+}
+
 /** `n` rows called `row-0`…, each with a short title. */
 function many(n: number): PanelRow[] {
   return Array.from({ length: n }, (_, at) => row(`k${at}`, `Row ${at}`));
@@ -84,7 +114,7 @@ describe("a row is one line", () => {
       "Land the panel contribution contract and prove it by moving the two panels that already exist onto it";
     draw([row("a", long)]);
 
-    const drawn = screen.getByRole("button").textContent ?? "";
+    const drawn = theRow().textContent ?? "";
 
     expect(drawn.length).toBeLessThan(long.length);
     expect(drawn).toContain("…");
@@ -105,8 +135,8 @@ describe("a row is one line", () => {
   it("leaves a row that already fits completely alone", () => {
     draw([row("a", "Short enough")]);
 
-    expect(screen.getByRole("button")).toHaveTextContent("Short enough");
-    expect(screen.getByRole("button").textContent).not.toContain("…");
+    expect(theRow()).toHaveTextContent("Short enough");
+    expect(theRow().textContent).not.toContain("…");
   });
 
   it("keeps the whole of a shortened row where a pointer can still read it", () => {
@@ -116,9 +146,9 @@ describe("a row is one line", () => {
     const long = `Land ${"the contract ".repeat(8)}`.trim();
     draw([row("a", long), row("b", "Short")]);
 
-    const [shortened, fits] = screen.getAllByRole("button");
-    expect(tipOf(shortened.querySelector(".row-text"))).toEqual(long);
-    expect(tipOf(fits.querySelector(".row-text"))).toBeNull();
+    const [shortened, fits] = rowsShown();
+    expect(tipOf(shortened)).toEqual(long);
+    expect(tipOf(fits)).toBeNull();
   });
 
   it("carries no native title on a row that opens a tab, which holds the whole of it", () => {
@@ -127,7 +157,7 @@ describe("a row is one line", () => {
     const long = `Land ${"the contract ".repeat(8)}`.trim();
     draw([row("a", long, { runs: "memory.open:shared/a" })]);
 
-    expect(tipOf(screen.getByRole("button").querySelector(".row-text"))).toBeNull();
+    expect(tipOf(theRow())).toBeNull();
   });
 });
 
@@ -137,19 +167,24 @@ describe("a row opens its card", () => {
     // popover pattern (charter-app#173), reused rather than a second surface per panel.
     draw([row("a", "Review the rollout plan")]);
 
-    await userEvent.click(screen.getByRole("button"));
+    await userEvent.click(theRow());
 
     const card = await waitFor(() => screen.getByTestId("row-detail-a"));
     expect(card).toHaveTextContent("the whole of Review the rollout plan");
   });
 
-  it("is a button exactly when it opens something, so a read-only list stays out of the tabs", () => {
-    // A row with neither a card nor a catalogue verb is a `<span>`: a screen reader is not
-    // told it can be pressed, and the region does not grow N tab stops that do nothing.
-    draw([row("a", "Opens"), row("b", "Inert", { detail: null })]);
+  it("runs nothing from a row that opens nothing", async () => {
+    // A row with neither a card nor a catalogue verb is a row the arrows pass through and a
+    // press does nothing on: the list is still one Tab stop.
+    const ran: string[] = [];
+    draw([row("a", "Opens"), row("b", "Inert", { detail: null })], {
+      onRun: (id) => ran.push(id),
+    });
 
-    expect(screen.getAllByRole("button")).toHaveLength(1);
-    expect(screen.getByText("Inert")).toBeInTheDocument();
+    await userEvent.click(screen.getByText("Inert"));
+
+    expect(screen.queryByTestId("row-detail-b")).toBeNull();
+    expect(ran).toEqual([]);
   });
 
   it("runs the row's catalogue verb, and opens no card of its own, when it has one", async () => {
@@ -162,7 +197,7 @@ describe("a row opens its card", () => {
       onRun: (id, kept) => ran.push(`${id}${kept ? " kept" : ""}`),
     });
 
-    await userEvent.click(screen.getByRole("button"));
+    await userEvent.click(theRow());
 
     expect(screen.queryByTestId("row-detail-m")).toBeNull();
     expect(ran).toEqual(["memory.open:shared/m"]);
@@ -176,7 +211,7 @@ describe("a row opens its card", () => {
       onRun: (id, kept) => ran.push(`${id}${kept ? " kept" : ""}`),
     });
 
-    await userEvent.dblClick(screen.getByRole("button"));
+    await userEvent.dblClick(theRow());
 
     expect(ran.at(-1)).toBe("memory.open:shared/m kept");
   });
@@ -189,7 +224,7 @@ describe("the count is bounded", () => {
     // the half that matters at the 500 rows `purlis_core::panel::MOST_ROWS` allows.
     draw(many(30), { page: 5 });
 
-    expect(within(screen.getByRole("list")).getAllByRole("listitem")).toHaveLength(5);
+    expect(rowsShown()).toHaveLength(5);
     expect(screen.getByRole("button", { name: /Show 5 more/ })).toBeInTheDocument();
   });
 
@@ -198,10 +233,10 @@ describe("the count is bounded", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /Show 5 more/ }));
 
-    expect(within(screen.getByRole("list")).getAllByRole("listitem")).toHaveLength(10);
+    expect(rowsShown()).toHaveLength(10);
     // Two left, so the offer says two rather than a page.
     await userEvent.click(screen.getByRole("button", { name: /Show 2 more/ }));
-    expect(within(screen.getByRole("list")).getAllByRole("listitem")).toHaveLength(12);
+    expect(rowsShown()).toHaveLength(12);
     expect(screen.queryByRole("button", { name: /Show/ })).toBeNull();
   });
 
@@ -214,7 +249,7 @@ describe("the count is bounded", () => {
   it("defaults to a page charter chose rather than to however many there are", () => {
     draw(many(PAGE + 3));
 
-    expect(within(screen.getByRole("list")).getAllByRole("listitem")).toHaveLength(PAGE);
+    expect(rowsShown()).toHaveLength(PAGE);
   });
 });
 
@@ -282,7 +317,7 @@ describe("the search", () => {
 
     await userEvent.type(screen.getByRole("searchbox"), "12 memories");
 
-    expect(within(screen.getByRole("list")).getAllByRole("listitem")).toHaveLength(1);
+    expect(rowsShown()).toHaveLength(1);
   });
 
   it("says nothing matches rather than drawing the list's empty state", async () => {
@@ -311,11 +346,11 @@ describe("the search", () => {
     // reads as rows going missing.
     draw(many(40), { page: 5 });
     await userEvent.click(screen.getByRole("button", { name: /Show 5 more/ }));
-    expect(within(screen.getByRole("list")).getAllByRole("listitem")).toHaveLength(10);
+    expect(rowsShown()).toHaveLength(10);
 
     await userEvent.type(screen.getByRole("searchbox"), "Row");
 
-    expect(within(screen.getByRole("list")).getAllByRole("listitem")).toHaveLength(5);
+    expect(rowsShown()).toHaveLength(5);
   });
 });
 
@@ -447,28 +482,29 @@ describe("the cut", () => {
 });
 
 describe("the keyboard in a list (charter-app#189)", () => {
-  it("is one Tab stop: the first row that does something, and Up and Down move", async () => {
+  it("is one Tab stop, and Up and Down move along every row", async () => {
     draw([row("a", "first"), row("b", "read only", { detail: null }), row("c", "third")]);
-    const list = screen.getByRole("list", { name: "Todos" });
-    const [first, third] = within(list).getAllByRole("button");
-    // A row that does nothing is a `<span>` and no stop at all; of the two that do, one is.
-    expect([first, third].map((one) => one.getAttribute("tabindex"))).toEqual(["0", "-1"]);
+    const [first, readOnly, third] = rowsShown();
 
-    first.focus();
+    await userEvent.tab();
+    expect(first).toHaveFocus();
     await userEvent.keyboard("{ArrowDown}");
-    await waitFor(() => expect(third).toHaveFocus());
-    expect(third).toHaveAttribute("tabindex", "0");
+    expect(readOnly).toHaveFocus();
+    await userEvent.keyboard("{ArrowDown}");
+    expect(third).toHaveFocus();
+    await userEvent.tab();
+    expect(document.body).toHaveFocus();
   });
 
-  it("comes back in on the row whose card is open", async () => {
+  it("opens a row's card with Enter, and comes back in on that row", async () => {
     draw([row("a", "first"), row("b", "second")]);
-    const list = screen.getByRole("list", { name: "Todos" });
-    const [, second] = within(list).getAllByRole("button");
-    await userEvent.click(second);
+    const [, second] = rowsShown();
+    await userEvent.tab();
+    await userEvent.keyboard("{ArrowDown}{Enter}");
     await screen.findByTestId("row-detail-b");
-    // The card has the keyboard now, and the list's stop is the row it came from.
-    await waitFor(() => expect(second).toHaveAttribute("tabindex", "0"));
-    expect(within(list).getAllByRole("button")[0]).toHaveAttribute("tabindex", "-1");
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByTestId("row-detail-b")).toBeNull());
+    await waitFor(() => expect(second).toHaveFocus());
   });
 });
 
@@ -491,9 +527,9 @@ describe("a row on the right is its title alone (#1674)", () => {
       },
     );
 
-    const button = screen.getByRole("button", { name: "Deploys freeze on Fridays" });
-    expect(button).toHaveTextContent(/^Deploys freeze on Fridays$/);
-    expect(tipOf(button)).toEqual("2026-10-10 09:12");
+    const one = theRow();
+    expect(one).toHaveTextContent(/^Deploys freeze on Fridays$/);
+    expect(tipOf(one)).toEqual("2026-10-10 09:12");
   });
 
   it("keeps the note beside the title where a list is not one of the right side's", () => {
@@ -501,10 +537,10 @@ describe("a row on the right is its title alone (#1674)", () => {
     // and keeps what it says on the line.
     draw([row("a", "Ship it", { note: "#7 open", runs: "x" })]);
 
-    expect(screen.getByRole("button")).toHaveTextContent("Ship it · #7 open");
+    expect(theRow()).toHaveTextContent("Ship it · #7 open");
     // The title is a body and the note beside it meta (#1920): two ranks, not one size in two greys.
-    wears(screen.getByRole("button").querySelector(".row-text"), "body", "a row's title");
-    wears(screen.getByRole("button").querySelector(".row-note"), "meta", "a row's note");
+    wears(theRow().querySelector(".row-text"), "body", "a row's title");
+    wears(theRow().querySelector(".row-note"), "meta", "a row's note");
   });
 
   it("groups dated rows under Today, Yesterday and Earlier, newest group first", () => {
@@ -518,12 +554,7 @@ describe("a row on the right is its title alone (#1674)", () => {
       { titleOnly: true },
     );
 
-    const days = screen.getAllByRole("heading").map((one) => one.textContent);
-    expect(days).toEqual(["Today", "Yesterday", "Earlier"]);
-    const under = (day: string) =>
-      within(screen.getByRole("list", { name: day }))
-        .getAllByRole("button")
-        .map((one) => one.textContent);
+    expect(daysShown()).toEqual(["Today", "Yesterday", "Earlier"]);
     // In the order the rows came, within each day.
     expect(under("Today")).toEqual(["From this morning", "From an hour ago"]);
     expect(under("Yesterday")).toEqual(["From yesterday"]);
@@ -538,10 +569,7 @@ describe("a row on the right is its title alone (#1674)", () => {
       ],
       { titleOnly: true },
     );
-    expect(screen.getAllByRole("heading").map((one) => one.textContent)).toEqual([
-      "Today",
-      "Earlier",
-    ]);
+    expect(daysShown()).toEqual(["Today", "Earlier"]);
 
     cleanup();
     draw(
@@ -551,8 +579,8 @@ describe("a row on the right is its title alone (#1674)", () => {
       ],
       { titleOnly: true },
     );
-    expect(screen.queryByRole("heading")).toBeNull();
-    expect(screen.getByRole("list", { name: "Todos" })).toBeInTheDocument();
+    expect(daysShown()).toEqual([]);
+    expect(screen.getByRole("grid", { name: "Todos" })).toBeInTheDocument();
   });
 
   it("puts a row with no date under Earlier, in a list whose other rows are dated", () => {
@@ -566,13 +594,8 @@ describe("a row on the right is its title alone (#1674)", () => {
       { titleOnly: true },
     );
 
-    expect(screen.getAllByRole("heading").map((one) => one.textContent)).toEqual([
-      "Today",
-      "Earlier",
-    ]);
-    expect(
-      within(screen.getByRole("list", { name: "Earlier" })).getByRole("button"),
-    ).toHaveTextContent("Written by hand");
+    expect(daysShown()).toEqual(["Today", "Earlier"]);
+    expect(under("Earlier")).toEqual(["Written by hand"]);
   });
 
   it("keeps the search at the top and Show more at the foot of a grouped list", async () => {
@@ -586,16 +609,13 @@ describe("a row on the right is its title alone (#1674)", () => {
 
     const list = screen.getByTestId("list");
     expect(list.firstElementChild).toContainElement(screen.getByRole("searchbox"));
-    expect(screen.getAllByRole("button", { name: /^Memory/ })).toHaveLength(PAGE);
+    expect(rowsShown()).toHaveLength(PAGE);
     await userEvent.click(screen.getByRole("button", { name: /Show 4 more/ }));
-    expect(screen.getAllByRole("button", { name: /^Memory/ })).toHaveLength(PAGE + 4);
+    expect(rowsShown()).toHaveLength(PAGE + 4);
 
     await userEvent.type(screen.getByRole("searchbox"), "Memory 1");
     // Memory 1 (today) and Memory 10..15 (earlier): still under their days.
-    expect(screen.getAllByRole("heading").map((one) => one.textContent)).toEqual([
-      "Today",
-      "Earlier",
-    ]);
+    expect(daysShown()).toEqual(["Today", "Earlier"]);
   });
 });
 
@@ -607,18 +627,22 @@ describe("a row on the right is its title alone (#1674)", () => {
 describe("a panel list on the shared styles", () => {
   it("draws its rows, its search and its load-more from the tokens", () => {
     draw(many(PAGE + 2).map((one) => ({ ...one, runs: "x" })));
-    for (const button of screen.getAllByRole("button", { name: /^Row/ })) {
-      expect(drawnWith(button, "min-block-size")).toBe("var(--ui-row-height)");
-      expect(drawnWith(button, "padding-inline")).toBe("var(--ui-row-pad)");
-      expect(drawnWith(button, "background", { hover: true })).toBe("var(--surface-hover)");
+    // The list family's dense rows (`ui/list/list.css`): a strip's height, its pill under the
+    // pointer.
+    for (const one of rowsShown()) {
+      expect(one).toHaveAttribute("data-size", "sm");
+      expect(drawnWith(one, "min-block-size")).toBe("var(--size-chrome)");
+      expect(drawnWith(one, "background-color", { hover: true })).toBe("var(--surface-hover)");
     }
     // The field family's box (#2905): a control tall, the ring outside it with the caret in it.
     const search = screen.getByRole("searchbox").parentElement as Element;
     expect(drawnWith(search, "block-size")).toBe("var(--size-control)");
     search.setAttribute("data-focus-within", "true");
     expect(drawnWith(search, "outline")).toBe("var(--focus-ring-width) solid var(--focus-ring)");
+    // Show more is a small button of the family at the list's foot.
     const more = screen.getByRole("button", { name: /Show 2 more/ });
-    expect(drawnWith(more, "min-block-size")).toBe("var(--ui-row-height)");
+    expect(more).toHaveAttribute("data-scope", "button");
+    expect(more).toHaveAttribute("data-size", "sm");
   });
 
   it("draws a row's own actions as small shared buttons", () => {

@@ -83,8 +83,8 @@ async function typeTheSkill(typed: string): Promise<void> {
     async () => {
       for (const row of await $$('[data-testid="use-skill-row"]')) {
         if ((await row.getText()).includes(SKILL)) {
-          // The skill's name is the row's button; the rest of the row says what it is.
-          await (await row.$("button")).click();
+          // The row is the skill's option (#2911): a press picks it.
+          await row.click();
           return true;
         }
       }
