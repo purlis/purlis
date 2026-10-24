@@ -955,8 +955,14 @@ fn live_skills_adds_the_skills_lines_and_nothing_else() {
 
     assert_eq!(live_skills(&root), None, "the finding is gone");
     let again = ran(&fix::apply(&root, FixId::LiveSkills)).to_vec();
-    assert!(again.iter().any(|l| l.contains("nothing to do")), "{again:?}");
-    assert_eq!(std::fs::read_to_string(root.join(".gitignore")).unwrap(), after);
+    assert!(
+        again.iter().any(|l| l.contains("nothing to do")),
+        "{again:?}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.join(".gitignore")).unwrap(),
+        after
+    );
 }
 
 #[test]
@@ -973,6 +979,10 @@ fn a_current_live_block_and_a_project_with_no_live_workspace_have_no_live_skills
 
     // No workspace is LIVE: nothing is shared, so an older baseline is not this row's.
     let (_e, local) = baseline("schema = 1\n");
-    std::fs::write(local.join(".gitignore"), "/workspaces/*/*\n!/workspaces/.gitkeep\n").unwrap();
+    std::fs::write(
+        local.join(".gitignore"),
+        "/workspaces/*/*\n!/workspaces/.gitkeep\n",
+    )
+    .unwrap();
     assert_eq!(live_skills(&local), None);
 }

@@ -392,7 +392,10 @@ pub(super) fn live_skills(d: &Doctor) -> Option<Row> {
     Some(
         Row::warn(
             NAME,
-            format!(".gitignore is older than its LIVE block: {}", found.join("; ")),
+            format!(
+                ".gitignore is older than its LIVE block: {}",
+                found.join("; ")
+            ),
             "A LIVE workspace's skills reach the team only through its LIVE block, and a \
              level's local skills are read only while git ignores them. `purlis doctor --fix \
              live-skills` adds these lines and nothing else.",

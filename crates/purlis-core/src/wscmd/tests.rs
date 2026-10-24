@@ -488,7 +488,10 @@ fn with_no_live_workspace_nothing_is_missing() {
 #[test]
 fn adding_the_skills_lines_puts_each_pair_after_its_workspace_and_keeps_every_byte() {
     let dir = plane();
-    let text = format!("head\r\n{}\r\ntail", older_block(&["alpha", "beta"]).replace('\n', "\r\n"));
+    let text = format!(
+        "head\r\n{}\r\ntail",
+        older_block(&["alpha", "beta"]).replace('\n', "\r\n")
+    );
     std::fs::write(dir.path().join(".gitignore"), &text).unwrap();
 
     let added = add_skills_lines(dir.path()).unwrap();
@@ -510,7 +513,9 @@ fn adding_the_skills_lines_puts_each_pair_after_its_workspace_and_keeps_every_by
     // The lines that were there, as they were and in their order.
     let mut kept = after.as_str();
     for line in text.split_inclusive('\n') {
-        let at = kept.find(line).unwrap_or_else(|| panic!("{line:?} kept: {after:?}"));
+        let at = kept
+            .find(line)
+            .unwrap_or_else(|| panic!("{line:?} kept: {after:?}"));
         kept = &kept[at + line.len()..];
     }
     assert!(skills_lines_in(&after).is_empty(), "{after:?}");

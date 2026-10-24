@@ -112,7 +112,10 @@ pub fn live_workspaces(root: &Path) -> BTreeSet<String> {
 
 /// The workspaces the managed block in `text` marks LIVE.
 fn live_in(text: &str) -> BTreeSet<String> {
-    block_lines(text).into_iter().filter_map(live_line).collect()
+    block_lines(text)
+        .into_iter()
+        .filter_map(live_line)
+        .collect()
 }
 
 /// The workspace a line inside the managed block un-ignores, or `None`.
