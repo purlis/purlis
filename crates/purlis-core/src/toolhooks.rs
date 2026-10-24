@@ -435,7 +435,7 @@ fn handed_over_from(hook: &Hook) -> Option<(u32, PathBuf)> {
     let harness = crate::hookwire::chat_harness(hook.env);
     if harness
         .as_deref()
-        .and_then(crate::harness::Harness::of_registry)
+        .and_then(crate::harness::Harness::of_registry_or_kind)
         != Some(crate::harness::Harness::ClaudeCode)
     {
         return None;

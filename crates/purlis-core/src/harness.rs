@@ -141,14 +141,14 @@ impl Harness {
     /// no adapter for is none.
     /// A chat that names an empty one names none ([`crate::hookwire::chat_harness`] reads it so).
     pub fn of_chat(kind: Option<&str>) -> Option<Self> {
-        kind.map_or(Some(Self::ClaudeCode), Self::of_registry)
+        kind.map_or(Some(Self::ClaudeCode), Self::of_registry_or_kind)
     }
 
     /// **The harness the registry's name `name` is** (`claude-code`, `codex`, `opencode`;
     /// [`crate::profiles::Kind::registry`]), which is what a chat's start puts into
     /// [`crate::hookwire::HARNESS_ENV`], or the kind's word a profile is written with. The one
     /// rule from a registry's name to a harness; none for a name purlis ships no adapter for.
-    pub fn of_registry(name: &str) -> Option<Self> {
+    pub fn of_registry_or_kind(name: &str) -> Option<Self> {
         let word = crate::profiles::KINDS
             .iter()
             .find(|known| known.registry == name)
@@ -630,16 +630,16 @@ mod tests {
     fn a_registry_name_and_a_kind_word_each_name_their_harness_and_none_is_claude_code() {
         // SK-36: the one rule from the name a chat carries to a harness.
         for kind in crate::profiles::KINDS {
-            let harness = Harness::of_registry(kind.registry).expect(kind.registry);
-            assert_eq!(Harness::of_registry(kind.word), Some(harness));
+            let harness = Harness::of_registry_or_kind(kind.registry).expect(kind.registry);
+            assert_eq!(Harness::of_registry_or_kind(kind.word), Some(harness));
             assert_eq!(Harness::of_chat(Some(kind.registry)), Some(harness));
         }
         assert_eq!(
-            Harness::of_registry("claude-code"),
+            Harness::of_registry_or_kind("claude-code"),
             Some(Harness::ClaudeCode)
         );
-        assert_eq!(Harness::of_registry("no-such-harness"), None);
-        assert_eq!(Harness::of_registry(""), None);
+        assert_eq!(Harness::of_registry_or_kind("no-such-harness"), None);
+        assert_eq!(Harness::of_registry_or_kind(""), None);
         assert_eq!(Harness::of_chat(None), Some(Harness::ClaudeCode));
     }
 

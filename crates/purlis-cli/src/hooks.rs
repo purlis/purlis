@@ -258,7 +258,7 @@ pub fn blocks(
     let here = Where::here();
     let cwd = absolute(payload["cwd"].as_str().map(str::to_owned)).unwrap_or_else(|| chat.clone());
     let home = absolute(env("HOME"));
-    let harness = env(purlis_core::hookwire::HARNESS_ENV);
+    let harness = purlis_core::hookwire::chat_harness(env);
     // A wrapped harness's sandbox writes no violation report: one in its result is printed.
     let reported = purlis_core::sandboxblock::as_its_harness_reports(payload, harness.as_deref());
     // A background command's output read back by file is read by how Claude Code's own

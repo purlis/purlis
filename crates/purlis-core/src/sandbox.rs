@@ -1144,7 +1144,7 @@ pub fn writes_are_sandboxed_in(env: &dyn Fn(&str) -> Option<String>, started: St
         Started::ByTheChat => true,
         Started::ByTheHarness => crate::hookwire::chat_harness(env)
             .as_deref()
-            .and_then(Harness::of_registry)
+            .and_then(Harness::of_registry_or_kind)
             .is_some_and(|harness| harness.adapter().sandbox_holds_what_it_starts()),
     }
 }

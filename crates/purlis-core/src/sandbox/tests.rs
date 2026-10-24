@@ -5265,11 +5265,11 @@ fn every_harness_says_whether_its_sandbox_holds_what_it_starts() {
 fn every_registry_name_a_chat_start_writes_names_its_harness() {
     // #1421 review: `PURLIS_HARNESS` holds the registry name, so the adapter must be found by it.
     for kind in crate::profiles::KINDS {
-        let harness = Harness::of_registry(kind.registry).expect(kind.registry);
+        let harness = Harness::of_registry_or_kind(kind.registry).expect(kind.registry);
         assert_eq!(harness.name(), kind.word);
     }
     assert_eq!(
-        Harness::of_registry("claude-code"),
+        Harness::of_registry_or_kind("claude-code"),
         Some(crate::harness::Harness::ClaudeCode)
     );
 }

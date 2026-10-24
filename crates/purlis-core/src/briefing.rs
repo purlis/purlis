@@ -411,7 +411,7 @@ fn workspace_confirm_nudge(ask: &Ask, ids: &Ids) -> Option<String> {
     // for charter to key the lock on — `registry.deficits`' `session-lock`, which only Codex
     // declares.
     let locks = crate::hookstate::session(None, ask.env).is_some()
-        || (ask.env)(crate::hookwire::HARNESS_ENV).as_deref() != Some("codex");
+        || crate::hookwire::chat_harness(ask.env).as_deref() != Some("codex");
     let current = ask.workspace(ids);
     let names = Plane::open(ask.root).workspaces().unwrap_or_default();
     let existing = if names.is_empty() {
@@ -583,7 +583,7 @@ fn retired_notes(ask: &Ask, persona: Option<&str>) -> Vec<String> {
     if let Some(name) = persona.filter(|name| exists(ask.root, name)) {
         let harness = crate::hookwire::chat_harness(ask.env)
             .as_deref()
-            .and_then(crate::harness::Harness::of_registry);
+            .and_then(crate::harness::Harness::of_registry_or_kind);
         let state = crate::personaverbs::state_dir(ask.root);
         notes.extend(
             crate::personaverbs::chatstart::told(ask.root, &state, name, harness)

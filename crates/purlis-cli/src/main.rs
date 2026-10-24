@@ -1922,7 +1922,7 @@ fn tell_the_host_about_the_tool_call(
         && let Some(turn_output) = hookwire::Output::of_ran(
             word,
             &data,
-            purlis_core::envvar::var(hookwire::HARNESS_ENV).as_deref(),
+            hookwire::chat_harness(&purlis_core::envvar::var).as_deref(),
         )
     {
         let _ = hookwire::tell_turn_output(

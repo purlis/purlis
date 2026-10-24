@@ -688,7 +688,7 @@ fn wait_report(
     waits: bool,
     env: &dyn Fn(&str) -> Option<String>,
 ) -> Option<purlis_core::hookwire::Report> {
-    if says_its_own_wait(env(purlis_core::hookwire::HARNESS_ENV).as_deref()) {
+    if says_its_own_wait(purlis_core::hookwire::chat_harness(env).as_deref()) {
         return None;
     }
     let kind = if waits { ASKS } else { ANSWERED };

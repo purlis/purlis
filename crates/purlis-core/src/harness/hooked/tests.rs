@@ -599,8 +599,9 @@ fn the_harness_a_chat_runs_names_the_hook_s_source() {
         Some(Source::ClaudeCode)
     );
     assert_eq!(Source::of_harness(None), Some(Source::ClaudeCode));
+    // The kind's word is the same harness (SK-36: the one rule, `Harness::of_registry_or_kind`).
+    assert_eq!(Source::of_harness(Some("claude")), Some(Source::ClaudeCode));
     // A name it does not know decides nothing, rather than in another harness's words.
-    assert_eq!(Source::of_harness(Some("claude")), None);
     assert_eq!(Source::of_harness(Some("a-later-harness")), None);
 }
 

@@ -220,7 +220,7 @@ impl Report {
                 unattended: crate::floorguard::unattended(field("permission_mode").as_deref()),
                 // Only a `Stop` of the chat's own can end its turn, so only there is it asked.
                 helpers_at_work: event == Event::Stop
-                    && env(HARNESS_ENV).as_deref() == Some(BACKGROUND_TASKS_HARNESS)
+                    && chat_harness(env).as_deref() == Some(BACKGROUND_TASKS_HARNESS)
                     && helpers_at_work(read.as_ref()),
                 // Only a `Notification` is a nudge (#1626).
                 idle: event == Event::Notification
@@ -391,7 +391,7 @@ pub fn helpers_at_work(payload: Option<&serde_json::Value>) -> bool {
 /// The sub-agent a payload's `agent_id` names, only on a harness where that field was measured
 /// to mean one ([`crate::handoffguard::Caller::from_a_subagent`]): elsewhere it is no agent.
 pub fn sub_agent(agent_id: Option<&str>, env: &dyn Fn(&str) -> Option<String>) -> Option<String> {
-    let harness = env(HARNESS_ENV);
+    let harness = chat_harness(env);
     let caller = crate::handoffguard::Caller {
         agent_id,
         harness: harness.as_deref(),
@@ -406,7 +406,7 @@ pub fn sub_agent(agent_id: Option<&str>, env: &dyn Fn(&str) -> Option<String>) -
 pub const HARNESS_ENV: &str = "PURLIS_HARNESS";
 
 /// **The harness the chat's environment `env` names in [`HARNESS_ENV`]**, by the registry's
-/// name a chat's start puts there ([`crate::harness::Harness::of_registry`]): under either
+/// name a chat's start puts there ([`crate::harness::Harness::of_registry_or_kind`]): under either
 /// spelling of the variable ([`crate::envvar::lookup`]), and none where it is unset or empty.
 /// The one reader of it, so an empty one means the same to every hook and to the MCP server.
 pub fn chat_harness(env: &dyn Fn(&str) -> Option<String>) -> Option<String> {

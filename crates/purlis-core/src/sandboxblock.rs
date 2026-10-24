@@ -1814,7 +1814,7 @@ fn ends_as_a_refusal(line: &str) -> bool {
 /// a refused host to it, so one refusal is one Notice; a lookup or a socket it still reads.
 pub fn the_proxy_tells_hosts(harness: Option<&str>) -> bool {
     matches!(
-        harness.and_then(crate::harness::Harness::of_registry),
+        harness.and_then(crate::harness::Harness::of_registry_or_kind),
         Some(crate::harness::Harness::Codex | crate::harness::Harness::Opencode)
     )
 }
@@ -1853,7 +1853,7 @@ pub fn the_hooks_own(
         return found;
     }
     let supervised = harness
-        .and_then(crate::harness::Harness::of_registry)
+        .and_then(crate::harness::Harness::of_registry_or_kind)
         .is_some_and(|harness| os.purlis_wraps(harness));
     found
         .into_iter()
