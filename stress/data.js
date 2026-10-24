@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792846066426,
+  "lastUpdate": 1792852696291,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -6714,6 +6714,42 @@ window.BENCHMARK_DATA = {
             "value": 446.8,
             "unit": "MB",
             "extra": "median of 6 samples: 435.8, 440.9, 445.8, 447.8, 448.7, 559.6 MB; window 236 MB, session host 210.7 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "575ed44571010750e4f1da41c5cee5dda60113c3",
+          "message": "SK-34: purlis skill list shows harness and repo skills too (#3140)\n\n* SK-34: purlis skill list and show list harness and repo skills\n\nThe CLI and the studio now call one core list, purlis_core::skills::studio_list,\nand the CLI prints each harness's own skills with whose each is and whether a\nchat gets it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-34: rustfmt\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-34: review fixes: one copy of the outside rows, typed owner and switch, escaping\n\n- studio_list returns each harness's outside rows; the CLI and the app read them\n  instead of calling outside_rows themselves. harnesses_in_the_studio,\n  with_harness_badges and outside_rows are private, studio_rows pub(crate).\n- Owner and Switch serialize as the window spells them (kind-tagged), and\n  Owner displays as you / plugin / repo <clone>; a test holds the app's mirror\n  to the same spelling.\n- Every free-text cell in list and show is escaped, measured after escaping.\n- Tests: core studio_list, Owner's words, a plugin's skill with its switch, a\n  linked repo skill folder, control and bidi characters.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-34: write the control characters into the fixture as they are\n\nThe frontmatter is read line by line, so a YAML escape stays literal text.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-24T17:41:23+04:00",
+          "tree_id": "8b8e8419849d7caf12a9e6e4815879f64242680c",
+          "url": "https://github.com/purlis/purlis/commit/575ed44571010750e4f1da41c5cee5dda60113c3"
+        },
+        "date": 1792852693781,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 1204,
+            "unit": "MB",
+            "extra": "median of 3 samples: 802, 1204, 1522 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 333,
+            "unit": "MB",
+            "extra": "median of 6 samples: 412.8, 351.1, 329.5, 332.6, 333.5, 252.7 MB; window 209.5 MB, session host 123 MB"
           }
         ]
       }
