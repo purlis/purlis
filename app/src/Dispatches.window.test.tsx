@@ -397,6 +397,21 @@ describe("the Dispatches tab", () => {
     expect(tasks(screen.getByRole("table", { name: "Dispatches" }))).toEqual(["test the rollout"]);
   });
 
+  it("reads nothing of the plane again while the person picks a filter in it", async () => {
+    // Focus moving inside the pane in front leaves the arrangement as it was, so nothing the
+    // window reads when its tabs change is read again for it (`focusPane`).
+    const { asked } = core();
+    render(<App />);
+    await opened();
+    const reads = () => asked.filter((one) => one.cmd === "plane_sidebar").length;
+    const before = reads();
+
+    await pickIn(screen.getByRole("combobox", { name: "Filter by persona" }), "devops");
+    await pickIn(screen.getByRole("combobox", { name: "Filter by asking chat" }), "planner 2");
+
+    expect(reads()).toBe(before);
+  });
+
   it("opens the persona chat from the row of a dispatch whose chat is still open", async () => {
     core();
     render(<App />);
