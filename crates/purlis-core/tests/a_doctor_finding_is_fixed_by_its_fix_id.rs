@@ -828,6 +828,7 @@ fn every_fix_is_refused_on_a_project_whose_charter_toml_links_out_of_it_and_writ
         FixId::LocalIgnore,
         FixId::MemoryOptimize,
         FixId::Discover,
+        FixId::LiveSkills,
     ] {
         let (_d, outside, root) = linked_out();
         let before = outside_git(&root);
@@ -966,7 +967,7 @@ fn live_skills_adds_the_skills_lines_and_nothing_else() {
 }
 
 #[test]
-fn a_current_live_block_and_a_project_with_no_live_workspace_have_no_live_skills_row() {
+fn a_current_gitignore_has_no_live_skills_row() {
     purlis_core::unsteered!();
     let (_d, root) = baseline("schema = 1\n");
     std::fs::write(
@@ -974,15 +975,88 @@ fn a_current_live_block_and_a_project_with_no_live_workspace_have_no_live_skills
         purlis_core::scaffold::GITIGNORE_BASELINE,
     )
     .unwrap();
+    assert_eq!(live_skills(&root), None);
     purlis_core::wscmd::write_live_block(&root, ["alpha"]).unwrap();
     assert_eq!(live_skills(&root), None);
+}
 
-    // No workspace is LIVE: nothing is shared, so an older baseline is not this row's.
-    let (_e, local) = baseline("schema = 1\n");
-    std::fs::write(
-        local.join(".gitignore"),
-        "/workspaces/*/*\n!/workspaces/.gitkeep\n",
-    )
-    .unwrap();
-    assert_eq!(live_skills(&local), None);
+#[test]
+fn without_a_live_workspace_a_missing_local_skills_line_is_named_and_added() {
+    purlis_core::unsteered!();
+    let (_d, root) = baseline("schema = 1\n");
+    let older = "/workspaces/*/*\n!/workspaces/.gitkeep\n/skills.local/\n\
+                 /workspaces/*/skills.local/\n/skills.local.lock\n";
+    std::fs::write(root.join(".gitignore"), older).unwrap();
+
+    let found = live_skills(&root).expect("a persona's local skills could be committed");
+    assert_eq!(found.fix, Some(FixId::LiveSkills), "{found:?}");
+    assert!(
+        found.detail.contains("/personas/*/skills.local/"),
+        "{found:?}"
+    );
+    assert!(!found.detail.contains("LIVE block does not"), "{found:?}");
+
+    ran(&fix::apply(&root, FixId::LiveSkills));
+
+    let after = std::fs::read_to_string(root.join(".gitignore")).unwrap();
+    assert!(after.starts_with(older), "{after}");
+    assert!(after.ends_with("/personas/*/skills.local/\n"), "{after}");
+    assert_eq!(live_skills(&root), None);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_gitignore_that_is_a_link_has_no_live_skills_row_and_is_never_written_through() {
+    purlis_core::unsteered!();
+    let (_d, root) = baseline("schema = 1\n");
+    std::fs::write(root.join("elsewhere"), OLDER_IGNORE).unwrap();
+    std::os::unix::fs::symlink(root.join("elsewhere"), root.join(".gitignore")).unwrap();
+    let before = tree(&root);
+
+    assert_eq!(live_skills(&root), None);
+    let why = refused(&fix::apply(&root, FixId::LiveSkills)).to_owned();
+
+    assert!(why.contains("symbolic link"), "{why}");
+    assert_eq!(tree(&root), before);
+}
+
+#[test]
+fn a_gitignore_that_is_not_text_is_not_checked_and_never_rewritten() {
+    purlis_core::unsteered!();
+    let (_d, root) = baseline("schema = 1\n");
+    std::fs::write(root.join(".gitignore"), b"/x\n\xff\xfe\n").unwrap();
+    let before = tree(&root);
+
+    let found = live_skills(&root).expect("an unread file is said, not passed over");
+
+    assert_eq!(found.status, Status::Warn, "{found:?}");
+    assert!(found.detail.starts_with("not checked"), "{found:?}");
+    assert!(found.detail.contains("not UTF-8"), "{found:?}");
+    assert_eq!(found.fix, None, "{found:?}");
+    assert!(matches!(
+        fix::apply(&root, FixId::LiveSkills),
+        Fixed::Refused(_)
+    ));
+    assert_eq!(tree(&root), before);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_gitignore_this_charter_cannot_read_is_not_checked() {
+    use std::os::unix::fs::PermissionsExt;
+    purlis_core::unsteered!();
+    let (_d, root) = baseline("schema = 1\n");
+    let path = root.join(".gitignore");
+    std::fs::write(&path, OLDER_IGNORE).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).unwrap();
+    // Root reads whatever the mode says; there is nothing unreadable to test then.
+    if std::fs::read(&path).is_ok() {
+        return;
+    }
+
+    let found = live_skills(&root).expect("an unread file is said, not passed over");
+
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+    assert!(found.detail.starts_with("not checked"), "{found:?}");
+    assert_eq!(found.fix, None, "{found:?}");
 }

@@ -155,12 +155,13 @@ pub enum FixId {
     /// where the move would leave any chat without one of its skills ([`project_skills`]).
     ProjectSkills,
     /// **`live-skills`** (SK-28, #2875): adds to the project's `.gitignore` the skills lines an
-    /// older LIVE block lacks, and nothing else. Inside the block, after each LIVE workspace's
-    /// last line, the pair that shares its `skills/` (SK-4); at the end, under a header, each
-    /// level's `skills.local/` line, a persona's included, by the one level rule. Every line
-    /// already there is kept where it is; the block's other lines are `workspace-reinit`'s. It
-    /// commits nothing. Offered by the `live skills` row. It refuses, writing nothing, where
-    /// `.gitignore` is a symbolic link, which git does not read ([`crate::wscmd::add_skills_lines`]).
+    /// older one lacks, and nothing else. Inside the LIVE block, after each LIVE workspace's
+    /// last line, the pair that publishes its `skills/` (SK-4); at the end, under a header, the
+    /// `skills.local/` line of the project, of the workspaces and of the personas, by the one
+    /// level rule. Every line already there is kept where it is; the block's other lines are
+    /// `workspace-reinit`'s. It reads the file back as git reads it, and says any line still
+    /// missing. It commits nothing. Offered by the `live skills` row. It refuses, writing
+    /// nothing, where `.gitignore` is a symbolic link, which git does not read.
     LiveSkills,
 }
 
@@ -402,12 +403,7 @@ pub fn moved(moved: crate::renamelocal::Moved) -> Fixed {
 
 fn local_ignore(root: &Path) -> Fixed {
     if crate::scaffold::gitignore_is_a_link(root) {
-        return Fixed::Refused(
-            "this project's .gitignore is a symbolic link, which git does not read, so a line \
-             added to it would change nothing; nothing was written. Replace the link with a \
-             real .gitignore, then run the fix again."
-                .to_owned(),
-        );
+        return Fixed::Refused(crate::scaffold::GITIGNORE_IS_A_LINK.to_owned());
     }
     let check = crate::profiles::ignore_check(root);
     if check.passes() {
@@ -526,52 +522,80 @@ fn discover(root: &Path, caller: &crate::forge::Caller) -> Fixed {
 /// `live-skills`: the skills lines an older LIVE block lacks, added and said line by line.
 fn live_skills(root: &Path) -> Fixed {
     if crate::scaffold::gitignore_is_a_link(root) {
-        return Fixed::Refused(
-            "this project's .gitignore is a symbolic link, which git does not read, so a line \
-             added to it would change nothing; nothing was written. Replace the link with a \
-             real .gitignore, then run the fix again."
-                .to_owned(),
-        );
+        return Fixed::Refused(crate::scaffold::GITIGNORE_IS_A_LINK.to_owned());
     }
+    let gitignore = super::fsx::path_field(&root.join(".gitignore"));
     let added = match crate::wscmd::add_skills_lines(root) {
         Ok(added) => added,
-        Err(e) => {
-            return Fixed::Refused(format!(
-                "{}: {e}; nothing was written",
-                super::fsx::path_field(&root.join(".gitignore"))
-            ));
-        }
+        Err(e) => return Fixed::Refused(format!("{gitignore}: {e}; nothing was written")),
     };
-    if added.is_empty() {
-        return Fixed::Ran {
-            said: vec![
-                "✓ .gitignore has every skills line its LIVE block needs — nothing to do."
-                    .to_owned(),
-            ],
-            complete: true,
-        };
-    }
     let mut said: Vec<String> = added
-        .unshared
+        .unpublished
         .iter()
         .map(|(name, lines)| {
             format!(
-                "✓ .gitignore: the LIVE block shares {name}'s skills now: added {}",
+                "✓ .gitignore now publishes {name}'s skills: added {}",
                 lines.join(", ")
             )
         })
         .collect();
     if !added.unignored.is_empty() {
         said.push(format!(
-            "✓ .gitignore: local skills stay on this machine: added {}",
+            "✓ .gitignore keeps local skills on this machine now: added {}",
             added.unignored.join(", ")
+        ));
+    }
+    said.extend(added.patterns.iter().map(|name| pattern_said(name)));
+    if added.is_empty() {
+        said.insert(
+            0,
+            "✓ .gitignore has every skills line it needs — nothing to do.".to_owned(),
+        );
+        return Fixed::Ran {
+            said,
+            complete: true,
+        };
+    }
+    // Asked again, as git will read it: a fix that says it added a line that still is not
+    // read is the one answer this must never give.
+    let left = match crate::wscmd::skills_lines_missing(root) {
+        Ok(left) => left,
+        Err(e) => {
+            said.push(format!("✗ {gitignore} could not be read back: {e}"));
+            return Fixed::Ran {
+                said,
+                complete: false,
+            };
+        }
+    };
+    let still: Vec<&str> = left
+        .unpublished
+        .values()
+        .flatten()
+        .chain(&left.unignored)
+        .map(String::as_str)
+        .collect();
+    if !still.is_empty() {
+        said.push(format!(
+            "✗ {gitignore} still lacks {} as git reads it; fix those lines by hand.",
+            still.join(", ")
         ));
     }
     said.push("• Nothing was committed.".to_owned());
     Fixed::Ran {
         said,
-        complete: true,
+        complete: still.is_empty(),
     }
+}
+
+/// What the `live skills` row and its fix say of a name the LIVE block marks that git reads as
+/// a pattern: no line is spelled from it.
+pub(crate) fn pattern_said(name: &str) -> String {
+    format!(
+        "• the LIVE block names `{}`, which git reads as a pattern and not one workspace, so \
+         no skills line is added for it",
+        super::one_line(name, super::DISPLAY_LIMIT)
+    )
 }
 
 fn workspace_reinit(root: &Path) -> Fixed {

@@ -1107,7 +1107,8 @@ key refuses.
     line each (`charter/util.py:499`). Headers seen: ``added by `purlis init` ``
     (`charter/commands.py:1152`), ``added by `purlis guard --local` ``
     (`charter/commands.py:1792`), ``added by `purlis reinit` — harness profiles stay on this machine``
-    (`charter/commands.py:1821`).
+    (`charter/commands.py:1821`), ``added by `purlis doctor --fix live-skills` — local skills
+    stay on this machine`` (the `live-skills` fix, #2875; purlis's own).
   - `charter/workspace.py:1408` `_write_live_block` rewrites the managed live-workspace block
     (markers `charter/workspace.py:1338`, `charter/workspace.py:1339`) — **workspaces area**,
     noted here only because it splices at the `!/workspaces/.gitkeep` anchor.
@@ -2927,10 +2928,13 @@ beside a purlis one is removed when the record is published (V93i).
     session records and skills follow it, LIVE or LOCAL, and its `skills.local/` stays ignored
     either way. A block written before them is brought up to date by `reinit`, as any older
     block is. `purlis doctor`'s `live skills` row names a LIVE workspace whose block lacks the
-    `skills` pair, and each level's `skills.local/` line the file lacks (by the one level
-    rule, a persona's included); `purlis doctor --fix live-skills` adds those lines and
-    nothing else: the pair after the workspace's last line in the block, the ignore lines at
-    the end of the file (#2875).
+    `skills` pair, and each level's `skills.local/` line the file lacks, LIVE workspace or
+    not (by the one level rule, a persona's included); `purlis doctor --fix live-skills` adds
+    those lines and nothing else: the pair after the workspace's last line in the block, the
+    ignore lines at the end of the file, ended as the file's lines are (#2875). Lines are read
+    as git reads them: split on `\n`, one `\r` and trailing spaces taken off, leading
+    whitespace kept. A LIVE name git reads as a pattern (`*`, `?`, `[`, `]`, `!`, `\`) gets no
+    `skills` pair, from the fix or from the block's writer, and the row names it.
   - Lines are joined with `\n` and the block has no trailing newline of its own; the rewrite
     is `re.sub(BEGIN .*? END, block, flags=DOTALL)` (`charter/workspace.py:1412`). A first
     write is inserted directly after the literal line `!/workspaces/.gitkeep\n`

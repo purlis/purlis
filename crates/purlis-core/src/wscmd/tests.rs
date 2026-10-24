@@ -430,7 +430,7 @@ fn an_older_block_lacks_each_live_workspaces_skills_pair_and_a_current_one_lacks
     let text = format!("{}\n{}\n", older_block(&["alpha", "beta"]), local_ignores());
     let missing = skills_lines_in(&text);
     assert_eq!(
-        missing.unshared,
+        missing.unpublished,
         BTreeMap::from([
             (
                 "alpha".to_owned(),
@@ -462,7 +462,7 @@ fn an_older_block_lacks_each_live_workspaces_skills_pair_and_a_current_one_lacks
 fn the_ignore_lines_are_every_levels_by_the_one_rule_a_personas_included() {
     let text = format!("{}\n/skills.local/\n", live_block(unmigrated(), ["alpha"]));
     let missing = skills_lines_in(&text);
-    assert!(missing.unshared.is_empty());
+    assert!(missing.unpublished.is_empty());
     assert!(
         missing
             .unignored
@@ -475,14 +475,96 @@ fn the_ignore_lines_are_every_levels_by_the_one_rule_a_personas_included() {
         "{}\n!/workspaces/alpha/skills\n!/workspaces/alpha/skills/**\n",
         older_block(&["alpha"])
     );
-    assert!(skills_lines_in(&outside).unshared.contains_key("alpha"));
+    assert!(skills_lines_in(&outside).unpublished.contains_key("alpha"));
 }
 
 #[test]
-fn with_no_live_workspace_nothing_is_missing() {
-    assert!(skills_lines_in("").is_empty());
-    assert!(skills_lines_in("/workspaces/*/*\n!/workspaces/.gitkeep\n").is_empty());
-    assert!(skills_lines_in(&format!("{}\n", older_block(&[]))).is_empty());
+fn without_a_live_workspace_no_pair_is_asked_for_but_the_ignore_lines_are() {
+    for text in [
+        String::new(),
+        "/workspaces/*/*\n!/workspaces/.gitkeep\n".to_owned(),
+        format!("{}\n", older_block(&[])),
+    ] {
+        let missing = skills_lines_in(&text);
+        assert!(missing.unpublished.is_empty(), "{missing:?}");
+        assert_eq!(
+            missing.unignored,
+            crate::scaffold::skills_local_ignores(),
+            "a persona's skills.local/ sits in committed personas/, LIVE or not"
+        );
+    }
+    assert!(skills_lines_in(&format!("{}\n", local_ignores())).is_empty());
+}
+
+#[test]
+fn a_live_name_git_reads_as_a_pattern_gets_no_skills_line() {
+    for name in ["*", "a?", "[ab]", "x]", "!b", "c\\d"] {
+        let text = format!(
+            "{LIVE_BEGIN}\n!/workspaces/{name}/workspace.json\n{LIVE_END}\n{}\n",
+            local_ignores()
+        );
+        let missing = skills_lines_in(&text);
+        assert!(missing.is_empty(), "{name}: {missing:?}");
+        assert_eq!(missing.patterns, [name.to_owned()], "{name}");
+        assert!(
+            !live_block(unmigrated(), [name]).contains("/skills"),
+            "the block's writer spells no pair for {name}"
+        );
+    }
+}
+
+#[test]
+fn lines_are_read_as_git_reads_them() {
+    // Leading whitespace is part of a git pattern, so an indented pair publishes nothing.
+    let indented = format!(
+        "{}\n{}\n",
+        older_block(&["alpha"]).replace(
+            LIVE_END,
+            &format!("  !/workspaces/alpha/skills\n  !/workspaces/alpha/skills/**\n{LIVE_END}")
+        ),
+        local_ignores()
+    );
+    assert!(skills_lines_in(&indented).unpublished.contains_key("alpha"));
+    // A trailing `\r` and trailing spaces are not, so those lines count.
+    let trailing = format!(
+        "{}\n{}\n",
+        older_block(&["alpha"]).replace(
+            LIVE_END,
+            &format!("!/workspaces/alpha/skills \r\n!/workspaces/alpha/skills/**\r\n{LIVE_END}")
+        ),
+        local_ignores()
+    );
+    assert!(skills_lines_in(&trailing).is_empty(), "{trailing:?}");
+    // A lone `\r` ends no line for git, so what follows it is not a line of its own.
+    let lone = format!(
+        "{}\n/skills.local/\r/personas/*/skills.local/\n",
+        older_block(&[])
+    );
+    assert!(
+        skills_lines_in(&lone)
+            .unignored
+            .contains(&"/personas/*/skills.local/".to_owned())
+    );
+}
+
+#[test]
+fn a_crlf_gitignore_stays_crlf_with_every_line_added() {
+    let dir = plane();
+    let text = format!("{}\n", older_block(&["alpha"])).replace('\n', "\r\n");
+    std::fs::write(dir.path().join(".gitignore"), &text).unwrap();
+
+    let added = add_skills_lines(dir.path()).unwrap();
+
+    assert!(
+        !added.unignored.is_empty() && !added.unpublished.is_empty(),
+        "{added:?}"
+    );
+    let after = std::fs::read_to_string(dir.path().join(".gitignore")).unwrap();
+    assert!(
+        !after.replace("\r\n", "").contains('\n'),
+        "a bare \\n in {after:?}"
+    );
+    assert!(skills_lines_in(&after).is_empty(), "{after:?}");
 }
 
 #[test]
@@ -496,7 +578,7 @@ fn adding_the_skills_lines_puts_each_pair_after_its_workspace_and_keeps_every_by
 
     let added = add_skills_lines(dir.path()).unwrap();
 
-    assert_eq!(added.unshared.len(), 2, "{added:?}");
+    assert_eq!(added.unpublished.len(), 2, "{added:?}");
     let after = std::fs::read_to_string(dir.path().join(".gitignore")).unwrap();
     let block = after.split("tail").next().unwrap();
     assert!(

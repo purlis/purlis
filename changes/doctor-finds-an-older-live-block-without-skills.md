@@ -1,7 +1,9 @@
 ### Added
 
-- **The doctor finds a LIVE workspace whose skills are not shared yet.** A project set up
-  before LIVE workspaces shared their skills keeps them on this machine. The new `live skills`
-  row names each such workspace and the lines it lacks, and any level whose local skills git
-  does not ignore, a persona's included. `purlis doctor --fix live-skills`, the Doctor dialog's
-  Fix button, or bare `purlis doctor --fix` adds exactly those lines and nothing else (#2875).
+- **The doctor finds skills an older project does not publish or keep local.** A project set up
+  before LIVE workspaces published their skills keeps them on this machine, and one set up
+  before local skills were kept out of git can commit them. The new `live skills` row names
+  each LIVE workspace whose skills are not published and the local skills of a project,
+  workspace or persona that git does not ignore. `purlis doctor --fix live-skills`, the Doctor
+  dialog's Fix button, or bare `purlis doctor --fix` adds exactly the missing lines and nothing
+  else (#2875).
