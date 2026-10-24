@@ -848,26 +848,26 @@ button.show-more:focus-visible {
 }
 
 /* **Which of a split's panes has the keyboard** (#2914), where a theme draws no line around a
-   pane (Purlis, the operator's ruling of 2026-10-22): the words in its corner (where it came
+   pane (Purlis, the operator's ruling of 2026-10-22): the words in its header (where it came
    from, its work item, its harness, its breadcrumb) are primary, and every other pane's keep their
    muted tier. A split is the panes' own group inside the content panel; one pane is never marked,
    and a split's separator parts the panes. */
 [data-scope="panel"][data-variant="content"]
   [data-group]
   .pane-frame[data-focused]
-  .pane-corner.at-start
+  .pane-head
   :is(.pane-from, .pane-work-item, .pane-harness, .pane-crumbs) {
   color: var(--text-primary);
 }
 
-/* A pane: what purlis has to say of its chats, in a row of its own at the top (#1647), and under
-   it the terminal with what charter draws over it. Everything in a corner is a SIBLING of the
-   element xterm draws into, never a child of it, so nothing charter draws is ever inside the
-   terminal's own DOM — and the pane's body is what those siblings are positioned against.
+/* A pane: what purlis has to say of its chats and the chat at a glance, each in a row of its own
+   at the top (the band and the header, `paneFrame.css`, #3142), and under them the terminal.
+   Everything charter draws is a SIBLING of the element xterm draws into, never a child of it, so
+   nothing charter draws is ever inside the terminal's own DOM.
 
-   **A column: the row of Notices, then the body**, which has whatever height the row leaves.
+   **A column: the band and the header, then the body**, which has whatever height they leave.
    The terminal is refitted to it (`SessionPane`'s `ResizeObserver`), so a Notice takes rows
-   from the terminal and never covers one. A view's pane and an empty one have no row and draw
+   from the terminal and never covers one. A view's pane and an empty one have neither and draw
    their one child at the whole height, as before. */
 .pane-frame {
   position: relative;
@@ -882,27 +882,20 @@ button.show-more:focus-visible {
   overflow: clip;
 }
 
-/* What a pane shows, under its row of Notices: the terminal (or a task that is away) and the two
-   corners over it. `flex-basis: 0` so its height is the pane's less the row's, never its
-   content's; `position: relative` so the corners and the find bar sit on the terminal, under
-   the row. */
+/* What a pane shows, under its band and its header: the terminal, or a task that is away.
+   `flex-basis: 0` so its height is the pane's less theirs, never its content's; `position:
+   relative` so the find bar sits on the terminal, under the header. */
 .pane-body {
   position: relative;
   flex: 1 1 0;
   min-height: 0;
 }
 
-/* **A pane's two corners, and the only two things in this window that position anything over a
-   terminal.** The gauge (M6.10) and the pane's own controls were each written as "the thing in
-   the pane's top-right", and absolutely positioned there they would have sat on top of each
-   other; they shared one row here for a while so neither had to know the other's width.
-
-   They are in different corners now — the operator: *"context status indicator in pane right
-   corner can be moved to left corner. to not make split and close buttons uggly"* (charter-app
-   #193) — the gauge top-left, the controls top-right. **The property that made the shared row
-   work is kept**: neither the gauge nor the controls position themselves; a corner does, and a
-   third thing arriving in a pane's corner has to go in one of these two, where it collides in
-   review rather than at runtime. */
+/* **A view's corner**: the pane's own controls, over the view at its top right. A chat's pane
+   has none: its chips and its controls are in its header, a row of their own, since the corners
+   over the terminal covered the harness's own first lines (#3142). **Nothing in a corner
+   positions itself**: the corner does (charter-app#193), so a second thing arriving here
+   collides in review rather than at runtime. */
 .pane-corner {
   position: absolute;
   top: var(--space-1);
@@ -912,24 +905,8 @@ button.show-more:focus-visible {
   gap: var(--space-2);
 }
 
-/* **The start corner: the chat at a glance, on one row.** It held the pane's Notices under that
-   row too (#1481), over the terminal; they have a row of their own above it now (#1647).
-
-   - **Never wider than the pane**: the pane's inner box, less the corner's margin on each side.
-   - **It takes no clicks of its own**: what is under the part of it that draws nothing is the
-     terminal. Its row takes its own. */
-.pane-corner.at-start {
-  left: var(--space-4);
-  max-width: calc(100% - var(--space-4) * 2);
-  pointer-events: none;
-}
-
-.pane-corner.at-start > * {
-  pointer-events: auto;
-}
-
-/* The chat at a glance: the gauge, the harness, where it came from, its work item. One row,
-   as the corner was. */
+/* The chat at a glance: its breadcrumb, its skills, the harness, where it came from, its work
+   item and its gauge. One row, in the pane's header (`PaneHead`). */
 .pane-chips {
   display: flex;
   flex: none;
@@ -956,7 +933,8 @@ button.show-more:focus-visible {
 }
 
 /* **A pane's row of Notices, above its terminal** (`NoticePaneRow`, #1647): the stack, and
-   beside it "+N more" while more than two have something to say.
+   beside it "+N more" while more than two have something to say. In a chat's pane it is the
+   band, inside the pane on its fill, and `paneFrame.css` places it (#3142).
 
    - **Never over the terminal**: it is in the pane's column, before the body, and the terminal
      has what it leaves.
@@ -1106,20 +1084,17 @@ button.show-more:focus-visible {
   outline-offset: var(--focus-ring-inset);
 }
 
-/* **The gauge floats; it takes no row.** For one build (#207) the pane gave the gauge a row of
-   its own, so as not to cover the start of the terminal's first line. The operator saw the
-   cost at once: *"context usage component position is not absolute and its changing harness
-   container sizes"* — a pane with a gauge was a row shorter than its neighbour without one, and
-   a pane changed height the moment its first usage arrived. The gauge is drawn over the
-   terminal now, exactly as the pane's controls are in the other corner, and the terminal keeps
-   every row whether or not charter has usage for it. */
+/* **The gauge takes no row of its own.** For one build (#207) the pane gave the gauge a row of
+   its own, and the operator saw the cost at once: *"context usage component position is not
+   absolute and its changing harness container sizes"* — a pane with a gauge was a row shorter
+   than its neighbour without one. It floated over the terminal after that, and covered its
+   first line. Now it is on the pane's header (#3142), which every chat's pane has with a gauge or
+   without, so the terminal keeps the same rows whether or not charter has usage for it.
 
-/* **A chat's `ctx`/`cache` gauge** (`app/src/ChatGauge.tsx`): small, in the pane's top-LEFT
-   corner since charter-app#193, drawn over the terminal and taking no row of its own. Raised and
-   bordered so it reads as charter's and not as the program's output.
-
-   **It does not place itself**: `.pane-corner.at-start` holds it. Everything else about it is
-   unchanged — in particular it is always drawn, and never takes the controls' hover rule. */
+   **A chat's `ctx`/`cache` gauge** (`app/src/ChatGauge.tsx`): small, last on the header's line.
+   **It does not place itself**: the header does (`.pane-head`, `paneFrame.css`, which also draws
+   it as words on the pane's fill). It is always drawn, and never takes the controls' hover
+   rule. */
 .chat-gauge {
   display: flex;
   align-items: center;

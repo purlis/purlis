@@ -660,7 +660,14 @@ const CLASSLESS: readonly string[] = [
  * under it; a class inside the `:has(…)` is another element's and is not read as a ground. Each
  * is listed so a new one is looked at.
  */
-const WITHIN: readonly string[] = [".chats-section li:has(> .ui-row[data-revealed])"];
+const WITHIN: readonly string[] = [
+  ".chats-section li:has(> .ui-row[data-revealed])",
+  // A pane's warning by its tone (`paneFrame.css`, #3142): a consent (it holds an Allow) on the
+  // warning wash, trouble on the danger wash. Each is a translucent wash over the terminal's
+  // fill, which the button family lists.
+  '.pane-top\n  :is(.notice-pane-box, [data-scope="notice"][data-placement="pane"]):has([data-variant="grants"])',
+  '.pane-top\n  :is(.notice-pane-box:has(> .notice-trouble), [data-scope="notice"][data-variant="trouble"])',
+];
 
 // --- The tests ------------------------------------------------------------------------------
 

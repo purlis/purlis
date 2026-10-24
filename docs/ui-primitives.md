@@ -254,7 +254,7 @@ primitive, only a native element and native buttons (`tabIndex={0}` on each, for
 argument above about props being the primitive's own does not apply; its props are the line's
 own words instead. What it adds is a type that refuses a line with no way out: `fixes`, `link`,
 `copy` or `onDismiss`, at least one, and always a `cause`. `at="pane"` draws it in its pane's
-row of Notices, above the terminal and never over it (#1647); the default, `at="inbox"`, lists it
+band of warnings, inside the pane above its terminal and never over it (#1647, #3142); the default, `at="inbox"`, lists it
 in the project's Inbox (#1695).
 `Notice.guard.test.ts` fails on a hand-built one. A fix whose press is still on its way
 (`busy`, an Undo in flight, #1190) is `aria-disabled` and `aria-busy`, and ignores a press, so a
@@ -278,23 +278,33 @@ chat stopped on a prompt, qw386) hides it for this run and that wait only (`hide
 so as its tooltip (`dismissSays`): the needs-you list and the tab's hand still show the wait.
 
 In a pane (`at="pane"`), a Notice is one box: its line, and under it what a way out opened. A
-pane's Notices stand in **a row of their own at the top of the pane** (`NoticePaneRow`, #1647),
-and the terminal has the height the row leaves, so no Notice is ever drawn over what a chat
-wrote. They were in the pane's corner, over the terminal, until the operator's screenshot of
-three of them hiding the conversation. In the row they are stacked in `.pane-notices`, in the
+pane's Notices stand in **a band of their own at the top of the pane, inside it**
+(`NoticePaneRow`, #1647, #3142), and the terminal has the height the band and the pane's header
+leave, so no Notice is ever drawn over what a chat wrote. They were in the pane's corner, over
+the terminal, until the operator's screenshot of three of them hiding the conversation; then in a
+row above the pane, between the chosen tab and its pane, until the operator's screenshot of
+2026-10-24 showed it breaking the tab's join. **A pane is three rows** (`paneFrame.css`, the
+operator's variant A): the band, on the terminal's own fill with an 8px runway at its top so the
+chosen tab joins the terminal; the header (`PaneHead`), the chat at a glance at its start and the
+pane's actions at its end (`PaneActions`, the one cluster of split side by side, split stacked and
+close, which a view's pane draws too, #3147); then the terminal, pinned to its bottom so a warning
+coming or going moves its top and never its last line. In the band each Notice is a washed card
+(`wash.warning`, `danger.wash` for trouble, no edge), its words above its ways out, a consent's
+Allow set apart from Keep blocked. Esc on a warning with a Dismiss puts it away, and the keyboard
+goes on to the next warning or to the terminal; a consent has no Dismiss and Esc leaves it. In the row they are stacked in `.pane-notices`, in the
 order the pane writes them: the shown chat's own, the one that waits for an answer before
 anything starts first, then each hidden chat's. **At most two stand, and the rest are behind
-"+N more"**; it sits beside the stack, so a third Notice takes no line, and
-it opens the rest in the row, closing on Escape (back on "+N more") or a press outside the row.
+"+N more"**, on a row of its own under them with its width reserved (it says Show fewer while
+open); it opens the rest in the band, closing on Escape (back on "+N more") or a press outside it.
 A Notice past two is `hidden` where it is drawn, never moved, so it keeps its state, and one the
-keyboard is on stays until the focus leaves it. The row is never more than three fifths of the
-pane, and inside it the stack is never wider or taller than the pane: the sentence has the row,
+keyboard is on stays until the focus leaves it. The band and the header are never more than
+about half the pane, and inside it the stack is never wider or taller than the pane: the sentence has the row,
 the ways out go under it when they do not fit beside it, and the stack scrolls (#1481). Every
 change of the row's height refits the terminal, which resizes the chat's pty and redraws its
 harness; with two at most, a third Notice and every one after it change only the count. The
-chat at a glance (the gauge, the harness, the breadcrumb) stays in the corner over the
-terminal: one short line. `Notice.pane.test.tsx` holds the shape and the rules, and
-`pane-notices.e2e.ts` measures them, with no Notice over the terminal in a narrow pane and a
+chat at a glance (the gauge, the harness, the breadcrumb) is the header's line, never over the
+terminal. `Notice.pane.test.tsx` and `PaneBand.test.tsx` hold the shape and the rules, and
+`pane-notices.e2e.ts` and `pane-warnings.e2e.ts` measure them, with no Notice over the terminal in a narrow pane and a
 wide one. Everything the window draws is ordered inside `#root`, which is one stacking
 context, so no `z-index` in the window is over a dialog or a menu: those are portaled to the
 body and need no number.
