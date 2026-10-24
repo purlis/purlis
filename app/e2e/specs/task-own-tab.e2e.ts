@@ -177,7 +177,7 @@ async function panes() {
       .filter((frame) => frame.querySelector('[data-testid="pane"]'))
       .map((frame) => {
         const crumbs = frame.querySelector<HTMLElement>(".pane-crumbs");
-        const line = frame.querySelector<HTMLElement>(".pane-corner.at-start > .pane-chips");
+        const line = frame.querySelector<HTMLElement>(".pane-head > .pane-chips");
         return {
           session: Number(
             frame.querySelector('[data-testid="pane"]')?.getAttribute("data-session") ?? -1,

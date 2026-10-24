@@ -328,11 +328,8 @@ describe("the pane Notice's rules", () => {
   const rule = (selector: string) =>
     new RegExp(`(^|[},])\\s*${selector}\\s*\\{([^}]*)\\}`).exec(css)?.[2] ?? "";
 
-  it("keeps the corner inside the pane", () => {
-    expect(rule("\\.pane-corner\\.at-start")).toMatch(
-      /max-width:\s*calc\(100% - var\(--space-4\) \* 2\)/,
-    );
-    // And nothing a pane draws is drawn outside it, by a box that cannot be scrolled.
+  it("draws nothing a pane holds outside it", () => {
+    // By a box that cannot be scrolled.
     expect(rule("\\.pane-frame")).toMatch(/overflow:\s*clip/);
   });
 
@@ -355,11 +352,6 @@ describe("the pane Notice's rules", () => {
     expect(rule("\\.pane-notice-row\\.pane-notice-row-empty")).toMatch(/display:\s*none/);
     // What the row keeps behind "+N more" is not drawn, whatever its box's own display says.
     expect(rule("\\.pane-notices > \\[hidden\\]")).toMatch(/display:\s*none/);
-  });
-
-  it("lets the terminal be reached through the part of the corner that draws nothing", () => {
-    expect(rule("\\.pane-corner\\.at-start")).toMatch(/pointer-events:\s*none/);
-    expect(rule("\\.pane-corner\\.at-start > \\*")).toMatch(/pointer-events:\s*auto/);
   });
 
   it("stacks a pane's Notices and scrolls them when they are taller than the pane", () => {

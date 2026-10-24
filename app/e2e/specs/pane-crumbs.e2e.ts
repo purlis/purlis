@@ -84,7 +84,7 @@ async function draw(
       const frames = [...document.querySelectorAll(".pane-frame")].filter((frame) =>
         frame.querySelector('[data-testid="pane"]'),
       );
-      const line = frames[at]?.querySelector(".pane-corner.at-start > .pane-chips");
+      const line = frames[at]?.querySelector(".pane-head > .pane-chips");
       if (!line) return false;
       const el = (tag: string, cls: string, text?: string) => {
         const made = document.createElement(tag);
@@ -194,7 +194,7 @@ async function lineOf(pane: number) {
     const frames = [...document.querySelectorAll(".pane-frame")].filter((frame) =>
       frame.querySelector('[data-testid="pane"]'),
     );
-    const line = frames[at]?.querySelector<HTMLElement>(".pane-corner.at-start > .pane-chips");
+    const line = frames[at]?.querySelector<HTMLElement>(".pane-head > .pane-chips");
     if (!line) return null;
     const said = (el: HTMLElement) => {
       const { left, right } = el.getBoundingClientRect();
@@ -227,7 +227,7 @@ async function oneMoreControl(pane: number): Promise<number> {
     const frames = [...document.querySelectorAll(".pane-frame")].filter((frame) =>
       frame.querySelector('[data-testid="pane"]'),
     );
-    const controls = frames[at]?.querySelector(".pane-corner.at-end > .pane-doing");
+    const controls = frames[at]?.querySelector(".pane-head > .pane-actions > .pane-doing");
     const like = controls?.querySelector("button");
     if (!controls || !like) return 0;
     const more = like.cloneNode(true) as HTMLElement;
@@ -263,7 +263,7 @@ async function asATaskPane(pane: number): Promise<number> {
     const frames = [...document.querySelectorAll(".pane-frame")].filter((frame) =>
       frame.querySelector('[data-testid="pane"]'),
     );
-    const controls = frames[at]?.querySelector(".pane-corner.at-end > .pane-doing");
+    const controls = frames[at]?.querySelector(".pane-head > .pane-actions > .pane-doing");
     const close = [...(controls?.querySelectorAll<HTMLElement>("button") ?? [])].find((button) =>
       (button.getAttribute("aria-label") ?? "").startsWith("End this pane"),
     );
@@ -288,7 +288,9 @@ async function untilReserved(pane: number): Promise<void> {
           frame.querySelector('[data-testid="pane"]'),
         );
         const frame = frames[at];
-        const controls = frame?.querySelector<HTMLElement>(".pane-corner.at-end > .pane-doing");
+        const controls = frame?.querySelector<HTMLElement>(
+          ".pane-head > .pane-actions > .pane-doing",
+        );
         if (!frame || !controls) return false;
         const said = Number.parseFloat(frame.style.getPropertyValue("--pane-controls"));
         return Math.abs(said - controls.offsetWidth) <= 1;
@@ -312,7 +314,7 @@ async function measured(pane: number) {
       frame.querySelector('[data-testid="pane"]'),
     );
     const frame = frames[at];
-    const line = frame?.querySelector(".pane-corner.at-start > .pane-chips");
+    const line = frame?.querySelector(".pane-head > .pane-chips");
     const crumbs = frame?.querySelector('nav[data-drawn="pane-crumbs.e2e"]');
     const brief = frame?.querySelector<HTMLElement>("button.pane-brief");
     const word = crumbs?.querySelector<HTMLElement>(".shown-state .word");
@@ -320,13 +322,13 @@ async function measured(pane: number) {
       rem: Number.parseFloat(getComputedStyle(document.documentElement).fontSize),
       frame: box(frame),
       terminal: box(frame?.querySelector('[data-testid="pane"]')),
-      corner: box(frame?.querySelector(".pane-corner.at-start")),
+      corner: box(frame?.querySelector(".pane-head")),
       line: box(line),
       // The line's other items, which were there before the breadcrumb: the gauge, the harness.
       others: [...(line?.children ?? [])]
         .filter((one) => one !== crumbs)
         .map((one) => ({ what: one.className, box: box(one) })),
-      controls: box(frame?.querySelector(".pane-corner.at-end > .pane-doing")),
+      controls: box(frame?.querySelector(".pane-head > .pane-actions > .pane-doing")),
       // The width the pane says its controls have, which its top line reserves.
       reserved: Number.parseFloat(
         (frame as HTMLElement | undefined)?.style.getPropertyValue("--pane-controls") ?? "",

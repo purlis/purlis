@@ -231,37 +231,35 @@ describe("useChatUsage", () => {
 });
 
 /**
- * **Where the gauge sits in a pane, held over the stylesheet** (charter-app#193).
+ * **Where the gauge sits in a pane, held over the stylesheet** (charter-app#193, #3142).
  *
- * The operator: *"context status indicator in pane right corner can be moved to left corner. to
- * not make split and close buttons uggly"*. jsdom lays nothing out, so what can be held here is
- * the rule as written — and the three properties the move had to keep are all rules:
+ * It floated in the pane's top-left corner, over the terminal, so a pane with a gauge was as tall
+ * as one without (the operator, of #207: *"its changing harness container sizes"*); and it
+ * covered the harness's own first line. It is on the pane's header now, a row every chat's pane
+ * has, with a gauge or without. jsdom lays nothing out, so what is held here is the rules as
+ * written:
  *
- * - **neither thing positions itself**; a corner does, so a third thing in a pane's corner
- *   collides in review and not at runtime;
+ * - **neither the gauge nor the controls position themselves**; the header places both;
  * - **the gauge is always drawn**, so the controls' hover rule may not reach it;
- * - **it never sits on the terminal's first line**, which at top-left it would at every size,
- *   because a terminal's text starts at column 0 — so the pane gives up a row, and only when
- *   there is a gauge to put in it.
+ * - **the header is a row of its own**, never over the terminal, and no rule makes a pane with a
+ *   gauge a different height from one without.
  */
-describe("the gauge's corner", () => {
-  const css = readFileSync(join(process.cwd(), "src/App.css"), "utf8").replace(
-    /\/\*[\s\S]*?\*\//g,
-    "",
-  );
-  const rule = (selector: string) =>
-    new RegExp(`(^|[},])\\s*${selector}\\s*\\{([^}]*)\\}`).exec(css)?.[2] ?? "";
+describe("the gauge's place", () => {
+  const strip = (file: string) =>
+    readFileSync(join(process.cwd(), file), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  const css = strip("src/App.css");
+  const frame = strip("src/paneFrame.css");
+  const rule = (sheet: string, selector: string) =>
+    new RegExp(`(^|[},])\\s*${selector}\\s*\\{([^}]*)\\}`).exec(sheet)?.[2] ?? "";
 
-  it("is the top-left corner, and the controls' is the top-right", () => {
-    expect(rule("\\.pane-corner\\.at-start")).toMatch(/left:/);
-    expect(rule("\\.pane-corner\\.at-end")).toMatch(/right:/);
-  });
-
-  it("leaves the positioning to the corner, for the gauge and the controls alike", () => {
-    for (const own of [rule("\\.chat-gauge"), rule("\\.pane-doing")]) {
+  it("leaves the positioning to the header, for the gauge and the controls alike", () => {
+    for (const own of [rule(css, "\\.chat-gauge"), rule(css, "\\.pane-doing")]) {
       expect(own).not.toBe("");
       expect(own).not.toMatch(/position:|top:|left:|right:/);
     }
+    const head = rule(frame, "\\.pane-head");
+    expect(head).toMatch(/display:\s*flex/);
+    expect(head).not.toMatch(/position:/);
   });
 
   it("never takes the controls' hover-only rule", () => {
@@ -272,11 +270,12 @@ describe("the gauge's corner", () => {
     expect(hidden).not.toContain("gauge");
   });
 
-  it("floats over the terminal and never changes the pane's size", () => {
-    // The operator: "context usage component position is not absolute and its changing harness
-    // container sizes". A pane with a gauge must be exactly as tall as one without.
+  it("is on a row of its own that every chat's pane has, so a gauge never changes its size", () => {
     expect(css).not.toMatch(/\.pane-frame\.gauged/);
     expect(css).not.toMatch(/--gauge-room/);
-    expect(rule("\\.pane-corner")).toMatch(/position:\s*absolute/);
+    // The header is in the pane's column and does not give way: it is the same row whatever
+    // is on it.
+    expect(rule(frame, "\\.pane-head")).toMatch(/flex:\s*none/);
+    expect(rule(frame, "\\.pane-head")).toMatch(/min-block-size:/);
   });
 });

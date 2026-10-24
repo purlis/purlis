@@ -545,11 +545,10 @@ describe("a Notice in a pane", () => {
         );
       expect((notice.box as Box).right).toBeLessThanOrEqual(seen.window.width);
 
-      // The sentence has the row: as wide as the Notice, less its padding. It was one word
-      // wide, and taller than it was wide.
+      // The sentence has the row: as wide as the Notice, less its padding and its mark's
+      // column (#3142). It was one word wide, and taller than it was wide.
       const says = notice.says as Box;
-      const room = Math.min(frame.width - 16, 40 * seen.rem);
-      expect(says.width).toBeGreaterThanOrEqual(room - 2 * seen.rem);
+      expect(says.width).toBeGreaterThanOrEqual((notice.box as Box).width - 4 * seen.rem);
       expect(says.width).toBeGreaterThan(says.height);
 
       // Every way out is inside the Notice, under the sentence, and on one line or, where it
@@ -593,7 +592,7 @@ describe("a Notice in a pane", () => {
       expect(notice.preScrolls).toBe(true);
       await briefInTheBoxUnder(pane);
 
-      // Opaque: the terminal does not show through it.
+      // A wash, drawn: on the pane's own fill, never over the terminal (#3142, rule 7).
       expect(notice.background).not.toMatch(/rgba\(.*,\s*0\)|transparent/);
 
       // Above the terminal, never over it, in a narrow pane (#1647).
@@ -790,13 +789,13 @@ describe("a Notice in a pane", () => {
     );
     expect(Math.abs(frame.height - (seen.neighbours[0] as Box).height)).toBeLessThanOrEqual(1);
     offTheTerminal(seen);
-    // "+N more" is in the row, beside the stack: it takes no line of its own.
+    // "+N more" is in the band, on a row of its own under the warnings (#3142, rule 5).
     inside(seen.more, seen.row, "+4 more in the row");
     check(
-      "+4 more is under the first Notice's top",
+      "+4 more is not under the warnings",
       (seen.more as Box).top,
-      "atMost",
-      (seen.notices[0].box as Box).bottom,
+      "atLeast",
+      (seen.stack as Box).bottom - 1,
     );
 
     // Opened, every one is in the row, one under another in the order raised, the row scrolls
@@ -888,7 +887,7 @@ describe("a Notice in a pane", () => {
     for (const left of starts) expect(left).toBeGreaterThanOrEqual(0);
   });
 
-  it("is one row in a wide pane, as it was, and a long one is no wider than a sentence reads", async () => {
+  it("draws a warning as a card the band's width, its words above its ways out (#3142)", async () => {
     await windowIs(1600, 1000);
     // The one-liner the corner was made for (ADR 0062), then the long one.
     const short = { sentence: "Restarting this chat…", ways: ["Dismiss"] };
@@ -897,25 +896,24 @@ describe("a Notice in a pane", () => {
 
     const seen = await measured(0);
     const frame = seen.frame as Box;
+    const stack = seen.stack as Box;
     const [oneLine, long] = seen.notices;
 
-    // One row: every button beside the sentence, to its right, and the box one line tall.
-    check("the pane is not wide enough for one line", frame.width, "above", 24 * seen.rem);
+    // Variant A: the words on their own row, every way out under them, side by side while
+    // they fit; the card as wide as the band, whatever it says.
     inside(oneLine.box, frame, "the one-line Notice in its pane");
     const says = oneLine.says as Box;
     for (const button of oneLine.buttons) {
       const at = button.box as Box;
-      check(`"${button.label}" is not beside the sentence`, at.left, "atLeast", says.right - 1);
-      expect(at.top).toBeLessThan(says.bottom);
+      check(`"${button.label}" is not under the words`, at.top, "atLeast", says.bottom - 1);
       expect(at.height).toBeLessThanOrEqual(button.line * 1.5 + button.chrome + 4);
     }
     expect(says.height).toBeLessThanOrEqual(oneLine.buttons[0].line * 1.5);
-    // As wide as what it says, not as wide as the pane.
-    expect((oneLine.box as Box).width).toBeLessThan(frame.width - 32);
+    expect(Math.abs((oneLine.box as Box).width - stack.width)).toBeLessThanOrEqual(1);
 
-    // The long one: inside the pane, and capped where a sentence stops reading well.
+    // The long one: inside the pane, the band's width, and what a way out opened under its line.
     inside(long.box, frame, "the long Notice in its pane");
-    expect((long.box as Box).width).toBeLessThanOrEqual(40 * seen.rem + 1);
+    expect(Math.abs((long.box as Box).width - stack.width)).toBeLessThanOrEqual(1);
     expect((long.under as Box).top).toBeGreaterThanOrEqual((long.line as Box).bottom - 1);
     expect((long.under as Box).right).toBeLessThanOrEqual((long.box as Box).right + 1);
     for (const neighbour of seen.neighbours)

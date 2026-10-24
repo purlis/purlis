@@ -1029,7 +1029,7 @@ describe("the breadcrumb", () => {
 
   it("says the session, the task and the task's state, in the pane's existing top line", async () => {
     const { tree, move } = await drawn(withTasks());
-    const corner = () => document.querySelector(".pane-corner.at-start");
+    const corner = () => document.querySelector(".pane-head");
     const rowsBefore = corner()?.children.length;
 
     await userEvent.click(row(tree, "talk"));

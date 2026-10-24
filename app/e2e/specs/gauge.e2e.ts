@@ -216,32 +216,35 @@ describe("a chat's context gauge", () => {
     });
     expect((await gauges()).join(" ")).toContain("cache 90%");
 
-    // 4. **Where it is drawn** (charter-app#193): the pane's top-LEFT, floating over the
-    // terminal the way the pane's controls do in the other corner, and taking no row of its
-    // own. For one build the pane gave the gauge a row, and the operator saw what that cost:
-    // "its changing harness container sizes" — a pane with a gauge was a row shorter than its
-    // neighbour. So what is measured is that the terminal starts where the pane frame starts,
-    // gauge or no gauge, and that the gauge's left edge is the frame's, not its right.
-    // No named helpers inside `execute`: the spec's bundler wraps them in a `__name` the page
-    // does not have.
+    // 4. **Where it is drawn** (#3142): on the pane's header, a row of its own between the band
+    // and the terminal, at the line's start side. It floated over the terminal before and
+    // covered its first line; for one build (#207) it had a row of its own that only a pane with
+    // a gauge had, and the operator saw what that cost: "its changing harness container sizes".
+    // The header is in every chat's pane, so what is measured is that the gauge is inside it,
+    // the terminal starts under it, and the gauge's left edge is nearer the frame's than its
+    // right. No named helpers inside `execute`: the spec's bundler wraps them in a `__name` the
+    // page does not have.
     const placed = await browser.execute(() => {
       const gauge = document.querySelector('[data-testid="chat-gauge"]');
       const frame = gauge?.closest(".pane-frame");
+      const head = gauge?.closest(".pane-head");
       const term = frame?.querySelector(".xterm-screen");
-      if (!gauge || !frame || !term) return null;
+      if (!gauge || !frame || !head || !term) return null;
       const g = gauge.getBoundingClientRect();
+      const h = head.getBoundingClientRect();
       const f = frame.getBoundingClientRect();
       const t = term.getBoundingClientRect();
       return {
-        termFromFrameTop: t.top - f.top,
+        inHead: g.top >= h.top - 1 && g.bottom <= h.bottom + 1,
+        termUnderHead: t.top >= h.bottom - 1,
         fromLeft: g.left - f.left,
         fromRight: f.right - g.right,
       };
     });
     expect(placed).not.toBeNull();
     if (placed) {
-      // The terminal's own padding (`.xterm`, a few px) and nothing more: no row given up.
-      expect(placed.termFromFrameTop).toBeLessThan(8);
+      expect(placed.inHead).toBe(true);
+      expect(placed.termUnderHead).toBe(true);
       expect(placed.fromLeft).toBeLessThan(placed.fromRight);
     }
 
