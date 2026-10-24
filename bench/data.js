@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792879262543,
+  "lastUpdate": 1792886170533,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -24234,6 +24234,48 @@ window.BENCHMARK_DATA = {
             "value": 103.4619715,
             "unit": "ms",
             "extra": "median of 5 runs: 102.826, 102.946, 103.462, 106.904, 107.192 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "881e498655e48f5406477804c8ecd85ed05d8c48",
+          "message": "Pane warnings: a band inside the pane, a header row, the terminal pinned (#3142) (#3152)\n\n* Pane warnings: a band inside the pane, a header row, the terminal pinned (#3142)\n\nThe operator's variant A of 2026-10-24. A chat's pane is three rows: the band of\nits warnings (washed cards, words above their ways out, two at most and \"+N more\"\non a row of its own), a slim header with the chips at its start and the pane's\nactions at its end, then the terminal, pinned to its bottom. Nothing sits between\nthe chosen tab and its pane, and nothing is drawn over the terminal.\n\n- PaneHead and PaneActions (LayoutPanes.tsx): the header row, and the split /\n  stack / close cluster as one component a view's pane can reuse (#3147).\n- NoticePaneRow: Esc on a warning with a Dismiss puts it away and the keyboard\n  goes on to the next warning or the terminal; \"+N more\" says Show fewer open.\n- paneFrame.css places the band, the header and the terminal, keyed on today's\n  classes and the notice family's parts (#2912) alike.\n- Stories in every theme cell, unit tests, and a scenario spec for a pane with\n  a warning, a split pane and a narrow pane.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Pane warnings: the stories beside the tabs', guards' lists (#3142)\n\nThe stories draw the window's shell, so they live with the tab family's, where\nthe component layer draws native elements. The pane actions' buttons keep the\nwindow's own size, and the warning marks' rules are listed by the grounds guard.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Pane warnings: the review's fixes (#3142)\n\n- The press-settle guard reads where a Notice's line is drawn against its\n  own root, scrolling aside, not its offsetTop: a card positioned for its\n  mark had pinned offsetTop, so a move went unseen. A story measures it in a\n  real engine (ConsentMoved).\n- After a warning is put away, a consent next is landed on by its line, never\n  on its Allow.\n- A card never shrinks in the band; the stack scrolls whole cards.\n- \"+N more\" draws both its labels in one cell, so it keeps one width; the band\n  has room at its foot for a whole target; it is a region, \"Warnings for this\n  pane\".\n- Plain answers in the band lose their edge (a grant keeps its); a warning's\n  detail line is quiet.\n- --pane-controls is gone: the header's row gives the line its room.\n- Stories: the real PaneActions, an Actions story, Tabs' Split on the header.\n- e2e: measured against the terminal's own box once it is fitted, cards\n  against the stack's inner width.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Pane warnings: the Narrow story measures its ways out before it scrolls the band (#3142)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* Pane warnings: what a way out opened scrolls in its own box, a third of the pane at most (#3142)\n\nA warning never shrinks in the band, so a long brief under its line is capped by\nthe pane's own height (a size container) and scrolls there: the warning's line\nand ways out stay whole and the card never runs past the pane.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Pane warnings: the scenario reads what +N more says, its shown label (#3142)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Pane warnings: a card is never taller than its pane; what it opened gives way inside it (#3142)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Pane warnings: the press-settle guard holds any answer that grants (#3142)\n\nThe guard took the Notices it covers from a list of causes. Any way out drawn\nas the button family's grants variant (every answer with `allows`) now waits\nfor its Notice to settle as well, whatever the cause. The ConsentMoved story\nmoves a vault consent and a sandbox consent, and a unit test holds the rule.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* Pane warnings: the project-expects scenario reads before it allows (#3142)\n\nIts Allow is the grants variant, so it waits for the Notice to settle as every\nanswer that grants does now.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-25T03:55:01+04:00",
+          "tree_id": "465b3e418dd1f6852e274fa12143d43894e9fe58",
+          "url": "https://github.com/purlis/purlis/commit/881e498655e48f5406477804c8ecd85ed05d8c48"
+        },
+        "date": 1792886168652,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.267319,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.259, 0.262, 0.267, 0.269, 0.287 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4796295,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.405, 16.452, 16.480, 16.484, 16.533 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.963392,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.475, 100.809, 100.963, 101.243, 101.885 ms"
           }
         ]
       }
