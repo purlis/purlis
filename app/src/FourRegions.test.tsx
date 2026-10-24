@@ -351,9 +351,14 @@ function sideKey(side: "left" | "right") {
 }
 /** Whether a side is put away: its activity bar stands and none of its views is the open one. */
 function away(region: "Navigation" | "Attention"): boolean {
-  return within(screen.getByRole("tablist", { name: region }))
-    .getAllByRole("tab")
-    .every((tab) => tab.getAttribute("aria-selected") !== "true");
+  // The side panel's tabs are across its own top (N36): away, they are gone with it.
+  const bar = screen.queryByRole("tablist", { name: region });
+  return (
+    bar === null ||
+    within(bar)
+      .getAllByRole("tab")
+      .every((tab) => tab.getAttribute("aria-selected") !== "true")
+  );
 }
 
 describe("the four regions", () => {
@@ -638,21 +643,23 @@ describe("the four regions", () => {
     // Nor on the chat strip, which is the editor's tab bar now (DS-6).
     expect(document.querySelector("header.bar [aria-pressed]")).toBeNull();
 
-    for (const [side, region, view] of [
-      ["left", "Navigation", "Chats"],
-      ["right", "Attention", "Inbox"],
-    ] as const) {
-      const tab = () =>
-        within(screen.getByRole("tablist", { name: region })).getByRole("tab", { name: view });
-      sideKey(side);
-      await waitFor(() => expect(away(region)).toBe(true));
-      // Away, the bar still says how to come back, on the view that would open.
-      expect(tipOf(tab())).toEqual(expect.stringContaining(`Show the ${view} view`));
+    // The right bar stands while its side is away, and says how to come back.
+    const tab = () =>
+      within(screen.getByRole("tablist", { name: "Attention" })).getByRole("tab", {
+        name: "Inbox",
+      });
+    sideKey("right");
+    await waitFor(() => expect(away("Attention")).toBe(true));
+    expect(tipOf(tab())).toEqual(expect.stringContaining("Show the Inbox view"));
+    await userEvent.click(tab());
+    expect(await screen.findByRole("tabpanel", { name: "Inbox" })).toBeInTheDocument();
+    expect(away("Attention")).toBe(false);
 
-      await userEvent.click(tab());
-      expect(await screen.findByRole("tabpanel", { name: view })).toBeInTheDocument();
-      expect(away(region)).toBe(false);
-    }
+    // The side panel's tabs are its own top (N36): its key brings it back.
+    sideKey("left");
+    await waitFor(() => expect(away("Navigation")).toBe(true));
+    sideKey("left");
+    expect(await screen.findByRole("tabpanel", { name: "Chats" })).toBeInTheDocument();
   });
 
   it("keeps a chat in another workspace running while the explorer is used", async () => {
@@ -702,7 +709,7 @@ describe("the left side's activity bar", () => {
     expect(tab("Explorer")).toHaveAttribute("aria-selected", "true");
   });
 
-  it("puts the side away on a press of the open view, keeps the bar, and brings it back", async () => {
+  it("leaves the side out on a press of the open view (R121)", async () => {
     core();
     render(<App />);
     await screen.findByRole("tabpanel", { name: "Chats" });
@@ -710,29 +717,26 @@ describe("the left side's activity bar", () => {
 
     await userEvent.click(tab("Chats"));
 
-    expect(screen.queryByRole("tabpanel", { name: "Chats" })).toBeNull();
-    expect(bar()).toBeInTheDocument();
-    expect(away("Navigation")).toBe(true);
-
-    await userEvent.click(tab("Chats"));
-
-    expect(await screen.findByRole("tabpanel", { name: "Chats" })).toBeInTheDocument();
+    expect(screen.getByRole("tabpanel", { name: "Chats" })).toBeInTheDocument();
+    expect(away("Navigation")).toBe(false);
     expect(screen.getByTestId("chats-section")).toBe(chats);
   });
 
-  it("counts the chats that need you on the Chats tab, while the side is away too", async () => {
+  it("counts the chats that need you on the Chats tab, plainly, and its press leaves the side out", async () => {
     waitingAsks = [asking(7, "Run cargo test")];
     core([7]);
     render(<App />);
     await screen.findByRole("button", { name: "1 thing waits on you" });
     await waitFor(() => expect(tab("Chats")).toHaveAccessibleDescription("1 chat needs you"));
-    expect(tab("Chats").querySelector('.activity-count[data-tone="needs-you"]')).toHaveTextContent(
-      "1",
-    );
+    // Only what waits in the Inbox is drawn hot (R120); the Chats count is plain (R119).
+    const count = tab("Chats").querySelector('[data-part="count"]');
+    expect(count).toHaveTextContent("1");
+    expect(count).not.toHaveAttribute("data-tone");
 
+    // The side panel's own tabs never put it away (R121).
     await userEvent.click(tab("Chats"));
 
-    expect(screen.queryByRole("tabpanel", { name: "Chats" })).toBeNull();
+    expect(screen.getByRole("tabpanel", { name: "Chats" })).toBeInTheDocument();
     expect(tab("Chats")).toHaveAccessibleDescription("1 chat needs you");
   });
 
@@ -741,7 +745,7 @@ describe("the left side's activity bar", () => {
     render(<App />);
     await screen.findByRole("tabpanel", { name: "Chats" });
 
-    expect(tab("Chats").querySelector(".activity-count")).toBeNull();
+    expect(tab("Chats").querySelector('[data-part="count"]')).toBeNull();
   });
 
   it("answers its keys: the side away and back, then Explorer and Chats shown", async () => {
@@ -957,10 +961,12 @@ describe("the Lower icons' badges and the views' keys", () => {
     await userEvent.click(lowerTab("Repos"));
 
     expect(screen.queryByRole("tabpanel", { name: "Repos" })).toBeNull();
-    expect(lowerTab("Changes").querySelector(".activity-count")).toHaveTextContent("5");
+    expect(lowerTab("Changes").querySelector('[data-part="count"]')).toHaveTextContent("5");
     expect(lowerTab("Changes")).toHaveAccessibleDescription("5 uncommitted files");
     // Not a question for the person: the plain count's colours, never the needs-you ones.
-    expect(lowerTab("Changes").querySelector('.activity-count[data-tone="needs-you"]')).toBeNull();
+    expect(
+      lowerTab("Changes").querySelector('[data-part="count"][data-tone="needs-you"]'),
+    ).toBeNull();
   });
 
   it("draws no count on Changes when every tree is clean", async () => {
@@ -970,7 +976,7 @@ describe("the Lower icons' badges and the views' keys", () => {
     await userEvent.click(await waitFor(() => lowerTab("Changes")));
     await within(await screen.findByRole("tabpanel", { name: "Changes" })).findByTestId("repo-svc");
 
-    expect(lowerTab("Changes").querySelector(".activity-count")).toBeNull();
+    expect(lowerTab("Changes").querySelector('[data-part="count"]')).toBeNull();
   });
 
   it("draws how far behind and ahead the repos are on Repos' icon, once one is behind (P-9)", async () => {
@@ -987,7 +993,11 @@ describe("the Lower icons' badges and the views' keys", () => {
     );
     await userEvent.click(lowerTab("Repos"));
 
-    expect(lowerTab("Repos").querySelector(".activity-count")).toHaveTextContent("3↓3↑");
+    // Drawn by the stylesheet from `data-count`, out of the item's name (axe, #2917).
+    expect(lowerTab("Repos").querySelector('[data-part="count"]')).toHaveAttribute(
+      "data-count",
+      "3↓3↑",
+    );
     expect(lowerTab("Repos")).toHaveAccessibleDescription("3 commits behind, 3 ahead");
   });
 
@@ -1000,7 +1010,7 @@ describe("the Lower icons' badges and the views' keys", () => {
       expect(lowerTab("Changes")).toHaveAccessibleDescription("1 uncommitted file"),
     );
 
-    expect(lowerTab("Repos").querySelector(".activity-count")).toBeNull();
+    expect(lowerTab("Repos").querySelector('[data-part="count"]')).toBeNull();
     expect(lowerTab("Repos")).not.toHaveAttribute("aria-describedby");
   });
 
@@ -1085,7 +1095,7 @@ describe("the Panel", () => {
     const view = await screen.findByRole("tabpanel", { name: "Repos" });
     expect(screen.getByTestId("region-panel")).toContainElement(view);
     expect(repos()).toHaveAttribute("aria-selected", "true");
-    expect(lower().closest(".activity-column")).toContainElement(
+    expect(lower().closest('[data-scope="activity-bar"][data-part="root"]')).toContainElement(
       screen.getByRole("tablist", { name: "Navigation" }),
     );
     expect(await within(view).findByTestId("clone-svc")).toBeInTheDocument();
@@ -1223,7 +1233,7 @@ describe("the Panel's right half", () => {
         .getAllByRole("tab")
         .map((one) => one.getAttribute("aria-label")),
     ).toEqual(["Memory", "Todos", "Sessions"]);
-    expect(lower().closest(".activity-column")).toContainElement(
+    expect(lower().closest('[data-scope="activity-bar"][data-part="root"]')).toContainElement(
       screen.getByRole("tablist", { name: "Attention" }),
     );
   });
@@ -1349,9 +1359,9 @@ describe("the right side's activity bar", () => {
     render(<App />);
     await screen.findByRole("tabpanel", { name: "Memory" });
     await waitFor(() => expect(lowerTab("Todos")).toHaveAccessibleDescription("2 open todos"));
-    expect(lowerTab("Todos").querySelector(".activity-count")).toHaveTextContent("2");
+    expect(lowerTab("Todos").querySelector('[data-part="count"]')).toHaveTextContent("2");
     // Plain, not the needs-you colours: a todo is yours to do, not a chat asking.
-    expect(lowerTab("Todos").querySelector(".activity-count")).not.toHaveAttribute("data-tone");
+    expect(lowerTab("Todos").querySelector('[data-part="count"]')).not.toHaveAttribute("data-tone");
 
     await userEvent.click(lowerTab("Memory"));
 
@@ -1365,7 +1375,10 @@ describe("the right side's activity bar", () => {
     render(<App />);
     await screen.findByRole("tabpanel", { name: "Inbox" });
     await waitFor(() => expect(tab("Inbox")).toHaveAccessibleDescription("2 things wait on you"));
-    expect(tab("Inbox").querySelector(".activity-count")).toHaveAttribute("data-tone", "needs-you");
+    expect(tab("Inbox").querySelector('[data-part="count"]')).toHaveAttribute(
+      "data-tone",
+      "needs-you",
+    );
 
     await userEvent.click(tab("Inbox"));
 
@@ -1466,7 +1479,7 @@ describe("the right side's activity bar", () => {
     render(<App />);
     await screen.findByRole("tabpanel", { name: "Memory" });
 
-    expect(lowerTab("Todos").querySelector(".activity-count")).toBeNull();
+    expect(lowerTab("Todos").querySelector('[data-part="count"]')).toBeNull();
   });
 
   it("answers ⌥⌘B: the side away, and back on the view it had", async () => {

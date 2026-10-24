@@ -3,6 +3,7 @@
 
 import { browser, expect, $$ } from "@wdio/globals";
 import { READY } from "../harness.js";
+import { bringSideBack, putSideAway, sideIsAway, type SideRegion } from "../sides.js";
 import {
   SELECTED_TAB,
   bringChatForward,
@@ -728,25 +729,12 @@ describe("the chip a session's tab wears for its tasks", () => {
     }
   });
 
-  /** Each sidebar that is open, put away by a press of its open view's icon; their icons. */
+  /** Each sidebar that is open, put away as a person does (`sides.ts`); the view each showed. */
   async function sidesAway(): Promise<string[]> {
     const pressed: string[] = [];
-    for (const [bar, slot] of [
-      ["Navigation", "region-left"],
-      ["Attention", "region-right"],
-    ]) {
-      const open = await $(
-        `[role="tablist"][aria-label="${bar}"] [role="tab"][aria-selected="true"]`,
-      );
-      const side = await $(`[data-panel][id="${slot}"]`);
-      if (!(await open.isExisting()) || ((await side.getSize("width")) as number) === 0) continue;
-      const name = (await open.getAttribute("aria-label")) ?? "";
-      await open.click();
-      await browser.waitUntil(async () => ((await side.getSize("width")) as number) === 0, {
-        timeout: 20_000,
-        timeoutMsg: `the ${bar} side did not go away when its open view was pressed`,
-      });
-      pressed.push(`${bar}\u0000${name}`);
+    for (const bar of ["Navigation", "Attention"] as const) {
+      if (await sideIsAway(bar)) continue;
+      pressed.push(`${bar}\u0000${await putSideAway(bar)}`);
     }
     return pressed;
   }
@@ -754,10 +742,8 @@ describe("the chip a session's tab wears for its tasks", () => {
   /** The sidebars `sidesAway` put away, open again on the view each was showing. */
   async function sidesBack(pressed: string[]): Promise<void> {
     for (const one of pressed) {
-      const [bar, name] = one.split("\u0000");
-      await (
-        await $(`[role="tablist"][aria-label="${bar}"] [role="tab"][aria-label="${name}"]`)
-      ).click();
+      const [bar, name] = one.split("\u0000") as [SideRegion, string];
+      await bringSideBack(bar, name);
     }
   }
 

@@ -190,6 +190,8 @@ mod native_tests;
 #[cfg(test)]
 mod options_tests;
 #[cfg(test)]
+mod parts_activity_tests;
+#[cfg(test)]
 mod parts_shell_tests;
 #[cfg(test)]
 mod parts_tabs_tests;
@@ -555,8 +557,9 @@ fn built_in_of(text: &str) -> Theme {
         .and_then(Value::as_str)
         .expect("a built-in theme has a name")
         .to_owned();
-    // Its component parts: the strip look Classic's tabs keep, where the family defaults draw
-    // Purlis's (#2914). A built-in's parts are clean, or this build is defective.
+    // Its component parts: the looks Classic keeps where the family defaults draw Purlis's,
+    // its tabs' strip (#2914) and its activity items (#2917). A built-in's parts are clean, or
+    // this build is defective.
     let (mut complaints, mut notes) = (Vec::new(), Vec::new());
     let parts = parts::read(document.get("parts"), &mut complaints, &mut notes);
     assert!(

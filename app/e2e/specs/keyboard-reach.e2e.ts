@@ -94,8 +94,9 @@ describe("the window's keyboard reach", () => {
         ["title bar", ".title-bar"],
         ["workspaces", '[data-strip="Workspaces"]'],
         ["chats", '[data-strip="Tabs"]'],
-        // The left side's open view (#1673): its other view is hidden, and not a stop.
-        ["navigation", '.region-views[data-region="navigation"] .region-view:not([hidden])'],
+        // The left side panel (#1673): its tabs across its top (#2917, N36), then its open view;
+        // its other views are hidden, and not stops.
+        ["navigation", ".slot-left"],
         ["panes", ".panes"],
         // The right side's open view (#1678): its others are hidden, and not stops.
         ["attention", '.region-views[data-region="aside"] .region-view:not([hidden])'],

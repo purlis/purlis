@@ -22,6 +22,7 @@ function bar() {
   return render(
     <ActivityBar
       side="left"
+      variant="tab"
       name="Navigation"
       views={VIEWS}
       open="chats"

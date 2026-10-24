@@ -155,7 +155,10 @@ describe("moving a view from its icon's menu, by keyboard", function () {
             ? null
             : { wide: el.scrollWidth - el.clientWidth, tall: el.scrollHeight - el.clientHeight };
         const head = document.querySelector(`${half} .half-head`);
-        const column = document.querySelector(".activity-column[data-side='left']");
+        // The left bar is tabs across the side panel's top (#2917, N36).
+        const column = document.querySelector(
+          ".slot-left [data-scope='activity-bar'][data-part='root']",
+        );
         const icons = document.querySelector(lower)?.getBoundingClientRect();
         const bar = column?.getBoundingClientRect();
         return {
