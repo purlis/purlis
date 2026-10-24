@@ -175,6 +175,78 @@ fn sole_bytes(dir: &crate::theme::opened::Held, _name: &str) -> Result<Option<Ve
     match *dir {}
 }
 
+/// The most one answer's own SVGs may come to, all of them together: an answer that lists many
+/// profiles (Start a chat's options) holds every person's icon in it to this, however many rows
+/// name one. The window holds the same budget across a list (`HarnessIcon.tsx`).
+pub const MOST_ANSWER: usize = 4 * safesvg::MOST_OUTPUT;
+
+/// **What one profile of an answer is drawn with**: its glyph, the file name of its own SVG in
+/// the answer's [`Answer::svgs`], and the monogram that stands in for either.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct Drawn {
+    pub glyph: Option<&'static str>,
+    /// The key of its SVG in [`Answer::svgs`].
+    pub own: Option<String>,
+    pub monogram: String,
+}
+
+/// **The icons of one answer that lists profiles**: each SVG a profile names read once, however
+/// many rows name it, and sent once, by its file name; all of them together held to
+/// [`MOST_ANSWER`]. A row whose file is past the budget, or cannot be drawn, gets the monogram.
+#[derive(Debug, Default)]
+pub struct Answer {
+    /// The SVGs the answer carries, by file name.
+    pub svgs: std::collections::BTreeMap<String, SafeSvg>,
+    /// Every file asked for, read or not, so none is read twice.
+    asked: std::collections::BTreeSet<String>,
+    /// What [`Self::svgs`] come to.
+    spent: usize,
+}
+
+impl Answer {
+    /// What the profile `name` of `kind` is drawn with in this answer, `icon` what its
+    /// definition names and `config_root` the config home its own SVG is read from.
+    pub fn drawn(
+        &mut self,
+        name: &str,
+        kind: &str,
+        icon: Option<&str>,
+        config_root: Option<&Path>,
+    ) -> Drawn {
+        let monogram = monogram(kind);
+        let (glyph, own) = match icon.map(named) {
+            Some(Named::Glyph(glyph)) => (Some(glyph), None),
+            Some(Named::File(file)) => (None, self.own(file, config_root)),
+            Some(Named::Neither) => (None, None),
+            None if name == kind => (glyph_of_kind(kind), None),
+            None => (None, None),
+        };
+        Drawn {
+            glyph,
+            own,
+            monogram,
+        }
+    }
+
+    /// The key of `file` in [`Self::svgs`], read the first time it is asked for and kept while
+    /// the answer's budget holds it.
+    fn own(&mut self, file: &str, config_root: Option<&Path>) -> Option<String> {
+        if self.asked.insert(file.to_owned())
+            && let Some(svg) = config_root.and_then(|root| read_file(root, file).ok())
+            && self.spent + svg.size() <= MOST_ANSWER
+        {
+            self.spent += svg.size();
+            self.svgs.insert(file.to_owned(), svg);
+        }
+        self.svgs.contains_key(file).then(|| file.to_owned())
+    }
+
+    /// What the answer's SVGs come to.
+    pub fn spent(&self) -> usize {
+        self.spent
+    }
+}
+
 /// **What the profile `name` of `kind` is drawn with**, `icon` what its definition names, and
 /// `config_root` the config home its own SVG is read from.
 pub fn of(name: &str, kind: &str, icon: Option<&str>, config_root: Option<&Path>) -> HarnessIcon {

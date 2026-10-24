@@ -35,11 +35,15 @@ import { isPath } from "../../theme/icons";
  */
 export function HarnessIcon({
   icon,
+  svg: own,
   kind,
   label,
 }: {
   /** What the core says the profile is drawn with. Absent (an older answer), the monogram. */
   icon?: HarnessIconRow | null;
+  /** The person's own SVG the row names (`icon.own`), as {@link ownIconsOf} hands it out for a
+   *  list: absent where the answer carries none or the list's budget is spent. */
+  svg?: SvgIcon | null;
   /** The profile's harness kind: `claude`, `opencode`, `codex`. */
   kind: string;
   /** Its name, where it stands without one beside it. */
@@ -47,7 +51,7 @@ export function HarnessIcon({
 }) {
   const glyphs = useHarnessGlyphs();
   const glyph = icon?.glyph == null ? undefined : glyphs(icon.glyph);
-  const svg = glyph === undefined && icon?.svg != null ? ownSvg(icon.svg) : undefined;
+  const svg = glyph === undefined && icon?.own != null && own != null ? ownSvg(own) : undefined;
   const drawn: { as: "glyph" | "svg" | "monogram"; mark: ReactNode } = glyph
     ? {
         as: "glyph",
@@ -143,6 +147,45 @@ const REFERS = /url\s*\(|script|[<>"'`&\\]/i;
  *  own budget (`purlis_core::safesvg::MOST_OUTPUT`), held again here. */
 export const MOST_OUTPUT = 64 * 1024;
 
+/** The most the own SVGs of one list may come to, every row's drawing counted: the core's
+ *  budget for an answer (`purlis_core::harness_icon::MOST_ANSWER`), held again here. */
+export const MOST_LIST = 4 * MOST_OUTPUT;
+
+/** What `svg` comes to, as {@link MOST_OUTPUT} counts it. */
+function sizeOf(svg: SvgIcon): number {
+  let size = svg.view_box.length;
+  for (const shape of svg.shapes) {
+    size += shape.tag.length;
+    for (const [name, value] of Object.entries(shape.attributes))
+      size += name.length + (typeof value === "string" ? value.length : 0);
+  }
+  return size;
+}
+
+/**
+ * **Each row's own SVG, for a list that draws many**: the SVG of the answer's `svgs` each row's
+ * `icon.own` names, in the rows' order, while every drawing of the list together stays within
+ * {@link MOST_LIST}. A row past it, or naming none, gets nothing, and shows its monogram. A list
+ * that draws harness icons hands each its entry: `<HarnessIcon icon={row.icon}
+ * svg={owns[at]} kind={row.kind} />`.
+ */
+export function ownIconsOf(
+  rows: readonly { icon?: HarnessIconRow | null }[],
+  svgs?: Readonly<Record<string, SvgIcon>> | null,
+): (SvgIcon | undefined)[] {
+  let spent = 0;
+  return rows.map(({ icon }) => {
+    const key = icon?.own;
+    if (key == null || svgs == null || !Object.prototype.hasOwnProperty.call(svgs, key))
+      return undefined;
+    const svg = svgs[key];
+    const size = sizeOf(svg);
+    if (size > MOST_OUTPUT || spent + size > MOST_LIST) return undefined;
+    spent += size;
+    return svg;
+  });
+}
+
 /** A fill or stroke as an icon draws it: `none`, or the text's colour whatever the answer says. */
 const paint = (value: string) => (value === "none" ? "none" : "currentColor");
 
@@ -152,14 +195,7 @@ const VIEW_BOX = /^\s*-?[\d.e+-]+(?:[\s,]+-?[\d.e+-]+){3}\s*$/i;
 /** **A person's SVG, drawn from its checked shapes**: nothing the core did not keep, and nothing
  *  this list does not know, whatever the answer holds. None where nothing is left to draw. */
 function ownSvg(svg: SvgIcon): ReactNode | undefined {
-  if (!VIEW_BOX.test(svg.view_box)) return undefined;
-  let spent = 0;
-  for (const shape of svg.shapes) {
-    spent += shape.tag.length;
-    for (const [name, value] of Object.entries(shape.attributes))
-      spent += name.length + (typeof value === "string" ? value.length : 0);
-    if (spent > MOST_OUTPUT) return undefined;
-  }
+  if (!VIEW_BOX.test(svg.view_box) || sizeOf(svg) > MOST_OUTPUT) return undefined;
   const shapes = svg.shapes.flatMap((shape, at) => {
     if (!SHAPES.has(shape.tag)) return [];
     const props: Record<string, string | number> = { key: at };

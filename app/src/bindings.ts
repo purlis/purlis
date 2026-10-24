@@ -7042,14 +7042,18 @@ export type HarnessGlance = {
 };
 
 /**
- *  A profile's icon: the glyph of the theme's icon set it is drawn with, or the shapes of the
- *  person's own SVG, and always the monogram of its harness kind, which the window draws where
- *  it can draw neither.
+ *  A profile's icon: the glyph of the theme's icon set it is drawn with, or the key of the
+ *  person's own SVG among the answer's, and always the monogram of its harness kind, which the
+ *  window draws where it can draw neither.
  */
 export type HarnessIconRow = {
 	/**  `spark`, `braces` or `terminal`. */
 	glyph: string | null,
-	svg: SvgIcon | null,
+	/**
+	 *  The file name its SVG is under in the answer's own icons; each is sent once, however
+	 *  many rows name it.
+	 */
+	own: string | null,
 	/**  `C`, `OC`, `CX`. */
 	monogram: string,
 };
@@ -11394,6 +11398,13 @@ export type StaleRemote = {
 /**  Everything the picker draws, read from the plane when it is opened. */
 export type StartOptions = {
 	profiles: ProfileRow[],
+	/**
+	 *  The person's own SVG icons the rows name (#2922), each once, by its file name: what a
+	 *  row's `icon.own` refers to. All of them together are held to one budget, and a row whose
+	 *  file is past it shows its monogram. Always sent; optional in the window's type so a
+	 *  picker drawn from an older answer reads it as none.
+	 */
+	own_icons?: { [key in string]: SvgIcon } | null,
 	/**
 	 *  Profiles charter read and will not use, by name and reason, so a row that is missing
 	 *  is never merely missing.
