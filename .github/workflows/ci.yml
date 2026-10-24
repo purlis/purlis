@@ -855,17 +855,25 @@ jobs:
       - name: What the probe needs to start under Seatbelt
         if: failure() && steps.scope.outputs.run == 'true'
         run: |
+          set +e
           p=target/debug/studio-probe
           d=$(cd target/debug && pwd -P)
           base='(version 1)(deny default)(allow process-exec)(allow process-fork)(allow signal (target same-sandbox))(allow process-info* (target same-sandbox))(allow sysctl-read)(allow mach-lookup (global-name "com.apple.logd"))'
+          sys="(allow file-read* file-map-executable (subpath \"/usr\") (subpath \"/System\") (subpath \"/bin\") (subpath \"$d\") (literal \"/dev/null\") (literal \"/dev/urandom\"))"
           try() { /usr/bin/sandbox-exec -p "$2" "$p" </dev/null >/dev/null 2>/tmp/err; echo "$1: exit $? $(head -c 300 /tmp/err)"; }
-          try "allow default" '(version 1)(allow default)'
-          try "reads all" "$base(allow file-read*)"
-          try "reads all, maps all" "$base(allow file-read* file-map-executable)"
-          try "reads system" "$base(allow file-read* file-map-executable (subpath \"/usr\") (subpath \"/System\") (subpath \"$d\") (literal \"/dev/null\") (literal \"/dev/urandom\"))"
-          try "reads system, metadata all" "$base(allow file-read* file-map-executable (subpath \"/usr\") (subpath \"/System\") (subpath \"$d\"))(allow file-read-metadata)"
-          try "reads all, chat services" "$base(allow file-read*)(allow user-preference-read)(allow ipc-posix-shm-read* (ipc-posix-name-prefix \"apple.cfprefs.\"))(allow ipc-posix-sem)(allow system-socket)(allow mach-lookup (global-name \"com.apple.system.opendirectoryd.libinfo\") (global-name \"com.apple.cfprefsd.daemon\") (global-name \"com.apple.cfprefsd.agent\") (global-name \"com.apple.FSEvents\"))"
-          try "reads system, all services" "$base(allow file-read* file-map-executable (subpath \"/usr\") (subpath \"/System\") (subpath \"$d\"))(allow file-read-metadata)(allow mach-lookup)(allow ipc-posix*)(allow system-socket)(allow user-preference-read)"
+          try "system" "$base$sys"
+          try "system, dev" "$base$sys(allow file-read* (subpath \"/dev\"))"
+          try "system, metadata" "$base$sys(allow file-read-metadata)"
+          try "system, root" "$base$sys(allow file-read* (literal \"/\"))"
+          try "system, private" "$base$sys(allow file-read* (subpath \"/private\"))"
+          try "system, private etc" "$base$sys(allow file-read* (subpath \"/private/etc\"))"
+          try "system, private var" "$base$sys(allow file-read* (subpath \"/private/var\"))"
+          try "system, Library" "$base$sys(allow file-read* (subpath \"/Library\"))"
+          try "system, Users" "$base$sys(allow file-read* (subpath \"/Users\"))"
+          try "system, opt" "$base$sys(allow file-read* (subpath \"/opt\"))"
+          /usr/bin/sandbox-exec -p "(version 1)(debug deny)$base$sys" "$p" </dev/null >/dev/null 2>&1
+          sleep 2
+          log show --last 1m --style compact --predicate 'eventMessage CONTAINS "deny"' | grep -i 'studio' | head -40
       # What Seatbelt refused while the probe ran, from the system's log, for a red run's reader.
       - name: What the sandbox refused
         if: failure() && steps.scope.outputs.run == 'true'
