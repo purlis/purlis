@@ -52,7 +52,10 @@ fn nothing_is_moved_over_what_is_already_there() {
     )
     .unwrap_err();
 
-    assert_eq!(refused, "something of its name is already where it goes");
+    assert_eq!(
+        refused,
+        Unmoved::Nothing("something of its name is already where it goes".to_owned())
+    );
     assert!(plane.join("skills.local/notes/SKILL.md").is_file());
 }
 
@@ -142,7 +145,7 @@ fn a_link_in_the_skills_place_or_beside_it_is_never_moved() {
     .unwrap_err();
 
     assert_eq!(
-        refused,
+        refused.to_string(),
         "it is not a plain folder or file, so purlis does not move it"
     );
 
@@ -169,4 +172,218 @@ fn a_link_in_the_skills_place_or_beside_it_is_never_moved() {
         "the folder is put back"
     );
     assert!(!plane.join("skills/notes").exists());
+}
+
+/// The race the look at the leaf leaves open: the folder swapped for a link after its look and
+/// before its rename. The rename moves the link; the look after it sees another entry, so the
+/// link is put back and the move refused.
+#[cfg(unix)]
+#[test]
+fn a_leaf_swapped_for_a_link_after_its_look_is_put_back_and_the_move_refused() {
+    use std::os::unix::fs::symlink;
+    let (_tmp, plane, outside) = plane();
+    folder(&plane.join("skills.local/notes"));
+    folder(&outside.join("secret"));
+    let (aside, secret) = (plane.join("aside"), outside.join("secret"));
+    let mut first = true;
+    let _hook = hook::set(move |moment, from, _| {
+        if moment == hook::Moment::BeforeRename && std::mem::take(&mut first) {
+            std::fs::rename(from, &aside).unwrap();
+            symlink(&secret, from).unwrap();
+        }
+    });
+
+    let refused = move_between(
+        &plane,
+        &plane.join("skills.local/notes"),
+        &plane,
+        &plane.join("skills/notes"),
+        1,
+    )
+    .unwrap_err();
+
+    assert_eq!(
+        refused.to_string(),
+        "it changed as it was moved, so it was put back"
+    );
+    assert!(
+        plane
+            .join("skills.local/notes")
+            .symlink_metadata()
+            .unwrap()
+            .file_type()
+            .is_symlink(),
+        "the link is put back where it was"
+    );
+    assert!(plane.join("skills/notes").symlink_metadata().is_err());
+    assert!(plane.join("aside/SKILL.md").is_file());
+}
+
+/// The swap above, and the leaf's place taken again before the put-back: the move says what is
+/// where, not that nothing moved.
+#[cfg(unix)]
+#[test]
+fn a_swapped_leaf_that_cannot_be_put_back_is_said_to_be_where_it_went() {
+    use std::os::unix::fs::symlink;
+    let (_tmp, plane, outside) = plane();
+    folder(&plane.join("skills.local/notes"));
+    folder(&outside.join("secret"));
+    let (aside, secret) = (plane.join("aside"), outside.join("secret"));
+    let mut call = 0;
+    let _hook = hook::set(move |moment, from, to| {
+        if moment != hook::Moment::BeforeRename {
+            return;
+        }
+        call += 1;
+        if call == 1 {
+            std::fs::rename(from, &aside).unwrap();
+            symlink(&secret, from).unwrap();
+        } else {
+            // The put-back, from where it went to where it was: something is there now.
+            folder(to);
+        }
+    });
+
+    let refused = move_between(
+        &plane,
+        &plane.join("skills.local/notes"),
+        &plane,
+        &plane.join("skills/notes"),
+        1,
+    )
+    .unwrap_err();
+
+    assert_eq!(
+        refused,
+        Unmoved::Stranded(
+            "it changed as it was moved and could not be put back (something of its name is \
+             already where it goes): what is there now is at skills/notes"
+                .to_owned()
+        )
+    );
+    assert!(
+        plane
+            .join("skills/notes")
+            .symlink_metadata()
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+}
+
+/// The folder moved, the file beside it could not (a link), and the folder's way back is taken:
+/// the move says the folder went and the file stayed, never that nothing moved.
+#[cfg(unix)]
+#[test]
+fn a_failed_put_back_says_the_folder_moved_and_the_file_beside_it_did_not() {
+    use std::os::unix::fs::symlink;
+    let (_tmp, plane, outside) = plane();
+    folder(&plane.join("skills.local/notes"));
+    std::fs::write(outside.join("notes.toml"), "grant = \"all\"\n").unwrap();
+    symlink(
+        outside.join("notes.toml"),
+        plane.join("skills.local/notes.toml"),
+    )
+    .unwrap();
+    let back_to = plane.join("skills.local/notes");
+    let _hook = hook::set(move |moment, _, to| {
+        if moment == hook::Moment::BeforeRename && to == back_to {
+            folder(to);
+        }
+    });
+
+    let refused = move_skill(
+        &plane,
+        &plane.join("skills.local/notes"),
+        &plane.join("skills/notes"),
+        1,
+    )
+    .unwrap_err();
+
+    assert_eq!(
+        refused,
+        Unmoved::Stranded(
+            "its folder was moved to skills/notes and could not be put back (something of its \
+             name is already where it goes), and skills.local/notes.toml was not moved (it is \
+             not a plain folder or file, so purlis does not move it)"
+                .to_owned()
+        )
+    );
+    assert!(plane.join("skills/notes/SKILL.md").is_file());
+}
+
+/// The entry taken away from where it went, between the rename and the look that proves it:
+/// nothing is there to put back, and the move says so, not that something took its place.
+#[cfg(unix)]
+#[test]
+fn a_leaf_gone_from_where_it_was_moved_is_said_to_be_gone() {
+    let (_tmp, plane, _) = plane();
+    folder(&plane.join("skills.local/notes"));
+    let aside = plane.join("aside");
+    let _hook = hook::set(move |moment, _, to| {
+        if moment == hook::Moment::AfterRename {
+            std::fs::rename(to, &aside).unwrap();
+        }
+    });
+
+    let refused = move_between(
+        &plane,
+        &plane.join("skills.local/notes"),
+        &plane,
+        &plane.join("skills/notes"),
+        1,
+    )
+    .unwrap_err();
+
+    assert_eq!(
+        refused,
+        Unmoved::Stranded(
+            "it was gone from where it was moved, so nothing could be put back".to_owned()
+        )
+    );
+}
+
+/// A file with a second name outside the plane reaches past it as a link does: never moved, so
+/// never committed, and a skill whose `.toml` is one is put back whole.
+#[cfg(unix)]
+#[test]
+fn a_hard_linked_file_is_never_moved() {
+    let (_tmp, plane, outside) = plane();
+    folder(&plane.join("skills.local/notes"));
+    std::fs::write(outside.join("notes.toml"), "grant = \"all\"\n").unwrap();
+    std::fs::hard_link(
+        outside.join("notes.toml"),
+        plane.join("skills.local/notes.toml"),
+    )
+    .unwrap();
+
+    let refused = move_between(
+        &plane,
+        &plane.join("skills.local/notes.toml"),
+        &plane,
+        &plane.join("skills/notes.toml"),
+        1,
+    )
+    .unwrap_err();
+
+    assert_eq!(
+        refused,
+        Unmoved::Nothing(
+            "it is a file with another name too (a hard link), so purlis does not move it"
+                .to_owned()
+        )
+    );
+    assert!(
+        move_skill(
+            &plane,
+            &plane.join("skills.local/notes"),
+            &plane.join("skills/notes"),
+            1,
+        )
+        .is_err()
+    );
+    assert!(plane.join("skills.local/notes/SKILL.md").is_file());
+    assert!(plane.join("skills.local/notes.toml").is_file());
+    assert!(!plane.join("skills/notes").exists());
+    assert!(!plane.join("skills/notes.toml").exists());
 }

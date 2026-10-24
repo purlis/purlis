@@ -84,13 +84,21 @@ async function pointerAt(x: number) {
   }, x);
 }
 
-/** Puts the rail back to always shown, however the test left it. */
+/**
+ * Puts the rail back to always shown, however the test left it, and waits until its column has
+ * opened to its 52px. The person's show slides the column open over `duration.slide` (R84), and
+ * the slot stops saying it is hidden as the slide starts, so a reading taken then finds the
+ * column part of the way open.
+ */
 async function shownAgain() {
   if (await $(SHOW).isExisting()) await $(SHOW).click();
-  await browser.waitUntil(async () => !(await seen()).hidden, {
-    timeout: 10_000,
-    timeoutMsg: "the rail was never shown again",
-  });
+  await browser.waitUntil(
+    async () => {
+      const now = await seen();
+      return !now.hidden && Math.round(now.width) === 52;
+    },
+    { timeout: 10_000, timeoutMsg: "the rail was never shown again at its 52px" },
+  );
 }
 
 /** Runs `step`, and goes on whatever it threw: a clean-up that fails leaves the next one to run. */
@@ -206,6 +214,11 @@ describe("the project rail", () => {
 
   it("is a 52px column of 36px buttons at the window's left, the project in front selected", async () => {
     await shownAgain();
+    // Read once the column has opened: shown, it grows to its width over the rail's transition.
+    await browser.waitUntil(async () => Math.round((await seen()).width) === 52, {
+      timeout: 10_000,
+      timeoutMsg: "the shown rail never reached its width",
+    });
     const now = await seen();
     expect(Math.round(now.width)).toBe(52);
     expect(Math.round(now.button)).toBe(36);

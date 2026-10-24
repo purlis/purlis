@@ -5,6 +5,7 @@ import { realpathSync, renameSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import { pressMenuPath, ROW } from "../menus.js";
+import { ALL_WORKSPACES, CURRENT_CHIP, goToAWorkspace } from "../titleBarWorkspaces.js";
 import { anEmptyRecord, copyFixturePlane } from "../harness.js";
 import { closeProject, openThroughTheTrustQuestion } from "../opening.js";
 
@@ -31,7 +32,6 @@ import { closeProject, openThroughTheTrustQuestion } from "../opening.js";
  */
 
 const PROJECTS = '[data-strip="Projects"]';
-const WORKSPACES = '[data-strip="Workspaces"]';
 const TABS = '[data-strip="Tabs"]';
 const LEVEL = '[role="radiogroup"][aria-label="Level"]';
 
@@ -126,7 +126,7 @@ describe("a tab's menu opens Settings at that tab's level", function () {
       timeout: 30_000,
       timeoutMsg: "this spec's project never opened",
     });
-    await $(`${WORKSPACES} [role="tab"].plane-root`).waitForExist({ timeout: 30_000 });
+    await $(ALL_WORKSPACES).waitForExist({ timeout: 30_000 });
   });
 
   after(async () => {
@@ -148,14 +148,7 @@ describe("a tab's menu opens Settings at that tab's level", function () {
   it("opens the Project level from the project's menu, and the workspace's from the workspace's", async () => {
     // A workspace focused, so the project's menu is held to the Project level and not to the
     // narrower one ⌘, would pick.
-    const workspace = `${WORKSPACES} [role="tab"]:not(.plane-root)`;
-    await $(workspace).click();
-    const focused = await browser.execute(
-      (selector: string) =>
-        document.querySelector(`${selector} [role="tab"][aria-selected="true"] .workspace-name`)
-          ?.textContent ?? "",
-      WORKSPACES,
-    );
+    const focused = await goToAWorkspace();
     expect(focused).not.toBe("");
 
     await fromItsMenu(`${PROJECTS} [role="tab"][aria-selected="true"]`, ROW.settings);
@@ -163,7 +156,8 @@ describe("a tab's menu opens Settings at that tab's level", function () {
     await levelBecomes("Project");
     await expect(inFront()).toHaveText("Settings", { containing: true });
 
-    await fromItsMenu(`${WORKSPACES} [role="tab"][aria-selected="true"]`, ROW.settings);
+    // The workspace's own menu, on its chip in the title bar (#2916).
+    await fromItsMenu(CURRENT_CHIP, ROW.settings);
 
     await levelBecomes("Workspace");
     const title = `Settings · ${focused}`;

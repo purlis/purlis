@@ -7,7 +7,7 @@ import { endEveryChat, pressAndStart } from "../opening.js";
 /**
  * **The chat strip is the editor's tab bar** (DS-6, #1836; ADR 0036 as amended 2026-10-12):
  * it sits at the top of the centre column, directly above the chat it shows, while the
- * workspaces stay the full-width row above every region.
+ * workspaces are the title bar's (#2916).
  *
  * Where a box is on screen is the whole question, and jsdom lays nothing out, so this is asked
  * here, in ranges and never in exact pixels: a box inside another within a pixel of rounding.
@@ -43,7 +43,6 @@ async function measured() {
       right: boxOf('[data-panel][id="region-right"]'),
       bar: boxOf('[data-panel][id="region-centre"] header.bar'),
       panes: boxOf('[data-panel][id="region-centre"] .panes'),
-      workspaces: boxOf('[data-strip="Workspaces"]'),
       selected: box ? { left: box.left, right: box.right, width: box.width } : null,
       least: strip ? Number.parseFloat(getComputedStyle(strip).getPropertyValue("--least")) : NaN,
       more: boxOf('header.bar button[aria-label^="Show "]'),
@@ -150,10 +149,6 @@ describe("the chat strip in the centre column", () => {
       expect((at.bar as Box).left).toBeGreaterThanOrEqual(at.left.right - 1);
     if (at.right && at.right.width > 0)
       expect((at.bar as Box).right).toBeLessThanOrEqual(at.right.left + 1);
-    // The workspaces stay where they were: a row above every region, wider than the column.
-    expect(at.workspaces).not.toBeNull();
-    expect((at.workspaces as Box).bottom).toBeLessThanOrEqual((at.centre as Box).top + 1);
-    expect((at.workspaces as Box).width).toBeGreaterThan((at.centre as Box).width);
   });
 
   it("keeps the chat strip at the chrome height, and grows no strip past a control", async () => {
@@ -194,7 +189,6 @@ describe("the chat strip in the centre column", () => {
           return height;
         })(),
         row: rowHeight,
-        workspaces: heightOf('[data-strip="Workspaces"]'),
         chats: heightOf("header.bar"),
       };
     });
@@ -202,10 +196,7 @@ describe("the chat strip in the centre column", () => {
     expect(at.control).toBeGreaterThan(at.chrome);
     expect(at.chats).toBeGreaterThanOrEqual(at.chrome - 1);
     // Each strip over its bound, named with its height, so a red run says which one grew.
-    const over = [
-      ["the chat strip", at.chats, at.tab + 0.5],
-      ["the workspace strip", at.workspaces, Math.max(at.control, at.row) + 1.5],
-    ].flatMap(([what, height, most]) =>
+    const over = [["the chat strip", at.chats, at.tab + 0.5]].flatMap(([what, height, most]) =>
       Number(height) <= Number(most) ? [] : [`${what} is ${height}px, over ${most}px`],
     );
     expect(over).toEqual([]);
