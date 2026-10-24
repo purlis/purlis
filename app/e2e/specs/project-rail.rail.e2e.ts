@@ -159,9 +159,14 @@ describe("the project rail in a narrow window (#3077)", () => {
     await $('[data-peek] [data-rail-toggle="keep"]').click();
     await columnIs(52, "Keep the projects sidebar shown never showed the rail");
     await windowAt(NARROWEST);
-    // The window's hide gives way to the person's pin.
-    expect(Math.round((await seen()).width)).toBe(52);
-    expect((await seen()).hidden).toBe(false);
+    // The window's hide gives way to the person's pin, and goes on giving way: read again over
+    // a second, so a hide that came late would be seen.
+    for (let reading = 0; reading < 5; reading++) {
+      const now = await seen();
+      expect(Math.round(now.width)).toBe(52);
+      expect(now.hidden).toBe(false);
+      await browser.pause(250);
+    }
     await keptBecomes(undefined);
   });
 

@@ -150,9 +150,9 @@ export const config: WebdriverIO.Config = {
   // them waits too.
   async before() {
     await theWindowIsDrawn();
-    // Wide enough for the project rail beside both sidebars, whatever an earlier spec left
-    // (`rail.ts`, #3077): the default window is where the rail hides itself to leave the work
-    // its room, and the specs that measure that window set it themselves.
+    // The default window, wide enough for the project rail beside both sidebars, whatever an
+    // earlier spec left (`rail.ts`, #3077). A spec that measures a narrower window, where the
+    // rail hides itself to leave the work its room, sets that size itself.
     await theWindowHoldsTheRail();
     // A dialog an earlier spec left up would cover every control of this one, and fifty specs
     // would fail for the one that left it (#1949's scenario stall).

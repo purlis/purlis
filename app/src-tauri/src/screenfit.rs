@@ -9,9 +9,15 @@
 //! less the menu bar, the dock or the taskbar) is smaller gets a window that fits it, never
 //! narrower than the window's minimum width: there the rail hides itself to leave the work its
 //! room (`app/src/railRoom.ts`, #3077).
+//!
+//! **The height is the window's inside.** A window's configured size is its content, so on Linux
+//! and Windows, whose title bar is the system's, a window cut to the usable height is taller than
+//! it by that bar. Tauri says how tall the bar is only once the window exists, and resizing it
+//! then would draw it twice, so the bar is left to the window manager, which keeps a new window
+//! on the screen. macOS draws the title bar inside the window (`titleBarStyle: Overlay`).
 
 use tauri::utils::config::WindowConfig;
-use tauri::{AppHandle, Runtime};
+use tauri::{AppHandle, Monitor, Runtime};
 
 /// The size, in logical pixels, a window asked for at `want` opens at on a screen whose usable
 /// area is `room`: each side cut to the room, the width never under `least_width`.
@@ -26,10 +32,16 @@ pub(crate) fn fitted(want: (f64, f64), room: (f64, f64), least_width: Option<f64
     (width, height.min(room_height))
 }
 
-/// Cuts `config`'s size to the usable area of the screen a new window opens on: the primary
-/// one, where the operating system puts a new window. Left as it is where no screen is known.
-pub(crate) fn fit_to_the_screen<R: Runtime>(app: &AppHandle<R>, config: &mut WindowConfig) {
-    let Ok(Some(screen)) = app.primary_monitor() else {
+/// Cuts `config`'s size to the usable area of the screen a new window opens on: `near`, the
+/// screen of the window it is made from (a split opens on its screen), else the primary one,
+/// where the operating system puts a first window. Left as it is where no screen is known, as
+/// on Wayland, whose compositor places and fits the window itself.
+pub(crate) fn fit_to_the_screen<R: Runtime>(
+    app: &AppHandle<R>,
+    config: &mut WindowConfig,
+    near: Option<Monitor>,
+) {
+    let Some(screen) = near.or_else(|| app.primary_monitor().ok().flatten()) else {
         return;
     };
     let room = screen

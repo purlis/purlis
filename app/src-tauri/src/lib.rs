@@ -3599,7 +3599,7 @@ pub fn run() {
                 .cloned()
                 .ok_or("tauri.conf.json declares no main window")?;
             // The default size, or the screen's usable size where that is smaller (`screenfit.rs`).
-            screenfit::fit_to_the_screen(app.handle(), &mut main);
+            screenfit::fit_to_the_screen(app.handle(), &mut main, None);
             let config_root = purlis_core::machine::config_root();
             // The working directory, resolved ONCE (`planes::at_launch` below takes this
             // answer): the plane it names is the one the window opens on, and its theme levels

@@ -145,8 +145,13 @@ pub fn raise<R: Runtime>(app: &AppHandle<R>, label: &str) {
 /// Makes a split window, from the main window's own entry in `tauri.conf.json` so it has the
 /// same size, minimum width, title bar and page — and the same creation script, so it draws
 /// the operator's layout and theme from its first frame (`windowprefs.rs`), in the native
-/// appearance and colour of that theme (`nativewindow.rs`).
-fn make_split<R: Runtime>(app: &AppHandle<R>, label: &str) -> Result<(), String> {
+/// appearance and colour of that theme (`nativewindow.rs`). Fitted to `near`, the screen of
+/// the window it is split from, where it opens (`screenfit.rs`).
+fn make_split<R: Runtime>(
+    app: &AppHandle<R>,
+    label: &str,
+    near: Option<tauri::Monitor>,
+) -> Result<(), String> {
     let mut config = app
         .config()
         .app
@@ -157,7 +162,7 @@ fn make_split<R: Runtime>(app: &AppHandle<R>, label: &str) -> Result<(), String>
         .ok_or("tauri.conf.json declares no main window")?;
     config.label = label.to_owned();
     // The default size, or the screen's usable size where that is smaller (`screenfit.rs`).
-    crate::screenfit::fit_to_the_screen(app, &mut config);
+    crate::screenfit::fit_to_the_screen(app, &mut config, near);
     let config_root = purlis_core::machine::config_root();
     // The project moved in front of it, whose theme levels its first frame draws (#2602).
     let front = app.try_state::<Showing>().and_then(|showing| {
@@ -231,7 +236,7 @@ pub async fn move_projects(
     if made {
         // What it holds is in `Showing` before the window exists, so the window's first ask
         // (`projects_handed`) finds it. A window that could not be made hands them back.
-        if let Err(why) = make_split(&app, &to) {
+        if let Err(why) = make_split(&app, &to, window.current_monitor().ok().flatten()) {
             let _ = showing.move_into(&to, &projects, None, &from);
             return Err(why);
         }
