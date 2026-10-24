@@ -141,7 +141,7 @@ async function fromTheMenu(name: string, row: string | RegExp) {
   await showTheExplorer();
   // Picked in the Repos view, the Panel's since #1737, which is what Files lists.
   const repos = await screen.findByRole("navigation", { name: "Repos" });
-  await userEvent.click(await within(repos).findByRole("treeitem", { name: /^one in svc/ }));
+  await userEvent.click(await within(repos).findByRole("row", { name: /^one in svc/ }));
   const tree = await screen.findByRole("treegrid", { name: "Files of one in svc" });
   fireEvent.contextMenu(await within(tree).findByRole("row", { name: new RegExp(`^${name}`) }));
   const menu = await screen.findByRole("menu");

@@ -79,7 +79,7 @@ async function onAlpha(): Promise<void> {
   // (#1677) would be where the next chat starts, and its files what Files draws.
   await browser.execute(() => {
     // The Repos view, in the left half of the Panel since #1737.
-    const root = document.querySelector<HTMLElement>('[data-testid="repos-view"] button.spot-root');
+    const root = document.querySelector<HTMLElement>('[data-testid="repos-view"] .spot-root');
     if (root !== null && root.getAttribute("aria-current") !== "true") root.click();
   });
 }
@@ -90,7 +90,7 @@ async function onAlpha(): Promise<void> {
  * picks the workspace itself again.
  */
 async function showFilesOf(piece: string): Promise<void> {
-  const row = await $(inExplorer(`[data-testid="piece-svc-${piece}"] .spot`));
+  const row = await $(inExplorer(`.spot[data-testid="piece-svc-${piece}"]`));
   await row.waitForExist({ timeout: 20_000 });
   await row.click();
   await $(inExplorer(`[role="treegrid"][aria-label^="Files of ${piece}"]`)).waitForExist({
@@ -194,7 +194,7 @@ describe("the explorer", () => {
     await onAlpha();
     await $('[data-testid="piece-svc-fix-login"]').waitForExist({ timeout: 20_000 });
 
-    const sent = await sendContextMenu('[data-testid="piece-svc-fix-login"] .spot');
+    const sent = await sendContextMenu('.spot[data-testid="piece-svc-fix-login"]');
     expect(sent).toBe(true);
 
     const menu = await $('[role="menu"]');
@@ -213,7 +213,9 @@ describe("the explorer", () => {
   it("says a clone has no branches cut rather than drawing nothing under it", async () => {
     await onAlpha();
 
-    const tool = await $('[data-testid="clone-tool"]');
+    // A line of the tree under the clone's row (the tree family, #2911).
+    const tool = await $('[data-clone="tool"].none');
+    await tool.waitForExist({ timeout: 20_000 });
     await browser.waitUntil(async () => (await tool.getText()).includes("No branches cut"), {
       timeout: 20_000,
       timeoutMsg: "the explorer never said whether `tool` has branches cut",
@@ -262,7 +264,7 @@ describe("the explorer", () => {
     // starts its chat — `files a chat under the workspace it was started in` needs nothing
     // picked, and a palette left up would be a dialog over every row after this.
     try {
-      const spot = await $('[data-testid="piece-svc-fix-login"] .spot');
+      const spot = await $('.spot[data-testid="piece-svc-fix-login"]');
       await spot.waitForExist({ timeout: 20_000 });
       await spot.click();
 
@@ -311,7 +313,7 @@ describe("the explorer", () => {
       await expect($('[role="dialog"]')).not.toBeDisplayed();
     } finally {
       if (await $('[role="dialog"]').isDisplayed()) await browser.keys(["Escape"]);
-      const root = await $('[data-testid="repos-view"] button.spot-root');
+      const root = await $('[data-testid="repos-view"] .spot-root');
       await root.click();
       await expect(root).toHaveAttribute("aria-current", "true");
       rmSync(join(branch, "found-by-name"), { recursive: true, force: true });
@@ -340,7 +342,7 @@ describe("the explorer", () => {
     // **It leaves the window as it found it**, for ⌘P's reason above: nothing picked in the
     // explorer, and no dialog up.
     try {
-      const spot = await $('[data-testid="piece-svc-fix-login"] .spot');
+      const spot = await $('.spot[data-testid="piece-svc-fix-login"]');
       await spot.waitForExist({ timeout: 20_000 });
       await spot.click();
 
@@ -393,7 +395,7 @@ describe("the explorer", () => {
       if (await $('[role="dialog"]').isDisplayed()) await browser.keys(["Escape"]);
       // Back on the Explorer view, which this describe holds the side on.
       await showView("Explorer");
-      const root = await $('[data-testid="repos-view"] button.spot-root');
+      const root = await $('[data-testid="repos-view"] .spot-root');
       await root.click();
       await expect(root).toHaveAttribute("aria-current", "true");
       rmSync(join(branch, "found-by-content"), { recursive: true, force: true });
@@ -556,7 +558,7 @@ describe("the explorer", () => {
     await $('[data-testid="piece-svc-fix-login"]').waitForExist({ timeout: 20_000 });
 
     try {
-      expect(await sendContextMenu('[data-testid="piece-svc-fix-login"] .spot')).toBe(true);
+      expect(await sendContextMenu('.spot[data-testid="piece-svc-fix-login"]')).toBe(true);
       const menu = await $('[role="menu"]');
       await menu.waitForDisplayed({ timeout: 20_000 });
       await pressMenuPath(ROW.focus);
@@ -576,7 +578,7 @@ describe("the explorer", () => {
       await expect(await $("aria/Breadcrumb")).toBeDisplayed();
       // Explorer's own: the Repos view keeps its tree, in the Panel (#1737).
       await expect(
-        await $('[data-testid="explorer"] [role="tree"][aria-label="Repos and branches"]'),
+        await $('[data-testid="explorer"] [role="treegrid"][aria-label="Repos and branches"]'),
       ).not.toBeExisting();
       const files = await $(inExplorer('[data-row="file:svc/fix-login:"]'));
       await expect(files).toHaveAttribute("aria-expanded", "true");
@@ -1381,7 +1383,7 @@ describe("the explorer's rows, in a region too narrow for them", () => {
 
       const rows = [
         ...[...explorer.querySelectorAll(".spot")].map((el) => oneLine(el, "a spot")),
-        ...[...explorer.querySelectorAll(".clone > summary")].map((el) => oneLine(el, "a clone")),
+        ...[...explorer.querySelectorAll(".clone")].map((el) => oneLine(el, "a clone")),
         ...[...explorer.querySelectorAll(".chat")].map((el) => oneLine(el, "a chat")),
         ...[...explorer.querySelectorAll(".worktree")].map((el) => oneLine(el, "a worktree")),
       ];
@@ -1437,9 +1439,9 @@ describe("the explorer's rows, in a region too narrow for them", () => {
   /**
    * **Each level a step in, with a guide per level** (#1672, the shared tree row since DS-12).
    *
-   * The explorer's rows are `.ui-tree-row`s: a row stands one `--ui-tree-step` further in per
-   * `aria-level`, and each level above it draws a `tree.guide` hairline as part of the row's own
-   * background, VS Code's straight guides. What is held here is what only a real WebView can
+   * The explorer's rows are the tree family's (#2911): a row stands one `--tree-step` further in
+   * per `aria-level`, and each level above it draws a `tree.guide` hairline on the row's own
+   * `::before`, VS Code's straight guides. What is held here is what only a real WebView can
    * say: a deeper row's name really starts further in, by about one step per level (a range,
    * never a pixel), and a row under another really paints its guides.
    */
@@ -1449,16 +1451,19 @@ describe("the explorer's rows, in a region too narrow for them", () => {
 
     const rows = await browser.execute(() => {
       const tree = document.querySelector<HTMLElement>(
-        '[data-testid="repos-view"] [role="tree"].ui-tree[aria-label="Repos and branches"]',
+        '[data-testid="repos-view"] [role="treegrid"][aria-label="Repos and branches"]',
       );
-      if (!tree) throw new Error("no explorer tree drawn in the shared tree style");
-      return [...tree.querySelectorAll<HTMLElement>('[role="treeitem"]')].map((row) => {
+      if (!tree) throw new Error("no explorer tree drawn by the tree family");
+      // The rows that name something: a line under a clone ("Asking git…") has no name to
+      // measure.
+      return [...tree.querySelectorAll<HTMLElement>('[role="row"]:not([data-line])')].map((row) => {
         const name = row.querySelector(".spot-name, .repo") ?? row;
         return {
           what: row.textContent?.trim().slice(0, 40) ?? "",
           level: Number(row.getAttribute("aria-level")),
           nameAt: name.getBoundingClientRect().left - tree.getBoundingClientRect().left,
-          guides: getComputedStyle(row).backgroundImage,
+          // The tree family draws a row's guides on its `::before` (`ui/tree/tree.css`).
+          guides: getComputedStyle(row, "::before").backgroundImage,
         };
       });
     });
@@ -1610,7 +1615,7 @@ async function marked(piece: string, path: string, mark: string): Promise<void> 
  */
 async function browseTheFiles(): Promise<void> {
   await $('[data-testid="piece-svc-fix-login"]').waitForExist({ timeout: 20_000 });
-  expect(await sendContextMenu('[data-testid="piece-svc-fix-login"] .spot')).toBe(true);
+  expect(await sendContextMenu('.spot[data-testid="piece-svc-fix-login"]')).toBe(true);
   const menu = await $('[role="menu"]');
   await menu.waitForDisplayed({ timeout: 20_000 });
   await pressMenuPath(ROW.browseFiles);

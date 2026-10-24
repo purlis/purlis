@@ -125,11 +125,10 @@ export default tseslint.config(
     rules: { "purlis/tabs-family": "off" },
   },
   // **The trees still drawn by hand** (the shared tree's classes and roles), each until its lane
-  // moves it onto the tree family (#2911): the explorer's Repos and branches; and the Chats list
-  // with the browsers and finished tasks under a chat.
+  // moves it onto the tree family (#2911): the Chats list with the browsers and finished tasks
+  // under a chat.
   {
     files: [
-      "src/Explorer.tsx",
       "src/ChatsSection.tsx",
       "src/ChatBrowsersShown.tsx",
       "src/FinishedTasks.tsx",

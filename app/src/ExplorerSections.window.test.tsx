@@ -176,7 +176,7 @@ describe("Explorer in sections (#1677)", () => {
         .filter((one) => one.closest("h2") !== null)
         .map((one) => one.textContent),
     ).toEqual(["Files alpha"]);
-    expect(reposView().getByRole("tree", { name: "Repos and branches" })).toBeVisible();
+    expect(reposView().getByRole("treegrid", { name: "Repos and branches" })).toBeVisible();
   });
 
   it("has no Workspaces section: the title bar is the one place a workspace is selected (qw358)", async () => {
@@ -311,18 +311,15 @@ describe("Explorer in sections (#1677)", () => {
     );
 
     // Picked in the Repos view, which is what Files lists (P-10).
-    await userEvent.click(await reposView().findByRole("treeitem", { name: /^one/ }));
+    await userEvent.click(await reposView().findByRole("row", { name: /^one/ }));
 
     const after = await explorer().findByRole("treegrid", { name: "Files of one in svc" });
     expect(await within(after).findByRole("row", { name: /^lib\.rs/ })).toBeVisible();
     // A branch is one row of Repos and branches: its files are drawn once, in Files.
     expect(
-      within(reposView().getByRole("tree", { name: "Repos and branches" })).queryByRole(
-        "treeitem",
-        {
-          name: /^lib\.rs/,
-        },
-      ),
+      within(reposView().getByRole("treegrid", { name: "Repos and branches" })).queryByRole("row", {
+        name: /^lib\.rs/,
+      }),
     ).not.toBeInTheDocument();
   });
 
@@ -416,11 +413,11 @@ describe("Explorer in sections (#1677)", () => {
     render(<App />);
     await screen.findByTestId("clone-svc");
 
-    const tree = reposView().getByRole("tree", { name: "Repos and branches" });
+    const tree = reposView().getByRole("treegrid", { name: "Repos and branches" });
     expect(tree).toBeVisible();
     // A view of its own has no fold, and its rows are the keyboard's: one of them is the stop.
     expect(reposView().queryByRole("button", { expanded: false })).toBeNull();
-    expect(tree.querySelector('[role="treeitem"][tabindex="0"]')).not.toBeNull();
+    expect(tree.querySelector('[role="row"][tabindex="0"]')).not.toBeNull();
   });
 
   it("gives the keyboard to the files' first row when its key shows Explorer", async () => {
@@ -443,7 +440,7 @@ describe("Explorer in sections (#1677)", () => {
 });
 
 describe("Explorer kept per project across a relaunch (B-11, #1686)", () => {
-  const repos = () => within(reposView().getByRole("tree", { name: "Repos and branches" }));
+  const repos = () => within(reposView().getByRole("treegrid", { name: "Repos and branches" }));
 
   it("writes a section folded and a clone folded under the project", async () => {
     const asked = core();
@@ -452,7 +449,7 @@ describe("Explorer kept per project across a relaunch (B-11, #1686)", () => {
     await explorer_ready();
 
     await userEvent.click(explorer().getByRole("button", { name: /^Files/ }));
-    await userEvent.click(repos().getByRole("treeitem", { name: /^svc/ }));
+    await userEvent.click(repos().getByRole("row", { name: /^svc/ }));
 
     await waitFor(() =>
       expect(explorerOf(asked)).toEqual({ closed: ["files"], folded: ["alpha/svc"] }),
@@ -479,10 +476,7 @@ describe("Explorer kept per project across a relaunch (B-11, #1686)", () => {
     await showTheExplorer();
     await explorer_ready();
 
-    expect(repos().getByRole("treeitem", { name: /^svc/ })).toHaveAttribute(
-      "aria-expanded",
-      "false",
-    );
+    expect(repos().getByRole("row", { name: /^svc/ })).toHaveAttribute("aria-expanded", "false");
     expect(explorer().getByRole("button", { name: /^Files/ })).toHaveAttribute(
       "aria-expanded",
       "false",

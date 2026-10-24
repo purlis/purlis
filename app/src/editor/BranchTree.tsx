@@ -33,7 +33,7 @@ import { Tree } from "../ui/tree/Tree";
  * It is the tree family's (`ui/tree`, #2911), the WAI-ARIA "Tree View" pattern: one Tab stop,
  * Up, Down, Home and End, Right opening a folder or moving into it, Left closing it or moving
  * to its parent, and type-ahead. Enter or a click on a file picks it, and the file picked is the
- * tree's chosen row (`aria-selected`).
+ * tree's chosen row (`aria-selected`) and its Tab stop.
  *
  * **The file picked is revealed** (#1137): when the pick comes from outside the tree (a search
  * jump, `fileJump.ts`), the folders above it are opened and its row is scrolled into view once it
@@ -151,20 +151,9 @@ export function BranchTree({
         size="sm"
         expandedKeys={openFileRows(rows)}
         onExpandedChange={foldFileRows(rows, fold)}
-        // **The file shown is the tree's one choice** (FM-2): a press on a file chooses it, the
-        // arrows never do, and the keyboard comes back in on it. A folder is never chosen: a
-        // press on one opens or closes it.
-        selectionMode="single"
-        selectionBehavior="toggle"
-        disallowEmptySelection
-        selectedKeys={pickedRow === undefined ? [] : [pickedRow]}
-        disabledKeys={rows.filter((row) => row.fold !== undefined).map((row) => row.id)}
-        disabledBehavior="selection"
-        onSelectionChange={(keys) => {
-          const key = keys === "all" ? undefined : [...keys][0];
-          const path = key === undefined ? undefined : pathOfRow(top, String(key));
-          if (path !== undefined) onPick(path);
-        }}
+        // **The file shown is the tree's chosen row** (FM-2): a press on a file, or Enter, shows
+        // it (again, if it is shown), the arrows never do, and the tree's Tab stop is on it.
+        stopAt={pickedRow}
       >
         {"trouble" in level ? null : (
           <TopItems
@@ -179,6 +168,7 @@ export function BranchTree({
               onOpenFile: (_place, path) => onPick(path),
               icons,
               onPress,
+              shown: picked ?? "",
             }}
           />
         )}
@@ -336,12 +326,6 @@ function openUnder(
   };
   walk(top);
   return out;
-}
-
-/** The path in `top`'s branch a file's row names, or none for a row of another branch. */
-function pathOfRow(top: BranchFolderRef, row: string): string | undefined {
-  const own = fileRow({ ...top, folder: "" });
-  return row.startsWith(`${own}`) && row.length > own.length ? row.slice(own.length) : undefined;
 }
 
 /** The fold keys of the folders above `path` in `top`'s branch, outermost first. */

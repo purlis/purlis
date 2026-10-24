@@ -273,4 +273,25 @@ describe("the file tab's tree, the tree family's (#2911)", () => {
     expect(src).toHaveAttribute("aria-expanded", "true");
     expect(picked).toEqual(["README.md"]);
   });
+
+  it("shows the file shown again on a press, and stops the Tab on it", async () => {
+    core([]);
+    const picked: string[] = [];
+    render(
+      <BranchTree
+        plane={PLANE}
+        place={CUT}
+        picked="README.md"
+        onPick={(path) => picked.push(path)}
+      />,
+    );
+    const readme = await screen.findByRole("row", { name: /^README\.md/ });
+    await userEvent.tab();
+    expect(readme).toHaveFocus();
+    await userEvent.keyboard("{ArrowUp}");
+    // The arrows never show a file.
+    expect(picked).toEqual([]);
+    await userEvent.click(readme);
+    expect(picked).toEqual(["README.md"]);
+  });
 });

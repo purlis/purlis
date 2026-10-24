@@ -39,6 +39,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   type CSSProperties,
   type KeyboardEvent,
@@ -81,6 +82,7 @@ interface Drawing {
   size: RowSize;
   twist: TwistAt;
   fixed: boolean;
+  stopAt?: Key;
 }
 
 const TreeDrawing = createContext<Drawing>({ size: "md", twist: "lead", fixed: false });
@@ -110,6 +112,11 @@ export interface TreeProps<T extends object> extends Omit<
   draggable?: boolean;
   /** Its owner chooses several of its rows at once (`chosen` on a row). */
   choosesMany?: boolean;
+  /**
+   * **The row the tree's one Tab stop is on** until the keyboard has been in it (the place the
+   * next chat starts, `current`), as a tree whose press chooses stops on its choice.
+   */
+  stopAt?: Key;
   /** **A key the owner takes before the tree's own**: true where it took it (Shift and the
    *  arrows picking rows). */
   onRowKey?: (event: KeyboardEvent<HTMLElement>) => boolean;
@@ -172,9 +179,17 @@ function useTreeKeys(
       event.stopPropagation();
       return;
     }
-    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
     const row = rowOf(event.target);
     if (row === null) return;
+    // A ← or → with a modifier is not the tree's: React Aria would open or close the row.
+    if (
+      (event.altKey || event.ctrlKey || event.metaKey) &&
+      (event.key === "ArrowLeft" || event.key === "ArrowRight")
+    ) {
+      event.stopPropagation();
+      return;
+    }
+    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
     const into = direction === "rtl" ? "ArrowLeft" : "ArrowRight";
     const out = direction === "rtl" ? "ArrowRight" : "ArrowLeft";
     const open = row.getAttribute("aria-expanded") === "true";
@@ -240,6 +255,7 @@ export function Tree<T extends object>({
   "aria-keyshortcuts": keys,
   draggable = false,
   choosesMany = false,
+  stopAt,
   onRowKey,
   ref,
   onExpandedChange,
@@ -248,7 +264,7 @@ export function Tree<T extends object>({
   const said = useSaid("aria-multiselectable", choosesMany ? "true" : undefined, ref);
   const own = useCollectionElement(keys, said);
   const onKeyDownCapture = useTreeKeys(fixed, onRowKey);
-  const drawing = useMemo(() => ({ size, twist, fixed }), [size, twist, fixed]);
+  const drawing = useMemo(() => ({ size, twist, fixed, stopAt }), [size, twist, fixed, stopAt]);
   // What a dragged row carries is its own (`carries`, its value to React Aria).
   const drag = useDragAndDrop<Value>({
     getItems: (_keys, items) => items.flatMap((item) => (item?.carries ? [item.carries] : [])),
@@ -309,6 +325,19 @@ function Drag() {
 }
 
 /**
+ * **The tree's Tab stop, on this row** (`stopAt`): while the keyboard is not in the tree, its
+ * stop moves to the row, so Tab lands where the owner says; the keyboard's own place wins once
+ * it has been in.
+ */
+function TakesTheStop({ at, state }: { at: Key; state: TreeItemContentRenderProps["state"] }) {
+  const manager = state.selectionManager;
+  useEffect(() => {
+    if (!manager.isFocused && manager.focusedKey !== at) manager.setFocusedKey(at);
+  }, [manager, at]);
+  return null;
+}
+
+/**
  * **A row of a dragging tree that carries nothing** (a line, a refused file): no drag button.
  * React Aria looks for one and warns of a row with none; the slot's ref is held by an element
  * that draws nothing, as {@link HeldOpen} holds the twist's.
@@ -351,6 +380,18 @@ export interface TreeRowProps {
   /** **Chosen by its owner**: said (`aria-selected`) and drawn as chosen; `false` for a row that
    *  can be chosen and is not, nothing for one that cannot be. */
   chosen?: boolean;
+  /**
+   * **The current one of its kind** (`aria-current`), drawn as a chosen row is: the place the
+   * next chat starts, which is a place and not a choice the arrows move (ADR 0036).
+   */
+  current?: boolean;
+  /** Its rows are always drawn: it never folds, and draws no twist (a workspace's own row). */
+  alwaysOpen?: boolean;
+  /**
+   * **What it is beside its name, to a reader** (`aria-description`): its marks' words, heard
+   * after its name (`textValue`), which stays what typing finds it by.
+   */
+  description?: string;
   /** What it carries when it is dragged out of a `draggable` tree. */
   carries?: Carried;
   /** A press on it begins: its modifier keys, before its action runs. */
@@ -378,18 +419,23 @@ export function TreeRow<T extends object>({
   tip,
   unavailable = false,
   chosen,
+  current = false,
+  alwaysOpen = false,
+  description,
   carries,
   className,
   style,
   ref,
   ...rest
 }: TreeRowProps) {
-  const { size, twist, fixed } = useContext(TreeDrawing);
+  const { size, twist, fixed, stopAt } = useContext(TreeDrawing);
   const owned = useRowMenu(menu);
   const tipped = useRowTip(tip);
   const selected = useSaid("aria-selected", chosen === undefined ? undefined : String(chosen), ref);
-  const shown = useSaid("data-selected", chosen ? "true" : undefined, selected);
-  const element = useSaid("aria-disabled", unavailable ? "true" : undefined, shown);
+  const shown = useSaid("data-selected", chosen || current ? "true" : undefined, selected);
+  const now = useSaid("aria-current", current ? "true" : undefined, shown);
+  const told = useSaid("aria-description", description || undefined, now);
+  const element = useSaid("aria-disabled", unavailable ? "true" : undefined, told);
   return (
     <AriaTreeItem<T>
       {...mergeProps(rest, owned.handlers, tipped.hover)}
@@ -405,9 +451,16 @@ export function TreeRow<T extends object>({
     >
       <AriaTreeItemContent>
         {(state) => {
-          const toggle = state.hasChildItems ? fixed ? <HeldOpen /> : <Twist /> : null;
+          const toggle = state.hasChildItems ? (
+            fixed || alwaysOpen ? (
+              <HeldOpen />
+            ) : (
+              <Twist />
+            )
+          ) : null;
           return (
             <>
+              {state.id === stopAt && <TakesTheStop at={state.id} state={state.state} />}
               {twist === "lead" && toggle}
               {rowHolds(content, owned.menu, tipped)(state)}
               {twist === "trail" && toggle}

@@ -155,7 +155,7 @@ describe("the branch cockpit", () => {
     core({ ahead: 2, behind: 1, base: "main" });
     draw();
 
-    expect(screen.queryByRole("tree", { name: "Repos and branches" })).toBeNull();
+    expect(screen.queryByRole("treegrid", { name: "Repos and branches" })).toBeNull();
     expect(within(header()).getByRole("heading", { name: "fix/one" })).toBeTruthy();
     await within(header()).findByText("2 ahead, 1 behind main");
     await within(header()).findByText("2 changes");
@@ -175,7 +175,7 @@ describe("the branch cockpit", () => {
     const crumbs = await screen.findByRole("navigation", { name: "Breadcrumb" });
 
     expect(screen.queryByRole("tree", { name: "Workspaces of this project" })).toBeNull();
-    expect(screen.queryByRole("tree", { name: "Repos and branches" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("treegrid", { name: "Repos and branches" })).not.toBeInTheDocument();
     // Which workspace the branch is in is still said, on the way back out.
     expect(crumbs).toHaveTextContent("alpha");
   });
@@ -325,8 +325,11 @@ describe("the branch cockpit", () => {
     screen.getByRole("row", { name: /^Files/ }).focus();
     await userEvent.keyboard("{Escape}");
 
-    await screen.findByRole("tree", { name: "Repos and branches" });
-    expect((document.activeElement as HTMLElement | null)?.dataset.row).toBe("piece:svc/one");
+    await screen.findByRole("treegrid", { name: "Repos and branches" });
+    // The tree family draws its rows a moment after it knows of them.
+    await waitFor(() =>
+      expect((document.activeElement as HTMLElement | null)?.dataset.row).toBe("piece:svc/one"),
+    );
   });
 
   it("stays when an open row menu takes the Esc", async () => {
@@ -500,7 +503,7 @@ describe("the cockpit beside the Repos view (#1737)", () => {
     );
     // The cockpit is Explorer's; the Repos view keeps its tree, and the trouble with it.
     expect(screen.getByRole("region", { name: "Branch fix/one" })).toBeTruthy();
-    expect(screen.getByRole("tree", { name: "Repos and branches" })).toBeTruthy();
+    expect(screen.getByRole("treegrid", { name: "Repos and branches" })).toBeTruthy();
     expect(said()).toBe(1);
     expect(
       within(screen.getByTestId("repos-view")).getByText("git status timed out in svc"),
