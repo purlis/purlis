@@ -14,7 +14,9 @@ import {
 import { Sparkles, TriangleAlert } from "lucide-react";
 import { Field, SettingRow } from "./settings/components";
 import { Dialog } from "./ui/dialog/Dialog";
-import { FILTERED_FROM, ListFilter } from "./ui/dialog/ListFilter";
+import { FILTERED_FROM, ListFilter, noMatchSaid } from "./ui/list/ListFilter";
+import { ListBox, ListOption } from "./ui/list/List";
+import { RowBelow, RowDescription, RowLabel } from "./ui/list/Row";
 import { Button } from "./ui/button/Button";
 import { counted } from "./dispatches";
 import { useSkillStudioOn } from "./skillStudio";
@@ -190,26 +192,38 @@ export function UseSkill({
                     : "This chat has no skills. Open Skill studio from the palette to see why any skill is left out."}
                 </p>
               ) : shown.length === 0 ? (
-                <p className="honest">No skill of this chat matches that.</p>
+                <p className="honest">{noMatchSaid(SKILLS, query)}</p>
               ) : (
-                <ul className="use-skill-list" aria-label="Skills">
+                // A list to pick from (`ui/list`, #2911): a press or Enter on a skill picks it.
+                <ListBox
+                  className="use-skill-list"
+                  aria-label="Skills"
+                  size="lg"
+                  disabledKeys={busy ? shown.map((skill) => skill.name) : []}
+                  onAction={(key) => {
+                    const skill = shown.find((one) => one.name === key);
+                    if (skill !== undefined) pick(skill);
+                  }}
+                >
                   {shown.map((skill) => (
-                    <li key={skill.name} className="use-skill-row" data-testid="use-skill-row">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="use-skill-name"
-                        isDisabled={busy}
-                        onPress={() => pick(skill)}
-                      >
-                        {skill.name}
-                      </Button>
-                      <span className="use-skill-level">{skill.label}</span>
-                      {skill.manual && <span className="use-skill-manual">manual only</span>}
-                      <span className="use-skill-description">{skill.description}</span>
-                    </li>
+                    <ListOption
+                      key={skill.name}
+                      id={skill.name}
+                      textValue={skill.name}
+                      className="use-skill-row"
+                      data-testid="use-skill-row"
+                    >
+                      <RowLabel className="use-skill-name">{skill.name}</RowLabel>
+                      {/* Its one line about it: where it comes from, and whether only a person
+                          can use it. */}
+                      <RowDescription>
+                        <span className="use-skill-level">{skill.label}</span>
+                        {skill.manual && <span className="use-skill-manual"> · manual only</span>}
+                      </RowDescription>
+                      <RowBelow className="use-skill-description">{skill.description}</RowBelow>
+                    </ListOption>
                   ))}
-                </ul>
+                </ListBox>
               )}
             </div>
           </>

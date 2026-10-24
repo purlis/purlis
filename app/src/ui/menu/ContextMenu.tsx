@@ -44,36 +44,28 @@ type Handlers = {
   onKeyDown?: (event: KeyboardEvent<HTMLElement>) => void;
 };
 
-/**
- * **A context menu on `children`**, one element, which keeps its own handlers and layout: the
- * menu is `menu`, a `Menu`, drawn only while it is open, so a menu whose rows are worked out
- * from the window's state works them out only then.
- */
-export function ContextMenu({
-  children,
-  menu,
-  isDisabled,
-  onAsked,
-  onOpenChange,
-  onClosed,
-  opensFromWithin = false,
-}: {
-  /** Whether Shift+F10 and the menu key open it from anything inside the element that has the
-   *  keyboard (a bar's items), at that thing, and not only from the element itself. */
-  opensFromWithin?: boolean;
-  /** The element the menu belongs to. One element: it is the trigger itself. */
-  children: ReactNode;
+/** What a context menu is handed beside its element. */
+export interface ContextMenuOptions {
   /** The menu, drawn while it is open. */
   menu: () => ReactNode;
-  /** Opens nothing: the element is drawn as it is. */
-  isDisabled?: boolean;
   /** The `contextmenu` event, before the menu reads it: preventing its default opens no menu
    *  here or around it, which is how a click a program asked for stays the program's. */
   onAsked?: (event: MouseEvent<HTMLElement>) => void;
   onOpenChange?: (isOpen: boolean) => void;
   /** Called once it has closed: where the keyboard goes instead of back where it was. */
   onClosed?: () => void;
-}) {
+}
+
+/**
+ * **A context menu for an element that is drawn by someone else** (#2911): a row of a list, a
+ * tree or a table, whose element its collection draws. `handlers` go on the element (its
+ * `contextmenu` and its open state) and `menu` is drawn anywhere inside it; Shift+F10 and the
+ * menu key reach it through {@link askForAMenu}, which its collection calls.
+ */
+export function useContextMenu({ menu, onAsked, onOpenChange, onClosed }: ContextMenuOptions): {
+  handlers: Omit<Handlers, "onKeyDown">;
+  menu: ReactNode;
+} {
   // Opened by a press of the pointer: the release of that press is not a row's.
   const [pressed, setPressed] = useState(false);
   const state = useMenuTriggerState({
@@ -88,52 +80,23 @@ export function ContextMenu({
   const trigger = useMemo(() => ({ current: on }), [on]);
   useRightClickElsewhere(state.isOpen, state.close);
   useNotTheOpeningRelease(state.isOpen && pressed, () => setPressed(false));
-  if (isDisabled || !isValidElement(children)) return <>{children}</>;
-  const child = children as ReactElement<Handlers>;
-  const own = child.props;
-  // The element the menu was opened on is found by the event that opened it: the element keeps
-  // its own `ref`, and no wrapper is added to a strip whose layout is measured.
-  const handlers: Handlers = {
-    "data-open": state.isOpen ? "" : undefined,
-    onContextMenu: (event) => {
-      own.onContextMenu?.(event);
-      onAsked?.(event);
-      // Answered by a menu inside it, or kept for a program: this one stands back.
-      if (event.nativeEvent.defaultPrevented) return;
-      event.preventDefault();
-      setOn(event.currentTarget);
-      setPressed(!FROM_THE_KEYS.has(event.nativeEvent));
-      state.setPoint({ x: event.clientX, y: event.clientY });
-      // From the keys, on its first row; from the pointer (or a program's own way in, as a
-      // terminal's), the menu itself takes the keyboard and no row is chosen yet.
-      state.open(FROM_THE_KEYS.has(event.nativeEvent) ? "first" : null);
+  return {
+    handlers: {
+      "data-open": state.isOpen ? "" : undefined,
+      onContextMenu: (event) => {
+        onAsked?.(event);
+        // Answered by a menu inside it, or kept for a program: this one stands back.
+        if (event.nativeEvent.defaultPrevented) return;
+        event.preventDefault();
+        setOn(event.currentTarget);
+        setPressed(!FROM_THE_KEYS.has(event.nativeEvent));
+        state.setPoint({ x: event.clientX, y: event.clientY });
+        // From the keys, on its first row; from the pointer (or a program's own way in, as a
+        // terminal's), the menu itself takes the keyboard and no row is chosen yet.
+        state.open(FROM_THE_KEYS.has(event.nativeEvent) ? "first" : null);
+      },
     },
-    onKeyDown: (event) => {
-      own.onKeyDown?.(event);
-      // Only when the element ITSELF has the keyboard: a key pressed inside it (a program in a
-      // terminal) belongs to what it was pressed in.
-      if (event.defaultPrevented) return;
-      if (!opensFromWithin && event.target !== event.currentTarget) return;
-      if (!asksForAMenu(event)) return;
-      event.preventDefault();
-      // **The event a right-click sends**, at the element's lower-left corner, so the menu a
-      // pointer would open opens, and whatever notes what a menu was opened on (the Brief
-      // panel's way back) notes it as it notes a right-click. macOS has no keyboard convention
-      // for a context menu and its WebView raises no `contextmenu` for either key.
-      const at = (event.target as Element).getBoundingClientRect();
-      const asked = new globalThis.MouseEvent("contextmenu", {
-        bubbles: true,
-        cancelable: true,
-        clientX: at.left,
-        clientY: at.bottom,
-      });
-      FROM_THE_KEYS.add(asked);
-      event.target.dispatchEvent(asked);
-    },
-  };
-  return (
-    <>
-      {cloneElement(child, handlers)}
+    menu: (
       <OpenMenu
         state={state}
         triggerRef={trigger}
@@ -144,6 +107,78 @@ export function ContextMenu({
       >
         {state.isOpen && menu()}
       </OpenMenu>
+    ),
+  };
+}
+
+/**
+ * **Shift+F10 or the menu key asks `target` for its menu**: the event a right-click sends, at
+ * its lower-left corner, so the menu a pointer would open opens, on its first row, and whatever
+ * notes what a menu was opened on (the Brief panel's way back) notes it as it notes a
+ * right-click. macOS has no keyboard convention for a context menu and its WebView raises no
+ * `contextmenu` for either key.
+ */
+export function askForAMenu(target: Element): void {
+  const at = target.getBoundingClientRect();
+  const asked = new globalThis.MouseEvent("contextmenu", {
+    bubbles: true,
+    cancelable: true,
+    clientX: at.left,
+    clientY: at.bottom,
+  });
+  FROM_THE_KEYS.add(asked);
+  target.dispatchEvent(asked);
+}
+
+/**
+ * **A context menu on `children`**, one element, which keeps its own handlers and layout: the
+ * menu is `menu`, a `Menu`, drawn only while it is open, so a menu whose rows are worked out
+ * from the window's state works them out only then.
+ */
+export function ContextMenu({
+  children,
+  menu,
+  isDisabled,
+  onAsked,
+  onOpenChange,
+  onClosed,
+  opensFromWithin = false,
+}: ContextMenuOptions & {
+  /** Whether Shift+F10 and the menu key open it from anything inside the element that has the
+   *  keyboard (a bar's items), at that thing, and not only from the element itself. */
+  opensFromWithin?: boolean;
+  /** The element the menu belongs to. One element: it is the trigger itself. */
+  children: ReactNode;
+  /** Opens nothing: the element is drawn as it is. */
+  isDisabled?: boolean;
+}) {
+  const { handlers, menu: drawn } = useContextMenu({ menu, onAsked, onOpenChange, onClosed });
+  if (isDisabled || !isValidElement(children)) return <>{children}</>;
+  const child = children as ReactElement<Handlers>;
+  const own = child.props;
+  // The element the menu was opened on is found by the event that opened it: the element keeps
+  // its own `ref`, and no wrapper is added to a strip whose layout is measured.
+  const joined: Handlers = {
+    ...handlers,
+    onContextMenu: (event) => {
+      own.onContextMenu?.(event);
+      handlers.onContextMenu?.(event);
+    },
+    onKeyDown: (event) => {
+      own.onKeyDown?.(event);
+      // Only when the element ITSELF has the keyboard: a key pressed inside it (a program in a
+      // terminal) belongs to what it was pressed in.
+      if (event.defaultPrevented) return;
+      if (!opensFromWithin && event.target !== event.currentTarget) return;
+      if (!asksForAMenu(event)) return;
+      event.preventDefault();
+      askForAMenu(event.target as Element);
+    },
+  };
+  return (
+    <>
+      {cloneElement(child, joined)}
+      {drawn}
     </>
   );
 }

@@ -444,9 +444,12 @@ export function AnchoredTooltip({
   side = "end",
   onPointerEnter,
   onPointerLeave,
+  tooltipRef,
   children,
 }: {
   anchor: RefObject<Element | null>;
+  /** Its element, which what it describes names (a row's, `ui/list/RowTip.tsx`). */
+  tooltipRef?: Ref<HTMLDivElement>;
   side?: "end" | "start";
   /** The pointer is on it, or has left it (WCAG 1.4.13, hoverable): its drawer keeps it then. */
   onPointerEnter?: () => void;
@@ -459,6 +462,7 @@ export function AnchoredTooltip({
     // Open for as long as it is drawn: whoever draws it takes it down.
     <TooltipTriggerStateContext.Provider value={ALWAYS_OPEN}>
       <AriaTooltip
+        ref={tooltipRef}
         triggerRef={anchor}
         isOpen
         placement={side === "end" ? TOOLTIP_PLACEMENT : "start"}

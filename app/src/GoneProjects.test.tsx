@@ -238,7 +238,7 @@ describe("a recent that is gone, on the opener", () => {
 
     await waitFor(() => expect(screen.queryByText(GONE.said)).not.toBeInTheDocument());
     expect(sent("forget_project")).toEqual([{ path: GONE.path }]);
-    expect(screen.getByRole("button", { name: /two/ })).toBeInTheDocument();
+    expect(screen.getByRole("row", { name: /two/ })).toBeInTheDocument();
   });
 
   it("re-points it at a picked folder and opens the project found there", async () => {
@@ -302,7 +302,7 @@ describe("a gone project dismissed (#1291)", () => {
     await closeFromTheRail("two");
 
     await screen.findByRole("heading", { level: 1 });
-    await screen.findByRole("button", { name: /two/ });
+    await screen.findByRole("row", { name: /two/ });
     expect(screen.queryByText(GONE.said)).not.toBeInTheDocument();
   });
 
@@ -316,7 +316,7 @@ describe("a gone project dismissed (#1291)", () => {
     // The disk comes back: the opener's answer no longer lists it as gone.
     plugged(true);
     await closeFromTheRail("two");
-    await userEvent.click(await screen.findByRole("button", { name: /two/ }));
+    await userEvent.click(await screen.findByRole("row", { name: /two/ }));
     await waitFor(() => expect(projectTabs()).toEqual(["two"]));
 
     // And it goes again: a new cause, so its line is drawn.
@@ -386,7 +386,7 @@ describe("a gone project dismissed, at the next launch (#1291)", () => {
     expect(screen.queryByText(GONE.said)).not.toBeInTheDocument();
 
     await closeFromTheRail("two");
-    await screen.findByRole("button", { name: /two/ });
+    await screen.findByRole("row", { name: /two/ });
     expect(screen.queryByText(GONE.said)).not.toBeInTheDocument();
     expect(sent("set_dismissed")).toEqual([]);
   });

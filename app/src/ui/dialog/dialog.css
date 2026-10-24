@@ -248,12 +248,3 @@ div[data-scope="reserved"][data-part="root"] {
 [data-scope="reserved"][data-part="lock"] {
   visibility: hidden;
 }
-
-/* ---------------------------------------------------------------------------------------------
-   A list's filter (`ListFilter.tsx`): the list's main field, at the large size, across the list.
-   --------------------------------------------------------------------------------------------- */
-
-.dialog-filter {
-  inline-size: 100%;
-  margin-block-end: var(--space-4);
-}

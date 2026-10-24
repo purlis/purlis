@@ -1152,7 +1152,8 @@ describe("the explorer", () => {
       // references.tsx): two chats may share a name, and a name may carry a persona before it.
       const listed = await browser.execute((session: number) => {
         const items = [
-          ...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] [role="menuitem"]'),
+          // The chats are a list to choose from (#2911).
+          ...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] [role="option"]'),
         ];
         const picked = items.find((item) => item.getAttribute("data-session") === String(session));
         picked?.click();

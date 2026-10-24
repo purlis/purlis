@@ -253,7 +253,7 @@ describe("a file or folder row's actions (FM-10)", () => {
     const picker = await screen.findByRole("dialog", {
       name: "Add README.md to a chat's context",
     });
-    await userEvent.click(within(picker).getByRole("menuitem", { name: /steward/ }));
+    await userEvent.click(within(picker).getByRole("option", { name: /steward/ }));
 
     await waitFor(() =>
       expect(asks(asked, "reference_into_chat")).toEqual([

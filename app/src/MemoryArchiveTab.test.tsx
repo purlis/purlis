@@ -84,12 +84,13 @@ describe("a store's archive tab", () => {
     const asked = core([[archived(), archived({ archived: "old-runbook", title: "Old runbook" })]]);
     draw();
 
-    expect(
-      await screen.findByRole("button", { name: /^Freeze\s*·\s*2026-09-28 16:05$/ }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /^Old runbook\s*·\s*2026-09-28 16:05$/ }),
-    ).toBeInTheDocument();
+    // Each is named by its title, and its stamp is its description (#2911).
+    expect(await screen.findByRole("option", { name: "Freeze" })).toHaveAccessibleDescription(
+      /2026-09-28 16:05/,
+    );
+    expect(screen.getByRole("option", { name: "Old runbook" })).toHaveAccessibleDescription(
+      /2026-09-28 16:05/,
+    );
     expect(asked.find((one) => one.cmd === "memory_archived")?.args).toMatchObject({
       plane: PLANE,
       scope: STEWARD,
@@ -100,7 +101,7 @@ describe("a store's archive tab", () => {
     core([[archived()]]);
     draw();
 
-    await userEvent.click(await screen.findByRole("button", { name: /Freeze/ }));
+    await userEvent.click(await screen.findByRole("option", { name: /Freeze/ }));
 
     const body = await screen.findByTestId("archived-body");
     expect(body.querySelector("strong")).toHaveTextContent("Friday");
@@ -114,7 +115,7 @@ describe("a store's archive tab", () => {
   it("restores one with an explicit button, by its name in the archive, and reads the archive again", async () => {
     const asked = core([[archived()], []]);
     draw();
-    await userEvent.click(await screen.findByRole("button", { name: /Freeze/ }));
+    await userEvent.click(await screen.findByRole("option", { name: /Freeze/ }));
 
     await userEvent.click(screen.getByRole("button", { name: "Restore memory" }));
 
@@ -136,7 +137,7 @@ describe("a store's archive tab", () => {
   it("moves focus to what Restore did, so it is read out and the keyboard is not stranded", async () => {
     core([[archived()], []]);
     draw();
-    await userEvent.click(await screen.findByRole("button", { name: /^Freeze/ }));
+    await userEvent.click(await screen.findByRole("option", { name: /^Freeze/ }));
 
     await userEvent.click(screen.getByRole("button", { name: "Restore memory" }));
 
@@ -147,14 +148,14 @@ describe("a store's archive tab", () => {
   it("says what purlis could not restore, and why, and keeps the memory listed", async () => {
     core([[archived()]], new Error("the store already holds freeze.md, so freeze stays archived"));
     draw();
-    await userEvent.click(await screen.findByRole("button", { name: /Freeze/ }));
+    await userEvent.click(await screen.findByRole("option", { name: /Freeze/ }));
 
     await userEvent.click(screen.getByRole("button", { name: "Restore memory" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "purlis could not restore Freeze: the store already holds freeze.md, so freeze stays archived",
     );
-    expect(screen.getByRole("button", { name: /Freeze/ })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /Freeze/ })).toBeInTheDocument();
   });
 
   it("says when nothing is archived, naming the store", async () => {
@@ -182,8 +183,8 @@ describe("a store's archive tab", () => {
 
     rerender(1);
 
-    const list = await screen.findByRole("list");
-    expect(within(list).getByRole("button", { name: /Freeze/ })).toBeInTheDocument();
+    // The rows, not the list: a collection is drawn empty first and its rows a pass later.
+    expect(await screen.findByRole("option", { name: /Freeze/ })).toBeInTheDocument();
     expect(asked.filter((one) => one.cmd === "memory_archived")).toHaveLength(2);
   });
 });
@@ -201,14 +202,14 @@ describe("a long archive (#1191)", () => {
     core([many(PAGE + 1)]);
     draw();
 
-    const list = await screen.findByRole("list");
-    expect(within(list).getAllByRole("button")).toHaveLength(PAGE);
-    expect(within(list).queryByRole("button", { name: /Note 13/ })).toBeNull();
+    const list = await screen.findByRole("listbox");
+    expect(await within(list).findAllByRole("option")).toHaveLength(PAGE);
+    expect(within(list).queryByRole("option", { name: /Note 13/ })).toBeNull();
 
     await userEvent.click(screen.getByRole("button", { name: /^Show 1 more/ }));
 
-    expect(within(list).getAllByRole("button")).toHaveLength(PAGE + 1);
-    expect(within(list).getByRole("button", { name: /Note 13/ })).toBeInTheDocument();
+    expect(within(list).getAllByRole("option")).toHaveLength(PAGE + 1);
+    expect(within(list).getByRole("option", { name: /Note 13/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Show \d+ more/ })).toBeNull();
   });
 
@@ -216,8 +217,8 @@ describe("a long archive (#1191)", () => {
     core([many(PAGE)]);
     draw();
 
-    const list = await screen.findByRole("list");
-    expect(within(list).getAllByRole("button")).toHaveLength(PAGE);
+    const list = await screen.findByRole("listbox");
+    expect(await within(list).findAllByRole("option")).toHaveLength(PAGE);
     expect(screen.queryByRole("searchbox")).toBeNull();
     expect(screen.queryByRole("button", { name: /^Show \d+ more/ })).toBeNull();
   });
@@ -233,9 +234,9 @@ describe("a long archive (#1191)", () => {
     });
     await userEvent.type(box, "friday freeze");
 
-    const list = screen.getByRole("list");
-    expect(within(list).getAllByRole("button")).toHaveLength(1);
-    expect(within(list).getByRole("button", { name: /Note 13/ })).toBeInTheDocument();
+    const list = screen.getByRole("listbox");
+    expect(within(list).getAllByRole("option")).toHaveLength(1);
+    expect(within(list).getByRole("option", { name: /Note 13/ })).toBeInTheDocument();
     // The row cannot show why it matched, so the part of its text that did is drawn under it.
     const snippet = screen.getByTestId("row-snippet-note-13");
     expect(snippet).toHaveTextContent("The Friday FREEZE holds until the release.");
@@ -250,12 +251,12 @@ describe("a long archive (#1191)", () => {
     const box = await screen.findByRole("searchbox");
 
     await userEvent.type(box, "note");
-    expect(within(screen.getByRole("list")).getAllByRole("button")).toHaveLength(PAGE * 2);
+    expect(within(screen.getByRole("listbox")).getAllByRole("option")).toHaveLength(PAGE * 2);
     expect(screen.queryByRole("button", { name: /^Show \d+ more/ })).toBeNull();
 
     await userEvent.clear(box);
     await userEvent.type(box, "2026-10-01");
-    expect(within(screen.getByRole("list")).getAllByRole("button")).toHaveLength(1);
+    expect(within(screen.getByRole("listbox")).getAllByRole("option")).toHaveLength(1);
   });
 
   it("says when a search finds nothing, and keeps the box", async () => {
@@ -272,11 +273,13 @@ describe("a long archive (#1191)", () => {
   it("keeps the chosen memory's text drawn when a search hides its row", async () => {
     core([many(PAGE + 1)]);
     draw();
-    await userEvent.click(await screen.findByRole("button", { name: /Note 01/ }));
+    await userEvent.click(await screen.findByRole("option", { name: /Note 01/ }));
 
     await userEvent.type(screen.getByRole("searchbox"), "note 13");
 
-    expect(within(screen.getByRole("list")).queryByRole("button", { name: /Note 01/ })).toBeNull();
+    expect(
+      within(screen.getByRole("listbox")).queryByRole("option", { name: /Note 01/ }),
+    ).toBeNull();
     expect(screen.getByTestId("archived-body")).toHaveTextContent("Body of note 01.");
     expect(screen.getByRole("button", { name: "Restore memory" })).toBeInTheDocument();
   });
@@ -291,7 +294,7 @@ describe("restoring a numbered archive name (#1191, D-1191-1)", () => {
   it("offers the un-numbered name beside the archived one, and sends it only when chosen", async () => {
     const asked = core([numbered()], restored("freeze"));
     draw();
-    await userEvent.click(await screen.findByRole("button", { name: /Freeze again/ }));
+    await userEvent.click(await screen.findByRole("option", { name: /Freeze again/ }));
 
     expect(screen.getByRole("button", { name: "Restore memory" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Restore as freeze" }));
@@ -309,7 +312,7 @@ describe("restoring a numbered archive name (#1191, D-1191-1)", () => {
     // and taking `freeze` would leave the archived `freeze` with no name to come back under.
     const asked = core([numbered()], restored("freeze-2"));
     draw();
-    await userEvent.click(await screen.findByRole("button", { name: /Freeze again/ }));
+    await userEvent.click(await screen.findByRole("option", { name: /Freeze again/ }));
 
     await userEvent.click(screen.getByRole("button", { name: "Restore memory" }));
 
@@ -326,7 +329,7 @@ describe("restoring a numbered archive name (#1191, D-1191-1)", () => {
       new Error("the store already holds freeze.md, so freeze-2.md stays archived"),
     );
     draw();
-    await userEvent.click(await screen.findByRole("button", { name: /Freeze again/ }));
+    await userEvent.click(await screen.findByRole("option", { name: /Freeze again/ }));
 
     await userEvent.click(screen.getByRole("button", { name: "Restore as freeze" }));
 
@@ -346,7 +349,7 @@ describe("restoring a numbered archive name (#1191, D-1191-1)", () => {
       ],
     ]);
     draw();
-    await userEvent.click(await screen.findByRole("button", { name: /Release 2026/ }));
+    await userEvent.click(await screen.findByRole("option", { name: /Release 2026/ }));
 
     expect(screen.queryByRole("button", { name: /^Restore as/ })).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: "Restore memory" }));
@@ -373,7 +376,7 @@ describe("a store's archive on a read-only project (#826)", () => {
         <MemoryArchiveTab plane={PLANE} scope={STEWARD} changed={0} />
       </ReadOnlySaid.Provider>,
     );
-    await userEvent.click(await screen.findByRole("button", { name: /Freeze/ }));
+    await userEvent.click(await screen.findByRole("option", { name: /Freeze/ }));
 
     const restore = screen.getByRole("button", { name: "Restore memory" });
     expect(restore).toBeDisabled();

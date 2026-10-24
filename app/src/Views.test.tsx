@@ -198,10 +198,10 @@ describe("the persona view", () => {
     draw(STEWARD);
 
     expect(await screen.findByText("It remembers 2 things.")).toBeInTheDocument();
-    const memories = screen.getByRole("list", { name: "steward" });
-    expect(within(memories).getAllByRole("listitem")).toHaveLength(2);
+    const memories = screen.getByRole("grid", { name: "steward" });
+    expect(within(memories).getAllByRole("row")).toHaveLength(2);
     // A memory's row opens its whole body, as every row of the list primitive does.
-    await userEvent.click(within(memories).getByRole("button", { name: /Charter defects/ }));
+    await userEvent.click(within(memories).getByRole("row", { name: /Charter defects/ }));
     expect(await screen.findByText("File the issue.")).toBeInTheDocument();
   });
 
@@ -814,7 +814,7 @@ describe("the + on a memory list's heading (SI-9c, ADR 0065 Q9)", () => {
     await waitFor(() => expect(opened).toHaveLength(1));
     expect(opened[0]).toMatchObject({ from: null, view: "shared-memory", key: "" });
     await userEvent.click(
-      await screen.findByRole("button", { name: /The plane is the unit of work/ }),
+      await screen.findByRole("row", { name: /The plane is the unit of work/ }),
     );
     await userEvent.click(
       within(heading(/Shared memory/)).getByRole("button", { name: "New shared memory…" }),
@@ -918,7 +918,9 @@ describe("a change's Push and Land (#474)", () => {
         new Error("gadget: blocker widget has not landed (its request is open)."),
     });
     open("land-blocked");
-    const gadget = (await screen.findByText("gadget · change/api-2")).closest("li");
+    const gadget = (await screen.findByText("gadget · change/api-2")).closest(
+      '[role="row"]',
+    ) as HTMLElement | null;
     if (gadget === null) throw new Error("no gadget row");
 
     await userEvent.click(within(gadget).getByRole("button", { name: "Land…" }));
@@ -941,7 +943,9 @@ describe("a change's Push and Land (#474)", () => {
       change_land: () => ["✓ merged #7 as e5bd3914e2e5, trailer Charter-Change: api-2"],
     });
     open("land-asks");
-    const widget = (await screen.findByText("widget · change/api-2")).closest("li");
+    const widget = (await screen.findByText("widget · change/api-2")).closest(
+      '[role="row"]',
+    ) as HTMLElement | null;
     if (widget === null) throw new Error("no widget row");
     await userEvent.click(within(widget).getByRole("button", { name: "Land…" }));
 
@@ -997,7 +1001,9 @@ describe("a change's Push and Land (#474)", () => {
       </ProjectShownProvider>
     );
     const { rerender } = render(view(true));
-    const widget = (await screen.findByText("widget · change/api-2")).closest("li");
+    const widget = (await screen.findByText("widget · change/api-2")).closest(
+      '[role="row"]',
+    ) as HTMLElement | null;
     if (widget === null) throw new Error("no widget row");
     await userEvent.click(within(widget).getByRole("button", { name: "Land…" }));
     await waitFor(() => expect(called("change_land_question")).toHaveLength(1));
@@ -1040,7 +1046,9 @@ describe("a change's Push and Land (#474)", () => {
       change_land_question: () => ({ ...QUESTION, through: "queue", how, squash: false }),
     });
     open("land-queue");
-    const widget = (await screen.findByText("widget · change/api-2")).closest("li");
+    const widget = (await screen.findByText("widget · change/api-2")).closest(
+      '[role="row"]',
+    ) as HTMLElement | null;
     if (widget === null) throw new Error("no widget row");
     await userEvent.click(within(widget).getByRole("button", { name: "Land…" }));
 
@@ -1062,7 +1070,9 @@ describe("a change's Push and Land (#474)", () => {
           : ["✓ merged #7 as e5bd3914e2e5"],
     });
     open("land-again");
-    const widget = (await screen.findByText("widget · change/api-2")).closest("li");
+    const widget = (await screen.findByText("widget · change/api-2")).closest(
+      '[role="row"]',
+    ) as HTMLElement | null;
     if (widget === null) throw new Error("no widget row");
     await userEvent.click(within(widget).getByRole("button", { name: "Land…" }));
     const asking = await screen.findByRole("alertdialog");
@@ -1234,7 +1244,7 @@ describe("the persona view on a read-only project (#826)", () => {
 
   it("lists a memory's Edit and Delete off with the sentence, and keeps Open", async () => {
     drawReadOnly(STEWARD, WITH_A_MEMORY);
-    const row = await screen.findByRole("button", { name: /Charter defects/ });
+    const row = await screen.findByRole("row", { name: /Charter defects/ });
 
     fireEvent.contextMenu(row);
 
