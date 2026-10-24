@@ -1063,10 +1063,13 @@ export function selectTab(tabs: Tabs, id: number): Tabs {
   return id in tabs.byId ? { ...tabs, inFront: id } : tabs;
 }
 
-/** Focuses a pane of the tab in front, so the next split or close acts on it. */
+/** Focuses a pane of the tab in front, so the next split or close acts on it. The very tabs
+ *  come back where that pane already has the focus: it is asked on every focus inside a pane,
+ *  and new tabs draw the whole window again and read the sidebar again (#3136). */
 export function focusPane(tabs: Tabs, pane: number): Tabs {
   const tab = frontTab(tabs);
-  if (!tab || !panes(tab.layout).some((each) => each.pane === pane)) return tabs;
+  if (!tab || tab.focused === pane || !panes(tab.layout).some((each) => each.pane === pane))
+    return tabs;
   return { ...tabs, byId: { ...tabs.byId, [tab.id]: { ...tab, focused: pane } } };
 }
 
