@@ -4,38 +4,44 @@
 import { browser } from "@wdio/globals";
 
 /**
- * **The window a scenario starts in** (#3077): wide enough for the project rail beside both
- * sidebars, so the rail is drawn, as it is in most windows a person works in.
+ * **The window a scenario starts in**: the default window, 1440×900 (`tauri.conf.json`, ADR 0054's
+ * amendment of 2026-10-24), wide enough for the project rail beside both sidebars, so the rail is
+ * drawn there as on a person's first launch.
  *
- * The rail hides itself where it would crowd the work (`app/src/railRoom.ts`): below the
- * narrowest window and the rail together, and, with both sidebars open, below the default
- * window (1280 px, `tauri.conf.json`) and the rail together. A spec that measures a narrow
- * window, or the default one, sets that size itself and measures the rail as the window draws
- * it there.
+ * The rail hides itself where it would crowd the work (`app/src/railRoom.ts`, #3077): below the
+ * narrowest window and the rail together, and, with both sidebars open, below 1280 px and the
+ * rail together. A spec that measures a narrow window, or {@link WINDOW_1280}, sets that size
+ * itself and measures the rail as the window draws it there.
  */
-export const STARTING_WINDOW = { width: 1440, height: 900 } as const;
+export const DEFAULT_WINDOW = { width: 1440, height: 900 } as const;
 
-/** The window the app opens at a person's first launch (`tauri.conf.json`). */
-export const DEFAULT_WINDOW = { width: 1280, height: 800 } as const;
+/**
+ * **1280×800**: the window a 1280px screen leaves, and the default window before 2026-10-24. The
+ * views are still held to fit it with both sidebars open (DS-9's tables, the settings row, the
+ * merge list), so the specs that measured the default window measure this one.
+ */
+export const WINDOW_1280 = { width: 1280, height: 800 } as const;
 
-/** Sets the window's size, and waits until the page has settled at its width. */
+/** Sets the window's size, and waits until the window is that size and the page has settled at
+ *  its width. */
 export async function windowAt(size: { width: number; height: number }): Promise<void> {
   await browser.setWindowSize(size.width, size.height);
   let last = -1;
   await browser.waitUntil(
     async () => {
+      if ((await browser.getWindowSize()).width !== size.width) return false;
       const now = await browser.execute(() => window.innerWidth);
-      const settled = now === last;
+      const settled = now === last && now <= size.width;
       last = now;
       return settled;
     },
-    { timeout: 20_000, interval: 200, timeoutMsg: "the window never settled on a width" },
+    { timeout: 20_000, interval: 200, timeoutMsg: `the window never settled at ${size.width}px` },
   );
 }
 
-/** Puts the window at {@link STARTING_WINDOW} unless it is already there. */
+/** Puts the window at {@link DEFAULT_WINDOW} unless it is already there. */
 export async function theWindowHoldsTheRail(): Promise<void> {
   const now = await browser.getWindowSize();
-  if (now.width === STARTING_WINDOW.width && now.height === STARTING_WINDOW.height) return;
-  await windowAt(STARTING_WINDOW);
+  if (now.width === DEFAULT_WINDOW.width && now.height === DEFAULT_WINDOW.height) return;
+  await windowAt(DEFAULT_WINDOW);
 }

@@ -1080,6 +1080,17 @@ jobs:
         run: xvfb-run -a npm run e2e:picked
         if: runner.os == 'Linux' && matrix.extras
         working-directory: app
+      # The project rail's show and keep, which hold over its own hide for the rest of a launch
+      # (#3077). Its own run, because the base run measures narrow windows with the rail as the
+      # window draws it, in the one app process a run keeps.
+      - name: The project rail
+        run: npm run e2e:rail
+        if: runner.os == 'macOS' && matrix.extras
+        working-directory: app
+      - name: The project rail
+        run: xvfb-run -a npm run e2e:rail
+        if: runner.os == 'Linux' && matrix.extras
+        working-directory: app
       # The app launched over an old charter install, and the launch's migration it runs
       # (RN-10). Its own run, because the old install has to be on disk before the one app
       # process a run keeps is started, and this is the one app that migrates at launch.

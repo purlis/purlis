@@ -156,6 +156,8 @@ fn make_split<R: Runtime>(app: &AppHandle<R>, label: &str) -> Result<(), String>
         .cloned()
         .ok_or("tauri.conf.json declares no main window")?;
     config.label = label.to_owned();
+    // The default size, or the screen's usable size where that is smaller (`screenfit.rs`).
+    crate::screenfit::fit_to_the_screen(app, &mut config);
     let config_root = purlis_core::machine::config_root();
     // The project moved in front of it, whose theme levels its first frame draws (#2602).
     let front = app.try_state::<Showing>().and_then(|showing| {

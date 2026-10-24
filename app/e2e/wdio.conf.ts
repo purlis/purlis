@@ -115,6 +115,8 @@ export const config: WebdriverIO.Config = {
     // The upgrade spec needs an old install on disk before the app starts, and an app that
     // migrates at launch (`wdio.upgrade.conf.ts`).
     "./specs/**/*.upgrade.e2e.ts",
+    // The rail's show and keep hold over its own hide for the launch (`wdio.rail.conf.ts`).
+    "./specs/**/*.rail.e2e.ts",
     ...(process.env.STRESS === "1" ? [] : ["./specs/stress.e2e.ts"]),
   ],
   maxInstances: 1,

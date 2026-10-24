@@ -32,6 +32,11 @@ function Window({ sides }: { sides: number }) {
     </>
   );
 }
+/** The rail as drawn, with no frame saying its sidebars. */
+function Output() {
+  const [drawn] = useRailMode();
+  return <output aria-label="rail">{drawn}</output>;
+}
 const drawn = () => screen.getByRole("status", { name: "rail" }).textContent;
 const press = (name: "Show" | "Hide") =>
   act(() => void screen.getByRole("button", { name }).click());
@@ -62,10 +67,9 @@ describe("the room the project rail leaves the work (#3077)", () => {
     expect(railDrawn("shown", true, true)).toBe("shown");
     // Hidden by the person, it stays hidden in a window with all the room it wants.
     expect(railDrawn("auto", false, true)).toBe("auto");
-    expect(shownAnywayAfter(false, "shown", true)).toBe(true);
-    expect(shownAnywayAfter(false, "shown", false)).toBe(false);
-    expect(shownAnywayAfter(true, "shown", false)).toBe(true);
-    expect(shownAnywayAfter(true, "auto", true)).toBe(false);
+    // Any show of the person's, in any window, holds; a hide ends it.
+    expect(shownAnywayAfter("shown")).toBe(true);
+    expect(shownAnywayAfter("auto")).toBe(false);
   });
 });
 
@@ -134,13 +138,32 @@ describe("the project rail in a narrow window (#3077)", () => {
     expect(drawn()).toBe("shown");
     // Shown is the default, which the file leaves out: nothing to write.
     expect(written).not.toHaveBeenCalled();
-    // Until the person hides it: then the window's hide is back for the next narrow window.
+    // Until the person hides it.
     press("Hide");
     expect(drawn()).toBe("auto");
     expect(written).toHaveBeenLastCalledWith("auto");
+  });
+
+  it("stays shown in a narrow window once the person pinned it in a wide one", () => {
     windowIs(1440);
+    render(<Window sides={2} />);
+    // Hidden by the person, then shown again (or kept from the peek: the same press).
+    press("Hide");
     press("Show");
+    expect(drawn()).toBe("shown");
+    windowIs(1280);
+    expect(drawn()).toBe("shown");
     windowIs(1024);
+    expect(drawn()).toBe("shown");
+  });
+
+  it("forgets the sidebars of a frame that has gone", () => {
+    windowIs(1280);
+    const { unmount } = render(<Window sides={1} />);
+    expect(drawn()).toBe("shown");
+    unmount();
+    render(<Output />);
+    // No frame says: both, as the default arrangement draws.
     expect(drawn()).toBe("auto");
   });
 
