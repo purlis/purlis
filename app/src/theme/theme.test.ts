@@ -243,8 +243,9 @@ describe("putting a theme on the document", () => {
       apply(shaped, element);
       expect(document.querySelectorAll(`#${PARTS_STYLE}`)).toHaveLength(1);
     } finally {
-      // A theme that names no parts draws every control as its family default.
-      apply(CLASSIC_DARK, element);
+      // A theme that names no parts draws every control as its family default. (Classic names
+      // its tabs' strip look, #2914, so it is taken without them here.)
+      apply({ ...CLASSIC_DARK, parts: "" }, element);
     }
     expect(document.getElementById(PARTS_STYLE)).toBeNull();
   });

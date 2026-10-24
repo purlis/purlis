@@ -40,6 +40,7 @@ import { sized, ToYourEditor } from "./PieceFiles";
 import { jumpTo } from "../fileJump";
 import { useBranchMoved } from "./branchMoved";
 import { Button } from "../ui/button/Button";
+import { editorToolbar, ToolbarFile } from "../ui/tabs/Tabs";
 
 /** The comparison, as the tab draws it: being read, refused with the core's sentence, or read. */
 type Read =
@@ -90,8 +91,8 @@ export function PieceDiffTab({ plane, cut, path }: { plane: PlaneId; cut: Place;
   const again = read?.asked === asked && read.moved !== moved;
   return (
     <div className="piece-file" aria-busy={again}>
-      <header className="piece-files-head">
-        <code>{path}</code>
+      <header className="piece-files-head" {...editorToolbar}>
+        <ToolbarFile path={path} />
         {now.kind === "read" && <span>{against(now.shown)}</span>}
         <span className="piece-files-actions">
           <ToYourEditor plane={plane} cut={cut} path={path} line={firstLine(now)} />

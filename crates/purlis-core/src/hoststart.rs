@@ -349,15 +349,29 @@ pub fn compose_ready(
     if let Some(change) = &trust {
         recorded(change, start, ready.harness, persona.as_deref(), beside)?;
     }
-    let armed = armed(
+    // A sandboxed chat could make a workspace or persona folder while it runs: the ones there
+    // now are noted as not its own (SK-9), before it is armed.
+    if sandbox.is_some()
+        && crate::skills::reach_chats_here(root)
+        && let Some(id) = start.program.as_deref()
+    {
+        let name = start
+            .number
+            .map_or_else(|| id.to_owned(), |number| number.to_string());
+        if let Err(why) = crate::skills::levels::note(root, id, &name) {
+            tracing::warn!("purlis: a sandboxed chat's start was not noted for its skills ({why})");
+        }
+    }
+    let armed = armed(&Arming {
         root,
         kit,
-        ready.harness,
-        Some(&cwd),
-        &ready.plugins,
+        harness: ready.harness,
+        cwd: Some(&cwd),
+        plugins: &ready.plugins,
         sandbox,
-        persona.as_deref(),
-    )?;
+        persona: persona.as_deref(),
+        env: &ready.env,
+    })?;
     let (hooks, armed_env) = armed;
     // No watcher of the project's own settings runs here, so a sandboxed Claude Code chat is
     // started on the person's settings and purlis's, as the window starts one it cannot watch.
@@ -395,6 +409,11 @@ pub fn compose_ready(
             (line.program, line.args, line.env)
         }
         None => (ready.program.clone(), ready.command_line(hooks), Vec::new()),
+    };
+    // Settings too long for one word of a command line go through a file of their own (SK-9).
+    let args = match start.program.as_deref() {
+        Some(id) => settings_in_a_file(root, id, args)?,
+        None => args,
     };
     let env = finished_env(
         ready.env.clone(),
@@ -592,45 +611,141 @@ fn recorded(
     }
 }
 
+/// The longest `--settings` JSON a chat's command line carries as it is (SK-9, #2772): under the
+/// one word Linux starts a program with (`MAX_ARG_STRLEN`, 128 KiB), with room for the rest. A
+/// longer one, such as a Claude Code chat's in a project with many workspaces and personas, each
+/// level of which it is denied writing, goes through a file.
+pub const SETTINGS_IN_A_WORD: usize = 96 * 1024;
+
+/// The folder of this machine's state a chat's settings file is kept in, by the chat's id.
+pub const SETTINGS_DIR: &str = "chat-settings";
+
+/// **`args` with a `--settings` JSON longer than [`SETTINGS_IN_A_WORD`] put in a file**, the
+/// chat `id`'s in this machine's state of the project at `root` (`chat-settings/<id>.json`,
+/// private, written through folder handles with no link followed), and its path in the JSON's
+/// place: Claude Code reads `--settings` as JSON or as a file. Words with a shorter one, or none,
+/// are as they were. Refused for an id that is no chat's.
+pub fn settings_in_a_file(
+    root: &Path,
+    id: &str,
+    mut args: Vec<String>,
+) -> Result<Vec<String>, String> {
+    let Some(at) = args
+        .iter()
+        .position(|word| word == "--settings")
+        .map(|flag| flag + 1)
+        .filter(|&at| at < args.len())
+    else {
+        return Ok(args);
+    };
+    if args[at].len() <= SETTINGS_IN_A_WORD || !args[at].starts_with('{') {
+        return Ok(args);
+    }
+    if crate::reopen::a_ulid(id).is_none() {
+        return Err(
+            "a chat with no id of its own was not started: its settings are too long \
+                    for its command line"
+                .to_owned(),
+        );
+    }
+    let state = crate::plane::state_dir(root);
+    std::fs::create_dir_all(&state).map_err(|why| why.to_string())?;
+    crate::profiletrust::private_dir(&state).map_err(|why| why.to_string())?;
+    let rel = std::path::PathBuf::from(SETTINGS_DIR).join(format!("{id}.json"));
+    let was = crate::proposed::read_pinned(&state, &rel)
+        .map_err(|_| "a chat's settings file is not a plain file, so it was not started")?;
+    let base = was
+        .as_deref()
+        .and_then(|bytes| crate::proposed::base_of(Some(bytes)));
+    crate::proposed::write_pinned_making(&state, &rel, base.as_deref(), &args[at], &|_, _| true)
+        .map_err(|_| "a chat's settings could not be written to its file, so it was not started")?;
+    args[at] = state.join(&rel).display().to_string();
+    Ok(args)
+}
+
+/// **The settings in `path`, where it is a chat's settings file purlis wrote**
+/// ([`settings_in_a_file`]): `<state>/chat-settings/<chat id>.json`, read without following a
+/// link. `None` for any other path.
+pub fn settings_from_its_file(path: &Path) -> Option<serde_json::Value> {
+    let name = path.file_name()?.to_str()?;
+    crate::reopen::a_ulid(name.strip_suffix(".json")?)?;
+    let dir = path.parent()?;
+    if dir.file_name()? != SETTINGS_DIR {
+        return None;
+    }
+    let bytes =
+        crate::proposed::read_pinned(dir.parent()?, &Path::new(SETTINGS_DIR).join(name)).ok()??;
+    serde_json::from_slice(&bytes).ok()
+}
+
+/// **Removes every chat's settings file whose chat is not among `open`**, older than a couple of
+/// minutes (the time between a start writing it and the chat being on the app's record): the
+/// app's, each time it writes that record. Only names this module makes, through the folder's
+/// handle.
+pub fn sweep_settings(root: &Path, open: &[String]) {
+    let dir = crate::plane::state_dir(root).join(SETTINGS_DIR);
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return;
+    };
+    for entry in entries.filter_map(Result::ok) {
+        let Some(id) = entry
+            .file_name()
+            .to_str()
+            .and_then(|name| name.strip_suffix(".json"))
+            .and_then(crate::reopen::a_ulid)
+        else {
+            continue;
+        };
+        let young = entry
+            .metadata()
+            .and_then(|meta| meta.modified())
+            .ok()
+            .and_then(|at| at.elapsed().ok())
+            .is_some_and(|age| age < crate::skills::verbs::drafts::SWEEP_GRACE);
+        if young || open.contains(&id) {
+            continue;
+        }
+        #[cfg(unix)]
+        if let Ok(at) = rustix::fs::openat(
+            rustix::fs::CWD,
+            &dir,
+            rustix::fs::OFlags::RDONLY
+                | rustix::fs::OFlags::DIRECTORY
+                | rustix::fs::OFlags::NOFOLLOW,
+            rustix::fs::Mode::empty(),
+        ) {
+            let _ = rustix::fs::unlinkat(
+                &at,
+                format!("{id}.json").as_str(),
+                rustix::fs::AtFlags::empty(),
+            );
+        }
+    }
+}
+
 /// What arms a chat's harness: the arguments its adapter adds, and the variables.
 pub type Armed = (Vec<String>, Vec<(String, String)>);
 
 /// **What arms a chat's harness** for this session alone: the arguments and the variables its
 /// adapter adds, as the window arms it. **Fail closed**: a sandbox compiled for another harness,
 /// or one the harness cannot be armed to carry here, refuses the chat.
-pub fn armed(
-    root: &Path,
-    kit: &Kit,
-    harness: Option<Harness>,
-    cwd: Option<&Path>,
-    plugins: &crate::harness_plugin::Chosen,
-    sandbox: Option<&crate::sandbox::Applied>,
-    persona: Option<&str>,
-) -> Result<Armed, String> {
-    armed_as(
-        crate::skills::reach_chats_here(root),
-        &Arming {
-            root,
-            kit,
-            harness,
-            cwd,
-            plugins,
-            sandbox,
-            persona,
-        },
-    )
+pub fn armed(arming: &Arming<'_>) -> Result<Armed, String> {
+    armed_as(crate::skills::reach_chats_here(arming.root), arming)
 }
 
 /// What [`armed`] arms a chat from, as one value.
 #[derive(Clone, Copy)]
-pub(crate) struct Arming<'a> {
-    pub(crate) root: &'a Path,
-    pub(crate) kit: &'a Kit,
-    pub(crate) harness: Option<Harness>,
-    pub(crate) cwd: Option<&'a Path>,
-    pub(crate) plugins: &'a crate::harness_plugin::Chosen,
-    pub(crate) sandbox: Option<&'a crate::sandbox::Applied>,
-    pub(crate) persona: Option<&'a str>,
+pub struct Arming<'a> {
+    pub root: &'a Path,
+    pub kit: &'a Kit,
+    pub harness: Option<Harness>,
+    pub cwd: Option<&'a Path>,
+    pub plugins: &'a crate::harness_plugin::Chosen,
+    pub sandbox: Option<&'a crate::sandbox::Applied>,
+    pub persona: Option<&'a str>,
+    /// The chat's own variables, as its profile sets them: where its harness keeps its own
+    /// config (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`), which a Try it's turn-offs are read from.
+    pub env: &'a [(String, String)],
 }
 
 /// [`armed`], with the Skill studio's flag `studio` as given rather than as this machine and
@@ -644,6 +759,7 @@ pub(crate) fn armed_as(studio: bool, arming: &Arming<'_>) -> Result<Armed, Strin
         plugins,
         sandbox,
         persona,
+        env,
     } = *arming;
     let not_carried = |then: &str| {
         crate::sandbox::under_policy(
@@ -672,15 +788,41 @@ pub(crate) fn armed_as(studio: bool, arming: &Arming<'_>) -> Result<Armed, Strin
     // turns the set into words (ADR 0063 as amended 2026-10-20).
     let workspace = cwd.and_then(|cwd| crate::active::workspace_of_tree(root, cwd));
     let on = studio;
+    // A Try it's scratch chat (SK-9, #2772): its project skills are the one skill its try laid
+    // out, at a root of its own, so it gets the built-in skills and the draft alone.
+    let scope = crate::skills::verbs::drafts::scope_of(root, cwd.filter(|_| on));
+    let skills_root = scope.root.as_path();
+    let (workspace, skills_persona) = if scope.tried {
+        (None, None)
+    } else {
+        (workspace, persona)
+    };
+    // And every harness skill and plugin off, so the draft is tried alone.
+    let alone;
+    let plugins = if scope.tried {
+        alone =
+            crate::skills::verbs::drafts::alone_on(harness, &crate::harness_plugin::Env::of(env));
+        &alone
+    } else {
+        plugins
+    };
     // And the repo skills of the clone it works in, read here too, so a narrower repo copy of a
     // plane skill is the one its harness gets where purlis builds what it is handed (SK-6).
     let repo = match (on, workspace.as_deref(), cwd) {
         (true, Some(ws), Some(cwd)) => crate::skills::repo_skills_of_chat(harness, root, ws, cwd),
         _ => Vec::new(),
     };
-    let linked = laid_out_on(on, root, workspace.as_deref(), persona, kit, harness, &repo);
+    let linked = laid_out_on(
+        on,
+        skills_root,
+        workspace.as_deref(),
+        skills_persona,
+        kit,
+        harness,
+        &repo,
+    );
     let skills = on.then_some(crate::skills::PlaneSkills {
-        plane: root,
+        plane: skills_root,
         workspace: workspace.as_deref(),
         linked: linked.as_deref(),
         repo: &repo,
@@ -815,3 +957,6 @@ impl crate::sandbox::HeldElsewhere for HeldByThisHost {
         None
     }
 }
+
+#[cfg(test)]
+mod tests;

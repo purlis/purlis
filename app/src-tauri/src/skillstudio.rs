@@ -81,6 +81,9 @@ pub struct StudioSkill {
     pub on: bool,
     /// Why it is left out, in one line, where it is.
     pub left_out: Option<String>,
+    /// Where it is left out because a chat could have made its level's folder (SK-9): that
+    /// folder, which Accept takes (`skill_level_accept`).
+    pub accept: Option<String>,
     /// What it does and when to use it: its frontmatter's `description`.
     pub description: String,
     /// Its folder, relative to the project where it is inside it; empty for an installed skill.
@@ -370,6 +373,7 @@ pub(crate) fn studio(
             local: row.local,
             grant: row.grant,
             on: row.left_out.is_none(),
+            accept: row.accept,
             left_out: row.left_out,
             description: row.description,
             folder: row.folder,
@@ -423,6 +427,7 @@ fn outside_shown(row: purlis_core::skills::StudioRow) -> StudioSkill {
         local: row.local,
         grant: row.grant,
         on: row.left_out.is_none(),
+        accept: row.accept,
         left_out: row.left_out,
         description: row.description,
         folder: row.folder,

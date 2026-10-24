@@ -93,6 +93,7 @@ pub(super) const POPOVER: Family = Family {
     focused: "[data-focus-visible]",
     words: &[],
     corner_most: None,
+    around: &[],
 };
 
 pub(super) const MENU: Family = Family {
@@ -170,6 +171,7 @@ pub(super) const MENU: Family = Family {
         ("indicator", "text.muted"),
     ],
     corner_most: None,
+    around: &[],
 };
 
 /// **The popover's colours as `app/src/ui/popover/popover.css` draws them**: one surface for a

@@ -192,6 +192,8 @@ mod options_tests;
 #[cfg(test)]
 mod parts_shell_tests;
 #[cfg(test)]
+mod parts_tabs_tests;
+#[cfg(test)]
 mod parts_tests;
 #[cfg(test)]
 mod person_tests;
@@ -553,6 +555,14 @@ fn built_in_of(text: &str) -> Theme {
         .and_then(Value::as_str)
         .expect("a built-in theme has a name")
         .to_owned();
+    // Its component parts: the strip look Classic's tabs keep, where the family defaults draw
+    // Purlis's (#2914). A built-in's parts are clean, or this build is defective.
+    let (mut complaints, mut notes) = (Vec::new(), Vec::new());
+    let parts = parts::read(document.get("parts"), &mut complaints, &mut notes);
+    assert!(
+        complaints.is_empty() && notes.is_empty(),
+        "the built-in theme {name}'s parts: {complaints:?} {notes:?}"
+    );
     let appearances = document
         .get("appearances")
         .and_then(Value::as_array)
@@ -598,7 +608,7 @@ fn built_in_of(text: &str) -> Theme {
                 fonts: Fonts::classic(),
                 options: Vec::new(),
                 tint: Tint::default(),
-                parts: parts::Parts::new(),
+                parts: parts.clone(),
                 least: Least::Standard,
             }
         })

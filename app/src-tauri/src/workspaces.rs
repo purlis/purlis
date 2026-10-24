@@ -225,6 +225,8 @@ fn create_in(
     let vision = vision.map(str::trim).filter(|text| !text.is_empty());
     let ids = purlis_core::active::Ids::default();
     let mut said = Vec::new();
+    let owner = format!("workspaces/{name}");
+    let was_there = purlis_core::skills::levels::there(root, &owner);
     let code = wscmd::create::create(
         &wscmd::create::Request {
             root,
@@ -240,6 +242,13 @@ fn create_in(
         },
         &mut |line: Say| said.push(line),
     );
+    // The person made it, in their window: no chat did, so its skills reach chats (SK-9), where
+    // the create made its folder.
+    if code == 0
+        && let Some(note) = purlis_core::skills::levels::vouch_if_made(root, &owner, was_there)
+    {
+        said.push(Say::Info(note));
+    }
     ran(code, said)
 }
 
