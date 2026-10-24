@@ -153,8 +153,19 @@ tester.run("purlis/choice-family", purlisUi.rules["choice-family"], {
 });
 
 tester.run("purlis/dialog-family", purlisUi.rules["dialog-family"], {
-  valid: [{ code: `<div role="group">x</div>` }],
-  invalid: [{ code: `<div role="dialog">x</div>`, errors: [{ messageId: "unmoved" }] }],
+  valid: [
+    { code: `<div role="group">x</div>` },
+    { code: `<Dialog onClose={close} title="Rename workspace" />` },
+    // A role held in a value is a selector, not a dialog drawn by hand.
+    { code: `<div data-role="dialog">x</div>` },
+  ],
+  invalid: [
+    { code: `<div role="dialog">x</div>`, errors: [{ messageId: "raw" }] },
+    {
+      code: `<section role="alertdialog" aria-label="Quit">x</section>`,
+      errors: [{ messageId: "raw" }],
+    },
+  ],
 });
 
 tester.run("purlis/tooltip-family", purlisUi.rules["tooltip-family"], {

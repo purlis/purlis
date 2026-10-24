@@ -7,6 +7,7 @@ import { showView } from "../opening.js";
 import { bringSideBack, putSideAway } from "../sides.js";
 import { tooltipOf } from "../tooltips.js";
 import { gutter } from "../gutter.js";
+import { railHidden } from "../rail.js";
 
 /**
  * The right region and the Changes view (ADR 0038; the bottom region until #1676, the left
@@ -445,11 +446,13 @@ describe("the left side's activity bar", () => {
     await untilTheStripIsRead();
     await $('[data-testid="chats-section"]').waitForDisplayed({ timeout: 20_000 });
 
+    // The window's edge is the project rail's, where it is shown (#2915).
+    const rail = await box('[data-scope="rail"][data-part="slot"]');
     const bar = await box(".activity-bar[data-side='left']");
     const slot = await box('[data-panel][id="region-left"]');
     const centre = await box('[data-panel][id="region-centre"]');
     expect(bar).not.toBeNull();
-    expect(bar?.left ?? -1).toBeLessThanOrEqual(1);
+    expect(bar?.left ?? -1).toBeLessThanOrEqual((rail?.right ?? 0) + 1);
     expect(bar?.right ?? Infinity).toBeLessThanOrEqual((slot?.left ?? 0) + 1);
     expect(slot?.right ?? Infinity).toBeLessThanOrEqual((centre?.left ?? 0) + 1);
   });
@@ -981,6 +984,10 @@ describe("the Panel", () => {
  * really lays out.
  */
 describe("the layout as data", () => {
+  // The work measured with the project rail hidden (`rail.ts`, #2915).
+  before(() => railHidden(true));
+  after(() => railHidden(false));
+
   it("draws each region in the slot the arrangement names", async () => {
     await untilTheStripIsRead();
     await $('[data-testid="explorer"]').waitForExist({ timeout: 20_000 });

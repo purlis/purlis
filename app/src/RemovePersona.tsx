@@ -1,10 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useRef } from "react";
-import * as AlertDialog from "./overlays/alert-dialog";
-import { AnswerBar } from "./AnswerBar";
-import { Button } from "./ui/button/Button";
+import { AlertDialog } from "./ui/dialog/Dialog";
 
 /**
  * Deleting a persona (SI-3): what goes, what stays, and one answer.
@@ -18,8 +15,8 @@ import { Button } from "./ui/button/Button";
  * **No name typed back**, unlike a vault. A persona is a directory in the plane's git history, so
  * a delete is a change to commit, not a destruction; a vault's keychain entries are neither.
  *
- * Radix's `AlertDialog`, for `DeleteWorkspace`'s reasons: Cancel is focused by the primitive,
- * Escape is Cancel, and a stray Return is never what deletes.
+ * The family's `AlertDialog`, for `DeleteWorkspace`'s reasons: it starts on Cancel, Escape is
+ * Cancel, and a stray Return is never what deletes.
  */
 export function RemovePersona({
   persona,
@@ -36,49 +33,32 @@ export function RemovePersona({
   onDelete: () => void;
   onCancel: () => void;
 }) {
-  const cancel = useRef<HTMLButtonElement>(null);
   return (
-    <AlertDialog.Root
-      open
-      onOpenChange={(open) => {
-        if (!open && !deleting) onCancel();
+    <AlertDialog
+      onClose={() => {
+        if (!deleting) onCancel();
+      }}
+      title={`Delete persona ${persona}?`}
+      description={
+        <p className="came-back">
+          This deletes <code>personas/{persona}/</code> — its definition, its memory and its
+          reference files — and the agent purlis generated for it. Its vault is left alone. Commit
+          the deletion to share it.
+        </p>
+      }
+      main={{
+        children: deleting ? "Deleting…" : "Delete persona",
+        reserve: ["Delete persona", "Deleting…"],
+        variant: "danger",
+        isDisabled: deleting,
+        onPress: onDelete,
       }}
     >
-      <AlertDialog.Portal>
-        <AlertDialog.Overlay className="ui-scrim" />
-        <AlertDialog.Content
-          className="ui-dialog warning"
-          onOpenAutoFocus={(event) => {
-            event.preventDefault();
-            cancel.current?.focus();
-          }}
-        >
-          <AlertDialog.Title>Delete persona {persona}?</AlertDialog.Title>
-          <AlertDialog.Description className="came-back">
-            This deletes <code>personas/{persona}/</code> — its definition, its memory and its
-            reference files — and the agent purlis generated for it. Its vault is left alone. Commit
-            the deletion to share it.
-          </AlertDialog.Description>
-
-          {trouble && (
-            <p className="trouble" role="alert">
-              {trouble}
-            </p>
-          )}
-
-          <AnswerBar>
-            <AlertDialog.Cancel asChild>
-              <Button ref={cancel} onPress={onCancel}>
-                Cancel
-              </Button>
-            </AlertDialog.Cancel>
-            {/* `tabIndex={0}` on both, per `docs/ui-primitives.md` (charter-app#186). */}
-            <Button variant="danger" isDisabled={deleting} onPress={onDelete}>
-              {deleting ? "Deleting…" : "Delete persona"}
-            </Button>
-          </AnswerBar>
-        </AlertDialog.Content>
-      </AlertDialog.Portal>
-    </AlertDialog.Root>
+      {trouble && (
+        <p className="trouble" role="alert">
+          {trouble}
+        </p>
+      )}
+    </AlertDialog>
   );
 }

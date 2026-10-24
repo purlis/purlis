@@ -304,18 +304,12 @@ describe("the window's three strips", () => {
     await vi.waitFor(() => expect(within(stripNamed("Tabs")).getAllByRole("tab")).toHaveLength(2));
     await within(stripNamed("Workspaces")).findByRole("button", { name: /settings/i });
     // What the debt list held is still drawn, and still in its strip: the `×`, the gears and
-    // the project strip's own controls moved nowhere.
-    expect(
-      within(stripNamed("Projects")).getAllByRole("button", { name: /^Close project/ }),
-    ).toHaveLength(1);
+    // the strips' own controls moved nowhere. The rail's own are its + and its hide (#2915).
     expect(
       within(stripNamed("Projects")).getByRole("button", { name: "Open a project…" }),
     ).toBeInTheDocument();
     expect(
-      within(stripNamed("Projects")).getByRole("button", { name: "New project…" }),
-    ).toBeInTheDocument();
-    expect(
-      within(stripNamed("Projects")).getByRole("button", { name: /settings/i }),
+      within(stripNamed("Projects")).getByRole("button", { name: "Hide the projects sidebar" }),
     ).toBeInTheDocument();
     expect(
       within(stripNamed("Tabs")).getAllByRole("button", { name: /^(End|Close) / }),

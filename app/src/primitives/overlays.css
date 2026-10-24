@@ -3,15 +3,14 @@
 
 /* **The overlay surface** (ADR 0094 §4, #1845): what the window draws over itself is one surface.
    A dialog, a popover, a menu and a tooltip share one ground, one border, one corner and one
-   elevation, so they read as related; a dialog and a popover share one padding. What is pressed
-   or typed inside one is the shared control (`controls.css`). `docs/ui-primitives.md` ("The
-   overlay surface") lists the classes and `primitives/overlays.test.tsx` holds them.
+   elevation, so they read as related. A dialog is the dialog family's (`ui/dialog/dialog.css`,
+   #2910), drawn on the same ground, border, corner and lift; this file draws the others. What is
+   pressed or typed inside one is the shared control (`controls.css`). `docs/ui-primitives.md`
+   ("The overlay surface") lists the classes and `primitives/overlays.test.tsx` holds them.
 
    **The look is this file's, the place is the view's.** A class here draws the surface; a view
-   still places and sizes its overlay with a class of its own (`.warning` centres a dialog and
-   caps it, `.row-card` caps a popover, `.more-menu` sizes a menu), and nothing here sets those.
-   The one size a view may hand the surface is `--ui-dialog-padding-end`: a dialog whose answers
-   stay at its bottom edge while it scrolls (Ask {persona}) takes its own bottom padding away.
+   still places and sizes its overlay with a class of its own (`.row-card` caps a popover,
+   `.more-menu` sizes a menu), and nothing here sets those.
 
    **Only tokens**, as in `controls.css`: every size is a core geometry token, every colour one
    theme token per declaration, and the lift is `--elevation-overlay`, whose colour is the
@@ -21,13 +20,12 @@
    redraw an overlay, and the surface below is the menu's too. */
 
 /* ---------------------------------------------------------------------------------------------
-   The surface: `.ui-dialog` on a Radix Dialog's or AlertDialog's content, and `.ui-menu`
-   (`controls.css`) on a select's list. A tooltip is its family's own surface
-   (`ui/tooltip/tooltip.css`, #2908), and a popover and a menu are the popover and menu families
-   (`ui/popover/popover.css`, #2909), drawn alike.
+   The surface: `.ui-menu` (`controls.css`) on a select's list. A dialog is its family's own
+   surface (`ui/dialog/dialog.css`, #2910), a tooltip its family's (`ui/tooltip/tooltip.css`,
+   #2908), and a popover and a menu are the popover and menu families (`ui/popover/popover.css`,
+   #2909), drawn alike.
    --------------------------------------------------------------------------------------------- */
 
-.ui-dialog,
 .ui-menu {
   box-sizing: border-box;
   border: 1px solid var(--border-subtle);
@@ -35,16 +33,6 @@
   color: var(--text-primary);
   background-color: var(--surface-overlay);
   box-shadow: var(--elevation-overlay);
-}
-
-/* A dialog holds words and controls, and is padded as a popover is (`ui/popover/popover.css`). A
-   list is a list whose rows pad themselves: it is inset by its own. */
-.ui-dialog {
-  padding: var(--space-6);
-}
-
-.ui-dialog {
-  padding-block-end: var(--ui-dialog-padding-end, var(--space-6));
 }
 
 /* The point an overlay takes from what opened it, in the surface's own ground. */
@@ -75,15 +63,4 @@
 .ui-inline-surface-trouble {
   color: var(--danger-text);
   background-color: var(--danger-surface);
-}
-
-/* ---------------------------------------------------------------------------------------------
-   The scrim: `.ui-scrim` on a Radix Dialog's or AlertDialog's overlay, the window dimmed behind a
-   question that is modal. A sibling of the dialog, not its box (Radix portals both).
-   --------------------------------------------------------------------------------------------- */
-
-.ui-scrim {
-  position: fixed;
-  inset: 0;
-  background-color: var(--overlay-scrim);
 }

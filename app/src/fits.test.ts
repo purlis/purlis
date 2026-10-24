@@ -128,7 +128,6 @@ describe("the floors the three strips fit by", () => {
     // as a number: a project's segment is the widest thing on the window and a chat's is the
     // narrowest. A change that made them equal would put the nesting back to three rows of
     // the same thing, which is what he was complaining about.
-    expect(LEAST.project).toBeGreaterThan(LEAST.workspace);
     expect(LEAST.workspace).toBeGreaterThan(LEAST.chat);
   });
 });
@@ -139,7 +138,7 @@ describe("the floors at the window text size in force (charter-app#283)", () => 
     expect(leastAt(LEAST.chat, 26)).toBe(LEAST.chat * 2);
     // So at the new 14px default a tab floor is a step wider than it was at 13px.
     expect(leastAt(LEAST.chat, 14)).toBeGreaterThan(LEAST.chat);
-    expect(leastAt(LEAST.project, 10)).toBeLessThan(LEAST.project);
+    expect(leastAt(LEAST.workspace, 10)).toBeLessThan(LEAST.workspace);
   });
 
   it("so a strip draws fewer, wider tabs when the text is bigger", () => {

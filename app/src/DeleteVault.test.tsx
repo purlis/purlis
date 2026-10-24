@@ -4,6 +4,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
+import { answerRowOf, answersOf } from "./ui/dialog/dialog.testkit";
 import { DeleteVault, type VaultHolds } from "./DeleteVault";
 
 afterEach(cleanup);
@@ -104,16 +105,11 @@ describe("the delete-vault dialog", () => {
    * a form, so it ends in the answer bar: the way out first, the act that cannot be taken back
    * last, at the trailing edge, as `DeleteWorkspace` beside it does.
    */
-  it("ends in the answer bar, with the way out first and the delete last", () => {
+  it("ends in the dialog's footer, with the way out first and the delete last", () => {
     const { dialog, button } = draw();
-    const bar = button.closest(".answer");
-    expect(bar).not.toBeNull();
+    expect(answerRowOf(dialog)?.contains(button)).toBe(true);
     expect(dialog.querySelector(".ui-setting-actions")).toBeNull();
-    expect(
-      within(bar as HTMLElement)
-        .getAllByRole("button")
-        .map((one) => one.textContent),
-    ).toEqual(["Cancel", "Delete vault"]);
+    expect(answersOf(dialog)).toEqual(["Cancel", "Delete vault"]);
     expect(button).toHaveAttribute("data-variant", "danger");
   });
 

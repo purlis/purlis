@@ -210,6 +210,7 @@ prose under another heading, which is why every store gets a heading or a row.
 - [Workspaces](#workspaces)
   - [`workspaces/`](#workspaces-1)
   - [`workspaces/.default`](#workspacesdefault)
+  - [`workspaces/.throwaway/purlis-try-<id>/`](#workspacesthrowawaypurlis-try-id)
   - [`workspaces/<ws>/`](#workspacesws)
   - [`workspaces/<ws>/workspace.md` — the living charter](#workspaceswsworkspacemd--the-living-charter)
   - [`workspaces/<ws>/workspace.json` — the committed manifest](#workspaceswsworkspacejson--the-committed-manifest)
@@ -338,6 +339,10 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`save-branch.json`](#save-branchjson)
   - [`save-journal.jsonl`](#save-journaljsonl)
   - [`skills-deleted/<stamp>-<name>/`](#skills-deletedstamp-name)
+  - [`skill-drafts/<id>/`](#skill-draftsid)
+  - [`skill-tries/<id>/`](#skill-triesid)
+  - [`skill-levels/<chat id>.json`](#skill-levelschat-idjson)
+  - [`chat-settings/<chat id>.json`](#chat-settingschat-idjson)
   - [`ws-edit-nudge/<sid>-<workspace>`](#ws-edit-nudgesid-workspace)
   - [`ws-autosave/<workspace>`](#ws-autosaveworkspace)
   - [`workspace-tab-order`](#workspace-tab-order)
@@ -1368,6 +1373,12 @@ outside the project and removes it when the flow ends, so it adds none of them (
   removes it from git, and Restore brings it back from that commit. A skill git does not track
   is kept in [`skills-deleted/`](#skills-deletedstamp-name) instead. When a chat runs
   `purlis skill` to write, it is refused: a chat's change becomes a draft the person accepts (SK-9).
+  **A chat never writes a skill's files** (SK-9, #2772): while the `skill-studio` flag is on, a
+  sandboxed chat is denied writing every level's `skills/` and `skills.local/` (at the root, in
+  each workspace and in each persona's folder, `sandbox::skills_held`), and a chat's `Write`,
+  `Edit` or `MultiEdit` of a skill's file, or its `purlis propose` of one, is kept as a
+  [draft skill](#skill-draftsid) instead. Accept writes the draft's files here as one commit of
+  exactly those files.
 - **Read by:** `purlis-skills`' `skill_set` (`crates/skills/src/lib.rs`), the one place a
   chat's skills are worked out, for every chat purlis starts and for `purlis skill list` and
   `show` and the Skill studio. A project skill is in the set of a chat at the plane root; a chat
@@ -1622,6 +1633,25 @@ Two rules hold for the whole area and are not repeated per file:
   `workspace.chosen` (`charter/workspace.py:646`) and of `workspace.source`
   (`charter/workspace.py:676`).
 - **Git:** committed.
+
+### `workspaces/.throwaway/purlis-try-<id>/`
+
+- **Format:** a folder, made new and `0700`, holding whatever a Try it's scratch chat wrote
+  (SK-9, #2772): the **throwaway piece** that chat starts in. `<id>` is its try's, in
+  [`skill-tries/<id>/`](#skill-triesid). Inside the project because a sandboxed chat starts
+  only in a folder of the project; a sandboxed scratch chat writes this folder alone. A dot-name
+  below `workspaces/` is no workspace (`workspaces::Plane::workspaces` skips it).
+- **Status:** **internal**, **experimental** behind the `skill-studio` flag (#2772).
+- **Tier:** Clone state, transient — it lasts as long as its chat.
+- **Written by:** `purlis_core::skills::verbs::drafts::try_out` makes it; the scratch chat writes
+  in it.
+- **Removed by:** the app once the chat closes (`drafts::end_try_at`), and each time it writes its
+  record of open chats for one no chat on it stands in, two minutes after it was laid out
+  (`drafts::sweep_tries`), so a launch removes every one a quit or a crash left. Only folders
+  named `purlis-try-<16 hex>` are removed, through the handle of `workspaces/.throwaway/`, and no
+  link is followed.
+- **Git:** ignored by `/workspaces/*/*`, and never staged by a save whatever the `.gitignore`
+  says (`planegit::NEVER_STAGED`).
 - **Encoding details:** exactly `name + "\n"` (`charter/workspace.py:512`). On read the
   value is `.strip()`ed and re-checked with `valid_name`; a `contain.file_refusal` (symlink,
   FIFO, oversized) makes it read as absent (`charter/workspace.py:488`).
@@ -6957,6 +6987,79 @@ rewritten.
   open with `O_NOFOLLOW`.
 - **Git:** gitignored, under the state directory.
 
+### `skill-drafts/<id>/`
+- **Format:** one folder per draft skill (SK-9, #2772): a chat's write to a skill's files, kept
+  for the person to try, accept or reject in the Skill studio. `<id>` is sixteen hex characters
+  of a SHA-256 over the level's folder and the skill's folder name, so a skill has one draft and a
+  second write adds to it. It holds `draft.json` (`level`: the level's folder relative to the
+  plane, `skills` or `workspaces/ops/skills.local`; `folder`: the skill's folder name; `chat`: the
+  number of the chat that wrote it last; `bases`: each file the draft changed, below the skill's
+  folder, with the SHA-256 of what the project held there when the draft first changed it, `null`
+  for nothing) and `files/`, each drafted file at its path below the skill's folder. Folders are
+  private to the person, as the state directory is.
+- **Status:** **internal**, **experimental** behind the `skill-studio` flag (#2772).
+- **Tier:** Clone state — this machine's. A draft is never committed: Accept writes its files into
+  the skill's folder and commits exactly those (a local skill's are only written), and Reject
+  deletes the folder.
+- **Written by:** the app, as `purlis_core::skills::verbs::drafts::take`, for a chat's `Write`,
+  `Edit` or `MultiEdit` of a plane skill's file (its `pretooluse-edit` hook) or its `purlis
+  propose` of one, which reach the app as a proposed change does. Never by a chat.
+- **Read by:** `drafts::list`, for the Skill studio's Draft skills and the chat's "Draft ready in
+  Skill studio". Deleted ⇒ the drafts are lost; nothing in the project changes. Every read, write
+  and removal goes through folders held open with `O_NOFOLLOW`.
+- **Git:** gitignored, under the state directory.
+
+### `skill-tries/<id>/`
+- **Format:** one folder per Try it of a draft skill (SK-9, #2772), `<id>` sixteen random hex
+  characters. `skills/<name>/` holds the skill as the draft makes it: the project's files of the
+  skill, with the draft's over them. `piece` names the try's **throwaway piece**: a folder
+  `workspaces/.throwaway/purlis-try-<id>` made new, `0700`, inside the project (a sandboxed chat
+  starts only in a folder of the project), which the scratch chat starts in. A dot-name below
+  `workspaces/` is no workspace, git ignores it with every LOCAL workspace's files
+  (`/workspaces/*/*`), and a save never stages it (`planegit::SAVE_STAGES`).
+  A chat started in that folder is armed with the built-in skills and this one skill alone, as if
+  `skill-tries/<id>/` were a project of its own (`drafts::tried`).
+- **Status:** **internal**, **experimental** behind the `skill-studio` flag (#2772).
+- **Tier:** Clone state, transient — it lasts as long as its chat.
+- **Written by:** `drafts::try_out`, from the studio's Try it.
+- **Removed by:** with its [throwaway piece](#workspacesthrowawaypurlis-try-id), the same way and
+  at the same moments. What is left is the skill run the chat recorded, under the skill's name.
+- **Git:** gitignored, under the state directory; the piece is ignored and never staged.
+
+### `chat-settings/<chat id>.json`
+- **Format:** a Claude Code chat's `--settings` JSON, as purlis armed it (SK-9, #2772), where it is
+  longer than one word of a command line carries (`hoststart::SETTINGS_IN_A_WORD`, 96 KiB, under
+  Linux's 128 KiB): the chat is started with `--settings <this file>` instead. `0600` in a
+  private folder.
+- **Status:** **internal**.
+- **Tier:** Clone state, transient — it lasts as long as its chat.
+- **Written by:** the session host as it starts the chat (`hoststart::settings_in_a_file`),
+  through folder handles, no link followed. No chat writes the state folder.
+- **Read by:** Claude Code, at the chat's start.
+- **Removed by:** the app, each time it writes its record of open chats, for a chat not on it,
+  two minutes after it was written (`hoststart::sweep_settings`).
+- **Git:** gitignored, under the state directory.
+
+### `skill-levels/<chat id>.json`
+- **Format:** JSON, one file per sandboxed chat that is running (SK-9, #2772): `name`, the chat's
+  number as its tab says it, and `levels`, the workspace and persona folders there when it
+  started, relative to the plane (`workspaces/ops`, `personas/steward`).
+- **Status:** **internal**, **experimental** behind the `skill-studio` flag (#2772).
+- **Tier:** Clone state, transient — it lasts as long as its chat.
+- **Written by:** the session host as it starts a sandboxed chat (`skills::levels::note`); a
+  restart keeps the record it has. A workspace or persona the person makes, in the window or from
+  their own terminal, is added to every record (`skills::levels::vouch`); one the app makes on a
+  chat's request is not. No chat writes the state folder. `unaccepted.json` beside the records
+  (`levels`, folders relative to the plane) keeps every folder a swept record's chat could have
+  made, until the person accepts it in the Skill studio (`skills::levels::accept`).
+- **Read by:** every skill set: a workspace's or persona's skills whose folder is not in a record,
+  or is in `unaccepted.json`, reach no chat, with "accept it in the Skill studio", until the person
+  does.
+- **Removed by:** the app, each time it writes its record of open chats
+  ([`app/reopen.json`](#appreopenjson)), for a chat not on it, two minutes after it was written,
+  moving what it could have made to `unaccepted.json` first (`skills::levels::sweep`).
+- **Git:** gitignored, under the state directory.
+
 ### `save-journal.jsonl`
 - **Format:** JSON Lines, one object per save attempt, appended. Capped at the newest 500
   lines.
@@ -7265,7 +7368,7 @@ refuses a `<data>` under a project or inside any git work tree.
 |---|---|---|---|
 | `<config>/machine.json` | Machine, device-bound | the planes this machine opened (absolute paths), the operator's approval of each with what it would do when opened, the windows open at the last quit, pinned planes and workspaces, the update channel, and this device's id with when it was minted (`device`, ADR 0066: a ULID minted at the first launch that asks, and the key events and records name the device by; on a runner, minted at its one pairing by `purlis bridge --pair`, and a runner whose store already holds one is not paired, #2539, ADR 0078 as amended 2026-10-18). And the ISO week the updater last read the weekly manifest in (`weekly`, `2026-W41`, ADR 0083 as amended for OB-17): never sent, and the same value on every machine that checked that week. And the browser limits the person set on this machine (`browsers`, #2023, ruled 2026-10-18): `per_project` (1 to 16), `on_this_device` (1 to 64) and `idle_minutes` (0 to 1440, `0` is never), each absent until set and absent meaning purlis's default, a value out of its bounds read as not set. And, in each remembered plane's entry, which pool each of its workspaces runs its chats on (`chatsRunOn`, #2679, the person's ruling of 2026-10-20: per machine and per workspace, set from the workspace's settings, never committed): `{"<workspace>": "<pool>"}`, at most 64 per plane, left out while every workspace runs its chats on this machine; a pool named here is defined only in `runners.json` (below), a name that is not kept there with its runner starts no chat and says so, and a name purlis would not write is dropped with a reason, that workspace running its chats on this machine. Renaming a workspace carries its entry. And which engine browsers start on (`browsers.engine`, #2835, ruled 2026-10-20): `"machine"` starts every browser on this machine's own Google Chrome or Chromium where one is installed, the person's choice on the Notice about the browser engine's sandbox (ADR 0042's choice); absent, or any other value, is the pinned engine. And the flags turned on on this machine (`flags`, #2764): `{"skill-studio": true}` turns on the Skill studio's slices until its finish line (spec #2762); a flag is on only where it is `true`, a name this build does not know is off, and the table is left out while none is on. A flag is never the channel's: both channels' binaries are the same (ADR 0092), and a flag is off on either until it is turned on here; `PURLIS_SKILL_STUDIO=1` or `0` decides over it for one process. Pins and the channel are preferences, but they are keyed by absolute path and share one file with the approvals, so the file is device-bound as a whole | `machine::update`, from the app's opener, a workspace's *Runs on* setting (#2046) and `purlis update --channel` |
 | `<config>/machine.json.lock` | Machine, device-bound, transient | the `flock` that makes a read-modify-write of `machine.json` one act | `machine::update` |
-| `<config>/layout.json` | Machine, syncable | the window's arrangement of regions, the two text sizes, your editor (RC-20, ADR 0081 §6: one of four words, never a program), and how chats are listed and summed up (`chats`, #1499: `lines`, 1 or 2, and `grouped`, whether its sessions are grouped by workspace; and #1489: `tabbed`, whether a pressed task opens in a tab of its own, where otherwise its session's tab is switched to it; and #1514: `away`, whether coming back to the window after a while away sums up what happened meanwhile; and #2024: `beside`, whether a browser a chat starts opens beside the chat; left out at the defaults, 2, `false`, `false`, `true` and `false`; and when the asks' notifications keep quiet, `notifications.quiet`, #1989: `on`, `from` and `to`, left out at the defaults, `false`, `22:00` and `07:00`) | `windowprefs::write_layout`, `adopt_layout` (which moves the legacy `charter.layout` localStorage key into it once) |
+| `<config>/layout.json` | Machine, syncable | the window's arrangement of regions, the two text sizes, your editor (RC-20, ADR 0081 §6: one of four words, never a program), and how chats are listed and summed up (`chats`, #1499: `lines`, 1 or 2, and `grouped`, whether its sessions are grouped by workspace; and #1489: `tabbed`, whether a pressed task opens in a tab of its own, where otherwise its session's tab is switched to it; and #1514: `away`, whether coming back to the window after a while away sums up what happened meanwhile; and #2024: `beside`, whether a browser a chat starts opens beside the chat; left out at the defaults, 2, `false`, `false`, `true` and `false`; and when the asks' notifications keep quiet, `notifications.quiet`, #1989: `on`, `from` and `to`, left out at the defaults, `false`, `22:00` and `07:00`; and whether the project rail hides itself, `rail`, #2915: `"auto"`, left out while it is always shown) | `windowprefs::write_layout`, `adopt_layout` (which moves the legacy `charter.layout` localStorage key into it once) |
 | `<config>/push-remotes.json` | Machine, device-bound | for each clone the window cloned or saved, the remote its pushes go to (#752, P-82-3): `{ "<clone's key>": "<host>/<owner>/<repo>" }`, lower-case, keyed as #1808's `clone_key` (the real path and the `.git`'s identity, so a repository cloned into the same folder later has no record). **No secret**. An automatic save gets purlis's own credential helper only for the recorded remote. A file that is missing or not a record holds nothing, and an automatic save then takes the forge CLI's helper and records nothing | `forge::gitcredential::helper_for_push` (a push the person confirmed) and `record_push_remote` (a clone the window made, a project created on a forge (#1819) or published to one (#1820)); read by `helper_for_push` |
 | `<config>/onboarding.json` | Machine, device-bound | where the person is in the guided steps (#1817, spec #1810): `version` (1), `step` (`welcome`, `sign-in`, `project`, `git` or `harness`), `door` (`create`, `get`, `open` or null), `signing_in` and `git_missing` (whether those steps are counted in this run), `made` (the project the steps opened, which the harness step holds: its absolute root, where its first chat starts and the workspace strip an installer is filed on; or null) and `finished_once` (this machine has been through the steps, so the harness step shows only while no harness is installed). **No secret, ever**: a forge token is a keyring item (ADR 0077 §7), and a resumed sign-in asks again. A convenience, never a gate: a file that is missing, larger than 16 KiB, not JSON, of another version or naming a step purlis does not know reads as no progress, and a `made` path is opened through the trust gate like any other. Written whole by the window on every step, read each time the steps appear | `onboarding::write`, from the window's `keep_onboarding_progress`; read by `onboarding::read` (`onboarding_progress`) |
 | `<config>/theme.json` | Machine, syncable | the operator's own theme; purlis only reads it | the operator, by hand |

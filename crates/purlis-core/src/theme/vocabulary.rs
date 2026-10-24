@@ -144,6 +144,9 @@ pub const DURATIONS: &[&str] = &[
     "duration.settle",
     "duration.spin",
     "duration.breathe",
+    "duration.slide",
+    "duration.reveal",
+    "duration.leave",
 ];
 
 /// How each kind of change moves, as the four numbers of a cubic Bézier.
@@ -273,6 +276,7 @@ pub const GEOMETRY: &[&str] = &[
     "--focus-ring-width",
     "--focus-ring-offset",
     "--focus-ring-inset",
+    "--pane-border-width",
     "--elevation-raised",
     "--elevation-overlay",
 ];

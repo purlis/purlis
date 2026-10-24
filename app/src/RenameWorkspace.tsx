@@ -1,11 +1,9 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useRef, useState } from "react";
-import * as Dialog from "./overlays/dialog";
-import { Field, SettingActions, SettingRow } from "./settings/components";
-import { Button } from "./ui/button/Button";
-import { Form } from "./ui/field/Field";
+import { useState } from "react";
+import { Field, SettingRow } from "./settings/components";
+import { Dialog } from "./ui/dialog/Dialog";
 
 /**
  * Renaming a workspace (charter#367), asked where the answer is given.
@@ -38,83 +36,59 @@ export function RenameWorkspace({
   onCancel: () => void;
 }) {
   const [name, setName] = useState(workspace);
-  // The dialog, so the box can be found in it on opening: the row draws the box, and a
-  // setting's field takes no ref.
-  const content = useRef<HTMLDivElement>(null);
   const next = name.trim();
   const ready = next !== "" && next !== workspace && !renaming && startsFresh !== undefined;
   const rename = () => {
     if (ready) onRename(next);
   };
   return (
-    <Dialog.Root
-      open
-      onOpenChange={(open) => {
-        if (!open) onCancel();
+    <Dialog
+      onClose={onCancel}
+      title={`Rename workspace ${workspace}`}
+      titleId="rename-workspace"
+      // The box, with its name chosen, so what is typed replaces it. The row draws the box, and
+      // a setting's field takes no ref, so it is found in the dialog.
+      initialFocus={(dialog) => {
+        const box = dialog.querySelector("input");
+        box?.select();
+        return box;
+      }}
+      main={{
+        children: renaming ? "Renaming…" : "Rename workspace",
+        reserve: ["Rename workspace", "Renaming…"],
+        isDisabled: !ready,
+        onPress: rename,
       }}
     >
-      <Dialog.Portal>
-        <Dialog.Overlay className="ui-scrim" />
-        <Dialog.Content
-          ref={content}
-          className="ui-dialog warning"
-          aria-labelledby="rename-workspace"
-          // A click outside answers nothing; Escape is Cancel, and nothing is renamed.
-          onInteractOutside={(e) => e.preventDefault()}
-          onOpenAutoFocus={(e) => {
-            e.preventDefault();
-            const box = content.current?.querySelector("input");
-            box?.focus();
-            box?.select();
-          }}
-        >
-          <Dialog.Title id="rename-workspace">Rename workspace {workspace}</Dialog.Title>
-          <Form
-            onSubmit={(event) => {
-              event.preventDefault();
-              rename();
-            }}
-          >
-            <SettingRow
-              label="New name"
-              help={
-                <>
-                  Its folder under <code>workspaces/</code> moves, its branches&apos; folders are
-                  repaired, and everything that names it follows. Not while a chat is running in it.
-                </>
-              }
-              control={(ids) => <Field ids={ids} kind="text" value={name} onChange={setName} />}
-            />
-            {/* Rename waits for this answer, so say that it is being asked (#1719): a button
-                greyed out with no reason reads as a dialog that refuses. */}
-            {startsFresh === undefined && (
-              <p className="pending" aria-busy="true">
-                Asking which chats would start fresh…
-              </p>
-            )}
-            {/* The core's sentence, unchanged, as `trouble` is. */}
-            {startsFresh && (
-              <p className="came-back" aria-label="Chats that will start fresh">
-                {startsFresh}
-              </p>
-            )}
-            {/* Verbatim, beside the box: the operator is still answering. */}
-            {trouble && (
-              <p className="trouble" role="alert">
-                {trouble}
-              </p>
-            )}
-
-            {/* `tabIndex={0}` on both, per `docs/ui-primitives.md` (charter-app#186). */}
-            <SettingActions>
-              <Button variant="primary" type="submit" isDisabled={!ready}>
-                {renaming ? "Renaming…" : "Rename workspace"}
-              </Button>
-              <Button onPress={onCancel}>Cancel</Button>
-            </SettingActions>
-          </Form>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+      <SettingRow
+        label="New name"
+        help={
+          <>
+            Its folder under <code>workspaces/</code> moves, its branches&apos; folders are
+            repaired, and everything that names it follows. Not while a chat is running in it.
+          </>
+        }
+        control={(ids) => <Field ids={ids} kind="text" value={name} onChange={setName} />}
+      />
+      {/* Rename waits for this answer, so say that it is being asked (#1719): a button greyed
+          out with no reason reads as a dialog that refuses. */}
+      {startsFresh === undefined && (
+        <p className="pending" aria-busy="true">
+          Asking which chats would start fresh…
+        </p>
+      )}
+      {/* The core's sentence, unchanged, as `trouble` is. */}
+      {startsFresh && (
+        <p className="came-back" aria-label="Chats that will start fresh">
+          {startsFresh}
+        </p>
+      )}
+      {/* Verbatim, beside the box: the operator is still answering. */}
+      {trouble && (
+        <p className="trouble" role="alert">
+          {trouble}
+        </p>
+      )}
+    </Dialog>
   );
 }

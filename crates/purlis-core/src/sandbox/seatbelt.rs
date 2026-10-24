@@ -149,6 +149,9 @@ pub fn denial_rules(denial: &Denial) -> Result<Vec<String>, &'static str> {
         (Reach::Itself, _) | (Reach::AndBelow, Access::Write) => "file-write*",
         (Reach::AndBelow, Access::ReadWrite) => "file-read* file-write*",
     };
+    if let Some(rules) = pattern_rules(denial, what)? {
+        return Ok(rules);
+    }
     let mut names: Vec<PathBuf> = Vec::new();
     for held in held_names(&denial.path) {
         for name in super::both_firmlink_names(held) {
@@ -175,6 +178,48 @@ pub fn denial_rules(denial: &Denial) -> Result<Vec<String>, &'static str> {
         rules.push(format!("(deny {what} {filter})"));
     }
     Ok(rules)
+}
+
+/// The rules that deny `denial` where its path holds a [`super::ANY_NAME`] part (SK-9): what is
+/// above the first such part as the kernel names it and across a firmlink, each such part one
+/// name, and the rest as written. `None` for a path with no such part.
+fn pattern_rules(denial: &Denial, what: &str) -> Result<Option<Vec<String>>, &'static str> {
+    let parts: Vec<String> = denial
+        .path
+        .components()
+        .map(|part| part.as_os_str().to_string_lossy().into_owned())
+        .collect();
+    let Some(first) = parts.iter().position(|part| part == super::ANY_NAME) else {
+        return Ok(None);
+    };
+    let above: PathBuf = parts[..first].iter().collect();
+    let below = parts[first..]
+        .iter()
+        .map(|part| {
+            if part == super::ANY_NAME {
+                "[^/]+".to_owned()
+            } else {
+                escaped(part)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("/");
+    let tail = match denial.reach {
+        Reach::AndBelow => "(/.*)?$",
+        Reach::Itself => "$",
+    };
+    let mut rules: Vec<String> = Vec::new();
+    for name in super::both_firmlink_names(real(&above)) {
+        let prefix = escaped(&name.display().to_string());
+        let rule = format!(
+            "(deny {what} (regex {}))",
+            string(&format!("^{prefix}/{below}{tail}"))?
+        );
+        if !rules.contains(&rule) {
+            rules.push(rule);
+        }
+    }
+    Ok(Some(rules))
 }
 
 /// `text` with every regular-expression character escaped.

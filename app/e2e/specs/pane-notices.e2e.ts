@@ -5,6 +5,7 @@ import { browser, expect, $, $$ } from "@wdio/globals";
 import { READY } from "../harness.js";
 import { pressAndStart, pressOnly } from "../opening.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
+import { railHidden } from "../rail.js";
 
 /**
  * **A Notice in a pane fits its pane, measured** (#1481), **in a row of its own above the
@@ -461,6 +462,10 @@ async function scrolledSideways(pane: number): Promise<number[]> {
 }
 
 describe("a Notice in a pane", () => {
+  // The work measured with the project rail hidden (`rail.ts`, #2915).
+  before(() => railHidden(true));
+  after(() => railHidden(false));
+
   /** The tabs that were already there: the strip is back to them once this file's chats end. */
   let wereAlreadyOpen: string[] = [];
   /** The chats running when the file began, so only the ones it started are ended again. */
@@ -936,7 +941,7 @@ describe("a Notice in a pane", () => {
         const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
         if (hit?.closest('[data-raised="pane-notices.e2e"]')) return "the Notice";
         if (hit?.closest('[role="dialog"]')) return "the dialog";
-        if (hit?.closest(".ui-scrim")) return "the scrim";
+        if (hit?.closest('[data-scope="dialog"][data-part="scrim"]')) return "the scrim";
         if (hit?.closest('[data-testid="pane"]')) return "the terminal";
         return hit?.className || hit?.tagName || "(nothing)";
       });
@@ -1134,9 +1139,21 @@ describe("the Ask persona dialog", () => {
           return made;
         },
       ][0];
-      const scrim = el("div", "ui-scrim");
-      const dialog = el("div", "ui-dialog warning ask-persona");
+      // The dialog family's anatomy (`ui/dialog/Dialog.tsx`), as the Ask a persona dialog
+      // draws it: the scrim, the root, its header, its body and its footer with the answers.
+      const part = (tag: string, name: string, text?: string) => {
+        const made = el(tag, "", text);
+        Object.assign(made.dataset, { scope: "dialog", part: name });
+        return made;
+      };
+      const scrim = part("div", "scrim");
+      const modal = part("div", "modal");
+      const dialog = part("section", "root");
+      Object.assign(dialog.dataset, { variant: "dialog", size: "standard" });
+      dialog.classList.add("ask-persona");
       dialog.setAttribute("role", "dialog");
+      const header = part("header", "header");
+      header.append(part("h2", "title", "Ask devops"));
       // The field family's boxes (#2905), as `TextField` and `TextArea` draw them: the field's
       // root, the box, and the element typed in.
       const field = (scope: "text-input" | "textarea", place: string, typed: HTMLElement) => {
@@ -1155,30 +1172,35 @@ describe("the Ask persona dialog", () => {
       const typed = el("textarea", "") as HTMLTextAreaElement;
       typed.rows = 4;
       const ask = field("textarea", "ui-setting-box ui-setting-list", typed);
-      const form = el("form", "");
-      form.append(
+      const form = part("form", "form");
+      const body = part("div", "body");
+      body.append(
         row(name, "What the task is called, on its tab and under this chat."),
         row(ask, "A task starts as devops on these words, with its own sandbox, hosts and vaults."),
       );
       // Where it works, and then some: more than a window of this height shows at once.
       for (let more = 0; more < 24; more++)
-        form.append(
+        body.append(
           row(
             el("span", "", "A branch of its own"),
             "purlis cuts a new branch, in a folder of its own.",
           ),
         );
-      const answers = el("div", "ui-setting-actions");
-      // The button family's buttons (#2904), as `Button` draws them.
+      const footer = part("footer", "footer");
+      const answers = part("div", "actions");
+      // The button family's buttons (#2904), as `Button` draws them: Cancel leads.
       const family = (variant: string, words: string) => {
         const button = el("button", "", words);
         Object.assign(button.dataset, { scope: "button", part: "root", variant, size: "md" });
         return button;
       };
-      answers.append(family("primary", "Ask devops"), family("secondary", "Cancel"));
-      form.append(answers);
-      dialog.append(el("h2", "", "Ask devops"), form);
-      document.body.append(scrim, dialog);
+      answers.append(family("secondary", "Cancel"), family("primary", "Ask devops"));
+      footer.append(part("div", "summary"), answers);
+      form.append(body, part("div", "separator"), footer);
+      dialog.append(header, form);
+      modal.append(dialog);
+      scrim.append(modal);
+      document.body.append(scrim);
 
       const box = [
         (of: Element) => {
@@ -1201,8 +1223,8 @@ describe("the Ask persona dialog", () => {
         ask: box(ask),
         resize: style.resize,
         answers: box(answers),
-        scrolls: dialog.scrollHeight > dialog.clientHeight + 1,
-        scrolledTo: dialog.scrollTop,
+        scrolls: body.scrollHeight > body.clientHeight + 1,
+        scrolledTo: body.scrollTop,
       };
     });
 
@@ -1214,7 +1236,7 @@ describe("the Ask persona dialog", () => {
     expect(seen.ask.height).toBeGreaterThan(seen.name.height * 2);
     expect(seen.resize).toBe("none");
 
-    // The dialog is inside the window and scrolls inside itself; before any scrolling, its
+    // The dialog is inside the window and its body scrolls inside it; before any scrolling, its
     // answers are at its bottom edge, in view.
     inside(seen.dialog, seen.window, "the dialog in the window");
     expect(seen.scrolls).toBe(true);

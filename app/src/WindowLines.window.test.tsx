@@ -78,7 +78,7 @@ function core() {
 const projectTabs = () =>
   within(stripNamed("Projects"))
     .getAllByRole("tab")
-    .map((tab) => tab.querySelector(".project-name")?.textContent);
+    .map((tab) => tab.getAttribute("aria-label"));
 
 /** The one slow-start line in the document, wherever it is drawn. */
 const slowLine = () => {

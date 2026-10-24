@@ -681,7 +681,7 @@ const projectNames = () =>
     .getAllByRole("tab")
     .map(
       (tab) =>
-        `${tab.querySelector(".project-name")?.textContent}${
+        `${tab.getAttribute("aria-label")}${
           tab.getAttribute("aria-selected") === "true" ? "*" : ""
         }`,
     );
@@ -690,7 +690,7 @@ const projectNames = () =>
 function projectTab(name: string): HTMLElement {
   const tab = within(stripNamed("Projects"))
     .getAllByRole("tab")
-    .find((one) => one.querySelector(".project-name")?.textContent === name);
+    .find((one) => one.getAttribute("aria-label") === name);
   if (!tab) throw new Error(`no project tab called ${name}`);
   return tab;
 }

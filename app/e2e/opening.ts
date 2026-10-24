@@ -74,10 +74,23 @@ export function aDialogOffers(
  * ("Starting…") while the dialog is still up, so it cannot say the dialog went.
  */
 async function theDialogHasGone(role: string, text: string, timeoutMsg: string): Promise<void> {
-  await browser.waitUntil(
-    async () => !(await browser.execute(aDialogOffers, role, text, "Cancel", false)),
-    { timeout: 20_000, timeoutMsg },
-  );
+  try {
+    await browser.waitUntil(
+      async () => !(await browser.execute(aDialogOffers, role, text, "Cancel", false)),
+      { timeout: 20_000 },
+    );
+  } catch {
+    // Said with what the dialog reads, so a red run says why it stayed.
+    const says = await browser.execute(
+      (wanted: string) =>
+        [...document.querySelectorAll(`[role="${wanted}"]`)]
+          .map((one) => (one.textContent ?? "").replace(/\s+/g, " ").trim())
+          .join(" | ")
+          .slice(-1500),
+      role,
+    );
+    throw new Error(`${timeoutMsg}. It reads: ${says}`);
+  }
 }
 
 /**
@@ -213,12 +226,17 @@ export async function endEveryChat(most = 200): Promise<void> {
 }
 
 /**
- * Closes a project by its `×` (a selector for it), and answers the question it asks when it has chats open
- * (`ClosingProject`, charter-app#239). A project with nothing open closes without one, so the
- * question is waited for briefly and not required.
+ * Closes a project by its button on the rail (a selector for it), with Delete, the key that
+ * closes a focused project (#2915: the rail has no `×`), and answers the question it asks when it
+ * has chats open (`ClosingProject`, charter-app#239). A project with nothing open closes without
+ * one, so the question is waited for briefly and not required.
  */
-export async function closeProject(closer: string): Promise<void> {
-  await $(closer).click();
+export async function closeProject(button: string): Promise<void> {
+  await $(button).waitForExist({ timeout: 20_000 });
+  await browser.execute((css: string) => {
+    document.querySelector<HTMLElement>(css)?.focus();
+  }, button);
+  await browser.keys(["Delete"]);
   // Looked for afresh, by its answer, at every look (#2126).
   const asked = await browser
     .waitUntil(
@@ -249,6 +267,25 @@ export async function everyCloseHasLetGo(): Promise<void> {
       timeoutMsg: "a project this window closed never finished letting go",
     },
   );
+}
+
+/** The palette, once it is up. */
+const PALETTE = '[role="dialog"][aria-label="Command palette"]';
+
+/**
+ * Runs a palette row by typing its words and Enter: how a scenario reaches what the window has
+ * no button for, New project… among them since the project strip went (#2915).
+ */
+export async function fromThePalette(words: string): Promise<void> {
+  await browser.keys(["F2"]);
+  await $(PALETTE).waitForDisplayed({ timeout: 20_000 });
+  const box = await $("#palette-query");
+  await browser.waitUntil(async () => box.isFocused(), {
+    timeout: 10_000,
+    timeoutMsg: "the palette did not take the keyboard when it opened",
+  });
+  await box.addValue(words);
+  await browser.keys(["Enter"]);
 }
 
 /** The trust question's title for a project this machine has approved nothing about (ADR 0035). */

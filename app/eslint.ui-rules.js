@@ -29,7 +29,10 @@
  *   the field family's.
  * - `purlis/choice-family` (warning until the choice families move): a raw checkbox, radio,
  *   slider (`range`) or colour well (`color`) `<input>`.
- * - `purlis/dialog-family` (warning until the dialog family moves): a `role="dialog"`.
+ * - `purlis/dialog-family` (error: the dialog family has moved, #2910): a `role="dialog"` or
+ *   `role="alertdialog"` written by hand. Every dialog and alert dialog is the family's `Dialog`,
+ *   `AlertDialog` or `DialogSurface` (`ui/dialog/Dialog`), which holds the dialog rules; a popover
+ *   of another family that is a dialog to a screen reader says so through its own primitive.
  * - `purlis/tooltip-family` (error: the tooltip family has moved, #2908): a native `title=` on an
  *   element, a primitive's part (`RadioGroup.Item`), a member of the button or status item
  *   family, or a house component that hands it on to its element (`handsOn`, set in
@@ -40,6 +43,8 @@
  * - `purlis/panel-family`, `purlis/panel-section-family`, `purlis/empty-state-family` and
  *   `purlis/status-item-family` (errors: these families have moved, #2913): each family's old
  *   classes, and its `data-scope` written by hand, which only its wrapper draws.
+ * - `purlis/rail-family` (error: the project rail is a family, #2915): the project strip's old
+ *   classes (`projects`, `project`, `project-name`) and `data-scope="rail"` by hand.
  *
  * The primitives library itself is refused outside `src/ui` by `no-restricted-imports`, in
  * `eslint.config.js`: one wrapper per primitive, and screens never import it.
@@ -318,15 +323,28 @@ const choiceFamily = unmoved({
   },
 });
 
-const dialogFamily = unmoved({
-  description: "A dialog is drawn from the dialog family in src/ui once it moves",
-  message:
-    '`role="dialog"`: draw it from the dialog family in `src/ui` once that family has moved (spec #2897).',
-  test: (node) => {
-    const role = attributeOf(node, "role");
-    return role?.value?.type === "Literal" && role.value.value === "dialog" ? [role] : [];
+/** The roles only the dialog family writes. */
+const DIALOG_ROLES = new Set(["dialog", "alertdialog"]);
+
+const dialogFamily = {
+  meta: {
+    type: "problem",
+    docs: { description: "A dialog is the shared dialog family, never a hand-drawn one" },
+    messages: {
+      raw: '`role="{{role}}"` by hand: draw it as `<Dialog>`, `<AlertDialog>` or `<DialogSurface>` from `ui/dialog/Dialog`, which keeps the dialog rules (docs/ui-primitives.md).',
+    },
+    schema: [],
   },
-});
+  create(context) {
+    return {
+      JSXOpeningElement(node) {
+        const role = attributeOf(node, "role");
+        if (role?.value?.type === "Literal" && DIALOG_ROLES.has(role.value.value))
+          context.report({ node: role, messageId: "raw", data: { role: role.value.value } });
+      },
+    };
+  },
+};
 
 /** The `title` key an object written as a literal holds, if it holds one. */
 const titleKeyOf = (object) =>
@@ -500,6 +518,14 @@ const statusItemFamily = moved({
     "a status item: draw it as `<StatusItem>` or `<StatusCell>` from `ui/status/StatusItem`, on a `<StatusBar>` (`ui/status/StatusBar`) where it is the bar's (#2913).",
 });
 
+const railFamily = moved({
+  description: "The project rail is the shared rail family",
+  scopes: ["rail"],
+  classes: ["projects", "project", "project-name"],
+  message:
+    "the project rail: draw it as `<Rail>`, `<RailProject>` and `<RailAction>` from `ui/rail/Rail` (#2915).",
+});
+
 export const purlisUi = {
   meta: { name: "purlis-ui" },
   rules: {
@@ -514,5 +540,6 @@ export const purlisUi = {
     "panel-section-family": panelSectionFamily,
     "empty-state-family": emptyStateFamily,
     "status-item-family": statusItemFamily,
+    "rail-family": railFamily,
   },
 };

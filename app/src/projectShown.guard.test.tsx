@@ -6,8 +6,6 @@ import { join } from "node:path";
 import { useRef, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import * as AlertDialog from "@radix-ui/react-alert-dialog";
-import * as Dialog from "@radix-ui/react-dialog";
 import * as Select from "@radix-ui/react-select";
 import { isView, RADIX_FROM, sourceFiles, SRC, withoutComments } from "./guards.testkit";
 import { PACKAGES, partsNotHeld } from "./overlaysHeld.testkit";
@@ -21,6 +19,7 @@ import { Button } from "./ui/button/Button";
 import { ContextMenu } from "./ui/menu/ContextMenu";
 import { AnchoredMenu, InlineMenu, Menu, MenuItem, MenuTrigger } from "./ui/menu/Menu";
 import { AnchoredPopover, HeldPopover, PopoverDialog, PopoverTrigger } from "./ui/popover/Popover";
+import { AlertDialog, Dialog } from "./ui/dialog/Dialog";
 
 /**
  * **Nothing a project's view opens over the window can stay up over another project**
@@ -37,8 +36,6 @@ afterEach(cleanup);
 
 /** Each Radix package the window draws with, and whether what it draws is over the window. */
 const KINDS: Record<string, "over" | "says nothing to answer" | "in place"> = {
-  "@radix-ui/react-alert-dialog": "over",
-  "@radix-ui/react-dialog": "over",
   "@radix-ui/react-select": "over",
   "@radix-ui/react-checkbox": "in place",
   "@radix-ui/react-radio-group": "in place",
@@ -56,6 +53,8 @@ const PORTALS = [
   "PlaneView.tsx",
   // A view's element, into the region it is in.
   "RegionFrame.tsx",
+  // A dialog's answers drawn from inside its body, into its own footer (`DialogAnswers`).
+  "ui/dialog/Dialog.tsx",
 ];
 
 const sources = sourceFiles(isView).map((file) => ({
@@ -151,27 +150,6 @@ describe("each kind drawn over the window is found as its project leaves the fro
 
   const kinds: [string, React.ReactElement][] = [
     [
-      "@radix-ui/react-dialog",
-      <Dialog.Root open>
-        <Dialog.Portal>
-          <Dialog.Content aria-describedby={undefined}>
-            <Dialog.Title>Doctor</Dialog.Title>
-          </Dialog.Content>
-        </Dialog.Portal>
-      </Dialog.Root>,
-    ],
-    [
-      "@radix-ui/react-alert-dialog",
-      <AlertDialog.Root open>
-        <AlertDialog.Portal>
-          <AlertDialog.Content aria-describedby={undefined}>
-            <AlertDialog.Title>Delete persona steward?</AlertDialog.Title>
-          </AlertDialog.Content>
-        </AlertDialog.Portal>
-      </AlertDialog.Root>,
-    ],
-
-    [
       "@radix-ui/react-select",
       <Select.Root open value="a">
         <Select.Trigger aria-label="Profile">
@@ -190,8 +168,14 @@ describe("each kind drawn over the window is found as its project leaves the fro
     ],
   ];
 
-  /** The families' own overlays (#2909): a menu, and a popover that asks. */
+  /** The families' own overlays: a dialog and an alert dialog (#2910), a menu, and a popover that
+   *  asks (#2909). */
   const families: [string, React.ReactElement][] = [
+    ["the dialog family's dialog", <Dialog onClose={() => {}} title="Doctor" />],
+    [
+      "the dialog family's alert dialog",
+      <AlertDialog onClose={() => {}} title="Delete persona steward?" />,
+    ],
     [
       "the menu family",
       <MenuTrigger defaultOpen>

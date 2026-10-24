@@ -946,6 +946,12 @@ export const commands = {
 	skillRestore: __WINDOW_ONLY_RESULT,
 	skillGrant: __WINDOW_ONLY_RESULT,
 	skillTurn: __WINDOW_ONLY_RESULT,
+	skillDrafts: __WINDOW_ONLY_RESULT,
+	skillDraftAccept: __WINDOW_ONLY_RESULT,
+	skillDraftReject: __WINDOW_ONLY_RESULT,
+	skillDraftChat: __WINDOW_ONLY_RESULT,
+	skillDraftTry: __WINDOW_ONLY_RESULT,
+	skillLevelAccept: __WINDOW_ONLY_RESULT,
 	skillSources: __WINDOW_ONLY_RESULT,
 	skillSourceAdd: __WINDOW_ONLY_RESULT,
 	skillSourceRemove: __WINDOW_ONLY_RESULT,
@@ -9144,6 +9150,32 @@ export type SkillCompat = {
 	says: string[],
 };
 
+/**  One draft skill, as the studio lists it. */
+export type SkillDraft = {
+	/**  What Try it, Accept and Reject are handed back. */
+	id: string,
+	name: string,
+	level: SkillLevel,
+	/**  The chat that wrote it last, by its number. */
+	chat: number | null,
+	/**  A new skill, rather than a change to one. */
+	new: boolean,
+	/**  A file it changes changed in the project since: Accept is refused. */
+	stale: boolean,
+	files: SkillDraftFile[],
+};
+
+/**  One file of a draft: the project's text and the draft's, drawn as a diff. */
+export type SkillDraftFile = {
+	/**  Below the skill's folder: `SKILL.md`, `scripts/run.sh`. */
+	path: string,
+	before: string | null,
+	after: string,
+	/**  The lines that changed, as git's one line diff marks them in the merge view. */
+	hunks: GitHunk[],
+	stale: boolean,
+};
+
 /**  How well a skill fits a harness, as its badge draws it (SK-8): the core's `Fit`. */
 export type SkillFit = 
 /**  Everything it asks for applies. */
@@ -9606,6 +9638,11 @@ export type StudioSkill = {
 	on: boolean,
 	/**  Why it is left out, in one line, where it is. */
 	left_out: string | null,
+	/**
+	 *  Where it is left out because a chat could have made its level's folder (SK-9): that
+	 *  folder, which Accept takes (`skill_level_accept`).
+	 */
+	accept: string | null,
 	/**  What it does and when to use it: its frontmatter's `description`. */
 	description: string,
 	/**  Its folder, relative to the project where it is inside it; empty for an installed skill. */

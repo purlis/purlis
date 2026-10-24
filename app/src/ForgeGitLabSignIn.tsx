@@ -2,10 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import * as Dialog from "./overlays/dialog";
 import { commands, type ForgeAccountRow } from "./bindings";
-import { SettingActions } from "./settings/components";
-import { Button } from "./ui/button/Button";
+import { Dialog } from "./ui/dialog/Dialog";
 
 /** The one host purlis has a GitLab application on (ADR 0077 §1). */
 const HOST = "gitlab.com";
@@ -84,50 +82,36 @@ export function ForgeGitLabSignIn({
 
   const waiting = trouble === undefined;
 
+  // **Placed as every dialog is** (#2910): it had no place of its own and sat wherever the
+  // window drew it.
   return (
-    <Dialog.Root
-      open
-      onOpenChange={(open) => {
-        if (!open) cancel();
+    <Dialog
+      onClose={cancel}
+      title="Sign in with GitLab"
+      subtitle="for this machine; the sign-in is kept in your system keychain"
+      // Its answer stays where it is while the browser is asked, so nothing moves when it fails.
+      main={{
+        children: waiting ? "Waiting…" : "Try again",
+        reserve: ["Waiting…", "Try again"],
+        isDisabled: waiting,
+        onPress: tryAgain,
       }}
     >
-      <Dialog.Portal>
-        <Dialog.Overlay className="ui-scrim" />
-        <Dialog.Content
-          className="ui-dialog"
-          aria-describedby={undefined}
-          // A click outside answers nothing (`docs/ui-primitives.md`). Escape is Cancel.
-          onInteractOutside={(e) => e.preventDefault()}
-        >
-          <Dialog.Title>Sign in with GitLab</Dialog.Title>
-          <p className="where">for this machine; the sign-in is kept in your system keychain</p>
-
-          {waiting ? (
-            <p className="pending" role="status" aria-busy="true">
-              Waiting for your browser. purlis opened {HOST} there: approve purlis on that page, and
-              the sign-in finishes here by itself.
-            </p>
-          ) : (
-            // Verbatim: the core's sentence says what stopped it and what to do.
-            <p className="trouble said-in-full" role="alert">
-              {trouble}
-            </p>
-          )}
-          <p className="ui-setting-help">
-            purlis asks {HOST} for the <code>api</code> scope, the only one that lets it open merge
-            requests and push for you. It never hands the sign-in to a chat.
-          </p>
-
-          <SettingActions>
-            {!waiting && (
-              <Button variant="primary" onPress={tryAgain}>
-                Try again
-              </Button>
-            )}
-            <Button onPress={cancel}>Cancel</Button>
-          </SettingActions>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+      {waiting ? (
+        <p className="pending" role="status" aria-busy="true">
+          Waiting for your browser. purlis opened {HOST} there: approve purlis on that page, and the
+          sign-in finishes here by itself.
+        </p>
+      ) : (
+        // Verbatim: the core's sentence says what stopped it and what to do.
+        <p className="trouble said-in-full" role="alert">
+          {trouble}
+        </p>
+      )}
+      <p className="ui-setting-help">
+        purlis asks {HOST} for the <code>api</code> scope, the only one that lets it open merge
+        requests and push for you. It never hands the sign-in to a chat.
+      </p>
+    </Dialog>
   );
 }

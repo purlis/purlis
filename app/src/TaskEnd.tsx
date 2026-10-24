@@ -1,7 +1,6 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import * as AlertDialog from "./overlays/alert-dialog";
 import {
   createContext,
   Fragment,
@@ -14,10 +13,10 @@ import {
 import type { Offer, TaskEndWay } from "./actions";
 import type { TaskEnding } from "./bindings";
 import { fitWaysOn } from "./wholeWays";
-import { AnswerBar } from "./AnswerBar";
 import { Choice, SettingRow } from "./settings/components";
 import { Button } from "./ui/button/Button";
 import { Tooltip } from "./ui/tooltip/Tooltip";
+import { AlertDialog } from "./ui/dialog/Dialog";
 
 /** The two answers about the tasks at work below the one being ended. */
 const TOO = "too";
@@ -126,7 +125,7 @@ export function belowSaid(below: readonly string[]): string {
  * is the answer that loses least. Where purlis may not type into the task, or the task is
  * being stopped already and has its one short turn, it is not drawn, the question says why,
  * and Cancel takes the keyboard. Escape is Cancel, and a click outside answers nothing
- * (Radix's `AlertDialog`, for `ChatAsk`'s reasons). A refusal stays in the question, in the
+ * (the family's `AlertDialog`, for `ChatAsk`'s reasons). A refusal stays in the question, in the
  * core's words.
  */
 export function TaskEndAsk({
@@ -141,102 +140,87 @@ export function TaskEndAsk({
   onAnswer: (way: TaskEndWay) => void;
   onCancel: () => void;
 }) {
-  const stop = useRef<HTMLButtonElement>(null);
-  const cancel = useRef<HTMLButtonElement>(null);
   const reports = asked.no_report === null && !asked.stopping;
+  const closeNow = {
+    children: "Close now",
+    variant: "danger" as const,
+    isDisabled: asked.busy,
+    onPress: () => onAnswer("now"),
+  };
   return (
-    <AlertDialog.Root
-      open
-      onOpenChange={(open) => {
-        if (!open && !asked.busy) onCancel();
+    <AlertDialog
+      onClose={() => {
+        if (!asked.busy) onCancel();
       }}
-    >
-      <AlertDialog.Portal>
-        <AlertDialog.Overlay className="ui-scrim" />
-        <AlertDialog.Content
-          className="ui-dialog warning task-end"
-          onOpenAutoFocus={(event) => {
-            event.preventDefault();
-            (reports ? stop : cancel).current?.focus();
-          }}
-        >
-          <AlertDialog.Title>{taskEndTitle(asked.name)}</AlertDialog.Title>
-          <AlertDialog.Description asChild>
-            <div>
-              {asked.working && <p className="honest">It is working.</p>}
-              {asked.stopping ? (
-                <p className="honest no-report">
-                  It is being stopped already. It has one short turn to say what it did. Close now
-                  ends it without waiting for that turn.
-                </p>
-              ) : (
-                asked.no_report !== null && (
-                  <p className="honest no-report">
-                    {asked.no_report} Close now ends its program without a report.
-                  </p>
-                )
-              )}
-              {asked.below.length > 0 && (
-                // The settings set's radio group (#630, DS-8; D-630-1, as Close a chat's): a Radix
-                // radio group, in WebKit's tab sequence and moved by the arrows, where two native
-                // radios in a hand-built fieldset were neither, and each answer says what it does.
-                <SettingRow
-                  label={belowSaid(asked.below)}
-                  grouped
-                  control={(ids) => (
-                    <Choice
-                      ids={ids}
-                      kind="radio"
-                      options={[
-                        {
-                          value: TOO,
-                          label: "End them too",
-                          says: "They end the same way, and each is told of in its own report.",
-                        },
-                        {
-                          value: KEEP,
-                          label: "Keep them working",
-                          says: `They finish with nobody to report to, and stay in the Chats list marked as from ${asked.name}.`,
-                        },
-                      ]}
-                      value={asked.belowToo ? TOO : KEEP}
-                      onValueChange={(to) => onBelow(to === TOO)}
-                      disabled={asked.busy}
-                    />
-                  )}
+      title={taskEndTitle(asked.name)}
+      className="task-end"
+      // Stop and get its report takes the keyboard where it is offered; Cancel where it is not.
+      initialFocus={reports ? "main" : "cancel"}
+      cancel={{ isDisabled: asked.busy }}
+      {...(reports
+        ? {
+            alternative: closeNow,
+            main: {
+              children: "Stop and get its report",
+              isDisabled: asked.busy,
+              onPress: () => onAnswer("report"),
+              className: "default-answer",
+            },
+          }
+        : { main: closeNow })}
+      description={
+        <>
+          {asked.working && <p className="honest">It is working.</p>}
+          {asked.stopping ? (
+            <p className="honest no-report">
+              It is being stopped already. It has one short turn to say what it did. Close now ends
+              it without waiting for that turn.
+            </p>
+          ) : (
+            asked.no_report !== null && (
+              <p className="honest no-report">
+                {asked.no_report} Close now ends its program without a report.
+              </p>
+            )
+          )}
+          {asked.below.length > 0 && (
+            // The settings set's radio group (#630, DS-8; D-630-1, as Close a chat's), moved by
+            // the arrows, and each answer says what it does.
+            <SettingRow
+              label={belowSaid(asked.below)}
+              grouped
+              control={(ids) => (
+                <Choice
+                  ids={ids}
+                  kind="radio"
+                  options={[
+                    {
+                      value: TOO,
+                      label: "End them too",
+                      says: "They end the same way, and each is told of in its own report.",
+                    },
+                    {
+                      value: KEEP,
+                      label: "Keep them working",
+                      says: `They finish with nobody to report to, and stay in the Chats list marked as from ${asked.name}.`,
+                    },
+                  ]}
+                  value={asked.belowToo ? TOO : KEEP}
+                  onValueChange={(to) => onBelow(to === TOO)}
+                  disabled={asked.busy}
                 />
               )}
-            </div>
-          </AlertDialog.Description>
-          {asked.trouble && (
-            <p className="trouble" role="alert">
-              {asked.trouble}
-            </p>
+            />
           )}
-          <AnswerBar>
-            <AlertDialog.Cancel asChild>
-              <Button ref={cancel} isDisabled={asked.busy}>
-                Cancel
-              </Button>
-            </AlertDialog.Cancel>
-            <Button variant="danger" isDisabled={asked.busy} onPress={() => onAnswer("now")}>
-              Close now
-            </Button>
-            {reports && (
-              <Button
-                variant="primary"
-                ref={stop}
-                isDisabled={asked.busy}
-                onPress={() => onAnswer("report")}
-                className="default-answer"
-              >
-                Stop and get its report
-              </Button>
-            )}
-          </AnswerBar>
-        </AlertDialog.Content>
-      </AlertDialog.Portal>
-    </AlertDialog.Root>
+        </>
+      }
+    >
+      {asked.trouble && (
+        <p className="trouble" role="alert">
+          {asked.trouble}
+        </p>
+      )}
+    </AlertDialog>
   );
 }
 

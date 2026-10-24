@@ -134,6 +134,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     count: 4,
     why: ACTION,
   },
+  "AddToAChat.tsx": {
+    count: 1,
+    why: "a filter that matches no chat says so where the list was, as the list's empty line (#2910)",
+  },
   "ui/empty-state/EmptyState.tsx": {
     count: 1,
     why:
@@ -182,11 +186,11 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why: ACTION,
   },
   "Extensions.tsx": {
-    count: 3,
+    count: 4,
     why:
       "an installed extension's row trouble, a colour theme's complaint (#2321) and an icon " +
       "theme's complaint, inside its row of the Extensions dialog: the row's Review and its box " +
-      "are the way out (#630)",
+      "are the way out (#630); and the filter's line where it matches no extension (#2910)",
   },
   "FindBar.tsx": { count: 1, why: "the find bar's match count, a live value" },
   "FinishedTasks.tsx": {
@@ -452,10 +456,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "it moved to: what the last press answered, not a standing line",
   },
   "UseSkill.tsx": {
-    count: 3,
+    count: 2,
     why:
       ACTION +
-      ", in the picker and in the arguments form, one shown at a time (#2775). And the " +
+      ", drawn once under the picker or the arguments form, one shown at a time (#2775). And the " +
       "dialog's warning that the chat's set is past its skill budget, read as it opens: about " +
       "the chat the dialog is for, gone with the dialog",
   },
@@ -467,13 +471,24 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "be listed, a sign-in refused as its vaults were listed, what the test just pressed " +
       "answered (passed, or the core's reason), and the refusal of the step just pressed",
   },
-  "Vaults.tsx": { count: 1, why: READING + ": Reading the vaults…" },
+  "Vaults.tsx": {
+    count: 2,
+    why: READING + ": Reading the vaults…; and Open vault's filter that matches no vault (#2910)",
+  },
+  "ui/dialog/Dialog.tsx": {
+    count: 3,
+    why:
+      "not a live region: a dialog's role, `dialog` or `alertdialog`, picked by the dialog " +
+      "family's own expression (#2910)",
+  },
   "VaultTab.tsx": {
     count: 7,
     why: VAULT,
   },
   "Views.tsx": {
-    count: 5,
+    // Four: a region drawn inside another tag's attribute is that region's, counted once
+    // (#2910).
+    count: 4,
     why: VIEWS,
   },
   "Welcome.tsx": {
@@ -615,9 +630,28 @@ function tags(source: string, named: (tag: string) => boolean): { tag: string; a
 }
 
 const html = (tag: string) => /^[a-z]/.test(tag);
+/** An attribute text with what its expressions hold left out (`{…}` stays `{}`): a tag's own
+ *  attributes, and not those of an element passed in one of them (a dialog's `summary`). */
+function ownAttributes(attrs: string): string {
+  let depth = 0;
+  let own = "";
+  for (const char of attrs) {
+    if (char === "{") {
+      if (depth === 0) own += char;
+      depth++;
+    } else if (char === "}") {
+      depth--;
+      if (depth === 0) own += char;
+    } else if (depth === 0) own += char;
+  }
+  return own;
+}
+
 /** A live region: a `status` or `alert` role (or one picked by an expression), or `aria-live`. */
-const live = (attrs: string) =>
-  /\brole=(?:"(?:status|alert)"|\{)/.test(attrs) || /\baria-live=/.test(attrs);
+const live = (attrs: string) => {
+  const own = ownAttributes(attrs);
+  return /\brole=(?:"(?:status|alert)"|\{)/.test(own) || /\baria-live=/.test(own);
+};
 
 /** The class names an attribute text's `className` can hold: every string in its value. */
 function classNames(attrs: string): string[] {

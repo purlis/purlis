@@ -2,11 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
-import * as Dialog from "./overlays/dialog";
 import { ScrollText } from "lucide-react";
 import { commands, type BriefOf, type PlaneId, type TaskBrief } from "./bindings";
-import { AnswerBar } from "./AnswerBar";
-import { Button } from "./ui/button/Button";
+import { Dialog } from "./ui/dialog/Dialog";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
@@ -156,11 +154,11 @@ function goesWithItsSurface(at: Element): boolean {
 }
 
 /**
- * **Where the keyboard was as the panel opened, handed back as it closes** (`useFocusBack`'s
- * rule, and the cases it leaves).
+ * **Where the keyboard was as the panel opened, handed back as it closes** (every dialog's rule,
+ * `ui/dialog/Dialog.tsx`, and the cases it leaves).
  *
- * The panel has no trigger of its own, so the element that had the focus as it opened gets it
- * back: the breadcrumb's button, a finished row's Brief.
+ * The element that had the focus as it opened gets it back: the breadcrumb's button, a finished
+ * row's Brief.
  *
  * **Opened from a row of a menu or of the palette, that element goes with its surface.** Then,
  * in order:
@@ -202,8 +200,7 @@ export function useKeyboardBack() {
       document.removeEventListener("focusin", passing, true);
     };
   }, [start]);
-  return (event: Event) => {
-    event.preventDefault();
+  return () => {
     const to = back.current;
     if (to !== null && to.isConnected) to.focus();
     else document.querySelector<HTMLElement>(".pane.focused textarea")?.focus();
@@ -231,7 +228,6 @@ export function BriefPanel({
   const [said, setSaid] = useState<TaskBrief>();
   const [trouble, setTrouble] = useState<string>();
   const [copied, setCopied] = useState<Copied>();
-  const close = useRef<HTMLButtonElement>(null);
   const handBack = useKeyboardBack();
   // What is asked, as values: one read an opening, whatever object named the task.
   const chat = "chat" in of ? of.chat : undefined;
@@ -267,123 +263,116 @@ export function BriefPanel({
 
   // The task's own name once the record has said it, the row's until then.
   const title = briefTitle(said?.name ?? of.name);
+  const copies =
+    said === undefined || said.kept === "missing"
+      ? {}
+      : said.inert === null
+        ? {
+            main: {
+              children: "Copy brief",
+              variant: "secondary" as const,
+              onPress: () => copy(said.brief, "sent"),
+            },
+          }
+        : {
+            // What is pasted is what was read, unless the person asks for the other by name: the
+            // brief as sent holds characters this panel would not draw. As shown stands next to
+            // Close, so it is the first one Tab reaches from it.
+            alternative: {
+              children: "Copy as shown",
+              tooltip:
+                "The text as it is shown here: nothing hidden, nothing that turns text around.",
+              onPress: () => copy(said.inert ?? said.brief, "shown"),
+            },
+            main: {
+              children: "Copy as sent",
+              variant: "secondary" as const,
+              tooltip:
+                "The brief exactly as it was sent, with the characters this panel wrote out as codes.",
+              onPress: () => copy(said.brief, "sent"),
+            },
+          };
   return (
-    <Dialog.Root
-      open
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
+    <Dialog
+      onClose={onClose}
+      title={
+        <>
+          Brief of <bdi>{said?.name ?? of.name}</bdi>
+        </>
+      }
+      className="brief-panel"
+      // Close has the keyboard from the start, whether or not the brief has been read yet:
+      // Escape and Enter both close, Tab is a copy, and Shift+Tab the brief's box.
+      initialFocus="cancel"
+      // The focus goes back to where it was as the panel opened.
+      afterClose={handBack}
+      summary={
+        <span className="brief-copied" role="status">
+          {copied === "sent"
+            ? "Copied, as it was sent."
+            : copied === "shown"
+              ? "Copied, as it is shown here."
+              : copied === "refused"
+                ? "purlis could not put the brief on the clipboard."
+                : ""}
+        </span>
+      }
+      // The footer's order (#630, `docs/design-system.md`): the way out first, the copies after
+      // it at the trailing edge.
+      cancel={{ children: "Close" }}
+      {...copies}
     >
-      <Dialog.Portal>
-        <Dialog.Overlay className="ui-scrim" />
-        <Dialog.Content
-          className="ui-dialog warning brief-panel"
-          aria-describedby={undefined}
-          onOpenAutoFocus={(event) => {
-            // Close has the keyboard from the start, whether or not the brief has been read
-            // yet: Escape and Enter both close, Tab is Copy brief, and Shift+Tab the brief's box.
-            event.preventDefault();
-            close.current?.focus();
-          }}
-          // The focus goes back to where it was as the panel opened.
-          onCloseAutoFocus={handBack}
-        >
-          <Dialog.Title>
-            Brief of <bdi>{said?.name ?? of.name}</bdi>
-          </Dialog.Title>
-          {trouble !== undefined ? (
-            <p className="honest" role="alert">
-              {trouble}
-            </p>
-          ) : said === undefined ? (
-            <p className="pending" role="status">
-              Reading the brief…
+      {trouble !== undefined ? (
+        <p className="honest" role="alert">
+          {trouble}
+        </p>
+      ) : said === undefined ? (
+        <p className="pending" role="status">
+          Reading the brief…
+        </p>
+      ) : (
+        <>
+          <Facts said={said} />
+          {said.kept === "missing" ? (
+            <p className="honest">
+              This task's dispatch record holds no brief, so there is nothing to show.
             </p>
           ) : (
             <>
-              <Facts said={said} />
-              {said.kept === "missing" ? (
+              {said.kept === "cut" && (
                 <p className="honest">
-                  This task's dispatch record holds no brief, so there is nothing to show.
+                  The brief was longer than a dispatch record keeps. This is its start, as it was
+                  sent. The rest is not kept.
                 </p>
-              ) : (
-                <>
-                  {said.kept === "cut" && (
-                    <p className="honest">
-                      The brief was longer than a dispatch record keeps. This is its start, as it
-                      was sent. The rest is not kept.
-                    </p>
-                  )}
-                  {said.inert !== null && (
-                    <p className="honest">
-                      This brief holds characters that draw as nothing or change how the text around
-                      them reads. Each is written out here as its code, such as{" "}
-                      <code>{"\\u202e"}</code>. A backslash the brief wrote is doubled.{" "}
-                      <strong>Copy as shown</strong> copies what you read here.{" "}
-                      <strong>Copy as sent</strong> copies the brief exactly as it was sent, with
-                      those characters in it.
-                    </p>
-                  )}
-                  <p className="brief-whose">
-                    {said.by_person
-                      ? "The brief, as you wrote it."
-                      : "The brief, as the chat wrote it. purlis did not write it."}
-                  </p>
-                  {/* One text node: a brief is a chat's words, and is never markup here. Its
-                      box scrolls, so it is a stop of its own for the keyboard. */}
-                  <pre
-                    className="brief-text"
-                    tabIndex={0}
-                    role="group"
-                    aria-label={`${title}, as it was sent`}
-                  >
-                    {said.inert ?? said.brief}
-                  </pre>
-                </>
               )}
+              {said.inert !== null && (
+                <p className="honest">
+                  This brief holds characters that draw as nothing or change how the text around
+                  them reads. Each is written out here as its code, such as <code>{"\\u202e"}</code>
+                  . A backslash the brief wrote is doubled. <strong>Copy as shown</strong> copies
+                  what you read here. <strong>Copy as sent</strong> copies the brief exactly as it
+                  was sent, with those characters in it.
+                </p>
+              )}
+              <p className="brief-whose">
+                {said.by_person
+                  ? "The brief, as you wrote it."
+                  : "The brief, as the chat wrote it. purlis did not write it."}
+              </p>
+              {/* One text node: a brief is a chat's words, and is never markup here. Its box
+                  scrolls, so it is a stop of its own for the keyboard. */}
+              <pre
+                className="brief-text"
+                tabIndex={0}
+                role="group"
+                aria-label={`${title}, as it was sent`}
+              >
+                {said.inert ?? said.brief}
+              </pre>
             </>
           )}
-          <AnswerBar>
-            <span className="brief-copied" role="status">
-              {copied === "sent"
-                ? "Copied, as it was sent."
-                : copied === "shown"
-                  ? "Copied, as it is shown here."
-                  : copied === "refused"
-                    ? "purlis could not put the brief on the clipboard."
-                    : ""}
-            </span>
-            {/* The answer bar's order (#630, `docs/design-system.md`): the way out first, the
-                copies after it at the trailing edge. */}
-            <Dialog.Close asChild>
-              <Button ref={close}>Close</Button>
-            </Dialog.Close>
-            {said !== undefined &&
-              said.kept !== "missing" &&
-              (said.inert === null ? (
-                <Button onPress={() => copy(said.brief, "sent")}>Copy brief</Button>
-              ) : (
-                // What is pasted is what was read, unless the person asks for the other by
-                // name: the brief as sent holds characters this panel would not draw. As shown
-                // stands next to Close, so it is the first one Tab reaches from it.
-                <>
-                  <Button
-                    tooltip="The text as it is shown here: nothing hidden, nothing that turns text around."
-                    onPress={() => copy(said.inert ?? said.brief, "shown")}
-                  >
-                    Copy as shown
-                  </Button>
-                  <Button
-                    tooltip="The brief exactly as it was sent, with the characters this panel wrote out as codes."
-                    onPress={() => copy(said.brief, "sent")}
-                  >
-                    Copy as sent
-                  </Button>
-                </>
-              ))}
-          </AnswerBar>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+        </>
+      )}
+    </Dialog>
   );
 }

@@ -33,6 +33,8 @@ use super::{Grant, LINKED_PLUGIN, Origin, beside, grant_of, level_dir, named, se
 use crate::planegit::literally;
 use crate::repocmd::{Say, Sink};
 
+pub mod drafts;
+
 /// Where a level is: the project's root, or one workspace.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum At {

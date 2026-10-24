@@ -160,11 +160,12 @@ describe("the chat strip in the centre column", () => {
     // DS-1's control baseline (ADR 0094) gives an unclassed control the 28px control height
     // by padding; a strip's own rules set their buttons' padding, so no strip may grow by it.
     // Ranges, not pixels, read from the core tokens themselves: the chat strip, the editor's
-    // tab bar, is at least the chrome height and shorter than a control. The project and
-    // workspace rows are not moved to the chrome height yet (their own `min-height` is 2rem),
-    // so they are held to the larger of one control height and that, and a pixel and a half of
-    // rounding: Purlis's control is 26px, under the rows' 2rem, and its words are set at a
-    // taller line height (#3034).
+    // tab bar, is at least the chrome height and no taller than a docked tab, a control and 3px
+    // (#2914, the switcher prototype's 31px tabs). The projects are the rail now (#2915), a
+    // column and not a row. The workspace row is not moved to the chrome height yet (its own
+    // `min-height` is 2rem), so it is held to the larger of one control height and that, and a
+    // pixel and a half of rounding: Purlis's control is 26px, under the row's 2rem, and its
+    // words are set at a taller line height (#3034).
     const at = await browser.execute(() => {
       const probe = (token: string) => {
         const el = document.createElement("div");
@@ -184,8 +185,15 @@ describe("the chat strip in the centre column", () => {
       return {
         chrome: probe("--size-chrome"),
         control: probe("--size-control"),
+        tab: (() => {
+          const el = document.createElement("div");
+          el.style.height = "calc(var(--size-control) + calc(3rem / 14))";
+          document.body.append(el);
+          const height = el.getBoundingClientRect().height;
+          el.remove();
+          return height;
+        })(),
         row: rowHeight,
-        projects: heightOf('[data-strip="Projects"]'),
         workspaces: heightOf('[data-strip="Workspaces"]'),
         chats: heightOf("header.bar"),
       };
@@ -195,8 +203,7 @@ describe("the chat strip in the centre column", () => {
     expect(at.chats).toBeGreaterThanOrEqual(at.chrome - 1);
     // Each strip over its bound, named with its height, so a red run says which one grew.
     const over = [
-      ["the chat strip", at.chats, at.control - 0.5],
-      ["the project strip", at.projects, Math.max(at.control, at.row) + 1.5],
+      ["the chat strip", at.chats, at.tab + 0.5],
       ["the workspace strip", at.workspaces, Math.max(at.control, at.row) + 1.5],
     ].flatMap(([what, height, most]) =>
       Number(height) <= Number(most) ? [] : [`${what} is ${height}px, over ${most}px`],

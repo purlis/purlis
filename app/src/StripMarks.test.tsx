@@ -131,9 +131,11 @@ describe("a tab's close", () => {
    * jsdom computes no hover, so this reads the rule.
    */
   it("goes to the danger colours when a pointer is on it, in the stylesheet", () => {
-    const css = readFileSync(join(process.cwd(), "src/App.css"), "utf8");
-    const hover = /\.tab \.closer:hover[^{]*\{([^}]*)\}/.exec(css)?.[1] ?? "";
-    expect(hover).toMatch(/background:\s*var\(--danger-surface\)/);
+    // The session tabs' `×` is the tabs family's (`ui/tabs/tabs.css`, #2914).
+    const css = readFileSync(join(process.cwd(), "src/ui/tabs/tabs.css"), "utf8");
+    const hover =
+      /\[data-part="closer"\]\[data-scope="tabs"\]:hover\s*\{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(hover).toMatch(/background-color:\s*var\(--danger-surface\)/);
     expect(hover).toMatch(/color:\s*var\(--danger-text\)/);
   });
 });
@@ -163,13 +165,21 @@ describe("the three strips share one tab shape", () => {
   );
 
   it("draws the selected tab a step lighter, from one token, on every strip", () => {
-    // The operator: *"little lighter for selected tab"* (charter-app#193). One token for all
-    // three, so the tab you are on reads the same way on every row.
+    // The operator: *"little lighter for selected tab"* (charter-app#193). One token for the
+    // workspace strip's tab you are on. The projects are the rail since #2915, which rings the
+    // current one instead (`ui/rail`). A chat's tab is the tabs family's (#2914): docked, it
+    // takes the panel's fill and joins it; Purlis Classic keeps the step lighter through its
+    // parts.
     const lit = /([^{}]*)\{\s*background:\s*var\(--layer-selected\);\s*\}/g;
     const selectors = [...css.matchAll(lit)].map((hit) => hit[1]).join(",");
-    expect(selectors).toContain('.projects .project:has([aria-selected="true"])');
     expect(selectors).toContain('.workspaces-strip [role="tab"][aria-selected="true"]');
-    expect(selectors).toContain('.tabs .tab:has([aria-selected="true"])');
+    const classic = JSON.parse(
+      readFileSync(
+        join(process.cwd(), "../crates/purlis-core/src/theme/built-in/purlis-classic/theme.json"),
+        "utf8",
+      ),
+    ) as { parts: Record<string, unknown> };
+    expect(classic.parts["tabs.tab.selected.fill"]).toBe("layer.selected");
   });
 
   it("lights no edge under a tab, because a lighter background is the whole signal", () => {
@@ -200,10 +210,12 @@ describe("the three strips share one tab shape", () => {
     const centred = [...css.matchAll(/([^{}]*)\{([^{}]*justify-content:\s*center;[^{}]*)\}/g)]
       .map((hit) => hit[1])
       .join(",");
-    for (const strip of ['.projects [role="tab"]', '.workspaces-strip [role="tab"]']) {
-      expect(centred).toContain(strip);
-    }
-    expect(centred).toContain('.tabs [role="tab"]');
+    expect(centred).toContain('.workspaces-strip [role="tab"]');
+    // A chat's tab is the tabs family's (#2914), and centres its label in its cell too.
+    const family = readFileSync(join(process.cwd(), "src/ui/tabs/tabs.css"), "utf8");
+    expect(
+      /\[data-part="tab"\] > \[role="tab"\] \{[^}]*justify-content: center;/.test(family),
+    ).toBe(true);
   });
 });
 
@@ -298,33 +310,60 @@ describe("each strip says which layer it is, by shade rather than by indent or l
     return parts.length === 4 ? parts[3] : parts.length === 1 ? parts[0] : parts[1];
   };
 
-  it.each([
-    [".projects", "--layer-project"],
-    [".workspaces", "--layer-workspace"],
-    [".bar", "--layer-chat"],
-  ])("%s is drawn on its own shade, with no line under it", (selector, token) => {
-    const rule = block(selector);
-    expect(rule).toContain(`background: var(${token})`);
-    expect(rule, `${selector} draws a border`).not.toMatch(/border/);
+  // The projects are the rail since #2915, a column on the window's frame and not a row.
+  it.each([[".workspaces", "--layer-workspace"]])(
+    "%s is drawn on its own shade, with no line under it",
+    (selector, token) => {
+      const rule = block(selector);
+      expect(rule).toContain(`background: var(${token})`);
+      expect(rule, `${selector} draws a border`).not.toMatch(/border/);
+    },
+  );
+
+  it("draws the chat strip as its theme says: on the panel with no shade, or on its own", () => {
+    // The chat strip is the tabs family's strip (#2914): docked on the content panel (Purlis)
+    // it has no ground of its own, and on a strip of its own (Purlis Classic's parts) it takes
+    // the third shade, `--layer-chat`, which the engine writes for `tabs.layout.attach: strip`.
+    const rule = block(".bar");
+    expect(rule, ".bar takes its ground from the family").not.toMatch(/background|border/);
+    const family = readFileSync(join(process.cwd(), "src/ui/tabs/tabs.css"), "utf8");
+    expect(family).toMatch(
+      /\[data-scope="tabs"\]\[data-part="strip"\] \{[^}]*background-color: transparent;/,
+    );
+    const classic = JSON.parse(
+      readFileSync(
+        join(process.cwd(), "../crates/purlis-core/src/theme/built-in/purlis-classic/theme.json"),
+        "utf8",
+      ),
+    ) as { parts: Record<string, unknown> };
+    expect(classic.parts["tabs.layout.attach"]).toBe("strip");
   });
 
-  it("gives the three of them three different tokens", () => {
+  it("gives the two of them two different tokens", () => {
     // One token used twice would pass every case above and draw two rows the same shade,
-    // which is the whole of what the operator asked to be able to tell apart.
-    const drawn = [".projects", ".workspaces", ".bar"].map(
+    // which is the whole of what the operator asked to be able to tell apart. The chat strip's
+    // is the one the engine writes for a strip of its own (`attached` in theme/parts.rs).
+    const drawn = [".workspaces"].map(
       (selector) => /background:\s*var\((--layer-\w+)\)/.exec(block(selector))?.[1],
     );
-    expect(new Set(drawn).size).toBe(3);
+    const engine = readFileSync(
+      join(process.cwd(), "../crates/purlis-core/src/theme/parts.rs"),
+      "utf8",
+    );
+    expect(engine).toContain('(STRIP, "background-color: var(--tabs-strip-shade);")');
+    const family = readFileSync(join(process.cwd(), "src/ui/tabs/tabs.css"), "utf8");
+    expect(family).toContain("--tabs-strip-shade: var(--layer-chat);");
+    expect(new Set([...drawn, "--layer-chat"]).size).toBe(2);
   });
 
-  it("indents none of the three, so each begins at the edge of the column it is drawn in", () => {
+  it("indents neither, so each begins at the edge of the column it is drawn in", () => {
     // `--nested` was #171's one value used twice. A strip that starts further in than the one
     // above it is the thing the operator asked to have taken away, and the property is that
     // there is no such number left to reach for. The chat strip is the editor's tab bar since
     // DS-6 (#1836), so its edge is the centre column's and not the window's; it still adds no
     // inset of its own.
     expect(raw).not.toContain("--nested");
-    for (const selector of [".projects", ".workspaces", ".bar"]) {
+    for (const selector of [".workspaces", ".bar"]) {
       expect(beginsAt(block(selector)), `${selector} begins further in than the strip above`).toBe(
         "0",
       );

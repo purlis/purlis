@@ -117,7 +117,7 @@ describe("a pin to a workspace that is gone", function () {
     expect(await pinOrder()).toEqual(found);
     // Let go of in the core, as `view-tabs.e2e.ts` does: the window is told and takes the tab
     // out (`plane-closed`, #1242).
-    const selector = `${PROJECTS} button[aria-label="Close project ${NAME}"]`;
+    const selector = `${PROJECTS} [role="tab"][aria-label="${NAME}"]`;
     if ((await ask<string[]>("open_planes")).includes(mine))
       await ask("close_plane", { plane: mine });
     await browser.waitUntil(async () => !(await $(selector).isExisting()), {

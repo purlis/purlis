@@ -13,6 +13,7 @@ import {
 } from "./bindings";
 import { Choice, Field, SettingActions, SettingRow } from "./settings/components";
 import { Button } from "./ui/button/Button";
+import { DialogAnswers } from "./ui/dialog/Dialog";
 import { TextField } from "./ui/field/Field";
 
 /** A command's answer, with a call that never reached the core answered as its refusal. */
@@ -470,28 +471,32 @@ export function VaultSignIn({
         </p>
       )}
 
-      {/* Each act names what it acts on, the sign-in (`docs/ui-copy.md`, #630). */}
-      <SettingActions>
-        {begun !== undefined && !refusedAtSignIn && (
-          <Button isDisabled={!ready} onPress={() => void test()}>
-            {tested === undefined ? "Test sign-in" : "Test sign-in again"}
-          </Button>
-        )}
-        {begun !== undefined && tested !== undefined && (
-          <Button isDisabled={!ready} onPress={() => void store()}>
-            {existing
-              ? tested.failed
-                ? "Store sign-in anyway"
-                : "Store sign-in"
-              : tested.failed
-                ? "Create anyway"
-                : "Create vault"}
-          </Button>
-        )}
-        <Button isDisabled={busy} onPress={onCancel}>
-          Cancel
-        </Button>
-      </SettingActions>
+      {/* The dialog's answers, in its footer (#2910). Each act names what it acts on, the
+          sign-in (`docs/ui-copy.md`, #630). Both stay in their places from the first step, so
+          nothing moves as the set-up goes on: each is offered once it can be taken. */}
+      <DialogAnswers
+        cancel={{ isDisabled: busy, onPress: onCancel }}
+        alternative={{
+          children: tested === undefined ? "Test sign-in" : "Test sign-in again",
+          reserve: ["Test sign-in", "Test sign-in again"],
+          isDisabled: begun === undefined || refusedAtSignIn || !ready,
+          onPress: () => void test(),
+        }}
+        main={{
+          children: existing
+            ? tested?.failed
+              ? "Store sign-in anyway"
+              : "Store sign-in"
+            : tested?.failed
+              ? "Create anyway"
+              : "Create vault",
+          reserve: existing
+            ? ["Store sign-in", "Store sign-in anyway"]
+            : ["Create vault", "Create anyway"],
+          isDisabled: begun === undefined || tested === undefined || !ready,
+          onPress: () => void store(),
+        }}
+      />
     </>
   );
 }

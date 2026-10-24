@@ -484,12 +484,14 @@ describe("any persona", () => {
       "data-variant",
       "grants",
     );
+    // A question whose yes grants starts on Cancel, the safe choice (#2980).
+    await waitFor(() => expect(confirm.getByRole("button", { name: "Cancel" })).toHaveFocus());
     await userEvent.setup().click(confirm.getByRole("button", { name: "Cancel" }));
 
     const said = await press(mine, "Allow for me");
 
     expect(said).toBe(
-      "Let steward dispatch to any persona, for you on this machine? steward chats will dispatch to every persona of this project without asking you, and to any persona added later.Allow for meCancel",
+      "Let steward dispatch to any persona, for you on this machine? steward chats will dispatch to every persona of this project without asking you, and to any persona added later.CancelAllow for me",
     );
     await waitFor(() =>
       expect(fake.sent("allow_dispatch_to_any")).toEqual([

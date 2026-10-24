@@ -1823,6 +1823,33 @@ export const commands = {
 	 *  grant that would reach the workspace.
 	 */
 	skillTurn: (plane: PlaneId, workspace: string, name: string, on: boolean) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_turn", { plane, workspace, name, on })),
+	/**
+	 *  **Every draft skill of the project**, by name: what the studio lists, and what a chat's tab
+	 *  asks to say "draft ready in Skill studio". None while the flag is off.
+	 */
+	skillDrafts: (plane: PlaneId) => typedError<SkillDraft[], string>(__TAURI_INVOKE("skill_drafts", { plane })),
+	/**  **Accepts a draft**: one commit of exactly its files. */
+	skillDraftAccept: (plane: PlaneId, id: string) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_draft_accept", { plane, id })),
+	/**  **Rejects a draft**: deletes it. */
+	skillDraftReject: (plane: PlaneId, id: string) => typedError<null, string>(__TAURI_INVOKE("skill_draft_reject", { plane, id })),
+	/**
+	 *  **"Ask a chat to draft a skill"** (decision 13): a chat where `level`'s skills are reached
+	 *  from (the project's root, or the workspace's folder), on the project's default profile, with
+	 *  the core's prompt typed and never sent.
+	 */
+	skillDraftChat: (plane: PlaneId, level: SkillLevel, columns: number, rows: number) => typedError<Curating, string>(__TAURI_INVOKE("skill_draft_chat", { plane, level, columns, rows })),
+	/**
+	 *  **Try it** (decision 50): a scratch chat in a throwaway piece, armed with the built-in skills
+	 *  and the draft `id` alone, on `profile` (the project's default where none is picked), with the
+	 *  core's prompt typed and never sent. Tries a closed chat never ended (a quit, a crash) are
+	 *  ended first. Nothing is left once the chat closes but the skill runs it recorded.
+	 */
+	skillDraftTry: (plane: PlaneId, id: string, profile: string | null, columns: number, rows: number) => typedError<Curating, string>(__TAURI_INVOKE("skill_draft_try", { plane, id, profile, columns, rows })),
+	/**
+	 *  **Accepts a workspace or persona folder a chat could have made** (SK-9): its skills reach
+	 *  chats from now on. The person's press in the studio, on a skill left out for it.
+	 */
+	skillLevelAccept: (plane: PlaneId, folder: string) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_level_accept", { plane, folder })),
 	/**  The project's skill sources. */
 	skillSources: (plane: PlaneId) => typedError<SkillSource[], string>(__TAURI_INVOKE("skill_sources", { plane })),
 	/**  **Adds a skill source**, shared with the project or kept on this machine. */
@@ -10938,6 +10965,32 @@ export type SkillCompat = {
 	says: string[],
 };
 
+/**  One draft skill, as the studio lists it. */
+export type SkillDraft = {
+	/**  What Try it, Accept and Reject are handed back. */
+	id: string,
+	name: string,
+	level: SkillLevel,
+	/**  The chat that wrote it last, by its number. */
+	chat: number | null,
+	/**  A new skill, rather than a change to one. */
+	new: boolean,
+	/**  A file it changes changed in the project since: Accept is refused. */
+	stale: boolean,
+	files: SkillDraftFile[],
+};
+
+/**  One file of a draft: the project's text and the draft's, drawn as a diff. */
+export type SkillDraftFile = {
+	/**  Below the skill's folder: `SKILL.md`, `scripts/run.sh`. */
+	path: string,
+	before: string | null,
+	after: string,
+	/**  The lines that changed, as git's one line diff marks them in the merge view. */
+	hunks: GitHunk[],
+	stale: boolean,
+};
+
 /**  How well a skill fits a harness, as its badge draws it (SK-8): the core's `Fit`. */
 export type SkillFit = 
 /**  Everything it asks for applies. */
@@ -11400,6 +11453,11 @@ export type StudioSkill = {
 	on: boolean,
 	/**  Why it is left out, in one line, where it is. */
 	left_out: string | null,
+	/**
+	 *  Where it is left out because a chat could have made its level's folder (SK-9): that
+	 *  folder, which Accept takes (`skill_level_accept`).
+	 */
+	accept: string | null,
 	/**  What it does and when to use it: its frontmatter's `description`. */
 	description: string,
 	/**  Its folder, relative to the project where it is inside it; empty for an installed skill. */

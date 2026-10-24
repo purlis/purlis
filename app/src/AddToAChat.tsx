@@ -1,12 +1,10 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useRef } from "react";
-import * as Dialog from "./overlays/dialog";
-import { AnswerBar } from "./AnswerBar";
 import { ChatsToPick, type ChatHere, type Referenced } from "./references";
 import { picksSaid } from "./referencesMany";
-import { Button } from "./ui/button/Button";
+import { Dialog } from "./ui/dialog/Dialog";
+import { ListFilter, noMatchSaid, useListFilter } from "./ui/dialog/ListFilter";
 
 /**
  * **"Add to a chat's context" from a file or folder row** (FM-9, #1151): the project's chats,
@@ -29,43 +27,47 @@ export function AddToAChat({
   onPick: (chat: ChatHere) => void;
   onCancel: () => void;
 }) {
-  const list = useRef<HTMLDivElement>(null);
   const label = `Add ${picksSaid(referenced)} to a chat's context`;
+  // More than about seven chats are filtered (#2910). The keyboard starts on the filter, or on a
+  // short list's first chat, as the vault picker's starts on its first row: the dialog's own
+  // first field, or else the first thing it can reach.
+  const { query, setQuery, shown, filtered } = useListFilter(chats, chatName);
   return (
-    <Dialog.Root
-      open
-      onOpenChange={(open) => {
-        if (!open) onCancel();
-      }}
-    >
-      <Dialog.Portal>
-        <Dialog.Overlay className="ui-scrim" />
-        <Dialog.Content
-          className="ui-dialog warning"
-          aria-describedby={undefined}
-          onOpenAutoFocus={(event) => {
-            // The keyboard starts on the first chat, as the vault picker's starts on its first
-            // row: the list takes it as it is drawn.
-            if (chats.length > 0) event.preventDefault();
-          }}
-        >
-          <Dialog.Title>{label}</Dialog.Title>
-          <div ref={list}>
+    <Dialog onClose={onCancel} title={label}>
+      <div>
+        {filtered && (
+          <ListFilter
+            noun={CHATS}
+            total={chats.length}
+            query={query}
+            onQuery={setQuery}
+            controls="add-to-a-chat-chats"
+          />
+        )}
+        {/* What the filter controls is here whether anything matches or not. */}
+        <div id="add-to-a-chat-chats">
+          {filtered && shown.length === 0 ? (
+            <p className="came-back" role="status">
+              {noMatchSaid(CHATS, query)}
+            </p>
+          ) : (
             <ChatsToPick
-              chats={chats}
+              chats={shown}
               label="Chats"
-              autoFocus
+              autoFocus={!filtered}
               onPick={(chat) => {
                 onCancel();
                 onPick(chat);
               }}
             />
-          </div>
-          <AnswerBar>
-            <Button onPress={onCancel}>Cancel</Button>
-          </AnswerBar>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+          )}
+        </div>
+      </div>
+    </Dialog>
   );
 }
+
+/** What a chat is filtered by: its name. */
+const chatName = (chat: ChatHere) => chat.name;
+
+const CHATS = { one: "chat", many: "chats" };

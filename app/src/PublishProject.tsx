@@ -2,15 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import * as Dialog from "./overlays/dialog";
 import { Channel } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { commands, type CreateProgress, type PlaneId } from "./bindings";
 import { FORGE_NAME, OwnerAndVisibility, StagesShown, useForgeOwners } from "./CreateOnForge";
 import { askSettingsLink } from "./settings/links";
-import { Choice, Field, SettingActions, SettingRow } from "./settings/components";
+import { Choice, Field, SettingRow } from "./settings/components";
 import { Button } from "./ui/button/Button";
-import { Form } from "./ui/field/Field";
+import { Dialog } from "./ui/dialog/Dialog";
 
 /** The forges a project is published to. */
 type Forge = keyof typeof FORGE_NAME;
@@ -107,147 +106,131 @@ export function PublishProject({
 
   const settingsPage = doing.kind === "refused" ? settingsPageIn(doing.sentence) : undefined;
 
+  const published = doing.kind === "published";
   return (
-    <Dialog.Root
-      open
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
+    <Dialog
+      onClose={onClose}
+      title="Publish to GitHub or GitLab"
+      titleId="publish-project"
+      cancel={
+        published
+          ? { children: "Done" }
+          : // While it publishes, its stages carry their own Cancel, which takes everything back.
+            { children: "Close", isDisabled: publishing }
+      }
+      main={
+        published
+          ? undefined
+          : { children: "Publish", isDisabled: !ready, onPress: () => void publish() }
+      }
     >
-      <Dialog.Portal>
-        <Dialog.Overlay className="ui-scrim" />
-        <Dialog.Content
-          className="ui-dialog warning"
-          aria-labelledby="publish-project"
-          onInteractOutside={(e) => e.preventDefault()}
-        >
-          <Dialog.Title id="publish-project">Publish to GitHub or GitLab</Dialog.Title>
-          {doing.kind === "published" ? (
-            <>
-              <p className="came-back" role="status">
-                Published to <code className="where">{doing.at}</code>. It is this project's remote
-                now: saves push there.
-              </p>
-              <SettingActions>
-                <Button onPress={onClose}>Done</Button>
-              </SettingActions>
-            </>
-          ) : (
-            <>
+      {published ? (
+        <p className="came-back" role="status">
+          Published to <code className="where">{doing.at}</code>. It is this project's remote now:
+          saves push there.
+        </p>
+      ) : (
+        <>
+          <p className="came-back">
+            purlis makes a new repo on {forgeName} with your own account, pushes this project&apos;s
+            history to it, and makes it the project&apos;s remote. Cancel takes back everything it
+            made.
+          </p>
+          <div aria-busy={publishing}>
+            <SettingRow
+              label="Where it goes"
+              setting="publish-project-forge"
+              grouped
+              control={(ids) => (
+                <Choice
+                  ids={ids}
+                  kind="radio"
+                  options={[
+                    { value: "github", label: "GitHub", says: "A new repo on GitHub." },
+                    { value: "gitlab", label: "GitLab", says: "A new repo on GitLab." },
+                  ]}
+                  value={forge}
+                  onValueChange={(to) => {
+                    setForge(to as Forge);
+                    setOwner(undefined);
+                    if (!publishing) setDoing({ kind: "asking" });
+                  }}
+                  disabled={publishing}
+                />
+              )}
+            />
+            {owners.kind === "signed-out" ? (
               <p className="came-back">
-                purlis makes a new repo on {forgeName} with your own account, pushes this
-                project&apos;s history to it, and makes it the project&apos;s remote. Cancel takes
-                back everything it made.
+                purlis publishes with your own {forgeName} account, and this machine is not signed
+                in to {forgeName}.{" "}
+                <Button
+                  onPress={() => {
+                    askSettingsLink(plane, { group: "you.accounts" });
+                    onClose();
+                  }}
+                >
+                  Sign in to {forgeName}…
+                </Button>
               </p>
-              <Form
-                aria-busy={publishing}
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  if (ready) void publish();
-                }}
-              >
+            ) : (
+              <>
                 <SettingRow
-                  label="Where it goes"
-                  setting="publish-project-forge"
-                  grouped
+                  label="Name"
+                  setting="publish-project-name"
+                  help="The repo's name: letters, digits, dots, dashes and underscores."
                   control={(ids) => (
-                    <Choice
+                    <Field
                       ids={ids}
-                      kind="radio"
-                      options={[
-                        { value: "github", label: "GitHub", says: "A new repo on GitHub." },
-                        { value: "gitlab", label: "GitLab", says: "A new repo on GitLab." },
-                      ]}
-                      value={forge}
-                      onValueChange={(to) => {
-                        setForge(to as Forge);
-                        setOwner(undefined);
+                      kind="text"
+                      value={name}
+                      placeholder="my-project"
+                      onChange={(to) => {
+                        setName(to);
                         if (!publishing) setDoing({ kind: "asking" });
                       }}
-                      disabled={publishing}
                     />
                   )}
                 />
-                {owners.kind === "signed-out" ? (
-                  <p className="came-back">
-                    purlis publishes with your own {forgeName} account, and this machine is not
-                    signed in to {forgeName}.{" "}
-                    <Button
-                      onPress={() => {
-                        askSettingsLink(plane, { group: "you.accounts" });
-                        onClose();
-                      }}
-                    >
-                      Sign in to {forgeName}…
-                    </Button>
-                  </p>
-                ) : (
-                  <>
-                    <SettingRow
-                      label="Name"
-                      setting="publish-project-name"
-                      help="The repo's name: letters, digits, dots, dashes and underscores."
-                      control={(ids) => (
-                        <Field
-                          ids={ids}
-                          kind="text"
-                          value={name}
-                          placeholder="my-project"
-                          onChange={(to) => {
-                            setName(to);
-                            if (!publishing) setDoing({ kind: "asking" });
-                          }}
-                        />
-                      )}
-                    />
-                    <OwnerAndVisibility
-                      forge={forge}
-                      owners={owners}
-                      owner={owner}
-                      onOwner={setOwner}
-                      visibility={visibility}
-                      onVisibility={setVisibility}
-                      busy={publishing}
-                      onRetry={retry}
-                    />
-                  </>
-                )}
-                <SettingActions>
-                  <Button variant="primary" type="submit" isDisabled={!ready}>
-                    Publish
-                  </Button>
-                  {!publishing && <Button onPress={onClose}>Close</Button>}
-                </SettingActions>
-              </Form>
+                <OwnerAndVisibility
+                  forge={forge}
+                  owners={owners}
+                  owner={owner}
+                  onOwner={setOwner}
+                  visibility={visibility}
+                  onVisibility={setVisibility}
+                  busy={publishing}
+                  onRetry={retry}
+                />
+              </>
+            )}
+          </div>
 
-              <div role="status" className="create-on-forge-progress">
-                {doing.kind === "publishing" && (
-                  <StagesShown
-                    label={`Publishing ${typed}`}
-                    progress={doing.progress}
-                    onCancel={() => void commands.cancelCreateProject()}
-                  />
-                )}
-                {doing.kind === "called-off" && "Cancelled. Nothing was left behind."}
-              </div>
+          <div role="status" className="create-on-forge-progress">
+            {doing.kind === "publishing" && (
+              <StagesShown
+                label={`Publishing ${typed}`}
+                progress={doing.progress}
+                onCancel={() => void commands.cancelCreateProject()}
+              />
+            )}
+            {doing.kind === "called-off" && "Cancelled. Nothing was left behind."}
+          </div>
 
-              {doing.kind === "refused" && (
-                <p className="trouble said-in-full" role="alert">
-                  {doing.sentence}{" "}
-                  {settingsPage && (
-                    <Button onPress={() => void openUrl(settingsPage).catch(() => undefined)}>
-                      Open the repo&apos;s settings
-                    </Button>
-                  )}{" "}
-                  <Button isDisabled={!ready} onPress={() => void publish()}>
-                    Retry
-                  </Button>
-                </p>
-              )}
-            </>
+          {doing.kind === "refused" && (
+            <p className="trouble said-in-full" role="alert">
+              {doing.sentence}{" "}
+              {settingsPage && (
+                <Button onPress={() => void openUrl(settingsPage).catch(() => undefined)}>
+                  Open the repo&apos;s settings
+                </Button>
+              )}{" "}
+              <Button isDisabled={!ready} onPress={() => void publish()}>
+                Retry
+              </Button>
+            </p>
           )}
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+        </>
+      )}
+    </Dialog>
   );
 }

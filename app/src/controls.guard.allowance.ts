@@ -20,9 +20,6 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
   "ActivityTab.tsx": [
     "<button className=\"vault-secret\">",
   ],
-  "App.tsx": [
-    "<button>",
-  ],
   "Brief.tsx": [
     "<button className=\"pane-brief\">",
   ],

@@ -196,7 +196,7 @@ describe("getting a project by its URL", function () {
     await asking.$("button=Open project").click();
     await untilOpen(true, "the cloned project never opened");
 
-    await closeProject(`${PROJECTS} button[aria-label="Close project ${basename(landed)}"]`);
+    await closeProject(`${PROJECTS} [role="tab"][aria-label="${basename(landed)}"]`);
     await untilOpen(false, "the cloned project stayed open");
   });
 });

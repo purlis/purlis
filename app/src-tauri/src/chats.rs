@@ -1355,16 +1355,18 @@ impl Chats {
         plugins: &purlis_core::harness_plugin::Chosen,
         sandbox: Option<&purlis_core::sandbox::Applied>,
         persona: Option<&str>,
+        env: &[(String, String)],
     ) -> Result<Armed, String> {
-        purlis_core::hoststart::armed(
-            &self.project,
-            &self.kit(harness),
+        purlis_core::hoststart::armed(&purlis_core::hoststart::Arming {
+            root: &self.project,
+            kit: &self.kit(harness),
             harness,
             cwd,
             plugins,
             sandbox,
             persona,
-        )
+            env,
+        })
     }
 
     /// The sandbox a chat that is not on a profile starts under: the same decision
@@ -3372,6 +3374,7 @@ impl Chats {
                 plugins,
                 sandbox,
                 runs_as.as_deref(),
+                &env,
             )?
         };
         let hooks = match &settings_watched {
@@ -3536,6 +3539,13 @@ impl Chats {
                 purlis_core::start::Ready::line(command, hooks, args),
                 Vec::new(),
             ),
+        };
+        // Settings too long for one word of a command line go through a file of their own (SK-9).
+        let all = match identity.id.as_deref() {
+            Some(id) if !reattaching => {
+                purlis_core::hoststart::settings_in_a_file(&self.project, id, all)?
+            }
+            _ => all,
         };
         let mut env = env;
         env.extend(armed);
@@ -3824,6 +3834,15 @@ impl Chats {
         lock(&self.starting_as).remove(&session);
         lock(&self.untaken).remove(&session);
         let gone = lock(&self.open).remove(&session);
+        // A Try it's scratch chat takes its throwaway piece with it, where no other open chat
+        // stands in it (SK-9): a restart starts before the chat it replaces ends.
+        if let Some(cwd) = gone.as_ref().and_then(|gone| gone.chat.cwd.clone())
+            && !lock(&self.open)
+                .values()
+                .any(|one| one.chat.cwd.as_deref() == Some(cwd.as_path()))
+        {
+            crate::skilldrafts::closed_in(&self.project, &cwd);
+        }
         self.project_settings.forget(session);
         lock(&self.sizes).remove(&session);
         lock(&self.owed).remove(&session);

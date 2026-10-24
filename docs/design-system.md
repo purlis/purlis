@@ -157,7 +157,7 @@ the badge that failed is the count of chats waiting for the operator. `needs-you
 cannot make that move; that is the whole argument for semantic names in one change.
 
 It paid again the other way (#1210). `danger.base` is the _words_ of an answer that ends
-something (`.ends-it` in an `AnswerBar`, a form's `SettingActions` and a menu), and `#c05c5c` on
+something (`.ends-it` in the answer bar a dialog's footer has since replaced, a form's `SettingActions` and a menu), and `#c05c5c` on
 the button's `control.base` was **3.73:1**, under the 4.5:1 that text at the window's 14px asks
 for. purlis-dark's `danger.base` is now `#c97474`, the same hue made lighter: **4.50:1** on
 `control.base` (Verdigris's warm `#262623`, #1838), 4.94:1 on `danger.surface` (the same button
@@ -989,6 +989,7 @@ has it; nothing reads the key after that.
   "chats": { "grouped": true, "tabbed": true, "away": false },
   "notifications": { "quiet": { "on": true, "from": "22:00", "to": "07:00" } },
   "explorer": { "closed": ["repos"] },
+  "rail": "auto",
   "dismissed": { "/home/me/project": ["pin-dormant:ide", "chat-fresh:3"] }
 }
 ```
@@ -1133,6 +1134,10 @@ has it; nothing reads the key after that.
   writes it (`app/src/explorerSections.ts`). Each project keeps its own too, under
   `projects` (#1686); this one is the last fold in any project, which a project with none of
   its own starts from, as a project with no arrangement starts from the machine's.
+- **`rail`** is whether the project rail hides itself (#2915): `"auto"` while it does, and
+  left out while it is always shown, the default. Any other value is the default, and the Inbox
+  says so. The rail's own last button and the title bar's show button write it
+  (`app/src/railMode.ts`); the first frame draws the rail as it says.
 - **`dismissed`** is the Notices you dismissed (NO-2, V91j), per project by its path, each
   by its cause. A Notice stays hidden while its cause is kept here, and the window lets the
   cause go once the project answers without it, so the Notice shows again if the cause comes
@@ -1172,7 +1177,7 @@ pipelines with animation"_), and adding it on top of that shape would have multi
 
 ### The vocabulary
 
-`DURATIONS` and `EASINGS` in `app/src/theme/motion.ts`. Nine names, written to the document as
+`DURATIONS` and `EASINGS` in `app/src/theme/motion.ts`. Twelve names, written to the document as
 `--motion-duration-*` and `--motion-easing-*` beside the colours. The built-ins are Purlis
 Classic's; Purlis draws `duration.quick` at 150 ms and `easing.standard` and `easing.enter` on
 the shell's one ease (below):
@@ -1184,6 +1189,9 @@ the shell's one ease (below):
 | `duration.settle`  | 280 ms             | a mark arriving at an answer: a pipeline finished, a chat changed state |
 | `duration.spin`    | 900 ms             | one turn of _still running_                                             |
 | `duration.breathe` | 1600 ms            | one breath of _queued, not yet running_                                 |
+| `duration.slide`   | 260 ms             | the project rail hiding and showing, the work column gliding with it    |
+| `duration.reveal`  | 220 ms             | the rail's peek coming in from the window's edge                        |
+| `duration.leave`   | 200 ms             | the peek going, and the rail fading out as it hides                     |
 | `easing.standard`  | `[0.2, 0, 0, 1]`   | a state changing in place                                               |
 | `easing.enter`     | `[0, 0, 0.2, 1]`   | decelerating into place, which is what reads as _arrived_               |
 | `easing.steady`    | `[0, 0, 1, 1]`     | a turn; an eased one stutters once a second                             |
@@ -1192,7 +1200,8 @@ the shell's one ease (below):
 **The shell's motion rule** (R150, #2925): one ease, `cubic-bezier(.22, .8, .24, 1)`, which
 Purlis gives `easing.standard` and `easing.enter`, and 150 ms for a chevron and a switch's knob,
 Purlis's `duration.quick`. Each of the shell's other steps is a duration token that arrives with
-the motion it times.
+the motion it times: `slide`, `reveal` and `leave` came with the project rail (#2915), at the same
+values in both built-ins.
 
 **Semantic, not a scale**, for the reason `needs-you.base` and `danger.base` are two tokens: a
 theme that wants arrivals quicker changes `duration.enter` and does not also speed up whatever
@@ -1457,6 +1466,7 @@ are no geometry token: they are the window's own family and its one monospace fa
 | `--focus-ring-width`    | 2px                                                          |
 | `--focus-ring-offset`   | 2px                                                          |
 | `--focus-ring-inset`    | -2px                                                         |
+| `--pane-border-width`   | 1px; the line around a pane, none in Purlis (#2914)          |
 | `--elevation-raised`    | 0 2px 8px                                                    |
 | `--elevation-overlay`   | 0 8px 24px                                                   |
 
@@ -1502,6 +1512,7 @@ engine's (`purlis_core::theme::geometry::STEPS`), which the published schema car
 | `focus-ring.width` | `--focus-ring-width` | 1 to 4 px | 2 | 2 |
 | `focus-ring.offset` | `--focus-ring-offset` | 0 to 4 px | 2 | 2 |
 | `focus-ring.inset` | `--focus-ring-inset` | -4 to 0 px | -2 | -2 |
+| `pane.border-width` | `--pane-border-width` | 0 to 2 px | 1 | 1 |
 | `elevation.raised-y` | `--elevation-raised` | 0 to 8 px at 14px | 2 | 2 |
 | `elevation.raised-blur` | `--elevation-raised` | 0 to 24 px at 14px | 8 | 8 |
 | `elevation.overlay-y` | `--elevation-overlay` | 0 to 16 px at 14px | 8 | 8 |
@@ -2125,44 +2136,31 @@ SettingActions in `app/src/settings/components.tsx`, six thin pieces over the Ra
 and native elements already in use, drawn in tokens. `docs/ui-primitives.md` gives the reasons. Nothing else joins it without a new
 amendment.
 
-**The answer bar** (`app/src/AnswerBar.tsx`, #1210) is the one row a question dialog is answered
-from: the quit warning, a delete's confirm, approving a project, Restart to update, About. A
-question with a way out and an act or two and nothing to fill in ends in it, as a form ends in
-`SettingActions`. It is a `<div className="answer">` and no more, so it is neither a settings
-piece nor an API in front of a primitive: the buttons inside it are native `<button>`s, or
-Radix's own `Cancel`, `Action` and `Close` around one, written by the dialog. The rules it
-carries are the dialog's to keep, and every question keeps the same ones:
+**A dialog's footer** (the dialog family, `app/src/ui/dialog/Dialog.tsx`, #2910, which replaced
+the answer bar of #1210) is the one row every dialog is answered from, a question's and a form's
+alike: the quit warning, a delete's confirm, approving a project, Restart to update, About, New
+workspace, Rename, Start a chat. Its answers are the dialog's props, so the rules are kept by
+construction:
 
-- **At the trailing edge.** `.answer` is a flex row pushed to the end, with a gap, so every
-  question's answers stand where the reader's eye ends the dialog.
-- **The way out first, then the acts**, and the answer that moves things on last, at the edge:
-  Cancel then Delete, Close then Read again, Cancel then Close then Smart close.
-  A question asked inline, where the press that raised it was made, keeps the same order:
-  a task's second step reads Keep, then Stop it (#1719).
-- **What cannot be taken back says so** with `ends-it` (which acts those are: `ui-primitives.md`,
-  D-1719-3), and it is never the one Return finds:
-  the dialog focuses its way out (or, for Reopen your sessions, the answer that loses nothing;
-  for a confirm by typed name, the name box, whose Return ends nothing until the name is exact,
-  D-1210-9).
-- **Focus and Escape stay the dialog's.** The bar handles no key. Escape is the dialog's Cancel,
-  or whatever that dialog says it is.
+- **At the trailing edge, always in view.** The footer is the dialog's last row, under its rule,
+  and the body above it is what scrolls, so every dialog's answers stand where the reader's eye
+  ends it.
+- **The way out first, then at most one other answer, and the main action last**, at the edge,
+  in the same place in every dialog: Cancel then Delete, Close then Check again then Install,
+  Cancel then Close then Smart close, Cancel then Create workspace. **One rule for forms and
+  questions** (N2): a form's act no longer leads its row, as `SettingActions` had it (V89j); it is
+  the footer's main action, trailing.
+- **What cannot be taken back says so** with `danger` (which acts those are: `ui-primitives.md`,
+  D-1719-3), and it is never the one Return finds from a field: an alert dialog starts on its way
+  out (or, for Reopen your sessions, the answer that loses nothing). A confirm by typed name keeps
+  its exception (D-1210-9): its keyboard lands in the name box, and Return there deletes only
+  once the name is typed exactly, while the delete is enabled.
+- **⏎ is the main action and Esc closes.** Return in a field answers with the main action;
+  Start a chat's is pressed, never found by Return, since a start runs a command. Escape is the
+  dialog's way out, or whatever that dialog says it is.
 
-`answerBar.guard.test.ts` fails on a dialog that builds an `answer` or `doing` row by hand, and
-on a dialog that puts an `ends-it` act in a form's `SettingActions` (D-1210-8).
-
-**One rule for both rows.** A form's `SettingActions` stands at the leading edge, in the form's
-flow, with its act first (Create workspace, then Cancel). A question's bar stands at the
-trailing edge with its act last. In both, the act that moves things on stands at the edge the
-row is anchored to, and the way out sits inward of it. A dialog that holds a form that makes or
-changes something (New vault, Rename, Start a chat) ends in the form's row, not the bar. Start
-a chat keeps Cancel focused and has no `<form>`, so a stray Return never starts it: a start runs
-a command. Its Approve and start is the form's act, not a confirm (D-1719-3): the command is
-said above it before the press, and the chat it starts can be closed. **A confirm whose
-only field is the typed name of what it ends is a question** (D-1210-8): Delete vault ends in the
-bar, Cancel first and the delete last, as Delete workspace does. Its keyboard lands in the name
-box, because typing is the answer, and Return there deletes only once the name is typed exactly
-(D-1210-9). Whether every dialog that holds a form should end at the trailing edge would amend
-V89j, and is left open.
+`dialogAnswers.guard.test.ts` fails on a dialog that builds an answer row by hand, and on a
+dialog that puts a `danger` act in a form's `SettingActions` (D-1210-8).
 
 **Lucide** is the icon set (`lucide-react`). The property that matters is that it draws with
 `stroke="currentColor"` and `fill="none"`, so an icon takes the colour of the text it sits in

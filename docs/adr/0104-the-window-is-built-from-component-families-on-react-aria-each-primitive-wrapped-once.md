@@ -92,8 +92,9 @@ error from the ticket that moves its last call site:
   which is its name, aside), a primitive's part or a member of the button family;
 - `purlis/menu-family`, an error since #2909: no element outside `src/ui` says a menu's role or
   wears the old menu and popover classes, and nothing imports Radix's menus or popover;
-- `purlis/dialog-family` (`role="dialog"`) is a warning. The field family moved and its rule is
-  an error, with the select and choice inputs split into rules of their own
+- `purlis/dialog-family`, an error since #2910: `role="dialog"` or `role="alertdialog"` written by
+  hand. The field family moved and its rule is an error, with the select and choice inputs split
+  into rules of their own
   ([amended 2026-10-22](0104/2026-10-22-the-field-family.md)).
 
 A family's ticket takes its own role and classes out of the button rule's list as it moves.
@@ -104,6 +105,12 @@ A family's ticket ships a story for each variant and state with a `play` test fo
 path, axe green in Chromium and WebKit, screenshot baselines, its parts in the theme engine's
 manifest, its docs, every call site moved with its lint at error, and the operator's before and
 after look (`docs/component-stories.md`).
+
+## Amendments
+
+The amendments to this decision are files of their own in [`0104/`](0104/), one per
+amendment, named `<yyyy-mm-dd>-<slug>.md`:
+[2026-10-22, the dialog family and the window's top layer](0104/2026-10-22-the-dialog-family-and-the-top-layer.md).
 
 ## What was rejected
 

@@ -27,7 +27,8 @@
 //! - **A size is a number inside its bound, or a geometry token** (`radius.md`, `space.3`),
 //!   which follows the person's density.
 //! - **A corner is 0 up to `full`** (one value, or four: top left, top right, bottom right,
-//!   bottom left), clamped as it is drawn to half the part's height, so `full` is a pill.
+//!   bottom left), clamped as it is drawn to half the part's height, so `full` is a pill. A
+//!   family may hold its corner to less (a dialog's, to the inset of what it holds, #2910).
 //! - **Padding, gap, font size and height are bounded** so a control stays at least
 //!   [`LEAST_TARGET`] px tall and its text fits, in both densities ([`fits`]).
 //!
@@ -75,7 +76,7 @@ use super::{Complaint, ResolvedTheme, stringify};
 
 /// **The manifest's version**: it grows when a family, a part, a variant or a property is added,
 /// and never takes one away.
-pub const VERSION: u32 = 6;
+pub const VERSION: u32 = 9;
 
 /// The least height a control keeps, in px at the default text size: WCAG 2.2's target size.
 pub const LEAST_TARGET: f64 = 24.0;
@@ -83,7 +84,8 @@ pub const LEAST_TARGET: f64 = 24.0;
 /// Why a state may not change a size, as the refusal says it.
 pub const NO_SIZE_IN_A_STATE: &str = "a state never changes a part's size, so nothing moves when \
      the pointer, a press, the keyboard or a choice reaches it; inside a state only fill, text, \
-     border-colour and shadow may be set";
+     border-colour and shadow may be set, and a tab's flare and hover inset, which are drawn \
+     out of its flow and size nothing";
 
 /// **One state of a part**, the state at rest left implied.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -167,10 +169,21 @@ pub enum Prop {
     FontSize,
     FontWeight,
     Height,
+    MaxWidth,
+    /// The inverse corners a chosen tab joins its panel with (#2914).
+    Flare,
+    /// How far an unchosen tab's hover pill stands in from its cell (#2914).
+    Inset,
+    /// A family's layout options (#2914): what its tabs attach to, how they share the strip,
+    /// whether a line parts them, and which edge an indicator is drawn on.
+    Attach,
+    Sizing,
+    Dividers,
+    Position,
 }
 
 /// Every property, in the order the stylesheet writes them.
-pub const PROPERTIES: [Prop; 11] = [
+pub const PROPERTIES: [Prop; 18] = [
     Prop::Fill,
     Prop::Text,
     Prop::BorderColour,
@@ -182,6 +195,13 @@ pub const PROPERTIES: [Prop; 11] = [
     Prop::FontSize,
     Prop::FontWeight,
     Prop::Height,
+    Prop::MaxWidth,
+    Prop::Flare,
+    Prop::Inset,
+    Prop::Attach,
+    Prop::Sizing,
+    Prop::Dividers,
+    Prop::Position,
 ];
 
 /// The most block padding a part takes, in px at the default text size.
@@ -205,15 +225,44 @@ impl Prop {
             Self::FontSize => "font-size",
             Self::FontWeight => "font-weight",
             Self::Height => "height",
+            Self::MaxWidth => "max-width",
+            Self::Flare => "flare",
+            Self::Inset => "inset",
+            Self::Attach => "attach",
+            Self::Sizing => "sizing",
+            Self::Dividers => "dividers",
+            Self::Position => "position",
         }
     }
 
-    /// **Whether a state may set it**: colours, fills and shadows, never a size.
+    /// **Whether a state may set it**: colours, fills and shadows, never a size; and a tab's
+    /// flare and hover inset, which are drawn out of its flow and size nothing (#2914).
     pub fn in_state(self) -> bool {
         matches!(
             self,
-            Self::Fill | Self::Text | Self::BorderColour | Self::Shadow
+            Self::Fill | Self::Text | Self::BorderColour | Self::Shadow | Self::Flare | Self::Inset
         )
+    }
+
+    /// **The one state it is set in, where it has one**: a flare is the chosen tab's, and an
+    /// inset the hover pill's (#2914).
+    pub fn only_in(self) -> Option<State> {
+        match self {
+            Self::Flare => Some(State::Selected),
+            Self::Inset => Some(State::Hover),
+            _ => None,
+        }
+    }
+
+    /// **The words it takes, where it is a choice** rather than a colour or a size (#2914).
+    pub fn keywords(self) -> Option<&'static [&'static str]> {
+        match self {
+            Self::Attach => Some(&["panel", "strip"]),
+            Self::Sizing => Some(&["content", "equal"]),
+            Self::Dividers => Some(&["off", "on"]),
+            Self::Position => Some(&["bottom", "top"]),
+            _ => None,
+        }
     }
 
     fn is_colour(self) -> bool {
@@ -243,13 +292,32 @@ impl Prop {
             Self::FontSize => bound(10.0, 18.0, geometry::Unit::Text, Some("font-size.")),
             Self::FontWeight => bound(300.0, 700.0, geometry::Unit::Weight, Some("font-weight.")),
             Self::Height => bound(LEAST_TARGET, 48.0, geometry::Unit::Text, Some("size.")),
-            Self::Fill | Self::Text | Self::BorderColour | Self::Shadow => None,
+            Self::MaxWidth => bound(48.0, 480.0, geometry::Unit::Text, None),
+            Self::Flare => bound(0.0, 16.0, geometry::Unit::Px, Some("radius.")),
+            Self::Inset => bound(0.0, 8.0, geometry::Unit::Px, None),
+            Self::Fill
+            | Self::Text
+            | Self::BorderColour
+            | Self::Shadow
+            | Self::Attach
+            | Self::Sizing
+            | Self::Dividers
+            | Self::Position => None,
         }
     }
 
     /// The manifest version it came in.
     pub fn since(self) -> u32 {
-        1
+        match self {
+            Self::MaxWidth
+            | Self::Flare
+            | Self::Inset
+            | Self::Attach
+            | Self::Sizing
+            | Self::Dividers
+            | Self::Position => 8,
+            _ => 1,
+        }
     }
 
     fn says(self) -> &'static str {
@@ -273,6 +341,25 @@ impl Prop {
             Self::FontSize => "Its words' size: px at the default text size or a font-size token.",
             Self::FontWeight => "Its words' weight, or a font-weight token.",
             Self::Height => "Its height: px at the default text size or a size token.",
+            Self::MaxWidth => "The widest it is drawn: px at the default text size.",
+            Self::Flare => {
+                "The inverse corners the chosen tab joins its panel with, in px or a radius \
+                 token: 0 for none. Set only on the selected state."
+            }
+            Self::Inset => {
+                "How far the hover pill stands in from the tab's cell: one value, or three (top, \
+                 sides, bottom), each px. Set only on the hover state."
+            }
+            Self::Attach => {
+                "What the tabs attach to: panel (the chosen tab joins the content panel under \
+                 the strip) or strip (the tabs sit on a strip of their own)."
+            }
+            Self::Sizing => {
+                "How the tabs share the strip: content (each as wide as its words) or \
+                 equal (each an equal share)."
+            }
+            Self::Dividers => "Whether a line parts one tab from the next: on or off.",
+            Self::Position => "The edge its mark is drawn on: top or bottom.",
         }
     }
 
@@ -290,6 +377,15 @@ impl Prop {
             Self::FontSize => &["font-size"],
             Self::FontWeight => &["font-weight"],
             Self::Height => &["block-size"],
+            Self::MaxWidth => &["max-inline-size"],
+            // Drawn by the family's own stylesheet from custom properties (`written_to`), or a
+            // word's declarations (`keyword_css`).
+            Self::Flare
+            | Self::Inset
+            | Self::Attach
+            | Self::Sizing
+            | Self::Dividers
+            | Self::Position => &[],
         }
     }
 }
@@ -374,6 +470,14 @@ pub struct Family {
     /// The words of a part that are not drawn in the root's colour, by the part's name: a field's
     /// help in the quiet tier and its error in the danger colour (#2905).
     words: &'static [(&'static str, &'static str)],
+    /// The largest corner its root takes, a geometry token, where it holds what would be cut off
+    /// beyond it: a dialog's answers in its corners (#2910). `None` for the corner its height or
+    /// its box gives.
+    corner_most: Option<&'static str>,
+    /// **The parts drawn around its root rather than inside it** (#2914): a tab's strip, and the
+    /// column that holds the strip and the panel its tabs attach to. Each is reached by its own
+    /// attributes alone, and takes no variant and no state.
+    pub around: &'static [&'static str],
 }
 
 impl Family {
@@ -416,8 +520,21 @@ fn look_named(family: &Family, part: &str, variant: &str) -> String {
     }
 }
 
-/// What a theme may set on a part with words: every property.
-const ALL: &[Prop] = &PROPERTIES;
+/// What a theme may set on a control's root: every property a control has (the layout words, a
+/// flare and an inset are a tab's, #2914).
+const ALL: &[Prop] = &[
+    Prop::Fill,
+    Prop::Text,
+    Prop::BorderColour,
+    Prop::Shadow,
+    Prop::BorderWidth,
+    Prop::CornerRadius,
+    Prop::Padding,
+    Prop::Gap,
+    Prop::FontSize,
+    Prop::FontWeight,
+    Prop::Height,
+];
 
 /// What a theme may set on a tooltip's surface: its colours, its edge, its corners and its
 /// shadow. Its size is its words', so none of its sizes is a theme's.
@@ -547,6 +664,8 @@ pub const MANIFEST: &[Family] = &[
         states: &STATES,
         focused: "[data-focus-visible]",
         words: &[],
+        corner_most: None,
+        around: &[],
     },
     Family {
         name: "field",
@@ -608,6 +727,8 @@ pub const MANIFEST: &[Family] = &[
         states: &[State::Disabled],
         focused: "[data-focus-within]",
         words: &[("help", "text.quiet"), ("error", "danger.text")],
+        corner_most: None,
+        around: &[],
     },
     Family {
         name: "text-input",
@@ -677,6 +798,8 @@ pub const MANIFEST: &[Family] = &[
         states: &[State::Hover, State::Focused, State::Disabled],
         focused: "[data-focus-within]",
         words: &[],
+        corner_most: None,
+        around: &[],
     },
     Family {
         name: "textarea",
@@ -727,6 +850,156 @@ pub const MANIFEST: &[Family] = &[
         states: &[State::Hover, State::Focused, State::Disabled],
         focused: "[data-focus-within]",
         words: &[],
+        corner_most: None,
+        around: &[],
+    },
+    Family {
+        name: "tabs",
+        description: "The session tabs: the strip, each tab, and the panel the chosen tab joins.",
+        since: 8,
+        parts: &[
+            Part {
+                name: "tab",
+                since: 8,
+                description: "One tab: its fill, words, corners and size; the chosen tab's flare and \
+                          the hover pill's inset.",
+                properties: &[
+                    Prop::Fill,
+                    Prop::Text,
+                    Prop::CornerRadius,
+                    Prop::Padding,
+                    Prop::Gap,
+                    Prop::FontSize,
+                    Prop::FontWeight,
+                    Prop::Height,
+                    Prop::MaxWidth,
+                    Prop::Flare,
+                    Prop::Inset,
+                ],
+            },
+            Part {
+                name: "label",
+                since: 8,
+                description: "The tab's name, cut short with an ellipsis rather than widening it.",
+                properties: &[Prop::Text, Prop::FontSize, Prop::FontWeight],
+            },
+            Part {
+                name: "closer",
+                since: 8,
+                description: "The tab's ×.",
+                properties: &[Prop::Fill, Prop::Text, Prop::CornerRadius],
+            },
+            Part {
+                name: "count",
+                since: 8,
+                description: "A count on a tab: how many of its tasks are working or waiting.",
+                properties: &[Prop::Fill, Prop::Text, Prop::CornerRadius],
+            },
+            Part {
+                name: "indicator",
+                since: 8,
+                description: "The mark on the chosen tab's edge: none until a theme gives it a height.",
+                properties: &[Prop::Fill, Prop::Height, Prop::CornerRadius, Prop::Position],
+            },
+            Part {
+                name: "strip",
+                since: 8,
+                description: "The row the tabs sit in: its ground and the line under it.",
+                properties: &[Prop::Fill, Prop::BorderColour, Prop::BorderWidth],
+            },
+            Part {
+                name: "layout",
+                since: 8,
+                description: "How the tabs are laid out: what they attach to, how they share the \
+                          strip, the lines between them and the room between them.",
+                properties: &[Prop::Attach, Prop::Sizing, Prop::Dividers, Prop::Gap],
+            },
+        ],
+        variants: &[
+            Variant {
+                name: "chat",
+                since: 8,
+                description: "A chat's tab.",
+                consent: None,
+            },
+            Variant {
+                name: "view",
+                since: 8,
+                description: "A view's tab: a persona, a memory, a vault, a setting.",
+                consent: None,
+            },
+            Variant {
+                name: "file",
+                since: 8,
+                description: "A file's tab, which joins the editor's toolbar under it.",
+                consent: None,
+            },
+            Variant {
+                name: "background",
+                since: 8,
+                description: "A chat wrapping up in the background, drawn as a chip at the strip's \
+                          start.",
+                consent: None,
+            },
+        ],
+        // What the strip is drawn on: the window behind a docked strip, Classic's own strip, and the
+        // panel the chosen tab takes the fill of.
+        grounds: &[
+            "surface.base",
+            "surface.deep",
+            "surface.raised",
+            "layer.chat",
+            "terminal.background",
+        ],
+        keeps_size: &[],
+        sized_apart: &[],
+        height: Some(Length::Token("size.control")),
+        font_size: "font-size.md",
+        line_height: 1.0,
+        border_width: 0.0,
+        defaults: tabs_look_in,
+        states: &[State::Hover, State::Selected],
+        focused: "[data-focus-visible]",
+        words: &[],
+        around: &["strip", "layout"],
+        corner_most: None,
+    },
+    Family {
+        name: "editor",
+        description: "An editor view: the toolbar over a file, joined by its file tab.",
+        since: 8,
+        parts: &[Part {
+            name: "toolbar",
+            since: 8,
+            description: "The bar over a file that names it and holds its actions; its fill is the \
+                      chosen file tab's.",
+            properties: &[
+                Prop::Fill,
+                Prop::Text,
+                Prop::Padding,
+                Prop::Gap,
+                Prop::FontSize,
+            ],
+        }],
+        variants: &[Variant {
+            name: "default",
+            since: 8,
+            description: "The toolbar.",
+            consent: None,
+        }],
+        grounds: &["surface.raised", "terminal.background"],
+        keeps_size: &[],
+        sized_apart: &[],
+        height: None,
+        font_size: "font-size.md",
+        line_height: 1.0,
+        border_width: 0.0,
+        defaults: editor_look,
+        states: &[],
+        focused: "[data-focus-visible]",
+        words: &[],
+        around: &[],
+        corner_most: None,
     },
     shell::PANEL,
     shell::PANEL_SECTION,
@@ -766,9 +1039,14 @@ pub const MANIFEST: &[Family] = &[
         states: &[],
         focused: "[data-focus-visible]",
         words: &[("detail", "text.secondary")],
+        corner_most: None,
+        around: &[],
     },
     overlay::POPOVER,
     overlay::MENU,
+    dialog::DIALOG,
+    // **The project rail** (#2915): a button per project at the window's left.
+    shell::RAIL,
 ];
 
 /// The popover and menu families (#2909): the surface a popover and a menu stand on, and a
@@ -777,9 +1055,15 @@ pub const MANIFEST: &[Family] = &[
 mod overlay;
 
 /// The window's own families (#2913): the region panel, its sections, an empty state and a
-/// status item.
+/// status item; and the project rail (#2915).
 #[path = "parts_shell.rs"]
 mod shell;
+
+/// The dialog family (#2910).
+#[path = "parts_dialog.rs"]
+mod dialog;
+#[cfg(test)]
+pub(super) use dialog::DIALOG_TIERS;
 
 /// **A field's colours as `app/src/ui/field/field.css` draws them**: no ground and no edge of
 /// its own, its label in the primary tier. Its help's and its error's words are the family's
@@ -906,6 +1190,57 @@ fn tooltip_look(_variant: &str, _states: &[State]) -> Look {
         fill: "surface.overlay",
         text: "text.primary",
         border: "border.subtle",
+    }
+}
+
+/// **A tab's colours as `app/src/ui/tabs/tabs.css` draws them** (#2914), which a test holds to
+/// that file: quiet words on the strip at rest; under the pointer, primary words on the card's
+/// pill; chosen, primary words on the panel's fill, or a file's on the editor toolbar's.
+fn tabs_look(variant: &str, state: Option<State>) -> Look {
+    let mut look = Look {
+        fill: TRANSPARENT,
+        text: "text.quiet",
+        border: TRANSPARENT,
+    };
+    match state {
+        Some(State::Hover) => {
+            look.fill = "surface.overlay";
+            look.text = "text.primary";
+        }
+        Some(State::Selected) => {
+            // A chat's tab and a file's join what is drawn under them, a terminal or code, which
+            // is one surface; a view's joins the panel.
+            look.fill = if variant == "file" || variant == "chat" {
+                EDITOR_TOOLBAR
+            } else {
+                "surface.raised"
+            };
+            look.text = "text.primary";
+        }
+        _ => {}
+    }
+    look
+}
+
+/// **A tab's colours in the states that hold at once**: chosen wins, since an unchosen tab's
+/// pill is the only fill the pointer draws, and a chosen tab under the pointer keeps its own.
+fn tabs_look_in(variant: &str, states: &[State]) -> Look {
+    let state = [State::Selected, State::Hover]
+        .into_iter()
+        .find(|one| states.contains(one));
+    tabs_look(variant, state)
+}
+
+/// The editor toolbar's fill, the code surface under it, which a chosen file tab takes too, as a
+/// chosen chat's tab takes its terminal's: one surface (the tab-strip prototype's toolbar).
+const EDITOR_TOOLBAR: &str = "terminal.background";
+
+/// **The editor toolbar's colours as `app/src/ui/tabs/tabs.css` draws them** (#2914).
+fn editor_look(_variant: &str, _states: &[State]) -> Look {
+    Look {
+        fill: EDITOR_TOOLBAR,
+        text: "text.muted",
+        border: TRANSPARENT,
     }
 }
 
@@ -1055,6 +1390,13 @@ pub(super) fn field_defaults_json() -> Value {
     })
 }
 
+/// The dialog's colours as the engine holds them, for the test that holds them to `dialog.css`.
+#[cfg(test)]
+pub(super) fn dialog_defaults_json(variant: &str) -> Value {
+    let rest = dialog::dialog_look(variant, &[]);
+    json!({ "fill": rest.fill, "text": rest.text, "border": rest.border })
+}
+
 /// A family's colours at rest and under the pointer, as the engine holds them, for the tests that
 /// hold them to the family's stylesheet: fill, text, border and the fill under the pointer.
 #[cfg(test)]
@@ -1072,6 +1414,14 @@ pub(super) fn look_of(family_name: &str, variant: &str, states: &[State]) -> [&'
     let family = family(family_name).expect("a family of the manifest");
     let look = (family.defaults)(variant, states);
     [look.fill, look.text, look.border]
+}
+
+/// A family's colours as the engine holds them, for the tests that hold them to its stylesheet:
+/// the fill and the words of `variant` in `state`.
+#[cfg(test)]
+pub(super) fn look_pair_of(family: &str, variant: &str, state: Option<State>) -> (String, String) {
+    let look = (self::family(family).expect("a family").defaults)(variant, state.as_slice());
+    (look.fill.to_owned(), look.text.to_owned())
 }
 
 /// The family `name` names.
@@ -1136,6 +1486,10 @@ pub enum PartValue {
     Corners([Corner; 4]),
     /// Block, inline.
     Padding(Length, Length),
+    /// One of a property's words (#2914): `panel`, `equal`, `on`, `bottom`.
+    Word(&'static str),
+    /// Top, sides, bottom (#2914).
+    Inset([Length; 3]),
 }
 
 /// **A theme's component parts**, every key and its value: empty for a theme that names none.
@@ -1201,6 +1555,14 @@ fn key(raw: &str) -> Result<Key, String> {
     }
     if next.is_some() {
         return Err(said());
+    }
+    // A part drawn around the root is the same in every variant and state (#2914).
+    if family.around.contains(&part.name) && (variant.is_some() || state.is_some()) {
+        return Err(format!(
+            "parts.{raw} is not a component part purlis has: {}.{} is drawn around every tab and \
+             takes no variant or state, so it was left out",
+            family.name, part.name
+        ));
     }
     Ok(Key {
         family: family.name,
@@ -1289,6 +1651,37 @@ fn value(key: &Key, raw: &Value) -> Result<PartValue, String> {
             key.variant.map(|v| format!(".{v}")).unwrap_or_default()
         ));
     }
+    if let Some(only) = property.only_in()
+        && key.state != Some(only)
+    {
+        return Err(format!(
+            "{at} is refused: a tab's {} is drawn only while it is {}, so it is set as \
+             {}.{}{}.{}.{}",
+            property.name(),
+            match only {
+                State::Selected => "chosen",
+                _ => "under the pointer",
+            },
+            key.family,
+            key.part,
+            key.variant.map(|v| format!(".{v}")).unwrap_or_default(),
+            only.name(),
+            property.name()
+        ));
+    }
+    if let Some(words) = property.keywords() {
+        return raw
+            .as_str()
+            .and_then(|text| words.iter().copied().find(|word| *word == text))
+            .map(PartValue::Word)
+            .ok_or_else(|| {
+                format!(
+                    "{at} is {}: it is one of {}",
+                    stringify(raw),
+                    words.join(" or ")
+                )
+            });
+    }
     if property.is_colour() {
         return match colour(raw) {
             Some(TRANSPARENT) if property == Prop::Text => Err(format!(
@@ -1314,10 +1707,24 @@ fn value(key: &Key, raw: &Value) -> Result<PartValue, String> {
             )),
         };
     }
-    let Some(bound) = property.bound() else {
+    let Some(bound) = bound_of(key) else {
         return Err(format!("{at} has no value purlis reads"));
     };
     match property {
+        Prop::Inset => match raw {
+            Value::Array(three) if three.len() == 3 => {
+                let mut sides = [Length::Number(0.0); 3];
+                for (at_side, one) in three.iter().enumerate() {
+                    sides[at_side] = length(one, bound, &format!("{at} (value {})", at_side + 1))?;
+                }
+                Ok(PartValue::Inset(sides))
+            }
+            Value::Array(_) => Err(format!(
+                "{at} is a list of {} values: an inset is one value, or three (top, sides, bottom)",
+                raw.as_array().map_or(0, Vec::len)
+            )),
+            one => length(one, bound, &at).map(|one| PartValue::Inset([one; 3])),
+        },
         Prop::CornerRadius => match raw {
             Value::Array(four) if four.len() == 4 => {
                 let mut corners = [Corner::Full; 4];
@@ -1402,7 +1809,44 @@ pub(super) fn read(
             Err(said) => complaints.push(Complaint::said(said)),
         }
     }
+    joined(&mut parts);
     parts
+}
+
+/// **What a chosen tab joins, it takes the fill of** (#2914): the panel under a docked strip, and
+/// a file's toolbar. A theme that gives the panel or the toolbar a fill and leaves the chosen
+/// tab's unset draws the tab in it too, so the two stay one piece and the floors measure the
+/// fill the tab is drawn in.
+fn joined(parts: &mut Parts) {
+    let key = |family, part, variant, state| Key {
+        family,
+        part,
+        variant,
+        state,
+        property: Prop::Fill,
+    };
+    let chosen = key("tabs", "tab", None, Some(State::Selected));
+    let file = key("tabs", "tab", Some("file"), Some(State::Selected));
+    // The content panel the tabs attach to is the panel family's (#2913).
+    let panel = [Some("content"), None]
+        .into_iter()
+        .find_map(|variant| parts.get(&key("panel", "root", variant, None)).copied());
+    // Only a fill that is not the one a docked chosen tab already takes: a theme whose panel is
+    // the default's draws its tabs from the family defaults, and costs nothing to measure.
+    if let Some(fill) = panel.filter(|fill| *fill != PartValue::Colour("surface.raised")) {
+        parts.entry(chosen).or_insert(fill);
+        // A chosen chat's tab stays on its terminal's surface: the panel's fill is a view's.
+        parts
+            .entry(key("tabs", "tab", Some("chat"), Some(State::Selected)))
+            .or_insert(PartValue::Colour(EDITOR_TOOLBAR));
+    }
+    // A chosen file tab joins its toolbar, whatever fill every other chosen tab takes.
+    let toolbar = parts.get(&key("editor", "toolbar", None, None)).copied();
+    if toolbar.is_some() || parts.contains_key(&chosen) {
+        parts
+            .entry(file)
+            .or_insert(toolbar.unwrap_or(PartValue::Colour(EDITOR_TOOLBAR)));
+    }
 }
 
 /// Why `key` would take a consent part's mark away, if it would: a border width of 0 on Allow.
@@ -1420,6 +1864,35 @@ fn edge_removed(key: &Key, value: &PartValue) -> Option<String> {
              so a theme can never disguise a consent decision"
         )
     })
+}
+
+/// **The parts that are marks, not controls** (#2914): a tab's indicator is a line a few px tall,
+/// so its height is a mark's, not a target's.
+const MARKS: &[(&str, &str)] = &[("tabs", "indicator")];
+
+/// The most a mark is drawn tall, in px.
+const MOST_MARK: f64 = 6.0;
+
+/// The bound `key`'s value is held to: its property's, but a mark's height is a mark's.
+fn bound_of(key: &Key) -> Option<Bound> {
+    // The room between tabs is a strip's, as wide as a text-only theme's gaps (#2914).
+    if key.property == Prop::Gap && (key.family, key.part) == ("tabs", "layout") {
+        return Some(Bound {
+            least: 0.0,
+            most: 32.0,
+            unit: geometry::Unit::Text,
+            tokens: Some("space."),
+        });
+    }
+    if key.property == Prop::Height && MARKS.contains(&(key.family, key.part)) {
+        return Some(Bound {
+            least: 0.0,
+            most: MOST_MARK,
+            unit: geometry::Unit::Px,
+            tokens: None,
+        });
+    }
+    key.property.bound()
 }
 
 fn variant(family_name: &str, name: &str) -> Option<&'static Variant> {
@@ -1476,13 +1949,17 @@ fn at_rest(
 fn bounded(parts: &Parts, comfortable: &Geometry, compact: &Geometry) -> Vec<String> {
     let mut said = Vec::new();
     for (key, value) in parts {
-        let Some(bound) = key.property.bound() else {
+        let Some(bound) = bound_of(key) else {
             continue;
         };
         let lengths: Vec<(Length, f64)> = match value {
             PartValue::Length(length) => vec![(*length, bound.most)],
             PartValue::Padding(block, inline) => vec![(*block, MOST_BLOCK), (*inline, bound.most)],
-            PartValue::Corners(_) | PartValue::Colour(_) | PartValue::Shadow(_) => Vec::new(),
+            PartValue::Corners(_)
+            | PartValue::Colour(_)
+            | PartValue::Shadow(_)
+            | PartValue::Word(_)
+            | PartValue::Inset(_) => Vec::new(),
         };
         for (length, most) in lengths {
             let Length::Token(token) = length else {
@@ -2394,10 +2871,147 @@ fn half_height(family: &Family) -> Option<String> {
     Some(format!("calc(var({HEIGHT_PROPERTY}, {own}) / 2)"))
 }
 
+/// The unit a rule's length for `property` is written in: its bound's, a mark's height in px.
+fn unit_of(rule: &Rule, property: Prop) -> geometry::Unit {
+    let part = rule.family.parts[rule.part].name;
+    if property == Prop::Height && MARKS.contains(&(rule.family.name, part)) {
+        return geometry::Unit::Px;
+    }
+    property.bound().map_or(geometry::Unit::Px, |b| b.unit)
+}
+
+/// **The custom property a number the family's own stylesheet draws from is written to**
+/// (#2914): a flare and an inset are drawn by the tab's own outlines, and the room between tabs
+/// is the strip's.
+fn written_to(rule: &Rule, property: Prop) -> Option<&'static str> {
+    let part = rule.family.parts[rule.part].name;
+    Some(match (rule.family.name, part, property) {
+        ("tabs", "tab", Prop::Flare) => "--tabs-flare",
+        ("tabs", "tab", Prop::Inset) => "--tabs-hover-inset",
+        ("tabs", "layout", Prop::Gap) => "--tabs-gap",
+        _ => return None,
+    })
+}
+
+/// **The elements a rule's `property` is drawn on** (#2914): its own, but a tab's fill under the
+/// pointer is its pill, which an unchosen tab draws, and a chosen tab's fill is its flares' too.
+fn targets(rule: &Rule, property: Prop, sized: bool) -> Vec<String> {
+    let own = selector(rule, sized);
+    let part = rule.family.parts[rule.part].name;
+    if (rule.family.name, part, property) != ("tabs", "tab", Prop::Fill) {
+        return vec![own];
+    }
+    match rule.state {
+        Some(State::Hover) => root_selectors(rule, sized)
+            .iter()
+            .map(|root| format!(":where({root}:not([data-selected]))::before"))
+            .collect(),
+        Some(State::Selected) => vec![
+            own.clone(),
+            format!("{own}::before"),
+            format!("{own}::after"),
+        ],
+        _ => vec![own],
+    }
+}
+
+/// The selectors of the parts drawn around the tabs, and of a chosen tab and its flares.
+const LAYOUT: &str = ":where([data-scope=\"tabs\"][data-part=\"layout\"])";
+const STRIP: &str = ":where([data-scope=\"tabs\"][data-part=\"strip\"])";
+const CHOSEN: &str = ":where([data-scope=\"tabs\"][data-part=\"tab\"][data-selected]:not([data-variant=\"file\"])), \
+     :where([data-scope=\"tabs\"][data-part=\"tab\"][data-selected]:not([data-variant=\"file\"]))::before, \
+     :where([data-scope=\"tabs\"][data-part=\"tab\"][data-selected]:not([data-variant=\"file\"]))::after";
+
+/// **What the tabs attach to, as the rules it writes** (#2914), before every other rule so a
+/// fill a theme names wins: on a strip of their own (`strip`) the strip takes the chat strip's
+/// shade, a chosen tab is a step lighter and nothing flares
+/// (`--tabs-joined`, which `tabs.css` draws the flares and the panel's corners from); docked on
+/// the panel (`panel`, Purlis's) the strip has no ground and a chosen tab takes the fill of what
+/// it joins: a chat's its terminal's, a file's its toolbar's, a view's the panel's.
+fn attached(word: &str) -> &'static [(&'static str, &'static str)] {
+    if word == "strip" {
+        &[
+            (LAYOUT, "--tabs-joined: 0;"),
+            (STRIP, "background-color: var(--tabs-strip-shade);"),
+            (CHOSEN, "background-color: var(--tabs-chosen-shade);"),
+        ]
+    } else {
+        // Docked, each chosen tab takes the family default of what it joins.
+        &[
+            (LAYOUT, "--tabs-joined: 1;"),
+            (STRIP, "background-color: transparent;"),
+        ]
+    }
+}
+
+/// **What a layout word draws** (#2914), as custom properties `tabs.css` reads, or an
+/// indicator's edge. `attach` is written first, on its own ([`attached`]).
+fn word_css(property: Prop, word: &str) -> &'static str {
+    match (property, word) {
+        (Prop::Sizing, "equal") => "--tabs-grow: 1; --tabs-basis: 0px;",
+        (Prop::Sizing, _) => "--tabs-grow: 0; --tabs-basis: auto;",
+        (Prop::Dividers, "on") => "--tabs-divider: 1px;",
+        (Prop::Dividers, _) => "--tabs-divider: 0px;",
+        (Prop::Position, "top") => "inset-block-start: 0; inset-block-end: auto;",
+        (Prop::Position, _) => "inset-block-start: auto; inset-block-end: 0;",
+        _ => "",
+    }
+}
+
+/// A colour as a stylesheet writes it.
+fn colour_css(token: &str) -> String {
+    if token == TRANSPARENT {
+        TRANSPARENT.to_owned()
+    } else {
+        var(token)
+    }
+}
+
 /// One property's declarations, written from its parsed value.
 fn declarations(rule: &Rule, property: Prop, value: PartValue) -> String {
+    if let Some(custom) = written_to(rule, property) {
+        let unit = unit_of(rule, property);
+        let written = match value {
+            PartValue::Colour(token) => colour_css(token),
+            PartValue::Length(length) => written_length(length, unit),
+            PartValue::Inset(sides) => sides
+                .iter()
+                .map(|side| written_length(*side, geometry::Unit::Px))
+                .collect::<Vec<_>>()
+                .join(" "),
+            PartValue::Padding(..)
+            | PartValue::Corners(_)
+            | PartValue::Shadow(_)
+            | PartValue::Word(_) => return String::new(),
+        };
+        let mut said = format!("{custom}: {written};");
+        // A pill that fills its cell takes no corners of its own; one inset from it is rounded.
+        if let PartValue::Inset(sides) = value
+            && sides.iter().all(|side| *side == Length::Number(0.0))
+        {
+            said.push_str(" --tabs-hover-corner: 0px;");
+        }
+        return said;
+    }
+    // A strip's line is under it, never around it.
+    if (rule.family.name, rule.family.parts[rule.part].name) == ("tabs", "strip") {
+        match (property, value) {
+            (Prop::BorderWidth, PartValue::Length(length)) => {
+                return format!(
+                    "border-block-end-width: {}; border-block-end-style: solid;",
+                    written_length(length, geometry::Unit::Px)
+                );
+            }
+            (Prop::BorderColour, PartValue::Colour(token)) => {
+                return format!("border-block-end-color: {};", colour_css(token));
+            }
+            _ => {}
+        }
+    }
     let css = property.css();
     match value {
+        PartValue::Word(word) => word_css(property, word).to_owned(),
+        PartValue::Inset(_) => String::new(),
         PartValue::Colour(TRANSPARENT) => format!("{}: transparent;", css[0]),
         PartValue::Colour(token) => format!("{}: {};", css[0], var(token)),
         PartValue::Shadow(Shadow::None) => format!("{}: none;", css[0]),
@@ -2416,17 +3030,30 @@ fn declarations(rule: &Rule, property: Prop, value: PartValue) -> String {
             // A control's corner is clamped to half the height it is drawn at; a box's, which is as
             // tall as what it holds, to half its own box, corner by corner (`50%` resolves on each
             // axis), and `full` on a box is that half (ADR 0103, amended 2026-10-22).
+            // A family that holds its corner to less draws at most that (a dialog's, the inset
+            // of what it holds, so its answers are never cut off in a corner, #2910).
             let control = (rule.part == 0).then(|| half_height(rule.family)).flatten();
-            let one = |corner: Corner| match (corner, &control) {
-                (Corner::Full, Some(_)) => format!("{}px", geometry::show(MOST_CORNER)),
-                (Corner::Full, None) => "50%".to_owned(),
-                (Corner::Length(length), Some(half)) => {
+            let most = if rule.part == 0 {
+                rule.family.corner_most
+            } else {
+                None
+            };
+            let one = |corner: Corner| match (corner, &control, most) {
+                (Corner::Full, _, Some(most)) => var(most),
+                (Corner::Length(length), _, Some(most)) => format!(
+                    "min({}, {})",
+                    written_length(length, geometry::Unit::Px),
+                    var(most)
+                ),
+                (Corner::Full, Some(_), None) => format!("{}px", geometry::show(MOST_CORNER)),
+                (Corner::Full, None, None) => "50%".to_owned(),
+                (Corner::Length(length), Some(half), None) => {
                     format!(
                         "min({}, {half})",
                         written_length(length, geometry::Unit::Px)
                     )
                 }
-                (Corner::Length(length), None) => {
+                (Corner::Length(length), None, None) => {
                     format!("min({}, 50%)", written_length(length, geometry::Unit::Px))
                 }
             };
@@ -2438,7 +3065,7 @@ fn declarations(rule: &Rule, property: Prop, value: PartValue) -> String {
             format!("{}: {};", css[0], written.join(" "))
         }
         PartValue::Length(length) => {
-            let unit = property.bound().map_or(geometry::Unit::Px, |b| b.unit);
+            let unit = unit_of(rule, property);
             let mut said = format!("{}: {};", css[0], written_length(length, unit));
             if property == Prop::BorderWidth {
                 said.push_str(" border-style: solid;");
@@ -2478,6 +3105,13 @@ fn root_selectors(rule: &Rule, sized: bool) -> Vec<String> {
 
 /// A rule's selector, without specificity: the stylesheet's order alone says which rule wins.
 fn selector(rule: &Rule, sized: bool) -> String {
+    let part = rule.family.parts[rule.part].name;
+    if rule.family.around.contains(&part) {
+        return format!(
+            ":where([data-scope=\"{}\"][data-part=\"{part}\"])",
+            rule.family.name
+        );
+    }
     let roots = root_selectors(rule, sized);
     let reached: Vec<String> = if rule.part == 0 {
         roots
@@ -2530,24 +3164,38 @@ pub fn stylesheet(theme: &ResolvedTheme) -> String {
             let _ = writeln!(sheet, "  :where({root}) {{ {HEIGHT_PROPERTY}: {height}; }}");
         }
     }
+    // What the tabs attach to, first: a fill a theme names over it wins.
+    for rule in &rules {
+        if let Some(PartValue::Word(word)) = rule.values.get(&Prop::Attach) {
+            for (on, said) in attached(word) {
+                let _ = writeln!(sheet, "  {on} {{ {said} }}");
+            }
+        }
+    }
     for rule in &rules {
         for sized in [false, true] {
-            let said: Vec<String> = PROPERTIES
+            // Each target with what is drawn on it, in the order the properties are written.
+            let mut blocks: Vec<(String, Vec<String>)> = Vec::new();
+            for property in PROPERTIES
                 .iter()
                 .filter(|property| sizes(**property) == sized)
-                .filter_map(|property| {
-                    rule.values
-                        .get(property)
-                        .map(|value| declarations(rule, *property, *value))
-                })
-                .collect();
-            if !said.is_empty() {
-                let _ = writeln!(
-                    sheet,
-                    "  {} {{ {} }}",
-                    selector(rule, sized),
-                    said.join(" ")
-                );
+            {
+                let Some(value) = rule.values.get(property) else {
+                    continue;
+                };
+                let said = declarations(rule, *property, *value);
+                if said.is_empty() {
+                    continue;
+                }
+                for target in targets(rule, *property, sized) {
+                    match blocks.iter_mut().find(|(at, _)| *at == target) {
+                        Some((_, list)) => list.push(said.clone()),
+                        None => blocks.push((target, vec![said.clone()])),
+                    }
+                }
+            }
+            for (target, said) in blocks {
+                let _ = writeln!(sheet, "  {target} {{ {} }}", said.join(" "));
             }
         }
     }
@@ -2558,6 +3206,9 @@ pub fn stylesheet(theme: &ResolvedTheme) -> String {
 // --- The manifest as JSON ----------------------------------------------------------------------
 
 fn bound_json(property: Prop) -> Value {
+    if let Some(words) = property.keywords() {
+        return json!({ "enum": words });
+    }
     let Some(bound) = property.bound() else {
         return if property == Prop::Shadow {
             json!({ "enum": ["none", "raised", "overlay"] })
@@ -2586,6 +3237,9 @@ fn bound_json(property: Prop) -> Value {
     if property == Prop::Padding {
         said["block_most"] = Value::from(12);
     }
+    if property == Prop::Inset {
+        said["values"] = Value::from("one, or three: top, sides, bottom");
+    }
     said
 }
 
@@ -2611,6 +3265,7 @@ pub fn manifest_json() -> Value {
             json!({
                 "name": property.name(),
                 "in_state": property.in_state(),
+                "only_in": property.only_in().map(State::name),
                 "bounds": bound_json(*property),
                 "description": property.says(),
                 "since": property.since(),
@@ -2626,12 +3281,27 @@ pub fn manifest_json() -> Value {
                 "since": family.since,
                 "focused": family.focused,
                 "states": family.states.iter().map(|state| state.name()).collect::<Vec<_>>(),
-                "parts": family.parts.iter().map(|part| json!({
-                    "name": part.name,
-                    "description": part.description,
-                    "since": part.since,
-                    "properties": part.properties.iter().map(|p| p.name()).collect::<Vec<_>>(),
-                })).collect::<Vec<_>>(),
+                "parts": family.parts.iter().map(|part| {
+                    let mut said = json!({
+                        "name": part.name,
+                        "description": part.description,
+                        "since": part.since,
+                        "properties": part.properties.iter().map(|p| p.name()).collect::<Vec<_>>(),
+                    });
+                    // Only what a family has that the first did not, so the button's entry
+                    // reads as it did at version 2.
+                    if family.around.contains(&part.name) {
+                        said["around"] = Value::Bool(true);
+                    }
+                    if MARKS.contains(&(family.name, part.name)) {
+                        said["mark_height"] = json!({
+                            "least": 0,
+                            "most": geometry::show(MOST_MARK).parse::<i64>().unwrap_or_default(),
+                            "unit": "px",
+                        });
+                    }
+                    said
+                }).collect::<Vec<_>>(),
                 "variants": family.variants.iter().map(|variant| json!({
                     "name": variant.name,
                     "description": variant.description,
@@ -2668,6 +3338,14 @@ pub(super) fn schema() -> Value {
                         if state.is_some() && !property.in_state() {
                             continue;
                         }
+                        if property.only_in().is_some_and(|only| state != Some(only)) {
+                            continue;
+                        }
+                        if family.around.contains(&part.name)
+                            && (variant.is_some() || state.is_some())
+                        {
+                            continue;
+                        }
                         let key = Key {
                             family: family.name,
                             part: part.name,
@@ -2675,9 +3353,16 @@ pub(super) fn schema() -> Value {
                             state,
                             property: *property,
                         };
+                        let def = if *property == Prop::Height
+                            && MARKS.contains(&(family.name, part.name))
+                        {
+                            "mark-height".to_owned()
+                        } else {
+                            property.name().to_owned()
+                        };
                         keys.insert(
                             key.to_string(),
-                            json!({ "$ref": format!("#/$defs/part-{}", property.name()) }),
+                            json!({ "$ref": format!("#/$defs/part-{def}") }),
                         );
                     }
                 }
@@ -2685,7 +3370,7 @@ pub(super) fn schema() -> Value {
         }
     }
     json!({
-        "description": format!("Component parts (manifest version {VERSION}): keys <family>.<part>[.<variant>][.<state>].<property>, the state at rest implied. A property not named is the family default. Inside a state only fill, text, border-colour and shadow may be set: a state never changes a part's size. `purlis theme parts` lists every family, part, state and property with its bounds."),
+        "description": format!("Component parts (manifest version {VERSION}): keys <family>.<part>[.<variant>][.<state>].<property>, the state at rest implied. A property not named is the family default. Inside a state only fill, text, border-colour and shadow may be set, and a tab's flare and hover inset: a state never changes a part's size. `purlis theme parts` lists every family, part, state and property with its bounds."),
         "type": "object",
         "additionalProperties": false,
         "properties": keys,
@@ -2706,6 +3391,10 @@ pub(super) fn schema_defs() -> Map<String, Value> {
             Prop::Shadow => json!({
                 "description": property.says(),
                 "enum": ["none", "raised", "overlay"],
+            }),
+            Prop::Attach | Prop::Sizing | Prop::Dividers | Prop::Position => json!({
+                "description": property.says(),
+                "enum": property.keywords().unwrap_or_default(),
             }),
             _ => {
                 let bound = property.bound().unwrap_or(Bound {
@@ -2753,6 +3442,13 @@ pub(super) fn schema_defs() -> Map<String, Value> {
                             { "type": "array", "prefixItems": [one(MOST_BLOCK), one(bound.most)], "items": false, "minItems": 2 }
                         ],
                     }),
+                    Prop::Inset => json!({
+                        "description": property.says(),
+                        "anyOf": [
+                            one(bound.most),
+                            { "type": "array", "items": one(bound.most), "minItems": 3, "maxItems": 3 }
+                        ],
+                    }),
                     _ => {
                         let mut def = one(bound.most);
                         def["description"] = Value::from(property.says());
@@ -2763,5 +3459,14 @@ pub(super) fn schema_defs() -> Map<String, Value> {
         };
         defs.insert(format!("part-{}", property.name()), def);
     }
+    defs.insert(
+        "part-mark-height".to_owned(),
+        json!({
+            "description": "A mark's height, in px: 0 for none.",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": geometry::show(MOST_MARK).parse::<i64>().unwrap_or_default(),
+        }),
+    );
     defs
 }

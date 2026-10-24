@@ -448,6 +448,9 @@ describe("the stylesheet and the vocabulary agree", () => {
    * - `--pane-controls`: how wide the controls in a pane's end corner are, measured by the
    *   controls themselves (`src/LayoutPanes.tsx`, `PaneDoing`, #1486): what the pane's top line
    *   reserves while it shows a task's breadcrumb. Their number differs from pane to pane.
+   * - `--dialog-height`: the height a dialog of the family is given by its call site
+   *   (`ui/dialog/Dialog.tsx`, `height`, #2910), at most the window's less 48 px. It differs from
+   *   dialog to dialog.
    *
    * Each is here rather than in `TOKENS` because neither is a colour and a theme has no
    * business with either, and neither is in `App.css` because the Rust that decides the number
@@ -455,7 +458,14 @@ describe("the stylesheet and the vocabulary agree", () => {
    * differ. Listed by hand, so that adding one is a decision somebody makes in this file
    * rather than a hole that opens quietly; the test below holds each to being really set.
    */
-  const fromTheWindow = ["--least", "--root", "--chip", "--window-controls", "--pane-controls"];
+  const fromTheWindow = [
+    "--least",
+    "--root",
+    "--chip",
+    "--window-controls",
+    "--pane-controls",
+    "--dialog-height",
+  ];
 
   /**
    * **What Radix measures and sets** on the content of a primitive it positions: a select's list
