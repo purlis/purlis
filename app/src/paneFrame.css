@@ -272,8 +272,6 @@
 }
 
 .pane-actions > .pane-doing button {
-  min-inline-size: var(--size-chrome);
-  min-block-size: var(--size-chrome);
   border-radius: var(--radius-md);
   color: var(--text-quiet);
 }
