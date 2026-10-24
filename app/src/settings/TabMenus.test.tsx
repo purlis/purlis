@@ -8,13 +8,20 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "../App";
 import { forgetThisLaunch } from "../regions";
 import { GLOBAL } from "../windowprefs";
-import { stripNamed } from "../test-strips";
+import {
+  chipName,
+  findTheWorkspaces,
+  goToWorkspace,
+  stripNamed,
+  workspaceChips,
+  workspaceInFront,
+} from "../test-strips";
 
 /**
  * **A tab's menu opens Settings at that tab's level** (#1213): right-click a project, then
  * Project settings…, and Settings opens at the Project level in THAT project, brought to the
  * front; right-click a workspace, then Workspace settings…, and it opens at that workspace's
- * level, on its strip. The palette's rows and the gears are the same catalogue rows
+ * level. The palette's rows and the menus are the same catalogue rows
  * (D-SE23a), so each lands on the tab its menu opened rather than a second one.
  *
  * `SettingsWindow.test.tsx` has the project menu with one project open and nothing focused;
@@ -106,7 +113,6 @@ function core(planes: string[], pinned: string[] = []) {
 }
 
 const projects = () => stripNamed("Projects");
-const workspaces = () => stripNamed("Workspaces");
 const tabs = () => within(stripNamed("Tabs")).queryAllByRole("tab");
 const inFront = () => tabs().find((tab) => tab.getAttribute("aria-selected") === "true");
 
@@ -155,7 +161,7 @@ describe("a project tab's menu", () => {
   it("opens Settings at the Project level in the project right-clicked, bringing it to the front", async () => {
     core([ONE, TWO]);
     render(<App />);
-    await screen.findByRole("tab", { name: /alpha/ });
+    await findTheWorkspaces();
     expect(projectTab("one")).toHaveAttribute("aria-selected", "true");
 
     await fromItsMenu(projectTab("two"), "Settings…");
@@ -168,8 +174,8 @@ describe("a project tab's menu", () => {
   it("opens the Project level while a workspace is focused, not the workspace's", async () => {
     core([ONE]);
     render(<App />);
-    await screen.findByRole("tab", { name: /alpha/ });
-    await userEvent.click(within(workspaces()).getByRole("tab", { name: /alpha/ }));
+    await findTheWorkspaces();
+    await goToWorkspace("alpha");
 
     await fromItsMenu(projectTab("one"), "Settings…");
 
@@ -179,7 +185,7 @@ describe("a project tab's menu", () => {
   it("lands on the tab the palette's Project settings… and the menu open, not a second", async () => {
     core([ONE]);
     render(<App />);
-    await screen.findByRole("tab", { name: /alpha/ });
+    await findTheWorkspaces();
 
     await fromItsMenu(projectTab("one"), "Settings…");
     await waitFor(() => expect(level()).toBe("Project"));
@@ -208,25 +214,34 @@ describe("a workspace tab's menu", () => {
     // Pinned, so beta has a tab on the strip while alpha is the one focused (ADR 0054).
     core([ONE], ["beta"]);
     render(<App />);
-    await screen.findByRole("tab", { name: /alpha/ });
-    const tab = (name: RegExp) => within(workspaces()).getByRole("tab", { name });
-    await userEvent.click(tab(/alpha/));
-    expect(tab(/alpha/)).toHaveAttribute("aria-selected", "true");
+    await findTheWorkspaces();
+    // beta pinned, so it is a chip in the title bar beside alpha's (#2916).
+    const tab = (name: string) => {
+      const chip = workspaceChips().find((one) => chipName(one) === name);
+      if (chip === undefined) throw new Error(`no ${name} chip`);
+      return chip;
+    };
+    await goToWorkspace("alpha");
+    await waitFor(() => expect(workspaceInFront()).toBe("alpha"));
 
-    await fromItsMenu(tab(/beta/), "Settings…");
+    await fromItsMenu(tab("beta"), "Settings…");
 
     await waitFor(() => expect(level()).toBe("Workspace"));
     expect(inFront()).toHaveTextContent("Settings · beta");
-    // Beta's strip is the one in front now, and the only one.
-    expect(within(workspaces()).getByRole("tab", { selected: true })).toBe(tab(/beta/));
+    // Beta is the workspace in front now.
+    expect(workspaceInFront()).toBe("beta");
   });
 
-  it("lands on the tab the palette's Workspace settings… and the gear open, not a second", async () => {
+  it("lands on the tab the palette's Workspace settings… and the chip's menu open, not a second", async () => {
     core([ONE]);
     render(<App />);
-    await screen.findByRole("tab", { name: /alpha/ });
-    const alpha = within(workspaces()).getByRole("tab", { name: /alpha/ });
-    await userEvent.click(alpha);
+    await findTheWorkspaces();
+    await goToWorkspace("alpha");
+    const alpha = await waitFor(() => {
+      const chip = workspaceChips().find((one) => chipName(one) === "alpha");
+      if (chip === undefined) throw new Error("no alpha chip");
+      return chip;
+    });
 
     await fromItsMenu(alpha, "Settings…");
     await waitFor(() => expect(level()).toBe("Workspace"));
@@ -249,9 +264,8 @@ describe("a workspace tab's menu", () => {
 
     await userEvent.click(other);
     expect(inFront()).toBe(other);
-    await userEvent.click(
-      within(workspaces()).getByRole("button", { name: "Workspace settings…" }),
-    );
+    // And the chip's menu again (#2916: the gear that was on the tab is its menu's row).
+    await fromItsMenu(alpha, "Settings…");
 
     await waitFor(() => expect(inFront()).toBe(workspace));
     expect(inFront()).toHaveTextContent("Settings · alpha");

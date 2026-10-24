@@ -9,7 +9,7 @@ import App from "./App";
 import type { OpenChat } from "./bindings";
 import { expectEveryControlNamed, paidDebts } from "./a11y.testkit";
 import { forgetThisLaunch } from "./regions";
-import { findStripNamed } from "./test-strips";
+import { findStripNamed, goToWorkspace } from "./test-strips";
 
 /**
  * **Every control the window draws has a name** (DS-6, #629): the window itself — its strips,
@@ -140,9 +140,7 @@ afterEach(() => {
 async function theWindow() {
   render(<App />);
   await findStripNamed("Projects");
-  await userEvent.click(
-    await within(await findStripNamed("Workspaces")).findByRole("tab", { name: /alpha/ }),
-  );
+  await goToWorkspace("alpha");
   await within(await findStripNamed("Tabs")).findByRole("tab", { name: /alpha\.1/ });
 }
 

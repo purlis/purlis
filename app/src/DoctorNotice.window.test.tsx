@@ -16,7 +16,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { DoctorReport, DoctorRow } from "./bindings";
 import { forgetThisLaunch } from "./regions";
-import { findStripNamed } from "./test-strips";
+import { findTheWorkspaces } from "./test-strips";
 
 // The Inbox lists a doctor finding as an update too (#1693), after its Notices (#1695):
 // these tests are about the Notice, so the update is not what they find.
@@ -305,7 +305,7 @@ describe("the doctor's git identity finding, as a Notice (#1250)", () => {
   it("is not drawn while the identity is set", async () => {
     core({ identity: () => set });
     render(<App />);
-    await findStripNamed("Workspaces");
+    await findTheWorkspaces();
     await new Promise((done) => setTimeout(done, 50));
 
     expect(document.querySelector('[data-cause^="doctor-finding:"]')).toBeNull();

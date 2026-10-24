@@ -10,6 +10,7 @@ import type { DoctorRow } from "./bindings";
 import { forgetThisLaunch } from "./regions";
 import { GLOBAL } from "./windowprefs";
 import { forgetGroups } from "./settings/links";
+import { goToWorkspace } from "./test-strips";
 
 /**
  * **The palette's rows per Settings group** (#1201): "Project settings: Saving" and the rest
@@ -182,7 +183,7 @@ describe("the palette's row for one Settings group", () => {
   it("opens the focused workspace's Settings at that group", async () => {
     core(PLANE);
     render(<App />);
-    await userEvent.click(await screen.findByRole("tab", { name: /alpha/ }));
+    await goToWorkspace("alpha");
 
     await palette("Workspace settings: Repos");
 

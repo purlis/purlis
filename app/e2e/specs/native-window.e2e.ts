@@ -57,7 +57,8 @@ async function drawn(): Promise<{ appearance: string; backgrounds: Record<string
 
 async function untilTheStripIsRead(): Promise<void> {
   await browser.waitUntil(
-    async () => (await $$('[data-strip="Workspaces"] [role="tab"]').getElements()).length > 0,
+    async () =>
+      (await $$('[data-testid="title-bar"] [data-titlebar-all]').getElements()).length > 0,
     { timeout: 30_000, interval: 250, timeoutMsg: "the strip never listed the fixture plane" },
   );
 }
