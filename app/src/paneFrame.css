@@ -125,13 +125,17 @@
 }
 
 /* **A warning never shrinks in the band** (rule 6): past the band's room the stack scrolls,
-   whole warnings in it, rather than a warning cutting off its own ways out. */
+   whole warnings in it, rather than a warning cutting off its own ways out. It is never taller
+   than its pane either: there what a way out opened under its line gives way and scrolls, and
+   the line and its ways out never do. */
 .pane-top
   > :is(.pane-notice-row, [data-scope="notice-row"][data-part="root"])
   > :is(.pane-notices, [data-scope="notice-row"][data-part="stack"])
   > :is(.notice-pane-box, [data-scope="notice"][data-part="root"]) {
   flex: none;
   min-block-size: auto;
+  /* Never taller than its pane: what a way out opened gives way first, inside the card. */
+  max-block-size: calc(100cqb - var(--space-8));
 }
 
 .pane-top
