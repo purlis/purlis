@@ -173,6 +173,18 @@ pub(crate) fn second_names_ahead(root: &Path, pathspec: &[&str]) -> Result<Vec<H
         .collect())
 }
 
+/// [`second_names_ahead`] for `paths` named relative to `root`, each read letter for letter
+/// (`:(literal)`), a few at a time so a long list stays well inside what a start holds.
+pub(crate) fn second_names_of(root: &Path, paths: &[String]) -> Result<Vec<Held>, String> {
+    let mut held = Vec::new();
+    for part in paths.chunks(UNSTAGED_AT_ONCE) {
+        let specs: Vec<String> = part.iter().map(|path| super::literally(path)).collect();
+        let specs: Vec<&str> = specs.iter().map(String::as_str).collect();
+        held.extend(second_names_ahead(root, &specs)?);
+    }
+    Ok(held)
+}
+
 /// The paths after the `--` of the `git add` arguments `add`: none where there is no `--`,
 /// which is all of the tree the add is run in.
 pub(crate) fn pathspec_of<'a>(add: &[&'a str]) -> Vec<&'a str> {
@@ -223,38 +235,118 @@ pub(crate) struct Refusal {
     pub(crate) then: String,
 }
 
+/// How a refusal puts back the rows it holds back ([`refused_into`]).
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum PutBack<'a> {
+    /// As `HEAD` has them (`git reset`): a save's or a commit's.
+    AsHead,
+    /// As the conflict git left them in, from the index's own record of it (`update-index
+    /// --unresolve`): a stopped rebase's resolved files, where `HEAD` is not what the paused
+    /// commit would carry. It carries every file that was staged, all put back where git could
+    /// not say which are held.
+    Conflicted(&'a [String]),
+}
+
 /// **What a save of the repository at `root` says where [`not_as_staged`] answered `found`**,
 /// or `None` where it holds nothing back. Each path held back is taken out of the index again
 /// first ([`unstage`]); where that fails, it is said.
 pub(crate) fn refused(root: &Path, found: &Result<Vec<Held>, String>) -> Option<Refusal> {
+    refused_into(root, found, PutBack::AsHead)
+}
+
+/// [`refused`], each path held back put back as `back` says.
+pub(crate) fn refused_into(
+    root: &Path,
+    found: &Result<Vec<Held>, String>,
+    back: PutBack<'_>,
+) -> Option<Refusal> {
     let held = match found {
         Ok(held) if held.is_empty() => return None,
         Ok(held) => held,
         Err(said) => {
+            let then = match back {
+                PutBack::AsHead => "Nothing was committed.".to_owned(),
+                PutBack::Conflicted(staged) => {
+                    let all: Vec<Held> = staged
+                        .iter()
+                        .map(|path| Held {
+                            path: path.clone(),
+                            why: Why::Changed,
+                        })
+                        .collect();
+                    put_back(root, &all, back).1
+                }
+            };
             return Some(Refusal {
                 named: vec![format!(
                     "purlis could not tell whether what is staged is the file on disk: {said}"
                 )],
-                then: "Nothing was committed.".into(),
+                then,
             });
         }
     };
     // Asked before the index forgets them: once unstaged, nothing says which blob each was.
     let blobs = staged_blobs(root, held);
-    let then = match unstage(root, held) {
-        Ok(()) => {
-            forget(root, &blobs);
-            "Nothing was committed, and those files are no longer staged.".to_owned()
-        }
-        Err(said) => format!(
-            "Nothing was committed, and git could not take those files out of the index again \
-             ({said}). Unstage them with `git reset -- <path>` before committing."
-        ),
-    };
+    let (back_all, then) = put_back(root, held, back);
+    if back_all {
+        forget(root, &blobs);
+    }
     Some(Refusal {
         named: named(held),
         then,
     })
+}
+
+/// Puts each of `held` back in the index of the repository at `root` as `back` says: whether
+/// they all went back, and what became of them in a sentence.
+fn put_back(root: &Path, held: &[Held], back: PutBack<'_>) -> (bool, String) {
+    let then = match (back, unstage_as(root, held, back)) {
+        (PutBack::AsHead, Ok(())) => {
+            return (
+                true,
+                "Nothing was committed, and those files are no longer staged.".to_owned(),
+            );
+        }
+        (PutBack::Conflicted(_), Ok(())) => {
+            return (
+                true,
+                "Nothing was committed, and those files are marked as conflicted again.".to_owned(),
+            );
+        }
+        (PutBack::AsHead, Err(said)) => format!(
+            "Nothing was committed, and git could not take those files out of the index again \
+             ({said}). Unstage them with `git reset -- <path>` before committing."
+        ),
+        (PutBack::Conflicted(_), Err(said)) => format!(
+            "Nothing was committed, and git could not mark those files as conflicted again \
+             ({said}). Finish or abort the rebase from your own terminal."
+        ),
+    };
+    (false, then)
+}
+
+/// [`unstage`], or for a stopped rebase's resolved files their conflict restored.
+fn unstage_as(root: &Path, held: &[Held], back: PutBack<'_>) -> Result<(), String> {
+    match back {
+        PutBack::AsHead => unstage(root, held),
+        // `update-index` takes paths, not pathspecs: each is the file of that name.
+        PutBack::Conflicted(_) => {
+            for part in held.chunks(UNSTAGED_AT_ONCE) {
+                let mut args = vec!["update-index", "--unresolve", "--"];
+                args.extend(part.iter().map(|one| one.path.as_str()));
+                run_ok(root, &args)?;
+            }
+            Ok(())
+        }
+    }
+}
+
+impl Refusal {
+    /// The refusal in one sentence, for an answer that is one: each path, then what became of
+    /// them.
+    pub(crate) fn sentence(&self) -> String {
+        format!("{}. {}", self.named.join("; "), self.then)
+    }
 }
 
 /// One line for each of `held`: its path, and why it is not saved.

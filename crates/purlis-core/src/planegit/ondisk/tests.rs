@@ -178,3 +178,43 @@ fn only_a_loose_object_nothing_reaches_is_taken_out_of_the_store() {
     assert!(there(&in_index), "a staged blob was removed");
     assert!(!there(&unreached), "an unreached loose blob is still there");
 }
+
+#[test]
+fn a_resolved_file_held_back_is_marked_as_conflicted_again_and_its_blob_taken_out() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap().join("repo");
+    std::fs::create_dir_all(&root).unwrap();
+    run(&root, &["init", "-q", "-b", "main", "."]);
+    run(&root, &["config", "user.name", "Fixture"]);
+    run(&root, &["config", "user.email", "fixture@example.invalid"]);
+    std::fs::write(root.join("both.txt"), "a\n").unwrap();
+    run(&root, &["add", "-A"]);
+    run(&root, &["commit", "-q", "-m", "one"]);
+    run(&root, &["switch", "-q", "-c", "side"]);
+    std::fs::write(root.join("both.txt"), "side\n").unwrap();
+    run(&root, &["commit", "-q", "-am", "side"]);
+    run(&root, &["switch", "-q", "main"]);
+    std::fs::write(root.join("both.txt"), "main\n").unwrap();
+    run(&root, &["commit", "-q", "-am", "main"]);
+    assert!(!crate::testgit::run(&root, &["merge", "-q", "side"]).ok());
+    std::fs::write(root.join("both.txt"), "resolved, then swapped\n").unwrap();
+    run(&root, &["add", "both.txt"]);
+    let blob = run(&root, &["rev-parse", ":both.txt"]).trim().to_owned();
+    std::fs::rename(root.join("both.txt"), root.join("aside")).unwrap();
+    std::fs::write(root.join("both.txt"), "other bytes\n").unwrap();
+
+    let staged = vec!["both.txt".to_owned()];
+    let refusal = refused_into(&root, &not_as_staged(&root), PutBack::Conflicted(&staged))
+        .expect("held back");
+
+    assert!(refusal.then.contains("conflicted again"), "{refusal:?}");
+    assert!(
+        !run(&root, &["ls-files", "-u", "--", "both.txt"]).is_empty(),
+        "the conflict is not back"
+    );
+    assert!(!crate::testgit::run(&root, &["cat-file", "-e", &blob]).ok());
+    assert_eq!(
+        std::fs::read_to_string(root.join("both.txt")).unwrap(),
+        "other bytes\n"
+    );
+}

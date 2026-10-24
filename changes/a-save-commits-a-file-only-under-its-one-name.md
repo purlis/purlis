@@ -9,3 +9,6 @@
   open file it checked. On macOS, the sandbox lets a chat make a hard
   link only to a file in the folders it may write, so git, cargo and npm keep making their own
   links as before.
+  A commit the app makes for a sandboxed chat in its branch folder, and the files
+  `purlis worktree update --continue` stages once a conflict is resolved, hold to the same
+  rule; a resolved file refused there is marked as conflicted again.

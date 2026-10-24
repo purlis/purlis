@@ -12,8 +12,9 @@
 //! - **update**: fetch the base's remote, bring the base up to it where that is a fast-forward
 //!   nothing has checked out ([`crate::worktree::fresh`]), and rebase the piece onto the base:
 //!   the one named, or the one recorded when the piece was cut. A rebase stops on a conflict and
-//!   names the files; `--continue` stages exactly the files git named, once resolved, and goes
-//!   on; `--abort` puts the branch back. **A move that cannot finish does not start**: for a
+//!   names the files; `--continue` stages exactly the files git named, once resolved, each as
+//!   the one file on disk with one name as a save does (`planegit::ondisk`), and goes on;
+//!   `--abort` puts the branch back. **A move that cannot finish does not start**: for a
 //!   sandboxed chat, the rebase is judged by the clone guard's own rules first
 //!   ([`crate::cloneupdate::judged`]) and refused where it would write a file the chat's
 //!   sandbox denies, naming it. A folder with uncommitted changes is refused.
@@ -29,6 +30,7 @@ use std::path::{Path, PathBuf};
 use crate::gitbroker::commit as broker;
 use crate::gitstate::{self, Operation};
 use crate::hookwire::UpdateStep;
+use crate::planegit::ondisk;
 use crate::repocmd::Say;
 use crate::worktree::{self, git, name};
 
@@ -359,6 +361,12 @@ fn go_on(piece: &Piece, here: &Here, say: &mut dyn FnMut(Say)) -> Result<u8, Str
     let files = stopped.unmerged;
     if !files.is_empty() {
         resolved(&here.folder, &files)?;
+        // As a save: a resolved file with a second name is refused before it is staged, so its
+        // bytes never reach the clone's object store (`planegit::ondisk`).
+        if let Some(refusal) = ondisk::refused_ahead(&ondisk::second_names_of(&here.folder, &files))
+        {
+            return Err(not_the_file(&refusal));
+        }
         let staged = git::run_with_input(
             &here.folder,
             &[
@@ -377,6 +385,21 @@ fn go_on(piece: &Piece, here: &Here, say: &mut dyn FnMut(Say)) -> Result<u8, Str
                 first_line(&String::from_utf8_lossy(&staged.err))
             ));
         }
+        // And once staged: a resolved file that is not the file on disk now, with one name, is
+        // marked as conflicted again, and its blob taken out of the object store where nothing
+        // else reaches it. Only the files staged here are asked about: the rest of the index
+        // is the paused commit as git left it.
+        let ours: std::collections::HashSet<&str> = files.iter().map(String::as_str).collect();
+        let found = ondisk::not_as_staged(&here.folder).map(|held| {
+            held.into_iter()
+                .filter(|one| ours.contains(one.path.as_str()))
+                .collect()
+        });
+        if let Some(refusal) =
+            ondisk::refused_into(&here.folder, &found, ondisk::PutBack::Conflicted(&files))
+        {
+            return Err(not_the_file(&refusal));
+        }
     }
     let mut args: Vec<&str> = REBASE.to_vec();
     args.extend(["rebase", "--continue"]);
@@ -392,6 +415,16 @@ fn go_on(piece: &Piece, here: &Here, say: &mut dyn FnMut(Say)) -> Result<u8, Str
     finish(here, &record)?;
     say(Say::Done(format!("{repo} · {name_} is rebased")));
     Ok(0)
+}
+
+/// What `--continue` refused by `planegit::ondisk` says: a resolved file is not the one file
+/// on disk.
+fn not_the_file(refusal: &ondisk::Refusal) -> String {
+    format!(
+        "a resolved file is not the one file on disk: {} Resolve it again as one file, then \
+         `purlis worktree update --continue`",
+        refusal.sentence()
+    )
 }
 
 /// What a branch moved while purlis judged or rebased it is told.

@@ -983,3 +983,100 @@ fn two_asks_for_one_folder_commit_one_after_the_other() {
     assert!(std::sync::Arc::ptr_eq(&folder, &lock_of(&t.here.git_dir)));
     assert!(ran_out("finish staging", STAGING).contains("within 5 minutes"));
 }
+
+/// What a test does to a folder once it is staged.
+type Swap = Box<dyn Fn(&Path)>;
+
+thread_local! {
+    /// What a test does to the folder once the ask's paths are staged, before the commit
+    /// reads what was staged: a file swapped in that gap.
+    static ONCE_STAGED: std::cell::RefCell<Option<Swap>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Runs what the test set in [`ONCE_STAGED`], if it set anything.
+pub(super) fn once_staged(top: &Path) {
+    ONCE_STAGED.with(|then| {
+        if let Some(then) = then.borrow().as_ref() {
+            then(top);
+        }
+    });
+}
+
+/// `run`, with `then` done to the folder once the ask's paths are staged.
+fn swapping<T>(then: impl Fn(&Path) + 'static, run: impl FnOnce() -> T) -> T {
+    struct Clear;
+    impl Drop for Clear {
+        fn drop(&mut self) {
+            ONCE_STAGED.with(|then| then.borrow_mut().take());
+        }
+    }
+    ONCE_STAGED.with(|held| *held.borrow_mut() = Some(Box::new(then)));
+    let _clear = Clear;
+    run()
+}
+
+impl Tree {
+    /// Whether the repository's object store holds `sha`.
+    fn holds(&self, sha: &str) -> bool {
+        crate::testgit::run(&self.here.top, &["cat-file", "-e", sha]).ok()
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_named_file_with_a_second_name_is_refused_before_anything_is_staged() {
+    let t = tree();
+    let top = &t.here.top;
+    std::fs::write(top.join("linked.txt"), "bytes with a second name\n").unwrap();
+    std::fs::hard_link(top.join("linked.txt"), t.root.join("second-name")).unwrap();
+    std::fs::write(top.join("plain.txt"), "one name\n").unwrap();
+    let blob = t.git(&["hash-object", "linked.txt"]);
+    let before = t.git(&["rev-parse", "HEAD"]);
+
+    let refused = t
+        .asked(staging(&["plain.txt", "linked.txt"]))
+        .expect_err("refused");
+
+    assert!(refused.contains("linked.txt"), "{refused}");
+    assert!(refused.contains("has a second name"), "{refused}");
+    assert!(refused.contains("Nothing was staged"), "{refused}");
+    assert_eq!(t.git(&["rev-parse", "HEAD"]), before);
+    assert!(t.nothing_staged());
+    assert!(!t.holds(&blob), "the file's bytes reached the object store");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_file_swapped_after_it_was_staged_is_refused_unstaged_and_its_blob_taken_out() {
+    let t = tree();
+    let top = &t.here.top;
+    std::fs::write(top.join("swapped.txt"), "the bytes that were staged\n").unwrap();
+    let blob = t.git(&["hash-object", "swapped.txt"]);
+    let before = t.git(&["rev-parse", "HEAD"]);
+    let aside = t.root.join("aside");
+
+    let refused = swapping(
+        move |top| {
+            std::fs::rename(top.join("swapped.txt"), &aside).unwrap();
+            std::fs::write(top.join("swapped.txt"), "other bytes\n").unwrap();
+        },
+        || t.asked(staging(&["swapped.txt"])),
+    )
+    .expect_err("refused");
+
+    assert!(
+        refused.contains("changed on disk after it was staged"),
+        "{refused}"
+    );
+    assert_eq!(t.git(&["rev-parse", "HEAD"]), before);
+    assert!(t.nothing_staged());
+    assert!(
+        !t.holds(&blob),
+        "the staged bytes are still in the object store"
+    );
+    assert_eq!(
+        std::fs::read_to_string(top.join("swapped.txt")).unwrap(),
+        "other bytes\n"
+    );
+}
