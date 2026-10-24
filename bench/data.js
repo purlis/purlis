@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792858752785,
+  "lastUpdate": 1792860524125,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -23898,6 +23898,48 @@ window.BENCHMARK_DATA = {
             "value": 101.4575205,
             "unit": "ms",
             "extra": "median of 5 runs: 101.278, 101.373, 101.458, 101.725, 102.349 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "03e3aeda13c39873b44c7c25c408734ff07619f5",
+          "message": "SK-22: the Skill studio's first open and its empty state (#3121)\n\n* SK-22: the Skill studio's first open and its empty state\n\nThe studio offers what to start from, worked out in the core\n(skills::first_open): three starts while the project has no skill of its\nown, the offered skill sources (a committed list) less the ones it\nbrowses, and the project-skills move where skills are still in\n.claude/skills. An offered source fills in Add source, which asks first;\nnothing is installed without the review.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-22: the views' studio fixtures carry first; Browse sources focuses after the press\n\nWebKit hands focus back to a pressed button, so the move to the sources\nheading waits for the press to finish.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-22: licence header on the offered list; its doc lines name no deferral\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-22: bindings carry the reworded doc line; the spec takes away the folders it made\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-22: review fixes: one label per act, neutral and honest move copy\n\n- The empty studio's starts use the toolbar's words, kept in one constant\n  each: Ask a chat to draft a skill, Browse sources, New skill. They are\n  disabled while a change runs.\n- The move Notice names no chat program, says the commit reaches everyone\n  and that an older purlis opens the project read-only, and a move that\n  did part of it says Some skills were not moved.\n- skills::first_open::offered is crate-private; the app test asserts the\n  anthropics/skills offer itself.\n- Offered rows are keyed by URL and folder, and their button reads Add….\n- The ADR amendment drops an unchecked star count and says when an entry\n  comes off the list.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-22: the first-open spec no longer makes the old skills folder\n\nA clone copies the project's .claude/skills while it is there, so the\nspec's probe could reach the next spec's repo clone (skill-studio-harness\nwent red on macOS after it, and never on main). The move offer stays\ncovered by the core's seam test and the studio's unit test.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-22: the offered sources are read beside the project's sources, not with the studio\n\nFiltering the offers reads the project's skill sources, which asks git\nwhether this machine's settings file is ignored. Done on every studio\nread, it pushed the read past a second on macOS: the harness spec's\nswitch, pressed once a second, then never saw a read land. The studio's\nread now stays on the disk (the starts and the move), and the sources\nsection asks skill_sources_offered beside skill_sources.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-24T20:42:44+04:00",
+          "tree_id": "a5c285c79a9e9b70e1d38db02cc0dceccb9875f9",
+          "url": "https://github.com/purlis/purlis/commit/03e3aeda13c39873b44c7c25c408734ff07619f5"
+        },
+        "date": 1792860522138,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.37088450000000006,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.352, 0.370, 0.371, 0.382, 0.396 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.540454,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.395, 16.513, 16.540, 16.544, 16.636 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.1232125,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.328, 100.959, 101.123, 101.798, 102.004 ms"
           }
         ]
       }
