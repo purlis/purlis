@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792842515680,
+  "lastUpdate": 1792845365229,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -23562,6 +23562,48 @@ window.BENCHMARK_DATA = {
             "value": 103.356586,
             "unit": "ms",
             "extra": "median of 5 runs: 101.720, 103.178, 103.357, 104.404, 104.793 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c4329f1c41a3995cfbd8cbf52b86c57f87f96e13",
+          "message": "SK-36: skill discovery never follows a linked skill folder; one harness-name lookup (#3119)\n\n* SK-36: skill discovery never follows a link, and one registry-name lookup\n\nSkill discovery reads each level through folder handles and leaves a linked\nskill folder, a linked SKILL.md or a linked level folder out as \"a link, so\npurlis doesn't read it\"; a SKILL.md over MOST_BYTES is left out as too large.\nHarness::of_registry is the one registry-name-to-harness rule (sandbox's copy\nand briefing's match are gone), and hookwire::chat_harness is the one reader\nof PURLIS_HARNESS, so an empty one is unset to every hook and the MCP server.\n\nCloses #3017\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-36: a linked skill is left out at discovery, before anything is handed\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-36 review: every PURLIS_HARNESS reader goes through chat_harness\n\nSource::of_harness is Harness::of_chat; guard, hooks, permission, statusline,\nmcp and hookwire read the variable through hookwire::chat_harness, and\nguard's own HARNESS_ENV const is gone. of_registry is of_registry_or_kind.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Move harness.rs's tests to harness/tests.rs (move only)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-36 review: load, scan and read through held folders all the way down\n\nA level is walked from the plane's root (or the bundle's plugin folder) one\npart at a time without following a link, so a linked workspace or persona is\nrefused too; load walks from Effective::root and reads and lists through the\nheld folder, so a folder swapped for a link after the look is never read.\nOne reader (held::read_opened) under read_plain and Folder::read refuses a\nSKILL.md with a second name. The size reason names the limit. The duplicate\nsandbox registry test is folded into harness/tests.rs, and the every-reader\nempty-harness test sits beside chat_harness.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-36 re-verify: lay-out, lint and repo skills read through held folders\n\nhandout::of walks the skill's folder from Effective::root through\nSkillFolder and lists its entries through that handle, so the set's folder\nnever hands a folder swapped for a link; the lint and the badges read the\nsame way, and read_skill_md takes the root it walks from. A repo skill's\nroot is the folder its clone sits in, so its skills/ swapped for a link\nafter discovery is refused. Folder::at, which trusted the folders above, is\ngone.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-36 verify: Share moves through handles, by the one mover\n\nShare's move was still path-based after the merge with SK-32, which opened\nShare to persona levels. A level's skills/ that is a link (to\n~/.claude/skills, say) took the skill into it. A linked <folder>.toml was\nmoved and committed. A folder on the way swapped for a link between the\nlook and the rename was followed.\n\n- The mover (open_dir, move_between, move_skill) moves from purlis-core's\n  verbs into purlis_skills::moving. Verbs and store call it, so there is\n  one copy.\n- share finds its folder with named_at, a walk from the plane's root. It\n  moves the folder and the file beside it with move_skill: both sides are\n  opened with O_NOFOLLOW, only a plain folder or file moves, and the move\n  is a renameat with RENAME_NOREPLACE. The rollback goes the same way.\n- share returns Shared { from, to }, and verbs::share commits exactly\n  that. It no longer looks the folder up again by path.\n- Every lookup of a skill by name at a plane level uses named_at through\n  Level::named: verbs, drafts, source update, lifecycle, skilluse,\n  project_folder and the app's skill details.\n\nTests cover a linked skills/ at the root and in a workspace, a linked\n.toml, and in the mover a link at each folder on either way, which is\nthe race's handle-relative property. Each fails on the path-based code.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-24T16:34:33+04:00",
+          "tree_id": "38afa928179d3eb15ae50ebfb59df144b0a4204a",
+          "url": "https://github.com/purlis/purlis/commit/c4329f1c41a3995cfbd8cbf52b86c57f87f96e13"
+        },
+        "date": 1792845362700,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4714665,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.461, 0.464, 0.471, 0.474, 0.512 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3285835,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.174, 16.189, 16.329, 16.332, 16.838 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.951226,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.685, 100.844, 100.951, 101.014, 101.139 ms"
           }
         ]
       }
