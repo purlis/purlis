@@ -191,6 +191,7 @@ mod native_tests;
 mod options_tests;
 #[cfg(test)]
 mod parts_activity_tests;
+#[cfg(test)]
 mod parts_content_tests;
 #[cfg(test)]
 mod parts_shell_tests;
