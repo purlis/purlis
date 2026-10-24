@@ -231,6 +231,7 @@ pub(crate) async fn skill_draft_chat(
                 label: "Draft a skill".to_owned(),
                 prompt: drafts::asking(&level),
                 then_a_space: false,
+                starts_runs: None,
             },
             purlis_core::engine::Size { columns, rows },
         )
@@ -292,6 +293,7 @@ pub(crate) async fn skill_draft_try(
                 label: format!("Try {}", draft.name),
                 prompt: drafts::trying(&draft.name),
                 then_a_space: false,
+                starts_runs: None,
             },
             purlis_core::engine::Size { columns, rows },
         );
