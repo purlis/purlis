@@ -110,7 +110,7 @@ impl From<&profilestore::MachineProfile> for MachineProfileRow {
             commands_can_read_sign_in: purlis_core::sandbox::signin::commands_can_read(
                 &record.harness,
             ),
-            icon: crate::harnessicon::of(&record.name, &record.harness, None),
+            icon: crate::harnessicon::of_kind(&record.name, &record.harness),
         }
     }
 }

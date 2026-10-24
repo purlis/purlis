@@ -119,6 +119,26 @@ pub struct SafeSvg {
     pub shapes: Vec<Shape>,
 }
 
+impl SafeSvg {
+    /// What it comes to, as [`MOST_OUTPUT`] counts it: its view box, and every tag, attribute
+    /// name and value of its shapes.
+    pub fn size(&self) -> usize {
+        self.view_box.len()
+            + self
+                .shapes
+                .iter()
+                .map(|shape| {
+                    shape.tag.len()
+                        + shape
+                            .attributes
+                            .iter()
+                            .map(|(key, value)| key.len() + value.len())
+                            .sum::<usize>()
+                })
+                .sum::<usize>()
+    }
+}
+
 /// One shape: an element of [`SHAPES`] and the attributes of [`ATTRIBUTES`] it keeps.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct Shape {

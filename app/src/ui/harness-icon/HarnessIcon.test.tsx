@@ -3,17 +3,17 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
-import type { HarnessIconRow } from "../../bindings";
+import type { HarnessIconRow, SvgIcon } from "../../bindings";
 import { OWN_GLYPHS } from "../../theme/harnessGlyphs";
 import { CLASSIC_THEME, drawIn, type Theme } from "../../theme/theme";
-import { HarnessIcon, monogramOf } from "./HarnessIcon";
+import { HarnessIcon, MOST_OUTPUT, monogramOf, ownIconsOf } from "./HarnessIcon";
 
 /**
  * **A harness's icon** (#2922): the glyph of the icon set, the person's own SVG, or the
  * monogram, never a blank; decorative beside a name and named alone.
  */
 
-const SPARK: HarnessIconRow = { glyph: "spark", svg: null, monogram: "C" };
+const SPARK: HarnessIconRow = { glyph: "spark", own: null, monogram: "C" };
 
 const DUSK: Theme = {
   ...CLASSIC_THEME,
@@ -48,8 +48,8 @@ describe("a harness icon", () => {
 
   it("draws the monogram for a profile with no icon, and for a glyph it has none of", () => {
     for (const icon of [
-      { glyph: null, svg: null, monogram: "OC" },
-      { glyph: "comet", svg: null, monogram: "OC" },
+      { glyph: null, own: null, monogram: "OC" },
+      { glyph: "comet", own: null, monogram: "OC" },
     ]) {
       const { container } = render(<HarnessIcon icon={icon} kind="opencode" />);
       expect(drawn(container)?.getAttribute("data-drawn")).toBe("monogram");
@@ -79,21 +79,18 @@ describe("a harness icon", () => {
   });
 
   it("draws a person's SVG from its shapes, and nothing the shapes do not hold", () => {
-    const icon: HarnessIconRow = {
-      glyph: null,
-      monogram: "C",
-      svg: {
-        view_box: "0 0 32 32",
-        shapes: [
-          { tag: "circle", attributes: { cx: "16", cy: "16", r: "8", fill: "none" } },
-          { tag: "path", attributes: { d: "M1 1h4", onclick: "alert(1)", "stroke-width": "2" } },
-          { tag: "path", attributes: { d: "javascript:alert(1)", fill: "url(#x)" } },
-          { tag: "script", attributes: { href: "x" } },
-          { tag: "image", attributes: { href: "https://example.invalid/x.png" } },
-        ],
-      },
+    const own: SvgIcon = {
+      view_box: "0 0 32 32",
+      shapes: [
+        { tag: "circle", attributes: { cx: "16", cy: "16", r: "8", fill: "none" } },
+        { tag: "path", attributes: { d: "M1 1h4", onclick: "alert(1)", "stroke-width": "2" } },
+        { tag: "path", attributes: { d: "javascript:alert(1)", fill: "url(#x)" } },
+        { tag: "script", attributes: { href: "x" } },
+        { tag: "image", attributes: { href: "https://example.invalid/x.png" } },
+      ],
     };
-    const { container } = render(<HarnessIcon icon={icon} kind="claude" />);
+    const icon: HarnessIconRow = { glyph: null, own: "mine.svg", monogram: "C" };
+    const { container } = render(<HarnessIcon icon={icon} svg={own} kind="claude" />);
     expect(drawn(container)?.getAttribute("data-drawn")).toBe("svg");
     const svg = container.querySelector("svg");
     expect(svg?.getAttribute("viewBox")).toBe("0 0 32 32");
@@ -109,44 +106,79 @@ describe("a harness icon", () => {
   });
 
   it("draws a person's SVG in the text's colour alone", () => {
-    const icon: HarnessIconRow = {
-      glyph: null,
-      monogram: "C",
-      svg: {
-        view_box: "0 0 24 24",
-        shapes: [{ tag: "path", attributes: { d: "M1 1h4", fill: "gold", stroke: "teal" } }],
-      },
+    const own: SvgIcon = {
+      view_box: "0 0 24 24",
+      shapes: [{ tag: "path", attributes: { d: "M1 1h4", fill: "gold", stroke: "teal" } }],
     };
-    const { container } = render(<HarnessIcon icon={icon} kind="claude" />);
+    const icon: HarnessIconRow = { glyph: null, own: "mine.svg", monogram: "C" };
+    const { container } = render(<HarnessIcon icon={icon} svg={own} kind="claude" />);
     const path = container.querySelector("path");
     expect(path?.getAttribute("fill")).toBe("currentColor");
     expect(path?.getAttribute("stroke")).toBe("currentColor");
   });
 
   it("draws the monogram for an SVG past the budget", () => {
-    const icon: HarnessIconRow = {
-      glyph: null,
-      monogram: "C",
-      svg: {
-        view_box: "0 0 24 24",
-        shapes: Array.from({ length: 64 }, () => ({
-          tag: "path",
-          attributes: { d: "M0 0", transform: "rotate(1) ".repeat(120) },
-        })),
-      },
+    const own: SvgIcon = {
+      view_box: "0 0 24 24",
+      shapes: Array.from({ length: 64 }, () => ({
+        tag: "path",
+        attributes: { d: "M0 0", transform: "rotate(1) ".repeat(120) },
+      })),
     };
-    const { container } = render(<HarnessIcon icon={icon} kind="claude" />);
+    const icon: HarnessIconRow = { glyph: null, own: "mine.svg", monogram: "C" };
+    const { container } = render(<HarnessIcon icon={icon} svg={own} kind="claude" />);
     expect(drawn(container)?.getAttribute("data-drawn")).toBe("monogram");
     expect(container.querySelector("path")).toBeNull();
   });
 
   it("draws the monogram for an SVG it cannot draw", () => {
-    const icon: HarnessIconRow = {
-      glyph: null,
-      monogram: "CX",
-      svg: { view_box: "0 0 javascript", shapes: [{ tag: "path", attributes: { d: "M0 0" } }] },
+    const own: SvgIcon = {
+      view_box: "0 0 javascript",
+      shapes: [{ tag: "path", attributes: { d: "M0 0" } }],
     };
-    const { container } = render(<HarnessIcon icon={icon} kind="codex" />);
+    const icon: HarnessIconRow = { glyph: null, own: "mine.svg", monogram: "CX" };
+    const { container } = render(<HarnessIcon icon={icon} svg={own} kind="codex" />);
     expect(drawn(container)?.textContent).toBe("CX");
+  });
+
+  it("is drawn from the row's own SVG only where the row names it", () => {
+    const own: SvgIcon = {
+      view_box: "0 0 24 24",
+      shapes: [{ tag: "path", attributes: { d: "M1 1" } }],
+    };
+    const { container } = render(<HarnessIcon icon={SPARK} svg={own} kind="claude" />);
+    expect(drawn(container)?.getAttribute("data-drawn")).toBe("glyph");
+    cleanup();
+    const plain: HarnessIconRow = { glyph: null, own: null, monogram: "C" };
+    render(<HarnessIcon icon={plain} svg={own} kind="claude" />);
+    expect(document.querySelector(".harness-icon")?.getAttribute("data-drawn")).toBe("monogram");
+  });
+});
+
+/** A list that draws many rows' own SVGs holds every drawing of them to one budget (#2922). */
+describe("a list's own icons", () => {
+  /** An SVG of about `size` once counted. */
+  const sized = (size: number): SvgIcon => ({
+    view_box: "0 0 24 24",
+    shapes: [{ tag: "path", attributes: { d: `M0 0${"h1".repeat(size / 2)}` } }],
+  });
+  const naming = (own: string | null) => ({ icon: { glyph: null, own, monogram: "C" } });
+
+  it("hands each row the SVG it names while the list's budget holds", () => {
+    const svgs = { "a.svg": sized(MOST_OUTPUT - 100) };
+    const rows = Array.from({ length: 300 }, () => naming("a.svg"));
+    const owns = ownIconsOf(rows, svgs);
+    const handed = owns.filter((svg) => svg !== undefined).length;
+    expect(handed).toBe(4);
+    expect(owns.slice(0, 4).every((svg) => svg === svgs["a.svg"])).toBe(true);
+    expect(owns.slice(4).every((svg) => svg === undefined)).toBe(true);
+  });
+
+  it("hands nothing to a row naming none, a key the answer lacks, or an SVG past its own budget", () => {
+    const svgs = { "big.svg": sized(MOST_OUTPUT + 10), "ok.svg": sized(10) };
+    expect(
+      ownIconsOf([naming(null), naming("gone.svg"), naming("big.svg"), naming("ok.svg"), {}], svgs),
+    ).toEqual([undefined, undefined, undefined, svgs["ok.svg"], undefined]);
+    expect(ownIconsOf([naming("ok.svg")], null)).toEqual([undefined]);
   });
 });

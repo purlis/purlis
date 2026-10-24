@@ -1405,13 +1405,18 @@ export const PlantedFar = () => <div style={plantedFar} />;
     expect(componentLiterals(tsx)).toEqual(["style top: 3", 'style insetInlineEnd: "0.3rem"']);
   });
 
-  it("gives the step under the words' floor to the scope switch alone (#2319)", () => {
+  it("gives the step under the words' floor to the scope switch and the harness monogram alone (#2319, #2922)", () => {
     const readers = [...sheets()].flatMap(([file, text]) =>
       declarations(text)
         .filter(({ value }) => value.includes("--font-size-2xs"))
         .map(({ context }) => `${file} ${context.join(" › ")}`),
     );
-    expect(readers).toEqual(["App.css .ui-levels-small"]);
+    expect(readers).toEqual([
+      "App.css .ui-levels-small",
+      // A harness kind's one or two capitals, which must fit the 14 px mark's box (R29) and
+      // are a mark beside the profile's name, never its words.
+      'ui/harness-icon/harness-icon.css .harness-icon[data-drawn="monogram"] > span',
+    ]);
     const views = sourceFiles(isView).filter((file) => read(file).includes("--font-size-2xs"));
     expect(views).toEqual([]);
   });

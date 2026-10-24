@@ -210,3 +210,83 @@ fn an_icon_file_past_the_cap_is_not_read() {
         UNREAD
     );
 }
+
+/// An icon file of about `paths` x 15 KB once read: each path's `d` that long.
+fn sized(paths: usize) -> String {
+    let path = format!("<path d=\"M0 0{}\"/>", "h1".repeat(7_500));
+    format!("<svg viewBox=\"0 0 24 24\">{}</svg>", path.repeat(paths))
+}
+
+/// **An answer that lists many profiles holds their icons to one budget** (#2922): a file is
+/// read and sent once however many rows name it, and the answer's SVGs together stay within
+/// [`MOST_ANSWER`], so a row past it shows its monogram.
+#[test]
+fn many_profiles_naming_icons_keep_the_answer_within_its_budget() {
+    // Each just under the file's cap: four fit the answer's budget, and eight do not.
+    let one = sized(4);
+    let names: Vec<String> = (0..8).map(|at| format!("icon-{at}.svg")).collect();
+    let files: Vec<(&str, &str)> = names
+        .iter()
+        .map(|name| (name.as_str(), one.as_str()))
+        .chain([("shared.svg", one.as_str())])
+        .collect();
+    let dir = home(&files);
+
+    // Three hundred profiles naming one icon: it is read once and sent once.
+    let mut answer = Answer::default();
+    let rows: Vec<Drawn> = (0..300)
+        .map(|at| {
+            answer.drawn(
+                &format!("p{at}"),
+                "claude",
+                Some("shared.svg"),
+                Some(dir.path()),
+            )
+        })
+        .collect();
+    assert!(
+        rows.iter()
+            .all(|row| row.own.as_deref() == Some("shared.svg"))
+    );
+    assert_eq!(answer.svgs.len(), 1);
+    let sent = serde_json::to_string(&(&rows, &answer.svgs)).unwrap();
+    assert!(sent.len() < MOST_ANSWER + 300 * 64, "{} bytes", sent.len());
+
+    // Rows naming several icons: those that fit are sent, and the rest show the monogram.
+    let mut answer = Answer::default();
+    let rows: Vec<Drawn> = names
+        .iter()
+        .cycle()
+        .take(200)
+        .enumerate()
+        .map(|(at, file)| answer.drawn(&format!("p{at}"), "codex", Some(file), Some(dir.path())))
+        .collect();
+    assert!(answer.spent() <= MOST_ANSWER);
+    assert!(
+        answer.svgs.len() < names.len(),
+        "the budget holds some back"
+    );
+    assert!(!answer.svgs.is_empty());
+    for row in &rows {
+        match &row.own {
+            Some(file) => assert!(answer.svgs.contains_key(file)),
+            None => assert_eq!(row.monogram, "CX"),
+        }
+    }
+    let sent = serde_json::to_string(&(&rows, &answer.svgs)).unwrap();
+    assert!(
+        sent.len() < MOST_ANSWER * 2 + 200 * 64,
+        "{} bytes",
+        sent.len()
+    );
+}
+
+#[test]
+fn an_answer_draws_a_built_in_and_a_glyph_as_a_lone_profile_is_drawn() {
+    let mut answer = Answer::default();
+    let built_in = answer.drawn("claude", "claude", None, None);
+    assert_eq!((built_in.glyph, built_in.own), (Some("spark"), None));
+    let named = answer.drawn("work", "opencode", Some("terminal"), None);
+    assert_eq!(named.glyph, Some("terminal"));
+    assert_eq!(answer.drawn("w", "opencode", None, None).monogram, "OC");
+}

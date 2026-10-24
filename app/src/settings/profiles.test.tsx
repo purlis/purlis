@@ -39,7 +39,7 @@ function row(name: string, more: Partial<MachineProfileRow> = {}): MachineProfil
     offered: null,
     sandbox_only: false,
     commands_can_read_sign_in: null,
-    icon: { glyph: null, svg: null, monogram: "C" },
+    icon: { glyph: null, own: null, monogram: "C" },
     ...more,
   };
 }
