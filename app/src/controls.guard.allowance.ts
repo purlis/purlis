@@ -20,10 +20,6 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
   "Brief.tsx": [
     "<button className=\"pane-brief\">",
   ],
-  "ChatStrip.tsx": [
-    "<button>",
-    "<button>",
-  ],
   "ChatsSection.tsx": [
     "<button className=\"needs-you-mark rolled-up\">",
   ],

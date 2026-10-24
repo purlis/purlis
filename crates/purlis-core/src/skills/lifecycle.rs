@@ -15,8 +15,8 @@ use std::path::Path;
 
 use purlis_skills::{Deprecated, Lifecycle};
 
+use super::beside;
 use super::verbs::{Ctx, Level, find, git, rel};
-use super::{beside, named};
 
 /// How many days a skill goes without a run before its tab suggests deprecating it.
 pub const UNUSED_DAYS: u64 = 60;
@@ -94,12 +94,10 @@ fn wider_copy(plane: &Path, level: &Level, name: &str) -> Option<Level> {
         wider.push(Level::project());
     }
     wider.into_iter().find(|one| {
-        one.dir(plane)
-            .and_then(|dir| named(&dir, name))
-            .is_some_and(|folder| {
-                purlis_skills::about_of(&folder)
-                    .map_or(true, |about| about.lifecycle != Lifecycle::Archived)
-            })
+        one.named(plane, name).is_some_and(|folder| {
+            purlis_skills::about_of(&folder)
+                .map_or(true, |about| about.lifecycle != Lifecycle::Archived)
+        })
     })
 }
 
@@ -114,8 +112,7 @@ fn replacement_there(cx: &Ctx<'_>, name: &str, other: &str) -> Result<(), String
     }
     let in_the_project = Level::every(cx.plane)
         .iter()
-        .filter_map(|level| level.dir(cx.plane))
-        .any(|dir| named(&dir, other).is_some());
+        .any(|level| level.named(cx.plane, other).is_some());
     let built_in = cx
         .built_in
         .is_some_and(|dir| super::read(dir).iter().any(|skill| skill.name == other));

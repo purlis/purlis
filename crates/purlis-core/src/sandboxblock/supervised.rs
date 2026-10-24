@@ -147,7 +147,7 @@ pub fn sorter_in(
     env: &dyn Fn(&str) -> Option<String>,
     here: &Path,
 ) -> Option<impl Fn(&Refusal) -> Option<crate::hookwire::SandboxBlocked> + Send + Sync + 'static> {
-    use crate::hookwire::{CHAT_ENV, HARNESS_ENV, SOCKET_ENV};
+    use crate::hookwire::{CHAT_ENV, SOCKET_ENV};
     if !crate::sandbox::chat_is_sandboxed_in(env) {
         return None;
     }
@@ -165,7 +165,7 @@ pub fn sorter_in(
         None => crate::plane::resolve(here).unwrap_or_else(|_| here.to_path_buf()),
     };
     let temp = absolute(env("TMPDIR")).unwrap_or_else(std::env::temp_dir);
-    let harness = env(HARNESS_ENV).filter(|it| !it.is_empty());
+    let harness = crate::hookwire::chat_harness(env);
     Some(move |refusal: &Refusal| {
         let place = Place {
             root: &root,

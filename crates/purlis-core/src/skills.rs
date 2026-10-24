@@ -19,9 +19,9 @@ pub use purlis_skills::{
     Effective, Field, Finding, Fit, FromHarness, Given, Grant, HarnessSkills, Honours, LOCAL_DIR,
     LeftOut, Lint, Machine, ManualOnly, Missing, Narrowing, OnMachine, Origin, Outcome,
     OutsideSkill, Over, Owner, POINTER, PROJECT_DIR, Reason, Reference, Refusal, Reload, Route,
-    Severity, Skill, SkillSet, Spent, Stamp, Switch, Whose, beside, compat, declared, grant_file,
-    grant_of, handed_text, in_bundle, level_dir, level_shown, listing, named, persona_dir, read,
-    scan, set_grant, share,
+    Severity, Shared, Skill, SkillSet, Spent, Stamp, Switch, Whose, beside, compat, declared,
+    grant_file, grant_of, handed_text, in_bundle, level_dir, level_shown, listing, named, named_at,
+    persona_dir, read, scan, set_grant, share,
 };
 
 /// Skill runs: the span from the moment a skill starts to the end of the turn (SK-3).
@@ -195,7 +195,7 @@ pub fn lay_out(
     let handed: Vec<handout::Handed> = set
         .from_the_plane()
         .filter(|effective| plain_name(&effective.skill.name))
-        .filter_map(|effective| handout::of(&effective.skill, honours).ok())
+        .filter_map(|effective| handout::of(effective, honours).ok())
         .collect();
     if handed.is_empty() {
         return Ok(None);
@@ -697,12 +697,12 @@ pub fn briefed(
             if !e.origin.of_the_plane() {
                 return Some(e.skill);
             }
+            let handed = handed.as_ref()?;
             let path = handed
-                .as_ref()?
                 .join(DIR_IN_BUNDLE)
                 .join(&e.skill.name)
                 .join(purlis_skills::FILE);
-            purlis_skills::read_skill_md(&path).ok()?;
+            purlis_skills::read_skill_md(handed, &path).ok()?;
             Some(Skill { path, ..e.skill })
         })
         .collect();
@@ -1041,7 +1041,7 @@ pub fn not_here(
     let mut not = NotHere::default();
     let honours = harness.skill_frontmatter();
     for effective in set.from_the_plane() {
-        if let Err(why) = handout::of(&effective.skill, &honours) {
+        if let Err(why) = handout::of(effective, &honours) {
             not.broken.push(Broken {
                 name: effective.skill.name.clone(),
                 origin: effective.origin,
@@ -1089,8 +1089,7 @@ pub fn turned_off(plane: &Path, workspace: &str) -> Vec<String> {
 pub fn project_folder(plane: &Path, name: &str) -> Option<PathBuf> {
     [false, true]
         .into_iter()
-        .filter_map(|local| level_dir(plane, &Whose::Project, local))
-        .find_map(|dir| named(&dir, name))
+        .find_map(|local| named_at(plane, &Whose::Project, local, name))
 }
 
 /// **`purlis skill grant <name> <grant>`** (#2767): writes `grant` as where the project skill
@@ -1197,7 +1196,7 @@ fn no_project_skill(name: &str) -> String {
 /// **Share** (#2767): moves the local skill `name` of the level `at` (the plane root's, a
 /// workspace's or a persona's) into that level's shared `skills/`, so the plane's save commits
 /// it. Refused on a project purlis opens read-only, whose committed files it does not write.
-pub fn share_here(plane: &Path, at: &Whose, name: &str) -> Result<PathBuf, String> {
+pub fn share_here(plane: &Path, at: &Whose, name: &str) -> Result<Shared, String> {
     crate::settings::writable(plane)?;
     share(plane, at, name)
 }
@@ -1539,7 +1538,11 @@ pub fn outside_rows(harness: &HarnessInTheStudio, plane: &Path) -> Vec<StudioRow
                 .map(|l| l.reason.to_string());
             let (compat, lint) = if left_out.is_none() {
                 (
-                    badges(&found.skill.path, found.origin, &[harness.harness]),
+                    badges(
+                        (&found.root, &found.skill.path),
+                        found.origin,
+                        &[harness.harness],
+                    ),
                     outside_lint(plane, found),
                 )
             } else {
@@ -1588,17 +1591,23 @@ pub fn lint(plane: &Path, level: &verbs::Level, name: &str, text: &str) -> Vec<F
     let path = verbs::text_of(plane, level, name)
         .ok()
         .map(|(path, _)| path);
-    linted(plane, path.as_deref(), name, text, level.origin())
+    linted(
+        plane,
+        path.as_deref().map(|path| (plane, path)),
+        name,
+        text,
+        level.origin(),
+    )
 }
 
 /// **What the built-in lints say of a skill from outside the plane** (SK-8): a harness or repo
 /// skill, read where it lies by the one reader that follows no link, each finding as anywhere
 /// but the editor says it ([`Finding::shown`]). What its studio row shows.
 fn outside_lint(plane: &Path, skill: &OutsideSkill) -> Vec<String> {
-    let findings = match purlis_skills::read_skill_md(&skill.skill.path) {
+    let findings = match purlis_skills::read_skill_md(&skill.root, &skill.skill.path) {
         Ok(text) => linted(
             plane,
-            Some(&skill.skill.path),
+            Some((&skill.root, &skill.skill.path)),
             &skill.skill.name,
             &text,
             skill.origin,
@@ -1613,10 +1622,11 @@ fn outside_lint(plane: &Path, skill: &OutsideSkill) -> Vec<String> {
 
 /// The built-in lints of the skill `name` from `origin`, whose `SKILL.md` says `text` and, where
 /// it is already there, lies at `skill_md`: checked against the plane's skills, the built-in
-/// ones and this machine's programs, with its other files read.
+/// ones and this machine's programs, with its other files read. `skill_md` is the root its
+/// folder is held from, and the path.
 fn linted(
     plane: &Path,
-    skill_md: Option<&Path>,
+    skill_md: Option<(&Path, &Path)>,
     name: &str,
     text: &str,
     origin: Origin,
@@ -1631,19 +1641,19 @@ fn linted(
         .collect();
     known.push(name.to_owned());
     let built_in = built_in_names_here();
+    // Read through the skill's folder held from its root, never through a link (SK-36).
     let others: Vec<(String, String)> = skill_md
-        .map(|path| {
-            let folder = path.parent().map(Path::to_path_buf).unwrap_or_default();
-            purlis_skills::other_files(path)
+        .and_then(|(root, path)| purlis_skills::SkillFolder::open(root, path).ok())
+        .map(|folder| {
+            folder
+                .entries()
                 .into_iter()
-                .filter(|file| {
-                    std::fs::symlink_metadata(file)
-                        .is_ok_and(|meta| meta.is_file() && meta.len() <= MOST_LINTED)
-                })
-                .filter_map(|file| {
-                    let text = std::fs::read_to_string(&file).ok()?;
-                    let shown = file.strip_prefix(&folder).unwrap_or(&file);
-                    Some((shown.to_string_lossy().into_owned(), text))
+                .filter_map(|entry| match entry {
+                    purlis_skills::Entry::File(rel) => {
+                        let text = folder.read(&rel, MOST_LINTED)?;
+                        Some((rel.to_string_lossy().into_owned(), text))
+                    }
+                    purlis_skills::Entry::Folder(_) => None,
                 })
                 .collect()
         })
@@ -1672,8 +1682,12 @@ pub struct HarnessCompat {
 /// The badges of the skill from `origin` whose `SKILL.md` is at `path` on each of `harnesses`
 /// ([`purlis_skills::compat`]), read by the one reader that follows no link: one that cannot be
 /// read is refused, or, from outside the plane, may widen the chat.
-fn badges(path: &Path, origin: Origin, harnesses: &[Harness]) -> Vec<HarnessCompat> {
-    let text = purlis_skills::read_skill_md(path);
+fn badges(
+    (root, path): (&Path, &Path),
+    origin: Origin,
+    harnesses: &[Harness],
+) -> Vec<HarnessCompat> {
+    let text = purlis_skills::read_skill_md(root, path);
     harnesses
         .iter()
         .map(|harness| HarnessCompat {
@@ -1705,8 +1719,11 @@ fn badge_named(rows: &mut [StudioRow], found: &[(Harness, &[OutsideSkill])], pla
     {
         for (harness, outside) in found {
             if let Some(skill) = outside.iter().find(|skill| skill.id == row.name) {
-                row.compat
-                    .extend(badges(&skill.skill.path, skill.origin, &[*harness]));
+                row.compat.extend(badges(
+                    (&skill.root, &skill.skill.path),
+                    skill.origin,
+                    &[*harness],
+                ));
                 if row.lint.is_empty() {
                     row.lint = outside_lint(plane, skill);
                 }
@@ -1760,7 +1777,7 @@ pub fn studio_rows(set: &SkillSet, plane: &Path, names: &[Reference]) -> Vec<Stu
                 unchecked: false,
                 outside: None,
                 accept: None,
-                compat: badges(&e.skill.path, e.origin, &Harness::ALL),
+                compat: badges((&e.root, &e.skill.path), e.origin, &Harness::ALL),
                 lint: Vec::new(),
                 lifecycle: e
                     .deprecated
