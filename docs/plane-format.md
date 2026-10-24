@@ -1103,12 +1103,18 @@ key refuses.
   - `charter/commands.py:1116` `_ensure_gitignore` (from `cmd_init`): writes
     `_GITIGNORE_BASELINE` verbatim when the file is absent (`charter/commands.py:1129`),
     otherwise appends only the missing whole lines through the one shared appender.
-  - `charter/util.py:472` `append_gitignore` — the single writer for additions. It appends
-    `"\n\n"`-separated: existing body `rstrip("\n") + "\n\n"`, then `# <header>\n`, then one
-    line each (`charter/util.py:499`). Headers seen: ``added by `purlis init` ``
+  - `charter/util.py:472` `append_gitignore` — the single writer for additions
+    (`crates/purlis-core/src/scaffold/mod.rs` `append_gitignore` / `with_appended`). It appends
+    only the lines git does not already read in the file: a line counts as present as git reads
+    it (split on `\n`, one `\r` before it and trailing spaces taken off, leading whitespace
+    kept), so an indented copy or one joined to the line before by a lone `\r` is added again.
+    The existing body has its trailing `\r` and `\n` taken off, then a blank line, then
+    `# <header>`, then one line each, every one ended as the body's first line is: `\r\n` in a
+    CRLF file, `\n` otherwise (Python wrote `\n` always; `charter/util.py:499`). Headers seen: ``added by `purlis init` ``
     (`charter/commands.py:1152`), ``added by `purlis guard --local` ``
     (`charter/commands.py:1792`), ``added by `purlis reinit` — harness profiles stay on this machine``
-    (`charter/commands.py:1821`).
+    (`charter/commands.py:1821`), ``added by `purlis doctor --fix live-skills` — local skills
+    stay on this machine`` (the `live-skills` fix, #2875; purlis's own).
   - `charter/workspace.py:1408` `_write_live_block` rewrites the managed live-workspace block
     (markers `charter/workspace.py:1338`, `charter/workspace.py:1339`) — **workspaces area**,
     noted here only because it splices at the `!/workspaces/.gitkeep` anchor.
@@ -2927,7 +2933,14 @@ beside a purlis one is removed when the record is published (V93i).
     (ADR 0064) and the `skills` pair (ADR 0099, #2767) are purlis's: a workspace's work links,
     session records and skills follow it, LIVE or LOCAL, and its `skills.local/` stays ignored
     either way. A block written before them is brought up to date by `reinit`, as any older
-    block is.
+    block is. `purlis doctor`'s `live skills` row names a LIVE workspace whose block lacks the
+    `skills` pair, and each level's `skills.local/` line the file lacks, LIVE workspace or
+    not (by the one level rule, a persona's included); `purlis doctor --fix live-skills` adds
+    those lines and nothing else: the pair after the workspace's last line in the block, the
+    ignore lines at the end of the file, ended as the file's lines are (#2875). Lines are read
+    as git reads them: split on `\n`, one `\r` and trailing spaces taken off, leading
+    whitespace kept. A LIVE name git reads as a pattern (`*`, `?`, `[`, `]`, `!`, `\`) gets no
+    `skills` pair, from the fix or from the block's writer, and the row names it.
   - Lines are joined with `\n` and the block has no trailing newline of its own; the rewrite
     is `re.sub(BEGIN .*? END, block, flags=DOTALL)` (`charter/workspace.py:1412`). A first
     write is inserted directly after the literal line `!/workspaces/.gitkeep\n`
