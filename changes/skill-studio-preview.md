@@ -51,3 +51,7 @@
   changed, and which skills a persona names that no chat can get. It needs the Skill studio
   switched on to run, and refuses while the project has changes that are not committed or its git
   is in the middle of something.
+- **A skill's tab totals its runs** (Skill studio preview, #2783): runs, tool calls, errors,
+  refusals, asks, tokens and time, by the program each chat ran on, by persona and by
+  workspace. Each run says what it ran on, and a run that a curation action's prompt started
+  says so, whichever way the chat's program started the skill.

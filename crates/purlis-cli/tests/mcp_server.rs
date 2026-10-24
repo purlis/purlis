@@ -20,6 +20,12 @@ fn project() -> tempfile::TempDir {
     for ws in ["alpha", "beta"] {
         std::fs::create_dir_all(dir.path().join("workspaces").join(ws)).expect("a workspace");
     }
+    // Shared workspaces: LIVE, so a skill run there says where it ran (SK-20).
+    std::fs::write(
+        dir.path().join(".gitignore"),
+        purlis_core::wscmd::live_block(dir.path(), ["alpha", "beta"]),
+    )
+    .expect(".gitignore");
     dir
 }
 

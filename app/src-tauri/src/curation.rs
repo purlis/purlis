@@ -333,17 +333,26 @@ fn open(held: &Arc<Held>, spec: &str, action: &str, size: Size) -> Result<Curati
         .ok_or_else(|| {
             format!("'{action}' is not offered on {spec} any more, so nothing was opened.")
         })?;
-    open_chosen(held, chosen, &name_of(&root, &subject), size)
+    open_chosen(
+        held,
+        chosen,
+        &name_of(&root, &subject),
+        size,
+        Some(purlis_core::skills::runs::StartedBy::Curation),
+    )
 }
 
 /// Opens the chat for `chosen`, an action the core resolved, on the subject the operator knows
 /// as `shown`: a curation action's, or Settings › Theme's New theme and Edit with a chat
-/// ([`crate::themegallery::theme_chat`], #2333).
+/// ([`crate::themegallery::theme_chat`], #2333). `starts_runs` is what starts the skill runs
+/// its prompt's turn opens: a curation action, and none for a theme chat, which is no curation
+/// action (decision 60), so its runs are the harness's own pick.
 pub(crate) fn open_chosen(
     held: &Arc<Held>,
     chosen: Resolved,
     shown: &str,
     size: Size,
+    starts_runs: Option<purlis_core::skills::runs::StartedBy>,
 ) -> Result<Curating, String> {
     let root = held.root().to_path_buf();
     let profile = launch_profile(&root)?;
@@ -357,6 +366,7 @@ pub(crate) fn open_chosen(
             label: label.clone(),
             prompt: chosen.prompt,
             then_a_space: false,
+            starts_runs,
         },
         size,
         when_typed,
@@ -398,6 +408,9 @@ pub struct ChatTyped {
     /// Whether one space follows the prompt inside its paste: a reference to a file (FM-9),
     /// so the operator's first word does not stick to it.
     pub then_a_space: bool,
+    /// What starts the skill runs the turn it is sent in opens at the top, where it is not the
+    /// harness's own pick: a curation action's (SK-20). Held before the chat starts.
+    pub starts_runs: Option<purlis_core::skills::runs::StartedBy>,
 }
 
 /// A typed chat that started.
@@ -522,6 +535,11 @@ pub fn start_typed_where_it_can_be(
     };
     if let Some(until) = when {
         held.typed().hold_paste(number, paste, until);
+        // The skill runs the turn it is sent in opens are the action's (SK-20): held before the
+        // chat starts, as its paste is, so they are there however soon its first prompt comes.
+        if let Some(by) = chat.starts_runs {
+            held.hooks().skill_prompted(&root, number, by, &chat.prompt);
+        }
     }
     let session = held
         .chats()
@@ -1814,6 +1832,79 @@ mod tests {
         let bytes = std::fs::read_to_string(&typed).unwrap_or_default();
         assert_eq!(bytes, wanted, "exactly one paste, and no Enter after it");
         assert!(!submits(&bytes));
+        held.close_chat(curating.session).unwrap();
+    }
+
+    /// SK-20: the skill a curation chat's first turn starts is the action's, in the project's
+    /// skill log, whatever route the harness took: the window holds the prompt for the chat's
+    /// runs before the chat starts, as it holds its paste.
+    #[test]
+    fn a_skill_the_curation_prompt_s_turn_starts_is_logged_as_the_curation_action_s() {
+        let plane = Plane::new("claude");
+        let planes =
+            crate::sandboxing::keeping_events_for_tests(planes(), &plane.root.join("events"));
+        let id = planes.open(&plane.root);
+        let held = planes.held(&id).expect("held");
+
+        let curating = open(&held, "workspace:alpha", "ops/tidy", SIZE).expect("it opens");
+        let socket = held.hooks().socket().expect("listening").to_path_buf();
+        let token = held.hooks().token_for(curating.session);
+        let report = |event: Event, prompt: Option<&str>| {
+            let mut detail = Detail::default();
+            if let Some(prompt) = prompt {
+                detail.prompt_marks = purlis_core::skillspan::PromptMarks::of(prompt);
+            }
+            purlis_core::hookwire::send(
+                &socket,
+                Some(&token),
+                &Report {
+                    chat: curating.session,
+                    event,
+                    conversation: Conversation::Unknown,
+                    pid: None,
+                    agent: None,
+                    detail,
+                },
+            )
+            .expect("the report reaches the plane");
+        };
+        // The person sends the prompt the action typed, and the harness picks the skill.
+        report(Event::UserPromptSubmit, Some("Tidy alpha.\nThen say so."));
+        purlis_core::hookwire::deliver_tool(
+            &socket,
+            Some(&token),
+            &purlis_core::hookwire::ToolCall {
+                chat: curating.session,
+                tool_hook: "posttooluse-skill".to_owned(),
+                tool: Some("Skill".to_owned()),
+                call: Some("toolu_1".to_owned()),
+                args: None,
+                decision: purlis_core::hookwire::Decision::None,
+                rule: None,
+                hook_ms: 1,
+                agent: None,
+                at_ms: 0,
+                skill: Some(Box::new(purlis_core::hookwire::SkillStarted {
+                    skill: "tidy".to_owned(),
+                    run: purlis_core::reopen::mint(),
+                    started_by: purlis_core::skills::runs::StartedBy::SkillTool,
+                    workspace: None,
+                    level: None,
+                })),
+            },
+        )
+        .expect("told");
+        report(Event::Stop, None);
+
+        let runs = purlis_core::skilluse::runs(&plane.root);
+        let [run] = &runs[..] else {
+            panic!("one run is logged: {runs:#?}");
+        };
+        assert_eq!(
+            run.started_by,
+            Some(purlis_core::skills::runs::StartedBy::Curation)
+        );
+        assert_eq!(run.harness.as_deref(), Some("claude"));
         held.close_chat(curating.session).unwrap();
     }
 

@@ -16,7 +16,8 @@ import { closeTheViewTabsOpenedSince, tabNames } from "../reach.js";
  * (`USES_A_SKILL`); the hook tells the app over the socket the app opened, and the app opens
  * the run on the chat's tab and logs its start in the project's skill log. The harness holds
  * its turn, so the run stays open. Pressing the chip opens the skill's own tab, whose Runs panel
- * lists that run. Ending the chat ends the run, and the chip goes.
+ * lists that run, and its totals count it by what it ran on, persona and workspace (SK-20).
+ * Ending the chat ends the run, and the chip goes.
  */
 
 const CHIP = '[data-testid="tab-skill-run"]';
@@ -60,6 +61,12 @@ describe("a skill run on a chat's tab", function () {
     await shown.waitForExist({ timeout: 20_000, timeoutMsg: "the run was not in its Runs panel" });
     await expect(shown).toHaveText(expect.stringContaining("The chat read the skill"));
     expect(await tabNames()).toContain(USED_SKILL);
+    // Its totals count the run, still open, by what it ran on, persona and workspace (SK-20).
+    for (const by of ["by_harness", "by_persona", "by_workspace"]) {
+      const totals = await $(`[data-testid="skill-totals-${by}"]`);
+      await totals.waitForExist({ timeout: 20_000, timeoutMsg: `no totals ${by}` });
+      await expect(totals).toHaveText(expect.stringContaining("1 run, 0 ended"));
+    }
 
     await endEveryChat();
     await browser.waitUntil(async () => !(await $(CHIP).isExisting()), {
