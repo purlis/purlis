@@ -808,21 +808,9 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
         SkillCommand::Uses { name, json } => {
             let node = purlis_core::skills::graph::uses_of(root, built_in.as_deref(), &name);
             if json {
-                let uses: Vec<Value> = node
-                    .uses
-                    .iter()
-                    .map(|one| {
-                        json!({
-                            "said": one.said,
-                            "name": one.name,
-                            "project": one.project,
-                            "broken": one.broken,
-                        })
-                    })
-                    .collect();
                 println!(
                     "{}",
-                    json!({ "uses": uses, "used_by": node.used_by, "cut": node.cut })
+                    json!({ "uses": node.uses, "used_by": node.used_by, "cut": node.cut })
                 );
                 return Ok(0);
             }
@@ -873,37 +861,47 @@ fn lifecycle_set(
     }
 }
 
-/// A skill's versions, one line each: its commit, when, who, its subject and its runs.
-fn versions_table(name: &str, versions: &[history::Version]) -> String {
-    if versions.is_empty() {
+/// A skill's versions, one line each: its commit, when, who, its subject and its runs; then the
+/// runs on changes not committed, where there were any.
+fn versions_table(name: &str, history: &history::History) -> String {
+    if history.versions.is_empty() {
         return format!(
             "{name} has no history yet: git keeps a skill's versions once the project commits it.\n"
         );
     }
     let mut text = String::new();
-    for version in versions {
+    for version in &history.versions {
         let when = chrono::DateTime::from_timestamp(i64::try_from(version.at).unwrap_or(0), 0)
             .map(|at| at.format("%Y-%m-%d %H:%M").to_string())
             .unwrap_or_default();
-        let runs = &version.runs;
-        let signals = if runs.runs == 0 {
-            "no runs".to_owned()
-        } else {
-            format!(
-                "{}, {}, {}",
-                counted(runs.runs, "run", "runs"),
-                counted(runs.tool_calls, "tool call", "tool calls"),
-                counted(runs.tool_errors, "error", "errors")
-            )
-        };
         text.push_str(&format!(
-            "{}  {when}  {}  {}  ({signals})\n",
-            &version.commit[..12.min(version.commit.len())],
+            "{}  {when}  {}  {}  ({})\n",
+            history::short(&version.commit),
             version.author,
-            version.subject
+            version.subject,
+            runs_said(&version.runs)
+        ));
+    }
+    if history.uncommitted.runs > 0 {
+        text.push_str(&format!(
+            "On changes not committed: {}\n",
+            runs_said(&history.uncommitted)
         ));
     }
     text
+}
+
+/// What runs add up to, as one line says them: signals, never a verdict.
+fn runs_said(totals: &purlis_core::skilluse::Totals) -> String {
+    if totals.runs == 0 {
+        return "no runs".to_owned();
+    }
+    format!(
+        "{}, {}, {}",
+        counted(totals.runs, "run", "runs"),
+        counted(totals.tool_calls, "tool call", "tool calls"),
+        counted(totals.tool_errors, "error", "errors")
+    )
 }
 
 /// The runs, one line each: when, which skill, by whom, what started it, how it ended and its

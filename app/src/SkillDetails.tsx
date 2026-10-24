@@ -11,6 +11,7 @@ import {
   type SkillDiff,
   type SkillLifecycle,
   type SkillVersion,
+  type StatsRow,
 } from "./bindings";
 import { counted, saidAt } from "./dispatches";
 import { Notice } from "./Notice";
@@ -43,9 +44,8 @@ export function diffLineKind(line: string): "added" | "removed" | undefined {
 export const UNREAD =
   "purlis could not read what it keeps about this skill, so it is taken as in use with no owners. Deprecating or archiving it writes it again.";
 
-/** A version's runs, as its row says them: signals, never a verdict. */
-export function versionRunsSaid(version: SkillVersion): string {
-  const runs = version.runs;
+/** What runs add up to, as one cell says them: signals, never a verdict. */
+export function runsSaid(runs: StatsRow): string {
   if (runs.runs === 0) return "No runs";
   return [
     counted(runs.runs, "run", "runs"),
@@ -365,6 +365,11 @@ function History({
           </tbody>
         </table>
       )}
+      {copy.uncommitted.runs > 0 && (
+        <p className="honest" data-testid="skill-uncommitted-runs">
+          On changes not committed yet: {runsSaid(copy.uncommitted)}.
+        </p>
+      )}
     </section>
   );
 }
@@ -398,7 +403,7 @@ function VersionRow({
         <td>{saidAt(version.at)}</td>
         <td>{version.author}</td>
         <td>{version.subject}</td>
-        <td>{versionRunsSaid(version)}</td>
+        <td>{runsSaid(version.runs)}</td>
         <td>
           <Button size="sm" variant="ghost" aria-expanded={open} onPress={onShow}>
             {open ? "Hide changes" : "Show changes"}

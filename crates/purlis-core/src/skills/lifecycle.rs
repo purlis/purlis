@@ -144,7 +144,9 @@ pub fn set_owners(
         .iter()
         .find_map(|owner| purlis_skills::lifecycle::owner_problem(owner).map(|why| (owner, why)))
     {
-        return Err(format!("{owner:?} cannot be an owner: {why}, so nothing changed"));
+        return Err(format!(
+            "{owner:?} cannot be an owner: {why}, so nothing changed"
+        ));
     }
     if owners.len() > purlis_skills::lifecycle::MOST_OWNERS {
         return Err(format!(
@@ -188,7 +190,11 @@ pub fn unused(plane: &Path, now: u64) -> Vec<Unused> {
         let (Some(copy), Some(at)) = (&run.copy, run.started_secs()) else {
             continue;
         };
-        let key = (run.skill_name().to_owned(), copy.level, copy.workspace.clone());
+        let key = (
+            run.skill_name().to_owned(),
+            copy.level,
+            copy.workspace.clone(),
+        );
         let held = last.entry(key).or_insert(at);
         *held = (*held).max(at);
     }

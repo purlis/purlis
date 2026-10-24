@@ -64,3 +64,7 @@
   beside a skill's folder (its grant, and now its state and owners) only from a plain file: a link
   in its place grants the skill nothing beyond the project's root, and a change to it is refused,
   so a link can no longer widen where a skill reaches.
+- **A skill's tab totals its runs** (Skill studio preview, #2783): runs, tool calls, errors,
+  refusals, asks, tokens and time, by the program each chat ran on, by persona and by
+  workspace. Each run says what it ran on, and a run that a curation action's prompt started
+  says so, whichever way the chat's program started the skill.

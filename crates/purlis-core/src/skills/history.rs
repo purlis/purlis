@@ -152,11 +152,14 @@ fn trees(plane: &Path, folder_rel: &str, versions: &mut [Version]) {
         }
     }
     for (version, one) in versions.iter_mut().zip(&asked) {
-        version.tree = git(plane, &["rev-parse", "--verify", "-q", "--end-of-options", one])
-            .map(|out| out.trim().to_owned())
-            .ok()
-            .filter(|tree| whole_id(tree))
-            .unwrap_or_default();
+        version.tree = git(
+            plane,
+            &["rev-parse", "--verify", "-q", "--end-of-options", one],
+        )
+        .map(|out| out.trim().to_owned())
+        .ok()
+        .filter(|tree| whole_id(tree))
+        .unwrap_or_default();
     }
 }
 
@@ -173,10 +176,11 @@ fn count_runs(plane: &Path, level: &Level, name: &str, history: &mut History) {
                 })
         })
         .collect();
-    let by_tree: std::collections::HashMap<Group, Totals> = crate::skilluse::stats(&ours, By::Version)
-        .into_iter()
-        .map(|row| (row.group, row.totals))
-        .collect();
+    let by_tree: std::collections::HashMap<Group, Totals> =
+        crate::skilluse::stats(&ours, By::Version)
+            .into_iter()
+            .map(|row| (row.group, row.totals))
+            .collect();
     for version in &mut history.versions {
         if let Some(totals) = by_tree.get(&Group::Named(version.tree.clone())) {
             version.runs = *totals;
@@ -281,7 +285,12 @@ fn shown_diff(raw: &str) -> Diff {
 
 /// What the instructions of version `commit` of the skill `name` say, from git, refused where
 /// they are no whole skill of this name.
-fn instructions_at(plane: &Path, folder_rel: &str, name: &str, commit: &str) -> Result<String, String> {
+fn instructions_at(
+    plane: &Path,
+    folder_rel: &str,
+    name: &str,
+    commit: &str,
+) -> Result<String, String> {
     let then = git(plane, &["show", &format!("{commit}:{folder_rel}/SKILL.md")]).map_err(|_| {
         format!(
             "version {} of {name} has no instructions to go back to",
@@ -314,7 +323,12 @@ pub fn revert_widens(
     let (_, folder_rel) = folder_of(plane, level, name)?;
     let then = instructions_at(plane, &folder_rel, name, commit)?;
     let widening: Vec<purlis_skills::Field> = purlis_skills::handed::parse(&then)
-        .map(|read| read.fields().into_iter().filter(|field| field.widens()).collect())
+        .map(|read| {
+            read.fields()
+                .into_iter()
+                .filter(|field| field.widens())
+                .collect()
+        })
         .unwrap_or_default();
     Ok((!widening.is_empty()).then(|| {
         format!(
@@ -328,13 +342,32 @@ pub fn revert_widens(
 /// repository, by its path: a revert never brings a link back, so nothing is restored.
 fn no_links_at(plane: &Path, folder_rel: &str, name: &str, commit: &str) -> Result<(), String> {
     let spec = literally(folder_rel);
-    let listed = git(plane, &["ls-tree", "-r", "-z", "--end-of-options", commit, "--", &spec])
-        .map_err(|why| format!("version {} of {name} could not be read: {why}", short(commit)))?;
+    let listed = git(
+        plane,
+        &[
+            "ls-tree",
+            "-r",
+            "-z",
+            "--end-of-options",
+            commit,
+            "--",
+            &spec,
+        ],
+    )
+    .map_err(|why| {
+        format!(
+            "version {} of {name} could not be read: {why}",
+            short(commit)
+        )
+    })?;
     for entry in listed.split('\0').filter(|one| !one.is_empty()) {
         let (head, path) = entry.split_once('\t').unwrap_or((entry, ""));
         let mode = head.split(' ').next().unwrap_or_default();
         if mode == "120000" || mode == "160000" {
-            let shown = path.strip_prefix(folder_rel).unwrap_or(path).trim_start_matches('/');
+            let shown = path
+                .strip_prefix(folder_rel)
+                .unwrap_or(path)
+                .trim_start_matches('/');
             return Err(format!(
                 "version {} of {name} holds a link ({}), and a revert never brings a link back, \
                  so nothing was reverted",

@@ -98,7 +98,9 @@ fn logged(root: &Path, id: &str, skill: &str, at: u64, calls: u64, level: &str, 
 
 /// The tree git holds of `deploy`'s folder at `commit`.
 fn tree_at(root: &Path, commit: &str) -> String {
-    run(root, &["rev-parse", &format!("{commit}:skills/deploy")]).line().to_owned()
+    run(root, &["rev-parse", &format!("{commit}:skills/deploy")])
+        .line()
+        .to_owned()
 }
 
 #[test]
@@ -135,7 +137,11 @@ fn each_version_counts_the_runs_whose_start_recorded_its_folder() {
 fn a_change_to_only_the_file_beside_the_folder_is_no_version() {
     let tmp = plane();
     let root = tmp.path();
-    std::fs::write(root.join("skills/deploy.toml"), "lifecycle = \"deprecated\"\n").unwrap();
+    std::fs::write(
+        root.join("skills/deploy.toml"),
+        "lifecycle = \"deprecated\"\n",
+    )
+    .unwrap();
     run(root, &["add", "-A"]);
     run(root, &["commit", "-q", "-m", "deprecate deploy"]);
     let toml_only = run(root, &["rev-parse", "HEAD"]).line().to_owned();
@@ -144,7 +150,9 @@ fn a_change_to_only_the_file_beside_the_folder_is_no_version() {
 
     assert_eq!(history.versions.len(), 2);
     assert!(history.versions.iter().all(|v| v.commit != toml_only));
-    let (answer, _) = did(root, |cx| revert(cx, &Level::project(), "deploy", &toml_only));
+    let (answer, _) = did(root, |cx| {
+        revert(cx, &Level::project(), "deploy", &toml_only)
+    });
     assert!(answer.unwrap_err().contains("no version"));
 }
 
@@ -188,10 +196,15 @@ fn a_revert_to_a_version_that_widens_the_chat_says_so_before_it_is_made() {
     run(root, &["commit", "-q", "-m", "narrow"]);
     let narrow = run(root, &["rev-parse", "HEAD"]).line().to_owned();
 
-    let said = revert_widens(root, &Level::project(), "deploy", &wide).unwrap().unwrap();
+    let said = revert_widens(root, &Level::project(), "deploy", &wide)
+        .unwrap()
+        .unwrap();
     assert!(said.starts_with("Widens the chat"), "{said}");
     assert!(said.contains("leaves them out when it hands"), "{said}");
-    assert_eq!(revert_widens(root, &Level::project(), "deploy", &narrow), Ok(None));
+    assert_eq!(
+        revert_widens(root, &Level::project(), "deploy", &narrow),
+        Ok(None)
+    );
 }
 
 #[test]
@@ -267,7 +280,10 @@ fn a_revert_brings_the_folder_back_as_one_commit_and_keeps_the_file_beside_it() 
     assert!(status.out.trim().is_empty(), "{}", status.out);
     // The revert is a version of its own.
     assert_eq!(
-        history(root, &Level::project(), "deploy").unwrap().len(),
+        history(root, &Level::project(), "deploy")
+            .unwrap()
+            .versions
+            .len(),
         versions.len() + 1
     );
 }
@@ -277,7 +293,7 @@ fn a_revert_is_refused_while_the_skill_holds_changes_not_committed() {
     let tmp = plane();
     let root = tmp.path();
     std::fs::write(root.join("skills/deploy/SKILL.md"), format!("{V2}more\n")).unwrap();
-    let first = history(root, &Level::project(), "deploy").unwrap()[1]
+    let first = history(root, &Level::project(), "deploy").unwrap().versions[1]
         .commit
         .clone();
 
@@ -303,7 +319,48 @@ fn a_skill_git_does_not_track_has_no_versions() {
     .unwrap();
     assert_eq!(
         history(root, &Level::project().local(true), "mine"),
-        Ok(Vec::new())
+        Ok(History::default())
     );
     assert!(history(root, &Level::project(), "nobody").is_err());
+}
+
+#[test]
+fn a_runs_start_records_the_folder_it_ran_or_that_it_held_changes_not_committed() {
+    let tmp = plane();
+    let root = tmp.path();
+    let start = |id: &str| {
+        crate::skilluse::started(
+            root,
+            &crate::skilluse::Starting {
+                id,
+                skill: "skills:deploy",
+                started_by: purlis_skills::runs::StartedBy::SkillTool,
+                workspace: None,
+                level: Some(copy_of(&Level::project())),
+                harness: Some("claude"),
+            },
+            None,
+            chrono::DateTime::from_timestamp(i64::try_from(T2 + 60).unwrap(), 0).unwrap(),
+            "box",
+        )
+        .unwrap();
+    };
+    start("clean");
+    std::fs::write(root.join("skills/deploy/notes.md"), "changed, not committed\n").unwrap();
+    start("dirty");
+
+    let runs = crate::skilluse::runs(root);
+    let content = |id: &str| {
+        runs.iter()
+            .find(|run| run.id.as_deref() == Some(id))
+            .and_then(|run| run.content.clone())
+    };
+    assert_eq!(
+        content("clean"),
+        Some(crate::skilluse::Content::Tree(tree_at(root, "HEAD")))
+    );
+    assert_eq!(content("dirty"), Some(crate::skilluse::Content::Uncommitted));
+    let history = history(root, &Level::project(), "deploy").unwrap();
+    assert_eq!(history.versions[0].runs.runs, 1);
+    assert_eq!(history.uncommitted.runs, 1);
 }
