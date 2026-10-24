@@ -32,7 +32,7 @@ use purlis_skills::change::{self, Template};
 use super::{Grant, LINKED_PLUGIN, Origin, beside, grant_of, level_dir, set_grant};
 use crate::planegit::literally;
 use crate::repocmd::{Say, Sink};
-use purlis_skills::{move_between, move_skill};
+use purlis_skills::{Unmoved, move_between, move_skill};
 
 pub mod drafts;
 
@@ -556,10 +556,17 @@ pub fn rename(cx: &mut Ctx<'_>, level: &Level, old: &str, new: &str) -> Result<P
     write(plane, &file, &what, Some(&text), &renamed, usize::MAX)?;
     let to = if renames_folder {
         let to = from.with_file_name(new);
-        if let Err(why) = move_skill(plane, &from, &to, usize::MAX) {
-            // The folder stayed where it was: put its name back.
-            let _ = write(plane, &file, &what, Some(&renamed), &text, usize::MAX);
-            return Err(format!("{old} was not renamed: {why}"));
+        match move_skill(plane, &from, &to, usize::MAX) {
+            Ok(()) => {}
+            Err(Unmoved::Nothing(why)) => {
+                // The folder stayed where it was: put its name back.
+                let _ = write(plane, &file, &what, Some(&renamed), &text, usize::MAX);
+                return Err(format!("{old} was not renamed: {why}"));
+            }
+            // Its folder went and could not come back (SK-45): say so, never "not renamed".
+            Err(Unmoved::Stranded(what)) => {
+                return Err(format!("{old} was renamed only in part: {what}"));
+            }
         }
         touched.push(rel(plane, &to));
         touched.push(rel(plane, &beside(&to)));
@@ -706,8 +713,10 @@ pub fn move_to(
     let folder_is = folder_name(&folder);
     let dir = free_at(plane, to, name, &folder_is)?;
     let moved = dir.join(&folder_is);
-    move_skill(plane, &folder, &moved, to.depth())
-        .map_err(|why| format!("{name} was not moved: {why}"))?;
+    move_skill(plane, &folder, &moved, to.depth()).map_err(|unmoved| match unmoved {
+        Unmoved::Nothing(why) => format!("{name} was not moved: {why}"),
+        Unmoved::Stranded(what) => format!("{name} was moved only in part: {what}"),
+    })?;
     let mut touched = vec![
         rel(plane, &folder),
         rel(plane, &beside(&folder)),
