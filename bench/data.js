@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792824748032,
+  "lastUpdate": 1792832774227,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -23436,6 +23436,48 @@ window.BENCHMARK_DATA = {
             "value": 101.23285150000001,
             "unit": "ms",
             "extra": "median of 5 runs: 100.278, 100.843, 101.233, 101.693, 101.901 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0ab256d5db1700ab06c7d4f324d0ce484aa158e0",
+          "message": "SK-32: a persona's own skills get every Skill studio verb (#3125)\n\n* SK-32: a persona's own skills get every Skill studio verb\n\nA persona with a folder is a skill level now (purlis_skills::Whose::Persona),\nby the one level rule. Create, edit, rename, move, delete, restore and share\nwork on it from the studio's persona scope and from `purlis skill -p`.\nPromoting a persona's skill to the project asks for its grant and adds it\nto the persona's skills: list; a move into a persona takes it out. A chat's\nwrite to a persona's skill becomes a draft (#3048).\n\nCloses #3003\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-32 review: persona local skills stay local, one level rule everywhere\n\nThe save's excludes and the .gitignore baseline are spelled from the one\nlevel rule (purlis_skills::local_globs), so a persona's skills.local/ is\nnever committed and is read as local. holds_skills looks through folder\nhandles and gates drafts too. Share takes only whose skills. One name,\nWhose; persona copies get a history with their runs.\n\nCloses #3124\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Recorded behaviour: init and reinit ignore a persona's skills.local/\n\nThe 21 init- and reinit- rows from CI's recorded-behaviour-blessed artifact,\nheld by tools/recorded-bless-check.mjs to stderr.text and the .gitignore tree:\nthe one moved line is /personas/*/skills.local/ (#3124).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Scaffold and init tests expect a persona's skills.local/ line\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-24T12:40:10+04:00",
+          "tree_id": "580fb7e5c0368a67d06c9c7f43ad6660e6252c03",
+          "url": "https://github.com/purlis/purlis/commit/0ab256d5db1700ab06c7d4f324d0ce484aa158e0"
+        },
+        "date": 1792832771626,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.472877,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.457, 0.472, 0.473, 0.481, 0.487 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.292066,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.220, 16.261, 16.292, 16.597, 16.859 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.20176649999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.778, 100.407, 101.202, 101.319, 101.478 ms"
           }
         ]
       }
