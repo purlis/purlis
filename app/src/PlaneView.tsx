@@ -177,6 +177,7 @@ import type { Elsewhere } from "./InboxElsewhere";
 import { sayAboutThisMachine, useAboutThisMachine } from "./windowprefs";
 import { drawWhatIsInForce } from "./Extensions";
 import { useProfileNames } from "./profileNames";
+import { useScreenReaderMode } from "./screenReader";
 import { PersonaMarks, ReloadPersonaMarks } from "./PersonaMark";
 import { usePersonaMarks } from "./usePersonaMarks";
 import { taskChangesTitle, taskChangesView } from "./taskChanges";
@@ -6953,6 +6954,10 @@ export const PlaneView = memo(function PlaneView({
   );
   const curations = useCurations(plane, subjects, curationsChanges);
 
+  // The catalogue's screen-reader row says what pressing it does now: it is built again when
+  // the mode is turned on or off, not only when something else draws this view again.
+  const screenReader = useScreenReaderMode();
+
   /**
    * Every action this project's window can do, in one list.
    *
@@ -7038,6 +7043,7 @@ export const PlaneView = memo(function PlaneView({
             away,
             sidePanels,
             profiles: profileNames,
+            screenReader,
             skillStudio: studioOn,
             skillBudgets,
             readOnly: readOnlySaid,
@@ -7098,6 +7104,7 @@ export const PlaneView = memo(function PlaneView({
       profileNames,
       studioOn,
       skillBudgets,
+      screenReader,
     ],
   );
 

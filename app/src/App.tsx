@@ -60,6 +60,7 @@ import {
   type Ran,
   type Said,
 } from "./actions";
+import { useScreenReaderMode } from "./screenReader";
 import { useLatestSaid } from "./latestSaid";
 import { useAlerts } from "./alerts";
 import type { InboxAlertsDo, WindowAlerts } from "./InboxAlerts";
@@ -1692,6 +1693,7 @@ function App() {
 
   /** Every action a window with no project in front can do. The project's own catalogue is
    *  `PlaneView`'s; this is the one for the opener, and its refusals are #111's. */
+  const screenReader = useScreenReaderMode();
   const openerOffers = useMemo(
     () =>
       catalogue({
@@ -1702,8 +1704,9 @@ function App() {
         pinned: { chats: [], workspaces: [], projects: pinnedProjects },
         nameOf: String,
         split,
+        screenReader,
       }),
-    [drawn, pinnedProjects, split],
+    [drawn, pinnedProjects, split, screenReader],
   );
 
   const run = useCallback(

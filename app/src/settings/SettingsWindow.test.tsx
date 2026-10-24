@@ -55,8 +55,10 @@ afterEach(() => {
 });
 
 function core(plane: string | null, views: ViewTab[] = []) {
+  const asked: string[] = [];
   mockIPC(
     (cmd) => {
+      asked.push(cmd);
       if (cmd === "plane_at_launch")
         return { plane, from: plane, why: plane === null ? "no plane here" : null };
       if (cmd === "opened_chats") return [];
@@ -71,6 +73,7 @@ function core(plane: string | null, views: ViewTab[] = []) {
     },
     { shouldMockEvents: true },
   );
+  return { asked };
 }
 
 async function palette(typed: string) {
@@ -106,6 +109,25 @@ describe("Settings, from the window", () => {
     await palette("Settings…");
     await userEvent.keyboard("{Enter}");
     expect(settingsTabs()).toHaveLength(1);
+  });
+
+  it("reads nothing of the plane again when it is asked for while it is in front", async () => {
+    // The tab in front, focused, and waiting for nothing: opening it again changes no tab, so
+    // nothing the window reads when its tabs change is read again for it (`openView`).
+    const { asked } = core(PLANE);
+    render(<App />);
+    await screen.findByRole("tab", { name: /plane/ });
+    await palette("Settings…");
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(groups()).toBeInTheDocument());
+    const reads = () => asked.filter((one) => one === "plane_sidebar").length;
+    const before = reads();
+
+    await palette("Settings…");
+    await userEvent.keyboard("{Enter}");
+
+    expect(settingsTabs()).toHaveLength(1);
+    expect(reads()).toBe(before);
   });
 
   it("moves its own tab to You, and to a level whose tab is open brings that tab forward", async () => {

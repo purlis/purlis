@@ -372,6 +372,14 @@ describe("the one list of actions", () => {
     );
   });
 
+  it("titles the screen-reader row by the mode it is given, which a render follows (#629)", () => {
+    const row = (screenReader: boolean) =>
+      by(catalogue(now({ screenReader })), "terminals:screen-reader")?.title;
+
+    expect(row(false)).toBe("Turn screen-reader mode on");
+    expect(row(true)).toBe("Turn screen-reader mode off");
+  });
+
   it("lists an action that cannot run WITH its reason, rather than dropping it", () => {
     // An operator cannot ask about an option they cannot see — #512, one surface along.
     const offers = catalogue(now());
