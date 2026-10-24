@@ -117,7 +117,7 @@ pub fn offered() -> Vec<OfferedSource> {
 pub struct FirstOpen {
     /// Whether the project has no skill of its own, so the three starts are offered.
     pub starts: bool,
-    /// The offered sources the project does not browse yet.
+    /// The offered sources, less those the project already browses.
     pub sources: Vec<OfferedSource>,
     /// Where the project's skills are still in the old folder: how many, and the fix that moves
     /// them.

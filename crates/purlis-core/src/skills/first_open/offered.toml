@@ -1,3 +1,6 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
 # The skill sources the Skill studio offers with one click (SK-22, #2785; ADR 0100 §1, as
 # amended 2026-10-24). Read by `skills::first_open::offered`, into a closed shape: a line purlis
 # does not read takes the whole list away, and a test fails the build first.
@@ -14,7 +17,7 @@
 # its own review of the exact files, summary first (ADR 0100 §3).
 #
 # `offering` is `catalogue` for purlis's own first-party catalogue (PE-44) or `well-known` for a
-# collection someone else keeps. purlis publishes no catalogue repository yet, so none is listed;
+# collection someone else keeps. purlis publishes no catalogue repository yet (#3120), so none is listed;
 # when it does, it is one more table here.
 
 [[source]]

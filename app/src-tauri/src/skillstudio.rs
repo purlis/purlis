@@ -314,8 +314,8 @@ pub struct StudioFirst {
     /// Whether the project has no skill of its own, so the three starts are offered: make one
     /// with a chat, browse skill sources, start blank.
     pub starts: bool,
-    /// The first-party catalogue and the well-known skill sources the project does not browse
-    /// yet, each taken up with one click through Add source.
+    /// The first-party catalogue and the well-known skill sources, less those the project
+    /// already browses, each taken up with one click through Add source.
     pub sources: Vec<OfferedSource>,
     /// Where the project's skills are still where only some chat programs read them: how many,
     /// and the doctor's fix that moves them (SK-21).
