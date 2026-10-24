@@ -713,10 +713,7 @@ describe("a workspace's settings (charter-app#280, SE-20)", () => {
     await userEvent.click(screen.getByRole("menuitem", { name: "Settings…" }));
 
     expect(await screen.findByRole("heading", { name: "Settings · beta" })).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: "Workspace" })).toHaveAttribute(
-      "aria-checked",
-      "true",
-    );
+    expect(screen.getByRole("radio", { name: "Workspace" })).toBeChecked();
     await vi.waitFor(() =>
       expect(calls("workspace_settings").map((one) => one.args)).toContainEqual({
         plane: PLANE,

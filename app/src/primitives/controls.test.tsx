@@ -20,14 +20,11 @@
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { useState } from "react";
+
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
-import * as Checkbox from "@radix-ui/react-checkbox";
-import * as RadioGroup from "@radix-ui/react-radio-group";
 import * as Select from "@radix-ui/react-select";
-import * as Switch from "@radix-ui/react-switch";
 import { drawnWith } from "../cascade.testkit";
 import { isGeometry } from "../theme/geometry";
 import { MOTION_TOKENS, motionProperty } from "../theme/motion";
@@ -83,8 +80,7 @@ describe("the primitives stylesheet", () => {
   it("reads only tokens: a theme's colours and motion, the core geometry, and its own", () => {
     const colours = new Set(TOKENS.map(property));
     const motion = new Set(MOTION_TOKENS.map(motionProperty));
-    // Its own: a length one primitive works out once (`--ui-switch-track`), and the ones a view
-    // may set for it: none, now that a menu's row is its family's (`ui/menu/menu.css`).
+    // Its own lengths, and the ones a view may set for it: none, now that a menu's row is its family's (`ui/menu/menu.css`).
     const own = new Set([...CSS.matchAll(/^\s+(--[\w-]+):/gm)].map((hit) => hit[1]));
     const fromViews = new Set<string>();
     for (const name of fromViews) expect(sheet("App.css")).toContain(`${name}:`);
@@ -189,146 +185,5 @@ describe("the select", () => {
     expect(picked).toHaveBeenCalledWith("codex");
     expect(trigger).toHaveTextContent("codex");
     expect(screen.queryByRole("listbox")).toBeNull();
-  });
-});
-
-describe("the checkbox", () => {
-  it("draws its box from the control height, with the outside ring, and Space ticks it", async () => {
-    const user = userEvent.setup();
-    render(
-      <>
-        <Checkbox.Root id="live" className="ui-checkbox" tabIndex={0}>
-          <Checkbox.Indicator>✓</Checkbox.Indicator>
-        </Checkbox.Root>
-        <label htmlFor="live">Start it live</label>
-      </>,
-    );
-    const box = screen.getByRole("checkbox", { name: "Start it live" });
-    expect(drawnWith(box, "block-size")).toBe("calc(var(--size-control) * 3 / 7)");
-    expect(drawnWith(box, "outline", { focusVisible: true })).toBe(RING);
-    expect(drawnWith(box, "outline-offset", { focusVisible: true })).toBe(
-      "var(--focus-ring-offset)",
-    );
-    await user.tab();
-    expect(box).toHaveFocus();
-    await user.keyboard(" ");
-    expect(box).toHaveAttribute("aria-checked", "true");
-    expect(drawnWith(box, "border-color")).toBe("var(--accent-base)");
-  });
-});
-
-describe("the radio", () => {
-  it("draws its mark from the control height; the arrows move along it and Space picks", async () => {
-    const user = userEvent.setup();
-    const chose = vi.fn();
-    render(
-      <RadioGroup.Root aria-label="Where it is kept" defaultValue="team" onValueChange={chose}>
-        {["team", "machine"].map((one) => (
-          <span key={one}>
-            <RadioGroup.Item id={one} value={one} className="ui-radio">
-              <RadioGroup.Indicator className="ui-radio-mark" />
-            </RadioGroup.Item>
-            <label htmlFor={one}>{one}</label>
-          </span>
-        ))}
-      </RadioGroup.Root>,
-    );
-    const group = screen.getByRole("radiogroup", { name: "Where it is kept" });
-    const team = within(group).getByRole("radio", { name: "team" });
-    expect(drawnWith(team, "block-size")).toBe("calc(var(--size-control) * 3 / 7)");
-    expect(drawnWith(team, "outline", { focusVisible: true })).toBe(RING);
-    await user.tab();
-    expect(team).toHaveFocus();
-    await user.keyboard("{ArrowDown}");
-    const machine = within(group).getByRole("radio", { name: "machine" });
-    expect(machine).toHaveFocus();
-    // Radix checks a radio the arrows land on in a browser, through a click it sends on focus;
-    // jsdom does not run that path (the settings set picks on focus itself, `useArrowPick`).
-    // Space picks everywhere.
-    await user.keyboard(" ");
-    expect(machine).toHaveAttribute("aria-checked", "true");
-    expect(chose).toHaveBeenLastCalledWith("machine");
-  });
-});
-
-describe("the switch", () => {
-  it("is half a control tall, with the outside ring, and Space and Enter turn it", async () => {
-    const user = userEvent.setup();
-    render(
-      <>
-        <Switch.Root id="sound" className="ui-switch" tabIndex={0}>
-          <Switch.Thumb className="ui-switch-thumb" />
-        </Switch.Root>
-        <label htmlFor="sound">Play a sound</label>
-      </>,
-    );
-    const toggle = screen.getByRole("switch", { name: "Play a sound" });
-    expect(drawnWith(toggle, "--ui-switch-track")).toBe("calc(var(--size-control) / 2)");
-    expect(drawnWith(toggle, "block-size")).toBe("var(--ui-switch-track)");
-    expect(drawnWith(toggle, "outline", { focusVisible: true })).toBe(RING);
-    await user.tab();
-    expect(toggle).toHaveFocus();
-    expect(toggle).toHaveAttribute("aria-checked", "false");
-    await user.keyboard(" ");
-    expect(toggle).toHaveAttribute("aria-checked", "true");
-    // On is said by the thumb's place and the accent, not by colour alone.
-    expect(drawnWith(toggle, "border-color")).toBe("var(--accent-base)");
-    await user.keyboard("{Enter}");
-    expect(toggle).toHaveAttribute("aria-checked", "false");
-  });
-});
-
-describe("the segmented control", () => {
-  function Levels({ small = false }: { small?: boolean }) {
-    const [level, setLevel] = useState("project");
-    return (
-      <RadioGroup.Root
-        aria-label="Level"
-        orientation="horizontal"
-        className={small ? "ui-segmented ui-segmented-sm" : "ui-segmented"}
-        value={level}
-        onValueChange={setLevel}
-      >
-        {["project", "workspace", "you"].map((one) => (
-          <RadioGroup.Item key={one} value={one} className="ui-segmented-item">
-            {one}
-          </RadioGroup.Item>
-        ))}
-      </RadioGroup.Root>
-    );
-  }
-
-  it("is one control height, the chrome height small, its ring inside each segment", () => {
-    const { unmount } = render(<Levels />);
-    const group = screen.getByRole("radiogroup", { name: "Level" });
-    expect(drawnWith(group, "block-size")).toBe("var(--size-control)");
-    const segment = within(group).getByRole("radio", { name: "project" });
-    expect(drawnWith(segment, "outline", { focusVisible: true })).toBe(RING);
-    expect(drawnWith(segment, "outline-offset", { focusVisible: true })).toBe(
-      "var(--focus-ring-inset)",
-    );
-    expect(drawnWith(segment, "background")).toBe("var(--accent-surface)");
-    unmount();
-    render(<Levels small />);
-    expect(drawnWith(screen.getByRole("radiogroup", { name: "Level" }), "block-size")).toBe(
-      "var(--size-chrome)",
-    );
-  });
-
-  it("moves along with the arrows, picks with Space, and says which segment is chosen", async () => {
-    const user = userEvent.setup();
-    render(<Levels />);
-    await user.tab();
-    const group = screen.getByRole("radiogroup", { name: "Level" });
-    expect(within(group).getByRole("radio", { name: "project" })).toHaveFocus();
-    await user.keyboard("{ArrowRight}");
-    const workspace = within(group).getByRole("radio", { name: "workspace" });
-    expect(workspace).toHaveFocus();
-    await user.keyboard(" ");
-    expect(workspace).toHaveAttribute("aria-checked", "true");
-    expect(within(group).getByRole("radio", { name: "project" })).toHaveAttribute(
-      "aria-checked",
-      "false",
-    );
   });
 });

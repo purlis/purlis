@@ -240,8 +240,8 @@ describe("the Chats list's words wear text roles (#1920)", () => {
   });
 
   it("draws the switch's line in the secondary's size", () => {
-    // The switch has a fixed size of its own (`.ui-levels-small`, `--font-size-2xs`, #2319), so
-    // this line's size no longer sets it; the line is the notes', the secondary's.
+    // The switch has a fixed size of its own (the segmented control's `sm`, #2907), so this
+    // line's size no longer sets it; the line is the notes', the secondary's.
     const section = draw();
 
     expect(named(drawnWith(section.querySelector(".chats-top") as Element, "font-size"))).toBe(

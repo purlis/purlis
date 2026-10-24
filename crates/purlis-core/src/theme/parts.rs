@@ -76,7 +76,7 @@ use super::{Complaint, ResolvedTheme, stringify};
 
 /// **The manifest's version**: it grows when a family, a part, a variant or a property is added,
 /// and never takes one away.
-pub const VERSION: u32 = 10;
+pub const VERSION: u32 = 11;
 
 /// The least height a control keeps, in px at the default text size: WCAG 2.2's target size.
 pub const LEAST_TARGET: f64 = 24.0;
@@ -510,6 +510,13 @@ impl Family {
             .iter()
             .find(|(one, _)| *one == name)
             .map(|(_, token)| *token)
+    }
+
+    /// The colour `part`'s words are drawn in by default, for the tests that hold it to a
+    /// family's stylesheet.
+    #[cfg(test)]
+    pub(super) fn own_words_of(&self, part: usize) -> Option<&'static str> {
+        self.own_words(part)
     }
 
     /// The colour `part`'s words are drawn in by default, when it is not the root's.
@@ -1067,6 +1074,13 @@ pub const MANIFEST: &[Family] = &[
     // **The project rail** (#2915): a button per project at the window's left.
     shell::RAIL,
     activity::ACTIVITY,
+    choice::CHECKBOX,
+    choice::RADIO,
+    choice::SWITCH,
+    choice::SEGMENTED_CONTROL,
+    choice::SEGMENT,
+    choice::SLIDER,
+    choice::OPTION_CARD,
 ];
 
 /// The popover and menu families (#2909): the surface a popover and a menu stand on, and a
@@ -1082,6 +1096,11 @@ mod shell;
 /// The dialog family (#2910).
 #[path = "parts_dialog.rs"]
 mod dialog;
+
+/// The choice families (#2907): checkbox, radio, switch, segmented control and segment, slider
+/// and option card.
+#[path = "parts_choice.rs"]
+mod choice;
 #[cfg(test)]
 pub(super) use dialog::DIALOG_TIERS;
 

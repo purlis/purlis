@@ -1405,13 +1405,15 @@ export const PlantedFar = () => <div style={plantedFar} />;
     expect(componentLiterals(tsx)).toEqual(["style top: 3", 'style insetInlineEnd: "0.3rem"']);
   });
 
-  it("gives the step under the words' floor to the scope switch alone (#2319)", () => {
+  it("gives the step under the words' floor to nothing, now the scope switch is a family's (#2907)", () => {
     const readers = [...sheets()].flatMap(([file, text]) =>
       declarations(text)
         .filter(({ value }) => value.includes("--font-size-2xs"))
         .map(({ context }) => `${file} ${context.join(" › ")}`),
     );
-    expect(readers).toEqual(["App.css .ui-levels-small"]);
+    // The scope switch read it (#2319) until it became the segmented control's `sm`, whose words
+    // are the small step.
+    expect(readers).toEqual([]);
     const views = sourceFiles(isView).filter((file) => read(file).includes("--font-size-2xs"));
     expect(views).toEqual([]);
   });

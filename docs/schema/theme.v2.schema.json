@@ -393,7 +393,7 @@
       }
     },
     "parts": {
-      "description": "Component parts (manifest version 10): keys <family>.<part>[.<variant>][.<state>].<property>, the state at rest implied. A property not named is the family default. Inside a state only fill, text, border-colour and shadow may be set, and a tab's flare and hover inset: a state never changes a part's size. `purlis theme parts` lists every family, part, state and property with its bounds.",
+      "description": "Component parts (manifest version 11): keys <family>.<part>[.<variant>][.<state>].<property>, the state at rest implied. A property not named is the family default. Inside a state only fill, text, border-colour and shadow may be set, and a tab's flare and hover inset: a state never changes a part's size. `purlis theme parts` lists every family, part, state and property with its bounds.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -5430,6 +5430,1059 @@
         },
         "activity.indicator.bar.focused.fill": {
           "$ref": "#/$defs/part-fill"
+        },
+        "checkbox.root.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "checkbox.root.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.root.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "checkbox.root.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "checkbox.root.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "checkbox.root.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.root.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "checkbox.root.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.root.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "checkbox.root.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.root.disabled.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "checkbox.root.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.root.box.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "checkbox.root.box.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.root.box.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "checkbox.root.box.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "checkbox.root.box.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "checkbox.root.box.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.root.box.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "checkbox.root.box.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.root.box.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "checkbox.root.box.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.root.box.disabled.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "checkbox.root.box.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.root.chip.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "checkbox.root.chip.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.root.chip.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "checkbox.root.chip.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "checkbox.root.chip.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "checkbox.root.chip.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.root.chip.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "checkbox.root.chip.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.root.chip.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "checkbox.root.chip.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.root.chip.disabled.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "checkbox.root.chip.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.box.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "checkbox.box.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "checkbox.box.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "checkbox.box.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "checkbox.box.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "checkbox.box.hover.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "checkbox.box.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "checkbox.box.selected.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "checkbox.box.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "checkbox.box.focused.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "checkbox.box.disabled.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "checkbox.box.disabled.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "checkbox.box.box.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "checkbox.box.box.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "checkbox.box.box.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "checkbox.box.box.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "checkbox.box.box.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "checkbox.box.box.hover.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "checkbox.box.box.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "checkbox.box.box.selected.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "checkbox.box.box.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "checkbox.box.box.focused.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "checkbox.box.box.disabled.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "checkbox.box.box.disabled.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "checkbox.box.chip.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "checkbox.box.chip.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "checkbox.box.chip.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "checkbox.box.chip.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "checkbox.box.chip.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "checkbox.box.chip.hover.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "checkbox.box.chip.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "checkbox.box.chip.selected.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "checkbox.box.chip.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "checkbox.box.chip.focused.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "checkbox.box.chip.disabled.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "checkbox.box.chip.disabled.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "checkbox.label.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.label.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "checkbox.label.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "checkbox.label.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.label.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.label.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.label.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.label.box.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.label.box.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "checkbox.label.box.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "checkbox.label.box.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.label.box.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.label.box.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.label.box.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.label.chip.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.label.chip.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "checkbox.label.chip.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "checkbox.label.chip.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.label.chip.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.label.chip.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.label.chip.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.description.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.description.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "checkbox.description.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.description.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.description.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.description.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.description.box.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.description.box.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "checkbox.description.box.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.description.box.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.description.box.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.description.box.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.description.chip.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.description.chip.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "checkbox.description.chip.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.description.chip.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.description.chip.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.description.chip.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "radio.root.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "radio.root.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "radio.root.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "radio.root.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "radio.root.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "radio.root.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "radio.mark.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "radio.mark.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "radio.mark.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "radio.mark.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "radio.mark.hover.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "radio.mark.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "radio.mark.selected.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "radio.mark.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "radio.mark.focused.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "radio.mark.disabled.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "radio.mark.disabled.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "radio.label.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "radio.label.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "radio.label.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "radio.label.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "radio.label.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "radio.label.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "radio.label.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "radio.description.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "radio.description.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "radio.description.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "radio.description.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "radio.description.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "radio.description.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "switch.root.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "switch.root.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "switch.root.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "switch.root.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "switch.root.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "switch.root.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "switch.track.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "switch.track.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "switch.track.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "switch.track.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "switch.track.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "switch.track.disabled.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "switch.thumb.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "switch.thumb.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "switch.thumb.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "switch.thumb.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "switch.thumb.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "switch.thumb.disabled.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "switch.label.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "switch.label.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "switch.label.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "switch.label.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "switch.label.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "switch.label.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "switch.label.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "segmented-control.root.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "segmented-control.root.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "segmented-control.root.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "segmented-control.root.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "segmented-control.root.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "segment.root.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "segment.root.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "segment.root.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "segment.root.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "segment.root.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "segment.root.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "segment.root.hover.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "segment.root.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "segment.root.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "segment.root.selected.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "segment.root.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "segment.root.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "segment.root.focused.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "segment.root.disabled.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "segment.root.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "segment.root.disabled.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "segment.label.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "segment.label.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "segment.label.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "segment.label.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "segment.label.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "segment.count.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "segment.count.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "segment.count.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "segment.count.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "segment.count.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "slider.root.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "slider.root.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "slider.root.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "slider.track.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "slider.track.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "slider.track.disabled.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "slider.fill.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "slider.fill.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "slider.fill.disabled.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "slider.thumb.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "slider.thumb.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "slider.thumb.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "slider.thumb.disabled.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "slider.thumb.disabled.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "slider.output.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "slider.output.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.root.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "option-card.root.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.root.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "option-card.root.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "option-card.root.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "option-card.root.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "option-card.root.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "option-card.root.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "option-card.root.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.root.hover.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "option-card.root.hover.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "option-card.root.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "option-card.root.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.root.selected.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "option-card.root.selected.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "option-card.root.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "option-card.root.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.root.focused.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "option-card.root.focused.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "option-card.root.disabled.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "option-card.root.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.root.disabled.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "option-card.root.disabled.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "option-card.root.card.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "option-card.root.card.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.root.card.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "option-card.root.card.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "option-card.root.card.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "option-card.root.card.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "option-card.root.card.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "option-card.root.card.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "option-card.root.card.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.root.card.hover.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "option-card.root.card.hover.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "option-card.root.card.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "option-card.root.card.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.root.card.selected.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "option-card.root.card.selected.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "option-card.root.card.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "option-card.root.card.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.root.card.focused.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "option-card.root.card.focused.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "option-card.root.card.disabled.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "option-card.root.card.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.root.card.disabled.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "option-card.root.card.disabled.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "option-card.root.tile.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "option-card.root.tile.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.root.tile.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "option-card.root.tile.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "option-card.root.tile.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "option-card.root.tile.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "option-card.root.tile.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "option-card.root.tile.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "option-card.root.tile.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.root.tile.hover.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "option-card.root.tile.hover.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "option-card.root.tile.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "option-card.root.tile.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.root.tile.selected.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "option-card.root.tile.selected.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "option-card.root.tile.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "option-card.root.tile.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.root.tile.focused.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "option-card.root.tile.focused.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "option-card.root.tile.disabled.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "option-card.root.tile.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.root.tile.disabled.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "option-card.root.tile.disabled.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "option-card.icon.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.icon.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.icon.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.icon.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.icon.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.icon.card.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.icon.card.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.icon.card.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.icon.card.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.icon.card.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.icon.tile.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.icon.tile.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.icon.tile.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.icon.tile.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.icon.tile.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.title.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.title.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "option-card.title.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "option-card.title.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.title.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.title.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.title.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.title.card.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.title.card.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "option-card.title.card.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "option-card.title.card.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.title.card.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.title.card.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.title.card.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.title.tile.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.title.tile.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "option-card.title.tile.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "option-card.title.tile.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.title.tile.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.title.tile.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.title.tile.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.detail.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.detail.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "option-card.detail.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.detail.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.detail.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.detail.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.detail.card.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.detail.card.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "option-card.detail.card.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.detail.card.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.detail.card.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.detail.card.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.detail.tile.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.detail.tile.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "option-card.detail.tile.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.detail.tile.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.detail.tile.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.detail.tile.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.check.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.check.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.check.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.check.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.check.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.check.card.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.check.card.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.check.card.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.check.card.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.check.card.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.check.tile.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.check.tile.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.check.tile.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.check.tile.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "option-card.check.tile.disabled.text": {
+          "$ref": "#/$defs/part-text"
         }
       }
     }

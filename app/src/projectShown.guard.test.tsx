@@ -37,10 +37,7 @@ afterEach(cleanup);
 /** Each Radix package the window draws with, and whether what it draws is over the window. */
 const KINDS: Record<string, "over" | "says nothing to answer" | "in place"> = {
   "@radix-ui/react-select": "over",
-  "@radix-ui/react-checkbox": "in place",
-  "@radix-ui/react-radio-group": "in place",
   "@radix-ui/react-roving-focus": "in place",
-  "@radix-ui/react-switch": "in place",
 };
 
 /** The files that put something outside where they are drawn, by React's own portal. */

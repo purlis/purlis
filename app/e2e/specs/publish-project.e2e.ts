@@ -119,9 +119,7 @@ describe("publishing a project that lives only on this machine", function () {
       { timeout: 20_000, timeoutMsg: "the owner picker never offered the account" },
     );
     expect(await $(NAME_BOX).getValue()).toBe("notebook");
-    expect(
-      await $(`${DIALOG} button[role="radio"][value="private"]`).getAttribute("aria-checked"),
-    ).toBe("true");
+    expect(await $(`${DIALOG} input[type="radio"][value="private"]`).isSelected()).toBe(true);
 
     await press(DIALOG, "Publish");
     await untilSays(DIALOG, "Published to https://github.com/octocat/notebook", true, 90_000);

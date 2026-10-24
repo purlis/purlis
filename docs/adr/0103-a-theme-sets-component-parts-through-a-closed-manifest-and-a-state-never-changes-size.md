@@ -148,4 +148,5 @@ reaches it.
 
 The amendments to this decision are files of their own in [`0103/`](0103/), one per
 amendment, named `<yyyy-mm-dd>-<slug>.md`. The latest:
-[2026-10-22, the dialog family is a surface](0103/2026-10-22-the-dialog-family-is-a-surface.md).
+[2026-10-22, the dialog family is a surface](0103/2026-10-22-the-dialog-family-is-a-surface.md);
+[2026-10-24, the choice families join the manifest](0103/2026-10-24-the-choice-families-join-the-manifest.md).

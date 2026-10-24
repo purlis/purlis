@@ -64,10 +64,10 @@ async function goTo(level: string, group: string): Promise<void> {
   await browser.execute((called: string) => {
     const radio = [
       ...document.querySelectorAll<HTMLElement>(
-        '[role="radiogroup"][aria-label="Level"] [role="radio"]',
+        '[role="radiogroup"][aria-label="Level"] input[type="radio"]',
       ),
-    ].find((one) => one.textContent?.trim() === called);
-    if (radio?.getAttribute("aria-checked") !== "true") radio?.click();
+    ].find((one) => one.closest("label")?.textContent?.trim() === called);
+    if ((radio as HTMLInputElement | undefined)?.checked !== true) radio?.click();
   }, level);
   await browser.waitUntil(
     async () =>
@@ -363,14 +363,28 @@ describe("the limits' lines and the set's native controls, in the real WebView",
     await goTo("You", "Text");
     const range = 'input[type="range"]';
     await $(range).waitForExist({ timeout: 20_000 });
-    for (const key of ["ArrowRight", "ArrowLeft"]) {
+    const value = () =>
+      browser.execute(
+        (which: string) => document.querySelector<HTMLInputElement>(which)?.valueAsNumber ?? NaN,
+        range,
+      );
+    for (const [key, step] of [
+      ["ArrowRight", 1],
+      ["ArrowLeft", -1],
+    ] as const) {
+      const was = await value();
       const seen = await aKeyReaches(range, key);
-      expect({ key, ...seen }).toEqual({
+      // The slider family's thumb takes its arrow key and keeps it (React Aria's slider, #2907):
+      // it moves the value, and nothing above it, a window shortcut included, acts on the key.
+      expect({ key, atControl: seen.atControl, stillFocused: seen.stillFocused }).toEqual({
         key,
         atControl: true,
-        atWindow: true,
-        prevented: false,
         stillFocused: true,
+      });
+      expect(seen.prevented).toBe(false);
+      await browser.waitUntil(async () => (await value()) === was + step, {
+        timeout: 5_000,
+        timeoutMsg: `${key} never moved the text size by a step`,
       });
     }
   });
