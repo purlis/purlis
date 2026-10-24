@@ -5,6 +5,7 @@ import { browser, expect } from "@wdio/globals";
 import { closeMenus, openMenuOn } from "../acting.js";
 import { menuNames, pressMenuPath, ROW, SUB } from "../menus.js";
 import { SELECTED_TAB, endChatsStartedHere, startAChat, type Started } from "../started.js";
+import { theWindowHoldsTheRail, WINDOW_1280, windowAt } from "../rail.js";
 
 /**
  * **A chat tab's menu, measured in the real WebView.**
@@ -118,6 +119,11 @@ function notedForNothing(drawn: Measured): string[] {
 }
 
 describe("a chat tab's menu", () => {
+  // At 1280×800, where this was held to fit before the default window grew (`rail.ts`,
+  // #3077); the project rail hides itself there beside both sidebars.
+  before(() => windowAt(WINDOW_1280));
+  after(() => theWindowHoldsTheRail());
+
   let mine: Started | undefined;
 
   before(async () => {

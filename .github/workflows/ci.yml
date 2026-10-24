@@ -911,7 +911,7 @@ jobs:
   # runner the job took 15 minutes, 7 of them building on macOS's slow runner and 6 running the
   # specs one at a time, longer than any other job but `rust` (2026-10-10). Each part builds for
   # itself, as `rust`'s do. Part 1 also builds the app as it ships (`app`, for `app builds
-  # (macos-latest)`) and runs the five runs that each need an app of their own (`extras`): part
+  # (macos-latest)`) and runs the seven runs that each need an app of their own (`extras`): part
   # 2's half of the specs is the heavier, 13 to 16 minutes against part 1's 7 to 11 (2026-10-12).
   # `scenario-checks` carries the required check's name. Linux has the same steps, in
   # `scenario-linux`.
@@ -1119,6 +1119,17 @@ jobs:
         run: xvfb-run -a npm run e2e:picked
         if: runner.os == 'Linux' && matrix.extras
         working-directory: app
+      # The project rail's show and keep, which hold over its own hide for the rest of a launch
+      # (#3077). Its own run, because the base run measures narrow windows with the rail as the
+      # window draws it, in the one app process a run keeps.
+      - name: The project rail
+        run: npm run e2e:rail
+        if: runner.os == 'macOS' && matrix.extras
+        working-directory: app
+      - name: The project rail
+        run: xvfb-run -a npm run e2e:rail
+        if: runner.os == 'Linux' && matrix.extras
+        working-directory: app
       # The app launched over an old charter install, and the launch's migration it runs
       # (RN-10). Its own run, because the old install has to be on disk before the one app
       # process a run keeps is started, and this is the one app that migrates at launch.
@@ -1186,7 +1197,7 @@ jobs:
 
   # Its own job, not a leg of `scenario`'s matrix, so that `scenario-checks` waits on macOS
   # alone. Two parts too, since its specs alone took 7.8 minutes of 12.7 (2026-10-12); Linux
-  # runners are not the ones in short supply. Part 2 runs the five single-app runs, as on macOS.
+  # runners are not the ones in short supply. Part 2 runs the seven single-app runs, as on macOS.
   scenario-linux:
     name: scenario tests (${{ matrix.os }}, part ${{ matrix.shard }} of ${{ matrix.shards }})
     strategy:

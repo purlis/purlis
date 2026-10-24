@@ -6,7 +6,6 @@ import { dirname, join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import { anEmptyRecord, copyFixturePlane } from "../harness.js";
 import { ask, inFront, openFromTheStrip, PROJECTS } from "../switching.js";
-import { railHidden } from "../rail.js";
 
 /**
  * **Settings' tables keep each heading on one line, whole, in the real WebView** (DS-9, #1841;
@@ -217,10 +216,6 @@ function oneLineEach(headings: readonly Heading[]): void {
 }
 
 describe("Settings' tables, in the real WebView", function () {
-  // The work measured with the project rail hidden (`rail.ts`, #2915).
-  before(() => railHidden(true));
-  after(() => railHidden(false));
-
   this.timeout(180_000);
 
   /** The project the launch opened, which this spec never touches. */
@@ -229,10 +224,13 @@ describe("Settings' tables, in the real WebView", function () {
 
   before(async () => {
     was = await browser.getWindowSize();
-    // The default window's size (`settings-limits.e2e.ts` measures the page at it too).
-    await browser.setWindowSize(1280, 800);
     first = (await ask<string[]>("open_planes"))[0];
+    // From the rail's `+`, while the window still holds the rail (`rail.ts`, #3077).
     await openFromTheStrip(mine);
+    // The default window's size (`settings-limits.e2e.ts` measures the page at it too). With both
+    // sidebars open the project rail hides itself there, and the tables are measured with the
+    // rail as the window draws it.
+    await browser.setWindowSize(1280, 800);
 
     await browser.executeAsync((done: () => void) => {
       void window.__TAURI__.event.emit("settings-asked").then(done, done);
@@ -272,6 +270,8 @@ describe("Settings' tables, in the real WebView", function () {
       for (const plane of (await ask<string[]>("open_planes")).filter((one) => one !== first))
         await ask("close_plane", { plane });
     });
+    // The window it found first, which holds the rail the launch's project is pressed on.
+    await tried(() => browser.setWindowSize(was.width, was.height));
     await tried(() =>
       browser.waitUntil(
         async () => {
@@ -289,7 +289,6 @@ describe("Settings' tables, in the real WebView", function () {
         { timeout: 20_000, interval: 250, timeoutMsg: "the launch's project never came back" },
       ),
     );
-    await tried(() => browser.setWindowSize(was.width, was.height));
   });
 
   it("draws every heading of the limits table on one line, whole", async () => {

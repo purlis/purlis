@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { PEEK_DWELL, ProjectRail } from "./ProjectRail";
 import { afterTheSlide, forgetTheSlide, railSliding } from "./railSlide";
-import type { RailMode } from "./railMode";
+import { forgetRailMode, useRailMode, type RailMode } from "./railMode";
 import { inForce } from "./theme/theme";
 
 beforeEach(() => {
@@ -29,7 +29,13 @@ afterEach(() => {
 });
 
 /** The rail with no projects, only its own two actions: what the peek and the slide need. */
-function Window({ mode }: { mode: RailMode }) {
+function Window({
+  mode,
+  onMode = () => {},
+}: {
+  mode: RailMode;
+  onMode?: (mode: RailMode) => void;
+}) {
   const edge = useRef<HTMLDivElement>(null);
   return (
     <>
@@ -44,7 +50,7 @@ function Window({ mode }: { mode: RailMode }) {
         onDrop={() => {}}
         lettingGo={0}
         mode={mode}
-        onMode={() => {}}
+        onMode={onMode}
         edge={edge}
         nameOf={(plane) => plane}
       />
@@ -138,5 +144,76 @@ describe("the project rail's slide (#2915, B1)", () => {
     // And what asks after it runs at once.
     afterTheSlide(refit);
     expect(refit).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("the project rail in a narrow window (#3077)", () => {
+  /** The rail drawn as the window's mode says, which follows the window's width. */
+  function Drawn() {
+    const [mode, onMode] = useRailMode();
+    return <Window mode={mode} onMode={onMode} />;
+  }
+  const slot = () => document.querySelector<HTMLElement>('[data-scope="rail"][data-part="slot"]');
+  function windowIs(width: number) {
+    act(() => {
+      Object.defineProperty(window, "innerWidth", {
+        configurable: true,
+        writable: true,
+        value: width,
+      });
+      window.dispatchEvent(new Event("resize"));
+    });
+  }
+  beforeEach(() => forgetRailMode());
+  afterEach(() => {
+    windowIs(1440);
+    forgetRailMode();
+  });
+
+  it("hides and comes back at once as the window narrows and widens, gliding nothing", () => {
+    windowIs(1440);
+    render(<Drawn />);
+    expect(slot()).not.toHaveAttribute("data-hidden");
+    windowIs(1024);
+    expect(slot()).toHaveAttribute("data-hidden");
+    // Drawn with no transition, and nothing waits for a slide that does not run.
+    expect(slot()).toHaveAttribute("data-settling");
+    expect(railSliding()).toBe(false);
+    act(() => void vi.runAllTimers());
+    windowIs(1440);
+    expect(slot()).not.toHaveAttribute("data-hidden");
+    expect(railSliding()).toBe(false);
+  });
+
+  it("slides for the person's own show in a narrow window, and stays", () => {
+    windowIs(1024);
+    render(<Drawn />);
+    expect(slot()).toHaveAttribute("data-hidden");
+    // The title bar's show is App's; the rail's Keep from its peek is the same press.
+    act(() => void fireEvent.pointerMove(document, { clientX: 0, clientY: 0 }));
+    act(() => void vi.advanceTimersByTime(PEEK_DWELL));
+    act(
+      () =>
+        void document.querySelector<HTMLElement>('[data-peek] [data-rail-toggle="keep"]')?.click(),
+    );
+    expect(slot()).not.toHaveAttribute("data-hidden");
+    windowIs(1440);
+    windowIs(1024);
+    expect(slot()).not.toHaveAttribute("data-hidden");
+  });
+
+  it("hands the keyboard to the title bar's show when the window hides the rail it was in", () => {
+    windowIs(1440);
+    render(
+      <>
+        <button data-rail-show="">Show the projects sidebar</button>
+        <Drawn />
+      </>,
+    );
+    const hide = document.querySelector<HTMLElement>('[data-rail-toggle="hide"]');
+    act(() => hide?.focus());
+    expect(hide).toHaveFocus();
+    windowIs(1024);
+    expect(document.querySelector("[data-rail-show]")).toHaveFocus();
   });
 });

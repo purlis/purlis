@@ -31,6 +31,7 @@ import { useTabIds } from "./StripTablist";
 import { motionReduced } from "./theme/motion";
 import { inForce } from "./theme/theme";
 import { railSliding, slideEnded, slideStarted } from "./railSlide";
+import { useRailCrowded } from "./railRoom";
 import {
   Rail,
   RailAction,
@@ -72,6 +73,9 @@ import type { RailMode } from "./railMode";
  *   the one ease while the rail slides out and fades over `duration.leave`, and the work column
  *   glides with it; showing is the reverse. Under reduced motion both are instant (R85). Pinned
  *   from the peek, it settles in its column without sliding again (R88).
+ * - **It never crowds the work** (#3077, `railRoom.ts`): in a window too narrow for it, `mode` is
+ *   auto-hide though the person left it shown, and it comes back as the window widens. That hide
+ *   and show are the window's, so they are drawn at once, with no slide.
  */
 export function ProjectRail({
   projects,
@@ -130,12 +134,30 @@ export function ProjectRail({
     };
   }, [settling]);
 
+  // Hidden or shown by the window, not the person (`railRoom.ts`, #3077): the window was resized,
+  // or a sidebar opened or put away, and the rail follows that change at once rather than
+  // gliding the work after it.
+  const crowded = useRailCrowded();
+  const [crowdedAs, setCrowdedAs] = useState(crowded);
+  const byTheWindow = crowdedAs !== crowded;
+  if (byTheWindow) setCrowdedAs(crowded);
+
   // The column starts to open or close: what fits itself to the work waits for the end (B1). Not
-  // when it settles from the peek, and not under reduced motion, which slide nothing.
+  // when it settles from the peek or follows the window, and not under reduced motion, which
+  // slide nothing.
   if (settledAs !== hidden) {
     setSettledAs(hidden);
-    if (!settling && !motionReduced()) slideStarted();
+    if (byTheWindow) setSettling(true);
+    else if (!settling && !motionReduced()) slideStarted();
   }
+  // Hidden by the window with the keyboard in it: the keyboard goes where the person's own hide
+  // sends it, the title bar's show, before the rail is out of reach and drops it.
+  useLayoutEffect(() => {
+    if (!hidden) return;
+    const slot = document.querySelector('[data-scope="rail"][data-part="slot"]');
+    if (slot?.contains(document.activeElement))
+      document.querySelector<HTMLElement>("[data-rail-show]")?.focus({ preventScroll: true });
+  }, [hidden]);
   useEffect(() => {
     if (!railSliding()) return;
     // Its length, should the column's transition never say it ended (a hidden window).

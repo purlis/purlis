@@ -7,6 +7,7 @@ import { pressAndStart } from "../opening.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
 import { bringSideBack, putSideAway, sideIsAway } from "../sides.js";
 import { gutter } from "../gutter.js";
+import { theWindowHoldsTheRail, WINDOW_1280, windowAt } from "../rail.js";
 
 /**
  * **A terminal fills the centre region, top to bottom** — with one pane, with a split, and
@@ -155,6 +156,11 @@ async function navigationBack(): Promise<void> {
 }
 
 describe("the terminal in the centre region", () => {
+  // At 1280×800, where this was held to fit before the default window grew (`rail.ts`,
+  // #3077); the project rail hides itself there beside both sidebars.
+  before(() => windowAt(WINDOW_1280));
+  after(() => theWindowHoldsTheRail());
+
   /** The tabs that were already there: the strip is back to them once this file's chats end. */
   let wereAlreadyOpen: string[] = [];
   /** The chats running when the file began, so only the ones it started are ended again. */
