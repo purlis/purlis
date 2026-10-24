@@ -164,7 +164,10 @@ fn skill_list_json_gives_each_harness_its_skills_with_owner_and_switch() {
     };
     let tool = skill("tool");
     assert_eq!(tool["level"], "repo");
-    assert_eq!(tool["owner"], serde_json::json!({"kind": "repo", "name": "app"}));
+    assert_eq!(
+        tool["owner"],
+        serde_json::json!({"kind": "repo", "name": "app"})
+    );
     assert_eq!(tool["switch"], serde_json::json!({"kind": "alone"}));
     assert_eq!(tool["on"], true);
     let quiet = skill("quiet");

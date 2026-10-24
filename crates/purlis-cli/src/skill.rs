@@ -14,10 +14,10 @@
 use std::path::Path;
 
 use clap::{Args, Subcommand, ValueEnum};
+use purlis_core::harness::Harness;
 use purlis_core::skills::review::escaped as esc;
 use purlis_core::skills::source::{self, Remote, Source, VaultEntry};
 use purlis_core::skills::verbs::{self, By, Level};
-use purlis_core::harness::Harness;
 use purlis_core::skills::{
     Deprecated, Grant, Lifecycle, Owner, StudioRow, Switch, Template, history, lifecycle,
 };
@@ -448,15 +448,15 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             // them (SK-34).
             let list = list_for(workspace.as_deref(), persona.as_deref());
             let found = outside(&list, root);
-            let copies: Vec<(Option<Harness>, &StudioRow)> = list
-                .rows
-                .iter()
-                .map(|row| (None, row))
-                .chain(found.iter().flat_map(|(harness, rows)| {
-                    rows.iter().map(move |row| (Some(*harness), row))
-                }))
-                .filter(|(_, row)| row.name == name)
-                .collect();
+            let copies: Vec<(Option<Harness>, &StudioRow)> =
+                list.rows
+                    .iter()
+                    .map(|row| (None, row))
+                    .chain(found.iter().flat_map(|(harness, rows)| {
+                        rows.iter().map(move |row| (Some(*harness), row))
+                    }))
+                    .filter(|(_, row)| row.name == name)
+                    .collect();
             if copies.is_empty() {
                 voice::err(&format!(
                     "No skill is named {name:?} here. `purlis skill list` lists every one."
@@ -1511,10 +1511,7 @@ fn table(rows: &[StudioRow]) -> String {
 
 /// Each harness in the studio, in the registry's order, with the rows of the skills it finds
 /// itself ([`purlis_core::skills::outside_rows`]).
-fn outside(
-    list: &purlis_core::skills::StudioList,
-    root: &Path,
-) -> Vec<(Harness, Vec<StudioRow>)> {
+fn outside(list: &purlis_core::skills::StudioList, root: &Path) -> Vec<(Harness, Vec<StudioRow>)> {
     list.harnesses
         .iter()
         .map(|one| (one.harness, purlis_core::skills::outside_rows(one, root)))
@@ -1554,7 +1551,12 @@ fn outside_json(harness: Harness, row: &StudioRow) -> Value {
 fn outside_table(rows: &[StudioRow]) -> String {
     let owners: Vec<String> = rows
         .iter()
-        .map(|row| row.outside.as_ref().map(|o| owner_shown(&o.owner)).unwrap_or_default())
+        .map(|row| {
+            row.outside
+                .as_ref()
+                .map(|o| owner_shown(&o.owner))
+                .unwrap_or_default()
+        })
         .collect();
     let levels: Vec<String> = rows.iter().map(level).collect();
     let name_w = voice::column(rows.iter().map(|row| row.name.as_str()).chain(["SKILL"]));

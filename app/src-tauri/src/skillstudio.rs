@@ -334,7 +334,10 @@ pub(crate) fn studio(
         .as_deref()
         .map(|ws| purlis_core::skills::turned_off(root, ws))
         .unwrap_or_default();
-    let purlis_core::skills::StudioList { rows, harnesses: all } = purlis_core::skills::studio_list(
+    let purlis_core::skills::StudioList {
+        rows,
+        harnesses: all,
+    } = purlis_core::skills::studio_list(
         built_in,
         root,
         workspace.as_deref(),
