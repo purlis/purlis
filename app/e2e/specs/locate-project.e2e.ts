@@ -100,7 +100,7 @@ describe("Locate… for a remembered project that moved", function () {
     await $(`${WORKSPACES} [role="tab"].plane-root`).waitForExist({ timeout: 30_000 });
 
     // Let go of it, and move it while nothing holds it.
-    const closer = `${PROJECTS} button[aria-label="Close project ${basename(mine)}"]`;
+    const closer = `${PROJECTS} [role="tab"][aria-label="${basename(mine)}"]`;
     await closeProject(closer);
     await browser.waitUntil(async () => !(await ask<string[]>("open_planes")).includes(mine), {
       timeout: 20_000,

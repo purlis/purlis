@@ -37,12 +37,14 @@
 
 use std::path::{Path, PathBuf};
 
+mod beside;
 pub mod budget;
 pub mod change;
 pub mod compat;
 mod declared;
 mod grant;
 pub mod handed;
+pub mod lifecycle;
 pub mod lint;
 mod load;
 mod read;
@@ -52,12 +54,14 @@ pub mod runs;
 mod share;
 mod stamp;
 pub mod tree;
+pub mod uses;
 
 pub use budget::{Budget, Over, Spent};
 pub use compat::{Compat, Field, Fit, Honours, ManualOnly, compat, handed_text, widening_said};
 pub use declared::{Argument, Declared, Given, declared};
 pub use grant::{Grant, grant_file, grant_of, set_grant};
 pub use handed::{Frontmatter, MOST_BYTES, Refusal, read_skill_md};
+pub use lifecycle::{About, Deprecated, Lifecycle, about_of, set_lifecycle, set_owners};
 pub use lint::{BuiltInLints, Finding, Lint, Severity, SkillFiles, SkillLint};
 pub use load::{Loaded, Narrowing, POINTER, by_name, find, load, other_files};
 pub use read::{DIR_IN_BUNDLE, FILE, frontmatter, in_bundle, listing, parsed, read, scan};
@@ -98,7 +102,7 @@ pub enum Route {
 }
 
 /// Where a skill in a chat's set comes from: its level.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Origin {
     /// It ships inside purlis, in the bundled plugin's `skills/`. It cannot be turned off.
     BuiltIn,
@@ -187,6 +191,11 @@ pub struct Chat<'a> {
 /// this crate only asks purlis-core.
 pub type KeptLocal<'a> = dyn Fn(&Path) -> Result<(), String> + Sync + 'a;
 
+/// **Why the skills of a workspace or persona folder reach no chat now** (SK-9), as the end of
+/// a sentence, or `None` where they do. purlis-core asks its records of the running sandboxed
+/// chats; this crate only asks purlis-core.
+pub type MadeSince<'a> = dyn Fn(&Path) -> Option<String> + Sync + 'a;
+
 /// What this machine holds that a chat's skills can come from.
 #[derive(Clone, Copy, Default)]
 pub struct Machine<'a> {
@@ -200,6 +209,9 @@ pub struct Machine<'a> {
     /// declaration reads. `None` where nobody looked: then a harness skill the persona names is
     /// taken as there, and never said to be missing.
     pub harness: Option<&'a [OnMachine]>,
+    /// How to ask whether a workspace's or persona's folder was made while a chat that could
+    /// have made it ran, by the folder. `None` asks nothing: every level is read.
+    pub made_since: Option<&'a MadeSince<'a>>,
 }
 
 impl std::fmt::Debug for Machine<'_> {
@@ -208,6 +220,7 @@ impl std::fmt::Debug for Machine<'_> {
             .field("built_in", &self.built_in)
             .field("kept_local", &self.kept_local.is_some())
             .field("harness", &self.harness)
+            .field("made_since", &self.made_since.is_some())
             .finish()
     }
 }
@@ -221,6 +234,9 @@ pub struct Effective {
     pub origin: Origin,
     /// Whether it is a local skill: kept on this machine, in its level's `skills.local/`.
     pub local: bool,
+    /// Where the skill is deprecated (SK-19, decision 62): it still works, and a router lists it
+    /// after the rest with its replacement (ADR 0102 §2). `None` for a skill in use.
+    pub deprecated: Option<Deprecated>,
 }
 
 /// One skill a chat does not get, and why.
@@ -269,6 +285,12 @@ pub enum Reason {
     /// A harness or repo skill named as one of purlis's built-in skills, which never loses to
     /// any other copy (SK-6): the chat is handed purlis's.
     HiddenByBuiltIn,
+    /// A plane skill its project archived (SK-19, decision 62): it never loads, takes no name
+    /// from another copy, and is restored by making it active again.
+    Archived,
+    /// A workspace or persona skill whose level's folder was made while a chat that could have
+    /// made it was running (SK-9): the sentence that says which, and when it reaches chats.
+    MadeWhileAChatRan(String),
 }
 
 /// What a folder lacks to be a whole skill.
@@ -329,6 +351,10 @@ impl std::fmt::Display for Reason {
             }
             Self::OffForTheHarness => f.write_str("turned off for this project's chats"),
             Self::HiddenByBuiltIn => f.write_str("hidden by purlis's built-in skill of this name"),
+            Self::Archived => {
+                f.write_str("archived: it never loads until it is restored from its tab")
+            }
+            Self::MadeWhileAChatRan(why) => f.write_str(why),
         }
     }
 }
@@ -549,6 +575,7 @@ impl SkillSet {
                     route: Route::Own,
                     origin: one.origin,
                     local: false,
+                    deprecated: None,
                 });
             }
         }
@@ -654,7 +681,11 @@ pub fn skill_set(plane: Option<&Path>, machine: &Machine<'_>, chat: &Chat<'_>) -
         if let Some(persona) = chat.persona {
             for local in [true, false] {
                 if let Some(dir) = persona_dir(plane, persona, local) {
+                    let made = made_since(machine, &plane.join("personas").join(persona));
                     level(&mut set, &dir, (Origin::Persona, local), route, |skill| {
+                        if let Some(why) = &made {
+                            return Some(Reason::MadeWhileAChatRan(why.clone()));
+                        }
                         if local {
                             kept_here(machine, folder_of_skill(skill))
                         } else {
@@ -668,7 +699,11 @@ pub fn skill_set(plane: Option<&Path>, machine: &Machine<'_>, chat: &Chat<'_>) -
         if let Some(ws) = workspace {
             for local in [true, false] {
                 if let Some(dir) = level_dir(plane, Some(ws), local) {
+                    let made = made_since(machine, &plane.join(WORKSPACES_DIR).join(ws));
                     level(&mut set, &dir, (Origin::Workspace, local), route, |skill| {
+                        if let Some(why) = &made {
+                            return Some(Reason::MadeWhileAChatRan(why.clone()));
+                        }
                         if local {
                             kept_here(machine, folder_of_skill(skill))
                         } else {
@@ -702,6 +737,12 @@ pub fn skill_set(plane: Option<&Path>, machine: &Machine<'_>, chat: &Chat<'_>) -
         .sort_by(|a, b| a.skill.name.cmp(&b.skill.name));
     widest_first(&mut set.left_out);
     set
+}
+
+/// Why the levels of the workspace or persona folder `owner` reach no chat, where `machine`
+/// asks (SK-9).
+fn made_since(machine: &Machine<'_>, owner: &Path) -> Option<String> {
+    machine.made_since.and_then(|asked| asked(owner))
 }
 
 /// Why a project skill in `folder`, named `name`, does not reach a chat in `workspace`, which
@@ -848,6 +889,27 @@ fn level(
                 continue;
             }
         };
+        let folder = skill
+            .path
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_default();
+        // An archived copy never loads, and takes no name from a wider one (decision 62).
+        let about = if origin.of_the_plane() {
+            about_of(&folder).unwrap_or_default()
+        } else {
+            About::default()
+        };
+        if about.lifecycle == Lifecycle::Archived {
+            set.left_out.push(LeftOut {
+                name: skill.name,
+                origin,
+                local,
+                folder,
+                reason: Reason::Archived,
+            });
+            continue;
+        }
         let taken = set
             .effective
             .iter()
@@ -868,16 +930,16 @@ fn level(
                 route,
                 origin,
                 local,
+                deprecated: match about.lifecycle {
+                    Lifecycle::Deprecated(deprecated) => Some(deprecated),
+                    _ => None,
+                },
             }),
             Some(reason) => set.left_out.push(LeftOut {
                 name: skill.name,
                 origin,
                 local,
-                folder: skill
-                    .path
-                    .parent()
-                    .map(Path::to_path_buf)
-                    .unwrap_or_default(),
+                folder,
                 reason,
             }),
         }

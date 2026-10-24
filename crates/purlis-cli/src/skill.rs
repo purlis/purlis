@@ -2,13 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! `purlis skill list | show | new | edit | mv | rm | restore | grant | share | install | update |
-//! runs` (SK-2,
-//! #2765; SK-4, #2767; SK-3, #2766; SK-7, #2770): the skills a chat in this project gets, and why
-//! each other one is left out, as the Skill studio shows them; making, editing, renaming, moving,
-//! deleting and restoring a skill, each one commit; where a project skill reaches and what a
-//! workspace turned off; Share; and every run of a skill with its signals. The same verbs the
-//! studio calls (`purlis_core::skills::verbs`). Behind the `skill-studio` flag until its finish
-//! line (#2786).
+//! runs | history | revert | deprecate | archive | owners | uses` (SK-2, #2765; SK-4, #2767; SK-3,
+//! #2766; SK-7, #2770; SK-19, #2782): the skills a chat in this project gets, and why each other one
+//! is left out, as the Skill studio shows them; making, editing, renaming, moving, deleting and
+//! restoring a skill, each one commit; where a project skill reaches and what a workspace turned
+//! off; Share; every run of a skill with its signals; and a skill's history, its lifecycle state,
+//! its owners and the skills it names and is named by. The same verbs the studio calls
+//! (`purlis_core::skills::verbs`, `history`, `lifecycle`, `graph`). Behind the `skill-studio` flag
+//! until its finish line (#2786).
 
 use std::path::Path;
 
@@ -16,7 +17,7 @@ use clap::{Args, Subcommand, ValueEnum};
 use purlis_core::skills::review::escaped as esc;
 use purlis_core::skills::source::{self, Remote, Source, VaultEntry};
 use purlis_core::skills::verbs::{self, By, Level};
-use purlis_core::skills::{Grant, StudioRow, Template};
+use purlis_core::skills::{Deprecated, Grant, Lifecycle, StudioRow, Template, history, lifecycle};
 use serde_json::{Value, json};
 
 use purlis_core::counts::counted;
@@ -200,6 +201,83 @@ pub enum SkillCommand {
         #[command(flatten)]
         at: At,
     },
+    /// A skill's history: every version git holds of it, newest first, with the runs that
+    /// started on each. With `--diff <commit>`, what that version changed.
+    History {
+        /// The skill's name, as `purlis skill list` prints it.
+        name: String,
+        /// Show what this version changed, by its commit.
+        #[arg(long, value_name = "COMMIT")]
+        diff: Option<String>,
+        #[command(flatten)]
+        at: At,
+        /// Answer as JSON, for a chat or a script.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Put a skill back as one version of its history has it, by that version's commit, as one
+    /// commit. Its grant, lifecycle state and owners stay as they are. A version that would widen
+    /// a chat says so and is asked about first.
+    Revert {
+        /// The skill's name, as `purlis skill list` prints it.
+        name: String,
+        /// The version's commit, as `purlis skill history` prints it.
+        commit: String,
+        /// Revert without asking, where the version would widen a chat: for a script that read
+        /// the warning itself.
+        #[arg(long)]
+        yes: bool,
+        #[command(flatten)]
+        at: At,
+    },
+    /// Deprecate a skill: it still works and reaches every chat it did, is listed after the
+    /// rest, and names its replacement. With `--undo`, it is in use again.
+    Deprecate {
+        /// The skill's name, as `purlis skill list` prints it.
+        name: String,
+        /// The skill to use instead.
+        #[arg(long = "for", value_name = "SKILL", conflicts_with = "undo")]
+        replacement: Option<String>,
+        /// Make it in use again.
+        #[arg(long)]
+        undo: bool,
+        #[command(flatten)]
+        at: At,
+    },
+    /// Archive a skill: it never loads, and stays in the project to be restored. With `--undo`,
+    /// it is restored and in use again.
+    Archive {
+        /// The skill's name, as `purlis skill list` prints it.
+        name: String,
+        /// Restore it.
+        #[arg(long)]
+        undo: bool,
+        #[command(flatten)]
+        at: At,
+    },
+    /// Who looks after a skill, for people to know: with names, those become its owners; with
+    /// `--none`, it names none; with neither, its owners are printed.
+    Owners {
+        /// The skill's name, as `purlis skill list` prints it.
+        name: String,
+        /// The owners: logins or emails.
+        #[arg(conflicts_with = "none")]
+        owners: Vec<String>,
+        /// Name no owners.
+        #[arg(long)]
+        none: bool,
+        #[command(flatten)]
+        at: At,
+    },
+    /// The skills a skill's text names (`skills:<name>`, `purlis:<name>`), each marked where no
+    /// skill has that name, and the project's skills that name it.
+    Uses {
+        /// The skill's name, as `purlis skill list` prints it.
+        name: String,
+        /// Answer as JSON, for a chat or a script.
+        #[arg(long)]
+        json: bool,
+    },
     /// Every skill run the project's skill log holds, newest first, with its signals (tool
     /// calls, tool errors, refusals, asks, tokens, time): never a pass or a fail. With a name,
     /// that skill's runs alone.
@@ -268,18 +346,23 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
         return Ok(1);
     }
     let built_in = purlis_core::skills::built_in_here();
-    let writes = !matches!(
-        command,
-        SkillCommand::List { .. }
-            | SkillCommand::Show { .. }
-            | SkillCommand::Restore { name: None }
-            | SkillCommand::Update {
-                name: None,
-                confirm: None,
-                ..
-            }
-            | SkillCommand::Runs { .. }
-    );
+    let reads_owners =
+        matches!(&command, SkillCommand::Owners { owners, none: false, .. } if owners.is_empty());
+    let writes = !reads_owners
+        && !matches!(
+            command,
+            SkillCommand::List { .. }
+                | SkillCommand::Show { .. }
+                | SkillCommand::Restore { name: None }
+                | SkillCommand::Update {
+                    name: None,
+                    confirm: None,
+                    ..
+                }
+                | SkillCommand::Runs { .. }
+                | SkillCommand::History { .. }
+                | SkillCommand::Uses { .. }
+        );
     if writes
         && purlis_core::envvar::var(purlis_core::active::SESSION_ID_ENV)
             .is_some_and(|id| !id.is_empty())
@@ -624,13 +707,234 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             }
             Ok(0)
         }
+        SkillCommand::History {
+            name,
+            diff: Some(commit),
+            at,
+            json,
+        } => match history::diff(root, &at.level(), &name, &commit) {
+            Ok(diff) => {
+                if json {
+                    println!("{}", json!({ "diff": diff }));
+                    return Ok(0);
+                }
+                for line in &diff.unseen {
+                    voice::warn(line);
+                }
+                print!("{}", diff.text);
+                if diff.cut {
+                    voice::info(&format!(
+                        "The diff is cut at {} KiB.",
+                        history::MOST_DIFF / 1024
+                    ));
+                }
+                Ok(0)
+            }
+            Err(why) => {
+                voice::err(&why);
+                Ok(1)
+            }
+        },
+        SkillCommand::History { name, at, json, .. } => {
+            match history::history(root, &at.level(), &name) {
+                Ok(versions) if json => {
+                    println!("{}", json!({ "versions": versions }));
+                    Ok(0)
+                }
+                Ok(versions) => {
+                    print!("{}", versions_table(&name, &versions));
+                    Ok(0)
+                }
+                Err(why) => {
+                    voice::err(&why);
+                    Ok(1)
+                }
+            }
+        }
+        SkillCommand::Revert {
+            name,
+            commit,
+            yes,
+            at,
+        } => {
+            let level = at.level();
+            // The same warning, and the same ask, as the window's confirm (SK-8: purlis still
+            // leaves what widens out when it hands the skill over).
+            match history::revert_widens(root, &level, &name, &commit) {
+                Ok(Some(widens)) => {
+                    voice::warn(&widens);
+                    if !yes && !asked(&format!("Revert {name} to {}?", history::short(&commit))) {
+                        voice::info("Nothing was reverted.");
+                        return Ok(1);
+                    }
+                }
+                Ok(None) => {}
+                Err(why) => {
+                    voice::err(&why);
+                    return Ok(1);
+                }
+            }
+            done(history::revert(&mut cx, &level, &name, &commit))
+        }
+        SkillCommand::Deprecate {
+            name,
+            replacement,
+            undo,
+            at,
+        } => {
+            let lifecycle = if undo {
+                Lifecycle::Active
+            } else {
+                Lifecycle::Deprecated(Deprecated { replacement })
+            };
+            lifecycle_set(&mut cx, &at.level(), &name, &lifecycle)
+        }
+        SkillCommand::Archive { name, undo, at } => {
+            let lifecycle = if undo {
+                Lifecycle::Active
+            } else {
+                Lifecycle::Archived
+            };
+            lifecycle_set(&mut cx, &at.level(), &name, &lifecycle)
+        }
+        SkillCommand::Owners {
+            name,
+            owners,
+            none,
+            at,
+        } => {
+            if owners.is_empty() && !none {
+                return match verbs::text_of(root, &at.level(), &name) {
+                    Ok((folder, _)) => {
+                        let about = purlis_core::skills::about_of(&folder).unwrap_or_default();
+                        if about.owners.is_empty() {
+                            println!("{name} names no owners.");
+                        } else {
+                            println!("{}", about.owners.join("\n"));
+                        }
+                        Ok(0)
+                    }
+                    Err(why) => {
+                        voice::err(&why);
+                        Ok(1)
+                    }
+                };
+            }
+            match lifecycle::set_owners(&mut cx, &at.level(), &name, &owners) {
+                Ok(true) => Ok(0),
+                Ok(false) => {
+                    voice::ok(&format!("{name}'s owners were already those."));
+                    Ok(0)
+                }
+                Err(why) => {
+                    voice::err(&why);
+                    Ok(1)
+                }
+            }
+        }
+        SkillCommand::Uses { name, json } => {
+            let node = purlis_core::skills::graph::uses_of(root, built_in.as_deref(), &name);
+            if json {
+                println!(
+                    "{}",
+                    json!({ "uses": node.uses, "used_by": node.used_by, "cut": node.cut })
+                );
+                return Ok(0);
+            }
+            if node.uses.is_empty() {
+                println!("{name} names no other skill.");
+            }
+            for one in &node.uses {
+                if one.broken {
+                    println!("uses {}  (no skill has this name)", one.said);
+                } else {
+                    println!("uses {}", one.said);
+                }
+            }
+            if node.used_by.is_empty() {
+                println!("No skill of the project names {name}.");
+            }
+            for other in &node.used_by {
+                println!("used by {other}");
+            }
+            if node.cut {
+                voice::info(&format!(
+                    "The project holds more than {} skills, and the rest were not read.",
+                    purlis_core::skills::graph::MOST_SKILLS
+                ));
+            }
+            Ok(0)
+        }
     }
+}
+
+/// Sets a skill's lifecycle state, saying when it already was so.
+fn lifecycle_set(
+    cx: &mut verbs::Ctx<'_>,
+    level: &Level,
+    name: &str,
+    lifecycle: &Lifecycle,
+) -> Result<Code, String> {
+    match lifecycle::set(cx, level, name, lifecycle) {
+        Ok(true) => Ok(0),
+        Ok(false) => {
+            voice::ok(&format!("{name} was already {}.", lifecycle.word()));
+            Ok(0)
+        }
+        Err(why) => {
+            voice::err(&why);
+            Ok(1)
+        }
+    }
+}
+
+/// A skill's versions, one line each: its commit, when, who, its subject and its runs; then the
+/// runs on changes not committed, where there were any.
+fn versions_table(name: &str, history: &history::History) -> String {
+    if history.versions.is_empty() {
+        return format!(
+            "{name} has no history yet: git keeps a skill's versions once the project commits it.\n"
+        );
+    }
+    let mut text = String::new();
+    for version in &history.versions {
+        let when = chrono::DateTime::from_timestamp(i64::try_from(version.at).unwrap_or(0), 0)
+            .map(|at| at.format("%Y-%m-%d %H:%M").to_string())
+            .unwrap_or_default();
+        text.push_str(&format!(
+            "{}  {when}  {}  {}  ({})\n",
+            history::short(&version.commit),
+            version.author,
+            version.subject,
+            runs_said(&version.runs)
+        ));
+    }
+    if history.uncommitted.runs > 0 {
+        text.push_str(&format!(
+            "On changes not committed: {}\n",
+            runs_said(&history.uncommitted)
+        ));
+    }
+    text
+}
+
+/// What runs add up to, as one line says them: signals, never a verdict.
+fn runs_said(totals: &purlis_core::skilluse::Totals) -> String {
+    if totals.runs == 0 {
+        return "no runs".to_owned();
+    }
+    format!(
+        "{}, {}, {}",
+        counted(totals.runs, "run", "runs"),
+        counted(totals.tool_calls, "tool call", "tool calls"),
+        counted(totals.tool_errors, "error", "errors")
+    )
 }
 
 /// The runs, one line each: when, which skill, by whom, what started it, how it ended and its
 /// signals. A run recorded before runs says so, and a run whose end is not logged says it is
 /// open or was not recorded.
-fn runs_table(runs: &[purlis_core::skilluse::Run], name: Option<&str>) -> String {
+fn runs_table(runs: &[purlis_core::skills::StudioRun], name: Option<&str>) -> String {
     if runs.is_empty() {
         return match name {
             Some(name) => format!("No runs of {name} yet.\n"),
@@ -639,8 +943,9 @@ fn runs_table(runs: &[purlis_core::skilluse::Run], name: Option<&str>) -> String
     }
     let lines: Vec<[String; 6]> = runs
         .iter()
-        .map(|run| {
-            let (ended, signals) = match &run.end {
+        .map(|nested| {
+            let run = &nested.run;
+            let (ended, mut signals) = match &run.end {
                 Some(end) => (
                     end.ended.word().to_owned(),
                     [
@@ -661,6 +966,12 @@ fn runs_table(runs: &[purlis_core::skilluse::Run], name: Option<&str>) -> String
                 }
                 None => ("-".to_owned(), "no end recorded".to_owned()),
             };
+            if let Some(parent) = &nested.inside {
+                signals.push_str(&format!("; inside {parent}"));
+            }
+            if !nested.ran.is_empty() {
+                signals.push_str(&format!("; ran {}", nested.ran.join(", ")));
+            }
             [
                 run.started.clone(),
                 run.skill.clone(),

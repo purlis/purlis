@@ -81,6 +81,9 @@ pub struct StudioSkill {
     pub on: bool,
     /// Why it is left out, in one line, where it is.
     pub left_out: Option<String>,
+    /// Where it is left out because a chat could have made its level's folder (SK-9): that
+    /// folder, which Accept takes (`skill_level_accept`).
+    pub accept: Option<String>,
     /// What it does and when to use it: its frontmatter's `description`.
     pub description: String,
     /// Its folder, relative to the project where it is inside it; empty for an installed skill.
@@ -370,6 +373,7 @@ pub(crate) fn studio(
             local: row.local,
             grant: row.grant,
             on: row.left_out.is_none(),
+            accept: row.accept,
             left_out: row.left_out,
             description: row.description,
             folder: row.folder,
@@ -423,6 +427,7 @@ fn outside_shown(row: purlis_core::skills::StudioRow) -> StudioSkill {
         local: row.local,
         grant: row.grant,
         on: row.left_out.is_none(),
+        accept: row.accept,
         left_out: row.left_out,
         description: row.description,
         folder: row.folder,
@@ -507,6 +512,10 @@ pub enum RunStart {
     McpLoad,
     /// The person picked it in Use skill… and sent the prompt it was typed into.
     UseSkill,
+    /// A curation action typed the prompt the person sent.
+    Curation,
+    /// A trigger sent the prompt.
+    Trigger,
     /// A start a newer purlis wrote.
     Unknown,
 }
@@ -519,6 +528,8 @@ impl From<purlis_core::skills::runs::StartedBy> for RunStart {
             StartedBy::Read => RunStart::Read,
             StartedBy::McpLoad => RunStart::McpLoad,
             StartedBy::UseSkill => RunStart::UseSkill,
+            StartedBy::Curation => RunStart::Curation,
+            StartedBy::Trigger => RunStart::Trigger,
             _ => RunStart::Unknown,
         }
     }
@@ -571,16 +582,30 @@ pub struct StudioRun {
     pub asks: Option<u32>,
     /// Tokens spent inside it, where the harness reported them.
     pub tokens: Option<u32>,
+    /// The skill whose run this one started inside, where it is a child span (SK-19).
+    pub inside: Option<String>,
+    /// The skills whose runs started inside this one, each once (SK-19).
+    pub ran: Vec<String>,
+    /// What it ran on, as a person calls it (`Claude Code`), or null where its start does not
+    /// say.
+    pub ran_on: Option<String>,
+}
+
+/// A count as the window's bindings carry it: at most `u32::MAX`.
+pub(crate) fn small(n: u64) -> u32 {
+    u32::try_from(n).unwrap_or(u32::MAX)
 }
 
 /// Every run of `skill` the project at `root` has recorded, newest first, at most `limit`.
 pub(crate) fn runs(root: &std::path::Path, skill: &str, limit: usize) -> Vec<StudioRun> {
-    let small = |n: u64| u32::try_from(n).unwrap_or(u32::MAX);
     purlis_core::skills::studio_runs(root, Some(skill), limit)
         .into_iter()
-        .map(|run| {
+        .map(|nested| {
+            let run = &nested.run;
             let end = run.end.as_ref();
             StudioRun {
+                inside: nested.inside.clone(),
+                ran: nested.ran.clone(),
                 id: run.id.clone(),
                 skill: run.skill.clone(),
                 persona: run.persona.clone(),
@@ -593,9 +618,117 @@ pub(crate) fn runs(root: &std::path::Path, skill: &str, limit: usize) -> Vec<Stu
                 refusals: end.map(|end| small(end.refusals)),
                 asks: end.map(|end| small(end.asks)),
                 tokens: end.and_then(|end| end.tokens).map(small),
+                ran_on: run.ran_on(),
             }
         })
         .collect()
+}
+
+/// The group a skill's totals row is of (SK-20).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[serde(tag = "kind", content = "name", rename_all = "kebab-case")]
+pub enum StatsGroup {
+    /// A harness, as a person calls it; a persona or a workspace, by name.
+    Named(String),
+    /// No persona, or the project's root.
+    None,
+    /// Runs whose start does not say.
+    NotRecorded,
+}
+
+/// One row of a skill's totals: a group's runs, their signals and their tokens (SK-20).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct StatsRow {
+    pub group: StatsGroup,
+    pub runs: u32,
+    /// Runs whose end is recorded: the ones the signals are counted from.
+    pub ended: u32,
+    pub tool_calls: u32,
+    pub tool_errors: u32,
+    pub refusals: u32,
+    pub asks: u32,
+    /// Tokens spent inside them, or null where no run said its tokens.
+    pub tokens: Option<u32>,
+    pub ms: u32,
+}
+
+/// A skill's totals, by what it ran on, by persona and by workspace (SK-20).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Type)]
+pub struct SkillStats {
+    pub by_harness: Vec<StatsRow>,
+    pub by_persona: Vec<StatsRow>,
+    pub by_workspace: Vec<StatsRow>,
+}
+
+/// **One totals row** of `group`'s `totals`, as the window draws it: a skill's totals by a
+/// grouping (SK-20), and one version's runs (SK-19).
+pub(crate) fn stats_row(group: StatsGroup, totals: purlis_core::skilluse::Totals) -> StatsRow {
+    StatsRow {
+        group,
+        runs: small(totals.runs),
+        ended: small(totals.ended),
+        tool_calls: small(totals.tool_calls),
+        tool_errors: small(totals.tool_errors),
+        refusals: small(totals.refusals),
+        asks: small(totals.asks),
+        tokens: (totals.tokens_said > 0).then(|| small(totals.tokens)),
+        ms: small(totals.ms),
+    }
+}
+
+/// The totals of every run of `skill` the project at `root` has recorded
+/// (`purlis_core::skilluse::stats`).
+pub(crate) fn stats(root: &std::path::Path, skill: &str) -> SkillStats {
+    use purlis_core::skilluse::{By, Group};
+    let runs: Vec<purlis_core::skilluse::Run> =
+        purlis_core::skills::studio_runs(root, Some(skill), usize::MAX)
+            .into_iter()
+            .map(|nested| nested.run)
+            .collect();
+    let rows = |by: By| -> Vec<StatsRow> {
+        purlis_core::skilluse::stats(&runs, by)
+            .into_iter()
+            .map(|row| {
+                let group = match by {
+                    By::Harness => row.group.harness_titled(),
+                    _ => row.group,
+                };
+                stats_row(
+                    match group {
+                        Group::Named(name) => StatsGroup::Named(name),
+                        Group::None => StatsGroup::None,
+                        Group::NotRecorded => StatsGroup::NotRecorded,
+                    },
+                    row.totals,
+                )
+            })
+            .collect()
+    };
+    SkillStats {
+        by_harness: rows(By::Harness),
+        by_persona: rows(By::Persona),
+        by_workspace: rows(By::Workspace),
+    }
+}
+
+/// The totals of skill `skill`'s runs in the project, by what they ran on, by persona and by
+/// workspace: none while the flag is off. On a blocking thread, as it reads the project's skill
+/// log.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_stats(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    skill: String,
+) -> Result<SkillStats, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("reading the skill's runs", move || {
+        if !purlis_core::skills::studio_on_here() {
+            return Ok(SkillStats::default());
+        }
+        Ok(stats(held.root(), &skill))
+    })
+    .await
 }
 
 /// How many runs a skill's Runs panel lists at most.

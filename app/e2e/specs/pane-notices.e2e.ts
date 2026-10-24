@@ -5,6 +5,7 @@ import { browser, expect, $, $$ } from "@wdio/globals";
 import { READY } from "../harness.js";
 import { pressAndStart, pressOnly } from "../opening.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
+import { railHidden } from "../rail.js";
 
 /**
  * **A Notice in a pane fits its pane, measured** (#1481), **in a row of its own above the
@@ -461,6 +462,10 @@ async function scrolledSideways(pane: number): Promise<number[]> {
 }
 
 describe("a Notice in a pane", () => {
+  // The work measured with the project rail hidden (`rail.ts`, #2915).
+  before(() => railHidden(true));
+  after(() => railHidden(false));
+
   /** The tabs that were already there: the strip is back to them once this file's chats end. */
   let wereAlreadyOpen: string[] = [];
   /** The chats running when the file began, so only the ones it started are ended again. */

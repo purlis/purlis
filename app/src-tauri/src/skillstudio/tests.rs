@@ -298,3 +298,58 @@ fn the_studio_lists_each_harnesss_own_skills_and_plugins_and_marks_a_clash_with_
         "opencode's plugins"
     );
 }
+
+#[test]
+fn a_skills_totals_name_what_it_ran_on_as_a_person_calls_it_and_say_a_start_that_does_not_say() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::write(root.join(purlis_core::plane::MANIFEST), "schema = 2\n").unwrap();
+    let log = root.join("personas/_skills");
+    std::fs::create_dir_all(&log).unwrap();
+    std::fs::write(
+        log.join("2026-10.box.jsonl"),
+        "{\"harness\": \"claude\", \"persona\": \"ops\", \"run\": \"01JB0000000000000000000001\", \
+         \"skill\": \"deploy\", \"started_by\": \"curation\", \"ts\": \"2026-10-01T09:00:00+00:00\", \
+         \"workspace\": null}\n\
+         {\"asks\": 1, \"ended\": \"turn\", \"ms\": 900, \"refusals\": 0, \"run\": \
+         \"01JB0000000000000000000001\", \"tokens\": 40, \"tool_calls\": 2, \"tool_errors\": 0, \
+         \"ts\": \"2026-10-01T09:00:01+00:00\"}\n\
+         {\"persona\": null, \"skill\": \"deploy\", \"ts\": \"2026-03-02T09:00:00+00:00\"}\n",
+    )
+    .unwrap();
+
+    let stats = stats(root, "deploy");
+
+    assert_eq!(
+        stats.by_harness,
+        [
+            StatsRow {
+                group: StatsGroup::Named("Claude Code".to_owned()),
+                runs: 1,
+                ended: 1,
+                tool_calls: 2,
+                tool_errors: 0,
+                refusals: 0,
+                asks: 1,
+                tokens: Some(40),
+                ms: 900,
+            },
+            StatsRow {
+                group: StatsGroup::NotRecorded,
+                runs: 1,
+                ended: 0,
+                tool_calls: 0,
+                tool_errors: 0,
+                refusals: 0,
+                asks: 0,
+                tokens: None,
+                ms: 0,
+            },
+        ]
+    );
+    let workspaces: Vec<&StatsGroup> = stats.by_workspace.iter().map(|row| &row.group).collect();
+    assert_eq!(workspaces, [&StatsGroup::None, &StatsGroup::NotRecorded]);
+    let runs = runs(root, "deploy", 10);
+    assert_eq!(runs[0].started_by, Some(RunStart::Curation));
+    assert_eq!(runs[0].ran_on.as_deref(), Some("Claude Code"));
+}

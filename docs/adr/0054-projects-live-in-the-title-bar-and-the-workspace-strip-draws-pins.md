@@ -124,3 +124,6 @@ The amendments to this decision are files of their own in [`0054/`](0054/), one 
 amendment, named `<yyyy-mm-dd>-<slug>.md`. A new amendment is a new file there and never a
 section added to this record, so two pull requests that amend it do not touch the same lines
 (#1982).
+
+**Superseded in part** by [the amendment of 2026-10-23](0054/2026-10-23-the-projects-move-to-the-rail-and-the-strip-goes.md):
+the projects are no longer in the title bar but on the project rail at the window's left (#2915).

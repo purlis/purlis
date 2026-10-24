@@ -1672,3 +1672,27 @@ fn no_harness_lets_a_sandboxed_chat_write_this_machine_s_sandbox_grants() {
     }
     assert_eq!(held, 3, "Claude Code, Codex and opencode");
 }
+
+/// SK-9 (#2772): a Try it's scratch chat starts in its throwaway folder, and that is the one
+/// folder of the project it writes; what it would write anywhere else in the project is refused,
+/// so nothing it does reaches a save.
+#[test]
+fn a_try_its_scratch_chat_writes_its_throwaway_folder_and_no_other_folder_of_the_project() {
+    let plane = plane_saying(ON);
+    let piece = plane
+        .path()
+        .join("workspaces/.throwaway/purlis-try-0123456789abcdef");
+    std::fs::create_dir_all(&piece).unwrap();
+    let applied = wrapped_in(&plane);
+    let confinement = applied.confine().expect("confined").expect("a wrap");
+    let line = line_in(&applied, &piece, None, &confinement).expect("starts");
+    let allows = write_allows(profile_of(&line));
+    assert_eq!(
+        allows[0],
+        format!("(subpath \"{}\")", real(&piece).display())
+    );
+    assert!(
+        !allows.contains(&format!("(subpath \"{}\")", real(plane.path()).display())),
+        "{allows:?}"
+    );
+}

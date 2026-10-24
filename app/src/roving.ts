@@ -44,7 +44,9 @@ export function useTabStop(selected: string | undefined, ids: readonly string[])
       // right after the last tab, and reaching it is leaving the tabs, so Shift+Tab back from
       // it lands on the selected tab as coming in from anywhere else does.
       const stays =
-        to instanceof Element && event.currentTarget.contains(to) && !to.closest(".strip-doing");
+        to instanceof Element &&
+        event.currentTarget.contains(to) &&
+        !to.closest(".strip-doing, [data-strip-doing]");
       if (!stays) setMoved(null);
     },
     tabIndex: -1,

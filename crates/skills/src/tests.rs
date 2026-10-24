@@ -84,6 +84,7 @@ impl Plane {
                 built_in: None,
                 kept_local: Some(kept),
                 harness: None,
+                made_since: None,
             },
             &Chat {
                 workspace,
@@ -619,6 +620,7 @@ fn a_workspace_or_local_skill_never_takes_a_built_in_skills_name() {
             built_in: Some(&built_in),
             kept_local: Some(&|_| Ok(())),
             harness: None,
+            made_since: None,
         },
         &Chat {
             workspace: Some("smart-ide"),
@@ -772,6 +774,7 @@ impl Plane {
                 built_in,
                 kept_local: Some(&|_| Ok(())),
                 harness,
+                made_since: None,
             },
             &Chat {
                 workspace,
@@ -1252,6 +1255,7 @@ fn a_built_in_skill_never_loses_to_a_repo_or_harness_copy_of_its_name_on_any_rou
                 built_in: Some(&built_in),
                 kept_local: Some(&|_| Ok(())),
                 harness: None,
+                made_since: None,
             },
             &Chat {
                 workspace: None,
@@ -1285,4 +1289,90 @@ fn a_built_in_skill_never_loses_to_a_repo_or_harness_copy_of_its_name_on_any_rou
         );
         assert!(got.clashes.is_empty(), "{route:?}");
     }
+}
+
+// ---- lifecycle (SK-19, #2782) -------------------------------------------------------------
+
+#[test]
+fn an_archived_skill_never_loads_and_its_left_out_line_says_so() {
+    let plane = Plane::new();
+    skill(&plane.project(), "deploy", &whole("deploy"));
+    plane.grant("deploy", "grant = \"all\"\nlifecycle = \"archived\"\n");
+
+    for workspace in [None, Some("ops")] {
+        let set = plane.set(workspace);
+        assert!(effective(&set).is_empty(), "{workspace:?}");
+        assert_eq!(
+            left_out(&set),
+            [(
+                "deploy",
+                Origin::Project,
+                false,
+                "archived: it never loads until it is restored from its tab".to_owned()
+            )]
+        );
+    }
+}
+
+#[test]
+fn an_archived_copy_takes_no_name_from_a_wider_copy() {
+    let plane = Plane::new();
+    skill(&plane.project(), "deploy", &whole("deploy"));
+    plane.grant("deploy", "grant = \"all\"\n");
+    skill(&plane.workspace("ops"), "deploy", &whole("deploy"));
+    std::fs::write(
+        plane.workspace("ops").join("deploy.toml"),
+        "lifecycle = \"archived\"\n",
+    )
+    .unwrap();
+
+    let set = plane.set(Some("ops"));
+
+    assert_eq!(effective(&set), [("deploy", Origin::Project, false)]);
+    assert_eq!(set.left_out[0].reason, Reason::Archived);
+}
+
+#[test]
+fn a_deprecated_skill_still_loads_and_the_set_records_its_replacement() {
+    let plane = Plane::new();
+    skill(&plane.project(), "deploy", &whole("deploy"));
+    skill(&plane.project(), "ship", &whole("ship"));
+    plane.grant(
+        "deploy",
+        "lifecycle = \"deprecated\"\nreplacement = \"ship\"\n",
+    );
+
+    let set = plane.set(None);
+
+    assert_eq!(
+        effective(&set),
+        [
+            ("deploy", Origin::Project, false),
+            ("ship", Origin::Project, false)
+        ]
+    );
+    assert_eq!(
+        set.effective[0].deprecated,
+        Some(Deprecated {
+            replacement: Some("ship".to_owned())
+        })
+    );
+    assert_eq!(set.effective[1].deprecated, None);
+}
+
+#[test]
+fn a_lifecycle_word_purlis_does_not_know_leaves_the_skill_working() {
+    let plane = Plane::new();
+    skill(&plane.project(), "deploy", &whole("deploy"));
+    plane.grant("deploy", "lifecycle = \"retired\"\n");
+
+    let set = plane.set(None);
+
+    assert_eq!(effective(&set), [("deploy", Origin::Project, false)]);
+    assert_eq!(set.effective[0].deprecated, None);
+    assert!(
+        about_of(&plane.project().join("deploy"))
+            .unwrap_err()
+            .contains("none of \"active\", \"deprecated\" or \"archived\"")
+    );
 }

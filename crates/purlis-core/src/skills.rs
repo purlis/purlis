@@ -29,10 +29,15 @@ pub use purlis_skills::runs;
 /// The install review's summary and a source's tree (SK-10).
 pub use purlis_skills::{review, tree};
 pub mod source;
+pub use purlis_skills::{About, Deprecated, Lifecycle, about_of};
+pub mod graph;
+pub mod history;
+pub mod lifecycle;
 pub mod verbs;
 
 use crate::harness::{Harness, Kit};
 
+pub mod levels;
 mod on_machine;
 pub mod persona;
 
@@ -930,12 +935,17 @@ fn ask(
         .zip(persona)
         .map(|(at, persona)| names_of(at.plane, persona))
         .unwrap_or_default();
+    // A workspace or persona folder a running sandboxed chat could have made (SK-9).
+    let made = plane.map(|at| levels::made_since(at.plane));
     let set = purlis_skills::skill_set(
         plane.map(|at| at.plane),
         &Machine {
             built_in,
             kept_local: Some(&kept),
             harness,
+            made_since: made
+                .as_deref()
+                .map(|made| made as &purlis_skills::MadeSince<'_>),
         },
         &Chat {
             workspace: plane.and_then(|at| at.workspace),
@@ -1486,6 +1496,9 @@ pub struct StudioRow {
     /// For a skill from outside the plane (SK-6, #2769): whose it is, and how its harness can
     /// leave it out. `None` for the plane's and the built-in skills.
     pub outside: Option<OutsideRow>,
+    /// For a skill left out because a chat could have made its level's folder (SK-9): that
+    /// folder, relative to the plane, which the person may accept ([`levels::accept`]).
+    pub accept: Option<String>,
     /// Its compatibility badge on each harness that would load it (SK-8, #2771): every harness
     /// for a skill a chat gets from purlis, its own harness for one from outside the plane, and
     /// none for a skill left out.
@@ -1495,6 +1508,11 @@ pub struct StudioRow {
     /// calls that this machine lacks. Empty for the plane's and the built-in skills, which their
     /// editor lints.
     pub lint: Vec<String>,
+    /// Its lifecycle state (SK-19, #2782): in use, deprecated or archived. Always in use for a
+    /// skill that is not the plane's, and for one whose file beside it cannot be read.
+    pub lifecycle: Lifecycle,
+    /// Who looks after it, informational (SK-19). Empty for a skill that is not the plane's.
+    pub owners: Vec<String>,
 }
 
 /// What a studio row says of a skill from outside the plane.
@@ -1546,8 +1564,11 @@ pub fn outside_rows(harness: &HarnessInTheStudio, plane: &Path) -> Vec<StudioRow
                     owner: found.owner.clone(),
                     switch: found.switch.clone(),
                 }),
+                accept: None,
                 compat,
                 lint,
+                lifecycle: Lifecycle::Active,
+                owners: Vec::new(),
             }
         })
         .collect()
@@ -1743,8 +1764,14 @@ pub fn studio_rows(set: &SkillSet, plane: &Path, names: &[Reference]) -> Vec<Stu
                 written,
                 unchecked: false,
                 outside: None,
+                accept: None,
                 compat: badges(&e.skill.path, e.origin, &Harness::ALL),
                 lint: Vec::new(),
+                lifecycle: e
+                    .deprecated
+                    .clone()
+                    .map_or(Lifecycle::Active, Lifecycle::Deprecated),
+                owners: owners(e.origin, folder),
             }
         })
         .chain(set.from_the_harness.iter().map(|h| {
@@ -1761,8 +1788,11 @@ pub fn studio_rows(set: &SkillSet, plane: &Path, names: &[Reference]) -> Vec<Stu
                 written,
                 unchecked: !h.checked,
                 outside: None,
+                accept: None,
                 compat: Vec::new(),
                 lint: Vec::new(),
+                lifecycle: Lifecycle::Active,
+                owners: Vec::new(),
             }
         }))
         .chain(set.left_out.iter().map(|l| {
@@ -1785,28 +1815,105 @@ pub fn studio_rows(set: &SkillSet, plane: &Path, names: &[Reference]) -> Vec<Stu
                 written,
                 unchecked: false,
                 outside: None,
+                accept: matches!(l.reason, Reason::MadeWhileAChatRan(_))
+                    .then(|| levels::to_accept(plane, &l.folder))
+                    .flatten(),
                 compat: Vec::new(),
                 lint: Vec::new(),
+                lifecycle: if matches!(l.reason, Reason::Archived) {
+                    Lifecycle::Archived
+                } else if l.origin.of_the_plane() {
+                    about_of(&l.folder)
+                        .map(|about| about.lifecycle)
+                        .unwrap_or_default()
+                } else {
+                    Lifecycle::Active
+                },
+                owners: owners(l.origin, &l.folder),
             }
         }))
         .collect();
+    // A deprecated skill is shown after the rest (decision 62), with every copy of its name.
+    let deprecated: std::collections::HashSet<String> = rows
+        .iter()
+        .filter(|row| row.left_out.is_none() && matches!(row.lifecycle, Lifecycle::Deprecated(_)))
+        .map(|row| row.name.clone())
+        .collect();
     // Stable: the set already lists each name's left-out copies widest first.
     rows.sort_by(|a, b| {
-        a.name
-            .cmp(&b.name)
+        deprecated
+            .contains(&a.name)
+            .cmp(&deprecated.contains(&b.name))
+            .then(a.name.cmp(&b.name))
             .then(a.left_out.is_some().cmp(&b.left_out.is_some()))
     });
     rows
 }
 
+/// The owners the plane's skill of `origin` in `folder` names, or none for a skill of another
+/// level or a file beside it that cannot be read.
+fn owners(origin: Origin, folder: &Path) -> Vec<String> {
+    if origin.of_the_plane() {
+        about_of(folder)
+            .map(|about| about.owners)
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    }
+}
+
+/// One skill run as the studio lists it: the run, and the skill runs it nests in and holds
+/// (SK-19): a skill a chat started while another's run was open is a child span of it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct StudioRun {
+    #[serde(flatten)]
+    pub run: crate::skilluse::Run,
+    /// The skill whose run this one started inside, where it is a child.
+    pub inside: Option<String>,
+    /// The skills whose runs started inside this one, each once, in the order they started.
+    pub ran: Vec<String>,
+}
+
 /// **The studio's runs** (SK-3): every run the plane at `plane`'s skill log holds, newest first,
 /// of skill `skill` where one is named (by its name, with or without the namespace a harness
-/// used it by), at most `limit`. The one list a skill's Runs panel and `purlis skill runs` draw.
-pub fn studio_runs(plane: &Path, skill: Option<&str>, limit: usize) -> Vec<crate::skilluse::Run> {
-    crate::skilluse::runs(plane)
-        .into_iter()
+/// used it by), at most `limit`, each with the run it nests in and the runs it holds (SK-19). The
+/// one list a skill's Runs panel and `purlis skill runs` draw.
+pub fn studio_runs(plane: &Path, skill: Option<&str>, limit: usize) -> Vec<StudioRun> {
+    let runs = crate::skilluse::runs(plane);
+    let mut skill_of: std::collections::HashMap<&str, &str> = std::collections::HashMap::new();
+    let mut children: std::collections::HashMap<&str, Vec<&str>> = std::collections::HashMap::new();
+    for run in &runs {
+        if let Some(id) = &run.id {
+            skill_of.insert(id, &run.skill);
+        }
+    }
+    // Oldest first, so a parent's children are in the order they started.
+    for run in runs.iter().rev() {
+        if let Some(parent) = run.end.as_ref().and_then(|end| end.parent.as_deref()) {
+            let held = children.entry(parent).or_default();
+            if !held.contains(&run.skill.as_str()) {
+                held.push(&run.skill);
+            }
+        }
+    }
+    runs.iter()
         .filter(|run| skill.is_none_or(|name| run.is_of(name)))
         .take(limit)
+        .map(|run| StudioRun {
+            inside: run
+                .end
+                .as_ref()
+                .and_then(|end| end.parent.as_deref())
+                .and_then(|parent| skill_of.get(parent))
+                .map(|skill| (*skill).to_owned()),
+            ran: run
+                .id
+                .as_deref()
+                .and_then(|id| children.get(id))
+                .map(|held| held.iter().map(|skill| (*skill).to_owned()).collect())
+                .unwrap_or_default(),
+            run: run.clone(),
+        })
         .collect()
 }
 
