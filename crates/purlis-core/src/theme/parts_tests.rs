@@ -1034,7 +1034,7 @@ fn the_list_family_default_is_what_its_stylesheet_draws() {
 #[test]
 fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
     let manifest = parts::manifest_json();
-    assert_eq!(manifest["version"], 11);
+    assert_eq!(manifest["version"], 12);
     for one in manifest["states"].as_array().unwrap() {
         assert_eq!(one["since"], 1, "{one}");
     }
@@ -1359,7 +1359,7 @@ const MANIFEST_DIGESTS: &[(u32, &str)] = &[
     ),
     (
         12,
-        "PENDING",
+        "e9b9b86c1d9ccd89f6a48dfa2b4e5d02873f7b120c69f129a37de052cb3aca37",
     ),
 ];
 

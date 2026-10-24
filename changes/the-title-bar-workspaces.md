@@ -10,6 +10,6 @@
 - **With the projects sidebar hidden**, the project's name in the title bar (or ⌥⌘P) opens a
   switcher of every project and workspace. Choosing a project goes back to the workspace you were last on.
 - **Themes have a `titlebar` family** of parts for the chips (`titlebar.workspace.*`,
-  `titlebar.count.*`; parts manifest version 11).
+  `titlebar.count.*`; parts manifest version 12).
 - **⌘P is unchanged**: it still finds files and projects, and ⌘P ⏎ still goes back to the last
   project.
