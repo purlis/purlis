@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792812542095,
+  "lastUpdate": 1792815627772,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -23226,6 +23226,48 @@ window.BENCHMARK_DATA = {
             "value": 104.14357799999999,
             "unit": "ms",
             "extra": "median of 5 runs: 103.974, 104.015, 104.144, 104.691, 105.278 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d941666bede51e5ccb52d9b72f5bc8df06502312",
+          "message": "SK-19: a skill's history, lifecycle, owners and uses graph (#3086)\n\n* SK-20: curation starts, run stats by harness, persona and workspace, skill attributes for the exporter\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-20: regenerate bindings, format\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-19: a skill's history, lifecycle, owners and uses graph\n\nEach skill's tab lists its versions with a diff, a revert and the runs that\nstarted on each; a skill can be deprecated (works, points to a replacement,\nlisted after the rest) or archived (never loads, restorable); a skill unused\nfor 60 days gets a suggestion to deprecate; owners are informational until the\npolicy layer (#697); skill references form a uses/used-by graph read by the\none reference reader the lint uses; a nested run shows its parent.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-20: clippy, and the unheard start row's record says its harness\n\nRe-recorded from CI's recorded-behaviour-blessed artifact, that row alone:\nposttooluse-skill-records-its-run-where-no-host-listens now logs harness\n\"claude\". The artifact's other six rows differ only in key order, so they\nwere not taken.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-20: the theme views test answers the skill's totals\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-19: the skill tab's bindings, field controls and diff marks\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-19: a scenario for the skill's tab: uses, history, archive and restore\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-20: the skill's totals are served on a link, as its runs are\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-19: the views' skill tab fixture and the diff's strong line on its text role\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-19: the skill tab's commands on the link's lists: reads served, writes the window's\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-19: uiRpc.ts regenerated for the skill tab's window-only writes\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-20: review fixes\n\nCuration prompts are held before the chat starts; theme chats are no\ncuration; a live workspace's name never reaches the committed skill log;\nPrompted's Debug says nothing of the prompt; tidier stats types.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-20: the unheard start row in a live workspace names no workspace\n\nRe-recorded from CI's blessed artifact, that row alone: the fixture's alpha\nis a live workspace, so its name and copy stay out of the committed log.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-19: module order\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-20: a draft skill's chat starts no curation runs\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-19 review: folder-only versions, link-safe revert, widening confirm, window words\n\nWork in progress until SK-20's stats land.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-19: purlis skill revert says what a version would widen and asks first, unless --yes\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-24T08:19:05+04:00",
+          "tree_id": "ab4e8b885bae530251f5583a813fd3cf9d3eb568",
+          "url": "https://github.com/purlis/purlis/commit/d941666bede51e5ccb52d9b72f5bc8df06502312"
+        },
+        "date": 1792815625673,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4705425,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.453, 0.467, 0.471, 0.472, 0.479 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.357235,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.141, 16.295, 16.357, 16.442, 16.480 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.612773,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.159, 101.493, 101.613, 101.643, 102.057 ms"
           }
         ]
       }
