@@ -583,3 +583,41 @@ fn in_the_remote(bare: &Path, args: &[&str]) -> String {
     );
     String::from_utf8_lossy(&out.stdout).into_owned()
 }
+
+/// **A first commit holds itself to a save's one-name rule** (CI, as above): a file that landed
+/// in the new project's folder with a second name refuses the commit before anything is
+/// staged, so its bytes reach no commit and no object store.
+#[test]
+fn a_first_commit_of_a_file_with_a_second_name_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let folder = dir.path().join("garden");
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(folder.join("README.md"), "# garden\n").unwrap();
+    let outside = dir.path().join("outside.md");
+    std::fs::write(&outside, "from outside: canary-b27e55\n").unwrap();
+    std::fs::hard_link(&outside, folder.join("notes.md")).unwrap();
+    let author = Author {
+        name: "acme".to_string(),
+        email: "acme@users.noreply.github.com".to_string(),
+    };
+
+    let said = OnThisMachine { push_to: None }
+        .commit(&folder, &plan(Kind::GitHub, &folder), &author)
+        .unwrap_err();
+
+    assert!(
+        said.starts_with("Not created: a file in the new project is not the one file on disk"),
+        "{said}"
+    );
+    assert!(said.contains("notes.md has a second name (a hard link)"), "{said}");
+    assert!(said.contains("Nothing was staged or committed."), "{said}");
+    assert!(
+        !crate::testgit::run(&folder, &["rev-parse", "--verify", "--quiet", "HEAD"]).ok(),
+        "a commit was made: {said}"
+    );
+    let sha = crate::testgit::run(&folder, &["hash-object", outside.to_str().unwrap()]);
+    assert!(
+        !crate::testgit::run(&folder, &["cat-file", "-e", sha.out.trim()]).ok(),
+        "the object store holds the file: {said}"
+    );
+}

@@ -741,3 +741,124 @@ fn in_the_remote(bare: &Path, args: &[&str]) -> String {
     );
     String::from_utf8_lossy(&out.stdout).into_owned()
 }
+
+/// What the file outside the project holds: nothing the push's scan calls a secret, so only
+/// the one-name rule stands between it and the forge.
+const OUTSIDE: &str = "a line from outside the project: canary-3f8a21\n";
+
+/// A project at `dir/notebook` that is a repository with a commit of its own, with `notes.md`
+/// a second name of a file outside it, and the blob that file would be stored as.
+fn a_project_with_a_second_name(dir: &Path) -> (PathBuf, String) {
+    let root = dir.join("notebook");
+    a_repository_with_a_commit(&root);
+    let outside = dir.join("outside.md");
+    std::fs::write(&outside, OUTSIDE).unwrap();
+    std::fs::hard_link(&outside, root.join("notes.md")).unwrap();
+    std::fs::write(root.join("a.md"), "a\n").unwrap();
+    let sha = crate::testgit::run(&root, &["hash-object", outside.to_str().unwrap()]);
+    (root, sha.out.trim().to_string())
+}
+
+/// A publish of the project at `root` by the window's hands, pushing to `bare`.
+fn published_to(root: &Path, bare: &Path) -> Result<Created, Refused> {
+    let (backend, _) = over(Kind::GitHub, "made");
+    publish(
+        &plan(Kind::GitHub, root, "made"),
+        backend.as_ref(),
+        &Caller::window(),
+        &OnThisMachine {
+            push_to: Some(bare.to_path_buf()),
+        },
+        &AtomicBool::new(false),
+        &mut |_| {},
+    )
+}
+
+/// That the refused publish of `root` made no commit, pushed nothing to `bare`, and left the
+/// blob `sha` nowhere in the project's object store.
+fn nothing_of_it_left(root: &Path, bare: &Path, sha: &str, said: &str) {
+    let log = crate::testgit::run(root, &["log", "--format=%s"]);
+    assert_eq!(log.out.trim(), "mine", "a commit was made: {said}");
+    let pushed = in_the_remote(bare, &["for-each-ref"]);
+    assert_eq!(pushed.trim(), "", "something was pushed: {said}");
+    assert!(
+        !crate::testgit::run(root, &["cat-file", "-e", sha]).ok(),
+        "the project's object store holds the file: {said}"
+    );
+    assert!(lives_only_here(root), "{said}");
+}
+
+/// **A publish holds itself to a save's one-name rule** (CI, as above): a file with a second
+/// name refuses the publish before anything is staged, so there is no commit, no push and no
+/// blob of it in the object store.
+#[test]
+fn a_project_holding_a_file_with_a_second_name_is_not_published() {
+    let dir = tempfile::tempdir().unwrap();
+    let bare = a_remote(dir.path());
+    let (root, sha) = a_project_with_a_second_name(dir.path());
+
+    let refused = published_to(&root, &bare).unwrap_err();
+
+    assert_eq!(refused.stage, Stage::Committing, "{refused:?}");
+    let said = &refused.sentence;
+    assert!(said.starts_with(NOT_ONE_FILE), "{said}");
+    assert!(
+        said.contains("notes.md has a second name (a hard link), so purlis does not save it"),
+        "{said}"
+    );
+    assert!(said.contains("Nothing was staged or committed."), "{said}");
+    let staged = crate::testgit::run(&root, &["diff", "--cached", "--name-only"]).out;
+    assert_eq!(staged.trim(), "", "refused before anything is staged");
+    nothing_of_it_left(&root, &bare, &sha, said);
+}
+
+/// **What is staged is asked again after the add** (CI, as above): a file staged before the
+/// publish while it had a second name, with git told not to look at it on disk and a file of
+/// one name put in its place, is held back, unstaged and its blob taken out of the store.
+#[test]
+fn a_file_staged_before_the_publish_that_is_not_the_one_on_disk_is_not_published() {
+    let dir = tempfile::tempdir().unwrap();
+    let bare = a_remote(dir.path());
+    let (root, sha) = a_project_with_a_second_name(dir.path());
+    for args in [
+        &["add", "notes.md"][..],
+        &["update-index", "--assume-unchanged", "notes.md"][..],
+    ] {
+        assert!(crate::testgit::run(&root, args).ok(), "{args:?}");
+    }
+    std::fs::remove_file(root.join("notes.md")).unwrap();
+    std::fs::write(root.join("notes.md"), "one name\n").unwrap();
+    assert!(crate::testgit::run(&root, &["cat-file", "-e", sha.as_str()]).ok());
+
+    let refused = published_to(&root, &bare).unwrap_err();
+
+    assert_eq!(refused.stage, Stage::Committing, "{refused:?}");
+    let said = &refused.sentence;
+    assert!(said.starts_with(NOT_ONE_FILE), "{said}");
+    assert!(
+        said.contains("notes.md is marked for git not to look at it on disk"),
+        "{said}"
+    );
+    let staged = crate::testgit::run(&root, &["diff", "--cached", "--name-only"]).out;
+    assert!(!staged.contains("notes.md"), "{staged}");
+    nothing_of_it_left(&root, &bare, &sha, said);
+}
+
+/// **A clean project still publishes** (CI, as above): a repository with a file staged before
+/// the publish and one it has not seen is committed and pushed whole.
+#[test]
+fn a_project_whose_files_each_have_one_name_is_published() {
+    let dir = tempfile::tempdir().unwrap();
+    let bare = a_remote(dir.path());
+    let root = dir.path().join("notebook");
+    a_repository_with_a_commit(&root);
+    std::fs::write(root.join("staged.md"), "staged\n").unwrap();
+    assert!(crate::testgit::run(&root, &["add", "staged.md"]).ok());
+    std::fs::write(root.join("notes.md"), "mine\n").unwrap();
+
+    let answer = published_to(&root, &bare);
+
+    assert!(matches!(answer, Ok(Created::Made { .. })), "{answer:?}");
+    let files = in_the_remote(&bare, &["ls-tree", "-r", "--name-only", BRANCH]);
+    assert_eq!(files.lines().collect::<Vec<_>>(), ["notes.md", "staged.md"]);
+}

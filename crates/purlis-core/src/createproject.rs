@@ -659,7 +659,15 @@ impl Hands for OnThisMachine {
             &["init", "-q", "-b", BRANCH],
             "make the project a repository",
         )?;
-        git_in(folder, &["add", "-A"], "add the project's files")?;
+        // The folder was empty when it was checked, but a file can land in it before the add:
+        // each file committed is the one name it has on disk, as a save's are
+        // (`planegit::ondisk`).
+        crate::planegit::ondisk::add_checked(
+            folder,
+            &[],
+            "Not created: a file in the new project is not the one file on disk",
+            || git_in(folder, &["add", "-A"], "add the project's files"),
+        )?;
         commit_as(
             folder,
             &first_commit_message(plan),

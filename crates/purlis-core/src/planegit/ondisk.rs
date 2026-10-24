@@ -286,6 +286,35 @@ pub(crate) fn refused_ahead(found: &Result<Vec<Held>, String>) -> Option<Refusal
     })
 }
 
+/// **Stages with `add` in the repository at `root` as a save does, for a commit made outside a
+/// save** (a publish, a new project's first commit, a doctor fix): [`second_names_ahead`] of
+/// `pathspec` before `add` runs, then [`not_as_staged`] of the whole index once it has, with
+/// what [`refused`] takes back. `Err` with `add`'s own words where it failed, or with
+/// `refused_as`, a colon, then each path's line and what became of them; nothing is committed
+/// either way.
+pub(crate) fn add_checked(
+    root: &Path,
+    pathspec: &[&str],
+    refused_as: &str,
+    add: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String> {
+    let refusal = match refused_ahead(&second_names_ahead(root, pathspec)) {
+        Some(refusal) => refusal,
+        None => {
+            add()?;
+            match refused(root, &not_as_staged(root)) {
+                Some(refusal) => refusal,
+                None => return Ok(()),
+            }
+        }
+    };
+    Err(format!(
+        "{refused_as}: {}. {}",
+        refusal.named.join("; "),
+        refusal.then
+    ))
+}
+
 /// The blob each of `held` is staged as, from the index: a nested repository's commit (mode
 /// `160000`) is not an object of this repository's, and is left out. None where git could not
 /// say, and then nothing is taken out of the object store.
