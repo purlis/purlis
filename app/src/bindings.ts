@@ -10046,7 +10046,7 @@ export type ReviewHost = {
 };
 
 /**  The kind of a character no reader sees. */
-export type ReviewInvisible = "tag" | "zero-width" | "bidi" | "format";
+export type ReviewInvisible = "tag" | "zero-width" | "blank" | "bidi" | "format";
 
 /**  An entry of a skill's folder that is not installed, why, and the core's words for it. */
 export type ReviewLeftOut = {

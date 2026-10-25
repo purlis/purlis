@@ -192,18 +192,41 @@ pub fn read_skill_md(root: &std::path::Path, path: &std::path::Path) -> Result<S
     crate::SkillFolder::open(root, path)?.skill_md()
 }
 
+/// **[`read_skill_md`] of a skill from `origin`** (SK-44): a harness skill is the person's own,
+/// in their folders, where a `SKILL.md` that is a hard link is read (the Nix store, `cp -al` and
+/// `rsync --link-dest` leave them). Every other skill's is refused, as [`read_skill_md`] refuses
+/// it. Still never through a link, and of at most [`MOST_BYTES`].
+pub fn read_skill_md_of(
+    root: &std::path::Path,
+    path: &std::path::Path,
+    origin: crate::Origin,
+) -> Result<String, Refusal> {
+    crate::SkillFolder::open(root, path)?.skill_md_of(origin)
+}
+
 /// The `SKILL.md` named `name` in the skill's folder held at `folder`, as [`read_skill_md`]
 /// reads one.
 pub(crate) fn read_held(
     folder: &crate::held::Folder,
     name: &std::ffi::OsStr,
 ) -> Result<String, Refusal> {
+    read_held_as(folder, name, crate::held::HardLinks::Refused)
+}
+
+/// [`read_held`], a hard link read or refused as `hard_links` says.
+pub(crate) fn read_held_as(
+    folder: &crate::held::Folder,
+    name: &std::ffi::OsStr,
+    hard_links: crate::held::HardLinks,
+) -> Result<String, Refusal> {
     use crate::held::NotRead;
-    folder.read(name, MOST_BYTES).map_err(|why| match why {
-        NotRead::Unreadable(why) => Refusal::Unreadable(why),
-        NotRead::NotPlain => Refusal::FileLink,
-        NotRead::TooLarge => Refusal::TooLarge,
-    })
+    folder
+        .read_as(name, MOST_BYTES, hard_links)
+        .map_err(|why| match why {
+            NotRead::Unreadable(why) => Refusal::Unreadable(why),
+            NotRead::NotPlain => Refusal::FileLink,
+            NotRead::TooLarge => Refusal::TooLarge,
+        })
 }
 
 /// Whether a boolean says yes, in any case: `true`, `yes`, `on` or `1`.

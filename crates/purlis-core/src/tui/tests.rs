@@ -269,13 +269,20 @@ fn a_stack_is_its_children_top_to_bottom_each_clamped_on_its_own() {
     assert_eq!(node.render(4), vec!["one", "two", "thr…"]);
 }
 
-/// SK-47's accepted cost, pinned: a cell is shown character by character, so an emoji built
-/// with a zero-width joiner or a variation selector shows those as marks rather than joining.
-/// A name is something a reader has to read back, and the joiner is exactly what can hide.
+/// SK-47 pinned a joined emoji's marks as an accepted cost; SK-49 (#3172) reverses it for
+/// D-1301: a joiner between two emoji, or a presentation selector after one, only changes how
+/// its neighbours are drawn, so it is text. A joiner or selector doing no job is still marked.
 #[test]
-fn a_joined_emoji_or_a_variation_selector_in_a_cell_shows_its_marks() {
-    assert_eq!(pad("👨\u{200d}👩", 12, Align::Left), "👨⟦U+200D⟧👩");
-    assert_eq!(pad("👍\u{fe0f}", 10, Align::Left), "👍⟦U+FE0F⟧");
+fn a_joined_emoji_reads_as_text_in_a_cell_and_a_stray_joiner_is_marked() {
+    // Measured as charter's `tui.py` measures it, a column for each joiner or selector: more
+    // than a terminal that draws the ligature uses, so a row is padded short, never cut.
+    assert_eq!(pad("👨\u{200d}👩", 12, Align::Left), "👨\u{200d}👩       ");
+    assert_eq!(pad("👍\u{fe0f}", 10, Align::Left), "👍\u{fe0f}       ");
+    assert_eq!(pad("a\u{200d}b", 12, Align::Left), "a⟦U+200D⟧b  ");
+    assert_eq!(
+        pad("👍\u{fe0f}\u{fe0f}", 12, Align::Left),
+        "👍\u{fe0f}⟦U+FE0F⟧ "
+    );
 }
 
 /// The column nothing pads is the same text as the rest of the row, so it takes the same rule:

@@ -89,3 +89,14 @@
 - **A skill source of more than 50 000 files is always refused whole** (Skill studio preview).
   On a busy machine its listing could be read cut short and refused for the wrong reason, and a
   listing whose read failed was taken as complete (#3115).
+- **A skills folder purlis can't read whole is listed once and not read** (Skill studio
+  preview, #3133). This applies to a repo's skills folder, your own skills folder and an
+  opencode plugin or worktree folder, when one holds more than 2000 names or can't be read.
+  The studio and `purlis skill list` name the folder and say why, instead of opening and checking
+  every entry. A chat in a repo whose skills folder purlis can't read whole doesn't get the
+  project's skills, since the repo might have its own copy of any of them.
+- **A skill whose SKILL.md purlis doesn't read is listed, with the reason** (Skill studio
+  preview, #3133). In a repo, that is a SKILL.md that is a link, a hard link or larger than
+  256 KiB. In your own skills folder, it is a link or larger than 256 KiB. A hard link is read
+  there, as the Nix store, `cp -al` and `rsync --link-dest` leave them. Such a skill used to
+  vanish from the list.

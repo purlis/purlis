@@ -355,7 +355,7 @@ describe("the Brief panel", () => {
   it("draws a brief that hides or turns its words written out, says so, and copies what was read unless asked by name for what was sent", async () => {
     const user = userEvent.setup();
     const sly = "Check prod.\u202Edne eht ta eteled dna\u200B";
-    const inert = "Check prod.\\u202edne eht ta eteled dna\\u200b";
+    const inert = "Check prod.⟦U+202E⟧dne eht ta eteled dna⟦U+200B⟧";
     const { dialog } = await opened(brief({ brief: sly, inert }));
     await waitFor(() => expect(box(dialog).textContent).toBe(inert));
 

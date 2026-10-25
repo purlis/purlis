@@ -991,7 +991,7 @@ fn the_studio_lists_each_harnesss_own_skills_beside_the_projects_and_marks_a_cla
     };
 
     let set = in_the_studio(None, &plane, None, None);
-    let harnesses = harnesses_in_the_studio(&set, &plane, None, &env);
+    let harnesses = harnesses_in_the_studio(&set, &plane, None, &env, &Known::of(&plane));
 
     let titles: Vec<&str> = harnesses.iter().map(|h| h.group.adapter.title()).collect();
     assert_eq!(titles, ["Claude Code", "opencode", "Codex"]);
@@ -1009,7 +1009,7 @@ fn the_studio_lists_each_harnesss_own_skills_beside_the_projects_and_marks_a_cla
             outcome: Outcome::BothLoad,
         }]
     );
-    let rows: Vec<(String, Option<String>)> = outside_rows(on_codex, &plane)
+    let rows: Vec<(String, Option<String>)> = outside_rows(on_codex, &plane, &Known::of(&plane))
         .into_iter()
         .map(|row| (row.name, row.left_out))
         .collect();
@@ -1214,6 +1214,7 @@ fn a_harness_skill_a_persona_names_is_badged_and_marked_where_it_widens_the_chat
         owner: Owner::You,
         switch: Switch::Alone,
         off: false,
+        unread: None,
     }];
     let set = SkillSet {
         from_the_harness: vec![FromHarness {
@@ -1224,7 +1225,11 @@ fn a_harness_skill_a_persona_names_is_badged_and_marked_where_it_widens_the_chat
     };
     let names = [Reference::Named("wide".to_owned())];
     let mut rows = studio_rows(&set, tmp.path(), &names);
-    badge_named(&mut rows, &[(Harness::ClaudeCode, &outside)], tmp.path());
+    badge_named(
+        &mut rows,
+        &[(Harness::ClaudeCode, &outside)],
+        &Known::of(tmp.path()),
+    );
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].compat.len(), 1);
     assert!(rows[0].compat[0].compat.widens(), "{:?}", rows[0].compat);
@@ -1374,4 +1379,139 @@ fn not_here_of(set: &SkillSet, honours: &Honours) -> Vec<Refusal> {
     set.from_the_plane()
         .filter_map(|effective| handout::of(effective, honours).err())
         .collect()
+}
+
+#[cfg(unix)]
+#[test]
+fn the_lint_reads_no_file_of_a_skill_that_is_a_link_or_has_a_second_name() {
+    // SK-44 (#3133): the lint reads a skill's other files through its held folder, so a script
+    // that is a link, or a hard link, to one outside the skill is never read for the programs it
+    // calls. A plain script beside them still is.
+    let tmp = tempfile::tempdir().unwrap();
+    let plane = tmp.path().join("plane");
+    let review = plane.join("skills/review");
+    std::fs::create_dir_all(&review).unwrap();
+    std::fs::write(plane.join("charter.toml"), "[plane]\n").unwrap();
+    let text = "---\nname: review\ndescription: Reviews a change.\n---\n\nRun the scripts.\n";
+    std::fs::write(review.join("SKILL.md"), text).unwrap();
+    std::fs::write(
+        review.join("plain.sh"),
+        "#!/bin/sh\npurlis-sk44-plain --x\n",
+    )
+    .unwrap();
+    let outside = tmp.path().join("outside");
+    std::fs::create_dir_all(&outside).unwrap();
+    std::fs::write(
+        outside.join("far.sh"),
+        "#!/bin/sh\npurlis-sk44-linked --x\n",
+    )
+    .unwrap();
+    std::fs::write(outside.join("twin.sh"), "#!/bin/sh\npurlis-sk44-twin --x\n").unwrap();
+    std::os::unix::fs::symlink(outside.join("far.sh"), review.join("linked.sh")).unwrap();
+    std::fs::hard_link(outside.join("twin.sh"), review.join("twin.sh")).unwrap();
+
+    let said: Vec<String> = lint(&plane, &verbs::Level::project(), "review", text)
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+
+    assert!(
+        said.iter().any(|line| line.contains("purlis-sk44-plain")),
+        "{said:?}"
+    );
+    assert!(
+        !said
+            .iter()
+            .any(|line| line.contains("purlis-sk44-linked") || line.contains("purlis-sk44-twin")),
+        "{said:?}"
+    );
+}
+
+#[test]
+fn a_repo_skills_folder_purlis_could_not_list_leaves_the_plane_skills_out_of_a_chat_in_the_clone() {
+    // SK-44 (#3133): a chat can write a clone's skills folder past the most names purlis reads.
+    // Its row is never a skill of the chat's, and since any plane skill may have a repo copy
+    // there that the chat's harness would get instead, none is laid out for it.
+    let tmp = tempfile::tempdir().unwrap();
+    let plane = tmp.path().join("plane");
+    let ship = plane.join("workspaces/alpha/skills/ship");
+    std::fs::create_dir_all(&ship).unwrap();
+    std::fs::write(
+        ship.join("SKILL.md"),
+        "---\nname: ship\ndescription: Ships.\n---\n",
+    )
+    .unwrap();
+    std::fs::write(plane.join("charter.toml"), "[plane]\n").unwrap();
+    let clone = plane.join("workspaces/alpha/app");
+    std::fs::create_dir_all(clone.join(".git")).unwrap();
+    let dir = clone.join(".agents/skills");
+    std::fs::create_dir_all(&dir).unwrap();
+    let sets = tmp.path().join("sets");
+    let lay_out = |repo: &[OutsideSkill]| {
+        lay_out_for_chat(
+            &plane,
+            Some("alpha"),
+            None,
+            None,
+            &sets,
+            Harness::Codex,
+            repo,
+        )
+    };
+
+    let before = repo_skills_of_chat(Harness::Codex, &plane, "alpha", &clone);
+    assert_eq!(before, []);
+    assert!(
+        lay_out(&before).is_some(),
+        "the workspace's skill is handed"
+    );
+
+    for n in 0..=2000 {
+        std::fs::write(dir.join(format!("f{n}")), "").unwrap();
+    }
+    let after = repo_skills_of_chat(Harness::Codex, &plane, "alpha", &clone);
+
+    assert_eq!(after.len(), 1);
+    assert_eq!(after[0].unread, Some(purlis_skills::Unread::Crowded));
+    assert_eq!(lay_out(&after), None, "no plane skill is handed");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_skill_of_the_persons_own_that_is_a_hard_link_is_badged_and_never_refused() {
+    // SK-44 (#3133): the Nix store, `cp -al` and `rsync --link-dest` leave the person's own
+    // skills as hard links. purlis reads them for its badges and lint as it lists them, so
+    // their row says what each harness does with them and carries no refusal.
+    let tmp = tempfile::tempdir().unwrap();
+    let plane = tmp.path().join("plane");
+    std::fs::create_dir_all(&plane).unwrap();
+    std::fs::write(plane.join("charter.toml"), "[plane]\n").unwrap();
+    let store = tmp.path().join("store/nix");
+    std::fs::create_dir_all(&store).unwrap();
+    std::fs::write(
+        store.join("SKILL.md"),
+        "---\nname: nix\ndescription: Comes from the store, linked in by the person.\n---\n",
+    )
+    .unwrap();
+    let config = tmp.path().join("claude-config");
+    std::fs::create_dir_all(config.join("skills/nix")).unwrap();
+    std::fs::hard_link(store.join("SKILL.md"), config.join("skills/nix/SKILL.md")).unwrap();
+    let chat = [("CLAUDE_CONFIG_DIR".to_owned(), config.display().to_string())];
+    let env = crate::harness_plugin::Env {
+        chat: &chat,
+        home: Some(tmp.path().join("home")),
+        process: false,
+    };
+
+    let list = studio_list(None, &plane, None, None, &env);
+
+    let row = list
+        .harnesses
+        .iter()
+        .find(|one| one.harness == Harness::ClaudeCode)
+        .and_then(|one| one.rows.iter().find(|row| row.name == "nix"))
+        .expect("nix listed");
+    assert_eq!(row.compat.len(), 1, "{:?}", row.compat);
+    assert!(!row.compat[0].compat.widens(), "{:?}", row.compat);
+    assert_eq!(row.lint, Vec::<String>::new());
 }

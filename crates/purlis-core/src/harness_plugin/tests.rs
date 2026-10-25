@@ -1924,3 +1924,58 @@ fn the_studio_refuses_what_a_harness_cannot_switch_and_writes_nothing() {
     }
     assert!(!plane.path().join("charter.local.toml").exists());
 }
+
+#[test]
+fn opencode_lists_a_plugin_folder_of_more_names_than_purlis_reads_as_one_it_did_not_read() {
+    // SK-44 (#3133): a project's plugin folder is a chat's to fill; past the most names purlis
+    // reads of one folder, none is read, and the folder is named, saying why.
+    let project = tempfile::tempdir().unwrap();
+    let dir = project.path().join(".opencode/plugin");
+    std::fs::create_dir_all(&dir).unwrap();
+    for n in 0..=MOST_NAMES {
+        std::fs::write(dir.join(format!("p{n}.ts")), "export default {}").unwrap();
+    }
+
+    let got: Vec<(String, String)> = OPENCODE
+        .in_project(project.path())
+        .into_iter()
+        .filter(|it| it.id.starts_with(".opencode/"))
+        .map(|it| (it.id, it.source))
+        .collect();
+
+    assert_eq!(got.len(), 1, "{got:?}");
+    assert_eq!(got[0].0, ".opencode/plugin");
+    assert!(
+        got[0]
+            .1
+            .starts_with("a folder of more than 2000 names, the most purlis reads of one"),
+        "{}",
+        got[0].1
+    );
+}
+
+#[test]
+fn a_clones_worktree_folder_of_more_names_than_purlis_reads_is_named_and_not_read() {
+    // SK-44 (#3133): the worktree folder of a clone is a chat's to fill too.
+    let project = project_with_a_workspace(&[]);
+    let root = project.path().canonicalize().unwrap();
+    let pieces = crate::worktree::root_of(&root, "smart").join("app");
+    std::fs::create_dir_all(&pieces).unwrap();
+    for n in 0..=MOST_NAMES {
+        std::fs::write(pieces.join(format!("w{n}")), "").unwrap();
+    }
+
+    let got: Vec<(String, String)> = ids_and_sources(OPENCODE.in_workspace(&root, "smart"))
+        .into_iter()
+        .filter(|(id, _)| id.contains(".worktrees"))
+        .collect();
+
+    assert_eq!(
+        got,
+        [pair(
+            "workspaces/smart/.worktrees/app",
+            "a folder of more than 2000 names, the most purlis reads of one: the plugins \
+             opencode loads from it are not listed"
+        )]
+    );
+}

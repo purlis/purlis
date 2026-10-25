@@ -837,7 +837,7 @@ mod tests {
         }
         let r = reply_of(&get, 403, json!({"message": forged}).to_string(), vec![]);
         assert_eq!(
-            r.err, "denied\\x0aok: merged\\u202etxt.exe\\x1b[2J (HTTP 403)",
+            r.err, "denied⟦U+000A⟧ok: merged⟦U+202E⟧txt.exe⟦U+001B⟧[2J (HTTP 403)",
             "escaped, not dropped, so the reader still sees what was sent"
         );
         let r = reply_of(&get, 500, long, vec![]);

@@ -195,7 +195,7 @@ fn a_harness_name_from_the_environment_cannot_forge_a_row() {
     let text = String::from_utf8(out.stdout).unwrap();
     assert!(!text.contains("\n  \u{2713}  forged"), "{text}");
     assert!(
-        text.contains("how x\\x0a  \u{2713}  forged finds"),
+        text.contains("how x⟦U+000A⟧  \u{2713}  forged finds"),
         "{text}"
     );
 }

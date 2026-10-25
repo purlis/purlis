@@ -1413,6 +1413,7 @@ fn harnesses_in_the_studio(
     plane: &Path,
     workspace: Option<&str>,
     env: &crate::harness_plugin::Env<'_>,
+    known: &Known,
 ) -> Vec<HarnessInTheStudio> {
     let choices = crate::harness_plugin::Choices::read_in(plane, workspace);
     let clones = workspace
@@ -1437,7 +1438,7 @@ fn harnesses_in_the_studio(
                 outside,
                 rows: Vec::new(),
             };
-            one.rows = outside_rows(&one, plane);
+            one.rows = outside_rows(&one, plane, known);
             Some(one)
         })
         .collect()
@@ -1531,7 +1532,7 @@ pub struct OutsideRow {
 /// **The studio's rows of the skills from outside the plane `harness` finds** (SK-6, #2769),
 /// each by the name the harness knows it by, on or left out as its set says, with whose it is
 /// and how it switches. In the order they were found.
-fn outside_rows(harness: &HarnessInTheStudio, plane: &Path) -> Vec<StudioRow> {
+fn outside_rows(harness: &HarnessInTheStudio, plane: &Path, known: &Known) -> Vec<StudioRow> {
     harness
         .outside
         .iter()
@@ -1543,14 +1544,15 @@ fn outside_rows(harness: &HarnessInTheStudio, plane: &Path) -> Vec<StudioRow> {
                 .iter()
                 .find(|l| l.name == found.id && l.origin == found.origin && l.folder == folder)
                 .map(|l| l.reason.to_string());
-            let (compat, lint) = if left_out.is_none() {
+            // One purlis did not read is never linted or badged (SK-44): its description says why.
+            let (compat, lint) = if left_out.is_none() && found.unread.is_none() {
                 (
                     badges(
                         (&found.root, &found.skill.path),
                         found.origin,
                         &[harness.harness],
                     ),
-                    outside_lint(plane, found),
+                    outside_lint(known, found),
                 )
             } else {
                 (Vec::new(), Vec::new())
@@ -1584,9 +1586,29 @@ fn outside_rows(harness: &HarnessInTheStudio, plane: &Path) -> Vec<StudioRow> {
         .collect()
 }
 
-/// The most bytes of one of a skill's other files the lint reads: a script past this is no
-/// script it reads for the programs it calls.
-const MOST_LINTED: u64 = 256 * 1024;
+/// **What the built-in lints check a skill against** (SK-44, #3133): the names of the plane's
+/// skills, every level's, and of the built-in ones. Read once per list, never once per skill
+/// linted: a clone's skills cost one read of the plane, whatever their number.
+struct Known {
+    plane: std::collections::HashSet<String>,
+    built_in: std::collections::HashSet<String>,
+}
+
+impl Known {
+    /// What the plane at `plane` and this machine's bundle have.
+    fn of(plane: &Path) -> Self {
+        // Every level, each persona's among them (SK-32).
+        Self {
+            plane: verbs::Level::every(plane)
+                .iter()
+                .filter_map(|level| level.dir(plane))
+                .flat_map(|dir| read(&dir))
+                .map(|skill| skill.name)
+                .collect(),
+            built_in: built_in_names_here().into_iter().collect(),
+        }
+    }
+}
 
 /// **The live lint of the skill `name` at `level` of the plane at `plane`, as its `SKILL.md`
 /// would say `text`** (SK-8, #2771): every finding of the built-in lints
@@ -1599,7 +1621,7 @@ pub fn lint(plane: &Path, level: &verbs::Level, name: &str, text: &str) -> Vec<F
         .ok()
         .map(|(path, _)| path);
     linted(
-        plane,
+        &Known::of(plane),
         path.as_deref().map(|path| (plane, path)),
         name,
         text,
@@ -1610,44 +1632,36 @@ pub fn lint(plane: &Path, level: &verbs::Level, name: &str, text: &str) -> Vec<F
 /// **What the built-in lints say of a skill from outside the plane** (SK-8): a harness or repo
 /// skill, read where it lies by the one reader that follows no link, each finding as anywhere
 /// but the editor says it ([`Finding::shown`]). What its studio row shows.
-fn outside_lint(plane: &Path, skill: &OutsideSkill) -> Vec<String> {
-    let findings = match purlis_skills::read_skill_md(&skill.root, &skill.skill.path) {
-        Ok(text) => linted(
-            plane,
-            Some((&skill.root, &skill.skill.path)),
-            &skill.skill.name,
-            &text,
-            skill.origin,
-        ),
-        Err(why) => vec![Finding {
-            severity: purlis_skills::Severity::Warns,
-            lint: purlis_skills::Lint::Refused(why),
-        }],
-    };
+fn outside_lint(known: &Known, skill: &OutsideSkill) -> Vec<String> {
+    let findings =
+        match purlis_skills::read_skill_md_of(&skill.root, &skill.skill.path, skill.origin) {
+            Ok(text) => linted(
+                known,
+                Some((&skill.root, &skill.skill.path)),
+                &skill.skill.name,
+                &text,
+                skill.origin,
+            ),
+            Err(why) => vec![Finding {
+                severity: purlis_skills::Severity::Warns,
+                lint: purlis_skills::Lint::Refused(why),
+            }],
+        };
     findings.iter().filter_map(Finding::shown).collect()
 }
 
 /// The built-in lints of the skill `name` from `origin`, whose `SKILL.md` says `text` and, where
-/// it is already there, lies at `skill_md`: checked against the plane's skills, the built-in
-/// ones and this machine's programs, with its other files read. `skill_md` is the root its
-/// folder is held from, and the path.
+/// it is already there, lies at `skill_md`: checked against the `known` skills and this
+/// machine's programs, with its other files read, each of at most [`purlis_skills::MOST_BYTES`].
+/// `skill_md` is the root its folder is held from, and the path.
 fn linted(
-    plane: &Path,
+    known: &Known,
     skill_md: Option<(&Path, &Path)>,
     name: &str,
     text: &str,
     origin: Origin,
 ) -> Vec<Finding> {
     use purlis_skills::SkillLint;
-    // Every level, each persona's among them (SK-32).
-    let mut known: Vec<String> = verbs::Level::every(plane)
-        .iter()
-        .filter_map(|level| level.dir(plane))
-        .flat_map(|dir| read(&dir))
-        .map(|skill| skill.name)
-        .collect();
-    known.push(name.to_owned());
-    let built_in = built_in_names_here();
     // Read through the skill's folder held from its root, never through a link (SK-36).
     let others: Vec<(String, String)> = skill_md
         .and_then(|(root, path)| purlis_skills::SkillFolder::open(root, path).ok())
@@ -1657,7 +1671,7 @@ fn linted(
                 .into_iter()
                 .filter_map(|entry| match entry {
                     purlis_skills::Entry::File(rel) => {
-                        let text = folder.read(&rel, MOST_LINTED)?;
+                        let text = folder.read(&rel, purlis_skills::MOST_BYTES)?;
                         Some((rel.to_string_lossy().into_owned(), text))
                     }
                     purlis_skills::Entry::Folder(_) => None,
@@ -1667,8 +1681,8 @@ fn linted(
         .unwrap_or_default();
     purlis_skills::BuiltInLints {
         namespace: LINKED_PLUGIN,
-        plane: &known,
-        built_in: &built_in,
+        plane: &known.plane,
+        built_in: &known.built_in,
         has: &crate::programs::on_path,
     }
     .findings(&purlis_skills::SkillFiles {
@@ -1694,7 +1708,7 @@ fn badges(
     origin: Origin,
     harnesses: &[Harness],
 ) -> Vec<HarnessCompat> {
-    let text = purlis_skills::read_skill_md(root, path);
+    let text = purlis_skills::read_skill_md_of(root, path, origin);
     harnesses
         .iter()
         .map(|harness| HarnessCompat {
@@ -1710,29 +1724,32 @@ fn badges(
 /// **Each studio row of a harness skill a persona names, with its badge and lint on every
 /// harness that finds it** (SK-8): the rows [`studio_rows`] draws from a persona's `skills:`
 /// list carry no file of their own, so the skill each harness found by that name gives them one.
-fn with_harness_badges(rows: &mut [StudioRow], harnesses: &[HarnessInTheStudio], plane: &Path) {
+fn with_harness_badges(rows: &mut [StudioRow], harnesses: &[HarnessInTheStudio], known: &Known) {
     let found: Vec<(Harness, &[OutsideSkill])> = harnesses
         .iter()
         .map(|one| (one.harness, one.outside.as_slice()))
         .collect();
-    badge_named(rows, &found, plane);
+    badge_named(rows, &found, known);
 }
 
 /// [`with_harness_badges`], with what each harness found.
-fn badge_named(rows: &mut [StudioRow], found: &[(Harness, &[OutsideSkill])], plane: &Path) {
+fn badge_named(rows: &mut [StudioRow], found: &[(Harness, &[OutsideSkill])], known: &Known) {
     for row in rows
         .iter_mut()
         .filter(|row| row.origin == Origin::Harness && row.outside.is_none())
     {
         for (harness, outside) in found {
-            if let Some(skill) = outside.iter().find(|skill| skill.id == row.name) {
+            if let Some(skill) = outside
+                .iter()
+                .find(|skill| skill.id == row.name && skill.unread.is_none())
+            {
                 row.compat.extend(badges(
                     (&skill.root, &skill.skill.path),
                     skill.origin,
                     &[*harness],
                 ));
                 if row.lint.is_empty() {
-                    row.lint = outside_lint(plane, skill);
+                    row.lint = outside_lint(known, skill);
                 }
             }
         }
@@ -1763,9 +1780,10 @@ pub fn studio_list(
     let names = persona
         .map(|persona| names_of(plane, persona))
         .unwrap_or_default();
-    let harnesses = harnesses_in_the_studio(&set, plane, workspace, env);
+    let known = Known::of(plane);
+    let harnesses = harnesses_in_the_studio(&set, plane, workspace, env, &known);
     let mut rows = studio_rows(&set, plane, &names);
-    with_harness_badges(&mut rows, &harnesses, plane);
+    with_harness_badges(&mut rows, &harnesses, &known);
     StudioList { rows, harnesses }
 }
 

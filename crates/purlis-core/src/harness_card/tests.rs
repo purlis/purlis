@@ -499,7 +499,7 @@ fn a_card_draws_a_declarations_words_as_one_clipped_line() {
         card.title.chars().count(),
         harness_declaration::MOST_TITLE + 1
     );
-    assert_eq!(card.tested.as_deref(), Some("1.0\\x0a2.0"));
+    assert_eq!(card.tested.as_deref(), Some("1.0⟦U+000A⟧2.0"));
 }
 
 // ---- what a chat cannot tell purlis: one source with the card (#1134, ADR 0073 §3) ------- //
