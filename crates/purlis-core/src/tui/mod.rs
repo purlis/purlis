@@ -650,13 +650,21 @@ impl Markup {
         self
     }
 
-    /// purlis's own words, as written. A literal carries no escape: colour is [`styled`].
+    /// purlis's own words, as written. A literal carries no escape and nothing hidden: colour
+    /// is [`styled`], and a test build fails on any character the one rule would mark (an
+    /// escape, a C1 CSI U+009B, a bidi or a zero-width character). A line end or a tab may be
+    /// purlis's own layout, so those two are let through.
+    ///
+    /// `&'static str` keeps run-time values out by convention, not by proof: a string made
+    /// `'static` with `Box::leak` gets past it. A value purlis did not write goes through
+    /// [`text`], always.
     ///
     /// [`styled`]: Markup::styled
+    /// [`text`]: Markup::text
     pub fn own(mut self, words: &'static str) -> Self {
         debug_assert!(
-            !words.contains('\x1b'),
-            "colour goes through Markup::styled"
+            marked(words, Breaks::Kept) == words,
+            "purlis's own words hold a character the one rule marks: {words:?}"
         );
         self.0.push_str(words);
         self

@@ -867,10 +867,8 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 return match verbs::text_of(root, &at.level(), &name) {
                     Ok((folder, _)) => {
                         let about = purlis_core::skills::about_of(&folder).unwrap_or_default();
-                        if about.owners.is_empty() {
-                            println!("{name} names no owners.");
-                        } else {
-                            println!("{}", about.owners.join("\n"));
+                        for line in owners_lines(&name, &about.owners) {
+                            println!("{line}");
                         }
                         Ok(0)
                     }
@@ -947,6 +945,18 @@ fn uses_lines(name: &str, node: &purlis_core::skills::graph::UsesOf) -> Vec<Mark
         lines.push(Markup::new().own("used by ").text(other));
     }
     lines
+}
+
+/// What `skill owners` prints of `name`: each owner its frontmatter names, one a line, or that
+/// it names none. The owners are the skill's own text, so each is escaped.
+fn owners_lines(name: &str, owners: &[String]) -> Vec<Markup> {
+    if owners.is_empty() {
+        return vec![Markup::new().text(name).own(" names no owners.")];
+    }
+    owners
+        .iter()
+        .map(|owner| Markup::new().text(owner))
+        .collect()
 }
 
 /// Sets a skill's lifecycle state, saying when it already was so.

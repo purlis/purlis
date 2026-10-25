@@ -321,3 +321,11 @@ fn purlis_s_own_colour_still_shows_around_escaped_text() {
     assert_eq!(line.as_str(), "\x1b[32mok⟦U+001B⟧[31m\x1b[0m done");
     assert_eq!(strip_ansi(line.as_str()), "ok⟦U+001B⟧[31m done");
 }
+
+/// SK-50: purlis's own words are a literal with nothing the one rule marks; a C1 CSI, a bidi
+/// or a zero-width character in one fails a test build, not only an ESC.
+#[test]
+#[should_panic(expected = "purlis's own words")]
+fn own_words_holding_a_c1_csi_fail_a_test_build() {
+    let _ = Markup::new().own("a\u{9b}8m");
+}

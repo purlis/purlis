@@ -100,3 +100,17 @@ fn skill_versions_shows_a_commit_s_author_and_subject_escaped() {
         "{empty}"
     );
 }
+
+#[test]
+fn skill_owners_shows_each_owner_escaped_one_a_line() {
+    let lines: Vec<String> = owners_lines(HOSTILE, &[HOSTILE.into(), "ops\nroot".into()])
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    assert_eq!(lines, [SHOWN.to_string(), "ops⟦U+000A⟧root".to_string()]);
+    let none: Vec<String> = owners_lines(HOSTILE, &[])
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    assert_eq!(none, [format!("{SHOWN} names no owners.")]);
+}
