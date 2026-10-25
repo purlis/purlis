@@ -104,7 +104,8 @@ pub fn hides(text: &str, breaks: Breaks) -> bool {
 ///
 /// The one mark everywhere: the install review, every terminal table, `one_line` and every
 /// report built on it. A mark is not an escape a program reads back; it is there so nothing
-/// the model or a terminal reads is hidden from the person.
+/// the model or a terminal reads is hidden from the person. Marking is idempotent (a mark is
+/// visible text), so a layer may mark what another layer already marked.
 pub fn marked(text: &str, breaks: Breaks) -> String {
     let mut out = String::with_capacity(text.len());
     for (ch, hidden) in flagged(text, breaks) {

@@ -1028,11 +1028,16 @@ pub fn shown_brief(brief: &str) -> ShownBrief {
 /// change direction or hide what follows. Lines and tabs are kept (a `\r\n` is a line break),
 /// and every other character a reader does not see is written as its mark, `⟦U+XXXX⟧`:
 /// purlis's one rule ([`purlis_unicode::marked`], SK-49), which leaves a joiner doing its job
-/// in a script or an emoji as text. Nothing is cut: what [`shown_brief`] shows of a brief
-/// before it is sent, and what the window shows of one after
-/// ([`crate::dispatchrecord::brief_sent`]).
+/// in a script or an emoji as text. A `⟦` the chat wrote is written as its own mark,
+/// `⟦U+27E6⟧`, so the chat cannot spell a mark and every one shown is purlis's. Nothing is cut:
+/// what [`shown_brief`] shows of a brief before it is sent, and what the window shows of one
+/// after ([`crate::dispatchrecord::brief_sent`]).
 pub fn inert(text: &str) -> String {
-    purlis_unicode::marked(&text.replace("\r\n", "\n"), purlis_unicode::Breaks::Kept)
+    text.replace("\r\n", "\n")
+        .split('\u{27E6}')
+        .map(|part| purlis_unicode::marked(part, purlis_unicode::Breaks::Kept))
+        .collect::<Vec<_>>()
+        .join("⟦U+27E6⟧")
 }
 
 /// Whether `text` holds a character [`inert`] writes out as a mark: one that draws as

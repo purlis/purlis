@@ -254,8 +254,8 @@ mod report_line_tests {
 
     #[test]
     fn a_newline_cannot_forge_a_second_line() {
-        assert_eq!(line("a\nEVIL: fine"), "a\\x0aEVIL: fine");
-        assert_eq!(line("a\r\nb"), "a\\x0d\\x0ab");
+        assert_eq!(line("a\nEVIL: fine"), "a⟦U+000A⟧EVIL: fine");
+        assert_eq!(line("a\r\nb"), "a⟦U+000D⟧⟦U+000A⟧b");
     }
 
     #[test]
@@ -266,17 +266,23 @@ mod report_line_tests {
             "Ship it — properly · no shortcuts ✗"
         );
         // U+200B ZERO WIDTH SPACE is `Cf`; U+180E is `Cf` and NOT `White_Space`.
-        assert_eq!(line("a\u{200b}b"), "a\\u200bb");
-        assert_eq!(line("a\u{180e}b"), "a\\u180eb");
+        assert_eq!(line("a\u{200b}b"), "a⟦U+200B⟧b");
+        assert_eq!(line("a\u{180e}b"), "a⟦U+180E⟧b");
         // U+00A0 is `Zs`: Python's `isspace()` clause, not the category set.
-        assert_eq!(line("a\u{a0}b"), "a\\xa0b");
-        // An astral escape is FIVE hex digits, because Python's width is a minimum.
-        assert_eq!(line("a\u{e0020}b"), "a\\ue0020b");
+        assert_eq!(line("a\u{a0}b"), "a⟦U+00A0⟧b");
+        // An astral mark is five hex digits: four is a minimum width.
+        assert_eq!(line("a\u{e0020}b"), "a⟦U+E0020⟧b");
+        // SK-49: a joiner inside an emoji or a script is text; a stray one is marked.
+        assert_eq!(
+            line("\u{1f468}\u{200d}\u{1f469}"),
+            "\u{1f468}\u{200d}\u{1f469}"
+        );
+        assert_eq!(line("a\u{200d}b"), "a⟦U+200D⟧b");
     }
 
     #[test]
     fn the_four_separator_controls_are_escaped_where_rust_calls_them_printable() {
-        assert_eq!(line("a\u{1f}b"), "a\\x1fb");
+        assert_eq!(line("a\u{1f}b"), "a⟦U+001F⟧b");
     }
 
     #[test]
@@ -302,7 +308,7 @@ mod report_line_tests {
             ],
         );
         assert_eq!(said.lines().count(), 1);
-        assert!(said.contains("0.60.0-a\\x0aEVIL: nothing is wrong.md"));
+        assert!(said.contains("0.60.0-a⟦U+000A⟧EVIL: nothing is wrong.md"));
     }
 
     #[test]
@@ -318,7 +324,7 @@ mod report_line_tests {
                 ),
             ],
         );
-        assert_eq!(said, "0.52.0: 2 entries (a\\x0ab.md, c.md)");
+        assert_eq!(said, "0.52.0: 2 entries (a⟦U+000A⟧b.md, c.md)");
     }
 
     #[test]

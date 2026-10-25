@@ -401,7 +401,7 @@ fn a_brief_is_shown_whole_with_its_lines_and_nothing_that_moves_or_hides_text() 
     assert_eq!(
         shown,
         ShownBrief {
-            text: "Check prod.\n\tThen report.\\u001b[2J\\u202eevil\\u200b\\u0007".to_owned(),
+            text: "Check prod.\n\tThen report.⟦U+001B⟧[2J⟦U+202E⟧evil⟦U+200B⟧⟦U+0007⟧".to_owned(),
             cut: false,
             lines: 2,
         }
@@ -413,15 +413,18 @@ fn a_brief_shows_every_character_with_no_glyph_as_its_escape_and_cannot_spell_on
     // Whatever draws as nothing, or as a line break that is not one: a soft hyphen, the
     // Mongolian vowel separator, the line and paragraph separators, a tag character.
     let shown = shown_brief("a\u{ad}b\u{180e}c\u{2028}d\u{2029}e\u{e0041}f");
-    assert_eq!(shown.text, "a\\u00adb\\u180ec\\u2028d\\u2029e\\U000e0041f");
+    assert_eq!(
+        shown.text,
+        "a⟦U+00AD⟧b⟦U+180E⟧c⟦U+2028⟧d⟦U+2029⟧e⟦U+E0041⟧f"
+    );
     assert_eq!(
         shown.lines, 1,
         "a separator that was escaped breaks no line"
     );
-    // A backslash the chat wrote is doubled, so its text never reads as one of purlis's
-    // escapes: these two briefs are shown differently.
-    assert_eq!(shown_brief("\\u202e").text, "\\\\u202e");
-    assert_ne!(shown_brief("\\u202e").text, shown_brief("\u{202e}").text);
+    // A mark the chat wrote is not one: its own `⟦` is marked, so these two briefs are shown
+    // differently.
+    assert_eq!(shown_brief("⟦U+202E⟧").text, "⟦U+27E6⟧U+202E⟧");
+    assert_ne!(shown_brief("⟦U+202E⟧").text, shown_brief("\u{202e}").text);
 }
 
 #[test]

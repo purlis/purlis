@@ -103,6 +103,13 @@ fn a_hidden_character_is_written_as_its_one_mark() {
     assert_eq!(marked("plain 日本語", Breaks::Marked), "plain 日本語");
 }
 
+/// The terminal layers mark a cell and then the line it is in, so marking twice is marking once.
+#[test]
+fn marking_what_is_marked_changes_nothing() {
+    let once = marked("a\u{202E}b\n\u{1F468}\u{200D}\u{1F469}", Breaks::Marked);
+    assert_eq!(marked(&once, Breaks::Marked), once);
+}
+
 #[test]
 fn line_ends_and_tabs_are_marked_or_kept_as_the_caller_says() {
     assert_eq!(

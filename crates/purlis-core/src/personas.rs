@@ -770,7 +770,7 @@ mod name_tests {
         );
         assert_eq!(
             name_refusal(dir.path(), "a\nb").unwrap(),
-            "invalid persona name 'a\\x0ab' (lowercase letters, digits, '.', '_', '-')"
+            "invalid persona name 'a⟦U+000A⟧b' (lowercase letters, digits, '.', '_', '-')"
         );
         assert_eq!(
             name_refusal(dir.path(), "nope").unwrap(),
@@ -847,7 +847,7 @@ mod name_tests {
         assert_eq!(crate::pyrepr::repr_str("it's"), "\"it's\"");
 
         // And `one_line` still escapes what could forge a second line of the report.
-        assert_eq!(one_line("two\nlines"), "two\\x0alines");
+        assert_eq!(one_line("two\nlines"), "two⟦U+000A⟧lines");
         // Where `repr` writes the short escape and adds its own quotes.
         assert_eq!(crate::pyrepr::repr_str("two\nlines"), "'two\\nlines'");
     }

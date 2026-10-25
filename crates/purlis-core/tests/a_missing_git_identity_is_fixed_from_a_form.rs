@@ -184,8 +184,8 @@ fn a_bad_name_or_email_is_refused_field_by_field_and_nothing_is_written() {
 
 /// **A name has to show something** (#1250): fillers and marks that draw nothing on their own
 /// passed the invisible-character rule, so a commit could be authored by a blank. Each is
-/// refused alone, and a real name around one of them (a Korean name with its filler, an emoji
-/// with its variation selector) is still a name.
+/// refused alone, and a real name around a mark that does a job (an emoji with its variation
+/// selector, a joined family) is still a name. A filler beside a name is not (SK-49).
 #[test]
 fn a_name_with_no_visible_character_is_refused_and_nothing_is_written() {
     purlis_core::unsteered!();
@@ -215,8 +215,17 @@ fn a_name_with_no_visible_character_is_refused_and_nothing_is_written() {
         );
         assert!(refused.email.is_empty(), "{refused:?}");
     }
+    // SK-49: a filler beside a real name is a character no reader sees, so it is refused as
+    // every other hidden character is; the one rule names the Hangul fillers.
+    let refused =
+        identity::apply(&root, "\u{d55c}\u{3164}", "ann@example.invalid").expect_err("a filler");
+    assert!(refused.name[0].contains("zero-width"), "{refused:?}");
     // Beside a bad email, so nothing is written: the name itself is taken.
-    for name in ["\u{d55c}\u{3164}", "Ann \u{2764}\u{fe0f}", "e\u{0301}"] {
+    for name in [
+        "Ann \u{2764}\u{fe0f}",
+        "e\u{0301}",
+        "\u{1f468}\u{200d}\u{1f469}",
+    ] {
         let taken = identity::apply(&root, name, "nope").expect_err("the email");
         assert!(taken.name.is_empty(), "{name:?}: {taken:?}");
     }

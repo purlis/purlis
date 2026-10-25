@@ -259,6 +259,10 @@ fn name_refused(name: &str) -> Option<String> {
     if let Some(why) = secret_refused(name) {
         return Some(why);
     }
+    // Nothing to see at all says so first, then anything hidden among what is seen.
+    if !name.chars().any(draws) {
+        return Some("A name needs at least one visible character.".into());
+    }
     if hides_a_character(name) {
         return Some(
             "A name is one line of visible characters: no control, zero-width or \
@@ -268,9 +272,6 @@ fn name_refused(name: &str) -> Option<String> {
     }
     if name.chars().count() > LIMIT {
         return Some(format!("A name is at most {LIMIT} characters."));
-    }
-    if !name.chars().any(draws) {
-        return Some("A name needs at least one visible character.".into());
     }
     if name.contains(['<', '>']) {
         return Some("A name cannot contain < or >: git keeps those for the email.".into());
