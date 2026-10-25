@@ -696,7 +696,7 @@ describe("a workspace's settings (charter-app#280, SE-20)", () => {
     await menuOn("beta");
     await userEvent.click(screen.getByRole("menuitem", { name: "Settings…" }));
 
-    expect(await screen.findByRole("heading", { name: "Settings · beta" })).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "Settings · beta" })).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: "Workspace" })).toHaveAttribute(
       "aria-checked",
       "true",

@@ -498,7 +498,7 @@ export function SkillStudioTab({
   );
   const restorable = deleted.length > 0 && (
     <section className="skill-deleted" aria-label="Deleted skills">
-      <h3>Deleted skills</h3>
+      <h2>Deleted skills</h2>
       <ul>
         {deleted.map((one) => (
           <li key={one.id} data-testid={`deleted-${one.name}`}>

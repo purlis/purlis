@@ -310,6 +310,23 @@ pub enum Reason {
     MadeWhileAChatRan(String),
 }
 
+impl Reason {
+    /// **Whether a repo of the chat's clone is why** (SK-53, #3213): a narrower repo copy took
+    /// the name ([`Self::NameTaken`] by [`Origin::Repo`], decision 51), or purlis could not read
+    /// a skills folder of the clone whole ([`Self::RepoUnread`]). A plane skill left out so is
+    /// one only a chat in that clone loses, and its tab says so (decision 41).
+    pub fn of_a_repo(&self) -> bool {
+        matches!(
+            self,
+            Self::RepoUnread { .. }
+                | Self::NameTaken {
+                    by: Origin::Repo,
+                    ..
+                }
+        )
+    }
+}
+
 /// What a folder lacks to be a whole skill.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Missing {
@@ -580,6 +597,15 @@ impl SkillSet {
             "every built-in skill sits in one directory"
         );
         Some(dir)
+    }
+
+    /// **The plane's skills a repo of the chat's clone leaves out** ([`Reason::of_a_repo`]),
+    /// in the order the set left them out: what the chat's tab and the studio say it starts
+    /// without because of that repo (SK-53).
+    pub fn left_out_by_a_repo(&self) -> impl Iterator<Item = &LeftOut> {
+        self.left_out
+            .iter()
+            .filter(|left| left.origin.of_the_plane() && left.reason.of_a_repo())
     }
 
     /// The effective skills that come from the plane, by name: what a route hands over beside

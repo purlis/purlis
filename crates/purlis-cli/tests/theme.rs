@@ -2175,7 +2175,8 @@ fn theme_parts_prints_every_family_part_state_and_property_as_json() {
     assert_eq!(ran.code, 0, "{}", ran.err);
     let json = ran.json();
     assert_eq!(json["schema"], 1);
-    assert_eq!(json["version"], 12);
+    // The last release's manifest version: a pull request that adds to it leaves it alone.
+    assert_eq!(json["version"], purlis_core::theme::parts::VERSION);
     assert_eq!(
         json["theme_schema"]
             .as_str()

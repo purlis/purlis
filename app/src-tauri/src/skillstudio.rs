@@ -266,6 +266,9 @@ pub struct StudioHarness {
     pub plugins: Vec<StudioPlugin>,
     /// The skills it finds itself, read only, each by the name it knows it by.
     pub skills: Vec<StudioSkill>,
+    /// The project's skills a repo of the workspace leaves out of its chats in that clone, each
+    /// with why (SK-53): the core's `HarnessInTheStudio::repo_left_out`.
+    pub repo_left_out: Vec<StudioSkill>,
 }
 
 /// A harness or repo skill with the name of a skill purlis hands a chat (ADR 0099 §3): both
@@ -529,6 +532,12 @@ fn harnesses(
                     })
                     .collect(),
                 skills: one.rows.iter().cloned().map(outside_shown).collect(),
+                repo_left_out: one
+                    .repo_left_out
+                    .iter()
+                    .cloned()
+                    .map(outside_shown)
+                    .collect(),
             }
         })
         .collect();

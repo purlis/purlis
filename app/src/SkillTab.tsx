@@ -83,7 +83,7 @@ function SkillTotals({ plane, name, changed }: { plane: string; name: string; ch
   if (stats === undefined || stats.by_persona.length === 0) return null;
   return (
     <section aria-labelledby="skill-totals-heading" data-testid="skill-totals">
-      <h3 id="skill-totals-heading">Totals</h3>
+      <h2 id="skill-totals-heading">Totals</h2>
       {GROUPINGS.map(({ key, heading, column, none }) => (
         <table
           key={key}
@@ -174,9 +174,7 @@ export function SkillTab({
 
   return (
     <div className="skill-tab" data-testid="skill-tab">
-      <h2 className="skill-tab-name">
-        <code>{name}</code>
-      </h2>
+      {/* No heading with the skill's name: its tab says it (#3147). */}
       <SkillDetailsPanel plane={plane} name={name} changed={changed + graded} onGraded={regraded} />
       <SkillTotals plane={plane} name={name} changed={changed} />
       {refused !== undefined ? (
@@ -234,10 +232,10 @@ function StudioPanelSection({
         panel.key.kind === SKILL_RUNS_PANEL ? "skill-runs" : `skill-panel-${keyOf(panel.key)}`
       }
     >
-      <h3 id={heading}>
+      <h2 id={heading}>
         {panel.title}
         {panel.by !== null && <span className="quiet">{` · ${panel.by}`}</span>}
-      </h3>
+      </h2>
       {panel.refused !== null ? (
         <EmptyState
           variant="panel"
