@@ -8,14 +8,16 @@
 //! `purlis bridge --pair` pairs the runner, once (ADR 0078 §3, as ruled 2026-10-17, #2044): it
 //! reads the desktop's device id and public link key on its standard input, one line of
 //! [`purlis_core::runnerlink::to_line`], keeps them as the runner's one peer, mints the
-//! runner's device id and makes its link key, and writes the runner's own device id and public key on its standard
-//! output for the desktop to keep. It is the bridge's one act that is not a pipe. The
+//! runner's device id and makes its link key, and writes the runner's own device id and public
+//! key on its standard output for the desktop to keep. For a Docker pool's runner the
 //! connector's own login vouches for this one exchange; after it, the keys decide.
 //!
-//! On a cluster runner (#2056) the key is made as the pod starts, by `purlis bridge --make-key
-//! <file> --publish <file>`, the pod's first step: its private half is handed to the pairing,
-//! and its public half written where the cluster shows it, for the operator to vouch for.
-//! `purlis bridge --pair --key-made-at-start <file>` then pairs with that key.
+//! A cluster runner's key is made earlier, as its pod starts (#2056): `purlis bridge --make-key
+//! <file> --publish <file>`, the pod's first step, hands the private half to the pairing and
+//! writes the public half where the cluster shows it, and the cluster operator vouches for that
+//! key. `purlis bridge --pair --key-made-at-start <file>` then pairs with it, and the desktop
+//! accepts the runner only when its answer is the vouched key. Pairing and making the key are
+//! the bridge's only acts that are not a pipe.
 
 use std::io::{BufRead, Read, Write};
 use std::time::{Duration, Instant};

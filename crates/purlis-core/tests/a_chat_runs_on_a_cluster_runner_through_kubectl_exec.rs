@@ -12,7 +12,8 @@
 //! It needs a cluster with purlis's cluster operator installed and the runner image of this
 //! build named by digest in `CLUSTER_POOL_TEST_IMAGE`, with the kubeconfig context in
 //! `CLUSTER_POOL_TEST_CONTEXT` (and `kubectl` on `PATH`): `operator/e2e/kind.sh` sets both on
-//! a kind cluster. Without them it runs nothing and passes, since a sandboxed agent cannot.
+//! a kind cluster and runs it with `--ignored`. It is ignored anywhere else, and fails when
+//! either is missing.
 
 #![cfg(unix)]
 
@@ -125,15 +126,14 @@ async fn linked(
 }
 
 #[test]
+#[ignore = "needs a cluster with purlis's cluster operator: operator/e2e/kind.sh"]
 fn a_chat_runs_on_a_cluster_runner_paired_with_the_key_the_operator_vouched_for() {
     purlis_core::unsteered!();
-    let (Ok(image), Ok(context)) = (
-        std::env::var("CLUSTER_POOL_TEST_IMAGE"),
-        std::env::var("CLUSTER_POOL_TEST_CONTEXT"),
-    ) else {
-        // No cluster is named: nothing is run (the module's docs say where it runs).
-        return;
-    };
+    // Run only by kind.sh, which names both: without them it fails, never passes unrun.
+    let image = std::env::var("CLUSTER_POOL_TEST_IMAGE")
+        .expect("CLUSTER_POOL_TEST_IMAGE names the runner image by digest");
+    let context = std::env::var("CLUSTER_POOL_TEST_CONTEXT")
+        .expect("CLUSTER_POOL_TEST_CONTEXT names the cluster's kubeconfig context");
     let kubectl = Kubectl::at("kubectl").with_context(&context);
     let suffix = ulid::Ulid::generate().to_string().to_lowercase();
     let namespace = format!("e2e-chat-{}", &suffix[..10]);

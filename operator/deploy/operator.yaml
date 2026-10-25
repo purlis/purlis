@@ -72,6 +72,11 @@ rules:
   - apiGroups: [""]
     resources: [pods]
     verbs: [get]
+  # The sandbox upstream made for a claim, read by its name, so a claim is followed to its pod
+  # by uid: the sandbox is the upstream claim's, and the pod the sandbox's.
+  - apiGroups: [agents.x-k8s.io]
+    resources: [sandboxes]
+    verbs: [get]
   # The policy's binding, by name only: the operator acts only on Claims admitted under it.
   - apiGroups: [admissionregistration.k8s.io]
     resources: [validatingadmissionpolicybindings]

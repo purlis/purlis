@@ -116,6 +116,14 @@ fn a_statement_purlis_does_not_read_is_refused_even_when_signed() {
         good.replace("pod uid: ", "pod uid:"),
         good.trim_end().to_owned(),
         good.replace("key: ", "key: 0"),
+        good.replace("pod: ada-1", "pod: --server=https://elsewhere"),
+        good.replace("pod: ada-1", "pod: Ada-1"),
+        good.replace("namespace: ada", "namespace: a.b"),
+        good.replace("claim uid: 6f1c2b8e", "claim uid: 6F1C2B8E"),
+        good.replace(
+            "pod uid: 0a1b2c3d-4e5f-4061-8728-394a5b6c7d8e",
+            "pod uid: a-pod",
+        ),
     ];
     for text in unread {
         let refused = operator.key().verified(&text, &operator.sign(&text));
@@ -142,7 +150,7 @@ fn a_statement_about_another_claim_or_requester_is_refused() {
             ..vouched(key)
         },
         Vouched {
-            claim_uid: "another".into(),
+            claim_uid: "99999999-9999-4999-8999-999999999999".into(),
             ..vouched(key)
         },
         Vouched {
@@ -277,9 +285,9 @@ fn pairing_execs_into_the_vouched_pod_and_refuses_a_runner_answering_another_key
             "-i",
             "--namespace",
             "ada",
-            "ada-1",
             "--container",
             "runner",
+            "pod/ada-1",
             "--",
             "/usr/local/bin/purlis",
             "bridge",
@@ -288,4 +296,9 @@ fn pairing_execs_into_the_vouched_pod_and_refuses_a_runner_answering_another_key
             "/run/purlis-link/link-key",
         ]
     );
+}
+
+#[test]
+fn the_link_key_path_is_the_one_the_operators_template_names() {
+    assert_eq!(KEY_MADE_AT_START, fixture("link-key-path.txt").trim());
 }

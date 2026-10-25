@@ -5,7 +5,7 @@ the operator signs {claim, pod, link key, requester} with a key the desktop pinn
 was added; the desktop also pairs over its own exec, and both must agree; a changed key is
 refused and asked about."* It adds to §3 and §8 for runners of a cluster pool, and to the
 amendment of 2026-10-17 on a Docker pool's runner (items 3 and 5); it changes neither for a
-Docker pool. *Decided in implementation, to be confirmed* (D-2056-1 to D-2056-6 in its pull
+Docker pool. *Decided in implementation, to be confirmed* (D-2056-1 to D-2056-8 in its pull
 request).
 
 1. **A cluster runner makes its link key as its pod starts, not at its pairing.** The pod's first
@@ -14,9 +14,10 @@ request).
    through a link) in a folder in memory that only the pod's two containers mount, and the
    public half, as 64 lower-case hex, as its termination message, which the cluster shows in the
    pod's status. Nothing else in the pod runs while it does, so nothing else can publish there.
-2. **The operator vouches for it.** It reads the runner's pod by name (the one upstream made for
-   the claim's sandbox, controlled by it), holds the pod to its own template for the pool, and
-   signs, with an Ed25519 key of its own, the statement `purlis runner link key v1` naming the
+2. **The operator vouches for it.** It follows the claim to the runner's pod by uid (the
+   upstream claim, the sandbox it controls, the pod that sandbox controls), holds the pod to its
+   own template for the pool in every field but those the cluster sets, refuses a template
+   another field manager changed, and signs, with an Ed25519 key of its own, the statement `purlis runner link key v1` naming the
    claim's namespace, name and uid, the pod's name and uid, the key, and the requester the
    claim was stamped with at admission. The statement is plain text, one `name: value` line
    each in a fixed order, so both sides sign and read exactly the same bytes
@@ -30,7 +31,8 @@ request).
    in the session host's own folder and removes the pod's copy. The two must agree: a runner
    answering another key than the one vouched for is refused as a changed key, which is how a
    connector that reached another runner is found. So is a statement that, before any later
-   link, names another pod or key than the ones paired with.
+   link, names another pod or key than the ones paired with; the operator takes a statement
+   away once it no longer holds, looking at each vouched claim again every minute.
 5. **The connector's own login no longer vouches alone.** §3 let the connector's own
    authentication vouch for the one pairing exchange. For a cluster runner that is the
    operator's statement and the exec answer together: whatever carries the exec stream, or

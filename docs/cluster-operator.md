@@ -130,10 +130,10 @@ kubectl label namespace purlis-system pod-security.kubernetes.io/enforce=restric
 
 # 3. The key the operator signs runners' link keys with, made once, here, and kept as a Secret
 #    the operator's pod mounts. Keep it: a new key makes every desktop ask again.
-openssl genpkey -algorithm ed25519 -out signing-key.pem
-kubectl -n purlis-system create secret generic purlis-cluster-operator-signing-key \
-  --from-file=key.pem=signing-key.pem
-rm signing-key.pem
+#    Piped, so the key is never written to a file.
+openssl genpkey -algorithm ed25519 |
+  kubectl -n purlis-system create secret generic purlis-cluster-operator-signing-key \
+    --from-file=key.pem=/dev/stdin
 
 # 4. purlis's definitions, the policy on Claims, and the operator.
 helm install purlis-cluster-operator operator/charts/purlis-cluster-operator \
@@ -146,7 +146,9 @@ helm install purlis-cluster-operator operator/charts/purlis-cluster-operator \
 Claim) before anything else in it, and never upgrades or deletes them. A cluster admin who
 reviews and applies them apart from the controllers applies `operator/deploy/crds.yaml` with
 `kubectl apply --server-side` and installs the chart with `--skip-crds`. After an upgrade of
-the chart that changes them, apply `operator/deploy/crds.yaml` the same way.
+the chart that changes them, apply `operator/deploy/crds.yaml` the same way, before the chart:
+Helm never upgrades `crds/`. An upgrade to a chart whose policy asks for a Claim's `requester`
+without the definitions that hold it refuses every new Claim until they are applied.
 
 `helm uninstall` removes the operator and leaves the definitions, the Claims and Pools in
 them, and the policy on Claims, which Helm keeps (`helm.sh/resource-policy: keep`).
@@ -184,10 +186,10 @@ kubectl apply --server-side -f operator/deploy/crds.yaml
 #    kept as a Secret its pod mounts. Keep it: a new key makes every desktop ask again.
 kubectl create namespace purlis-system
 kubectl label namespace purlis-system pod-security.kubernetes.io/enforce=restricted
-openssl genpkey -algorithm ed25519 -out signing-key.pem
-kubectl -n purlis-system create secret generic purlis-cluster-operator-signing-key \
-  --from-file=key.pem=signing-key.pem
-rm signing-key.pem
+#    Piped, so the key is never written to a file.
+openssl genpkey -algorithm ed25519 |
+  kubectl -n purlis-system create secret generic purlis-cluster-operator-signing-key \
+    --from-file=key.pem=/dev/stdin
 
 # 4. The operator, with its image named by digest: the `install/operator.yaml` of a run's
 #    `operator-image` artifact, which already names it, or this one with the image set.
@@ -275,9 +277,10 @@ claimed. Two witnesses say which key that runner holds, and both must agree:
    key, hands its private half to the runner in a folder in memory the two containers alone
    share (`/run/purlis-link/`), and writes its public half as its termination message, which
    the cluster shows in the pod's status.
-2. **The operator signs what it saw.** It reads that pod by name, holds it to the template it
-   made for the pool (the `link-key` step and the runner both of the pool's image, and nothing
-   before them), and signs a statement of the claim, the pod, the key and the requester with
+2. **The operator signs what it saw.** It follows the claim to its pod by uid: its upstream
+   claim, the sandbox that claim controls, and the pod that sandbox controls. It holds the pod
+   to the template it made for the pool in full, every field but the few the cluster itself
+   sets or defaults, and refuses a pool's template that someone else changed. Then it signs a statement of the claim, the pod, the key and the requester with
    its own Ed25519 key. The statement and its signature are the Claim's `status.linkKey`, and
    its `KeyPublished` condition says `Vouched`, or why not yet. Every Pool's
    `status.signingKey` names the operator's key, which a desktop pins when it adds the pool.
@@ -286,7 +289,14 @@ claimed. Two witnesses say which key that runner holds, and both must agree:
    and key. A statement signed by another key, about another claim or requester, or a runner
    answering another key than the one vouched for, is refused, and so is a statement that names
    another pod or key before any later link. The pairing takes the private half out of the
-   shared folder, so it is left only in the session host's own.
+   shared folder, so it is left only in the session host's own. The operator looks at a
+   vouched claim again every minute, and takes its statement away once it no longer holds.
+
+**Vouching is only as strong as the namespace is the requester's own.** Anyone who may exec into
+pods, make pods, or change the pool's objects in a claim's namespace can reach its runner, read
+its key, or pair with it first, whatever the statement says. Until the operator makes a
+namespace per person (#2055), give each person a namespace of their own and no one else rights
+in it. Read access to Secrets in the operator's namespace is the power to vouch for any runner.
 
 A runner is paired once: a pod whose container restarts has lost its pairing, and the claim is
 made again.
@@ -343,12 +353,13 @@ it holds:
 | `runners.purlis.dev` | `claims/status` | patch |
 | `runners.purlis.dev` | `pools/status` | patch |
 | core | `pods` | get |
+| `agents.x-k8s.io` | `sandboxes` | get |
 | `admissionregistration.k8s.io` | `validatingadmissionpolicybindings`, only `purlis-claims-use-their-pool` | get, list, watch |
 | `extensions.agents.x-k8s.io` | `sandboxclaims`, `sandboxtemplates`, `sandboxwarmpools` | create, get, list, patch, watch |
 
 It holds no right to `exec`, `attach` or port-forward to a pod and none to read a Secret, and it
-reads a pod only by name: the runner's, which upstream made for a Claim's sandbox, for the key it
-vouches for. It never lists, makes, changes or deletes a pod. Its own signing key is the
+reads a sandbox and a pod only by name: a Claim's, which upstream made, to follow the claim to
+its runner and read the key it vouches for. It never lists, makes, changes or deletes a pod. Its own signing key is the
 Secret you made at install, which the kubelet mounts in its pod. Its Kubernetes client is built
 without the websocket support `exec` would need.
 `operator/tests/the_install_manifests.rs` holds these rules, and the kind tests ask the cluster

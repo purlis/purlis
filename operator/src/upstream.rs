@@ -97,6 +97,17 @@ pub struct SandboxWarmPoolSpec {
     pub sandbox_template_ref: Reference,
 }
 
+/// Upstream's sandbox, which makes and owns one runner's pod: purlis reads only its metadata,
+/// to follow a claim to its pod by uid (#2056).
+#[derive(CustomResource, Serialize, Deserialize, Clone, Debug, Default, PartialEq, JsonSchema)]
+#[kube(
+    group = "agents.x-k8s.io",
+    version = "v1beta1",
+    kind = "Sandbox",
+    namespaced
+)]
+pub struct SandboxSpec {}
+
 /// Upstream's claim of one runner from a warm pool. Upstream's controller writes its status.
 #[derive(CustomResource, Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[kube(

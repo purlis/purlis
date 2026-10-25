@@ -12,18 +12,15 @@
 //! nothing is written for the Claim until that object is gone.
 
 use crate::admission::{Admission, POLICY, admission};
-use crate::resources::{
-    Claim, ClaimStatus, KEY_PUBLISHED, LinkKey, Pool, READY, condition, condition_of,
-};
+use crate::resources::{Claim, ClaimStatus, Pool, READY, condition};
 use crate::upstream::{
-    self, Found, SandboxClaim, SandboxTemplate, SandboxWarmPool, made_for, made_for_pool,
+    self, Found, Sandbox, SandboxClaim, SandboxTemplate, SandboxWarmPool, made_for, made_for_pool,
     owners_with, sandbox_claim_for, template_for, warm_pool_for,
 };
-use crate::vouch::{self, NotYet, SigningKey};
+use crate::vouch::{self, SigningKey, Vouching};
 use futures::StreamExt;
 use k8s_openapi::api::admissionregistration::v1::ValidatingAdmissionPolicyBinding;
 use k8s_openapi::api::core::v1::Pod;
-use k8s_openapi::apimachinery::pkg::apis::meta::v1::Condition;
 use kube::api::{Api, ObjectMeta, PartialObjectMeta, Patch, PatchParams, PostParams};
 use kube::runtime::controller::{Action, Controller};
 use kube::runtime::reflector::{ObjectRef, Store};
@@ -312,134 +309,74 @@ async fn reconcile_claim(claim: Arc<Claim>, context: Arc<Context>) -> Result<Act
                 write_status(client, &claim, &namespace, status).await?;
                 return Ok(Action::await_change());
             }
-            write_ours(&templates, template, template_found).await?;
+            let template_now = write_ours(&templates, template, template_found).await?;
             write_ours(&warm_pools, warm, warm_found).await?;
             let applied = write_ours(&upstream_claims, wanted, claim_found).await?;
-            let mut status = status_of(Some(&applied));
-            let (vouched, link_key) = vouch_for(
+            let vouching = vouch_for(
                 client,
                 &context.signing,
                 &claim,
-                &namespace,
                 &pool,
                 &applied,
+                &template_now.metadata,
             )
             .await?;
-            let starting = vouched.reason == "Starting";
-            status.conditions.push(vouched);
-            status.link_key = link_key;
-            write_status(client, &claim, &namespace, status).await?;
-            // The pod's first step publishes its key soon after the pod starts, and the pod is
-            // not watched: the claim is looked at again until it has.
-            return Ok(if starting {
-                Action::requeue(KEY_WAIT)
-            } else {
-                Action::await_change()
-            });
+            let mut status = status_of(Some(&applied));
+            status.conditions.push(vouching.condition());
+            status.link_key = vouching.link_key();
+            write_status_saying(client, &claim, &namespace, status, LinkKeyIs::Said).await?;
+            // The pod is not watched: a claim waiting for its key is looked at again soon, and
+            // one vouched for or refused now and then, so a pod changed since is found.
+            return Ok(Action::requeue(vouching.again()));
         }
     };
     write_status(client, &claim, &namespace, status).await?;
     Ok(Action::await_change())
 }
 
-/// How long a claim whose runner has not published its key yet waits to be looked at again.
-const KEY_WAIT: Duration = Duration::from_secs(3);
-
-/// **The operator's word on `claim`'s runner's link key** (#2056): its `KeyPublished`
-/// condition, and, once the runner's pod published its key, the signed statement. The pod is
-/// the one upstream made for the claim's sandbox, read by name: it must be controlled by that
-/// sandbox and be of the operator's template for `pool` ([`vouch::key_published`]).
+/// **The operator's word on `claim`'s runner's link key** (#2056): the sandbox its upstream
+/// claim names and the pod of that sandbox's name, read, then [`vouch::vouch`].
 async fn vouch_for(
     client: &Client,
     signing: &SigningKey,
     claim: &Claim,
-    namespace: &str,
     pool: &Pool,
     upstream: &SandboxClaim,
-) -> Result<(Condition, Option<LinkKey>), Error> {
-    let starting = |message: &str| {
-        (
-            condition_of(KEY_PUBLISHED, "False", "Starting", message.to_owned()),
-            None,
-        )
-    };
-    let refused = |message: String| {
-        (
-            condition_of(KEY_PUBLISHED, "False", "NotVouched", message),
-            None,
-        )
-    };
-    let Some(sandbox) = upstream
+    template: &ObjectMeta,
+) -> Result<Vouching, Error> {
+    let namespace = claim.namespace().unwrap_or_default();
+    let named = upstream
         .status
         .as_ref()
         .and_then(|status| status.sandbox.as_ref())
-        .map(|sandbox| sandbox.name.clone())
-    else {
-        return Ok(starting("The runner's pod has not been made yet."));
+        .map(|sandbox| sandbox.name.clone());
+    let (sandbox, pod) = match &named {
+        Some(name) => (
+            Api::<Sandbox>::namespaced(client.clone(), &namespace)
+                .get_metadata_opt(name)
+                .await?
+                .map(|held| held.metadata),
+            Api::<Pod>::namespaced(client.clone(), &namespace)
+                .get_opt(name)
+                .await?,
+        ),
+        None => (None, None),
     };
-    let Some(pod) = Api::<Pod>::namespaced(client.clone(), namespace)
-        .get_opt(&sandbox)
-        .await?
-    else {
-        return Ok(starting("The runner's pod has not been made yet."));
-    };
-    let of_the_sandbox = pod.owner_references().iter().any(|owner| {
-        owner.controller == Some(true) && owner.kind == "Sandbox" && owner.name == sandbox
-    });
-    if !of_the_sandbox {
-        return Ok(refused(format!(
-            "The pod {sandbox} is not the one upstream made for this claim's sandbox, so the \
-             operator vouches for no key in it."
-        )));
-    }
-    let template = upstream::template_for(pool, namespace, Vec::new())
+    let wanted = upstream::template_for(pool, &namespace, Vec::new())
         .spec
         .pod_template
         .spec
         .unwrap_or_default();
-    let key = match vouch::key_published(&pod, &template) {
-        Ok(key) => key,
-        Err(NotYet::Starting) => {
-            return Ok(starting("The runner's pod has not made its link key yet."));
-        }
-        Err(NotYet::NotOurs(why)) => {
-            return Ok(refused(format!(
-                "The operator vouches for no key in the pod {sandbox}: {why}."
-            )));
-        }
-    };
-    let (claim_uid, pod_uid) = (
-        claim.uid().unwrap_or_default(),
-        pod.uid().unwrap_or_default(),
-    );
-    let pod_name = pod.name_any();
-    let about = vouch::About {
-        namespace,
-        claim: &claim.name_any(),
-        claim_uid: &claim_uid,
-        pod: &pod_name,
-        pod_uid: &pod_uid,
-        key: &key,
-        requester: &claim.spec.requester,
-    };
-    let Some(text) = vouch::statement(&about) else {
-        return Ok(refused(
-            "The claim's requester, or its pod's names, cannot be written in a statement."
-                .to_owned(),
-        ));
-    };
-    let signature = signing.sign(&text);
-    Ok((
-        condition_of(
-            KEY_PUBLISHED,
-            "True",
-            "Vouched",
-            format!("The operator vouches for the link key pod {pod_name} made as it started."),
-        ),
-        Some(LinkKey {
-            statement: text,
-            signature,
-        }),
+    Ok(vouch::vouch(
+        &vouch::Held {
+            claim,
+            upstream,
+            template: Some(template),
+            sandbox: sandbox.as_ref(),
+            pod: pod.as_ref(),
+        },
+        &wanted,
+        signing,
     ))
 }
 
@@ -520,23 +457,62 @@ pub fn claims_kept_as_owners(
 }
 
 /// `status` written on the Claim, unless it says what the Claim already says.
+/// Whether a status written for a Claim says what becomes of its link key.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LinkKeyIs {
+    /// Left as it was: the pass did not look at the runner's key.
+    Kept,
+    /// Exactly the status's: none means the statement written before goes.
+    Said,
+}
+
+/// The merge patch that brings a Claim's `previous` status to `next`, or none when it already
+/// says that ([`settled`]). With [`LinkKeyIs::Said`] a status that names no link key writes
+/// `linkKey: null`, so a statement that no longer holds is taken away (#2056).
+pub fn status_patch(
+    previous: Option<&ClaimStatus>,
+    next: ClaimStatus,
+    link_key: LinkKeyIs,
+) -> Option<serde_json::Value> {
+    let mut status = settled(previous, next);
+    if link_key == LinkKeyIs::Kept {
+        status.link_key = previous.and_then(|held| held.link_key.clone());
+    }
+    if previous == Some(&status) {
+        return None;
+    }
+    let mut value = serde_json::to_value(&status).unwrap_or_default();
+    if status.link_key.is_none()
+        && let Some(fields) = value.as_object_mut()
+    {
+        fields.insert("linkKey".into(), serde_json::Value::Null);
+    }
+    Some(serde_json::json!({ "status": value }))
+}
+
+/// `status` written on the Claim, unless it says what the Claim already says.
 async fn write_status(
     client: &Client,
     claim: &Claim,
     namespace: &str,
     status: ClaimStatus,
 ) -> Result<(), Error> {
-    let mut status = settled(claim.status.as_ref(), status);
-    // A status that names no link key leaves the one written before as it is (a merge).
-    if status.link_key.is_none() {
-        status.link_key = claim.status.as_ref().and_then(|held| held.link_key.clone());
-    }
-    if claim.status.as_ref() != Some(&status) {
+    write_status_saying(client, claim, namespace, status, LinkKeyIs::Kept).await
+}
+
+async fn write_status_saying(
+    client: &Client,
+    claim: &Claim,
+    namespace: &str,
+    status: ClaimStatus,
+    link_key: LinkKeyIs,
+) -> Result<(), Error> {
+    if let Some(patch) = status_patch(claim.status.as_ref(), status, link_key) {
         Api::<Claim>::namespaced(client.clone(), namespace)
             .patch_status(
                 &claim.name_any(),
                 &PatchParams::default(),
-                &Patch::Merge(serde_json::json!({ "status": status })),
+                &Patch::Merge(patch),
             )
             .await?;
     }

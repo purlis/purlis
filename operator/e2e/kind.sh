@@ -166,10 +166,10 @@ kubectl --context "$context" create namespace purlis-system
 kubectl --context "$context" label namespace purlis-system pod-security.kubernetes.io/enforce=restricted
 # The key the operator signs runners' link keys with, made before it is installed, as
 # docs/cluster-operator.md makes it (#2056).
-openssl genpkey -algorithm ed25519 -out "$helm_home/signing-key.pem"
-kubectl --context "$context" -n purlis-system create secret generic purlis-cluster-operator-signing-key \
-  --from-file=key.pem="$helm_home/signing-key.pem" >/dev/null
-rm -f "$helm_home/signing-key.pem"
+# Piped, so the key is never written to a file.
+openssl genpkey -algorithm ed25519 |
+  kubectl --context "$context" -n purlis-system create secret generic purlis-cluster-operator-signing-key \
+    --from-file=key.pem=/dev/stdin >/dev/null
 # The chart's own default names the image, as in the install a person downloads.
 helm install purlis-cluster-operator "$install/charts/purlis-cluster-operator" --kube-context "$context" --namespace purlis-system \
   --wait --timeout 180s
@@ -204,7 +204,7 @@ step "a chat runs on a cluster runner, through the link"
 # that must agree with it, then a link through kubectl exec and a chat on it.
 CLUSTER_POOL_TEST_IMAGE=$runner CLUSTER_POOL_TEST_CONTEXT=$context \
   cargo test --manifest-path "$repo/Cargo.toml" --locked -p purlis-core \
-  --test a_chat_runs_on_a_cluster_runner_through_kubectl_exec -- --test-threads=1
+  --test a_chat_runs_on_a_cluster_runner_through_kubectl_exec -- --ignored --test-threads=1
 
 step "uninstalled, the chart leaves the definitions and the policy"
 helm uninstall purlis-cluster-operator --kube-context "$context" --namespace purlis-system --wait

@@ -139,6 +139,7 @@ fn the_operator_may_do_exactly_what_it_needs() {
             "validatingadmissionpolicybindings",
             "get,list,watch",
         ),
+        ("agents.x-k8s.io", "sandboxes", "get"),
         (
             "extensions.agents.x-k8s.io",
             "sandboxclaims",

@@ -110,7 +110,9 @@ impl Vouched {
     /// A statement from its text: exactly [`Vouched::text`]'s lines, each value plain printable
     /// text, and its key 64 lower-case hex. Anything else is refused.
     pub fn from_text(text: &str) -> Result<Vouched, Refused> {
-        let bad = || Refused::NotVouched("the operator's statement is not one purlis reads".into());
+        let bad = || {
+            Refused::NotVouched("the cluster operator's statement is not one purlis reads".into())
+        };
         let body = text
             .strip_prefix(STATEMENT_HEADER)
             .and_then(|rest| rest.strip_prefix('\n'))
@@ -132,6 +134,16 @@ impl Vouched {
         let key = bytes_of(&values[5]).ok_or_else(bad)?;
         let [namespace, claim, claim_uid, pod, pod_uid, _key, requester]: [String; 7] =
             values.try_into().map_err(|_| bad())?;
+        // Names and uids only as Kubernetes gives them: nothing that could read as a flag or
+        // another kind of object where kubectl is handed the pod's name.
+        let named = is_label(&namespace)
+            && is_subdomain(&claim)
+            && is_subdomain(&pod)
+            && is_uid(&claim_uid)
+            && is_uid(&pod_uid);
+        if !named {
+            return Err(bad());
+        }
         Ok(Vouched {
             namespace,
             claim,
@@ -155,6 +167,34 @@ impl Vouched {
 
 /// Whether `value` can be a statement's value: not empty, at most [`MOST_VALUE`] bytes, and
 /// nothing a line break or a control character could hide behind.
+/// A DNS-1123 label, as a namespace is named.
+pub fn is_label(name: &str) -> bool {
+    is_subdomain(name) && name.len() <= 63 && !name.contains('.')
+}
+
+/// A DNS-1123 subdomain, as a pod or a claim is named.
+pub fn is_subdomain(name: &str) -> bool {
+    let plain = |b: u8| b.is_ascii_lowercase() || b.is_ascii_digit();
+    !name.is_empty()
+        && name.len() <= 253
+        && name.split('.').all(|part| {
+            !part.is_empty()
+                && part.bytes().all(|b| plain(b) || b == b'-')
+                && part.bytes().next().is_some_and(plain)
+                && part.bytes().last().is_some_and(plain)
+        })
+}
+
+/// A uid as Kubernetes makes one: a UUID in lower-case hex, `8-4-4-4-12`.
+pub fn is_uid(uid: &str) -> bool {
+    let parts: Vec<&str> = uid.split('-').collect();
+    parts.len() == 5
+        && parts
+            .iter()
+            .zip([8, 4, 4, 4, 12])
+            .all(|(part, len)| is_lower_hex(part, len))
+}
+
 fn plain(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= MOST_VALUE
@@ -195,7 +235,7 @@ impl OperatorKey {
     /// not a statement.
     pub fn verified(&self, text: &str, signature: &str) -> Result<Vouched, Refused> {
         let signed = signature_bytes(signature).ok_or_else(|| {
-            Refused::NotVouched("the operator's signature is not one purlis reads".into())
+            Refused::NotVouched("the cluster operator's signature is not one purlis reads".into())
         })?;
         ring::signature::UnparsedPublicKey::new(&ring::signature::ED25519, self.0)
             .verify(text.as_bytes(), &signed)
@@ -308,9 +348,9 @@ impl Kubectl {
             "-i",
             "--namespace",
             namespace,
-            pod,
             "--container",
             RUNNER_CONTAINER,
+            &format!("pod/{pod}"),
             "--",
             PURLIS,
             "bridge",
@@ -331,65 +371,37 @@ impl Kubectl {
     /// Runs kubectl with `args`, handing it `input`, and answers what it printed, up to `most`
     /// bytes. What it says on standard error is only shown, never read to decide anything.
     pub fn run(&self, args: &[String], input: Option<&str>, most: u64) -> Result<String, Refused> {
-        use std::io::{Read, Write};
-        let mut command = std::process::Command::new(&self.program);
-        command
-            .args(args)
-            .stdin(if input.is_some() {
-                std::process::Stdio::piped()
-            } else {
-                std::process::Stdio::null()
-            })
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped());
         let what = || {
             args.iter()
                 .find(|arg| !arg.starts_with('-') && !self.pointed().contains(arg))
                 .cloned()
                 .unwrap_or_default()
         };
-        let mut child = crate::forklock::spawn(&mut command).map_err(|why| {
-            Refused::Other(format!(
-                "{} could not be run: {why}",
-                self.program.display()
-            ))
-        })?;
-        if let (Some(input), Some(mut stdin)) = (input, child.stdin.take()) {
-            let _ = stdin.write_all(input.as_bytes());
-        }
-        let said = child.stderr.take().map(|stderr| {
-            std::thread::spawn(move || {
-                let mut kept = Vec::new();
-                let mut stderr = stderr;
-                let _ = (&mut stderr).take(MOST_SAID).read_to_end(&mut kept);
-                let _ = std::io::copy(&mut stderr, &mut std::io::sink());
-                kept
+        let mut command = std::process::Command::new(&self.program);
+        command.args(args);
+        let ran = crate::boundedrun::run(&mut command, input, most, MOST_SAID).map_err(|why| {
+            use crate::boundedrun::Unanswered;
+            Refused::Other(match why {
+                Unanswered::NotStarted(why) => {
+                    format!("{} could not be run: {why}", self.program.display())
+                }
+                Unanswered::PrintedTooMuch => format!(
+                    "kubectl {} printed more than the {most} bytes purlis reads of it, so it was ended",
+                    what()
+                ),
+                Unanswered::NotFinished(why) => {
+                    format!("{} did not finish: {why}", self.program.display())
+                }
             })
-        });
-        let mut out = Vec::new();
-        if let Some(stdout) = child.stdout.take() {
-            let _ = stdout.take(most + 1).read_to_end(&mut out);
-        }
-        if out.len() as u64 > most {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(Refused::Other(format!(
-                "kubectl {} printed more than the {most} bytes purlis reads of it, so it was ended",
-                what()
-            )));
-        }
-        let status = child.wait().map_err(|why| {
-            Refused::Other(format!("{} did not finish: {why}", self.program.display()))
         })?;
-        let said = said.and_then(|said| said.join().ok()).unwrap_or_default();
-        if !status.success() {
+        if !ran.status.success() {
             return Err(Refused::Other(format!(
                 "kubectl {} failed: {}",
                 what(),
-                String::from_utf8_lossy(&said).trim()
+                String::from_utf8_lossy(&ran.said).trim()
             )));
         }
-        String::from_utf8(out)
+        String::from_utf8(ran.printed)
             .map_err(|_| Refused::Other("kubectl answered with something that is not text".into()))
     }
 
@@ -550,7 +562,7 @@ pub fn checked(
         &claimed.requester,
     ) {
         return Err(Refused::NotVouched(format!(
-            "the operator's statement is about another claim or requester than the claim {}/{} \
+            "the cluster operator's statement is about another claim or requester than the claim {}/{} \
              this desktop made as {}, so purlis refused it",
             claimed.namespace, claimed.name, claimed.requester
         )));
