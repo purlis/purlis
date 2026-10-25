@@ -25,6 +25,7 @@ pub use purlis_skills::{
     grant_file, grant_of, handed_text, in_bundle, level_dir, level_shown, listing, named, named_at,
     persona_dir, read, scan, set_grant, share,
 };
+pub use purlis_skills::{Hidden, HiddenWhy, INDEX, Index, Router, Routing};
 pub use purlis_skills::{SkillFiles, SkillLint};
 
 /// Skill runs: the span from the moment a skill starts to the end of the turn (SK-3).
@@ -93,6 +94,7 @@ pub fn for_chat(kit: Kit<'_>, harness: Harness) -> SkillSet {
         kit.persona.map(|persona| persona.persona),
         harness.skills(),
         None,
+        Some(harness.skill_budget()),
     )
 }
 
@@ -135,7 +137,9 @@ pub fn built_in_names(dir: Option<&Path>) -> Vec<String> {
 /// plane skill. Nothing is read or written here: an adapter only turns the set into argv, env and
 /// config (ADR 0063 as amended 2026-10-20).
 pub fn linked<'a>(set: &SkillSet, kit: Kit<'a>) -> Option<&'a Path> {
-    set.from_the_plane().next()?;
+    if set.from_the_plane().next().is_none() && set.index().is_none() {
+        return None;
+    }
     kit.skills?.linked
 }
 
@@ -162,7 +166,14 @@ pub fn lay_out_for_chat(
         linked: None,
         repo,
     };
-    let set = ask(built_in, Some(at), persona, harness.skills(), None);
+    let set = ask(
+        built_in,
+        Some(at),
+        persona,
+        harness.skills(),
+        None,
+        Some(harness.skill_budget()),
+    );
     match lay_out(&set, sets, &harness.skill_frontmatter()) {
         Ok(folder) => folder,
         Err(why) => {
@@ -197,11 +208,16 @@ pub fn lay_out(
     sets: &Path,
     honours: &purlis_skills::Honours,
 ) -> std::io::Result<Option<PathBuf>> {
-    let handed: Vec<handout::Handed> = set
+    let mut handed: Vec<handout::Handed> = set
         .from_the_plane()
         .filter(|effective| plain_name(&effective.skill.name))
         .filter_map(|effective| handout::of(effective, honours).ok())
         .collect();
+    // The index skill, in place of what a router hid (SK-15, ADR 0102 §2).
+    handed.extend(
+        set.index()
+            .and_then(|index| handout::index(&index, honours).ok()),
+    );
     if handed.is_empty() {
         return Ok(None);
     }
@@ -691,6 +707,8 @@ pub fn briefed(
         persona.as_deref(),
         Route::Briefing,
         None,
+        // Routed where the folder was laid out: a skill hidden there is not in it.
+        None,
     );
     // Only what purlis hands: the harness lists its own and the repo's itself. A plane skill is
     // named by the `SKILL.md` purlis wrote for it, and one it refused is not named at all.
@@ -711,6 +729,22 @@ pub fn briefed(
             Some(Skill { path, ..e.skill })
         })
         .collect();
+    // A skill a router hid was not laid out, so it is not named above; the index laid out in its
+    // place is (SK-15, ADR 0102 §2).
+    let mut skills = skills;
+    if let Some(handed) = &handed {
+        let path = handed
+            .join(DIR_IN_BUNDLE)
+            .join(INDEX)
+            .join(purlis_skills::FILE);
+        if purlis_skills::read_skill_md(handed, &path).is_ok() {
+            skills.push(Skill {
+                name: INDEX.to_owned(),
+                description: purlis_skills::router::INDEX_DESCRIPTION.to_owned(),
+                path,
+            });
+        }
+    }
     listing(&skills)
 }
 
@@ -778,6 +812,9 @@ pub struct Offered {
     /// The name the chat's harness knows it by, which a run of it records
     /// ([`Harness::skill_name`]).
     pub known_as: String,
+    /// Why a router hid it from the chat's listing (SK-15), where it did: its harness was not
+    /// handed it, so Use skill… asks the chat to load it with `skill_load` instead.
+    pub hidden: Option<Hidden>,
 }
 
 /// **What Use skill… offers a chat, and its skill budget** (SK-12): every skill of its set, the
@@ -790,6 +827,9 @@ pub struct ChatSkills {
     pub workspace: Option<String>,
     pub offered: Vec<Offered>,
     pub spent: Spent,
+    /// Whether what the router cannot hide (the pins among it) is over the budget by itself
+    /// (ADR 0102 §4): the budget then says the pins are why.
+    pub pins_over: bool,
 }
 
 /// **The skills of chat `chat`, as Use skill… offers them** (SK-12): exactly its set, worked out
@@ -798,23 +838,31 @@ pub struct ChatSkills {
 /// its harness.
 pub fn for_use_skill(chat: &Running<'_>) -> ChatSkills {
     let route = chat.harness.skills();
-    let set = if chat.plane_skills {
-        of_a_chat(
-            chat.built_in,
-            chat.plane,
-            chat.workspace,
-            chat.persona,
-            route,
-        )
-    } else {
-        ask(chat.built_in, None, chat.persona, route, None)
-    };
+    let at = chat.plane_skills.then_some(PlaneSkills {
+        plane: chat.plane,
+        workspace: chat.workspace,
+        linked: None,
+        repo: &[],
+    });
+    // Routed as its start routed it, so a skill its harness was not handed is marked.
+    let set = ask(
+        chat.built_in,
+        at,
+        chat.persona,
+        route,
+        None,
+        Some(chat.harness.skill_budget()),
+    );
+    let pins_over = set.routing.as_ref().is_some_and(|routing| routing.pins_over);
+    let hidden = |name: &str| set.hidden_by_router(name).cloned();
     let offered: Vec<Offered> = set
         .effective
-        .into_iter()
+        .iter()
+        .cloned()
         .map(|effective| {
             let declared = declared(&effective.skill);
             Offered {
+                hidden: hidden(&effective.skill.name),
                 takes_arguments: !declared.arguments.is_empty() || declared.hint.is_some(),
                 known_as: chat
                     .harness
@@ -835,6 +883,7 @@ pub fn for_use_skill(chat: &Running<'_>) -> ChatSkills {
         workspace: chat.workspace.map(str::to_owned),
         offered,
         spent,
+        pins_over,
     }
 }
 
@@ -845,8 +894,9 @@ pub struct Typing {
     pub text: String,
     /// The run it starts once its prompt is sent, its id minted now: the name the harness knows
     /// the skill by, which copy it is, and how its start is confirmed
-    /// ([`crate::skillspan::Typed`]).
-    pub held: crate::skillspan::Typed,
+    /// ([`crate::skillspan::Typed`]). `None` for a skill a router hid, which is loaded with
+    /// `skill_load`: the load opens its run.
+    pub held: Option<crate::skillspan::Typed>,
 }
 
 impl ChatSkills {
@@ -862,6 +912,12 @@ impl ChatSkills {
                 format!("{name} is not one of this chat's skills, so nothing was typed")
             })?;
         let given = Given::of(&offered.declared, values);
+        if offered.hidden.is_some() {
+            return Ok(Typing {
+                text: load_text(&offered.effective.skill.name, &given),
+                held: None,
+            });
+        }
         let text = self
             .harness
             .skill_start_text(&crate::harness::SkillToStart {
@@ -869,7 +925,7 @@ impl ChatSkills {
                 origin: offered.effective.origin,
                 given: &given,
             });
-        let held = crate::skillspan::Typed {
+        let held = Some(crate::skillspan::Typed {
             skill: offered.known_as.clone(),
             run: ulid::Ulid::generate(),
             workspace: self.workspace.clone(),
@@ -879,8 +935,20 @@ impl ChatSkills {
             }),
             text: crate::skillspan::PromptMarks::digest(&text),
             confirmed: self.harness.typed_start(),
-        };
+        });
         Ok(Typing { text, held })
+    }
+}
+
+/// **What Use skill… types to start `name`, a skill a router hid** (SK-15, ADR 0102 §7): its
+/// harness was not handed it, so the chat is asked, in words, to load it with purlis's
+/// `skill_load` tool, with `given` in plain words. The same on every harness.
+fn load_text(name: &str, given: &Given) -> String {
+    match given.in_words() {
+        None => format!("Load the skill {name} with skill_load and follow it."),
+        Some(words) => {
+            format!("Load the skill {name} with skill_load and follow it, with {words}")
+        }
     }
 }
 
@@ -914,20 +982,30 @@ pub fn stamp_of(
         linked: None,
         repo: &[],
     };
-    let set = ask(None, Some(at), persona, harness.skills(), None);
+    let set = ask(
+        None,
+        Some(at),
+        persona,
+        harness.skills(),
+        None,
+        Some(harness.skill_budget()),
+    );
     Stamp::of(&set, harness.skills_reload())
 }
 
 /// One ask of purlis-skills, from a directory of built-in skills, the plane with the workspace
 /// the chat works in (where the plane's skills are let in), the persona a chat runs as (whose
-/// `skills:` list is read where the plane's skills are let in), the chat's route, and the
-/// harness skills on this machine where they were looked for.
+/// `skills:` list is read where the plane's skills are let in), the chat's route, the harness
+/// skills on this machine where they were looked for, and the chat's skill budget where its
+/// listing is routed (SK-15): by the built-in router, with the pins of its workspace and its
+/// persona ([`pins_of`]).
 fn ask(
     built_in: Option<&Path>,
     plane: Option<PlaneSkills<'_>>,
     persona: Option<&str>,
     route: Route,
     harness: Option<&[OnMachine]>,
+    budget: Option<Budget>,
 ) -> SkillSet {
     let kept = |folder: &Path| match plane {
         Some(at) => crate::profiles::kept_local(at.plane, folder),
@@ -960,10 +1038,37 @@ fn ask(
             harness: HarnessSkills { route },
         },
     );
-    match plane.map(|at| at.repo) {
+    let set = match plane.map(|at| at.repo) {
         Some(repo) if !repo.is_empty() => set.with_outside(route, repo.iter().cloned()),
         _ => set,
+    };
+    match budget {
+        Some(budget) => {
+            let pins = plane
+                .map(|at| pins_of(at.plane, at.workspace, persona))
+                .unwrap_or_default();
+            set.routed(budget, &pins)
+        }
+        None => set,
     }
+}
+
+/// **A chat's pins** (ADR 0102 §4): the skills its workspace pins (`settings.skills.pinned`)
+/// and those its persona pins (`pinned-skills:`), each name once. A pin only keeps a skill of the
+/// chat's set listed: it adds none.
+pub fn pins_of(plane: &Path, workspace: Option<&str>, persona: Option<&str>) -> Vec<String> {
+    let mut pins = workspace
+        .map(|ws| pinned_in(plane, ws))
+        .unwrap_or_default();
+    for name in persona
+        .map(|persona| crate::personaverbs::pinned_skills(plane, persona))
+        .unwrap_or_default()
+    {
+        if !pins.contains(&name) {
+            pins.push(name);
+        }
+    }
+    pins
 }
 
 /// **What the persona `persona`'s `skills:` list names** (SK-5, #2768), in the plane at `plane`:
@@ -1038,7 +1143,14 @@ pub fn not_here(
         linked: None,
         repo: &[],
     };
-    let set = ask(built_in, Some(at), persona, harness.skills(), Some(&here));
+    let set = ask(
+        built_in,
+        Some(at),
+        persona,
+        harness.skills(),
+        Some(&here),
+        None,
+    );
     let reaches = |left: &LeftOut| {
         left.origin != Origin::Project
             || workspace.is_none_or(|ws| grant_of(&left.folder).is_ok_and(|g| g.reaches(ws)))
@@ -1077,16 +1189,89 @@ pub fn not_here(
 /// as the Workspace settings layer reads its `workspace.json`. Empty where it names none, or
 /// holds something other than a list of names, which that layer's save refuses to write.
 pub fn turned_off(plane: &Path, workspace: &str) -> Vec<String> {
-    use crate::settings::workspace::{SKILLS, SKILLS_OFF};
+    names_in_settings(plane, workspace, crate::settings::workspace::SKILLS_OFF)
+}
+
+/// **The skills the workspace `workspace` pins** (SK-15, ADR 0102 §4): `settings.skills.pinned`,
+/// as the Workspace settings layer reads its `workspace.json`. Empty where it names none, or
+/// holds something other than a list of names, which that layer's save refuses to write.
+pub fn pinned_in(plane: &Path, workspace: &str) -> Vec<String> {
+    names_in_settings(plane, workspace, crate::settings::workspace::SKILLS_PINNED)
+}
+
+/// The list of names `settings.skills.<key>` of the workspace `workspace` holds, or none.
+fn names_in_settings(plane: &Path, workspace: &str, key: &str) -> Vec<String> {
+    use crate::settings::workspace::SKILLS;
     crate::settings::workspace::read(plane, workspace)
         .and_then(|table| {
-            let names = table.get(SKILLS)?.get(SKILLS_OFF)?.as_array()?;
+            let names = table.get(SKILLS)?.get(key)?.as_array()?;
             names
                 .iter()
                 .map(|name| name.as_str().map(str::to_owned))
                 .collect::<Option<Vec<_>>>()
         })
         .unwrap_or_default()
+}
+
+/// **Whose pins a pin changes** (SK-15, ADR 0102 §4): a workspace's or a persona's.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PinnedBy {
+    Workspace(String),
+    Persona(String),
+}
+
+/// **Pins `name` (`on`) or unpins it** for `by`'s chats (SK-15, ADR 0102 §4): the workspace's
+/// `settings.skills.pinned`, through the Workspace level's own save, or the persona's
+/// `pinned-skills:` line. `Ok(false)` where it already was so, and nothing is written. A pin only
+/// keeps a skill of a chat's set listed, so a name no skill has is refused, as is a workspace or
+/// persona the project does not have, and a project purlis opens read-only.
+pub fn pin(plane: &Path, by: &PinnedBy, name: &str, on: bool) -> Result<bool, String> {
+    crate::settings::writable(plane)?;
+    if on && !any_skill_named(plane, name) {
+        return Err(format!(
+            "no skill is named {name:?}, so nothing was pinned: `purlis skill list` lists them"
+        ));
+    }
+    let mut pins = match by {
+        PinnedBy::Workspace(ws) => {
+            let held = crate::workspaces::Plane::open(plane);
+            if !held.workspace(ws).is_ok_and(|one| one.dir().is_dir()) {
+                return Err(format!(
+                    "this project has no workspace {ws:?}: `purlis workspace list` lists them"
+                ));
+            }
+            pinned_in(plane, ws)
+        }
+        PinnedBy::Persona(persona) => crate::personaverbs::pinned_skills(plane, persona),
+    };
+    if pins.iter().any(|one| one == name) == on {
+        return Ok(false);
+    }
+    if on {
+        pins.push(name.to_owned());
+    } else {
+        pins.retain(|one| one != name);
+    }
+    match by {
+        PinnedBy::Workspace(ws) => set_names_in_settings(
+            plane,
+            ws,
+            crate::settings::workspace::SKILLS_PINNED,
+            pins,
+        )?,
+        PinnedBy::Persona(persona) => persona::write_pins(plane, persona, &pins)?,
+    }
+    Ok(true)
+}
+
+/// Whether any skill a chat could get is named `name`: a built-in skill, or one at any level of
+/// the plane.
+fn any_skill_named(plane: &Path, name: &str) -> bool {
+    built_in_names_here().iter().any(|one| one == name)
+        || verbs::Level::every(plane)
+            .iter()
+            .filter_map(|level| level.dir(plane))
+            .any(|dir| read(&dir).iter().any(|skill| skill.name == name))
 }
 
 /// The folder of the project skill named `name` in the plane at `plane`: in its `skills/`, else
@@ -1174,13 +1359,24 @@ pub(crate) fn set_turned_off(
     workspace: &str,
     off: Vec<String>,
 ) -> Result<(), String> {
+    set_names_in_settings(plane, workspace, crate::settings::workspace::SKILLS_OFF, off)
+}
+
+/// Writes `names` as `settings.skills.<key>` of the workspace `workspace`, through the Workspace
+/// level's own save, or takes the key out for none.
+fn set_names_in_settings(
+    plane: &Path,
+    workspace: &str,
+    key: &str,
+    names: Vec<String>,
+) -> Result<(), String> {
     let read = crate::settings::workspace::read_file(plane, workspace)?;
     let base = read.exists.then_some(read.text.as_str());
     let path = vec![
         crate::settings::Step::Key(crate::settings::workspace::SKILLS.to_owned()),
-        crate::settings::Step::Key(crate::settings::workspace::SKILLS_OFF.to_owned()),
+        crate::settings::Step::Key(key.to_owned()),
     ];
-    let value = (!off.is_empty()).then_some(crate::settings::Value::List(off));
+    let value = (!names.is_empty()).then_some(crate::settings::Value::List(names));
     crate::settings::workspace::save(
         plane,
         workspace,
@@ -1272,7 +1468,25 @@ pub fn in_the_studio(
             .flat_map(|harness| on_machine(harness, &env))
             .collect::<Vec<_>>()
     });
-    ask(built_in, Some(at), persona, Route::Plugin, here.as_deref())
+    ask(
+        built_in,
+        Some(at),
+        persona,
+        Route::Plugin,
+        here.as_deref(),
+        Some(studio_budget()),
+    )
+}
+
+/// **The budget the studio routes a chat's set by**: that of the harness whose route it reads
+/// the set as ([`Route::Plugin`]), so what it says is hidden is what such a chat would have
+/// hidden.
+fn studio_budget() -> Budget {
+    Harness::ALL
+        .iter()
+        .find(|harness| harness.skills() == Route::Plugin)
+        .unwrap_or(&Harness::ALL[0])
+        .skill_budget()
 }
 
 /// **Every harness the project's profiles run**, in the registry's order, or Claude Code alone
@@ -1387,7 +1601,8 @@ pub fn of_a_chat(
         repo: &[],
     };
     // The harness's own installed skills are the harness's to hand over, never these tools'.
-    ask(built_in, Some(at), persona, route, None)
+    // Not routed: a skill a router hides is the chat's all the same (ADR 0102 §7).
+    ask(built_in, Some(at), persona, route, None, None)
 }
 
 /// **One harness in the Skill studio** (SK-6, #2769): its plugins, as the settings tab surveys

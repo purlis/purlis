@@ -42,9 +42,9 @@ const GRANT_DECIDING_KEYS: [&str; 2] = ["borrows", "extends"];
 
 /// The whole frontmatter vocabulary — `persona.KNOWN_KEYS`, and `profile` (#1445,
 /// [`crate::personaprofile`]), `icon` (#1449) and `wants` (#1502,
-/// [`crate::dispatchwants`]), which purlis added. Only its case-folded
+/// [`crate::dispatchwants`]) and `pinned-skills` (SK-15), which purlis added. Only its case-folded
 /// spellings are used here, to recognise a MISSPELLED grant-deciding key.
-const KNOWN_KEYS: [&str; 24] = [
+const KNOWN_KEYS: [&str; 25] = [
     "profile",
     "model",
     "color",
@@ -64,6 +64,7 @@ const KNOWN_KEYS: [&str; 24] = [
     "dispatch-isolation",
     "draft",
     "skills",
+    crate::skills::persona::PINS_KEY,
     "disallowed-tools",
     "routing",
     "routes-to",

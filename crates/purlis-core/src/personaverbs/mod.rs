@@ -133,11 +133,22 @@ pub fn is_draft(root: &Path, name: &str) -> bool {
 
 /// `persona.declared_skills`: the persona's OWN `skills:`, comma-separated, in order.
 pub fn declared_skills(root: &Path, name: &str) -> Vec<String> {
+    own_list(root, name, "skills")
+}
+
+/// **The skills the persona pins** (SK-15, ADR 0102 §4): its OWN `pinned-skills:`,
+/// comma-separated, in order. Not inherited along `extends`, as `skills:` is not.
+pub fn pinned_skills(root: &Path, name: &str) -> Vec<String> {
+    own_list(root, name, crate::skills::persona::PINS_KEY)
+}
+
+/// The persona's OWN `key:`, comma-separated, in order, blanks dropped.
+fn own_list(root: &Path, name: &str, key: &str) -> Vec<String> {
     let Some(meta) = own_meta(root, name) else {
         return Vec::new();
     };
     let raw = meta
-        .get("skills")
+        .get(key)
         .map(|s| crate::memstore::py_strip(s))
         .unwrap_or("");
     raw.split(',')

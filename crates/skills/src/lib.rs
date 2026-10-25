@@ -52,6 +52,7 @@ pub mod moving;
 mod read;
 mod reference;
 pub mod review;
+pub mod router;
 pub mod runs;
 mod share;
 mod stamp;
@@ -72,6 +73,7 @@ pub use read::{
 };
 use reference::Seen;
 pub use reference::{BUILT_IN_PREFIXES, OnMachine, Reference};
+pub use router::{Hidden, HiddenWhy, INDEX, Index, Router, Routing};
 pub use share::{Shared, named, named_at, share};
 pub use stamp::{Reload, Stamp};
 
@@ -307,6 +309,9 @@ pub enum Reason {
     /// A workspace or persona skill whose level's folder was made while a chat that could have
     /// made it was running (SK-9): the sentence that says which, and when it reaches chats.
     MadeWhileAChatRan(String),
+    /// A plane skill named as purlis's index skill ([`router::INDEX`], ADR 0102 §2), which a
+    /// router shows in its place: it never loads until it is renamed.
+    IndexName,
 }
 
 /// What a folder lacks to be a whole skill.
@@ -387,6 +392,9 @@ impl std::fmt::Display for Reason {
                 f.write_str("archived: it never loads until it is restored from its tab")
             }
             Self::MadeWhileAChatRan(why) => f.write_str(why),
+            Self::IndexName => f.write_str(
+                "purlis's index skill has this name, so this skill never loads: rename it",
+            ),
         }
     }
 }
@@ -405,6 +413,9 @@ pub struct SkillSet {
     /// Every skill from outside the plane that has the name of a skill purlis hands the chat, by name
     /// ([`SkillSet::with_outside`]), and what came of it.
     pub clashes: Vec<Clash>,
+    /// What a router made of the set (SK-15, ADR 0102), or `None` where none ran: which skills
+    /// its listing hides, each still in [`Self::effective`], and the chat's pins.
+    pub routing: Option<Routing>,
 }
 
 /// A harness skill a chat's persona names, which the chat's harness loads by itself.
@@ -583,10 +594,10 @@ impl SkillSet {
 
     /// The effective skills that come from the plane, by name: what a route hands over beside
     /// the built-in directory (ADR 0063 as amended 2026-10-20). Each has one name in the set. A
-    /// harness or repo skill is never among them: the harness reads those itself.
+    /// harness or repo skill is never among them: the harness reads those itself. Nor is one a
+    /// router hid ([`Self::hidden_by_router`]): the route hands the index skill in its place.
     pub fn from_the_plane(&self) -> impl Iterator<Item = &Effective> {
-        self.effective
-            .iter()
+        self.listed()
             .filter(|effective| effective.origin.of_the_plane())
     }
 
@@ -1147,6 +1158,16 @@ fn level(
                 local,
                 folder,
                 reason: Reason::Archived,
+            });
+            continue;
+        }
+        if origin.of_the_plane() && skill.name == router::INDEX {
+            set.left_out.push(LeftOut {
+                name: skill.name,
+                origin,
+                local,
+                folder,
+                reason: Reason::IndexName,
             });
             continue;
         }

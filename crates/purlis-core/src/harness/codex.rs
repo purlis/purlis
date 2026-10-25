@@ -212,25 +212,10 @@ impl HarnessAdapter for Codex {
     /// follow the mention as plain words the model reads: `name: value` for each named one, in
     /// the declared order, a value left empty said as none.
     fn skill_start_text(&self, skill: &SkillToStart<'_>) -> String {
-        use crate::skills::Given;
         let mention = format!("${}", self.skill_name(skill.name, skill.origin));
-        match skill.given {
-            Given::Nothing => mention,
-            Given::Raw(line) => format!("{mention} {line}"),
-            Given::Named(values) => {
-                let said: Vec<String> = values
-                    .iter()
-                    .map(|one| {
-                        let value = if one.value.is_empty() {
-                            "none"
-                        } else {
-                            &one.value
-                        };
-                        format!("{}: {value}", one.name)
-                    })
-                    .collect();
-                format!("{mention} {}", said.join("; "))
-            }
+        match skill.given.in_words() {
+            None => mention,
+            Some(words) => format!("{mention} {words}"),
         }
     }
 

@@ -14,6 +14,10 @@ use super::{Reference, names_of};
 /// The key a persona's definition names its skills by.
 pub(crate) const KEY: &str = "skills";
 
+/// The key a persona's definition pins skills by (SK-15, ADR 0102 §4): a comma-separated list of
+/// names its chats always list.
+pub const PINS_KEY: &str = "pinned-skills";
+
 /// **How many skills `persona` brings into every workspace** (SK-5, #2768), in the plane at
 /// `plane`: its own skills, and each other skill its `skills:` list names. What its page's
 /// summary row counts; the Skill studio lists them.
@@ -75,13 +79,18 @@ pub fn change(plane: &Path, persona: &str, written: &str, change: Change) -> Res
             }
         }
     }
-    write(plane, persona, &entries)?;
+    write(plane, persona, KEY, &entries)?;
     Ok(true)
 }
 
-/// `persona`'s own definition with its `skills:` line saying `entries`, or without the line for
+/// **Writes `persona`'s `pinned-skills:` line** as `pins`, or takes it out for none (SK-15).
+pub(crate) fn write_pins(plane: &Path, persona: &str, pins: &[String]) -> Result<(), String> {
+    write(plane, persona, PINS_KEY, pins)
+}
+
+/// `persona`'s own definition with its `key:` line saying `entries`, or without the line for
 /// none.
-fn write(plane: &Path, persona: &str, entries: &[String]) -> Result<(), String> {
+fn write(plane: &Path, persona: &str, key: &str, entries: &[String]) -> Result<(), String> {
     if let Some(refused) = crate::personas::name_refusal(plane, persona) {
         return Err(refused);
     }
@@ -91,10 +100,10 @@ fn write(plane: &Path, persona: &str, entries: &[String]) -> Result<(), String> 
     let text = crate::contain::read_text_no_link(plane, &file)
         .map_err(|why| format!("purlis could not read {}: {why}", file.display()))?;
     let line = entries.join(", ");
-    let Some(next) = crate::personas::with_key(&text, KEY, (!line.is_empty()).then_some(&line))
+    let Some(next) = crate::personas::with_key(&text, key, (!line.is_empty()).then_some(&line))
     else {
         return Err(format!(
-            "{} has no frontmatter to hold a `{KEY}:` line, so nothing was written.",
+            "{} has no frontmatter to hold a `{key}:` line, so nothing was written.",
             file.display()
         ));
     };
