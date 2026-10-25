@@ -97,9 +97,9 @@ fn a_secret_refused_for_its_second_name_says_what_to_do_next() {
     assert_eq!(
         err.to_string(),
         format!(
-            "{t} has a second name (a hard link), so purlis does not rewrite it in place. Change \
-             the value where the file comes from, or put a plain copy of the file at {t}, then \
-             try again"
+            "{t} has a second name (a hard link), so purlis does not rewrite it in place. Remove \
+             the other name, or put a plain copy of the file at {t}, then try again. A value \
+             written through the other name reaches both names."
         )
     );
 }
@@ -127,7 +127,8 @@ fn a_second_name_inside_the_project_is_named_in_the_refusal() {
         err.to_string(),
         format!(
             "{t} has a second name (a hard link), {o}, so purlis does not rewrite it in place. \
-             Change the value at {o}, or put a plain copy of the file at {t}, then try again"
+             Remove {o}, or put a plain copy of the file at {t}, then try again. A value written \
+             through the other name reaches both names."
         )
     );
     assert_eq!(std::fs::read(&target).unwrap(), b"old\n");
@@ -152,11 +153,24 @@ fn a_second_name_the_search_does_not_enter_is_not_named() {
     let err = replace(project.path(), &target, b"new\n", Mode::Secret).unwrap_err();
     let err = named_in(err, project.path());
 
-    assert!(
-        err.to_string()
-            .contains("Change the value where the file comes from"),
-        "{err}"
-    );
+    assert!(err.to_string().contains("Remove the other name,"), "{err}");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_folder_that_is_a_link_is_not_followed_to_the_other_name() {
+    let project = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let target = project.path().join("app.json");
+    std::fs::write(&target, "old\n").unwrap();
+    std::fs::hard_link(&target, outside.path().join("app.json")).unwrap();
+    std::os::unix::fs::symlink(outside.path(), project.path().join("linked")).unwrap();
+
+    let err = replace(project.path(), &target, b"new\n", Mode::Secret).unwrap_err();
+    let err = named_in(err, project.path());
+
+    assert!(!err.to_string().contains("linked"), "{err}");
+    assert!(err.to_string().contains("Remove the other name,"), "{err}");
 }
 
 #[test]

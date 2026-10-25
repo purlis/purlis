@@ -196,19 +196,20 @@ impl std::fmt::Display for SecondName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let path = self.path.display();
         match &self.other {
-            Some(other) => write!(
-                f,
-                "{path} has a second name (a hard link), {}, so purlis does not rewrite it in \
-                 place. Change the value at {}, or put a plain copy of the file at {path}, then \
-                 try again",
-                other.display(),
-                other.display()
-            ),
+            Some(other) => {
+                let other = other.display();
+                write!(
+                    f,
+                    "{path} has a second name (a hard link), {other}, so purlis does not rewrite \
+                     it in place. Remove {other}, or put a plain copy of the file at {path}, then \
+                     try again. A value written through the other name reaches both names."
+                )
+            }
             None => write!(
                 f,
                 "{path} has a second name (a hard link), so purlis does not rewrite it in place. \
-                 Change the value where the file comes from, or put a plain copy of the file at \
-                 {path}, then try again"
+                 Remove the other name, or put a plain copy of the file at {path}, then try \
+                 again. A value written through the other name reaches both names."
             ),
         }
     }
@@ -246,62 +247,88 @@ const NOT_SEARCHED: [&str; 3] = [".git", "node_modules", "target"];
 /// Another name, inside `project`, of the regular file at `path`: an entry on the same device
 /// with the same inode that is not `path` itself. Breadth first and in name order, so the
 /// nearest name is the one found; bounded by [`SEARCH_DEPTH`], [`SEARCH_ENTRIES`] and
-/// [`SEARCH_FOLDER_ENTRIES`]. No link is followed, and a folder on another device is not
-/// entered, since a second name is always on the file's own.
+/// [`SEARCH_FOLDER_ENTRIES`]. Every folder is opened through [`crate::held::Store`], one
+/// component at a time with `O_NOFOLLOW`, so a folder that is a link, or one swapped for a link
+/// while the search runs, is not entered. A folder on another device is not entered either,
+/// since a second name is always on the file's own.
+#[cfg(unix)]
 fn other_name_in(project: &Path, path: &Path) -> Option<PathBuf> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        let held = std::fs::symlink_metadata(path).ok()?;
-        if !held.file_type().is_file() || held.nlink() < 2 {
-            return None;
-        }
-        let (dev, ino) = (held.dev(), held.ino());
-        let itself = std::fs::canonicalize(directory_of(path).ok()?)
-            .ok()?
-            .join(path.file_name()?);
-        let top = std::fs::canonicalize(project).ok()?;
-        let mut left = SEARCH_ENTRIES;
-        let mut folders = std::collections::VecDeque::from([(top.clone(), 0)]);
-        while let Some((dir, depth)) = folders.pop_front() {
-            let Ok(entries) = std::fs::read_dir(&dir) else {
+    use rustix::fs::FileType;
+    use std::os::unix::fs::MetadataExt;
+    let held = std::fs::symlink_metadata(path).ok()?;
+    if !held.file_type().is_file() || held.nlink() < 2 {
+        return None;
+    }
+    let (dev, ino) = (held.dev(), held.ino());
+    // Where `path` itself is below the project, so the search does not name it back.
+    let itself = std::fs::canonicalize(directory_of(path).ok()?)
+        .ok()?
+        .join(path.file_name()?);
+    let itself = std::fs::canonicalize(project)
+        .ok()
+        .and_then(|top| itself.strip_prefix(top).ok().map(Path::to_path_buf));
+    let top = crate::held::Store::project(project).ok()?;
+    let mut left = SEARCH_ENTRIES;
+    // Folders are queued by name and opened again from the top when their turn comes, so the
+    // queue holds no descriptors.
+    let mut folders = std::collections::VecDeque::from([Vec::<String>::new()]);
+    while let Some(below) = folders.pop_front() {
+        let opened;
+        let folder = if below.is_empty() {
+            &top
+        } else {
+            let Some(deeper) = open_below(&top, &below) else {
                 continue;
             };
-            let mut names: Vec<std::ffi::OsString> = entries
-                .take(SEARCH_FOLDER_ENTRIES + 1)
-                .filter_map(|e| e.ok().map(|e| e.file_name()))
-                .collect();
-            if names.len() > SEARCH_FOLDER_ENTRIES {
+            opened = deeper;
+            &opened
+        };
+        let Some(names) = folder.names_within(SEARCH_FOLDER_ENTRIES) else {
+            continue;
+        };
+        for name in names {
+            left = left.checked_sub(1)?;
+            let Ok(Some(entry)) = folder.entry(&name) else {
+                continue;
+            };
+            if entry.dev != dev {
                 continue;
             }
-            names.sort();
-            for name in names {
-                left = left.checked_sub(1)?;
-                let here = dir.join(&name);
-                let Ok(m) = std::fs::symlink_metadata(&here) else {
-                    continue;
-                };
-                if m.dev() != dev {
-                    continue;
+            if entry.kind == FileType::Directory {
+                if below.len() < SEARCH_DEPTH && !NOT_SEARCHED.contains(&name.as_str()) {
+                    let mut deeper = below.clone();
+                    deeper.push(name);
+                    folders.push_back(deeper);
                 }
-                if m.file_type().is_dir() {
-                    if depth < SEARCH_DEPTH && !NOT_SEARCHED.iter().any(|n| name == *n) {
-                        folders.push_back((here, depth + 1));
-                    }
-                } else if m.file_type().is_file() && m.ino() == ino && here != itself {
+            } else if entry.kind == FileType::RegularFile && entry.ino == ino {
+                let here: PathBuf = below.iter().chain([&name]).collect();
+                if itself.as_deref() != Some(here.as_path()) {
                     // Said under the project's own spelling, as the refused path is.
-                    let below = here.strip_prefix(&top).ok()?;
-                    return Some(project.join(below));
+                    return Some(project.join(here));
                 }
             }
         }
-        None
     }
-    #[cfg(not(unix))]
-    {
-        let _ = (project, path);
-        None
+    None
+}
+
+/// The folder `below` (one name or more) names under `top`, opened one component at a time
+/// without following a link: `None` when any of it is not a folder, is a link, or is gone.
+#[cfg(unix)]
+fn open_below(top: &crate::held::Store, below: &[String]) -> Option<crate::held::Store> {
+    let (first, rest) = below.split_first()?;
+    let mut folder = top.sub(first, false).ok()??;
+    let names = rest.iter();
+    for name in names {
+        folder = folder.sub(name, false).ok()??;
     }
+    Some(folder)
+}
+
+#[cfg(not(unix))]
+fn other_name_in(project: &Path, path: &Path) -> Option<PathBuf> {
+    let _ = (project, path);
+    None
 }
 
 /// Every temp file [`replace`] writes starts with this, so one pattern names all of them:
