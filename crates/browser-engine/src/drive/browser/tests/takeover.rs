@@ -1540,3 +1540,61 @@ fn a_key_after_a_press_of_the_mouse_reads_the_page_anew() {
 
     assert_eq!(page_reads(&engine), 2, "the page was not read anew");
 }
+
+#[test]
+fn taking_over_has_the_engine_make_the_pages_tree_before_the_first_key() {
+    // #2967: the engine makes its tree for the page while the person is still to type, off the
+    // take-over, which does not wait for it.
+    let (browser, engine) = browser();
+    engine.on(|sent, _| {
+        (sent.method == "Accessibility.getRootAXNode").then(|| {
+            std::thread::sleep(Duration::from_millis(400));
+            Ok(json!({ "node": {} }))
+        })
+    });
+
+    let started = Instant::now();
+    browser.take_over();
+    let took = started.elapsed();
+
+    assert!(
+        took < Duration::from_millis(200),
+        "the take-over took {took:?}"
+    );
+    wait_for("the tree made", || {
+        !engine.sent("Accessibility.getRootAXNode").is_empty()
+    });
+    let made = engine.sent("Accessibility.getRootAXNode");
+    assert_eq!(made[0].params["frameId"], "PAGE-1");
+    assert_eq!(made[0].session.as_deref(), Some("S-PAGE-1"));
+}
+
+#[test]
+fn a_press_on_a_page_shown_anew_has_the_engine_make_its_tree_once() {
+    // #2967: a page that loaded another document has its tree made again at the person's next
+    // press; a press on the page as it was makes none.
+    let (browser, engine) = browser();
+    browser.take_over();
+    wait_for("the tree made", || {
+        engine.sent("Accessibility.getRootAXNode").len() == 1
+    });
+    let aim = aim_now(&browser);
+    browser.person_input(&press(&aim, 5.0, 5.0)).unwrap();
+    std::thread::sleep(Duration::from_millis(100));
+    assert_eq!(engine.sent("Accessibility.getRootAXNode").len(), 1);
+
+    engine.emit(
+        "Page.frameNavigated",
+        json!({"frame":{"id":"PAGE-1","loaderId":"LOADER-2","url":"http://fixture.test/frames.html?again","securityOrigin":"http://fixture.test","mimeType":"text/html"}}),
+        Some("S-PAGE-1"),
+    );
+    wait_for("the page shown anew", || {
+        aim_now(&browser).document > aim.document
+    });
+    let aim = aim_now(&browser);
+    browser.person_input(&press(&aim, 5.0, 5.0)).unwrap();
+
+    wait_for("the tree made again", || {
+        engine.sent("Accessibility.getRootAXNode").len() == 2
+    });
+}

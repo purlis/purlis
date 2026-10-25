@@ -91,7 +91,13 @@ pub(crate) struct Typing {
     /// The read of a page's trees made for a key that was held back because the read outlived
     /// it, still running for the next key (#3043).
     reading: Option<Reading>,
+    /// The page (its target and document number) the engine was last asked to make its tree
+    /// for, ahead of the person's first key into it (#2967).
+    made: Option<(String, u64)>,
 }
+
+/// How long the engine has to make a page's tree ahead of the person's keys (#2967).
+const MADE_WITHIN: Duration = Duration::from_secs(30);
 
 /// A read of every frame's tree of a page for the person's keys (#3043): its page's target, the
 /// lease's epoch and the page's document number when it began, and its answer to come.
@@ -207,6 +213,7 @@ impl Browser {
         }
         // Whatever waits for the page wakes now, and finds itself cut.
         self.inner.changed.notify_all();
+        self.make_the_tree();
         epoch
     }
 
@@ -223,6 +230,8 @@ impl Browser {
             let mut typing = lock(&self.typing);
             typing.focus = None;
             typing.reading = None;
+            // The engine may let go of the tree while the agent drives: made again next time.
+            typing.made = None;
         }
         // What a login the person cut had filled is emptied before the agent has the page.
         self.clear_cut_logins();
@@ -491,6 +500,7 @@ impl Browser {
                         typing.reading = None;
                         typing.end_run(&target);
                     }
+                    self.make_the_tree();
                     self.keep_typing_out();
                 }
                 let bit = button_bit(*button);
@@ -899,6 +909,47 @@ impl Browser {
         ["textbox", "searchbox", "combobox", "spinbutton"].contains(&role)
             || ["INPUT", "TEXTAREA"].contains(&name.as_str())
             || editable
+    }
+
+    /// Has the engine make its accessibility tree for the current page's document, off this
+    /// thread, ahead of the person's first key into it (#2967): the engine makes it the first
+    /// time it is asked for any of it (a few hundred milliseconds on a large page), and the
+    /// person's first key then reads the tree around its field at once. Once a document: asked
+    /// again only for a page or document it was not asked for. What the engine answers is not
+    /// read.
+    fn make_the_tree(&self) {
+        let (target, session, shows) = {
+            let state = lock(&self.inner.state);
+            let Some(target) = state.current.clone() else {
+                return;
+            };
+            let Some((session, shows)) = state
+                .page(&target)
+                .and_then(|page| page.session.clone().map(|session| (session, page.shows)))
+            else {
+                return;
+            };
+            (target, session, shows)
+        };
+        {
+            let mut typing = lock(&self.typing);
+            let page = (target.clone(), shows);
+            if typing.made.as_ref() == Some(&page) {
+                return;
+            }
+            typing.made = Some(page);
+        }
+        let devtools = std::sync::Arc::clone(&self.inner.devtools);
+        let _ = std::thread::Builder::new()
+            .name("purlis-tree-made".into())
+            .spawn(move || {
+                let _ = devtools.call_within(
+                    "Accessibility.getRootAXNode",
+                    json!({ "frameId": target }),
+                    Some(&session),
+                    MADE_WITHIN,
+                );
+            });
     }
 
     /// Every frame's tree of `target`'s page for the person's key, read by `by` (#3043). The

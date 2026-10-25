@@ -5,8 +5,9 @@
 //! large page (twenty thousand rows) reaches the page within the spec's 50 ms for input, every
 //! protection of #2014 kept: the field is blanked before the first key, read after each, and
 //! what was typed is in no later answer. Each key's time, from the window's event to its return
-//! (the key sent and the field read after it), is said on CI; the first key's, which blanks the
-//! field from the tree around it (#2967), is said and not held to the bound.
+//! (the key sent and the field read after it), is said on CI. The first key's, which blanks the
+//! field from the tree around it, the engine having made its tree since the take-over (#2967),
+//! is held to the bound too.
 //!
 //! These need a real Chrome and the right to start it and to listen on a loopback port, which a
 //! sandboxed agent does not have. They run where `PURLIS_TEST_ENGINE` names a Chrome
@@ -26,6 +27,10 @@ use purlis_browser_engine::drive::{Aim, PersonInput, Refusal};
 
 /// The spec's bound from a keystroke to the screen (docs/spec.md, "Keystroke to screen").
 const MOST_PER_KEY: Duration = Duration::from_millis(50);
+
+/// How long after taking the browser over the person's first key comes: a click on the view
+/// takes it over, and the hand goes to the keys after it.
+const A_PERSON_FIRST_TYPES_AFTER: Duration = Duration::from_secs(1);
 
 /// How long the window waits for a key's answer (`LINK_WITHIN` in the app's browsers).
 const THE_WINDOW_WAITS: Duration = Duration::from_secs(30);
@@ -54,6 +59,8 @@ fn typing_into_a_field_of_a_large_page_stays_under_fifty_milliseconds_a_key() {
     };
     open(&browser, "typing-on-a-large-page.html");
     browser.take_over();
+    // A person's first key comes a moment after they take the browser over (#2967).
+    std::thread::sleep(A_PERSON_FIRST_TYPES_AFTER);
     let aim = browser.aim().expect("a page is shown");
     let typed = "squirrelnineteenxyz";
     let mut took = Vec::new();
@@ -80,7 +87,7 @@ fn typing_into_a_field_of_a_large_page_stays_under_fifty_milliseconds_a_key() {
         let mut out = std::io::stdout().lock();
         let _ = writeln!(
             out,
-            "::notice title=key to page on a large page::first key {} ms (it blanks the field from the tree around it), then median {} ms, worst {} ms, over {} keys",
+            "::notice title=key to page on a large page::first key {} ms (it blanks the field from the tree around it, made since the take-over), then median {} ms, worst {} ms, over {} keys",
             first.as_millis(),
             median.as_millis(),
             worst.as_millis(),
@@ -91,6 +98,10 @@ fn typing_into_a_field_of_a_large_page_stays_under_fifty_milliseconds_a_key() {
     assert!(
         median < MOST_PER_KEY,
         "median {median:?}, every key {took:?}"
+    );
+    assert!(
+        first < MOST_PER_KEY,
+        "the first key took {first:?}, every key {took:?}"
     );
     browser.hand_back();
     assert!(
