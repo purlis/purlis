@@ -124,8 +124,9 @@ pub(crate) struct Entry {
 
 impl Entry {
     /// The entry `stat` describes.
-    // `st_nlink` is a u16 on macOS and a u64 on Linux, so the widening is a no-op on one of them.
-    #[allow(clippy::useless_conversion)]
+    // `st_nlink` is a u16 on macOS and a u64 on Linux, so the widening is a no-op on one of them;
+    // `st_dev` is an i32 on macOS and a u64 on Linux, so its cast is.
+    #[allow(clippy::useless_conversion, clippy::unnecessary_cast)]
     fn of(stat: &rustix::fs::Stat) -> Self {
         Self {
             kind: FileType::from_raw_mode(stat.st_mode),
