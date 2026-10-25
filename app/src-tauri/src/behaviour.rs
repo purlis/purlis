@@ -175,7 +175,7 @@ fn in_a_host_keeping_its_switch_in(folder: &Path) -> Target {
     let folder = folder.to_path_buf();
     let data = tempfile::tempdir().expect("a data home");
     let log = data.path().to_path_buf();
-    let mut target = a_window_on(log.clone(), false, move || a_host(&folder, &log));
+    let mut target = a_window_on(log.clone(), Runs::Here, move || a_host(&folder, &log));
     target._keeps.push(Box::new(data));
     target
 }
@@ -193,7 +193,7 @@ pub(crate) fn through_a_link() -> Target {
     // Host B runs the chats, so it writes their event log.
     let data = tempfile::tempdir().expect("host B's data home");
     let host_b = a_host(folder.path(), data.path());
-    let mut target = a_window_on(data.path().to_path_buf(), true, move || {
+    let mut target = a_window_on(data.path().to_path_buf(), Runs::OnARunner, move || {
         purlis_host::Relay::new(Arc::new(move || {
             let host_b = host_b.clone();
             Box::pin(async move { Ok(linked_to(host_b).await) })
@@ -202,6 +202,156 @@ pub(crate) fn through_a_link() -> Target {
     target._keeps.push(Box::new(folder));
     target._keeps.push(Box::new(data));
     target
+}
+
+/// Where the window's chats of a target's project run, as its sessions are told.
+#[derive(Clone, Copy)]
+enum Runs {
+    /// In the host the window speaks to.
+    Here,
+    /// On a runner that host relays to, which holds the project at the window's own path.
+    OnARunner,
+    /// On a pool's runner, which holds the project where it keeps its projects and is sent its
+    /// code (#2046).
+    OnAPoolsRunner,
+}
+
+/// The variable naming the runner image a Docker pool's target runs, by digest: the parity
+/// job's (`.github/workflows/ci.yml`, #2045). Without it, the target is not made and its tests
+/// pass having run nothing, as every real-Docker test here does.
+const DOCKER_POOL_IMAGE: &str = "DOCKER_POOL_TEST_IMAGE";
+
+/// **A chat on a Docker pool's runner** (#2045, spec #2041): a pool added on this machine as
+/// the window adds one ([`crate::dockerpools::add_on`]), its runner a container of the image
+/// [`DOCKER_POOL_IMAGE`] names, paired with this desktop. The window speaks to its own host,
+/// which relays to the runner's `purlis serve` over the link between hosts, through
+/// `docker exec` and the key pinned at the pairing ([`crate::runnerlinks::ToARunner`]). The
+/// runner holds the project where it keeps its projects, sent its code by the window, so the
+/// project is a repository with one commit. What a chat on it inherits is what the runner's
+/// host inherited, read from the container.
+///
+/// The image is the runner image of this build with the repo's fake harness and `purlis` at
+/// the paths this test's build has them, so a behaviour's program is where it names it on
+/// either machine (`runner-image/parity.Dockerfile`). Each test adds a pool of its own and
+/// removes it, its container and its home, however the test ends.
+pub(crate) fn in_a_docker_pool() -> Option<Target> {
+    use purlis_core::dockerpool::{Docker, Image};
+    use purlis_core::runners::{Pool, Set};
+    let image = std::env::var(DOCKER_POOL_IMAGE).ok()?;
+    let config = tempfile::tempdir().expect("the desktop's config home");
+    let docker = Docker::at(std::env::var_os("DOCKER_POOL_TEST_DOCKER").unwrap_or("docker".into()))
+        .with_settings_in(config.path().join("docker-settings"));
+    let machine = crate::runnerlinks::Machine {
+        config: config.path().to_path_buf(),
+        docker: docker.clone(),
+        keyring: Arc::new(purlis_core::secrets::keyring::FileStore::at(
+            config.path().join("keyring.json"),
+        )),
+    };
+    let name = format!(
+        "parity-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("after 1970")
+            .as_nanos()
+    );
+    let pool = Pool::new(
+        &name,
+        Image::pinned(&image).expect("an image named by digest"),
+        Set::default(),
+    )
+    .expect("a pool");
+    crate::dockerpools::add_on(&machine, &pool).expect("the pool is added and its runner paired");
+    let removes = RemovesThePool {
+        config: config.path().to_path_buf(),
+        docker: docker.clone(),
+        name: name.clone(),
+    };
+    let made = purlis_core::runners::runner_for(config.path(), &name)
+        .expect("its runner is kept")
+        .made;
+    let inherited = environment_in(&docker, made.container.as_str());
+    let to = crate::runnerlinks::ToARunner::of(&machine, &name).expect("a link to its runner");
+    let data = tempfile::tempdir().expect("a data home");
+    let mut target = a_window_on(data.path().to_path_buf(), Runs::OnAPoolsRunner, move || {
+        purlis_host::Relay::kept(Arc::new(move || to.keep()))
+    });
+    target.inherited = inherited;
+    a_repository(&target.root);
+    target._keeps.push(Box::new(data));
+    // Removed last, once the window and its link are gone.
+    target._keeps.push(Box::new(config));
+    target._keeps.push(Box::new(removes));
+    Some(target)
+}
+
+/// What the runner's host in `container` was started with: the environment of the
+/// container's first process, which starts it.
+fn environment_in(
+    docker: &purlis_core::dockerpool::Docker,
+    container: &str,
+) -> Vec<(OsString, OsString)> {
+    use std::os::unix::ffi::OsStringExt;
+    let out = purlis_core::forklock::output(std::process::Command::new(docker.program()).args([
+        "exec",
+        container,
+        "cat",
+        "/proc/1/environ",
+    ]))
+    .expect("docker runs");
+    assert!(out.status.success(), "the runner's environment: {out:?}");
+    out.stdout
+        .split(|byte| *byte == 0)
+        .filter(|pair| !pair.is_empty())
+        .filter_map(|pair| {
+            let at = pair.iter().position(|byte| *byte == b'=')?;
+            Some((
+                OsString::from_vec(pair[..at].to_vec()),
+                OsString::from_vec(pair[at + 1..].to_vec()),
+            ))
+        })
+        .collect()
+}
+
+/// Removes a test's pool, its runner's container and its home, however the test ends.
+struct RemovesThePool {
+    config: PathBuf,
+    docker: purlis_core::dockerpool::Docker,
+    name: String,
+}
+
+impl Drop for RemovesThePool {
+    fn drop(&mut self) {
+        let removed = purlis_core::pools::remove(&self.config, &self.docker, &self.name, None);
+        if !removed
+            .as_ref()
+            .is_ok_and(|removed| removed.as_ref().is_none_or(|removed| removed.forgotten))
+        {
+            // Said, not panicked: a panic while the test already panics aborts the run.
+            eprintln!("the pool {} was not removed whole: {removed:?}", self.name);
+        }
+    }
+}
+
+/// Makes the project at `root` a repository with one commit, as a project the window holds on
+/// a pool's runner is: its code is sent there as git sends it.
+fn a_repository(root: &Path) {
+    git(root, &["init", "-q", "-b", "main"]);
+    git(root, &["add", "-A"]);
+    git(
+        root,
+        &[
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@example.invalid",
+            "commit",
+            "-q",
+            "-m",
+            "a project",
+        ],
+    );
 }
 
 /// A session host as the window's binary composes it, keeping its kill switch in `folder`: its
@@ -271,7 +421,7 @@ pub(crate) async fn linked_to(host_b: purlis_host::Hosting) -> link::Link {
 /// it in `log`.
 fn a_window_on<H: session::Host + Clone>(
     log: PathBuf,
-    on_a_runner: bool,
+    runs: Runs,
     host: impl FnOnce() -> H + Send + 'static,
 ) -> Target {
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -282,7 +432,7 @@ fn a_window_on<H: session::Host + Clone>(
     // Made on the runtime, as a host is made where it serves.
     let host = runtime.block_on(async move { host() });
     let (connection, _window) = crate::hostedsessions::tests::in_memory(host, &runtime);
-    let mut target = a_window_over(connection, std::env::vars_os().collect(), log, on_a_runner);
+    let mut target = a_window_over(connection, std::env::vars_os().collect(), log, runs);
     target._keeps.push(Box::new(runtime));
     target
 }
@@ -294,7 +444,7 @@ fn a_window_over(
     connection: Arc<Connection>,
     inherited: Vec<(OsString, OsString)>,
     log: PathBuf,
-    on_a_runner: bool,
+    runs: Runs,
 ) -> Target {
     let config = tempfile::tempdir().expect("a config home");
     let (project, root) = a_project();
@@ -305,10 +455,10 @@ fn a_window_over(
     }));
     let switch = KillSwitch::kept_in(Some(config.path().to_path_buf()));
     switch.held_by(Arc::clone(&connection) as Arc<dyn crate::killswitch::Authority>);
-    let mut sessions = if on_a_runner {
-        HostedSessions::on_a_runner(Arc::clone(&connection), &root)
-    } else {
-        HostedSessions::new(Arc::clone(&connection), &root)
+    let mut sessions = match runs {
+        Runs::Here => HostedSessions::new(Arc::clone(&connection), &root),
+        Runs::OnARunner => HostedSessions::on_a_runner(Arc::clone(&connection), &root),
+        Runs::OnAPoolsRunner => HostedSessions::on_a_pools_runner(Arc::clone(&connection), &root),
     };
     sessions.hear_through(hooks.relayed_from_the_host().expect("heard from the host"));
     sessions.stopped_by(Arc::clone(&switch));
@@ -359,7 +509,7 @@ fn in_a_host_process_at(home: &Path) -> Target {
     connection
         .wait(PATIENCE)
         .expect("the window connects to its host");
-    let mut target = a_window_over(connection, inherited, log, false);
+    let mut target = a_window_over(connection, inherited, log, Runs::Here);
     target.savers_here = 0;
     target.kill_the_host = Some(host.0.killer());
     // Ended before the folders it serves from go.
@@ -2567,61 +2717,58 @@ fn a_chat_ending_with_the_window_gone_still_writes_its_record_and_its_dispatch_r
 }
 
 /// Each behaviour, as a test of its own on every target. Each group after `not yet through a
-/// link` runs on the window's and the host's targets, and through a link waits for what its
-/// reason names (#2042).
+/// link` runs on the window's and the host's targets, and through a link and in a Docker pool
+/// (whose runner is reached through a link) waits for what its reason names (#2042). Each
+/// group after `not yet in a Docker pool` runs on every target but a Docker pool's, which waits
+/// for what its reason names (#2045).
 macro_rules! on_every_target {
+    (@one $behaviour:ident, through_a_link: [$($link:meta)*], in_a_docker_pool: [$($docker:meta)*]) => {
+        mod $behaviour {
+            #[test]
+            fn in_the_window() {
+                super::$behaviour(&super::in_the_window());
+            }
+
+            #[test]
+            fn in_the_host() {
+                super::$behaviour(&super::in_the_host());
+            }
+
+            #[cfg(target_os = "linux")]
+            #[test]
+            fn in_a_host_process() {
+                super::$behaviour(&super::in_a_host_process());
+            }
+
+            #[test]
+            $(#[$link])*
+            fn through_a_link() {
+                super::$behaviour(&super::through_a_link());
+            }
+
+            /// Run by the parity job, which names a runner image; elsewhere it runs nothing.
+            #[test]
+            $(#[$docker])*
+            fn in_a_docker_pool() {
+                if let Some(target) = super::in_a_docker_pool() {
+                    super::$behaviour(&target);
+                }
+            }
+        }
+    };
     (
         $($behaviour:ident),* $(,)?;
         $(not yet through a link ($why:literal): $($waiting:ident),+ $(,)?;)*
+        $(not yet in a Docker pool ($docker_why:literal): $($docker_waiting:ident),+ $(,)?;)*
     ) => {
         $(
-            mod $behaviour {
-                #[test]
-                fn in_the_window() {
-                    super::$behaviour(&super::in_the_window());
-                }
-
-                #[test]
-                fn in_the_host() {
-                    super::$behaviour(&super::in_the_host());
-                }
-
-                #[cfg(target_os = "linux")]
-                #[test]
-                fn in_a_host_process() {
-                    super::$behaviour(&super::in_a_host_process());
-                }
-
-                #[test]
-                fn through_a_link() {
-                    super::$behaviour(&super::through_a_link());
-                }
-            }
+            on_every_target!(@one $behaviour, through_a_link: [], in_a_docker_pool: []);
         )*
         $($(
-            mod $waiting {
-                #[test]
-                fn in_the_window() {
-                    super::$waiting(&super::in_the_window());
-                }
-
-                #[test]
-                fn in_the_host() {
-                    super::$waiting(&super::in_the_host());
-                }
-
-                #[cfg(target_os = "linux")]
-                #[test]
-                fn in_a_host_process() {
-                    super::$waiting(&super::in_a_host_process());
-                }
-
-                #[test]
-                #[ignore = $why]
-                fn through_a_link() {
-                    super::$waiting(&super::through_a_link());
-                }
-            }
+            on_every_target!(@one $waiting, through_a_link: [ignore = $why], in_a_docker_pool: [ignore = $why]);
+        )+)*
+        $($(
+            on_every_target!(@one $docker_waiting, through_a_link: [], in_a_docker_pool: [ignore = $docker_why]);
         )+)*
     };
 }

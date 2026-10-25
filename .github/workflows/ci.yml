@@ -198,6 +198,110 @@ jobs:
         env:
           RESULTS: ${{ needs.lint.result }} ${{ needs.rust.result }}
         run: test "$RESULTS" = "success success"
+  # **The parity suite against a Docker pool** (#2045, spec #2041): the behaviour suite
+  # (`app/src-tauri/src/behaviour.rs`) on its Docker pool target, each behaviour on a pool of its
+  # own whose runner is a container of this build's runner image, reached through `docker exec`
+  # and the link between hosts; and the real-Docker tests of the pool, its link and its code.
+  # The local targets of the same suite run in `rust` on every pull request. A pull request that
+  # touches the host, the protocol, the sandbox or the browsers is gated on both; any other runs a
+  # check of a few seconds and nothing else, scoped like `bench`, so the check's name is posted on
+  # every pull request and can be required. A push to `main` is scoped the same way; each night
+  # runs it whole.
+  #
+  # The runner image is `runner-image/Dockerfile` around the `purlis` this job built, with the
+  # fake harness and `purlis` added at the folder the tests' build keeps them in
+  # (`tests/parity/runner.Dockerfile`), pushed to a registry of this job's own: a pool names its
+  # image by digest alone.
+  parity:
+    name: parity against a Docker pool (host, protocol, sandbox, browsers)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # A pull request's merge commit and the base branch's tip, or a push and the commit
+          # before it: what the change is.
+          fetch-depth: 2
+      - name: Whether this change touches the host, the protocol, the sandbox or the browsers
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" = schedule ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed=$(git diff --name-only HEAD^1 HEAD)
+          echo "$changed"
+          if echo "$changed" | grep -qE '^(crates/(host|session-protocol|linux-sandbox|browser-engine|fake-harness)/|crates/purlis-core/src/(sandbox|browsers|dockerpool|pools|runners|runnerlink|codelink|hookchannel|hoststart|hostsocket|session)(\.rs$|/)|crates/purlis-cli/src/(bridge|mcp)(\.rs$|/)|app/src-tauri/src/(behaviour|host|hostedsessions|hostedconfinement|hostsaving|sessionhost|sessions|hooks|killswitch|browsers|chatbrowsers|routedsessions|runnerlinks|runnercode|dockerpools)(\.rs$|/)|runner-image/|tests/parity/|Cargo\.lock$|rust-toolchain\.toml$|\.github/workflows/ci\.yml$)'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::nothing of the host, the protocol, the sandbox or the browsers has changed; the parity suite is not run against Docker"
+          fi
+      - name: Tauri's Linux build dependencies, and the sandbox's programs
+        if: steps.scope.outputs.run == 'true'
+        timeout-minutes: 9
+        uses: ./.github/actions/linux-packages
+        with:
+          tauri: true
+          packages: bubblewrap socat
+      - if: steps.scope.outputs.run == 'true'
+        uses: ./.github/actions/rust-toolchain
+      - if: steps.scope.outputs.run == 'true'
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: false
+      - if: steps.scope.outputs.run == 'true'
+        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        with:
+          tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
+      # tauri::generate_context! reads the built frontend, so it has to exist before a build.
+      - name: The tests, purlis and the fake harness, built
+        if: steps.scope.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p app/dist
+          cargo build --locked -p purlis-cli --bin purlis -p fake-harness --bin fake-harness
+          cargo nextest run --locked -p purlis-app --lib --no-run
+          cargo nextest run --locked -p purlis-core --test a_docker_pool_runner_is_linked_through_docker_exec --test code_crosses_to_a_docker_pools_runner_and_back --no-run
+      - name: The runner image of this build, and the parity suite's around it, by digest
+        if: steps.scope.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          docker run --detach --publish 127.0.0.1:5000:5000 --name registry registry:3
+          context="$RUNNER_TEMP/runner"
+          mkdir -p "$context"
+          cp target/debug/purlis "$context/purlis"
+          cp -R app/src-tauri/plugin "$context/plugin"
+          docker build --file runner-image/Dockerfile --tag purlis-runner:parity "$context"
+          parity="$RUNNER_TEMP/parity"
+          mkdir -p "$parity"
+          cp target/debug/purlis target/debug/fake-harness "$parity/"
+          docker build --file tests/parity/runner.Dockerfile \
+            --build-arg RUNNER=purlis-runner:parity --build-arg "AT=$PWD/target/debug" \
+            --tag localhost:5000/purlis-runner-parity:candidate "$parity"
+          docker push localhost:5000/purlis-runner-parity:candidate
+          image=$(docker image inspect --format '{{index .RepoDigests 0}}' localhost:5000/purlis-runner-parity:candidate)
+          echo "image $image"
+          echo "DOCKER_POOL_TEST_IMAGE=$image" >> "$GITHUB_ENV"
+      # Under `tools/no-orphans.sh`, as `rust` is: a test ends what it started, its pool's
+      # container included.
+      - name: The behaviour suite on its Docker pool target, and the window's real-Docker tests
+        if: steps.scope.outputs.run == 'true'
+        run: >-
+          tools/no-orphans.sh --reap --
+          cargo nextest run --locked -p purlis-app --lib --profile ci --no-tests fail
+          -E 'test(/::in_a_docker_pool$/) | test(/^runnerlinks::tests::a_(window_reaches|project_reaches)_/)'
+      - name: The pool's link and code over it, on Docker
+        if: steps.scope.outputs.run == 'true'
+        run: >-
+          tools/no-orphans.sh --reap --
+          cargo nextest run --locked -p purlis-core --profile ci --no-tests fail
+          --test a_docker_pool_runner_is_linked_through_docker_exec
+          --test code_crosses_to_a_docker_pools_runner_and_back
+      - name: What the runners left, if a test failed
+        if: failure() && steps.scope.outputs.run == 'true'
+        run: docker ps --all --no-trunc || true
   deny:
     name: rust (licences, advisories)
     runs-on: ubuntu-24.04
