@@ -545,10 +545,13 @@ pub(crate) fn asked(
             }
         }
         Ok(saved) => Answer::Drafted {
-            lines: vec![Say::Done(format!(
-                "The theme draft {folder} is saved and drawn {here}; Keep puts it in {}.",
-                kept_to(&saved.kept_to)
-            ).into())],
+            lines: vec![Say::Done(
+                format!(
+                    "The theme draft {folder} is saved and drawn {here}; Keep puts it in {}.",
+                    kept_to(&saved.kept_to)
+                )
+                .into(),
+            )],
             code: 0,
             made: saved.made,
         },

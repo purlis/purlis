@@ -267,10 +267,9 @@ impl Ctx<'_> {
         );
         if code != 0 {
             (self.say)(Say::Warn(
-                ("The change is made, and it could not be saved yet: the next save takes it, and \
+                "The change is made, and it could not be saved yet: the next save takes it, and \
                  Saving says why."
-                    .to_owned())
-                .into(),
+                    .into(),
             ));
         }
     }

@@ -236,9 +236,8 @@ pub fn version_report(root: Option<&Path>) -> Report {
     match verdict {
         PinVerdict::Unpinned => {
             report.said.push(Say::Info(
-                ("this control plane pins no purlis version, so there is nothing to conform \
+                "this control plane pins no purlis version, so there is nothing to conform \
                  to."
-                .to_owned())
                 .into(),
             ));
             report
@@ -373,9 +372,7 @@ pub fn set_channel_report(config_root: Option<&Path>, word: &str) -> Report {
     };
     let Some(config_root) = config_root else {
         report.said.push(Say::Err(
-            ("this machine has no config home, so purlis has nowhere to keep the channel."
-                .to_owned())
-            .into(),
+            "this machine has no config home, so purlis has nowhere to keep the channel.".into(),
         ));
         report.code = 1;
         return report;

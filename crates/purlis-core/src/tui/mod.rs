@@ -754,10 +754,13 @@ impl Markup {
 ///
 /// A message line (`voice::info`, a command's `Say`) takes `impl Into<Markup>`, so a literal
 /// is [`Markup::own`] and a `String` — a `format!` that splices a skill's, a repo's or a
-/// piece's name, a reason, a path — is [`Markup::text`], whole (SK-54, #3225). Escaping
-/// purlis's own words along with it changes nothing: they hold nothing the one rule marks.
-/// There is no conversion from a borrowed `&str`, which may have been read at run time: own
-/// it as a `String`, or splice it with `text`.
+/// piece's name, a reason, a path — is [`Markup::lines_of`], whole (SK-54, #3225): every
+/// control (an escape included), bidi, zero-width and tag character, and every tab, is
+/// marked, and only its line ends stay, because a message's sentence is often purlis's own
+/// layout over lines. A value whose line ends must be marked too, a name or a reason in a
+/// line of its own, is spliced with [`text`](Markup::text). Escaping purlis's own words
+/// changes nothing: they hold nothing the one rule marks. There is no conversion from a
+/// borrowed `&str`, which may have been read at run time: own it as a `String`, or splice it.
 impl From<&'static str> for Markup {
     fn from(words: &'static str) -> Self {
         Markup::new().own(words)
@@ -766,7 +769,7 @@ impl From<&'static str> for Markup {
 
 impl From<String> for Markup {
     fn from(text: String) -> Self {
-        Markup::new().text(text)
+        Markup::lines_of(&text)
     }
 }
 
@@ -822,7 +825,7 @@ impl serde::Serialize for Markup {
     }
 }
 
-/// Read back off the wire **escaped again**, as [`Markup::text`]: what arrives is bytes, not
+/// Read back off the wire **escaped again**, as a `String` is: what arrives is bytes, not
 /// markup this process built, so it cannot be a way in for raw text. Marking is idempotent,
 /// so a line the other end escaped reads back the same.
 impl<'de> serde::Deserialize<'de> for Markup {

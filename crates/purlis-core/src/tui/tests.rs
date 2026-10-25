@@ -331,23 +331,24 @@ fn own_words_holding_a_c1_csi_fail_a_test_build() {
 }
 
 /// SK-54 (#3225): a message line takes `impl Into<Markup>`, so a literal is purlis's own words
-/// and a `String` — a `format!` that spliced a name — enters escaped, whole.
+/// and a `String` — a `format!` that spliced a name — enters escaped, whole, its line ends
+/// kept as the message's layout.
 #[test]
 fn a_string_becomes_markup_escaped_and_a_literal_as_written() {
     let name = "n\x1b[8ma\u{202e}m\u{200b}e";
-    let line: Markup = format!("saved {name}\tthere\n").into();
+    let line: Markup = format!("saved {name}\tthere\r\n  hint").into();
     assert_eq!(
         line.as_str(),
-        "saved n⟦U+001B⟧[8ma⟦U+202E⟧m⟦U+200B⟧e⟦U+0009⟧there⟦U+000A⟧"
+        "saved n⟦U+001B⟧[8ma⟦U+202E⟧m⟦U+200B⟧e⟦U+0009⟧there⟦U+000D⟧\n  hint"
     );
     let own: Markup = "purlis's own words".into();
     assert_eq!(own, "purlis's own words");
 }
 
-/// SK-54: purlis lays a message out over lines, and a line end inside a line is still marked.
+/// SK-54: purlis lays a message out over lines, and a line end in a spliced value is marked.
 #[test]
 fn markup_lines_keep_purlis_s_line_ends_and_mark_a_value_s() {
-    let two = Markup::lines(["first:".into(), format!("  got a\nb\u{200b}").into()]);
+    let two = Markup::lines(["first:".into(), Markup::new().text("  got a\nb\u{200b}")]);
     assert_eq!(two.as_str(), "first:\n  got a⟦U+000A⟧b⟦U+200B⟧");
     assert_eq!(
         Markup::lines_of("fatal: x\x1b[2J\nhint: y\u{202e}").as_str(),

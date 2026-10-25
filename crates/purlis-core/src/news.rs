@@ -141,10 +141,9 @@ fn one(changelog: &str, version: &str) -> Report {
         Ok(section) if section.notes.is_empty() => Report {
             out: String::new(),
             said: vec![Say::Info(
-                ("nothing is unreleased yet: every change this build has is in a released \
+                "nothing is unreleased yet: every change this build has is in a released \
                  version."
-                    .to_owned())
-                .into(),
+                    .into(),
             )],
             code: 0,
         },

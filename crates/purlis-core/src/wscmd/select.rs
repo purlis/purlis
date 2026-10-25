@@ -509,10 +509,9 @@ fn distance(a: &str, b: &str) -> usize {
 pub fn unlock_command(root: &Path, ids: &Ids, say: Sink) -> u8 {
     if unlock(root, ids) {
         say(Say::Done(
-            ("Workspace unlocked for this session — `purlis workspace use <name>` can switch \
+            "Workspace unlocked for this session — `purlis workspace use <name>` can switch \
              now."
-                .to_string())
-            .into(),
+                .into(),
         ));
     } else {
         say(Say::Info(
@@ -638,11 +637,10 @@ pub fn default_command(root: &Path, name: Option<&str>, clear: bool, say: Sink) 
         .into(),
     ));
     say(Say::Info(
-        ("  Committed, so it travels with the plane. It is read LAST, so an explicit \
+        "  Committed, so it travels with the plane. It is read LAST, so an explicit \
          `--workspace`, $CHARTER_WORKSPACE, the tree you are standing in, or a \
          session/terminal selection all still win."
-            .to_string())
-        .into(),
+            .into(),
     ));
     0
 }

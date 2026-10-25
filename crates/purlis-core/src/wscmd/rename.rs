@@ -777,10 +777,9 @@ fn save(root: &Path, old: &str, new: &str, say: Sink) {
         .is_none()
     {
         say(Say::Info(
-            ("Not saved: this plane has not been told how it is saved yet — the next \
+            "Not saved: this plane has not been told how it is saved yet — the next \
              `purlis save` takes the rename."
-                .to_string())
-            .into(),
+                .into(),
         ));
         return;
     }
@@ -803,9 +802,8 @@ fn save(root: &Path, old: &str, new: &str, say: Sink) {
     );
     if code != 0 {
         say(Say::Warn(
-            ("The rename is done on disk; the save did not finish, and the next save takes it."
-                .to_string())
-            .into(),
+            "The rename is done on disk; the save did not finish, and the next save takes it."
+                .into(),
         ));
     }
 }

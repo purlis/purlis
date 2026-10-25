@@ -85,10 +85,9 @@ pub fn snapshot(request: &Request, say: Sink) -> u8 {
         ));
         wscmd::say_each(say, blockers);
         say(Say::Info(
-            ("Commit + push inside each repo, then retry (or --force to snapshot branches \
+            "Commit + push inside each repo, then retry (or --force to snapshot branches \
              as-is)."
-                .to_string())
-            .into(),
+                .into(),
         ));
         return 2;
     }

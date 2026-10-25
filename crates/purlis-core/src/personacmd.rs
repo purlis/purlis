@@ -149,9 +149,8 @@ pub fn default_command(root: &Path, name: Option<&str>, clear: bool, say: Sink) 
             ));
         }
         say(Say::Info(
-            ("Overridden per-developer by `purlis persona use` / $CHARTER_PERSONA / --persona."
-                .to_string())
-            .into(),
+            "Overridden per-developer by `purlis persona use` / $CHARTER_PERSONA / --persona."
+                .into(),
         ));
         return 0;
     }
@@ -160,10 +159,9 @@ pub fn default_command(root: &Path, name: Option<&str>, clear: bool, say: Sink) 
     if let Some(cur) = declared(root) {
         say(Say::Out(cur));
         say(Say::Info(
-            ("declared front door (charter.toml [persona] default). Change: purlis persona \
+            "declared front door (charter.toml [persona] default). Change: purlis persona \
              default <name>  ·  clear: --clear"
-                .to_string())
-            .into(),
+                .into(),
         ));
         return 0;
     }

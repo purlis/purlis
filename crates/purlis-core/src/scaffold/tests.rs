@@ -246,10 +246,9 @@ fn init_into_an_empty_directory_says_what_it_wrote_line_for_line() {
         Say::Info("  + .gitattributes (merge rules)".to_owned().into()),
         Say::Info(format!("  + {settings_item}").into()),
         Say::Info(
-            ("  + opencode.json (ask: charter report --yes, ask: charter ws \
+            "  + opencode.json (ask: charter report --yes, ask: charter ws \
              todo promote, ask: purlis report --yes, ask: purlis ws todo promote)"
-                .to_owned())
-            .into(),
+                .into(),
         ),
         Say::Info(
             "  + personas/steward/ (front door, declared in charter.toml)"
@@ -293,7 +292,7 @@ fn init_twice_says_the_plane_is_already_set_up_and_what_it_found() {
                     .into()
             ),
             Say::Info(
-                ("  already present: charter.toml, personas/, inventory/, workspaces/, \
+                "  already present: charter.toml, personas/, inventory/, workspaces/, \
                  .gitignore, .gitattributes (merge rules), .claude/settings.json (env), \
                  .claude/settings.json (ask: charter report --yes), opencode.json (ask: \
                  charter report --yes), .claude/settings.json (ask: charter ws todo \
@@ -302,8 +301,7 @@ fn init_twice_says_the_plane_is_already_set_up_and_what_it_found() {
                  report --yes), .claude/settings.json (ask: purlis ws todo promote), \
                  opencode.json (ask: purlis ws todo promote), \
                  .claude/settings.json (plane-root guard already wired)"
-                    .to_owned())
-                .into()
+                    .into()
             ),
             Say::Info(NEXT.to_owned().into()),
         ]
@@ -332,10 +330,9 @@ fn init_without_an_owner_warns_that_the_forge_block_has_none() {
     assert_eq!(
         outcome.said.first(),
         Some(&Say::Warn(
-            ("No --owner given — charter.toml's [[forge]] block has no owner/group set. Add \
+            "No --owner given — charter.toml's [[forge]] block has no owner/group set. Add \
              one before `purlis discover`."
-                .to_owned())
-            .into()
+                .into()
         ))
     );
     assert_eq!(outcome.code, 0);
@@ -779,15 +776,12 @@ fn a_settings_file_that_is_not_json_is_left_untouched_and_init_exits_1() {
     let outcome = init(&at(&root, false), &plain());
 
     let path = root.join(settings::SETTINGS);
-    let warned = Say::Warn(
-        format!(
-            "{} is not a settings file purlis can read and write back as JSON — left it \
+    let warned = Say::Warn(crate::tui::Markup::lines_of(&format!(
+        "{} is not a settings file purlis can read and write back as JSON — left it \
          completely untouched. Wire the plane-root guard yourself:\n{}",
-            path.display(),
-            settings::hooks_snippet()
-        )
-        .into(),
-    );
+        path.display(),
+        settings::hooks_snippet()
+    )));
     assert!(outcome.said.contains(&warned), "{:?}", outcome.said);
     assert_eq!(errs(&outcome), Vec::<&str>::new());
     assert_eq!(outcome.code, 1);
@@ -968,10 +962,9 @@ fn reinit_outside_a_plane_refuses_and_writes_nothing() {
     assert_eq!(
         outcome.said,
         vec![Say::Err(
-            ("no control plane found (no charter.toml here or in any parent) — `purlis \
+            "no control plane found (no charter.toml here or in any parent) — `purlis \
              reinit` only works inside one."
-                .to_owned())
-            .into()
+                .into()
         )]
     );
     assert_eq!(outcome.code, 1);
@@ -1085,16 +1078,14 @@ fn reinit_heals_what_a_plane_predates_and_names_each_thing_it_added() {
         outcome.said,
         vec![
             Say::Ok(
-                ("Reinitialized control plane → added inventory/, .gitignore \
+                "Reinitialized control plane → added inventory/, .gitignore \
                  (/charter.local.toml)."
-                    .to_owned())
-                .into()
+                    .into()
             ),
             Say::Info(
-                ("  already present: personas/, workspaces/, .gitattributes (merge rules), \
+                "  already present: personas/, workspaces/, .gitattributes (merge rules), \
                  .claude/settings.json (plane-root guard already wired)"
-                    .to_owned())
-                .into()
+                    .into()
             ),
         ]
     );
@@ -1511,10 +1502,9 @@ fn a_profile_nobody_approved_is_named_with_the_way_to_approve_it() {
     assert_eq!(
         line_about_work(&outcome),
         vec![&Say::Warn(
-            ("  profile 'work' is new and not approved yet — start a chat on it from the \
+            "  profile 'work' is new and not approved yet — start a chat on it from the \
              app's new-chat picker to approve its command"
-                .to_owned())
-            .into()
+                .into()
         )]
     );
 }
@@ -1744,37 +1734,31 @@ fn init_at_the_top_of_a_repository_writes_nothing_and_says_how_to_ask() {
         outcome.said,
         vec![
             Say::Err(
-                ("this is the git repo 'widget', and `purlis init` does not make a \
+                "this is the git repo 'widget', and `purlis init` does not make a \
                  repository into a control plane unless you ask it to. Nothing was \
                  written."
-                    .to_owned())
-                .into()
+                    .into()
             ),
-            Say::Info(
-                ("A plane is a directory of its own, and this repo is the first clone in \
+            Say::Info(crate::tui::Markup::lines_of(
+                "A plane is a directory of its own, and this repo is the first clone in \
                  it:\n      mkdir ../widget-plane && cd ../widget-plane\n      purlis \
                  init --forge github --owner acme --adopt ../plane\n  That clones this \
                  repo into the plane's first workspace. Nothing here is written by any of \
                  it — this repo is read, and only read."
-                    .to_owned())
-                .into()
-            ),
-            Say::Info(
-                ("To make THIS repo the plane instead — purlis's own plane is one, which \
+            )),
+            Say::Info(crate::tui::Markup::lines_of(
+                "To make THIS repo the plane instead — purlis's own plane is one, which \
                  is why the option is here — ask for it by name:\n      purlis init \
                  --plane-is-this-repo --forge github --owner acme\n  That writes \
                  charter.toml, .claude/settings.json, opencode.json, personas/, \
                  inventory/, workspaces/ into this repo, and purlis's own rules into its \
                  tracked .gitignore."
-                    .to_owned())
-                .into()
-            ),
+            )),
             Say::Info(
-                ("Why the default changed: docs/adr/0035-a-plane-is-untrusted-until-the-\
+                "Why the default changed: docs/adr/0035-a-plane-is-untrusted-until-the-\
                  operator-opens-it.md, and charter-app spec decision 27. `purlis init` \
                  anywhere that is not the top of a git repo is unchanged."
-                    .to_owned())
-                .into()
+                    .into()
             ),
         ]
     );
@@ -1826,14 +1810,12 @@ fn plane_is_this_repo_scaffolds_the_repo_and_offers_its_first_clone() {
     assert_eq!(outcome.code, 0, "{:?}", outcome.said);
     assert_eq!(
         outcome.said.last(),
-        Some(&Say::Info(
-            ("You are standing in the git repo 'widget'. Work happens in a workspace, not \
+        Some(&Say::Info(crate::tui::Markup::lines_of(
+            "You are standing in the git repo 'widget'. Work happens in a workspace, not \
              in the plane root — clone it into the first one:\n      purlis init \
              --clone-this-repo\n  Nothing is cloned unless you run that. It lands in \
              workspaces/default/widget/, and declining leaves this plane complete."
-                .to_owned())
-            .into()
-        ))
+        )))
     );
     assert!(root.join("charter.toml").is_file());
 }
@@ -1909,11 +1891,10 @@ fn adopt_naming_the_planes_own_directory_points_at_clone_this_repo() {
     assert_eq!(
         outcome.said.last(),
         Some(&Say::Err(
-            ("--adopt: that is this plane's own directory. To clone the repo the plane is \
+            "--adopt: that is this plane's own directory. To clone the repo the plane is \
              being made IN, ask for `--clone-this-repo`; `--adopt` is for a repository \
              somewhere else, with the plane beside it (ADR 0035)."
-                .to_owned())
-            .into()
+                .into()
         ))
     );
     assert_eq!(outcome.code, 1);

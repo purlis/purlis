@@ -436,10 +436,9 @@ fn made(
             unstage(top);
             here.forget();
             lines.push(Say::Info(
-                ("an earlier commit for this chat was interrupted after it staged; what it \
+                "an earlier commit for this chat was interrupted after it staged; what it \
                  had staged was unstaged first, and the files are as they were"
-                    .to_owned())
-                .into(),
+                    .into(),
             ));
         }
         Some(1) => {

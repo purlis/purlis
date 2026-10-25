@@ -54,9 +54,7 @@ pub fn drafted(held: &Held, ask: &ProposeAsk) -> Option<Answer> {
             // The studio and the chat's tab read the drafts again when the asks move.
             held.chats().asks_may_have_moved();
             Answer::Said {
-                lines: vec![purlis_core::repocmd::Say::Done(
-                    drafts::DRAFTED_SAID.into(),
-                )],
+                lines: vec![purlis_core::repocmd::Say::Done(drafts::DRAFTED_SAID.into())],
                 code: 0,
             }
         }

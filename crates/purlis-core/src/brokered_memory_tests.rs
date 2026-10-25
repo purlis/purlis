@@ -234,10 +234,9 @@ fn a_verb_that_finds_nothing_says_so_and_exits_one() {
     assert_eq!(
         lines,
         vec![Say::Fail(
-            ("no memory 'nothing-like-it' in workspace 'alpha' (list them: purlis workspace \
+            "no memory 'nothing-like-it' in workspace 'alpha' (list them: purlis workspace \
              recall)."
-                .to_owned())
-            .into()
+                .into()
         )]
     );
 }
