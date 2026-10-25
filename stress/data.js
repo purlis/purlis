@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792941667263,
+  "lastUpdate": 1792945125517,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -7252,6 +7252,42 @@ window.BENCHMARK_DATA = {
             "value": 293.3,
             "unit": "MB",
             "extra": "median of 6 samples: 332.7, 293.7, 292.6, 292.9, 293.9, 213.7 MB; window 172.4 MB, session host 120.9 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b7c4bf37f4277c97cd3c0d70c9d8675c1baba485",
+          "message": "stories: Chromium draws its words greyscale, so a picture is the same every run (#3212)\n\n* stories: Chromium draws its words greyscale, so a picture is the same every run\n\nThe List family's ToChooseFrom picture failed the stories job on main and\non every pull request, in a different two or three Purlis cells each time.\nIts pictures differed by one pixel of one glyph (the r of \"designer\"),\ndrawn in Chromium's subpixel (LCD) text: Chromium takes each glyph from a\ncache the whole run shares, so the glyph came out a pixel apart depending\non which stories ran before it. Alone, the file drew one picture every\ntime; in the full run it drew three different ones in eight runs.\n\nChromium is launched with --disable-lcd-text for the stories, and drew the\nsame picture in all eight runs. The Chromium baselines are redrawn by the\nupdate-baselines label.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-25T19:01:43+04:00",
+          "tree_id": "c4e6d13b0b2dd58c3dee8ee90fde5e29af5770e4",
+          "url": "https://github.com/purlis/purlis/commit/b7c4bf37f4277c97cd3c0d70c9d8675c1baba485"
+        },
+        "date": 1792945122951,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 1099,
+            "unit": "MB",
+            "extra": "median of 3 samples: 879, 1099, 1424 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 292.1,
+            "unit": "MB",
+            "extra": "median of 6 samples: 367.1, 324.8, 289.5, 291.6, 292.7, 203.6 MB; window 171.2 MB, session host 121.2 MB"
           }
         ]
       }
