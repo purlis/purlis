@@ -108,7 +108,7 @@ function Rows({ names, action }: { names: readonly string[]; action: string }) {
 }
 
 /** Enough of them that every view scrolls in the story's frame. */
-const MANY = [
+const MANY_ONCE = [
   "Charter defects go upstream",
   "Never pkill by name",
   "Separate PRs, not trains",
@@ -124,6 +124,7 @@ const MANY = [
   "Sandbox defaults must not break standard tools",
   "One place for questions",
 ];
+const MANY = [...MANY_ONCE, ...MANY_ONCE.map((one) => `${one}, again`)];
 
 /** The view's first row, as `ViewPane` and `VaultTab` draw it: what can be done to what it is
  *  about, and the quiet words beside it. Settings draws its own (its levels). */
@@ -329,24 +330,30 @@ function ViewTab({ shown, width = 760 }: { shown: Shown; width?: number }) {
         role="tabpanel"
         aria-labelledby={idOf(chosen)}
       >
-        <div className="pane-frame pane-viewed" data-focused="" data-testid="view frame">
-          <PaneHead
-            doing={
-              <PaneActions
-                pane={0}
-                offerFor={(id) => PANE_OFFERS[id]}
-                closeOf={() => PANE_OFFERS["pane.close"]}
-                onPaneDoes={() => undefined}
+        {/* As the window's split group draws a pane (`react-resizable-panels`): a box of the
+            panel's height, which the view's body scrolls inside. */}
+        <div data-group="" style={{ display: "flex", blockSize: "100%" }}>
+          <div style={{ flex: "1 1 0", minInlineSize: 0, blockSize: "100%" }}>
+            <div className="pane-frame pane-viewed" data-focused="" data-testid="view frame">
+              <PaneHead
+                doing={
+                  <PaneActions
+                    pane={0}
+                    offerFor={(id) => PANE_OFFERS[id]}
+                    closeOf={() => PANE_OFFERS["pane.close"]}
+                    onPaneDoes={() => undefined}
+                  />
+                }
               />
-            }
-          />
-          <div className="pane view focused">
-            <section className="view-pane" aria-label={title}>
-              <FirstRow shown={shown} />
-              <div className="view-body">
-                <Body shown={shown} />
+              <div className="pane view focused">
+                <section className="view-pane" aria-label={title}>
+                  <FirstRow shown={shown} />
+                  <div className="view-body">
+                    <Body shown={shown} />
+                  </div>
+                </section>
               </div>
-            </section>
+            </div>
           </div>
         </div>
       </div>
@@ -475,10 +482,14 @@ function pressableUnderTheActions(canvasElement: HTMLElement): string[] {
  * theirs. A view that scrolls is held to scroll here.
  */
 async function nothingScrollsUnderTheActions(canvasElement: HTMLElement) {
-  const scroller = [
-    ...canvasElement.querySelectorAll<HTMLElement>(".view-body, .view-body pre"),
-  ].find((one) => one.scrollHeight > one.clientHeight + 1);
-  expect(scroller).toBeDefined();
+  const scrollers = [...canvasElement.querySelectorAll<HTMLElement>(".view-body, .view-body pre")];
+  const scroller = scrollers.find((one) => one.scrollHeight > one.clientHeight + 1);
+  // Says what was measured when nothing scrolls, so a story whose view stopped scrolling says so.
+  expect(
+    scroller === undefined
+      ? scrollers.map((one) => `${one.className}: ${one.scrollHeight}/${one.clientHeight}`)
+      : [],
+  ).toEqual([]);
   const end = (scroller as HTMLElement).scrollHeight;
   for (const to of [0, 24, 61, 140, end]) {
     (scroller as HTMLElement).scrollTop = to;
