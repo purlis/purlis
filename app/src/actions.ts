@@ -1443,6 +1443,7 @@ function halfSaid(
 const VIEW_NOTES: Record<Exclude<OwnViewId, "search">, string> = {
   chats: "The project's chats and their tasks, on the left.",
   explorer: "The project's workspaces and the files of where the next chat starts, on the left.",
+  skills: "The focused workspace's skills by level, and what needs you, on the left.",
   changes:
     "The focused workspace's repos: branch, uncommitted files, branches and pipeline, in the Panel.",
   repos:
@@ -1675,6 +1676,8 @@ export function catalogue(now: Now): Offer[] {
   // *Search in files*, above (#1676), so it is not said twice.
   for (const view of Object.keys(VIEWS) as OwnViewId[]) {
     if (view === "search") continue;
+    // Behind the Skill studio's preview (#3266): no row while the view is drawn nowhere.
+    if (view === "skills" && now.skillStudio !== true) continue;
     const key = SIDE_KEYS_SAID[view];
     offers.push({
       ...can(sideViewId(view), `Show the ${VIEWS[view].name} view`, { verb: "showSideView", view }),

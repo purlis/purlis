@@ -932,6 +932,17 @@ half**, together. Left is navigation, right is what is for you (ADR 0038). A vie
 within its own side.
 _Avoid_: pane (a pane is a chat's terminal), column
 
+**Sidebar view**:
+One of the views an activity bar shows in its sidebar, one at a time (Chats, Explorer, Search,
+**Skills**, …). The window says "the Explorer view".
+_Avoid_: view (a hosted program's), panel
+
+**Skills** (sidebar view):
+The **sidebar view** under Search on the left that lists the skills of the title bar's workspace
+by level, with what needs the person on top, and opens each skill's tab, while the **Skill
+studio**'s preview is on (#3266). The window says "the Skills view". The studio stays a view tab.
+_Avoid_: skills panel, skill list
+
 **Panel**:
 The full-width region under both sidebars and the editor, in a left and a right **Panel half**,
 switched by the **Lower icons**. It holds reference lists, such as Repos, beside what the

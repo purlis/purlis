@@ -117,7 +117,7 @@ describe("moving a view (#1740)", () => {
 
     const moved = viewMoved(away, "search", "panel-left");
 
-    expect(viewsOf(of(moved, "navigation"))).toEqual(["chats", "explorer"]);
+    expect(viewsOf(of(moved, "navigation"))).toEqual(["chats", "explorer", "skills"]);
     expect(viewsOf(of(moved, "panel-left"))).toEqual(["repos", "changes", "search"]);
     expect(of(moved, "panel-left")).toMatchObject({ view: "search", collapsed: false });
     expect(regionOf("search", moved)).toBe("panel-left");
@@ -147,7 +147,7 @@ describe("moving a view (#1740)", () => {
 
     const back = viewMoved(there, "explorer", "navigation");
 
-    expect(viewsOf(of(back, "navigation"))).toEqual(["chats", "explorer", "search"]);
+    expect(viewsOf(of(back, "navigation"))).toEqual(["chats", "explorer", "search", "skills"]);
     expect(viewsOf(of(back, "panel-left"))).toEqual(["repos", "changes"]);
     expect(back.map(({ id, side, order, collapsed }) => ({ id, side, order, collapsed }))).toEqual(
       DEFAULT_ARRANGEMENT,
@@ -168,7 +168,7 @@ describe("moving a view (#1740)", () => {
 
   it("empties a sidebar whose every view moved down, which is then not drawn, and fills it again", () => {
     let all = DEFAULT_ARRANGEMENT;
-    for (const view of ["chats", "explorer", "search"] as const)
+    for (const view of ["chats", "explorer", "search", "skills"] as const)
       all = viewMoved(all, view, "panel-left");
 
     expect(viewsOf(of(all, "navigation"))).toEqual([]);
@@ -345,7 +345,7 @@ describe("a file's `moved`, read field by field", () => {
   it("draws each place's own views first and what moved into it after, in the file's order", () => {
     const got = read([{ id: "panel-left", side: "left", moved: ["search", "chats"] }]);
 
-    expect(viewsOf(of(got, "navigation"))).toEqual(["explorer"]);
+    expect(viewsOf(of(got, "navigation"))).toEqual(["explorer", "skills"]);
     expect(viewsOf(of(got, "panel-left"))).toEqual(["repos", "changes", "search", "chats"]);
   });
 

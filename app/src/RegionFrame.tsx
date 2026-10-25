@@ -59,6 +59,9 @@ import { IconButton } from "./ui/button/Button";
 import { PanelSectionTitle, panelRoot } from "./ui/panel/Panel";
 import { ActivityBarFrame, type ActivityVariant } from "./ui/activity/ActivityItem";
 
+/** No view behind a preview is on. */
+const NO_PREVIEWS: readonly ViewId[] = [];
+
 /**
  * **The window, drawn from the arrangement** (ADR 0038, and `regions.ts` for why the
  * arrangement is data).
@@ -81,6 +84,7 @@ export function RegionFrame({
   content,
   views,
   panels = [],
+  previews = NO_PREVIEWS,
   badges,
   keys,
   onPick,
@@ -111,6 +115,9 @@ export function RegionFrame({
    * declared. What each draws is in {@link views} under its id.
    */
   panels?: readonly PanelTab[];
+  /** **purlis's own views behind a preview that is on now** (#3266, `sideViews.PREVIEWED_VIEWS`):
+   *  one left out is drawn nowhere, and its region opens on its first view meanwhile. */
+  previews?: readonly ViewId[];
   /** What each view's tab carries beside its icon: a count, drawn while the side is away too. */
   badges?: Partial<Record<ViewId, ReactNode>>;
   /** How each view's key is spelled, for its tab's tooltip. */
@@ -151,7 +158,7 @@ export function RegionFrame({
     setBefore(kept);
     setLast(lastUsed(before, kept, last));
   }
-  const present = panels.map((one) => one.view);
+  const present = [...panels.map((one) => one.view), ...previews];
   // Without the moved panels no extension contributes now (`regions.drawnNow`): a half left
   // with none of its views is not drawn, and F6 skips it.
   const now = drawnNow(kept, present);

@@ -7834,6 +7834,42 @@ nav.piece-files-head {
   font-size: var(--font-size-sm);
 }
 
+/* The Skills view (#3266): a sidebar view, its header's two ways in, the switch to the chat in
+   front, then the list, which takes the rest and scrolls. The list's look is the list family's. */
+.skills-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-block-size: 0;
+  block-size: 100%;
+  padding: var(--space-2);
+}
+
+.skills-view .skill-starts {
+  grid-template-columns: 1fr;
+}
+
+.skills-view-only {
+  align-self: flex-start;
+}
+
+.skills-view-list {
+  flex: 1;
+  min-block-size: 0;
+  overflow: auto;
+}
+
+/* A row's one mark, in the quiet tier: never a colour alone (WCAG 1.4.1). */
+.skills-view-mark {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+/* A row's tooltip, one line each: what the skill does, then why it has its mark. */
+.skills-view-tip {
+  display: block;
+}
+
 /* Skill sources (SK-10): the install review leads with its summary, risky items marked. */
 .skill-sources,
 .skill-review {

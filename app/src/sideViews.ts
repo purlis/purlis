@@ -20,6 +20,7 @@ export type OwnViewId =
   | "chats"
   | "explorer"
   | "search"
+  | "skills"
   | "changes"
   | "repos"
   | "inbox"
@@ -53,6 +54,19 @@ export const panelKeyOf = (view: PanelViewId): string => view.slice("panel:".len
 export const isPanelView = (view: string): view is PanelViewId =>
   view.startsWith("panel:") && view.length > "panel:".length;
 
+/**
+ * **purlis's own views behind a preview** (SK-55, #3266): the Skills view, only while the Skill
+ * studio's preview is on. While it is off the view is drawn nowhere and its place keeps it, as an
+ * extension's panel is kept while its extension contributes nothing: the side opens on its first
+ * view, and the person's pick comes back with the preview.
+ */
+export const PREVIEWED_VIEWS: readonly OwnViewId[] = ["skills"];
+
+/** **Whether `view` is drawn only while it is present now**: an extension's panel while it is
+ *  contributed, a view behind a preview while that preview is on. */
+export const drawnOnlyPresent = (view: string): boolean =>
+  isPanelView(view) || (PREVIEWED_VIEWS as readonly string[]).includes(view);
+
 /** The right sidebar's own views, in its bar's order (#1678, #1738): the attention region's. The
  *  Inbox is first (#1692, I-2): what waits on the person heads the "for you" side, and the side
  *  opens on it. */
@@ -74,6 +88,8 @@ export const VIEWS: Record<OwnViewId, { name: string }> = {
   // #1676: the Search tab's content, in the side; and the repos' state, which the bottom
   // region drew until it went (B-7).
   search: { name: "Search" },
+  // #3266: this workspace's skills by level, behind the Skill studio's preview.
+  skills: { name: "Skills" },
   changes: { name: "Changes" },
   // #1737: Explorer's *Repos and branches*, a view of its own in the left half of the Panel.
   repos: { name: "Repos" },
