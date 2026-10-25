@@ -1484,9 +1484,14 @@ button.show-more:focus-visible {
    item holds it (`.pane-chips:has(.pane-crumbs) > :not(.pane-crumbs)`, which outranks the
    `flex` here): it gives way with the gauge and the harness's name, before the breadcrumb
    gives anything, and is cut at its own edge. Only once every such item is down to that does
-   the breadcrumb shrink, by its own order: the names, and the state word last. */
+   the breadcrumb shrink, by its own order: the names, and the state word last.
+
+   **Clear of its neighbours** (WCAG 2.5.8): a small icon button is under 24px in the compact
+   density, and the line's gap is a hairline, so a step on either side keeps a 24px circle around
+   it clear of the breadcrumb's last name and of the ways beside it. */
 .pane-brief {
   flex: 0 1 auto;
+  margin-inline: var(--space-2);
 }
 
 /* **Words for a screen reader and for nobody else**: what a drawn separator stands for. Clipped

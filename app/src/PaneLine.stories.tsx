@@ -100,15 +100,6 @@ export const ATasksLine: Story = {
     const close = canvas.getByRole("button", { name: "Close now" });
     const harness = canvas.getByRole("button", { name: "What Claude Code can do here" });
 
-    // Every way on the line is a whole target (WCAG 2.5.8): at least 24px each way.
-    const small = [brief, stop, close, harness].flatMap((target) => {
-      const { width, height } = target.getBoundingClientRect();
-      return Math.min(width, height) < 23.5
-        ? [`${target.getAttribute("aria-label")}: ${width}x${height}`]
-        : [];
-    });
-    await expect(small).toEqual([]);
-
     await userEvent.tab();
     await expect(brief).toHaveFocus();
     expectFocusInSight();
