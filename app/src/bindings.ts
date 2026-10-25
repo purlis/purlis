@@ -11220,7 +11220,7 @@ export type SkillGradePlan = {
 	tests_refused: string | null,
 	/**  The trigger tests left out, each with why: a query no chat can be started on. */
 	left_out: string[],
-	/**  The outcome evals the skill has, which this version does not grade yet. */
+	/**  The outcome evals the skill has, shown and not run (#3235 grades them). */
 	outcome_evals: number,
 	outcomes_refused: string | null,
 	estimate: GradeEstimate | null,
