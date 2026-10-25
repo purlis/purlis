@@ -1086,7 +1086,12 @@ fn open_tunnel(proxy: &crate::sandbox::egress::Proxy, host: &str) -> Option<std:
     }
     stream.write_all(&client_hello(host)).ok()?;
     let mut answered = [0u8; 1];
-    (stream.read(&mut answered).ok()? == 1).then_some(stream)
+    let carried = matches!(stream.read(&mut answered), Ok(1));
+    assert!(
+        carried || std::env::var_os("CI").is_none(),
+        "on CI, {host} did not answer through the tunnel"
+    );
+    carried.then_some(stream)
 }
 
 /// Whether `stream` reaches its end within a few seconds, whatever it still had to read.
