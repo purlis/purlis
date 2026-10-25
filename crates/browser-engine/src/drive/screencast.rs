@@ -14,6 +14,10 @@
 //! **One thread, never the event reader's.** The calls into the engine (start, stop,
 //! acknowledge) are made on a thread of the screencast's own, so neither the reader of the
 //! engine's events nor the caller waits on them. The screencast follows the current page.
+//!
+//! **No wider than asked** (#2050): [`super::Browser::narrow`] has the engine scale its frames
+//! down to a width, as a view over a link between hosts wants them; a change of it starts the
+//! screencast again at the new width.
 
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex, Weak};
@@ -39,6 +43,7 @@ enum Ask {
     Show,
     Hide,
     Pace(Duration),
+    Narrow(Option<u16>),
     Frame { session: String, ack: i64 },
 }
 
@@ -86,6 +91,10 @@ impl Screencast {
         self.ask(Ask::Pace(every));
     }
 
+    pub(crate) fn narrow(&self, most: Option<u16>) {
+        self.ask(Ask::Narrow(most));
+    }
+
     /// A `Page.screencastFrame` event, from the event reader: handed over while shown, with
     /// `aim`, what it showed (#2014), and `address`, the engine's record of its page's document
     /// (#2300), and acknowledged on the screencast's thread.
@@ -118,6 +127,7 @@ fn run(weak: &Weak<Inner>, asked: &Receiver<Ask>) {
     let mut every = Duration::ZERO;
     let mut acked: Option<Instant> = None;
     let mut waiting: Option<(String, i64)> = None;
+    let mut most_width: Option<u16> = None;
     loop {
         let due = waiting
             .as_ref()
@@ -135,7 +145,7 @@ fn run(weak: &Weak<Inner>, asked: &Receiver<Ask>) {
         match next {
             Ok(Ask::Show) => {
                 showing = true;
-                follow(&inner, &mut on);
+                follow(&inner, &mut on, most_width);
             }
             Ok(Ask::Hide) => {
                 showing = false;
@@ -147,6 +157,21 @@ fn run(weak: &Weak<Inner>, asked: &Receiver<Ask>) {
                 }
             }
             Ok(Ask::Pace(pace)) => every = pace,
+            Ok(Ask::Narrow(most)) => {
+                if most != most_width {
+                    most_width = most;
+                    // Started again at the new width, on the page it casts.
+                    if let Some(session) = on.take() {
+                        waiting = None;
+                        let _ = inner
+                            .devtools
+                            .call("Page.stopScreencast", json!({}), Some(&session));
+                    }
+                    if showing {
+                        follow(&inner, &mut on, most_width);
+                    }
+                }
+            }
             Ok(Ask::Frame { session, ack }) => {
                 if showing {
                     waiting = Some((session, ack));
@@ -154,7 +179,7 @@ fn run(weak: &Weak<Inner>, asked: &Receiver<Ask>) {
             }
             Err(RecvTimeoutError::Timeout) => {
                 if showing {
-                    follow(&inner, &mut on);
+                    follow(&inner, &mut on, most_width);
                 }
             }
             Err(RecvTimeoutError::Disconnected) => return,
@@ -177,9 +202,9 @@ fn run(weak: &Weak<Inner>, asked: &Receiver<Ask>) {
     }
 }
 
-/// Casts the current page: stops the screencast on a page that is no longer current, and
-/// starts it on the one that is.
-fn follow(inner: &Inner, on: &mut Option<String>) {
+/// Casts the current page, no wider than `most_width`: stops the screencast on a page that is
+/// no longer current, and starts it on the one that is.
+fn follow(inner: &Inner, on: &mut Option<String>, most_width: Option<u16>) {
     let current = inner.current_session();
     if *on == current {
         return;
@@ -190,11 +215,13 @@ fn follow(inner: &Inner, on: &mut Option<String>) {
             .call("Page.stopScreencast", json!({}), Some(&old));
     }
     if let Some(session) = current {
-        let started = inner.devtools.call(
-            "Page.startScreencast",
-            json!({ "format": "jpeg", "quality": QUALITY, "everyNthFrame": 1 }),
-            Some(&session),
-        );
+        let mut asked = json!({ "format": "jpeg", "quality": QUALITY, "everyNthFrame": 1 });
+        if let Some(most) = most_width {
+            asked["maxWidth"] = json!(most);
+        }
+        let started = inner
+            .devtools
+            .call("Page.startScreencast", asked, Some(&session));
         if started.is_ok() {
             *on = Some(session);
         }

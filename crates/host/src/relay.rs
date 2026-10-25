@@ -58,9 +58,13 @@
 //! code stream is never parked or carried over: a transfer the link ended under is refused, and
 //! the window sends it again.
 //!
-//! **A login's values are never relayed** (#2016): `log_in` is refused at the relay for every
-//! client, so a vault's value never reaches another host this way; nor is a browser's start
-//! from kept logins (#2021), which stay on this device.
+//! **A runner chat's browser runs on the runner, relayed for the window alone** (1.38, #2050):
+//! its start, its views, its chat's acts, the person driving it and a login purlis performs in
+//! it are sent on for a `local-ui` client only. A login's values cross only as the window
+//! decided to send them (the chat's persona opted in for that pool, the desktop connected), and
+//! the runner keeps none of them. **A kept login is never relayed** (#2021): a browser's start
+//! from kept logins, and a login that keeps one, are refused here, so a kept login stays on the
+//! device it was made on.
 //!
 //! **What only the window may send, the relay sends on for the window alone** (ruled
 //! 2026-10-15, #2042): holding a project, dealing its numbers, a start with the window's own
@@ -1143,7 +1147,9 @@ fn the_windows_alone(command: &Command) -> bool {
                 || start.without_sandbox
                 || start.confinement.is_some()
                 || !start.alone.is_empty()
+                || start.kind == session::ProgramKind::Browser
         }
+        Command::AttachView { kind, .. } => *kind == session::ViewKind::Browser,
         command => the_windows_power(command.power()),
     }
 }
@@ -1166,12 +1172,18 @@ fn ids_for_the_window_alone(command: Command, scope: Scope) -> Command {
 }
 
 /// Whether `power` is one only the window holds of those the relay meets in a command or a
-/// push: holding a project, replying to its hook lines, saving it, confining a chat, and moving
-/// code (1.34, #2046).
+/// push: holding a project, replying to its hook lines, saving it, confining a chat, moving
+/// code (1.34, #2046), and a browser, its acts, its driving and its login (1.38, #2050).
 fn the_windows_power(power: Power) -> bool {
     matches!(
         power,
-        Power::Hold | Power::Heard | Power::Save | Power::Confine | Power::Code
+        Power::Hold
+            | Power::Heard
+            | Power::Save
+            | Power::Confine
+            | Power::Code
+            | Power::Browser
+            | Power::LogIn
     )
 }
 
@@ -1192,14 +1204,18 @@ fn refused(why: &CallError) -> Refusal {
 
 impl session::Host for Relay {
     async fn call(&self, command: Command, peer: &Peer) -> Result<Answer, Refusal> {
-        // A login's values never leave this host (#2016): not for any client, the window's
-        // included.
-        let kept = matches!(&command, Command::StartProgram(start) if start.kept.is_some());
-        if command.power() == Power::LogIn || kept {
+        // A kept login stays on the device it was made on (#2021, #2050): a browser on another
+        // host is never opened from one, and keeps none.
+        let kept = match &command {
+            Command::StartProgram(start) => start.kept.is_some(),
+            Command::LogIn { login, .. } => login.keep.is_some(),
+            _ => false,
+        };
+        if kept {
             return Err(Refusal {
                 code: session::NOT_ALLOWED.into(),
-                why: "a browser on another host is logged in to nothing: a login's values are \
-                      not sent to another host"
+                why: "a kept login stays on the device it was made on: a browser on another host \
+                      is not opened from one, and keeps none"
                     .into(),
             });
         }

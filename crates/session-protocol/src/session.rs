@@ -237,9 +237,22 @@ use crate::view::{Limits, Views};
 /// where that is known), a few times a second at most, and `cancel_engine_download` stops it,
 /// keeping nothing of it. The window's alone ([`crate::grants::Power::Browser`]): a host pushes
 /// it only to a link of 1.37 or later that may start a browser.
+///
+/// 1.38 added a runner's browsers (#2050, spec #2041): `remote-link` may start a browser, attach
+/// a view of one, send a chat's acts to it, drive it for the person and have purlis log it in,
+/// each as the desktop's host relaying its window ([`crate::grants`]), never from a kept login
+/// or keeping one, which stay on the device they were made on. A runner before 1.38 refuses each
+/// `not_allowed`, and its window's chats there have no browser.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 37,
+    minor: 38,
+};
+
+/// The version that first runs browsers for a relaying host (#2050): a runner before it refuses
+/// a browser from `remote-link`.
+pub const RUNS_BROWSERS_FOR_A_RELAY: Version = Version {
+    major: 1,
+    minor: 38,
 };
 
 /// The version that first knows a browser engine's download (#2207): no link before it is
@@ -2046,16 +2059,28 @@ async fn refused<H: Host>(command: &Command, peer: &Peer, host: &H) -> Option<Re
         Command::AttachView { kind, .. } => *kind == ViewKind::Browser,
         _ => false,
     };
-    // A kept login is the window's alone, as a login is (1.27).
+    // A kept login is the window's alone, on its own device (1.27, 1.38).
     if let Command::StartProgram(start) = command
         && start.kept.is_some()
-        && !scope.may(Power::LogIn)
+        && !scope.may(Power::KeptLogin)
     {
         return Some(Refusal {
             code: NOT_ALLOWED.into(),
             why: format!(
-                "a browser opens from kept logins from purlis's window only, and this link is \
-                 `{scope}`"
+                "a browser opens from kept logins from purlis's window on its own device only, \
+                 and this link is `{scope}`"
+            ),
+        });
+    }
+    if let Command::LogIn { login, .. } = command
+        && login.keep.is_some()
+        && !scope.may(Power::KeptLogin)
+    {
+        return Some(Refusal {
+            code: NOT_ALLOWED.into(),
+            why: format!(
+                "a login is kept on the device it was made on, from purlis's window only, and \
+                 this link is `{scope}`"
             ),
         });
     }

@@ -2024,7 +2024,11 @@ impl Hosting {
                 .programs
                 .get(program)
                 .ok_or_else(|| no_such_program(program))?;
-            let reads = crate::browsers::Reads::of(peer.version());
+            // A view over a link between hosts is held to the link's frames (#2050).
+            let reads = crate::browsers::Reads {
+                between_hosts: peer.scope() == purlis_session_protocol::auth::Scope::RemoteLink,
+                ..crate::browsers::Reads::of(peer.version())
+            };
             let source = hosted
                 .running
                 .view(kind, role, rate, reads)

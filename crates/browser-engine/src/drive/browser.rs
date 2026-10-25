@@ -1242,6 +1242,12 @@ impl Browser {
         self.inner.cast.pace(every);
     }
 
+    /// Asks the engine for frames no wider than `most` pixels, scaled down where its pages are
+    /// wider, or as wide as its pages with none (#2050). Returns at once.
+    pub fn narrow(&self, most: Option<u16>) {
+        self.inner.cast.narrow(most);
+    }
+
     /// Stops its frames. Returns at once.
     pub fn hide(&self) {
         self.inner.cast.hide();

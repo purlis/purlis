@@ -267,57 +267,47 @@ async fn a_thumbnail_is_sent_about_one_frame_a_second_while_the_focused_view_get
 }
 
 #[tokio::test]
-async fn a_view_that_falls_behind_is_given_the_next_whole_frame() {
+async fn a_view_not_done_drawing_its_frame_is_sent_no_other_then_the_newest_whole() {
+    // One frame in flight (#2050): a view slow to draw never falls behind into a queue of
+    // frames; once it draws again it is given the newest frame, whole.
     let mut linked = linked().await;
     let (program, screen) = linked.browser().await;
-    // The first stream is never read: the view falls behind.
-    let (_, _stalled) = linked.watch(&program, ViewRole::Focused).await;
+    let (_, mut reader) = linked.watch(&program, ViewRole::Focused).await;
+    let snapshot = every_frame_until(&mut reader, Instant::now() + Duration::from_millis(200)).await;
+    assert!(snapshot.is_empty(), "nothing made yet");
 
-    let until = Instant::now() + PATIENCE;
     let big = vec![0x5a_u8; 200 * 1024];
-    let maker = {
-        let screen = screen.clone();
-        std::thread::spawn(move || {
-            while Instant::now() < until && screen.shown().showing {
-                screen.makes(&big);
-                std::thread::sleep(Duration::from_millis(5));
-            }
-        })
-    };
-    let stream = timeout(PATIENCE, linked.views.accept())
-        .await
-        .expect("the view comes back")
-        .unwrap();
-    let mut again = linked.viewer.accept(stream).await.unwrap();
-    assert!(again.epoch().0 > 1, "attached again, at its next epoch");
-
-    let mut frames = Frames::default();
-    let mut snapshot = Vec::new();
-    while !again.snapshot_complete() || snapshot.is_empty() {
-        match timeout(PATIENCE, again.next()).await.unwrap() {
-            Some(Ok(Chunk::Snapshot(bytes))) => {
-                snapshot.extend_from_slice(&bytes);
-                again.ack(bytes.len()).await.unwrap();
-            }
-            other => panic!("the snapshot did not come whole: {other:?}"),
+    screen.makes(&big);
+    // The frame in flight, read and drawn but for its last piece.
+    let mut held = Vec::new();
+    let mut last = 0;
+    while let Ok(Some(Ok(Chunk::Live(bytes)))) =
+        timeout(Duration::from_millis(300), reader.next()).await
+    {
+        if last > 0 {
+            reader.ack(last).await.unwrap();
         }
+        last = bytes.len();
+        held.extend_from_slice(&bytes);
     }
-    let whole = frames.push(&snapshot).unwrap();
-    assert_eq!(
-        whole.len(),
-        2,
-        "the snapshot is the page's origin and one frame"
-    );
-    assert_eq!(
-        whole[0].origin(),
-        Some(None),
-        "a stand-in's page has no origin"
-    );
-    let (_, image) = whole[1].aimed().expect("an aimed frame");
-    assert_eq!(image.len(), 200 * 1024, "and it is whole");
+    for n in 0..20u8 {
+        screen.makes(&vec![n; 200 * 1024]);
+    }
+    let mut frames = Frames::default();
+    let in_flight = frames.push(&held).unwrap();
+    let images: Vec<_> = in_flight.iter().filter_map(Frame::aimed).collect();
+    assert_eq!(images.len(), 1, "one frame in flight: {:?}", said(&in_flight).len());
+    assert_eq!(images[0].1.len(), 200 * 1024, "whole");
     assert!(frames.is_between_frames());
+    let nothing_more = timeout(Duration::from_millis(300), reader.next()).await;
+    assert!(nothing_more.is_err(), "nothing more is sent until it is drawn");
+
+    reader.ack(last).await.unwrap();
+    let next = every_frame_until(&mut reader, Instant::now() + Duration::from_millis(500)).await;
+    assert_eq!(next.len(), 1, "one frame: the newest, none between");
+    let (_, image) = next[0].aimed().expect("an aimed frame");
+    assert_eq!(&image[..], &vec![19u8; 200 * 1024][..], "and it is whole");
     linked.hosting.end_all();
-    maker.join().unwrap();
 }
 
 #[tokio::test]
