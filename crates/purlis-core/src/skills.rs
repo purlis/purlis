@@ -46,6 +46,9 @@ use crate::harness::{Harness, Kit};
 pub mod levels;
 mod on_machine;
 pub mod persona;
+mod routing;
+
+pub use routing::{PinnedBy, pin, pinned_in, pins_of};
 
 pub use on_machine::on_machine;
 pub(crate) use on_machine::{folders, skill_dirs};
@@ -1053,24 +1056,6 @@ fn ask(
     }
 }
 
-/// **A chat's pins** (ADR 0102 §4): the skills its workspace pins (`settings.skills.pinned`)
-/// and those its persona pins (`pinned-skills:`), each name once. A pin only keeps a skill of the
-/// chat's set listed: it adds none.
-pub fn pins_of(plane: &Path, workspace: Option<&str>, persona: Option<&str>) -> Vec<String> {
-    let mut pins = workspace
-        .map(|ws| pinned_in(plane, ws))
-        .unwrap_or_default();
-    for name in persona
-        .map(|persona| crate::personaverbs::pinned_skills(plane, persona))
-        .unwrap_or_default()
-    {
-        if !pins.contains(&name) {
-            pins.push(name);
-        }
-    }
-    pins
-}
-
 /// **What the persona `persona`'s `skills:` list names** (SK-5, #2768), in the plane at `plane`:
 /// each entry it writes, as a [`Reference`], in order. An entry that names nothing is dropped.
 pub fn names_of(plane: &Path, persona: &str) -> Vec<Reference> {
@@ -1192,15 +1177,9 @@ pub fn turned_off(plane: &Path, workspace: &str) -> Vec<String> {
     names_in_settings(plane, workspace, crate::settings::workspace::SKILLS_OFF)
 }
 
-/// **The skills the workspace `workspace` pins** (SK-15, ADR 0102 §4): `settings.skills.pinned`,
-/// as the Workspace settings layer reads its `workspace.json`. Empty where it names none, or
-/// holds something other than a list of names, which that layer's save refuses to write.
-pub fn pinned_in(plane: &Path, workspace: &str) -> Vec<String> {
-    names_in_settings(plane, workspace, crate::settings::workspace::SKILLS_PINNED)
-}
 
 /// The list of names `settings.skills.<key>` of the workspace `workspace` holds, or none.
-fn names_in_settings(plane: &Path, workspace: &str, key: &str) -> Vec<String> {
+pub(super) fn names_in_settings(plane: &Path, workspace: &str, key: &str) -> Vec<String> {
     use crate::settings::workspace::SKILLS;
     crate::settings::workspace::read(plane, workspace)
         .and_then(|table| {
@@ -1213,66 +1192,6 @@ fn names_in_settings(plane: &Path, workspace: &str, key: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// **Whose pins a pin changes** (SK-15, ADR 0102 §4): a workspace's or a persona's.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PinnedBy {
-    Workspace(String),
-    Persona(String),
-}
-
-/// **Pins `name` (`on`) or unpins it** for `by`'s chats (SK-15, ADR 0102 §4): the workspace's
-/// `settings.skills.pinned`, through the Workspace level's own save, or the persona's
-/// `pinned-skills:` line. `Ok(false)` where it already was so, and nothing is written. A pin only
-/// keeps a skill of a chat's set listed, so a name no skill has is refused, as is a workspace or
-/// persona the project does not have, and a project purlis opens read-only.
-pub fn pin(plane: &Path, by: &PinnedBy, name: &str, on: bool) -> Result<bool, String> {
-    crate::settings::writable(plane)?;
-    if on && !any_skill_named(plane, name) {
-        return Err(format!(
-            "no skill is named {name:?}, so nothing was pinned: `purlis skill list` lists them"
-        ));
-    }
-    let mut pins = match by {
-        PinnedBy::Workspace(ws) => {
-            let held = crate::workspaces::Plane::open(plane);
-            if !held.workspace(ws).is_ok_and(|one| one.dir().is_dir()) {
-                return Err(format!(
-                    "this project has no workspace {ws:?}: `purlis workspace list` lists them"
-                ));
-            }
-            pinned_in(plane, ws)
-        }
-        PinnedBy::Persona(persona) => crate::personaverbs::pinned_skills(plane, persona),
-    };
-    if pins.iter().any(|one| one == name) == on {
-        return Ok(false);
-    }
-    if on {
-        pins.push(name.to_owned());
-    } else {
-        pins.retain(|one| one != name);
-    }
-    match by {
-        PinnedBy::Workspace(ws) => set_names_in_settings(
-            plane,
-            ws,
-            crate::settings::workspace::SKILLS_PINNED,
-            pins,
-        )?,
-        PinnedBy::Persona(persona) => persona::write_pins(plane, persona, &pins)?,
-    }
-    Ok(true)
-}
-
-/// Whether any skill a chat could get is named `name`: a built-in skill, or one at any level of
-/// the plane.
-fn any_skill_named(plane: &Path, name: &str) -> bool {
-    built_in_names_here().iter().any(|one| one == name)
-        || verbs::Level::every(plane)
-            .iter()
-            .filter_map(|level| level.dir(plane))
-            .any(|dir| read(&dir).iter().any(|skill| skill.name == name))
-}
 
 /// The folder of the project skill named `name` in the plane at `plane`: in its `skills/`, else
 /// in its `skills.local/`, or `None` where neither holds one.
@@ -1364,7 +1283,7 @@ pub(crate) fn set_turned_off(
 
 /// Writes `names` as `settings.skills.<key>` of the workspace `workspace`, through the Workspace
 /// level's own save, or takes the key out for none.
-fn set_names_in_settings(
+pub(super) fn set_names_in_settings(
     plane: &Path,
     workspace: &str,
     key: &str,
@@ -1739,6 +1658,11 @@ pub struct StudioRow {
     pub lifecycle: Lifecycle,
     /// Who looks after it, informational (SK-19). Empty for a skill that is not the plane's.
     pub owners: Vec<String>,
+    /// Why a router hid it from the chat's listing, in one line, where it did (SK-15, ADR 0102
+    /// §7): the chat still has it, and loads it with `skill_load`.
+    pub hidden: Option<String>,
+    /// Whether the chat's workspace or persona pins it, so no router hides it (ADR 0102 §4).
+    pub pinned: bool,
 }
 
 /// What a studio row says of a skill from outside the plane.
@@ -1800,6 +1724,8 @@ fn outside_rows(harness: &HarnessInTheStudio, plane: &Path, known: &Known) -> Ve
                 lint,
                 lifecycle: Lifecycle::Active,
                 owners: Vec::new(),
+                hidden: None,
+                pinned: false,
             }
         })
         .collect()
@@ -2079,6 +2005,10 @@ pub(crate) fn studio_rows(set: &SkillSet, plane: &Path, names: &[Reference]) -> 
                     .clone()
                     .map_or(Lifecycle::Active, Lifecycle::Deprecated),
                 owners: owners(e.origin, folder),
+                hidden: set
+                    .hidden_by_router(&e.skill.name)
+                    .map(ToString::to_string),
+                pinned: set.is_pinned(&e.skill.name),
             }
         })
         .chain(set.from_the_harness.iter().map(|h| {
@@ -2100,6 +2030,8 @@ pub(crate) fn studio_rows(set: &SkillSet, plane: &Path, names: &[Reference]) -> 
                 lint: Vec::new(),
                 lifecycle: Lifecycle::Active,
                 owners: Vec::new(),
+                hidden: None,
+                pinned: false,
             }
         }))
         .chain(set.left_out.iter().map(|l| {
@@ -2137,6 +2069,8 @@ pub(crate) fn studio_rows(set: &SkillSet, plane: &Path, names: &[Reference]) -> 
                     Lifecycle::Active
                 },
                 owners: owners(l.origin, &l.folder),
+                hidden: None,
+                pinned: false,
             }
         }))
         .collect();

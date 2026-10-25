@@ -42,6 +42,9 @@ pub struct ChatSkill {
     pub arguments: Vec<String>,
     /// What to pass it, in one line, where it says: the one box of a skill that names none.
     pub hint: Option<String>,
+    /// Why the router hid it from the chat's list, where it did (SK-15): Use skill… then asks
+    /// the chat to load it.
+    pub hidden: Option<String>,
 }
 
 /// Which part of a chat's skill budget its set warns of: at four fifths of it or past it.
@@ -79,6 +82,10 @@ pub struct SkillBudget {
     pub most_chars: u32,
     /// What the chat warns of, or null below four fifths of both.
     pub warns: Option<BudgetWarns>,
+    /// Skills the router hid behind the index skill, its set being over the budget (SK-15).
+    pub hidden: u32,
+    /// Whether the pins alone are over the budget, so all of them are listed (ADR 0102 §4).
+    pub pins_over: bool,
 }
 
 /// What Use skill… offers a chat, and its budget.
@@ -162,6 +169,7 @@ pub(crate) fn shown(skills: Option<&purlis_core::skills::ChatSkills>) -> ChatSki
                 takes_arguments: one.takes_arguments,
                 arguments: one.declared.arguments.clone(),
                 hint: one.declared.hint.clone(),
+                hidden: one.hidden.as_ref().map(ToString::to_string),
             })
             .collect(),
         budget: Some(SkillBudget {
@@ -171,6 +179,8 @@ pub(crate) fn shown(skills: Option<&purlis_core::skills::ChatSkills>) -> ChatSki
             most_skills: small(spent.budget.skills),
             most_chars: small(spent.budget.chars),
             warns: spent.warns().map(BudgetWarns::from),
+            hidden: small(skills.offered.iter().filter(|one| one.hidden.is_some()).count()),
+            pins_over: skills.pins_over,
         }),
     }
 }
@@ -231,8 +241,9 @@ pub(crate) fn typed_and_held(
     copy: &dyn Fn(&str) -> Result<(), String>,
 ) -> Result<Handed, String> {
     let handed = crate::references::typed_or_copied(held, session, typing.text, COPIED, copy)?;
-    if matches!(handed, Handed::Typed { .. }) {
-        held.hooks().skill_typed(held.root(), session, typing.held);
+    // A skill the router hid is loaded with `skill_load`, whose load opens its run.
+    if let (Handed::Typed { .. }, Some(run)) = (&handed, typing.held) {
+        held.hooks().skill_typed(held.root(), session, run);
     }
     Ok(handed)
 }

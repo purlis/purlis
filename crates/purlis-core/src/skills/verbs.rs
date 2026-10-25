@@ -1534,6 +1534,34 @@ pub fn switch(cx: &mut Ctx<'_>, workspace: &str, name: &str, on: bool) -> Result
     Ok(changed)
 }
 
+/// **Pins `name` (`on`) or unpins it** for a workspace's or a persona's chats (SK-15, ADR 0102
+/// §4), committed. `Ok(false)` where it already was so, and nothing is written.
+pub fn pin(
+    cx: &mut Ctx<'_>,
+    by: &super::PinnedBy,
+    name: &str,
+    on: bool,
+) -> Result<bool, String> {
+    let changed = super::pin(cx.plane, by, name, on)?;
+    if changed {
+        let (whose, file) = match by {
+            super::PinnedBy::Workspace(ws) => (
+                format!("{ws}'s chats"),
+                crate::settings::workspace::named(ws),
+            ),
+            super::PinnedBy::Persona(persona) => (
+                format!("chats as {persona}"),
+                rel(cx.plane, &crate::personas::def_path(cx.plane, persona)),
+            ),
+        };
+        let verb = if on { "pinned" } else { "unpinned" };
+        cx.done(format!("{name} is {verb} for {whose}"));
+        let word = if on { "pin" } else { "unpin" };
+        cx.commit(&[file], &format!("skill {word} {name} for {whose}"));
+    }
+    Ok(changed)
+}
+
 /// **Share** (#2767): the local skill `name` at the project's root, in a workspace or of a
 /// persona (`at`) moved into its level's `skills/`, committed (#2770).
 pub fn share(cx: &mut Ctx<'_>, at: &Whose, name: &str) -> Result<PathBuf, String> {

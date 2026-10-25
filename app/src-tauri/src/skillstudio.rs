@@ -109,6 +109,11 @@ pub struct StudioSkill {
     /// What the built-in lints say of a skill from outside the plane (SK-8): that it widens the
     /// chat, and what else is worth knowing. Empty for the plane's and the built-in skills.
     pub lint: Vec<String>,
+    /// Why the router hid it from the list of the chat the studio shows, where it did (SK-15):
+    /// the chat still has it, through the index skill.
+    pub hidden: Option<String>,
+    /// Whether that chat's workspace or persona pins it, so no router hides it.
+    pub pinned: bool,
 }
 
 /// How well a skill fits a harness, as its badge draws it (SK-8): the core's `Fit`.
@@ -428,6 +433,8 @@ pub(crate) fn studio(
             switch: None,
             compat: row.compat.iter().map(Into::into).collect(),
             lint: row.lint,
+            hidden: row.hidden,
+            pinned: row.pinned,
         })
         .collect();
     let (harnesses, clashes) = harnesses(&all);
@@ -477,6 +484,8 @@ fn outside_shown(row: purlis_core::skills::StudioRow) -> StudioSkill {
         switch,
         compat: row.compat.iter().map(Into::into).collect(),
         lint: row.lint,
+        hidden: row.hidden,
+        pinned: row.pinned,
     }
 }
 

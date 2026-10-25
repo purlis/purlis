@@ -63,8 +63,11 @@ fn the_window_is_shown_the_chats_skills_with_what_each_takes_and_its_budget() {
             most_skills: 30,
             most_chars: 6_000,
             warns: None,
+            hidden: 0,
+            pins_over: false,
         })
     );
+    assert!(shown.skills.iter().all(|one| one.hidden.is_none()));
 }
 
 #[test]
