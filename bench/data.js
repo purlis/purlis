@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792929077967,
+  "lastUpdate": 1792931166927,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -24402,6 +24402,48 @@ window.BENCHMARK_DATA = {
             "value": 101.881466,
             "unit": "ms",
             "extra": "median of 5 runs: 101.226, 101.641, 101.881, 102.154, 102.214 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "218ed6204904108fe6c1a8d9fbb33a38040e1a49",
+          "message": "Whole-tree saves stage each file from one open handle (#3201)\n\nA plane save of the whole tree, a repo save, and each commit made as a\nsave makes one (a publish, a new project's first commit, a doctor fix)\nnow stage through ondisk::stage_named, as a save of named paths already\ndid: each regular file is opened without following a link, its\ndescriptor must show one name, and git hashes the bytes from that\ndescriptor. A file with a second name is never hashed into the object\nstore. Links, nested repositories and deletions are still staged by\ngit add. The checks before and after staging stay as a backstop, and\nthe index write still adds git's untracked cache.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-25T16:19:51+04:00",
+          "tree_id": "c433fc07077c4ff0306f69404c37c6dcd05ee27f",
+          "url": "https://github.com/purlis/purlis/commit/218ed6204904108fe6c1a8d9fbb33a38040e1a49"
+        },
+        "date": 1792931164242,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5142565,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.502, 0.506, 0.514, 0.519, 0.525 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.8617135,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.590, 16.738, 16.862, 16.889, 17.143 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.8609835,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.981, 102.816, 102.861, 103.235, 103.433 ms"
           }
         ]
       }
