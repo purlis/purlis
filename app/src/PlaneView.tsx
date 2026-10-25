@@ -574,7 +574,7 @@ type Typed =
  * chats is kept as state here and reported to the window, and its view takes it all at once as
  * it comes back. Its terminals are not React's to draw: they go on taking what their programs
  * write. What any part of it draws over the whole window, a dialog or a menu, is drawn only
- * while the project is in front, whenever it was opened (`overlays/`); and should anything
+ * while the project is in front, whenever it was opened (the families' surfaces); and should anything
  * still be over the window once the project has left, the view is not kept at all
  * (`drawnOverTheWindow`).
  *
