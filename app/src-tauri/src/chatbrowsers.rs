@@ -2468,8 +2468,8 @@ pub struct TimelineMoved {
 /// One moment of a chat's browser timeline, as the window draws it (#2017).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct TimelineMoment {
-    /// When, in milliseconds since 1970.
-    pub at: f64,
+    /// When, in seconds since 1970.
+    pub at: u32,
     /// Which of the chat's browsers (`b1`).
     pub browser: String,
     /// Who drove it: `agent`, `person` or `purlis`.
@@ -2493,8 +2493,7 @@ impl From<purlis_core::browsertimeline::Moment> for TimelineMoment {
                 .unwrap_or_default()
         };
         TimelineMoment {
-            #[allow(clippy::cast_precision_loss)]
-            at: moment.at as f64,
+            at: u32::try_from(moment.at / 1000).unwrap_or(u32::MAX),
             browser: moment.browser,
             by: word(serde_json::to_value(moment.by)),
             did: moment.did,
@@ -2515,15 +2514,9 @@ pub async fn chat_browser_timeline(
     plane: crate::planes::PlaneId,
     chat: String,
 ) -> Result<Vec<TimelineMoment>, String> {
-    let root = planes.held(&plane)?.root().to_path_buf();
-    tauri::async_runtime::spawn_blocking(move || {
-        purlis_core::browsertimeline::read(&root, &chat)
-            .into_iter()
-            .map(TimelineMoment::from)
-            .collect()
-    })
-    .await
-    .map_err(|why| why.to_string())
+    let held = planes.held(&plane)?;
+    let moments = purlis_core::browsertimeline::read(held.root(), &chat);
+    Ok(moments.into_iter().map(TimelineMoment::from).collect())
 }
 
 /// **Screenshot `shot` of chat `chat`'s browser timeline** (#2017), PNG in base64: only one a
@@ -2537,14 +2530,11 @@ pub async fn chat_browser_timeline_shot(
     shot: u32,
 ) -> Result<String, String> {
     use base64::Engine as _;
-    let root = planes.held(&plane)?.root().to_path_buf();
-    tauri::async_runtime::spawn_blocking(move || {
-        purlis_core::browsertimeline::shot_of(&root, &chat, u64::from(shot))
-            .map(|png| base64::engine::general_purpose::STANDARD.encode(png))
-            .ok_or_else(|| "That screenshot is no longer kept.".to_owned())
-    })
-    .await
-    .map_err(|why| why.to_string())?
+    let held = planes.held(&plane)?;
+    match purlis_core::browsertimeline::shot_of(held.root(), &chat, u64::from(shot)) {
+        Some(png) => Ok(base64::engine::general_purpose::STANDARD.encode(png)),
+        None => Err("That screenshot is no longer kept.".to_owned()),
+    }
 }
 
 /// **Chat `session`'s browser login `name`** (#2016): read for the chat as the app records it,

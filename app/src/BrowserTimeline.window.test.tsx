@@ -33,7 +33,7 @@ const CHAT = "01JB0000000000000000000001";
 
 function moment(over: Partial<TimelineMoment>): TimelineMoment {
   return {
-    at: Date.UTC(2026, 9, 26, 9, 0, 0),
+    at: Date.UTC(2026, 9, 26, 9, 0, 0) / 1000,
     browser: "b1",
     by: "agent",
     did: "Clicked e12",
@@ -84,20 +84,21 @@ describe("a chat's browser timeline", () => {
   it("lists the newest moment first, with the screenshot the agent took drawn from its PNG", async () => {
     const host = core([
       moment({ did: "Clicked e12", page: "https://shop.example.test/cart" }),
-      moment({ at: Date.UTC(2026, 9, 26, 9, 0, 5), did: "Took a screenshot", shot: 3 }),
+      moment({ at: Date.UTC(2026, 9, 26, 9, 0, 5) / 1000, did: "Took a screenshot", shot: 3 }),
     ]);
 
     render(<BrowserTimeline plane={PLANE} chat={CHAT} />);
 
     const list = await screen.findByRole("list", { name: "Browser timeline" });
     const rows = within(list).getAllByRole("listitem");
-    expect(rows.map((row) => row.querySelector(".browser-timeline-said span:nth-child(3)")?.textContent)).toEqual([
-      "Took a screenshot",
-      "Clicked e12",
-    ]);
+    expect(
+      rows.map((row) => row.querySelector(".browser-timeline-said span:nth-child(3)")?.textContent),
+    ).toEqual(["Took a screenshot", "Clicked e12"]);
     expect(rows[1]).toHaveTextContent("https://shop.example.test/cart");
     expect(within(rows[0]).getByRole("img", { name: /Took a screenshot/ })).toBeInTheDocument();
-    await waitFor(() => expect(painted).toEqual([{ png: [0x89, 0x50, 0x4e, 0x47], type: "image/png" }]));
+    await waitFor(() =>
+      expect(painted).toEqual([{ png: [0x89, 0x50, 0x4e, 0x47], type: "image/png" }]),
+    );
     expect(host.asked("chat_browser_timeline_shot")).toEqual([
       { plane: PLANE, chat: CHAT, shot: 3 },
     ]);

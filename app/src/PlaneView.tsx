@@ -4027,8 +4027,7 @@ export const PlaneView = memo(function PlaneView({
    *  (#2017). */
   const idOfNow = useRef<(session: number) => string | null>(() => null);
   useEffect(() => {
-    idOfNow.current = (session) =>
-      reopened.find((chat) => chat.session === session)?.id ?? null;
+    idOfNow.current = (session) => reopened.find((chat) => chat.session === session)?.id ?? null;
   }, [reopened]);
 
   /** Each chat's browsers as they are drawn (#2024), by the name the chat has here. */

@@ -722,6 +722,17 @@ export const commands = {
 	 */
 	chatBrowsers: (plane: PlaneId) => typedError<ChatBrowser[], string>(__TAURI_INVOKE("chat_browsers", { plane })),
 	/**
+	 *  **Chat `chat`'s browser timeline** (#2017), by its id, oldest first: what its agent did in
+	 *  its browsers, and where the person or purlis drove. The window's alone (`ui::WINDOW_ONLY`):
+	 *  it holds screenshots of the chat's pages.
+	 */
+	chatBrowserTimeline: (plane: PlaneId, chat: string) => typedError<TimelineMoment[], string>(__TAURI_INVOKE("chat_browser_timeline", { plane, chat })),
+	/**
+	 *  **Screenshot `shot` of chat `chat`'s browser timeline** (#2017), PNG in base64: only one a
+	 *  moment of the timeline lists. The window's alone (`ui::WINDOW_ONLY`).
+	 */
+	chatBrowserTimelineShot: (plane: PlaneId, chat: string, shot: number) => typedError<string, string>(__TAURI_INVOKE("chat_browser_timeline_shot", { plane, chat, shot })),
+	/**
 	 *  **The person pins chat `session`'s browser `program`, or unpins it** (#2022): pinned, it
 	 *  outlives its chat. The window's alone (`ui::WINDOW_ONLY`).
 	 */
@@ -12226,6 +12237,31 @@ export type ThisMachine = {
 	dropped: string[],
 	/**  Why this machine keeps no store at all, or null when it does. */
 	forgetful: string | null,
+};
+
+/**  One moment of a chat's browser timeline, as the window draws it (#2017). */
+export type TimelineMoment = {
+	/**  When, in seconds since 1970. */
+	at: number,
+	/**  Which of the chat's browsers (`b1`). */
+	browser: string,
+	/**  Who drove it: `agent`, `person` or `purlis`. */
+	by: string,
+	/**  What was done, in words that hold nothing typed. */
+	did: string,
+	/**  The page it left: its scheme, host, port and path. */
+	page: string | null,
+	/**  Its screenshot's number, to read with [`chat_browser_timeline_shot`]. */
+	shot: number | null,
+	/**  Why a screenshot it had is not kept: `bound`, `too_large` or `driven`. */
+	unkept: string | null,
+};
+
+/**  **A chat whose browser timeline moved** (#2017): a tab of it reads it again. */
+export type TimelineMoved = {
+	plane: PlaneId,
+	/**  The chat's id. */
+	chat: string,
 };
 
 /**  What the operating system has already spent of the window's own title bar. */

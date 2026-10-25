@@ -10,7 +10,10 @@ import { listen } from "./here";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 
 /** What a timeline reads as: nothing yet, its moments, or why it could not be read. */
-type Read = { kind: "reading" } | { kind: "read"; moments: TimelineMoment[] } | { kind: "refused"; why: string };
+type Read =
+  | { kind: "reading" }
+  | { kind: "read"; moments: TimelineMoment[] }
+  | { kind: "refused"; why: string };
 
 /**
  * **A chat's browser timeline** (#2017, spec #2008): what its agent did in its browsers, the
@@ -93,7 +96,9 @@ export function BrowserTimeline({ plane, chat }: { plane: string; chat: string }
           {moment.page !== null && (
             <p className="browser-timeline-page ui-text-meta">{moment.page}</p>
           )}
-          {moment.shot !== null && <Shot plane={plane} chat={chat} shot={moment.shot} did={moment.did} />}
+          {moment.shot !== null && (
+            <Shot plane={plane} chat={chat} shot={moment.shot} did={moment.did} />
+          )}
           {unkeptSaid(moment) !== null && (
             <p className="browser-timeline-unkept ui-text-meta">{unkeptSaid(moment)}</p>
           )}
@@ -104,7 +109,17 @@ export function BrowserTimeline({ plane, chat }: { plane: string; chat: string }
 }
 
 /** One screenshot of a timeline, read once and drawn on a canvas. */
-function Shot({ plane, chat, shot, did }: { plane: string; chat: string; shot: number; did: string }) {
+function Shot({
+  plane,
+  chat,
+  shot,
+  did,
+}: {
+  plane: string;
+  chat: string;
+  shot: number;
+  did: string;
+}) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [gone, setGone] = useState<string | null>(null);
   useEffect(() => {

@@ -48,9 +48,10 @@ export function unkeptSaid(moment: TimelineMoment): string | null {
   }
 }
 
-/** When a moment was, as its row says it: the time of day, to the second. */
+/** When a moment was, as its row says it: the time of day, to the second. `at` is in seconds
+ *  since 1970. */
 export function atSaid(at: number): string {
-  return new Date(at).toLocaleTimeString(undefined, {
+  return new Date(at * 1000).toLocaleTimeString(undefined, {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
