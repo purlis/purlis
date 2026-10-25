@@ -1122,13 +1122,17 @@ fn a_tunnel_carried_during_a_question_ends_with_it_and_when_its_proxy_closes() {
             return;
         };
         if close {
+            // The question is still being answered: only `close_proxy` can end the tunnel here.
             close_proxy(id);
+            assert!(
+                ends_promptly(tunnel),
+                "the tunnel outlived its proxy closing for good, mid-question"
+            );
+            drop(asking);
+        } else {
+            drop(asking);
+            assert!(ends_promptly(tunnel), "the tunnel outlived its question");
         }
-        drop(asking);
         drop(proxy);
-        assert!(
-            ends_promptly(tunnel),
-            "the tunnel outlived its question (closed for good: {close})"
-        );
     }
 }
