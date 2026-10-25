@@ -2648,18 +2648,19 @@ pub fn save_paths(request: &Request, trigger: Trigger, paths: &[String], say: Si
     save_staging(request, trigger, &claim, Staging::Named(&literal), say)
 }
 
-/// How a save stages what it commits.
+/// What a save stages: what `git add -A` of its pathspecs would, each file from one open
+/// descriptor ([`ondisk::stage_named`]).
 #[derive(Clone, Copy)]
 enum Staging<'a> {
-    /// `git add` with these arguments.
+    /// The `git add` arguments of a whole-tree save ([`save_stages`]), whose pathspecs are
+    /// staged.
     Add(&'a [&'a str]),
-    /// What `git add -A` of these literal pathspecs would stage, each file from one open
-    /// descriptor ([`ondisk::stage_named`]).
+    /// These literal pathspecs.
     Named(&'a [&'a str]),
 }
 
 impl<'a> Staging<'a> {
-    /// The paths the staging looks at, for the look before anything is staged
+    /// The pathspecs the staging stages, and looks at before anything is staged
     /// ([`ondisk::second_names_ahead`]).
     fn pathspec(self) -> Vec<&'a str> {
         match self {
@@ -3173,63 +3174,26 @@ fn commit_push(
         );
     }
 
-    match staging {
-        Staging::Named(specs) => {
-            let held = match ondisk::stage_named(root, specs, kept_out) {
-                Ok(held) => held,
-                Err(said) => {
-                    return refuse_unreadable(
-                        root,
-                        &git_dir,
-                        "staging the named files failed",
-                        &said,
-                        say,
-                    );
-                }
-            };
-            // A file whose own descriptor showed a second name was not staged, and is refused
-            // as one found after the add is.
-            if let Some(refusal) = ondisk::refused(root, &Ok(held)) {
-                return refuse_not_as_staged(refusal, attempt, say);
-            }
+    #[cfg(test)]
+    tests::before_the_add(root);
+    // Each file is staged from one open descriptor, the whole tree's as a named path's, so a
+    // file with a second name is never hashed into the object store ([`ondisk::stage_named`]).
+    // One inside what a save never stages is left out by [`kept_out`], as the whole tree's
+    // pathspec leaves it out. **Staging's failure is the whole fix**: under a held
+    // `.git/index.lock` git stages nothing, and the probe below would then answer 0, because
+    // there is no difference between HEAD and an index nothing was written to.
+    let held = match ondisk::stage_named(root, &staging.pathspec(), kept_out) {
+        Ok(held) => held,
+        Err(said) => {
+            return refuse_unreadable(root, &git_dir, "staging the files failed", &said, say);
         }
-        Staging::Add(add_cmd) => {
-            // **The add's exit status is the whole fix.** Under a held `.git/index.lock` it
-            // exits 128 and stages nothing, and the probe below then answers 0 — because there
-            // is no difference between HEAD and an index nothing was written to. Discarded,
-            // that made "charter could not stage anything" and "there was nothing to stage" the
-            // same value.
-            // The write that adds git's untracked cache to the index, which a status that can
-            // write it (the operator's own) keeps fresh and every status then uses (FD-11,
-            // [`git::UNTRACKED_CACHE`]).
-            let added = match git::run_untimed(root, &git::with_untracked_cache(root, add_cmd)) {
-                Ok(run) => run,
-                Err(unavailable) => {
-                    return refuse_unreadable(
-                        root,
-                        &git_dir,
-                        &format!("`git {}` could not be run", add_cmd.join(" ")),
-                        &unavailable.to_string(),
-                        say,
-                    );
-                }
-            };
-            if !added.ok() {
-                return refuse_unreadable(
-                    root,
-                    &git_dir,
-                    &format!(
-                        "`git {}` exited {}",
-                        add_cmd.join(" "),
-                        added
-                            .code
-                            .map_or_else(|| "None".to_string(), |c| c.to_string())
-                    ),
-                    &gitstate::said(&added),
-                    say,
-                );
-            }
-        }
+    };
+    #[cfg(test)]
+    tests::after_the_add(root);
+    // A file whose own descriptor showed a second name was not staged, and is refused as one
+    // found once staged is.
+    if let Some(refusal) = ondisk::refused(root, &Ok(held)) {
+        return refuse_not_as_staged(refusal, attempt, say);
     }
 
     // Three outcomes, and `diff --quiet` has always answered in three: 0 for no difference, 1
@@ -3328,8 +3292,6 @@ fn commit_push(
     // guard below reads any blob. A row git does not look at is read by the guard, which names
     // what it finds, and taken out after it. What the refusal says comes
     // after the guard's own findings, so a save the guard refuses names both ([`ondisk`]).
-    #[cfg(test)]
-    tests::after_the_add(root);
     let (first, after) = ondisk::split_for_guard(ondisk::not_as_staged(root));
     let held_back: std::collections::HashSet<String> = first
         .as_ref()
