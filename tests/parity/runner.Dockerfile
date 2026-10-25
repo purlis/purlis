@@ -16,10 +16,13 @@ FROM ${RUNNER}
 ARG AT
 COPY --chmod=0755 fake-harness purlis ${AT}/
 
-# The runner's `claude`, as a profile of the runner's own runs it: the stand-in a behaviour
-# gives, written into the runner's home (`/home/purlis/.parity/claude`) as the behaviour starts,
-# since the image's own folders are read-only in a pool's container.
+# The runner's `claude`, as a profile of the runner's own runs it: signed in, as Claude Code's
+# own `auth status` answers it, and otherwise the stand-in a behaviour gives, written into the
+# runner's home (`/home/purlis/.parity/claude`) as the behaviour starts, since the image's own
+# folders are read-only in a pool's container.
 USER 0
-RUN printf '%s\n' '#!/bin/sh' 'exec /home/purlis/.parity/claude "$@"' > /usr/local/bin/claude \
+RUN printf '%s\n' '#!/bin/sh' \
+      '[ "$1" = auth ] && [ "$2" = status ] && exit 0' \
+      'exec /home/purlis/.parity/claude "$@"' > /usr/local/bin/claude \
  && chmod 0755 /usr/local/bin/claude
 USER 10001:10001

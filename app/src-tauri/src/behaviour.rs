@@ -662,14 +662,32 @@ fn a_window_over(
     }));
     let switch = KillSwitch::kept_in(Some(config.path().to_path_buf()));
     switch.held_by(Arc::clone(&connection) as Arc<dyn crate::killswitch::Authority>);
+    let relayed = hooks.relayed_from_the_host().expect("heard from the host");
+    let mut beside: Option<HostedSessions> = None;
     let mut sessions = match runs {
         Runs::Here => HostedSessions::new(Arc::clone(&connection), &root),
         Runs::OnARunner => HostedSessions::on_a_runner(Arc::clone(&connection), &root),
         Runs::OnAPoolsRunner(pool) => {
-            HostedSessions::on_a_pools_runner(connection.relaying_to(&pool), &root)
+            // As the window routes a pool's chats (`crate::routedsessions`): this machine's
+            // host holds the project and keeps its board, hearing its own lines, and the
+            // runner's lines are heard as that pool's, for every chat, since every chat of the
+            // target runs there.
+            let here = HostedSessions::new(Arc::clone(&connection), &root);
+            here.hear_through(Arc::clone(&relayed));
+            here.hold_here();
+            let on_the_pool =
+                HostedSessions::on_a_pools_runner(connection.relaying_to(&pool), &root);
+            let every_chat = pool.clone();
+            on_the_pool.hear_through(
+                relayed.for_a_pool(&pool, Arc::new(move |_| Some(every_chat.clone()))),
+            );
+            beside = Some(here);
+            on_the_pool
         }
     };
-    sessions.hear_through(hooks.relayed_from_the_host().expect("heard from the host"));
+    if beside.is_none() {
+        sessions.hear_through(relayed);
+    }
     sessions.stopped_by(Arc::clone(&switch));
     Target {
         sessions: Box::new(sessions),
@@ -683,7 +701,13 @@ fn a_window_over(
         host: Some(connection),
         kill_the_host: None,
         runner: None,
-        _keeps: vec![Box::new(project), Box::new(config)],
+        _keeps: {
+            let mut keeps: Vec<Box<dyn std::any::Any>> = vec![Box::new(project), Box::new(config)];
+            if let Some(here) = beside {
+                keeps.insert(0, Box::new(here));
+            }
+            keeps
+        },
     }
 }
 
