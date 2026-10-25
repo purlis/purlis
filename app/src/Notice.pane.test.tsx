@@ -8,7 +8,13 @@ import { act, cleanup, render, screen, waitFor, within } from "@testing-library/
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { Notice, NoticePaneRow } from "./Notice";
-import { NOTICE_MOVED_JUST_NOW, forgetPaneBand, paneBand } from "./noticeSettle";
+import {
+  NOTICE_MOVED_JUST_NOW,
+  NoticeWayGuard,
+  forgetPaneBand,
+  paneBand,
+  useNoticeSettle,
+} from "./noticeSettle";
 import { drawnWith } from "./cascade.testkit";
 
 /**
@@ -1159,5 +1165,129 @@ describe("a pane's band drawn anew, by another component (#3167, D-3167-6)", () 
     render(<Pane band={band} around="live" shown="consent" allowed={allowed} />);
     await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
     expect(allowed).toEqual(["forge"]);
+  });
+});
+
+describe("a look-alike grant drawn in the place of one that stood (#3167, D-3167-10)", () => {
+  // Every box in one place, as two look-alike Notices drawn in the same slot are.
+  const clock = { now: 1_000_000 };
+  let spies: { mockRestore: () => void }[] = [];
+  const timedAndStill = () => {
+    clock.now = 1_000_000;
+    spies = [
+      vi.spyOn(Date, "now").mockImplementation(() => clock.now),
+      vi
+        .spyOn(Element.prototype, "getBoundingClientRect")
+        .mockImplementation(() => DOMRect.fromRect({ x: 12, y: 24, width: 90, height: 24 })),
+    ];
+  };
+  afterEach(() => {
+    for (const spy of spies) spy.mockRestore();
+    spies = [];
+  });
+
+  /** A block of the chat's, as the sandbox's Notice draws one: one cause for the chat's
+   *  writes, whatever path each names, so two of them differ only in what they say. */
+  function Block({ target, allowed }: { target: string; allowed: string[] }) {
+    return (
+      <Notice
+        cause="sandbox-blocked:7:write:path:chat"
+        at="pane"
+        tone="trouble"
+        label="Sandbox block"
+        fixes={[
+          { label: "Allow for this chat", onPress: () => allowed.push(target), allows: true },
+          { label: "Keep blocked", onPress: () => undefined },
+        ]}
+      >
+        The sandbox blocked writing {target}.
+      </Notice>
+    );
+  }
+
+  function Band({ target, allowed, band }: { target: string; allowed: string[]; band?: string }) {
+    return (
+      <NoticePaneRow band={band}>
+        <Notice cause="skills-missing:9" at="pane" label="Skills" onDismiss={() => undefined}>
+          A skill is missing.
+        </Notice>
+        <Block key={target} target={target} allowed={allowed} />
+      </NoticePaneRow>
+    );
+  }
+
+  let named = 0;
+  for (const naming of ["unnamed", "named"] as const) {
+    it(`holds one that replaces it in one render, the band drawn on (${naming} band)`, async () => {
+      timedAndStill();
+      const band = naming === "named" ? paneBand("look-alike", named++) : undefined;
+      const allowed: string[] = [];
+      const { rerender } = render(<Band target="~/proj/out" allowed={allowed} band={band} />);
+      clock.now += 10_000;
+      rerender(<Band target="~/.ssh" allowed={allowed} band={band} />);
+      await userEvent.click(screen.getByRole("button", { name: "Allow for this chat" }));
+      expect(allowed).toEqual([]);
+      expect(screen.getByText(NOTICE_MOVED_JUST_NOW)).toBeTruthy();
+    });
+  }
+
+  it("holds one that replaces it as the pane's band is drawn anew", async () => {
+    timedAndStill();
+    const band = paneBand("look-alike", named++);
+    const allowed: string[] = [];
+    const { rerender } = render(
+      <section className="pane-frame pane-headed">
+        <Band target="~/proj/out" allowed={allowed} band={band} />
+      </section>,
+    );
+    clock.now += 10_000;
+    rerender(
+      <div className="pane-frame pane-headed">
+        <Band target="~/.ssh" allowed={allowed} band={band} />
+      </div>,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Allow for this chat" }));
+    expect(allowed).toEqual([]);
+  });
+
+  it("holds one that replaces it in a list whose every first drawing waits (the Inbox's)", async () => {
+    timedAndStill();
+    const allowed: string[] = [];
+    function Listed({ target }: { target: string }) {
+      const { at, allows, said } = useNoticeSettle<HTMLDivElement>("moves");
+      return (
+        <NoticeWayGuard value={allows}>
+          <div ref={at}>
+            <Block key={target} target={target} allowed={allowed} />
+          </div>
+          {said !== undefined && <p>{said}</p>}
+        </NoticeWayGuard>
+      );
+    }
+    const { rerender } = render(<Listed target="~/proj/out" />);
+    clock.now += 10_000;
+    rerender(<Listed target="~/.ssh" />);
+    await userEvent.click(screen.getByRole("button", { name: "Allow for this chat" }));
+    expect(allowed).toEqual([]);
+    expect(screen.getByText(NOTICE_MOVED_JUST_NOW)).toBeTruthy();
+  });
+
+  it("lets the same grant that stood still through a redrawing be pressed", async () => {
+    timedAndStill();
+    const band = paneBand("look-alike", named++);
+    const allowed: string[] = [];
+    const { rerender } = render(
+      <section className="pane-frame pane-headed">
+        <Band target="~/proj/out" allowed={allowed} band={band} />
+      </section>,
+    );
+    clock.now += 10_000;
+    rerender(
+      <div className="pane-frame pane-headed">
+        <Band target="~/proj/out" allowed={allowed} band={band} />
+      </div>,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Allow for this chat" }));
+    expect(allowed).toEqual(["~/proj/out"]);
   });
 });

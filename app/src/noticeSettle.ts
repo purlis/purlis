@@ -92,9 +92,11 @@ const freshBand = (): BandMemory => ({ hadAny: false, emptiedAt: -Infinity, plac
  * where something else may have been aimed at is a move: a granting way out drawn into a Notice
  * already standing, or a granting Notice drawn while the band holds another (however long that
  * one stood) or went empty within the settle time. `band` names the pane ({@link paneBand}), so
- * this holds across the band being drawn again: a grant whose place is remembered is read
- * against that place, and a new one arriving in a pane whose band held a Notice is a move. A
- * band with no name remembers only while it is drawn.
+ * this holds across the band being drawn again: on the redrawing's own first read, a grant whose
+ * place is remembered under the same name (its Notice's cause and words, its label and order) is
+ * read against that place, and any other grant arriving in a pane whose band held a Notice is a
+ * move. A grant that arrives in any later read is new, however it is named. A band with no name
+ * remembers only while it is drawn, and in the Inbox no grant is ever taken for one before it.
  */
 export function useNoticeSettle<T extends HTMLElement>(
   firstDrawn: "moves" | "stands",
@@ -121,8 +123,15 @@ export function useNoticeSettle<T extends HTMLElement>(
   const lines = useRef(new WeakSet<Element>());
   const later = useRef(new WeakMap<Element, boolean>());
   const names = useRef(new WeakMap<Element, string>());
+  // **Only this drawing's first read is a redrawing** (D-3167-10): a grant found then may be
+  // the one the pane's band drew before; one that arrives in any later read is new, whatever
+  // it is named. In the Inbox ("moves") a first drawing is always a move, so none is recalled.
+  const firstRead = useRef(true);
+  const recalling = useRef(false);
   const ways = useCallback(
     function* (root: T) {
+      recalling.current = firstRead.current && firstDrawn === "stands";
+      firstRead.current = false;
       const kept = memory();
       const all = [...root.querySelectorAll("[data-cause]")];
       const now = Date.now();
@@ -140,23 +149,31 @@ export function useNoticeSettle<T extends HTMLElement>(
         for (const way of line.querySelectorAll("button")) {
           if (!waits(way, cause)) continue;
           if (!later.current.has(way)) later.current.set(way, known || held);
-          if (!names.current.has(way)) {
-            names.current.set(way, `${cause}\u0000${way.textContent ?? ""}\u0000${nth}`);
-          }
+          // **Named by what its Notice says**, as well as its cause, label and order: a cause
+          // can be one Notice's for several grants that differ only in what they name.
+          names.current.set(
+            way,
+            `${cause}\u0000${line.textContent ?? ""}\u0000${way.textContent ?? ""}\u0000${nth}`,
+          );
           nth += 1;
           yield way;
         }
       }
     },
-    [memory],
+    [memory, firstDrawn],
   );
   const remembered = useCallback(() => memory().places, [memory]);
+  const recalls = useCallback(() => recalling.current, []);
   const nameOf = useCallback((way: Element) => names.current.get(way), []);
   const firstMoves = useCallback(
     (way: Element) => firstDrawn === "moves" || later.current.get(way) === true,
     [firstDrawn],
   );
-  const { movedAt } = useWayPlaces(at, ways, firstMoves, { nameOf, remembered });
+  const { movedAt } = useWayPlaces(at, ways, firstMoves, {
+    nameOf,
+    remembered,
+    recalls,
+  });
   const allows = (way: Element): boolean => {
     const notice = way.closest("[data-cause]");
     const cause = notice?.getAttribute("data-cause");

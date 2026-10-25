@@ -57,6 +57,9 @@ type Watch = {
   nameOf?: (way: Element) => string | undefined;
   /** Where each named answer was, kept past this drawing (#3167, D-3167-6). */
   remembered?: () => Map<string, WayPlace>;
+  /** Whether a newly drawn answer may be read against its remembered place now: only on the
+   *  read that is the redrawing itself (D-3167-10). */
+  recalls?: () => boolean;
   /** Where each box that scrolls one of its answers was scrolled to, at its last read. */
   scrolled: WeakMap<Element, Scrolled>;
   /** What changes under the root: read again in the next frame. */
@@ -133,10 +136,12 @@ function place(watch: Watch, way: Element, pass: Pass, at: number) {
   const y = box.top + around.y;
   const made = around.made;
   // An answer drawn again where its place is remembered (its band drawn anew) is read against
-  // where it was, not as a first drawing.
+  // where it was, not as a first drawing: on the redrawing's own read only, so a new answer
+  // arriving later is never taken for one that stood (D-3167-10). Every read remembers.
   const name = watch.nameOf?.(way);
   const kept = name === undefined ? undefined : watch.remembered?.();
-  const was = watch.places.get(way) ?? (name === undefined ? undefined : kept?.get(name));
+  const recalled = name !== undefined && watch.recalls?.() === true ? kept?.get(name) : undefined;
+  const was = watch.places.get(way) ?? recalled;
   const moved =
     was === undefined
       ? watch.firstMoves(way)
@@ -277,6 +282,7 @@ export function useWayPlaces<T extends Element>(
   past?: {
     nameOf: (way: Element) => string | undefined;
     remembered: () => Map<string, WayPlace>;
+    recalls: () => boolean;
   },
 ) {
   // The callbacks of the last render, which the watch asks when it reads.
@@ -287,6 +293,7 @@ export function useWayPlaces<T extends Element>(
     firstMoves: (way) => said.current.firstMoves(way),
     nameOf: (way) => said.current.past?.nameOf(way),
     remembered: () => said.current.past?.remembered() ?? NOTHING_KEPT,
+    recalls: () => said.current.past?.recalls() === true,
     places: new WeakMap(),
     scrolled: new WeakMap(),
   }));
