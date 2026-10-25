@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792966632559,
+  "lastUpdate": 1792968219248,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -24948,6 +24948,48 @@ window.BENCHMARK_DATA = {
             "value": 103.79854950000001,
             "unit": "ms",
             "extra": "median of 5 runs: 102.435, 103.503, 103.799, 103.940, 105.135 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "1c0038cfb1f46f77840ba3800454996494769a10",
+          "message": "Press-settle guard: track each grant button's own box on screen (#3167) (#3203)\n\n* Press-settle guard: track each grant button's own box on screen (#3167)\n\nThe guard read where a granting Notice's line stood against its root, and\nan Inbox row's offsetTop. Some moves change where the Allow itself is drawn\nwhile that line's top stays put, so they were not seen as moves.\n\nuseWayPlaces (wayPlaces.ts) now reads each granting answer's own box: its\nsize, and its place with every scroll above it added back. A change of\neither is a move. A free scroll (the person's, or a driver bringing an\nanswer into view) is not. A scroll the browser was made to take, because\na scroller holds less than it was scrolled past, is a move. Boxes are read\nin the commit, in one frame after any change (mutations under the root,\nResizeObserver on the answer and every box around it, scroll, resize,\ntransition and animation ends, font loads), and again at the press.\n\nThe pane band and the Inbox's Notices (useNoticeSettle), and the Inbox's\nask and update rows (useSettledPlace), all use it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Settle-guard tests: type the standing Notice fixture, settle the clamp story first\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Settle guard: measure from where an answer last settled; a grant arriving beside another Notice waits\n\nA box's size and scroll-adjusted place are kept from where it last settled,\nnot overwritten on every read, so a drift too small to count between two\nreads still adds up to a move.\n\nOn a pane, a granting Notice's first drawing is a move when the band\nalready holds a Notice, or held one within the settle time. Only the first\nNotice into an empty band stands as it arrives.\n\nConsentClamped keeps the band's scrollbar room while it plays, and checks\nthat the Allow kept its width and its place in the band, so it tests the\nclamp on its own.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Settle guard: a Notice that stood long still holds a grant drawn where it was\n\nThe rule for a granting Notice arriving on a pane now asks whether the\nlast read of the band found a Notice, however long it had stood, or the\nband went empty within the settle time. Before, it asked when a read had\nlast seen one, which a Notice standing still for longer than the settle\ntime let lapse.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Settle guard: a pane's band remembers what stood in it when drawn anew\n\nWhat a pane's band holds for the arrival rule now lives per pane, outside\nthe band component: whether its last read found a Notice, when it went\nempty, and where each granting answer was. The pane's number, which is\nnever reused, names it. A band drawn anew by another component (the pane's\ntask ended or moved, a split formed or went, its tab came back to the\nfront) reads on from there: a new grant in a pane whose band held a Notice\nis a move, and a remembered grant is read against where it was. A pane\ndrawn for the first time still lets its first Notice through.\n\nA pane closed for good, or a project leaving the window, lets its memory\ngo.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* pane-warnings scenario: wait for the terminal's fit to hold still\n\nuntilRefitted returned on the first change to the terminal's rows. A band\nthat comes or goes can lay out over more than one frame, so a fit read\nbetween the two is not the room the pane ends with. It now waits for the\nrows to hold still for three reads in a row.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* Settle guard: only a redrawing's first read recalls a grant's place\n\nA grant newly drawn in a band could be matched to a remembered place by a\nname that does not identify the grant, so a different grant drawn in the\nsame box counted as standing still. A remembered place is now read only on\na band instance's first read, the redrawing itself. Every later arrival is\nnew, and the Inbox-style guard never recalls one. The name now also\ncarries what the Notice says. Every read still remembers each grant's\nplace.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-26T02:38:59+04:00",
+          "tree_id": "172c66c1dcb7fa4e4615b46aa74c06ef2b98916a",
+          "url": "https://github.com/purlis/purlis/commit/1c0038cfb1f46f77840ba3800454996494769a10"
+        },
+        "date": 1792968216846,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.466134,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.456, 0.466, 0.466, 0.470, 0.472 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3191955,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.126, 16.295, 16.319, 16.345, 16.968 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.730041,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.507, 101.618, 101.730, 101.938, 102.454 ms"
           }
         ]
       }
