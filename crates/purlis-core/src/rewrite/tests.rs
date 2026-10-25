@@ -63,12 +63,11 @@ fn a_secret_with_a_second_name_is_refused_and_both_names_keep_their_bytes() {
 
     let err = replace(dir.path(), &target, b"new\n", Mode::Secret).unwrap_err();
 
-    assert_eq!(
-        err.to_string(),
-        format!(
-            "{} has a second name, so purlis does not rewrite it in place",
-            target.display()
-        )
+    assert_eq!(err.kind(), io::ErrorKind::PermissionDenied);
+    assert!(
+        err.to_string()
+            .starts_with(&format!("{} has a second name", target.display())),
+        "{err}"
     );
     assert_eq!(std::fs::read(&target).unwrap(), b"old\n");
     assert_eq!(std::fs::read(&second).unwrap(), b"old\n");
@@ -79,6 +78,89 @@ fn a_secret_with_a_second_name_is_refused_and_both_names_keep_their_bytes() {
         2,
         "no temp left"
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_secret_refused_for_its_second_name_says_what_to_do_next() {
+    let dir = tempfile::tempdir().unwrap();
+    let target = dir.path().join("app.json");
+    std::fs::write(&target, "old\n").unwrap();
+    std::fs::hard_link(&target, dir.path().join("second.json")).unwrap();
+
+    let err = replace(dir.path(), &target, b"new\n", Mode::Secret).unwrap_err();
+
+    let t = target.display();
+    assert_eq!(
+        err.to_string(),
+        format!(
+            "{t} has a second name (a hard link), so purlis does not rewrite it in place. Change \
+             the value where the file comes from, or put a plain copy of the file at {t}, then \
+             try again"
+        )
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_second_name_inside_the_project_is_named_in_the_refusal() {
+    let project = tempfile::tempdir().unwrap();
+    let held = project.path().join("held");
+    std::fs::create_dir(&held).unwrap();
+    let target = held.join("app.json");
+    std::fs::write(&target, "old\n").unwrap();
+    let source = project.path().join("source");
+    std::fs::create_dir(&source).unwrap();
+    std::fs::write(source.join("other.json"), "not it\n").unwrap();
+    let other = source.join("app.json");
+    std::fs::hard_link(&target, &other).unwrap();
+
+    let err = replace(&held, &target, b"new\n", Mode::Secret).unwrap_err();
+    let err = named_in(err, project.path());
+
+    assert_eq!(err.kind(), io::ErrorKind::PermissionDenied);
+    let (t, o) = (target.display(), other.display());
+    assert_eq!(
+        err.to_string(),
+        format!(
+            "{t} has a second name (a hard link), {o}, so purlis does not rewrite it in place. \
+             Change the value at {o}, or put a plain copy of the file at {t}, then try again"
+        )
+    );
+    assert_eq!(std::fs::read(&target).unwrap(), b"old\n");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_second_name_the_search_does_not_enter_is_not_named() {
+    let project = tempfile::tempdir().unwrap();
+    let target = project.path().join("app.json");
+    std::fs::write(&target, "old\n").unwrap();
+    let git = project.path().join(".git");
+    std::fs::create_dir(&git).unwrap();
+    std::fs::hard_link(&target, git.join("app.json")).unwrap();
+    let big = project.path().join("big");
+    std::fs::create_dir(&big).unwrap();
+    for n in 0..=super::SEARCH_FOLDER_ENTRIES {
+        std::fs::write(big.join(format!("{n:05}")), "").unwrap();
+    }
+    std::fs::hard_link(&target, big.join("app.json")).unwrap();
+
+    let err = replace(project.path(), &target, b"new\n", Mode::Secret).unwrap_err();
+    let err = named_in(err, project.path());
+
+    assert!(
+        err.to_string()
+            .contains("Change the value where the file comes from"),
+        "{err}"
+    );
+}
+
+#[test]
+fn naming_the_other_name_leaves_any_other_error_as_it_was() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = named_in(io::Error::other("disk full"), dir.path());
+    assert_eq!(e.to_string(), "disk full");
 }
 
 #[cfg(unix)]

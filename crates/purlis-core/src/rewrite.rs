@@ -183,6 +183,127 @@ impl std::fmt::Display for NotPrivate {
 
 impl std::error::Error for NotPrivate {}
 
+/// The file [`Mode::Secret`] was writing has a second name (a hard link), so nothing was
+/// written. Carried inside the `io::Error`, as [`NotPrivate`] is; its words say what to do
+/// next, and name the other name once [`named_in`] has found it.
+#[derive(Debug)]
+pub struct SecondName {
+    path: PathBuf,
+    other: Option<PathBuf>,
+}
+
+impl std::fmt::Display for SecondName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let path = self.path.display();
+        match &self.other {
+            Some(other) => write!(
+                f,
+                "{path} has a second name (a hard link), {}, so purlis does not rewrite it in \
+                 place. Change the value at {}, or put a plain copy of the file at {path}, then \
+                 try again",
+                other.display(),
+                other.display()
+            ),
+            None => write!(
+                f,
+                "{path} has a second name (a hard link), so purlis does not rewrite it in place. \
+                 Change the value where the file comes from, or put a plain copy of the file at \
+                 {path}, then try again"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for SecondName {}
+
+/// `e`, with the other name of the file it refused named, when `e` is a [`SecondName`] and a
+/// same-file search of `project` finds that name ([`other_name_in`]). Any other error, or a
+/// search that finds nothing, is returned as it was.
+pub fn named_in(e: io::Error, project: &Path) -> io::Error {
+    let Some(refused) = e.get_ref().and_then(|e| e.downcast_ref::<SecondName>()) else {
+        return e;
+    };
+    match other_name_in(project, &refused.path) {
+        Some(other) => io::Error::new(
+            e.kind(),
+            SecondName {
+                path: refused.path.clone(),
+                other: Some(other),
+            },
+        ),
+        None => e,
+    }
+}
+
+/// How far [`other_name_in`] looks: folders below the project, entries in all, entries in one
+/// folder (a bigger folder is passed over whole), and the folders it never enters — git's own,
+/// and the two that hold a build's or a package manager's thousands of files.
+const SEARCH_DEPTH: usize = 12;
+const SEARCH_ENTRIES: usize = 20_000;
+const SEARCH_FOLDER_ENTRIES: usize = 2_000;
+const NOT_SEARCHED: [&str; 3] = [".git", "node_modules", "target"];
+
+/// Another name, inside `project`, of the regular file at `path`: an entry on the same device
+/// with the same inode that is not `path` itself. Breadth first and in name order, so the
+/// nearest name is the one found; bounded by [`SEARCH_DEPTH`], [`SEARCH_ENTRIES`] and
+/// [`SEARCH_FOLDER_ENTRIES`]. No link is followed, and a folder on another device is not
+/// entered, since a second name is always on the file's own.
+fn other_name_in(project: &Path, path: &Path) -> Option<PathBuf> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let held = std::fs::symlink_metadata(path).ok()?;
+        if !held.file_type().is_file() || held.nlink() < 2 {
+            return None;
+        }
+        let (dev, ino) = (held.dev(), held.ino());
+        let itself = std::fs::canonicalize(directory_of(path).ok()?)
+            .ok()?
+            .join(path.file_name()?);
+        let top = std::fs::canonicalize(project).ok()?;
+        let mut left = SEARCH_ENTRIES;
+        let mut folders = std::collections::VecDeque::from([(top.clone(), 0)]);
+        while let Some((dir, depth)) = folders.pop_front() {
+            let Ok(entries) = std::fs::read_dir(&dir) else {
+                continue;
+            };
+            let mut names: Vec<std::ffi::OsString> = entries
+                .take(SEARCH_FOLDER_ENTRIES + 1)
+                .filter_map(|e| e.ok().map(|e| e.file_name()))
+                .collect();
+            if names.len() > SEARCH_FOLDER_ENTRIES {
+                continue;
+            }
+            names.sort();
+            for name in names {
+                left = left.checked_sub(1)?;
+                let here = dir.join(&name);
+                let Ok(m) = std::fs::symlink_metadata(&here) else {
+                    continue;
+                };
+                if m.dev() != dev {
+                    continue;
+                }
+                if m.file_type().is_dir() {
+                    if depth < SEARCH_DEPTH && !NOT_SEARCHED.iter().any(|n| name == *n) {
+                        folders.push_back((here, depth + 1));
+                    }
+                } else if m.file_type().is_file() && m.ino() == ino && here != itself {
+                    // Said under the project's own spelling, as the refused path is.
+                    let below = here.strip_prefix(&top).ok()?;
+                    return Some(project.join(below));
+                }
+            }
+        }
+        None
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (project, path);
+        None
+    }
+}
+
 /// Every temp file [`replace`] writes starts with this, so one pattern names all of them:
 /// `.purlis-generated.<name>.<pid>.<tag>.tmp` ([`crate::names::GENERATED_TEMP_PREFIX`]; an
 /// older charter's were `.charter-generated.…`, and are still recognised). It is the prefix
@@ -250,10 +371,10 @@ fn replace_through(
     if mode == Mode::Secret && has_a_second_name(path) {
         return Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
-            format!(
-                "{} has a second name, so purlis does not rewrite it in place",
-                path.display()
-            ),
+            SecondName {
+                path: path.to_path_buf(),
+                other: None,
+            },
         ));
     }
     let wanted = mode.permissions(now);
