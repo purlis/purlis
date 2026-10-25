@@ -39,8 +39,7 @@
 //! **Some files are offered with their box unticked**, and say why: one longer than
 //! [`TICKED_UP_TO`], since every chat in the workspace reads all of it, and one holding an
 //! invisible character ([`purlis_unicode::hidden`], purlis's one rule) — a zero-width, bidirectional or tag character can
-//! hide an instruction in text that looks harmless, and the preview draws each by its code
-//! point.
+//! hide an instruction in text that looks harmless.
 //!
 //! # Where it is written
 //!
@@ -403,16 +402,15 @@ fn past_ticking(text: &str) -> Option<String> {
 
 /// The first line of `text` holding a character a reader does not see there (purlis's one
 /// rule, [`purlis_unicode::hidden`]: zero-width characters, the bidirectional controls, the tag
-/// block that can carry a whole hidden sentence), said. The preview draws each as its code
-/// point; this unticks the file and says where the first is.
+/// block that can carry a whole hidden sentence), said: this unticks the file and says where the
+/// first is.
 fn invisible(text: &str) -> Option<String> {
     text.lines().enumerate().find_map(|(at, line)| {
         purlis_unicode::hidden(line, purlis_unicode::Breaks::Kept)
             .next()
             .map(|c| {
                 format!(
-                    "line {} holds an invisible character (U+{:04X}), drawn in the preview by its \
-                 code point, so it starts unticked",
+                    "line {} holds an invisible character (U+{:04X}), so it starts unticked",
                     at + 1,
                     u32::from(c)
                 )

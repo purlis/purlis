@@ -290,6 +290,29 @@ fn every_character_the_one_table_names_is_marked_in_a_review() {
     assert_eq!(escaped("a"), "a");
 }
 
+/// Each kind says truly what the character is: a filler or a wide space is blank, not
+/// zero-width, and an Arabic number sign is a format character.
+#[test]
+fn each_hidden_character_is_named_by_what_it_is() {
+    let kinds = |c: char| {
+        summarize(&[file("SKILL.md", false, &format!("a{c}b"))]).unseen[0]
+            .kinds
+            .clone()
+    };
+    assert_eq!(kinds('\u{E0041}'), [Invisible::Tag]);
+    assert_eq!(kinds('\u{200B}'), [Invisible::ZeroWidth]);
+    assert_eq!(kinds('\u{FE00}'), [Invisible::ZeroWidth]);
+    assert_eq!(kinds('\u{3164}'), [Invisible::Blank]);
+    assert_eq!(kinds('\u{2000}'), [Invisible::Blank]);
+    assert_eq!(kinds('\u{A0}'), [Invisible::Blank]);
+    assert_eq!(kinds('\u{202E}'), [Invisible::Bidi]);
+    assert_eq!(kinds('\u{200E}'), [Invisible::Bidi]);
+    assert_eq!(kinds('\u{0600}'), [Invisible::Format]);
+    assert_eq!(kinds('\u{1B}'), [Invisible::Format]);
+    assert_eq!(kinds('\u{2028}'), [Invisible::Format]);
+    assert_eq!(Invisible::Blank.to_string(), "a blank character");
+}
+
 /// D-1301: a joiner inside a script or an emoji is text, in a review as everywhere.
 #[test]
 fn a_joiner_inside_a_script_or_an_emoji_is_not_marked_in_a_review() {

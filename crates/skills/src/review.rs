@@ -116,18 +116,23 @@ pub struct Outside {
 pub enum Invisible {
     /// A Unicode tag character (U+E0000 to U+E007F), which can spell words no one sees.
     Tag,
-    /// A zero-width or blank-looking character: a joiner, a variation selector, a Hangul
-    /// filler.
+    /// A character that takes no room (Default_Ignorable_Code_Point): a zero-width space, a
+    /// joiner, a variation selector.
     ZeroWidth,
-    /// A bidi override or isolate, which reorders what is shown.
+    /// A character that takes room and draws nothing in it: a space other than the plain one, or
+    /// a Hangul filler.
+    Blank,
+    /// A bidi control (Bidi_Control), which reorders what is shown.
     Bidi,
-    /// Another format or control character.
+    /// A control character, a line or paragraph separator, or a format character that does
+    /// draw something but marks the text in a way a reader does not see (an Arabic number sign).
     Format,
 }
 
 impl Invisible {
     /// The kind of `c`, a character [`purlis_unicode::hidden`] named. Only the kind is decided
-    /// here: whether a character is invisible is the one generated rule's to say (SK-49).
+    /// here, from the generated tables: whether a character is invisible is the one rule's to
+    /// say (SK-49).
     fn of(c: char) -> Invisible {
         if matches!(u32::from(c), 0xE0000..=0xE007F) {
             Self::Tag
@@ -135,8 +140,12 @@ impl Invisible {
             Self::Bidi
         } else if c.is_control() || matches!(c, '\u{2028}' | '\u{2029}') {
             Self::Format
-        } else {
+        } else if c.is_whitespace() || (c.is_alphabetic() && purlis_unicode::default_ignorable(c)) {
+            Self::Blank
+        } else if purlis_unicode::default_ignorable(c) {
             Self::ZeroWidth
+        } else {
+            Self::Format
         }
     }
 }
@@ -146,6 +155,7 @@ impl std::fmt::Display for Invisible {
         f.write_str(match self {
             Self::Tag => "a hidden tag character",
             Self::ZeroWidth => "a zero-width character",
+            Self::Blank => "a blank character",
             Self::Bidi => "a character that reorders the text",
             Self::Format => "an invisible control character",
         })

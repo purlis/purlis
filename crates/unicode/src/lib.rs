@@ -63,6 +63,12 @@ pub fn bidi_control(ch: char) -> bool {
     in_table(ch, &tables::BIDI_CONTROL)
 }
 
+/// Does `ch` draw as nothing at all (Default_Ignorable_Code_Point: the joiners, the selectors,
+/// the fillers, the tags)? Only to say what kind of invisible character something is.
+pub fn default_ignorable(ch: char) -> bool {
+    in_table(ch, &tables::DEFAULT_IGNORABLE)
+}
+
 /// What becomes of a line end (`\n`) and a tab in a text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Breaks {

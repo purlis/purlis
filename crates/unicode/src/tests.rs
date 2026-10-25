@@ -194,6 +194,24 @@ fn a_joiner_or_a_selector_doing_no_job_is_marked() {
 }
 
 #[test]
+fn a_default_ignorable_character_is_known_from_the_generated_table() {
+    for c in [
+        '\u{200B}',
+        '\u{200D}',
+        '\u{FE0F}',
+        '\u{3164}',
+        '\u{E0041}',
+        '\u{AD}',
+    ] {
+        assert!(default_ignorable(c), "U+{:04X}", u32::from(c));
+    }
+    // Invisible, but not ignorable: a control, a blank space, an Arabic number sign.
+    for c in ['\u{1B}', '\u{2000}', '\u{0600}', 'a'] {
+        assert!(!default_ignorable(c), "U+{:04X}", u32::from(c));
+    }
+}
+
+#[test]
 fn a_bidi_control_is_known_from_the_generated_table() {
     for c in ['\u{061C}', '\u{200E}', '\u{202E}', '\u{2066}', '\u{2069}'] {
         assert!(bidi_control(c), "U+{:04X}", u32::from(c));

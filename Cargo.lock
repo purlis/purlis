@@ -5614,6 +5614,7 @@ dependencies = [
  "purlis-host",
  "purlis-linux-sandbox",
  "purlis-session-protocol",
+ "purlis-unicode",
  "rfd",
  "rustix",
  "serde",

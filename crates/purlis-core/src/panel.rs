@@ -757,11 +757,12 @@ fn mark_of(value: Option<&serde_json::Value>) -> Result<Mark, String> {
 /// and reverse what follows them — so a view titled `Stats\u{202E}` would draw the ` · <id>`
 /// charter puts after it backwards, and the surface would no longer say which extension it came
 /// from. It also holds the zero-width characters (U+200B–200F, U+2060, U+FEFF) that make two
-/// different strings look identical. The set is purlis's one rule, [`purlis_unicode::invisible`], less
-/// its ordinary whitespace — a space or a tab in a row's
-/// text is content, and draws as what it is.
+/// different strings look identical. The set is purlis's one rule, [`purlis_unicode::invisible`],
+/// less its ordinary whitespace — a space or a tab in a row's text is content, and draws as
+/// what it is.
 pub(crate) fn undrawable(c: char) -> bool {
     c.is_control()
+        // Not redundant: both separators are whitespace, so the clause below lets them through.
         || matches!(c, '\u{2028}' | '\u{2029}')
         || (purlis_unicode::invisible(c) && !c.is_whitespace())
 }

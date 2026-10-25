@@ -197,7 +197,6 @@ fn holds_what_a_file_s_view_draws_otherwise(text: &str) -> bool {
 fn drawn_otherwise_in_a_file(c: char) -> bool {
     match c {
         '\t' | '\n' => false,
-        '\u{2028}' | '\u{2029}' => true,
         c => purlis_unicode::invisible(c),
     }
 }
