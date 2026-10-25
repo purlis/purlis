@@ -38,10 +38,10 @@ export type PanelTab = Tabbed & { view: PanelViewId };
  * **A side's activity bar: a strip of icons, one per view, that switches the side between them**
  * (ADR 0038 as amended 2026-10-10, B-1, #1673).
  *
- * Each item is the activity family's (`ui/activity`, #2917). **It is a tab list**: a row across
- * the side panel's top on the left (N36), a column at the window's edge on the right, the tabs
- * the views and the selected tab the open view; the arrows along it, Home and End move with one
- * Tab stop (`roving.ts`). Enter or Space presses the tab the keyboard is on, and so does a click:
+ * Each item is the activity family's (`ui/activity`, #2917). **It is a tab list**: a column of
+ * icons on each side (#3144), the left one beside the project rail and the right one at the
+ * window's edge, the tabs the views and the selected tab the open view; the arrows along it,
+ * Home and End move with one Tab stop (`roving.ts`). Enter or Space presses the tab the keyboard is on, and so does a click:
  * activation is manual, so walking the bar opens nothing. **The tab list owns tabs and nothing
  * else** (#1204): each tab's count is inside its own tab.
  *
@@ -76,9 +76,9 @@ export function ActivityBar({
 }: {
   /** Which edge of the window it is drawn on. */
   side: Side;
-  /** How its items are drawn (`ui/activity`): tabs across the top of the side panel, or icons in
-   *  the right bar's column. A row of tabs is walked by the left and right arrows, a column by up
-   *  and down. */
+  /** How its items are drawn (`ui/activity`): icons in a side's column (#3144), or tabs across a
+   *  side panel's top. A column is walked by the up and down arrows, a row of tabs by left and
+   *  right. */
   variant: ActivityVariant;
   /** The region whose bar it is, said on the bar for the stylesheet and the scenarios. */
   region?: string;

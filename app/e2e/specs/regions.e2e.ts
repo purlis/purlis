@@ -420,7 +420,7 @@ describe("the left side's activity bar", () => {
     await $('[data-testid="chats-section"]').waitForDisplayed({ timeout: 20_000 });
     const slot = await $('[data-panel][id="region-left"]');
 
-    // R121 (#2917): its tabs are across its own top, so a press of the open one is nothing.
+    // R121 (#2917): the side panel's own tabs stay, so a press of the open one is nothing.
     await (await tab("Chats")).click();
     await browser.pause(400);
     expect((await slot.getSize("width")) as number).toBeGreaterThan(0);
@@ -438,21 +438,47 @@ describe("the left side's activity bar", () => {
     expect((await slot.getSize("width")) as number).toBeGreaterThan(0);
   });
 
-  it("is tabs across the side panel's top, and nothing on the left lies over the terminals", async () => {
+  it("is a column beside the project rail, and nothing on the left lies over the terminals", async () => {
     await untilTheStripIsRead();
     await $('[data-testid="chats-section"]').waitForDisplayed({ timeout: 20_000 });
 
-    // The window's edge is the project rail's, where it is shown (#2915); the bar is inside the
-    // side panel, not a column beside it (N36, R116, #2917).
+    // The window's edge is the project rail's, where it is shown (#2915); the bar is the next
+    // column, 44px, and the side panel after it (#3144).
     const rail = await box('[data-scope="rail"][data-part="slot"]');
-    const bar = await box(".activity-bar[data-side='left']");
+    const column = await box(".activity-column[data-side='left']");
     const slot = await box('[data-panel][id="region-left"]');
     const centre = await box('[data-panel][id="region-centre"]');
-    expect(bar).not.toBeNull();
-    expect(slot?.left ?? -1).toBeGreaterThanOrEqual((rail?.right ?? 0) - 1);
-    expect(bar?.left ?? -1).toBeGreaterThanOrEqual((slot?.left ?? 0) - 1);
-    expect(bar?.right ?? Infinity).toBeLessThanOrEqual((slot?.right ?? 0) + 1);
+    // A gutter and a half from the rail (D-3144-13): 12px in Purlis, flush in Classic.
+    const fromRail = ((await gutter()) * 3) / 2;
+    expect(column).not.toBeNull();
+    expect(column?.width).toBe(44);
+    if (rail !== null && rail.width > 0) {
+      expect(Math.abs((column?.left ?? Infinity) - rail.right - fromRail)).toBeLessThanOrEqual(1);
+    } else {
+      // The rail hidden (a narrow window, or auto-hide): the column is the window's first, a
+      // gutter and a half from its edge, as from the rail (#3144, D-3144-13).
+      expect(Math.abs((column?.left ?? Infinity) - fromRail)).toBeLessThanOrEqual(1);
+    }
+    expect(slot?.left ?? -1).toBeGreaterThanOrEqual((column?.right ?? 0) - 1);
     expect(slot?.right ?? Infinity).toBeLessThanOrEqual((centre?.left ?? 0) + 1);
+  });
+
+  it("keeps the column where it is while the side goes away and comes back", async () => {
+    await untilTheStripIsRead();
+    await $('[data-testid="chats-section"]').waitForDisplayed({ timeout: 20_000 });
+    const before = await box(".activity-column[data-side='left']");
+
+    const view = await putSideAway("Navigation");
+    const slot = await $('[data-panel][id="region-left"]');
+    await browser.waitUntil(async () => ((await slot.getSize("width")) as number) === 0, {
+      timeout: 20_000,
+      timeoutMsg: "the left slot did not go to nothing on its key",
+    });
+    expect(await box(".activity-column[data-side='left']")).toEqual(before);
+
+    await bringSideBack("Navigation", view);
+    await $('[data-testid="chats-section"]').waitForDisplayed({ timeout: 20_000 });
+    expect(await box(".activity-column[data-side='left']")).toEqual(before);
   });
 });
 
@@ -627,14 +653,14 @@ describe("the Panel", () => {
     await $('[data-testid="repos-view"]').waitForDisplayed({ timeout: 20_000 });
   });
 
-  it("holds the Repos view, open, its icon at the end of the side panel's tab row", async () => {
+  it("holds the Repos view, open, its icon at the foot of the left column", async () => {
     await expect(await $(`${PANEL} [data-testid="repos-view"]`)).toBeDisplayed();
     const lower = await boxOf('[role="tablist"][aria-label="Panel, left half"]');
     const upper = await boxOf('[role="tablist"][aria-label="Navigation"]');
     if (lower === null || upper === null) throw new Error("no Lower or upper icons to measure");
-    // One row (R116): the bottom group after the top group's, on its line.
-    expect(Math.abs(lower.top - upper.top)).toBeLessThanOrEqual(1);
-    expect(lower.left).toBeGreaterThanOrEqual(upper.right - 1);
+    // One column (#3144): the bottom group under the top group's, in its line.
+    expect(Math.abs(lower.left - upper.left)).toBeLessThanOrEqual(1);
+    expect(lower.top).toBeGreaterThanOrEqual(upper.bottom - 1);
   });
 
   it("runs under both sidebars and the editor, the whole width between the bars", async () => {
@@ -643,8 +669,8 @@ describe("the Panel", () => {
     const right = await boxOf('[data-panel][id="region-right"]');
     const rightBar = await boxOf(".activity-column[data-side='right']");
     if ([panel, left, right, rightBar].includes(null)) throw new Error("nothing to measure");
-    // From the side panel's edge (R126): the left bar is inside the side panel now; flush with
-    // the right bar, or the theme's gutter from it (#3034).
+    // From the side panel's edge (R126), the left column before it (#3144); flush with the
+    // right bar, or the theme's gutter from it (#3034).
     const apart = (await gutter()) + 2;
     expect(Math.abs((panel as Box).left - (left as Box).left)).toBeLessThanOrEqual(2);
     expect(Math.abs((panel as Box).right - (rightBar as Box).left)).toBeLessThanOrEqual(apart);
@@ -949,6 +975,28 @@ describe("the Panel", () => {
         timeout: 20_000,
         timeoutMsg: "a wide window again did not draw both halves",
       });
+    });
+
+    it("puts the left column a gutter and a half from the window's edge, the rail hidden (#3144)", async () => {
+      // The narrowest window: the rail hides itself (#3077), and the column it leaves is the
+      // window's first, as the prototype's variant D draws a hidden rail.
+      await browser.waitUntil(
+        async () =>
+          browser.execute(
+            () =>
+              (document
+                .querySelector('[data-scope="rail"][data-part="slot"]')
+                ?.getBoundingClientRect().width ?? 0) < 1,
+          ),
+        { timeout: 20_000, timeoutMsg: "the rail still takes room in the narrowest window" },
+      );
+      const left = await browser.execute(
+        () =>
+          document.querySelector(".activity-column[data-side='left']")?.getBoundingClientRect()
+            .left ?? null,
+      );
+      expect(left).not.toBeNull();
+      expect(Math.abs((left as number) - ((await gutter()) * 3) / 2)).toBeLessThanOrEqual(1);
     });
 
     it("draws one half at a time, the other side's Lower icons switching it, and overflows nothing", async () => {
