@@ -2212,7 +2212,13 @@ function App() {
                   : undefined
             }
             onCount={onWindowLines}
-            className="window-notices"
+            at={
+              openerUp && !settingsAlone
+                ? "page"
+                : inFront !== undefined && inboxLinesAt != null
+                  ? "lines"
+                  : "band"
+            }
           >
             {/* A launch nobody could see. The core only answers here when the start passed the
             spec's limit, so on an ordinary launch there is nothing to draw and nothing to

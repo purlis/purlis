@@ -49,7 +49,13 @@ import {
   type EntryWrote,
   type Wrote,
 } from "./driver";
-import type { Collection, FileSetting, SettingsFileId, SettingsGroup } from "./groups";
+import type {
+  Collection,
+  CollectionEntry,
+  FileSetting,
+  SettingsFileId,
+  SettingsGroup,
+} from "./groups";
 import { EXTENSIONS_LINK, linkToGroup, settingsPlace } from "./links";
 import { profilePage } from "./profileAddress";
 import { askIconThemes, iconsControl, iconsHeld, iconsNotes } from "./iconsPick";
@@ -279,12 +285,20 @@ function hostsCollection(file: SettingsFile, name: "hosts" | "myHosts"): Collect
     base: file.exists ? file.text : null,
     entries: (file.entries ?? [])
       .filter((one) => one.collection === name)
-      .map((one) => ({
-        id: one.id,
-        label: one.label,
-        settings: [],
-        confirm: one.values.some((value) => value.field === "confirmed" && value.value === "no"),
-      })),
+      .map((one) => {
+        const waits = one.values.some(
+          (value) => value.field === "confirmed" && value.value === "no",
+        );
+        return {
+          id: one.id,
+          label: one.label,
+          settings: [],
+          confirm: waits,
+          // Your own hosts say whether each waits for your Confirm (R66); the project's are the
+          // project's, with nothing to confirm.
+          status: name === "myHosts" ? (waits ? "waiting" : "confirmed") : undefined,
+        } satisfies CollectionEntry;
+      }),
     fields: [
       {
         field: "host",

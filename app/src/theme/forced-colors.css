@@ -120,9 +120,8 @@
   }
 
   /* What needs you: the system's pair for what is marked. */
-  .count-pill-needs,
-  .show-more-needs,
   [data-scope="activity"][data-part="count"][data-tone="needs-you"],
+  [data-scope="count"][data-part="root"][data-variant="hot"],
   [data-scope="status-item"][data-variant="waiting"] > [data-part="count"],
   .repo-instruction-text .invisible-char {
     forced-color-adjust: none;
@@ -136,8 +135,7 @@
   [data-scope="menu"][data-part="root"][data-variant="danger"],
   [data-scope="status-item"][data-part="root"][data-tone="danger"],
   .trouble,
-  .ui-inline-surface-trouble,
-  .notice-list .notice-inbox.notice-trouble,
+  [data-scope="notice"][data-part="root"][data-variant="trouble"],
   .ui-setting-error p {
     outline: 2px dashed CanvasText;
     outline-offset: -2px;

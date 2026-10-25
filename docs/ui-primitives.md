@@ -300,7 +300,7 @@ for this pane"; a card never shrinks in it, so past its room the cards scroll in
 on a warning with a Dismiss puts it away, and the keyboard goes on to the next warning or to the
 terminal, never onto an Allow: a consent is landed on by its line. A consent has no Dismiss and
 Esc leaves it. The press-settle guard (#1695) reads where each line is drawn against the band
-itself, scrolling aside, never its `offsetTop`, which a card positioned for its mark would pin. In the row they are stacked in `.pane-notices`, in the
+itself, scrolling aside, never its `offsetTop`, which a card positioned for its mark would pin. In the row they are stacked (the notice family's `stack`), in the
 order the pane writes them: the shown chat's own, the one that waits for an answer before
 anything starts first, then each hidden chat's. **At most two stand, and the rest are behind
 "+N more"**, on a row of its own under them, as wide as the longer of "+N more" and the Show
@@ -607,6 +607,59 @@ spec #2897, ADR 0104), each one wrapper under `app/src/ui/` and its own lint rul
 - **Stories hold them** (`Panel.stories.tsx`, `EmptyState.stories.tsx`, `StatusItem.stories.tsx`):
   panels flush and floating, a section with its action, each empty state, the pills and the bar
   with its menu, each walked by the keyboard and checked by axe in Chromium and WebKit.
+
+## The card, notice, badge and count, and separator families
+
+**Every card, Notice, badge, count and separator is drawn by its family** (#2912, spec #2897,
+ADR 0104), each one wrapper under `app/src/ui/` and its own lint rule at error
+(`purlis/card-family`, `purlis/notice-family`, `purlis/badge-family`,
+`purlis/separator-family`): a screen wears none of their old classes (`ui-inline-surface`,
+`notice-*`, `pane-notices`, `ui-setting-badge`, `count-pill`), writes none of their
+`data-scope`, and draws no `<hr>` of its own.
+
+| Family | Wrapper | Parts | Variants |
+| --- | --- | --- | --- |
+| Card | `Card` (as a `div`, `li`, `p`, `section` or `article`), `CardTitle` (`ui/card/Card.tsx`) | `root`, `title` | `raised`, `ask` |
+| Notice | `Notice`, `NoticeList`, `NoticePaneRow` (`src/Notice.tsx`), drawn through `ui/notice/Notice.tsx` | `root`, `message`, `whose`, and `under` (what a way out opened) | `news`, `trouble` |
+| Badge | `Badge`, `HostStatus` (`ui/badge/Badge.tsx`) | `root` | `neutral`, `accent`, `waiting`, `ok` |
+| Count | `Count`, `CountGroup` (`ui/badge/Badge.tsx`) | `root`, `group` | `neutral`, `accent`, `waiting`, `hot` |
+| Separator | `Separator` (`ui/separator/Separator.tsx`, on React Aria's) | `root` | none |
+
+- **A card is a box one step off its surface**: an ask in the Inbox, a task's question in a chat,
+  a block's report under its Notice, a code to copy. Purlis draws it the Figma way, on the window's
+  fill with corners 10 and no hairline (R25, its theme's `card.root.fill` and
+  `card.root.border-width: 0`); Classic on its raised ground with the subtle hairline. **An ask
+  keeps its waiting edge in every theme** (ADR 0097 §6): no theme can take it away, as no theme
+  can take Allow's.
+- **A Notice is drawn by the notice family and is a Notice by `Notice.tsx`.** Its box is the
+  family's `root`, its tone the variant and where it stands its `data-placement`: `pane` (its
+  pane's row; in a chat's pane the band draws it as a washed card with its mark and no edge,
+  `paneFrame.css`, #3142), `inbox` (a row of the Inbox's list, no box of its
+  own, the danger ground across a trouble row) or `alone` (on a page, edged in the hairline).
+  Each way out is a button of the button family that says which it is (`data-way`: `go`, `fix`,
+  `link`, `copy`, `dismiss`, and the row's `more`). **A Notice holds Allow, so it is a consent
+  surface**: its fill is one of the grounds an answer that grants is measured on, and its edge's
+  width is no theme's. The Inbox's list (`data-scope="notice-list"`) and a pane's row
+  (`data-scope="notice-row"`) are the family's layout.
+- **A badge is a word or two; a count is a number.** Both are pills in 11px words, a badge on the
+  count's ground or a wash in the colour of what it says, a count at the strong weight. Your hosts
+  say each host's status in a badge (R66): "Waiting for you" on the amber wash until it is
+  confirmed, then "Confirmed" in the ok words. A count is heard as what it counts (`said`), and a
+  tab's counts are one pill (`CountGroup`): its chats, and those that need the person in the
+  needs-you colours (`hot`). A badge with a hint is the tooltip's target and a Tab stop. A number
+  inside a sentence or a segmented option ("Chats 3") is words, not a count.
+- **A separator is its own part, never a control's border** (#2804, #2877). Its colour is
+  `separator.root.fill`; its width is the theme's `separator.width`, 0 for none. Both reach the
+  menu's rule, the dialog's footer rule, the status bar's line, the rows of the Inbox's list and
+  the hairlines between rows inside a surface (`--separator-fill`).
+  One that only parts two marks on a strip is `decorative`, hidden from a screen reader.
+- **Controls take no border in Purlis**: its theme draws the edge of the plain and the primary
+  button, the text input and the textarea in no colour, at every size; Allow and danger, the
+  consent variants, keep theirs, and a refused field keeps its danger edge, drawn as an outline over the box's own edge that no part reaches (the focus ring takes its place while the field holds the caret).
+- **Stories hold them** (`Card.stories.tsx`, `Notice.stories.tsx`, `Badge.stories.tsx`,
+  `Separator.stories.tsx`): an ask with Allow and Keep blocked, a pane's row with +N more, the
+  Inbox's list, a Notice alone, every badge and count, the hosts' statuses, a badge's hint, and a
+  line across a card and down a strip, each walked by the keyboard and checked by axe.
 ## The tooltip family
 
 **Every hint in the window is the shared tooltip** (`app/src/ui/tooltip/Tooltip.tsx`, #2908,
@@ -1051,13 +1104,11 @@ rows).
   the field family's `Form`, so its fields are checked before it is sent and ⌘⏎ sends its main
   action.
 - **A Notice is not an overlay.** It stands in its pane's row or in the Inbox, never over
-  anything (#1647), so it has no lift and no overlay ground. It is the **inline surface** instead
-  (#1855): `.ui-inline-surface` draws the overlay's border and the control's corner on the page's
-  raised ground (`surface.raised`), with no shadow. `.ui-inline-surface-waiting` edges it in the
-  waiting colour (a Notice's box in a pane); `.ui-inline-surface-trouble` is the danger ground (a
-  Notice standing alone that reports something wrong). A Notice in the Inbox's list is the list's
-  row, not a box of its own. What a way out opened under a Notice (a block's report, a
-  dispatch's brief) is the inline surface too.
+  anything (#1647), so it has no lift and no overlay ground. It is [the notice
+  family's](#the-card-notice-badge-and-count-and-separator-families) box instead, on the page's
+  raised ground (`surface.raised`) with no shadow: a washed card with its mark in a chat pane's band (#3142), the
+  danger ground for trouble, and in the Inbox's list the list's row, not a box of its own. What a
+  way out opened under a Notice (a block's report, a dispatch's brief) is a card.
 
 `app/src/primitives/overlays.test.tsx` holds the surface through the window's cascade (the same
 ground, border, corner and lift on each kind, the same padding on a dialog and a popover), that a

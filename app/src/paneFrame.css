@@ -87,16 +87,16 @@
   font-variant-numeric: tabular-nums;
 }
 
-.notice-more-says {
+[data-scope="notice-row"][data-part="says"] {
   display: inline-grid;
   justify-items: start;
 }
 
-.notice-more-says > * {
+[data-scope="notice-row"][data-part="says"] > * {
   grid-area: 1 / 1;
 }
 
-.notice-more-says > [data-off] {
+[data-scope="notice-row"][data-part="says"] > [data-off] {
   visibility: hidden;
 }
 

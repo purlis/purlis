@@ -150,9 +150,14 @@
    States.
    --------------------------------------------------------------------------------------------- */
 
-/* A value the field refuses: the danger colour on its edge, beside the words that say why. */
+/* A value the field refuses: the danger colour on its edge, beside the words that say why. The
+   edge is an outline over the box's own edge, which no part reaches, so a theme whose controls
+   take no border (Purlis, #2912) or that gives the box a shadow still marks it; while the field
+   holds the caret the focus ring is drawn in its place, and the words still say why. */
 :is([data-scope="text-input"], [data-scope="textarea"])[data-part="root"][data-invalid] {
   border-color: var(--danger-base);
+  outline: 1px solid var(--danger-base);
+  outline-offset: -1px;
 }
 
 /* Unavailable: its words in the faint tier, on its own ground and edge, so nothing moves. */

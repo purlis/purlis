@@ -23,6 +23,7 @@ import { Button } from "../ui/button/Button";
 import { TextArea, TextField } from "../ui/field/Field";
 import { Tooltip } from "../ui/tooltip/Tooltip";
 import { useReadOnlyReasonId } from "../readOnlyReason";
+import { Badge } from "../ui/badge/Badge";
 
 /**
  * **The house settings set** (SE-16, #1166; DS-3 #626; V89f, V89j): the six pieces every
@@ -464,7 +465,7 @@ function OriginBadge({ badge }: { badge: Badge }) {
     // A word, not a control: it presses nothing, so it is no button. It takes the keyboard only
     // so the tooltip can be read without a pointer.
     <Tooltip tip={badge.says}>
-      <span className="ui-setting-badge">{badge.label}</span>
+      <Badge variant="accent">{badge.label}</Badge>
     </Tooltip>
   );
 }

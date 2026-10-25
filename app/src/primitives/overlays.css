@@ -39,28 +39,3 @@
 .ui-overlay-arrow {
   fill: var(--surface-overlay);
 }
-
-/* ---------------------------------------------------------------------------------------------
-   The inline surface (#1855): `.ui-inline-surface` on what stands in the page rather than over it,
-   a Notice and what a Notice's way out opened. The overlay's border and corner scale, a ground of
-   the page's raised level, and **no lift**: nothing is under it. `.ui-inline-surface-waiting`
-   edges it in the waiting colour (purlis speaking in a pane, #1647); `.ui-inline-surface-trouble`
-   is the danger ground for something that went wrong. A view still places and pads it.
-   --------------------------------------------------------------------------------------------- */
-
-.ui-inline-surface {
-  box-sizing: border-box;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  color: var(--text-primary);
-  background-color: var(--surface-raised);
-}
-
-.ui-inline-surface-waiting {
-  border-color: var(--state-waiting);
-}
-
-.ui-inline-surface-trouble {
-  color: var(--danger-text);
-  background-color: var(--danger-surface);
-}

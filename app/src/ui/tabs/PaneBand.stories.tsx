@@ -357,10 +357,12 @@ function rowsOf(canvas: HTMLElement, name = "steward 2") {
   const frame = canvas.querySelector(`[data-testid="pane ${name}"]`) as HTMLElement;
   return {
     frame,
-    band: frame.querySelector(".pane-notice-row"),
+    band: frame.querySelector('[data-scope="notice-row"][data-part="root"]'),
     head: frame.querySelector(".pane-head"),
     terminal: frame.querySelector(".pane"),
-    warnings: [...frame.querySelectorAll(".pane-notices > :not([hidden])")],
+    warnings: [
+      ...frame.querySelectorAll('[data-scope="notice-row"][data-part="stack"] > :not([hidden])'),
+    ],
   };
 }
 

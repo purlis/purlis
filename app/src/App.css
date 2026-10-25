@@ -303,34 +303,6 @@ body {
   cursor: grabbing;
 }
 
-/* **A tab's counts, in one pill** (`CountPill.tsx`, qw337): how many chats are open in a
-   workspace, which with the chat strip showing one workspace's chats is the answer to "where
-   are the other forty"; and, as a second segment of the same pill, how many of them are asking
-   for you (below). A workspace's tab, the plane root's and a project's draw it, and the rows of
-   their show-more menus.
-
-   It does not shrink: the title gives way first, and then the pill goes whole
-   (`wholeWays.fitPill`, D-1867-1), set aside by `data-away`. */
-.count-pill {
-  display: inline-flex;
-  flex: none;
-  align-items: stretch;
-  overflow: hidden;
-  border-radius: var(--radius-full);
-  background: var(--control-count);
-  color: var(--text-secondary);
-  font-size: var(--font-size-xs);
-  font-variant-numeric: tabular-nums;
-}
-
-.count-pill > span {
-  padding: var(--space-0) var(--space-2);
-}
-
-.count-pill[data-away] {
-  display: none;
-}
-
 /* **A LIVE workspace's dot** (`LiveMark`, qw337): right after the name, in the accent colour,
    with a ring of the same colour so it is not taken for the workspace's own colour mark before
    the name. The margin is the ring's room. */
@@ -342,29 +314,6 @@ body {
   border-radius: var(--radius-full);
   background: var(--accent-base);
   box-shadow: 0 0 0 var(--space-1) color-mix(in srgb, var(--accent-base) 35%, transparent);
-}
-
-/* And how many of them are asking for you, which is the hole scoping the chats would
-   otherwise open. The same mark the project tabs carry one scope up — **the count of chats
-   waiting for the operator is the one thing in this window that exists to be seen**, so it is
-   the only mark on a strip drawn in a colour charter chose — a workspace's own colour is the
-   operator's (above) — and it is drawn in the weight of a
-   number rather than the weight of a label. A show-more button draws the same mark for what it
-   hides (ADR 0054), because a hidden workspace's count is still a chat waiting on you.
-
-   On a tab it is the second segment of the tab's one pill (`.count-pill`, above). */
-.count-pill-needs,
-.show-more-needs {
-  background: var(--needs-you-base);
-  color: var(--needs-you-text);
-  font-weight: var(--font-weight-strong);
-  font-variant-numeric: tabular-nums;
-}
-
-.show-more-needs {
-  padding: var(--space-0) var(--space-2);
-  border-radius: var(--radius-full);
-  font-size: var(--font-size-xs);
 }
 
 /* **No strip scrolls. What does not fit is not drawn** — the operator, looking at the
@@ -616,17 +565,6 @@ body {
 
 .tab-browsers > .tab-browser:hover {
   border-color: var(--border-strong);
-}
-
-/* How many: the tab's count pill (`.count-pill`), with a browser's mark before the digit. */
-.tab-browsers-count {
-  align-items: center;
-  padding-inline-start: var(--space-2);
-}
-
-.tab-browsers-count > svg {
-  inline-size: 1em;
-  block-size: 1em;
 }
 
 .browser-thumbnail {
@@ -882,66 +820,6 @@ button.show-more:focus-visible {
     .pane-skills
   ) {
   height: var(--size-chrome);
-}
-
-/* **A pane's row of Notices, above its terminal** (`NoticePaneRow`, #1647): the stack, and
-   beside it "+N more" while more than two have something to say. In a chat's pane it is the
-   band, inside the pane on its fill, and `paneFrame.css` places it (#3142).
-
-   - **Never over the terminal**: it is in the pane's column, before the body, and the terminal
-     has what it leaves.
-   - **Never more than most of the pane**: the terminal keeps at least two fifths of it, whatever
-     is opened (`max-height`); past that the stack scrolls, and the box that is too tall gives way
-     first (`.notice-pane-box`).
-   - **None, no row**: a pane with nothing to say is all terminal. */
-.pane-notice-row {
-  display: flex;
-  flex: 0 1 auto;
-  align-items: stretch;
-  gap: var(--space-2);
-  min-height: 0;
-  max-height: 60%;
-  padding: var(--space-1) var(--space-4);
-  background: var(--surface-base);
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.pane-notice-row.pane-notice-row-empty {
-  display: none;
-}
-
-/* **A pane's Notices, one under another** (`PlaneView`, `PaneFrame`), in the order the pane
-   wrote them: the one that waits for an answer first. Two stand; the rest are `hidden` by the
-   row until "+N more" is open.
-
-   - **Together never taller than the row**: the stack is the row's height (`stretch`), gives
-     way (`min-height: 0`) and scrolls, so a Notice's buttons are always reachable.
-   - **Each as wide as what it says, never wider than the pane, and no wider than a sentence
-     reads well** (`max-width`). The cap is here and not on each Notice, so the stack is never
-     wider than its widest Notice may be. */
-.pane-notices {
-  display: flex;
-  flex-direction: column;
-  flex: 0 1 auto;
-  align-items: flex-start;
-  gap: var(--space-2);
-  min-width: 0;
-  max-width: min(100%, 40rem);
-  min-height: 0;
-  overflow-y: auto;
-}
-
-/* `hidden` hides a Notice the row keeps behind "+N more": its box's own `display` would
-   otherwise win over the browser's rule for the attribute. */
-.pane-notices > [hidden] {
-  display: none;
-}
-
-/* "+N more", beside the stack and at its top, so it takes no line of its own: a third Notice
-   changes the row's width by a button, never its height. */
-.pane-notice-row > .notice-more-pane {
-  flex: none;
-  align-self: flex-start;
 }
 
 /* **A runner's chat while its link is down** (#2496, `SessionPane.tsx`): its last screen dimmed
@@ -1488,13 +1366,6 @@ button.show-more:focus-visible {
   white-space: nowrap;
 }
 
-/* **Whose a pane's Notice is**, where it is a chat's that is not the one on screen (#1486,
-   `NoticeOf`): the first words of its sentence, in the sentence's own colour and its weight
-   up, so it is read before what the Notice asks. */
-.notice-whose {
-  font-weight: var(--font-weight-strong);
-}
-
 /* **A pane whose tab shows a task that is not there to be drawn** (#1486, `TaskAway.tsx`): in
    the terminal's place and on its surface, under the pane's top line, which still says the
    path. A sentence, how it ended, and the way back. Nothing here is a terminal, so nothing
@@ -1916,7 +1787,7 @@ button.show-more:focus-visible {
   justify-content: space-between;
   margin-top: var(--space-1);
   padding: var(--space-2) var(--space-3) var(--space-1);
-  border-top: 1px solid var(--border-subtle);
+  border-top: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
   color: var(--text-secondary);
   font-size: var(--font-size-md);
 }
@@ -1927,124 +1798,51 @@ button.show-more:focus-visible {
   overflow-wrap: anywhere;
 }
 
-/* **A Notice in a pane** (`Notice` with `at="pane"`), first for a harness started by hand in a
-   shell tab (ADR 0062). It stood in the pane's top-left corner, over the terminal and taking no
-   row; since #1647 it stands in the pane's row of Notices, above the terminal, and the terminal
-   is that much shorter, two Notices at most. Bordered in the waiting colour so it reads as
-   charter speaking to the operator and not as the shell's output, and quieter than a needs-you
-   item: nothing is waiting, and the harness is running whatever is pressed.
-
-   **One box: the line, and under it what a way out opened** (#1481). The box is the inline
-   surface edged in the waiting colour (`.ui-inline-surface-waiting`, #1855), so the two read as
-   one thing; this places it. */
-/* **Never taller than the pane** (#1483's dispatch question in a short pane): the box may
-   shrink in the stack (`flex` and `min-height: 0`), the line and its answers never do, and
-   what a way out opened under them gives way first, its brief before anything else, then by
-   scrolling. Every answer stays whole and reachable, and nothing is drawn over another. */
-.notice-pane-box {
-  display: flex;
-  flex-direction: column;
-  flex: 0 1 auto;
-  min-height: 0;
-  min-width: 0;
-  max-width: 100%;
-  font-size: var(--font-size-xs);
-}
-
-/* In a pane a Notice is as wide as its line, up to the stack's width. One that has opened
-   something takes that width whole, so what it opened is not drawn as narrow as a short line. */
-.pane-notices > .notice-pane-box.notice-opened {
-  width: 40rem;
-}
-
-/* **The sentence has the row.** It is as wide as it reads on one line, so the ways out stand
-   beside it only when all of it fits unwrapped; when it does not, the sentence takes the whole
-   row and wraps there, and the ways out go under it, on as many rows as they need. The line is
-   a `ButtonRow` (#1855): a way out that alone is wider than the Notice breaks its words
-   over lines, and is never clipped. */
-.notice-pane {
-  flex: none;
-  padding: var(--space-1) var(--space-3);
-}
-
-.notice-pane > .notice-says {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
 /* The persona the line names: the sentence's first word (`Notice`). */
-.notice-pane > .notice-says > .persona-mark {
+[data-placement="pane"] [data-scope="notice"][data-part="message"] > .persona-mark {
   margin-right: var(--space-2);
   vertical-align: middle;
 }
 
-/* Where "Show the request" lands (`VaultRefusedNotice`): the line itself, never one of its
-   buttons, so no key pressed next answers it. */
-.notice-pane:focus {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: calc(var(--focus-ring-offset) / 2);
-}
-
-/* **What a way out opened, under the line and at its width.** `min-width: 0` and the `pre`
-   rule: a long line of a draft scrolls inside its own box and never widens the Notice. */
-.notice-under-pane {
-  display: flex;
-  flex-direction: column;
-  flex: 0 1 auto;
-  min-height: 0;
-  min-width: 0;
-  overflow-y: auto;
-  padding: 0 var(--space-3) var(--space-2);
-}
-
-.notice-under-pane > * {
-  flex: none;
-  max-width: 100%;
-}
-
 /* What gives way first: an opened report, and inside it its scrolling draft (the brief),
    down to a few lines. */
-.notice-under-pane > .block-report {
+[data-placement="pane"] > [data-scope="notice"][data-part="under"] > .block-report {
   display: flex;
   flex-direction: column;
   flex: 0 1 auto;
   min-height: 0;
 }
 
-.notice-under-pane > .block-report > * {
+[data-placement="pane"] > [data-scope="notice"][data-part="under"] > .block-report > * {
   flex: none;
 }
 
-.notice-under-pane > .block-report > .block-report-draft,
-.notice-under-pane > .block-report > section {
+[data-placement="pane"]
+  > [data-scope="notice"][data-part="under"]
+  > .block-report
+  > .block-report-draft,
+[data-placement="pane"] > [data-scope="notice"][data-part="under"] > .block-report > section {
   flex: 0 1 auto;
   min-height: 3.5em;
 }
 
-.notice-under-pane > .block-report > section {
+[data-placement="pane"] > [data-scope="notice"][data-part="under"] > .block-report > section {
   display: flex;
   flex-direction: column;
 }
 
-.notice-under-pane > .block-report > section > .block-report-draft {
+[data-placement="pane"]
+  > [data-scope="notice"][data-part="under"]
+  > .block-report
+  > section
+  > .block-report-draft {
   flex: 0 1 auto;
   min-height: 3.5em;
-}
-
-.notice-under-pane pre {
-  max-width: 100%;
-  margin: var(--space-2) 0;
-  overflow: auto;
-}
-
-.notice-under-pane p {
-  margin: var(--space-2) 0;
 }
 
 /* A sandbox block's Report (#1338), opened under its Notice in the pane's corner: the draft
-   exactly as it would be filed, and the one button that files it. On the inline surface
-   (`.ui-inline-surface`, #1855); this places and pads it. */
+   exactly as it would be filed, and the one button that files it. A card (the card family's,
+   #2912); this places it. */
 .block-report {
   max-width: 36rem;
   margin-top: var(--space-2);
@@ -2568,13 +2366,7 @@ button.show-more:focus-visible {
 .inbox-updates {
   margin-top: var(--space-5);
 }
-/* The project's Notices (#1695): one box, a row per Notice. */
-.notice-list {
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--surface-raised);
-  overflow-wrap: anywhere;
-}
+
 /* **The scope switch** (qw359): the Chats view's own segments (`ScopeSwitch.tsx`), at the top of
    the Inbox. In a narrow side a segment's words are cut before its count is, and the group is
    never wider than the view. */
@@ -2784,9 +2576,7 @@ button.show-more:focus-visible {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
 }
-.inbox-notice .notice-pane-box {
-  max-width: 100%;
-}
+
 .inbox-refused {
   margin: 0;
   color: var(--text-secondary);
@@ -3078,7 +2868,7 @@ button.show-more:focus-visible {
 .explorer .cockpit-head {
   margin-block-end: var(--space-4);
   padding-block-end: var(--space-4);
-  border-block-end: 1px solid var(--border-subtle);
+  border-block-end: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
 .explorer .cockpit-name {
@@ -3185,12 +2975,6 @@ button.show-more:focus-visible {
   font-variant-numeric: tabular-nums;
 }
 
-.explorer .piece-count:not(.none):not(.pending) {
-  padding: 0 var(--space-2);
-  border-radius: var(--radius-full);
-  background: var(--control-count);
-}
-
 /* What a piece's row says under its name: the branch, and the two states the operator has to
    read before starting a chat in the tree. It was an unstyled run of spans on the row that
    matters most for that decision. */
@@ -3279,7 +3063,7 @@ button.show-more:focus-visible {
 }
 
 .explorer .absent {
-  border-top: 1px solid var(--border-subtle);
+  border-top: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
   margin-top: var(--space-4);
   padding-top: var(--space-2);
   opacity: 0.7;
@@ -3342,11 +3126,6 @@ button.show-more:focus-visible {
    at the strong weight (`ui-text-meta ui-text-strong`, #1920), as every count is. */
 .chats-section .task-count {
   flex: none;
-  padding: 0 var(--space-2);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  font-variant-numeric: tabular-nums;
-  line-height: var(--line-height-tight);
 }
 
 .explorer .needs-you-mark.rolled-up:hover {
@@ -3913,40 +3692,11 @@ button.show-more:focus-visible {
   padding: var(--space-2) var(--space-5);
   font-size: var(--font-size-sm);
   background: var(--border-subtle);
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
 .came-back code {
   opacity: 0.7;
-}
-
-/* **A Notice** (`Notice.tsx`, V91a–d): a standing line about something true now, with its ways
-   out — a fix, a link, Copy command, Dismiss — as the shared small buttons in a row that wraps
-   (`ButtonRow`, #1855). Outside a list (a Notice on a Settings page) the line is the inline
-   surface (`.ui-inline-surface`, `primitives/overlays.css`); this only pads it. */
-.notice-inbox {
-  margin: 0;
-  padding: var(--space-2) var(--space-5);
-  font-size: var(--font-size-sm);
-  /* **It wraps, whatever it says** (#1497): a reason with a path or one long word in it
-     breaks inside the window, never past its edge. */
-  overflow-wrap: anywhere;
-}
-
-.notice-inbox.notice-trouble {
-  color: var(--danger-text);
-}
-
-.notice-inbox .notice-says {
-  display: inline;
-}
-
-.notice-inbox code {
-  opacity: 0.7;
-}
-
-.notice-inbox p {
-  margin: 0 0 var(--space-2);
 }
 
 /* **While you were away** (`AwaySummary.tsx`, #1514): each part of the sentence is a link to
@@ -4027,7 +3777,7 @@ button.show-more:focus-visible {
   gap: var(--space-3);
   align-items: baseline;
   padding: var(--space-1) 0;
-  border-top: 1px solid var(--border-subtle);
+  border-top: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
 .ending .what {
@@ -4242,7 +3992,7 @@ button.show-more:focus-visible {
   padding: var(--space-3) var(--space-3) var(--space-5);
 }
 .panels > section + section {
-  border-top: 1px solid var(--layer-divider);
+  border-top: var(--separator-width) solid var(--separator-fill, var(--layer-divider));
 }
 .panels ul {
   list-style: none;
@@ -4364,29 +4114,6 @@ button.show-more:focus-visible {
   margin: var(--space-2) 0 0;
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-strong);
-}
-
-/* **The window's own lines** (D-LB-1, `App.tsx`): one list. With a project in front it is
-   listed at the top of that project's Inbox's Notices (#1695), as part of that list; until the
-   Inbox is first drawn it stands under the title bar, the window's width, as a band rather than
-   a box. With none, it is drawn at the top of the opener's page, at the page's width, with the
-   opener's own lines in it. */
-.notice-list.window-notices {
-  border-width: 0 0 1px;
-  border-radius: 0;
-}
-
-.inbox-window-lines > .notice-list.window-notices {
-  border-width: 0;
-}
-
-.window-notices-at > .notice-list.window-notices {
-  box-sizing: border-box;
-  width: calc(100% - 3rem);
-  max-width: 37rem;
-  margin: var(--space-7) auto 0;
-  border-width: 1px;
-  border-radius: var(--radius-md);
 }
 
 /* **The welcome** (#1812, `Welcome.tsx`): what a window with no project draws, and the pages
@@ -4629,7 +4356,7 @@ button.show-more:focus-visible {
 
 .first-run-found li {
   padding: var(--space-2) 0;
-  border-top: 1px solid var(--border-subtle);
+  border-top: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
 /* The harness setup tab (FR-29): one row per harness, its installer's command on a line of
@@ -4647,7 +4374,7 @@ button.show-more:focus-visible {
 
 .harness-setup-rows li {
   padding: var(--space-3) 0;
-  border-top: 1px solid var(--border-subtle);
+  border-top: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
 .harness-installer {
@@ -4660,7 +4387,7 @@ button.show-more:focus-visible {
    that looks pressable, as the refused profiles' is. */
 .advanced {
   margin-top: var(--space-6);
-  border-top: 1px solid var(--border-subtle);
+  border-top: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
   padding-top: var(--space-5);
 }
 
@@ -4835,35 +4562,6 @@ button.show-more:focus-visible {
   overflow-wrap: anywhere;
 }
 
-/* **A Notice in the Inbox** (`NoticeList`, #1695): what stood under the strip and what the Alerts
-   drawer listed, one row each in the side — the mark, the words, then its ways out on a line of
-   their own under the words, so a long detail never pushes a button off the side. */
-.notice-list > div + div {
-  border-top: 1px solid var(--border-subtle);
-}
-
-.notice-list .notice-inbox {
-  padding: var(--space-2) var(--space-3);
-  font-size: inherit;
-  background: none;
-  border: 0;
-}
-
-.notice-list .notice-inbox.notice-trouble {
-  background: var(--danger-surface);
-}
-
-.notice-list .notice-inbox .notice-says {
-  display: flex;
-  flex: 1 1 100%;
-  gap: var(--space-3);
-  align-items: baseline;
-}
-
-.notice-list .notice-under-inbox {
-  padding: 0 var(--space-3) var(--space-2);
-}
-
 /* An alert's mark (`InboxAlerts.tsx`): a warning's colour, or a failure's. */
 .alert-mark[data-severity="warn"] {
   color: var(--state-waiting);
@@ -4882,8 +4580,8 @@ button.show-more:focus-visible {
 }
 
 /* On a trouble row, the mark and the details take the row's own colour (`danger.text`). */
-.notice-trouble .alert-mark,
-.notice-trouble .alert-detail {
+[data-scope="notice"][data-variant="trouble"] .alert-mark,
+[data-scope="notice"][data-variant="trouble"] .alert-detail {
   color: inherit;
 }
 
@@ -4910,7 +4608,7 @@ button.show-more:focus-visible {
   gap: var(--space-3);
   align-items: baseline;
   padding: var(--space-3) 0;
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
   overflow-wrap: anywhere;
 }
 
@@ -5648,7 +5346,7 @@ nav.piece-files-head {
   align-items: baseline;
   padding-block: var(--space-2);
   padding-inline-end: var(--space-3);
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
 .activity-at {
@@ -5714,15 +5412,19 @@ nav.piece-files-head {
   justify-self: stretch;
 }
 
+/* The card the question stands in (the card family's), and its form inside it. */
 .answer-question {
-  display: grid;
-  gap: var(--space-2);
   max-width: 44rem;
   margin: var(--space-2) 0;
-  padding: var(--space-3);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--surface-raised);
+}
+
+.answer-form {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.answer-pending {
+  margin: var(--space-2) 0;
 }
 
 /* The task's own words, as text: line breaks kept, a long word broken. */
@@ -5989,7 +5691,7 @@ nav.piece-files-head {
   flex-direction: column;
   gap: var(--space-3);
   padding: var(--space-5) var(--space-5);
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 .persona-mark-shown {
   display: flex;
@@ -6655,7 +6357,7 @@ nav.piece-files-head {
 
 .memory-archived {
   padding-top: var(--space-5);
-  border-top: 1px solid var(--border-subtle);
+  border-top: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
 /* A memory's Move (KN-3): under the body, set apart from it by a rule. */
@@ -6663,7 +6365,7 @@ nav.piece-files-head {
   max-width: 60rem;
   margin-top: var(--space-7);
   padding-top: var(--space-5);
-  border-top: 1px solid var(--border-subtle);
+  border-top: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
 /* The repo's agent instructions, offered to a workspace's memory (FR-18a): each file whole, under
@@ -6725,7 +6427,7 @@ nav.piece-files-head {
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-4) var(--space-5);
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
 /* The box and its glass: the field family's (#2905). */
@@ -6825,13 +6527,9 @@ nav.piece-files-head {
   padding-inline-start: calc(var(--space-6) + var(--space-7));
 }
 
+/* A file's hits, counted at the end of its line (the count family's pill). */
 .search-count {
   margin-inline-start: auto;
-  padding: 0 var(--space-3);
-  border-radius: var(--radius-full);
-  background: var(--control-count);
-  color: var(--text-secondary);
-  font-size: var(--font-size-xs);
 }
 
 /* **A hit is the list family's row** (`ui/list`, #2911): its height, its hover, and the hit
@@ -6893,7 +6591,7 @@ nav.piece-files-head {
   align-items: baseline;
   gap: var(--space-3) var(--space-5);
   padding-bottom: var(--space-4);
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
 /* **One segmented style** (#1696): a radio group drawn as one row of segments, the chosen one
@@ -7016,7 +6714,7 @@ nav.piece-files-head {
   gap: var(--space-1);
   margin-top: var(--space-3);
   padding-top: var(--space-3);
-  border-top: 1px solid var(--border-subtle);
+  border-top: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
 .ui-settings-raw-label {
@@ -7159,7 +6857,7 @@ nav.piece-files-head {
    (its padding and weight come from `.ui-table`, a layer above this one), so the name's own
    words carry the weight. */
 .dispatch-table .dispatch-grant-group {
-  border-block-end: 1px solid var(--border-subtle);
+  border-block-end: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
 .dispatch-grant-group > span:first-child {
@@ -7185,7 +6883,7 @@ nav.piece-files-head {
 }
 
 .dispatch-confirm-row td {
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
 .dispatch-confirm p {
@@ -7293,7 +6991,7 @@ nav.piece-files-head {
   display: grid;
   gap: var(--space-2);
   padding-block: var(--space-5);
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
 .ui-setting-line {
@@ -7349,29 +7047,6 @@ nav.piece-files-head {
   block-size: var(--space-3);
   border-radius: var(--radius-full);
   background-color: var(--accent-base);
-}
-
-/* Where a value comes from, when that is not where its group keeps its values (DS-8): Team,
-   This machine, Workspace, with the whole sentence in its tooltip. You › This machine's notes
-   wear it too. */
-.ui-setting-badge {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  align-self: center;
-  padding-block: 0;
-  padding-inline: var(--space-3);
-  border: 1px solid var(--accent-base);
-  border-radius: var(--radius-sm);
-  font-size: var(--font-size-xs);
-  color: var(--text-primary);
-  background-color: var(--accent-surface);
-  cursor: default;
-}
-
-.ui-setting-badge:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: var(--focus-ring-offset);
 }
 
 /* "Move to…"'s menu: as wide as the longest file name it offers. */
@@ -7546,23 +7221,6 @@ nav.piece-files-head {
 .doctor-form {
   grid-column: 2 / -1;
   margin-top: var(--space-3);
-}
-
-/* The same form opened from a Notice (#1250): right under the line, outside its live region
-   (`Notice`'s `under`), in the page's own colours. */
-.notice-under-band {
-  padding: var(--space-2) var(--space-5);
-  background: var(--border-subtle);
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.notice-under-band .doctor-form {
-  max-width: 36rem;
-  padding: var(--space-3) var(--space-5);
-  color: var(--text-primary);
-  background: var(--surface-raised);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
 }
 
 /* The set-up of a 1Password vault's sign-in (#1527): its lines sit apart from the rows. */

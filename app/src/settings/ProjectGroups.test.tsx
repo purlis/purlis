@@ -909,7 +909,7 @@ describe("the project's own save keys, in Saving (charter-app#300, ADR 0051)", (
       /From charter\.local\.toml, at the Project level: this machine only\. charter\.toml has pr, which this overrides\./,
     );
     expect(
-      within(rowOf("Mode")).getByText("This machine", { selector: ".ui-setting-badge" }),
+      within(rowOf("Mode")).getByText("This machine", { selector: "[data-scope=badge]" }),
     ).toBeVisible();
     expect(within(saving).getByLabelText("Sign commits")).toHaveAccessibleDescription(
       /In this project: on, from charter\.toml\./,
@@ -926,7 +926,7 @@ describe("the project's own save keys, in Saving (charter-app#300, ADR 0051)", (
     );
     // It is still kept elsewhere than the group's values: badged, without an override.
     expect(
-      within(rowOf("Target branch")).getByText("This machine", { selector: ".ui-setting-badge" }),
+      within(rowOf("Target branch")).getByText("This machine", { selector: "[data-scope=badge]" }),
     ).toBeVisible();
   });
 
@@ -1180,7 +1180,7 @@ describe("each repo's save keys, in Saving (charter-app#300, ADR 0051)", () => {
       /charter\.toml has off, which this overrides\./,
     );
     expect(
-      within(rowOf("api: auto-save")).getByText("This machine", { selector: ".ui-setting-badge" }),
+      within(rowOf("api: auto-save")).getByText("This machine", { selector: "[data-scope=badge]" }),
     ).toBeVisible();
   });
 

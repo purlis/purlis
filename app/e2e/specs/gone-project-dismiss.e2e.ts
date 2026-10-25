@@ -152,7 +152,7 @@ async function dismiss(path: string): Promise<void> {
     const notice = [...document.querySelectorAll<HTMLElement>("[data-cause]")].find(
       (one) => one.dataset.cause === cause,
     );
-    const button = notice?.querySelector<HTMLElement>(".notice-dismiss");
+    const button = notice?.querySelector<HTMLElement>("[data-way=dismiss]");
     button?.click();
     return button !== undefined && button !== null;
   }, `project-gone:${path}`);

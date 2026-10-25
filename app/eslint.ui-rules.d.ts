@@ -25,7 +25,11 @@ export const purlisUi: {
     | "rail-family"
     | "activity-family"
     | "tabs-family"
-    | "titlebar-family",
+    | "titlebar-family"
+    | "card-family"
+    | "notice-family"
+    | "badge-family"
+    | "separator-family",
     Rule.RuleModule
   >;
 };

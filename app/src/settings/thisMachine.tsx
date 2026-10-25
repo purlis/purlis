@@ -7,6 +7,7 @@ import { Choice } from "./components";
 import type { LiveSetting, SettingsGroup } from "./groups";
 import { channelMoved, readChannel, useUpdateChannel } from "../updateChannel";
 import { Button } from "../ui/button/Button";
+import { Badge } from "../ui/badge/Badge";
 
 /**
  * **You › This machine** (ST-2, #1226; V91r): what this machine's store holds — its recent
@@ -245,7 +246,7 @@ function Entry({
     <li className="ui-machine-entry">
       <span className="ui-machine-name">{name}</span>
       {path !== undefined && <span className="ui-machine-path">{path}</span>}
-      {note !== undefined && <span className="ui-setting-badge">{note}</span>}
+      {note !== undefined && <Badge variant="accent">{note}</Badge>}
       {before !== undefined && <EntryButton {...before} />}
       <EntryButton {...main} />
     </li>

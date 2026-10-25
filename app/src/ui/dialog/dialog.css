@@ -173,7 +173,7 @@
 /* The footer's rule: its own part, a line the width of the dialog, and never a control's border
    (#2804). */
 [data-scope="dialog"][data-part="separator"] {
-  block-size: 1px;
+  block-size: var(--separator-width);
   background-color: var(--border-subtle);
 }
 

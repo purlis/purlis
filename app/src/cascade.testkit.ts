@@ -18,9 +18,10 @@
  * - a selector that names a pseudo-element draws something else, and is skipped;
  * - `:hover` and `:focus-visible` match only when the call says the element is in that state;
  * - `primitives/controls.css`, `ui/button/button.css`, `ui/field/field.css`, the window's own
- *   families (`ui/panel`, `ui/empty-state`, `ui/status`), `ui/dialog/dialog.css`,
- *   `primitives/overlays.css`, `ui/tooltip/tooltip.css`, the popover and menu families' sheets and
- *   the list family's are in the `components` layer,
+ *   families (`ui/panel`, `ui/empty-state`, `ui/status`), the card, notice, badge and separator
+ *   families (`ui/card`, `ui/notice`, `ui/badge`, `ui/separator`), `ui/dialog/dialog.css`,
+ *   `primitives/overlays.css`, `ui/tooltip/tooltip.css`, the popover and menu families' sheets,
+ *   the list family's and a chat's pane (`paneFrame.css`) are in the `components` layer,
  *   above `App.css`'s `charter` (`styles.css`), so a primitive's rule beats any of `App.css`'s that
  *   sets the same property, at any specificity;
  * - inside one layer, the winner is the highest specificity, then the last in the file.
@@ -120,6 +121,10 @@ const COMPONENTS = [
   "ui/empty-state/empty-state.css",
   "ui/status/status.css",
   "ui/harness-icon/harness-icon.css",
+  "ui/card/card.css",
+  "ui/notice/notice.css",
+  "ui/badge/badge.css",
+  "ui/separator/separator.css",
   "ui/dialog/dialog.css",
   "primitives/overlays.css",
   "ui/tooltip/tooltip.css",

@@ -126,24 +126,25 @@ describe("a Notice's ways out", () => {
 });
 
 describe("a Notice's surface", () => {
-  /** The inline surface: the overlay's border and corner scale, a ground in the page, no lift. */
-  const INLINE: [string, string][] = [
-    ["background", "var(--surface-raised)"],
+  /** The notice family's box (#2912): the raised ground in the page, the cards' corner, no lift. */
+  const BOX: [string, string][] = [
+    ["background-color", "var(--surface-raised)"],
     ["color", "var(--text-primary)"],
-    ["border-radius", "var(--radius-md)"],
+    ["border-radius", "var(--radius-lg)"],
   ];
+  const boxOf = (line: HTMLElement) => line.closest('[data-scope="notice"]') as HTMLElement;
 
-  it("is the inline surface in a pane, edged in the waiting colour and never lifted", () => {
-    const { container } = render(everyWay("pane", "trouble"));
+  it("is the notice family's box in a pane, edged in the waiting colour and never lifted", () => {
+    const { container } = render(everyWay("pane"));
     const box = container.firstElementChild as HTMLElement;
-    expect(box).toHaveClass("notice-pane-box", "ui-inline-surface", "ui-inline-surface-waiting");
-    for (const [name, value] of INLINE) expect(drawnWith(box, name), name).toBe(value);
-    expect(drawnWith(box, "border")).toBe("1px solid var(--border-subtle)");
-    expect(drawnWith(box, "border-color")).toBe("var(--state-waiting)");
+    expect(box).toHaveAttribute("data-scope", "notice");
+    expect(box).toHaveAttribute("data-placement", "pane");
+    for (const [name, value] of BOX) expect(drawnWith(box, name), name).toBe(value);
+    expect(drawnWith(box, "border")).toBe("1px solid var(--state-waiting)");
     expect(drawnWith(box, "box-shadow")).toBeUndefined();
   });
 
-  it("is the inline surface where it stands alone, and the danger ground for trouble", () => {
+  it("is the same box where it stands alone, edged in the hairline, and the danger ground for trouble", () => {
     render(
       <>
         {everyWay("inbox")}
@@ -152,18 +153,22 @@ describe("a Notice's surface", () => {
         </Notice>
       </>,
     );
-    const news = screen.getByRole("status", { name: "Every way" });
-    expect(news).toHaveClass("ui-inline-surface");
-    for (const [name, value] of INLINE) expect(drawnWith(news, name), name).toBe(value);
-    const trouble = screen.getByRole("status", { name: "Trouble" });
-    expect(trouble).toHaveClass("ui-inline-surface", "ui-inline-surface-trouble");
-    expect(drawnWith(trouble, "background")).toBe("var(--danger-surface)");
+    const news = boxOf(screen.getByRole("status", { name: "Every way" }));
+    expect(news).toHaveAttribute("data-placement", "alone");
+    for (const [name, value] of BOX) expect(drawnWith(news, name), name).toBe(value);
+    expect(drawnWith(news, "border-color")).toBe("var(--border-subtle)");
+    const trouble = boxOf(screen.getByRole("status", { name: "Trouble" }));
+    expect(trouble).toHaveAttribute("data-variant", "trouble");
+    expect(drawnWith(trouble, "background-color")).toBe("var(--danger-surface)");
     expect(drawnWith(trouble, "color")).toBe("var(--danger-text)");
   });
 
   it("is the list's row in the Inbox, not a box of its own", async () => {
     render(<NoticeList>{everyWay("inbox")}</NoticeList>);
     await waitFor(() => screen.getByRole("status", { name: "Every way" }));
-    expect(screen.getByRole("status", { name: "Every way" })).not.toHaveClass("ui-inline-surface");
+    const row = boxOf(screen.getByRole("status", { name: "Every way" }));
+    expect(row).toHaveAttribute("data-placement", "inbox");
+    expect(drawnWith(row, "border-width")).toBe("0");
+    expect(drawnWith(row, "background-color")).toBe("transparent");
   });
 });

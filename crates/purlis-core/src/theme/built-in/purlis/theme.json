@@ -59,7 +59,9 @@
     "tooltip.root.corner-radius": 8,
     "tooltip.root.border-width": 0,
     "dialog.root.border-width": 0,
-    "popover.root.border-width": 0
+    "popover.root.border-width": 0,
+    "card.root.fill": "surface.base",
+    "card.root.border-width": 0
   },
   "appearances": [
     {

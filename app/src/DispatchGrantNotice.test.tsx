@@ -171,7 +171,9 @@ describe("the dispatch grant Notice", () => {
     expect(screen.getByText(/cut: purlis shows the start of it/)).toBeInTheDocument();
     const line = screen.getByText(/wants to dispatch to devops/);
     expect(line).toHaveTextContent("Its devops chat would start on profile claude-work.");
-    expect(line.closest(".notice-says")?.querySelector(".persona-mark")).not.toBeNull();
+    expect(
+      line.closest("[data-scope=notice][data-part=message]")?.querySelector(".persona-mark"),
+    ).not.toBeNull();
   });
 
   it("says no task name or profile where the core holds none", async () => {
@@ -472,11 +474,12 @@ describe("the dispatch grant Notice", () => {
     expect(notice).not.toContainElement(access);
     // The shape the stylesheet's rules, and `pane-notices.e2e.ts`, are written against: under
     // the line, one block for the boxes and the access line, then the brief's.
-    const under = notice.parentElement?.querySelector(".notice-under-pane");
+    const under = notice.parentElement?.querySelector("[data-scope=notice][data-part=under]");
     expect([...(under?.children ?? [])].map((one) => one.className)).toEqual([
       "dispatch-also",
-      "block-report ui-inline-surface",
+      "block-report",
     ]);
+    expect(under?.children[1]).toHaveAttribute("data-scope", "card");
     expect(boxes).toHaveClass("ui-choice-checks");
     expect(boxes.parentElement).toHaveClass("dispatch-also");
     expect(access).toHaveClass("dispatch-works-with");
@@ -926,7 +929,7 @@ describe("the dispatch grant Notice, for a task that works in a workspace", () =
     for (const answer of answers) expect(after(answer, where())).toBe(true);
     expect(after(where(), brief)).toBe(true);
     // In the Notice's own box under its line, so it is as wide as the Notice and no wider.
-    expect(where().closest(".notice-under-pane")).not.toBeNull();
+    expect(where().closest("[data-scope=notice][data-part=under]")).not.toBeNull();
   });
 
   it("says an Allow at the project's root holds in any workspace, on the sentence and on the two wider answers", async () => {

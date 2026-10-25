@@ -102,6 +102,11 @@ export default tseslint.config(
       // A tablist is the tabs family's, on React Aria, since #3042.
       "purlis/tabs-family": "error",
       "purlis/titlebar-family": "error",
+      // The card, notice, badge and count, and separator families have moved (#2912).
+      "purlis/card-family": "error",
+      "purlis/notice-family": "error",
+      "purlis/badge-family": "error",
+      "purlis/separator-family": "error",
     },
   },
   // **The old field wrapper's last wearers** (#3129): a settings row's select and its slider,

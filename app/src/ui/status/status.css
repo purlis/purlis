@@ -56,7 +56,7 @@ footer[data-scope="status-bar"] {
 [data-scope="status-bar"][data-part="separator"] {
   flex: none;
   align-self: stretch;
-  inline-size: 1px;
+  inline-size: var(--separator-width);
   background-color: var(--border-subtle);
 }
 

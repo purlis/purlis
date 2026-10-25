@@ -60,6 +60,9 @@
  * - `purlis/titlebar-family` (error: the title bar's workspaces are a family, #2916): the
  *   workspace strip's old classes (`workspaces`, `workspaces-strip`, `workspace`, `plane-root`,
  *   `workspace-name`, `workspace-mark`) and `data-scope="titlebar"` by hand.
+ * - `purlis/card-family`, `purlis/notice-family`, `purlis/badge-family` and
+ *   `purlis/separator-family` (errors: these families have moved, #2912): the same, and a raw
+ *   `<hr>`, which is the separator family's `Separator` (`ui/separator/Separator`).
  *
  * The primitives library itself is refused outside `src/ui` by `no-restricted-imports`, in
  * `eslint.config.js`: one wrapper per primitive, and screens never import it.
@@ -647,6 +650,44 @@ const titlebarFamily = moved({
     "the title bar's workspaces: draw them as `<WorkspaceChip>` and `<PinnedStrip>` from `ui/titlebar/TitleBarWorkspaces`, and a switcher's parts from `ui/titlebar/Switcher` (#2916).",
 });
 
+const cardFamily = moved({
+  description: "A box one step off its surface is the shared Card family",
+  scopes: ["card"],
+  classes: ["ui-inline-surface", "ui-inline-surface-*"],
+  message: 'a card: draw it as `<Card>` (an ask as `variant="ask"`) from `ui/card/Card` (#2912).',
+});
+
+const noticeFamily = moved({
+  description: "A Notice is drawn by the shared notice family",
+  scopes: ["notice", "notice-list", "notice-row"],
+  classes: [
+    "notice",
+    "notice-*",
+    "pane-notice-row",
+    "pane-notice-row-*",
+    "pane-notices",
+    "window-notices",
+  ],
+  message:
+    "a Notice: draw it as `<Notice>` (`src/Notice.tsx`), which draws through `ui/notice/Notice` (#2912).",
+});
+
+const badgeFamily = moved({
+  description: "A badge or a count is the shared badge and count family",
+  scopes: ["badge", "count"],
+  classes: ["ui-setting-badge", "count-pill", "count-pill-*", "show-more-needs", "activity-said"],
+  message:
+    "a badge or a count: draw it as `<Badge>`, `<Count>` or `<CountGroup>` from `ui/badge/Badge` (#2912).",
+});
+
+const separatorFamily = moved({
+  description: "A line between two groups is the shared Separator family",
+  scopes: ["separator"],
+  classes: [],
+  elements: ["hr"],
+  message: "a separator: draw it as `<Separator>` from `ui/separator/Separator` (#2912).",
+});
+
 export const purlisUi = {
   meta: { name: "purlis-ui" },
   rules: {
@@ -666,5 +707,9 @@ export const purlisUi = {
     "list-family": listFamily,
     "tabs-family": tabsFamily,
     "titlebar-family": titlebarFamily,
+    "card-family": cardFamily,
+    "notice-family": noticeFamily,
+    "badge-family": badgeFamily,
+    "separator-family": separatorFamily,
   },
 };

@@ -738,10 +738,10 @@ describe("one form for Shared and Local (SE-18)", () => {
     const group = screen.getByRole("region", { name: "Harness & profiles" });
     expect(within(group).getAllByText(/Kept in charter\.local\.toml/)).toHaveLength(1);
     expect(
-      within(rowOf("Default harness")).getByText("Team", { selector: ".ui-setting-badge" }),
+      within(rowOf("Default harness")).getByText("Team", { selector: "[data-scope=badge]" }),
     ).toBeVisible();
     expect(
-      within(rowOf("Default profile")).queryByText("Team", { selector: ".ui-setting-badge" }),
+      within(rowOf("Default profile")).queryByText("Team", { selector: "[data-scope=badge]" }),
     ).toBeNull();
   });
 
@@ -794,7 +794,7 @@ describe("one form for Shared and Local (SE-18)", () => {
     expect(screen.getByLabelText("Mode")).toHaveValue("push");
     // Now kept elsewhere than its group keeps its values: badged with where.
     expect(
-      within(rowOf("Mode")).getByText("This machine", { selector: ".ui-setting-badge" }),
+      within(rowOf("Mode")).getByText("This machine", { selector: "[data-scope=badge]" }),
     ).toBeVisible();
   });
 
@@ -871,7 +871,7 @@ describe("one form for Shared and Local (SE-18)", () => {
     // Kept where its group keeps its values: no badge.
     expect(
       within(rowOf("Default profile")).queryByText(/Team|This machine/, {
-        selector: ".ui-setting-badge",
+        selector: "[data-scope=badge]",
       }),
     ).toBeNull();
     expect(screen.getByLabelText("Default profile")).not.toHaveAccessibleDescription(/overrides/);
@@ -903,7 +903,7 @@ describe("one form for Shared and Local (SE-18)", () => {
 
     expect(screen.getByLabelText("Mode")).toHaveValue("pr");
     const badge = within(rowOf("Mode")).getByText("This machine", {
-      selector: ".ui-setting-badge",
+      selector: "[data-scope=badge]",
     });
     expect(screen.getByLabelText("Mode")).toHaveAccessibleDescription(
       /charter\.toml has push, which this overrides/,
@@ -923,7 +923,7 @@ describe("one form for Shared and Local (SE-18)", () => {
     });
     await waitFor(() => expect(screen.getByLabelText("Mode")).toHaveValue("push"));
     expect(
-      within(rowOf("Mode")).queryByText("This machine", { selector: ".ui-setting-badge" }),
+      within(rowOf("Mode")).queryByText("This machine", { selector: "[data-scope=badge]" }),
     ).toBeNull();
     expect(screen.getByLabelText("Mode")).toHaveAccessibleDescription(/From charter\.toml/);
   });
@@ -954,7 +954,7 @@ describe("one form for Shared and Local (SE-18)", () => {
     await userEvent.click(within(menu).getByRole("menuitemradio", { name: /^This machine/ }));
     expect(sent).toEqual([]);
     expect(
-      within(rowOf("Target branch")).getByText("This machine", { selector: ".ui-setting-badge" }),
+      within(rowOf("Target branch")).getByText("This machine", { selector: "[data-scope=badge]" }),
     ).toBeVisible();
     await userEvent.type(screen.getByLabelText("Target branch"), "trunk");
     await userEvent.tab();
