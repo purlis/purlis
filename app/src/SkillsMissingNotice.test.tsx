@@ -17,6 +17,7 @@ const MISSING = {
   missing: ["superpowers:tdd", "langfuse"],
   no_built_in: ["purlis:gone"],
   broken: [],
+  by_a_repo: [],
 };
 
 describe("a chat's missing skills", () => {
@@ -80,9 +81,42 @@ describe("a chat's missing skills", () => {
             why: "not a skill: its SKILL.md names no `description`",
           },
         ],
+        by_a_repo: [],
       }),
     ).toBe(
       "This chat started without 1 skill that could not be loaded: half (project), not a skill: its SKILL.md names no `description`.",
+    );
+  });
+
+  it("says each skill the repo the chat works in leaves out, with why (SK-53)", () => {
+    expect(
+      missingSays("This chat", {
+        persona: null,
+        missing: [],
+        no_built_in: [],
+        broken: [],
+        by_a_repo: [
+          {
+            name: "review",
+            level: "workspace",
+            local: false,
+            label: "workspace",
+            why: "hidden by the repo skill of this name",
+          },
+          {
+            name: "ship",
+            level: "workspace",
+            local: false,
+            label: "workspace",
+            why: "purlis could not read the skills folder of web whole, so a copy of this skill may be there, and a chat in that repo would get that one",
+          },
+        ],
+      }),
+    ).toBe(
+      "This chat started without 2 skills because of the repo it works in: " +
+        "review (workspace), hidden by the repo skill of this name; " +
+        "ship (workspace), purlis could not read the skills folder of web whole, so a copy of " +
+        "this skill may be there, and a chat in that repo would get that one.",
     );
   });
 
@@ -96,6 +130,7 @@ describe("a chat's missing skills", () => {
           broken: [
             { name: "half", level: "project", local: false, label: "project", why: "not a skill" },
           ],
+          by_a_repo: [],
         };
       return null;
     });

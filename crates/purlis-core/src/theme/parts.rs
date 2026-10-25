@@ -74,9 +74,21 @@ use super::tint;
 use super::vocabulary::{PLATFORM, TOKENS};
 use super::{Complaint, ResolvedTheme, stringify};
 
-/// **The manifest's version**: it grows when a family, a part, a variant or a property is added,
-/// and never takes one away.
+/// **The manifest's version: the last one a release shipped.** It grows once per release that adds
+/// a family, a part, a variant, a state or a property, and the manifest never takes one away
+/// (operator ruling 2026-10-25: one version per release, not one per pull request). A pull request
+/// never changes it: what it adds is `since:` [`NEXT`], and the release step
+/// (`node tools/theme-parts-release.mjs`, `docs/updating.md`) turns every [`NEXT`] into this
+/// version plus one, raises this, and pins the new version's digest.
 pub const VERSION: u32 = 12;
+
+/// **The version what is added since the last release comes in**: a pull request that adds a
+/// family, a part, a variant, a state or a property gives it `since: NEXT` (written
+/// `super::NEXT` in a family's own file, and `parts::NEXT` in a test; never imported). It is a
+/// marker: the release step replaces every one written in code with the number, and refuses a
+/// stable tag while one is left. `purlis theme parts` lists such an addition with `since` one
+/// above `version`, which is how a reader tells one no release has shipped yet.
+pub const NEXT: u32 = VERSION + 1;
 
 /// The least height a control keeps, in px at the default text size: WCAG 2.2's target size.
 pub const LEAST_TARGET: f64 = 24.0;
@@ -3387,10 +3399,20 @@ fn bound_json(property: Prop) -> Value {
 /// **The closed manifest as `purlis theme parts` prints it**: the grammar, the states with the
 /// attribute each is keyed on, the properties with their bounds and whether a state may set
 /// them, and every family with its parts and variants, each with its description and the
-/// manifest version it came in.
+/// manifest version it came in. What no release has shipped yet is in it, with `since` [`NEXT`].
 pub fn manifest_json() -> Value {
+    // `VERSION + 1` and not the marker itself, which the release step replaces where it is
+    // written.
+    manifest_as_of(VERSION + 1)
+}
+
+/// **The manifest as it stood at `version`**: only what came in at that version or before. As of
+/// [`VERSION`] it is what the last release shipped, which a test holds to that version's digest,
+/// so an unreleased addition never changes what a released theme was written against.
+pub fn manifest_as_of(version: u32) -> Value {
     let states: Vec<Value> = STATES
         .iter()
+        .filter(|state| state.since() <= version)
         .map(|state| {
             json!({
                 "name": state.name(),
@@ -3402,6 +3424,7 @@ pub fn manifest_json() -> Value {
         .collect();
     let properties: Vec<Value> = PROPERTIES
         .iter()
+        .filter(|property| property.since() <= version)
         .map(|property| {
             json!({
                 "name": property.name(),
@@ -3415,19 +3438,20 @@ pub fn manifest_json() -> Value {
         .collect();
     let families: Vec<Value> = MANIFEST
         .iter()
+        .filter(|family| family.since <= version)
         .map(|family| {
             json!({
                 "name": family.name,
                 "description": family.description,
                 "since": family.since,
                 "focused": family.focused,
-                "states": family.states.iter().map(|state| state.name()).collect::<Vec<_>>(),
-                "parts": family.parts.iter().map(|part| {
+                "states": family.states.iter().filter(|state| state.since() <= version).map(|state| state.name()).collect::<Vec<_>>(),
+                "parts": family.parts.iter().filter(|part| part.since <= version).map(|part| {
                     let mut said = json!({
                         "name": part.name,
                         "description": part.description,
                         "since": part.since,
-                        "properties": part.properties.iter().map(|p| p.name()).collect::<Vec<_>>(),
+                        "properties": part.properties.iter().filter(|p| p.since() <= version).map(|p| p.name()).collect::<Vec<_>>(),
                     });
                     // Only what a family has that the first did not, so the button's entry
                     // reads as it did at version 2.
@@ -3443,7 +3467,7 @@ pub fn manifest_json() -> Value {
                     }
                     said
                 }).collect::<Vec<_>>(),
-                "variants": family.variants.iter().map(|variant| json!({
+                "variants": family.variants.iter().filter(|variant| variant.since <= version).map(|variant| json!({
                     "name": variant.name,
                     "description": variant.description,
                     "since": variant.since,
@@ -3462,6 +3486,31 @@ pub fn manifest_json() -> Value {
         "properties": properties,
         "families": families,
     })
+}
+
+/// **Whether the manifest holds anything no release has shipped yet**: a family, a part, a
+/// variant, a state or a property `since` [`NEXT`].
+pub fn has_unreleased() -> bool {
+    STATES.iter().any(|state| state.since() > VERSION)
+        || PROPERTIES.iter().any(|property| property.since() > VERSION)
+        || MANIFEST.iter().any(|family| {
+            family.since > VERSION
+                || family.parts.iter().any(|part| part.since > VERSION)
+                || family
+                    .variants
+                    .iter()
+                    .any(|variant| variant.since > VERSION)
+        })
+}
+
+/// The manifest's version as the schema says it: the last release's, and what has been added
+/// since, when there is any.
+fn version_said() -> String {
+    if has_unreleased() {
+        format!("{VERSION}, plus unreleased additions marked since {NEXT}")
+    } else {
+        VERSION.to_string()
+    }
 }
 
 /// **The schema of a theme's `parts` block**: every key the manifest has, each with the schema
@@ -3511,7 +3560,7 @@ pub(super) fn schema() -> Value {
         }
     }
     json!({
-        "description": format!("Component parts (manifest version {VERSION}): keys <family>.<part>[.<variant>][.<state>].<property>, the state at rest implied. A property not named is the family default. Inside a state only fill, text, border-colour and shadow may be set, and a tab's flare and hover inset: a state never changes a part's size. `purlis theme parts` lists every family, part, state and property with its bounds."),
+        "description": format!("Component parts (manifest version {}): keys <family>.<part>[.<variant>][.<state>].<property>, the state at rest implied. A property not named is the family default. Inside a state only fill, text, border-colour and shadow may be set, and a tab's flare and hover inset: a state never changes a part's size. `purlis theme parts` lists every family, part, state and property with its bounds.", version_said()),
         "type": "object",
         "additionalProperties": false,
         "properties": keys,

@@ -114,13 +114,26 @@ async function draw(
       shape.append(document.createElementNS("http://www.w3.org/2000/svg", "svg"));
       shown.append(shape, el("span", "word", state));
       crumbs.append(shown);
-      // Brief (`BriefButton`): an icon button, an item of the line and not of the breadcrumb.
+      // Brief (`BriefButton`): an icon button, an item of the line and not of the breadcrumb,
+      // drawn as the button family draws a small ghost icon button (#3129).
       const brief = el("button", "pane-brief");
       brief.dataset.drawn = "pane-crumbs.e2e";
+      Object.assign(brief.dataset, {
+        scope: "button",
+        part: "root",
+        variant: "ghost",
+        size: "sm",
+        iconOnly: "",
+      });
       brief.setAttribute("type", "button");
       brief.setAttribute("aria-label", `Brief of ${path[path.length - 1]}`);
       brief.tabIndex = 0;
-      brief.append(document.createElementNS("http://www.w3.org/2000/svg", "svg"));
+      const icon = el("span", "");
+      Object.assign(icon.dataset, { scope: "button", part: "icon" });
+      const mark = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      mark.setAttribute("class", "lucide");
+      icon.append(mark);
+      brief.append(icon);
       line.prepend(crumbs, brief);
       return true;
     },
@@ -145,12 +158,22 @@ async function drawEnds(pane: number): Promise<boolean> {
     const group = document.createElement("span");
     group.className = "pane-task-ends";
     group.dataset.drawn = "pane-crumbs.e2e";
+    // Each a small button of the family, as `TaskEnds` draws it (#3129).
     for (const words of ["Stop", "Close now"]) {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "task-end";
+      Object.assign(button.dataset, {
+        scope: "button",
+        part: "root",
+        variant: "secondary",
+        size: "sm",
+      });
       button.tabIndex = 0;
-      button.textContent = words;
+      const label = document.createElement("span");
+      Object.assign(label.dataset, { scope: "button", part: "label" });
+      label.textContent = words;
+      button.append(label);
       group.append(button);
     }
     // After Brief, where a pane draws them (#1494).
@@ -483,14 +506,14 @@ describe("a pane's breadcrumb, while its tab shows a task", () => {
     // With room to spare nothing is cut: every name and the state are whole.
     expect(seen.names.map((name) => name.cut)).toEqual([false, false]);
     expect(seen.wordCut).toBe(false);
-    // Brief is whole too: right after the breadcrumb, on its row, no taller than it, and wide
-    // enough to press.
+    // Brief is whole too: right after the breadcrumb, on its row, a small button of the family
+    // (#3129), never taller than the line, and wide enough to press.
     const [crumbs, brief] = [seen.crumbs as Box, seen.brief as Box];
     check("Brief was not drawn", seen.brief !== null, "is", true);
     check("Brief is before the breadcrumb", brief.left, "atLeast", crumbs.right - 1);
     check("Brief is cut", brief.width, "atLeast", seen.briefNeeds - 1);
     check("Brief is too small to press", brief.width, "atLeast", seen.rem);
-    check("Brief is taller than the breadcrumb", brief.height, "atMost", crumbs.height + 1);
+    check("Brief is taller than the line", brief.height, "atMost", (seen.line as Box).height + 1);
   });
 
   // Each narrow pane twice: with the controls a pane showing a task draws (the two splits),
@@ -673,10 +696,18 @@ describe("a pane's breadcrumb, while its tab shows a task", () => {
       says.className = "task-end-says";
       says.textContent = "Stop live check talk and get its report?";
       confirm.append(says);
-      for (const words of ["Keep", "Stop it"]) {
+      // Keep and the answer, buttons of the family as `TaskEndConfirm` draws them (#3129).
+      for (const [words, variant] of [
+        ["Keep", "secondary"],
+        ["Stop it", "danger"],
+      ]) {
         const button = document.createElement("button");
         button.type = "button";
-        button.textContent = words;
+        Object.assign(button.dataset, { scope: "button", part: "root", variant, size: "md" });
+        const label = document.createElement("span");
+        Object.assign(label.dataset, { scope: "button", part: "label" });
+        label.textContent = words;
+        button.append(label);
         confirm.append(button);
       }
       group.append(confirm);

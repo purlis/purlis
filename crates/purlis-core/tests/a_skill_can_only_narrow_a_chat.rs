@@ -263,6 +263,7 @@ fn nothing_is_handed_through_a_link_and_only_the_top_skill_md_is_the_skills() {
         Some(&here.plugin.join("skills")),
         Harness::ClaudeCode,
         &env,
+        None,
     )
     .expect("said");
     let mut broken: Vec<(String, String)> = said
@@ -318,6 +319,7 @@ fn a_skill_whose_frontmatter_purlis_cannot_read_is_handed_to_no_chat_and_said() 
         Some(&here.plugin.join("skills")),
         Harness::ClaudeCode,
         &env,
+        None,
     )
     .expect("said");
     assert_eq!(said.broken.len(), 1, "{said:?}");
@@ -457,6 +459,7 @@ fn a_skill_a_chat_would_have_loaded_that_cannot_be_is_said_with_its_level_and_wh
         Some(&here.plugin.join("skills")),
         Harness::ClaudeCode,
         &env,
+        None,
     )
     .expect("said");
     assert_eq!(
@@ -481,6 +484,7 @@ fn a_skill_a_chat_would_have_loaded_that_cannot_be_is_said_with_its_level_and_wh
         Some(&here.plugin.join("skills")),
         Harness::ClaudeCode,
         &env,
+        None,
     );
     assert_eq!(in_ops, None);
 }

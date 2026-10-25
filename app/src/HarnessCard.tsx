@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { HarnessGlance } from "./bindings";
-import { Tooltip } from "./ui/tooltip/Tooltip";
+import { Button } from "./ui/button/Button";
 
 /**
  * **A harness's capability card, at a glance** (HP-19, W10, ADR 0072 §3): labelled *What
@@ -43,9 +43,10 @@ export function HarnessSummary({ glance }: { glance: HarnessGlance }) {
 }
 
 /**
- * The harness in a chat's header, by its product's name, with its card one press away. Its
- * accessible name is the card's label; its tooltip is the card's lines, and beside an
- * `aria-label` a `title` is what a screen reader reads as the button's description.
+ * The harness in a chat's header, by its product's name, with its card one press away: a ghost
+ * button of the family, small as the line's other chips are (#3129). Its accessible name is the
+ * card's label; its tooltip is the card's lines, which a screen reader hears as the button's
+ * description.
  */
 export function HarnessChip({
   glance,
@@ -56,17 +57,15 @@ export function HarnessChip({
   onOpen: () => void;
 }) {
   return (
-    <Tooltip tip={glanceSaid(glance)}>
-      <button
-        type="button"
-        className="pane-harness"
-        // In the tab sequence, said out loud (`docs/ui-primitives.md`).
-        tabIndex={0}
-        aria-label={glance.label}
-        onClick={onOpen}
-      >
-        {glance.title}
-      </button>
-    </Tooltip>
+    <Button
+      variant="ghost"
+      size="sm"
+      className="pane-harness"
+      tooltip={glanceSaid(glance)}
+      aria-label={glance.label}
+      onPress={onOpen}
+    >
+      {glance.title}
+    </Button>
   );
 }

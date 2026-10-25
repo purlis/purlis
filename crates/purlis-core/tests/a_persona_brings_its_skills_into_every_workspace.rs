@@ -254,6 +254,7 @@ fn a_harness_skill_the_persona_names_and_this_machine_lacks_is_said_on_the_tab()
             Some(&here.plugin.join("skills")),
             harness,
             &env,
+            None,
         )
     };
 
@@ -263,6 +264,7 @@ fn a_harness_skill_the_persona_names_and_this_machine_lacks_is_said_on_the_tab()
             missing: vec!["superpowers:test-driven-development".to_owned()],
             no_built_in: Vec::new(),
             broken: Vec::new(),
+            by_a_repo: Vec::new(),
         })
     );
 
@@ -312,6 +314,7 @@ fn on_codex_a_plugin_skill_is_found_in_its_cache_and_one_it_cannot_list_raises_n
             Some(&here.plugin.join("skills")),
             Harness::Codex,
             &env,
+            None,
         )
     };
 

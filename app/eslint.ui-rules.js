@@ -266,8 +266,9 @@ function unmoved({ description, message, test }) {
   };
 }
 
-/** The field family's old styling classes: `ui-input`, every `ui-input-*`, `ui-list-field`. */
-const FIELD_CLASS = /(?:^|\s)(ui-input(?:-[\w-]+)?|ui-list-field)(?=\s|$)/;
+/** The field family's old styling classes: `ui-input`, every `ui-input-*`, `ui-list-field`, and
+ *  the old field wrapper, `ui-field` and every `ui-field-*` (#3129), whose box the family draws. */
+const FIELD_CLASS = /(?:^|\s)(ui-input(?:-[\w-]+)?|ui-list-field|ui-field(?:-[\w-]+)?)(?=\s|$)/;
 
 /** The kinds of `<input>` another family draws: a choice, a slider, a colour well. */
 const CHOICES = new Set(["checkbox", "radio", "range", "color", "file"]);
