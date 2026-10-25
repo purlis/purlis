@@ -312,7 +312,7 @@ fn add_with_a_token(ctx: &Ctx, req: &AddRequest, io: &mut dyn Io) -> i32 {
     );
     let made = match made {
         Ok(made) => made,
-        Err(e) => return refuse(io, e.message.into()),
+        Err(e) => return refuse(io, e.said()),
     };
     let where_ = if req.share {
         "shared — commit vaults.json"
@@ -360,7 +360,7 @@ fn token_tested(
     let token = match setup::clean_token(&given) {
         Ok(token) => token,
         Err(e) => {
-            io.say(Say::Err(e.message.into()));
+            io.say(Say::Err(e.said()));
             return None;
         }
     };
@@ -443,7 +443,10 @@ fn token_for_a_registered_vault(
     }
     let (op_vault, op_item) = match (onepassword::op_vault(vault), onepassword::op_item(vault)) {
         (Ok(v), Ok(i)) => (v, i),
-        (Err(e), _) | (_, Err(e)) => return refuse(io, e.message),
+        (Err(e), _) | (_, Err(e)) => {
+            io.say(Say::Err(e.said()));
+            return 1;
+        }
     };
     let account = super::config_str(&vault.config, "account")
         .map(|a| a.trim().to_owned())
@@ -482,7 +485,10 @@ fn token_for_a_registered_vault(
     };
     let changed = match setup::change(ctx, &req.name, &sign_in, None, &[]) {
         Ok(changed) => changed,
-        Err(e) => return refuse(io, e.message),
+        Err(e) => {
+            io.say(Say::Err(e.said()));
+            return 1;
+        }
     };
     io.say(Say::Ok(
         format!(
@@ -593,7 +599,7 @@ pub fn add(ctx: &Ctx, req: &AddRequest, io: &mut dyn Io) -> i32 {
             }
             Ok(None) => {}
             Err(e) => {
-                io.say(Say::Err(e.message.into()));
+                io.say(Say::Err(e.said()));
                 return 1;
             }
         }
@@ -601,7 +607,7 @@ pub fn add(ctx: &Ctx, req: &AddRequest, io: &mut dyn Io) -> i32 {
             if let Some(value) = cfg.get(key).and_then(Value::as_str)
                 && let Err(e) = onepassword::not_a_flag(key, &req.name, value)
             {
-                io.say(Say::Err(e.message.into()));
+                io.say(Say::Err(e.said()));
                 return 1;
             }
         }
@@ -633,7 +639,7 @@ pub fn add(ctx: &Ctx, req: &AddRequest, io: &mut dyn Io) -> i32 {
         req.force,
         req.share,
     ) {
-        io.say(Say::Err(e.message.into()));
+        io.say(Say::Err(e.said()));
         return 1;
     }
     if let Some(replaced) = replaced {
@@ -680,7 +686,7 @@ pub fn add(ctx: &Ctx, req: &AddRequest, io: &mut dyn Io) -> i32 {
     let v = match registry::vault(ctx, &req.name) {
         Ok(v) => v,
         Err(e) => {
-            io.say(Say::Err(e.message.into()));
+            io.say(Say::Err(e.said()));
             return 1;
         }
     };
@@ -866,7 +872,7 @@ pub fn list(ctx: &Ctx, io: &mut dyn Io) -> i32 {
     let doc = match registry::load_registry(ctx) {
         Ok(d) => d,
         Err(e) => {
-            io.say(Say::Err(e.message.into()));
+            io.say(Say::Err(e.said()));
             return 1;
         }
     };
@@ -954,7 +960,7 @@ pub fn verify(ctx: &Ctx, name: Option<&str>, io: &mut dyn Io) -> i32 {
         None => match registry::load_registry(ctx) {
             Ok(doc) => registry::vaults(&doc).keys().cloned().collect(),
             Err(e) => {
-                io.say(Say::Err(e.message.into()));
+                io.say(Say::Err(e.said()));
                 return 1;
             }
         },
@@ -1154,7 +1160,7 @@ pub fn remove(ctx: &Ctx, name: &str, io: &mut dyn Io) -> i32 {
             0
         }
         Err(e) => {
-            io.say(Say::Err(e.message.into()));
+            io.say(Say::Err(e.said()));
             1
         }
     }

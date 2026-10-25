@@ -387,7 +387,7 @@ pub fn exec(ctx: &Ctx, req: &Request, io: &mut dyn Io) -> i32 {
     let v = match cmd::provider(ctx, &req.vault) {
         Ok(v) => v,
         Err(e) => {
-            io.say(Say::Err(e.message.into()));
+            io.say(Say::Err(e.said()));
             return 1;
         }
     };
@@ -435,7 +435,7 @@ pub fn exec(ctx: &Ctx, req: &Request, io: &mut dyn Io) -> i32 {
     let env = match child_env(ctx, &req.vault) {
         Ok(env) => env,
         Err(e) => {
-            io.say(Say::Err(e.message.into()));
+            io.say(Say::Err(e.said()));
             return 1;
         }
     };
