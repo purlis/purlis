@@ -91,10 +91,12 @@ pub(super) const POPOVER: Family = Family {
     // A surface is drawn by what it holds: no state of its own.
     states: &[],
     focused: "[data-focus-visible]",
-    words: &[],
+    // The footer's keys in the quiet tier, and each key in its cap on the raised surface
+    // (`popover.css`), read on that cap (#3099).
+    words: &[("footer", "text.quiet"), ("key", "text.secondary")],
     corner_most: None,
     around: &[],
-    fills: &[],
+    fills: &[("key", "surface.raised")],
 };
 
 pub(super) const MENU: Family = Family {

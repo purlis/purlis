@@ -1007,10 +1007,12 @@ pub const MANIFEST: &[Family] = &[
         defaults: tabs_look_in,
         states: &[State::Hover, State::Selected],
         focused: "[data-focus-visible]",
-        words: &[],
+        // Its ×, a faint mark on the tab, and its count, secondary words on the counts' sunken pill
+        // (`App.css`), each read on its own fill (#3099).
+        words: &[("closer", "text.faint"), ("count", "text.secondary")],
         around: &["strip", "layout"],
         corner_most: None,
-        fills: &[],
+        fills: &[("count", "surface.sunken")],
     },
     Family {
         name: "editor",
@@ -1147,6 +1149,10 @@ mod activity;
 #[cfg(test)]
 #[path = "state_words_tests.rs"]
 mod state_words_tests;
+
+#[cfg(test)]
+#[path = "part_fills_tests.rs"]
+mod part_fills_tests;
 
 /// **A field's colours as `app/src/ui/field/field.css` draws them**: no ground and no edge of
 /// its own, its label in the primary tier. Its help's and its error's words are the family's
@@ -2371,15 +2377,20 @@ fn lowest(theme: &ResolvedTheme, family: &Family, fill: &str, front: &str) -> Op
         .map(|ratio| (ratio * 100.0).floor() / 100.0)
 }
 
-/// The floor a part's words or marks are held to: 4.5:1 for words, 3:1 for a mark (an icon, a
-/// select's chevron).
-fn floor_of(part: &Part) -> f64 {
-    if is_mark(part) { 3.0 } else { 4.5 }
+/// **The parts whose words are a mark, not words** (#3099): a tab's ×, and the title bar's ⌄
+/// and pin, each a glyph to be told apart, held at 3:1 (WCAG 1.4.11) in the faint tier
+/// ([`super::check::FAINT`]), as an icon and a select's chevron are.
+const MARK_WORDS: &[(&str, &str)] = &[("tabs", "closer"), ("titlebar", "all"), ("titlebar", "pin")];
+
+/// Whether `part` of `family` draws a mark rather than words: an icon, the chevron of a select
+/// or a combobox, or one of [`MARK_WORDS`].
+fn is_mark(family: &Family, part: &Part) -> bool {
+    matches!(part.name, "icon" | "chevron") || MARK_WORDS.contains(&(family.name, part.name))
 }
 
-/// Whether a part is a mark and not words: an icon, or the chevron of a select or a combobox.
-fn is_mark(part: &Part) -> bool {
-    matches!(part.name, "icon" | "chevron")
+/// The floor a part's words or marks are held to: 4.5:1 for words, 3:1 for a mark.
+fn floor_of(family: &Family, part: &Part) -> f64 {
+    if is_mark(family, part) { 3.0 } else { 4.5 }
 }
 
 /// The value `rules` give `property` of `family`'s root in `variant` at rest, if any sets it:
@@ -2448,11 +2459,15 @@ fn unreadable(
 ) -> Option<(String, Option<f64>)> {
     for (at, part) in family.parts.iter().enumerate() {
         // With more contrast asked for, the reading floors are raised (#2925).
-        let floor = theme.least.floor(floor_of(part));
+        let floor = theme.least.floor(floor_of(family, part));
         if let Some(ratio) = lowest(theme, family, look.grounds[at], look.words[at])
             && ratio < floor
         {
-            let what = if is_mark(part) { "marks" } else { "words" };
+            let what = if is_mark(family, part) {
+                "marks"
+            } else {
+                "words"
+            };
             return Some((
                 format!(
                     "the {}'s {what} contrast {floor}:1 with its fill",

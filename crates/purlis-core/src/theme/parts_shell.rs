@@ -511,11 +511,24 @@ pub(super) const TITLEBAR: Family = Family {
     // What its wrapper marks: under the pointer, the current workspace, the keyboard's focus.
     states: &[State::Hover, State::Selected, State::Focused],
     focused: "[data-focus-visible]",
-    words: &[("count", "state.waiting")],
+    // Each part's words as `titlebar.css` draws them: the count in amber, the crumb secondary,
+    // the ⌄ quiet and a row's pin faint, marks both, and a switcher's row secondary.
+    words: &[
+        ("count", "state.waiting"),
+        ("crumb", "text.secondary"),
+        ("all", "text.quiet"),
+        ("pin", "text.faint"),
+        ("row", "text.secondary"),
+    ],
     corner_most: None,
     around: &[],
-    // The count's pill, the amber wash (`titlebar.css`): its digits are read on it (#3041).
-    fills: &[("count", "wash.warning")],
+    // The count's pill, the amber wash (`titlebar.css`): its digits are read on it (#3041). A
+    // switcher's row and its pin stand on the popover's surface the switcher is drawn on (#3099).
+    fills: &[
+        ("count", "wash.warning"),
+        ("row", "surface.overlay"),
+        ("pin", "surface.overlay"),
+    ],
 };
 
 /// **A chip's colours as `app/src/ui/titlebar/titlebar.css` draws them.** Quiet words with no box
