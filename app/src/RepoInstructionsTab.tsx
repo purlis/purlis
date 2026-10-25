@@ -182,9 +182,10 @@ function isTicked(file: InstructionFile, pressed: ReadonlyMap<string, boolean>):
 }
 
 /**
- * Zero-width characters, the bidirectional controls and the Unicode tag block — the characters
- * `purlis_core::repoinstructions::is_invisible` names. Text the operator approves goes into
- * every chat's briefing, so the preview draws each one as its code point instead of nothing.
+ * Zero-width characters, the bidirectional controls and the Unicode tag block. Text the operator
+ * approves goes into every chat's briefing, so the preview draws each one as its code point
+ * instead of nothing. The window's own list, narrower than the core's one rule
+ * (`purlis_unicode::hidden`), which unticks a file; one rule for both is #3202.
  */
 const INVISIBLE =
   /[\u00AD\u061C\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF\u{E0000}-\u{E007F}]/u;

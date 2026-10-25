@@ -155,7 +155,7 @@ fn named(items: &[&str]) -> String {
 /// `doctor-with-a-claude-config-dir-that-is-not-nfc-normalised` had charter print
 /// `~/.claude-café/` and this binary print `~/.claude-cafe` + U+0301.
 ///
-/// **Why a crate here and generated tables next door.** `crate::tui::tables` is generated
+/// **Why a crate here and generated tables next door.** `purlis_unicode::tables` is generated
 /// from CPython because `unicode-width` *deliberately* deviates from `east_asian_width`, and a
 /// deliberate deviation cannot be carried by a byte-exact differential. NFC has no such
 /// latitude: UAX #15 fixes one answer, `unicode-normalization` implements it and CPython's

@@ -679,7 +679,7 @@ fn a_hostile_member_name_renders_as_exactly_one_row() {
     plane.ok(&["add", "api-2", hostile]);
     let (_, out, _) = plane.change(&["show", "api-2"]);
     assert!(!out.contains('\u{1b}'), "{out:?}");
-    assert!(out.contains("evil\\x1b[31m"), "{out}");
+    assert!(out.contains("evil⟦U+001B⟧[31m"), "{out}");
 }
 
 // ---- committed exactly when the workspace is LIVE -------------------------------------------

@@ -749,13 +749,13 @@ pub const MOST_DECLARED: usize = 32;
 
 /// Whether `path`, a socket's as a repository wrote it, can be said plainly: no longer than a
 /// path is, and with no character that draws as nothing (a control, a zero-width or
-/// direction-changing one: [`crate::shown::invisible`]). It is drawn to a person and named in
+/// direction-changing one: [`purlis_unicode::invisible`]). It is drawn to a person and named in
 /// a question, so one that cannot be is no declaration.
 fn said_plainly(path: &str) -> bool {
     path.len() <= MOST_DECLARED_PATH
         && path
             .chars()
-            .all(|ch| ch == ' ' || !crate::shown::invisible(ch))
+            .all(|ch| ch == ' ' || !purlis_unicode::invisible(ch))
 }
 
 /// What the committed `[sandbox] expects` in `top`, a whole `charter.toml`, declares. Anything

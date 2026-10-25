@@ -239,7 +239,7 @@ mod tests {
     fn a_newline_in_a_refused_name_cannot_forge_a_line_of_the_refusal() {
         let dir = plane();
         let (_code, said) = run(dir.path(), "a\nb", false);
-        assert!(said[0].contains("'a\\x0ab'"), "{said:?}");
+        assert!(said[0].contains("'a⟦U+000A⟧b'"), "{said:?}");
         assert_eq!(said.len(), 1, "one line, not two: {said:?}");
     }
 

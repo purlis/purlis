@@ -26,7 +26,6 @@ use agent_client_protocol::schema::v1::{
     ElicitationScope, EnumOption, MultiSelectItems, StringFormat,
 };
 
-use crate::harness::hooked::drawn_otherwise;
 use crate::harness::model::{
     Action, Ask, Channel, Choice, ChoiceKind, ChoiceScope, Deadline, MayAnswer, Risk, Summary,
 };
@@ -486,7 +485,7 @@ pub fn plain(text: &str, most: usize, lines: bool) -> String {
         .filter_map(|c| match c {
             '\n' | '\u{2028}' | '\u{2029}' if lines => Some('\n'),
             '\n' | '\t' | '\u{2028}' | '\u{2029}' => Some(' '),
-            c if drawn_otherwise(c) => None,
+            c if purlis_unicode::invisible(c) => None,
             c => Some(c),
         })
         .collect();
