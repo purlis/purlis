@@ -277,7 +277,7 @@ describe("a persona with an icon and a colour is drawn with them", () => {
     expect(panel.querySelector(".panel-row svg.lucide-user-round")).toBeNull();
   });
 
-  it("on its own view's tab and heading", async () => {
+  it("on its own view's tab, and on no heading of its view's (#3147)", async () => {
     await opened();
     const panel = await showThePanel("Personas");
 
@@ -287,8 +287,8 @@ describe("a persona with an icon and a colour is drawn with them", () => {
     const tab = within(strip()).getByRole("tab", { selected: true });
     expect(tab.querySelector(".tab-name")).toHaveTextContent(/^devops$/);
     expect(marksIn(tab, "devops")).toEqual([ROCKET_ON_TEAL]);
-    const heading = screen.getByRole("heading", { level: 2, name: "devops" });
-    expect(marksIn(heading, "devops")).toEqual([ROCKET_ON_TEAL]);
+    // The tab is the view's name: the view repeats neither it nor its mark (#3147).
+    expect(screen.queryByRole("heading", { level: 2, name: "devops" })).not.toBeInTheDocument();
   });
 
   it("on its chat's group in the Inbox", async () => {

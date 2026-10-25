@@ -170,7 +170,7 @@ export function CollectionView({
       {collection.entries.map((entry) => (
         <div key={entry.id} className="ui-collection-entry" role="group" aria-label={entry.label}>
           <div className="ui-collection-head">
-            <h4>{entry.label}</h4>
+            <h3>{entry.label}</h3>
             {entry.page !== undefined && reachable(entry.page) && (
               <Button
                 size="sm"
