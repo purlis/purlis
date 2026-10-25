@@ -1924,3 +1924,30 @@ fn the_studio_refuses_what_a_harness_cannot_switch_and_writes_nothing() {
     }
     assert!(!plane.path().join("charter.local.toml").exists());
 }
+
+#[test]
+fn opencode_lists_a_plugin_folder_of_more_names_than_purlis_reads_as_one_it_did_not_read() {
+    // SK-44 (#3133): a project's plugin folder is a chat's to fill; past the most names purlis
+    // reads of one folder, none is read, and the folder is named, saying why.
+    let project = tempfile::tempdir().unwrap();
+    let dir = project.path().join(".opencode/plugin");
+    std::fs::create_dir_all(&dir).unwrap();
+    for n in 0..=MOST_NAMES {
+        std::fs::write(dir.join(format!("p{n}.ts")), "export default {}").unwrap();
+    }
+
+    let got: Vec<(String, String)> = OPENCODE
+        .in_project(project.path())
+        .into_iter()
+        .filter(|it| it.id.starts_with(".opencode/"))
+        .map(|it| (it.id, it.source))
+        .collect();
+
+    assert_eq!(got.len(), 1, "{got:?}");
+    assert_eq!(got[0].0, ".opencode/plugin");
+    assert!(
+        got[0].1.contains(&format!("more than {MOST_NAMES} names")),
+        "{}",
+        got[0].1
+    );
+}

@@ -846,8 +846,11 @@ fn opencode_worktrees(
         let listed: BTreeSet<String> = crate::worktree::list(root, workspace, &repo.name)
             .map(|pieces| pieces.into_iter().map(|piece| piece.piece).collect())
             .unwrap_or_default();
+        let Some(mut names) = folder.names() else {
+            out.push(crowded(harness, &at, &repo.name));
+            continue;
+        };
         let at = format!("{at}{}/", repo.name);
-        let mut names = folder.names();
         names.sort();
         for name in names {
             match folder.child(&name, false) {
@@ -874,6 +877,20 @@ fn unfollowed(harness: &'static str, prefix: &str, name: &str) -> Plugin {
         source: "a link purlis does not follow: the plugins opencode loads through it are not \
                  listed"
             .to_owned(),
+    }
+}
+
+/// A folder opencode reads that holds more than [`MOST_NAMES`], which purlis names and does not
+/// read.
+fn crowded(harness: &'static str, prefix: &str, name: &str) -> Plugin {
+    Plugin {
+        id: format!("{prefix}{name}"),
+        harness,
+        name: name.to_owned(),
+        source: format!(
+            "a folder of more than {MOST_NAMES} names, the most purlis reads of one: the plugins \
+             opencode loads from it are not listed"
+        ),
     }
 }
 
@@ -949,8 +966,11 @@ fn opencode_scripts(
             }
             Child::Absent => continue,
         };
-        let mut files: Vec<String> = scripts
-            .names()
+        let Some(names) = scripts.names() else {
+            out.push(crowded(harness, prefix, folder));
+            continue;
+        };
+        let mut files: Vec<String> = names
             .into_iter()
             .filter(|name| {
                 Path::new(name)
@@ -1008,6 +1028,12 @@ fn read_opened(opened: std::io::Result<std::fs::File>) -> Result<Option<String>,
         .map_err(drop)?;
     Ok(Some(text))
 }
+
+/// **The most names purlis reads of one folder it lists** (SK-44, #3133): a clone's skills
+/// folder and a project's plugin folder are a chat's to fill, and each name read is opened, read
+/// and linted. A folder holding more is read for none of them, and named as one purlis did not
+/// read ([`Folder::names`]).
+const MOST_NAMES: usize = 2000;
 
 /// What a name in a [`Folder`] is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1099,15 +1125,18 @@ impl Folder {
         read_opened(opened.map(std::fs::File::from).map_err(Into::into))
     }
 
-    /// Every name in this folder that is text, in no order.
-    fn names(&self) -> Vec<String> {
+    /// Every name in this folder that is text, in no order: `None` where it holds more than
+    /// [`MOST_NAMES`], read no further than one past them.
+    fn names(&self) -> Option<Vec<String>> {
         let Ok(dir) = rustix::fs::Dir::read_from(&self.0) else {
-            return Vec::new();
+            return Some(Vec::new());
         };
-        dir.filter_map(Result::ok)
-            .filter_map(|entry| entry.file_name().to_str().ok().map(str::to_owned))
-            .filter(|name| name != "." && name != "..")
-            .collect()
+        at_most(
+            dir.filter_map(Result::ok)
+                .map(|entry| entry.file_name().to_bytes().to_vec())
+                .filter(|name| name != b"." && name != b"..")
+                .map(String::from_utf8),
+        )
     }
 }
 
@@ -1164,15 +1193,31 @@ impl Folder {
         read_opened(std::fs::File::open(path))
     }
 
-    fn names(&self) -> Vec<String> {
+    fn names(&self) -> Option<Vec<String>> {
         let Ok(entries) = std::fs::read_dir(&self.0) else {
-            return Vec::new();
+            return Some(Vec::new());
         };
-        entries
-            .filter_map(Result::ok)
-            .filter_map(|entry| entry.file_name().into_string().ok())
-            .collect()
+        at_most(
+            entries
+                .filter_map(Result::ok)
+                .map(|entry| entry.file_name().into_string()),
+        )
     }
+}
+
+/// The names that are text of a folder's `names`, each counted whether it is text or not:
+/// `None` past [`MOST_NAMES`], read no further than one past them.
+fn at_most<E>(names: impl Iterator<Item = Result<String, E>>) -> Option<Vec<String>> {
+    let mut out = Vec::new();
+    for (n, name) in names.enumerate() {
+        if n == MOST_NAMES {
+            return None;
+        }
+        if let Ok(name) = name {
+            out.push(name);
+        }
+    }
+    Some(out)
 }
 
 impl Folder {

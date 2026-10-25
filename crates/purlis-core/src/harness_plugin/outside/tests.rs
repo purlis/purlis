@@ -264,3 +264,83 @@ fn a_repo_skill_whose_folder_is_swapped_for_a_link_after_it_was_found_is_never_l
         "{refused}"
     );
 }
+
+#[test]
+fn a_folder_of_more_names_than_purlis_reads_lists_none_of_its_skills_and_says_so() {
+    // SK-44 (#3133): a clone's skills folder is the chat's to fill, and `purlis skill list`
+    // lints each skill found. Past the most names purlis reads of one folder, it reads none of
+    // them and lists the folder once, saying why.
+    let (_tmp, clone) = a_clone();
+    let dir = clone.join(".claude/skills");
+    for n in 0..crate::harness_plugin::MOST_NAMES {
+        std::fs::write(dir.join(format!("f{n}")), "").unwrap();
+    }
+
+    let found = repo_skills(
+        &CLAUDE_CODE,
+        &Choices::default(),
+        &[clone_at("api", &clone)],
+    );
+
+    assert_eq!(found.len(), 1, "{:?}", rows(&found));
+    assert_eq!(found[0].skill.name, "skills");
+    assert!(
+        found[0].skill.description.contains(&format!(
+            "more than {} names",
+            crate::harness_plugin::MOST_NAMES
+        )),
+        "{}",
+        found[0].skill.description
+    );
+}
+
+#[test]
+fn a_repo_skill_whose_skill_md_is_larger_than_purlis_reads_of_a_skills_file_is_not_listed() {
+    // SK-44 (#3133): one limit for a skill's file, wherever it is read from.
+    let (_tmp, clone) = a_clone();
+    let big = clone.join(".claude/skills/big");
+    std::fs::create_dir_all(&big).unwrap();
+    let pad = "x".repeat(usize::try_from(purlis_skills::MOST_BYTES).unwrap());
+    std::fs::write(
+        big.join("SKILL.md"),
+        format!("---\nname: big\ndescription: Too big.\n---\n\n{pad}\n"),
+    )
+    .unwrap();
+
+    let found = repo_skills(
+        &CLAUDE_CODE,
+        &Choices::default(),
+        &[clone_at("api", &clone)],
+    );
+
+    assert_eq!(
+        rows(&found),
+        [("review", Origin::Repo, "api".to_owned(), true, false)]
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_repo_skill_whose_skill_md_has_a_second_name_is_not_listed() {
+    // SK-44 (#3133): read as every skill's own file is, a hard link reaching past it refused.
+    let (tmp, clone) = a_clone();
+    let elsewhere = tmp.path().join("elsewhere");
+    skill(&elsewhere, "twin", "twin");
+    std::fs::create_dir_all(clone.join(".claude/skills/twin")).unwrap();
+    std::fs::hard_link(
+        elsewhere.join("twin/SKILL.md"),
+        clone.join(".claude/skills/twin/SKILL.md"),
+    )
+    .unwrap();
+
+    let found = repo_skills(
+        &CLAUDE_CODE,
+        &Choices::default(),
+        &[clone_at("api", &clone)],
+    );
+
+    assert_eq!(
+        rows(&found),
+        [("review", Origin::Repo, "api".to_owned(), true, false)]
+    );
+}

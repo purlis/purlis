@@ -991,7 +991,7 @@ fn the_studio_lists_each_harnesss_own_skills_beside_the_projects_and_marks_a_cla
     };
 
     let set = in_the_studio(None, &plane, None, None);
-    let harnesses = harnesses_in_the_studio(&set, &plane, None, &env);
+    let harnesses = harnesses_in_the_studio(&set, &plane, None, &env, &Known::of(&plane));
 
     let titles: Vec<&str> = harnesses.iter().map(|h| h.group.adapter.title()).collect();
     assert_eq!(titles, ["Claude Code", "opencode", "Codex"]);
@@ -1009,7 +1009,7 @@ fn the_studio_lists_each_harnesss_own_skills_beside_the_projects_and_marks_a_cla
             outcome: Outcome::BothLoad,
         }]
     );
-    let rows: Vec<(String, Option<String>)> = outside_rows(on_codex, &plane)
+    let rows: Vec<(String, Option<String>)> = outside_rows(on_codex, &plane, &Known::of(&plane))
         .into_iter()
         .map(|row| (row.name, row.left_out))
         .collect();
@@ -1224,7 +1224,11 @@ fn a_harness_skill_a_persona_names_is_badged_and_marked_where_it_widens_the_chat
     };
     let names = [Reference::Named("wide".to_owned())];
     let mut rows = studio_rows(&set, tmp.path(), &names);
-    badge_named(&mut rows, &[(Harness::ClaudeCode, &outside)], tmp.path());
+    badge_named(
+        &mut rows,
+        &[(Harness::ClaudeCode, &outside)],
+        &Known::of(tmp.path()),
+    );
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].compat.len(), 1);
     assert!(rows[0].compat[0].compat.widens(), "{:?}", rows[0].compat);
@@ -1374,4 +1378,50 @@ fn not_here_of(set: &SkillSet, honours: &Honours) -> Vec<Refusal> {
     set.from_the_plane()
         .filter_map(|effective| handout::of(effective, honours).err())
         .collect()
+}
+
+#[cfg(unix)]
+#[test]
+fn the_lint_reads_no_file_of_a_skill_that_is_a_link_or_has_a_second_name() {
+    // SK-44 (#3133): the lint reads a skill's other files through its held folder, so a script
+    // that is a link, or a hard link, to one outside the skill is never read for the programs it
+    // calls. A plain script beside them still is.
+    let tmp = tempfile::tempdir().unwrap();
+    let plane = tmp.path().join("plane");
+    let review = plane.join("skills/review");
+    std::fs::create_dir_all(&review).unwrap();
+    std::fs::write(plane.join("charter.toml"), "[plane]\n").unwrap();
+    let text = "---\nname: review\ndescription: Reviews a change.\n---\n\nRun the scripts.\n";
+    std::fs::write(review.join("SKILL.md"), text).unwrap();
+    std::fs::write(
+        review.join("plain.sh"),
+        "#!/bin/sh\npurlis-sk44-plain --x\n",
+    )
+    .unwrap();
+    let outside = tmp.path().join("outside");
+    std::fs::create_dir_all(&outside).unwrap();
+    std::fs::write(
+        outside.join("far.sh"),
+        "#!/bin/sh\npurlis-sk44-linked --x\n",
+    )
+    .unwrap();
+    std::fs::write(outside.join("twin.sh"), "#!/bin/sh\npurlis-sk44-twin --x\n").unwrap();
+    std::os::unix::fs::symlink(outside.join("far.sh"), review.join("linked.sh")).unwrap();
+    std::fs::hard_link(outside.join("twin.sh"), review.join("twin.sh")).unwrap();
+
+    let said: Vec<String> = lint(&plane, &verbs::Level::project(), "review", text)
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+
+    assert!(
+        said.iter().any(|line| line.contains("purlis-sk44-plain")),
+        "{said:?}"
+    );
+    assert!(
+        !said
+            .iter()
+            .any(|line| line.contains("purlis-sk44-linked") || line.contains("purlis-sk44-twin")),
+        "{said:?}"
+    );
 }

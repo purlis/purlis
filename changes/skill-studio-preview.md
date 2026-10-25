@@ -89,3 +89,8 @@
 - **A skill source of more than 50 000 files is always refused whole** (Skill studio preview).
   On a busy machine its listing could be read cut short and refused for the wrong reason, and a
   listing whose read failed was taken as complete (#3115).
+- **A repo's skills folder of more than 2000 names is listed once, unread** (Skill studio
+  preview, #3133). The studio and `purlis skill list` name the folder and say none of its skills
+  is read, instead of opening and checking every one; a crowded opencode plugin folder is named
+  the same way. A repo skill whose `SKILL.md` is larger than 256 KiB, or is a hard link to a file
+  elsewhere, is no longer listed, as the project's own already were not.

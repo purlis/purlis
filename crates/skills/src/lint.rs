@@ -174,7 +174,7 @@ const FEWEST_DESCRIPTION: usize = 20;
 pub struct BuiltInLints<'a> {
     /// The namespace a skill names a plane skill by: `skills:<name>`.
     pub namespace: &'a str,
-    /// The names of the plane's skills a reference may name.
+    /// The names of the plane's skills a reference may name, beside the skill's own.
     pub plane: &'a [String],
     /// The names of the built-in skills.
     pub built_in: &'a [String],
@@ -208,7 +208,7 @@ impl SkillLint for BuiltInLints<'_> {
         }
         out.extend(short_description(skill.text));
         out.extend(keys(skill));
-        out.extend(references(skill.text, self));
+        out.extend(references(skill, self));
         out.extend(tools_missing(skill, self.has));
         out
     }
@@ -272,10 +272,17 @@ fn keys(skill: &SkillFiles<'_>) -> Vec<Finding> {
     out
 }
 
-/// Each `<namespace>:<name>` in `text` that names no skill there is, once each: the broken
-/// uses of the one reader of references ([`crate::uses::uses_in`]).
-fn references(text: &str, lints: &BuiltInLints<'_>) -> Vec<Finding> {
-    let plane: std::collections::HashSet<&str> = lints.plane.iter().map(String::as_str).collect();
+/// Each `<namespace>:<name>` in the skill's text that names no skill there is, once each: the
+/// broken uses of the one reader of references ([`crate::uses::uses_in`]). A skill naming itself
+/// names one there is, wherever it is from.
+fn references(skill: &SkillFiles<'_>, lints: &BuiltInLints<'_>) -> Vec<Finding> {
+    let text = skill.text;
+    let plane: std::collections::HashSet<&str> = lints
+        .plane
+        .iter()
+        .map(String::as_str)
+        .chain([skill.name])
+        .collect();
     let built_in: std::collections::HashSet<&str> =
         lints.built_in.iter().map(String::as_str).collect();
     crate::uses::uses_in(text, lints.namespace, &|one| plane.contains(one), &|one| {

@@ -43,15 +43,10 @@ pub fn harness_skills(
         let Some(held) = Folder::open(&dir, true) else {
             continue;
         };
-        for skill in skills_in(&held, &dir, Links::Followed) {
+        // The person's own folder is read as it is, a link an installer left included.
+        for found in skills_in(&held, &dir, Links::Followed, &dir) {
             let owner = plugin.clone().map_or(Owner::You, Owner::Plugin);
-            // The person's own folder is read as it is, a link an installer left included.
-            let root = skill
-                .path
-                .parent()
-                .map(Path::to_path_buf)
-                .unwrap_or_default();
-            let one = outside(adapter, choices, (skill, root), Origin::Harness, owner);
+            let one = outside(adapter, choices, found, Origin::Harness, owner);
             if !out.iter().any(|had| had.id == one.id) {
                 out.push(one);
             }
@@ -76,21 +71,15 @@ pub fn repo_skills(
             let Some(dir) = walk(&top, rel) else {
                 continue;
             };
-            for skill in skills_in(&dir, &clone.path.join(rel), Links::Named) {
+            // A clone is the chat's to write: read from the folder it sits in, the clone's own
+            // folder and every one below opened through held folders (SK-36).
+            let root = clone
+                .path
+                .parent()
+                .map_or_else(|| clone.path.clone(), Path::to_path_buf);
+            for found in skills_in(&dir, &clone.path.join(rel), Links::Named, &root) {
                 let owner = Owner::Repo(clone.name.clone());
-                // A clone is the chat's to write: read from the folder it sits in, the clone's
-                // own folder and every one below opened through held folders (SK-36).
-                let root = clone
-                    .path
-                    .parent()
-                    .map_or_else(|| clone.path.clone(), Path::to_path_buf);
-                out.push(outside(
-                    adapter,
-                    choices,
-                    (skill, root),
-                    Origin::Repo,
-                    owner,
-                ));
+                out.push(outside(adapter, choices, found, Origin::Repo, owner));
             }
         }
     }
@@ -170,33 +159,59 @@ fn walk(top: &Folder, rel: &str) -> Option<Folder> {
 }
 
 /// Every whole skill in `dir`, held open at `shown` (the path a skill's `SKILL.md` is said to be
-/// at), by its folder's name, a link in it taken as `links` says. A folder that is not a whole
-/// skill is not listed: it is no skill the harness loads either.
-fn skills_in(dir: &Folder, shown: &Path, links: Links) -> Vec<Skill> {
-    let mut names = dir.names();
+/// at), by its folder's name, a link in it taken as `links` says, each with the root its
+/// `SKILL.md` is read from: `root` where links are named, its own folder where they are followed.
+/// A folder that is not a whole skill is not listed: it is no skill the harness loads either.
+///
+/// **Each `SKILL.md` is read as every skill's own file is** ([`purlis_skills::read_skill_md`],
+/// SK-44): through folders held from its root, never through a link, refused where it has a
+/// second name or is larger than [`purlis_skills::MOST_BYTES`]. A `dir` of more than
+/// [`super::MOST_NAMES`] names is read for none of them, and listed once by its own name, saying
+/// so.
+fn skills_in(dir: &Folder, shown: &Path, links: Links, root: &Path) -> Vec<(Skill, PathBuf)> {
+    let Some(mut names) = dir.names() else {
+        let name = shown
+            .file_name()
+            .map_or_else(String::new, |name| name.to_string_lossy().into_owned());
+        let skill = Skill {
+            name,
+            description: format!(
+                "A folder of more than {} names, the most purlis reads of one, so none of its \
+                 skills is read here. A chat still finds them.",
+                super::MOST_NAMES
+            ),
+            path: shown.join(purlis_skills::FILE),
+        };
+        return vec![(skill, root.to_path_buf())];
+    };
     names.sort();
     let mut out = Vec::new();
     for name in names {
-        let folder = match dir.child(&name, links == Links::Followed) {
-            Child::Folder(folder) => folder,
+        let path = shown.join(&name).join(purlis_skills::FILE);
+        match dir.child(&name, links == Links::Followed) {
+            Child::Folder(_) => {}
             Child::Link => {
-                out.push(Skill {
+                let skill = Skill {
                     name: name.clone(),
                     description: "A link purlis does not follow, so what it holds is not read \
                                   here. A chat in this repo still follows it."
                         .to_owned(),
-                    path: shown.join(&name).join(purlis_skills::FILE),
-                });
+                    path,
+                };
+                out.push((skill, root.to_path_buf()));
                 continue;
             }
             Child::Absent => continue,
+        }
+        let root = match links {
+            Links::Followed => shown.join(&name),
+            Links::Named => root.to_path_buf(),
         };
-        let Ok(Some(text)) = folder.read(purlis_skills::FILE) else {
+        let Ok(text) = purlis_skills::read_skill_md(&root, &path) else {
             continue;
         };
-        if let Ok(skill) = purlis_skills::parsed(&text, shown.join(&name).join(purlis_skills::FILE))
-        {
-            out.push(skill);
+        if let Ok(skill) = purlis_skills::parsed(&text, path) {
+            out.push((skill, root));
         }
     }
     out

@@ -211,3 +211,24 @@ fn only_the_editor_names_a_key() {
         assert_eq!(finding.shown(), None, "{finding}");
     }
 }
+
+#[test]
+fn a_skill_naming_itself_names_one_there_is_though_the_plane_has_no_skill_of_its_name() {
+    // SK-44 (#3133): the plane's names are worked out once per list, without each skill's own
+    // name in them; a repo skill telling the chat to use itself again is no broken reference.
+    let text = "---\nname: tidy\ndescription: Tidies the repo, then checks it again.\n---\n\n\
+                When done, use skills:tidy again and skills:nowhere.\n";
+    let findings = lints(&[], &[]).findings(&SkillFiles {
+        name: "tidy",
+        text,
+        others: &[],
+        origin: crate::Origin::Repo,
+    });
+    assert_eq!(
+        says(&findings),
+        [
+            "it names skills:nowhere, and this project has no skill nowhere: a chat told to use it \
+          finds none"
+        ]
+    );
+}
