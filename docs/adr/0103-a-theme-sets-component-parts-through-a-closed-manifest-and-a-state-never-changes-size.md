@@ -138,7 +138,8 @@ reaches it.
 
 - A theme can give purlis the shapes of the Figma design, part by part, within bounds that keep
   it readable and keep every control a target.
-- A family joins the manifest with its parts and its defaults, under a new manifest version, and
+- A family joins the manifest with its parts and its defaults, under a new manifest version (the
+  next release's, [amended 2026-10-25](0103/2026-10-25-one-manifest-version-per-release.md)), and
   its wrapper sets `data-scope`, `data-part` and `data-variant`.
 - `purlis theme parts` and the schema are what the theme skill, the gallery and an editor read.
 - The family default is the window's own stylesheet, and a test holds the engine's copy of each
@@ -148,4 +149,4 @@ reaches it.
 
 The amendments to this decision are files of their own in [`0103/`](0103/), one per
 amendment, named `<yyyy-mm-dd>-<slug>.md`. The latest:
-[2026-10-24, the list family joins the manifest](0103/2026-10-24-the-list-family-joins-the-manifest.md).
+[2026-10-25, one manifest version per release](0103/2026-10-25-one-manifest-version-per-release.md).

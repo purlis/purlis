@@ -1037,7 +1037,7 @@ fn the_list_family_default_is_what_its_stylesheet_draws() {
 #[test]
 fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
     let manifest = parts::manifest_json();
-    assert_eq!(manifest["version"], 12);
+    assert_eq!(manifest["version"], parts::VERSION);
     for one in manifest["states"].as_array().unwrap() {
         assert_eq!(one["since"], 1, "{one}");
     }
@@ -1313,8 +1313,10 @@ fn the_schema_completes_every_part_key_and_no_size_inside_a_state() {
     }
 }
 
-/// The digest of `purlis theme parts`' manifest at each version: a change to the manifest is a
-/// new version, with its digest added here.
+/// **The digest of the manifest each release shipped** ([`parts::manifest_as_of`] that version):
+/// what a released theme was written against never changes. Only a release adds a line here, and
+/// the release step writes it (`node tools/theme-parts-release.mjs`); a pull request that adds to
+/// the manifest gives what it adds `since: NEXT` and leaves this alone.
 const MANIFEST_DIGESTS: &[(u32, &str)] = &[
     (
         1,
@@ -1366,21 +1368,152 @@ const MANIFEST_DIGESTS: &[(u32, &str)] = &[
     ),
 ];
 
-#[test]
-fn the_manifest_version_changes_with_the_manifest() {
+fn digest_of(manifest: &Value) -> String {
     use sha2::{Digest, Sha256};
-    let digest = Sha256::digest(parts::manifest_json().to_string().as_bytes());
-    let hex: String = digest.iter().map(|byte| format!("{byte:02x}")).collect();
+    let digest = Sha256::digest(manifest.to_string().as_bytes());
+    digest.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+/// The pin the release step writes: `PURLIS_THEME_PARTS_PIN=1` adds the released version's digest
+/// to [`MANIFEST_DIGESTS`] when it has none.
+fn pin(version: u32, hex: &str) {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/theme/parts_tests.rs");
+    let text = std::fs::read_to_string(path).expect("parts_tests.rs is read");
+    let start = text
+        .find("const MANIFEST_DIGESTS: &[(u32, &str)] = &[")
+        .expect("the digest table");
+    let end = start + text[start..].find("\n];\n").expect("the table's end");
+    let line = format!("\n    (\n        {version},\n        \"{hex}\",\n    ),");
+    let written = format!("{}{line}{}", &text[..end], &text[end..]);
+    std::fs::write(path, written).expect("parts_tests.rs is written");
+}
+
+#[test]
+fn every_released_manifest_keeps_its_digest() {
+    let hex = digest_of(&parts::manifest_as_of(parts::VERSION));
     let pinned = MANIFEST_DIGESTS
         .iter()
         .find(|(version, _)| *version == parts::VERSION)
         .map(|(_, digest)| *digest);
+    if pinned.is_none() && std::env::var_os("PURLIS_THEME_PARTS_PIN").is_some_and(|v| v == "1") {
+        pin(parts::VERSION, &hex);
+        return;
+    }
     assert_eq!(
         pinned,
         Some(hex.as_str()),
-        "the manifest changed: raise parts::VERSION, give what is new `since` that version, and \
-         add the new digest to MANIFEST_DIGESTS"
+        "the manifest version {} shipped changed. A pull request never changes what a release \
+         shipped: give what it adds `since: NEXT` (`super::NEXT` in a family's own file) and leave \
+         parts::VERSION and MANIFEST_DIGESTS alone; only the release step \
+         (`node tools/theme-parts-release.mjs`) raises the version and pins its digest",
+        parts::VERSION
     );
+    // No version is pinned past the last release, and none twice.
+    let mut versions: Vec<u32> = MANIFEST_DIGESTS.iter().map(|(one, _)| *one).collect();
+    assert!(
+        versions.iter().all(|one| *one <= parts::VERSION),
+        "{versions:?}"
+    );
+    versions.dedup();
+    assert_eq!(versions.len(), MANIFEST_DIGESTS.len(), "{versions:?}");
+}
+
+/// Every `since` the manifest says, with what says it.
+fn every_since() -> Vec<(String, u32, u32)> {
+    let mut said = Vec::new();
+    for state in parts::STATES {
+        said.push((format!("state {}", state.name()), state.since(), 1));
+    }
+    for property in parts::PROPERTIES {
+        said.push((format!("property {}", property.name()), property.since(), 1));
+    }
+    for family in parts::MANIFEST {
+        said.push((family.name.to_owned(), family.since, 1));
+        for part in family.parts {
+            let name = format!("{}.{}", family.name, part.name);
+            said.push((name, part.since, family.since));
+        }
+        for variant in family.variants {
+            let name = format!("{}.{}", family.name, variant.name);
+            said.push((name, variant.since, family.since));
+        }
+    }
+    said
+}
+
+#[test]
+fn what_is_unreleased_is_since_next_and_nothing_is_older_than_what_holds_it() {
+    // `VERSION + 1` here, not the marker, which the release step replaces where it is written.
+    let next = parts::VERSION + 1;
+    for (name, since, least) in every_since() {
+        assert!(
+            since <= next,
+            "{name} is since {since}: what no release has shipped is since NEXT ({next})"
+        );
+        assert!(
+            since >= least,
+            "{name} is since {since}, before what holds it ({least})"
+        );
+    }
+    // The manifest as of NEXT is the whole of it, and as of the last release it has no more than
+    // the whole.
+    assert_eq!(parts::manifest_as_of(next), parts::manifest_json());
+    let unreleased = every_since()
+        .iter()
+        .any(|(_, since, _)| *since > parts::VERSION);
+    assert_eq!(parts::has_unreleased(), unreleased);
+    if !unreleased {
+        assert_eq!(
+            parts::manifest_as_of(parts::VERSION),
+            parts::manifest_json()
+        );
+    }
+}
+
+#[test]
+fn an_unreleased_addition_is_listed_but_left_out_of_what_the_release_shipped() {
+    let released = parts::manifest_as_of(parts::VERSION);
+    let all = parts::manifest_json();
+    assert_eq!(released["version"], parts::VERSION);
+    assert_eq!(all["version"], parts::VERSION);
+    // The manifest at an earlier version leaves out what came after it: the button alone at 1,
+    // with none of version 2's variants.
+    let first = parts::manifest_as_of(1);
+    let families = first["families"].as_array().unwrap();
+    assert_eq!(families.len(), 1, "{families:?}");
+    assert_eq!(families[0]["name"], "button");
+    assert!(
+        families[0]["variants"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|one| one["since"] == 1)
+    );
+    assert!(
+        first["properties"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|one| one["since"] == 1)
+    );
+}
+
+#[test]
+fn the_schema_says_the_last_release_and_whether_there_is_more() {
+    let said = schema()["properties"]["parts"]["description"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned();
+    let version = format!("manifest version {}", parts::VERSION);
+    if parts::has_unreleased() {
+        let more = format!(
+            "{version}, plus unreleased additions marked since {}",
+            parts::VERSION + 1
+        );
+        assert!(said.contains(&more), "{said}");
+    } else {
+        assert!(said.contains(&format!("({version})")), "{said}");
+    }
 }
 
 #[test]

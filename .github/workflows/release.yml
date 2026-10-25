@@ -368,6 +368,12 @@ jobs:
       - name: A stable tag has no changelog fragment left to fold
         if: steps.plan.outputs.channel == 'stable'
         run: node tools/changelog-fold.mjs --check
+      # Release prep also gives the component parts manifest its one version for this release
+      # (`node tools/theme-parts-release.mjs`, ADR 0103 amended 2026-10-25). A `since: NEXT` still
+      # there is an addition no version names, so a stable tag is refused on it too.
+      - name: A stable tag has no unreleased theme part left
+        if: steps.plan.outputs.channel == 'stable'
+        run: node tools/theme-parts-release.mjs --check
 
       # Everything a publish needs that a human has to provide, checked BEFORE twenty minutes
       # of building, each failure naming the one thing to do. See docs/updating.md.
