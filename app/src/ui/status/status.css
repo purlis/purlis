@@ -175,8 +175,10 @@ footer[data-scope="status-bar"] {
 }
 
 /* The pill that is news: an update on offer, on the accent's ground. */
+/* Its words and its icon in the accent's words (#3177, the record's lavender on the wash);
+   Purlis Classic keeps the primary words through its parts. */
 [data-scope="status-item"][data-part="root"][data-variant="accent"] {
-  color: var(--text-primary);
+  color: var(--accent-text);
   background-color: var(--accent-surface);
 }
 
@@ -187,7 +189,7 @@ footer[data-scope="status-bar"] {
 }
 
 [data-scope="status-item"][data-part="root"][data-variant="accent"] > [data-part="icon"] {
-  color: var(--accent-base);
+  color: var(--accent-text);
 }
 
 /* ---------------------------------------------------------------------------------------------

@@ -209,6 +209,12 @@
           "minimum": 0,
           "maximum": 10
         },
+        "radius.control": {
+          "description": "Pixels. Purlis Classic's is 4.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 14
+        },
         "radius.lg": {
           "description": "Pixels. Purlis Classic's is 6.",
           "type": "integer",
@@ -354,8 +360,14 @@
               "text.faint",
               "border.subtle",
               "border.strong",
+              "border.control",
               "accent.base",
               "accent.surface",
+              "accent.wash",
+              "accent.text",
+              "accent.fill",
+              "accent.fill-hover",
+              "accent.fill-edge",
               "focus.ring",
               "tab.active",
               "list.selected",
@@ -369,7 +381,7 @@
               "layer.divider"
             ]
           },
-          "maxItems": 122
+          "maxItems": 129
         },
         "hues": {
           "description": "A workspace colour's hue in this theme: the hue of this colour. A workspace's own #rrggbb is always its own hue.",
@@ -6312,10 +6324,31 @@
         "border.strong": {
           "$ref": "#/$defs/colour"
         },
+        "border.control": {
+          "$ref": "#/$defs/colour"
+        },
         "accent.base": {
           "$ref": "#/$defs/colour"
         },
         "accent.surface": {
+          "$ref": "#/$defs/colour"
+        },
+        "accent.wash": {
+          "$ref": "#/$defs/colour"
+        },
+        "accent.text": {
+          "$ref": "#/$defs/colour"
+        },
+        "accent.fill": {
+          "$ref": "#/$defs/colour"
+        },
+        "accent.fill-hover": {
+          "$ref": "#/$defs/colour"
+        },
+        "accent.fill-edge": {
+          "$ref": "#/$defs/colour"
+        },
+        "accent.fill-text": {
           "$ref": "#/$defs/colour"
         },
         "focus.ring": {
@@ -6923,6 +6956,12 @@
           "minimum": 0,
           "maximum": 10
         },
+        "radius.control": {
+          "description": "Pixels. Purlis Classic's is 4.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 14
+        },
         "radius.lg": {
           "description": "Pixels. Purlis Classic's is 6.",
           "type": "integer",
@@ -7396,8 +7435,15 @@
         "text.faint",
         "border.subtle",
         "border.strong",
+        "border.control",
         "accent.base",
         "accent.surface",
+        "accent.wash",
+        "accent.text",
+        "accent.fill",
+        "accent.fill-hover",
+        "accent.fill-edge",
+        "accent.fill-text",
         "focus.ring",
         "tab.active",
         "list.selected",
@@ -7524,8 +7570,15 @@
         "text.faint",
         "border.subtle",
         "border.strong",
+        "border.control",
         "accent.base",
         "accent.surface",
+        "accent.wash",
+        "accent.text",
+        "accent.fill",
+        "accent.fill-hover",
+        "accent.fill-edge",
+        "accent.fill-text",
         "focus.ring",
         "tab.active",
         "list.selected",
@@ -7651,8 +7704,15 @@
         "text.faint",
         "border.subtle",
         "border.strong",
+        "border.control",
         "accent.base",
         "accent.surface",
+        "accent.wash",
+        "accent.text",
+        "accent.fill",
+        "accent.fill-hover",
+        "accent.fill-edge",
+        "accent.fill-text",
         "focus.ring",
         "tab.active",
         "list.selected",
@@ -7789,6 +7849,7 @@
                   "enum": [
                     "radius.sm",
                     "radius.md",
+                    "radius.control",
                     "radius.lg",
                     "radius.xl",
                     "radius.full"
@@ -7816,6 +7877,7 @@
                     "enum": [
                       "radius.sm",
                       "radius.md",
+                      "radius.control",
                       "radius.lg",
                       "radius.xl",
                       "radius.full"
@@ -8005,6 +8067,7 @@
           "enum": [
             "radius.sm",
             "radius.md",
+            "radius.control",
             "radius.lg",
             "radius.xl",
             "radius.full"

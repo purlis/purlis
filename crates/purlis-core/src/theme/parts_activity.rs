@@ -105,8 +105,8 @@ pub(super) const ACTIVITY: Family = Family {
 fn activity_look(_variant: &str, states: &[State]) -> Look {
     if states.contains(&State::Selected) {
         return Look {
-            fill: "accent.surface",
-            text: "accent.base",
+            fill: "accent.wash",
+            text: "accent.text",
             border: TRANSPARENT,
         };
     }

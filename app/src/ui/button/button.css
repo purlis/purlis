@@ -29,8 +29,8 @@
   block-size: var(--size-control);
   padding-block: 0;
   padding-inline: var(--space-4);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-control);
   color: var(--text-primary);
   background-color: var(--control-base);
   font: inherit;
@@ -60,14 +60,19 @@
    Variants.
    --------------------------------------------------------------------------------------------- */
 
+/* **The answer purlis suggests** (#3177): its ground is the accent's fill and its words the
+   fill's, held to 4.5:1 at rest and under the pointer, behind the fill's edge. Purlis fills it in
+   the accent with white words and draws no edge (the operator's ruling of 2026-10-24); Purlis
+   Classic's fill is the accent's surface with the primary words behind the accent, as it always
+   drew. */
 [data-scope="button"][data-part="root"][data-variant="primary"] {
-  border-color: var(--accent-base);
-  color: var(--text-primary);
-  background-color: var(--accent-surface);
+  border-color: var(--accent-fill-edge);
+  color: var(--accent-fill-text);
+  background-color: var(--accent-fill);
 }
 
 [data-scope="button"][data-part="root"][data-variant="primary"][data-hovered]:not([data-disabled]) {
-  background-color: var(--tab-active);
+  background-color: var(--accent-fill-hover);
 }
 
 [data-scope="button"][data-part="root"][data-variant="ghost"] {
@@ -94,7 +99,8 @@
 /* **An answer that grants** (an Allow, an Accept; ADR 0097 §6): as plain as Keep blocked beside
    it, on the control's own ground, so neither is pressed for its weight. It is told apart by its
    edge in the accent and the open lock the family draws before its words, a cue that is not
-   colour. The primary look stays the answer purlis suggests, and is never a grant's. */
+   colour, and its edge is drawn whatever `border.control` is. The primary look, filled in the
+   accent, stays the answer purlis suggests, and is never a grant's. */
 [data-scope="button"][data-part="root"][data-variant="grants"] {
   border-color: var(--accent-base);
 }
@@ -147,6 +153,12 @@
 [data-scope="button"][data-part="root"][data-selected] {
   border-color: var(--accent-base);
   background-color: var(--accent-surface);
+}
+
+/* A pressed toggle in the primary look is drawn on the accent's surface, so its words are the
+   primary words, not the fill's (#3177). */
+[data-scope="button"][data-part="root"][data-variant="primary"][data-selected] {
+  color: var(--text-primary);
 }
 
 [data-scope="button"][data-part="root"][data-selected][data-hovered]:not([data-disabled]) {

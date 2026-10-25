@@ -317,7 +317,7 @@ fn status_look(variant: &str, states: &[State]) -> Look {
         },
         "accent" => Look {
             fill: "accent.surface",
-            text: "text.primary",
+            text: "accent.text",
             border: TRANSPARENT,
         },
         "waiting" => Look {

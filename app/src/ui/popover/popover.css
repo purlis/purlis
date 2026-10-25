@@ -194,7 +194,7 @@
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-strong);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
 }
 
 /* A group named by data (a persona's name) is written as the name is, in the secondary role:

@@ -1108,10 +1108,10 @@ fn every_level_s_theme_is_drawn_with_its_own_tint_recipe() {
     let accent = default_theme().value("accent.base").to_owned();
     let edges = json!({
         "name": "Edges",
-        "tint": { "tokens": ["accent.base", "border.strong"] },
+        "tint": { "tokens": ["accent.base", "border.control"] },
         "appearances": [{
             "id": "dark", "appearance": "dark",
-            "tokens": { "border.strong": tint_hex(&accent, 25.0) }
+            "tokens": { "border.control": tint_hex(&accent, 25.0) }
         }]
     });
     let off = json!({
@@ -1154,10 +1154,10 @@ fn every_level_s_theme_is_drawn_with_its_own_tint_recipe() {
         let shown = drawn(&levels, &places.folders(Some("alpha")), None);
         let theme = shown.theme.expect("a theme is drawn");
         assert_eq!(theme.name, "Edges");
-        assert_eq!(theme.tint.tabs(), ["border.strong", "accent.base"]);
+        assert_eq!(theme.tint.tabs(), ["border.control", "accent.base"]);
         for one in &theme.tint.hues {
             let tint = tinted(&theme, one.name);
-            let apart = [tint.value("accent.base"), tint.value("border.strong")]
+            let apart = [tint.value("accent.base"), tint.value("border.control")]
                 .map(|hex| tint::oklab_of(hex).expect("a colour"));
             assert!(
                 tint::distance(apart[0], apart[1]) >= ALLOW_APART,

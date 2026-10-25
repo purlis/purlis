@@ -504,6 +504,7 @@ fn a_light_wash_reads_in_its_own_hue_on_every_ground_it_is_laid_on() {
         "wash.warning",
         "diff.deleted",
         "diff.inserted",
+        "accent.wash",
     ] {
         let hue = light_rule::oklch_of(&dark.value(wash)[..7]).2;
         for ground in ["surface.base", "surface.raised", "surface.overlay"] {
@@ -526,13 +527,25 @@ fn light_is_dark_reflected_by_its_one_rule() {
     let light = theme.of(Appearance::Light).unwrap();
     // The foundation's deepest colour: what the window is drawn on, behind everything.
     let deepest = light_rule::oklch_of(dark.value("window.background")).0;
-    let kept = ["overlay.scrim", "overlay.shadow", "scrollbar.track"];
+    // A plain control's edge stays none, and the filled primary is drawn as in dark: its white
+    // words hold 4.5:1 on its fill in either (#3177).
+    let kept = [
+        "overlay.scrim",
+        "overlay.shadow",
+        "scrollbar.track",
+        "border.control",
+        "accent.fill",
+        "accent.fill-hover",
+        "accent.fill-edge",
+        "accent.fill-text",
+    ];
     // The washes: a hue laid thin over a ground, which reflected would read as grey (#2924).
     let washes = [
         "danger.wash",
         "wash.warning",
         "diff.deleted",
         "diff.inserted",
+        "accent.wash",
     ];
     // The pairs a reflected colour missed, and the ground it is stepped away from (#2700).
     let stepped = [
@@ -766,4 +779,72 @@ fn purlis_draws_each_workspace_colour_as_these_numbers_and_every_strip_keeps_its
         .map(|(id, name, most, accent, strip)| (*id, *name, *most, accent.as_str(), strip.as_str()))
         .collect();
     assert_eq!(got, want);
+}
+
+// ---------------------------------------------------------------------------------------
+// The Figma pass (#3177): the record's scale, its control size and its filled primary
+// ---------------------------------------------------------------------------------------
+
+/// **The corners the Figma record draws** (R157, R158): 7, 8, 10, 12 and full, in px.
+const SCALE: [f64; 5] = [7.0, 8.0, 10.0, 12.0, 9999.0];
+
+#[test]
+fn every_corner_purlis_names_is_on_the_record_s_scale() {
+    // Its geometry's corners, in every appearance, and every corner its parts set: a theme's
+    // corner off 7, 8, 10, 12 or full is a deviation from the record (#3177, A7).
+    for theme in &purlis().appearances {
+        for (token, value) in &theme.geometry {
+            if token.starts_with("radius.") || *token == "panel.corner-radius" {
+                assert!(SCALE.contains(value), "{} {token} is {value}", theme.id);
+            }
+        }
+    }
+    let parts = document()["parts"].as_object().unwrap().clone();
+    for (key, value) in parts {
+        if key.ends_with(".corner-radius") {
+            let value = value.as_f64().expect("a corner in px");
+            assert!(SCALE.contains(&value), "{key} is {value}");
+        }
+    }
+}
+
+#[test]
+fn every_built_in_draws_one_md_height_and_one_md_corner() {
+    // #3113: an md control is 28 tall in every built-in theme and appearance (the ruling on
+    // #2793; the record's buttons were 26), 24 in compact, and every md family's corner is one
+    // token, `radius.control`: 8 in Purlis (R157, the record's fields and rows), Classic's
+    // `radius.md` in Classic. `app/src/ui/md.test.ts` holds each family's stylesheet to the two.
+    let classic = super::classic();
+    for theme in classic.appearances.iter().chain(&purlis().appearances) {
+        let at = |token: &str| theme.geometry[token];
+        assert_eq!(at("size.control"), 28.0, "{} {}", theme.name, theme.id);
+        assert_eq!(
+            theme.compact["size.control"], 24.0,
+            "{} {}",
+            theme.name, theme.id
+        );
+        let corner = if theme.name == "Purlis" {
+            8.0
+        } else {
+            at("radius.md")
+        };
+        assert_eq!(at("radius.control"), corner, "{} {}", theme.name, theme.id);
+    }
+}
+
+#[test]
+fn the_primary_is_filled_in_the_accent_with_white_words_in_every_appearance() {
+    // The operator's ruling of 2026-10-24 (#3177): Purlis's primary is filled in the accent with
+    // white words, in dark, light and high contrast, its words 4.5:1 on its fill at rest and
+    // under the pointer, and it draws no edge (`accent.fill-edge`, a token and not a part: a
+    // button part is measured at every hue at every launch). Allow keeps its edge and its lock
+    // (`allow_primary_tests`).
+    for theme in &purlis().appearances {
+        assert_eq!(theme.value("accent.fill-text"), "#ffffff", "{}", theme.id);
+        for fill in ["accent.fill", "accent.fill-hover"] {
+            let ratio = light_rule::contrast("#ffffff", theme.value(fill));
+            assert!(ratio >= 4.5, "{} {fill}: {ratio}", theme.id);
+        }
+        assert_eq!(theme.value("accent.fill-edge"), "#00000000", "{}", theme.id);
+    }
 }

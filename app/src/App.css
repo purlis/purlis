@@ -2733,7 +2733,7 @@ button.show-more:focus-visible {
   margin: 0 0 var(--space-3);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-strong);
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
   color: var(--text-secondary);
   overflow-wrap: anywhere;
 }
@@ -5702,7 +5702,7 @@ nav.piece-files-head {
   color: var(--text-muted);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-strong);
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
 }
 
@@ -5871,7 +5871,7 @@ nav.piece-files-head {
   color: var(--text-muted);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-strong);
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
 }
 
