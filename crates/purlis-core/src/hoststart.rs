@@ -792,6 +792,9 @@ pub(crate) fn armed_as(studio: bool, arming: &Arming<'_>) -> Result<Armed, Strin
     // A Try it's scratch chat (SK-9, #2772): its project skills are the one skill its try laid
     // out, at a root of its own, so it gets the built-in skills and the draft alone.
     let scope = crate::skills::verbs::drafts::scope_of(root, cwd.filter(|_| on));
+    // A grade's chat (SK-16): its MCP servers and tools held to purlis's read tools.
+    let graded =
+        scope.tried && cwd.is_some_and(|cwd| crate::skills::verbs::drafts::graded_piece(root, cwd));
     let skills_root = scope.root.as_path();
     let (workspace, skills_persona) = if scope.tried {
         (None, None)
@@ -833,6 +836,7 @@ pub(crate) fn armed_as(studio: bool, arming: &Arming<'_>) -> Result<Armed, Strin
         plugin: kit.plugin.as_deref(),
         persona: persona.map(|persona| crate::harness::As { root, persona }),
         skills,
+        graded,
     };
     // Which folder the chat is handed, for its terminal to note while it runs (SK-24).
     let held = linked.as_ref().map(|folder| {

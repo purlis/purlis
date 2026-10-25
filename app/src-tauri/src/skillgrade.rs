@@ -97,20 +97,59 @@ pub struct SkillGradePlan {
     /// The tokens a grade may spend before it stops, and whether this machine set it.
     pub token_cap: f64,
     pub cap_set_here: bool,
+    /// The longest one of its chats runs, in minutes: the plan's "up to".
+    pub chat_minutes: u32,
+    /// The profile its chats run on, and the sandbox they run in there, by its name, or why no
+    /// grade can run on it (the operator's ruling of 2026-10-26).
+    pub profile: Option<String>,
+    pub sandbox: Option<String>,
+    pub refused: Option<String>,
+    /// What pressing Grade consents to: handed back with the press, and a grade on another plan
+    /// is refused.
+    pub consent: Option<String>,
+}
+
+/// **Whether a grade's chats can run on `profile`** (the project's default where none) in the
+/// project at `root`: the profile's name and the sandbox's, or why not (R1 and R2 of the
+/// operator's ruling of 2026-10-26).
+fn chats_on(
+    root: &std::path::Path,
+    profile: Option<String>,
+) -> (Option<String>, Result<String, String>) {
+    let profile = match profile {
+        Some(profile) => profile,
+        None => match crate::curation::default_profile(root, "no grade can run") {
+            Ok((profile, _)) => profile,
+            Err(why) => return (None, Err(why)),
+        },
+    };
+    let start = purlis_core::start::Start {
+        profile: Some(profile.clone()),
+        name: "grade".to_owned(),
+        cwd: Some(root.to_path_buf()),
+        made: purlis_core::sandbox::Made::Window,
+        ..Default::default()
+    };
+    let checked = crate::curation::graded_ready(&start, root).map(|ready| {
+        ready
+            .sandbox
+            .as_ref()
+            .map_or(
+                purlis_core::sandbox::Level::Full,
+                purlis_core::sandbox::Applied::level,
+            )
+            .title()
+            .to_owned()
+    });
+    (Some(profile), checked)
 }
 
 impl SkillGradePlan {
-    fn of(planned: &Planned, running: Option<String>) -> Self {
-        use purlis_core::skills::grade::Read;
-        let refused = |read: &Read<_>| match read {
-            Read::Refused(why) => Some(why.clone()),
-            Read::Absent | Read::Read(_) => None,
-        };
-        let refused_outcomes =
-            |read: &Read<Vec<purlis_core::skills::grade::OutcomeEval>>| match read {
-                Read::Refused(why) => Some(why.clone()),
-                Read::Absent | Read::Read(_) => None,
-            };
+    fn of(
+        planned: &Planned,
+        running: Option<String>,
+        on: (Option<String>, Result<String, String>),
+    ) -> Self {
         let tests = planned
             .request
             .as_ref()
@@ -118,19 +157,25 @@ impl SkillGradePlan {
                 request
                     .triggers
                     .iter()
-                    .map(|test| GradeQuery {
+                    .enumerate()
+                    .map(|(at, test)| GradeQuery {
                         query: purlis_unicode::marked(&test.query, purlis_unicode::Breaks::Marked),
                         should_trigger: test.should_trigger,
-                        hides: purlis_unicode::hides(&test.query, purlis_unicode::Breaks::Kept),
+                        hides: planned.unseen.contains(&at),
                     })
                     .collect()
             })
             .unwrap_or_default();
+        let (profile, sandbox) = on;
         SkillGradePlan {
             tests,
             chats: planned.plan.map(|plan| plan.chats).unwrap_or_default(),
             runs: u32::from(grading::RUNS),
-            tests_refused: refused(&planned.fixtures.triggers),
+            tests_refused: planned
+                .fixtures
+                .triggers
+                .refused()
+                .map(purlis_core::skills::grade::Refused::in_window),
             left_out: planned
                 .left_out
                 .iter()
@@ -142,7 +187,11 @@ impl SkillGradePlan {
                 .read()
                 .map(|evals| u32::try_from(evals.len()).unwrap_or(u32::MAX))
                 .unwrap_or_default(),
-            outcomes_refused: refused_outcomes(&planned.fixtures.outcomes),
+            outcomes_refused: planned
+                .fixtures
+                .outcomes
+                .refused()
+                .map(purlis_core::skills::grade::Refused::in_window),
             estimate: planned.estimate.map(|estimate| GradeEstimate {
                 tokens: estimate.tokens.map(|tokens| tokens as f64),
                 cost_usd: estimate.cost_usd,
@@ -151,6 +200,11 @@ impl SkillGradePlan {
             running,
             token_cap: planned.cap.tokens as f64,
             cap_set_here: planned.cap.from == grades::cap::From::Yours,
+            chat_minutes: u32::try_from(grades::CHAT_TIME.as_secs() / 60).unwrap_or(u32::MAX),
+            profile,
+            refused: sandbox.as_ref().err().cloned(),
+            sandbox: sandbox.ok(),
+            consent: planned.consent.clone(),
         }
     }
 }
@@ -231,12 +285,14 @@ pub(crate) async fn skill_grade_plan(
     plane: PlaneId,
     level: SkillLevel,
     skill: String,
+    profile: Option<String>,
 ) -> Result<SkillGradePlan, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reading what a grade runs", move || {
         flag_on()?;
         let planned = grades::planned(held.root(), &(&level).into(), &skill)?;
-        Ok(SkillGradePlan::of(&planned, running_of(&plane, &skill)))
+        let on = chats_on(held.root(), profile);
+        Ok(SkillGradePlan::of(&planned, running_of(&plane, &skill), on))
     })
     .await
 }
@@ -253,6 +309,7 @@ pub(crate) async fn skill_grade_start(
     level: SkillLevel,
     skill: String,
     profile: Option<String>,
+    consent: String,
 ) -> Result<String, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("starting a grade", move || {
@@ -260,13 +317,21 @@ pub(crate) async fn skill_grade_start(
         let level: Level = (&level).into();
         let root = held.root().to_path_buf();
         let planned = grades::planned(&root, &level, &skill)?;
+        // What runs is what the plan showed (the review of #3229): the tests, the skill's files
+        // and what its folder holds, read once here and laid out from this one copy.
+        if planned.consent.as_deref() != Some(consent.as_str()) {
+            return Err(format!(
+                "{skill} or its trigger tests changed since the plan was shown, so nothing was \
+                 started: read the plan again."
+            ));
+        }
+        let snapshot = grades::snapshot(&root, &level, &skill)?;
         let request = planned.request.ok_or_else(|| {
             format!("{skill} has no trigger tests to grade, so nothing was started.")
         })?;
-        let profile = match profile {
-            Some(profile) => profile,
-            None => crate::curation::default_profile(&root, "the grade did not start")?.0,
-        };
+        let (profile, on) = chats_on(&root, profile);
+        on?;
+        let profile = profile.ok_or("The grade did not start: no profile was found.")?;
         let id = purlis_core::reopen::mint();
         let stop = Arc::new(AtomicBool::new(false));
         {
@@ -316,7 +381,7 @@ pub(crate) async fn skill_grade_start(
                 tell(0, None, None, None);
                 let mut chats = InChats {
                     held: &held,
-                    level: &level,
+                    snapshot: &snapshot,
                     skill: &skill,
                     profile: &profile,
                     stop: &stop,
@@ -332,7 +397,7 @@ pub(crate) async fn skill_grade_start(
                     v: grades::VERSION,
                     grade: grade.clone(),
                     skill: skill.clone(),
-                    level: grades::level_word(&root, &level),
+                    level: grades::recorded_level(&level),
                     tree: version.word().to_owned(),
                     commit,
                     harness,
@@ -342,8 +407,12 @@ pub(crate) async fn skill_grade_start(
                     spent,
                     report,
                 };
-                let recorded =
-                    grades::record(&root, &graded, &purlis_core::machine::this_log_name());
+                let recorded = grades::record(
+                    &root,
+                    &level,
+                    &graded,
+                    &purlis_core::machine::this_log_name(),
+                );
                 running().remove(&grade);
                 let said = match (&graded.report.not_started, recorded) {
                     (Some(why), _) => Some(why.clone()),
@@ -385,6 +454,7 @@ pub(crate) async fn skill_grade_set_cap(
     plane: PlaneId,
     level: SkillLevel,
     skill: String,
+    profile: Option<String>,
     tokens: f64,
 ) -> Result<SkillGradePlan, String> {
     let held = planes.held(&plane)?;
@@ -397,7 +467,8 @@ pub(crate) async fn skill_grade_set_cap(
         }
         grades::cap::set_token_cap(held.root(), tokens as u64)?;
         let planned = grades::planned(held.root(), &(&level).into(), &skill)?;
-        Ok(SkillGradePlan::of(&planned, running_of(&plane, &skill)))
+        let on = chats_on(held.root(), profile);
+        Ok(SkillGradePlan::of(&planned, running_of(&plane, &skill), on))
     })
     .await
 }
@@ -420,7 +491,8 @@ pub(crate) async fn skill_grade_stop(plane: PlaneId, grade: String) -> Result<()
 /// as a grade's chat (`curation::start_graded`), one at a time.
 struct InChats<'a> {
     held: &'a Arc<Held>,
-    level: &'a Level,
+    /// The skill's copy, read once for the grade.
+    snapshot: &'a grades::Snapshot,
     skill: &'a str,
     profile: &'a str,
     stop: &'a AtomicBool,
@@ -464,10 +536,10 @@ impl InChats<'_> {
             end: ChatEnd::NotStarted { why },
         };
         let root = self.held.root().to_path_buf();
-        let skill = chat.arm.has_the_skill().then_some((self.level, self.skill));
+        let skill = chat.arm.has_the_skill().then_some(self.snapshot);
         // The previous version as an arm is #3237: the built-in runner asks for none now.
         if chat.arm == Arm::Previous {
-            return not_started("this purlis grades no previous version (#3237)".to_owned());
+            return not_started("this purlis grades no previous version".to_owned());
         }
         let laid = match purlis_core::skills::verbs::drafts::lay_out_arm(&root, skill) {
             Ok(laid) => laid,
@@ -537,7 +609,7 @@ impl InChats<'_> {
                 }
                 match heard.recv_timeout(LOOK_EVERY) {
                     Ok(Watched::Started(name)) => {
-                        let this = name.rsplit(':').next() == Some(self.skill);
+                        let this = purlis_core::skills::leaf_name(&name) == self.skill;
                         skills.push(name);
                         // A trigger test learns nothing more once the skill under test started.
                         if this {
@@ -545,6 +617,8 @@ impl InChats<'_> {
                         }
                     }
                     Ok(Watched::TurnEnded) => break ChatEnd::Turn,
+                    // A grade's chat waits on nobody: ended at its first ask, with that end.
+                    Ok(Watched::Asked) => break ChatEnd::Asked,
                     Ok(Watched::Closed) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
                         break ChatEnd::Turn;
                     }

@@ -20,23 +20,36 @@ fn planned(query: &str) -> Planned {
         skill: "deploy".into(),
         fixtures: Fixtures {
             triggers: Read::Read(tests),
-            outcomes: Read::Refused("evals/evals.json is not JSON purlis can read".into()),
+            outcomes: Read::Refused(purlis_core::skills::grade::Refused {
+                file: purlis_core::skills::grade::FixtureFile::Outcomes,
+                item: None,
+                wrong: purlis_core::skills::grade::Wrong::NotJson { line: 1, column: 2 },
+            }),
         },
         plan: Some(grading::plan(&request)),
         request: Some(request),
         estimate: None,
-        unseen: vec![0],
+        unseen: if query.contains('\u{202e}') {
+            vec![0]
+        } else {
+            Vec::new()
+        },
         left_out: vec![(1, "it starts with a dash".into())],
         cap: grades::cap::Cap {
             tokens: 50_000,
             from: grades::cap::From::Yours,
         },
+        consent: Some("abc".into()),
     }
 }
 
 #[test]
 fn the_plan_shows_each_query_as_the_chat_reads_it_and_what_is_left_out() {
-    let plan = SkillGradePlan::of(&planned("ship it\u{202e}now"), None);
+    let plan = SkillGradePlan::of(
+        &planned("ship it\u{202e}now"),
+        None,
+        (Some("work".into()), Ok("full sandbox".into())),
+    );
     assert_eq!(plan.chats, 6);
     assert_eq!(plan.runs, 3);
     assert_eq!(plan.tests.len(), 1);
@@ -46,9 +59,27 @@ fn the_plan_shows_each_query_as_the_chat_reads_it_and_what_is_left_out() {
         plan.left_out,
         vec!["Test 2: it starts with a dash".to_owned()]
     );
-    assert!(plan.outcomes_refused.is_some());
+    assert_eq!(
+        plan.outcomes_refused.as_deref(),
+        Some("The skill's outcome evals could not be read: they are not written right, at line 1.")
+    );
     assert_eq!(plan.tests_refused, None);
     assert_eq!((plan.token_cap, plan.cap_set_here), (50_000.0, true));
+    assert_eq!(plan.chat_minutes, 5);
+    assert_eq!(plan.sandbox.as_deref(), Some("full sandbox"));
+    assert_eq!((plan.refused, plan.consent.as_deref()), (None, Some("abc")));
+
+    let refused = SkillGradePlan::of(
+        &planned("ship it"),
+        None,
+        (Some("work".into()), Err("the sandbox is off".into())),
+    );
+    assert_eq!(refused.refused.as_deref(), Some("the sandbox is off"));
+    assert_eq!(refused.sandbox, None);
+    assert!(
+        !refused.tests[0].hides,
+        "the hidden mark is the plan's own reading"
+    );
 }
 
 #[test]

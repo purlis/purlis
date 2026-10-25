@@ -315,3 +315,36 @@ fn a_chat_that_does_not_say_what_it_spent_stops_a_capped_grade() {
         GradeEnd::Whole
     );
 }
+
+#[test]
+fn a_chat_that_asked_the_person_is_no_run_and_the_grade_goes_on() {
+    struct Asks(usize);
+    impl Chats for Asks {
+        fn run(&mut self, _: &RunChat, _: Option<u64>) -> ChatRan {
+            self.0 += 1;
+            ChatRan {
+                chat: Some("01".into()),
+                started: Vec::new(),
+                tokens: Some(10),
+                cost_usd: None,
+                ms: 10,
+                end: ChatEnd::Asked,
+            }
+        }
+        fn cancelled(&self) -> bool {
+            false
+        }
+    }
+    let mut host = Asks(0);
+    let report = grade(&request(), &mut host, None);
+    assert_eq!(host.0, 12, "every chat is still asked for");
+    assert_eq!(report.ended, GradeEnd::Whole);
+    assert!(
+        report
+            .triggers
+            .iter()
+            .all(|score| score.runs == 0 && score.pass.is_none()),
+        "an ask is never a test that did not trigger: {report:?}"
+    );
+    assert_eq!(report.arm(Arm::With).unwrap().not_run, 6);
+}

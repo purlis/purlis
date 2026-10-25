@@ -52,6 +52,7 @@ fn a_chat_is_handed_every_built_in_skill_by_its_harness_route() {
         binary: Path::new("/bin/purlis"),
         plugin: Some(&plugin),
         persona: None,
+        graded: false,
     };
     for harness in [Harness::ClaudeCode, Harness::Codex, Harness::Opencode] {
         let set = for_chat(kit, harness);

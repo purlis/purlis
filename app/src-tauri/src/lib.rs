@@ -2692,6 +2692,8 @@ fn chat_states(planes: tauri::State<'_, Planes>, plane: PlaneId) -> Result<Vec<M
         .chats()
         .open_now()
         .into_iter()
+        // A grade's chat is drawn nowhere, so its state is no row's (SK-16).
+        .filter(|open| !held.chats().kept_from_the_window(open.session))
         .map(|open| held.board().now(open.session))
         .collect())
 }

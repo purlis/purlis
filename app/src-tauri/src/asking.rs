@@ -1779,7 +1779,12 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
     };
     Asking {
         plane: plane.clone(),
-        asks: derive(&waiting),
+        // A grade's chat is drawn nowhere, and asks nobody (SK-16): the grade ends it at its
+        // first ask, with that end, and none of its asks is listed.
+        asks: derive(&waiting)
+            .into_iter()
+            .filter(|ask| !chats.kept_from_the_window(ask.session))
+            .collect(),
     }
 }
 

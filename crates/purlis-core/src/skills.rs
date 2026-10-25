@@ -22,8 +22,8 @@ pub use purlis_skills::{
     LeftOut, Lint, Machine, ManualOnly, Missing, Narrowing, OnMachine, Origin, Outcome,
     OutsideSkill, Over, Owner, POINTER, PROJECT_DIR, Reason, Reference, Refusal, Reload, Route,
     Severity, Shared, Skill, SkillSet, Spent, Stamp, Switch, Whose, beside, compat, declared,
-    grant_file, grant_of, handed_text, in_bundle, level_dir, level_shown, listing, named, named_at,
-    persona_dir, read, scan, set_grant, share,
+    grant_file, grant_of, handed_text, in_bundle, leaf_name, level_dir, level_shown, listing,
+    named, named_at, persona_dir, read, scan, set_grant, share,
 };
 pub use purlis_skills::{SkillFiles, SkillLint};
 

@@ -25,9 +25,10 @@
 mod fixtures;
 
 pub use fixtures::{
-    EVALS_DIR, Fixtures, MOST_EVAL_FILES, MOST_EXPECTATION_BYTES, MOST_EXPECTATIONS,
+    EVALS_DIR, FixtureFile, Fixtures, MOST_EVAL_FILES, MOST_EXPECTATION_BYTES, MOST_EXPECTATIONS,
     MOST_FIXTURE_BYTES, MOST_OUTCOME_EVALS, MOST_PROMPT_BYTES, MOST_TRIGGER_TESTS, OUTCOME_FILE,
-    OutcomeEval, Read, TRIGGER_FILE, TriggerTest, fixtures_of, outcomes_of, triggers_of,
+    OutcomeEval, Read, Refused, TRIGGER_FILE, TriggerTest, Wrong, fixtures_of, outcomes_of,
+    triggers_of,
 };
 
 /// How many times each fixture runs in each arm: skill-creator's and `claude plugin eval`'s
@@ -114,6 +115,10 @@ pub enum ChatEnd {
     NotStarted { why: String },
     /// The person stopped the grade while it ran.
     Cancelled,
+    /// It asked the person something (a permission, or a notice that it waits on them), and the
+    /// host ended it there: a grade's chat waits on nobody. It is no run, never a "did not
+    /// trigger" (the review of #3229).
+    Asked,
     /// The grade reached its token cap while it ran, and the host ended it. It is no run: it
     /// was cut short before it could say what it would have started.
     OverCap,
@@ -146,7 +151,7 @@ impl ChatRan {
     fn started(&self, skill: &str) -> bool {
         self.started
             .iter()
-            .any(|one| one.rsplit(':').next() == Some(skill))
+            .any(|one| crate::leaf_name(one) == skill)
     }
 }
 
@@ -360,7 +365,9 @@ pub fn grade(request: &GradeRequest, chats: &mut dyn Chats, cap: Option<u64>) ->
                         ended = GradeEnd::OverCap;
                         break 'runs;
                     }
-                    ChatEnd::Turn | ChatEnd::TimedOut => not_started_in_a_row = 0,
+                    ChatEnd::Turn | ChatEnd::TimedOut | ChatEnd::Asked => {
+                        not_started_in_a_row = 0;
+                    }
                 }
                 let unreported = cap.is_some() && result.ran() && result.tokens.is_none();
                 ran[t][a].push(result);

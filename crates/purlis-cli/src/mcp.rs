@@ -32,7 +32,7 @@ use purlis_core::chattools;
 const ANSWER: &str = "answer";
 
 /// Serves the tools on stdin and stdout until the harness closes them.
-pub fn serve() -> Result<u8, String> {
+pub fn serve(graded: bool) -> Result<u8, String> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -40,6 +40,7 @@ pub fn serve() -> Result<u8, String> {
     let waiting = std::sync::Arc::new(Waiting::of_this_chat());
     let server = Server {
         waiting: std::sync::Arc::clone(&waiting),
+        graded,
     };
     let served = runtime.block_on(async {
         let running = server
@@ -61,6 +62,10 @@ pub fn serve() -> Result<u8, String> {
 /// whether a question of its waits on the person ([`Waiting`]).
 struct Server {
     waiting: std::sync::Arc<Waiting>,
+    /// A grade's chat (SK-16): only the tools that only read are listed and answered
+    /// ([`chattools::PRE_ALLOWED`]); none writes, dispatches, asks the person or drives a
+    /// browser.
+    graded: bool,
 }
 
 impl ServerHandler for Server {
@@ -85,12 +90,14 @@ impl ServerHandler for Server {
         } else {
             &[]
         };
+        let graded = self.graded;
         Ok(ListToolsResult::with_all_items(
             chattools::TOOLS
                 .iter()
                 .chain(purlis_core::browsertools::TOOLS.iter())
                 .chain(purlis_core::themepreview::TOOLS.iter())
                 .chain(skills.iter())
+                .filter(|one| !graded || chattools::PRE_ALLOWED.contains(&one.name))
                 .map(tool)
                 .collect(),
         ))
@@ -105,6 +112,13 @@ impl ServerHandler for Server {
         // showing it: the retry that carries the answer, or a turn that went on without one.
         self.waiting.heard_again();
         let name = request.name.as_ref();
+        // A grade's chat is answered the tools that only read, and nothing else (SK-16).
+        if self.graded && !chattools::PRE_ALLOWED.contains(&name) {
+            return Err(ErrorData::invalid_params(
+                format!("purlis has no tool {name:?} for a grade's chat"),
+                None,
+            ));
+        }
         // A browser tool (#2013): handed to the app, which decides and answers it, a
         // screenshot attached as an image.
         if purlis_core::browsertools::is_one(name) {

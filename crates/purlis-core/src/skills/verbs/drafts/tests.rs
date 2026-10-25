@@ -574,6 +574,7 @@ fn a_try_turns_off_every_harness_skill_and_plugin_on_every_harness() {
         plugin: None,
         persona: None,
         skills: None,
+        graded: false,
     };
     for (harness, own) in [
         (Harness::ClaudeCode, "mine"),
@@ -610,7 +611,16 @@ fn a_grades_arms_hand_a_chat_the_skill_without_its_fixtures_or_no_skill_at_all()
     std::fs::write(root.join("skills/deploy/notes.md"), "kept\n").unwrap();
     skill_at(root, "skills/release", "release", "Cuts it.");
 
-    let with = lay_out_arm(root, Some((&Level::project(), "deploy"))).unwrap();
+    let copy = snapshot(root, &Level::project(), "deploy").unwrap();
+    assert!(
+        copy.files.keys().all(|path| !path.starts_with("evals/")),
+        "{:?}",
+        copy.files
+    );
+    // An edit after the grade read it changes nothing it lays out.
+    std::fs::write(root.join("skills/deploy/notes.md"), "edited mid-grade\n").unwrap();
+    let with = lay_out_arm(root, Some(&copy)).unwrap();
+    assert!(graded_piece(root, &with.piece));
     let skills_from = tried(root, &with.piece).expect("the piece is a try's");
     let set = crate::skills::in_the_studio(None, &skills_from, None, None);
     let names: Vec<&str> = set
@@ -620,13 +630,17 @@ fn a_grades_arms_hand_a_chat_the_skill_without_its_fixtures_or_no_skill_at_all()
         .collect();
     assert_eq!(names, ["deploy"]);
     let laid = skills_from.join("skills/deploy");
-    assert!(laid.join("notes.md").is_file());
+    assert_eq!(
+        std::fs::read_to_string(laid.join("notes.md")).unwrap(),
+        "kept\n"
+    );
     assert!(
         !laid.join("evals").exists(),
         "the fixtures stay out of the chat's reach"
     );
 
     let without = lay_out_arm(root, None).unwrap();
+    assert!(graded_piece(root, &without.piece));
     let none_from = tried(root, &without.piece).expect("the piece is a try's");
     let set = crate::skills::in_the_studio(None, &none_from, None, None);
     assert!(set.effective.is_empty(), "{:?}", set.effective);

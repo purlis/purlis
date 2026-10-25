@@ -46,7 +46,7 @@ fn a_trigger_file_that_is_not_whole_is_refused_whole() {
         ),
         ("[{\"query\": \"x\", ", "not JSON"),
     ] {
-        let why = triggers_of(text).unwrap_err();
+        let why = triggers_of(text).unwrap_err().terminal();
         assert!(why.contains(says), "{text}: {why}");
     }
 }
@@ -56,22 +56,25 @@ fn a_trigger_file_is_held_to_its_limits_before_any_test_is_read() {
     let many: Vec<String> = (0..=MOST_TRIGGER_TESTS)
         .map(|n| format!(r#"{{"query": "q{n}", "should_trigger": true}}"#))
         .collect();
-    let why = triggers_of(&format!("[{}]", many.join(","))).unwrap_err();
+    let why = triggers_of(&format!("[{}]", many.join(",")))
+        .unwrap_err()
+        .terminal();
     assert!(why.contains("at most 100"), "{why}");
 
     let long = "a".repeat(MOST_PROMPT_BYTES + 1);
     let why = triggers_of(&format!(
         r#"[{{"query": "{long}", "should_trigger": true}}]"#
     ))
-    .unwrap_err();
+    .unwrap_err()
+    .terminal();
     assert!(why.contains("longer than 8 KiB"), "{why}");
 
     let huge = format!("[\"{}\"]", "a".repeat(MOST_FIXTURE_BYTES as usize));
-    let why = triggers_of(&huge).unwrap_err();
+    let why = triggers_of(&huge).unwrap_err().terminal();
     assert!(why.contains("larger than 256 KiB"), "{why}");
 
     let deep = format!("{}{}", "[".repeat(5000), "]".repeat(5000));
-    let why = triggers_of(&deep).unwrap_err();
+    let why = triggers_of(&deep).unwrap_err().terminal();
     assert!(
         why.contains("not JSON"),
         "nesting past serde_json's depth is refused: {why}"
@@ -103,7 +106,10 @@ fn skill_creators_eval_file_reads_with_either_name_for_its_checks() {
 fn an_eval_file_that_is_not_whole_is_refused_whole() {
     for (text, says) in [
         ("[]", "not an object"),
-        (r#"{"skill_name": "other", "evals": []}"#, "not \"pdf\""),
+        (
+            r#"{"skill_name": "other", "evals": []}"#,
+            "for the skill \"other\"",
+        ),
         (r#"{"evals": 1}"#, "no list of evals"),
         (r#"{"evals": [{"prompt": "x"}]}"#, "whole-number id"),
         (
@@ -127,7 +133,7 @@ fn an_eval_file_that_is_not_whole_is_refused_whole() {
             "not text",
         ),
     ] {
-        let why = outcomes_of(text, "pdf").unwrap_err();
+        let why = outcomes_of(text, "pdf").unwrap_err().terminal();
         assert!(why.contains(says), "{text}: {why}");
     }
 }
@@ -160,7 +166,7 @@ fn fixtures_are_read_from_the_skills_folder_and_never_through_a_link() {
         .unwrap();
         let linked = fixtures_of(plane.path(), Path::new("skills/pdf"), "pdf");
         assert!(
-            matches!(&linked.outcomes, Read::Refused(why) if why.contains("not a plain file")),
+            matches!(&linked.outcomes, Read::Refused(why) if why.terminal().contains("not a plain file")),
             "{linked:?}"
         );
 
@@ -169,8 +175,39 @@ fn fixtures_are_read_from_the_skills_folder_and_never_through_a_link() {
         std::os::unix::fs::symlink(skill.join(EVALS_DIR), folder.join(EVALS_DIR)).unwrap();
         let through = fixtures_of(plane.path(), Path::new("skills/linked"), "linked");
         assert!(
-            matches!(&through.triggers, Read::Refused(why) if why.contains("is a link")),
+            matches!(&through.triggers, Read::Refused(why) if why.terminal().contains("is a link")),
             "{through:?}"
         );
     }
+}
+
+#[test]
+fn the_window_is_told_what_is_wrong_and_never_a_file_or_a_key() {
+    for text in [
+        "{",
+        r#"[{"query": "x"}]"#,
+        r#"[{"query": "", "should_trigger": true}]"#,
+        r#"[{"query": "x", "should_trigger": true}, {"query": "x", "should_trigger": true}]"#,
+    ] {
+        let refused = triggers_of(text).unwrap_err();
+        let said = refused.in_window();
+        for named in ["evals", "triggers.json", "should_trigger", "json", "JSON"] {
+            assert!(!said.contains(named), "{text}: {said}");
+        }
+        assert!(
+            said.starts_with("The skill's trigger tests could not be read: "),
+            "{said}"
+        );
+        assert!(refused.terminal().contains("evals/triggers.json") || refused.item.is_some());
+    }
+    let said = outcomes_of(
+        r#"{"evals": [{"id": 1, "prompt": "x", "expectations": [], "assertions": []}]}"#,
+        "pdf",
+    )
+    .unwrap_err()
+    .in_window();
+    assert_eq!(
+        said,
+        "The skill's outcome evals could not be read: outcome eval 1 lists its checks twice, under two names."
+    );
 }

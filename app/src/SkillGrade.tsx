@@ -86,6 +86,34 @@ export function SkillGrade({
   const [step, setStep] = useState<SkillGradeStep>();
   const [said, setSaid] = useState<{ tone: "news" | "trouble"; text: string }>();
   const running = step !== undefined && step.ended === null;
+  const picked = profile === DEFAULT ? null : profile;
+
+  // A grade still running from before this tab was drawn is shown, with its Stop: the app's
+  // word, never this tab's memory of it (the review of #3229).
+  useEffect(() => {
+    let live = true;
+    void commands.skillGradePlan(plane, level, name, null).then((answer) => {
+      if (!live || answer.status !== "ok" || answer.data.running === null) return;
+      const grade = answer.data.running;
+      setStep(
+        (was) =>
+          was ?? {
+            plane,
+            skill: name,
+            grade,
+            ran: 0,
+            of: answer.data.chats,
+            tokens: null,
+            cap: answer.data.token_cap,
+            ended: null,
+            said: null,
+          },
+      );
+    });
+    return () => {
+      live = false;
+    };
+  }, [plane, level, name]);
 
   useEffect(() => {
     const listening = listen<SkillGradeStep>(SKILL_GRADE, (event) => {
@@ -103,10 +131,18 @@ export function SkillGrade({
     return () => void listening.then((stop) => stop?.()).catch(() => undefined);
   }, [plane, name, onGraded]);
 
+  const read = (on: string | null) =>
+    void commands.skillGradePlan(plane, level, name, on).then((answer) => {
+      if (answer.status === "ok") {
+        setPlan(answer.data);
+        setRefused(undefined);
+      } else setRefused(answer.error);
+    });
+
   const open = () => {
     setAsking(true);
     setSaid(undefined);
-    void commands.skillGradePlan(plane, level, name).then((answer) => {
+    void commands.skillGradePlan(plane, level, name, picked).then((answer) => {
       if (answer.status === "ok") {
         setPlan(answer.data);
         setRefused(undefined);
@@ -122,7 +158,7 @@ export function SkillGrade({
 
   const start = () => {
     void commands
-      .skillGradeStart(plane, level, name, profile === DEFAULT ? null : profile)
+      .skillGradeStart(plane, level, name, picked, plan?.consent ?? "")
       .then((answer) => {
         if (answer.status === "ok") {
           setAsking(false);
@@ -148,7 +184,9 @@ export function SkillGrade({
         <Notice
           cause="skill-grade"
           tone={said.tone}
-          label={said.tone === "trouble" ? "Not graded" : "Graded"}
+          label={
+            said.tone === "trouble" ? "Not graded" : step?.ended === "whole" ? "Graded" : "Stopped"
+          }
           onDismiss={() => setSaid(undefined)}
         >
           {said.text}
@@ -196,7 +234,7 @@ export function SkillGrade({
           name={name}
           plan={plan}
           onCap={(tokens) =>
-            void commands.skillGradeSetCap(plane, level, name, tokens).then((answer) => {
+            void commands.skillGradeSetCap(plane, level, name, picked, tokens).then((answer) => {
               if (answer.status === "ok") {
                 setPlan(answer.data);
                 setSaid(undefined);
@@ -205,7 +243,10 @@ export function SkillGrade({
           }
           profiles={profiles}
           profile={profile}
-          onProfile={setProfile}
+          onProfile={(to) => {
+            setProfile(to);
+            read(to === DEFAULT ? null : to);
+          }}
           onStart={start}
           onCancel={() => setAsking(false)}
         />
@@ -245,7 +286,12 @@ function GradePlan({
     <div data-testid="skill-grade-plan">
       {plan.tests_refused !== null && (
         <p className="honest" data-testid="skill-grade-tests-refused">
-          The trigger tests could not be read: {plan.tests_refused}
+          {plan.tests_refused}
+        </p>
+      )}
+      {plan.refused !== null && (
+        <p className="honest" data-testid="skill-grade-cannot-run">
+          No grade can run on {plan.profile ?? "this profile"}: {plan.refused}
         </p>
       )}
       {nothing ? (
@@ -260,11 +306,14 @@ function GradePlan({
             Grading runs {counted(plan.chats, "chat", "chats")}, one turn each: each of the{" "}
             {counted(plan.tests.length, "trigger test", "trigger tests")}{" "}
             {counted(plan.runs, "time", "times")} with the skill and{" "}
-            {counted(plan.runs, "time", "times")} without it. {costSaid(plan)} It stops once its
-            chats have spent {tokensSaid(plan.token_cap ?? 0)}
+            {counted(plan.runs, "time", "times")} without it, up to{" "}
+            {counted(plan.chats, "chat", "chats")} × {plan.chat_minutes} min. {costSaid(plan)} It
+            stops once its chats have spent {tokensSaid(plan.token_cap ?? 0)}
             {plan.cap_set_here ? ", the cap you set on this machine" : ", the default cap"}. The
-            chats run on the profile you pick, under this project's sandbox, and its account pays
-            for them as for any chat.
+            chats run on the profile you pick
+            {plan.sandbox === null ? "" : `, in the project's ${plan.sandbox}`}, with none of your
+            own Allows and no tools but purlis's that only read, and its account pays for them as
+            for any chat.
           </p>
           <ol aria-label={`Trigger tests of ${name}`}>
             {plan.tests.map((test, at) => (
@@ -290,9 +339,7 @@ function GradePlan({
           version of purlis: this grade runs the trigger tests alone.
         </p>
       )}
-      {plan.outcomes_refused !== null && (
-        <p className="honest">The outcome evals could not be read: {plan.outcomes_refused}</p>
-      )}
+      {plan.outcomes_refused !== null && <p className="honest">{plan.outcomes_refused}</p>}
       {!nothing && (
         <ButtonRow>
           <TextField
@@ -323,7 +370,7 @@ function GradePlan({
             <Button
               size="sm"
               variant="primary"
-              isDisabled={plan.running !== null}
+              isDisabled={plan.running !== null || plan.refused !== null || plan.consent === null}
               onPress={onStart}
             >
               Grade

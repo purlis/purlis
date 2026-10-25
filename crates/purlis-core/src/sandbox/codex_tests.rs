@@ -659,6 +659,7 @@ fn charters_hooks() -> Vec<String> {
             binary: Path::new("/Applications/charter.app/Contents/MacOS/charter"),
             plugin: None,
             persona: None,
+            graded: false,
         },
         None,
         &crate::harness_plugin::Chosen::new(),

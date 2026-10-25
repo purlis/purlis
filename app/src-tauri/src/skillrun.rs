@@ -50,6 +50,8 @@ pub enum Watched {
     Started(String),
     /// Its turn ended.
     TurnEnded,
+    /// It asked the person something: a permission, or a notice that it waits on them.
+    Asked,
     /// It closed, or its session ended.
     Closed,
 }
@@ -109,6 +111,10 @@ impl SkillRuns {
     /// A tool hook of chat `call.chat`: one that starts a skill opens its run, and every one
     /// inside a run counts toward it ([`Tracker::call`]).
     pub fn heard(&self, call: &purlis_core::hookwire::ToolCall) {
+        // A call put to the person is an ask, which a grade's chat never waits on (SK-16).
+        if call.decision == purlis_core::hookwire::Decision::Ask {
+            self.tell_watching(call.chat, Watched::Asked);
+        }
         let key = call.chat.to_string();
         let (told, opened) = {
             let mut runs = self.runs();
@@ -146,6 +152,10 @@ impl SkillRuns {
                     }
                     purlis_core::state::Event::SessionEnd => {
                         self.tell_watching(report.chat, Watched::Closed);
+                    }
+                    // A chat sitting idle at its prompt is nudged, which asks nothing.
+                    purlis_core::state::Event::Notification if !report.detail.idle => {
+                        self.tell_watching(report.chat, Watched::Asked);
                     }
                     _ => {}
                 }

@@ -97,7 +97,7 @@ fn graded(root: &Path, id: &str, ts: &str, spent: Spent) -> Graded {
         v: VERSION,
         grade: id.to_owned(),
         skill: "deploy".into(),
-        level: level_word(root, &level),
+        level: level.rel(),
         tree: content.word().to_owned(),
         commit,
         harness: Some("claude".into()),
@@ -134,6 +134,7 @@ fn a_grade_is_recorded_against_the_version_its_folder_holds() {
 
     let written = record(
         root,
+        &Level::project(),
         &graded(root, "g1", "2026-10-25T10:00:00+00:00", Spent::default()),
         "laptop",
     )
@@ -163,11 +164,13 @@ fn the_record_is_read_newest_first_and_a_row_it_cannot_take_is_skipped() {
     let root = plane.path();
     record(
         root,
+        &Level::project(),
         &graded(root, "old", "2026-10-01T10:00:00+00:00", Spent::default()),
         "laptop",
     );
     record(
         root,
+        &Level::project(),
         &graded(root, "new", "2026-10-25T10:00:00+00:00", Spent::default()),
         "desk",
     );
@@ -227,6 +230,7 @@ fn the_estimate_is_the_last_grades_spend_per_chat_times_the_chats() {
     let root = plane.path();
     record(
         root,
+        &Level::project(),
         &graded(
             root,
             "g1",
@@ -280,6 +284,7 @@ fn a_skills_history_shows_each_versions_newest_grade() {
     assert_eq!(before.versions[0].grade, None);
     record(
         root,
+        &Level::project(),
         &graded(root, "g1", "2026-10-25T10:00:00+00:00", Spent::default()),
         "laptop",
     );
@@ -316,6 +321,7 @@ fn a_row_that_says_more_than_purlis_writes_is_skipped() {
     let root = plane.path();
     record(
         root,
+        &Level::project(),
         &graded(root, "kept", "2026-10-25T10:00:00+00:00", Spent::default()),
         "laptop",
     );
@@ -343,4 +349,110 @@ fn a_row_that_says_more_than_purlis_writes_is_skipped() {
         .map(|one| one.grade)
         .collect();
     assert_eq!(ids, vec!["kept".to_owned()]);
+}
+
+#[test]
+fn a_query_a_chat_program_reads_as_its_own_command_is_left_out_and_named() {
+    let plane = plane();
+    let root = plane.path();
+    std::fs::write(
+        root.join("skills/deploy/evals/triggers.json"),
+        r##"[
+            {"query": "/clear", "should_trigger": false},
+            {"query": "!rm -rf .", "should_trigger": false},
+            {"query": "# remember this", "should_trigger": false},
+            {"query": "@notes.md ship it", "should_trigger": true},
+            {"query": "ship it", "should_trigger": true}
+        ]"##,
+    )
+    .unwrap();
+    let planned = planned(root, &Level::project(), "deploy").unwrap();
+    let left: Vec<usize> = planned.left_out.iter().map(|(at, _)| *at).collect();
+    assert_eq!(left, vec![0, 1, 2, 3]);
+    assert!(
+        planned.left_out[0].1.contains("'/'"),
+        "{:?}",
+        planned.left_out
+    );
+    assert_eq!(planned.request.unwrap().triggers.len(), 1);
+}
+
+#[test]
+fn a_local_copys_grade_stays_on_this_machine_and_is_read_back() {
+    let plane = plane();
+    let root = plane.path();
+    let local = Level::project().local(true);
+    std::fs::create_dir_all(root.join("skills.local/deploy")).unwrap();
+    std::fs::write(root.join("skills.local/deploy/SKILL.md"), SKILL).unwrap();
+    assert!(is_local(root, &local));
+    assert!(!is_local(root, &Level::project()));
+    let mut row = graded(root, "mine", "2026-10-25T10:00:00+00:00", Spent::default());
+    row.level = local.rel();
+    let written = record(root, &local, &row, "laptop").unwrap();
+    assert!(
+        written.starts_with(crate::plane::state_dir(root)),
+        "{}",
+        written.display()
+    );
+    assert!(!root.join("personas/_grades").exists(), "nothing committed");
+    let read = grades_of(root, "deploy", Some(&local));
+    assert_eq!(read.len(), 1);
+    assert_eq!(read[0].grade, "mine");
+}
+
+#[test]
+fn a_record_folder_with_too_many_names_is_read_no_further() {
+    let plane = plane();
+    let root = plane.path();
+    record(
+        root,
+        &Level::project(),
+        &graded(root, "g1", "2026-10-25T10:00:00+00:00", Spent::default()),
+        "laptop",
+    );
+    for n in 0..MOST_FILES {
+        std::fs::write(root.join(format!("personas/_grades/x{n}.txt")), "").unwrap();
+    }
+    assert!(grades_of(root, "deploy", None).is_empty());
+}
+
+#[test]
+fn the_consent_a_plan_asks_for_changes_with_its_tests_and_with_the_skill() {
+    let plane = plane();
+    let root = plane.path();
+    let first = planned(root, &Level::project(), "deploy")
+        .unwrap()
+        .consent
+        .unwrap();
+    assert_eq!(
+        planned(root, &Level::project(), "deploy")
+            .unwrap()
+            .consent
+            .unwrap(),
+        first,
+        "the same plan asks the same consent"
+    );
+    std::fs::write(
+        root.join("skills/deploy/SKILL.md"),
+        format!("{SKILL}Ship faster.\n"),
+    )
+    .unwrap();
+    let edited = planned(root, &Level::project(), "deploy")
+        .unwrap()
+        .consent
+        .unwrap();
+    assert_ne!(edited, first, "an edit to the skill is another plan");
+    std::fs::write(
+        root.join("skills/deploy/evals/triggers.json"),
+        r#"[{"query": "ship it now", "should_trigger": true}]"#,
+    )
+    .unwrap();
+    assert_ne!(
+        planned(root, &Level::project(), "deploy")
+            .unwrap()
+            .consent
+            .unwrap(),
+        edited,
+        "so is one to its tests"
+    );
 }

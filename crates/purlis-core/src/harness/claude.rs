@@ -95,6 +95,13 @@ impl HarnessAdapter for ClaudeCode {
         StateHooks::ThisSessionOnly {
             args: [
                 args,
+                // A grade's chat loads no MCP server but purlis's (SK-16): none of the person's
+                // own, nor a project's, nor a connector.
+                if kit.graded {
+                    words(["--strict-mcp-config"])
+                } else {
+                    Vec::new()
+                },
                 words([
                     // charter's MCP server (HP-7), before `--settings`: `--mcp-config` takes every
                     // word up to the next flag, and the chat's own words end the line.
@@ -594,9 +601,10 @@ fn settings(
 /// server is there only once this machine approved it, wrapped in `secret exec`; purlis's own
 /// is written last, so no entry of a persona's file can take its name.
 fn mcp_config(kit: Kit<'_>) -> String {
-    let mut config: serde_json::Value =
-        serde_json::from_str(&crate::chattools::claude_code_config(kit.binary))
-            .unwrap_or_else(|_| serde_json::json!({ "mcpServers": {} }));
+    let mut config: serde_json::Value = serde_json::from_str(
+        &crate::chattools::claude_code_config_as(kit.binary, kit.graded),
+    )
+    .unwrap_or_else(|_| serde_json::json!({ "mcpServers": {} }));
     let Some(of) = kit.persona else {
         return config.to_string();
     };
@@ -872,6 +880,7 @@ mod tests {
                 binary: std::path::Path::new("/bin/charter"),
                 plugin: Some(std::path::Path::new("/app/plugin")),
                 persona: None,
+                graded: false,
             },
             Some(plane.path()),
             &crate::harness_plugin::Chosen::new(),
@@ -894,6 +903,7 @@ mod tests {
                 binary: std::path::Path::new("/bin/charter"),
                 plugin: Some(std::path::Path::new("/app/plugin")),
                 persona: None,
+                graded: false,
             },
             Some(empty.path()),
             &crate::harness_plugin::Chosen::new(),
@@ -925,6 +935,7 @@ mod tests {
                 binary: std::path::Path::new("/bin/charter"),
                 plugin: Some(std::path::Path::new("/app/plugin")),
                 persona: None,
+                graded: false,
             },
             None,
             &crate::harness_plugin::Chosen::new(),
@@ -961,6 +972,7 @@ mod tests {
                     root: plane.root(),
                     persona,
                 }),
+                graded: false,
             },
             Some(plane.root()),
             &crate::harness_plugin::Chosen::new(),
@@ -1119,6 +1131,7 @@ mod tests {
                 binary: std::path::Path::new("/bin/charter"),
                 plugin: Some(std::path::Path::new("/app/plugin")),
                 persona: None,
+                graded: false,
             },
             Some(empty.path()),
             &crate::harness_plugin::Chosen::new(),
@@ -1211,6 +1224,7 @@ mod tests {
                 binary: std::path::Path::new("/bin/charter"),
                 plugin: Some(std::path::Path::new("/app/plugin")),
                 persona: None,
+                graded: false,
             },
             Some(&root),
             &crate::harness_plugin::Chosen::new(),

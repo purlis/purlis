@@ -695,6 +695,8 @@ const ORDINARY: Answers = {
   workspace_saving: REPO_SAVING,
   session_record: RECORD,
   dispatches: { rows: DISPATCHES, undrawn: 1 },
+  // Grade reads its plan on its own, for a grade running already (SK-16).
+  skill_grade_plan: { running: null },
   skill_details: {
     copies: [
       {

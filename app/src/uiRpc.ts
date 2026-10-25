@@ -982,7 +982,7 @@ export const commands = {
 	skillDraftTry: __WINDOW_ONLY_RESULT,
 	skillLevelAccept: __WINDOW_ONLY_RESULT,
 	/**  **What grading the copy of `skill` at `level` would run**, before anything runs. */
-	skillGradePlan: (plane: PlaneId, level: SkillLevel, skill: string) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_grade_plan", { plane, level, skill })),
+	skillGradePlan: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_grade_plan", { plane, level, skill, profile })),
 	skillGradeStart: __WINDOW_ONLY_RESULT,
 	skillGradeStop: __WINDOW_ONLY_RESULT,
 	skillGradeSetCap: __WINDOW_ONLY_RESULT,
@@ -9396,6 +9396,20 @@ export type SkillGradePlan = {
 	/**  The tokens a grade may spend before it stops, and whether this machine set it. */
 	token_cap: number | null,
 	cap_set_here: boolean,
+	/**  The longest one of its chats runs, in minutes: the plan's "up to". */
+	chat_minutes: number,
+	/**
+	 *  The profile its chats run on, and the sandbox they run in there, by its name, or why no
+	 *  grade can run on it (the operator's ruling of 2026-10-26).
+	 */
+	profile: string | null,
+	sandbox: string | null,
+	refused: string | null,
+	/**
+	 *  What pressing Grade consents to: handed back with the press, and a grade on another plan
+	 *  is refused.
+	 */
+	consent: string | null,
 };
 
 /**

@@ -100,7 +100,10 @@
   or the cap you set in the plan for this machine, and says what it spent. Nothing runs until you
   press _Grade_. Each test then
   runs in a chat of its own, three times with the skill and three times without it, in a
-  throwaway folder under the project's sandbox. Those chats get no tab, and each ends as soon as
+  throwaway folder, only in the project's full sandbox, with none of your own Allows, no tools
+  but purlis's that only read, and only on a Claude Code profile that keeps its permission
+  prompts; the plan says why when a grade cannot run. A chat that asks you something is ended
+  there and does not count. A grade of a skill kept on this machine stays on this machine. Those chats get no tab, and each ends as soon as
   the skill starts. The tab says how far the grade has got and offers _Stop_. The skill's
   _Grades_ panel shows each grade: the version it graded, what it ran on, the tests passed, each
   side's pass rate and the difference the skill made. Each version in its history shows its

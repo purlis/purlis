@@ -56,6 +56,7 @@ fn kit<'a>(here: &'a Here, skills: Option<PlaneSkills<'a>>) -> Kit<'a> {
         plugin: Some(&here.plugin),
         persona: None,
         skills,
+        graded: false,
     }
 }
 

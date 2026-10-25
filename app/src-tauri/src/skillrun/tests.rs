@@ -167,3 +167,19 @@ fn a_grade_watching_a_chat_is_told_each_skill_it_started_and_the_end_of_its_turn
         vec![Watched::Started("deploy".to_owned()), Watched::TurnEnded],
     );
 }
+
+/// SK-16 (the review of #3229): a grade watching a chat is told when it asks the person, by a
+/// call put to them or by a notice that it waits.
+#[test]
+fn a_grade_watching_a_chat_is_told_when_it_asks_the_person() {
+    let (runs, _told) = listening();
+    let watched = runs.watch(4);
+    let mut asked = call(4, "toolu_1", None);
+    asked.decision = Decision::Ask;
+    runs.heard(&asked);
+    runs.reported(&report(4, Event::Notification));
+    assert_eq!(
+        watched.try_iter().collect::<Vec<_>>(),
+        vec![Watched::Asked, Watched::Asked],
+    );
+}

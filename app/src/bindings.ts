@@ -1887,13 +1887,13 @@ export const commands = {
 	 */
 	skillLevelAccept: (plane: PlaneId, folder: string) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_level_accept", { plane, folder })),
 	/**  **What grading the copy of `skill` at `level` would run**, before anything runs. */
-	skillGradePlan: (plane: PlaneId, level: SkillLevel, skill: string) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_grade_plan", { plane, level, skill })),
+	skillGradePlan: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_grade_plan", { plane, level, skill, profile })),
 	/**
 	 *  **Grades the copy of `skill` at `level`**, on `profile` (the project's default where none
 	 *  is picked): its chats run one at a time behind the window, which is told each step
 	 *  ([`EVENT`]). The answer is the grade's id. Refused while a grade runs in the project.
 	 */
-	skillGradeStart: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null) => typedError<string, string>(__TAURI_INVOKE("skill_grade_start", { plane, level, skill, profile })),
+	skillGradeStart: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null, consent: string) => typedError<string, string>(__TAURI_INVOKE("skill_grade_start", { plane, level, skill, profile, consent })),
 	/**
 	 *  **Stops the grade `grade`**: the chat it runs now is ended, no other starts, and what ran is
 	 *  scored and recorded.
@@ -1904,7 +1904,7 @@ export const commands = {
 	 *  operator's ruling of 2026-10-26): the person who pays for the chats sets it, and the plan shows
 	 *  it before Grade is pressed. The answer is the plan of `skill` at `level` again, with it.
 	 */
-	skillGradeSetCap: (plane: PlaneId, level: SkillLevel, skill: string, tokens: number | null) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_grade_set_cap", { plane, level, skill, tokens })),
+	skillGradeSetCap: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null, tokens: number | null) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_grade_set_cap", { plane, level, skill, profile, tokens })),
 	/**  The project's skill sources. */
 	skillSources: (plane: PlaneId) => typedError<SkillSource[], string>(__TAURI_INVOKE("skill_sources", { plane })),
 	/**
@@ -11239,6 +11239,20 @@ export type SkillGradePlan = {
 	/**  The tokens a grade may spend before it stops, and whether this machine set it. */
 	token_cap: number | null,
 	cap_set_here: boolean,
+	/**  The longest one of its chats runs, in minutes: the plan's "up to". */
+	chat_minutes: number,
+	/**
+	 *  The profile its chats run on, and the sandbox they run in there, by its name, or why no
+	 *  grade can run on it (the operator's ruling of 2026-10-26).
+	 */
+	profile: string | null,
+	sandbox: string | null,
+	refused: string | null,
+	/**
+	 *  What pressing Grade consents to: handed back with the press, and a grade on another plan
+	 *  is refused.
+	 */
+	consent: string | null,
 };
 
 /**

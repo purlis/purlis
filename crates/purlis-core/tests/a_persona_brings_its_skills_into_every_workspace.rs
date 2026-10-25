@@ -98,6 +98,7 @@ fn host_armed(harness: Harness, here: &Here) -> (Vec<String>, Vec<(String, Strin
             linked: linked.as_deref(),
             repo: &[],
         }),
+        graded: false,
     };
     let cwd = here.plane.join("workspaces").join(WORKSPACE);
     match harness.state_hooks(

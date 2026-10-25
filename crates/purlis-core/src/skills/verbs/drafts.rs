@@ -542,21 +542,64 @@ pub fn try_out(root: &Path, id: &str) -> Result<Try, String> {
     lay_out(root, Some((&draft.name, &files)))
 }
 
-/// **Lays out a grade's arm** (SK-16, #2779): a throwaway piece whose chat gets the built-in
-/// skills and the copy of `name` at `level` alone, as it is in the project now, or, with no skill
-/// named, the built-in skills alone. The copy leaves out the skill's [`EVALS`] folder, so the
-/// chat a fixture is run in is never handed the fixtures it is graded by. Ended as a Try it is,
-/// when its chat closes ([`end_try_at`]).
-pub fn lay_out_arm(root: &Path, skill: Option<(&Level, &str)>) -> Result<Try, String> {
-    let Some((level, name)) = skill else {
-        return lay_out(root, None);
-    };
+/// **A copy of a skill, read once for a grade** (SK-16, #2779): its name and its files, without
+/// its [`EVALS`] folder, so the chat a fixture is run in is never handed the fixtures it is graded
+/// by. Every arm with the skill is laid out from it ([`lay_out_arm`]), so an edit while the grade
+/// runs changes nothing it grades.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Snapshot {
+    pub name: String,
+    pub files: BTreeMap<String, String>,
+}
+
+/// **The copy of `name` at `level`, read once**: [`Snapshot`].
+pub fn snapshot(root: &Path, level: &Level, name: &str) -> Result<Snapshot, String> {
     let folder = find(root, level, name)?;
-    let files: BTreeMap<String, String> = files_below(root, &folder)
-        .into_iter()
-        .filter(|(path, _)| path.split('/').next() != Some(EVALS))
-        .collect();
-    lay_out(root, Some((name, &files)))
+    Ok(Snapshot {
+        name: name.to_owned(),
+        files: files_below(root, &folder)
+            .into_iter()
+            .filter(|(path, _)| path.split('/').next() != Some(EVALS))
+            .collect(),
+    })
+}
+
+/// **Lays out a grade's arm** (SK-16, #2779): a throwaway piece whose chat gets the built-in
+/// skills and `skill` alone, or, with none, the built-in skills alone. Marked as a grade's
+/// ([`graded_piece`]), so its chat is armed as a grade's chat is. Ended as a Try it is, when its
+/// chat closes ([`end_try_at`]).
+pub fn lay_out_arm(root: &Path, skill: Option<&Snapshot>) -> Result<Try, String> {
+    let laid = lay_out(root, skill.map(|skill| (skill.name.as_str(), &skill.files)))?;
+    let state = crate::plane::state_dir(root);
+    if let Err(why) = write_at(
+        &state,
+        &format!("{TRIES_DIR}/{}/{GRADED}", laid.id),
+        None,
+        "",
+        usize::MAX,
+    ) {
+        let _ = end_try(root, &laid.id);
+        return Err(super::not_written("the grade's record of its folder", why));
+    }
+    Ok(laid)
+}
+
+/// A try's file that marks it as a grade's arm.
+const GRADED: &str = "graded";
+
+/// **Whether `cwd` is the throwaway piece of a grade's arm** in the project at `root`
+/// ([`lay_out_arm`]): only this machine's state says so, and no chat writes it.
+pub fn graded_piece(root: &Path, cwd: &Path) -> bool {
+    a_piece(cwd)
+        && try_of(root, cwd).is_some_and(|id| {
+            read_at(
+                &crate::plane::state_dir(root),
+                &format!("{TRIES_DIR}/{id}/{GRADED}"),
+            )
+            .ok()
+            .flatten()
+            .is_some()
+        })
 }
 
 /// The folder of a skill's fixtures, which a grade's arm leaves out of its copy.

@@ -82,6 +82,7 @@ fn host_armed(harness: Harness, here: &Here) -> (Vec<String>, Vec<(String, Strin
             linked: linked.as_deref(),
             repo: &[],
         }),
+        graded: false,
     };
     match harness.state_hooks(
         kit,

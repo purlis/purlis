@@ -342,6 +342,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`skills-deleted/<stamp>-<name>/`](#skills-deletedstamp-name)
   - [`skills-deleting/<stamp>-<folder>`](#skills-deletingstamp-folder)
   - [`skill-drafts/<id>/`](#skill-draftsid)
+  - [`<state>/skill-grades/<YYYY-MM>.jsonl`](#stateskill-gradesyyyy-mmjsonl)
   - [`skill-tries/<id>/`](#skill-triesid)
   - [`skill-levels/<chat id>.json`](#skill-levelschat-idjson)
   - [`chat-settings/<chat id>.json`](#chat-settingschat-idjson)
@@ -939,7 +940,7 @@ key refuses.
 | `[dispatch]`, `[dispatch.workspaces.<workspace>]`, `[dispatch.personas.<persona>]` | as in `charter.toml` | optional | **purlis only** (#1440: the **You** level). Your own dispatch limits on this machine, in the same shape and with the same refusals as `charter.toml`'s, **and never a dispatch grant**: `[dispatch.grants]` here is refused with a sentence and read as absent, since a grant of your own is kept by the app in `app/sandbox.json` `dispatch_mine` and the project's are in the committed file (#1437). **They only ever lower a limit**: a value above what the project's files give is ignored, and Settings › Project › Dispatch says so on its "Me on this machine" row. **Read even where git would carry this file**, which leaves every other table of it out: a lowering can only lower, so honouring it is the strict reading. An administrator's policy caps the result. | stable | `crates/purlis-core/src/dispatchlimits.rs` `Files::read`, `in_force` |
 | `[harnesses.<name>]` | table | optional | **purlis only** (#968, ADR 0073 §5). A harness declaration of this machine's own, in the schema of [`harnesses/<name>.toml`](#harnessesnametoml--a-harness-declaration); `name` may be left out and is the table's, and a different `name` is refused. A name of its own declares a harness for this machine alone: it gives a profile from this file, asked about once like any profile here; the one question shows the words its declaration adds, and is asked again when they change. It may not take a project declaration's name, nor a name purlis gives a harness it ships. The name of a harness purlis ships (`claude`, `codex`, `opencode`) replaces that harness's measured facts on this machine (`[terminal]`, `title`, `tested`, and the capabilities on its card) and never how it is run or armed: `program`, `[levels]`, `[session]`, `env`, `[sign_in]`, `[folders]` and `[conversation]` are the built-in's, left out or restated word for word; otherwise the table is refused and the built-in stands. A word is added to a built-in's command by a profile, which asks first, and to its environment by `[chat_env]`. In a harness of this machine's own a bare `{id}` word is allowed, a bare `{name}` is not. A prompt is typed into either on one line only. | stable | `crates/purlis-core/src/harness_declaration.rs` `read`, `with_local`, `parse`, `replacement_session` |
 | `[chat_env].pass` | list[str] | optional, default `[]` | **purlis only** (ADR 0047, amendment of 2026-09-29). More of this machine's own environment every chat started in this plane is given, beyond the built-in keep-list and what the chat's harness declares (`crates/purlis-core/src/chatenv.rs` `PASSED`, `Harness::env_passed`). Each entry is a variable's name (letters, digits and `_`, not starting with a digit), or such a name ending in `*` for a prefix. A credential-class name (forge, cloud, model-provider or registry credential, or a name holding `KEY`/`TOKEN`/`SECRET`/`PASSWORD`) passes only by its exact name, never by a prefix. `OP_*`, a vault's declared identity variables, a harness's identity, `CHARTER_WORKSPACE`, `CHARTER_PLANE_ROOT_SESSION` and `TERM` are never passed, whatever is listed. An entry of another shape, a `pass` that is not a list, or another key in the table is refused with a sentence and passes nothing. No counterpart in `charter.toml`. | stable | `crates/purlis-core/src/chatenv.rs` `from_text`, `refusals`, `inherited` |
-| `[skill_grades].token_cap` | int | optional; absent = 200000 | **purlis only** (#2779, ADR 0105 as amended 2026-10-26, the operator's ruling on #3229). The tokens a grade of a skill in this project may spend on this machine before it stops: the running chat is ended, no more are started, and the end says it stopped at the cap and what it spent. A whole number from 1000 to 100000000. Written by the Skill studio's plan ("Set the cap") and by hand; read by `purlis_core::skills::grades::cap::token_cap` for the plan, which shows it before Grade is pressed, and for the grade. This machine's alone: the person who pays for a grade's chats sets it, so `[skill_grades]` in `charter.toml` is refused, and so is any other key in the table or a value out of bounds, which leaves the default. **experimental** behind the `skill-studio` flag. | experimental | `crates/purlis-core/src/skills/grades/cap.rs` |
+| `[skill_grades].token_cap` | int | optional; absent = 200000 | **purlis only** (#2779, ADR 0105 §4, the operator's ruling of 2026-10-26 on #3229). The tokens a grade of a skill in this project may spend on this machine before it stops: the running chat is ended, no more are started, and the end says it stopped at the cap and what it spent. A whole number from 1000 to 100000000. Written by the Skill studio's plan ("Set the cap") and by hand; read by `purlis_core::skills::grades::cap::token_cap` for the plan, which shows it before Grade is pressed, and for the grade. This machine's alone: the person who pays for a grade's chats sets it, so `[skill_grades]` in `charter.toml` is refused, and so is any other key in the table or a value out of bounds, which leaves the default. **experimental** behind the `skill-studio` flag. | experimental | `crates/purlis-core/src/skills/grades/cap.rs` |
 
 ---
 
@@ -3715,15 +3716,18 @@ An end row, never a pass or a fail:
 - **Tier:** Plane — committed, beside the skill log, so a teammate sees a skill's grades on the
   version they pulled.
 - **What a row holds:** `v` (1); `grade`, the grade's id; `skill`; `level`, the copy's folder
-  relative to the plane (`skills`, `workspaces/<ws>/skills`, `personas/<p>/skills`, or a `.local`
-  one), and null for a copy in a workspace that is this machine's alone, whose name never goes in
-  a committed file; `tree`, what the copy's folder held by content, as a skill run's start
+  relative to the plane (`skills`, `workspaces/<ws>/skills`, `personas/<p>/skills`). A copy that
+  is this machine's alone (a `skills.local/` copy, or one in a workspace that is this machine's
+  alone) is never graded into this file: its grades go to
+  [`<state>/skill-grades/`](#stateskill-gradesyyyy-mmjsonl); `tree`, what the copy's folder held by content, as a skill run's start
   records it (the tree git holds of it, or `uncommitted`); `commit`, the commit that tree is, or
   null; `harness` and `profile`, the plain names its chats ran on; `ts`; `runs`, each fixture's
   runs per arm; `report`, the grade report as ADR 0105 §1 spells it, with the token cap it was
-  held to and what its chats spent (`cap`, `spent_tokens`, its amendment of 2026-10-26); and `spent`,
+  held to and what its chats spent (`cap`, `spent_tokens`, ADR 0105 §4); and `spent`,
   `{chats, tokens, cost_usd}` as the chats' harness reported them, null where it did not.
-- **Read:** each file following no link and at most 16 MiB, each line at most 1 MiB; a line that
+- **Read:** the folder only where it is a folder of its own (no link) holding at most 600 names,
+  newest month first, stopping once 200 grades are held; each file following no link and at most
+  16 MiB, each line at most 1 MiB; a line that
   is not a row, a row of a newer `v`, and a row that says more than purlis writes (a commit that
   is no whole hex id, a harness, profile or id that is no plain name, a stamp that is no time)
   is skipped. At most 200 grades of a skill are answered, newest first
@@ -7121,6 +7125,16 @@ rewritten.
   and removal goes through folders held open with `O_NOFOLLOW`.
 - **Git:** gitignored, under the state directory.
 
+### `<state>/skill-grades/<YYYY-MM>.jsonl`
+- **Format:** JSON Lines, append-only: the eval record's rows
+  ([`personas/_grades/`](#personas_gradesyyyy-mmdevicejsonl)) for a copy of a skill that is this
+  machine's alone, a `skills.local/` copy or one in a workspace that is this machine's alone
+  (SK-16, #2779, the review of #3229). Written `0600` through no link (`grades::record`), read
+  beside the committed record by `grades::grades_of`, held to the same limits.
+- **Status:** **internal**, **experimental** behind the `skill-studio` flag.
+- **Tier:** Clone state — this machine's own; nothing rebuilds it.
+- **Git:** gitignored, under the state directory.
+
 ### `skill-tries/<id>/`
 - **Format:** one folder per Try it of a draft skill (SK-9, #2772), `<id>` sixteen random hex
   characters. `skills/<name>/` holds the skill as the draft makes it: the project's files of the
@@ -7134,8 +7148,10 @@ rewritten.
 - **Status:** **internal**, **experimental** behind the `skill-studio` flag (#2772).
 - **Tier:** Clone state, transient — it lasts as long as its chat.
 - **Written by:** `drafts::try_out`, from the studio's Try it; and `drafts::lay_out_arm`, for each
-  chat of a grade (SK-16, #2779): the skill as the project holds it, without its `evals/`
-  folder, or, for the arm without the skill, no `skills/` at all.
+  chat of a grade (SK-16, #2779): the skill as the grade read it once (`drafts::snapshot`),
+  without its `evals/` folder, or, for the arm without the skill, no `skills/` at all; and an
+  empty file `graded` beside `piece`, which arms the chat started there as a grade's chat
+  (`--strict-mcp-config`, purlis's server with `--graded`, ADR 0105 §3).
 - **Removed by:** with its [throwaway piece](#workspacesthrowawaypurlis-try-id), the same way and
   at the same moments. What is left is the skill run the chat recorded, under the skill's name.
 - **Git:** gitignored, under the state directory; the piece is ignored and never staged.

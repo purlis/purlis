@@ -1102,7 +1102,10 @@ fn grade_said(
     let name = &planned.skill;
     let mut text = String::new();
     if let Read::Refused(why) = &planned.fixtures.triggers {
-        text.push_str(&format!("Its trigger tests could not be read: {why}\n"));
+        text.push_str(&format!(
+            "Its trigger tests could not be read: {}\n",
+            why.terminal()
+        ));
     }
     match (&planned.request, planned.plan) {
         (Some(request), Some(plan)) => {
@@ -1171,9 +1174,8 @@ fn grade_said(
         .filter(|evals| !evals.is_empty())
     {
         text.push_str(&format!(
-            "{} {} for a later purlis: grades run the trigger tests alone.\n",
-            counted(evals.len(), "outcome eval", "outcome evals"),
-            if evals.len() == 1 { "waits" } else { "wait" }
+            "{} for a later purlis: grades run the trigger tests alone.\n",
+            counted(evals.len(), "outcome eval waits", "outcome evals wait"),
         ));
     }
     if graded.is_empty() {
@@ -1193,9 +1195,10 @@ fn grade_said(
         };
         let (passed, of) = one.report.passed_with();
         text.push_str(&format!(
-            "  {}  {}  {passed} of {of} tests passed  with {}  without {}{}  ({})\n",
+            "  {}  {}  {passed} of {} passed  with {}  without {}{}  ({})\n",
             purlis_core::skills::review::escaped_line(&one.ts),
             one.commit.as_deref().map_or("uncommitted", history::short),
+            counted(of, "test", "tests"),
             rate(Arm::With),
             rate(Arm::Without),
             one.report

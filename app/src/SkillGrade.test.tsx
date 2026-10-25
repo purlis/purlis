@@ -29,6 +29,11 @@ function plan(over: Partial<SkillGradePlan> = {}): SkillGradePlan {
     running: null,
     token_cap: 200000,
     cap_set_here: false,
+    chat_minutes: 5,
+    profile: "work",
+    sandbox: "full sandbox",
+    refused: null,
+    consent: "c0ffee",
     ...over,
   };
 }
@@ -54,6 +59,10 @@ describe("Grade, cost first", () => {
     fireEvent.click(screen.getByRole("button", { name: "Grade…" }));
     const cost = await screen.findByTestId("skill-grade-cost");
     expect(cost.textContent).toContain("12 chats, one turn each");
+    expect(cost.textContent).toContain("up to 12 chats × 5 min");
+    expect(cost.textContent).toContain(
+      "in the project's full sandbox, with none of your own Allows",
+    );
     expect(cost.textContent).toContain(
       "2 trigger tests 3 times with the skill and 3 times without it",
     );
@@ -74,6 +83,7 @@ describe("Grade, cost first", () => {
       plane: "p",
       skill: "deploy",
       profile: null,
+      consent: "c0ffee",
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Stop" }));
@@ -174,6 +184,48 @@ describe("a grade's token cap", () => {
       }),
     ).toBe(
       "Stopped at its cap of 200,000 tokens after 9 chats, having spent 201,345 tokens. What ran is scored in Grades below.",
+    );
+  });
+});
+
+describe("a grade that cannot run, or runs already", () => {
+  it("says why no grade can run on the profile, and offers no Grade press", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "skill_grade_plan")
+        return plan({
+          sandbox: null,
+          refused:
+            "Its chats would start with the sandbox off, and a grade runs only in the full sandbox.",
+        });
+      if (cmd === "start_options") return { profiles: [] };
+      return null;
+    });
+    render(<SkillGrade plane="p" name="deploy" level={LEVEL} onGraded={() => undefined} />);
+    fireEvent.click(screen.getByRole("button", { name: "Grade…" }));
+    const said = await screen.findByTestId("skill-grade-cannot-run");
+    expect(said.textContent).toContain(
+      "No grade can run on work: Its chats would start with the sandbox off",
+    );
+    expect(
+      screen.getByRole("button", { name: "Grade" }).hasAttribute("disabled") ||
+        screen.getByRole("button", { name: "Grade" }).getAttribute("aria-disabled") === "true",
+    ).toBe(true);
+  });
+
+  it("shows a grade running from before the tab was drawn, with its Stop", async () => {
+    const asked: Array<{ cmd: string; args: unknown }> = [];
+    mockIPC((cmd, args) => {
+      asked.push({ cmd, args });
+      if (cmd === "skill_grade_plan") return plan({ running: "01RUNNING" });
+      return null;
+    });
+    render(<SkillGrade plane="p" name="deploy" level={LEVEL} onGraded={() => undefined} />);
+    await screen.findByTestId("skill-grade-running");
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+    await waitFor(() =>
+      expect(asked.find((one) => one.cmd === "skill_grade_stop")?.args).toMatchObject({
+        grade: "01RUNNING",
+      }),
     );
   });
 });

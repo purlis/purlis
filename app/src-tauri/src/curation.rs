@@ -606,6 +606,23 @@ pub fn start_graded(
     sent(held, chat, size, SentFor::Grade, before)
 }
 
+/// **How a grade's chat would start as `start`** in the project at `root` (SK-16, the operator's
+/// rulings of 2026-10-26 on #3229), or why it may not: decided keeping none of the person's own
+/// Allows ([`purlis_core::sandbox::policy::holding_no_kept_grants`]), and refused unless it runs
+/// at the full sandbox on a profile that keeps its permission prompts
+/// ([`purlis_core::skills::grades::chat_refused`]). The one answer a grade's plan and its chats
+/// both take.
+pub(crate) fn graded_ready(
+    start: &purlis_core::start::Start,
+    root: &Path,
+) -> Result<purlis_core::start::Ready, String> {
+    let ready = purlis_core::sandbox::policy::holding_no_kept_grants(|| {
+        purlis_core::start::ready(start, root)
+    })?;
+    purlis_core::skills::grades::chat_refused(&ready)?;
+    Ok(ready)
+}
+
 /// [`start_sent`] and [`start_graded`]: `before` is told the number before the chat starts.
 fn sent(
     held: &Arc<Held>,
@@ -620,24 +637,25 @@ fn sent(
     let root = held.root().to_path_buf();
     let number = held.chats().sessions().deal();
     let name = number.to_string();
-    let ready = purlis_core::start::ready(
-        &purlis_core::start::Start {
-            profile: Some(chat.profile.clone()),
-            persona: chat.persona.clone(),
-            name: name.clone(),
-            cwd: Some(chat.cwd.clone()),
-            resume: None,
-            show_footer: false,
-            resuming: None,
-            // An ordinary sandboxed chat, with nothing past its project's sandbox.
-            without_sandbox: None,
-            held: None,
-            grants: Default::default(),
-            // The person's curation action, from the window (#2071).
-            made: purlis_core::sandbox::Made::Window,
-        },
-        &root,
-    )
+    let start = purlis_core::start::Start {
+        profile: Some(chat.profile.clone()),
+        persona: chat.persona.clone(),
+        name: name.clone(),
+        cwd: Some(chat.cwd.clone()),
+        resume: None,
+        show_footer: false,
+        resuming: None,
+        // An ordinary sandboxed chat, with nothing past its project's sandbox.
+        without_sandbox: None,
+        held: None,
+        grants: Default::default(),
+        // The person's curation action, from the window (#2071).
+        made: purlis_core::sandbox::Made::Window,
+    };
+    let ready = match why {
+        SentFor::Grade => graded_ready(&start, &root),
+        SentFor::FixASave => purlis_core::start::ready(&start, &root),
+    }
     .and_then(|ready| crate::handoff::told_first(ready, &chat.profile, &chat.prompt))?;
     let record = Chat {
         program: ready.program.clone(),

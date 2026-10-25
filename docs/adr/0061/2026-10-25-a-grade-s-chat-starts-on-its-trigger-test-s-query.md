@@ -16,9 +16,13 @@ times.
   character no reader would see marked, and a query no chat can be started on (one a harness would
   read as its own flag) left out and named. The commands are the window's alone; no chat, tool,
   hook or `purlis` word reaches them.
-- **The chat starts in a throwaway piece**, under the project's sandbox, with the built-in skills
-  and the skill under test alone (or none), on the profile the person picked. It is drawn nowhere,
-  is ended by purlis, and is never started again at a relaunch.
+- **The chat starts in a throwaway piece, stripped down**, on the profile the person picked: only
+  in the full sandbox (never at the floor, lifted, or with no backend; the plan says why and
+  states the level), with none of the person's own Allows (no folder, socket, service or port),
+  no MCP server but purlis's, none of purlis's tools that write, and never on a profile whose
+  command turns permission prompts off (ADR 0105 §3). It is drawn nowhere, is ended by purlis at
+  its first ask, at the end of its turn, at its time or at the grade's token cap, and is never
+  started again at a relaunch.
 - **Nothing is typed**, so nothing is gated by the board, as for Fix.
 
 Every other prompt this record prepares is still typed and never sent. A third reason is a new

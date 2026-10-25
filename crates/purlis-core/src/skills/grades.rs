@@ -44,11 +44,48 @@ pub const MOST_GRADES: usize = 200;
 /// The arms the built-in runner compares now: the skill against no skill.
 pub const ARMS: [Arm; 2] = [Arm::With, Arm::Without];
 
+/// The longest one grade's chat runs before purlis ends it: what the plan's "up to" says.
+pub const CHAT_TIME: std::time::Duration = std::time::Duration::from_secs(5 * 60);
+
+/// The folder of this machine's state the grades of a local copy are kept in, never committed
+/// (a copy in `skills.local/`, or in a workspace that is this machine's alone).
+pub const LOCAL_DIR: &str = "skill-grades";
+
+/// The most files of one record folder looked at: a folder with more is read no further.
+pub const MOST_FILES: usize = 600;
+
+/// The first characters a chat program reads as its own command, a flag, a shell line, a memory
+/// or a file's mention, rather than as a prompt: a query that starts with one is left out of a
+/// grade, never sent (the review of #3229).
+pub const COMMAND_STARTS: [char; 5] = ['-', '/', '!', '#', '@'];
+
 /// `personas/_grades/<YYYY-MM>.<device>.jsonl`, `<device>` named as the skill log's is.
 pub fn path_for(root: &Path, when: chrono::DateTime<chrono::Utc>, device: &str) -> PathBuf {
     root.join("personas")
         .join(DIR_NAME)
         .join(format!("{}.{device}.jsonl", when.format("%Y-%m")))
+}
+
+/// `<state>/skill-grades/<YYYY-MM>.jsonl`: where a local copy's grades are kept.
+pub fn local_path_for(root: &Path, when: chrono::DateTime<chrono::Utc>) -> PathBuf {
+    crate::plane::state_dir(root)
+        .join(LOCAL_DIR)
+        .join(format!("{}.jsonl", when.format("%Y-%m")))
+}
+
+/// The level a grade of the copy at `level` is recorded by: its folder relative to the plane.
+pub fn recorded_level(level: &Level) -> Option<String> {
+    level.rel()
+}
+
+/// **Whether the copy at `level` is this machine's alone**: a `skills.local/` copy, or one in a
+/// workspace that is this machine's alone. Its grades never go in a committed file.
+pub fn is_local(root: &Path, level: &Level) -> bool {
+    level.local
+        || level
+            .at
+            .workspace()
+            .is_some_and(|ws| !crate::wscmd::live_workspaces(root).contains(ws))
 }
 
 /// What a grade's chats spent in all, where their harness said.
@@ -67,9 +104,9 @@ pub struct Graded {
     /// The grade's id.
     pub grade: String,
     pub skill: String,
-    /// The copy's level, as its folder relative to the plane (`skills`, `workspaces/ops/skills`),
-    /// or `None` for a copy in a workspace that is this machine's alone, whose name never goes in
-    /// a committed file.
+    /// The copy's level, as its folder relative to the plane (`skills`, `workspaces/ops/skills`).
+    /// A copy that is this machine's alone is recorded in this machine's state, never in the
+    /// committed file ([`is_local`]).
     pub level: Option<String>,
     /// What the copy's folder held, by content: the tree's id, or `uncommitted`.
     pub tree: String,
@@ -117,25 +154,43 @@ impl Graded {
     }
 }
 
-/// The level `level` is recorded by: its folder relative to the plane, or `None` for a local
-/// workspace's.
-pub fn level_word(root: &Path, level: &Level) -> Option<String> {
-    if let Some(ws) = level.at.workspace()
-        && !crate::wscmd::live_workspaces(root).contains(ws)
-    {
-        return None;
+/// **Appends `graded`, a grade of the copy at `level`, to this month's file of the project at
+/// `root`**: the committed record, or, for a copy that is this machine's alone ([`is_local`]),
+/// this machine's state. `None` where the project is one this purlis may not write, or the write
+/// was refused.
+pub fn record(root: &Path, level: &Level, graded: &Graded, device: &str) -> Option<PathBuf> {
+    let row = serde_json::to_value(graded).ok()?;
+    if is_local(root, level) {
+        return append_local(&local_path_for(root, chrono::Utc::now()), &row).ok();
     }
-    level.rel()
-}
-
-/// **Appends `graded` to this month's file of the project at `root`**: `None` where the project
-/// is one this purlis may not write, or the write was refused.
-pub fn record(root: &Path, graded: &Graded, device: &str) -> Option<PathBuf> {
     if crate::compat::read_only(root).is_some() {
         return None;
     }
-    let row = serde_json::to_value(graded).ok()?;
     crate::dispatch::append(&path_for(root, chrono::Utc::now(), device), root, &row)
+}
+
+/// **Appends `row` to this machine's record file `path`**, in a folder of this machine's state
+/// made private, opened following no link, one line with its keys sorted, as the committed
+/// record's are.
+fn append_local(path: &Path, row: &serde_json::Value) -> std::io::Result<PathBuf> {
+    use std::io::Write as _;
+    let dir = path
+        .parent()
+        .ok_or_else(|| std::io::Error::other("the record has no folder"))?;
+    std::fs::create_dir_all(dir)?;
+    if !std::fs::symlink_metadata(dir)?.is_dir() {
+        return Err(std::io::Error::other("the record's folder is not a folder"));
+    }
+    let mut options = std::fs::OpenOptions::new();
+    options.append(true).create(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt as _;
+        options.mode(0o600);
+    }
+    let mut file = crate::contain::nofollow(&mut options).open(path)?;
+    file.write_all(format!("{}\n", crate::pyjson::dumps_sorted(row)).as_bytes())?;
+    Ok(path.to_path_buf())
 }
 
 /// The text of the record file `path`, read through no link and at most [`MOST_FILE_BYTES`].
@@ -152,24 +207,48 @@ fn file_text(path: &Path) -> Option<String> {
     Some(text)
 }
 
-/// **The grades of the skill `name`** in the project at `root`, newest first, at most
-/// [`MOST_GRADES`]: every copy's, or with `level`, that copy's alone (a row of a local
-/// workspace's copy says no level, and is that copy's where its name and content match).
-pub fn grades_of(root: &Path, name: &str, level: Option<&Level>) -> Vec<Graded> {
-    let dir = root.join("personas").join(DIR_NAME);
+/// The record files of folder `dir`, newest month first: only where `dir` is a folder of its
+/// own (never a link), and none of a folder holding more than [`MOST_FILES`] names.
+fn record_files(dir: &Path) -> Vec<PathBuf> {
+    if !std::fs::symlink_metadata(dir).is_ok_and(|meta| meta.is_dir()) {
+        return Vec::new();
+    }
     let Ok(reader) = std::fs::read_dir(dir) else {
         return Vec::new();
     };
-    let mut files: Vec<PathBuf> = reader
+    let names: Vec<PathBuf> = reader
+        .take(MOST_FILES + 1)
         .filter_map(Result::ok)
         .map(|entry| entry.path())
+        .collect();
+    if names.len() > MOST_FILES {
+        return Vec::new();
+    }
+    let mut files: Vec<PathBuf> = names
+        .into_iter()
         .filter(|path| path.extension().is_some_and(|ext| ext == "jsonl"))
         .collect();
     files.sort();
-    let wanted = level.map(|level| level_word(root, level));
+    files.reverse();
+    files
+}
+
+/// **The grades of the skill `name`** in the project at `root`, newest first, at most
+/// [`MOST_GRADES`]: every copy's, or with `level`, that copy's alone (a row of a local
+/// workspace's copy says no level, and is that copy's where its name and content match). The
+/// committed record and this machine's are read, newest month first, until enough are held.
+pub fn grades_of(root: &Path, name: &str, level: Option<&Level>) -> Vec<Graded> {
+    let wanted = level.map(|level| level.rel());
+    let mut files = record_files(&root.join("personas").join(DIR_NAME));
+    files.extend(record_files(&crate::plane::state_dir(root).join(LOCAL_DIR)));
+    // Newest month first, across both folders: a file's name starts with its month.
+    files.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
     let mut out: Vec<Graded> = Vec::new();
-    for file in files.iter().rev() {
-        let Some(text) = file_text(file) else {
+    for file in files {
+        if out.len() >= MOST_GRADES {
+            break;
+        }
+        let Some(text) = file_text(&file) else {
             continue;
         };
         let mut rows: Vec<Graded> = crate::mdsection::split_lines(&text)
@@ -217,6 +296,9 @@ pub struct Planned {
     pub left_out: Vec<(usize, String)>,
     /// The token cap the grade is held to ([`cap::token_cap`]).
     pub cap: cap::Cap,
+    /// What the person consents to by pressing Grade on this plan ([`consent_of`]): a grade
+    /// started on another is refused.
+    pub consent: Option<String>,
 }
 
 /// **The plan of grading the copy of `name` at `level`** in the project at `root`.
@@ -231,15 +313,13 @@ pub fn planned(root: &Path, level: &Level, name: &str) -> Result<Planned, String
             tests
                 .iter()
                 .enumerate()
-                .filter(
-                    |(at, test)| match crate::handoff::bad_message(&test.query) {
-                        Some(bad) => {
-                            left_out.push((*at, bad.say()));
-                            false
-                        }
-                        None => true,
-                    },
-                )
+                .filter(|(at, test)| match left_out_why(&test.query) {
+                    Some(why) => {
+                        left_out.push((*at, why));
+                        false
+                    }
+                    None => true,
+                })
                 .map(|(_, test)| test.clone())
                 .collect()
         })
@@ -279,6 +359,14 @@ pub fn planned(root: &Path, level: &Level, name: &str) -> Result<Planned, String
                 .collect()
         })
         .unwrap_or_default();
+    let consent = match &request {
+        Some(request) => {
+            let content =
+                crate::skilluse::content_at(root, &folder).unwrap_or(Content::Uncommitted);
+            Some(consent_of(request, &content, &snapshot(root, level, name)?))
+        }
+        None => None,
+    };
     Ok(Planned {
         skill: name.to_owned(),
         fixtures,
@@ -288,7 +376,111 @@ pub fn planned(root: &Path, level: &Level, name: &str) -> Result<Planned, String
         unseen,
         left_out,
         cap: cap::token_cap(root),
+        consent,
     })
+}
+
+/// **Why the query `query` is left out of a grade**, or `None` for one a chat is started on: one
+/// whose first character a chat program reads as its own ([`COMMAND_STARTS`]), or one no first
+/// message can carry ([`crate::handoff::bad_message`]).
+pub fn left_out_why(query: &str) -> Option<String> {
+    if let Some(first) = query.trim_start().chars().next()
+        && COMMAND_STARTS.contains(&first)
+    {
+        return Some(format!(
+            "it starts with {first:?}, which the chat program would read as a command of its \
+             own rather than as a prompt"
+        ));
+    }
+    crate::handoff::bad_message(query).map(|bad| bad.say())
+}
+
+/// **What the person consented to**: one digest of the trigger tests the plan showed, what the
+/// copy's folder held by content, and the copy's files as they are now. A grade started on a
+/// plan that no longer holds is refused, so what runs is what was shown.
+pub fn consent_of(request: &GradeRequest, content: &Content, snapshot: &Snapshot) -> String {
+    use sha2::Digest as _;
+    let mut digest = sha2::Sha256::new();
+    digest.update(serde_json::to_vec(&request.triggers).unwrap_or_default());
+    digest.update(b"\0");
+    digest.update(content.word().as_bytes());
+    for (path, text) in &snapshot.files {
+        digest.update(b"\0");
+        digest.update(path.as_bytes());
+        digest.update(b"\0");
+        digest.update(text.as_bytes());
+    }
+    digest
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+/// The copy's files a grade lays out, read once for the whole grade ([`snapshot`]).
+pub use super::verbs::drafts::Snapshot;
+
+/// **The copy of `name` at `level`, read once for a grade**: every arm with the skill is laid
+/// out from this, so an edit while the grade runs grades nothing it did not show.
+pub fn snapshot(root: &Path, level: &Level, name: &str) -> Result<Snapshot, String> {
+    super::verbs::drafts::snapshot(root, level, name)
+}
+
+/// **Why a grade's chat may not start as `ready` would start it**, or the sandbox level it would
+/// run at (the review of #3229, the operator's ruling of 2026-10-26): a grade's chats run on a
+/// Claude Code profile alone, as only there can purlis hold a chat to the grade's limits (its
+/// spend, #3272; its MCP servers); never on a profile whose command turns the harness's
+/// permission prompts off; and only at the full sandbox, never at the floor, with the sandbox
+/// lifted, or with no backend.
+pub fn chat_refused(ready: &crate::start::Ready) -> Result<crate::sandbox::Level, String> {
+    if ready.harness != Some(crate::harness::Harness::ClaudeCode) {
+        return Err(
+            "A grade runs its chats on a Claude Code profile only, as only there can purlis \
+             hold a chat to the grade's limits: pick one."
+                .to_owned(),
+        );
+    }
+    let command: Vec<String> = std::iter::once(ready.program.clone())
+        .chain(ready.command.iter().cloned())
+        .collect();
+    if let Some(flag) = crate::dispatchunattended::bypass_in(&command) {
+        return Err(format!(
+            "This profile's command turns the program's permission prompts off ({}), and a \
+             grade never runs on one: pick another profile.",
+            crate::shown::one_line(&flag, 60)
+        ));
+    }
+    if let Some(lifted) = &ready.unsandboxed {
+        return Err(match &lifted.reason {
+            Some(why) => format!(
+                "Its chats would start with the sandbox off ({}), and a grade runs only in the \
+                 full sandbox.",
+                crate::shown::one_line(why, 120)
+            ),
+            None => "Its chats would start with the sandbox off, as your own level for this \
+                     project is off, and a grade runs only in the full sandbox."
+                .to_owned(),
+        });
+    }
+    if let Some(why) = &ready.floorless {
+        return Err(format!(
+            "{} A grade runs only in the full sandbox.",
+            crate::shown::one_line(why, 200)
+        ));
+    }
+    match ready.sandbox.as_ref().map(crate::sandbox::Applied::level) {
+        Some(crate::sandbox::Level::Full) => Ok(crate::sandbox::Level::Full),
+        Some(crate::sandbox::Level::Floor) => Err(
+            "This project's chats run at the floor, not the full sandbox, and a grade runs only \
+             in the full sandbox: turn the sandbox on for the project, or set your own level to \
+             on."
+            .to_owned(),
+        ),
+        None => Err(
+            "Its chats would start with no sandbox, and a grade runs only in the full sandbox."
+                .to_owned(),
+        ),
+    }
 }
 
 /// **What the copy of `name` at `level` holds now, by content, and the commit that is**: the
