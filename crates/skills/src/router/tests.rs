@@ -383,7 +383,7 @@ fn a_repo_or_harness_skill_named_as_the_index_is_hidden_by_it() {
         (crate::Origin::Harness, crate::Owner::You),
     ] {
         let set = set_at_the_root(&plane, &built_in)
-            .with_outside(Route::Config, [outside(origin, owner)]);
+            .with_outside(Route::Plugin, [outside(origin, owner.clone())]);
 
         assert!(set.effective.iter().all(|e| e.skill.name != INDEX));
         let left = set
@@ -395,6 +395,26 @@ fn a_repo_or_harness_skill_named_as_the_index_is_hidden_by_it() {
         assert_eq!(
             left.reason.to_string(),
             "hidden by purlis's index skill of this name"
+        );
+        let briefed = set_on(&plane, &built_in, Route::Briefing)
+            .with_outside(Route::Briefing, [outside(origin, owner.clone())]);
+        assert!(
+            briefed
+                .left_out
+                .iter()
+                .any(|l| l.reason == Reason::HiddenByIndex)
+        );
+
+        // Where purlis's folder is one the harness discovers as its own, a switch by name would
+        // drop purlis's index too: the copy loads, and is not said to be hidden.
+        let discovered = set_on(&plane, &built_in, Route::Config)
+            .with_outside(Route::Config, [outside(origin, owner)]);
+        assert!(discovered.effective.iter().any(|e| e.skill.name == INDEX));
+        assert!(
+            discovered
+                .left_out
+                .iter()
+                .all(|l| l.reason != Reason::HiddenByIndex)
         );
     }
 }

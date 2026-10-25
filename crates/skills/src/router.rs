@@ -176,6 +176,10 @@ impl SkillSet {
     /// router ran.
     pub fn hidden_by_router(&self, name: &str) -> Option<&Hidden> {
         let hidden = &self.routing.as_ref()?.hidden;
+        debug_assert!(
+            hidden.is_sorted_by(|a, b| a.name < b.name),
+            "a routing's hidden skills are sorted by name, once each"
+        );
         hidden
             .binary_search_by(|one| one.name.as_str().cmp(name))
             .ok()

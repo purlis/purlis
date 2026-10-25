@@ -161,10 +161,10 @@ describe("Use skill…", () => {
     );
     expect(warnsSaid(over)).toMatch(/so 2 skills are hidden behind the index skill/);
     expect(warnsSaid({ ...over, still_over: "pins" })).toMatch(
-      /pinned skills are past purlis's skill budget.*`purlis skill pin <name> --off`/,
+      /pinned skills are past purlis's skill budget.*`purlis skill pin <name> -w <workspace> --off` \(or `-p <persona>`/,
     );
     expect(warnsSaid({ ...over, still_over: "not-hideable" })).toMatch(
-      /purlis's own skills and the ones this chat's tool and repos bring are past/,
+      /purlis's own skills and the ones this chat's program and repos bring are past/,
     );
     opened(
       skills(

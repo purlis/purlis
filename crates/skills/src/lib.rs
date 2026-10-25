@@ -108,6 +108,17 @@ pub enum Route {
     Own,
 }
 
+impl Route {
+    /// **Whether a harness on this route that leaves one of its own skills out by its name still
+    /// gets the copy purlis hands of that name** (SK-15): on [`Route::Plugin`] purlis's copies
+    /// come under their plugin's namespace, and on [`Route::Briefing`] purlis names them in the
+    /// briefing, apart from what the harness finds itself. On [`Route::Config`] purlis's folder is
+    /// one the harness discovers as its own, so a switch by name would reach purlis's copy too.
+    pub fn off_by_name_spares_handed(self) -> bool {
+        matches!(self, Self::Plugin | Self::Briefing)
+    }
+}
+
 /// Where a skill in a chat's set comes from: its level.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Origin {
@@ -690,8 +701,10 @@ impl SkillSet {
                 .map(Path::to_path_buf)
                 .unwrap_or_default();
             // The index skill's name is purlis's on every route, whether or not a router hands
-            // one to this chat (SK-15).
-            if one.id == router::INDEX && !one.off {
+            // one to this chat (SK-15): where the harness can leave its own copy out by that name
+            // and keep purlis's, it is asked to ([`Route::off_by_name_spares_handed`]); elsewhere
+            // it loads, and its studio row says so.
+            if one.id == router::INDEX && !one.off && route.off_by_name_spares_handed() {
                 self.left_out.push(LeftOut {
                     name: one.id,
                     origin: one.origin,

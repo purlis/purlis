@@ -49,7 +49,7 @@ pub mod persona;
 mod routing;
 
 pub use routing::PinnedBy;
-pub(crate) use routing::{pin, pins_of};
+pub(crate) use routing::{pin, pins_or_none};
 
 pub use on_machine::on_machine;
 pub(crate) use on_machine::{folders, skill_dirs};
@@ -107,6 +107,11 @@ pub fn for_chat(kit: Kit<'_>, harness: Harness) -> SkillSet {
 /// (a harness that switches by the name alone would reach purlis's own), and one the harness
 /// cannot leave out on its own ([`crate::harness_plugin::Adapter::skill_named_alone`]). What
 /// every adapter turns into its own switch.
+///
+/// And the index skill's name (SK-15), where the chat's set holds the plane's skills, a skill of
+/// the harness's own or of the chat's clone has it, and the harness can leave that copy out by
+/// name and keep purlis's ([`Route::off_by_name_spares_handed`]): so exactly one copy of the name
+/// reaches the chat, purlis's.
 pub fn skills_off_for(
     kit: Kit<'_>,
     harness: Harness,
@@ -114,13 +119,28 @@ pub fn skills_off_for(
 ) -> Vec<String> {
     let built_in = built_in_names(kit.plugin.and_then(in_bundle).as_deref());
     let adapter = harness.adapter().plugins();
-    chosen
+    let mut off: Vec<String> = chosen
         .skills_off
         .iter()
         .filter(|name| !built_in.contains(name))
         .filter(|name| adapter.skill_named_alone(name).is_none())
         .cloned()
-        .collect()
+        .collect();
+    let index_elsewhere = || {
+        kit.skills
+            .is_some_and(|at| at.repo.iter().any(|one| one.id == INDEX && !one.off))
+            || on_machine(harness, &crate::harness_plugin::Env::of(&[]))
+                .iter()
+                .any(|one| matches!(one, OnMachine::Skill { plugin: None, name } if name == INDEX))
+    };
+    if kit.skills.is_some()
+        && harness.skills().off_by_name_spares_handed()
+        && !off.iter().any(|name| name == INDEX)
+        && index_elsewhere()
+    {
+        off.push(INDEX.to_owned());
+    }
+    off
 }
 
 /// The names of the built-in skills of the bundle installed beside this binary
@@ -1016,7 +1036,7 @@ pub fn stamp_of(
 /// `skills:` list is read where the plane's skills are let in), the chat's route, the harness
 /// skills on this machine where they were looked for, and the chat's skill budget where its
 /// listing is routed (SK-15): by the built-in router, with the pins of its workspace and its
-/// persona ([`pins_of`]).
+/// persona ([`pins_or_none`]).
 fn ask(
     built_in: Option<&Path>,
     plane: Option<PlaneSkills<'_>>,
@@ -1062,14 +1082,9 @@ fn ask(
     };
     match budget {
         Some(budget) => {
-            let pins = match plane.map(|at| pins_of(at.plane, at.workspace, persona)) {
-                Some(Ok(pins)) => pins,
-                Some(Err(why)) => {
-                    tracing::warn!("purlis: {why}");
-                    Vec::new()
-                }
-                None => Vec::new(),
-            };
+            let pins = plane
+                .map(|at| pins_or_none(at.plane, at.workspace, persona))
+                .unwrap_or_default();
             set.routed(budget, &pins)
         }
         None => set,
@@ -1742,7 +1757,7 @@ fn outside_rows(harness: &HarnessInTheStudio, plane: &Path, known: &Known) -> Ve
                 .find(|l| l.name == found.id && l.origin == found.origin && l.folder == folder)
                 .map(|l| l.reason.to_string());
             // One purlis did not read is never linted or badged (SK-44): its description says why.
-            let (compat, lint) = if left_out.is_none() && found.unread.is_none() {
+            let (compat, mut lint) = if left_out.is_none() && found.unread.is_none() {
                 (
                     badges(
                         (&found.root, &found.skill.path),
@@ -1754,6 +1769,14 @@ fn outside_rows(harness: &HarnessInTheStudio, plane: &Path, known: &Known) -> Ve
             } else {
                 (Vec::new(), Vec::new())
             };
+            // A copy of the index skill's name its harness cannot leave out by name (SK-15).
+            if left_out.is_none() && found.id == INDEX && !found.off {
+                lint.push(format!(
+                    "it has the name of purlis's index skill, and {} cannot leave it out by name \
+                     without leaving out purlis's too, so a chat may get either one: rename it",
+                    harness.harness.title()
+                ));
+            }
             StudioRow {
                 name: found.id.clone(),
                 origin: found.origin,
@@ -2001,7 +2024,7 @@ pub fn studio_list(
         .map(|persona| names_of(plane, persona))
         .unwrap_or_default();
     let known = Known::of(plane);
-    let pins = pins_of(plane, workspace, persona).unwrap_or_default();
+    let pins = pins_or_none(plane, workspace, persona);
     let harnesses = harnesses_in_the_studio(&set, plane, workspace, &names, &pins, env, &known);
     let mut rows = studio_rows(&set, plane, &names);
     with_harness_badges(&mut rows, &harnesses, &known);

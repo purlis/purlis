@@ -63,6 +63,19 @@ pub(crate) fn pins_of(
     Ok(pins)
 }
 
+/// **A chat's pins, or none where they are refused** ([`pins_of`]), the refusal said in the log:
+/// what every set routed for a chat reads, so a refused list fails closed the same way everywhere.
+pub(crate) fn pins_or_none(
+    plane: &Path,
+    workspace: Option<&str>,
+    persona: Option<&str>,
+) -> Vec<String> {
+    pins_of(plane, workspace, persona).unwrap_or_else(|why| {
+        tracing::warn!("purlis: {why}");
+        Vec::new()
+    })
+}
+
 /// **Whose pins a pin changes** (SK-15, ADR 0102 §4): a workspace's or a persona's.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PinnedBy {
