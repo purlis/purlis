@@ -181,9 +181,7 @@ pub fn drawn_as_it_is(write: &Write) -> bool {
     use crate::harness::model::{Unshown, Written};
     texts(write).into_iter().all(|text| {
         !text.contains('\r')
-            && !text
-                .chars()
-                .any(|c| c != '\n' && c != '\t' && crate::shown::invisible(c))
+            && !purlis_unicode::hides(text, purlis_unicode::Breaks::Kept)
             && matches!(
                 unshown(&[Written::File {
                     content: text.to_owned(),

@@ -453,13 +453,13 @@ pub fn ancestor_that_does_not_load(root: &Path, name: &str) -> Option<String> {
 /// * `one_line` **clips** at `DISPLAY_LIMIT` with a `…`, because a persona name is
 ///   attacker-chosen and a refusal is one row of a TUI. `repr` never clips — a refusal that
 ///   quotes back a truncated value is not Python's refusal.
-/// * `one_line` leaves the **backslash** alone and escapes by general category; `repr`
+/// * `one_line` leaves the **backslash** alone and marks by purlis's one rule; `repr`
 ///   doubles the backslash and escapes by `str.isprintable`, which is also false for every
 ///   unassigned codepoint. They are close and they are not the same set, and the day they
 ///   are made the same set is the day one of them stops being a port of its Python.
 ///
 /// What the two DO share is the source of "which characters are which": one generated file,
-/// `crate::tui::tables`, so the divergence stays the deliberate one and does not quietly
+/// `purlis_unicode::tables`, so the divergence stays the deliberate one and does not quietly
 /// acquire an accidental one on top.
 pub fn one_line(value: &str) -> String {
     crate::shown::line(value)

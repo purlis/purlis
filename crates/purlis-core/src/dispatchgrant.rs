@@ -1026,32 +1026,20 @@ pub fn shown_brief(brief: &str) -> ShownBrief {
 
 /// **`text` written out inertly**: a chat's words, so nothing in them can move the cursor,
 /// change direction or hide what follows. Lines and tabs are kept (a `\r\n` is a line break),
-/// every other character with no glyph is written out as its escape, and a backslash is
-/// doubled so the text cannot spell an escape itself. Nothing is cut: what [`shown_brief`]
-/// shows of a brief before it is sent, and what the window shows of one after
+/// and every other character a reader does not see is written as its mark, `⟦U+XXXX⟧`:
+/// purlis's one rule ([`purlis_unicode::marked`], SK-49), which leaves a joiner doing its job
+/// in a script or an emoji as text. Nothing is cut: what [`shown_brief`] shows of a brief
+/// before it is sent, and what the window shows of one after
 /// ([`crate::dispatchrecord::brief_sent`]).
 pub fn inert(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    for ch in text.replace("\r\n", "\n").chars() {
-        match ch {
-            '\n' | '\t' => out.push(ch),
-            '\\' => out.push_str("\\\\"),
-            // The house's one table of what draws as nothing ([`crate::shown`]), never a list
-            // of ranges kept here.
-            _ if crate::shown::invisible(ch) => out.push_str(&crate::shown::escape_char(ch)),
-            _ => out.push(ch),
-        }
-    }
-    out
+    purlis_unicode::marked(&text.replace("\r\n", "\n"), purlis_unicode::Breaks::Kept)
 }
 
-/// Whether `text` holds a character [`inert`] writes out as an escape: one that draws as
+/// Whether `text` holds a character [`inert`] writes out as a mark: one that draws as
 /// nothing, moves the cursor or turns the words around it. A line break (`\n`, `\r\n`) and a
 /// tab are plain text, and are not one.
 pub fn holds_what_draws_as_nothing(text: &str) -> bool {
-    text.replace("\r\n", "\n")
-        .chars()
-        .any(|ch| ch != '\n' && ch != '\t' && crate::shown::invisible(ch))
+    purlis_unicode::hides(&text.replace("\r\n", "\n"), purlis_unicode::Breaks::Kept)
 }
 
 #[cfg(test)]

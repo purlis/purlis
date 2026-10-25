@@ -38,7 +38,7 @@
 //!
 //! **Some files are offered with their box unticked**, and say why: one longer than
 //! [`TICKED_UP_TO`], since every chat in the workspace reads all of it, and one holding an
-//! invisible character ([`is_invisible`]) — a zero-width, bidirectional or tag character can
+//! invisible character ([`purlis_unicode::hidden`], purlis's one rule) — a zero-width, bidirectional or tag character can
 //! hide an instruction in text that looks harmless, and the preview draws each by its code
 //! point.
 //!
@@ -401,34 +401,22 @@ fn past_ticking(text: &str) -> Option<String> {
     })
 }
 
-/// A character that changes what text means without being seen: zero-width characters, the
-/// bidirectional controls, and the Unicode tag block, which can carry a whole hidden sentence.
-/// The preview draws each as its code point; this unticks the file and says where the first is.
-pub fn is_invisible(c: char) -> bool {
-    matches!(
-        c,
-        '\u{00AD}'
-            | '\u{061C}'
-            | '\u{180E}'
-            | '\u{200B}'..='\u{200F}'
-            | '\u{202A}'..='\u{202E}'
-            | '\u{2060}'..='\u{2064}'
-            | '\u{2066}'..='\u{2069}'
-            | '\u{FEFF}'
-            | '\u{E0000}'..='\u{E007F}'
-    )
-}
-
+/// The first line of `text` holding a character a reader does not see there (purlis's one
+/// rule, [`purlis_unicode::hidden`]: zero-width characters, the bidirectional controls, the tag
+/// block that can carry a whole hidden sentence), said. The preview draws each as its code
+/// point; this unticks the file and says where the first is.
 fn invisible(text: &str) -> Option<String> {
     text.lines().enumerate().find_map(|(at, line)| {
-        line.chars().find(|c| is_invisible(*c)).map(|c| {
-            format!(
-                "line {} holds an invisible character (U+{:04X}), drawn in the preview by its \
+        purlis_unicode::hidden(line, purlis_unicode::Breaks::Kept)
+            .next()
+            .map(|c| {
+                format!(
+                    "line {} holds an invisible character (U+{:04X}), drawn in the preview by its \
                  code point, so it starts unticked",
-                at + 1,
-                u32::from(c)
-            )
-        })
+                    at + 1,
+                    u32::from(c)
+                )
+            })
     })
 }
 

@@ -29,7 +29,7 @@
 
 use serde_json::{Map, Value};
 
-use super::super::hooked::{drawn_otherwise, stacks_marks};
+use super::super::hooked::stacks_marks;
 use super::super::model::{Unshown, Writes, Written};
 
 /// The most lines an ask's change draws, every side of every change counted. Past it the
@@ -190,14 +190,15 @@ fn holds_what_a_file_s_view_draws_otherwise(text: &str) -> bool {
     false
 }
 
-/// Whether a file's text draws `c` as nothing or elsewhere: what [`drawn_otherwise`] says, but
+/// Whether a file's text draws `c` as nothing or elsewhere: what [`purlis_unicode::invisible`]
+/// says, but
 /// a tab and a newline, which a file's view draws as they are; and the line and paragraph
 /// separators, which an editor may break a line on.
 fn drawn_otherwise_in_a_file(c: char) -> bool {
     match c {
         '\t' | '\n' => false,
         '\u{2028}' | '\u{2029}' => true,
-        c => drawn_otherwise(c),
+        c => purlis_unicode::invisible(c),
     }
 }
 

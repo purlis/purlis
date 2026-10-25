@@ -107,63 +107,30 @@ pub fn short(value: &str) -> String {
 // em-dash is content and has to reach the screen as itself. Folding one into the other would
 // escape every one of those.
 
-/// Has `c` no glyph of its own — `charter/contain.py`'s `_INVISIBLE`, plus the whitespace
-/// clause beside it?
-///
-/// Python asks `category(ch) in {Cc, Cf, Cs, Zl, Zp} or (ch.isspace() and ch != ' ')`, and
-/// [`crate::tui::tables::INVISIBLE`] is **that sentence, evaluated by CPython** for every
-/// codepoint and written down as ranges (`tools/gen-unicode-tables.py`).
-///
-/// **Not decomposed into Rust's own `char` predicates any more, and that is the point.** It
-/// used to be three clauses — `is_control` for `Cc`, `is_whitespace` for `Zl`/`Zp`/`Zs`, and a
-/// hand-pasted `Cf` table — with a paragraph arguing that the three cover Python's set
-/// exactly. The argument was correct and the table beside it still drifted: [`crate::pyrepr`]
-/// derived its own list from the same `unicodedata` on a different day and came out nine
-/// ranges short, so `shown` escaped U+0890 and `repr()` printed it. An argument a reader has
-/// to re-check is not a rule; a table CPython wrote is. The whole file is regenerated from one
-/// CPython, so the two answers cannot be of different Unicode versions either.
-///
-/// The residual risk is unchanged and still stated rather than hidden: the table is of ONE
-/// Unicode version (named at the top of `tables.rs`). A codepoint whose category changes after
-/// it escapes in charter and not here until the table moves — one line the two implementations
-/// would render differently, named rather than left to be found.
-pub(crate) fn invisible(c: char) -> bool {
-    crate::tui::in_table(c, &crate::tui::tables::INVISIBLE)
-}
-
 /// `value` as one line of a report, with nothing in it that can forge another
 /// (`charter/contain.py:195`).
 ///
 /// **The property is line structure, not trustworthiness.** charter's reports are lines of
 /// the form `  <name> → <command>`, and every field in one comes out of a committed file. A
 /// newline in one of those fields writes a second line that looks exactly as much like
-/// charter's own output as the first. So every character with no glyph is replaced by its own
-/// escape, and the result is clipped.
+/// charter's own output as the first. So every character with no glyph is replaced by its mark,
+/// and the result is clipped.
 ///
 /// What this does NOT do is make the value trustworthy to READ: `I` and `l`, a Cyrillic `а`
 /// and a Latin `a`, come back unchanged and a reader cannot tell them apart. Those cannot
 /// forge a line, which is the whole of what is claimed. A caller whose sentence has to NAME
 /// something wants [`readable`] instead.
 ///
-/// The escape is Python's, spelling for spelling: `\xNN` below U+0100 and `\uXXXX` above it,
-/// where the four is a MINIMUM width — so an astral codepoint renders as five hex digits, not
-/// four. Deliberately not [`escape_char`]'s fixed-width injective form; the two answer
-/// different questions and charter writes both.
+/// Which characters those are, and how each is written, is purlis's one rule (SK-49, #3172):
+/// [`purlis_unicode::marked`], every character a reader does not see as `⟦U+XXXX⟧`, line ends
+/// and tabs included, and a joiner doing its job inside a script or an emoji left as text
+/// (D-1301). It used to be Python's `\xNN`/`\uXXXX` over CPython's narrower set; the install
+/// review and the terminal tables already wrote `⟦U+XXXX⟧`, and one value read three ways is
+/// the drift the one rule ends. Not [`escape_char`]'s fixed-width injective form: that answers
+/// [`readable`]'s question, whether a reader can read the value back off the line.
 pub fn one_line(value: &str, limit: usize) -> String {
-    let mut out = String::with_capacity(value.len());
-    for c in value.chars() {
-        if invisible(c) {
-            let cp = c as u32;
-            if cp < 0x100 {
-                out.push_str(&format!("\\x{cp:02x}"));
-            } else {
-                out.push_str(&format!("\\u{cp:04x}"));
-            }
-        } else {
-            out.push(c);
-        }
-    }
-    // Python clips on CHARACTERS, and what survives `invisible` is arbitrary Unicode, so this
+    let out = purlis_unicode::marked(value, purlis_unicode::Breaks::Marked);
+    // Python clips on CHARACTERS, and what survives the marking is arbitrary Unicode, so this
     // counts codepoints rather than bytes.
     if out.chars().count() <= limit {
         return out;

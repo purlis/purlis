@@ -201,12 +201,9 @@ pub fn apply(root: &Path, name: &str, email: &str) -> Result<Fixed, Invalid> {
         match set_global(key, value) {
             Ok(()) => said.push(format!(
                 "✓ set {key} = {} (global git config)",
-                // The name as typed, joiners and all (D-1301-4); the email is never joined.
-                if key == "user.name" {
-                    shown_name(value)
-                } else {
-                    crate::shown::line(value)
-                }
+                // The name as typed, joiners and all (D-1301-4): the one rule draws a joiner
+                // doing its job as itself; the email holds none.
+                crate::shown::line(value)
             )),
             Err(why) => {
                 said.push(format!("✗ {key} was not set: {}", crate::shown::line(&why)));
@@ -281,129 +278,31 @@ fn name_refused(name: &str) -> Option<String> {
     None
 }
 
-/// ZERO WIDTH JOINER: joins two emoji into one (a family, a flag, a profession).
-const ZWJ: char = '\u{200d}';
-/// ZERO WIDTH NON-JOINER: keeps two letters of a joining script apart, as Persian spells
-/// a word's parts (the prefix `mi` before a verb).
-const ZWNJ: char = '\u{200c}';
-/// VARIATION SELECTOR-16, which may follow an emoji before the joiner (the rainbow flag).
-const EMOJI_PRESENTATION: char = '\u{fe0f}';
-
-/// Does `name` hold a character [`crate::shown::invisible`] escapes, other than the two joiners
-/// a name of a person may need (#1301, D-1301-1, D-1301-3)?
+/// Does `name` hold a character a reader does not see there (#1301, D-1301-1, D-1301-3)?
 ///
-/// **Only in a git identity's name, and only where each joiner does its one job:**
-/// - a ZWJ between two emoji (after the first's variation selector, if it has one), as in a
-///   ZWJ family emoji;
-/// - a ZWNJ between two letters of the Arabic script, as Persian writes it;
-/// - either, after a letter or a virama of the Brahmic scripts (Devanagari to Malayalam) and
-///   before a letter of them: a ZWJ asks for a half form (a Devanagari conjunct, a Malayalam
-///   chillu), a ZWNJ keeps the virama shown.
-///
-/// Anywhere else (at either end, doubled, between two Latin letters, after a digit or a danda)
-/// each is refused like every other control, zero-width or direction-changing character.
-/// Neither joiner can reorder text or hide a word: each only changes how its two neighbours
-/// are drawn. The shared rule, [`crate::shown::invisible`], is not widened: every other writer
-/// keeps it as it is.
+/// purlis's one rule ([`purlis_unicode::hidden`], SK-49): every control, zero-width,
+/// direction-changing and default-ignorable character, except the joiners a name of a person
+/// may need, each doing its one job (a ZWJ inside an emoji sequence, a ZWNJ between Arabic
+/// letters, either inside a Brahmic word) and an emoji's presentation selector. Line ends and
+/// tabs count too: a name is one line.
 fn hides_a_character(name: &str) -> bool {
-    let chars: Vec<char> = name.chars().collect();
-    (0..chars.len()).any(|at| crate::shown::invisible(chars[at]) && !joins(&chars, at))
+    purlis_unicode::hides(name, purlis_unicode::Breaks::Marked)
 }
 
-/// Is `chars[at]` a joiner doing its one job between its neighbours ([`hides_a_character`])?
-fn joins(chars: &[char], at: usize) -> bool {
-    let before = at.checked_sub(1).map(|i| chars[i]);
-    let after = chars.get(at + 1).copied();
-    let brahmic =
-        before.is_some_and(|c| brahmic_letter(c) || virama(c)) && after.is_some_and(brahmic_letter);
-    match chars[at] {
-        ZWJ => {
-            let emoji_before = match before {
-                Some(EMOJI_PRESENTATION) => {
-                    at.checked_sub(2).is_some_and(|i| pictographic(chars[i]))
-                }
-                Some(before) => pictographic(before),
-                None => false,
-            };
-            (emoji_before && after.is_some_and(pictographic)) || brahmic
-        }
-        ZWNJ => (before.is_some_and(arabic_letter) && after.is_some_and(arabic_letter)) || brahmic,
-        _ => false,
-    }
-}
-
-/// `name`, which the name check let through, as the confirmation shows it (#1301, D-1301-4):
-/// [`crate::shown::line`], except that a joiner doing its job ([`joins`]) is drawn as itself,
-/// so a joined name echoes back as it was typed. Every other invisible character is escaped.
-fn shown_name(name: &str) -> String {
-    let chars: Vec<char> = name.chars().collect();
-    let mut out = String::with_capacity(name.len());
-    for (at, &c) in chars.iter().enumerate() {
-        if crate::shown::invisible(c) && joins(&chars, at) {
-            out.push(c);
-        } else {
-            out.push_str(&crate::shown::one_line(
-                c.encode_utf8(&mut [0; 4]),
-                crate::shown::NO_CLIP,
-            ));
-        }
-    }
-    if out.chars().count() <= crate::shown::DISPLAY_LIMIT {
-        return out;
-    }
-    let mut clipped: String = out.chars().take(crate::shown::DISPLAY_LIMIT).collect();
-    clipped.push('…');
-    clipped
-}
-
-/// Is `c` a letter of the Brahmic scripts' blocks, Devanagari to Malayalam (U+0900-U+0D7F): a
-/// consonant, a vowel or a vowel sign, never a digit or a danda.
-fn brahmic_letter(c: char) -> bool {
-    c.is_alphabetic() && matches!(c as u32, 0x0900..=0x0d7f)
-}
-
-/// Is `c` a virama of those scripts: each block's U+0x4D, and Malayalam's vertical-bar and
-/// circular viramas.
-fn virama(c: char) -> bool {
-    let cp = c as u32;
-    matches!(cp, 0x0900..=0x0d7f) && (cp & 0x7f == 0x4d || matches!(cp, 0x0d3b | 0x0d3c))
-}
-
-/// Is `c` an emoji a ZWJ sequence is made of: the pictographic blocks (symbols, dingbats,
-/// arrows and the emoji planes) and the skin-tone modifiers in them. A close reading of
-/// Unicode's Extended_Pictographic, without a table of its own.
-fn pictographic(c: char) -> bool {
-    matches!(
-        c as u32,
-        0x2300..=0x23ff | 0x2600..=0x27bf | 0x2b00..=0x2bff | 0x1f000..=0x1faff
-    )
-}
-
-/// Is `c` a letter of the Arabic script, in which Persian, Urdu and others are written: the
-/// Arabic blocks and their presentation forms.
-fn arabic_letter(c: char) -> bool {
-    c.is_alphabetic()
-        && matches!(
-            c as u32,
-            0x0600..=0x06ff | 0x0750..=0x077f | 0x08a0..=0x08ff | 0xfb50..=0xfdff | 0xfe70..=0xfeff
-        )
-}
-
-/// Characters that take a column and draw nothing in it: the Hangul fillers, letters by
-/// category with no glyph of their own (Unicode's Default_Ignorable_Code_Point; U+115F is even
-/// two columns wide), and the braille blank, U+2800.
-const BLANKS: [char; 5] = ['\u{115f}', '\u{1160}', '\u{2800}', '\u{3164}', '\u{ffa0}'];
+/// The braille blank, U+2800: a symbol that takes a column and draws nothing in it. The Hangul
+/// fillers that do the same are default-ignorable, so [`purlis_unicode::invisible`] names them.
+const BRAILLE_BLANK: char = '\u{2800}';
 
 /// Does `c` draw something a reader can see (#1250)? Not a space, not one of the characters
-/// [`crate::shown::invisible`] escapes, not one that takes no column (a combining or
-/// variation mark, a joiner), and not one of the [`BLANKS`]. A name made only of these reads as
+/// [`purlis_unicode::invisible`] names, not one that takes no column (a combining or
+/// variation mark, a joiner), and not the [`BRAILLE_BLANK`]. A name made only of these reads as
 /// a blank author.
 fn draws(c: char) -> bool {
     use unicode_width::UnicodeWidthChar;
     !c.is_whitespace()
-        && !crate::shown::invisible(c)
+        && !purlis_unicode::invisible(c)
         && c.width().is_some_and(|w| w > 0)
-        && !BLANKS.contains(&c)
+        && c != BRAILLE_BLANK
 }
 
 /// Why `value` cannot be written because it looks like a credential (V91m, D-1250-7), or `None`.
@@ -430,7 +329,7 @@ fn email_refused(email: &str) -> Option<String> {
     }
     if email
         .chars()
-        .any(|c| c.is_whitespace() || crate::shown::invisible(c) || c == '<' || c == '>')
+        .any(|c| c.is_whitespace() || purlis_unicode::invisible(c) || c == '<' || c == '>')
     {
         return Some(
             "An email has no spaces, < or >, and no control, zero-width or direction-changing \

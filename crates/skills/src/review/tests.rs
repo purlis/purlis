@@ -299,7 +299,9 @@ fn a_joiner_inside_a_script_or_an_emoji_is_not_marked_in_a_review() {
     assert!(summary.unseen.is_empty(), "{:?}", summary.unseen);
     assert_eq!(escaped(text), text);
     assert_eq!(
-        summarize(&[file("SKILL.md", false, "a\u{200D}b\n")]).unseen.len(),
+        summarize(&[file("SKILL.md", false, "a\u{200D}b\n")])
+            .unseen
+            .len(),
         1
     );
 }
