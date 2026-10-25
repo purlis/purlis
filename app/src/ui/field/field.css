@@ -43,17 +43,49 @@
 
 /* Why its value is refused: in the danger colour, under the control, beside the edge that says
    so too. Its words are the cue that is not colour. **Its line is kept whether it says anything
-   or not**, one line tall, so a refusal coming or going moves nothing; a long one is cut short
-   here and read whole as the box's description. */
+   or not**, one line tall, so a refusal coming or going moves nothing (#2905). */
 [data-scope="field"][data-part="error"] {
+  position: relative;
   margin: 0;
-  overflow: hidden;
   color: var(--danger-text);
   font-size: var(--font-size-xs);
   line-height: var(--line-height-body);
   block-size: calc(var(--font-size-xs) * var(--line-height-body));
+}
+
+/* At rest a long refusal is cut short on its line; the screen reader hears it whole. */
+[data-scope="field"][data-part="error"] > span {
+  display: block;
+  overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* **The whole of a refusal cut short** (#3033), while the field holds the keyboard or the pointer
+   is on the line: drawn over what follows, on the overlay surface a hint is drawn on, its first
+   word where the line's is, so nothing moves and nothing under it is pushed away. Its words keep
+   the line's colour, which the engine holds on the overlay surface. It never animates. */
+[data-scope="field"][data-part="error"] > [data-whole] {
+  display: none;
+}
+
+[data-scope="field"][data-part="root"]:focus-within
+  [data-part="error"][data-clipped]
+  > [data-whole],
+[data-scope="field"][data-part="error"][data-clipped]:hover > [data-whole] {
+  display: block;
+  position: absolute;
+  z-index: 1;
+  inset-block-start: calc(-1 * var(--space-1));
+  inset-inline: calc(-1 * var(--space-2));
+  padding-block: var(--space-1);
+  padding-inline: var(--space-2);
+  border-radius: var(--radius-control);
+  color: inherit;
+  background-color: var(--surface-overlay);
+  box-shadow: var(--elevation-overlay);
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 /* ---------------------------------------------------------------------------------------------

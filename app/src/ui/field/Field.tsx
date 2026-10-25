@@ -36,6 +36,7 @@ import {
   useContext,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -388,22 +389,55 @@ function joined<T>(...refs: (Ref<T> | undefined)[]): RefCallback<T> {
 // ---------------------------------------------------------------------------------------------
 
 /**
- * **The room for why a value is refused** (N26): a field that can be refused (it has `validate`,
- * or an `error` prop, set or not) keeps one line under its box whether or not it says anything,
- * so a refusal that comes or goes moves nothing around it. Empty, it is hidden from a screen
- * reader; the words that land in it are an alert, as every refusal in the window is. A long one
- * is cut short on screen and read whole as the box's description.
+ * **The room for why a value is refused** (N26, #3033): a field that can be refused (it has
+ * `validate`, or an `error` prop, set or not) keeps one line under its box whether or not it says
+ * anything, so a refusal that comes or goes moves nothing around it.
+ *
+ * - **Heard when it lands.** The line is an alert, as every refusal in the window is, and it is in
+ *   the accessibility tree from the start, empty: a live region that is already there when its
+ *   words arrive is announced by VoiceOver on WebKit, where one shown and filled at once may not
+ *   be. While it says something it describes the box (`aria-describedby`), in full.
+ * - **Read whole by sight.** A refusal too long for its line (the core's words in a settings
+ *   row) is cut short at rest; while the field holds the keyboard, or the pointer is on the line,
+ *   the whole of it is drawn over what follows, from where the line starts, so nothing moves. That
+ *   copy is for the eye alone (`aria-hidden`): the line's own words are what is heard. An input
+ *   error is the one kind of such content WCAG 1.4.13 does not ask to be dismissable.
  */
 function ErrorLine({ id, said }: { id: string; said: string | undefined }) {
+  const words = useRef<HTMLSpanElement>(null);
+  const [clipped, setClipped] = useState(false);
+  useLayoutEffect(() => {
+    const line = words.current;
+    if (line === null) {
+      setClipped(false);
+      return;
+    }
+    // Measured at rest, on the one line, which never changes how it is drawn: the whole copy is
+    // another element, so showing it never makes the line look as if it fits.
+    const measure = () => setClipped(line.scrollWidth > line.clientWidth);
+    measure();
+    const watch = new ResizeObserver(measure);
+    watch.observe(line);
+    return () => watch.disconnect();
+  }, [said]);
   return (
     <p
       data-scope="field"
       data-part="error"
       id={id}
       role="alert"
-      aria-hidden={said === undefined ? "true" : undefined}
+      data-clipped={said !== undefined && clipped ? "" : undefined}
     >
-      {said}
+      {said !== undefined && (
+        <>
+          <span ref={words}>{said}</span>
+          {clipped && (
+            <span data-whole="" aria-hidden="true">
+              {said}
+            </span>
+          )}
+        </>
+      )}
     </p>
   );
 }

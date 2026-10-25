@@ -72,7 +72,8 @@ export const ValidatedOnBlur: Story = {
     const box = canvas.getByRole("textbox", { name: "Name" });
     await userEvent.tab();
     await userEvent.keyboard("my name");
-    await expect(canvas.queryByRole("alert")).toBeNull();
+    // The line is there from the start, an empty alert, so VoiceOver hears the words land.
+    await expect(canvas.getByRole("alert")).toBeEmptyDOMElement();
     await userEvent.tab();
     await waitFor(() =>
       expect(canvas.getByRole("alert")).toHaveTextContent("A name is letters, digits, ., _ and -."),
@@ -82,7 +83,7 @@ export const ValidatedOnBlur: Story = {
     await expect(box).toHaveFocus();
     expectFocusInSight();
     await userEvent.keyboard("{Backspace>5/}-name");
-    await waitFor(() => expect(canvas.queryByRole("alert")).toBeNull());
+    await waitFor(() => expect(canvas.getByRole("alert")).toBeEmptyDOMElement());
     await userEvent.keyboard("{Backspace>5/} x");
     await userEvent.tab();
     // The baseline: a refused value, its edge and its words.
@@ -99,6 +100,60 @@ export const Refused: Story = {
     await userEvent.tab();
     await expect(box).toHaveFocus();
     expectFocusInSight();
+  },
+};
+
+const LONG_REFUSAL =
+  "The core would not take this profile: it mounts /Volumes/shared/builds, which is outside the " +
+  "workspace, and a workspace's profile may only mount what the workspace holds.";
+
+/**
+ * **A refusal too long for its line** (#3033): cut short at rest, and drawn whole over what
+ * follows while the field holds the keyboard or the pointer is on the line, so nothing under it
+ * moves. The box is described by the whole words, once.
+ */
+export const LongRefusal: Story = {
+  args: { label: "Profile", start: "build", error: LONG_REFUSAL },
+  render: (args) => (
+    <div style={{ display: "grid", gap: "var(--space-4)", inlineSize: "20rem" }}>
+      <Held {...args} />
+      <Held label="Next" />
+    </div>
+  ),
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const box = canvas.getByRole("textbox", { name: "Profile" });
+    const next = canvas.getByRole("textbox", { name: "Next" });
+    await expect(box).toHaveAccessibleDescription(LONG_REFUSAL);
+    const line = canvasElement.querySelector('[data-part="error"]') as HTMLElement;
+    await waitFor(() => expect(line).toHaveAttribute("data-clipped"));
+    const whole = line.querySelector("[data-whole]") as HTMLElement;
+    await expect(whole).not.toBeVisible();
+    const before = next.getBoundingClientRect().top;
+    const height = line.getBoundingClientRect().height;
+    await userEvent.tab();
+    await expect(box).toHaveFocus();
+    expectFocusInSight();
+    // Whole, over what follows: the line keeps its height and the next field stays put.
+    await expect(whole).toBeVisible();
+    await expect(whole).toHaveTextContent(LONG_REFUSAL);
+    await expect(whole.scrollWidth).toBeLessThanOrEqual(whole.clientWidth);
+    await expect(line.getBoundingClientRect().height).toBe(height);
+    await expect(next.getBoundingClientRect().top).toBe(before);
+    // Leaving the field puts it back on its line.
+    await userEvent.tab();
+    await expect(next).toHaveFocus();
+    await expect(whole).not.toBeVisible();
+    // Under the pointer it is whole again, and stays while the pointer is on it.
+    await userEvent.hover(line);
+    await expect(whole).toBeVisible();
+    await userEvent.hover(whole);
+    await expect(whole).toBeVisible();
+    await userEvent.unhover(whole);
+    // The baseline: the box with the keyboard, its refusal drawn whole.
+    await userEvent.tab({ shift: true });
+    await expect(box).toHaveFocus();
+    await expect(whole).toBeVisible();
+    await expect(next.getBoundingClientRect().top).toBe(before);
   },
 };
 

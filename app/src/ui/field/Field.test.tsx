@@ -153,7 +153,7 @@ describe("inline validation (N26)", () => {
     render(<Held label="Name" validate={NAME_RULE} />);
     const box = screen.getByRole("textbox", { name: "Name" });
     await userEvent.type(box, "my name");
-    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByRole("alert")).toBeEmptyDOMElement();
     expect(box).not.toHaveAttribute("aria-invalid");
     await userEvent.tab();
     expect(screen.getByRole("alert")).toHaveTextContent("A name is letters, digits, ., _ and -.");
@@ -178,10 +178,13 @@ describe("inline validation (N26)", () => {
     expect(document.querySelector('[data-part="error"]')).toBeEmptyDOMElement();
   });
 
-  it("keeps its error's line, empty and unheard, so a refusal moves nothing", async () => {
+  it("keeps its error's line, an empty alert from the start, so a refusal moves nothing", async () => {
     render(<Held label="Name" validate={NAME_RULE} />);
     const line = document.querySelector('[data-scope="field"][data-part="error"]') as Element;
-    expect(line).toHaveAttribute("aria-hidden", "true");
+    // In the accessibility tree before it says anything (#3033): a live region that is already
+    // there when its words land is announced by VoiceOver on WebKit.
+    expect(line).toHaveAttribute("role", "alert");
+    expect(line).not.toHaveAttribute("aria-hidden");
     expect(line).toBeEmptyDOMElement();
     const box = screen.getByRole("textbox", { name: "Name" });
     expect(box).not.toHaveAccessibleDescription();
@@ -189,12 +192,11 @@ describe("inline validation (N26)", () => {
     await userEvent.tab();
     // The same element, now saying why: no part comes or goes, so the field keeps its height.
     expect(document.querySelector('[data-part="error"]')).toBe(line);
-    expect(line).not.toHaveAttribute("aria-hidden");
     expect(line).toHaveTextContent("A name is letters");
     expect(drawnWith(line, "block-size")).toBe(
       "calc(var(--font-size-xs) * var(--line-height-body))",
     );
-    expect(drawnWith(line, "white-space")).toBe("nowrap");
+    expect(drawnWith(line.firstElementChild as Element, "white-space")).toBe("nowrap");
   });
 
   it("follows the typing once said, until the value is right", async () => {
@@ -207,7 +209,7 @@ describe("inline validation (N26)", () => {
     await userEvent.click(box);
     await userEvent.clear(box);
     await userEvent.type(box, "my-name");
-    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByRole("alert")).toBeEmptyDOMElement();
     expect(box).not.toHaveAttribute("aria-invalid");
   });
 
@@ -486,5 +488,79 @@ describe("the family's default, through the window's cascade (field.css)", () =>
     const box = screen.getByRole("textbox", { name: "Host" }).parentElement as Element;
     expect(drawnWith(box, "color")).toBe("var(--text-faint)");
     expect(drawnWith(box, "background-color")).toBe("var(--surface-sunken)");
+  });
+});
+
+describe("a refusal too long for its line (#3033)", () => {
+  const LONG =
+    "The core would not take this value: a workspace's sandbox profile names a mount outside " +
+    "the workspace, and a profile may only mount what its workspace holds.";
+
+  /** Every line in the window as too narrow for its words, as a settings row's is for the core's. */
+  function narrow() {
+    const scroll = vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockReturnValue(400);
+    const client = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(200);
+    return () => {
+      scroll.mockRestore();
+      client.mockRestore();
+    };
+  }
+
+  it("is described to the box in full, once, and the whole copy is for the eye alone", () => {
+    const restore = narrow();
+    try {
+      render(<TextField aria-label="Profile" error={LONG} value="x" onChange={() => {}} />);
+      const box = screen.getByRole("textbox", { name: "Profile" });
+      expect(box).toHaveAttribute("aria-invalid", "true");
+      expect(box).toHaveAccessibleDescription(LONG);
+      const line = screen.getByRole("alert");
+      expect(line).toHaveAttribute("data-clipped");
+      const whole = line.querySelector("[data-whole]") as Element;
+      expect(whole).toHaveTextContent(LONG);
+      expect(whole).toHaveAttribute("aria-hidden", "true");
+    } finally {
+      restore();
+    }
+  });
+
+  it("draws its whole words over what follows while the field holds the keyboard, moving nothing", () => {
+    const restore = narrow();
+    try {
+      render(<TextField aria-label="Profile" error={LONG} value="x" onChange={() => {}} />);
+      const line = screen.getByRole("alert");
+      const whole = line.querySelector("[data-whole]") as Element;
+      expect(drawnWith(whole, "display")).toBe("none");
+      act(() => screen.getByRole("textbox", { name: "Profile" }).focus());
+      expect(drawnWith(whole, "display")).toBe("block");
+      expect(drawnWith(whole, "position")).toBe("absolute");
+      expect(drawnWith(whole, "white-space")).toBe("normal");
+      expect(drawnWith(whole, "background-color")).toBe("var(--surface-overlay)");
+      // The line keeps its one line: what is under the field never moves.
+      expect(drawnWith(line, "block-size")).toBe(
+        "calc(var(--font-size-xs) * var(--line-height-body))",
+      );
+    } finally {
+      restore();
+    }
+  });
+
+  it("is drawn on its line alone when it fits, with no copy", () => {
+    render(<TextField aria-label="Colour" error="Not a colour." value="x" onChange={() => {}} />);
+    const line = screen.getByRole("alert");
+    expect(line).not.toHaveAttribute("data-clipped");
+    expect(line.querySelector("[data-whole]")).toBeNull();
+  });
+
+  it("reads whole in a box that holds its own words, as in one React Aria draws", () => {
+    const restore = narrow();
+    try {
+      render(<TextField aria-label="Token" type="password" error={LONG} />);
+      const box = screen.getByLabelText("Token");
+      expect(box).toHaveAttribute("aria-invalid", "true");
+      expect(box).toHaveAccessibleDescription(LONG);
+      expect(screen.getByRole("alert")).toHaveAttribute("data-clipped");
+    } finally {
+      restore();
+    }
   });
 });
