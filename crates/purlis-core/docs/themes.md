@@ -438,8 +438,10 @@ second line. A theme sets the surface's fill, words, edge colour and width, corn
 its size is its words', so none of its sizes is a theme's. Purlis draws it with corners of 8 and
 no edge: `"tooltip.root.corner-radius": 8`, `"tooltip.root.border-width": 0`.
 
-**The activity family** (manifest version 10, #2917): `activity`, a view's icon on a side's bar:
-`tab` (the left bar's tabs across the side panel) and `bar` (the right bar's column); its `item`
+**The activity family** (manifest version 10, #2917; its words reworded in the next release's manifest version, #3144): `activity`, a
+view's icon on a side's bar: `bar` (an icon in a side's column, the left bar beside the project
+rail and the right one at the window's edge) and `tab` (tabs across a side panel's top, which no
+bar of the window draws since the left bar became a column); its `item`
 (the root: colours, edge and corners, never a size), its `icon`, its `count` and its
 `indicator`, the mark along a chosen item's edge. Purlis draws the family default; Purlis
 Classic's own `parts` give its square items and accent edge (`activity.indicator.selected.fill`).

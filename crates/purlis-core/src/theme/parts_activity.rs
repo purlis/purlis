@@ -5,8 +5,10 @@
 //! declared once here and once in its wrapper, `app/src/ui/activity/`, whose stylesheet
 //! (`activity.css`) draws the defaults [`super::Look`] holds a copy of.
 //!
-//! Two variants, one per corner: `tab`, the left bar's 32×30 tabs across the top of the side
-//! panel, and `bar`, the right bar's 36px column. Its parts are the item itself (the root, which
+//! Two variants: `bar`, an icon in a side's 36px column, which both corners draw since #3144
+//! (the left column beside the project rail, the right one at the window's edge), and `tab`, 32×30
+//! tabs across the top of a side panel, which no bar of the window draws now and a theme may still
+//! name, as the manifest never takes a variant away. Its parts are the item itself (the root, which
 //! carries the variant and the state), its icon, its count and an indicator: a mark the item
 //! draws while it is chosen, which the Purlis look leaves empty and Purlis Classic paints as its
 //! accent edge.
@@ -24,13 +26,13 @@ const ITEM: &[Prop] = &[
     Prop::CornerRadius,
 ];
 
-/// **An activity item** (R116–R120): a tab across the top of the left side panel, or an icon in
-/// the right bar's column. A top item switches its side's panel; a bottom one opens its half of the
+/// **An activity item** (R116–R120, #3144): an icon in a side's column, or a tab across the top of
+/// a side panel. A top item switches its side's panel; a bottom one opens its half of the
 /// bottom panel.
 pub(super) const ACTIVITY: Family = Family {
     name: "activity",
-    description: "A view's icon on a side's activity bar: a tab across the top of the side \
-                  panel, or an icon in the right bar's column.",
+    description: "A view's icon on a side's activity bar: an icon in the side's column, or a \
+                  tab across the top of a side panel.",
     since: 10,
     parts: &[
         Part {
@@ -63,13 +65,15 @@ pub(super) const ACTIVITY: Family = Family {
         Variant {
             name: "tab",
             since: 10,
-            description: "A tab across the top of the left side panel, 32 by 30.",
+            description: "A tab across the top of a side panel, 32 by 30. No bar of the \
+                          window draws it since the left bar became a column.",
             consent: None,
         },
         Variant {
             name: "bar",
             since: 10,
-            description: "An icon in the right bar's column, 36 square.",
+            description: "An icon in a side's column, 36 square: the left bar beside the \
+                          project rail and the right bar at the window's edge.",
             consent: None,
         },
     ],

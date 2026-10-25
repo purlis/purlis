@@ -369,9 +369,19 @@ pub const PAIRS: &[Pair] = &[
     p("text.primary", "wash.warning", 4.5).over("surface.deep"),
     // - Its hand, a mark in the needs-you colour on the same wash: 3:1.
     p("needs-you.base", "wash.warning", 3.0).over("surface.deep"),
-    // A title-bar chip's waiting count (#2916, R101): its digits in amber on the amber wash, a
-    // count held as the rail's badge is (3:1).
-    p("state.waiting", "wash.warning", 3.0).over("surface.deep"),
+    // **A state's colour drawn as a part's words is held as words** (#3041): wherever a family
+    // of the component parts manifest draws a state's colour as its words, at rest or under the
+    // pointer, it is held at the window's text size on the part's fill, not at the 3:1 a mark
+    // takes (`parts/state_words_tests.rs` keeps this list whole).
+    // - A title-bar chip's waiting count (#2916, R101): its digits in amber on the amber wash,
+    //   over the title bar, and over the card's fill while the chip is lit.
+    p("state.waiting", "wash.warning", TEXT).over("surface.deep"),
+    p("state.waiting", "wash.warning", TEXT).over("surface.overlay"),
+    // - The rail's waiting badge (R79): its digits in amber on the overlay's pill.
+    p("state.waiting", "surface.overlay", TEXT),
+    // - The warning-soft button: amber words on the control, and under the pointer.
+    p("state.waiting", "control.base", TEXT),
+    p("state.waiting", "control.hover", TEXT),
     // - A chosen activity button: its icon in the accent's words on the accent's wash, laid on
     //   the window and the frame (#3177), held as words are, the icon being all it says.
     p("accent.text", "accent.wash", TEXT).over("surface.base"),

@@ -2430,19 +2430,28 @@ button.show-more:focus-visible {
 }
 
 /* **The right bar** (#2917, R117): the activity family's column (`ui/activity`) at the window's
-   edge, the window's whole height; a hairline toward the regions where a theme draws one. The
-   left bar is tabs across the side panel's own top (N36, R116), drawn inside its slot. */
+   edge, the window's whole height; a hairline toward the regions where a theme draws one. */
 .activity-column[data-side="right"] {
   border-inline-start: var(--panel-border-width) solid var(--border-subtle);
 }
 
-/* **The left bar while its side panel is away** (D-2917-18): a column at the window's edge. */
+/* **The left bar** (#3144): the same column, the frame's first, beside the project rail, as the
+   switcher prototype's variant D draws it ("Bar: column"). It stands whether or not the side
+   panel is out, so nothing moves when the side comes or goes, and its hairline toward the
+   regions is drawn where a theme draws one.
+
+   **Half as far again from the rail as the regions are apart** (the operator, 2026-10-24: the
+   two columns of icons read as almost one, D-3144-13): the theme's gutter and half of it, 12px
+   in Purlis. Purlis Classic's gutter is 0, so it stays flush there, as everything in Classic
+   is; its icons are still 12px apart, inside their two columns. The side panel stays one
+   gutter from the column, as every region is from the next. */
 .activity-column[data-side="left"] {
+  margin-inline-start: calc(var(--window-gutter) + var(--window-gutter) / 2);
   border-inline-end: var(--panel-border-width) solid var(--border-subtle);
 }
 
-/* **A side panel's body**: what it draws above its views (its tabs and header on the left, its
-   title and × on the right), then the open view, which takes the rest and scrolls inside itself. */
+/* **A side panel's body**: what it draws above its views (its header on the left, its title and
+   × on the right), then the open view, which takes the rest and scrolls inside itself. */
 .slot-body {
   display: flex;
   flex-direction: column;

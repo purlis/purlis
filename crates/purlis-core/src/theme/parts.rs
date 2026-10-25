@@ -1144,6 +1144,10 @@ pub(super) use dialog::DIALOG_TIERS;
 #[path = "parts_activity.rs"]
 mod activity;
 
+#[cfg(test)]
+#[path = "state_words_tests.rs"]
+mod state_words_tests;
+
 /// **A field's colours as `app/src/ui/field/field.css` draws them**: no ground and no edge of
 /// its own, its label in the primary tier. Its help's and its error's words are the family's
 /// `words`.

@@ -8,7 +8,13 @@ import { act, cleanup, render, screen, waitFor, within } from "@testing-library/
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { Notice, NoticePaneRow } from "./Notice";
-import { NOTICE_MOVED_JUST_NOW } from "./noticeSettle";
+import {
+  NOTICE_MOVED_JUST_NOW,
+  NoticeWayGuard,
+  forgetPaneBand,
+  paneBand,
+  useNoticeSettle,
+} from "./noticeSettle";
 import { drawnWith } from "./cascade.testkit";
 
 /**
@@ -606,5 +612,685 @@ describe("a granting Notice on a pane that just moved (#1695, train 54's review)
       rect.mockRestore();
       offset.mockRestore();
     }
+  });
+});
+
+describe("a granting answer on a pane that moved while its line stood still (#3167)", () => {
+  /** The band's scroll, as `band` says it: every other box scrolls nothing. */
+  function scrolling(band: { top: number; height: number }) {
+    const of = (key: "top" | "height" | "client") =>
+      function (this: Element) {
+        if (!this.classList.contains("pane-notices")) return 0;
+        return key === "client" ? 200 : band[key as "top" | "height"];
+      };
+    const spies = [
+      vi.spyOn(Element.prototype, "scrollTop", "get").mockImplementation(of("top")),
+      vi.spyOn(Element.prototype, "scrollHeight", "get").mockImplementation(of("height")),
+      vi.spyOn(Element.prototype, "clientHeight", "get").mockImplementation(of("client")),
+    ];
+    return () => spies.forEach((spy) => spy.mockRestore());
+  }
+
+  /** One vault refusal alone in a pane's row, its Allow drawn where `allowAt` says, its line
+   *  at the top of the band whatever happens: the guard reads the Allow's own box. */
+  function aConsent(allowAt: () => DOMRect, lineTop: () => number = () => 0) {
+    const rect = vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: Element,
+    ) {
+      if (this.closest('[data-variant="grants"]') !== null) return allowAt();
+      // What the band holds slides with its scroll; the row and the band themselves do not.
+      const inBand = this.closest(".pane-notices > *") !== null;
+      return DOMRect.fromRect({ x: 0, y: inBand ? lineTop() : 0, width: 300, height: 60 });
+    });
+    const allowed: string[] = [];
+    render(
+      <NoticePaneRow>
+        <Notice
+          cause="vault-refused:7:forge"
+          at="pane"
+          tone="trouble"
+          label="Vault"
+          fixes={[
+            { label: "Allow forge", onPress: () => allowed.push("forge"), allows: true },
+            { label: "Keep blocked", onPress: () => undefined },
+          ]}
+        >
+          purlis did not open vault forge.
+        </Notice>
+      </NoticePaneRow>,
+    );
+    const line = screen.getByRole("status", { name: "Vault" });
+    return { rect, allowed, line };
+  }
+
+  it("holds a press on an Allow its words pushed elsewhere at a new width", async () => {
+    // Wide, the Allow sits after the words on the line's second row; narrower, the words take
+    // that row and the Allow goes down and to the start. The line's top never moves.
+    let wide = true;
+    const { rect, allowed, line } = aConsent(() =>
+      DOMRect.fromRect(
+        wide ? { x: 180, y: 24, width: 90, height: 24 } : { x: 12, y: 48, width: 90, height: 24 },
+      ),
+    );
+    let clock = 1_000_000;
+    const now = vi.spyOn(Date, "now").mockImplementation(() => clock);
+    try {
+      const top = line.getBoundingClientRect().top;
+      wide = false;
+      expect(line.getBoundingClientRect().top).toBe(top);
+      await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+      expect(allowed).toEqual([]);
+      expect(screen.getByText(NOTICE_MOVED_JUST_NOW)).toBeTruthy();
+
+      clock += 2000;
+      await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+      expect(allowed).toEqual(["forge"]);
+    } finally {
+      now.mockRestore();
+      rect.mockRestore();
+    }
+  });
+
+  it("holds a press after the band was made to scroll back, its place in the band unchanged", async () => {
+    // The band is scrolled to its end, 100 down. What is below the consent goes: the band holds
+    // less, the browser clamps its scroll to 20, and the consent slides 80 down on screen while
+    // its place inside the band stays where it was.
+    const band = { top: 100, height: 300 };
+    const unscroll = scrolling(band);
+    const { rect, allowed } = aConsent(
+      () => DOMRect.fromRect({ x: 12, y: 140 - band.top, width: 90, height: 24 }),
+      () => 116 - band.top,
+    );
+    let clock = 1_000_000;
+    const now = vi.spyOn(Date, "now").mockImplementation(() => clock);
+    try {
+      await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+      expect(allowed).toEqual(["forge"]);
+
+      band.height = 220;
+      band.top = 20;
+      await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+      expect(allowed).toEqual(["forge"]);
+      expect(screen.getByText(NOTICE_MOVED_JUST_NOW)).toBeTruthy();
+
+      clock += 2000;
+      await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+      expect(allowed).toEqual(["forge", "forge"]);
+    } finally {
+      now.mockRestore();
+      rect.mockRestore();
+      unscroll();
+    }
+  });
+
+  it("lets a press through after the person scrolled the band themselves", async () => {
+    // The same 80 on screen, with nothing in the band gone: a scroll the band could still take.
+    const band = { top: 100, height: 300 };
+    const unscroll = scrolling(band);
+    const { rect, allowed } = aConsent(
+      () => DOMRect.fromRect({ x: 12, y: 140 - band.top, width: 90, height: 24 }),
+      () => 116 - band.top,
+    );
+    try {
+      band.top = 20;
+      await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+      expect(allowed).toEqual(["forge"]);
+      expect(screen.queryByText(NOTICE_MOVED_JUST_NOW)).toBeNull();
+    } finally {
+      rect.mockRestore();
+      unscroll();
+    }
+  });
+
+  it("dates a move from the frame after it, not from the press: a settled Allow is not held", async () => {
+    // The window is narrowed and the Allow moves; its press comes well after. The frame after
+    // the resize read the move then, so the press is not held for a move it did not follow.
+    let wide = true;
+    const { rect, allowed } = aConsent(() =>
+      DOMRect.fromRect(
+        wide ? { x: 180, y: 24, width: 90, height: 24 } : { x: 12, y: 48, width: 90, height: 24 },
+      ),
+    );
+    let clock = 1_000_000;
+    const now = vi.spyOn(Date, "now").mockImplementation(() => clock);
+    const aFrame = () => act(() => new Promise((done) => setTimeout(done, 50)));
+    try {
+      // Whatever the first drawing asked to read again is read first.
+      await aFrame();
+      wide = false;
+      window.dispatchEvent(new Event("resize"));
+      await aFrame();
+      clock += 2000;
+      await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+      expect(allowed).toEqual(["forge"]);
+    } finally {
+      now.mockRestore();
+      rect.mockRestore();
+    }
+  });
+
+  it("holds an Allow drawn into a Notice that already stood, where another way out was", async () => {
+    const allowed: string[] = [];
+    let ask: () => void = () => undefined;
+    function Pane() {
+      const [asks, setAsks] = useState(false);
+      ask = () => setAsks(true);
+      return (
+        <NoticePaneRow>
+          <Notice
+            cause="vault-refused:7:forge"
+            at="pane"
+            label="Vault"
+            fixes={
+              asks
+                ? [
+                    { label: "Allow forge", onPress: () => allowed.push("forge"), allows: true },
+                    { label: "Keep blocked", onPress: () => undefined },
+                  ]
+                : [{ label: "Keep blocked", onPress: () => undefined }]
+            }
+          >
+            purlis did not open vault forge.
+          </Notice>
+        </NoticePaneRow>
+      );
+    }
+    let clock = 1_000_000;
+    const now = vi.spyOn(Date, "now").mockImplementation(() => clock);
+    try {
+      render(<Pane />);
+      act(() => ask());
+      await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+      expect(allowed).toEqual([]);
+
+      clock += 2000;
+      await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+      expect(allowed).toEqual(["forge"]);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it("holds a press on an Allow that drifted in steps each too small to count", async () => {
+    // Each read sees it 0.4 px from the last, under the tolerance; together they carry it 40 px.
+    let x = 12;
+    const { rect, allowed } = aConsent(() => DOMRect.fromRect({ x, y: 24, width: 90, height: 24 }));
+    const aFrame = () => act(() => new Promise((done) => setTimeout(done, 20)));
+    try {
+      await aFrame();
+      for (let i = 0; i < 100; i++) {
+        x += 0.4;
+        window.dispatchEvent(new Event("resize"));
+        await aFrame();
+      }
+      await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+      expect(allowed).toEqual([]);
+      expect(screen.getByText(NOTICE_MOVED_JUST_NOW)).toBeTruthy();
+    } finally {
+      rect.mockRestore();
+    }
+  });
+
+  it("holds a press on an Allow that grew under the pointer", async () => {
+    let wide = false;
+    const { rect, allowed } = aConsent(() =>
+      DOMRect.fromRect({ x: 12, y: 24, width: wide ? 160 : 90, height: 24 }),
+    );
+    try {
+      wide = true;
+      await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+      expect(allowed).toEqual([]);
+    } finally {
+      rect.mockRestore();
+    }
+  });
+});
+
+describe("a granting Notice that arrives in a pane's band (#3167, D-3167-5)", () => {
+  type Shown = "none" | "warning" | "both" | "consent";
+  function Band({ shown, allowed }: { shown: Shown; allowed: string[] }) {
+    return (
+      <NoticePaneRow>
+        {(shown === "warning" || shown === "both") && (
+          <Notice cause="skills-missing:7" at="pane" label="Skills" onDismiss={() => undefined}>
+            A skill is missing.
+          </Notice>
+        )}
+        {(shown === "both" || shown === "consent") && (
+          <Notice
+            cause="vault-refused:7:forge"
+            at="pane"
+            tone="trouble"
+            label="Vault"
+            fixes={[
+              { label: "Allow forge", onPress: () => allowed.push("forge"), allows: true },
+              { label: "Keep blocked", onPress: () => undefined },
+            ]}
+          >
+            purlis did not open vault forge.
+          </Notice>
+        )}
+      </NoticePaneRow>
+    );
+  }
+
+  it("stands as it arrives in an empty band: nothing else there is aimed at", async () => {
+    const allowed: string[] = [];
+    const { rerender } = render(<Band shown="none" allowed={allowed} />);
+    rerender(<Band shown="consent" allowed={allowed} />);
+    await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+    expect(allowed).toEqual(["forge"]);
+  });
+
+  it("holds a consent drawn in the same render that took away a warning that stood long", async () => {
+    let clock = 1_000_000;
+    const now = vi.spyOn(Date, "now").mockImplementation(() => clock);
+    try {
+      const allowed: string[] = [];
+      const { rerender } = render(<Band shown="warning" allowed={allowed} />);
+      // The warning stands still for 10 s, and nothing reads the band in between.
+      clock += 10_000;
+      rerender(<Band shown="consent" allowed={allowed} />);
+      await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+      expect(allowed).toEqual([]);
+      expect(screen.getByText(NOTICE_MOVED_JUST_NOW)).toBeTruthy();
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it("holds a consent drawn just after a warning that stood long was put away", async () => {
+    let clock = 1_000_000;
+    const now = vi.spyOn(Date, "now").mockImplementation(() => clock);
+    try {
+      const allowed: string[] = [];
+      const { rerender } = render(<Band shown="warning" allowed={allowed} />);
+      clock += 10_000;
+      rerender(<Band shown="none" allowed={allowed} />);
+      clock += 200;
+      rerender(<Band shown="consent" allowed={allowed} />);
+      await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+      expect(allowed).toEqual([]);
+
+      // Once it has stood for the settle time, the same press allows.
+      clock += 2000;
+      await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+      expect(allowed).toEqual(["forge"]);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it("holds its Allow when it arrives beside another Notice, or where one just left", async () => {
+    let clock = 1_000_000;
+    const now = vi.spyOn(Date, "now").mockImplementation(() => clock);
+    try {
+      const allowed: string[] = [];
+      const { rerender } = render(<Band shown="warning" allowed={allowed} />);
+      rerender(<Band shown="both" allowed={allowed} />);
+      await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+      expect(allowed).toEqual([]);
+      expect(screen.getByText(NOTICE_MOVED_JUST_NOW)).toBeTruthy();
+      clock += 2000;
+      await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+      expect(allowed).toEqual(["forge"]);
+
+      // The band empties, and a consent arrives at once where the warning was.
+      rerender(<Band shown="warning" allowed={allowed} />);
+      rerender(<Band shown="none" allowed={allowed} />);
+      clock += 200;
+      rerender(<Band shown="consent" allowed={allowed} />);
+      expect(screen.queryByText(NOTICE_MOVED_JUST_NOW)).toBeNull();
+      await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+      expect(allowed).toEqual(["forge"]);
+      expect(screen.getByText(NOTICE_MOVED_JUST_NOW)).toBeTruthy();
+    } finally {
+      now.mockRestore();
+    }
+  });
+});
+
+describe("a pane's band drawn anew, by another component (#3167, D-3167-6)", () => {
+  /** How the band's pane is drawn around it: each a different tree, so the band is drawn anew. */
+  type Around = "live" | "ended" | "split" | "away";
+  type Shown = "warning" | "consent" | "both" | "first";
+  let named = 0;
+  /** A pane no test has drawn before. */
+  const aPane = () => paneBand("test-plane", 10_000 + named++);
+
+  function Band({ shown, allowed }: { shown: Shown; allowed: string[] }) {
+    return (
+      <>
+        {(shown === "warning" || shown === "both") && (
+          <Notice cause="skills-missing:9" at="pane" label="Skills" onDismiss={() => undefined}>
+            A skill is missing.
+          </Notice>
+        )}
+        {shown !== "warning" && (
+          <Notice
+            cause="vault-refused:7:forge"
+            at="pane"
+            tone="trouble"
+            label="Vault"
+            fixes={[
+              { label: "Allow forge", onPress: () => allowed.push("forge"), allows: true },
+              { label: "Keep blocked", onPress: () => undefined },
+            ]}
+          >
+            purlis did not open vault forge.
+          </Notice>
+        )}
+      </>
+    );
+  }
+
+  /** As `LayoutPanes` draws a pane: by `PaneFrame` while its task is live, by a plain frame once
+   *  it ended or moved, inside a split's group once the tab is split, and not at all while
+   *  another tab is in front. */
+  function Pane({
+    band,
+    around,
+    shown,
+    allowed,
+  }: {
+    band: string;
+    around: Around;
+    shown: Shown;
+    allowed: string[];
+  }) {
+    const row = (
+      <NoticePaneRow band={band}>
+        <Band shown={shown} allowed={allowed} />
+      </NoticePaneRow>
+    );
+    if (around === "away") return <p>Another tab is in front.</p>;
+    if (around === "ended") return <div className="pane-frame pane-headed">{row}</div>;
+    if (around === "split") {
+      return (
+        <div data-group="">
+          <div data-panel="">
+            <section className="pane-frame pane-headed">{row}</section>
+          </div>
+        </div>
+      );
+    }
+    return <section className="pane-frame pane-headed">{row}</section>;
+  }
+
+  /** The pane drawn `from`, its warning standing 10 s, then drawn `to` with a consent where the
+   *  warning stood. */
+  async function drawnAnew(from: Around, to: Around, shown: Shown = "consent") {
+    const band = aPane();
+    const allowed: string[] = [];
+    const { rerender } = render(
+      <Pane band={band} around={from} shown="warning" allowed={allowed} />,
+    );
+    clock.now += 10_000;
+    rerender(<Pane band={band} around={to} shown={shown} allowed={allowed} />);
+    return { band, allowed, rerender };
+  }
+
+  const clock = { now: 1_000_000 };
+  let spy: { mockRestore: () => void } | undefined;
+  const timed = () => {
+    clock.now = 1_000_000;
+    spy = vi.spyOn(Date, "now").mockImplementation(() => clock.now);
+  };
+  afterEach(() => spy?.mockRestore());
+
+  it("holds a consent drawn where a warning stood once the pane's task ended", async () => {
+    timed();
+    const { allowed } = await drawnAnew("live", "ended");
+    await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+    expect(allowed).toEqual([]);
+    expect(screen.getByText(NOTICE_MOVED_JUST_NOW)).toBeTruthy();
+    clock.now += 2000;
+    await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+    expect(allowed).toEqual(["forge"]);
+  });
+
+  it("holds it from the keyboard as from the pointer", async () => {
+    timed();
+    const { allowed } = await drawnAnew("live", "ended");
+    screen.getByRole("button", { name: "Allow forge" }).focus();
+    await userEvent.keyboard("{Enter}");
+    await userEvent.keyboard(" ");
+    expect(allowed).toEqual([]);
+  });
+
+  it("holds it when the pane's task moved, and when it came back", async () => {
+    timed();
+    const { band, allowed, rerender } = await drawnAnew("live", "ended");
+    await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+    expect(allowed).toEqual([]);
+    // Drawn by its live frame again, with the warning back in the consent's place.
+    clock.now += 10_000;
+    rerender(<Pane band={band} around="live" shown="warning" allowed={allowed} />);
+    clock.now += 10_000;
+    rerender(<Pane band={band} around="ended" shown="consent" allowed={allowed} />);
+    await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+    expect(allowed).toEqual([]);
+  });
+
+  it("holds it when a split formed, and when the split went", async () => {
+    timed();
+    const formed = await drawnAnew("live", "split");
+    await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+    expect(formed.allowed).toEqual([]);
+    cleanup();
+    const went = await drawnAnew("split", "live");
+    await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+    expect(went.allowed).toEqual([]);
+  });
+
+  it("holds it when its tab comes back to the front with a consent where the warning was", async () => {
+    timed();
+    const band = aPane();
+    const allowed: string[] = [];
+    const { rerender } = render(
+      <Pane band={band} around="live" shown="warning" allowed={allowed} />,
+    );
+    clock.now += 10_000;
+    rerender(<Pane band={band} around="away" shown="warning" allowed={allowed} />);
+    clock.now += 10_000;
+    rerender(<Pane band={band} around="live" shown="consent" allowed={allowed} />);
+    await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+    expect(allowed).toEqual([]);
+  });
+
+  it("holds a consent that stood below the warning, read against where it was", async () => {
+    // The consent stood under the warning; the warning goes as the pane is drawn anew, and the
+    // consent is drawn 40 px higher, where the warning's way out was.
+    let up = false;
+    const rect = vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: Element,
+    ) {
+      if (this.closest('[data-variant="grants"]') === null) {
+        return DOMRect.fromRect({ x: 0, y: 0, width: 300, height: 120 });
+      }
+      return DOMRect.fromRect({ x: 12, y: up ? 24 : 64, width: 90, height: 24 });
+    });
+    timed();
+    try {
+      const band = aPane();
+      const allowed: string[] = [];
+      const { rerender } = render(
+        <Pane band={band} around="live" shown="both" allowed={allowed} />,
+      );
+      clock.now += 10_000;
+      up = true;
+      rerender(<Pane band={band} around="ended" shown="consent" allowed={allowed} />);
+      await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+      expect(allowed).toEqual([]);
+    } finally {
+      rect.mockRestore();
+    }
+  });
+
+  it("lets a consent that stood still through the redrawing be pressed: nothing moved", async () => {
+    const rect = vi
+      .spyOn(Element.prototype, "getBoundingClientRect")
+      .mockImplementation(() => DOMRect.fromRect({ x: 12, y: 24, width: 90, height: 24 }));
+    timed();
+    try {
+      const band = aPane();
+      const allowed: string[] = [];
+      const { rerender } = render(
+        <Pane band={band} around="live" shown="consent" allowed={allowed} />,
+      );
+      clock.now += 10_000;
+      rerender(<Pane band={band} around="split" shown="consent" allowed={allowed} />);
+      await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+      expect(allowed).toEqual(["forge"]);
+    } finally {
+      rect.mockRestore();
+    }
+  });
+
+  it("lets the first Notice of a pane never drawn before be pressed at once", async () => {
+    timed();
+    const allowed: string[] = [];
+    render(<Pane band={aPane()} around="live" shown="consent" allowed={allowed} />);
+    await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+    expect(allowed).toEqual(["forge"]);
+  });
+
+  it("forgets a pane closed for good: drawn again, it is a pane never drawn before", async () => {
+    timed();
+    const band = aPane();
+    const allowed: string[] = [];
+    const { unmount } = render(
+      <Pane band={band} around="live" shown="warning" allowed={allowed} />,
+    );
+    unmount();
+    forgetPaneBand(band);
+    clock.now += 10_000;
+    render(<Pane band={band} around="live" shown="consent" allowed={allowed} />);
+    await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+    expect(allowed).toEqual(["forge"]);
+  });
+});
+
+describe("a look-alike grant drawn in the place of one that stood (#3167, D-3167-10)", () => {
+  // Every box in one place, as two look-alike Notices drawn in the same slot are.
+  const clock = { now: 1_000_000 };
+  let spies: { mockRestore: () => void }[] = [];
+  const timedAndStill = () => {
+    clock.now = 1_000_000;
+    spies = [
+      vi.spyOn(Date, "now").mockImplementation(() => clock.now),
+      vi
+        .spyOn(Element.prototype, "getBoundingClientRect")
+        .mockImplementation(() => DOMRect.fromRect({ x: 12, y: 24, width: 90, height: 24 })),
+    ];
+  };
+  afterEach(() => {
+    for (const spy of spies) spy.mockRestore();
+    spies = [];
+  });
+
+  /** A block of the chat's, as the sandbox's Notice draws one: one cause for the chat's
+   *  writes, whatever path each names, so two of them differ only in what they say. */
+  function Block({ target, allowed }: { target: string; allowed: string[] }) {
+    return (
+      <Notice
+        cause="sandbox-blocked:7:write:path:chat"
+        at="pane"
+        tone="trouble"
+        label="Sandbox block"
+        fixes={[
+          { label: "Allow for this chat", onPress: () => allowed.push(target), allows: true },
+          { label: "Keep blocked", onPress: () => undefined },
+        ]}
+      >
+        The sandbox blocked writing {target}.
+      </Notice>
+    );
+  }
+
+  function Band({ target, allowed, band }: { target: string; allowed: string[]; band?: string }) {
+    return (
+      <NoticePaneRow band={band}>
+        <Notice cause="skills-missing:9" at="pane" label="Skills" onDismiss={() => undefined}>
+          A skill is missing.
+        </Notice>
+        <Block key={target} target={target} allowed={allowed} />
+      </NoticePaneRow>
+    );
+  }
+
+  let named = 0;
+  for (const naming of ["unnamed", "named"] as const) {
+    it(`holds one that replaces it in one render, the band drawn on (${naming} band)`, async () => {
+      timedAndStill();
+      const band = naming === "named" ? paneBand("look-alike", named++) : undefined;
+      const allowed: string[] = [];
+      const { rerender } = render(<Band target="~/proj/out" allowed={allowed} band={band} />);
+      clock.now += 10_000;
+      rerender(<Band target="~/.ssh" allowed={allowed} band={band} />);
+      await userEvent.click(screen.getByRole("button", { name: "Allow for this chat" }));
+      expect(allowed).toEqual([]);
+      expect(screen.getByText(NOTICE_MOVED_JUST_NOW)).toBeTruthy();
+    });
+  }
+
+  it("holds one that replaces it as the pane's band is drawn anew", async () => {
+    timedAndStill();
+    const band = paneBand("look-alike", named++);
+    const allowed: string[] = [];
+    const { rerender } = render(
+      <section className="pane-frame pane-headed">
+        <Band target="~/proj/out" allowed={allowed} band={band} />
+      </section>,
+    );
+    clock.now += 10_000;
+    rerender(
+      <div className="pane-frame pane-headed">
+        <Band target="~/.ssh" allowed={allowed} band={band} />
+      </div>,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Allow for this chat" }));
+    expect(allowed).toEqual([]);
+  });
+
+  it("holds one that replaces it in a list whose every first drawing waits (the Inbox's)", async () => {
+    timedAndStill();
+    const allowed: string[] = [];
+    function Listed({ target }: { target: string }) {
+      const { at, allows, said } = useNoticeSettle<HTMLDivElement>("moves");
+      return (
+        <NoticeWayGuard value={allows}>
+          <div ref={at}>
+            <Block key={target} target={target} allowed={allowed} />
+          </div>
+          {said !== undefined && <p>{said}</p>}
+        </NoticeWayGuard>
+      );
+    }
+    const { rerender } = render(<Listed target="~/proj/out" />);
+    clock.now += 10_000;
+    rerender(<Listed target="~/.ssh" />);
+    await userEvent.click(screen.getByRole("button", { name: "Allow for this chat" }));
+    expect(allowed).toEqual([]);
+    expect(screen.getByText(NOTICE_MOVED_JUST_NOW)).toBeTruthy();
+  });
+
+  it("lets the same grant that stood still through a redrawing be pressed", async () => {
+    timedAndStill();
+    const band = paneBand("look-alike", named++);
+    const allowed: string[] = [];
+    const { rerender } = render(
+      <section className="pane-frame pane-headed">
+        <Band target="~/proj/out" allowed={allowed} band={band} />
+      </section>,
+    );
+    clock.now += 10_000;
+    rerender(
+      <div className="pane-frame pane-headed">
+        <Band target="~/proj/out" allowed={allowed} band={band} />
+      </div>,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Allow for this chat" }));
+    expect(allowed).toEqual(["~/proj/out"]);
   });
 });
