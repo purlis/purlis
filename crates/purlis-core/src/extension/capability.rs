@@ -6,7 +6,9 @@
 //!
 //! **A capability is something charter does for an extension that asked for it and was
 //! approved.** It is charter's conduct, never a limit on the extension — [`super::RUNS_AS_YOU`]
-//! stays true of every one of them. A manifest names the capabilities it uses in a top-level
+//! stays true of every one of them, **but the six studio capabilities** (ADR 0101): an extension
+//! that declares one of those runs confined ([`super::studio`]), so for it a capability also
+//! limits what it can do. A manifest names the capabilities it uses in a top-level
 //! `capabilities` list; each capability that has a shape declares it in `contributes` under the
 //! same word. The list is inside the manifest's bytes, so the fingerprint covers it and adding
 //! one to an approved extension asks the operator again.
@@ -61,9 +63,44 @@ pub enum Capability {
     /// charter passes back unchanged ([`super::cli`], charter-app#342, protocol 2). Its shape is
     /// `contributes.cli`.
     Cli,
+    /// **The six studio capabilities** (ADR 0101), known only where the `skill-studio` flag is
+    /// on ([`crate::skills::STUDIO_FLAG`]) and experimental there. An extension that declares
+    /// any of them runs confined ([`super::studio`]). Each declares its shape under its own word.
+    ///
+    /// A skill source: purlis asks it what skills it has, and for one skill's files at a
+    /// revision; the review, the copy and the pin stay purlis's (ADR 0100 §8).
+    SkillSource,
+    /// A grading framework: purlis asks it to grade a skill, and runs every chat it asks for
+    /// (ADR 0101 §5). Its contract is here; purlis asks the first one in SK-16 (#2779).
+    Grader,
+    /// Findings on a skill's files, shown in the live lint beside purlis's own.
+    SkillLint,
+    /// Templates a new skill starts from, beside purlis's own.
+    SkillTemplate,
+    /// A panel on a skill's tab, answered in panel blocks (ADR 0101 §6).
+    StudioPanel,
+    /// Which skills a chat sees, within a deadline (ADR 0102). Its contract is here; purlis asks
+    /// the first one in SK-15 (#2778).
+    SkillRouter,
 }
 
 impl Capability {
+    /// The six studio capabilities, in the order a prompt lists them (ADR 0101 §1).
+    pub const STUDIO: [Capability; 6] = [
+        Self::SkillSource,
+        Self::Grader,
+        Self::SkillLint,
+        Self::SkillTemplate,
+        Self::StudioPanel,
+        Self::SkillRouter,
+    ];
+
+    /// Whether it is one of the six studio capabilities, whose extension runs confined and
+    /// which are experimental until the Skill studio's finish line (ADR 0101 §2, §7).
+    pub fn is_studio(self) -> bool {
+        Self::STUDIO.contains(&self)
+    }
+
     /// The word a manifest writes, and what the approval prompt says it does — one row per
     /// capability, so that adding one is one arm here and one in [`Self::known`].
     fn spelled(self) -> (&'static str, &'static str) {
@@ -110,6 +147,34 @@ impl Capability {
                  each one starts its program, and purlis passes back what it prints and its \
                  exit status. The ones that write are listed here",
             ),
+            Self::SkillSource => (
+                "skill-source",
+                "offers skills to install; purlis asks it what it has and for one skill's files, \
+                 and you review every file before purlis copies it into the project",
+            ),
+            Self::Grader => (
+                "grader",
+                "grades a skill; every chat a grade needs is one purlis runs for it, under the \
+                 chat sandbox, with the cost shown before anything starts",
+            ),
+            Self::SkillLint => (
+                "skill-lint",
+                "says what it finds in a skill's files, shown beside purlis's own lint; it \
+                 never changes a skill",
+            ),
+            Self::SkillTemplate => (
+                "skill-template",
+                "offers templates a new skill starts from; you name the skill, and its text is \
+                 checked as any new skill is",
+            ),
+            Self::StudioPanel => (
+                "studio-panel",
+                "adds a panel to a skill's tab, which purlis draws from what it answers",
+            ),
+            Self::SkillRouter => (
+                "skill-router",
+                "chooses which skills a chat sees, within a deadline",
+            ),
         }
     }
 
@@ -122,6 +187,13 @@ impl Capability {
             // in charter-app#343 and #342, beside #341's run-action request: 2 was not yet
             // released, so it holds all four.
             Self::Actions | Self::Writes | Self::Events | Self::Briefing | Self::Cli => 2,
+            // The studio questions are protocol 3's (ADR 0101, #2777).
+            Self::SkillSource
+            | Self::Grader
+            | Self::SkillLint
+            | Self::SkillTemplate
+            | Self::StudioPanel
+            | Self::SkillRouter => 3,
         }
     }
 
@@ -130,8 +202,15 @@ impl Capability {
         self.spelled().0
     }
 
-    /// Every capability this build of charter knows, in the order a prompt lists them.
+    /// Every capability this build of charter knows on this machine, in the order a prompt lists
+    /// them: the studio capabilities only where the `skill-studio` flag is on here
+    /// ([`crate::skills::studio_on_here`], ADR 0101 §7).
     pub fn known() -> Vec<Self> {
+        Self::known_where(crate::skills::studio_on_here())
+    }
+
+    /// [`Self::known`], where `studio` says whether the `skill-studio` flag is on.
+    pub fn known_where(studio: bool) -> Vec<Self> {
         let mut known = Vec::new();
         if crate::fence::FENCED {
             known.push(Self::Probe);
@@ -146,12 +225,15 @@ impl Capability {
             Self::Briefing,
             Self::Cli,
         ]);
+        if studio {
+            known.extend(Self::STUDIO);
+        }
         known
     }
 
-    /// The capability `word` names, if this build knows it.
-    pub fn parse(word: &str) -> Option<Self> {
-        Self::known().into_iter().find(|it| it.as_str() == word)
+    /// The capability `word` names, if it is one of `known`.
+    pub fn parse_in(word: &str, known: &[Self]) -> Option<Self> {
+        known.iter().copied().find(|it| it.as_str() == word)
     }
 
     /// Whether it declares a shape in `contributes`, under its own word (ADR 0053). One that
@@ -166,14 +248,25 @@ impl Capability {
             | Self::Writes
             | Self::Events
             | Self::Briefing
-            | Self::Cli => true,
+            | Self::Cli
+            | Self::SkillSource
+            | Self::Grader
+            | Self::SkillLint
+            | Self::SkillTemplate
+            | Self::StudioPanel
+            | Self::SkillRouter => true,
         }
     }
 
-    /// What the approval prompt says about it, in charter's words.
+    /// What the approval prompt says about it, in charter's words: a studio capability is said
+    /// to be experimental, as the Extensions list says it (ADR 0101 §7).
     pub fn asks(self) -> String {
         let (word, what) = self.spelled();
-        format!("the capability “{word}” — {what}")
+        if self.is_studio() {
+            format!("the capability “{word}”, experimental — {what}")
+        } else {
+            format!("the capability “{word}” — {what}")
+        }
     }
 }
 
@@ -181,9 +274,12 @@ impl Capability {
 /// on the Extensions list is not the place for kilobytes of it.
 const MOST_WORD_SHOWN: usize = 64;
 
-/// The capabilities a manifest's top-level `capabilities` asks for, or why charter will not
-/// load it.
-pub(super) fn declared(value: &serde_json::Value) -> Result<Vec<Capability>, String> {
+/// The capabilities a manifest's top-level `capabilities` asks for, of those `known`, or why
+/// charter will not load it.
+pub(super) fn declared(
+    value: &serde_json::Value,
+    known: &[Capability],
+) -> Result<Vec<Capability>, String> {
     let list = value
         .as_array()
         .ok_or("has a 'capabilities' that is not a list of words")?;
@@ -192,8 +288,8 @@ pub(super) fn declared(value: &serde_json::Value) -> Result<Vec<Capability>, Str
         let word = raw
             .as_str()
             .ok_or("has a 'capabilities' entry that is not a word")?;
-        let Some(capability) = Capability::parse(word) else {
-            return Err(unknown(word, &Capability::known()));
+        let Some(capability) = Capability::parse_in(word, known) else {
+            return Err(unknown(word, known));
         };
         if out.contains(&capability) {
             return Err(format!(
@@ -220,52 +316,4 @@ fn unknown(word: &str, known: &[Capability]) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_release_build_names_the_words_it_knows_and_not_the_test_one() {
-        assert_eq!(
-            unknown("teleport", &[Capability::Badges, Capability::RepoColumns]),
-            "asks for the capability \"teleport\", which this purlis does not know, so it \
-             loads none of this extension. This purlis knows badges, repo-columns. A newer \
-             purlis may know it."
-        );
-    }
-
-    #[test]
-    fn a_refusal_repeats_at_most_a_line_of_the_word_it_refuses() {
-        let said = unknown(&"x".repeat(10_000), &[Capability::Probe]);
-        assert!(said.len() < 300, "{said}");
-        assert!(said.contains("This purlis knows probe."), "{said}");
-    }
-
-    #[test]
-    fn the_prompt_names_each_capability_by_its_word_and_says_what_it_does() {
-        assert_eq!(
-            Capability::Briefing.asks(),
-            "the capability “briefing” — adds text to every chat's first message, quoted as \
-             data under its name"
-        );
-    }
-
-    #[test]
-    fn the_test_capability_declares_no_shape_and_every_other_one_does() {
-        assert!(!Capability::Probe.has_shape());
-        assert!(
-            Capability::known()
-                .into_iter()
-                .filter(|it| *it != Capability::Probe)
-                .all(Capability::has_shape)
-        );
-    }
-
-    #[test]
-    fn a_release_build_knows_badges_and_repo_columns() {
-        assert_eq!(Capability::parse("badges"), Some(Capability::Badges));
-        assert_eq!(
-            Capability::parse("repo-columns"),
-            Some(Capability::RepoColumns)
-        );
-    }
-}
+mod tests;

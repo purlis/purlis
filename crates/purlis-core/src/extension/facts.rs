@@ -520,7 +520,7 @@ fn wanted(manifest: &super::Manifest, reading: Reading) -> bool {
 }
 
 /// Whether the project (and workspace) has it on — `project::resolve`, the one answer.
-pub(super) fn on_here(
+pub(crate) fn on_here(
     id: &str,
     manifest: &super::Manifest,
     choices: &super::project::Choices,
