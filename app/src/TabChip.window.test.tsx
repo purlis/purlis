@@ -749,9 +749,7 @@ describe("what the menu says of the work (#1493, #1494, #1495)", () => {
     const brief = line("talk").querySelector<HTMLElement>('[data-says="Brief of talk"]');
     expect(brief).not.toBeNull();
     // The pointer's button names the keyboard's way to the same panel.
-    expect(await hoverTipOf(brief)).toBe(
-      "Brief of talk (also in its row's menu in the Chats list)",
-    );
+    expect(await hoverTipOf(brief)).toBe("Brief of talkAlso in its row's menu in the Chats list");
     press(brief as HTMLElement);
 
     expect(await screen.findByRole("dialog", { name: /Brief of talk/ })).toBeTruthy();
@@ -771,7 +769,7 @@ describe("what the menu says of the work (#1493, #1494, #1495)", () => {
     expect(answer).not.toBeNull();
     // The pointer's button names the keyboard's way to the same dialog.
     expect(await hoverTipOf(answer)).toBe(
-      "Answer talk's question (also in its row's menu in the Chats list)",
+      "Answer talk's questionAlso in its row's menu in the Chats list",
     );
     press(answer as HTMLElement);
 

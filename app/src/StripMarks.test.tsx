@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
-import { Closer, Doer, MARKS, Pin } from "./StripMarks";
+import { Closer, Doer, MARKS, Pin, ShowMore } from "./StripMarks";
 import type { Offer } from "./actions";
 
 /**
@@ -242,21 +242,28 @@ describe("the show-more button", () => {
     expect(perStrip, "one control, one rule — a strip may not redress it").toEqual([]);
   });
 
-  it("wears the same family as the `+` beside it: no border, no fill, muted until hovered", () => {
-    const rule = (selector: string) =>
-      new RegExp(`(^|[},])\\s*${selector}\\s*\\{([^}]*)\\}`).exec(css)?.[2] ?? "";
-    const drawn = rule("button\\.show-more");
-    // Read against `button.bare`, which is what the strip's `+` wears, so the claim is that
-    // the two match rather than that this one happens to say some words.
-    const bare = rule("button\\.bare");
-    expect(bare).not.toBe("");
-    for (const declaration of ["border: 0", "background: none", "color: var(--text-muted)"]) {
-      expect(bare, `button.bare no longer says ${declaration}`).toContain(declaration);
-      expect(drawn, `button.show-more does not say ${declaration}`).toContain(declaration);
+  // The quiet ghost of the button family (#3214), as the `+` beside it is: no box, quiet words.
+  it("is the same quiet ghost as the `+` beside it", () => {
+    render(
+      <>
+        <Doer offer={offer("chat.new", "New tab")} onPress={() => {}} iconOnly />
+        <ShowMore
+          noun="tab"
+          hidden={[{ key: "a", offer: offer("tab.select:a", "a"), needs: 0, children: "a" }]}
+          onPress={() => {}}
+        />
+      </>,
+    );
+    const plus = screen.getByRole("button", { name: "New tab" });
+    const more = screen.getByRole("button", { name: /^Show 1 tab/ });
+    for (const one of [plus, more]) {
+      expect(one).toHaveAttribute("data-scope", "button");
+      expect(one).toHaveAttribute("data-variant", "quiet");
+      expect(one).toHaveAttribute("data-size", "sm");
     }
-    expect(
-      rule('button\\.show-more:hover:not\\(:disabled, \\[aria-disabled="true"\\]\\)'),
-    ).toContain("background: var(--surface-hover)");
+    expect(plus).toHaveClass("bare");
+    expect(more).toHaveClass("show-more");
+    expect(more.textContent).toContain("1 more");
   });
 });
 

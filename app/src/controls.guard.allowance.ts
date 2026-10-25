@@ -20,21 +20,15 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
   "ChatsSection.tsx": [
     "<button className=\"needs-you-mark rolled-up\">",
   ],
-  "LayoutPanes.tsx": [
-    "<button className={offer.id === \"pane.close\" && !closesOnly(offer.does) ? \"ends-a-chat\" : undefined}>",
-  ],
   "PaneCrumbs.tsx": [
     "<button className={at === 0 ? \"crumb own\" : \"crumb between\"}>",
   ],
   "StripMarks.tsx": [
-    "<button className={clsx( offer.id === \"pane.close\" && !closesOnly(offer.does) && \"ends-a-chat\", bare && \"bare\", )}>",
-    "<button className={arrived ? \"show-more arrived\" : \"show-more\"}>",
     "<button className={clsx(\"closer\", closesOnly(offer.does) && \"keeps\", minimise && \"minimise\")}>",
   ],
   "TabChip.tsx": [
     "<button className=\"tab-tasks-hand needs-you-mark\">",
     "<button className=\"tab-tasks-counts\">",
-    "<button className=\"tasks-menu-place\">",
   ],
   "Welcome.tsx": [
     "<button className=\"welcome-door\">",

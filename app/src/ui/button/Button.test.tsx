@@ -219,6 +219,19 @@ describe("the family's look, from the tokens (button.css)", () => {
     expect(drawn("link", "text-decoration", true)).toBe("underline");
   });
 
+  // #3214: a mark at the end of a strip, a crumb, a pane's split and close.
+  it("draws the quiet ghost's words in the quiet tier, primary on the hover fill", () => {
+    render(<Button variant="quiet">More</Button>);
+    const quiet = screen.getByRole("button", { name: "More" });
+    expect(quiet).toHaveAttribute("data-variant", "quiet");
+    expect(drawnWith(quiet, "background")).toBe("transparent");
+    expect(drawnWith(quiet, "border-color")).toBe("transparent");
+    expect(drawnWith(quiet, "color")).toBe("var(--text-quiet)");
+    expect(drawnWith(quiet, "background", { hover: true })).toBe("var(--surface-hover)");
+    expect(drawnWith(quiet, "color", { hover: true })).toBe("var(--text-primary)");
+    heldToTheTokens(quiet);
+  });
+
   it("draws a grant as plain as the secondary, edged in the accent (ADR 0097 §6)", () => {
     render(<Button variant="grants">Allow</Button>);
     const grant = screen.getByRole("button", { name: "Allow" });

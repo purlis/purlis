@@ -96,6 +96,11 @@ export const WarningSoft: Story = {
   args: { variant: "warning-soft", label: "Restart later" },
   play: pressedByTheKeyboard,
 };
+/** The quiet ghost (#3214): a strip's end mark, a pane's corner, its words in the quiet tier. */
+export const Quiet: Story = {
+  args: { variant: "quiet", label: "3 more" },
+  play: pressedByTheKeyboard,
+};
 export const Link: Story = {
   args: { variant: "link", label: "Open its settings" },
   play: pressedByTheKeyboard,

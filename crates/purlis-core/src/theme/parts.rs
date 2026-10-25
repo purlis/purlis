@@ -646,6 +646,12 @@ pub const MANIFEST: &[Family] = &[
                 description: "A button that reads as a link: no box, as tall as its words.",
                 consent: None,
             },
+            Variant {
+                name: "quiet",
+                since: NEXT,
+                description: "A ghost with quiet words: a strip's end mark, a crumb, a pane's corner.",
+                consent: None,
+            },
         ],
         // Every surface a button is drawn on in the window, as `app/src/theme/grounds.test.ts` finds
         // them from the components; that test fails until a new one is listed here.
@@ -1212,6 +1218,12 @@ fn button_look(variant: &str, state: Option<State>) -> Look {
             text: "markdown.link",
             border: TRANSPARENT,
         },
+        // The quiet ghost (#3214): no box, quiet words.
+        "quiet" => Look {
+            fill: TRANSPARENT,
+            text: "text.quiet",
+            border: TRANSPARENT,
+        },
         _ => Look {
             fill: "control.base",
             text: "text.primary",
@@ -1222,13 +1234,17 @@ fn button_look(variant: &str, state: Option<State>) -> Look {
         Some(State::Hover) => {
             look.fill = match variant {
                 "primary" => "accent.fill-hover",
-                "ghost" => "surface.hover",
+                "ghost" | "quiet" => "surface.hover",
                 "danger" => "danger.surface",
                 "soft-accent" => "list.selected",
                 // A link is underlined under the pointer; its ground stays none.
                 "link" => TRANSPARENT,
                 _ => "control.hover",
             };
+            // The quiet ghost's words come up to the primary on its hover fill (#3214).
+            if variant == "quiet" {
+                look.text = "text.primary";
+            }
         }
         Some(State::Selected) => {
             look.fill = "accent.surface";
