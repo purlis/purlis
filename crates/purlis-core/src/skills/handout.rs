@@ -1,7 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **What a harness is handed of one plane skill** (SK-8, #2771; decision 58): a folder of its own
+//! **What a harness is handed of one skill of a set's folder** (SK-8, #2771; decision 58): a
+//! plane skill, or a built-in one on a route that names it its own; a folder of its own
 //! in the set's folder, holding the `SKILL.md` purlis writes for it
 //! ([`purlis_skills::handed_text`]) and a link to each plain file of the skill's own folder, in
 //! folders of their own as the skill has them.
@@ -44,7 +45,8 @@ pub(super) struct Handed {
 pub(super) fn of(effective: &Effective, honours: &Honours) -> Result<Handed, Refusal> {
     let folder = SkillFolder::of(effective)?;
     let own = folder.skill_md()?;
-    let text = purlis_skills::handed_text(&own, honours)?;
+    // Named as the set holds it: a built-in skill handed under a name of its own says that name.
+    let text = purlis_skills::handed_text_as(&own, honours, &effective.skill.name)?;
     Ok(Handed {
         name: effective.skill.name.clone(),
         folder: folder.path().to_path_buf(),

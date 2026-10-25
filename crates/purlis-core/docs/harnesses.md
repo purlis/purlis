@@ -256,9 +256,15 @@ the command line, for that session alone, and writes nothing into any config fol
   about once, not once a chat. Codex has no way to take a skills directory for one session,
   so the chat is started with `PURLIS_SKILLS_DIR` naming the bundle's `skills/`, and its
   `SessionStart` briefing lists purlis's skills with the path to each `SKILL.md` (ADR 0063).
-- **opencode** gets purlis's shim, named in `OPENCODE_CONFIG_CONTENT` with the bundle's
-  `skills/` as its option: the shim carries every hook, and adds that directory to the skills
-  opencode discovers, beside the operator's own `skills.paths` (ADR 0058, ADR 0063).
+- **opencode** gets purlis's shim, named in `OPENCODE_CONFIG_CONTENT` with a folder of
+  purlis's skills as its option: the shim carries every hook, and adds that directory to the
+  skills opencode discovers, beside the operator's own `skills.paths` (ADR 0058, ADR 0063).
+  The folder is laid out for the chat in purlis's data folder, and holds the built-in skills
+  under names of their own, `purlis-handoff`, `purlis-working-in-a-clone`, `purlis-secrets` and
+  so on, as Claude Code knows them as `purlis:<skill>` (ADR 0099 as amended 2026-10-26).
+  opencode reads every skill by its bare name, the ones a repo holds in `.agents/skills` and
+  your own alike, so a skill of yours named `secrets` is another skill beside
+  `purlis-secrets`. A chat types one as `/purlis-<skill>`.
 
 **Every chat is also handed purlis's MCP server**, `purlis mcp`, the same way on each harness
 and for that chat alone: Claude Code on `--mcp-config`, Codex on

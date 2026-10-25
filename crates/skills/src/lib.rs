@@ -59,7 +59,9 @@ pub mod tree;
 pub mod uses;
 
 pub use budget::{Budget, Over, Spent};
-pub use compat::{Compat, Field, Fit, Honours, ManualOnly, compat, handed_text, widening_said};
+pub use compat::{
+    Compat, Field, Fit, Honours, ManualOnly, compat, handed_text, handed_text_as, widening_said,
+};
 pub use declared::{Argument, Declared, Given, declared};
 pub use grant::{Grant, grant_file, grant_of, set_grant};
 pub use handed::{Frontmatter, MOST_BYTES, Refusal, read_skill_md, read_skill_md_of};
@@ -104,6 +106,34 @@ pub enum Route {
     /// The harness finds it itself, where it lies: a harness or repo skill ([`OutsideSkill`]). purlis
     /// hands it nothing, and can only ask the harness to leave it out.
     Own,
+}
+
+/// What a built-in skill's name starts with on a route that names built-in skills their own
+/// ([`Route::built_in_name`]): `purlis-<name>`.
+pub const BUILT_IN_OWN_PREFIX: &str = "purlis-";
+
+impl Route {
+    /// **Whether this route hands each built-in skill under a name of its own**, `purlis-<name>`
+    /// ([`Self::built_in_name`]): the config route, whose harness reads the folder it is told of
+    /// beside the ones it finds itself, every skill by its bare `name`. There a skill of the
+    /// clone's or the person's could have a built-in skill's name, and the harness would hold two
+    /// skills of one name. The plugin route has its own namespace (`purlis:<name>`), and the
+    /// briefing and MCP routes name each skill with where it lies.
+    pub fn names_built_ins_its_own(self) -> bool {
+        matches!(self, Self::Config)
+    }
+
+    /// **The name a chat on this route knows the built-in skill `name` by**: `purlis-<name>`
+    /// where the route names built-in skills its own ([`Self::names_built_ins_its_own`]), the
+    /// name itself otherwise. The set holds a built-in skill by this name, and the `SKILL.md`
+    /// purlis writes for it says it.
+    pub fn built_in_name(self, name: &str) -> String {
+        if self.names_built_ins_its_own() {
+            format!("{BUILT_IN_OWN_PREFIX}{name}")
+        } else {
+            name.to_owned()
+        }
+    }
 }
 
 /// Where a skill in a chat's set comes from: its level.
@@ -294,6 +324,10 @@ pub enum Reason {
     /// A harness or repo skill named as one of purlis's built-in skills, which never loses to
     /// any other copy (SK-6): the chat is handed purlis's.
     HiddenByBuiltIn,
+    /// A plane, harness or repo skill with the name a built-in skill takes on a route that names
+    /// built-in skills their own (`purlis-<name>`, [`Route::names_built_ins_its_own`]): the name
+    /// is kept for purlis's.
+    BuiltInsOwnName,
     /// A plane skill a repo copy could hide, where purlis could not list a skills folder of the
     /// chat's clone whole ([`Unread::Crowded`], SK-44): left out, since purlis cannot tell whether
     /// the repo has a skill of its name.
@@ -395,6 +429,10 @@ impl std::fmt::Display for Reason {
             }
             Self::OffForTheHarness => f.write_str("turned off for this project's chats"),
             Self::HiddenByBuiltIn => f.write_str("hidden by purlis's built-in skill of this name"),
+            Self::BuiltInsOwnName => f.write_str(
+                "purlis's built-in skill goes by this name in this program, and the name is kept \
+                 for it: rename this skill",
+            ),
             Self::RepoUnread { repo } => write!(
                 f,
                 "purlis could not read the skills folder of {repo} whole, so a copy of this \
@@ -583,7 +621,9 @@ pub enum Outcome {
 
 impl SkillSet {
     /// The one directory the effective built-in skills sit in, a folder per skill, or `None` for
-    /// a set with none: the bundle's `skills/`, which every route hands over as it is.
+    /// a set with none: the bundle's `skills/`, which every route hands over as it is but one
+    /// that names built-in skills their own ([`Route::names_built_ins_its_own`]), whose set's
+    /// folder holds them ([`Self::in_the_folder`]).
     pub fn built_in_dir(&self) -> Option<&Path> {
         let mut dirs = self
             .effective
@@ -614,6 +654,18 @@ impl SkillSet {
         self.effective
             .iter()
             .filter(|effective| effective.origin.of_the_plane())
+    }
+
+    /// **The effective skills a set's folder holds** ([`Route`]'s hand-over): the plane's
+    /// ([`Self::from_the_plane`]), and on a route that names built-in skills their own
+    /// ([`Route::names_built_ins_its_own`]) the built-in ones too, each under that name, so the
+    /// `SKILL.md` the harness is handed says it.
+    pub fn in_the_folder(&self) -> impl Iterator<Item = &Effective> {
+        self.effective.iter().filter(|effective| {
+            effective.origin.of_the_plane()
+                || (effective.origin == Origin::BuiltIn
+                    && effective.route.names_built_ins_its_own())
+        })
     }
 
     /// **The set, with the skills from outside the plane beside what purlis hands** (SK-6,
@@ -676,13 +728,22 @@ impl SkillSet {
                 .unwrap_or_default();
             // A built-in skill never loses to any other copy: purlis's is the one handed, and
             // the other is listed as hidden by it, whatever the route.
-            if handed.is_some_and(|at| self.effective[at].origin == Origin::BuiltIn) {
+            if let Some(built_in) = handed
+                .map(|at| &self.effective[at])
+                .filter(|e| e.origin == Origin::BuiltIn)
+            {
+                // Matched by the name of its own its route gives it, or by its bare name.
+                let reason = if built_in.route.names_built_ins_its_own() {
+                    Reason::BuiltInsOwnName
+                } else {
+                    Reason::HiddenByBuiltIn
+                };
                 self.left_out.push(LeftOut {
                     name: one.id,
                     origin: one.origin,
                     local: false,
                     folder,
-                    reason: Reason::HiddenByBuiltIn,
+                    reason,
                 });
                 continue;
             }
@@ -918,6 +979,15 @@ pub fn skill_set(plane: Option<&Path>, machine: &Machine<'_>, chat: &Chat<'_>) -
             route,
             |_| None,
         );
+        // Each under the name its route knows it by, from here on: what a plane skill's name is
+        // checked against, and what the chat is told and handed.
+        for effective in set
+            .effective
+            .iter_mut()
+            .filter(|e| e.origin == Origin::BuiltIn)
+        {
+            effective.skill.name = route.built_in_name(&effective.skill.name);
+        }
     }
     if let Some(plane) = plane {
         if let Some(persona) = chat.persona {
@@ -992,7 +1062,7 @@ pub fn skill_set(plane: Option<&Path>, machine: &Machine<'_>, chat: &Chat<'_>) -
             );
         }
     }
-    named_elsewhere(&mut set, machine, chat.names);
+    named_elsewhere(&mut set, machine, chat.names, route);
     set.effective
         .sort_by(|a, b| a.skill.name.cmp(&b.skill.name));
     widest_first(&mut set.left_out);
@@ -1025,7 +1095,7 @@ fn reach(folder: &Path, workspace: &str, off: &[String], name: &str) -> Option<R
 /// harness's to load where `machine` has it or could not tell, and left out where it looked and
 /// found none. A plane skill named and found in no level is a harness skill to look for, since the
 /// harness may have it by that name.
-fn named_elsewhere(set: &mut SkillSet, machine: &Machine<'_>, names: &[Reference]) {
+fn named_elsewhere(set: &mut SkillSet, machine: &Machine<'_>, names: &[Reference], route: Route) {
     for reference in names {
         let said = reference.to_string();
         let held = |set: &SkillSet| {
@@ -1044,10 +1114,11 @@ fn named_elsewhere(set: &mut SkillSet, machine: &Machine<'_>, names: &[Reference
                 let Some(dir) = machine.built_in else {
                     continue;
                 };
+                let own = route.built_in_name(name);
                 let built_in = set
                     .effective
                     .iter()
-                    .any(|e| e.origin == Origin::BuiltIn && e.skill.name == *name);
+                    .any(|e| e.origin == Origin::BuiltIn && e.skill.name == own);
                 if built_in {
                     continue;
                 }
@@ -1176,13 +1247,24 @@ fn level(
             });
             continue;
         }
+        // A built-in skill's name is never taken: its bare name, on every route, and the name
+        // of its own a route gives it ([`Route::built_in_name`]).
         let taken = set
             .effective
             .iter()
-            .find(|effective| effective.skill.name == skill.name)
+            .find(|effective| {
+                effective.skill.name == skill.name
+                    || (effective.origin == Origin::BuiltIn
+                        && route.built_in_name(&skill.name) == effective.skill.name)
+            })
             .map(|effective| {
                 if effective.origin == origin && effective.local == local {
                     Reason::Twin { origin, local }
+                } else if effective.origin == Origin::BuiltIn
+                    && route.names_built_ins_its_own()
+                    && effective.skill.name == skill.name
+                {
+                    Reason::BuiltInsOwnName
                 } else {
                     Reason::NameTaken {
                         by: effective.origin,

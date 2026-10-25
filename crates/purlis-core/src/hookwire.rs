@@ -4817,6 +4817,8 @@ mod tests {
         for typed in [
             "/smart-close",
             "/purlis:smart-close",
+            // opencode's name for purlis's built-in skill.
+            "/purlis-smart-close",
             "  /smart-close now please",
         ] {
             let report = Report::read(Event::UserPromptSubmit, &prompt_payload(typed), &env)

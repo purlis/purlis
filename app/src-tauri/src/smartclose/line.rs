@@ -113,7 +113,8 @@ impl Line {
     }
 
     /// Whether this is the person asking for purlis's smart-close skill as a slash command:
-    /// `/smart-close` or `/purlis:smart-close` (the skill's old prefix too), alone or with words
+    /// `/smart-close`, `/purlis:smart-close` (the skill's old prefix too) or opencode's
+    /// `/purlis-smart-close`, alone or with words
     /// after it, or a prefix of one from `/sm` (`/purlis:sm`) on that a picker completes.
     pub fn is_smart_close(&self) -> bool {
         let Self::Typed(typed) = self else {
@@ -134,6 +135,8 @@ fn picks_smart_close(typed: &str) -> bool {
     std::iter::once("")
         .chain(std::iter::once(namespace.write))
         .chain(namespace.reads.iter().copied())
+        // opencode's name for it, `/purlis-smart-close`.
+        .chain(std::iter::once(purlis_core::skills::BUILT_IN_OWN_PREFIX))
         .any(|prefix| {
             let whole = format!("/{prefix}{}", purlis_core::state::SMART_CLOSE_SKILL);
             whole.starts_with(typed) && typed.len() >= 1 + prefix.len() + FLOOR
@@ -185,6 +188,10 @@ mod tests {
     fn the_command_typed_alone_is_smart_close() {
         assert!(is_smart_close(&[b"/smart-close\r"]));
         assert!(is_smart_close(&[b"/purlis:smart-close", b"\r"]));
+        assert!(
+            is_smart_close(&[b"/purlis-smart-close", b"\r"]),
+            "opencode's name"
+        );
         assert!(is_smart_close(&[b"/smart-closx", b"\x7f", b"e", b"\r"]));
         assert!(is_smart_close(&[b"go on", b"\x03", b"/smart-close\r"]));
         assert!(is_smart_close(&[b"\x1b[200~/smart-close\x1b[201~", b"\r"]));
