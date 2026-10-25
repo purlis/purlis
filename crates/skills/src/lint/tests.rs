@@ -12,7 +12,10 @@ fn has(tool: &str) -> bool {
     ["git", "sh", "bash", "python3", "/bin/sh"].contains(&tool)
 }
 
-fn lints<'a>(plane: &'a [String], built_in: &'a [String]) -> BuiltInLints<'a> {
+fn lints<'a>(
+    plane: &'a std::collections::HashSet<String>,
+    built_in: &'a std::collections::HashSet<String>,
+) -> BuiltInLints<'a> {
     BuiltInLints {
         namespace: "skills",
         plane,
@@ -27,8 +30,8 @@ fn found(text: &str, others: &[(String, String)], handed: bool) -> Vec<Finding> 
     } else {
         crate::Origin::Repo
     };
-    let plane = vec!["deploy".to_owned(), "review".to_owned()];
-    let built_in = vec!["secrets".to_owned()];
+    let plane = ["deploy".to_owned(), "review".to_owned()].into();
+    let built_in = ["secrets".to_owned()].into();
     lints(&plane, &built_in).findings(&SkillFiles {
         name: "deploy",
         text,
@@ -218,7 +221,8 @@ fn a_skill_naming_itself_names_one_there_is_though_the_plane_has_no_skill_of_its
     // name in them; a repo skill telling the chat to use itself again is no broken reference.
     let text = "---\nname: tidy\ndescription: Tidies the repo, then checks it again.\n---\n\n\
                 When done, use skills:tidy again and skills:nowhere.\n";
-    let findings = lints(&[], &[]).findings(&SkillFiles {
+    let none = std::collections::HashSet::new();
+    let findings = lints(&none, &none).findings(&SkillFiles {
         name: "tidy",
         text,
         others: &[],

@@ -846,9 +846,12 @@ fn opencode_worktrees(
         let listed: BTreeSet<String> = crate::worktree::list(root, workspace, &repo.name)
             .map(|pieces| pieces.into_iter().map(|piece| piece.piece).collect())
             .unwrap_or_default();
-        let Some(mut names) = folder.names() else {
-            out.push(crowded(harness, &at, &repo.name));
-            continue;
+        let mut names = match folder.names() {
+            Ok(names) => names,
+            Err(why) => {
+                out.push(unlisted(harness, &at, &repo.name, why));
+                continue;
+            }
         };
         let at = format!("{at}{}/", repo.name);
         names.sort();
@@ -880,16 +883,16 @@ fn unfollowed(harness: &'static str, prefix: &str, name: &str) -> Plugin {
     }
 }
 
-/// A folder opencode reads that holds more than [`MOST_NAMES`], which purlis names and does not
-/// read.
-fn crowded(harness: &'static str, prefix: &str, name: &str) -> Plugin {
+/// A folder opencode reads that purlis did not list whole ([`NotListed`]): named, and nothing in
+/// it read.
+fn unlisted(harness: &'static str, prefix: &str, name: &str, why: NotListed) -> Plugin {
     Plugin {
         id: format!("{prefix}{name}"),
         harness,
         name: name.to_owned(),
         source: format!(
-            "a folder of more than {MOST_NAMES} names, the most purlis reads of one: the plugins \
-             opencode loads from it are not listed"
+            "{}: the plugins opencode loads from it are not listed",
+            why.said()
         ),
     }
 }
@@ -966,9 +969,12 @@ fn opencode_scripts(
             }
             Child::Absent => continue,
         };
-        let Some(names) = scripts.names() else {
-            out.push(crowded(harness, prefix, folder));
-            continue;
+        let names = match scripts.names() {
+            Ok(names) => names,
+            Err(why) => {
+                out.push(unlisted(harness, prefix, folder, why));
+                continue;
+            }
         };
         let mut files: Vec<String> = names
             .into_iter()
@@ -1009,9 +1015,9 @@ const MOST_PROJECT_CONFIG_BYTES: u64 = 1024 * 1024;
 
 /// A file a chat can write, read only where it is a plain file of its own (train 77 review),
 /// from what opening it gave: `None` where nothing is there, and an error for a link, a pipe, a
-/// device, anything past [`MOST_PROJECT_CONFIG_BYTES`] or a file that will not read. A link is
+/// device, anything past `most` bytes or a file that will not read. A link is
 /// never followed, so a chat cannot have this read a file elsewhere, nor one that never ends.
-fn read_opened(opened: std::io::Result<std::fs::File>) -> Result<Option<String>, ()> {
+fn read_opened(opened: std::io::Result<std::fs::File>, most: u64) -> Result<Option<String>, ()> {
     use std::io::Read;
     let file = match opened {
         Ok(file) => file,
@@ -1019,13 +1025,16 @@ fn read_opened(opened: std::io::Result<std::fs::File>) -> Result<Option<String>,
         Err(_) => return Err(()),
     };
     let meta = file.metadata().map_err(drop)?;
-    if !meta.is_file() || meta.len() > MOST_PROJECT_CONFIG_BYTES {
+    if !meta.is_file() || meta.len() > most {
         return Err(());
     }
     let mut text = String::new();
-    file.take(MOST_PROJECT_CONFIG_BYTES)
+    file.take(most + 1)
         .read_to_string(&mut text)
         .map_err(drop)?;
+    if text.len() as u64 > most {
+        return Err(());
+    }
     Ok(Some(text))
 }
 
@@ -1113,8 +1122,15 @@ impl Folder {
         })
     }
 
-    /// `name`'s text, read as [`read_opened`] reads, never through a link.
+    /// `name`'s text, read as [`read_opened`] reads, never through a link: a config, of at most
+    /// [`MOST_PROJECT_CONFIG_BYTES`].
     fn read(&self, name: &str) -> Result<Option<String>, ()> {
+        self.read_at_most(name, MOST_PROJECT_CONFIG_BYTES)
+    }
+
+    /// `name`'s text, of at most `most` bytes, read as [`read_opened`] reads, never through a
+    /// link.
+    fn read_at_most(&self, name: &str, most: u64) -> Result<Option<String>, ()> {
         use rustix::fs::OFlags;
         let opened = rustix::fs::openat(
             &self.0,
@@ -1122,20 +1138,19 @@ impl Folder {
             OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC,
             rustix::fs::Mode::empty(),
         );
-        read_opened(opened.map(std::fs::File::from).map_err(Into::into))
+        read_opened(opened.map(std::fs::File::from).map_err(Into::into), most)
     }
 
-    /// Every name in this folder that is text, in no order: `None` where it holds more than
-    /// [`MOST_NAMES`], read no further than one past them.
-    fn names(&self) -> Option<Vec<String>> {
+    /// Every name in this folder that is text, in no order, or why it is not listed whole
+    /// ([`names_whole`]).
+    fn names(&self) -> Result<Vec<String>, NotListed> {
         let Ok(dir) = rustix::fs::Dir::read_from(&self.0) else {
-            return Some(Vec::new());
+            return Err(NotListed::Unreadable);
         };
-        at_most(
-            dir.filter_map(Result::ok)
-                .map(|entry| entry.file_name().to_bytes().to_vec())
-                .filter(|name| name != b"." && name != b"..")
-                .map(String::from_utf8),
+        names_whole(
+            dir.map(|entry| entry.map(|entry| entry.file_name().to_bytes().to_vec()))
+                .filter(|name| !matches!(name.as_deref(), Ok(b".") | Ok(b"..")))
+                .map(|name| name.map(String::from_utf8)),
         )
     }
 }
@@ -1186,38 +1201,65 @@ impl Folder {
     }
 
     fn read(&self, name: &str) -> Result<Option<String>, ()> {
+        self.read_at_most(name, MOST_PROJECT_CONFIG_BYTES)
+    }
+
+    fn read_at_most(&self, name: &str, most: u64) -> Result<Option<String>, ()> {
         let path = self.0.join(name);
         if self.kind(name, false) == Some(Kind::Link) {
             return Err(());
         }
-        read_opened(std::fs::File::open(path))
+        read_opened(std::fs::File::open(path), most)
     }
 
-    fn names(&self) -> Option<Vec<String>> {
+    fn names(&self) -> Result<Vec<String>, NotListed> {
         let Ok(entries) = std::fs::read_dir(&self.0) else {
-            return Some(Vec::new());
+            return Err(NotListed::Unreadable);
         };
-        at_most(
-            entries
-                .filter_map(Result::ok)
-                .map(|entry| entry.file_name().into_string()),
-        )
+        names_whole(entries.map(|entry| entry.map(|entry| entry.file_name().into_string())))
     }
 }
 
-/// The names that are text of a folder's `names`, each counted whether it is text or not:
-/// `None` past [`MOST_NAMES`], read no further than one past them.
-fn at_most<E>(names: impl Iterator<Item = Result<String, E>>) -> Option<Vec<String>> {
+/// Why a folder's names are not listed whole ([`Folder::names`]): nothing of it is read then.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NotListed {
+    /// It holds more than [`MOST_NAMES`].
+    Crowded,
+    /// Reading it failed, at its start or partway.
+    Unreadable,
+}
+
+impl NotListed {
+    /// What is said of a folder purlis did not list: "a folder of more than 2000 names, the most
+    /// purlis reads of one", or "a folder purlis could not read whole".
+    fn said(self) -> String {
+        match self {
+            Self::Crowded => format!(
+                "a folder of more than {}, the most purlis reads of one",
+                crate::counts::counted(MOST_NAMES, "name", "names")
+            ),
+            Self::Unreadable => "a folder purlis could not read whole".to_owned(),
+        }
+    }
+}
+
+/// **A folder's names, whole or not at all**: each entry read as `names` gives it, the ones that
+/// are text kept. [`NotListed::Crowded`] past [`MOST_NAMES`], read no further than one past them,
+/// and [`NotListed::Unreadable`] where an entry could not be read: a short list is never taken for
+/// the whole.
+fn names_whole<E, F>(
+    names: impl Iterator<Item = Result<Result<String, F>, E>>,
+) -> Result<Vec<String>, NotListed> {
     let mut out = Vec::new();
     for (n, name) in names.enumerate() {
         if n == MOST_NAMES {
-            return None;
+            return Err(NotListed::Crowded);
         }
-        if let Ok(name) = name {
+        if let Ok(name) = name.map_err(|_| NotListed::Unreadable)? {
             out.push(name);
         }
     }
-    Some(out)
+    Ok(out)
 }
 
 impl Folder {

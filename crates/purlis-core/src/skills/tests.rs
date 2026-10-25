@@ -1214,6 +1214,7 @@ fn a_harness_skill_a_persona_names_is_badged_and_marked_where_it_widens_the_chat
         owner: Owner::You,
         switch: Switch::Alone,
         off: false,
+        unread: None,
     }];
     let set = SkillSet {
         from_the_harness: vec![FromHarness {
@@ -1424,4 +1425,53 @@ fn the_lint_reads_no_file_of_a_skill_that_is_a_link_or_has_a_second_name() {
             .any(|line| line.contains("purlis-sk44-linked") || line.contains("purlis-sk44-twin")),
         "{said:?}"
     );
+}
+
+#[test]
+fn a_repo_skills_folder_purlis_could_not_list_leaves_the_plane_skills_out_of_a_chat_in_the_clone() {
+    // SK-44 (#3133): a chat can write a clone's skills folder past the most names purlis reads.
+    // Its row is never a skill of the chat's, and since any plane skill may have a repo copy
+    // there that the chat's harness would get instead, none is laid out for it.
+    let tmp = tempfile::tempdir().unwrap();
+    let plane = tmp.path().join("plane");
+    let ship = plane.join("workspaces/alpha/skills/ship");
+    std::fs::create_dir_all(&ship).unwrap();
+    std::fs::write(
+        ship.join("SKILL.md"),
+        "---\nname: ship\ndescription: Ships.\n---\n",
+    )
+    .unwrap();
+    std::fs::write(plane.join("charter.toml"), "[plane]\n").unwrap();
+    let clone = plane.join("workspaces/alpha/app");
+    std::fs::create_dir_all(clone.join(".git")).unwrap();
+    let dir = clone.join(".agents/skills");
+    std::fs::create_dir_all(&dir).unwrap();
+    let sets = tmp.path().join("sets");
+    let lay_out = |repo: &[OutsideSkill]| {
+        lay_out_for_chat(
+            &plane,
+            Some("alpha"),
+            None,
+            None,
+            &sets,
+            Harness::Codex,
+            repo,
+        )
+    };
+
+    let before = repo_skills_of_chat(Harness::Codex, &plane, "alpha", &clone);
+    assert_eq!(before, []);
+    assert!(
+        lay_out(&before).is_some(),
+        "the workspace's skill is handed"
+    );
+
+    for n in 0..=2000 {
+        std::fs::write(dir.join(format!("f{n}")), "").unwrap();
+    }
+    let after = repo_skills_of_chat(Harness::Codex, &plane, "alpha", &clone);
+
+    assert_eq!(after.len(), 1);
+    assert_eq!(after[0].unread, Some(purlis_skills::Unread::Crowded));
+    assert_eq!(lay_out(&after), None, "no plane skill is handed");
 }

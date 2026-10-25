@@ -174,10 +174,11 @@ const FEWEST_DESCRIPTION: usize = 20;
 pub struct BuiltInLints<'a> {
     /// The namespace a skill names a plane skill by: `skills:<name>`.
     pub namespace: &'a str,
-    /// The names of the plane's skills a reference may name, beside the skill's own.
-    pub plane: &'a [String],
+    /// The names of the plane's skills a reference may name, beside the skill's own: a set, made
+    /// once for every skill a list lints.
+    pub plane: &'a std::collections::HashSet<String>,
     /// The names of the built-in skills.
-    pub built_in: &'a [String],
+    pub built_in: &'a std::collections::HashSet<String>,
     /// Whether this machine has the program named, on its `PATH` or at the path given.
     pub has: &'a (dyn Fn(&str) -> bool + 'a),
 }
@@ -276,18 +277,12 @@ fn keys(skill: &SkillFiles<'_>) -> Vec<Finding> {
 /// broken uses of the one reader of references ([`crate::uses::uses_in`]). A skill naming itself
 /// names one there is, wherever it is from.
 fn references(skill: &SkillFiles<'_>, lints: &BuiltInLints<'_>) -> Vec<Finding> {
-    let text = skill.text;
-    let plane: std::collections::HashSet<&str> = lints
-        .plane
-        .iter()
-        .map(String::as_str)
-        .chain([skill.name])
-        .collect();
-    let built_in: std::collections::HashSet<&str> =
-        lints.built_in.iter().map(String::as_str).collect();
-    crate::uses::uses_in(text, lints.namespace, &|one| plane.contains(one), &|one| {
-        built_in.contains(one)
-    })
+    crate::uses::uses_in(
+        skill.text,
+        lints.namespace,
+        &|one| one == skill.name || lints.plane.contains(one),
+        &|one| lints.built_in.contains(one),
+    )
     .into_iter()
     .filter(|one| one.broken)
     .map(|one| {

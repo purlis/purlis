@@ -1544,7 +1544,8 @@ fn outside_rows(harness: &HarnessInTheStudio, plane: &Path, known: &Known) -> Ve
                 .iter()
                 .find(|l| l.name == found.id && l.origin == found.origin && l.folder == folder)
                 .map(|l| l.reason.to_string());
-            let (compat, lint) = if left_out.is_none() {
+            // One purlis did not read is never linted or badged (SK-44): its description says why.
+            let (compat, lint) = if left_out.is_none() && found.unread.is_none() {
                 (
                     badges(
                         (&found.root, &found.skill.path),
@@ -1589,8 +1590,8 @@ fn outside_rows(harness: &HarnessInTheStudio, plane: &Path, known: &Known) -> Ve
 /// skills, every level's, and of the built-in ones. Read once per list, never once per skill
 /// linted: a clone's skills cost one read of the plane, whatever their number.
 struct Known {
-    plane: Vec<String>,
-    built_in: Vec<String>,
+    plane: std::collections::HashSet<String>,
+    built_in: std::collections::HashSet<String>,
 }
 
 impl Known {
@@ -1604,7 +1605,7 @@ impl Known {
                 .flat_map(|dir| read(&dir))
                 .map(|skill| skill.name)
                 .collect(),
-            built_in: built_in_names_here(),
+            built_in: built_in_names_here().into_iter().collect(),
         }
     }
 }
@@ -1737,7 +1738,10 @@ fn badge_named(rows: &mut [StudioRow], found: &[(Harness, &[OutsideSkill])], kno
         .filter(|row| row.origin == Origin::Harness && row.outside.is_none())
     {
         for (harness, outside) in found {
-            if let Some(skill) = outside.iter().find(|skill| skill.id == row.name) {
+            if let Some(skill) = outside
+                .iter()
+                .find(|skill| skill.id == row.name && skill.unread.is_none())
+            {
                 row.compat.extend(badges(
                     (&skill.root, &skill.skill.path),
                     skill.origin,

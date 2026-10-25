@@ -16,9 +16,13 @@
 
 use std::path::{Path, PathBuf};
 
-use purlis_skills::{Origin, OutsideSkill, Owner, Skill, Switch};
+use purlis_skills::{Origin, OutsideSkill, Owner, Skill, Switch, Unread};
 
-use super::{Adapter, Child, Choices, Env, Folder, SkillsAt};
+use super::{Adapter, Child, Choices, Env, Folder, Kind, SkillsAt};
+
+/// One skill [`skills_in`] found: the skill, the root its `SKILL.md` is read from, and why
+/// purlis did not read it, where it did not.
+type Found = (Skill, PathBuf, Option<Unread>);
 
 /// Whether a link where a skill's folder should be is read through.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -91,7 +95,7 @@ pub fn repo_skills(
 fn outside(
     adapter: &dyn Adapter,
     choices: &Choices,
-    (skill, root): (Skill, PathBuf),
+    (skill, root, unread): Found,
     origin: Origin,
     owner: Owner,
 ) -> OutsideSkill {
@@ -109,6 +113,7 @@ fn outside(
         root,
         origin,
         owner,
+        unread,
     }
 }
 
@@ -163,58 +168,104 @@ fn walk(top: &Folder, rel: &str) -> Option<Folder> {
 /// `SKILL.md` is read from: `root` where links are named, its own folder where they are followed.
 /// A folder that is not a whole skill is not listed: it is no skill the harness loads either.
 ///
-/// **Each `SKILL.md` is read as every skill's own file is** ([`purlis_skills::read_skill_md`],
-/// SK-44): through folders held from its root, never through a link, refused where it has a
-/// second name or is larger than [`purlis_skills::MOST_BYTES`]. A `dir` of more than
-/// [`super::MOST_NAMES`] names is read for none of them, and listed once by its own name, saying
-/// so.
-fn skills_in(dir: &Folder, shown: &Path, links: Links, root: &Path) -> Vec<(Skill, PathBuf)> {
-    let Some(mut names) = dir.names() else {
-        let name = shown
-            .file_name()
-            .map_or_else(String::new, |name| name.to_string_lossy().into_owned());
+/// **Each `SKILL.md` is read with one limit, [`purlis_skills::MOST_BYTES`], never through a
+/// link** (SK-44). In a clone (`Links::Named`), as every skill's own file is
+/// ([`purlis_skills::read_skill_md`]): through folders held from its root, a hard link refused.
+/// In the person's own folders (`Links::Followed`), through the folder held open, a hard link
+/// read: the Nix store, `cp -al` and `rsync --link-dest` leave them there. One purlis does not
+/// read is listed by its folder's name, saying so ([`Unread::Refused`]), as a link is
+/// ([`Unread::Link`]); and a `dir` purlis cannot list whole is read for none of them, and listed
+/// once by its own name ([`Unread::Crowded`]).
+fn skills_in(dir: &Folder, shown: &Path, links: Links, root: &Path) -> Vec<Found> {
+    let unread = |name: &str, description: String, why: Unread| -> Found {
         let skill = Skill {
-            name,
-            description: format!(
-                "A folder of more than {} names, the most purlis reads of one, so none of its \
-                 skills is read here. A chat still finds them.",
-                super::MOST_NAMES
-            ),
-            path: shown.join(purlis_skills::FILE),
+            name: name.to_owned(),
+            description,
+            path: shown.join(name).join(purlis_skills::FILE),
         };
-        return vec![(skill, root.to_path_buf())];
+        (skill, root.to_path_buf(), Some(why))
+    };
+    let mut names = match dir.names() {
+        Ok(names) => names,
+        Err(why) => {
+            let skill = Skill {
+                name: shown
+                    .file_name()
+                    .map_or_else(String::new, |name| name.to_string_lossy().into_owned()),
+                description: format!(
+                    "{}, so none of its skills is read here. A chat still finds them.",
+                    capitalized(&why.said())
+                ),
+                path: shown.join(purlis_skills::FILE),
+            };
+            return vec![(skill, root.to_path_buf(), Some(Unread::Crowded))];
+        }
     };
     names.sort();
+    let refused = format!(
+        "purlis does not read a SKILL.md that is a link{} or larger than {} KiB, so it is not \
+         checked here. A chat still loads it.",
+        match links {
+            Links::Named => ", a hard link",
+            Links::Followed => "",
+        },
+        purlis_skills::MOST_BYTES / 1024
+    );
     let mut out = Vec::new();
     for name in names {
         let path = shown.join(&name).join(purlis_skills::FILE);
-        match dir.child(&name, links == Links::Followed) {
-            Child::Folder(_) => {}
+        let folder = match dir.child(&name, links == Links::Followed) {
+            Child::Folder(folder) => folder,
             Child::Link => {
-                let skill = Skill {
-                    name: name.clone(),
-                    description: "A link purlis does not follow, so what it holds is not read \
-                                  here. A chat in this repo still follows it."
+                out.push(unread(
+                    &name,
+                    "A link purlis does not follow, so what it holds is not read here. A chat in \
+                     this repo still follows it."
                         .to_owned(),
-                    path,
-                };
-                out.push((skill, root.to_path_buf()));
+                    Unread::Link,
+                ));
                 continue;
             }
             Child::Absent => continue,
-        }
-        let root = match links {
-            Links::Followed => shown.join(&name),
-            Links::Named => root.to_path_buf(),
         };
-        let Ok(text) = purlis_skills::read_skill_md(&root, &path) else {
-            continue;
+        let (text, root) = match links {
+            Links::Named => match purlis_skills::read_skill_md(root, &path) {
+                Ok(text) => (text, root.to_path_buf()),
+                Err(purlis_skills::Refusal::FileLink | purlis_skills::Refusal::TooLarge) => {
+                    out.push(unread(&name, refused.clone(), Unread::Refused));
+                    continue;
+                }
+                Err(_) => continue,
+            },
+            Links::Followed => {
+                match folder.read_at_most(purlis_skills::FILE, purlis_skills::MOST_BYTES) {
+                    Ok(Some(text)) => (text, shown.join(&name)),
+                    Ok(None) => continue,
+                    Err(()) => {
+                        if matches!(
+                            folder.kind(purlis_skills::FILE, false),
+                            Some(Kind::File | Kind::Link)
+                        ) {
+                            out.push(unread(&name, refused.clone(), Unread::Refused));
+                        }
+                        continue;
+                    }
+                }
+            }
         };
         if let Ok(skill) = purlis_skills::parsed(&text, path) {
-            out.push((skill, root));
+            out.push((skill, root, None));
         }
     }
     out
+}
+
+/// `said` with its first letter a capital, to start a sentence.
+fn capitalized(said: &str) -> String {
+    let mut chars = said.chars();
+    chars.next().map_or_else(String::new, |first| {
+        first.to_uppercase().chain(chars).collect()
+    })
 }
 
 #[cfg(test)]
