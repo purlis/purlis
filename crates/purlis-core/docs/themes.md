@@ -320,7 +320,7 @@ surfaces (ADR 0097 §6): their `root.fill` names one of the grounds the button f
 on (or `transparent`), and a theme that names another is refused, so an Allow on them is always
 held apart from the primary (with `transparent`, the surface under it is the ground, #3083). A
 Notice's edge width is no theme's, and a Notice (wherever the window draws its edge: a chat
-pane's band draws its Notices as washed cards with no edge, #3142) and a card's `ask` keep their waiting edge: an
+pane's band draws its Notices as washed cards with no edge, #3142, and its own washes and words: a theme's `notice.*.fill` and `notice.*.text` reach every Notice but one in a pane) and a card's `ask` keep their waiting edge: an
 edge that would not show or that takes the accent's hue draws the family default,
 `card.root.ask.border-width: 0` is refused, and a theme that turns every card's border off still
 draws the ask's. `separator.root.fill` colours every line between groups, the menu's, the

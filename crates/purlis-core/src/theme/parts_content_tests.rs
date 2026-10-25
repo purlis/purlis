@@ -502,6 +502,18 @@ fn the_card_s_ground_and_edge_width_reach_the_inbox_s_list_of_notices() {
         rules.iter().any(|one| one.contains("var(--surface-base)")),
         "{rules:?}"
     );
+    // Only a ground the Notices' words are measured on reaches the list: a card on the danger
+    // ground leaves the list's rows on their own, so a news row never looks like trouble.
+    let sheet = sheet_of(json!({ "card.root.fill": "danger.surface" }));
+    assert!(!sheet.lines().any(|line| line.contains(list)), "{sheet}");
+    // The card's edge width reaches a Notice alone on a page, whose hairline is decorative.
+    let sheet = sheet_of(json!({ "card.root.border-width": 0 }));
+    assert!(
+        sheet.lines().any(
+            |line| line.contains("[data-placement=\"alone\"]") && line.contains("border-width")
+        ),
+        "{sheet}"
+    );
     // A variant's or a state's key is the card's own: the list follows only the card at rest.
     let sheet = sheet_of(json!({ "card.root.ask.border-width": 2 }));
     assert!(!sheet.contains(list), "{sheet}");
@@ -548,5 +560,50 @@ fn a_family_measured_as_written_alone_falls_as_it_would_in_every_tint() {
             "Purlis {}",
             theme.id
         );
+    }
+    // A translucent ground a tint turns: as written the ask's edge clears 3:1 on it, and in some
+    // hues it does not. Measured in every tint, it falls as it would there (#2912).
+    for (appearance, colour) in [("dark", "#e550cc83"), ("light", "#9172d691")] {
+        for fill in ["card.root.fill", "notice.root.fill"] {
+            let loaded = load(&json!({
+                "name": "Translucent",
+                "extends": "purlis-classic",
+                "appearances": [{ "id": appearance, "tokens": { "list.selected": colour } }],
+                "parts": { fill: "list.selected" }
+            }));
+            assert!(!loaded.refused, "{:?}", said(&loaded));
+            for theme in &loaded.theme.appearances {
+                assert_eq!(
+                    parts::fallen(theme),
+                    parts::fallen_in_every_tint(theme),
+                    "{fill} {colour} {}",
+                    theme.id
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn a_chat_pane_s_band_draws_its_notices_ground_and_words_itself() {
+    // The band's washes are the window's (#3142): no theme's Notice colour reaches a Notice in a
+    // pane, so none draws one in the terminal's own fill.
+    let sheet = sheet_of(json!({
+        "notice.root.fill": "terminal.background",
+        "notice.root.trouble.fill": "transparent",
+        "notice.root.text": "text.secondary",
+        "notice.message.text": "text.secondary",
+        "notice.whose.text": "text.secondary",
+    }));
+    let notice: Vec<&str> = sheet
+        .lines()
+        .filter(|line| {
+            line.contains("[data-scope=\"notice\"]")
+                && (line.contains("background-color") || line.contains(" color:"))
+        })
+        .collect();
+    assert_eq!(notice.len(), 4, "{sheet}");
+    for line in notice {
+        assert!(line.contains(":not([data-placement=\"pane\"])"), "{line}");
     }
 }

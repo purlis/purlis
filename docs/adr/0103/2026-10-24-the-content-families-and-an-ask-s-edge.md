@@ -19,8 +19,11 @@ wrapper's attributes alone. None is a control: each is a box as tall as what it 
   row, the Inbox's list, a page) is the window's layout, not a variant. In a chat's pane the
   window draws its Notices in the pane's band as washed cards with their mark and no edge (#3142,
   the operator's variant A of 2026-10-24): there a Notice is told from what the terminal prints
-  by its own row inside the pane and outside the terminal, its wash and its mark, and a theme's
-  `notice.root` keys still reach it and are held as above.
+  by its own row inside the pane and outside the terminal, its wash and its mark. **The band's
+  wash and words are the window's**: a theme's Notice colours (`notice.*.fill`, `notice.*.text`)
+  reach a Notice anywhere but in a pane, so the band always draws the state washes, which no
+  tint turns, and no theme can draw a band Notice in the terminal's own fill. Its other keys
+  (corners, room) still reach it.
 - **`badge`** (`neutral`, `accent`, `waiting`, `ok`) and **`count`** (`neutral`,
   `accent`, `waiting`, `hot`, and its `group` part): pills whose words are measured on their own
   fill.
@@ -37,8 +40,11 @@ the surface under it: a panel's fill a theme sets is held, and the other part-se
 the open #3083.
 
 **A family whose rules set no colour is measured as written** (and one whose only colour takes an
-edge off a variant that carries no consent, or sets the ground of a card or a Notice, which is
-one of the button family's grounds and keeps its luminance in every tint): its consent variants are drawn in its own colours
+edge off a variant that carries no consent, or sets the ground of a card or a Notice to one of
+the button family's grounds when that ground and every surface the family stands on are outside
+the theme's tint recipe, so every tint draws them as written; a tinted ground, which a
+translucent fill over a surface or two near colours may not keep its contrast on when turned,
+is measured in every tint): its consent variants are drawn in its own colours
 in every tint, which the token-level floors hold in each tint, so the engine does not measure
 it again per tint. Every other family is measured in every tint, as before.
 
@@ -49,3 +55,9 @@ key for its line still overrides, and the hairlines a stylesheet draws between r
 
 The state at rest draws as before for every family that had one: a theme that names no part of
 these draws them as their stylesheets do, which a test holds to the engine's defaults.
+
+**The Inbox's list of Notices is a card of rows**: the card's root edge width reaches it, and
+its fill too when that fill is one of the Notice's own grounds (or none), where the Notices'
+words are measured; a card on another ground leaves the list on its own. The card's edge width
+also reaches a Notice alone on a page, whose subtle hairline is an inline surface's edge, not
+the waiting edge an ask keeps (#3177, the operator's no-hairline ruling).

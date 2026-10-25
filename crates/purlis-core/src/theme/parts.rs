@@ -2671,7 +2671,7 @@ fn held_from(
             && rules.iter().any(|rule| std::ptr::eq(rule.family, family))
             // Built only for a family measured in them (#2912): one measured as written alone
             // needs none.
-            && (colours(&rules, family) || every_tint())
+            && (colours(theme, &rules, family) || every_tint())
     });
     if consents && !theme.tint.tabs().is_empty() {
         drawn_in.extend(
@@ -2715,7 +2715,7 @@ fn held_from(
         // token-level floors hold in each tint (`floors.rs`, #2526), and what the theme sets (an
         // edge's width, a size) is the same in every tint. A family whose rules set a colour is
         // measured in every tint, as before.
-        let drawn_in: &[ResolvedTheme] = if colours(&rules, family) || every_tint() {
+        let drawn_in: &[ResolvedTheme] = if colours(theme, &rules, family) || every_tint() {
             &drawn_in
         } else {
             &drawn_in[..1]
@@ -2808,30 +2808,43 @@ pub(super) fn fallen_in_every_tint(theme: &ResolvedTheme) -> Vec<Fell> {
 /// in every tint, and it only stands that variant further from the answers the floors hold apart
 /// from it (#2912).
 /// **Whether `family`'s rules set a colour a tint can change what its consent floors read**: any
-/// colour but an edge taken off a variant with no consent ([`edge_taken_off`]) and the ground of
-/// a family that holds answers ([`ground_held`]).
-fn colours(rules: &[Rule], family: &Family) -> bool {
+/// colour but an edge taken off a variant with no consent ([`edge_taken_off`]) and an untinted
+/// ground of a family that holds answers ([`ground_held`]).
+fn colours(theme: &ResolvedTheme, rules: &[Rule], family: &Family) -> bool {
     rules.iter().any(|rule| {
         std::ptr::eq(rule.family, family)
             && !rule.fallback
             && rule.values.iter().any(|(property, value)| {
                 property.is_colour()
                     && !edge_taken_off(rule, *property, *value)
-                    && !ground_held(rule, *property)
+                    && !ground_held(theme, rule, *property, *value)
             })
     })
 }
 
-/// **Whether a rule only sets the ground of a family that holds answers** (a card's or a
-/// Notice's fill at rest, #2912): that ground is one of the button family's own grounds or none
-/// (a key naming any other is refused), on which the floors hold Allow apart from the primary in
-/// every tint already; and a tint keeps each colour's luminance, so the ask's edge contrasts with
-/// it as written in every tint, while its edge, the family's own, is no nearer the accent in any.
-fn ground_held(rule: &Rule, property: Prop) -> bool {
+/// **Whether a rule only sets a ground no tint reaches, of a family that holds answers** (a
+/// card's or a Notice's fill, #2912): its token, and each of the surfaces the family stands on,
+/// is outside the theme's tint recipe, so every tint draws the ground and what it is laid over as
+/// written, and what the family's consent floors read there is what they read as written. The
+/// ground is one of the button family's own (a key naming another is refused), on which the floors
+/// hold Allow apart from the primary in every tint already. A tinted ground, or one over a tinted
+/// surface, is measured in every tint: a translucent ground laid over a surface, or two colours
+/// near each other, need not keep their contrast when a tint turns them.
+fn ground_held(theme: &ResolvedTheme, rule: &Rule, property: Prop, value: PartValue) -> bool {
+    let PartValue::Colour(token) = value else {
+        return false;
+    };
+    let tinted = theme.tint.tabs();
     property == Prop::Fill
         && rule.part == 0
         && rule.state.is_none()
         && content::HOLDS_ANSWERS.contains(&rule.family.name)
+        && !tinted.contains(&token)
+        && rule
+            .family
+            .grounds
+            .iter()
+            .all(|ground| !tinted.contains(ground))
 }
 
 fn edge_taken_off(rule: &Rule, property: Prop, value: PartValue) -> bool {
@@ -3192,6 +3205,16 @@ fn written_to(rule: &Rule, property: Prop) -> Option<&'static str> {
 fn targets(rule: &Rule, property: Prop, sized: bool) -> Vec<String> {
     let own = selector(rule, sized);
     let part = rule.family.parts[rule.part].name;
+    // **A chat pane's band draws its Notices' ground and words itself** (#3142, #2912): the
+    // state washes, never tinted, and the primary tier on them. A theme's Notice colours reach a
+    // Notice anywhere else, so none can draw a band Notice in the terminal's own fill.
+    if rule.family.name == "notice" && matches!(property, Prop::Fill | Prop::Text) {
+        return vec![own.replacen(
+            "[data-part=\"root\"]",
+            "[data-part=\"root\"]:not([data-placement=\"pane\"])",
+            1,
+        )];
+    }
     if (rule.family.name, part, property) != ("tabs", "tab", Prop::Fill) {
         return vec![own];
     }
@@ -3502,18 +3525,31 @@ pub fn stylesheet(theme: &ResolvedTheme) -> String {
     }
     // **The card's ground and edge width reach the Inbox's list of Notices** (#2912, #3177): the
     // list is a card of rows, so a theme that draws its cards on another ground, or with no
-    // hairline, draws the list so. A card's fill is held to the grounds an answer is measured on,
-    // as the list's must be: its rows hold Allow. Each Notice's own edge is the notice family's.
+    // hairline, draws the list so. Only a ground the Notices' own words are measured on (or none)
+    // reaches it: its rows hold Allow, and a news row never takes another tone's ground. The
+    // card's edge width also reaches a Notice alone on a page, whose subtle hairline is an
+    // inline surface's edge, not the waiting edge an ask keeps.
     for property in [Prop::Fill, Prop::BorderWidth] {
-        if let Some(rule) = rules.iter().rev().find(|rule| {
+        let Some(rule) = rules.iter().rev().find(|rule| {
             rule.family.name == "card"
                 && rule.part == 0
                 && rule.variant.is_none()
                 && rule.state.is_none()
                 && rule.values.contains_key(&property)
-        }) {
-            let said = declarations(rule, property, rule.values[&property]);
-            let _ = writeln!(sheet, "  :where({CARD_EDGED}) {{ {said} }}");
+        }) else {
+            continue;
+        };
+        let value = rule.values[&property];
+        let reaches = match (property, value) {
+            (Prop::Fill, PartValue::Colour(token)) => (token == TRANSPARENT
+                || content::NOTICE.grounds.contains(&token))
+            .then_some(CARD_EDGED),
+            (Prop::BorderWidth, _) => Some(CARD_EDGED_TOO),
+            _ => None,
+        };
+        if let Some(reaches) = reaches {
+            let said = declarations(rule, property, value);
+            let _ = writeln!(sheet, "  :where({reaches}) {{ {said} }}");
         }
     }
     for rule in &rules {
@@ -3559,6 +3595,11 @@ const SEPARATOR_LINES: &[&str] = &[
 /// draw no box).
 const CARD_EDGED: &str =
     "[data-scope=\"notice-list\"][data-part=\"root\"]:is([data-at=\"inbox\"], [data-at=\"page\"])";
+
+/// **What takes the card's edge width alone**: the list, and a Notice alone on a page, an inline
+/// surface whose hairline is decorative (#3177, the operator's no-hairline ruling).
+const CARD_EDGED_TOO: &str = "[data-scope=\"notice-list\"][data-part=\"root\"]:is([data-at=\"inbox\"], [data-at=\"page\"]), \
+     [data-scope=\"notice\"][data-part=\"root\"][data-placement=\"alone\"]";
 
 // --- The manifest as JSON ----------------------------------------------------------------------
 

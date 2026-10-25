@@ -277,7 +277,11 @@ describe("the Skill studio", () => {
 
     const notice = await screen.findByRole("status", { name: /Skill delete cut short/ });
     expect(notice).toHaveTextContent(line);
-    expect(notice).not.toHaveClass("notice-trouble");
+    // The notice family's box says its tone (#2912).
+    expect(notice.closest('[data-scope="notice"][data-part="root"]')).toHaveAttribute(
+      "data-variant",
+      "news",
+    );
     await waitFor(() =>
       expect(calls.filter((cmd) => cmd === "skill_studio").length).toBeGreaterThanOrEqual(2),
     );
@@ -296,7 +300,10 @@ describe("the Skill studio", () => {
     const notice = await screen.findByRole("status", {
       name: /A skill delete could not be finished/,
     });
-    expect(notice).toHaveClass("notice-trouble");
+    expect(notice.closest('[data-scope="notice"][data-part="root"]')).toHaveAttribute(
+      "data-variant",
+      "trouble",
+    );
     expect(notice).toHaveTextContent(`${failed} ${finished}`);
   });
 
