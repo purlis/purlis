@@ -22,6 +22,7 @@ import { onAMac } from "./tabKeys";
 import { goToWorkspace, showTheExplorer, stripNamed } from "./test-strips";
 import { drawnWith } from "./cascade.testkit";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
+import { selectNamed } from "./ui/select/select.testkit";
 
 /**
  * **The window is four regions** (ADR 0038), against the whole app, because three of
@@ -862,9 +863,7 @@ describe("the Search and Changes views", () => {
     render(<App />);
     await screen.findByRole("tabpanel", { name: "Chats" });
     const scope = () =>
-      within(screen.getByRole("tabpanel", { name: "Search" })).getByRole("combobox", {
-        name: "Where to search",
-      });
+      selectNamed("Where to search", screen.getByRole("tabpanel", { name: "Search" }));
     await userEvent.click(tab("Search"));
     await waitFor(() => expect(scope()).toHaveTextContent("Workspace alpha"));
 

@@ -1339,9 +1339,7 @@ export function ratchet(
 
 /**
  * **Where a Radix package is imported from**, as a pattern for the start of an import's source,
- * up to the package's own name (`dialog`, `dropdown-menu`): the package itself, or the window's
- * file of the same name in `overlays/`, through which every overlay is written
- * (`projectShown.guard.test.tsx`). A guard that finds a file's dialogs or menus by what it
- * imports reads both, so moving an import there hides nothing from it.
+ * up to the package's own name (`checkbox`, `radio-group`): the package itself. Every overlay is
+ * a family's, on React Aria (#2906), so no window file stands in for a Radix package.
  */
-export const RADIX_FROM = String.raw`(?:@radix-ui\/react-|(?:\.\.?\/)+overlays\/)`;
+export const RADIX_FROM = String.raw`@radix-ui\/react-`;

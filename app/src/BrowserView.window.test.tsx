@@ -9,7 +9,7 @@ import type { Channel } from "@tauri-apps/api/core";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { BrowserFrame } from "./bindings";
-import { pickIn } from "./primitives/select.testkit";
+import { pickIn, selectNamed } from "./ui/select/select.testkit";
 import { onAMac } from "./tabKeys";
 import { stripNamed } from "./test-strips";
 
@@ -363,7 +363,7 @@ describe("taking a browser over from its view (#2014)", () => {
   it("takes the browser over to set a size preset, and sets it", async () => {
     const host = await drawn();
 
-    await pickIn(screen.getByRole("combobox", { name: "Page size" }), "phone");
+    await pickIn(selectNamed("Page size"), "phone");
 
     await waitFor(() =>
       expect(host.asked("size_browser")).toEqual([{ program: "B1", width: 390, height: 844 }]),
