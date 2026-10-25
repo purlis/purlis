@@ -121,6 +121,18 @@ impl Pool {
         self.limits
     }
 
+    /// **What defines this pool, as a digest** (#2050): SHA-256, in hex, of its row as this file
+    /// keeps it (its name, kind, image and the limits the person set), so any change to how it is
+    /// defined changes it.
+    pub fn definition_digest(&self) -> String {
+        use sha2::Digest as _;
+        let row = pool_to_row(self).to_string();
+        sha2::Sha256::digest(row.as_bytes())
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect()
+    }
+
     /// This pool, its runner image `image` from now on (#2749).
     fn moved_to(&self, image: Image) -> Pool {
         Pool {

@@ -32,6 +32,15 @@
 //! the window, its asker's input handed one way and its frames the other. A line nobody is there
 //! to hear, because no window holds the project, is answered as an app with nothing to answer
 //! it would answer.
+//!
+//! **A browser login asked while nobody is there waits for the window** (#2050, spec #2041
+//! story 14): on a runner whose desktop is away, `browser_login` is answered at once in words
+//! that say it waits for the person as an Ask and the chat should carry on, and the ask is
+//! kept, in memory, at most [`MOST_LOGINS_WAITING`] and each chat's login once. As soon as a
+//! window hears this host's lines again, each is handed on to it as it was asked, so the window
+//! decides it as it decides any login (the persona's opt-in for the pool included), and what it
+//! came to is said to that chat at the start of its next browser call. No value is kept here:
+//! what waits is the login's name.
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -42,8 +51,8 @@ use std::time::{Duration, Instant};
 
 use super::permission::{Left, PermissionAsked, Waiting};
 use super::{
-    Answer, Ask, ChatTokens, CommitRefused, Doing, Hearing, Report, SandboxBlocked, SessionSaved,
-    StartedByHand, ToolCall, Touching, TurnOutput,
+    Answer, Ask, BrowseAsk, Browsing, ChatTokens, CommitRefused, Doing, Hearing, Report,
+    SandboxBlocked, SessionSaved, StartedByHand, ToolCall, Touching, TurnOutput,
 };
 use crate::eventlog::Entry;
 use crate::harness::model::Choice;
@@ -171,6 +180,30 @@ const AN_ASKER_IS_LOOKED_AT_EVERY: Duration = Duration::from_millis(100);
 /// What a line nobody is there to hear is answered with.
 pub const NOBODY_HEARS: &str = "purlis's window is not there to take this";
 
+/// The most browser logins that wait for the window at once (#2050).
+pub const MOST_LOGINS_WAITING: usize = 16;
+
+/// The most things one chat's next browser call is told of logins that waited.
+const MOST_TOLD: usize = 8;
+
+/// What a chat is told of its browser login `login`, asked while nobody is there (#2050).
+pub fn login_waits_said(login: &str) -> String {
+    format!(
+        "the person's desktop is not connected, so purlis did not log in with {login}: the login \
+         waits for them as an Ask, and purlis performs it once they are back if they allow it. Go \
+         on with what needs no login; a later browser call says how it went"
+    )
+}
+
+/// What a chat's next browser call says first of its login `login` that waited, which came to
+/// `outcome` once a window heard it.
+fn waited_said(login: &str, outcome: &str) -> String {
+    format!(
+        "while the person was away, this chat asked purlis to log in with {login}; now they are \
+         back: {outcome}"
+    )
+}
+
 /// What hands a line on to the window, numbered: `false` when nothing holds the project to hear
 /// it.
 pub type HandOn = Box<dyn Fn(u64, &Heard) -> bool + Send + Sync + 'static>;
@@ -183,6 +216,11 @@ pub struct Relaying {
     waiting: Mutex<HashMap<u64, Awaiting>>,
     /// Where what the window carries back is recorded, where this host keeps the event log.
     keeping: Option<Keeping>,
+    /// The browser logins asked while nobody was there, each on the hook connection it came on,
+    /// oldest first (#2050).
+    logins_waiting: Mutex<Vec<(u64, BrowseAsk)>>,
+    /// What each chat's next browser call is told first: what its logins that waited came to.
+    told: Mutex<HashMap<u32, Vec<String>>>,
 }
 
 /// **How the host keeps what its hook channel hears** (#2003): it writes the event log, and
@@ -226,6 +264,8 @@ impl Relaying {
             next: AtomicU64::new(1),
             waiting: Mutex::default(),
             keeping,
+            logins_waiting: Mutex::default(),
+            told: Mutex::default(),
         })
     }
 
@@ -292,13 +332,14 @@ impl Relaying {
 
     /// Hands chat `chat`'s line `heard` on and waits for the window to say it took it, and
     /// records what the window carried back of it.
-    fn taken(&self, chat: u32, heard: &Heard) -> io::Result<()> {
+    fn taken(self: &Arc<Self>, chat: u32, heard: &Heard) -> io::Result<()> {
         if let Some(keeping) = &self.keeping {
             (keeping.heard_from)(chat);
         }
         let Some((id, replied)) = self.exchange(heard) else {
             return Err(io::Error::other(NOBODY_HEARS));
         };
+        self.hand_on_the_logins_that_waited();
         let reply = replied.recv_timeout(A_RELAYED_LINE_IS_TAKEN_WITHIN);
         self.done(id);
         if let (Err(mpsc::RecvTimeoutError::Disconnected), Some(keeping)) = (&reply, &self.keeping)
@@ -334,10 +375,34 @@ impl Relaying {
 
     /// Hands an ask on, and waits as long as the window takes to answer it. While it waits it
     /// looks at the asker, and tells the window once it has hung up.
-    fn answer(&self, tokens: &ChatTokens, connection: u64, ask: Ask) -> Answer {
-        let Some((id, replied)) = self.exchange(&Heard::Ask { connection, ask }) else {
-            return nobody();
+    fn answer(self: &Arc<Self>, tokens: &ChatTokens, connection: u64, ask: Ask) -> Answer {
+        let browsing = match &ask {
+            Ask::Browse(browse) => Some((**browse).clone()),
+            _ => None,
         };
+        let Some((id, replied)) = self.exchange(&Heard::Ask { connection, ask }) else {
+            return match browsing {
+                Some(browse) => self.wait_for_the_window(connection, browse),
+                None => nobody(),
+            };
+        };
+        self.hand_on_the_logins_that_waited();
+        let answer = self.answered(tokens, connection, id, &replied);
+        match browsing {
+            Some(browse) => self.told_first(browse.chat, answer),
+            None => answer,
+        }
+    }
+
+    /// The answer to the ask handed on as `id` on hook connection `connection`, waited for as
+    /// long as the window takes, the window told once its asker hangs up.
+    fn answered(
+        &self,
+        tokens: &ChatTokens,
+        connection: u64,
+        id: u64,
+        replied: &mpsc::Receiver<Replied>,
+    ) -> Answer {
         let mut told_gone = false;
         let answer = loop {
             match replied.recv_timeout(AN_ASKER_IS_LOOKED_AT_EVERY) {
@@ -357,6 +422,115 @@ impl Relaying {
             }
         };
         self.done(id);
+        answer
+    }
+
+    /// **Browser call `browse`, on hook connection `connection`, that nobody is there to hear**
+    /// (#2050): a login waits for the window, and is said to; any other is answered as a line
+    /// nobody heard.
+    fn wait_for_the_window(&self, connection: u64, browse: BrowseAsk) -> Answer {
+        let Browsing::LogIn { login } = &browse.asked else {
+            return nobody();
+        };
+        let login = login.clone();
+        let mut waiting = lock(&self.logins_waiting);
+        let already = waiting.iter().any(|(_, one)| {
+            one.chat == browse.chat
+                && matches!(&one.asked, Browsing::LogIn { login: theirs } if *theirs == login)
+        });
+        if !already {
+            if waiting.len() >= MOST_LOGINS_WAITING {
+                return Answer::No {
+                    why: format!(
+                        "the person's desktop is not connected, and too many logins wait for \
+                         them already, so purlis did not log in with {login} and keeps nothing \
+                         of it: go on with what needs no login, and ask again once they are back"
+                    ),
+                };
+            }
+            waiting.push((connection, browse));
+        }
+        Answer::No {
+            why: login_waits_said(&login),
+        }
+    }
+
+    /// **Hands every login that waited on to the window that hears this host again** (#2050),
+    /// each on a thread of its own, as it was asked: what each came to is told to its chat's
+    /// next browser call. One the window did not take waits on.
+    fn hand_on_the_logins_that_waited(self: &Arc<Self>) {
+        let waited = std::mem::take(&mut *lock(&self.logins_waiting));
+        for (connection, browse) in waited {
+            let relaying = Arc::clone(self);
+            let spawned = std::thread::Builder::new()
+                .name("purlisd-login-waited".into())
+                .spawn(move || relaying.hand_on_one_that_waited(connection, browse));
+            if let Err(why) = spawned {
+                tracing::warn!("purlisd: a login that waited was not handed on: {why}");
+            }
+        }
+    }
+
+    fn hand_on_one_that_waited(&self, connection: u64, browse: BrowseAsk) {
+        let ask = Ask::Browse(Box::new(browse.clone()));
+        let Some((id, replied)) = self.exchange(&Heard::Ask { connection, ask }) else {
+            self.waits_again(connection, browse);
+            return;
+        };
+        let reply = replied.recv();
+        self.done(id);
+        let Browsing::LogIn { login } = &browse.asked else {
+            return;
+        };
+        match reply {
+            Ok(Replied::Answer(answer)) => {
+                let outcome = match &answer {
+                    Answer::No { why } => why.clone(),
+                    Answer::Browsed { browsed, .. } => browsed
+                        .note
+                        .clone()
+                        .unwrap_or_else(|| "purlis performed it".to_owned()),
+                    other => format!("the window answered {other:?}"),
+                };
+                let mut told = lock(&self.told);
+                let chat = told.entry(browse.chat).or_default();
+                if chat.len() < MOST_TOLD {
+                    chat.push(waited_said(login, &outcome));
+                }
+            }
+            // The window went before it answered: it waits for the next one.
+            Err(_) => self.waits_again(connection, browse),
+            Ok(_) => {}
+        }
+    }
+
+    fn waits_again(&self, connection: u64, browse: BrowseAsk) {
+        let mut waiting = lock(&self.logins_waiting);
+        if waiting.len() < MOST_LOGINS_WAITING {
+            waiting.push((connection, browse));
+        }
+    }
+
+    /// `answer` to a browser call of chat `chat`'s, after what its logins that waited came to,
+    /// which it is told once.
+    fn told_first(&self, chat: u32, mut answer: Answer) -> Answer {
+        let Some(told) = lock(&self.told).remove(&chat) else {
+            return answer;
+        };
+        let said = told.join(". ");
+        match &mut answer {
+            Answer::No { why } => *why = format!("{said}. {why}"),
+            Answer::Browsed { browsed, .. } => {
+                browsed.note = Some(match browsed.note.take() {
+                    Some(note) => format!("{said}. {note}"),
+                    None => said,
+                });
+            }
+            // Nothing else answers a browser call: what it would say is kept for the next.
+            _ => {
+                lock(&self.told).insert(chat, told);
+            }
+        }
         answer
     }
 
