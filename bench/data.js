@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792921274141,
+  "lastUpdate": 1792924233605,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -24318,6 +24318,48 @@ window.BENCHMARK_DATA = {
             "value": 104.14119050000001,
             "unit": "ms",
             "extra": "median of 5 runs: 102.887, 103.247, 104.141, 105.350, 106.437 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "654fde520d70448622f5a435113024a28f8654db",
+          "message": "Release check lists every test-only crate feature (#3199)\n\ntools/release-features.mjs named only purlis-session-protocol/any-stream.\nTEST_ONLY now lists purlis-core's fenced and the test-support features of\npurlis-core, purlis-host, purlis-skills and purlis-terminal, each with a\ncanary from another crate's dev-dependencies. The check also reads the\nworkspace's packages: a test-support feature the list leaves out, a listed\nfeature no package has, or one with no canary is an error, so a new test\nhook is caught by CI rather than kept out by the resolver alone.\n\nCloses #3180\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-25T14:29:08+04:00",
+          "tree_id": "c62091235f00ac16c785399a2d3f4b1bb88fce61",
+          "url": "https://github.com/purlis/purlis/commit/654fde520d70448622f5a435113024a28f8654db"
+        },
+        "date": 1792924231067,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.382391,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.380, 0.382, 0.382, 0.383, 0.418 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.616755,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.348, 16.533, 16.617, 16.661, 16.749 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.7955575,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.339, 101.438, 101.796, 102.156, 102.493 ms"
           }
         ]
       }
