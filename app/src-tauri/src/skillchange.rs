@@ -442,6 +442,25 @@ pub(crate) async fn skill_delete(
     .await
 }
 
+/// **Finishes or undoes every skill delete a crash or a quit cut short** (SK-35, #3013), as the
+/// studio opens, and answers one line for each.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_deletes_cut_short(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+) -> Result<SkillChanged, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("finishing a skill delete", move || {
+        flag_on()?;
+        heard(held.root(), |cx| {
+            verbs::interrupted(cx);
+            Ok(())
+        })
+    })
+    .await
+}
+
 /// The deleted skills Restore can bring back, newest first.
 #[tauri::command]
 #[specta::specta]

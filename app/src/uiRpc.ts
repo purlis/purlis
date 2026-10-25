@@ -943,6 +943,7 @@ export const commands = {
 	/**  **Who uses a skill**: what Delete shows first. */
 	skillUsers: (plane: PlaneId, level: SkillLevel, name: string) => typedError<SkillUsers, string>(__TAURI_INVOKE("skill_users", { plane, level, name })),
 	skillDelete: __WINDOW_ONLY_RESULT,
+	skillDeletesCutShort: __WINDOW_ONLY_RESULT,
 	/**  The deleted skills Restore can bring back, newest first. */
 	skillsDeleted: (plane: PlaneId) => typedError<DeletedSkill[], string>(__TAURI_INVOKE("skills_deleted", { plane })),
 	skillRestore: __WINDOW_ONLY_RESULT,

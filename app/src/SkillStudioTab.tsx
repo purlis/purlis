@@ -151,6 +151,27 @@ export function SkillStudioTab({
       live = false;
     };
   }, [plane, workspace, persona, changed, done, switched]);
+  // A delete a crash or a quit cut short is finished or undone as the studio opens (SK-35),
+  // said in one line each, and the lists read again.
+  useEffect(() => {
+    let live = true;
+    if (!on) return;
+    void commands
+      .skillDeletesCutShort(plane)
+      .then((answer) => {
+        if (!live || answer.status !== "ok" || answer.data.notes.length === 0) return;
+        setSaid({
+          tone: "news",
+          label: "Skill delete cut short",
+          text: answer.data.notes.join(" "),
+        });
+        setDone((n) => n + 1);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [plane, on]);
   useEffect(() => {
     let live = true;
     if (!on) return;

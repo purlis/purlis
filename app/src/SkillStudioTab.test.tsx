@@ -245,6 +245,38 @@ describe("the Skill studio", () => {
     expect(calls.filter((cmd) => cmd === "skill_studio")).toHaveLength(2);
   });
 
+  it("says a skill delete a crash cut short, finished as it opens, and reads its skills again", async () => {
+    // SK-35 (#3013): the core finishes or undoes it, and the studio says which in one line.
+    const calls: string[] = [];
+    const line = "release's delete was cut short; it is finished now, and Restore brings it back";
+    mockIPC((cmd) => {
+      calls.push(cmd);
+      if (cmd === "skill_studio")
+        return {
+          on: true,
+          workspace: null,
+          persona: null,
+          first: { starts: false, unmoved: null },
+          workspaces: [],
+          levels: [],
+          skills: [],
+          harnesses: [],
+          clashes: [],
+        };
+      if (cmd === "skills_deleted") return [];
+      if (cmd === "skill_deletes_cut_short") return { notes: [line] };
+      return [];
+    });
+    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
+
+    const notice = await screen.findByRole("status", { name: /Skill delete cut short/ });
+    expect(notice).toHaveTextContent(line);
+    await waitFor(() =>
+      expect(calls.filter((cmd) => cmd === "skill_studio").length).toBeGreaterThanOrEqual(2),
+    );
+    expect(calls.filter((cmd) => cmd === "skill_deletes_cut_short")).toHaveLength(1);
+  });
+
   it("says it is not on while its flag is off", async () => {
     answering({
       on: false,

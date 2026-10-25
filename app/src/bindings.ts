@@ -1811,6 +1811,11 @@ export const commands = {
 	skillUsers: (plane: PlaneId, level: SkillLevel, name: string) => typedError<SkillUsers, string>(__TAURI_INVOKE("skill_users", { plane, level, name })),
 	/**  **Deletes a skill**, so Restore can bring it back. */
 	skillDelete: (plane: PlaneId, level: SkillLevel, name: string) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_delete", { plane, level, name })),
+	/**
+	 *  **Finishes or undoes every skill delete a crash or a quit cut short** (SK-35, #3013), as the
+	 *  studio opens, and answers one line for each.
+	 */
+	skillDeletesCutShort: (plane: PlaneId) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_deletes_cut_short", { plane })),
 	/**  The deleted skills Restore can bring back, newest first. */
 	skillsDeleted: (plane: PlaneId) => typedError<DeletedSkill[], string>(__TAURI_INVOKE("skills_deleted", { plane })),
 	/**

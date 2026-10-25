@@ -296,6 +296,7 @@ macro_rules! app_commands {
                 skillchange::skill_move,
                 skillchange::skill_users,
                 skillchange::skill_delete,
+                skillchange::skill_deletes_cut_short,
                 skillchange::skills_deleted,
                 skillchange::skill_restore,
                 skillchange::skill_grant,

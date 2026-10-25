@@ -762,6 +762,139 @@ fn a_delete_whose_commit_is_refused_after_the_removal_puts_the_skill_back_and_na
     assert!(deleted(root).iter().all(|one| one.name != "release"));
 }
 
+// A delete cut short (SK-35, #3013): the app dies between the removal and its commit.
+
+/// Deletes the project skill `release` in the plane at `root`, cut short at `step` as a crash
+/// would: nothing after it runs, and what the delete held open is let go.
+fn delete_cut_short_at(root: &Path, step: cut::Step) {
+    let _hook = cut::set(move |at| {
+        if at == step {
+            panic!("cut short at {at:?}");
+        }
+    });
+    let crashed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        did(root, |cx| delete(cx, &Level::project(), "release"))
+    }));
+    assert!(crashed.is_err(), "the delete was not cut short at {step:?}");
+}
+
+/// The notes of deletes by git that ran, and were not seen to end.
+fn notes_left(root: &Path) -> Vec<String> {
+    std::fs::read_dir(crate::plane::state_dir(root).join(DELETING_DIR))
+        .map(|dir| {
+            dir.filter_map(Result::ok)
+                .map(|one| one.file_name().to_string_lossy().into_owned())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[test]
+fn a_delete_cut_short_before_its_commit_is_finished_at_the_next_start() {
+    for step in [cut::Step::Removed, cut::Step::Unstaged] {
+        let tmp = committed_plane();
+        let root = tmp.path();
+        let before = head_of(root);
+        delete_cut_short_at(root, step);
+        // What the crash left: the skill is in neither the live list nor Restore.
+        assert!(!root.join("skills/release").exists(), "{step:?}");
+        assert!(
+            !gets(root, None).contains(&"release".to_owned()),
+            "{step:?}"
+        );
+        assert!(deleted(root).iter().all(|one| one.name != "release"));
+
+        let ((), lines) = on(root, None, interrupted);
+
+        assert_eq!(lines.len(), 1, "{step:?}: one line, {lines:?}");
+        assert!(
+            matches!(&lines[0], Say::Info(text) if text.contains("release") && text.contains("finished")),
+            "{step:?}: {lines:?}"
+        );
+        assert_ne!(head_of(root), before, "{step:?}");
+        let (subject, paths) = last_commit(root);
+        assert!(subject.ends_with("skill rm release"), "{step:?}: {subject}");
+        assert_eq!(paths, ["skills/release/SKILL.md"], "{step:?}");
+        assert_eq!(run(root, &["status", "--porcelain"]).line(), "", "{step:?}");
+        let listed = deleted(root);
+        let one = listed
+            .iter()
+            .find(|one| one.name == "release")
+            .unwrap_or_else(|| panic!("{step:?}: not offered back: {listed:?}"));
+        assert!(one.kept().in_git(), "{step:?}");
+        assert!(notes_left(root).is_empty(), "{step:?}");
+        // Once is enough: the next start finds nothing.
+        assert!(on(root, None, interrupted).1.is_empty(), "{step:?}");
+    }
+}
+
+#[test]
+fn a_delete_cut_short_whose_commit_cannot_land_now_is_put_back_and_unstaged() {
+    let tmp = committed_plane();
+    let root = tmp.path();
+    let before = head_of(root);
+    delete_cut_short_at(root, cut::Step::Removed);
+    // Somebody's own work staged since: the delete's commit cannot land now.
+    std::fs::write(root.join("notes.md"), "mine\n").unwrap();
+    run(root, &["add", "notes.md"]);
+
+    let ((), lines) = on(root, None, interrupted);
+
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert!(
+        matches!(&lines[0], Say::Info(text) if text.contains("release") && text.contains("put back")),
+        "{lines:?}"
+    );
+    assert_eq!(head_of(root), before);
+    assert!(root.join("skills/release/SKILL.md").exists());
+    assert!(gets(root, None).contains(&"release".to_owned()));
+    assert_eq!(
+        run(root, &["status", "--porcelain"]).line(),
+        "A  notes.md",
+        "the skill's removal is never left staged, and the person's work is left as it was"
+    );
+    assert!(notes_left(root).is_empty());
+}
+
+#[test]
+fn a_delete_cut_short_after_its_commit_says_nothing_and_takes_its_note_away() {
+    let tmp = committed_plane();
+    let root = tmp.path();
+    delete_cut_short_at(root, cut::Step::Committed);
+    let after = head_of(root);
+    assert_eq!(notes_left(root).len(), 1, "the crash left its note");
+
+    let ((), lines) = on(root, None, interrupted);
+
+    assert!(lines.is_empty(), "{lines:?}");
+    assert_eq!(head_of(root), after);
+    assert!(notes_left(root).is_empty());
+    assert!(deleted(root).iter().any(|one| one.name == "release"));
+}
+
+#[test]
+fn a_delete_still_running_is_never_finished_by_another_start() {
+    let tmp = committed_plane();
+    let root = tmp.path().to_path_buf();
+    let heard = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let _hook = cut::set({
+        let (root, heard) = (root.clone(), heard.clone());
+        move |at| {
+            if at == cut::Step::Unstaged {
+                // Another start, while this delete runs: the window's studio, say.
+                heard.borrow_mut().extend(on(&root, None, interrupted).1);
+            }
+        }
+    });
+
+    let kept = did(&root, |cx| delete(cx, &Level::project(), "release")).unwrap();
+
+    assert!(heard.borrow().is_empty(), "{:?}", heard.borrow());
+    assert!(kept.in_git());
+    assert_eq!(last_commit(&root).1, ["skills/release/SKILL.md"]);
+    assert!(notes_left(&root).is_empty());
+}
+
 #[test]
 fn files_git_ignores_left_in_a_deleted_skills_folder_do_not_hide_it_from_restore() {
     let tmp = committed_plane();

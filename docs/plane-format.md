@@ -339,6 +339,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`save-branch.json`](#save-branchjson)
   - [`save-journal.jsonl`](#save-journaljsonl)
   - [`skills-deleted/<stamp>-<name>/`](#skills-deletedstamp-name)
+  - [`skills-deleting/<stamp>-<folder>`](#skills-deletingstamp-folder)
   - [`skill-drafts/<id>/`](#skill-draftsid)
   - [`skill-tries/<id>/`](#skill-triesid)
   - [`skill-levels/<chat id>.json`](#skill-levelschat-idjson)
@@ -7022,6 +7023,25 @@ rewritten.
   Deleted ⇒ those skills cannot be restored. A committed skill whose delete was committed is
   never kept here: git keeps it. Every read, write and removal here goes through folders held
   open with `O_NOFOLLOW`.
+- **Git:** gitignored, under the state directory.
+
+### `skills-deleting/<stamp>-<folder>`
+- **Format:** one file per delete of a committed skill that runs (SK-35, #3013): two lines, the
+  level it is deleted from relative to the plane (`skills`, `workspaces/ops/skills`,
+  `personas/reviewer/skills`), then the skill's folder name. `<stamp>` is when the delete began, in
+  nanoseconds since the epoch. Written whole as `.<stamp>-<folder>` and renamed into place already
+  locked. The folder is `0700` and each file `0600`.
+- **Status:** **internal**, **experimental** behind the `skill-studio` flag.
+- **Tier:** Clone state, transient — it lives from before a delete's `git rm` until its commit is made or the
+  skill is put back.
+- **Written by:** `purlis_core::skills::verbs::delete`, which holds the file's `flock` for as
+  long as the delete runs and takes the file away when it ends, either way.
+- **Read by:** `verbs::interrupted`, as the Skill studio opens and as `purlis skill` starts a
+  change. A file nothing holds locked is a delete a crash, a quit or a failed git cut short: the
+  skill's removal is taken out of the index, then committed where its commit can land now, or
+  put back as `HEAD` has it, and the file is taken away. One line says which. Deleted ⇒ a delete
+  cut short is not found: its skill stays out of the project and out of Restore, and its staged
+  removal keeps every later skill delete on this machine, until a save commits it.
 - **Git:** gitignored, under the state directory.
 
 ### `skill-drafts/<id>/`
