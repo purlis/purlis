@@ -106,9 +106,10 @@ each font you named that their folder does not already have.
 
 **Shape and size** are tokens beside the colours, set in each appearance (one that leaves them out
 keeps the theme it extends): a whole number (the line heights take decimals) inside its bounds, or
-the theme is refused. Offer them: the built-in Purlis theme sets `radius.md` 7, `radius.lg` 10,
-`radius.xl` 12, `size.control` 26, `size.chrome` 24, `line-height.body` 1.55, `window.gutter` 8 and
-`panel.corner-radius` 12 in all three of its appearances: its panels float with rounded corners,
+the theme is refused. Offer them: the built-in Purlis theme sets `radius.sm` and `radius.md` 7,
+`radius.control` 8, `radius.lg` 10, `radius.xl` 12, `size.control` 28, `size.chrome` 24,
+`font-size.base` 13, `line-height.body` 1.55, `window.gutter` 8 and `panel.corner-radius` 12 in
+all three of its appearances: its panels float with rounded corners,
 where Purlis Classic draws them flush. The top-level `compact` holds what compact density draws. A token it leaves out keeps
 the appearance's own value, except the ones Classic's compact moves (`space.2` to `space.8`,
 `line-height.body`, `size.control`, `size.chrome`): those take the smaller of Classic's compact and
@@ -119,7 +120,8 @@ Most asks for another shape come down to the corners and the heights:
 | Token | Bounds | Classic | Compact | What it reaches |
 |---|---|---|---|---|
 | `radius.sm` | 0–8 px | 3 | 3 | labels, chips, crumbs, badges, checkboxes, error and report boxes |
-| `radius.md` | 0–10 px | 4 | 4 | buttons, fields, selects, menu rows, a list's rows, Notices, the palette's rows, Inbox asks |
+| `radius.md` | 0–10 px | 4 | 4 | menu rows, Notices, the palette's rows, Inbox asks, a tab's hover pill |
+| `radius.control` | 0–14 px | 4 | 4 | an md control: buttons, fields, selects, a list's rows, title-bar chips, a tab's top |
 | `radius.lg` | 0–14 px | 6 | 6 | dialogs, popovers, menus, tooltips, segmented controls |
 | `radius.xl` | 0–18 px | 8 | 8 | the Welcome page's doors, nothing else |
 | `radius.full` | 0–9999 px | 9999 | 9999 | pills: counts, toggle tracks |
@@ -146,7 +148,7 @@ tighter: `font-size.md` 14 fits comfortable (14 × 1.4 = 19.6, within 21) and fa
 **Still square, whatever `radius.*` says:** the project and workspace strip tabs, the settings
 gear on a strip, and every tree row. Tell the person when they ask for rounder ones: the theme
 cannot round those yet. The session tabs (chats, views, files) and their `×` are rounded through
-their parts (`tabs.*`, below), and a list's rows by `radius.md` and the `list` family's parts. The
+their parts (`tabs.*`, below), and a list's rows by `radius.control` and the `list` family's parts. The
 focus ring tokens reach every focus ring, the strip tabs', the closer's and the gear's among them.
 
 **One part of one control** is a component part, in a top-level `parts` object:
