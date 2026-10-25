@@ -99,7 +99,14 @@ A family's ticket (spec #2897) is done when it ships:
 - a `play` function on every interactive story: its keyboard path, Esc dismissal where it
   dismisses, and the focus in sight after every move;
 - its baselines, drawn by the label and reviewed in the pull request;
-- its parts in the theme engine's manifest, and its docs;
+- its parts in the theme engine's manifest, and its docs. What it adds there is `since: NEXT`
+  (`super::NEXT` in the family's own file, `parts::NEXT` in a test, never imported); the pull
+  request leaves `parts::VERSION` and the digest table alone, and the release step gives every
+  addition of the release one version (`node tools/theme-parts-release.mjs`, ADR 0103 amended
+  2026-10-25), so family pull requests never queue behind each other for the next number. A
+  literal next number (`since: 13`) fails the tools' tests: write it as NEXT. On a conflict in
+  the theme schema, take main's and write it again
+  (`PURLIS_THEME_SCHEMA_WRITE=1 cargo test -p purlis-core the_published_schema`);
 - every call site moved to it, with the lint rule for it at error;
 - the operator's before and after look at the screens it changes.
 
