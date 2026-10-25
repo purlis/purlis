@@ -275,11 +275,11 @@ function WithViews({
 const bar = () => screen.getByRole("tablist", { name: "Navigation" });
 
 describe("the activity bar of a region with views (#1673)", () => {
-  it("is a row of tabs across the side panel's top, one tab per view, each named and with a tooltip", () => {
+  it("is a column beside the side panel, one tab per view, each named and with a tooltip", () => {
     render(<WithViews from={DEFAULT_ARRANGEMENT} />);
 
-    // N36, R116: tabs across the side panel, so a row.
-    expect(bar()).toHaveAttribute("aria-orientation", "horizontal");
+    // #3144: a column of icons at the frame's start, beside the project rail.
+    expect(bar()).toHaveAttribute("aria-orientation", "vertical");
     const tabs = within(bar()).getAllByRole("tab");
     expect(tabs.map((tab) => tab.getAttribute("aria-label"))).toEqual([
       "Chats",
@@ -287,8 +287,9 @@ describe("the activity bar of a region with views (#1673)", () => {
       "Search",
     ]);
     for (const tab of tabs) expect(tipOf(tab)).toBeTruthy();
-    // Inside the side panel, at its top.
-    expect(slot("left").contains(bar())).toBe(true);
+    // Its own column, outside the side panel.
+    expect(slot("left").contains(bar())).toBe(false);
+    expect(bar().closest(".activity-column")).toHaveAttribute("data-side", "left");
     // The open view's tab names the view: pressing it again does nothing (R121).
     expect(tipOf(within(bar()).getByRole("tab", { name: "Chats" }))).toEqual("Chats");
   });
@@ -337,14 +338,14 @@ describe("the activity bar of a region with views (#1673)", () => {
     render(<WithViews from={DEFAULT_ARRANGEMENT} onPick={onPick} />);
 
     screen.getByRole("tab", { name: "Chats" }).focus();
-    await userEvent.keyboard("{ArrowRight}");
+    await userEvent.keyboard("{ArrowDown}");
     expect(screen.getByRole("tab", { name: "Explorer" })).toHaveFocus();
     await userEvent.keyboard("{Enter}");
 
     expect(onPick).toHaveBeenCalledWith("explorer");
   });
 
-  it("keeps the views mounted when the side is put away by its key, its tabs a column at the edge", async () => {
+  it("keeps the views mounted when the side is put away by its key, its column where it was", async () => {
     render(
       <WithViews
         from={DEFAULT_ARRANGEMENT}
@@ -357,7 +358,7 @@ describe("the activity bar of a region with views (#1673)", () => {
 
     expect(screen.getByTestId("v-chats")).toBe(chats);
     expect(within(slot("left")).queryByRole("tabpanel")).toBeNull();
-    // D-2917-18: the tabs stand at the window's edge as a column, none of them chosen.
+    // #3144: the column stays where it was, none of its tabs chosen.
     expect(bar().closest(".activity-column")).toHaveAttribute("data-side", "left");
     expect(within(bar()).queryAllByRole("tab", { selected: true })).toEqual([]);
   });
@@ -500,7 +501,7 @@ describe("the Skills view's place on the left (#3266)", () => {
 describe("the Panel (#1737)", () => {
   const lower = () => screen.getByRole("tablist", { name: "Panel, left half" });
 
-  it("puts the Lower icons below the left bar's own, at the side panel's tab row's end, Repos and Changes", () => {
+  it("puts the Lower icons below the left bar's own, at the left column's foot, Repos and Changes", () => {
     render(<WithViews from={DEFAULT_ARRANGEMENT} />);
 
     expect(
@@ -508,11 +509,12 @@ describe("the Panel (#1737)", () => {
         .getAllByRole("tab")
         .map((tab) => tab.getAttribute("aria-label")),
     ).toEqual(["Repos", "Changes"]);
-    // The left bar is tabs across the side panel's top (N36, R116): its own group, the gap, then
-    // the Lower icons at the row's end.
+    // The left bar is a column beside the side panel (#3144): its own group, the gap, then the
+    // Lower icons at its foot.
     const row = bar().closest('[data-scope="activity-bar"][data-part="root"]');
-    expect(row).toHaveAttribute("data-variant", "tab");
-    expect(row?.closest(".slot-left")).not.toBeNull();
+    expect(row).toHaveAttribute("data-variant", "bar");
+    expect(row).toHaveClass("activity-column");
+    expect(row?.closest(".slot-left")).toBeNull();
     expect(row).toContainElement(lower());
     const order = [...(row?.querySelector('[data-part="items"]')?.children ?? [])].map((one) =>
       one.getAttribute("data-part") === "gap" ? "gap" : one.getAttribute("data-region"),

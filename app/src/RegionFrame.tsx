@@ -57,7 +57,7 @@ import { CHAT_KEYBOARD } from "./actions";
 import { forgetFrameScroll, useViewScroll } from "./viewScroll";
 import { IconButton } from "./ui/button/Button";
 import { PanelSectionTitle, panelRoot } from "./ui/panel/Panel";
-import { ActivityBarFrame, type ActivityVariant } from "./ui/activity/ActivityItem";
+import { ActivityBarFrame } from "./ui/activity/ActivityItem";
 
 /** No view behind a preview is on. */
 const NO_PREVIEWS: readonly ViewId[] = [];
@@ -199,12 +199,13 @@ export function RegionFrame({
           const to = movesTo(arrangement, view);
           return menu(view, to === undefined ? undefined : placeOf(to), tab);
         };
-  /** A region's bar: tabs across the side panel's top on the left, a column on the right. */
-  const barOf = (one: Placement, side: Side, variant: ActivityVariant, away?: string) => (
+  /** A region's bar: a column of its icons, at the frame's start on the left and its end on the
+   *  right (#3144). */
+  const barOf = (one: Placement, side: Side, away?: string) => (
     <ActivityBar
       key={one.id}
       side={side}
-      variant={variant}
+      variant="bar"
       region={one.id}
       name={CATALOGUE[one.id].name}
       away={CATALOGUE[one.id].stays === true ? null : away}
@@ -219,22 +220,25 @@ export function RegionFrame({
   );
   /** A side's own bar and its Lower icons (the bars of its halves of the Panel): the top group,
    *  then the bottom group. A half with no views has no icons. */
-  const barsOf = (side: Side, variant: ActivityVariant) => ({
+  const barsOf = (side: Side) => ({
     // A sidebar every view has moved out of draws no icons (#1740), as an empty half does not.
     upper: slots[side]
       .filter((one) => withViews(one) && tabbed(one.id).length > 0)
-      .map((one) => barOf(one, side, variant)),
+      .map((one) => barOf(one, side)),
     lower: slots.panel
       .filter((one) => one.side === side && withViews(one) && tabbed(one.id).length > 0)
-      .map((one) => barOf(one, side, variant, `Put the panel's ${side} half away`)),
+      .map((one) => barOf(one, side, `Put the panel's ${side} half away`)),
   });
   /**
-   * **The right bar** (R117, #2917): a 44px column at the window's edge, the whole height beside
-   * the right panel and the Panel's right half, its own icons at the top and the Lower icons at
-   * its foot.
+   * **A side's bar** (R117, #2917; #3144): a 44px column the whole height beside its side panel
+   * and its half of the Panel, its own icons at the top and the Lower icons at its foot. The
+   * right one is at the window's edge; the left one is the frame's first column, beside the
+   * project rail, as the switcher prototype's variant D draws it with "Bar: column". It is
+   * drawn whether or not its side is out, so putting the side away or bringing it back moves
+   * no icon.
    */
   const column = (side: Side) => {
-    const { upper, lower } = barsOf(side, "bar");
+    const { upper, lower } = barsOf(side);
     if (upper.length === 0 && lower.length === 0) return null;
     return (
       <ActivityBarFrame
@@ -247,10 +251,9 @@ export function RegionFrame({
     );
   };
   /**
-   * **What a side panel draws above its views** (N36, R116, R123, R125): on the left, its bar as
-   * tabs across its top (the side panel's views, then its half of the Panel's at the row's end)
-   * and the open view's header in the label's capitals; on the right, the open view's title and
-   * the × that closes it. Nothing while the side is away.
+   * **What a side panel draws above its views** (R123, R125): on the left, the open view's
+   * header in the label's capitals (its icons are the left column's, #3144); on the right, the
+   * open view's title and the × that closes it. Nothing while the side is away.
    */
   const sideTop = (side: Side): ReactNode => {
     const first = shownIn(slots[side]).find(withViews);
@@ -258,17 +261,12 @@ export function RegionFrame({
     const open = openView(first, present);
     const named = tabbed(first.id).find((one) => one.view === open)?.name;
     if (side === "left") {
-      const { upper, lower } = barsOf(side, "tab");
       const head = open === undefined ? undefined : heads?.[open];
+      if (open === undefined || head === null) return null;
       return (
-        <>
-          <ActivityBarFrame variant="tab" top={upper} bottom={lower} />
-          {open !== undefined && head !== null && (
-            <div className="side-head" data-side={side}>
-              <PanelSectionTitle>{head ?? named}</PanelSectionTitle>
-            </div>
-          )}
-        </>
+        <div className="side-head" data-side={side}>
+          <PanelSectionTitle>{head ?? named}</PanelSectionTitle>
+        </div>
       );
     }
     if (open === undefined || named === undefined) return null;
@@ -467,9 +465,10 @@ export function RegionFrame({
   // above it, so it runs under all three, and an activity bar the whole height beside both.
   return (
     <div className="region-frame" ref={frame} data-cycle={order}>
-      {/* **The left bar while its side panel is away** (D-2917-18, VS Code's): its icons as a
-          narrow column at the window's edge, so a press brings the side back on that view. */}
-      {shownIn(slots.left).length === 0 && column("left")}
+      {/* **The left bar** (#3144): the frame's first column, beside the project rail, drawn
+          whether or not its side panel is out, so a press brings the side back on that view and
+          nothing moves when it comes or goes. */}
+      {column("left")}
       <Group className="regions" orientation="vertical" onLayoutChanged={settled}>
         <Panel id="region-upper" className="region-upper" minSize="20%">
           <Group className="region-row" orientation="horizontal" onLayoutChanged={settled}>
