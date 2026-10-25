@@ -42,7 +42,8 @@ function PaneLine() {
   const pressed = (what: string) => () => setSaid(what);
   return (
     <div style={{ display: "grid", gap: "var(--space-3)", inlineSize: 640 }}>
-      <div className="pane-frame pane-headed">
+      {/* A pane's size is its layout's (`container-type: size`), so the story gives it one. */}
+      <div className="pane-frame pane-headed" style={{ blockSize: 96 }}>
         <div className="pane-top">
           <BriefOpener value={(of: BriefAsk) => setSaid(`Brief of ${of.name}`)}>
             <TaskEndContext.Provider
