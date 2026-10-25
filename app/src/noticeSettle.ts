@@ -1,8 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { createContext, useCallback, useRef, useState } from "react";
-import { useWayPlaces } from "./wayPlaces";
+import { createContext, useCallback, useLayoutEffect, useRef, useState } from "react";
+import { useWayPlaces, type WayPlace } from "./wayPlaces";
 
 /**
  * How long after a question formed, or after the tasks it lists changed, a press on it does
@@ -45,6 +45,36 @@ export const NoticeWayGuard = createContext<(way: Element) => boolean>(() => tru
  *  look, or its Notice grants by its cause. */
 const waits = (way: Element, cause: string) => grantsByLook(way) || grants(cause);
 
+/** **What a pane's band remembers past its own drawing** (#3167, D-3167-6): whether its last read
+ *  found a Notice, when it last went empty, and where each of its answers that grant was. */
+type BandMemory = { hadAny: boolean; emptiedAt: number; places: Map<string, WayPlace> };
+
+/**
+ * **Each pane's band memory, by the pane** ({@link paneBand}): a band drawn again by another
+ * component (its pane's task ended or moved, a split formed or went, the tab was switched away
+ * and back) reads on from where the pane's band was, so what stood there still counts. A pane
+ * drawn for the first time has none. {@link forgetPaneBand} lets a pane closed for good go.
+ */
+const bands = new Map<string, BandMemory>();
+
+/** The band memory's name for pane `pane` of plane `plane`: a pane's number is never reused. */
+export const paneBand = (plane: string, pane: number) => `${plane}\u0000${pane}`;
+
+/** Lets the band memory of a pane closed for good go. */
+export function forgetPaneBand(band: string) {
+  bands.delete(band);
+}
+
+/** Lets every pane's band memory of plane `plane` go, as the window lets the project go; with
+ *  no plane, every pane's of the window (a test's window is a new one). */
+export function forgetPaneBands(plane?: string) {
+  for (const band of [...bands.keys()]) {
+    if (plane === undefined || band.startsWith(`${plane}\u0000`)) bands.delete(band);
+  }
+}
+
+const freshBand = (): BandMemory => ({ hadAny: false, emptiedAt: -Infinity, places: new Map() });
+
 /**
  * **The Notices' move-settle guard** (#1695, train 50's and train 54's reviews): a Notice that
  * grants something is drawn among others that come and go, so a press on one of its ways out
@@ -57,47 +87,76 @@ const waits = (way: Element, cause: string) => grantsByLook(way) || grants(cause
  * the person's own scroll is not.
  *
  * `firstDrawn` says whether a Notice's first drawing counts as a move. In the Inbox it does, as
- * an ask's Allow waits on its first drawing. On a pane it does not: a Notice there arrives
- * where the person is already looking, and only a move (one above it going, say) can put a way
- * out under a pointer that was aimed at something else. On a pane, a granting way out drawn into
- * a Notice already standing, or a granting Notice drawn while the band holds another (however
- * long that one stood) or went empty within the settle time, is a move too: it is drawn where
- * something else was aimed at. Only the first Notice into a band empty for longer stands.
+ * an ask's Allow waits on its first drawing. On a pane it does not when nothing else is there to
+ * be aimed at: a pane's first Notice arrives where the person is already looking. Anything drawn
+ * where something else may have been aimed at is a move: a granting way out drawn into a Notice
+ * already standing, or a granting Notice drawn while the band holds another (however long that
+ * one stood) or went empty within the settle time. `band` names the pane ({@link paneBand}), so
+ * this holds across the band being drawn again: a grant whose place is remembered is read
+ * against that place, and a new one arriving in a pane whose band held a Notice is a move. A
+ * band with no name remembers only while it is drawn.
  */
-export function useNoticeSettle<T extends HTMLElement>(firstDrawn: "moves" | "stands") {
+export function useNoticeSettle<T extends HTMLElement>(
+  firstDrawn: "moves" | "stands",
+  band?: string,
+) {
   const at = useRef<T>(null);
   const [said, setSaid] = useState<string>();
-  // The lines read so far; for each way out whether its first drawing is a move; whether the
-  // last read found a Notice; and when the root last went empty.
+  // The band's memory: the pane's, read on from wherever it was drawn before, or this
+  // drawing's own.
+  const own = useRef<BandMemory>(undefined);
+  const named = useRef(band);
+  useLayoutEffect(() => {
+    named.current = band;
+  });
+  const memory = useCallback((): BandMemory => {
+    const name = named.current;
+    if (name === undefined) return (own.current ??= freshBand());
+    let kept = bands.get(name);
+    if (kept === undefined) bands.set(name, (kept = freshBand()));
+    return kept;
+  }, []);
+  // The lines read so far; for each way out whether its first drawing is a move, and the name
+  // its place is remembered by.
   const lines = useRef(new WeakSet<Element>());
   const later = useRef(new WeakMap<Element, boolean>());
-  const hadAny = useRef(false);
-  const emptiedAt = useRef(-Infinity);
-  const ways = useCallback(function* (root: T) {
-    const all = [...root.querySelectorAll("[data-cause]")];
-    const now = Date.now();
-    // **Drawn where another Notice stood** (#3167): the last read found one here, however long
-    // it had stood, or the root went empty within the settle time, so a pointer may be aimed
-    // at what this one now covers.
-    const held = hadAny.current || now - emptiedAt.current < SETTLE_MS;
-    if (all.length === 0 && hadAny.current) emptiedAt.current = now;
-    hadAny.current = all.length > 0;
-    for (const line of all) {
-      const known = lines.current.has(line);
-      lines.current.add(line);
-      const cause = line.getAttribute("data-cause") ?? "";
-      for (const way of line.querySelectorAll("button")) {
-        if (!waits(way, cause)) continue;
-        if (!later.current.has(way)) later.current.set(way, known || held);
-        yield way;
+  const names = useRef(new WeakMap<Element, string>());
+  const ways = useCallback(
+    function* (root: T) {
+      const kept = memory();
+      const all = [...root.querySelectorAll("[data-cause]")];
+      const now = Date.now();
+      // **Drawn where another Notice stood** (#3167): the last read found one here, however
+      // long it had stood, or the band went empty within the settle time, so a pointer may be
+      // aimed at what this one now covers.
+      const held = kept.hadAny || now - kept.emptiedAt < SETTLE_MS;
+      if (all.length === 0 && kept.hadAny) kept.emptiedAt = now;
+      kept.hadAny = all.length > 0;
+      for (const line of all) {
+        const known = lines.current.has(line);
+        lines.current.add(line);
+        const cause = line.getAttribute("data-cause") ?? "";
+        let nth = 0;
+        for (const way of line.querySelectorAll("button")) {
+          if (!waits(way, cause)) continue;
+          if (!later.current.has(way)) later.current.set(way, known || held);
+          if (!names.current.has(way)) {
+            names.current.set(way, `${cause}\u0000${way.textContent ?? ""}\u0000${nth}`);
+          }
+          nth += 1;
+          yield way;
+        }
       }
-    }
-  }, []);
+    },
+    [memory],
+  );
+  const remembered = useCallback(() => memory().places, [memory]);
+  const nameOf = useCallback((way: Element) => names.current.get(way), []);
   const firstMoves = useCallback(
     (way: Element) => firstDrawn === "moves" || later.current.get(way) === true,
     [firstDrawn],
   );
-  const { movedAt } = useWayPlaces(at, ways, firstMoves);
+  const { movedAt } = useWayPlaces(at, ways, firstMoves, { nameOf, remembered });
   const allows = (way: Element): boolean => {
     const notice = way.closest("[data-cause]");
     const cause = notice?.getAttribute("data-cause");

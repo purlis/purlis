@@ -34,7 +34,7 @@ import { useLayoutEffect, useRef, useState, type RefObject } from "react";
 const STILL = 0.5;
 
 /** A box's place, and since when it is there. */
-type Place = {
+export type WayPlace = {
   /** The box on screen. */
   left: number;
   top: number;
@@ -52,7 +52,11 @@ type Watch = {
   root: () => Element | null;
   ways: (root: Element) => Iterable<Element>;
   firstMoves: (way: Element) => boolean;
-  places: WeakMap<Element, Place>;
+  places: WeakMap<Element, WayPlace>;
+  /** The name an answer's place is remembered by past this drawing, if it has one. */
+  nameOf?: (way: Element) => string | undefined;
+  /** Where each named answer was, kept past this drawing (#3167, D-3167-6). */
+  remembered?: () => Map<string, WayPlace>;
   /** Where each box that scrolls one of its answers was scrolled to, at its last read. */
   scrolled: WeakMap<Element, Scrolled>;
   /** What changes under the root: read again in the next frame. */
@@ -75,8 +79,10 @@ const differ = (a: number, b: number) => Math.abs(a - b) > STILL;
 /** What every box from one up to the page has scrolled, and whether one of them was made to. */
 type Chain = { x: number; y: number; made: boolean };
 /** One pass's chains, each box's read once however many answers it holds. */
-type Pass = Map<Element, Chain>;
+type Pass = Map<Element, Chain> & { named?: Set<string> };
 const PAGE: Chain = { x: 0, y: 0, made: false };
+/** What a watch with nothing kept past its drawing keeps: nothing, as it is never named. */
+const NOTHING_KEPT = new Map<string, WayPlace>();
 
 /** **Whether `box` was made to scroll back since the watch last read it**: it was scrolled
  *  further than what it holds now lets it be, so the browser clamped it. */
@@ -126,7 +132,11 @@ function place(watch: Watch, way: Element, pass: Pass, at: number) {
   const x = box.left + around.x;
   const y = box.top + around.y;
   const made = around.made;
-  const was = watch.places.get(way);
+  // An answer drawn again where its place is remembered (its band drawn anew) is read against
+  // where it was, not as a first drawing.
+  const name = watch.nameOf?.(way);
+  const kept = name === undefined ? undefined : watch.remembered?.();
+  const was = watch.places.get(way) ?? (name === undefined ? undefined : kept?.get(name));
   const moved =
     was === undefined
       ? watch.firstMoves(way)
@@ -139,7 +149,7 @@ function place(watch: Watch, way: Element, pass: Pass, at: number) {
   // less than `STILL` between reads still moves as far as it goes in all. Only the on-screen box
   // the clamp check compares is read again every time.
   const keep = !moved && was !== undefined;
-  watch.places.set(way, {
+  const now: WayPlace = {
     left: box.left,
     top: box.top,
     width: keep ? was.width : box.width,
@@ -147,7 +157,12 @@ function place(watch: Watch, way: Element, pass: Pass, at: number) {
     x: keep ? was.x : x,
     y: keep ? was.y : y,
     at: moved ? at : (was?.at ?? -Infinity),
-  });
+  };
+  watch.places.set(way, now);
+  if (name !== undefined) {
+    kept?.set(name, now);
+    pass.named?.add(name);
+  }
 }
 
 /** **One pass over one watch**: every answer it guards is read where it is drawn now. */
@@ -156,8 +171,13 @@ function look(watch: Watch) {
   watchRoot(watch, root);
   if (root === null) return;
   const pass: Pass = new Map();
+  pass.named = new Set();
   const at = Date.now();
   for (const way of watch.ways(root)) place(watch, way, pass, at);
+  // What the root no longer draws is no longer remembered: the memory holds what stands now.
+  const kept = watch.remembered?.();
+  if (kept !== undefined)
+    for (const name of kept.keys()) if (!pass.named.has(name)) kept.delete(name);
 }
 
 /** **One pass over every watch**, in the frame after anything that can move an answer. */
@@ -254,13 +274,19 @@ export function useWayPlaces<T extends Element>(
   at: RefObject<T | null>,
   ways: (root: T) => Iterable<Element>,
   firstMoves: (way: Element) => boolean,
+  past?: {
+    nameOf: (way: Element) => string | undefined;
+    remembered: () => Map<string, WayPlace>;
+  },
 ) {
   // The callbacks of the last render, which the watch asks when it reads.
-  const said = useRef({ ways, firstMoves });
+  const said = useRef({ ways, firstMoves, past });
   const [watch] = useState<Watch>(() => ({
     root: () => at.current,
     ways: (root) => said.current.ways(root as T),
     firstMoves: (way) => said.current.firstMoves(way),
+    nameOf: (way) => said.current.past?.nameOf(way),
+    remembered: () => said.current.past?.remembered() ?? NOTHING_KEPT,
     places: new WeakMap(),
     scrolled: new WeakMap(),
   }));
@@ -271,7 +297,7 @@ export function useWayPlaces<T extends Element>(
   // After every render, in the commit itself: what it drew is read where it is drawn before
   // anything else can move it, so a move right after its first drawing is a move.
   useLayoutEffect(() => {
-    said.current = { ways, firstMoves };
+    said.current = { ways, firstMoves, past };
     look(watch);
   });
   const movedAt = (way?: Element): number => {
