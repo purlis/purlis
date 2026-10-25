@@ -98,46 +98,59 @@ describe("a repo's own skills in the Skill studio", function () {
 
   it("turns the repo's skill off for the workspace's chats, and back on", async () => {
     const row = () => $(`[data-testid="found-claude-${NAME}"]`);
+    const named = () => readFileSync(manifest, "utf8").includes(NAME);
     // The row is drawn again after each switch, and again when the plane's change reaches the
-    // window, so the button is found afresh on every try rather than held.
-    const press = async (label: string, until: RegExp, what: string) => {
+    // window, so the button is found afresh on every try rather than held. It is pressed only
+    // while workspace.json is not yet as wanted, and at most once every few seconds: the switch
+    // says on or off by what the row showed when pressed, so a press that lands just as the row
+    // is redrawn sends the other way and undoes the first (#3139). The file is the signal the
+    // switch landed; the row is the signal the window caught up.
+    const press = async (label: string, until: RegExp, keyed: boolean, what: string) => {
+      let pressed = 0;
       try {
         await browser.waitUntil(
           async () => {
-            if (until.test(await (await row()).getText())) return true;
+            if (named() === keyed) return until.test(await (await row()).getText());
+            if (Date.now() - pressed < 5_000) return false;
             const button = await (await row()).$(`button=${label}`);
             if (
               (await button.isExisting()) &&
               (await button.isEnabled()) &&
               (await button.getAttribute("aria-disabled")) !== "true"
             ) {
+              pressed = Date.now();
               await button.click().catch(() => undefined);
             }
             return false;
           },
-          { timeout: 30_000, interval: 1_000 },
+          { timeout: 30_000, interval: 500 },
         );
       } catch {
-        // Said with what the row and the studio's notices read, so a red run says why.
+        // Said with what the row, the studio's notices and the file read, so a red run says why.
         const said = await $(".skill-studio-harnesses")
           .getText()
           .catch(() => "");
-        throw new Error(`${what}. The row reads: ${await (await row()).getText()}. ${said}`);
+        const file = `workspace.json ${named() ? "names it" : "does not name it"}`;
+        const reads = await (await row()).getText();
+        throw new Error(`${what}. ${file}. The row reads: ${reads}. ${said}`);
       }
     };
 
     await press(
       "Turn off",
       /Left out: turned off for this project's chats/,
-      "the repo's skill never read as turned off",
+      true,
+      "turning the repo's skill off never showed in workspace.json and the row",
     );
     expect(readFileSync(manifest, "utf8")).toContain(NAME);
 
     // The cells read run together ("…probeOn Turn off"), so on is the Turn off button being back.
-    await press("Turn on", /On Turn off/, "the repo's skill never read as on again");
-    await browser.waitUntil(async () => !readFileSync(manifest, "utf8").includes(NAME), {
-      timeout: 10_000,
-      timeoutMsg: "turning it back on left its key in workspace.json",
-    });
+    await press(
+      "Turn on",
+      /On Turn off/,
+      false,
+      "turning the repo's skill back on never showed in workspace.json and the row",
+    );
+    expect(readFileSync(manifest, "utf8")).not.toContain(NAME);
   });
 });

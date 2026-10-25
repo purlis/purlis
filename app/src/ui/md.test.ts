@@ -66,7 +66,8 @@ const MD: [string, string, string, string][] = [
   ["button", "ui/button/button.css", '[data-scope="button"][data-part="root"]', "block-size"],
   ["text input", "ui/field/field.css", '[data-scope="text-input"][data-part="root"]', "block-size"],
   ["list row", "ui/list/list.css", '[data-scope="list"][data-part="root"]', "min-block-size"],
-  ["select", "primitives/controls.css", ".ui-select", "block-size"],
+  ["select", "ui/select/select.css", '[data-scope="select"][data-part="root"]', "block-size"],
+  ["combobox", "ui/select/select.css", '[data-scope="combobox"][data-part="root"]', "block-size"],
 ];
 
 describe("an md control", () => {

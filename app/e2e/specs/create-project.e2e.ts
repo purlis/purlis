@@ -44,7 +44,7 @@ const DOORS = 'ul[aria-label="Ways to start"]';
 const WELCOME = "section.welcome";
 const WHERE = '[data-setting="create-project-where"]';
 const NAME_BOX = '[data-setting="create-project-name"] input';
-const OWNER = '[data-setting="create-project-owner"] [role="combobox"]';
+const OWNER = '[data-setting="create-project-owner"] [data-scope="select"][data-part="root"]';
 
 /** Where the person keeps their projects in this run. */
 const projects = (() => {

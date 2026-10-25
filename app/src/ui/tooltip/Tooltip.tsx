@@ -340,7 +340,9 @@ const textOf = (children: unknown): string =>
     )
     .join("");
 
-/** The words an element shows, shallowly: an icon-only button shows none. */
+/** The words an element shows, shallowly: an icon-only button shows none. A part that says it
+ *  shows words (`data-shows-words`: a select's value, drawn by a function of what it holds,
+ *  `ui/select/Select.tsx`) shows them. */
 const showsWords = (children: unknown): boolean =>
   Children.toArray(children as ReactNode).some(
     (one) =>
@@ -348,7 +350,8 @@ const showsWords = (children: unknown): boolean =>
       typeof one === "number" ||
       (isValidElement(one) &&
         String((one.props as { "aria-hidden"?: unknown })["aria-hidden"]) !== "true" &&
-        showsWords((one.props as { children?: unknown }).children)),
+        ((one.props as Record<string, unknown>)["data-shows-words"] !== undefined ||
+          showsWords((one.props as { children?: unknown }).children))),
   );
 
 /**
