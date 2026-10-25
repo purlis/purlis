@@ -645,12 +645,12 @@ fn what_an_ask_names_is_said_with_every_character_that_draws_as_nothing_written_
     let shown = sandbox_block(5, &sly, &Locks::none(), &Default::default()).expect("an ask");
     assert_eq!(
         shown.says,
-        "The sandbox refused a write in /w/gpj.\\u202eexe\\u200b"
+        "The sandbox refused a write in /w/gpj.⟦U+202E⟧exe⟦U+200B⟧"
     );
     let mut world = World::new();
     world.blocks = vec![(5, sly)];
     world.names = vec![(5, "pay\u{202e}lanigiro")];
-    assert_eq!(world.asks()[0].chain, ["pay\\u202elanigiro"]);
+    assert_eq!(world.asks()[0].chain, ["pay⟦U+202E⟧lanigiro"]);
 }
 
 #[test]

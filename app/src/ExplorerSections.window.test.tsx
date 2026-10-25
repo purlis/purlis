@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render as renderBare, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { showTheExplorer, stripNamed } from "./test-strips";
+import { goToWorkspace, showTheExplorer, workspaceInFront } from "./test-strips";
 import App from "./App";
 import { forgetThisLaunch } from "./regions";
 import { GLOBAL } from "./windowprefs";
@@ -158,8 +158,8 @@ afterEach(() => {
 });
 
 const explorer = () => within(screen.getByRole("navigation", { name: "Explorer" }));
-/** The strip's tab for a workspace, by its name. */
-const stripTab = (name: RegExp) => within(stripNamed("Workspaces")).getByRole("tab", { name });
+/** Goes to a workspace from the title bar's ⌄ (#2916), by its name. */
+const goTo = (name: string) => goToWorkspace(name);
 /** The Repos view, in the left half of the Panel (#1737): Explorer's *Repos and branches*. */
 const reposView = () => within(screen.getByRole("navigation", { name: "Repos" }));
 
@@ -179,7 +179,7 @@ describe("Explorer in sections (#1677)", () => {
     expect(reposView().getByRole("tree", { name: "Repos and branches" })).toBeVisible();
   });
 
-  it("has no Workspaces section: the strip is the one place a workspace is selected (qw358)", async () => {
+  it("has no Workspaces section: the title bar is the one place a workspace is selected (qw358)", async () => {
     core();
     render(<App />);
     await showTheExplorer();
@@ -188,19 +188,19 @@ describe("Explorer in sections (#1677)", () => {
     expect(explorer().queryByRole("tree", { name: "Workspaces of this project" })).toBeNull();
     expect(explorer().queryByRole("button", { name: "Workspaces" })).toBeNull();
     expect(explorer().queryByRole("treeitem", { name: /^beta/ })).toBeNull();
-    // What its rows carried is the strip's tab's: the selection, and the tab is there to press.
-    expect(stripTab(/alpha/)).toHaveAttribute("aria-selected", "true");
-    expect(stripTab(/beta/)).toHaveAttribute("aria-selected", "false");
+    // What its rows carried is the title bar's (#2916): which workspace is in front, and the ⌄
+    // to go to another.
+    expect(workspaceInFront()).toBe("alpha");
   });
 
-  it("follows the strip: Files is of the workspace selected there", async () => {
+  it("follows the title bar: Files is of the workspace in front", async () => {
     const asked = core();
     render(<App />);
     await showTheExplorer();
     const alphas = await explorer().findByRole("tree", { name: "Files of alpha" });
     expect(await within(alphas).findByRole("treeitem", { name: /^svc/ })).toBeVisible();
 
-    await userEvent.click(stripTab(/beta/));
+    await goTo("beta");
 
     const betas = await explorer().findByRole("tree", { name: "Files of beta" });
     expect(await within(betas).findByRole("treeitem", { name: /^web/ })).toBeVisible();
@@ -221,7 +221,7 @@ describe("Explorer in sections (#1677)", () => {
     await explorer().findByRole("tree", { name: "Files of alpha" });
     const before = asked.length;
 
-    await userEvent.click(stripTab(/^Plane root/));
+    await goTo("Plane root");
 
     await explorer().findByRole("button", { name: "Files Plane root" });
     const tree = within(await explorer().findByRole("tree", { name: "Files of Plane root" }));
@@ -249,7 +249,7 @@ describe("Explorer in sections (#1677)", () => {
     await tree.findByRole("treeitem", { name: "target" });
 
     // And back on a workspace, its files again.
-    await userEvent.click(stripTab(/alpha/));
+    await goTo("alpha");
     await explorer().findByRole("tree", { name: "Files of alpha" });
   });
 
@@ -257,7 +257,7 @@ describe("Explorer in sections (#1677)", () => {
     const asked = core();
     render(<App />);
     await showTheExplorer();
-    await userEvent.click(stripTab(/^Plane root/));
+    await goTo("Plane root");
     const tree = within(await explorer().findByRole("tree", { name: "Files of Plane root" }));
 
     await userEvent.click(await tree.findByRole("treeitem", { name: "README.md" }));
@@ -276,11 +276,11 @@ describe("Explorer in sections (#1677)", () => {
     expect(tree.getByRole("treeitem", { name: "README.md" })).not.toHaveAttribute("draggable");
   });
 
-  it("draws a workspace's repo as one row that selects that workspace's tab (#1916)", async () => {
+  it("draws a workspace's repo as one row that brings that workspace forward (#1916)", async () => {
     core();
     render(<App />);
     await showTheExplorer();
-    await userEvent.click(stripTab(/^Plane root/));
+    await goTo("Plane root");
     const tree = within(await explorer().findByRole("tree", { name: "Files of Plane root" }));
     await userEvent.click(await tree.findByRole("treeitem", { name: "workspaces" }));
     await userEvent.click(await tree.findByRole("treeitem", { name: "beta" }));
@@ -294,7 +294,7 @@ describe("Explorer in sections (#1677)", () => {
 
     await userEvent.click(repo);
 
-    await waitFor(() => expect(stripTab(/beta/)).toHaveAttribute("aria-selected", "true"));
+    await waitFor(() => expect(workspaceInFront()).toBe("beta"));
     await explorer().findByRole("tree", { name: "Files of beta" });
   });
 

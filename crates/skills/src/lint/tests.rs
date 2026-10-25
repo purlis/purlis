@@ -12,7 +12,10 @@ fn has(tool: &str) -> bool {
     ["git", "sh", "bash", "python3", "/bin/sh"].contains(&tool)
 }
 
-fn lints<'a>(plane: &'a [String], built_in: &'a [String]) -> BuiltInLints<'a> {
+fn lints<'a>(
+    plane: &'a std::collections::HashSet<String>,
+    built_in: &'a std::collections::HashSet<String>,
+) -> BuiltInLints<'a> {
     BuiltInLints {
         namespace: "skills",
         plane,
@@ -27,8 +30,8 @@ fn found(text: &str, others: &[(String, String)], handed: bool) -> Vec<Finding> 
     } else {
         crate::Origin::Repo
     };
-    let plane = vec!["deploy".to_owned(), "review".to_owned()];
-    let built_in = vec!["secrets".to_owned()];
+    let plane = ["deploy".to_owned(), "review".to_owned()].into();
+    let built_in = ["secrets".to_owned()].into();
     lints(&plane, &built_in).findings(&SkillFiles {
         name: "deploy",
         text,
@@ -210,4 +213,26 @@ fn only_the_editor_names_a_key() {
     for finding in &findings {
         assert_eq!(finding.shown(), None, "{finding}");
     }
+}
+
+#[test]
+fn a_skill_naming_itself_names_one_there_is_though_the_plane_has_no_skill_of_its_name() {
+    // SK-44 (#3133): the plane's names are worked out once per list, without each skill's own
+    // name in them; a repo skill telling the chat to use itself again is no broken reference.
+    let text = "---\nname: tidy\ndescription: Tidies the repo, then checks it again.\n---\n\n\
+                When done, use skills:tidy again and skills:nowhere.\n";
+    let none = std::collections::HashSet::new();
+    let findings = lints(&none, &none).findings(&SkillFiles {
+        name: "tidy",
+        text,
+        others: &[],
+        origin: crate::Origin::Repo,
+    });
+    assert_eq!(
+        says(&findings),
+        [
+            "it names skills:nowhere, and this project has no skill nowhere: a chat told to use it \
+          finds none"
+        ]
+    );
 }

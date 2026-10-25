@@ -128,16 +128,19 @@ function DockedStrip({
                 {at > 0 && <Separator className="pane-split" aria-label="Resize the split" />}
                 <Panel id={name}>
                   <div
-                    className="pane-frame"
+                    className="pane-frame pane-headed"
                     data-testid={`pane ${name}`}
                     data-focused={at === 1 || undefined}
                   >
-                    <div className="pane-body">
-                      <div className="pane-corner at-start">
+                    {/* As `PaneFrame` draws a chat's pane: its header, then the terminal (#3142). */}
+                    <div className="pane-top">
+                      <div className="pane-head">
                         <div className="pane-chips">
                           <span className="pane-from">{name}</span>
                         </div>
                       </div>
+                    </div>
+                    <div className="pane-body">
                       <div className={at === 1 ? "pane focused" : "pane"}>
                         <p style={{ margin: 0, padding: "var(--space-7) var(--space-5)" }}>
                           {name}

@@ -2175,7 +2175,8 @@ fn theme_parts_prints_every_family_part_state_and_property_as_json() {
     assert_eq!(ran.code, 0, "{}", ran.err);
     let json = ran.json();
     assert_eq!(json["schema"], 1);
-    assert_eq!(json["version"], 13);
+    // The last release's manifest version: a pull request that adds to it leaves it alone.
+    assert_eq!(json["version"], purlis_core::theme::parts::VERSION);
     assert_eq!(
         json["theme_schema"]
             .as_str()
@@ -2188,7 +2189,7 @@ fn theme_parts_prints_every_family_part_state_and_property_as_json() {
     );
     assert_eq!(json["families"][0]["name"], "button");
     // The window's own families (#2913), the tooltip (#2908), the popover and the menu (#2909),
-    // and the project rail (#2915), and the list (#2911).
+    // the project rail (#2915), the list (#2911) and the title bar's pinned workspaces (#2916).
     let names: Vec<&str> = json["families"]
         .as_array()
         .unwrap()
@@ -2207,6 +2208,7 @@ fn theme_parts_prints_every_family_part_state_and_property_as_json() {
         "rail",
         "activity",
         "list",
+        "titlebar",
         "panel-separator",
     ] {
         assert!(names.contains(&family), "{family}: {names:?}");

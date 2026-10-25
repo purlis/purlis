@@ -28,17 +28,17 @@ pub(super) const PANEL_SEPARATOR: Family = Family {
     name: "panel-separator",
     description: "The handle between two panels that resizes them: a side's edge, the line under \
                   the work, the line between the bottom panel's halves, a split between panes.",
-    since: 13,
+    since: super::NEXT,
     parts: &[
         Part {
             name: "root",
-            since: 13,
+            since: super::NEXT,
             description: "The handle: its line, as long as the panels it parts.",
             properties: &[Prop::Fill],
         },
         Part {
             name: "grip",
-            since: 13,
+            since: super::NEXT,
             description: "The short mark at the handle's middle, drawn under the pointer and \
                           while it is dragged.",
             properties: &[Prop::Fill],

@@ -203,7 +203,10 @@ describe("the family's look, from the tokens (button.css)", () => {
     const drawn = (variant: string, property: string, hover = false) =>
       drawnWith(screen.getByRole("button", { name: `Save ${variant}` }), property, { hover });
     expect(drawn("secondary", "background")).toBe("var(--control-base)");
-    expect(drawn("primary", "background")).toBe("var(--accent-surface)");
+    // The primary is filled by its own token (#3177): Purlis's accent fill, Classic's surface.
+    expect(drawn("primary", "background")).toBe("var(--accent-fill)");
+    expect(drawn("primary", "color")).toBe("var(--accent-fill-text)");
+    expect(drawn("primary", "background", true)).toBe("var(--accent-fill-hover)");
     expect(drawn("ghost", "background")).toBe("transparent");
     expect(drawn("danger", "background")).toBe("var(--control-base)");
     expect(drawn("danger", "color")).toBe("var(--danger-base)");

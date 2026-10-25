@@ -127,3 +127,6 @@ section added to this record, so two pull requests that amend it do not touch th
 
 **Superseded in part** by [the amendment of 2026-10-23](0054/2026-10-23-the-projects-move-to-the-rail-and-the-strip-goes.md):
 the projects are no longer in the title bar but on the project rail at the window's left (#2915).
+
+**Superseded in part** by [the amendment of 2026-10-24](0054/2026-10-24-the-workspaces-move-to-the-title-bar.md):
+the workspace strip is gone, and the project's pinned workspaces are chips in the title bar (#2916).

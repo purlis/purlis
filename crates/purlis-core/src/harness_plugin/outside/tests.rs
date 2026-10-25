@@ -264,3 +264,185 @@ fn a_repo_skill_whose_folder_is_swapped_for_a_link_after_it_was_found_is_never_l
         "{refused}"
     );
 }
+
+#[test]
+fn a_folder_of_more_names_than_purlis_reads_lists_none_of_its_skills_and_says_so() {
+    // SK-44 (#3133): a clone's skills folder is the chat's to fill, and `purlis skill list`
+    // lints each skill found. Past the most names purlis reads of one folder, it reads none of
+    // them and lists the folder once, saying why.
+    let (_tmp, clone) = a_clone();
+    let dir = clone.join(".claude/skills");
+    for n in 0..crate::harness_plugin::MOST_NAMES {
+        std::fs::write(dir.join(format!("f{n}")), "").unwrap();
+    }
+
+    let found = repo_skills(
+        &CLAUDE_CODE,
+        &Choices::default(),
+        &[clone_at("api", &clone)],
+    );
+
+    assert_eq!(found.len(), 1, "{:?}", rows(&found));
+    assert_eq!(found[0].skill.name, "skills");
+    assert!(
+        found[0].skill.description.contains(&format!(
+            "more than {} names",
+            crate::harness_plugin::MOST_NAMES
+        )),
+        "{}",
+        found[0].skill.description
+    );
+}
+
+#[test]
+fn a_repo_skill_whose_skill_md_is_larger_than_purlis_reads_of_a_skills_file_is_listed_unread() {
+    // SK-44 (#3133): one limit for a skill's file, wherever it is read from, and a skill past it
+    // is listed, saying why it is not read.
+    let (_tmp, clone) = a_clone();
+    let big = clone.join(".claude/skills/big");
+    std::fs::create_dir_all(&big).unwrap();
+    let pad = "x".repeat(usize::try_from(purlis_skills::MOST_BYTES).unwrap());
+    std::fs::write(
+        big.join("SKILL.md"),
+        format!("---\nname: big\ndescription: Too big.\n---\n\n{pad}\n"),
+    )
+    .unwrap();
+
+    let found = repo_skills(
+        &CLAUDE_CODE,
+        &Choices::default(),
+        &[clone_at("api", &clone)],
+    );
+
+    let unread: Vec<(&str, Option<Unread>)> =
+        found.iter().map(|f| (f.id.as_str(), f.unread)).collect();
+    assert_eq!(unread, [("big", Some(Unread::Refused)), ("review", None)]);
+    assert_eq!(
+        found[0].skill.description,
+        "purlis does not read a SKILL.md that is a link, a hard link or larger than 256 KiB, so \
+         it is not checked here. A chat still loads it."
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_repo_skill_whose_skill_md_has_a_second_name_is_listed_unread() {
+    // SK-44 (#3133): read as every skill's own file is, a hard link reaching past it refused,
+    // and the skill listed, saying so.
+    let (tmp, clone) = a_clone();
+    let elsewhere = tmp.path().join("elsewhere");
+    skill(&elsewhere, "twin", "twin");
+    std::fs::create_dir_all(clone.join(".claude/skills/twin")).unwrap();
+    std::fs::hard_link(
+        elsewhere.join("twin/SKILL.md"),
+        clone.join(".claude/skills/twin/SKILL.md"),
+    )
+    .unwrap();
+
+    let found = repo_skills(
+        &CLAUDE_CODE,
+        &Choices::default(),
+        &[clone_at("api", &clone)],
+    );
+
+    let unread: Vec<(&str, Option<Unread>)> =
+        found.iter().map(|f| (f.id.as_str(), f.unread)).collect();
+    assert_eq!(unread, [("review", None), ("twin", Some(Unread::Refused))]);
+}
+
+#[test]
+fn a_folder_of_exactly_the_most_names_purlis_reads_is_listed() {
+    let (_tmp, clone) = a_clone();
+    let dir = clone.join(".claude/skills");
+    for n in 1..crate::harness_plugin::MOST_NAMES {
+        std::fs::write(dir.join(format!("f{n}")), "").unwrap();
+    }
+
+    let found = repo_skills(
+        &CLAUDE_CODE,
+        &Choices::default(),
+        &[clone_at("api", &clone)],
+    );
+
+    assert_eq!(
+        rows(&found),
+        [("review", Origin::Repo, "api".to_owned(), true, false)]
+    );
+}
+
+#[test]
+fn the_persons_own_folder_of_more_names_than_purlis_reads_is_listed_once_unread() {
+    let tmp = tempfile::tempdir().unwrap();
+    let config = tmp.path().join("claude-config");
+    let dir = config.join("skills");
+    skill(&dir, "mine", "mine");
+    for n in 0..crate::harness_plugin::MOST_NAMES {
+        std::fs::write(dir.join(format!("f{n}")), "").unwrap();
+    }
+    let chat = [("CLAUDE_CONFIG_DIR".to_owned(), config.display().to_string())];
+
+    let found = harness_skills(&CLAUDE_CODE, &env(&chat, tmp.path()), &Choices::default());
+
+    assert_eq!(found.len(), 1, "{:?}", rows(&found));
+    assert_eq!(found[0].unread, Some(Unread::Crowded));
+    assert!(
+        found[0]
+            .skill
+            .description
+            .starts_with("A folder of more than 2000 names"),
+        "{}",
+        found[0].skill.description
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn the_persons_own_skill_md_that_is_a_hard_link_is_read() {
+    // SK-44 (#3133): the Nix store, `cp -al` and `rsync --link-dest` leave the person's own
+    // skills as hard links. A clone's are refused.
+    let tmp = tempfile::tempdir().unwrap();
+    let store = tmp.path().join("store");
+    skill(&store, "nix", "nix");
+    let config = tmp.path().join("claude-config");
+    std::fs::create_dir_all(config.join("skills/nix")).unwrap();
+    std::fs::hard_link(
+        store.join("nix/SKILL.md"),
+        config.join("skills/nix/SKILL.md"),
+    )
+    .unwrap();
+    let chat = [("CLAUDE_CONFIG_DIR".to_owned(), config.display().to_string())];
+
+    let found = harness_skills(&CLAUDE_CODE, &env(&chat, tmp.path()), &Choices::default());
+
+    assert_eq!(
+        rows(&found),
+        [("nix", Origin::Harness, "you".to_owned(), true, false)]
+    );
+    assert_eq!(found[0].unread, None);
+}
+
+#[test]
+fn the_persons_own_skill_md_larger_than_purlis_reads_is_listed_unread() {
+    let tmp = tempfile::tempdir().unwrap();
+    let config = tmp.path().join("claude-config");
+    let big = config.join("skills/big");
+    std::fs::create_dir_all(&big).unwrap();
+    let pad = "x".repeat(usize::try_from(purlis_skills::MOST_BYTES).unwrap());
+    std::fs::write(
+        big.join("SKILL.md"),
+        format!("---\nname: big\ndescription: Too big.\n---\n\n{pad}\n"),
+    )
+    .unwrap();
+    let chat = [("CLAUDE_CONFIG_DIR".to_owned(), config.display().to_string())];
+
+    let found = harness_skills(&CLAUDE_CODE, &env(&chat, tmp.path()), &Choices::default());
+
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].skill.name, "big");
+    assert_eq!(found[0].unread, Some(Unread::Refused));
+    assert_eq!(
+        found[0].skill.description,
+        "purlis does not read a SKILL.md that is a link or larger than 256 KiB, so it is not \
+         checked here. A chat still loads it."
+    );
+}

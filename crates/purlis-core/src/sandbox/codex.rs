@@ -662,8 +662,10 @@ fn own(wrap: &Wrap) -> Result<Own, &'static str> {
     // No project's former Codex home is read: their sessions are brought to the profile before
     // the wrap ([`prepare`]).
     if let Some(homes) = wrap.former.as_deref().and_then(Path::parent) {
-        own.deny
-            .push(format!("(deny file-read* (subpath {}))", quote(homes)?));
+        own.deny.push(format!(
+            "(deny file-read* file-link (subpath {}))",
+            quote(homes)?
+        ));
     }
     // No other profile's folder is read or written, and the chat's own is reached through
     // the folders above it, looked up and never listed.
@@ -673,7 +675,7 @@ fn own(wrap: &Wrap) -> Result<Own, &'static str> {
             .zip(super::kernel_names(home))
         {
             own.deny.push(format!(
-                "(deny file-read* file-write* (require-all (subpath {}) (require-not (subpath \
+                "(deny file-read* file-write* file-link (require-all (subpath {}) (require-not (subpath \
                  {}))))",
                 string(&all.display().to_string())?,
                 string(&own_home.display().to_string())?

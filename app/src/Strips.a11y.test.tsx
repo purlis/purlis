@@ -8,7 +8,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import App from "./App";
 import type { OpenChat } from "./bindings";
-import { findStripNamed, stripNamed } from "./test-strips";
+import { findStripNamed, goToWorkspace, stripNamed } from "./test-strips";
 
 /**
  * **A tab strip owns only tabs** (#1204): the rule axe calls `aria-required-children`. A
@@ -290,19 +290,17 @@ function core() {
   );
 }
 
-describe("the window's three strips", () => {
+describe("the window's strips", () => {
   it("own only tabs (#1204)", async () => {
     core();
     render(<App />);
     const tablist = (name: string) => screen.getByRole("tablist", { name });
-    // Drawn as the test means them: alpha in front with its two chat tabs, and the gears on
-    // the strips that have one.
+    // Drawn as the test means them: alpha in front with its two chat tabs. The workspaces are
+    // the title bar's chips, a toolbar and no tablist (#2916).
     await findStripNamed("Projects");
-    await userEvent.click(
-      await within(await findStripNamed("Workspaces")).findByRole("tab", { name: /alpha/ }),
-    );
+    // alpha, from the title bar's ⌄ (#2916).
+    await goToWorkspace("alpha");
     await vi.waitFor(() => expect(within(stripNamed("Tabs")).getAllByRole("tab")).toHaveLength(2));
-    await within(stripNamed("Workspaces")).findByRole("button", { name: /settings/i });
     // What the debt list held is still drawn, and still in its strip: the `×`, the gears and
     // the strips' own controls moved nowhere. The rail's own are its + and its hide (#2915).
     expect(
@@ -323,11 +321,10 @@ describe("the window's three strips", () => {
 
     expect({
       projects: notTabs(tablist("Projects")),
-      workspaces: notTabs(tablist("Workspaces")),
       chats: notTabs(tablist("Tabs")),
-    }).toEqual({ projects: [], workspaces: [], chats: [] });
+    }).toEqual({ projects: [], chats: [] });
     // And each owns every tab its strip draws, in order (`stripNamed` holds it to that).
-    for (const name of ["Projects", "Workspaces", "Tabs"])
+    for (const name of ["Projects", "Tabs"])
       expect(ownedByTheRule(tablist(name)).map(({ element }) => element)).toEqual([
         ...stripNamed(name).querySelectorAll('[role="tab"]'),
       ]);
@@ -336,9 +333,8 @@ describe("the window's three strips", () => {
   it("owns no name box while a chat tab is being renamed (#1204)", async () => {
     core();
     render(<App />);
-    await userEvent.click(
-      await within(await findStripNamed("Workspaces")).findByRole("tab", { name: /alpha/ }),
-    );
+    // alpha, from the title bar's ⌄ (#2916).
+    await goToWorkspace("alpha");
     await vi.waitFor(() => expect(within(stripNamed("Tabs")).getAllByRole("tab")).toHaveLength(2));
 
     within(stripNamed("Tabs")).getAllByRole("tab")[0].focus();
@@ -353,9 +349,8 @@ describe("the window's three strips", () => {
   it("owns a tab that goes into the background while its name is open (#1204)", async () => {
     core();
     render(<App />);
-    await userEvent.click(
-      await within(await findStripNamed("Workspaces")).findByRole("tab", { name: /alpha/ }),
-    );
+    // alpha, from the title bar's ⌄ (#2916).
+    await goToWorkspace("alpha");
     await vi.waitFor(() => expect(within(stripNamed("Tabs")).getAllByRole("tab")).toHaveLength(2));
     within(stripNamed("Tabs")).getAllByRole("tab")[0].focus();
     await userEvent.keyboard("{F2}");

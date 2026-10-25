@@ -306,6 +306,10 @@ export const IMPORTANCE: readonly string[] = [
 /** How many Notices stand in a pane's row; the rest are behind "+N more" (V91i, #1647). */
 export const SHOWN = 2;
 
+/** A pane Notice's own Dismiss, on its line (not one inside what a way out opened): by its
+ *  class here, or by the way out it is once the notice family draws it (#2912). */
+const DISMISS = ':scope > [role="status"] > :is(.notice-dismiss, [data-way="dismiss"])';
+
 /** A cause's family: what it is up to the first `:` (`pin-dormant:ide` is a `pin-dormant`). */
 export const familyOf = (cause: string): string => cause.split(":", 1)[0];
 
@@ -539,6 +543,70 @@ export function NoticePaneRow({ children }: { children: ReactNode }) {
     };
   }, [open]);
 
+  // **Esc puts away the warning the keyboard is on, and the keyboard goes on to the next**
+  // (#3142, rule 14): to the warning that took its place, or to the pane's terminal when it was
+  // the last. Only a warning with a Dismiss: a consent has none, and Esc leaves it standing
+  // (rule 9). While "+N more" is open, Esc closes the list first (F3, below).
+  useEffect(() => {
+    const row = rowAt.current;
+    const stack = stackAt.current;
+    if (row === null || stack === null) return;
+    const shown = () => [...stack.children].filter((box) => !(box as HTMLElement).hidden);
+    const boxOf = (node: EventTarget | null) =>
+      node instanceof Node ? [...stack.children].find((box) => box.contains(node)) : undefined;
+    /** The warning the keyboard was last in, and where it stood among those shown. */
+    let was: { box: Element; at: number } | undefined;
+    const into = (event: FocusEvent) => {
+      const box = boxOf(event.target);
+      was = box === undefined ? undefined : { box, at: shown().indexOf(box) };
+    };
+    // A warning answered, dismissed or put away by Esc leaves the page with the focus on it:
+    // the keyboard goes on from where it stood, never to the top of the window.
+    const goOn = () => {
+      if (was === undefined || was.box.isConnected) return;
+      const at = was.at;
+      was = undefined;
+      const on = document.activeElement;
+      if (on !== null && on !== document.body) return;
+      const left = shown();
+      const next = left[Math.min(at, left.length - 1)];
+      // **Never onto an answer that grants** (ADR 0097 §6): a consent is landed on by its line,
+      // as "Show the request" lands on it, so an Enter after a Dismiss allows nothing.
+      const line = next?.querySelector<HTMLElement>(':scope > [role="status"]');
+      if (line && next?.querySelector('[data-variant="grants"]')) {
+        if (!line.hasAttribute("tabindex")) line.tabIndex = -1;
+        line.focus();
+        return;
+      }
+      const to =
+        next?.querySelector<HTMLElement>("button:not([disabled])") ??
+        row.closest(".pane-frame")?.querySelector<HTMLElement>(".xterm-helper-textarea");
+      to?.focus();
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || open) return;
+      // On the warning's own line only: Esc in what a way out opened (a field being written)
+      // is that field's, and never puts the warning away.
+      const box = boxOf(event.target);
+      const line = event.target instanceof Element ? event.target.closest('[role="status"]') : null;
+      if (box === undefined || line?.parentElement !== box) return;
+      const dismiss = box.querySelector<HTMLElement>(DISMISS);
+      if (!dismiss) return;
+      event.preventDefault();
+      event.stopPropagation();
+      dismiss.click();
+    };
+    const watching = new MutationObserver(goOn);
+    watching.observe(stack, { childList: true });
+    stack.addEventListener("focusin", into);
+    row.addEventListener("keydown", escape);
+    return () => {
+      watching.disconnect();
+      stack.removeEventListener("focusin", into);
+      row.removeEventListener("keydown", escape);
+    };
+  }, [open, rowAt]);
+
   // **The list closes on Escape and on a press outside the row** (F3).
   useEffect(() => {
     const row = rowAt.current;
@@ -564,6 +632,9 @@ export function NoticePaneRow({ children }: { children: ReactNode }) {
   return (
     <div
       className={count === 0 ? "pane-notice-row pane-notice-row-empty" : "pane-notice-row"}
+      // The pane's warnings, named as one place (#3142), while it has any.
+      role={count === 0 ? undefined : "region"}
+      aria-label={count === 0 ? undefined : "Warnings for this pane"}
       ref={rowAt}
     >
       <div className="pane-notices" ref={stackAt}>
@@ -582,7 +653,16 @@ export function NoticePaneRow({ children }: { children: ReactNode }) {
           onPress={() => setOpen((was) => !was)}
           className="notice-more-pane"
         >
-          +{behind} more
+          {/* Open, it says how to close it again (#3142). Both are drawn in one cell, the one
+              not said hidden, so the button is as wide as the longer whichever it says. */}
+          <span className="notice-more-says">
+            <span aria-hidden={open || undefined} data-off={open || undefined}>
+              +{behind} more
+            </span>
+            <span aria-hidden={!open || undefined} data-off={!open || undefined}>
+              Show fewer
+            </span>
+          </span>
         </Button>
       )}
     </div>

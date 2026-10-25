@@ -30,7 +30,7 @@ story picks a theme of its own; each cell is a Vitest project of its own, `stori
 | Theme | Appearances | Densities | Pictures |
 | --- | --- | --- | --- |
 | Purlis Classic (`purlis-classic`) | `dark`, `light` | `comfortable`, `compact` | dark and light, comfortable |
-| Purlis (`purlis`) | `dark`, `light`, `dark-high-contrast` | `comfortable`, `compact` | dark and light, comfortable |
+| Purlis (`purlis`) | `dark`, `light`, `dark-high-contrast` | `comfortable`, `compact` | dark, light and dark high contrast, comfortable |
 
 Every cell renders the story, plays its keyboard path and runs axe. A picture is taken only in
 the cells `app/.storybook/pictured.json` names, each its own baseline, named for its theme and
@@ -39,7 +39,8 @@ appearance: `<story id>_<theme>_<appearance>-<browser>-linux.png`, so
 appearance in WebKit. A cell's name is `<theme>_<appearance>`, and `_compact` after it for the
 compact density, which its pictures' names carry too
 (`ui-button-primary_purlis_dark_compact-webkit-linux.png`). Any cell can be pictured by adding its
-name to `pictured.json`; four are today, to keep the `stories` job short, and axe and the
+name to `pictured.json`; five are today (Purlis's high contrast since #2924, so its derived
+look is seen beside dark and light), to keep the `stories` job short, and axe and the
 keyboard run in all ten. A picture's name is held to the names `tools/story-baselines.mjs`
 takes, cell by cell, in `tools/story-baselines.test.mjs`.
 
@@ -98,7 +99,14 @@ A family's ticket (spec #2897) is done when it ships:
 - a `play` function on every interactive story: its keyboard path, Esc dismissal where it
   dismisses, and the focus in sight after every move;
 - its baselines, drawn by the label and reviewed in the pull request;
-- its parts in the theme engine's manifest, and its docs;
+- its parts in the theme engine's manifest, and its docs. What it adds there is `since: NEXT`
+  (`super::NEXT` in the family's own file, `parts::NEXT` in a test, never imported); the pull
+  request leaves `parts::VERSION` and the digest table alone, and the release step gives every
+  addition of the release one version (`node tools/theme-parts-release.mjs`, ADR 0103 amended
+  2026-10-25), so family pull requests never queue behind each other for the next number. A
+  literal next number (`since: 13`) fails the tools' tests: write it as NEXT. On a conflict in
+  the theme schema, take main's and write it again
+  (`PURLIS_THEME_SCHEMA_WRITE=1 cargo test -p purlis-core the_published_schema`);
 - every call site moved to it, with the lint rule for it at error;
 - the operator's before and after look at the screens it changes.
 
@@ -117,6 +125,11 @@ npm run storybook                        # the stories in Storybook, on http://l
 **Pictures are compared only in CI.** A picture depends on the machine's fonts and rasteriser, so
 on any machine but the pinned image it would differ from its baseline without anything being
 wrong. A local run checks rendering, the keyboard and axe, and takes no picture.
+
+**Chromium draws its words greyscale** in every story run (`--disable-lcd-text`,
+`app/.storybook/vitest.project.ts`). Its subpixel text takes each glyph from a cache the whole
+run shares, so a picture could differ by a pixel with the stories that ran before it; greyscale
+text draws the same each time.
 
 **What a failure says.** In CI, each story that fails is one annotation on the `stories` check,
 titled `<story> in <browser>, <cell>`: its file, the gate it failed (`renders`, `keyboard`,

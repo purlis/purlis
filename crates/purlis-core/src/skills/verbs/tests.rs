@@ -9,6 +9,7 @@ use std::path::Path;
 
 use super::*;
 use crate::testgit::run;
+use purlis_skills::change::{BuiltInTemplates, Template, TemplateId};
 
 /// A plane with a workspace `ops`, a persona `steward` that names `deploy`, and a project skill
 /// `deploy` that another project skill `release` names. No git repository: a change is made on
@@ -90,7 +91,8 @@ fn a_new_skill_from_a_template_lands_at_the_level_it_was_made_at() {
             &Level::workspace("ops"),
             "triage",
             "Sorts new issues.",
-            Template::Steps,
+            &BuiltInTemplates,
+            &TemplateId::BuiltIn(Template::Steps),
         )
     })
     .unwrap();
@@ -110,7 +112,14 @@ fn a_new_skill_is_refused_for_a_bad_name_a_taken_name_or_a_built_in_name() {
     skill(built_in.path(), "handoff", "handoff", "Hands off.");
     let new = |name: &str| {
         on(root, Some(built_in.path()), |cx| {
-            create(cx, &Level::project(), name, "Does it.", Template::Blank)
+            create(
+                cx,
+                &Level::project(),
+                name,
+                "Does it.",
+                &BuiltInTemplates,
+                &TemplateId::BuiltIn(Template::Blank),
+            )
         })
         .0
     };
@@ -133,7 +142,8 @@ fn a_new_skill_is_refused_for_a_bad_name_a_taken_name_or_a_built_in_name() {
             &Level::workspace("nope"),
             "x",
             "Does x.",
-            Template::Blank,
+            &BuiltInTemplates,
+            &TemplateId::BuiltIn(Template::Blank),
         )
     });
     assert!(
@@ -394,6 +404,120 @@ fn a_deleted_skill_whose_name_is_taken_again_is_not_offered_back() {
     assert!(deleted(root).is_empty());
 }
 
+/// The file beside a deleted skill's folder that cannot be put away (a link in its place): the
+/// folder comes back, nothing is kept, and the delete says it was not deleted (SK-48).
+#[cfg(unix)]
+#[test]
+fn a_delete_whose_file_beside_the_folder_cannot_move_puts_the_folder_back_and_refuses() {
+    let tmp = plane();
+    let root = tmp.path();
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::write(outside.path().join("deploy.toml"), "grant = \"all\"\n").unwrap();
+    std::os::unix::fs::symlink(
+        outside.path().join("deploy.toml"),
+        root.join("skills/deploy.toml"),
+    )
+    .unwrap();
+
+    let refused = did(root, |cx| delete(cx, &Level::project(), "deploy")).unwrap_err();
+
+    assert_eq!(
+        refused,
+        "deploy was not deleted: skills/deploy.toml could not go with it (it is not a plain \
+         folder or file, so purlis does not move it), so nothing was moved"
+    );
+    assert!(root.join("skills/deploy/SKILL.md").is_file());
+    assert!(root.join("skills/deploy.toml").is_symlink());
+    assert!(deleted(root).is_empty());
+    assert_eq!(
+        std::fs::read_dir(crate::plane::state_dir(root).join(DELETED_DIR))
+            .map(|kept| kept.count())
+            .unwrap_or(0),
+        0,
+        "nothing is kept of a delete that did not happen"
+    );
+}
+
+/// A delete whose file beside the folder cannot move and whose folder's way back is taken: the
+/// folder is kept, the delete says so and where to restore it from, and the file left in the
+/// project does not hide it from Restore (SK-48).
+#[cfg(unix)]
+#[test]
+fn a_delete_stranded_in_its_kept_folder_says_so_and_is_restored_from_there() {
+    let tmp = plane();
+    let root = tmp.path();
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::write(outside.path().join("deploy.toml"), "grant = \"all\"\n").unwrap();
+    std::os::unix::fs::symlink(
+        outside.path().join("deploy.toml"),
+        root.join("skills/deploy.toml"),
+    )
+    .unwrap();
+    let way_back = root.join("skills/deploy");
+    let hook = purlis_skills::moving::hook::set(move |moment, _, to| {
+        if moment == purlis_skills::moving::hook::Moment::BeforeRename && to == way_back {
+            std::fs::write(to, "in the way\n").unwrap();
+        }
+    });
+
+    let stranded = did(root, |cx| delete(cx, &Level::project(), "deploy")).unwrap_err();
+    drop(hook);
+
+    assert!(
+        stranded.starts_with("deploy was deleted only in part: its folder was moved to "),
+        "{stranded}"
+    );
+    assert!(
+        stranded.ends_with(
+            "and skills/deploy.toml was not moved (it is not a plain folder or file, so purlis \
+             does not move it). It is in this machine's deleted skills: restore it from there"
+        ),
+        "{stranded}"
+    );
+    std::fs::remove_file(root.join("skills/deploy")).unwrap();
+    let listed = deleted(root);
+    assert_eq!(listed.len(), 1, "{listed:?}");
+
+    did(root, |cx| restore(cx, &listed[0])).unwrap();
+
+    assert!(root.join("skills/deploy/SKILL.md").is_file());
+    assert!(root.join("skills/deploy.toml").is_symlink());
+    assert!(deleted(root).is_empty());
+}
+
+/// The kept file beside a deleted skill's folder that cannot come back (a link in its place):
+/// the folder stays kept, the skill is still offered back, and the restore says it was not
+/// restored, never a skill back without its grant (SK-48).
+#[cfg(unix)]
+#[test]
+fn a_restore_whose_file_beside_the_folder_cannot_move_keeps_the_folder_and_refuses() {
+    let tmp = plane();
+    let root = tmp.path();
+    crate::skills::grant(root, "deploy", &Grant::All).unwrap();
+    did(root, |cx| delete(cx, &Level::project(), "deploy")).unwrap();
+    let kept_dir = std::fs::read_dir(crate::plane::state_dir(root).join(DELETED_DIR))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let kept_toml = kept_dir.join("deploy.toml");
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::rename(&kept_toml, outside.path().join("deploy.toml")).unwrap();
+    std::os::unix::fs::symlink(outside.path().join("deploy.toml"), &kept_toml).unwrap();
+    let listed = deleted(root);
+
+    let refused = did(root, |cx| restore(cx, &listed[0])).unwrap_err();
+
+    assert!(
+        refused.starts_with("deploy was not restored: "),
+        "{refused}"
+    );
+    assert!(!root.join("skills/deploy").exists());
+    assert!(kept_dir.join("deploy/SKILL.md").is_file());
+    assert_eq!(deleted(root), listed);
+}
+
 /// A plane that is a git repository with an identity and a save mode that commits and never
 /// pushes, holding [`plane`]'s files in one commit.
 fn committed_plane() -> tempfile::TempDir {
@@ -452,7 +576,8 @@ fn each_change_is_one_commit_of_its_own_paths_and_nothing_else() {
             &Level::project(),
             "triage",
             "Sorts issues.",
-            Template::Blank,
+            &BuiltInTemplates,
+            &TemplateId::BuiltIn(Template::Blank),
         )
     })
     .unwrap();
@@ -586,7 +711,8 @@ fn a_save_of_some_paths_is_refused_while_something_else_is_staged() {
             &Level::project(),
             "triage",
             "Sorts issues.",
-            Template::Blank,
+            &BuiltInTemplates,
+            &TemplateId::BuiltIn(Template::Blank),
         )
     });
 
@@ -646,6 +772,294 @@ fn a_delete_whose_commit_is_refused_after_the_removal_puts_the_skill_back_and_na
         "nothing is left staged or removed"
     );
     assert!(deleted(root).iter().all(|one| one.name != "release"));
+}
+
+// A delete cut short (SK-35, #3013): the app dies between the removal and its commit.
+
+/// Deletes the project skill `release` in the plane at `root`, cut short at `step` as a crash
+/// would: nothing after it runs, and what the delete held open is let go.
+fn delete_cut_short_at(root: &Path, step: cut::Step) {
+    let _hook = cut::set(move |at| {
+        if at == step {
+            panic!("cut short at {at:?}");
+        }
+    });
+    let crashed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        did(root, |cx| delete(cx, &Level::project(), "release"))
+    }));
+    assert!(crashed.is_err(), "the delete was not cut short at {step:?}");
+}
+
+/// The notes of deletes by git that ran, and were not seen to end.
+fn notes_left(root: &Path) -> Vec<String> {
+    std::fs::read_dir(crate::plane::state_dir(root).join(DELETING_DIR))
+        .map(|dir| {
+            dir.filter_map(Result::ok)
+                .map(|one| one.file_name().to_string_lossy().into_owned())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[test]
+fn a_delete_cut_short_before_its_commit_is_finished_at_the_next_start() {
+    for step in [cut::Step::Removed, cut::Step::Unstaged] {
+        let tmp = committed_plane();
+        let root = tmp.path();
+        let before = head_of(root);
+        delete_cut_short_at(root, step);
+        // What the crash left: the skill is in neither the live list nor Restore.
+        assert!(!root.join("skills/release").exists(), "{step:?}");
+        assert!(
+            !gets(root, None).contains(&"release".to_owned()),
+            "{step:?}"
+        );
+        assert!(deleted(root).iter().all(|one| one.name != "release"));
+
+        let ((), lines) = on(root, None, interrupted);
+
+        assert_eq!(lines.len(), 1, "{step:?}: one line, {lines:?}");
+        assert!(
+            matches!(&lines[0], Say::Info(text) if text.contains("release") && text.contains("finished")),
+            "{step:?}: {lines:?}"
+        );
+        assert_ne!(head_of(root), before, "{step:?}");
+        let (subject, paths) = last_commit(root);
+        assert!(subject.ends_with("skill rm release"), "{step:?}: {subject}");
+        assert_eq!(paths, ["skills/release/SKILL.md"], "{step:?}");
+        assert_eq!(run(root, &["status", "--porcelain"]).line(), "", "{step:?}");
+        let listed = deleted(root);
+        let one = listed
+            .iter()
+            .find(|one| one.name == "release")
+            .unwrap_or_else(|| panic!("{step:?}: not offered back: {listed:?}"));
+        assert!(one.kept().in_git(), "{step:?}");
+        assert!(notes_left(root).is_empty(), "{step:?}");
+        // Once is enough: the next start finds nothing.
+        assert!(on(root, None, interrupted).1.is_empty(), "{step:?}");
+    }
+}
+
+#[test]
+fn a_delete_cut_short_whose_commit_cannot_land_now_is_put_back_and_unstaged() {
+    let tmp = committed_plane();
+    let root = tmp.path();
+    let before = head_of(root);
+    delete_cut_short_at(root, cut::Step::Removed);
+    // Somebody's own work staged since: the delete's commit cannot land now.
+    std::fs::write(root.join("notes.md"), "mine\n").unwrap();
+    run(root, &["add", "notes.md"]);
+
+    let ((), lines) = on(root, None, interrupted);
+
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert!(
+        matches!(&lines[0], Say::Info(text) if text.contains("release") && text.contains("put back")),
+        "{lines:?}"
+    );
+    assert_eq!(head_of(root), before);
+    assert!(root.join("skills/release/SKILL.md").exists());
+    assert!(gets(root, None).contains(&"release".to_owned()));
+    assert_eq!(
+        run(root, &["status", "--porcelain"]).line(),
+        "A  notes.md",
+        "the skill's removal is never left staged, and the person's work is left as it was"
+    );
+    assert!(notes_left(root).is_empty());
+}
+
+#[test]
+fn a_delete_cut_short_after_its_commit_says_nothing_and_takes_its_note_away() {
+    let tmp = committed_plane();
+    let root = tmp.path();
+    delete_cut_short_at(root, cut::Step::Committed);
+    let after = head_of(root);
+    assert_eq!(notes_left(root).len(), 1, "the crash left its note");
+
+    let ((), lines) = on(root, None, interrupted);
+
+    assert!(lines.is_empty(), "{lines:?}");
+    assert_eq!(head_of(root), after);
+    assert!(notes_left(root).is_empty());
+    assert!(deleted(root).iter().any(|one| one.name == "release"));
+}
+
+#[test]
+fn a_delete_still_running_is_never_finished_by_another_start() {
+    let tmp = committed_plane();
+    let root = tmp.path().to_path_buf();
+    let heard = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let _hook = cut::set({
+        let (root, heard) = (root.clone(), heard.clone());
+        move |at| {
+            if at == cut::Step::Unstaged {
+                // Another start, while this delete runs: the window's studio, say.
+                heard.borrow_mut().extend(on(&root, None, interrupted).1);
+            }
+        }
+    });
+
+    let kept = did(&root, |cx| delete(cx, &Level::project(), "release")).unwrap();
+
+    assert!(heard.borrow().is_empty(), "{:?}", heard.borrow());
+    assert!(kept.in_git());
+    assert_eq!(last_commit(&root).1, ["skills/release/SKILL.md"]);
+    assert!(notes_left(&root).is_empty());
+}
+
+#[test]
+fn a_delete_neither_committed_nor_put_back_keeps_its_note_and_the_next_start_puts_it_back() {
+    // The save signs and the signer refuses, so no commit; and git's index is locked from the
+    // removal on, so the files cannot be put back either.
+    let tmp = committed_plane();
+    let root = tmp.path().to_path_buf();
+    std::fs::write(
+        root.join("charter.toml"),
+        "schema = 1\n\n[plane]\nmode = \"commit\"\nsign = true\n",
+    )
+    .unwrap();
+    run(&root, &["add", "charter.toml"]);
+    run(&root, &["commit", "-q", "-m", "signs"]);
+    run(&root, &["config", "gpg.program", "false"]);
+    let before = head_of(&root);
+    let locked = root.join(".git/index.lock");
+    let refused = {
+        let _hook = cut::set({
+            let locked = locked.clone();
+            move |at| {
+                if at == cut::Step::Unstaged {
+                    std::fs::write(&locked, "").unwrap();
+                }
+            }
+        });
+        did(&root, |cx| delete(cx, &Level::project(), "release"))
+    };
+
+    let why = refused.unwrap_err();
+    assert!(why.contains("tries again"), "{why}");
+    assert!(!root.join("skills/release/SKILL.md").exists());
+    assert_eq!(
+        notes_left(&root).len(),
+        1,
+        "the note stays for the next start"
+    );
+
+    std::fs::remove_file(&locked).unwrap();
+    let ((), lines) = on(&root, None, interrupted);
+
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert!(
+        matches!(&lines[0], Say::Info(text) if text.contains("put back")),
+        "{lines:?}"
+    );
+    assert_eq!(head_of(&root), before);
+    assert!(root.join("skills/release/SKILL.md").exists());
+    assert_eq!(run(&root, &["status", "--porcelain"]).line(), "");
+    assert!(notes_left(&root).is_empty());
+}
+
+#[test]
+fn a_start_that_can_neither_finish_nor_put_back_warns_and_keeps_the_note() {
+    let tmp = committed_plane();
+    let root = tmp.path();
+    delete_cut_short_at(root, cut::Step::Unstaged);
+    // The save refuses from now on, and git's index is locked: nothing can land or come back.
+    std::fs::write(
+        root.join("charter.toml"),
+        "schema = 1\n\n[plane]\nmode = \"commit\"\nsign = true\n",
+    )
+    .unwrap();
+    run(root, &["config", "gpg.program", "false"]);
+    std::fs::write(root.join(".git/index.lock"), "").unwrap();
+
+    let ((), lines) = on(root, None, interrupted);
+
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert!(
+        matches!(&lines[0], Say::Warn(text) if text.contains("could not be finished or put back")),
+        "{lines:?}"
+    );
+    assert_eq!(notes_left(root).len(), 1, "tried again next time");
+}
+
+#[test]
+fn a_delete_cut_short_whose_skill_is_back_says_it_is_still_here_and_unstages_its_removal() {
+    let tmp = committed_plane();
+    let root = tmp.path();
+    let before = head_of(root);
+    delete_cut_short_at(root, cut::Step::Removed);
+    // The files are back in the working tree, the removal still staged.
+    run(
+        root,
+        &[
+            "restore",
+            "--source=HEAD",
+            "--worktree",
+            "--",
+            "skills/release",
+        ],
+    );
+    assert_eq!(
+        run(root, &["status", "--porcelain", "--untracked-files=no"]).line(),
+        "D  skills/release/SKILL.md"
+    );
+
+    let ((), lines) = on(root, None, interrupted);
+
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert!(
+        matches!(&lines[0], Say::Info(text) if text.contains("release") && text.contains("still here")),
+        "{lines:?}"
+    );
+    assert_eq!(head_of(root), before);
+    assert_eq!(
+        run(root, &["status", "--porcelain"]).line(),
+        "",
+        "the index is as the last commit has it"
+    );
+    assert!(notes_left(root).is_empty());
+}
+
+#[test]
+fn a_planted_or_broken_note_is_taken_away_and_nothing_else_is_done() {
+    let tmp = committed_plane();
+    let root = tmp.path();
+    let before = head_of(root);
+    let dir = crate::plane::state_dir(root).join(DELETING_DIR);
+    std::fs::create_dir_all(&dir).unwrap();
+    for (name, text) in [
+        ("1-up", "skills\n..\n"),
+        ("2-nested", "skills\na/b\n"),
+        ("3-more", "skills\nrelease\nskills/deploy\n"),
+        ("4-nowhere", "elsewhere\nrelease\n"),
+        ("5-empty", ""),
+    ] {
+        std::fs::write(dir.join(name), text).unwrap();
+    }
+
+    let ((), lines) = on(root, None, interrupted);
+
+    assert!(lines.is_empty(), "{lines:?}");
+    assert!(notes_left(root).is_empty());
+    assert_eq!(head_of(root), before);
+    assert_eq!(run(root, &["status", "--porcelain"]).line(), "");
+    assert!(root.join("skills/release/SKILL.md").exists());
+    assert!(root.join("skills/deploy/SKILL.md").exists());
+}
+
+#[test]
+fn a_note_whose_writer_died_before_it_was_named_is_taken_away() {
+    let tmp = committed_plane();
+    let root = tmp.path();
+    let dir = crate::plane::state_dir(root).join(DELETING_DIR);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join(".1-release"), "skills\nrelease\n").unwrap();
+
+    let ((), lines) = on(root, None, interrupted);
+
+    assert!(lines.is_empty(), "{lines:?}");
+    assert!(notes_left(root).is_empty());
+    assert!(root.join("skills/release/SKILL.md").exists());
 }
 
 #[test]
@@ -732,7 +1146,8 @@ fn a_personas_own_skill_is_made_edited_and_committed_at_its_level() {
             &Level::persona("reviewer"),
             "triage",
             "Sorts new issues.",
-            Template::Blank,
+            &BuiltInTemplates,
+            &TemplateId::BuiltIn(Template::Blank),
         )
     })
     .unwrap();
@@ -779,7 +1194,8 @@ fn a_persona_skill_is_refused_for_a_persona_there_is_not_or_one_made_as_one_file
                 &Level::persona(persona),
                 "x",
                 "Does x.",
-                Template::Blank,
+                &BuiltInTemplates,
+                &TemplateId::BuiltIn(Template::Blank),
             )
         })
     };

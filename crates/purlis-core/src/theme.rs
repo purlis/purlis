@@ -93,7 +93,7 @@ mod import;
 mod least;
 pub mod levels;
 mod native;
-mod opened;
+pub(crate) mod opened;
 mod options;
 pub mod parts;
 mod person;
@@ -955,6 +955,7 @@ fn load_format_1(from: &serde_json::Map<String, Value>) -> Resolved {
         }
     }
     vocabulary::follow_muted(&mut named, &base.values);
+    vocabulary::follow_kin(&mut named, &base.values);
     let values: BTreeMap<&'static str, String> = TOKENS
         .iter()
         .map(|token| {

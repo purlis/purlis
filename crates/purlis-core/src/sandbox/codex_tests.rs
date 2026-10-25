@@ -143,7 +143,7 @@ fn a_keyring_vault_does_not_refuse_a_wrapped_codex_chat_because_the_wrap_holds_t
     let keychains = real(home.path()).join("Library/Keychains");
     assert!(
         line.args[1].contains(&format!(
-            "(deny file-read* file-write* (subpath \"{}\"))",
+            "(deny file-read* file-write* file-link (subpath \"{}\"))",
             keychains.display()
         )),
         "{}",
@@ -331,7 +331,7 @@ fn the_profile_writes_the_chat_directory_its_temp_and_only_what_a_codex_turn_wri
     let operator = real(home.path()).join(".codex");
     assert!(
         line.args[1].contains(&format!(
-            "(deny file-read* file-write* (subpath \"{}\"))",
+            "(deny file-read* file-write* file-link (subpath \"{}\"))",
             operator.display()
         )),
         "{}",
@@ -885,7 +885,7 @@ fn a_codex_chat_is_denied_the_manifests_of_its_folder_and_those_above_it_only() 
     let root = real(plane.path());
     let denies = |path: &Path| {
         profile.contains(&format!(
-            "(deny file-write* (subpath \"{}\"))",
+            "(deny file-write* file-link (subpath \"{}\"))",
             path.display()
         ))
     };

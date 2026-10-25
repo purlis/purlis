@@ -339,6 +339,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`save-branch.json`](#save-branchjson)
   - [`save-journal.jsonl`](#save-journaljsonl)
   - [`skills-deleted/<stamp>-<name>/`](#skills-deletedstamp-name)
+  - [`skills-deleting/<stamp>-<folder>`](#skills-deletingstamp-folder)
   - [`skill-drafts/<id>/`](#skill-draftsid)
   - [`skill-tries/<id>/`](#skill-triesid)
   - [`skill-levels/<chat id>.json`](#skill-levelschat-idjson)
@@ -925,6 +926,7 @@ key refuses.
 | `…​.kind` | str | required | The word typed after `charter`: `claude`/`codex`/`opencode` (registry `cli_name`s), or in charter-app the name of a harness the project declares in [`harnesses/<name>.toml`](#harnessesnametoml--a-harness-declaration) (ADR 0073), which a profile then also asks approval for. | stable | `charter/profiles.py:257`; `crates/purlis-core/src/profiles.rs` `refusal` |
 | `…​.command` | list[str] | required, non-empty, all non-empty strings | argv. Never a shell string — no shell runs it. Refused if its first word is purlis itself. | stable | `charter/profiles.py:261`, `charter/profiles.py:445` |
 | `…​.env` | table of str→str | optional, default `{}` | Environment for the harness process. A name starting `CHARTER_` is refused; a name containing `KEY`/`TOKEN`/`SECRET`/`PASSWORD` (case-insensitive) is refused. | stable | `charter/profiles.py:265`, `charter/profiles.py:89`, `charter/profiles.py:58` |
+| `…​.icon` | str | optional; absent = the harness's glyph for the profile named after its kind, else the kind's monogram | **purlis only** (#2922, ruling #2866; the key and its folder by operator ruling 2026-10-24). What the profile is drawn with in Start a chat, Settings and wherever a harness is named. The name of a glyph of the theme's icon set (`spark`, `braces`, `terminal`), or the file name of an SVG in the `icons` folder of purlis's directory in the config home (`icon = "mine.svg"`: letters, digits, `.`, `_` and `-`, ending `.svg`, no path, at most 128). The SVG is read from handles, as a theme's files are: the folder and the file each opened refusing a link, and the file read only when it is a plain file of at most 64 KiB, then as shapes only, within a budget on what they come to (and an answer that lists many profiles reads each file once, sends it once and holds all of them to one budget, a row past it showing the monogram), and drawn in the text's colour whatever colours it names. A file with more than one name is not read. Off macOS and Linux it is not read. A profile's icon is drawn only where the profile is listed beside its name, never on a consent or ask surface. A glyph or a file purlis cannot draw shows the monogram of the profile's kind (`C`, `OC`, `CX`). Refused: a value that is not text, empty, longer than 128 or holding a control character. | stable | `crates/purlis-core/src/harness_icon.rs`, `crates/purlis-core/src/safesvg.rs`; `profiles.rs` `refusals_of` |
 | any other key in a profile table | — | — | Refuses that profile (e.g. `enviroment`). | stable | `charter/profiles.py:86`, `charter/profiles.py:278` |
 | `[extensions.<id>].enabled` | bool | optional | **purlis only** (purlis#253, ADR 0048). This machine's choice for this project, over `charter.toml`'s. Same shape and rules as there; still cannot reach past this machine's approval. | stable | `crates/purlis-core/src/extension/project.rs` `resolve` |
 | `[extensions.<id>.settings].<key>` | bool or str | optional | **purlis only.** Overrides `charter.toml`'s value for the same key, key by key; falls through to it (then to the declared default) when the extension would not accept this one. | stable | `crates/purlis-core/src/extension/project.rs` `resolve` |
@@ -1102,12 +1104,18 @@ key refuses.
   - `charter/commands.py:1116` `_ensure_gitignore` (from `cmd_init`): writes
     `_GITIGNORE_BASELINE` verbatim when the file is absent (`charter/commands.py:1129`),
     otherwise appends only the missing whole lines through the one shared appender.
-  - `charter/util.py:472` `append_gitignore` — the single writer for additions. It appends
-    `"\n\n"`-separated: existing body `rstrip("\n") + "\n\n"`, then `# <header>\n`, then one
-    line each (`charter/util.py:499`). Headers seen: ``added by `purlis init` ``
+  - `charter/util.py:472` `append_gitignore` — the single writer for additions
+    (`crates/purlis-core/src/scaffold/mod.rs` `append_gitignore` / `with_appended`). It appends
+    only the lines git does not already read in the file: a line counts as present as git reads
+    it (split on `\n`, one `\r` before it and trailing spaces taken off, leading whitespace
+    kept), so an indented copy or one joined to the line before by a lone `\r` is added again.
+    The existing body has its trailing `\r` and `\n` taken off, then a blank line, then
+    `# <header>`, then one line each, every one ended as the body's first line is: `\r\n` in a
+    CRLF file, `\n` otherwise (Python wrote `\n` always; `charter/util.py:499`). Headers seen: ``added by `purlis init` ``
     (`charter/commands.py:1152`), ``added by `purlis guard --local` ``
     (`charter/commands.py:1792`), ``added by `purlis reinit` — harness profiles stay on this machine``
-    (`charter/commands.py:1821`).
+    (`charter/commands.py:1821`), ``added by `purlis doctor --fix live-skills` — local skills
+    stay on this machine`` (the `live-skills` fix, #2875; purlis's own).
   - `charter/workspace.py:1408` `_write_live_block` rewrites the managed live-workspace block
     (markers `charter/workspace.py:1338`, `charter/workspace.py:1339`) — **workspaces area**,
     noted here only because it splices at the `!/workspaces/.gitkeep` anchor.
@@ -1350,7 +1358,12 @@ outside the project and removes it when the flow ends, so it adds none of them (
 - **Git:** committed (nothing ignores it).
 - **Encoding details:** a theme folder is a folder, never a bare `theme.json`: a theme's fonts,
   icons and licence live beside its `theme.json`, so each theme has a folder of its own. Decided
-  by ADR 0098, built by #2324: a theme folder needs no approval.
+  by ADR 0098, built by #2324: a theme folder needs no approval. Format 2's vocabulary only
+  grows: the Figma pass added the colour tokens `border.control`, `accent.wash`, `accent.text`,
+  `accent.fill`, `accent.fill-hover`, `accent.fill-edge` and `accent.fill-text`, and the
+  geometry token `radius.control` (operator ruling 2026-10-25, #3177, #3113). A theme folder
+  written before them draws as it did: each follows the token that drew its part before
+  (`crates/purlis-core/docs/themes.md`, "Tokens added after themes existed").
 
 ### `skills/` — the project's skills
 
@@ -2926,7 +2939,14 @@ beside a purlis one is removed when the record is published (V93i).
     (ADR 0064) and the `skills` pair (ADR 0099, #2767) are purlis's: a workspace's work links,
     session records and skills follow it, LIVE or LOCAL, and its `skills.local/` stays ignored
     either way. A block written before them is brought up to date by `reinit`, as any older
-    block is.
+    block is. `purlis doctor`'s `live skills` row names a LIVE workspace whose block lacks the
+    `skills` pair, and each level's `skills.local/` line the file lacks, LIVE workspace or
+    not (by the one level rule, a persona's included); `purlis doctor --fix live-skills` adds
+    those lines and nothing else: the pair after the workspace's last line in the block, the
+    ignore lines at the end of the file, ended as the file's lines are (#2875). Lines are read
+    as git reads them: split on `\n`, one `\r` and trailing spaces taken off, leading
+    whitespace kept. A LIVE name git reads as a pattern (`*`, `?`, `[`, `]`, `!`, `\`) gets no
+    `skills` pair, from the fix or from the block's writer, and the row names it.
   - Lines are joined with `\n` and the block has no trailing newline of its own; the rewrite
     is `re.sub(BEGIN .*? END, block, flags=DOTALL)` (`charter/workspace.py:1412`). A first
     write is inserted directly after the literal line `!/workspaces/.gitkeep\n`
@@ -7002,7 +7022,34 @@ rewritten.
 - **Read by:** `verbs::deleted`, for the Skill studio's Deleted skills and `purlis skill restore`.
   Deleted ⇒ those skills cannot be restored. A committed skill whose delete was committed is
   never kept here: git keeps it. Every read, write and removal here goes through folders held
-  open with `O_NOFOLLOW`.
+  open with `O_NOFOLLOW`. A chat's sandbox denies writing it (SK-35).
+- **Git:** gitignored, under the state directory.
+
+### `skills-deleting/<stamp>-<folder>`
+- **Format:** one file per delete of a committed skill that runs (SK-35, #3013): two lines, the
+  level it is deleted from relative to the plane (`skills`, `workspaces/ops/skills`,
+  `personas/reviewer/skills`), then the skill's folder name. `<stamp>` is when the delete began, in
+  nanoseconds since the epoch. Written whole as `.<stamp>-<folder>` and renamed into place already
+  locked, on every system, and never opened through a link (on Unix through folders held open
+  with `O_NOFOLLOW`; on Windows the reparse point itself is opened). On Unix the folder is `0700`
+  and each file `0600`; on Windows they take the state folder's own access.
+- **Status:** **internal**, **experimental** behind the `skill-studio` flag.
+- **Tier:** Clone state, transient — it lives from before a delete's `git rm` until its commit is made or the
+  skill is put back.
+- **Written by:** `purlis_core::skills::verbs::delete`, which holds the file's `flock` for as
+  long as the delete runs and takes the file away when it ends, either way.
+- **Read by:** `verbs::interrupted`, as the Skill studio opens and as `purlis skill` starts a
+  change. A file nothing holds locked is a delete a crash, a quit or a failed git cut short: the
+  skill's removal is taken out of the index, then committed where its commit can land now, or
+  put back as `HEAD` has it, and the file is taken away. One line says which. Where it can be
+  neither (no commit, and git could not put the files back), the line is a warning and the file
+  stays for the next start to try again; a delete that itself ends that way leaves its file
+  too. A file that names no level or no plain folder name (`..`, `a/b`, a third
+  line) is logged and taken away, and nothing else is done; a `.`-name nothing holds locked is
+  a note whose writer died and is taken away. A chat's sandbox denies writing this folder and
+  [`skills-deleted/`](#skills-deletedstamp-name). Deleted ⇒ a delete
+  cut short is not found: its skill stays out of the project and out of Restore, and its staged
+  removal keeps every later skill delete on this machine, until a save commits it.
 - **Git:** gitignored, under the state directory.
 
 ### `skill-drafts/<id>/`

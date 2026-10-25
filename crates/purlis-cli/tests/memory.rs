@@ -358,11 +358,35 @@ fn a_duplicate_todos_heading_is_quoted_back_escaped_and_never_raw() {
     assert_ne!(out.status.code(), Some(0), "{said}");
     assert!(said.contains("already on the list:"), "{said}");
     assert!(
-        said.contains("deliveries\\x1b[2K"),
+        said.contains("deliveries⟦U+001B⟧[2K"),
         "the heading was not escaped: {said:?}"
     );
     assert!(
         !said.contains('\u{1b}'),
         "a raw ESC reached the terminal: {said:?}"
+    );
+}
+
+/// SK-47: a memory's title is the last column of `recall`, which nothing pads. It is text an
+/// operator or an agent wrote, so it is shown escaped: a conceal in it would hide every hit
+/// printed after it, and a bidi override would reorder the line.
+#[test]
+fn a_memory_title_in_recall_is_shown_escaped_and_cannot_hide_the_hits_after_it() {
+    let tmp = daily();
+    let root = root(&tmp);
+    std::fs::write(
+        root.join("workspaces/alpha/memory/20260303-090000-zebracorn.md"),
+        "# Zebracorn \x1b[8mhidden\u{202e}x\n\n_2026-03-03 09:00 · persistent_\n\nZebracorn notes.\n",
+    )
+    .unwrap();
+
+    let out = charter(&root, &["recall", "zebracorn"]);
+
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let text = stdout(&out);
+    assert!(!text.contains(['\x1b', '\u{202e}']), "{text:?}");
+    assert!(
+        text.contains("Zebracorn ⟦U+001B⟧[8mhidden⟦U+202E⟧x"),
+        "{text}"
     );
 }

@@ -41,9 +41,8 @@ const HOVER: &str = ":is([data-separator=\"hover\"], [data-separator=\"focus\"]:
 // ---------------------------------------------------------------------------------------
 
 #[test]
-fn the_panel_separator_is_in_the_manifest_at_version_13() {
+fn the_panel_separator_comes_in_the_next_release_s_manifest() {
     let manifest = parts::manifest_json();
-    assert!(manifest["version"].as_u64().unwrap() >= 13);
     let family = manifest["families"]
         .as_array()
         .unwrap()
@@ -51,7 +50,7 @@ fn the_panel_separator_is_in_the_manifest_at_version_13() {
         .find(|one| one["name"] == "panel-separator")
         .expect("the panel separator is in the manifest")
         .clone();
-    assert_eq!(family["since"], 13);
+    assert_eq!(family["since"], parts::NEXT);
     let parts: Vec<&str> = family["parts"]
         .as_array()
         .unwrap()

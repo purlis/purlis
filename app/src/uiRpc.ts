@@ -904,6 +904,12 @@ export const commands = {
 	 *  log.
 	 */
 	skillStats: (plane: PlaneId, skill: string) => typedError<SkillStats, string>(__TAURI_INVOKE("skill_stats", { plane, skill })),
+	/**
+	 *  **The panels on skill `skill`'s tab** (ADR 0101 §6): purlis's Runs panel, which lists every
+	 *  run of the skill, newest first, then each extension's. None while the flag is off. On a
+	 *  blocking thread, as it reads the project's skill log and asks each extension.
+	 */
+	skillPanels: (plane: PlaneId, skill: string) => typedError<SkillPanel[], string>(__TAURI_INVOKE("skill_panels", { plane, skill })),
 	/**  Whether the Skill studio is on in this window: this machine's flag, or the variable over it. */
 	skillStudioOn: () => typedError<boolean, string>(__TAURI_INVOKE("skill_studio_on")),
 	setSkillStudioOn: __WINDOW_ONLY_RESULT,
@@ -924,8 +930,11 @@ export const commands = {
 	broken: SkillBroken[],
 } | null, string>(__TAURI_INVOKE("chat_skills_missing", { plane, session })),
 	putAwayChatSkillsMissing: __WINDOW_ONLY_RESULT,
-	/**  The templates a new skill can start from. */
-	skillTemplates: () => __TAURI_INVOKE<SkillTemplate[]>("skill_templates"),
+	/**
+	 *  The templates a new skill can start from in the project `plane`: purlis's own, then each
+	 *  extension's (ADR 0101).
+	 */
+	skillTemplates: (plane: PlaneId) => typedError<SkillTemplate[], string>(__TAURI_INVOKE("skill_templates", { plane })),
 	/**
 	 *  **The live lint** of `text`, a `SKILL.md` being edited for the skill `name` at `level` of
 	 *  `plane` (SK-7; SK-8, #2771): each line the editor shows, checked against the project's skills
@@ -943,6 +952,7 @@ export const commands = {
 	/**  **Who uses a skill**: what Delete shows first. */
 	skillUsers: (plane: PlaneId, level: SkillLevel, name: string) => typedError<SkillUsers, string>(__TAURI_INVOKE("skill_users", { plane, level, name })),
 	skillDelete: __WINDOW_ONLY_RESULT,
+	skillDeletesCutShort: __WINDOW_ONLY_RESULT,
 	/**  The deleted skills Restore can bring back, newest first. */
 	skillsDeleted: (plane: PlaneId) => typedError<DeletedSkill[], string>(__TAURI_INVOKE("skills_deleted", { plane })),
 	skillRestore: __WINDOW_ONLY_RESULT,
@@ -970,6 +980,7 @@ export const commands = {
 	skillDraftTry: __WINDOW_ONLY_RESULT,
 	skillLevelAccept: __WINDOW_ONLY_RESULT,
 	skillSources: __WINDOW_ONLY_RESULT,
+	skillSourcesOffered: __WINDOW_ONLY_RESULT,
 	skillSourceAdd: __WINDOW_ONLY_RESULT,
 	skillSourceRemove: __WINDOW_ONLY_RESULT,
 	skillSourceConfirm: __WINDOW_ONLY_RESULT,
@@ -2007,6 +2018,8 @@ export const ENGINE_SANDBOX_NEEDED = "engine-sandbox-needed" as const;
 export const PERSONA_SCOPE_KEY = "persona/" as const;
 
 export const SESSION_BUS_ANSWERS = "session-bus://answers" as const;
+
+export const SKILL_RUNS_PANEL = "runs" as const;
 
 export const SKILL_STUDIO_IN = "skills.studio:" as const;
 
@@ -3483,6 +3496,14 @@ export type DeletedSkill = {
 	level: SkillLevel,
 	/**  Its level as a person reads it: `project`, `local workspace ops`. */
 	label: string,
+};
+
+/**  What became of the skill deletes a crash or a quit cut short, one line each (SK-35, #3013). */
+export type DeletesCutShort = {
+	/**  Finished, or put back. */
+	settled: string[],
+	/**  Neither finished nor put back: tried again the next time the studio opens. */
+	unsettled: string[],
 };
 
 /**  Why a grant the person accepted before waits for a yes again. */
@@ -5223,6 +5244,23 @@ export type HarnessGlance = {
 	cannot_type: string | null,
 };
 
+/**
+ *  A profile's icon: the glyph of the theme's icon set it is drawn with, or the key of the
+ *  person's own SVG among the answer's, and always the monogram of its harness kind, which the
+ *  window draws where it can draw neither.
+ */
+export type HarnessIconRow = {
+	/**  `spark`, `braces` or `terminal`. */
+	glyph: string | null,
+	/**
+	 *  The file name its SVG is under in the answer's own icons; each is sent once, however
+	 *  many rows name it.
+	 */
+	own: string | null,
+	/**  `C`, `OC`, `CX`. */
+	monogram: string,
+};
+
 /**  A harness, as the window and the core name one to each other: a profile's `kind`. */
 export type HarnessKind = "claude" | "opencode" | "codex";
 
@@ -5772,6 +5810,11 @@ export type MachineProfileRow = {
 	 *  page's warning, in the core's words; null where its harness keeps the sign-in from them.
 	 */
 	commands_can_read_sign_in: string | null,
+	/**
+	 *  What it is drawn with (#2922): its harness's glyph where it stands for the built-in, else
+	 *  its kind's monogram.
+	 */
+	icon: HarnessIconRow,
 };
 
 /**  One project this machine remembers, with what it holds about it. */
@@ -6143,6 +6186,17 @@ export type OfferedSkill = {
 };
 
 /**
+ *  **A skill source the studio offers** (SK-22, #2785): its name, why it is on the list, and the source Add
+ *  source starts filled in with, kept with the project unless the person picks this machine.
+ */
+export type OfferedSource = {
+	offering: SourceOffering,
+	name: string,
+	why: string,
+	source: SkillSource,
+};
+
+/**
  *  The chats of a project still running under an older sandbox (#1428), for the Notice after
  *  a sandbox setting changes: those that run under a sandbox other than the one a start would
  *  compile for them now. The window is sent this type itself (`chats_on_older_sandbox`).
@@ -6443,7 +6497,12 @@ export type PanelBlock = { kind: "list"; rows: PanelRow[]; empty: PanelEmpty } |
 /**  `bars` or `columns` (`panel::Shape`). */
 shape: string; unit: string | null; points: PanelPoint[] } | 
 /**  Labelled facts, drawn as two columns (`panel::Block::Facts`). */
-{ kind: "facts"; facts: PanelFact[] };
+{ kind: "facts"; facts: PanelFact[] } | 
+/**
+ *  Rows of words under named columns, drawn as a table (`panel::Block::Table`): a skill's
+ *  Runs panel, and a studio panel's (ADR 0101 §6).
+ */
+{ kind: "table"; caption: string; columns: string[]; rows: PanelTableRow[]; empty: PanelEmpty };
 
 /**
  *  What opens when a row is opened, as the window receives it.
@@ -6515,6 +6574,12 @@ export type PanelRow = {
 	 *  answer's. Empty on every row of charter's own.
 	 */
 	actions: RowAction[],
+};
+
+/**  One row of a table: its key, and a cell per column. */
+export type PanelTableRow = {
+	key: string,
+	cells: string[],
 };
 
 /**  One open todo. There is no state field: a closed todo is a deleted file (ADR 0004). */
@@ -7337,6 +7402,11 @@ export type ProfileRow = {
 	 *  (#2036). Always sent; optional for the same reason.
 	 */
 	billed_to?: string | null,
+	/**
+	 *  What it is drawn with (#2922): its glyph or its own SVG, and its kind's monogram. Always
+	 *  sent; optional for the same reason.
+	 */
+	icon?: HarnessIconRow | null,
 };
 
 /**
@@ -8169,7 +8239,7 @@ export type ReviewHost = {
 };
 
 /**  The kind of a character no reader sees. */
-export type ReviewInvisible = "tag" | "zero-width" | "bidi" | "format";
+export type ReviewInvisible = "tag" | "zero-width" | "blank" | "bidi" | "format";
 
 /**  An entry of a skill's folder that is not installed, why, and the core's words for it. */
 export type ReviewLeftOut = {
@@ -9309,6 +9379,27 @@ export type SkillLintLevel =
 /**  Worth knowing, and Save does not wait on it. */
 "warns";
 
+/**
+ *  **One panel on a skill's tab** (ADR 0101 §6), as the window draws it: purlis's Runs panel,
+ *  then each panel an extension that declares `studio-panel` adds, each answered in panel blocks
+ *  or refused with the core's sentence.
+ */
+export type SkillPanel = {
+	key: SkillPanelKey,
+	title: string,
+	/**  The extension that adds it, by name, or null for purlis's own. */
+	by: string | null,
+	blocks: PanelBlock[],
+	/**  Why it has no blocks, in the core's words, or null where it answered. */
+	refused: string | null,
+};
+
+/**
+ *  **Which panel on a skill's tab**, as the window holds it: purlis's Runs panel, or one an
+ *  extension adds, by its id and the panel's.
+ */
+export type SkillPanelKey = { kind: "runs" } | { kind: "extension"; extension: string; panel: string };
+
 /**  A skill source as the studio shows and adds one. */
 export type SkillSource = {
 	remote: SourceRemote,
@@ -9341,15 +9432,21 @@ export type SkillSwitch =
 /**  Not on its own, and why, which the studio says in place of a switch. */
 { kind: "not"; why: string };
 
-/**  One template, as the New skill form offers it. */
+/**
+ *  One template, as the New skill form offers it: purlis's own, then each extension's that
+ *  declares `skill-template` (ADR 0101).
+ */
 export type SkillTemplate = {
 	id: SkillTemplateId,
 	label: string,
 	about: string,
 };
 
-/**  A template a new skill can start from. */
-export type SkillTemplateId = "blank" | "steps";
+/**
+ *  Which template a new skill starts from, as the window names it: one of purlis's own, or one
+ *  an extension offers, by its id and the template's (ADR 0101).
+ */
+export type SkillTemplateId = { kind: "blank" } | { kind: "steps" } | { kind: "extension"; extension: string; template: string };
 
 /**  One newer commit offered for an installed skill. */
 export type SkillUpdateOffer = {
@@ -9487,6 +9584,13 @@ export type SourceCommit = {
 /**  Which settings a source is kept in: the project's, shared with the team, or this machine's. */
 export type SourceKept = "shared" | "local";
 
+/**  Whose list an offered source is on. */
+export type SourceOffering = 
+/**  purlis's own first-party catalogue. */
+"catalogue" | 
+/**  A collection someone else keeps that people use widely. */
+"well-known";
+
 /**  A repository and the branch read from it. */
 export type SourceRemote = {
 	url: string,
@@ -9553,6 +9657,13 @@ export type StaleRemote = {
 /**  Everything the picker draws, read from the plane when it is opened. */
 export type StartOptions = {
 	profiles: ProfileRow[],
+	/**
+	 *  The person's own SVG icons the rows name (#2922), each once, by its file name: what a
+	 *  row's `icon.own` refers to. All of them together are held to one budget, and a row whose
+	 *  file is past it shows its monogram. Always sent; optional in the window's type so a
+	 *  picker drawn from an older answer reads it as none.
+	 */
+	own_icons?: { [key in string]: SvgIcon } | null,
 	/**
 	 *  Profiles charter read and will not use, by name and reason, so a row that is missing
 	 *  is never merely missing.
@@ -9678,6 +9789,8 @@ export type Studio = {
 	harnesses: StudioHarness[],
 	/**  Every skill from outside the plane that has the name of a skill a chat gets, by name. */
 	clashes: StudioClash[],
+	/**  What it offers to start from (SK-22, #2785): the core's `skills::first_open`. */
+	first: StudioFirst,
 };
 
 /**
@@ -9695,6 +9808,23 @@ export type StudioClash = {
 	outside: Level,
 	owner: Owner,
 	outcome: ClashOutcome,
+};
+
+/**
+ *  **What the studio offers when it opens** (SK-22, #2785; decision 42), as the core works it
+ *  out (`purlis_core::skills::first_open`).
+ */
+export type StudioFirst = {
+	/**
+	 *  Whether the project has no skill of its own, so the three starts are offered: make one
+	 *  with a chat, browse skill sources, start blank.
+	 */
+	starts: boolean,
+	/**
+	 *  Where the project's skills are still where only some chat programs read them: how many,
+	 *  and the doctor's fix that moves them (SK-21).
+	 */
+	unmoved: StudioUnmoved | null,
 };
 
 /**  One harness in the studio (SK-6): its plugins and the skills it finds itself. */
@@ -9855,6 +9985,13 @@ export type StudioSkill = {
  */
 export type StudioSwitched = "plugin" | "skill";
 
+/**  The project's skills still to move into the studio's. */
+export type StudioUnmoved = {
+	skills: number,
+	/**  The doctor's fix that moves them, by its id (`planeDoctorFix`). */
+	fix: string,
+};
+
 /**  What one subject is offered. */
 export type SubjectCurations = {
 	/**  `workspace:<name>`, `persona:<name>` or `plane` — the core's own spelling of a subject. */
@@ -9868,6 +10005,25 @@ export type SubjectCurations = {
 	left_out: LeftOut[],
 	/**  Why this subject has no list at all — a workspace deleted a moment ago, say. */
 	trouble: string | null,
+};
+
+/**
+ *  A person's SVG as checked shapes (`purlis_core::safesvg`): the window draws each with its
+ *  own element, and never reads it as markup.
+ */
+export type SvgIcon = {
+	/**  `min-x min-y width height`. */
+	view_box: string,
+	shapes: SvgShape[],
+};
+
+/**
+ *  One shape: `path`, `circle`, `ellipse`, `rect`, `line`, `polyline` or `polygon`, and its
+ *  checked attributes by their SVG names.
+ */
+export type SvgShape = {
+	tag: string,
+	attributes: { [key in string]: string },
 };
 
 /**  The brief a task was sent, and the facts of its sending. */
@@ -10884,6 +11040,8 @@ export type WindowTheme = {
 	motion: WindowMotion,
 	/**  The theme's icon set, by view id: empty when the rails draw the window's own marks. */
 	icons: { [key in string]: WindowIcon },
+	/**  The harness glyphs of its icon set, by name (#2922): empty when the window draws its own. */
+	glyphs: { [key in string]: WindowIcon },
 	/**  The geometry's custom properties, written by the engine, for each density (#2326). */
 	geometry: WindowGeometry,
 	/**  The UI, mono and terminal fonts (#2326). */

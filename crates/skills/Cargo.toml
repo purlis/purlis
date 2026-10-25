@@ -22,11 +22,18 @@ serde.workspace = true
 yaml-rust2 = { version = "0.13", default-features = false }
 # A grant is written beside the file and renamed over it, never half-written.
 tempfile.workspace = true
+# What a review marks as a character no reader sees, and how (SK-49, #3172).
+purlis-unicode.workspace = true
 
 # A skill's folder and its `SKILL.md` are opened through the handle of the folder above them,
 # never through a link (SK-36).
 [target.'cfg(unix)'.dependencies]
 rustix = { version = "1", features = ["fs"] }
+
+[features]
+# `moving::hook`, a test's way into a move at the instants a swap would land, for another crate's
+# tests of what moves a skill (purlis-core's delete and restore, SK-48). Only tests turn it on.
+test-support = []
 
 [lints]
 workspace = true

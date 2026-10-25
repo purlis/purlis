@@ -99,7 +99,7 @@ pub fn share(plane: &Path, at: &Whose, name: &str) -> Result<Shared, String> {
     }
     // Only the level's own `skills/` is made; the folders above it are the level's.
     let make_from = Path::new(&shared).components().count();
-    move_skill(plane, &from, &to, make_from).map_err(|unmoved| match unmoved {
+    move_skill(plane, &from, plane, &to, make_from).map_err(|unmoved| match unmoved {
         Unmoved::Nothing(why) => {
             format!("{name} could not be moved to {shown} ({why}), so nothing was moved")
         }

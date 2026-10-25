@@ -120,10 +120,10 @@ fn as_seen_from(absolute: &Path, from: Option<&Path>) -> String {
 
 /// A character a reference never holds: a control character, or one a composer draws as nothing
 /// or that moves what is around it — a format character (zero-width, bidirectional overrides and
-/// isolates), any other default-ignorable one (HP-6's `drawn_otherwise`), and the line and
-/// paragraph separators. A name holding one would show something else than what is typed.
+/// isolates), any other default-ignorable one, and the line and paragraph separators:
+/// purlis's one rule, [`purlis_unicode::invisible`]. A name holding one would show something else than what is typed.
 pub fn not_typeable(c: char) -> bool {
-    crate::harness::hooked::drawn_otherwise(c) || matches!(c, '\u{2028}' | '\u{2029}')
+    purlis_unicode::invisible(c)
 }
 
 /// `path` as no harness reads as a mode or a command: a relative path that does not begin with a

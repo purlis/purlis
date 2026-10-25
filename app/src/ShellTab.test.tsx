@@ -19,7 +19,7 @@ import App from "./App";
 import type { ByHand, Moved, OpenChat } from "./bindings";
 import { onAMac } from "./tabKeys";
 import { askLogin } from "./RepoPicker";
-import { stripNamed } from "./test-strips";
+import { goToWorkspace, stripNamed, workspaceInFront, workspacesListed } from "./test-strips";
 
 /**
  * A plain shell tab, and what the window does when a harness is started by hand inside one
@@ -167,20 +167,11 @@ const chatTabs = () =>
     .queryAllByRole("tab")
     .map((tab) => tab.querySelector(".tab-name")?.textContent);
 
-const workspaces = () =>
-  within(stripNamed("Workspaces"))
-    .getAllByRole("tab")
-    .map(
-      (tab) => tab.querySelector(".workspace-name")?.textContent ?? tab.getAttribute("aria-label"),
-    );
+/** The workspaces, as the title bar's ⌄ lists them (#2916), the plane root first. */
+const workspaces = () => workspacesListed();
 
-const focusedWorkspace = () =>
-  within(stripNamed("Workspaces"))
-    .getAllByRole("tab")
-    .filter((tab) => tab.getAttribute("aria-selected") === "true")
-    .map(
-      (tab) => tab.querySelector(".workspace-name")?.textContent ?? tab.getAttribute("aria-label"),
-    );
+/** The workspace in front, as the title bar's chips say it; the plane root's, by its name. */
+const focusedWorkspace = () => [workspaceInFront() ?? "Plane root"];
 
 /** The mark a shell tab wears: aria-hidden, as every tab's kind mark is, so looked up by what
  *  it says it is rather than by a name a screen reader would read twice. */
@@ -205,7 +196,7 @@ describe("a plain shell tab", () => {
   it("opens from the palette in the focused workspace, as a shell and not a harness", async () => {
     const { opens } = core();
     render(<App />);
-    await waitFor(() => expect(workspaces()).toEqual(["Plane root", "alpha", "beta"]));
+    expect(await workspaces()).toEqual(["Plane root", "alpha", "beta"]);
 
     await fromThePalette("New shell");
 
@@ -221,7 +212,7 @@ describe("a plain shell tab", () => {
   it("opens in the workspace a row names, and is filed under that workspace", async () => {
     const { opens } = core();
     render(<App />);
-    await waitFor(() => expect(workspaces()).toEqual(["Plane root", "alpha", "beta"]));
+    expect(await workspaces()).toEqual(["Plane root", "alpha", "beta"]);
 
     await fromThePalette("New shell in beta");
 
@@ -234,7 +225,7 @@ describe("a plain shell tab", () => {
   it("opens from its key, wherever the keyboard is", async () => {
     const { opens } = core();
     render(<App />);
-    await waitFor(() => expect(workspaces()).toEqual(["Plane root", "alpha", "beta"]));
+    expect(await workspaces()).toEqual(["Plane root", "alpha", "beta"]);
 
     const mac = onAMac();
     fireEvent.keyDown(window, { key: "T", shiftKey: true, metaKey: mac, ctrlKey: !mac });
@@ -245,13 +236,9 @@ describe("a plain shell tab", () => {
   it("opens at the plane root when the root's tab is focused, and from the root's own row (SI-1)", async () => {
     const { opens } = core();
     render(<App />);
-    await waitFor(() => expect(workspaces()).toEqual(["Plane root", "alpha", "beta"]));
+    expect(await workspaces()).toEqual(["Plane root", "alpha", "beta"]);
 
-    await userEvent.click(
-      within(stripNamed("Workspaces")).getByRole("tab", {
-        name: "Plane root",
-      }),
-    );
+    await goToWorkspace("Plane root");
     await waitFor(() => expect(focusedWorkspace()).toEqual(["Plane root"]));
     await fromThePalette("New shell");
     await waitFor(() => expect(opens()).toEqual([expect.objectContaining({ cwd: PLANE })]));
@@ -303,7 +290,7 @@ describe("a shell tab's state mark", () => {
   it("draws none on a shell opened here either", async () => {
     core();
     render(<App />);
-    await waitFor(() => expect(workspaces()).toEqual(["Plane root", "alpha", "beta"]));
+    expect(await workspaces()).toEqual(["Plane root", "alpha", "beta"]);
 
     await fromThePalette("New shell");
 
@@ -407,7 +394,7 @@ describe("the ways out of the start dialogs' refusals (NO-8, #1233)", () => {
   it("types a forge login the repo picker asks for in a shell tab at the root, not run", async () => {
     const { asked, opens } = core();
     render(<App />);
-    await waitFor(() => expect(workspaces()).toEqual(["Plane root", "alpha", "beta"]));
+    expect(await workspaces()).toEqual(["Plane root", "alpha", "beta"]);
     await settle();
 
     act(() => askLogin(PLANE, "gh auth login --hostname github.com"));
@@ -425,7 +412,7 @@ describe("the ways out of the start dialogs' refusals (NO-8, #1233)", () => {
   it("types no login line that holds a control character, so nothing is run", async () => {
     const { asked, opens } = core();
     render(<App />);
-    await waitFor(() => expect(workspaces()).toEqual(["Plane root", "alpha", "beta"]));
+    expect(await workspaces()).toEqual(["Plane root", "alpha", "beta"]);
     await settle();
 
     for (const line of ["gh auth login\nrm -rf ~", "gh auth login\r", "gh\u001b[2Jauth"])
@@ -439,7 +426,7 @@ describe("the ways out of the start dialogs' refusals (NO-8, #1233)", () => {
   it("ignores a login asked for another project", async () => {
     const { opens } = core();
     render(<App />);
-    await waitFor(() => expect(workspaces()).toEqual(["Plane root", "alpha", "beta"]));
+    expect(await workspaces()).toEqual(["Plane root", "alpha", "beta"]);
     await settle();
 
     act(() => askLogin("/elsewhere", "gh auth login --hostname github.com"));
@@ -467,7 +454,7 @@ describe("the ways out of the start dialogs' refusals (NO-8, #1233)", () => {
       },
     });
     render(<App />);
-    await waitFor(() => expect(workspaces()).toEqual(["Plane root", "alpha", "beta"]));
+    expect(await workspaces()).toEqual(["Plane root", "alpha", "beta"]);
 
     await fromThePalette("New tab");
     await userEvent.click(await screen.findByRole("button", { name: "Add the ignore line" }));
@@ -498,7 +485,7 @@ describe("the ways out of the start dialogs' refusals (NO-8, #1233)", () => {
       }),
     });
     render(<App />);
-    await waitFor(() => expect(workspaces()).toEqual(["Plane root", "alpha", "beta"]));
+    expect(await workspaces()).toEqual(["Plane root", "alpha", "beta"]);
 
     await fromThePalette("New tab");
     await userEvent.click(await screen.findByRole("button", { name: "Add the ignore line" }));
@@ -521,7 +508,7 @@ describe("the ways out of the start dialogs' refusals (NO-8, #1233)", () => {
       project_settings: () => ({ shared: file("shared"), local: file("local") }),
     });
     render(<App />);
-    await waitFor(() => expect(workspaces()).toEqual(["Plane root", "alpha", "beta"]));
+    expect(await workspaces()).toEqual(["Plane root", "alpha", "beta"]);
 
     await fromThePalette("New tab");
     await userEvent.click(await screen.findByText("1 refused"));
@@ -579,7 +566,7 @@ describe("the ways out of the start dialogs' refusals (NO-8, #1233)", () => {
       project_settings: () => ({ shared, local }),
     });
     render(<App />);
-    await waitFor(() => expect(workspaces()).toEqual(["Plane root", "alpha", "beta"]));
+    expect(await workspaces()).toEqual(["Plane root", "alpha", "beta"]);
 
     await fromThePalette("New tab");
     await userEvent.click(await screen.findByText("1 refused"));

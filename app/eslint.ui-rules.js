@@ -57,6 +57,9 @@
  *   family's `useTabStrip`, `TabStripRow` and `StripTab` (`ui/tabs/TabStrip`), a tab's cell its
  *   `TabCell`, and the panel a tab names `tabPanelOf` (`ui/tabs/Tabs`). The tablists still drawn
  *   by hand are turned off by file in `eslint.config.js`, each naming the ticket that moves it.
+ * - `purlis/titlebar-family` (error: the title bar's workspaces are a family, #2916): the
+ *   workspace strip's old classes (`workspaces`, `workspaces-strip`, `workspace`, `plane-root`,
+ *   `workspace-name`, `workspace-mark`) and `data-scope="titlebar"` by hand.
  * - `purlis/panel-separator-family` (error: every resize handle is the family's, #3143):
  *   `data-scope="panel-separator"` written by hand, and the panel library's own `Separator`,
  *   by name or through `import * as`.
@@ -631,6 +634,21 @@ const listFamily = moved({
     "a list: draw it as `<ListBox>` and `<ListOption>` (a list to choose from) or `<List>` and `<ListRow>` (rows that act), with the row's slots, from `ui/list/List` (#2911).",
 });
 
+const titlebarFamily = moved({
+  description: "The title bar's workspaces are the shared title bar family",
+  scopes: ["titlebar"],
+  classes: [
+    "workspaces",
+    "workspaces-strip",
+    "workspace",
+    "plane-root",
+    "workspace-name",
+    "workspace-mark",
+  ],
+  message:
+    "the title bar's workspaces: draw them as `<WorkspaceChip>` and `<PinnedStrip>` from `ui/titlebar/TitleBarWorkspaces`, and a switcher's parts from `ui/titlebar/Switcher` (#2916).",
+});
+
 const separatorScope = moved({
   description: "A resize handle between two panels is the shared panel separator family",
   scopes: ["panel-separator"],
@@ -688,6 +706,7 @@ export const purlisUi = {
     "activity-family": activityFamily,
     "list-family": listFamily,
     "tabs-family": tabsFamily,
+    "titlebar-family": titlebarFamily,
     "panel-separator-family": panelSeparatorFamily,
   },
 };

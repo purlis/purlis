@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, renderHook, waitFor } from "@testing-library/react";
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { useProfileNames } from "./profileNames";
 
@@ -69,6 +69,22 @@ describe("the project's profile names", () => {
     rerender({ open: true });
 
     await waitFor(() => expect(asked.filter((one) => one === "project_settings")).toHaveLength(2));
+  });
+
+  it("keeps the very list when an opening reads the same names again", async () => {
+    const asked = core([entry("profiles", "claude", "claude")]);
+    const { result, rerender } = renderHook(({ open }) => useProfileNames(PLANE, open), {
+      initialProps: { open: true },
+    });
+    await waitFor(() => expect(result.current).toEqual(["claude"]));
+    const first = result.current;
+    rerender({ open: false });
+    rerender({ open: true });
+    await waitFor(() => expect(asked.filter((one) => one === "project_settings")).toHaveLength(2));
+    // The second read has answered once the core has been asked: let its answer land.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+
+    expect(result.current).toBe(first);
   });
 
   it("names none from a file the core could not parse", async () => {

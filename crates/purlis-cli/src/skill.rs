@@ -14,12 +14,13 @@
 use std::path::Path;
 
 use clap::{Args, Subcommand, ValueEnum};
+use purlis_core::executor::Executor;
 use purlis_core::harness::Harness;
 use purlis_core::skills::review::escaped as esc;
 use purlis_core::skills::source::{self, Remote, Source, VaultEntry};
 use purlis_core::skills::verbs::{self, By, Level};
 use purlis_core::skills::{
-    Deprecated, Grant, Lifecycle, StudioRow, Switch, Template, history, lifecycle,
+    Deprecated, Grant, Lifecycle, StudioRow, Switch, Template, TemplateId, history, lifecycle,
 };
 use serde_json::{Value, json};
 
@@ -94,9 +95,18 @@ pub enum SkillCommand {
         /// What it does and when to use it, in one line.
         #[arg(long, short = 'd')]
         description: String,
-        /// What it starts from.
-        #[arg(long, value_enum, default_value = "blank")]
+        /// What it starts from, of purlis's own templates.
+        #[arg(
+            long,
+            value_enum,
+            default_value = "blank",
+            conflicts_with = "extension_template"
+        )]
         template: TemplateArg,
+        /// Start from a template an extension offers instead: the extension's id, then the
+        /// template's.
+        #[arg(long, num_args = 2, value_names = ["EXTENSION", "TEMPLATE"])]
+        extension_template: Option<Vec<String>>,
         #[command(flatten)]
         at: LevelArgs,
     },
@@ -329,7 +339,7 @@ impl LevelArgs {
     }
 }
 
-/// A new skill's template, as the command line names it.
+/// One of purlis's own templates, as the command line names it.
 #[derive(Clone, Copy, ValueEnum)]
 pub enum TemplateArg {
     Blank,
@@ -392,6 +402,10 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
         by: By::Command,
         say: &mut said,
     };
+    // A delete a crash or a quit cut short is finished or undone before any change (SK-35).
+    if writes {
+        verbs::interrupted(&mut cx);
+    }
     // The studio's own list (SK-34, #3008): the plane's skills, and each harness's, the same
     // call the window makes.
     let list_for = |workspace: Option<&str>, persona: Option<&str>| {
@@ -485,14 +499,35 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             name,
             description,
             template,
+            extension_template,
             at,
-        } => done(verbs::create(
-            &mut cx,
-            &at.level(),
-            &name,
-            &description,
-            template.into(),
-        )),
+        } => {
+            let template = match extension_template.as_deref() {
+                Some([extension, template]) => TemplateId::Extension {
+                    extension: extension.clone(),
+                    template: template.clone(),
+                },
+                _ => TemplateId::BuiltIn(template.into()),
+            };
+            // purlis's own templates, and each extension's that declares `skill-template`, asked
+            // through the executor's gate as the studio asks them (ADR 0101).
+            let executor =
+                Executor::with_built_in(purlis_core::extension::BuiltIn::of_this_program());
+            done(purlis_core::skills::studio::with_studio(
+                &executor,
+                root,
+                |studio| {
+                    verbs::create(
+                        &mut cx,
+                        &at.level(),
+                        &name,
+                        &description,
+                        &purlis_core::skills::studio::Templates { studio },
+                        &template,
+                    )
+                },
+            ))
+        }
         SkillCommand::Edit { name, from, at } => {
             let level = at.level();
             let (_, was) = match verbs::text_of(root, &level, &name) {
@@ -1043,12 +1078,12 @@ fn runs_table(runs: &[purlis_core::skills::StudioRun], name: Option<&str>) -> St
         .map(|i| voice::column(lines.iter().map(|l| l[i].as_str()).chain([heads[i]])))
         .collect();
     let line = |cells: [&str; 6]| {
-        let mut text = String::new();
-        for (i, width) in widths.iter().enumerate() {
-            text.push_str(&voice::pad(cells[i], *width));
-            text.push_str("  ");
-        }
-        text.push_str(cells[5]);
+        let padded: Vec<(&str, usize)> = cells
+            .iter()
+            .zip(&widths)
+            .map(|(c, w)| (*c, w + 2))
+            .collect();
+        let mut text = purlis_core::tui::row(&padded, cells[5]);
         text.push('\n');
         text
     };
@@ -1490,8 +1525,8 @@ fn table(rows: &[StudioRow]) -> String {
             .to_owned();
     }
     let states: Vec<String> = rows.iter().map(|row| esc(&state(row))).collect();
-    let names: Vec<String> = rows.iter().map(|row| esc(&row.name)).collect();
-    let name_w = voice::column(names.iter().map(String::as_str).chain(["SKILL"]));
+    let names: Vec<&str> = rows.iter().map(|row| row.name.as_str()).collect();
+    let name_w = voice::column(names.iter().copied().chain(["SKILL"]));
     let levels: Vec<String> = rows.iter().map(level).collect();
     let level_w = voice::column(levels.iter().map(String::as_str).chain(["LEVEL"]));
     let mut text = format!(
@@ -1523,20 +1558,21 @@ fn outside_json(harness: Harness, row: &StudioRow) -> Value {
 }
 
 /// The skills one harness finds itself, with whose each is: read only. A repo's names are the
-/// least trusted text here, so every cell is escaped before it is measured.
+/// least trusted text here; [`voice::pad`] escapes every padded cell before it is measured, and
+/// the last column, which nothing pads, is escaped here.
 fn outside_table(rows: &[StudioRow]) -> String {
-    let names: Vec<String> = rows.iter().map(|row| esc(&row.name)).collect();
+    let names: Vec<&str> = rows.iter().map(|row| row.name.as_str()).collect();
     let owners: Vec<String> = rows
         .iter()
         .map(|row| {
             row.outside
                 .as_ref()
-                .map(|o| esc(&o.owner.to_string()))
+                .map(|o| o.owner.to_string())
                 .unwrap_or_default()
         })
         .collect();
     let levels: Vec<String> = rows.iter().map(level).collect();
-    let name_w = voice::column(names.iter().map(String::as_str).chain(["SKILL"]));
+    let name_w = voice::column(names.iter().copied().chain(["SKILL"]));
     let level_w = voice::column(levels.iter().map(String::as_str).chain(["LEVEL"]));
     let owner_w = voice::column(owners.iter().map(String::as_str).chain(["OWNER"]));
     let mut text = format!(

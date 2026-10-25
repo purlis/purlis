@@ -34,6 +34,11 @@ const FAINT: ReadonlySet<string> = new Set([
   '[data-scope="status-item"][data-part="root"][data-disabled]',
   // An empty state's mark, above its words (#2913).
   '[data-scope="empty-state"][data-part="icon"]',
+  // The slash between the title bar's project and its pinned workspaces, a mark (#2916, R156).
+  '[data-part="slash"][data-scope="titlebar"]',
+  // A switcher row's pin, a mark (R107, R156), and a row that cannot run, the disabled tier.
+  '[data-part="pin"][data-scope="titlebar"]',
+  '[data-part="row"][data-scope="titlebar"][data-unavailable]',
   // A menu's row that cannot run (#2909), and an option of a select's list that cannot be
   // chosen.
   '[data-scope="menu"][data-part="root"][data-disabled]',

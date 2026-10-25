@@ -98,8 +98,9 @@
   block-size: 36px;
   padding: 0;
   border: 0 solid transparent;
-  /* 9px (R77): three of the scale's smallest corner. */
-  border-radius: calc(var(--radius-sm) * 3);
+  /* The control corner (#3177): 8 in Purlis, on its scale; Purlis Classic keeps its 9 (R77)
+     through its parts. */
+  border-radius: var(--radius-control);
   color: var(--text-muted);
   background-color: transparent;
   font: inherit;
@@ -213,8 +214,16 @@
   block-size: auto;
   padding-block-start: var(--space-4);
   background-color: var(--surface-deep);
-  border-start-end-radius: calc(var(--radius-lg) * 2);
-  border-end-end-radius: calc(var(--radius-lg) * 2);
+  /* A panel over the content: the panel's corner where the window rounds its panels (Purlis's
+     12), and where it draws them flush the rail's own, twice the large corner (Classic's 12). */
+  border-start-end-radius: max(
+    var(--panel-corner-radius),
+    calc(var(--radius-lg) * 2 - var(--panel-corner-radius))
+  );
+  border-end-end-radius: max(
+    var(--panel-corner-radius),
+    calc(var(--radius-lg) * 2 - var(--panel-corner-radius))
+  );
   box-shadow: 8px 0 24px var(--overlay-shadow);
   animation: rail-peek-in var(--motion-duration-reveal) var(--motion-easing-enter);
 }

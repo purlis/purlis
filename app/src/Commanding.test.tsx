@@ -441,6 +441,24 @@ describe("screen-reader mode from the palette (#629)", () => {
     await palette("screen-reader");
     expect(rowTitles()).toEqual(["Turn screen-reader mode on"]);
   });
+
+  it("says the mode it is in with no project open, too", async () => {
+    core((cmd) =>
+      cmd === "plane_at_launch" ? { plane: null, from: null, why: "no plane here" } : undefined,
+    );
+    render(<App />);
+    expect(
+      await screen.findByRole("heading", { name: "Welcome to purlis", level: 1 }),
+    ).toBeInTheDocument();
+
+    await palette("screen-reader");
+    expect(rowTitles()).toEqual(["Turn screen-reader mode on"]);
+    await userEvent.keyboard("{Enter}");
+    expect(screenReaderMode()).toBe(true);
+
+    await palette("screen-reader");
+    expect(rowTitles()).toEqual(["Turn screen-reader mode off"]);
+  });
 });
 
 describe("one list, two surfaces", () => {

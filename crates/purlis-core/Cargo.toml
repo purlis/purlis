@@ -43,6 +43,10 @@ dirs = "7"
 imagesize = { version = "0.15", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 # The same searcher vte uses to find these sequences in the same bytes.
 memchr = "2"
+# A profile's own SVG icon (#2922) is parsed, never handed on as text: the XML reader plist
+# already brings into this workspace's lockfile (MIT, its one dependency memchr), with no
+# features, so it adds no crate to the tree. It expands no entity but XML's five.
+quick-xml = "0.42"
 # An extension's declared plane-write paths (charter-app#341): one segment matched as a shell
 # matches it, `*` and `?`, never a leading dot. The rust-lang crate, already in this workspace's
 # lockfile, so it adds no crate to the tree.
@@ -57,6 +61,9 @@ purlis-linux-sandbox.workspace = true
 # What a chat's skill set is, and why (SK-1, #2764): the one crate that works skills out. A
 # crate of this workspace, with no dependencies of its own.
 purlis-skills.workspace = true
+# purlis's one rule for a character a reader does not see, its one mark, and every generated
+# Unicode table the core asks (SK-49, #3172). A crate of this workspace, with no dependencies.
+purlis-unicode.workspace = true
 # What a chat's browser tools ask (#2013): the session protocol's browser acts, one vocabulary
 # from the tool server through the window to the session host. A crate of this workspace.
 purlis-session-protocol.workspace = true
@@ -210,6 +217,8 @@ minisign = "0.10"
 purlis-core = { path = ".", features = ["fenced", "test-support"] }
 # The fork lock held as a fork holds it, for the executor's test of what waits for one.
 purlis-terminal = { workspace = true, features = ["test-support"] }
+# A move of a skill caught at the instant a swap would land, for delete's and restore's tests.
+purlis-skills = { workspace = true, features = ["test-support"] }
 # The frozen fuzz subsets under `fixtures/corpora/*-generated.jsonl.gz` are read through it.
 # Test-only, and already in this workspace's lockfile (Tauri's `png` pulls it in), with the
 # same default features — so it adds no crate to the tree and no licence to review.

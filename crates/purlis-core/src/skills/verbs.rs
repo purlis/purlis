@@ -20,19 +20,21 @@
 //! **A delete never loses a skill.** A committed skill is removed with `git rm` only where its
 //! commit can land now ([`crate::planegit::paths_unsaved`]), and is put back where the commit was
 //! not made; Restore brings it back from that commit. Any other skill is moved into this
-//! machine's [`DELETED_DIR`], where Restore finds it.
+//! machine's [`DELETED_DIR`], where Restore finds it. A delete by git holds a note locked in
+//! [`DELETING_DIR`] while it runs, so one a crash cuts short between its removal and its commit
+//! is finished or put back the next time skills are read for a change ([`interrupted`], SK-35).
 //!
 //! **What it says is the window's words too.** A refusal or a warning names the skill and what to
 //! do, never a file's path or a command; a `Done` line, which only the command line prints, may.
 
 use std::path::{Path, PathBuf};
 
-use purlis_skills::change::{self, Template};
+use purlis_skills::change::{self, SkillTemplate, TemplateId};
 
 use super::{Grant, LINKED_PLUGIN, Origin, beside, grant_of, level_dir, set_grant};
 use crate::planegit::literally;
 use crate::repocmd::{Say, Sink};
-use purlis_skills::{Unmoved, move_between, move_skill};
+use purlis_skills::{Unmoved, move_skill};
 
 pub mod drafts;
 
@@ -413,16 +415,22 @@ fn write(
     .map_err(|why| not_written(what, why))
 }
 
-/// **Creates a skill** named `name`, described by `description`, from `template`, at `level`
-/// (#2770): its folder and `SKILL.md`, committed. A project skill starts granted to the
-/// project's root alone, the default. Refused for a name the open format does not allow, one a
-/// built-in skill has, or one the level already holds.
+/// **Creates a skill** named `name`, described by `description`, from the template `template`
+/// that `templates` offers, at `level` (#2770): its folder and `SKILL.md`, committed. A project
+/// skill starts granted to the project's root alone, the default. Refused for a name the open
+/// format does not allow, one a built-in skill has, or one the level already holds, and for a
+/// template whose text is not a whole skill that keeps its name.
+///
+/// `templates` is purlis's own ([`purlis_skills::change::BuiltInTemplates`]) or the studio's,
+/// which adds each extension's (`crate::skills::studio::Templates`): one interface, the
+/// SkillTemplate capability's (ADR 0101).
 pub fn create(
     cx: &mut Ctx<'_>,
     level: &Level,
     name: &str,
     description: &str,
-    template: Template,
+    templates: &dyn SkillTemplate,
+    template: &TemplateId,
 ) -> Result<PathBuf, String> {
     let plane = cx.plane;
     crate::settings::writable(plane)?;
@@ -433,6 +441,12 @@ pub fn create(
         return Err(format!("that description cannot be used: {why}"));
     }
     cx.not_built_in(name)?;
+    let text = templates.text(template, name, description)?;
+    if let Some(problem) = change::check(&text, name).first() {
+        return Err(format!(
+            "that template does not make a whole skill: {problem}"
+        ));
+    }
     let dir = free_at(plane, level, name, name)?;
     let folder = dir.join(name);
     write(
@@ -440,7 +454,7 @@ pub fn create(
         &format!("{}/SKILL.md", rel(plane, &folder)),
         &format!("{name}'s instructions"),
         None,
-        &template.text(name, description),
+        &text,
         level.depth(),
     )?;
     cx.done(format!(
@@ -556,7 +570,7 @@ pub fn rename(cx: &mut Ctx<'_>, level: &Level, old: &str, new: &str) -> Result<P
     write(plane, &file, &what, Some(&text), &renamed, usize::MAX)?;
     let to = if renames_folder {
         let to = from.with_file_name(new);
-        match move_skill(plane, &from, &to, usize::MAX) {
+        match move_skill(plane, &from, plane, &to, usize::MAX) {
             Ok(()) => {}
             Err(Unmoved::Nothing(why)) => {
                 // The folder stayed where it was: put its name back.
@@ -713,7 +727,7 @@ pub fn move_to(
     let folder_is = folder_name(&folder);
     let dir = free_at(plane, to, name, &folder_is)?;
     let moved = dir.join(&folder_is);
-    move_skill(plane, &folder, &moved, to.depth()).map_err(|unmoved| match unmoved {
+    move_skill(plane, &folder, plane, &moved, to.depth()).map_err(|unmoved| match unmoved {
         Unmoved::Nothing(why) => format!("{name} was not moved: {why}"),
         Unmoved::Stranded(what) => format!("{name} was moved only in part: {what}"),
     })?;
@@ -883,6 +897,15 @@ const DELETED_DIR: &str = "skills-deleted";
 /// The file in a kept delete's folder that names the level its skill came from.
 const KEPT_FROM: &str = "from";
 
+/// The folder in this machine's state that holds a note for each delete by git while it runs,
+/// held locked by the delete (SK-35, #3013, `docs/plane-format.md`): one left unlocked is a delete
+/// a crash, a quit or a failed git cut short, which [`interrupted`] finishes or undoes.
+const DELETING_DIR: &str = "skills-deleting";
+
+/// The folders of this machine's state that skill deletes keep, which only purlis writes: a
+/// chat's sandbox denies writing them (`crate::sandbox`).
+pub(crate) const KEPT_BY_DELETES: [&str; 2] = [DELETED_DIR, DELETING_DIR];
+
 /// Where a deleted skill can be restored from.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Kept(Source);
@@ -971,7 +994,7 @@ pub fn delete(cx: &mut Ctx<'_>, level: &Level, name: &str) -> Result<Kept, Strin
             ));
         }
         if crate::planegit::paths_unsaved(plane, &paths).is_none() {
-            return deleted_by_git(cx, name, &folder_rel, &toml_rel);
+            return deleted_by_git(cx, level, name, &folder_rel, &toml_rel);
         }
     }
     let kept = keep_here(plane, level, &folder).map_err(|unmoved| match unmoved {
@@ -988,24 +1011,93 @@ pub fn delete(cx: &mut Ctx<'_>, level: &Level, name: &str) -> Result<Kept, Strin
 
 /// The committed skill `name`'s delete, where its commit can land: `git rm`, taken out of the
 /// index again so the save stages it with the change, and committed. Put back as `HEAD` has it
-/// where no commit was made.
+/// where no commit was made. A note of it is held locked from before the removal until it ended
+/// either way, so a delete cut short is found at the next start ([`interrupted`]).
 fn deleted_by_git(
     cx: &mut Ctx<'_>,
+    level: &Level,
     name: &str,
     folder_rel: &str,
     toml_rel: &str,
 ) -> Result<Kept, String> {
     let plane = cx.plane;
-    let mut specs = vec![literally(folder_rel)];
-    if tracked(plane, toml_rel) {
-        specs.push(literally(toml_rel));
-    }
+    let note = Deleting::begin(plane, level, folder_rel)
+        .map_err(|why| format!("{name} was not deleted: {why}"))?;
+    let specs = specs_of(plane, folder_rel, toml_rel, "HEAD");
     let mut args = vec!["rm", "-r", "-q", "--"];
     args.extend(specs.iter().map(String::as_str));
-    git(plane, &args).map_err(|why| format!("{name} was not deleted: {why}"))?;
-    let mut unstaged = vec!["reset", "-q", "--"];
-    unstaged.extend(specs.iter().map(String::as_str));
-    let _ = git(plane, &unstaged);
+    if let Err(why) = git(plane, &args) {
+        note.end();
+        return Err(format!("{name} was not deleted: {why}"));
+    }
+    #[cfg(test)]
+    cut::at(cut::Step::Removed);
+    unstage(plane, &specs);
+    #[cfg(test)]
+    cut::at(cut::Step::Unstaged);
+    let removed = removal_committed(cx, name, folder_rel, toml_rel, &specs);
+    #[cfg(test)]
+    cut::at(cut::Step::Committed);
+    if removed == Err(false) {
+        // Neither committed nor put back: the note stays, let go of, so the next start tries
+        // again ([`interrupted`]).
+        note.left();
+    } else {
+        note.end();
+    }
+    match removed {
+        Ok(after) => {
+            cx.done(format!(
+                "{name} is deleted; Restore brings it back from the commit"
+            ));
+            Ok(Kept(Source::Commit(after)))
+        }
+        Err(true) => Err(format!(
+            "{name} was not deleted: its commit could not be made, so it was put back"
+        )),
+        Err(false) => Err(format!(
+            "{name}'s commit could not be made, and it could not be put back: the project's \
+             last commit still has it, and purlis tries again next time"
+        )),
+    }
+}
+
+/// The git pathspecs of a skill's folder at `folder_rel`, and of the file beside it at
+/// `toml_rel` where `commit` has it.
+fn specs_of(plane: &Path, folder_rel: &str, toml_rel: &str, commit: &str) -> Vec<String> {
+    let mut specs = vec![literally(folder_rel)];
+    if git(plane, &["cat-file", "-e", &format!("{commit}:{toml_rel}")]).is_ok() {
+        specs.push(literally(toml_rel));
+    }
+    specs
+}
+
+/// Takes what is staged of `specs` out of the index, back to what `HEAD` has.
+fn unstage(plane: &Path, specs: &[String]) {
+    let mut args = vec!["reset", "-q", "--"];
+    args.extend(specs.iter().map(String::as_str));
+    let _ = git(plane, &args);
+}
+
+/// Puts the files of `specs` back in the working tree as `HEAD` has them: whether they are.
+fn put_back(plane: &Path, specs: &[String]) -> bool {
+    let mut args = vec!["restore", "--source=HEAD", "--worktree", "--"];
+    args.extend(specs.iter().map(String::as_str));
+    git(plane, &args).is_ok()
+}
+
+/// **Commits a skill's removal from the working tree**, not staged, as `skill rm <name>`, and
+/// answers the commit. Where no commit was made, what the save staged of it is taken out of the
+/// index and the files are put back as `HEAD` has them: `Err(true)`, or `Err(false)` where they
+/// could not be.
+fn removal_committed(
+    cx: &mut Ctx<'_>,
+    name: &str,
+    folder_rel: &str,
+    toml_rel: &str,
+    specs: &[String],
+) -> Result<String, bool> {
+    let plane = cx.plane;
     let before = head(plane);
     cx.commit(
         &[folder_rel.to_owned(), toml_rel.to_owned()],
@@ -1013,25 +1105,172 @@ fn deleted_by_git(
     );
     let after = head(plane);
     if after.is_empty() || after == before {
-        // What the save staged of the removal is taken out of the index, then the files are put
-        // back as `HEAD` has them: the project is left as it was before the delete.
-        let _ = git(plane, &unstaged);
-        let mut back = vec!["restore", "--source=HEAD", "--worktree", "--"];
-        back.extend(specs.iter().map(String::as_str));
-        let restored = git(plane, &back).is_ok();
-        return Err(if restored {
-            format!("{name} was not deleted: its commit could not be made, so it was put back")
+        unstage(plane, specs);
+        return Err(put_back(plane, specs));
+    }
+    Ok(after)
+}
+
+/// **A delete by git that runs**: its note in this machine's [`DELETING_DIR`], naming the level
+/// and the folder, held locked until [`Deleting::end`] takes it away. A crash lets go of the lock
+/// and leaves the note, which is how [`interrupted`] tells a delete cut short from one running.
+struct Deleting {
+    state: PathBuf,
+    note: String,
+    _held: std::fs::File,
+}
+
+impl Deleting {
+    /// Writes and locks the note of a delete of the skill at `folder_rel`, at `level`.
+    fn begin(plane: &Path, level: &Level, folder_rel: &str) -> Result<Deleting, String> {
+        let state = crate::plane::state_dir(plane);
+        let folder = folder_rel.rsplit('/').next().unwrap_or(folder_rel);
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|at| at.as_nanos())
+            .unwrap_or_default();
+        let note = format!("{stamp}-{folder}");
+        let text = format!("{}\n{folder}\n", level.rel().unwrap_or_default());
+        crate::profiletrust::private_dir(&state).map_err(|why| why.to_string())?;
+        let held = store::note_begun(&state, DELETING_DIR, &note, &text)
+            .map_err(|why| format!("its delete could not be noted ({why})"))?;
+        Ok(Deleting {
+            state,
+            note,
+            _held: held,
+        })
+    }
+
+    /// Takes the note away, then lets go of its lock: the delete ended.
+    fn end(self) {
+        store::note_ended(&self.state, DELETING_DIR, &self.note);
+    }
+
+    /// Lets go of the lock and leaves the note: the delete did not end, and the next start
+    /// finishes or undoes it as one a crash cut short.
+    fn left(self) {}
+}
+
+/// The level and the skill folder a delete's note names, or `None` where it names no level, or
+/// no plain folder name.
+fn noted(text: &str) -> Option<(Level, String)> {
+    let mut lines = text.lines();
+    let level = Level::of_rel(lines.next()?.trim())?;
+    let folder = lines.next()?.trim();
+    let plain = !folder.is_empty()
+        && folder != "."
+        && folder != ".."
+        && !folder.contains(['/', '\\', '\0'])
+        && lines.all(|rest| rest.trim().is_empty());
+    plain.then(|| (level, folder.to_owned()))
+}
+
+/// **Finishes or undoes every delete of a skill a crash, a quit or a failed git cut short**
+/// between its removal and its commit (SK-35, #3013), and says which, one line each. Run where
+/// the skills are next read for a change: as the Skill studio opens and as `purlis skill` starts
+/// a change. A delete still running holds its note locked and is left to end.
+///
+/// One whose commit landed has nothing left to do. One whose skill is gone from the project is
+/// committed where its commit can land now, so Restore brings it back from that commit, as the
+/// delete would have. Otherwise its files are put back as the last commit has them. Either way
+/// nothing of it is left staged, so the next delete is never kept on this machine for it.
+pub fn interrupted(cx: &mut Ctx<'_>) {
+    let state = crate::plane::state_dir(cx.plane);
+    for (note, held, text) in store::notes_left(&state, DELETING_DIR) {
+        let settled = match noted(&text) {
+            Some((level, folder)) => match finished_or_undone(cx, &level, &folder) {
+                Some(Ended::Settled(line)) => {
+                    (cx.say)(Say::Info(line));
+                    true
+                }
+                // Neither finished nor put back: said, and the note is left for the next start.
+                Some(Ended::Unsettled(line)) => {
+                    (cx.say)(Say::Warn(line));
+                    false
+                }
+                None => true,
+            },
+            None => {
+                tracing::warn!(
+                    target: "purlis::skills",
+                    "a note of a skill's delete named no skill, and was taken away: {note}"
+                );
+                true
+            }
+        };
+        if settled {
+            store::note_ended(&state, DELETING_DIR, &note);
+        }
+        drop(held);
+    }
+}
+
+/// How [`interrupted`] left a delete cut short, in the line it says.
+enum Ended {
+    /// Finished, or put back: the note goes.
+    Settled(String),
+    /// Neither: the project's last commit still has the skill, and the note stays for the next
+    /// start to try again.
+    Unsettled(String),
+}
+
+/// How [`interrupted`] finished or undid the delete of the skill in `folder` at `level`, or
+/// `None` where its commit had landed.
+fn finished_or_undone(cx: &mut Ctx<'_>, level: &Level, folder: &str) -> Option<Ended> {
+    let plane = cx.plane;
+    let folder_rel = format!("{}/{folder}", level.rel()?);
+    let toml_rel = rel(plane, &beside(&plane.join(&folder_rel)));
+    let skill_md = format!("HEAD:{folder_rel}/SKILL.md");
+    let text = git(plane, &["show", &skill_md]).ok()?;
+    let name = name_in(&text).unwrap_or_else(|| folder.to_owned());
+    let specs = specs_of(plane, &folder_rel, &toml_rel, "HEAD");
+    unstage(plane, &specs);
+    if plane
+        .join(&folder_rel)
+        .join("SKILL.md")
+        .symlink_metadata()
+        .is_ok()
+    {
+        return Some(Ended::Settled(format!(
+            "{name}'s delete was cut short before it removed anything, so it is still here"
+        )));
+    }
+    let unsettled = || {
+        Ended::Unsettled(format!(
+            "{name}'s delete was cut short and could not be finished or put back: the project's \
+             last commit still has it, and purlis tries again next time"
+        ))
+    };
+    let paths = [folder_rel.clone(), toml_rel.clone()];
+    if crate::planegit::paths_unsaved(plane, &paths).is_some() {
+        return Some(if put_back(plane, &specs) {
+            Ended::Settled(format!(
+                "{name}'s delete was cut short and the project cannot save it now, so it was \
+                 put back"
+            ))
         } else {
-            format!(
-                "{name}'s commit could not be made, and it could not be put back: the project's \
-                 last commit still has it"
-            )
+            unsettled()
         });
     }
-    cx.done(format!(
-        "{name} is deleted; Restore brings it back from the commit"
-    ));
-    Ok(Kept(Source::Commit(after)))
+    // The save's own lines go to the log: this says how the delete ended, in one line.
+    let mut quiet = |line: Say| tracing::info!(target: "purlis::skills", "{line}");
+    let mut inner = Ctx {
+        plane,
+        built_in: cx.built_in,
+        by: cx.by,
+        say: &mut quiet,
+    };
+    Some(
+        match removal_committed(&mut inner, &name, &folder_rel, &toml_rel, &specs) {
+            Ok(_) => Ended::Settled(format!(
+                "{name}'s delete was cut short; it is finished now, and Restore brings it back"
+            )),
+            Err(true) => Ended::Settled(format!(
+                "{name}'s delete was cut short and could not be finished, so it was put back"
+            )),
+            Err(false) => unsettled(),
+        },
+    )
 }
 
 /// Moves the skill's `folder`, and the file beside it, at `level` into a new folder of this
@@ -1058,12 +1297,21 @@ fn keep_here(plane: &Path, level: &Level, folder: &Path) -> Result<String, Unmov
     )
     .map_err(|why| Unmoved::Nothing(why.to_string()))?;
     let into = state.join(DELETED_DIR).join(&kept).join(&folder_is);
-    move_between(plane, folder, &state, &into, usize::MAX)?;
-    let toml = beside(folder);
-    if toml.symlink_metadata().is_ok() {
-        let _ = move_between(plane, &toml, &state, &beside(&into), usize::MAX);
+    // The folder and the file beside it go together, or neither does (SK-48).
+    match move_skill(plane, folder, &state, &into, usize::MAX) {
+        Ok(()) => Ok(kept),
+        Err(Unmoved::Nothing(why)) => {
+            // Nothing moved: the kept folder made for it, and its `from`, are taken away again.
+            store::put_away(&state, DELETED_DIR, &kept, KEPT_FROM);
+            Err(Unmoved::Nothing(why))
+        }
+        // Its folder is kept and named by its `from`, and a file of its own left in the project
+        // takes nothing (`taken_again`): it is listed, and Restore brings it back.
+        Err(Unmoved::Stranded(what)) if into.symlink_metadata().is_ok() => Err(Unmoved::Stranded(
+            format!("{what}. It is in this machine's deleted skills: restore it from there"),
+        )),
+        Err(stranded) => Err(stranded),
     }
-    Ok(kept)
 }
 
 /// How many deleted skills from git [`deleted`] lists at most, newest first.
@@ -1097,7 +1345,12 @@ pub fn deleted(plane: &Path) -> Vec<Deleted> {
         let Some(name) = name_in(&text) else {
             continue;
         };
-        if taken_again(plane, &level, &name, &folder) {
+        // A file beside its folder left in the project (a delete that could not move it) takes
+        // its place only where the kept skill has one of its own to bring back over it.
+        let toml_kept = beside(&state.join(DELETED_DIR).join(&kept).join(&folder))
+            .symlink_metadata()
+            .is_ok();
+        if taken_again(plane, &level, &name, &folder, toml_kept) {
             continue;
         }
         let at = kept
@@ -1159,7 +1412,7 @@ pub fn deleted(plane: &Path) -> Vec<Deleted> {
             let here_too = out
                 .iter()
                 .any(|one: &Deleted| one.level == level && one.folder == folder);
-            if here_too || taken_again(plane, &level, &name, folder) {
+            if here_too || taken_again(plane, &level, &name, folder, true) {
                 continue;
             }
             out.push(Deleted {
@@ -1185,14 +1438,16 @@ fn name_in(text: &str) -> Option<String> {
 
 /// Whether `level` holds a skill named `name`, or a folder named `folder` with a skill or a file
 /// git tracks in it, again. Files git ignores, left behind in a deleted skill's folder (a build's
-/// output, an editor's), take nothing: Restore puts the skill back beside them.
-fn taken_again(plane: &Path, level: &Level, name: &str, folder: &str) -> bool {
+/// output, an editor's), take nothing: Restore puts the skill back beside them. The file beside
+/// the folder there takes it only where `toml_counts`: where the deleted skill would bring one
+/// back over it (SK-48).
+fn taken_again(plane: &Path, level: &Level, name: &str, folder: &str, toml_counts: bool) -> bool {
     let Some(dir) = level.dir(plane) else {
         return true;
     };
     let at = dir.join(folder);
     let held = at.join("SKILL.md").symlink_metadata().is_ok()
-        || beside(&at).symlink_metadata().is_ok()
+        || (toml_counts && beside(&at).symlink_metadata().is_ok())
         || (at.symlink_metadata().is_ok() && tracked(plane, &rel(plane, &at)));
     held || level.named(plane, name).is_some()
 }
@@ -1231,7 +1486,8 @@ pub fn restore(cx: &mut Ctx<'_>, deleted: &Deleted) -> Result<PathBuf, String> {
         Source::Here(kept) => {
             let state = crate::plane::state_dir(plane);
             let from = state.join(DELETED_DIR).join(kept).join(&deleted.folder);
-            move_between(&state, &from, plane, &folder, deleted.level.depth()).map_err(
+            // The folder and the file beside it come back together, or neither does (SK-48).
+            move_skill(&state, &from, plane, &folder, deleted.level.depth()).map_err(
                 |unmoved| match unmoved {
                     Unmoved::Nothing(why) => format!("{name} was not restored: {why}"),
                     // It left the kept folder and could not go back (SK-45): say so.
@@ -1240,10 +1496,6 @@ pub fn restore(cx: &mut Ctx<'_>, deleted: &Deleted) -> Result<PathBuf, String> {
                     }
                 },
             )?;
-            let toml = beside(&from);
-            if toml.symlink_metadata().is_ok() {
-                let _ = move_between(&state, &toml, plane, &beside(&folder), usize::MAX);
-            }
             // Its `from` and the folder it kept, now empty, and nothing else.
             store::put_away(&state, DELETED_DIR, kept, KEPT_FROM);
         }
@@ -1419,6 +1671,99 @@ pub(in crate::skills) mod store {
         out
     }
 
+    /// **Writes and locks the note `note`** in the folder `dir` under `state`, made where it is
+    /// not there, with `text`, and answers it held locked until it is dropped. Written whole under
+    /// a name [`notes_left`] never reads, then renamed to `note` already locked, so a note is never
+    /// read half written or unlocked while its delete runs.
+    pub(super) fn note_begun(
+        state: &Path,
+        dir: &str,
+        note: &str,
+        text: &str,
+    ) -> std::io::Result<std::fs::File> {
+        made(state, &[dir], true)?;
+        let at = open_dir(state, &[dir.to_owned()], usize::MAX)?;
+        let writing = format!(".{note}");
+        let file = openat(
+            &at,
+            writing.as_str(),
+            OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+            Mode::from_raw_mode(0o600),
+        )?;
+        let mut file = std::fs::File::from(file);
+        file.lock()?;
+        let written = file
+            .write_all(text.as_bytes())
+            .and_then(|()| file.sync_all())
+            .and_then(|()| {
+                rustix::fs::renameat(&at, writing.as_str(), &at, note).map_err(Into::into)
+            });
+        match written {
+            Ok(()) => Ok(file),
+            Err(why) => {
+                let _ = unlinkat(&at, writing.as_str(), AtFlags::empty());
+                Err(why)
+            }
+        }
+    }
+
+    /// Takes the note `note` in the folder `dir` under `state` away. The folder stays: another
+    /// delete may be about to write its own note in it.
+    pub(super) fn note_ended(state: &Path, dir: &str, note: &str) {
+        let Ok(at) = open_dir(state, &[dir.to_owned()], usize::MAX) else {
+            return;
+        };
+        let _ = unlinkat(&at, note, AtFlags::empty());
+    }
+
+    /// **Every note in the folder `dir` under `state` that nothing holds locked**: its name, its
+    /// lock, held now, and its text, of at most a kilobyte. A note still being written that
+    /// nothing holds (its writer died) is taken away; a note that is not one plain file with one
+    /// name is passed over.
+    pub(super) fn notes_left(state: &Path, dir: &str) -> Vec<(String, std::fs::File, String)> {
+        let Ok(at) = open_dir(state, &[dir.to_owned()], usize::MAX) else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        for name in names_in(&at, FileType::RegularFile) {
+            let Ok(fd) = openat(
+                &at,
+                name.as_str(),
+                OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC,
+                Mode::empty(),
+            ) else {
+                continue;
+            };
+            let Ok(stat) = fstat(&fd) else {
+                continue;
+            };
+            if FileType::from_raw_mode(stat.st_mode) != FileType::RegularFile || stat.st_nlink != 1
+            {
+                continue;
+            }
+            let mut file = std::fs::File::from(fd);
+            if file.try_lock().is_err() {
+                continue;
+            }
+            // Taken away between the read of the folder and the lock: a delete that ended.
+            let still = rustix::fs::statat(&at, name.as_str(), AtFlags::SYMLINK_NOFOLLOW)
+                .is_ok_and(|now| now.st_ino == stat.st_ino && now.st_dev == stat.st_dev);
+            if !still {
+                continue;
+            }
+            if name.starts_with('.') {
+                let _ = unlinkat(&at, name.as_str(), AtFlags::empty());
+                continue;
+            }
+            let mut text = String::new();
+            if (&mut file).take(1024).read_to_string(&mut text).is_err() {
+                text.clear();
+            }
+            out.push((name, file, text));
+        }
+        out
+    }
+
     /// Takes away the kept delete `kept` in `dir` under `state` once its skill went back: its
     /// `from` file, then the folder, which must be empty by then.
     pub(super) fn put_away(state: &Path, dir: &str, kept: &str, from: &str) {
@@ -1454,7 +1799,91 @@ mod store {
     }
 
     pub(super) fn put_away(_: &Path, _: &str, _: &str, _: &str) {}
+
+    // A delete's note where no folder can be held open: by path, written whole under a dot-name
+    // and renamed into place already locked, as on Unix, and opened without following a link
+    // (on Windows, the reparse point itself).
+
+    /// The options a note is opened with: never through a link where the system can say so.
+    fn options() -> std::fs::OpenOptions {
+        #[allow(unused_mut)]
+        let mut options = std::fs::OpenOptions::new();
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt as _;
+            // FILE_FLAG_OPEN_REPARSE_POINT: the link itself, never what it names.
+            options.custom_flags(0x0020_0000);
+        }
+        options
+    }
+
+    pub(super) fn note_begun(
+        state: &Path,
+        dir: &str,
+        note: &str,
+        text: &str,
+    ) -> std::io::Result<std::fs::File> {
+        use std::io::Write as _;
+        let at = state.join(dir);
+        std::fs::create_dir_all(&at)?;
+        let writing = at.join(format!(".{note}"));
+        let mut file = options().write(true).create_new(true).open(&writing)?;
+        let written = file
+            .lock()
+            .and_then(|()| file.write_all(text.as_bytes()))
+            .and_then(|()| file.sync_all())
+            .and_then(|()| std::fs::rename(&writing, at.join(note)));
+        match written {
+            Ok(()) => Ok(file),
+            Err(why) => {
+                drop(file);
+                let _ = std::fs::remove_file(&writing);
+                Err(why)
+            }
+        }
+    }
+
+    pub(super) fn note_ended(state: &Path, dir: &str, note: &str) {
+        let _ = std::fs::remove_file(state.join(dir).join(note));
+    }
+
+    pub(super) fn notes_left(state: &Path, dir: &str) -> Vec<(String, std::fs::File, String)> {
+        use std::io::Read as _;
+        let Ok(names) = std::fs::read_dir(state.join(dir)) else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        for one in names.filter_map(Result::ok) {
+            let Ok(name) = one.file_name().into_string() else {
+                continue;
+            };
+            // A plain file alone: never a link or a folder.
+            if !std::fs::symlink_metadata(one.path()).is_ok_and(|meta| meta.file_type().is_file()) {
+                continue;
+            }
+            let Ok(file) = options().read(true).open(one.path()) else {
+                continue;
+            };
+            if file.try_lock().is_err() {
+                continue;
+            }
+            if name.starts_with('.') {
+                drop(file);
+                let _ = std::fs::remove_file(one.path());
+                continue;
+            }
+            let mut text = String::new();
+            if (&file).take(1024).read_to_string(&mut text).is_err() {
+                text.clear();
+            }
+            out.push((name, file, text));
+        }
+        out
+    }
 }
+
+#[cfg(test)]
+mod cut;
 
 #[cfg(test)]
 mod tests;

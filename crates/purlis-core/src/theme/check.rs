@@ -285,8 +285,9 @@ pub const PAIRS: &[Pair] = &[
     // A read-only project's line (#826) on the project strip: its sentence in secondary text,
     // and its lock a mark in the waiting colour.
     p("text.secondary", "layer.project", 4.5),
-    // The theme draft strip (#2332) is primary text on the project strip's shade, under the
-    // workspaces: what a draft is and why it is not drawn are always read (a hard floor).
+    // The theme draft strip (#2332) is primary text on the workspace's shade (#2916, held with
+    // a workspace's colour below): what a draft is and why it is not drawn are always read (a
+    // hard floor). The read-only line is still on the project's.
     p("text.primary", "layer.project", 4.5),
     p("state.waiting", "layer.project", 3.0),
     p("text.muted", "layer.workspace", 4.5),
@@ -359,6 +360,11 @@ pub const PAIRS: &[Pair] = &[
     p("accent.base", "accent.surface", TEXT),
     // - A checklist's tick is a mark in the accent on a sunken box.
     p("accent.base", "surface.sunken", 3.0),
+    // - The filled primary (#3177): its words on its fill, at rest and under the pointer.
+    p("accent.fill-text", "accent.fill", TEXT),
+    p("accent.fill-text", "accent.fill-hover", TEXT),
+    // - The update pill's words in the accent's words on the accent's surface (#3177).
+    p("accent.text", "accent.surface", TEXT),
     // - What an extension runs as you, said inside its approval dialog on the danger wash.
     p("text.primary", "danger.wash", 4.5).over("surface.base"),
     // - The same, in a dialog: its refusal and its unrun command on the danger wash.
@@ -367,6 +373,13 @@ pub const PAIRS: &[Pair] = &[
     p("text.primary", "wash.warning", 4.5).over("surface.deep"),
     // - Its hand, a mark in the needs-you colour on the same wash: 3:1.
     p("needs-you.base", "wash.warning", 3.0).over("surface.deep"),
+    // A title-bar chip's waiting count (#2916, R101): its digits in amber on the amber wash, a
+    // count held as the rail's badge is (3:1).
+    p("state.waiting", "wash.warning", 3.0).over("surface.deep"),
+    // - A chosen activity button: its icon in the accent's words on the accent's wash, laid on
+    //   the window and the frame (#3177), held as words are, the icon being all it says.
+    p("accent.text", "accent.wash", TEXT).over("surface.base"),
+    p("accent.text", "accent.wash", TEXT).over("surface.deep"),
     // - What a dialog is honest about (`.honest`): its words at the opacity it fades them to.
     p("text.primary", "surface.overlay", TEXT).faded(0.8),
     // - A task that is away draws its words on the terminal's own background.

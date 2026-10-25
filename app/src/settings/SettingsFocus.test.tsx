@@ -12,7 +12,7 @@ import { forgetThisLaunch } from "../regions";
 import { GLOBAL } from "../windowprefs";
 import { useRef } from "react";
 import { enterSettings, forgetEntering, landSettingsFocus, useEnteringFocus } from "./entering";
-import { stripNamed } from "../test-strips";
+import { chipName, findTheWorkspaces, workspaceChips } from "../test-strips";
 
 /**
  * **The keyboard goes into Settings on every way in** (#1206; the spec on #558, user story 32):
@@ -141,7 +141,13 @@ afterEach(() => {
 });
 
 const nav = () => screen.getByRole("navigation", { name: "Groups" });
-const workspaces = () => stripNamed("Workspaces");
+/** alpha's chip in the title bar (#2916), once it is drawn. */
+const alphaChip = () =>
+  waitFor(() => {
+    const chip = workspaceChips().find((one) => chipName(one) === "alpha");
+    if (chip === undefined) throw new Error("no alpha chip yet");
+    return chip;
+  });
 const level = (name: string) => screen.getByRole("radio", { name });
 
 /** The keyboard is on the group nav's current group, named `group` when given. */
@@ -240,7 +246,7 @@ describe("every way into Settings leaves the keyboard on the nav's current group
   it("the palette's Project settings…", async () => {
     core(PLANE);
     render(<App />);
-    await screen.findByRole("tab", { name: /alpha/ });
+    await findTheWorkspaces();
 
     await userEvent.keyboard("{F2}");
     await screen.findByRole("dialog", { name: "Command palette" });
@@ -251,13 +257,14 @@ describe("every way into Settings leaves the keyboard on the nav's current group
     await onTheCurrentGroup();
   });
 
-  it("the workspace gear", async () => {
+  it("the workspace chip's menu", async () => {
     core(PLANE);
     render(<App />);
-    await userEvent.click(await screen.findByRole("tab", { name: /alpha/ }));
+    const chip = await alphaChip();
+    fireEvent.contextMenu(chip);
 
     await userEvent.click(
-      within(workspaces()).getByRole("button", { name: "Workspace settings…" }),
+      within(await screen.findByRole("menu")).getByRole("menuitem", { name: "Settings…" }),
     );
 
     await waitFor(() => expect(level("Workspace")).toBeChecked());
@@ -326,8 +333,8 @@ describe("every way into Settings leaves the keyboard on the nav's current group
   it("a tab's menu, and not back on the tab", async () => {
     core(PLANE);
     render(<App />);
-    const tab = await screen.findByRole("tab", { name: /alpha/ });
-    await userEvent.click(tab);
+    // alpha's chip in the title bar, whose menu is the workspace's (#2916).
+    const tab = await alphaChip();
     tab.focus();
     fireEvent.keyDown(tab, { key: "F10", shiftKey: true });
     const menu = await screen.findByRole("menu");

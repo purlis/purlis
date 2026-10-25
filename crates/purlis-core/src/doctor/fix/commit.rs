@@ -236,14 +236,22 @@ pub(super) fn commit_paths(
     paths: &[&str],
     body: &str,
 ) -> Result<Option<String>, String> {
-    let mut args = vec!["add", "--"];
-    args.extend(
-        paths
-            .iter()
-            .copied()
-            .filter(|p| root.join(p).symlink_metadata().is_ok()),
-    );
-    git(root, &args).map_err(|why| format!("could not stage the change ({why})"))?;
+    let there: Vec<&str> = paths
+        .iter()
+        .copied()
+        .filter(|p| root.join(p).symlink_metadata().is_ok())
+        .collect();
+    // A folder a fix moves carries files it did not write, so each file committed is the one
+    // name it has on disk, as a save's are (`planegit::ondisk`). With no path there, there is
+    // nothing to stage, and a staging of no pathspec would be of the whole tree.
+    if !there.is_empty() {
+        crate::planegit::ondisk::add_checked(
+            root,
+            &there,
+            "could not stage the change: a file in it is not the one file on disk",
+            "could not stage the change",
+        )?;
+    }
     git(root, &["commit", "-q", "-m", body])
         .map_err(|why| format!("git did not make the commit ({why})"))?;
     Ok(git(root, &["rev-parse", "--short", "HEAD"])
@@ -268,3 +276,6 @@ pub(super) fn git(root: &Path, args: &[&str]) -> Result<String, String> {
         })
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -172,12 +172,6 @@ const RESERVES: readonly { rule: string; property: string; written: string; why:
     written: "calc(var(--size-control) * 2.5)",
     why: "the title bar's drag stretch",
   },
-  {
-    rule: ".pane-chips:has(.pane-crumbs)",
-    property: "margin-right",
-    written: "calc(var(--size-control) * 2.75)",
-    why: "the pane chips' room for the corner's controls before they are measured (the `--pane-controls` fallback)",
-  },
 ];
 
 /** A declaration's value with its own reserve, if it has one, read as the control it is
@@ -560,7 +554,6 @@ export const Planted = () => <div style={{ "--planted-pad": "7px", "--planted-at
       .a { padding: calc(var(--space-5) * 3); margin: calc(-1 * var(--space-2)); }
       .b { gap: calc(var(--space-4) / 2); margin-inline: calc(var(--space-3) * -1); }
       .title-bar { --title-bar-drag: calc(var(--size-control) * 2.5); padding-left: var(--title-bar-drag); }
-      .pane-chips:has(.pane-crumbs) { margin-right: calc(var(--pane-controls, calc(var(--size-control) * 2.75)) + var(--space-3)); }
       .e { padding-block: calc((var(--size-control) - 1lh) / 2 - 1px); }
       .f { inline-size: calc(var(--space-6) * 1.6); top: calc(100% / 3); }
       .g { margin: calc(var(--space-1) * (1 + 2)); padding: round(nearest, var(--space-4) * 3, 1px); }
@@ -1405,13 +1398,18 @@ export const PlantedFar = () => <div style={plantedFar} />;
     expect(componentLiterals(tsx)).toEqual(["style top: 3", 'style insetInlineEnd: "0.3rem"']);
   });
 
-  it("gives the step under the words' floor to the scope switch alone (#2319)", () => {
+  it("gives the step under the words' floor to the scope switch and the harness monogram alone (#2319, #2922)", () => {
     const readers = [...sheets()].flatMap(([file, text]) =>
       declarations(text)
         .filter(({ value }) => value.includes("--font-size-2xs"))
         .map(({ context }) => `${file} ${context.join(" › ")}`),
     );
-    expect(readers).toEqual(["App.css .ui-levels-small"]);
+    expect(readers).toEqual([
+      "App.css .ui-levels-small",
+      // A harness kind's one or two capitals, which must fit the 14 px mark's box (R29) and
+      // are a mark beside the profile's name, never its words.
+      'ui/harness-icon/harness-icon.css .harness-icon[data-drawn="monogram"] > span',
+    ]);
     const views = sourceFiles(isView).filter((file) => read(file).includes("--font-size-2xs"));
     expect(views).toEqual([]);
   });

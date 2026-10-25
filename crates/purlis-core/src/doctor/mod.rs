@@ -330,7 +330,7 @@ pub(crate) const PATH_DISPLAY_LIMIT: usize = 1024;
 /// **And the table under it is generated, not pasted.** This module carried its own `Cf`
 /// list once; `shown` carried a second one; `pyrepr` carried a third that was nine ranges
 /// short of `shown`'s, so the two disagreed about U+0890. They are one generated file now
-/// ([`crate::tui::tables`], from `tools/gen-unicode-tables.py` run against the CPython the
+/// ([`purlis_unicode::tables`], from `tools/gen-unicode-tables.py` run against the CPython the
 /// differential oracle runs), which is the only arrangement in which "one glyph rule" is a
 /// fact rather than a convention.
 ///
@@ -507,6 +507,7 @@ impl Doctor {
         ]
         .into_iter()
         .chain(plane::behind_the_layout(self))
+        .chain(plane::live_skills(self))
         .filter_map(|row| row.fix)
         .collect();
         ids.sort();
@@ -547,6 +548,7 @@ impl Doctor {
         rows.push(clones::workspace_clones(self));
         rows.extend(clones::hidden_agents_md(self));
         rows.extend(plane::behind_the_layout(self));
+        rows.extend(plane::live_skills(self));
         rows.push(layer::workspace_layer(self));
         rows.extend(themes::themes(self));
         rows.push(changes::changes(self));

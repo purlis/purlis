@@ -306,15 +306,42 @@ fn commit_push(
         return 0;
     }
 
-    // As the plane's save: the add's exit status decides, never the probe after it.
-    // Untimed, as the plane's: an `add` killed at a deadline leaves `index.lock` behind.
-    // The write that adds git's untracked cache to the index (FD-11, `git::UNTRACKED_CACHE`).
-    let added = git::run_untimed(clone, &git::with_untracked_cache(clone, &["add", "-A"]));
-    if !added.as_ref().is_ok_and(git::Run::ok) {
-        let said = added.map_or_else(|e| e.to_string(), |run| planegit::tail(&run));
+    // As the plane's save: a file the staging would take that has a second name refuses the
+    // save before anything is staged, and each file is then staged from one open descriptor,
+    // so a file with a second name is never hashed into the clone's object store
+    // (`planegit::ondisk`). Staging's failure decides, never the probe after it.
+    let refusal =
+        match planegit::ondisk::refused_ahead(&planegit::ondisk::second_names_ahead(clone, &[])) {
+            Some(refusal) => Some(refusal),
+            None => {
+                #[cfg(test)]
+                tests::before_the_add(clone);
+                let held = match planegit::ondisk::stage_named(clone, &[], |_| false) {
+                    Ok(held) => held,
+                    Err(said) => {
+                        say(Say::Fail(format!(
+                            "Not saved: git could not stage the changes in {at} — {said}"
+                        )));
+                        return 1;
+                    }
+                };
+                #[cfg(test)]
+                tests::after_the_add(clone);
+                // A file whose own descriptor showed a second name was not staged.
+                planegit::ondisk::refused(clone, &Ok(held))
+            }
+        };
+    if let Some(refusal) = refusal {
         say(Say::Fail(format!(
-            "Not saved: git could not stage the changes in {at} — {said}"
+            "Not saved: a file in {at} is not the one file on disk:"
         )));
+        for line in refusal.named {
+            say(Say::Fail(format!("  {line}")));
+        }
+        say(Say::Info(format!("  {}", refusal.then)));
+        attempt.outcome = "blocked";
+        attempt.detail = planegit::ondisk::NOT_AS_STAGED.into();
+        attempt.commit = rev(clone, "HEAD");
         return 1;
     }
     let probe = git::run(clone, &["diff", "--cached", "--quiet"], git::READ)
@@ -334,11 +361,36 @@ fn commit_push(
                     })
                     .unwrap_or_default();
             attempt.files = staged.len();
+            // Each staged file is the one name it has on disk, as the plane's save asks: a row
+            // with a second name, changed since it was staged, or gone is taken out of the
+            // index, and its blob out of the clone's object store where nothing else reaches
+            // it, before the secret check reads any blob. A row git does not look at is read by
+            // that check and taken out after it. What the refusal says comes after
+            // the check's own findings, as the plane's save says it (`planegit::ondisk`).
+            let (first, after) =
+                planegit::ondisk::split_for_guard(planegit::ondisk::not_as_staged(clone));
+            let held_back: std::collections::HashSet<String> = first
+                .as_ref()
+                .map(|held| held.iter().map(|one| one.path.clone()).collect())
+                .unwrap_or_default();
+            let refused_first = planegit::ondisk::refused(clone, &first);
+            #[cfg(test)]
+            tests::at_the_secret_check(clone);
             // What a save must never carry to a remote: a secret-shaped file, or a private key
             // or a live token in anything it stages (ADR 0051, for a repo). Asked of the index,
             // as the plane's guard asks it, and refused before the commit exists; what was
             // staged stays staged, as the plane's refusal leaves it.
-            let flagged = secret_files(clone, &staged);
+            // A row held back above is no longer staged: nothing of it is committed to scan.
+            let to_scan: Vec<String> = staged
+                .iter()
+                .filter(|path| !held_back.contains(*path))
+                .cloned()
+                .collect();
+            let flagged = secret_files(clone, &to_scan);
+            let refusal = planegit::ondisk::Refusal::joined(
+                refused_first,
+                planegit::ondisk::refused(clone, &Ok(after)),
+            );
             if !flagged.is_empty() {
                 let named: Vec<String> = flagged
                     .iter()
@@ -356,8 +408,27 @@ fn commit_push(
                      belong in a vault."
                         .into(),
                 ));
+                if let Some(refusal) = refusal {
+                    for line in refusal.named {
+                        say(Say::Fail(format!("  {line}")));
+                    }
+                    say(Say::Info(format!("  {}", refusal.then)));
+                }
                 attempt.outcome = "blocked";
                 attempt.detail = why;
+                attempt.commit = rev(clone, "HEAD");
+                return 1;
+            }
+            if let Some(refusal) = refusal {
+                say(Say::Fail(format!(
+                    "Not saved: a staged file in {at} is not the one file on disk:"
+                )));
+                for line in refusal.named {
+                    say(Say::Fail(format!("  {line}")));
+                }
+                say(Say::Info(format!("  {}", refusal.then)));
+                attempt.outcome = "blocked";
+                attempt.detail = planegit::ondisk::NOT_AS_STAGED.into();
                 attempt.commit = rev(clone, "HEAD");
                 return 1;
             }

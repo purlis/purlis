@@ -145,9 +145,10 @@ pub fn held_names(path: &Path) -> Vec<PathBuf> {
 /// letter in either case, so a folder not there yet and made under another spelling of its name
 /// is held too (#2752).
 pub fn denial_rules(denial: &Denial) -> Result<Vec<String>, &'static str> {
+    // And no second name made for what it holds ([`LINK`]).
     let what = match (denial.reach, denial.access) {
-        (Reach::Itself, _) | (Reach::AndBelow, Access::Write) => "file-write*",
-        (Reach::AndBelow, Access::ReadWrite) => "file-read* file-write*",
+        (Reach::Itself, _) | (Reach::AndBelow, Access::Write) => "file-write* file-link",
+        (Reach::AndBelow, Access::ReadWrite) => "file-read* file-write* file-link",
     };
     if let Some(rules) = pattern_rules(denial, what)? {
         return Ok(rules);
@@ -262,10 +263,21 @@ pub fn planted_rules(root: &Path) -> Result<Vec<String>, &'static str> {
                 }
             }
             let regex = format!("^{root}/(.*/)?{body}{tail}");
-            Ok(format!("(deny file-write* (regex {}))", string(&regex)?))
+            Ok(format!(
+                "(deny file-write* file-link (regex {}))",
+                string(&regex)?
+            ))
         })
         .collect()
 }
+
+/// **A file's second name** (`link(2)`, a hard link), which Seatbelt judges as its own operation
+/// rather than as a write. Every rule here that keeps a path from being read or written also
+/// denies it, so a file held is never given a name in a folder a chat may read and write; and
+/// the full sandbox makes one only for a file in what the chat may write, as the Linux sandbox
+/// judges a link as a write of the file it names. A tool's own links inside its own folders
+/// (git's objects, cargo's `target`, a package cache) are made as ever.
+const LINK: &str = "file-link";
 
 /// The one lookup the certificate check needs (#1337): Go programs on macOS, `gh` among them,
 /// verify a host's certificate by asking the `trustd` agent, and fail every TLS connection
@@ -293,7 +305,7 @@ pub fn widen(own: &mut Own, widened: &super::Widened) -> Result<(), &'static str
                 .push(format!("(regex {})", string(&under(bare, "[^/]+/.+$"))?));
             own.roots.push(bare.clone());
             own.deny.push(format!(
-                "(deny file-write* (regex {}))",
+                "(deny file-write* file-link (regex {}))",
                 string(&under(
                     bare,
                     &format!("[^/]+/({})(/.*)?$", super::caches::BARE_RUN.join("|"))
@@ -356,8 +368,10 @@ pub fn granted(own: &mut Own, folders: &[PathBuf]) -> Result<(), &'static str> {
             "^{}/(.*/)?({names})$",
             escaped(&folder.display().to_string())
         );
-        own.deny
-            .push(format!("(deny file-write* (regex {}))", string(&regex)?));
+        own.deny.push(format!(
+            "(deny file-write* file-link (regex {}))",
+            string(&regex)?
+        ));
     }
     Ok(())
 }
@@ -433,8 +447,15 @@ pub fn profile(
         format!("(subpath {})", quote(tmp)?),
     ];
     allow.extend(own.allow.iter().cloned());
+    // A second name only for a file in what it may write ([`LINK`]).
+    line(format!("(deny {LINK})"));
+    line(format!("(allow {LINK}"));
+    for rule in &allow {
+        line(format!("  {rule}"));
+    }
+    line(")".to_owned());
     line("(allow file-write*".to_owned());
-    for rule in allow {
+    for rule in &allow {
         line(format!("  {rule}"));
     }
     out.push_str(DEVICES);
@@ -623,15 +644,21 @@ pub fn every_project_rules() -> Result<Vec<String>, &'static str> {
     let mut rules = Vec::new();
     for state in crate::names::STATE_DIR.spellings() {
         let regex = format!("^/(.*/)?{}(/.*)?$", either_case(&escaped(state)));
-        rules.push(format!("(deny file-write* (regex {}))", string(&regex)?));
+        rules.push(format!(
+            "(deny file-write* file-link (regex {}))",
+            string(&regex)?
+        ));
     }
     for manifest in super::MANIFESTS {
         let regex = format!("^/(.*/)?{}$", either_case(&escaped(manifest)));
-        rules.push(format!("(deny file-write* (regex {}))", string(&regex)?));
+        rules.push(format!(
+            "(deny file-write* file-link (regex {}))",
+            string(&regex)?
+        ));
     }
     // And every workspace's manifest (#2046), in any case.
     rules.push(format!(
-        "(deny file-write* (regex {}))",
+        "(deny file-write* file-link (regex {}))",
         string(&workspace_manifests_regex())?
     ));
     Ok(rules)
@@ -698,7 +725,7 @@ pub fn vaults_everywhere_rules() -> Result<Vec<String>, &'static str> {
                 either_case(&format!("{}/{}", escaped(state), escaped(kept)))
             );
             rules.push(format!(
-                "(deny file-read* file-write* (regex {}))",
+                "(deny file-read* file-write* file-link (regex {}))",
                 string(&regex)?
             ));
         }
@@ -751,7 +778,10 @@ pub fn floor_planted_rules() -> Result<Vec<String>, &'static str> {
             // Each letter either case: the disk compares names case-folded, so a name spelled
             // another way is the same file.
             let regex = format!("^/(.*/)?{}{tail}", either_case(&body));
-            Ok(format!("(deny file-write* (regex {}))", string(&regex)?))
+            Ok(format!(
+                "(deny file-write* file-link (regex {}))",
+                string(&regex)?
+            ))
         })
         .collect()
 }

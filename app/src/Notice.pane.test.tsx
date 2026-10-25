@@ -328,11 +328,8 @@ describe("the pane Notice's rules", () => {
   const rule = (selector: string) =>
     new RegExp(`(^|[},])\\s*${selector}\\s*\\{([^}]*)\\}`).exec(css)?.[2] ?? "";
 
-  it("keeps the corner inside the pane", () => {
-    expect(rule("\\.pane-corner\\.at-start")).toMatch(
-      /max-width:\s*calc\(100% - var\(--space-4\) \* 2\)/,
-    );
-    // And nothing a pane draws is drawn outside it, by a box that cannot be scrolled.
+  it("draws nothing a pane holds outside it", () => {
+    // By a box that cannot be scrolled.
     expect(rule("\\.pane-frame")).toMatch(/overflow:\s*clip/);
   });
 
@@ -355,11 +352,6 @@ describe("the pane Notice's rules", () => {
     expect(rule("\\.pane-notice-row\\.pane-notice-row-empty")).toMatch(/display:\s*none/);
     // What the row keeps behind "+N more" is not drawn, whatever its box's own display says.
     expect(rule("\\.pane-notices > \\[hidden\\]")).toMatch(/display:\s*none/);
-  });
-
-  it("lets the terminal be reached through the part of the corner that draws nothing", () => {
-    expect(rule("\\.pane-corner\\.at-start")).toMatch(/pointer-events:\s*none/);
-    expect(rule("\\.pane-corner\\.at-start > \\*")).toMatch(/pointer-events:\s*auto/);
   });
 
   it("stacks a pane's Notices and scrolls them when they are taller than the pane", () => {
@@ -494,16 +486,73 @@ describe("Ask {persona}'s rules", () => {
 });
 
 describe("a granting Notice on a pane that just moved (#1695, train 54's review)", () => {
-  it("does nothing for a press on its way out until it settles, and says so", async () => {
-    // jsdom lays nothing out: each Notice's box stands at its place among the stack's.
-    const offsetTop = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetTop");
-    Object.defineProperty(HTMLElement.prototype, "offsetTop", {
-      configurable: true,
-      get(this: HTMLElement) {
-        const box = this.closest(".pane-notices > *");
-        return box === null ? 0 : [...(box.parentElement?.children ?? [])].indexOf(box) * 40;
-      },
+  it("holds any answer that grants, whatever its Notice's cause (#3142)", async () => {
+    // A vault refusal's Allow is the grants variant, and its cause is in no list: the look is
+    // the rule.
+    const rect = vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: Element,
+    ) {
+      const box = this.closest(".pane-notices > *");
+      const top = box === null ? 0 : [...(box.parentElement?.children ?? [])].indexOf(box) * 40;
+      return DOMRect.fromRect({ x: 0, y: top, width: 100, height: 30 });
     });
+    let clock = 1_000_000;
+    const now = vi.spyOn(Date, "now").mockImplementation(() => clock);
+    try {
+      const allowed: string[] = [];
+      let away: () => void = () => undefined;
+      function Pane() {
+        const [first, setFirst] = useState(true);
+        away = () => setFirst(false);
+        return (
+          <NoticePaneRow>
+            {first && (
+              <Notice cause="skills-missing:7" at="pane" label="Skills" onDismiss={() => undefined}>
+                A skill is missing.
+              </Notice>
+            )}
+            <Notice
+              cause="vault-refused:7:forge"
+              at="pane"
+              tone="trouble"
+              label="Vault"
+              fixes={[
+                { label: "Allow forge", onPress: () => allowed.push("forge"), allows: true },
+                { label: "Keep blocked", onPress: () => undefined },
+              ]}
+            >
+              purlis did not open vault forge.
+            </Notice>
+          </NoticePaneRow>
+        );
+      }
+      render(<Pane />);
+      act(() => away());
+      await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+      expect(allowed).toEqual([]);
+      expect(screen.getByText(NOTICE_MOVED_JUST_NOW)).toBeTruthy();
+
+      clock += 2000;
+      await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+      expect(allowed).toEqual(["forge"]);
+    } finally {
+      now.mockRestore();
+      rect.mockRestore();
+    }
+  });
+
+  it("does nothing for a press on its way out until it settles, and says so", async () => {
+    // jsdom lays nothing out: each Notice's box stands at its place among the stack's, and the
+    // row at the top. Its `offsetTop` says nothing, as a positioned box makes it say nothing in
+    // a real engine (#3142): the guard reads where each one is drawn.
+    const rect = vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: Element,
+    ) {
+      const box = this.closest(".pane-notices > *");
+      const top = box === null ? 0 : [...(box.parentElement?.children ?? [])].indexOf(box) * 40;
+      return DOMRect.fromRect({ x: 0, y: top, width: 100, height: 30 });
+    });
+    const offset = vi.spyOn(HTMLElement.prototype, "offsetTop", "get").mockReturnValue(4);
     let clock = 1_000_000;
     const now = vi.spyOn(Date, "now").mockImplementation(() => clock);
     try {
@@ -551,7 +600,8 @@ describe("a granting Notice on a pane that just moved (#1695, train 54's review)
       expect(screen.queryByText(NOTICE_MOVED_JUST_NOW)).toBeNull();
     } finally {
       now.mockRestore();
-      if (offsetTop) Object.defineProperty(HTMLElement.prototype, "offsetTop", offsetTop);
+      rect.mockRestore();
+      offset.mockRestore();
     }
   });
 });

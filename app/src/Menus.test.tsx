@@ -20,6 +20,7 @@ import { Menued, useNoBrowserMenu } from "./Menus";
 import { TIP_AFTER_MS } from "./ui/menu/MenuTip";
 import { noTabs, openTab, selectTab } from "./tabs";
 import { TOOLTIP_CLOSE_DELAY } from "./ui/tooltip/Tooltip";
+import { chipName, workspaceChips } from "./test-strips";
 
 /**
  * The context menus, and the browser menu they replace.
@@ -1009,7 +1010,12 @@ describe("a real contextmenu event, with the suppressor live", () => {
   it("opens charter's own menu, and still takes the browser's away", async () => {
     aPlane();
     render(<App />);
-    const tab = await screen.findByRole("tab", { name: /alpha/ });
+    // alpha's chip in the title bar (#2916), whose menu is the workspace's.
+    const tab = await waitFor(() => {
+      const chip = workspaceChips().find((one) => chipName(one) === "alpha");
+      if (chip === undefined) throw new Error("no alpha chip yet");
+      return chip;
+    });
 
     // Not `fireEvent`, deliberately: what a WebView sends is a `MouseEvent`, so that is what
     // is sent, and the event object is kept so the second claim can be made about it.
@@ -1017,7 +1023,7 @@ describe("a real contextmenu event, with the suppressor live", () => {
     tab.dispatchEvent(event);
 
     const menu = await screen.findByRole("menu");
-    // The focused workspace's own tab: no Focus row, which could only say it is focused.
+    // The focused workspace's own chip: no Focus row, which could only say it is focused.
     expect(menu).toHaveAccessibleName("Workspace alpha");
     expect(
       Array.from(menu.querySelectorAll('[role^="menuitem"]')).map((row) =>

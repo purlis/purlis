@@ -33,7 +33,7 @@ use serde_json::Value;
 
 use crate::pieces::{self, Declaration, Event, Who};
 use crate::repocmd::Say;
-use crate::tui::{self, Align};
+use crate::tui;
 use crate::worktree::{self, Dirt, Refusal};
 
 /// The exit code for "this piece is already claimed", distinct from the generic 1. A worker
@@ -423,24 +423,23 @@ pub fn remove(
 }
 
 /// Rows of five cells, the first four sized to their widest value in terminal cells, the last
-/// left unpadded — it has nothing to its right. Each cell is sanitised: these values come out
-/// of a log and out of directory names, and a newline in one would shear every column below.
+/// left unpadded — it has nothing to its right. Every cell is text and goes through
+/// [`tui::row`]: these values come out of a log and out of directory names, and a newline in one
+/// would shear every column below, as an escape in the last would hide every row after it.
 fn table(rows: &[[String; 5]], say: &mut dyn FnMut(Say)) {
-    let clean: Vec<Vec<String>> = rows
-        .iter()
-        .map(|r| r.iter().map(|c| tui::sanitize(c).into_owned()).collect())
-        .collect();
     let widths: Vec<usize> = (0..4)
-        .map(|i| tui::column("", clean.iter().map(|r| r[i].as_str()), GAP, None))
+        .map(|i| tui::column("", rows.iter().map(|r| r[i].as_str()), GAP, None))
         .collect();
-    for row in &clean {
-        let cells: String = row
+    for row in rows {
+        let cells: Vec<(&str, usize)> = row
             .iter()
-            .zip(&widths)
-            .map(|(c, w)| tui::pad(c, *w, Align::Left))
+            .map(String::as_str)
+            .zip(widths.iter().copied())
             .collect();
         say(Say::Out(
-            format!("    {cells}{}", row[4]).trim_end().to_string(),
+            format!("    {}", tui::row(&cells, &row[4]))
+                .trim_end()
+                .to_string(),
         ));
     }
 }
@@ -452,3 +451,6 @@ fn git_has(clone: &Path, full: &str) -> bool {
     })
     .is_ok_and(|run| run.ok())
 }
+
+#[cfg(test)]
+mod tests;

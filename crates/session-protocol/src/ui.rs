@@ -607,6 +607,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     "skill_rename",
     "skill_move",
     "skill_delete",
+    // A skill delete a crash or a quit cut short, finished in one commit or put back as the
+    // studio opens (SK-35, #3013): the person's window alone, as Delete is.
+    "skill_deletes_cut_short",
     "skill_restore",
     "skill_grant",
     "skill_turn",
@@ -632,6 +635,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     // a credential read from a vault, and an install or an update is one commit to the project.
     // The person's own press in their window, never a link's.
     "skill_sources",
+    "skill_sources_offered",
     "skill_source_add",
     "skill_source_remove",
     "skill_source_confirm",
@@ -1029,6 +1033,7 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "skill_diff",
     "skill_lint",
     "skill_move_needs_grant",
+    "skill_panels",
     "skill_revert_widens",
     "skill_runs",
     "skill_stats",

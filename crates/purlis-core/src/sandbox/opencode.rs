@@ -245,14 +245,14 @@ fn own(wrap: &Wrap) -> Result<Own, &'static str> {
     if let Some(data) = &wrap.data {
         for file in CREDENTIALS {
             own.deny.push(format!(
-                "(deny file-write* (literal {}))",
+                "(deny file-write* file-link (literal {}))",
                 quote(&data.join(file))?
             ));
         }
         // Every snapshot repository, its config and hooks among them, which git reads and runs
         // when opencode later runs it there: none is written, moved in or made.
         own.deny.push(format!(
-            "(deny file-write* (subpath {}))",
+            "(deny file-write* file-link (subpath {}))",
             quote(&data.join("snapshot"))?
         ));
         // No link where a later opencode writes, which it would write through, and no

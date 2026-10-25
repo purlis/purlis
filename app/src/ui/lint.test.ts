@@ -321,6 +321,19 @@ tester.run("purlis/tabs-family", purlisUi.rules["tabs-family"], {
   ],
 });
 
+tester.run("purlis/titlebar-family", purlisUi.rules["titlebar-family"], {
+  valid: [
+    { code: `<WorkspaceChip name="alpha" current onClick={go} />` },
+    { code: `<span className="workspace-settings">x</span>` },
+  ],
+  invalid: [
+    { code: `<div className="workspaces-strip">x</div>`, errors: [{ messageId: "oldClass" }] },
+    { code: `<span className="workspace">x</span>`, errors: [{ messageId: "oldClass" }] },
+    { code: `<button className="plane-root">x</button>`, errors: [{ messageId: "oldClass" }] },
+    { code: `<span data-scope="titlebar">x</span>`, errors: [{ messageId: "scope" }] },
+  ],
+});
+
 tester.run("purlis/panel-separator-family", purlisUi.rules["panel-separator-family"], {
   valid: [
     { code: `<Separator aria-label="Resize the split" />` },

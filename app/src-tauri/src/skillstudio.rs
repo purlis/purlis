@@ -312,6 +312,40 @@ pub struct Studio {
     pub harnesses: Vec<StudioHarness>,
     /// Every skill from outside the plane that has the name of a skill a chat gets, by name.
     pub clashes: Vec<StudioClash>,
+    /// What it offers to start from (SK-22, #2785): the core's `skills::first_open`.
+    pub first: StudioFirst,
+}
+
+/// **What the studio offers when it opens** (SK-22, #2785; decision 42), as the core works it
+/// out (`purlis_core::skills::first_open`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Type)]
+pub struct StudioFirst {
+    /// Whether the project has no skill of its own, so the three starts are offered: make one
+    /// with a chat, browse skill sources, start blank.
+    pub starts: bool,
+    /// Where the project's skills are still where only some chat programs read them: how many,
+    /// and the doctor's fix that moves them (SK-21).
+    pub unmoved: Option<StudioUnmoved>,
+}
+
+/// The project's skills still to move into the studio's.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct StudioUnmoved {
+    pub skills: u32,
+    /// The doctor's fix that moves them, by its id (`planeDoctorFix`).
+    pub fix: String,
+}
+
+impl From<purlis_core::skills::first_open::FirstOpen> for StudioFirst {
+    fn from(first: purlis_core::skills::first_open::FirstOpen) -> Self {
+        StudioFirst {
+            starts: first.starts,
+            unmoved: first.unmoved.map(|unmoved| StudioUnmoved {
+                skills: u32::try_from(unmoved.skills).unwrap_or(u32::MAX),
+                fix: unmoved.fix.id().to_owned(),
+            }),
+        }
+    }
 }
 
 /// The studio of the project at `root`, for a chat at its root (`workspace` `None`) or in
@@ -337,6 +371,7 @@ pub(crate) fn studio(
             skills: Vec::new(),
             harnesses: Vec::new(),
             clashes: Vec::new(),
+            first: StudioFirst::default(),
         };
     }
     let off = workspace
@@ -353,6 +388,7 @@ pub(crate) fn studio(
         persona.as_deref(),
         env,
     );
+    let first = purlis_core::skills::first_open::first_open(root, &rows).into();
     let skills = rows
         .into_iter()
         .map(|row| {
@@ -407,6 +443,7 @@ pub(crate) fn studio(
         skills,
         harnesses,
         clashes,
+        first,
     }
 }
 
@@ -747,6 +784,102 @@ pub(crate) async fn skill_runs(
             return Ok(Vec::new());
         }
         Ok(runs(held.root(), &skill, RUNS_SHOWN))
+    })
+    .await
+}
+
+/// **Which panel on a skill's tab**, as the window holds it: purlis's Runs panel, or one an
+/// extension adds, by its id and the panel's.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum SkillPanelKey {
+    Runs,
+    Extension { extension: String, panel: String },
+}
+
+/// The word [`SkillPanelKey::Runs`] is told to the window by, which it names that panel by.
+pub(crate) const RUNS_PANEL: &str = "runs";
+
+impl From<purlis_core::skills::studio::PanelKey> for SkillPanelKey {
+    fn from(key: purlis_core::skills::studio::PanelKey) -> SkillPanelKey {
+        use purlis_core::skills::studio::PanelKey;
+        match key {
+            PanelKey::Runs => SkillPanelKey::Runs,
+            PanelKey::Extension { extension, panel } => {
+                SkillPanelKey::Extension { extension, panel }
+            }
+        }
+    }
+}
+
+/// **One panel on a skill's tab** (ADR 0101 §6), as the window draws it: purlis's Runs panel,
+/// then each panel an extension that declares `studio-panel` adds, each answered in panel blocks
+/// or refused with the core's sentence.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct SkillPanel {
+    pub key: SkillPanelKey,
+    pub title: String,
+    /// The extension that adds it, by name, or null for purlis's own.
+    pub by: Option<String>,
+    pub blocks: Vec<crate::panels::PanelBlock>,
+    /// Why it has no blocks, in the core's words, or null where it answered.
+    pub refused: Option<String>,
+}
+
+/// The panels on skill `skill`'s tab in the project at `root`, asked with `studio`.
+pub(crate) fn panels(
+    root: &std::path::Path,
+    skill: &str,
+    studio: Option<purlis_core::skills::studio::Studio<'_>>,
+) -> Vec<SkillPanel> {
+    use purlis_core::skills::studio::{Answered, RunsPanel};
+    let answered = match studio {
+        Some(studio) => studio.panels(root, skill),
+        None => vec![Answered::of(&RunsPanel { plane: root }, skill)],
+    };
+    answered
+        .into_iter()
+        .map(|panel| {
+            let (blocks, refused) = match panel.blocks {
+                Ok(blocks) => (
+                    blocks.iter().map(crate::panels::PanelBlock::from).collect(),
+                    None,
+                ),
+                Err(why) => (Vec::new(), Some(why)),
+            };
+            SkillPanel {
+                key: panel.key.into(),
+                title: panel.title,
+                by: panel.by,
+                blocks,
+                refused,
+            }
+        })
+        .collect()
+}
+
+/// **The panels on skill `skill`'s tab** (ADR 0101 §6): purlis's Runs panel, which lists every
+/// run of the skill, newest first, then each extension's. None while the flag is off. On a
+/// blocking thread, as it reads the project's skill log and asks each extension.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_panels(
+    views: tauri::State<'_, crate::views::Views>,
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    skill: String,
+) -> Result<Vec<SkillPanel>, String> {
+    let held = planes.held(&plane)?;
+    let executor = views.executor();
+    crate::off_the_window("reading the skill's panels", move || {
+        if !purlis_core::skills::studio_on_here() {
+            return Ok(Vec::new());
+        }
+        Ok(purlis_core::skills::studio::with_studio(
+            &executor,
+            held.root(),
+            |studio| panels(held.root(), &skill, studio),
+        ))
     })
     .await
 }

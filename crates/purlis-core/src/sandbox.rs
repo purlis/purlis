@@ -1681,6 +1681,12 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             root.join(state).join(crate::theme::drafts::DRAFTS),
             Access::Write,
         );
+        // The skills a delete kept on this machine, and the notes of deletes that run (SK-7,
+        // SK-35): only purlis writes either. A note a chat planted would be finished as a delete
+        // the next time the studio opens.
+        for kept in crate::skills::verbs::KEPT_BY_DELETES {
+            deny(Class::Integrity, root.join(state).join(kept), Access::Write);
+        }
         // Every chat's hook spool and the keys that check it, neither read nor written: the
         // hooks that write a spool run outside the sandbox their tools run in (ADR 0068 §6
         // as amended by V63), so nothing inside it needs them.
@@ -1731,6 +1737,10 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             ctx.state.join(crate::theme::drafts::DRAFTS),
             Access::Write,
         );
+        // …and what skill deletes keep there (SK-7, SK-35).
+        for kept in crate::skills::verbs::KEPT_BY_DELETES {
+            deny(Class::Integrity, ctx.state.join(kept), Access::Write);
+        }
     }
     // …and a state folder the project does not have as a folder is not the chat's to make
     // (D-RN2a-7): which folder holds charter's state is decided by which are there, so making
@@ -6511,6 +6521,7 @@ pub mod browser_sites;
 pub mod caches;
 pub mod claude;
 pub mod codex;
+pub mod confined;
 pub mod egress;
 pub mod grant;
 pub mod held;

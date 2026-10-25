@@ -1933,3 +1933,56 @@ fn reinit_keeps_every_levels_local_skills_on_this_machine_and_adds_the_lines_onc
         "a second reinit adds nothing"
     );
 }
+
+/// What `init` and `reinit` append to a CRLF `.gitignore` is CRLF too (#2875): their one
+/// appender ends each added line as the file's first line is, so no bare `\n` is left in it.
+#[test]
+fn init_and_reinit_keep_a_crlf_gitignore_crlf() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(".gitignore");
+    std::fs::write(&path, "build/\r\n!/workspaces/.gitkeep\r\n").unwrap();
+
+    assert_eq!(ensure_gitignore(&path), Ok(true));
+
+    let body = std::fs::read_to_string(&path).unwrap();
+    assert!(
+        body.starts_with("build/\r\n!/workspaces/.gitkeep\r\n"),
+        "{body:?}"
+    );
+    assert!(body.contains("/personas/*/skills.local/\r\n"), "{body:?}");
+    assert!(
+        !body.replace("\r\n", "").contains('\n'),
+        "a bare \\n in {body:?}"
+    );
+    assert_eq!(
+        ensure_gitignore(&path),
+        Ok(false),
+        "and it is read back as present"
+    );
+}
+
+/// A line is present only as git reads it: an indented copy ignores nothing, and one a lone
+/// `\r` joins to the line before is no line of its own, so `init` and `reinit` add each again.
+#[test]
+fn a_line_git_does_not_read_is_added_again() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(".gitignore");
+    let body = "build/\n!/workspaces/.gitkeep\n/.charter/\n/.purlis/\n\
+                /.claude/settings.local.json\n/charter.local.toml\n/purlis.local.toml\n\
+                /sessions/\n  /skills.local/\n/workspaces/*/skills.local/\r/personas/*/skills.local/\n\
+                /skills.local.lock\n";
+    std::fs::write(&path, body).unwrap();
+
+    assert_eq!(ensure_gitignore(&path), Ok(true));
+
+    let after = std::fs::read_to_string(&path).unwrap();
+    let added = &after[body.len()..];
+    for line in [
+        "/skills.local/\n",
+        "/workspaces/*/skills.local/\n",
+        "/personas/*/skills.local/\n",
+    ] {
+        assert!(added.contains(line), "{line:?} added: {after:?}");
+    }
+    assert!(!added.contains("/skills.local.lock"), "{after:?}");
+}

@@ -112,6 +112,26 @@ fn home_signing_through(at: &Path, signer: impl Fn(&Path) -> String) -> (PathBuf
     (home, ran)
 }
 
+/// **Whether the object store of the repository at `dir` holds the bytes of the file at
+/// `file`** (wherever that file is), as git would store them in `dir`: as any object git can
+/// read, or as a loose object at its own path, read or not.
+pub(crate) fn stores_file(dir: &Path, file: &Path) -> bool {
+    let sha = run(
+        dir,
+        &["hash-object", "--no-filters", &file.display().to_string()],
+    );
+    assert!(sha.ok(), "git hash-object failed: {sha:?}");
+    let sha = sha.out.trim().to_owned();
+    let (fan, rest) = sha.split_at(2);
+    let loose = run(
+        dir,
+        &["rev-parse", "--git-path", &format!("objects/{fan}/{rest}")],
+    );
+    assert!(loose.ok(), "git rev-parse failed: {loose:?}");
+    run(dir, &["cat-file", "-e", &sha]).ok()
+        || dir.join(loose.out.trim()).symlink_metadata().is_ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

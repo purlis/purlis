@@ -65,8 +65,8 @@
   display: flex;
   box-sizing: border-box;
   min-inline-size: 0;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-control);
   color: var(--text-primary);
   background-color: var(--surface-sunken);
   font-size: var(--font-size-base);
