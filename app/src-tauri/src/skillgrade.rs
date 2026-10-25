@@ -88,7 +88,7 @@ pub struct SkillGradePlan {
     pub tests_refused: Option<String>,
     /// The trigger tests left out, each with why: a query no chat can be started on.
     pub left_out: Vec<String>,
-    /// The outcome evals the skill has, which this version does not grade yet.
+    /// The outcome evals the skill has, shown and not run (#3235 grades them).
     pub outcome_evals: u32,
     pub outcomes_refused: Option<String>,
     pub estimate: Option<GradeEstimate>,
@@ -406,10 +406,9 @@ impl InChats<'_> {
         };
         let root = self.held.root().to_path_buf();
         let skill = chat.arm.has_the_skill().then_some((self.level, self.skill));
-        // The previous version is laid out by a later version of the runner; this one asks for
-        // none.
+        // The previous version as an arm is #3237: the built-in runner asks for none now.
         if chat.arm == Arm::Previous {
-            return not_started("this purlis grades no previous version yet".to_owned());
+            return not_started("this purlis grades no previous version (#3237)".to_owned());
         }
         let laid = match purlis_core::skills::verbs::drafts::lay_out_arm(&root, skill) {
             Ok(laid) => laid,

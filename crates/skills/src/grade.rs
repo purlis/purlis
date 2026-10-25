@@ -163,7 +163,7 @@ pub struct Plan {
     /// Of those, the chats of each arm.
     pub per_arm: u32,
     pub trigger_tests: u32,
-    /// Outcome evals the skill has that this runner does not grade yet: shown, never run.
+    /// Outcome evals the skill has, which this runner shows and does not run (#3235 grades them).
     pub outcome_evals_waiting: u32,
 }
 
@@ -297,7 +297,7 @@ impl GradeReport {
 
 /// **Grades `request` with purlis's built-in runner**, asking `chats` for every chat: each run in
 /// turn, every trigger test in it, every arm for each, so a grade the person stops has scored
-/// every arm alike so far. Outcome evals are not graded by this runner yet: [`Plan`] says how
+/// every arm alike so far. Outcome evals are shown and not run by this runner (#3235): [`Plan`] says how
 /// many wait.
 pub fn grade(request: &GradeRequest, chats: &mut dyn Chats) -> GradeReport {
     let skill = request.skill.as_str();

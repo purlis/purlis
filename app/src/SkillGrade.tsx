@@ -143,7 +143,7 @@ export function SkillGrade({
       )}
       {running ? (
         <ButtonRow>
-          <p data-testid="skill-grade-running" aria-live="polite">
+          <p data-testid="skill-grade-running">
             Grading {name}: {step.ran} of {counted(step.of, "chat", "chats")} done.
           </p>
           <Button
