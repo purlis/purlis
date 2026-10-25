@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792944933649,
+  "lastUpdate": 1792946707001,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -24654,6 +24654,48 @@ window.BENCHMARK_DATA = {
             "value": 101.776074,
             "unit": "ms",
             "extra": "median of 5 runs: 101.342, 101.666, 101.776, 101.794, 102.002 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "8fa702efea3cc8893e3c1d247088315e659cd6bb",
+          "message": "SK-53: say which project skills a repo leaves out of a chat (#3222)\n\n* SK-53: say which project skills a repo leaves out of a chat\n\nCodex and opencode chats in a clone lose a plane skill to a narrower repo\ncopy (decision 51) or to a skills folder purlis could not read whole\n(SK-44). The chat's tab, the studio and `purlis skill list` now say so,\nfrom one predicate in purlis-skills (Reason::of_a_repo).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-53: regenerate the bindings, format, and fill the studio fixtures\n\nBindings and the UI RPC client from `cargo test -p purlis-app -- --ignored\nregenerate_the_typescript_the_ui_imports`.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-53: the theme views' studio fixture lists what a repo leaves out\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-25T20:27:54+04:00",
+          "tree_id": "0c918d81323deab31cf31e0ae032b8133e75b50d",
+          "url": "https://github.com/purlis/purlis/commit/8fa702efea3cc8893e3c1d247088315e659cd6bb"
+        },
+        "date": 1792946704707,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5154934999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.491, 0.509, 0.515, 0.534, 0.536 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.919252999999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.737, 16.756, 16.919, 17.249, 17.629 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.809003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 104.066, 104.658, 104.809, 105.199, 106.584 ms"
           }
         ]
       }
