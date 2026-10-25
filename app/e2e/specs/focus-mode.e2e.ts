@@ -135,6 +135,19 @@ async function focusModeTo(want: boolean): Promise<void> {
       if (on instanceof HTMLElement) on.blur();
       const at = document.activeElement?.tagName ?? "none";
       const modalUp = document.querySelector(modal) !== null;
+      // Every change of the window's focus-mode marks after the press, for the failure: a
+      // toggle that went on and back off reads apart from one that never went on.
+      const root = document.querySelector("main.window");
+      const seen: string[] = [];
+      (window as unknown as { focusModeSeen: string[] }).focusModeSeen = seen;
+      if (root !== null)
+        new MutationObserver((changes) => {
+          for (const one of changes)
+            seen.push(`${one.attributeName}:${root.hasAttribute(one.attributeName ?? "")}`);
+        }).observe(root, {
+          attributes: true,
+          attributeFilter: ["data-focus-mode", "data-focus-back"],
+        });
       const claimed = !document.body.dispatchEvent(
         new KeyboardEvent("keydown", {
           key: "Enter",
@@ -160,9 +173,11 @@ async function focusModeTo(want: boolean): Promise<void> {
   // What held the key back, said in the failure: the modal up, if one is.
   const held = await browser.execute((modal: string) => {
     const up = document.querySelector<HTMLElement>(modal);
+    const seen = (window as unknown as { focusModeSeen?: string[] }).focusModeSeen ?? [];
+    const marks = `the marks changed: ${seen.length === 0 ? "never" : seen.join(" ")}`;
     return up === null
-      ? "no modal up now"
-      : `a modal up now: ${up.getAttribute("aria-label") ?? up.dataset.testid ?? up.className}`;
+      ? `no modal up now; ${marks}`
+      : `a modal up now: ${up.getAttribute("aria-label") ?? up.dataset.testid ?? up.className}; ${marks}`;
   }, MODAL);
   throw new Error(
     `${MAC ? "⌘⇧↩" : "Ctrl+Shift+Enter"} did not turn focus mode ${want ? "on" : "off"} (${pressed}; ${held})`,
