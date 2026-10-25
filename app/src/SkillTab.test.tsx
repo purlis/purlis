@@ -187,7 +187,7 @@ describe("a panel an extension adds to a skill's tab", () => {
       "did not answer within 5 seconds",
     );
     const order = screen
-      .getAllByRole("heading", { level: 3 })
+      .getAllByRole("heading", { level: 2 })
       .map((heading) => heading.textContent)
       .filter((text) => text === "Runs" || (text ?? "").endsWith("· House rules"));
     expect(order).toEqual(["Runs", "Checks · House rules", "Broken · House rules"]);

@@ -100,9 +100,10 @@ describe("a vault's tab", () => {
     );
     draw();
 
-    expect(await screen.findByRole("heading", { name: /ops/ })).toHaveTextContent(
-      "ops · System keychain · 2 secrets",
-    );
+    // No title of its own: the tab says which vault this is (#3147). What kind it is and how
+    // much it holds stay, as quiet words in its first row.
+    expect(await screen.findByText("System keychain · 2 secrets")).toHaveClass("view-head-says");
+    expect(screen.queryByRole("heading")).not.toBeInTheDocument();
     const table = screen.getByRole("table", { name: "Secrets in ops" });
     expect(
       within(table)
@@ -791,8 +792,8 @@ describe("a 1Password vault's token", () => {
     expect(screen.queryByTestId("vault-empty")).not.toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Add" })).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: /ops/ })).toHaveTextContent("ops · 1Password");
-    expect(screen.getByRole("heading", { name: /ops/ })).not.toHaveTextContent("0 secrets");
+    expect(screen.getByText("1Password")).toHaveClass("view-head-says");
+    expect(screen.queryByText(/0 secrets/)).not.toBeInTheDocument();
   });
 
   it("stores a token pasted there, then lists the vault's secrets without being asked", async () => {
