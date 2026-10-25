@@ -92,7 +92,8 @@ export function PieceDiffTab({ plane, cut, path }: { plane: PlaneId; cut: Place;
   return (
     <div className="piece-file" aria-busy={again}>
       <header className="piece-files-head" {...editorToolbar}>
-        <ToolbarFile path={path} />
+        {/* The tab is the file's name: the path alone, quiet (#3147). */}
+        <ToolbarFile path={path} named={false} />
         {now.kind === "read" && <span>{against(now.shown)}</span>}
         <span className="piece-files-actions">
           <ToYourEditor plane={plane} cut={cut} path={path} line={firstLine(now)} />

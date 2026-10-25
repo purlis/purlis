@@ -396,20 +396,18 @@ export function VaultTab({
       data-testid={`vault-tab-${vault}`}
       aria-label={`Vault ${vault}`}
     >
-      <header className="view-head">
-        <h2>
-          <KeyRound className="tab-mark" aria-hidden="true" />
-          {vault}
-          {contents && (
-            <span className="panel-from">
-              {contents.refused === null
-                ? ` · ${providerName(contents.provider)} · ${counted(contents.count)}`
-                : ` · ${providerName(contents.provider)}`}
-            </span>
-          )}
-        </h2>
+      {/* **Its first row, with no title in it** (#3147): the tab says which vault this is.
+          What kind of vault it is and how much it holds stay, as quiet words. */}
+      <div className="view-head">
+        {contents && (
+          <span className="view-head-says">
+            {contents.refused === null
+              ? `${providerName(contents.provider)} · ${counted(contents.count)}`
+              : providerName(contents.provider)}
+          </span>
+        )}
         {actions}
-      </header>
+      </div>
       <div className="view-body">
         {!mayRead ? (
           fromFiles === false ? (
