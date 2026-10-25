@@ -225,10 +225,22 @@ pub fn profile(
     }
     line("  (literal \"/dev/null\")".to_owned());
     line(")".to_owned());
+    // Its proxy's ports on the two loopback addresses the proxy holds. Seatbelt names them as
+    // `localhost`, which on macOS is those two. Linux's reader is told them exactly, since a
+    // Linux loopback is all of 127/8, and any other address on it could be another listener.
     for port in proxy_ports {
-        line(format!(
-            "(allow network-outbound (remote ip \"localhost:{port}\"))"
-        ));
+        if os == Os::Linux {
+            line(format!(
+                "(allow network-outbound (remote ip \"127.0.0.1:{port}\"))"
+            ));
+            line(format!(
+                "(allow network-outbound (remote ip \"[::1]:{port}\"))"
+            ));
+        } else {
+            line(format!(
+                "(allow network-outbound (remote ip \"localhost:{port}\"))"
+            ));
+        }
     }
     // The denial classes, after every grant: Seatbelt takes the last rule that matches.
     for root in writes {

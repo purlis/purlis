@@ -495,8 +495,18 @@ impl Asking {
 
 impl Drop for Asking {
     fn drop(&mut self) {
-        if let Some(asking) = self.proxy.asking() {
-            asking.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+        // The last question over: what the proxy is still carrying ends with it.
+        // Never below none: a proxy closed for good was set to none while this was asked.
+        if let Some(asking) = self.proxy.asking()
+            && asking
+                .try_update(
+                    std::sync::atomic::Ordering::SeqCst,
+                    std::sync::atomic::Ordering::SeqCst,
+                    |now| Some(now.saturating_sub(1)),
+                )
+                .is_ok_and(|was| was <= 1)
+        {
+            self.proxy.cut();
         }
     }
 }
@@ -505,10 +515,17 @@ impl Drop for Asking {
 /// Its ports stay held for the rest of the run, so no other listener is given them
 /// ([`crate::sandbox::egress::Serving::confined`]); a later question opens a proxy of its own.
 pub(crate) fn close_proxy(id: &str) {
-    PROXIES
+    let closed = PROXIES
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .remove(id);
+    // Whatever it was carrying ends now, whoever else still holds the proxy.
+    if let Some((_, proxy)) = closed {
+        if let Some(asking) = proxy.asking() {
+            asking.store(0, std::sync::atomic::Ordering::SeqCst);
+        }
+        proxy.cut();
+    }
 }
 
 /// A confined extension's proxy, with the hosts it carries.

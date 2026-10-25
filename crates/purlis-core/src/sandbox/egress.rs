@@ -720,8 +720,8 @@ impl Proxy {
             for (addr, speaks) in [(http_addr, Speaks::Http), (socks_addr, Speaks::Socks)] {
                 match TcpListener::bind((std::net::Ipv6Addr::LOCALHOST, addr.port())) {
                     Ok(listener) => also.push((listener, speaks)),
-                    // No IPv6 loopback here: nothing can listen on it either.
-                    Err(err) if err.kind() == io::ErrorKind::AddrNotAvailable => {}
+                    // No IPv6 loopback here, or no IPv6 at all: nothing can listen on it either.
+                    Err(err) if no_ipv6(&err) => {}
                     Err(err) => {
                         super::localport::release(http_addr.port());
                         super::localport::release(socks_addr.port());
@@ -756,6 +756,7 @@ impl Proxy {
             left_out: serving.left_out,
             confined: serving.confined,
             asking: serving.asking.clone(),
+            live: Live::default(),
             tally: Mutex::new(Tally::default()),
             teller: Teller::default(),
         });
@@ -831,6 +832,12 @@ impl Proxy {
         self.asking.clone()
     }
 
+    /// **Ends every connection it is carrying**, both ways: a confined extension's question is
+    /// over, or its proxy closed for good.
+    pub fn cut(&self) {
+        self.allowed.live.cut();
+    }
+
     /// Waits until the teller has told every refusal handed to it so far.
     #[cfg(test)]
     pub(crate) fn settled(&self) {
@@ -882,6 +889,8 @@ impl Proxy {
 impl Drop for Proxy {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::SeqCst);
+        // Nothing it was carrying outlives it.
+        self.allowed.live.cut();
         // Wakes each accept, which then sees the stop and closes its listener.
         for addr in [self.http, self.socks].iter().chain(&self.also) {
             let _ = TcpStream::connect_timeout(addr, Duration::from_secs(1));
@@ -952,11 +961,7 @@ fn listen(
                 };
                 // A confined extension's proxy carries nothing while none of its questions is
                 // being answered ([`Serving::asking`]).
-                if allowed
-                    .asking
-                    .as_ref()
-                    .is_some_and(|asking| asking.load(Ordering::SeqCst) == 0)
-                {
+                if allowed.quiet() {
                     let _ = stream.shutdown(Shutdown::Both);
                     continue;
                 }
@@ -1022,6 +1027,8 @@ struct Allowed {
     left_out: Vec<u16>,
     confined: bool,
     asking: Option<Arc<AtomicUsize>>,
+    /// What it carries now, for a confined extension's proxy, ended when its question is.
+    live: Live,
     tally: Mutex<Tally>,
     teller: Teller,
 }
@@ -1059,6 +1066,14 @@ impl Teller {
 }
 
 impl Allowed {
+    /// Whether this is a confined extension's proxy none of whose questions is being answered:
+    /// it carries nothing then ([`Serving::asking`]).
+    fn quiet(&self) -> bool {
+        self.asking
+            .as_ref()
+            .is_some_and(|asking| asking.load(Ordering::SeqCst) == 0)
+    }
+
     /// Whether `host`, reached at `at`, is carried past what its runner's policy lists, for a
     /// chat planned on another machine (#2445): always, for any other.
     fn carries(&self, host: &str, at: SocketAddr, own: Option<&[super::hosts::Network]>) -> bool {
@@ -1313,6 +1328,11 @@ fn serve(mut client: TcpStream, allowed: &Arc<Allowed>) {
         );
         return;
     };
+    // A confined extension's question may have ended while the head arrived.
+    if allowed.quiet() {
+        let _ = client.shutdown(Shutdown::Both);
+        return;
+    }
     if let Some(named) = &request.host_header
         && !same_host(named, &request.host, request.port)
     {
@@ -1374,6 +1394,24 @@ fn serve(mut client: TcpStream, allowed: &Arc<Allowed>) {
         }
     };
     let _ = upstream.set_write_timeout(Some(allowed.idle));
+    // A confined extension's connection is held where its question's end can cut it, and cut
+    // now if the question ended while it was made.
+    let held = if allowed.confined {
+        let Some(id) = allowed.live.hold(&client, &upstream) else {
+            return;
+        };
+        Some(HeldLive {
+            allowed: allowed.as_ref(),
+            id,
+        })
+    } else {
+        None
+    };
+    if allowed.quiet() {
+        allowed.live.cut();
+        return;
+    }
+    let _held = held;
     let sent = match &request.forward {
         None => client.write_all(b"HTTP/1.1 200 Connection established\r\n\r\n"),
         Some(head) => upstream.write_all(head.as_bytes()),
@@ -1408,6 +1446,18 @@ fn serve(mut client: TcpStream, allowed: &Arc<Allowed>) {
         return;
     }
     splice(client, upstream, up_to - rest.len() as u64, allowed.idle);
+}
+
+/// A confined connection held in its proxy's [`Live`], let go of when it ends.
+struct HeldLive<'a> {
+    allowed: &'a Allowed,
+    id: u64,
+}
+
+impl Drop for HeldLive<'_> {
+    fn drop(&mut self) {
+        self.allowed.live.release(self.id);
+    }
 }
 
 /// SOCKS's version byte (RFC 1928).
@@ -1851,6 +1901,69 @@ fn reachable_from(
                 || reach.lists_exactly(addr.ip(), addr.port())
         })
         .collect()
+}
+
+/// Whether binding `[::1]` failed because this machine has no IPv6 loopback to bind: none
+/// configured, or IPv6 turned off in the kernel.
+fn no_ipv6(err: &io::Error) -> bool {
+    matches!(
+        err.kind(),
+        io::ErrorKind::AddrNotAvailable | io::ErrorKind::Unsupported
+    ) || err.raw_os_error() == Some(libc::EAFNOSUPPORT)
+}
+
+/// One tunnel or request a confined extension's proxy is carrying: both ends, each a handle of
+/// its own, so the proxy can end it when its extension's question is over.
+struct Carrying {
+    id: u64,
+    client: TcpStream,
+    upstream: TcpStream,
+}
+
+/// What a confined extension's proxy is carrying now ([`Serving::asking`]).
+#[derive(Default)]
+struct Live {
+    next: AtomicUsize,
+    carrying: Mutex<Vec<Carrying>>,
+}
+
+impl Live {
+    /// Holds `client` and `upstream` until the guard drops, or until [`Self::cut`].
+    fn hold(&self, client: &TcpStream, upstream: &TcpStream) -> Option<u64> {
+        let (Ok(client), Ok(upstream)) = (client.try_clone(), upstream.try_clone()) else {
+            return None;
+        };
+        let id = self.next.fetch_add(1, Ordering::SeqCst) as u64;
+        self.carrying
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(Carrying {
+                id,
+                client,
+                upstream,
+            });
+        Some(id)
+    }
+
+    fn release(&self, id: u64) {
+        self.carrying
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .retain(|it| it.id != id);
+    }
+
+    /// Ends every connection it carries, both ways.
+    fn cut(&self) {
+        for one in self
+            .carrying
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .drain(..)
+        {
+            let _ = one.client.shutdown(Shutdown::Both);
+            let _ = one.upstream.shutdown(Shutdown::Both);
+        }
+    }
 }
 
 /// The TLS extension that carries an encrypted ClientHello (ECH).

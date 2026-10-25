@@ -436,6 +436,17 @@ fn a_confined_program_reaches_its_proxy_and_no_other_address() {
         !reaches(&profile, "127.0.0.1", 40_003),
         "another port of this machine"
     );
+    // The two loopback addresses the proxy holds, and no other on Linux's 127/8.
+    assert!(reaches(&profile, "::1", 40_001));
+    assert!(reaches(&profile, "::ffff:127.0.0.1", 40_001));
+    assert!(
+        !reaches(&profile, "127.0.0.2", 40_001),
+        "another loopback address"
+    );
+    assert!(
+        !reaches(&profile, "127.1.2.3", 40_002),
+        "another loopback address"
+    );
     assert!(
         !reaches(&profile, "160.79.104.10", 443),
         "a model provider, directly"
@@ -1039,6 +1050,80 @@ fn a_name_that_resolves_to_a_private_network_is_not_connected_to() {
         assert!(
             matches!(connected, Connected::OnlyLocal),
             "{private} was connected to"
+        );
+    }
+}
+
+/// A tunnel through a confined proxy to `host`, its ClientHello sent and the start of the
+/// server's answer read, so the tunnel is carried and open; or `None` where `host` cannot be
+/// reached from here (never on CI).
+fn open_tunnel(proxy: &crate::sandbox::egress::Proxy, host: &str) -> Option<std::net::TcpStream> {
+    use std::io::{Read, Write};
+    let mut stream = std::net::TcpStream::connect(("127.0.0.1", proxy.port())).ok()?;
+    stream
+        .set_read_timeout(Some(std::time::Duration::from_secs(10)))
+        .ok()?;
+    write!(
+        stream,
+        "CONNECT {host}:443 HTTP/1.1\r\nHost: {host}:443\r\n\r\n"
+    )
+    .ok()?;
+    let mut head = Vec::new();
+    let mut byte = [0u8; 1];
+    while !head.ends_with(b"\r\n\r\n") && head.len() < 4096 {
+        match stream.read(&mut byte) {
+            Ok(1) => head.push(byte[0]),
+            _ => break,
+        }
+    }
+    if !String::from_utf8_lossy(&head).starts_with("HTTP/1.1 200") {
+        assert!(
+            std::env::var_os("CI").is_none(),
+            "on CI, the tunnel to {host} was not carried: {}",
+            String::from_utf8_lossy(&head)
+        );
+        return None;
+    }
+    stream.write_all(&client_hello(host)).ok()?;
+    let mut answered = [0u8; 1];
+    (stream.read(&mut answered).ok()? == 1).then_some(stream)
+}
+
+/// Whether `stream` reaches its end within a few seconds, whatever it still had to read.
+fn ends_promptly(mut stream: std::net::TcpStream) -> bool {
+    use std::io::Read;
+    let begun = std::time::Instant::now();
+    let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(8)));
+    let mut chunk = [0u8; 4096];
+    loop {
+        match stream.read(&mut chunk) {
+            Ok(0) => return begun.elapsed() < std::time::Duration::from_secs(5),
+            Ok(_) => continue,
+            Err(why) => {
+                return why.kind() != std::io::ErrorKind::WouldBlock
+                    && why.kind() != std::io::ErrorKind::TimedOut;
+            }
+        }
+    }
+}
+
+#[test]
+fn a_tunnel_carried_during_a_question_ends_with_it_and_when_its_proxy_closes() {
+    for (id, close) in [("cut-a", false), ("cut-b", true)] {
+        let proxy = proxy_for(id, vec!["example.com".to_owned()]).expect("a proxy");
+        let asking = Asking::of(std::sync::Arc::clone(&proxy));
+        let Some(tunnel) = open_tunnel(&proxy, "example.com") else {
+            // Off CI, where `open_tunnel` holds it to, a machine with no network says nothing here.
+            return;
+        };
+        if close {
+            close_proxy(id);
+        }
+        drop(asking);
+        drop(proxy);
+        assert!(
+            ends_promptly(tunnel),
+            "the tunnel outlived its question (closed for good: {close})"
         );
     }
 }
