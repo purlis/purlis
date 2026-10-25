@@ -862,7 +862,8 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                     if json {
                         println!("{}", json!({ "plan": planned, "grades": graded }));
                     } else {
-                        print!("{}", grade_said(&planned, &graded));
+                        let local_file = purlis_core::settings::Which::Local.file_at(root);
+                        print!("{}", grade_said(&planned, &graded, local_file));
                     }
                     Ok(0)
                 }
@@ -1097,6 +1098,7 @@ fn versions_table(name: &str, history: &history::History) -> String {
 fn grade_said(
     planned: &purlis_core::skills::grades::Planned,
     graded: &[purlis_core::skills::grades::Graded],
+    local_file: &str,
 ) -> String {
     use purlis_core::skills::grade::{Arm, Read};
     let name = &planned.skill;
@@ -1152,13 +1154,14 @@ fn grade_said(
                 text.push_str(&format!("Test {} is left out: {why}\n", at + 1));
             }
             text.push_str(&format!(
-                "A grade stops once its chats have spent {} ({}; [skill_grades] token_cap in \
-                 charter.local.toml sets it).\n",
+                "A grade stops once its chats have spent {} ({}; [skill_grades] token_cap in {} \
+                 sets it).\n",
                 counted(planned.cap.tokens, "token", "tokens"),
                 match planned.cap.from {
                     purlis_core::skills::grades::cap::From::Default => "the default",
                     purlis_core::skills::grades::cap::From::Yours => "this machine's cap",
-                }
+                },
+                local_file,
             ));
             text.push_str("Grade it from its tab in the Skill studio, which shows this first.\n");
         }

@@ -16,7 +16,7 @@ import { Notice } from "./Notice";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { TextField } from "./ui/field/Field";
-import { Select } from "./primitives/Select";
+import { Select } from "./ui/select/Select";
 
 /** The project's default profile, in the picker. */
 const DEFAULT = "";
@@ -362,6 +362,7 @@ function GradePlan({
         {!nothing && (
           <>
             <Select
+              size="sm"
               aria-label={`Grade ${name} on`}
               value={profile}
               options={options}
