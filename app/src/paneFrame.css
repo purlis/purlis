@@ -290,6 +290,30 @@
   opacity: 1;
 }
 
+/* **The harness's name keeps the header's tier** (#2914, the operator's ruling of 2026-10-22):
+   muted, primary on the pane of a split that has the keyboard, and under the pointer or the
+   keyboard. **Interim, until the quiet ghost variant (#3214)**: the family's ghost draws primary
+   words, so these rules out-rank its variant (0,3,0) by specificity, naming the button's own
+   attributes, never by where they are written. */
+.pane-head > .pane-chips > .pane-harness[data-scope="button"][data-variant="ghost"] {
+  color: var(--text-muted);
+}
+
+[data-scope="panel"][data-variant="content"]
+  [data-group]
+  .pane-frame[data-focused]
+  .pane-head
+  > .pane-chips
+  > .pane-harness[data-scope="button"][data-variant="ghost"],
+.pane-head
+  > .pane-chips
+  > .pane-harness[data-scope="button"][data-variant="ghost"]:is(
+    [data-hovered],
+    [data-focus-visible]
+  ) {
+  color: var(--text-primary);
+}
+
 .pane-head > .pane-chips > .chat-gauge {
   color: var(--text-muted);
 }

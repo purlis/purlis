@@ -105,8 +105,9 @@ export default tseslint.config(
     },
   },
   // **The old field wrapper's last wearers** (#3129): a settings row's select and its slider,
-  // which the select (#2906) and choice (#2907) families take off it. This block goes once both
-  // have moved; nothing else may wear `ui-field`.
+  // which the select (#2906, PR #3107) and choice (#2907, PR #3109) families take off it.
+  // Whichever of #3107, #3109 and #3208 lands last deletes this block and the dead `.ui-field`
+  // rules in `App.css`; nothing else may wear `ui-field`.
   {
     files: ["src/settings/components.tsx"],
     rules: { "purlis/field-family": "off" },

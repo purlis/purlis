@@ -813,10 +813,10 @@ button.show-more:focus-visible {
 
 /* **Which of a split's panes has the keyboard** (#2914), where a theme draws no line around a
    pane (Purlis, the operator's ruling of 2026-10-22): the words in its header (where it came
-   from, its work item, its breadcrumb) are primary, and every other pane's keep their muted
-   tier. Its buttons (the harness, the skills, Brief) are the family's, drawn alike in every pane.
-   A split is the panes' own group inside the content panel; one pane is never marked, and a
-   split's separator parts the panes. */
+   from, its work item, its harness, its breadcrumb) are primary, and every other pane's keep
+   their muted tier. The harness is a button of the family (#3129), so its tier is drawn with the
+   family, in `paneFrame.css`. A split is the panes' own group inside the content panel; one pane
+   is never marked, and a split's separator parts the panes. */
 [data-scope="panel"][data-variant="content"]
   [data-group]
   .pane-frame[data-focused]
@@ -880,10 +880,11 @@ button.show-more:focus-visible {
   max-width: 100%;
 }
 
-/* **The line is one height** (#2484): each chip on it is the chrome height, as the ways to end
-   a task beside them are, so no chip stands shorter than its neighbour. What each says is
-   centred in it (`align-items` or `align-content` in the chip's own rule). The heights guard
-   holds every chip here (`PANE_LINE_CHIPS`). */
+/* **The line's words are one height** (#2484): each chip that is words (the breadcrumb, the
+   gauge, where a chat came from, its work item) is the chrome height. Its buttons (Brief, the
+   harness, the skills, a task's ways) are the family's small size, which the family draws a step
+   taller and which wins over this; the line centres both, so nothing stands off its middle. The
+   heights guard holds every chip here (`PANE_LINE_CHIPS`). */
 .pane-chips
   > :is(
     .pane-crumbs,
