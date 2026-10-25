@@ -436,7 +436,7 @@ export function StartChat({
       {/* One heading over every state of it, so the sentence about a sandbox that is off
         or cannot be applied is not a stray line under the Name box. */}
       {sandbox !== null && (
-        <SettingGroup label="Sandbox">
+        <SettingGroup label="Sandbox" level={3}>
           {sandbox.state === "sandboxed" && locked === null && (
             <SettingRow
               label="Start without the sandbox"
