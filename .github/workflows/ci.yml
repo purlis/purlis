@@ -173,10 +173,11 @@ jobs:
       # tauri::generate_context! reads the built frontend, so it has to exist before clippy.
       - run: mkdir -p app/dist
       - run: cargo fmt --all --check
-      # No release build carries a crate's test-only feature, `purlis-session-protocol`'s
-      # `any-stream` (#2216): the features Cargo resolves for each build the shipping workflows
-      # make, read with `cargo tree` and nothing compiled. An error names the manifest that
-      # turned it on; a build line it cannot read whole, or a feature flag on one, is an error too.
+      # No release build carries a crate's test-only feature, each listed in the script's
+      # `TEST_ONLY` (#2216, #3180): the features Cargo resolves for each build the shipping
+      # workflows make, read with `cargo tree` and nothing compiled. An error names the manifest
+      # that turned one on; a build line it cannot read whole, a feature flag on one, or a
+      # `test-support` feature the list leaves out is an error too.
       - run: node tools/release-features.mjs
       # `purlis-session-protocol/bench` so the latency bench, which only that feature builds, is
       # linted too (SC-16).
