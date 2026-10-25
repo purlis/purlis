@@ -13,9 +13,10 @@ import { useLayoutEffect, useRef, useState, type RefObject } from "react";
  * and the answer's own box is what the pointer lands on.
  *
  * **What counts as a move**: any change of the box's size, or of its place in what scrolls it
- * (its place on screen with every scroll above it added back). A scroll alone is no move: the
- * person scrolling a list to read it, or a test's driver bringing an answer into view, moves
- * nothing under them they did not choose to move. A scroll the page was **made** to take is
+ * (its place on screen with every scroll above it added back), against where it last settled
+ * (so a drift too small to see between two reads still adds up). A scroll alone is no move:
+ * the person scrolling a list to read it, or a test's driver bringing an answer into view,
+ * moves nothing under them they did not choose to move. A scroll the page was **made** to take is
  * one: a box that scrolls cannot stay where it was scrolled to once what it holds got shorter
  * than that (the browser clamps it), and everything in it slides on screen though nothing in it
  * moved inside it.
@@ -134,13 +135,17 @@ function place(watch: Watch, way: Element, pass: Pass, at: number) {
         differ(x, was.x) ||
         differ(y, was.y) ||
         (made && (differ(box.left, was.left) || differ(box.top, was.top)));
+  // **Measured from where it last settled**, never from the last read: a box that drifts a little
+  // less than `STILL` between reads still moves as far as it goes in all. Only the on-screen box
+  // the clamp check compares is read again every time.
+  const keep = !moved && was !== undefined;
   watch.places.set(way, {
     left: box.left,
     top: box.top,
-    width: box.width,
-    height: box.height,
-    x,
-    y,
+    width: keep ? was.width : box.width,
+    height: keep ? was.height : box.height,
+    x: keep ? was.x : x,
+    y: keep ? was.y : y,
     at: moved ? at : (was?.at ?? -Infinity),
   });
 }

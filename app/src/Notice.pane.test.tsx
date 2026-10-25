@@ -802,6 +802,26 @@ describe("a granting answer on a pane that moved while its line stood still (#31
     }
   });
 
+  it("holds a press on an Allow that drifted in steps each too small to count", async () => {
+    // Each read sees it 0.4 px from the last, under the tolerance; together they carry it 40 px.
+    let x = 12;
+    const { rect, allowed } = aConsent(() => DOMRect.fromRect({ x, y: 24, width: 90, height: 24 }));
+    const aFrame = () => act(() => new Promise((done) => setTimeout(done, 20)));
+    try {
+      await aFrame();
+      for (let i = 0; i < 100; i++) {
+        x += 0.4;
+        window.dispatchEvent(new Event("resize"));
+        await aFrame();
+      }
+      await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+      expect(allowed).toEqual([]);
+      expect(screen.getByText(NOTICE_MOVED_JUST_NOW)).toBeTruthy();
+    } finally {
+      rect.mockRestore();
+    }
+  });
+
   it("holds a press on an Allow that grew under the pointer", async () => {
     let wide = false;
     const { rect, allowed } = aConsent(() =>
@@ -813,6 +833,69 @@ describe("a granting answer on a pane that moved while its line stood still (#31
       expect(allowed).toEqual([]);
     } finally {
       rect.mockRestore();
+    }
+  });
+});
+
+describe("a granting Notice that arrives in a pane's band (#3167, D-3167-5)", () => {
+  type Shown = "none" | "warning" | "both" | "consent";
+  function Band({ shown, allowed }: { shown: Shown; allowed: string[] }) {
+    return (
+      <NoticePaneRow>
+        {(shown === "warning" || shown === "both") && (
+          <Notice cause="skills-missing:7" at="pane" label="Skills" onDismiss={() => undefined}>
+            A skill is missing.
+          </Notice>
+        )}
+        {(shown === "both" || shown === "consent") && (
+          <Notice
+            cause="vault-refused:7:forge"
+            at="pane"
+            tone="trouble"
+            label="Vault"
+            fixes={[
+              { label: "Allow forge", onPress: () => allowed.push("forge"), allows: true },
+              { label: "Keep blocked", onPress: () => undefined },
+            ]}
+          >
+            purlis did not open vault forge.
+          </Notice>
+        )}
+      </NoticePaneRow>
+    );
+  }
+
+  it("stands as it arrives in an empty band: nothing else there is aimed at", async () => {
+    const allowed: string[] = [];
+    const { rerender } = render(<Band shown="none" allowed={allowed} />);
+    rerender(<Band shown="consent" allowed={allowed} />);
+    await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+    expect(allowed).toEqual(["forge"]);
+  });
+
+  it("holds its Allow when it arrives beside another Notice, or where one just left", async () => {
+    let clock = 1_000_000;
+    const now = vi.spyOn(Date, "now").mockImplementation(() => clock);
+    try {
+      const allowed: string[] = [];
+      const { rerender } = render(<Band shown="warning" allowed={allowed} />);
+      rerender(<Band shown="both" allowed={allowed} />);
+      await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+      expect(allowed).toEqual([]);
+      expect(screen.getByText(NOTICE_MOVED_JUST_NOW)).toBeTruthy();
+      clock += 2000;
+      await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+      expect(allowed).toEqual(["forge"]);
+
+      // The band empties, and a consent arrives at once where the warning was.
+      rerender(<Band shown="warning" allowed={allowed} />);
+      rerender(<Band shown="none" allowed={allowed} />);
+      clock += 200;
+      rerender(<Band shown="consent" allowed={allowed} />);
+      await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+      expect(allowed).toEqual(["forge"]);
+    } finally {
+      now.mockRestore();
     }
   });
 });

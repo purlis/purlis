@@ -540,8 +540,8 @@ export const ConsentRewraps: Story = {
  * **A consent the band was made to scroll back holds its Allow** (#3167): the band is scrolled
  * to its end, a long warning under the consent is put away, and the band, holding less, can no
  * longer stay scrolled: the consent slides down on screen though its place in the band is the
- * same. A press on its Allow at once does nothing. Scrolling the band yourself is no move: the
- * Allow pressed just after that scroll allows.
+ * same, and the Allow as wide. A press on its Allow at once does nothing. Scrolling the band
+ * yourself is no move: the Allow pressed just after that scroll allows.
  */
 export const ConsentClamped: Story = {
   args: { warnings: ["vault-refused", "sandbox-long"], width: 400 },
@@ -550,9 +550,11 @@ export const ConsentClamped: Story = {
     const vault = await canvas.findByRole("status", { name: "Vault" });
     const allow = within(vault).getByRole("button", { name: "Allow steward to use this vault" });
     const stack = vault.closest(".pane-notices") as HTMLElement;
+    // The clamp alone, and no re-wrap: the band keeps its scrollbar's room whether it overflows
+    // or not, so its words are as wide before the dismiss as after it.
+    stack.style.scrollbarGutter = "stable";
     await waitFor(() => expect(stack.scrollHeight).toBeGreaterThan(stack.clientHeight + 24));
-    // The band laid out once it overflowed (its scrollbar can take room and wrap the words):
-    // start from a consent that has stood still for the settle time, and is pressed as it is.
+    // Start from a consent that has stood still for the settle time, and is pressed as it is.
     await new Promise((done) => setTimeout(done, SETTLE_MS + 100));
     await userEvent.click(allow);
     expect(allowed).toEqual(["forge"]);
@@ -566,18 +568,26 @@ export const ConsentClamped: Story = {
     expect(allowed).toEqual(["forge"]);
     allowed.length = 0;
 
-    const inBand = () => boxOf(vault).top - boxOf(stack).top + stack.scrollTop;
+    const inBand = () => ({
+      top: boxOf(allow).top - boxOf(stack).top + stack.scrollTop,
+      left: boxOf(allow).left - boxOf(stack).left,
+      width: boxOf(allow).width,
+    });
     const was = { inBand: inBand(), onScreen: boxOf(allow).top };
     const long = canvas.getByRole("status", { name: "Sandbox block" });
     await userEvent.click(within(long).getByRole("button", { name: "Dismiss" }));
     await waitFor(() => expect(canvas.queryByRole("status", { name: "Sandbox block" })).toBeNull());
-    // Clamped: the same place in the band, lower on screen.
-    expect(inBand()).toBeCloseTo(was.inBand, 0);
+    // Clamped: the Allow as wide and at the same place in the band, only lower on screen.
+    const now = inBand();
+    expect(now.top).toBeCloseTo(was.inBand.top, 0);
+    expect(now.left).toBeCloseTo(was.inBand.left, 0);
+    expect(now.width).toBeCloseTo(was.inBand.width, 0);
     expect(boxOf(allow).top - was.onScreen).toBeGreaterThan(24);
 
     await userEvent.click(allow);
     expect(allowed).toEqual([]);
     expect(await canvas.findByText(NOTICE_MOVED_JUST_NOW)).toBeVisible();
+    stack.style.scrollbarGutter = "";
     atRest();
   },
 };
