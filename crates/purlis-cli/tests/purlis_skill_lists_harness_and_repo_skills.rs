@@ -421,3 +421,58 @@ fn a_repo_skills_folder_purlis_cannot_list_whole_is_one_row_that_says_why() {
         )]
     );
 }
+
+#[test]
+fn skill_list_says_under_codex_and_opencode_which_skills_a_repo_leaves_out_and_why() {
+    // SK-53 (#3213), decision 41: a Codex or opencode chat in `app` gets the repo's `deploy` in
+    // place of the workspace's (decision 51), and the list says so under each, once.
+    let project = Project::new();
+    let root = project.at.join("plane");
+    write_skill(&root.join("workspaces/alpha/skills"), "deploy", "Deploys alpha.");
+    write_skill(
+        &root.join("workspaces/alpha/app/.agents/skills"),
+        "deploy",
+        "The repo's deploy.",
+    );
+
+    let out = project.run(&["skill", "list", "-w", "alpha"]);
+    let json = project.run(&["skill", "list", "-w", "alpha", "--json"]);
+
+    assert!(out.status.success(), "{}", stderr(&out));
+    let text = stdout(&out);
+    assert!(!text.contains("left out: left out"), "{text}");
+    for title in ["Codex", "opencode"] {
+        let lost = section(
+            &text,
+            &format!("{title} chats in a repo here start without these:"),
+        );
+        assert_eq!(row(&lost, "SKILL"), "SKILL LEVEL STATE", "{text}");
+        assert_eq!(
+            row(&lost, "deploy"),
+            "deploy workspace left out: hidden by the repo skill of this name",
+            "{text}"
+        );
+    }
+    assert!(
+        section(
+            &text,
+            "Claude Code chats in a repo here start without these:"
+        )
+        .is_empty(),
+        "Claude Code's chats get the workspace's copy too: {text}"
+    );
+    assert!(json.status.success(), "{}", stderr(&json));
+    let doc: serde_json::Value = serde_json::from_str(&stdout(&json)).unwrap();
+    let codex = doc["harnesses"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|one| one["harness"] == "codex")
+        .expect("Codex listed");
+    assert_eq!(codex["repo_left_out"][0]["name"], "deploy");
+    assert_eq!(codex["repo_left_out"][0]["level"], "workspace");
+    assert_eq!(
+        codex["repo_left_out"][0]["left_out"],
+        "hidden by the repo skill of this name"
+    );
+}

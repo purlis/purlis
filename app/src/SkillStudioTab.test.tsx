@@ -714,6 +714,40 @@ describe("each program's own skills in the Skill studio (SK-6)", () => {
     );
   });
 
+  it("lists under a program each project skill a repo leaves out of its chats, with why (SK-53)", async () => {
+    const studio = withClaudeCode(false);
+    const opencode = {
+      ...studio.harnesses[1],
+      repo_left_out: [
+        {
+          ...ROW,
+          name: "ship",
+          level: "workspace" as const,
+          label: "workspace",
+          on: false,
+          left_out:
+            "purlis could not read the skills folder of web whole, so a copy of this skill may be there, and a chat in that repo would get that one",
+          folder: "workspaces/alpha/skills/ship",
+        },
+      ],
+    };
+    answering({ ...studio, harnesses: [studio.harnesses[0], opencode] });
+    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
+
+    const section = await screen.findByTestId("skill-studio-opencode");
+    expect(
+      within(section).getByText("opencode chats in a repo here start without 1 skill of this project's:"),
+    ).toBeInTheDocument();
+    const row = within(section).getByTestId("repo-left-out-opencode-ship");
+    expect(row).toHaveTextContent("workspace");
+    expect(row).toHaveTextContent(
+      "Left out: purlis could not read the skills folder of web whole",
+    );
+    expect(
+      within(screen.getByTestId("skill-studio-claude")).queryByText(/start without/),
+    ).toBeNull();
+  });
+
   it("renames the project's copy from the clash mark, through the studio's own Rename", async () => {
     const asked: unknown[] = [];
     mockIPC((cmd, args) => {
