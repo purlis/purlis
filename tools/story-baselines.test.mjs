@@ -23,6 +23,7 @@ import {
   picturedCells,
   problems,
   take,
+  unpicturedIn,
 } from "./story-baselines.mjs";
 import { cellsOf, pictureOf } from "../app/.storybook/matrix.ts";
 
@@ -433,4 +434,75 @@ test("take refuses baselines over the total cap, and writes nothing", () => {
   );
   assert.equal(existsSync(join(app, `${SHOT}-chromium-linux.png`)), false);
   assert.equal(take(drawn, app, { total: 2 * PNG.length }).taken.length, 2);
+});
+
+test("a baseline of a story that takes no picture is obsolete, naming its story", () => {
+  const app = tree({
+    "src/settings/Choice.stories.tsx": "",
+    [`${SHOT}-chromium-linux.png`]: PNG,
+    [`${SHOT}-webkit-linux.png`]: PNG,
+  });
+  const off = unpicturedIn([
+    {
+      unpictured: [
+        {
+          file: "src/settings/Choice.stories.tsx",
+          id: "settings-choice--radios",
+        },
+      ],
+    },
+  ]);
+  const found = problems(app, INDEX, CELLS, off);
+  assert.equal(found.length, 2);
+  for (const line of found)
+    assert.match(
+      line,
+      /settings-choice-radios_purlis_dark .*screenshot: false.*obsolete/,
+    );
+  assert.deepEqual(problems(app, INDEX, CELLS, []), []);
+});
+
+test("a story that takes no picture in one file leaves a story of that id in another alone", () => {
+  const app = tree({
+    "src/settings/Choice.stories.tsx": "",
+    [`${SHOT}-webkit-linux.png`]: PNG,
+  });
+  const off = [
+    { file: "src/other/Choice.stories.tsx", id: "settings-choice--radios" },
+  ];
+  assert.deepEqual(problems(app, INDEX, CELLS, off), []);
+});
+
+test("gather leaves out the baselines of a story that takes no picture", () => {
+  const kept =
+    "src/settings/__screenshots__/Choice.stories.tsx/settings-choice-checks_purlis_dark-webkit-linux.png";
+  const index = indexOf([
+    ["settings-choice--radios", "src/settings/Choice.stories.tsx"],
+    ["settings-choice--checks", "src/settings/Choice.stories.tsx"],
+  ]);
+  const app = tree({
+    "src/settings/Choice.stories.tsx": "",
+    [`${SHOT}-webkit-linux.png`]: PNG,
+    [kept]: PNG,
+  });
+  const out = mkdtempSync(join(tmpdir(), "story-baselines-out-"));
+  const off = [
+    {
+      file: "./src/settings/Choice.stories.tsx",
+      id: "settings-choice--radios",
+    },
+  ];
+  assert.deepEqual(gather(app, index, out, CELLS, off), [kept]);
+  assert.equal(existsSync(join(out, `${SHOT}-webkit-linux.png`)), false);
+});
+
+test("the stories that take no picture are read from each browser's report", () => {
+  assert.deepEqual(
+    unpicturedIn([
+      { unpictured: [{ file: "src/a/A.stories.tsx", id: "a--one" }] },
+      { unpictured: [] },
+    ]),
+    [{ file: "src/a/A.stories.tsx", id: "a--one" }],
+  );
+  assert.throws(() => unpicturedIn([{ failures: [] }]), /not a stories report/);
 });
