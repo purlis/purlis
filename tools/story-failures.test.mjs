@@ -220,8 +220,9 @@ function moduleOf({ tests = [], errors = [], suites = [] }) {
     errors: () => errors,
     children: {
       *allTests(state) {
-        assert.equal(state, "failed");
-        yield* tests;
+        for (const one of tests)
+          if (state === undefined || (one.state ?? "failed") === state)
+            yield { meta: () => ({}), ...one };
       },
       *allSuites() {
         yield* suites.map((suiteErrors) => ({ errors: () => suiteErrors }));
@@ -263,6 +264,7 @@ test("the reporter keeps each failed story's message apart from its stack", () =
       },
     ],
     errors: [{ message: "outside", stack: "s" }],
+    unpictured: [],
   });
   assert.deepEqual(annotations(report, "webkit"), [
     `::error title=Probe Steps in webkit::src/Probe.stories.tsx: keyboard: ${WHY.keyboard}`,
@@ -341,5 +343,48 @@ test("a failed story is named with the matrix cell it failed in", () => {
   const report = JSON.parse(readFileSync(to, "utf8"));
   assert.deepEqual(annotations(report, "webkit"), [
     "::error title=Probe Steps in webkit%2C purlis_light::src/Probe.stories.tsx: renders: the probe would not draw",
+  ]);
+});
+
+test("the reporter names each story that takes no picture, once", () => {
+  const to = join(
+    mkdtempSync(join(tmpdir(), "story-failures-")),
+    "report.json",
+  );
+  const off = (state) => ({
+    state,
+    fullName: "Probe > Moving",
+    meta: () => ({ screenshot: { story: "probe--moving", taken: false } }),
+    result: () => ({ errors: [] }),
+  });
+  const pictured = {
+    state: "passed",
+    fullName: "Probe > Still",
+    meta: () => ({ screenshot: { story: "probe--still", taken: "frame" } }),
+    result: () => ({ errors: [] }),
+  };
+  reporting(to, (reporter) =>
+    reporter.onTestRunEnd(
+      [
+        moduleOf({ tests: [off("passed"), pictured] }),
+        moduleOf({ tests: [off("passed")] }),
+        moduleOf({
+          tests: [
+            {
+              ...off("failed"),
+              meta: () => ({
+                screenshot: { story: "probe--other", taken: false },
+              }),
+            },
+          ],
+        }),
+      ],
+      [],
+      "failed",
+    ),
+  );
+  assert.deepEqual(JSON.parse(readFileSync(to, "utf8")).unpictured, [
+    { file: "src/Probe.stories.tsx", id: "probe--moving" },
+    { file: "src/Probe.stories.tsx", id: "probe--other" },
   ]);
 });
