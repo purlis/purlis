@@ -13,7 +13,7 @@
 use std::path::Path;
 
 use purlis_skills::review as summary;
-use purlis_skills::tree::{self, LeftOut};
+use purlis_skills::tree::LeftOut;
 use serde::{Deserialize, Serialize};
 
 use super::fetch::{Fetched, Found, NotASkill, SourceFile, fetch};
@@ -248,43 +248,53 @@ pub(super) fn review_of(
     }
 }
 
+/// **The review of `names` from `source`**, and every skill they refer to that the source holds
+/// and `have` does not, each right after the one that brought it, so one that was also named is
+/// still marked as brought along and an install's second review reads the same. One review for
+/// every source, the git one and each extension's (ADR 0101 §1): what is reviewed is what the
+/// source answered, and the review is purlis's.
+pub(super) fn reviews_of(
+    source: &dyn super::SkillSource,
+    names: &[String],
+    have: &dyn Fn(&str) -> bool,
+) -> Result<Vec<SkillReview>, String> {
+    let (found, _) = source.skills()?;
+    let held: Vec<String> = found.iter().map(|f| f.name.clone()).collect();
+    let mut queue: Vec<(String, Option<String>)> =
+        names.iter().map(|name| (name.clone(), None)).collect();
+    let mut skills: Vec<SkillReview> = Vec::new();
+    while !queue.is_empty() {
+        let (name, by) = queue.remove(0);
+        if skills.iter().any(|s| s.name == name) {
+            continue;
+        }
+        let Some(one) = found.iter().find(|f| f.name == name) else {
+            return Err(format!("{} holds no skill named {name:?}", source.shown()));
+        };
+        let (files, left) = source.files(one)?;
+        let mut next: Vec<(String, Option<String>)> = referenced(&files)
+            .into_iter()
+            .filter(|other| *other != name && held.contains(other) && !have(other))
+            .map(|other| (other, Some(name.clone())))
+            .collect();
+        next.append(&mut queue);
+        queue = next;
+        skills.push(review_of(one, &files, left, by, &held));
+    }
+    Ok(skills)
+}
+
 impl Fetched {
-    /// **The review of `names`** from this commit, and every skill they refer to that the source
-    /// holds and `have` does not, each right after the one that brought it, so one that was also
-    /// named is still marked as brought along and an install's second review reads the same.
+    /// **The review of `names`** from this commit ([`reviews_of`]).
     pub(super) fn review_with(
         &self,
         names: &[String],
         have: &dyn Fn(&str) -> bool,
     ) -> Result<Review, String> {
-        let (found, _) = self.skills()?;
-        let held: Vec<String> = found.iter().map(|f| f.name.clone()).collect();
-        let mut queue: Vec<(String, Option<String>)> =
-            names.iter().map(|name| (name.clone(), None)).collect();
-        let mut skills: Vec<SkillReview> = Vec::new();
-        while !queue.is_empty() {
-            let (name, by) = queue.remove(0);
-            if skills.iter().any(|s| s.name == name) {
-                continue;
-            }
-            let Some(one) = found.iter().find(|f| f.name == name) else {
-                return Err(format!("{} holds no skill named {name:?}", self.source));
-            };
-            let files = self.files_of(&one.dir)?;
-            let mut next: Vec<(String, Option<String>)> = referenced(&files)
-                .into_iter()
-                .filter(|other| *other != name && held.contains(other) && !have(other))
-                .map(|other| (other, Some(name.clone())))
-                .collect();
-            next.append(&mut queue);
-            queue = next;
-            let left = tree::left_in(&self.left, &one.dir);
-            skills.push(review_of(one, &files, left, by, &held));
-        }
         Ok(Review {
             source: self.source.clone(),
             commit: self.commit.clone(),
-            skills,
+            skills: reviews_of(self, names, have)?,
         })
     }
 

@@ -307,7 +307,7 @@ fn a_payload_refusal_reaches_the_window_as_one_line_and_capped() {
         )
         .unwrap_err()
         .to_string();
-    assert!(said.contains("first\\x0aline\\u202ereversed"), "{said}");
+    assert!(said.contains("first⟦U+000A⟧line⟦U+202E⟧reversed"), "{said}");
     assert!(!said.contains('\n') && !said.contains('\u{202e}'), "{said}");
     assert!(
         said.chars().count() < 1_000,

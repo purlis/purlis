@@ -398,6 +398,29 @@ pub enum Block {
     /// Labelled facts, drawn as two columns: what a definition says, key by key. Answered,
     /// never declared — a declared panel is a list, and nothing has asked for more.
     Facts(Vec<Fact>),
+    /// **Rows of words under named columns**, drawn as a table. It arrived with the first
+    /// producer that wanted one, as each block here did: a skill's Runs panel, a studio panel
+    /// (ADR 0101 §6), whose rows are runs and whose columns are what each one did. Answered,
+    /// never declared.
+    Table(Table),
+}
+
+/// A table: its columns, its rows, and what it says when it has none.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Table {
+    /// What a screen reader names it by.
+    pub caption: String,
+    /// Each column's heading, in order.
+    pub columns: Vec<String>,
+    pub rows: Vec<TableRow>,
+    pub empty: Empty,
+}
+
+/// One row of a table: a key unique in it, and one cell per column.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TableRow {
+    pub key: String,
+    pub cells: Vec<String>,
 }
 
 /// Who contributed a panel.
@@ -475,7 +498,7 @@ pub fn declares(panel: &Panel) -> String {
         .iter()
         .map(|block| match block {
             Block::List { rows, .. } => rows.len(),
-            Block::Note { .. } | Block::Chart(_) | Block::Facts(_) => 0,
+            Block::Note { .. } | Block::Chart(_) | Block::Facts(_) | Block::Table(_) => 0,
         })
         .sum();
     format!(
@@ -757,13 +780,14 @@ fn mark_of(value: Option<&serde_json::Value>) -> Result<Mark, String> {
 /// and reverse what follows them — so a view titled `Stats\u{202E}` would draw the ` · <id>`
 /// charter puts after it backwards, and the surface would no longer say which extension it came
 /// from. It also holds the zero-width characters (U+200B–200F, U+2060, U+FEFF) that make two
-/// different strings look identical. The set is [`crate::tui::tables::INVISIBLE`], which CPython
-/// wrote for `charter/contain.py`, less its ordinary whitespace — a space or a tab in a row's
-/// text is content, and draws as what it is.
+/// different strings look identical. The set is purlis's one rule, [`purlis_unicode::invisible`],
+/// less its ordinary whitespace — a space or a tab in a row's text is content, and draws as
+/// what it is.
 pub(crate) fn undrawable(c: char) -> bool {
     c.is_control()
+        // Not redundant: both separators are whitespace, so the clause below lets them through.
         || matches!(c, '\u{2028}' | '\u{2029}')
-        || (crate::tui::in_table(c, &crate::tui::tables::INVISIBLE) && !c.is_whitespace())
+        || (purlis_unicode::invisible(c) && !c.is_whitespace())
 }
 
 /// A string charter will put on the screen: present, non-empty, bounded, and with nothing in it
@@ -853,6 +877,11 @@ const CHART_KEYS: [&str; 5] = ["kind", "title", "shape", "unit", "points"];
 const POINT_KEYS: [&str; 3] = ["label", "value", "note"];
 const FACTS_KEYS: [&str; 2] = ["kind", "facts"];
 const FACT_KEYS: [&str; 2] = ["label", "value"];
+const TABLE_KEYS: [&str; 5] = ["kind", "caption", "columns", "rows", "empty"];
+const TABLE_ROW_KEYS: [&str; 2] = ["key", "cells"];
+
+/// The most columns one table may have. Past this it is not a table anybody reads across.
+pub const MOST_COLUMNS: usize = 12;
 
 /// The blocks an extension's program answered, or why charter will not draw them.
 ///
@@ -915,9 +944,13 @@ fn block_of(raw: &serde_json::Value) -> Result<Block, String> {
             )?;
             Ok(Block::Facts(facts_of(object.get("facts"))?))
         }
+        "table" => {
+            only(object.keys().map(String::as_str), &TABLE_KEYS, "a table")?;
+            Ok(Block::Table(table_of(object)?))
+        }
         other => Err(format!(
-            "is a {other:?}, and purlis draws a list, a note, a chart or facts — a block says \
-             what it holds, and purlis decides what that looks like"
+            "is a {other:?}, and purlis draws a list, a note, a chart, facts or a table — a \
+             block says what it holds, and purlis decides what that looks like"
         )),
     }
 }
@@ -959,6 +992,75 @@ fn chart_of(object: &serde_json::Map<String, serde_json::Value>) -> Result<Chart
         shape,
         unit,
         points,
+    })
+}
+
+/// A table's caption, columns and rows, bounded, every word held to [`words`]'s rules, and each
+/// row as wide as the columns.
+fn table_of(object: &serde_json::Map<String, serde_json::Value>) -> Result<Table, String> {
+    let caption = words(object.get("caption"), MOST_TEXT, "caption")?.ok_or("has no caption")?;
+    let listed = object
+        .get("columns")
+        .and_then(serde_json::Value::as_array)
+        .ok_or("has no list of 'columns'")?;
+    if listed.is_empty() || listed.len() > MOST_COLUMNS {
+        return Err(format!(
+            "has {} columns, and a table purlis draws has 1 to {MOST_COLUMNS}",
+            listed.len()
+        ));
+    }
+    let mut columns = Vec::with_capacity(listed.len());
+    for raw in listed {
+        columns.push(words(Some(raw), MOST_LABEL, "column")?.ok_or("has an empty column")?);
+    }
+    let rows_listed = object
+        .get("rows")
+        .and_then(serde_json::Value::as_array)
+        .ok_or("has no list of 'rows'")?;
+    if rows_listed.len() > MOST_ROWS {
+        return Err(format!(
+            "has {} rows, and purlis holds at most {MOST_ROWS} in one table",
+            rows_listed.len()
+        ));
+    }
+    let mut rows: Vec<TableRow> = Vec::with_capacity(rows_listed.len());
+    for (at, raw) in rows_listed.iter().enumerate() {
+        let row = raw
+            .as_object()
+            .ok_or_else(|| format!("has a row at {at} that is not an object"))?;
+        only(
+            row.keys().map(String::as_str),
+            &TABLE_ROW_KEYS,
+            "a table's row",
+        )?;
+        let key = words(row.get("key"), MOST_LABEL, "key")?
+            .ok_or_else(|| format!("has a row at {at} with no key"))?;
+        if rows.iter().any(|it| it.key == key) {
+            return Err(format!("has two rows keyed {key:?}"));
+        }
+        let cells_listed = row
+            .get("cells")
+            .and_then(serde_json::Value::as_array)
+            .ok_or_else(|| format!("has a row at {at} with no list of 'cells'"))?;
+        if cells_listed.len() != columns.len() {
+            return Err(format!(
+                "has a row at {at} of {} cells, and the table has {} columns",
+                cells_listed.len(),
+                columns.len()
+            ));
+        }
+        let mut cells = Vec::with_capacity(cells_listed.len());
+        for cell in cells_listed {
+            // An empty cell is a cell: a run with no end recorded has no count to show.
+            cells.push(words(Some(cell), MOST_TEXT, "cell")?.unwrap_or_default());
+        }
+        rows.push(TableRow { key, cells });
+    }
+    Ok(Table {
+        caption,
+        columns,
+        rows,
+        empty: empty_of(object.get("empty"))?,
     })
 }
 

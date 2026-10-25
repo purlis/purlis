@@ -404,10 +404,11 @@ fn an_option_that_switches_the_session_s_permission_mode_is_never_offered() {
     }
 }
 
+/// SK-49: the hook asks purlis's one generated rule, so every format or default-ignorable
+/// character and every blank space keeps a command from being shown in full, and a joined
+/// emoji does not.
 #[test]
-fn every_format_or_ignorable_character_counts_as_drawn_otherwise() {
-    // From Unicode's own tables, not a hand list: Egyptian format controls, the interlinear
-    // annotation and noncharacter-adjacent specials, Arabic prepended marks, and the rest.
+fn every_format_ignorable_or_blank_character_keeps_a_command_from_being_shown_in_full() {
     for c in [
         '\u{13430}',
         '\u{1343F}',
@@ -427,11 +428,22 @@ fn every_format_or_ignorable_character_counts_as_drawn_otherwise() {
         '\u{E0041}',
         '\u{FE0F}',
         '\u{180E}',
+        '\u{2000}',
+        '\u{3000}',
+        '\u{00A0}',
     ] {
-        assert!(drawn_otherwise(c), "U+{:04X}", u32::from(c));
+        let line = format!("echo a{c}b");
+        assert!(
+            !shown_in_full(&ask(Source::ClaudeCode, &bash(&line))),
+            "U+{:04X}",
+            u32::from(c)
+        );
     }
-    for c in ['a', 'é', '中', ' ', '-', '\u{0301}'] {
-        assert!(!drawn_otherwise(c), "U+{:04X}", u32::from(c));
+    for line in ["echo a é 中 - e\u{0301}", "echo \u{1F468}\u{200D}\u{1F469}"] {
+        assert!(
+            shown_in_full(&ask(Source::ClaudeCode, &bash(line))),
+            "{line:?}"
+        );
     }
 }
 

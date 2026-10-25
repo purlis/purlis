@@ -260,13 +260,15 @@ fn one_line_of_terminal_text_marks_its_line_ends_and_tabs_too() {
     assert_eq!(escaped_line("日本語"), "日本語");
 }
 
+/// SK-49: the review asks the one generated table, so what the hand list missed is marked too:
+/// variation selectors, fillers, line separators, the Arabic number signs and blank spaces.
 #[test]
-fn variation_selectors_fillers_and_line_separators_are_invisible_too() {
+fn every_character_the_one_table_names_is_marked_in_a_review() {
     for c in [
         '\u{FE00}',
-        '\u{FE0F}',
         '\u{E0100}',
         '\u{E01EF}',
+        '\u{E01F0}',
         '\u{034F}',
         '\u{115F}',
         '\u{1160}',
@@ -274,9 +276,55 @@ fn variation_selectors_fillers_and_line_separators_are_invisible_too() {
         '\u{FFA0}',
         '\u{2028}',
         '\u{2029}',
+        '\u{0600}',
+        '\u{06DD}',
+        '\u{13430}',
+        '\u{2000}',
+        '\u{3000}',
     ] {
-        assert!(Invisible::of(c).is_some(), "U+{:04X}", u32::from(c));
+        let text = format!("a{c}b");
+        assert_eq!(escaped(&text), format!("a⟦U+{:04X}⟧b", u32::from(c)));
+        let summary = summarize(&[file("SKILL.md", false, &text)]);
+        assert_eq!(summary.unseen.len(), 1, "U+{:04X}", u32::from(c));
     }
-    assert_eq!(Invisible::of('a'), None);
-    assert_eq!(Invisible::of('\u{E01F0}'), None);
+    assert_eq!(escaped("a"), "a");
+}
+
+/// Each kind says truly what the character is: a filler or a wide space is blank, not
+/// zero-width, and an Arabic number sign is a format character.
+#[test]
+fn each_hidden_character_is_named_by_what_it_is() {
+    let kinds = |c: char| {
+        summarize(&[file("SKILL.md", false, &format!("a{c}b"))]).unseen[0]
+            .kinds
+            .clone()
+    };
+    assert_eq!(kinds('\u{E0041}'), [Invisible::Tag]);
+    assert_eq!(kinds('\u{200B}'), [Invisible::ZeroWidth]);
+    assert_eq!(kinds('\u{FE00}'), [Invisible::ZeroWidth]);
+    assert_eq!(kinds('\u{3164}'), [Invisible::Blank]);
+    assert_eq!(kinds('\u{2000}'), [Invisible::Blank]);
+    assert_eq!(kinds('\u{A0}'), [Invisible::Blank]);
+    assert_eq!(kinds('\u{202E}'), [Invisible::Bidi]);
+    assert_eq!(kinds('\u{200E}'), [Invisible::Bidi]);
+    assert_eq!(kinds('\u{0600}'), [Invisible::Format]);
+    assert_eq!(kinds('\u{1B}'), [Invisible::Format]);
+    assert_eq!(kinds('\u{2028}'), [Invisible::Format]);
+    assert_eq!(Invisible::Blank.to_string(), "a blank character");
+}
+
+/// D-1301: a joiner inside a script or an emoji is text, in a review as everywhere.
+#[test]
+fn a_joiner_inside_a_script_or_an_emoji_is_not_marked_in_a_review() {
+    let text = "\u{0645}\u{06CC}\u{200C}\u{062E}\u{0648}\n\u{0915}\u{094D}\u{200D}\u{0937}\n\
+                \u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}\n";
+    let summary = summarize(&[file("SKILL.md", false, text)]);
+    assert!(summary.unseen.is_empty(), "{:?}", summary.unseen);
+    assert_eq!(escaped(text), text);
+    assert_eq!(
+        summarize(&[file("SKILL.md", false, "a\u{200D}b\n")])
+            .unseen
+            .len(),
+        1
+    );
 }

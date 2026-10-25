@@ -2910,6 +2910,7 @@ fn commands() -> Builder<tauri::Wry> {
         // The Skill studio's catalogue row and a persona's scope key (#2768): named once for
         // the persona page's summary row and the window's catalogue.
         .constant("SKILL_STUDIO_IN", skillstudio::STUDIO_IN)
+        .constant("SKILL_RUNS_PANEL", skillstudio::RUNS_PANEL)
         .constant("PERSONA_SCOPE_KEY", skillstudio::PERSONA_SCOPE_KEY)
 }
 

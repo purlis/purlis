@@ -631,7 +631,10 @@ fn a_todo_store_charter_will_not_read_is_a_sentence_and_never_an_empty_list() {
         .iter()
         .find_map(|block| match block {
             PanelBlock::Note { text, tone } => Some((text.clone(), tone.clone())),
-            PanelBlock::List { .. } | PanelBlock::Chart { .. } | PanelBlock::Facts { .. } => None,
+            PanelBlock::List { .. }
+            | PanelBlock::Chart { .. }
+            | PanelBlock::Facts { .. }
+            | PanelBlock::Table { .. } => None,
         })
         .expect("the refusal is drawn");
     assert_eq!(told.1, "trouble");
@@ -674,7 +677,10 @@ fn list_of(panel: &PanelView) -> &[PanelRow] {
         .iter()
         .find_map(|block| match block {
             PanelBlock::List { rows, .. } => Some(rows.as_slice()),
-            PanelBlock::Note { .. } | PanelBlock::Chart { .. } | PanelBlock::Facts { .. } => None,
+            PanelBlock::Note { .. }
+            | PanelBlock::Chart { .. }
+            | PanelBlock::Facts { .. }
+            | PanelBlock::Table { .. } => None,
         })
         .expect("a list block")
 }

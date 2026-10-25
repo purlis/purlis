@@ -159,7 +159,7 @@ fn ask_within(source: Source, payload: &Value, left: Duration) -> Ask {
     ask.options.retain(|option| {
         option.scope != ChoiceScope::Always
             && !switches_the_mode(source, payload, option)
-            && !option.label.chars().any(drawn_otherwise)
+            && !purlis_unicode::hides(&option.label, purlis_unicode::Breaks::Marked)
             // Nor one whose words carry a vault value this process knows (#1047): it is not
             // shown, and a label with a mask in it does not say what it grants.
             && !crate::secrets::seen::holds(&option.label)
@@ -213,7 +213,7 @@ fn plain_shell_input(ask: &Ask, payload: &Value) -> bool {
 /// Whether `ask`'s summary says everything its action would run, exactly, and draws it as it
 /// is: the command line or the tool's whole input, with nothing collapsed, cut or masked, and
 /// no character a window draws as nothing or draws elsewhere (a control, a zero-width or
-/// format character, a bidirectional override). For an edit, its path, and only where its
+/// format character, a bidirectional override: purlis's one rule, [`purlis_unicode::hidden`]). For an edit, its path, and only where its
 /// whole change is shown beside it (#1146); never for an ask that says nothing.
 pub fn shown_in_full(ask: &Ask) -> bool {
     let whole = match &ask.action {
@@ -227,16 +227,7 @@ pub fn shown_in_full(ask: &Ask) -> bool {
             return false;
         }
     };
-    ask.summary.as_str() == whole && !whole.chars().any(drawn_otherwise)
-}
-
-/// Whether a window draws `c` as nothing, or moves what is around it: a control character, a
-/// format character (general category Cf, which holds the zero-width and bidirectional
-/// controls), or any other Default_Ignorable_Code_Point (variation selectors, fillers, tags).
-pub fn drawn_otherwise(c: char) -> bool {
-    use unicode_properties::{GeneralCategory, UnicodeGeneralCategory};
-
-    c.is_control() || c.general_category() == GeneralCategory::Format || ignorable_beyond_cf(c)
+    ask.summary.as_str() == whole && !purlis_unicode::hides(&whole, purlis_unicode::Breaks::Marked)
 }
 
 /// The most combining marks one character carries in ordinary text: as the window's own cap on
@@ -257,24 +248,6 @@ pub fn stacks_marks(text: &str) -> bool {
         run = if mark { run + 1 } else { 0 };
         run > MOST_MARKS
     })
-}
-
-/// Default_Ignorable_Code_Point beyond the Cf characters: Other_Default_Ignorable_Code_Point and
-/// the variation selectors, as Unicode's DerivedCoreProperties.txt derives the property.
-fn ignorable_beyond_cf(c: char) -> bool {
-    matches!(
-        c,
-        '\u{034F}'
-            | '\u{115F}'..='\u{1160}'
-            | '\u{17B4}'..='\u{17B5}'
-            | '\u{180B}'..='\u{180F}'
-            | '\u{2065}'
-            | '\u{3164}'
-            | '\u{FE00}'..='\u{FE0F}'
-            | '\u{FFA0}'
-            | '\u{FFF0}'..='\u{FFF8}'
-            | '\u{E0000}'..='\u{E0FFF}'
-    )
 }
 
 /// What the hook prints for the option `chosen` of `payload`'s ask: the harness's own

@@ -201,7 +201,7 @@ fn count_runs(plane: &Path, level: &Level, name: &str, history: &mut History) {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct Diff {
     /// What the version changed, as a unified diff, each character that draws as nothing shown
-    /// as `<U+XXXX>`.
+    /// as `⟦U+XXXX⟧`.
     pub text: String,
     /// Whether it was cut at [`MOST_DIFF`] bytes.
     pub cut: bool,
@@ -255,7 +255,7 @@ pub fn diff(plane: &Path, level: &Level, name: &str, commit: &str) -> Result<Dif
 }
 
 /// `raw` as it is shown: cut at [`MOST_DIFF`] bytes on a character's edge, each character that
-/// draws as nothing (a tab aside) as its code point, and each line holding one said.
+/// draws as nothing (a tab aside) as its mark, `⟦U+XXXX⟧`, and each line holding one said.
 fn shown_diff(raw: &str) -> Diff {
     let cut = raw.len() > MOST_DIFF;
     let mut end = raw.len().min(MOST_DIFF);
@@ -269,15 +269,9 @@ fn shown_diff(raw: &str) -> Diff {
             Some(body) => (body, "\n"),
             None => (line, ""),
         };
-        let mut first: Option<char> = None;
-        for c in body.chars() {
-            if c != '\t' && crate::shown::invisible(c) {
-                first.get_or_insert(c);
-                text.push_str(&format!("<U+{:04X}>", u32::from(c)));
-            } else {
-                text.push(c);
-            }
-        }
+        // purlis's one rule and its one mark (SK-49): a tab is the diff's own layout.
+        let first = purlis_unicode::hidden(body, purlis_unicode::Breaks::Kept).next();
+        text.push_str(&purlis_unicode::marked(body, purlis_unicode::Breaks::Kept));
         text.push_str(newline);
         if let Some(c) = first {
             unseen.push(format!(

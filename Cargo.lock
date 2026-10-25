@@ -5614,6 +5614,7 @@ dependencies = [
  "purlis-host",
  "purlis-linux-sandbox",
  "purlis-session-protocol",
+ "purlis-unicode",
  "rfd",
  "rustix",
  "serde",
@@ -5733,6 +5734,7 @@ dependencies = [
  "purlis-session-protocol",
  "purlis-skills",
  "purlis-terminal",
+ "purlis-unicode",
  "quick-xml",
  "regex",
  "ring",
@@ -5840,6 +5842,7 @@ dependencies = [
 name = "purlis-skills"
 version = "0.4.2"
 dependencies = [
+ "purlis-unicode",
  "rustix",
  "serde",
  "tempfile",
@@ -5867,6 +5870,10 @@ dependencies = [
  "thiserror 2.0.21",
  "unicode-width",
 ]
+
+[[package]]
+name = "purlis-unicode"
+version = "0.4.2"
 
 [[package]]
 name = "quick-error"
@@ -7247,6 +7254,17 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "studio-probe"
+version = "0.4.2"
+dependencies = [
+ "purlis-core",
+ "purlis-linux-sandbox",
+ "purlis-skills",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]

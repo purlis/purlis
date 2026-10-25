@@ -289,6 +289,20 @@ fn a_chat_that_rode_and_was_answered_before_the_window_closed_is_not_sent() {
     assert!(heard(&mut rules, &a, &first, start + TOGETHER * 2).is_empty());
 }
 
+/// SK-49: every bidi control is dropped from a name, as the generated table names them.
+#[test]
+fn every_bidi_control_is_dropped_from_a_name() {
+    for c in [
+        '\u{200E}', '\u{200F}', '\u{061C}', '\u{202A}', '\u{202E}', '\u{2066}', '\u{2069}',
+    ] {
+        assert_eq!(plain(&format!("ab{c}cd")), "abcd", "U+{:04X}", u32::from(c));
+    }
+    assert_eq!(
+        plain("\u{1F468}\u{200D}\u{1F469}"),
+        "\u{1F468}\u{200D}\u{1F469}"
+    );
+}
+
 #[test]
 fn a_chat_s_name_is_plain_text_and_capped() {
     let long = format!("evil\u{202e}name\n{}", "x".repeat(200));

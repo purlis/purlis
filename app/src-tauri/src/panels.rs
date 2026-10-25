@@ -168,6 +168,21 @@ pub(crate) enum PanelBlock {
     Facts {
         facts: Vec<PanelFact>,
     },
+    /// Rows of words under named columns, drawn as a table (`panel::Block::Table`): a skill's
+    /// Runs panel, and a studio panel's (ADR 0101 §6).
+    Table {
+        caption: String,
+        columns: Vec<String>,
+        rows: Vec<PanelTableRow>,
+        empty: PanelEmpty,
+    },
+}
+
+/// One row of a table: its key, and a cell per column.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub(crate) struct PanelTableRow {
+    pub key: String,
+    pub cells: Vec<String>,
 }
 
 /// One labelled fact.
@@ -263,6 +278,23 @@ impl From<&panel::Block> for PanelBlock {
                         value: fact.value.clone(),
                     })
                     .collect(),
+            },
+            panel::Block::Table(table) => Self::Table {
+                caption: table.caption.clone(),
+                columns: table.columns.clone(),
+                rows: table
+                    .rows
+                    .iter()
+                    .map(|row| PanelTableRow {
+                        key: row.key.clone(),
+                        cells: row.cells.clone(),
+                    })
+                    .collect(),
+                empty: PanelEmpty {
+                    headline: table.empty.headline.clone(),
+                    body: table.empty.body.clone(),
+                    offer: table.empty.offer.clone(),
+                },
             },
         }
     }

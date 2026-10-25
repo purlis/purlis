@@ -346,10 +346,11 @@ export function BriefPanel({
               {said.inert !== null && (
                 <p className="honest">
                   This brief holds characters that draw as nothing or change how the text around
-                  them reads. Each is written out here as its code, such as <code>{"\\u202e"}</code>
-                  . A backslash the brief wrote is doubled. <strong>Copy as shown</strong> copies
-                  what you read here. <strong>Copy as sent</strong> copies the brief exactly as it
-                  was sent, with those characters in it.
+                  them reads. Each is written out here as its code, such as <code>⟦U+202E⟧</code>,
+                  and a <code>⟦</code> the brief wrote itself as <code>⟦U+27E6⟧</code>, so no mark
+                  here is the brief's own. <strong>Copy as shown</strong> copies what you read here.{" "}
+                  <strong>Copy as sent</strong> copies the brief exactly as it was sent, with those
+                  characters in it.
                 </p>
               )}
               <p className="brief-whose">

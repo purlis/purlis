@@ -1859,10 +1859,8 @@ fn task_shown(held: &Pending) -> Option<(String, bool)> {
     let name = held.task.name.as_deref()?;
     let cut = name.chars().count() > MOST_TASK_NAME_CHARS;
     let kept: String = name.chars().take(MOST_TASK_NAME_CHARS).collect();
-    // One line: a name's breaks are shown as what they are, never as a second line.
-    let shown = dispatchgrant::inert(&kept)
-        .replace('\n', "\\n")
-        .replace('\t', " ");
+    // One line: a name's breaks are marked as what they are, never a second line (SK-49).
+    let shown = purlis_core::shown::one_line(&kept, purlis_core::shown::NO_CLIP);
     Some((shown, cut))
 }
 

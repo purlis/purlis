@@ -75,9 +75,63 @@ pub fn description_problem(description: &str) -> Option<String> {
     None
 }
 
+/// **Which template a new skill starts from**: one of purlis's own, or one an extension offers,
+/// by the extension's id and the template's.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum TemplateId {
+    BuiltIn(Template),
+    Extension { extension: String, template: String },
+}
+
+/// One template a new skill can start from, as the studio offers it: the template, what a person
+/// is shown, and what it gives in one line.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Offer {
+    pub id: TemplateId,
+    pub label: String,
+    pub about: String,
+}
+
+/// **What a new skill starts from** (the SkillTemplate capability, ADR 0101): the templates it
+/// offers, and the text of a new skill made from one of them. purlis's own ([`BuiltInTemplates`])
+/// and each extension's that declares `skill-template` answer through this same interface.
+pub trait SkillTemplate {
+    /// Every template it offers, in the order the studio offers them.
+    fn offered(&self) -> Vec<Offer>;
+    /// The `SKILL.md` of a new skill named `name`, described by `description`, from the template
+    /// `id`, or why it has none.
+    fn text(&self, id: &TemplateId, name: &str, description: &str) -> Result<String, String>;
+}
+
+/// **purlis's own templates** ([`Template`]), the SkillTemplate capability's first user.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct BuiltInTemplates;
+
+impl SkillTemplate for BuiltInTemplates {
+    fn offered(&self) -> Vec<Offer> {
+        Template::ALL
+            .iter()
+            .map(|template| Offer {
+                id: TemplateId::BuiltIn(*template),
+                label: template.label().to_owned(),
+                about: template.about().to_owned(),
+            })
+            .collect()
+    }
+
+    fn text(&self, id: &TemplateId, name: &str, description: &str) -> Result<String, String> {
+        match id {
+            TemplateId::BuiltIn(template) => Ok(template.text(name, description)),
+            TemplateId::Extension { extension, .. } => Err(format!(
+                "purlis has no template of the extension '{extension}' here"
+            )),
+        }
+    }
+}
+
 /// What a new skill starts from (decision 13: blank from a template). The built-in templates are
-/// the SkillTemplate capability's first user.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// the SkillTemplate capability's first user ([`BuiltInTemplates`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Template {
     /// The frontmatter and one heading.
     Blank,
