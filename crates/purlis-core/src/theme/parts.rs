@@ -683,7 +683,7 @@ pub const MANIFEST: &[Family] = &[
         sized_apart: &[
             (
                 "[data-scope=\"button\"][data-part=\"root\"][data-size=\"sm\"]",
-                "max(var(--size-chrome), var(--space-7))",
+                "max(24px, var(--size-chrome), var(--space-7))",
             ),
             (
                 "[data-scope=\"button\"][data-part=\"root\"][data-size=\"lg\"]",
