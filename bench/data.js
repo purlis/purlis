@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792946707001,
+  "lastUpdate": 1792953296522,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -24696,6 +24696,48 @@ window.BENCHMARK_DATA = {
             "value": 104.809003,
             "unit": "ms",
             "extra": "median of 5 runs: 104.066, 104.658, 104.809, 105.199, 106.584 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "69c54ebae8122bd1cefd945bcf31014828154057",
+          "message": "Hand-drawn buttons onto the button family, the old field wrapper refused (#3129) (#3208)\n\n* Hand-drawn buttons onto the button family; the old field wrapper refused (#3129)\n\nBrief, the two ways to end a task, the harness chip and the strip's fresh\nmark are the button family's now, so Purlis's borderless rule reaches them.\nThe rules that drew a button's edge from a view's stylesheet (.bar button,\n.welcome button, .pane-brief, .pane-harness, .task-end, .ui-setting-reset)\nare gone or narrowed to the welcome's cards. The unused Gear is deleted.\n\nThe button lint no longer lets those classes stand as another family's,\nthe field lint refuses ui-field and ui-field-*, and a guard holds the view\nstylesheets to drawing no button's edge.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* PaneLine story: the pane is given a size, as a layout gives it (#3129)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Task ends: the group is as tall as its family buttons; e2e stand-ins drawn as the family (#3129)\n\nThe ways to end a task are small buttons of the family, a step taller than\nthe chrome height, so their group no longer holds them to it or clips their\nfocus ring. The pane-crumbs scenario draws Brief, the ways and the second\nstep's answers with the family's attributes, as the app does.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* PaneLine story: the pane as roomy as a real one (#3129)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* PaneLine story: every way on the line is a whole target (#3129)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Brief stands a step clear of its neighbours on the line (WCAG 2.5.8) (#3129)\n\nA small icon button is under 24px in the compact density, and the line's\ngap is a hairline, so its 24px circle met the ways beside it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* Harness chip keeps the header's tier; fresh mark's tab order and description held (#3129)\n\nThe harness's name is muted, primary on the split's pane with the keyboard\nand under the pointer or the keyboard, as the #2914 tier rule says. Interim\nrules in paneFrame.css out-rank the ghost variant by specificity until the\nquiet ghost variant (#3214) exists. A unit test holds the fresh mark out of\nthe Tab order and its tab described by it, through its id. The eslint\noverride names who removes it; the line's height comment says what holds.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-25T22:33:28+04:00",
+          "tree_id": "b9e40578e5d991097cf840ab1c290911d450e5f5",
+          "url": "https://github.com/purlis/purlis/commit/69c54ebae8122bd1cefd945bcf31014828154057"
+        },
+        "date": 1792953293676,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.533838,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.496, 0.497, 0.534, 0.534, 0.537 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.836688,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.494, 16.654, 16.837, 16.981, 17.176 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.19759350000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.532, 103.642, 104.198, 104.925, 105.695 ms"
           }
         ]
       }
