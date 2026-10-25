@@ -1313,10 +1313,13 @@ fn the_schema_completes_every_part_key_and_no_size_inside_a_state() {
     }
 }
 
-/// **The digest of the manifest each release shipped** ([`parts::manifest_as_of`] that version):
-/// what a released theme was written against never changes. Only a release adds a line here, and
-/// the release step writes it (`node tools/theme-parts-release.mjs`); a pull request that adds to
-/// the manifest gives what it adds `since: NEXT` and leaves this alone.
+/// **The digest of the contract each release shipped**: [`contract`] of
+/// [`parts::manifest_as_of`] that version, so what a released theme was written against never
+/// changes, while its prose may be reworded. Only a release adds a line here, and the release step
+/// writes it (`node tools/theme-parts-release.mjs`); a pull request that adds to the manifest
+/// gives what it adds `since: NEXT` and leaves this alone. Versions 1 to 11 were pinned over the
+/// whole text, descriptions and all, before the contract was the thing pinned; 12 is pinned again
+/// over its contract (D-manifest-6), and only the last release's line is checked.
 const MANIFEST_DIGESTS: &[(u32, &str)] = &[
     (
         1,
@@ -1364,14 +1367,72 @@ const MANIFEST_DIGESTS: &[(u32, &str)] = &[
     ),
     (
         12,
-        "e9b9b86c1d9ccd89f6a48dfa2b4e5d02873f7b120c69f129a37de052cb3aca37",
+        "8a4b6d0a12377b03f8da2ff51f063c3066a96f6c2083c61fd9247b5359a845f6",
     ),
 ];
 
+/// The prose of the manifest, which a theme is never written against: every `description`, and
+/// the sentences that say the grammar's rest and why a state keeps a size.
+const PROSE: [&str; 3] = ["description", "rest", "no_size_in_a_state"];
+
+/// **The manifest's contract**: what a theme is written against (the families, parts, variants,
+/// states and properties, their bounds, attributes and `since`), with its prose left out, so a
+/// reworded description changes no pin and any other change to a released item does.
+fn contract(manifest: &Value) -> Value {
+    match manifest {
+        Value::Object(map) => Value::Object(
+            map.iter()
+                .filter(|(key, _)| !PROSE.contains(&key.as_str()))
+                .map(|(key, value)| (key.clone(), contract(value)))
+                .collect(),
+        ),
+        Value::Array(items) => Value::Array(items.iter().map(contract).collect()),
+        other => other.clone(),
+    }
+}
+
 fn digest_of(manifest: &Value) -> String {
     use sha2::{Digest, Sha256};
-    let digest = Sha256::digest(manifest.to_string().as_bytes());
+    let digest = Sha256::digest(contract(manifest).to_string().as_bytes());
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+#[test]
+fn a_reworded_description_keeps_the_pin_and_a_changed_bound_breaks_it() {
+    let released = parts::manifest_as_of(parts::VERSION);
+    let pinned = digest_of(&released);
+
+    let mut reworded = released.clone();
+    reworded["families"][0]["description"] = json!("The same button, said another way.");
+    reworded["families"][0]["parts"][0]["description"] = json!("Its root, reworded.");
+    reworded["properties"][0]["description"] = json!("A fill, reworded.");
+    reworded["states"][0]["description"] = json!("Hovered, reworded.");
+    reworded["no_size_in_a_state"] = json!("Reworded.");
+    assert_ne!(reworded, released);
+    assert_eq!(digest_of(&reworded), pinned);
+
+    let corner = released["properties"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|one| one["name"] == "corner-radius")
+        .expect("corner-radius");
+    let mut bound = released.clone();
+    bound["properties"][corner]["bounds"]["or"] = json!([]);
+    assert_ne!(digest_of(&bound), pinned, "a bound is the contract");
+
+    for (path, value) in [
+        ("/families/0/since", json!(99)),
+        ("/families/0/parts/0/name", json!("renamed")),
+        ("/families/0/variants/0/consent", json!(true)),
+        ("/properties/0/in_state", json!(false)),
+        ("/states/0/attribute", json!("[data-other]")),
+        ("/grammar", json!("<family>.<property>")),
+    ] {
+        let mut changed = released.clone();
+        *changed.pointer_mut(path).expect(path) = value;
+        assert_ne!(digest_of(&changed), pinned, "{path} is the contract");
+    }
 }
 
 /// The pin the release step writes: `PURLIS_THEME_PARTS_PIN=1` adds the released version's digest

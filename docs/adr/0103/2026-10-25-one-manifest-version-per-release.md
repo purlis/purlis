@@ -12,7 +12,11 @@ and merge after the one before it.
 - **Only what a release shipped is pinned.** The digest test holds the manifest as of
   `parts::VERSION` (`parts::manifest_as_of`, which leaves out everything since a later version)
   to that version's digest, so an unreleased addition changes no released theme's manifest, and
-  a change to what a release shipped still fails. Unreleased additions are checked for form: no
+  a change to what a release shipped still fails. **The digest is of the contract, not the
+  prose**: every `description`, and the `rest` and `no_size_in_a_state` sentences, are left out,
+  so a reworded description merges freely, while a family, part, variant, state or property, a
+  bound, an attribute or a `since` of a released item cannot change. Version 12 is pinned again
+  over its contract. Unreleased additions are checked for form: no
   `since` past `NEXT`, and none before the family that holds it.
 - **The release step gives the release its version**: `node tools/theme-parts-release.mjs` in
   release prep (`docs/updating.md`), beside the changelog fold, turns every `NEXT` written in
