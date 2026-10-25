@@ -183,6 +183,30 @@ fn a_unicode_line_separator_never_starts_a_line_in_a_label() {
 }
 
 #[test]
+fn a_persian_label_keeps_its_non_joiner_and_a_joiner_between_latin_letters_is_dropped() {
+    // #3220: purlis's one rule (D-1301) reads a joiner doing its job as text.
+    let persian = "\u{645}\u{6CC}\u{200C}\u{62E}\u{648}\u{627}\u{647}\u{645}";
+    assert_eq!(plain(persian, MOST_LABEL_BYTES, false), persian);
+    let family = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}";
+    assert_eq!(plain(family, MOST_LABEL_BYTES, false), family);
+    assert_eq!(plain("a\u{200D}b\u{200C}c", MOST_LABEL_BYTES, false), "abc");
+    assert_eq!(plain("\u{200C}\u{645}", MOST_LABEL_BYTES, true), "\u{645}");
+}
+
+#[test]
+fn a_label_cut_after_a_joiner_drops_the_joiner_it_left_before_the_ellipsis() {
+    // The cut keeps `most - 3` bytes: the padding, the man and the ZWJ, but not the woman.
+    let padding = "a".repeat(MOST_LABEL_BYTES - '…'.len_utf8() - 7);
+    let label = plain(
+        &format!("{padding}\u{1F468}\u{200D}\u{1F469}"),
+        MOST_LABEL_BYTES,
+        false,
+    );
+    assert_eq!(label, format!("{padding}\u{1F468}…"));
+    assert!(label.len() <= MOST_LABEL_BYTES);
+}
+
+#[test]
 fn an_elicitation_is_raised_as_an_ask_only_the_window_answers_with_no_deadline() {
     let ask = token_form().ask("s-1");
     assert!(ask.elicits_secret);
