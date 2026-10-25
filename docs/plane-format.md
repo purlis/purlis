@@ -1357,7 +1357,12 @@ outside the project and removes it when the flow ends, so it adds none of them (
 - **Git:** committed (nothing ignores it).
 - **Encoding details:** a theme folder is a folder, never a bare `theme.json`: a theme's fonts,
   icons and licence live beside its `theme.json`, so each theme has a folder of its own. Decided
-  by ADR 0098, built by #2324: a theme folder needs no approval.
+  by ADR 0098, built by #2324: a theme folder needs no approval. Format 2's vocabulary only
+  grows: the Figma pass added the colour tokens `border.control`, `accent.wash`, `accent.text`,
+  `accent.fill`, `accent.fill-hover`, `accent.fill-edge` and `accent.fill-text`, and the
+  geometry token `radius.control` (operator ruling 2026-10-25, #3177, #3113). A theme folder
+  written before them draws as it did: each follows the token that drew its part before
+  (`crates/purlis-core/docs/themes.md`, "Tokens added after themes existed").
 
 ### `skills/` — the project's skills
 

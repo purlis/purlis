@@ -201,9 +201,9 @@ describe("one surface", () => {
       // The footer's row wraps a long answer's words inside the dialog's width, and keeps every
       // answer at least the control's height.
       expect(drawnWith(button, "min-block-size")).toBe("var(--size-control)");
-      expect(drawnWith(button, "border-radius")).toBe("var(--radius-md)");
+      expect(drawnWith(button, "border-radius")).toBe("var(--radius-control)");
     }
-    expect(drawnWith(rename, "background")).toBe("var(--accent-surface)");
+    expect(drawnWith(rename, "background")).toBe("var(--accent-fill)");
     expect(drawnWith(cancel, "background")).toBe("var(--control-base)");
   });
 

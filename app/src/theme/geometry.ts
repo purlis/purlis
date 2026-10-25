@@ -57,7 +57,14 @@ export const GEOMETRY = {
    *  (`ui-text-code`). The terminal's family is xterm's, not a property. */
   family: ["--font-ui", "--font-mono"],
   /** Corners: 3px (checks, chips), 4px (controls), 6px (every overlay), and 8px. */
-  radius: ["--radius-sm", "--radius-md", "--radius-lg", "--radius-xl", "--radius-full"],
+  radius: [
+    "--radius-sm",
+    "--radius-md",
+    "--radius-control",
+    "--radius-lg",
+    "--radius-xl",
+    "--radius-full",
+  ],
   /** One height for every control (28px) and one for every strip and pane header (21px). */
   size: ["--size-control", "--size-chrome"],
   /** The window's geometry (#2805, #2913): the gap between its regions, a region panel's

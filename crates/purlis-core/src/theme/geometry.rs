@@ -192,6 +192,16 @@ pub const STEPS: &[Step] = &[
     // Corners.
     step("radius.sm", "--radius-sm", Px, (0.0, 8.0), 3.0, 3.0),
     step("radius.md", "--radius-md", Px, (0.0, 10.0), 4.0, 4.0),
+    // An md control's corner (#3113, #3177): a button's, a field's, a select's, a list's row
+    // and a title-bar chip. Purlis Classic's is its `radius.md`; Purlis draws 8 against its 7.
+    step(
+        "radius.control",
+        "--radius-control",
+        Px,
+        (0.0, 14.0),
+        4.0,
+        4.0,
+    ),
     step("radius.lg", "--radius-lg", Px, (0.0, 14.0), 6.0, 6.0),
     step("radius.xl", "--radius-xl", Px, (0.0, 18.0), 8.0, 8.0),
     step(

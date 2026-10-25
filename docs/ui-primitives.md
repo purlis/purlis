@@ -1086,7 +1086,7 @@ its role and writes no `font-size`, `font-weight` or `color` for it.
 | Body      | `ui-text-body`      | what the surface is about: a row's name, an ask's words | 13px                | regular (400) | `text.primary`   |
 | Secondary | `ui-text-secondary` | where, who, a help line under a field                   | 12px                | regular (400) | `text.secondary` |
 | Meta      | `ui-text-meta`      | age, kind, counts, shortcuts: read last                 | 11px                | regular (400) | `text.quiet`     |
-| Label     | `ui-text-label`     | a section label over a group; capitals, spaced `0.06em` | 11px                | strong (600)  | `text.secondary` |
+| Label     | `ui-text-label`     | a section label over a group; capitals, spaced `0.05em` | 11px                | strong (600)  | `text.secondary` |
 | Code      | `ui-text-code`      | a command, a path, a host                               | the role it sits in | regular (400) | inherited        |
 
 The px are at the default 14px text; each size is a core token and scales with the text-size

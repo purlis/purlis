@@ -100,8 +100,8 @@
   margin: 0;
   padding: 0;
   border: 0 solid transparent;
-  /* 9px in Purlis (R117: radius.xl 12 less radius.sm 3), from the core steps alone. */
-  border-radius: calc(var(--radius-xl) - var(--radius-sm));
+  /* The control corner (#3177): 8 in Purlis, on its scale (R117 drew 9). */
+  border-radius: var(--radius-control);
   background-color: transparent;
   color: var(--text-muted);
   font: inherit;
@@ -119,10 +119,11 @@
   color: var(--text-primary);
 }
 
-/* Its view open: the accent's wash and the accent's words, whatever the pointer does. */
+/* Its view open: the accent's wash and the accent's words (the record's .14 lavender and its
+   lighter words, #3177), whatever the pointer does. */
 [data-scope="activity"][data-part="item"][data-selected] {
-  background-color: var(--accent-surface);
-  color: var(--accent-base);
+  background-color: var(--accent-wash);
+  color: var(--accent-text);
 }
 
 [data-scope="activity"][data-part="item"][data-focus-visible] {

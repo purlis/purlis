@@ -212,7 +212,7 @@ describe("the Chats list's words wear text roles (#1920)", () => {
 
     wears(title, "label", "the title");
     expect(drawnWith(title as Element, "text-transform")).toBe("uppercase");
-    expect(drawnWith(title as Element, "letter-spacing")).toBe("0.06em");
+    expect(drawnWith(title as Element, "letter-spacing")).toBe("0.05em");
   });
 
   it("draws a chat's name as a body, at the regular weight on every row", () => {
@@ -281,7 +281,7 @@ describe("the Chats list's words wear text roles (#1920)", () => {
     for (const group of groups) {
       wears(group, "label", `${group.textContent}'s heading`);
       expect(drawnWith(group, "text-transform")).toBe("uppercase");
-      expect(drawnWith(group, "letter-spacing")).toBe("0.06em");
+      expect(drawnWith(group, "letter-spacing")).toBe("0.05em");
     }
   });
 
