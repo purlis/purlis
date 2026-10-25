@@ -93,7 +93,8 @@ describe("the core geometry", () => {
         .map((n) => px(values.get(n) ?? "missing"));
     expect(scale("space")).toEqual([0, 2, 4, 6, 8, 12, 16, 24, 32]);
     expect(scale("type")).toEqual([10, 11, 12, 13, 14, 16, 20]);
-    expect(scale("radius")).toEqual([3, 4, 6, 8]);
+    // `radius.control`, an md control's corner, is Classic's `radius.md` (#3113).
+    expect(scale("radius")).toEqual([3, 4, 4, 6, 8]);
     expect(scale("size")).toEqual([28, 21]);
     expect(scale("focus")).toEqual([2, 2, -2]);
   });

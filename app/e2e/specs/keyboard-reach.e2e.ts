@@ -75,7 +75,6 @@ describe("the window's keyboard reach", () => {
     // tab bar (DS-6, #1836), so it comes after the left column and before the right one.
     expect(strips.map((one) => one.strip)).toEqual([
       "Projects",
-      "Workspaces",
       "Navigation",
       "Panel, left half",
       "Tabs",
@@ -92,7 +91,6 @@ describe("the window's keyboard reach", () => {
       // its tabs first, then the bar's right-hand end.
       const regions: [string, string][] = [
         ["title bar", ".title-bar"],
-        ["workspaces", '[data-strip="Workspaces"]'],
         ["chats", '[data-strip="Tabs"]'],
         // The left side panel (#1673): its tabs across its top (#2917, N36), then its open view;
         // its other views are hidden, and not stops.
@@ -132,7 +130,7 @@ describe("the window's keyboard reach", () => {
         })
         .map((one) => one.name);
       // And inside the focused pane, its own controls before its terminal: its row of Notices
-      // when it has one (#1647), then everything its two top corners draw, left then right —
+      // when it has one (#1647), then everything its header draws, left then right (#3142) —
       // the harness it runs (HP-19) at the left, split and end at the right — and the terminal
       // last.
       const frame = document.querySelector(".pane-frame:has(.pane.focused)");
@@ -141,16 +139,15 @@ describe("the window's keyboard reach", () => {
       const controlsFirst =
         terminal > 0 &&
         terminal === inFrame.length - 1 &&
-        inFrame
-          .slice(0, terminal)
-          .every((el) => el.closest(".pane-corner, .pane-notice-row") !== null) &&
+        inFrame.slice(0, terminal).every((el) => el.closest(".pane-corner, .pane-top") !== null) &&
         inFrame.some((el) => el.closest(".pane-doing") !== null);
       return { tabbed, laidOut, controlsFirst };
     });
     expect(tabbed).toEqual(laidOut);
     // The two full-width rows, then the left side; the chat strip is the editor's, so it is
     // reached after the left side and straight before the panes it sits on (DS-6, #1836).
-    expect(tabbed.slice(0, 3)).toEqual(["title bar", "workspaces", "navigation"]);
+    // The workspaces are the title bar's (#2916), reached as the title bar.
+    expect(tabbed.slice(0, 2)).toEqual(["title bar", "navigation"]);
     expect(tabbed.indexOf("panes") - tabbed.indexOf("chats")).toBe(1);
     expect(tabbed[tabbed.length - 1]).toBe("status line");
     expect(controlsFirst).toBe(true);

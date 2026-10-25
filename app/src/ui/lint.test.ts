@@ -282,3 +282,54 @@ tester.run("purlis/list-family", purlisUi.rules["list-family"], {
     { code: `<div data-scope="list">x</div>`, errors: [{ messageId: "scope" }] },
   ],
 });
+
+tester.run("purlis/tabs-family", purlisUi.rules["tabs-family"], {
+  valid: [
+    {
+      code: `<StripTab strip={along} tabKey="1" selected tip={undefined} id={idOf(0)}>talk</StripTab>`,
+    },
+    { code: `<TabStripRow strip={along} name="Tabs" ids={ids} className="tabs">x</TabStripRow>` },
+    { code: `<div className="panes" {...tabPanelOf(namedBy)} />` },
+    // Another role, and a selector that reads a tab: neither draws one.
+    { code: `<li role="treeitem">x</li>` },
+    { code: `<li role={open ? "treeitem" : "option"}>x</li>` },
+    { code: `strip.querySelector('[role="tab"][aria-selected="true"]')` },
+    // The id helper beside the old tablist is not a tablist.
+    { code: `import { useTabIds } from "./StripTablist";` },
+    { code: `<span data-scope="rail">x</span>` },
+  ],
+  invalid: [
+    { code: `<button role="tab" aria-selected>talk</button>`, errors: [{ messageId: "role" }] },
+    { code: `<div role="tablist" aria-label="Tabs" />`, errors: [{ messageId: "role" }] },
+    { code: `<div role="tabpanel" aria-labelledby={id} />`, errors: [{ messageId: "role" }] },
+    { code: `<button role={"tab"}>talk</button>`, errors: [{ messageId: "role" }] },
+    { code: "<div role={`tablist`} />", errors: [{ messageId: "role" }] },
+    { code: `<li role={open ? "tab" : "option"} />`, errors: [{ messageId: "role" }] },
+    {
+      code: `const panel = { role: "tabpanel", "aria-labelledby": id };`,
+      errors: [{ messageId: "role" }],
+    },
+    {
+      code: `import { StripTablist, useTabIds } from "./StripTablist";`,
+      errors: [{ messageId: "owner" }],
+    },
+    { code: `<span data-scope="tabs" data-part="tab" />`, errors: [{ messageId: "scope" }] },
+    {
+      code: `const part = { "data-scope": "tabs", "data-part": "strip" };`,
+      errors: [{ messageId: "scope" }],
+    },
+  ],
+});
+
+tester.run("purlis/titlebar-family", purlisUi.rules["titlebar-family"], {
+  valid: [
+    { code: `<WorkspaceChip name="alpha" current onClick={go} />` },
+    { code: `<span className="workspace-settings">x</span>` },
+  ],
+  invalid: [
+    { code: `<div className="workspaces-strip">x</div>`, errors: [{ messageId: "oldClass" }] },
+    { code: `<span className="workspace">x</span>`, errors: [{ messageId: "oldClass" }] },
+    { code: `<button className="plane-root">x</button>`, errors: [{ messageId: "oldClass" }] },
+    { code: `<span data-scope="titlebar">x</span>`, errors: [{ messageId: "scope" }] },
+  ],
+});

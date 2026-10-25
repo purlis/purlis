@@ -19,7 +19,7 @@ import App from "./App";
 import { forgetThisLaunch } from "./regions";
 import { GLOBAL } from "./windowprefs";
 import { onAMac } from "./tabKeys";
-import { findStripNamed, showTheExplorer, stripNamed } from "./test-strips";
+import { goToWorkspace, showTheExplorer, stripNamed } from "./test-strips";
 import { drawnWith } from "./cascade.testkit";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
@@ -325,13 +325,9 @@ async function openAChat() {
   await userEvent.click(await screen.findByRole("button", { name: "Start" }));
 }
 
-/** Focuses a workspace from the strip, which is the axis (ADR 0036). */
+/** Focuses a workspace from the title bar's ⌄ (#2916), which is the axis (ADR 0036). */
 async function focus(workspace: string) {
-  const tab = within(stripNamed("Workspaces"))
-    .getAllByRole("tab")
-    .find((one) => one.querySelector(".workspace-name")?.textContent === workspace);
-  if (!tab) throw new Error(`no ${workspace} on the strip`);
-  await userEvent.click(tab);
+  await goToWorkspace(workspace);
 }
 
 /** Where the last chat was started. */
@@ -374,7 +370,7 @@ describe("the four regions", () => {
     expect(stripNamed("Tabs")).toBeInTheDocument();
   });
 
-  it("has exactly one thing called Workspaces, and it is the strip", async () => {
+  it("has nothing called Workspaces: the workspaces are the title bar's", async () => {
     // Two `nav[aria-label="Workspaces"]` broke a spec when the second appeared. The old left
     // sidebar was the second one; the explorer is not.
     core();
@@ -382,11 +378,11 @@ describe("the four regions", () => {
     // The strip itself, and not the explorer: the explorer draws as soon as the project does,
     // and the strip only once the plane has been read — so waiting on the explorer would ask
     // this question before the thing it is about exists.
-    await findStripNamed("Workspaces");
+    await screen.findByRole("toolbar", { name: "Pinned workspaces" });
     await screen.findByTestId("clone-svc");
 
-    expect(screen.getAllByLabelText("Workspaces")).toHaveLength(1);
-    expect(screen.getByLabelText("Workspaces")).toHaveAttribute("role", "tablist");
+    // The workspaces are the title bar's (#2916), and nothing else is called Workspaces.
+    expect(screen.queryAllByLabelText("Workspaces")).toHaveLength(0);
   });
 
   it("starts a chat in the workspace when nothing in the explorer is picked", async () => {
@@ -1922,7 +1918,7 @@ describe("the status line", () => {
     expect(document.querySelector("header.bar .status-project")).toBeNull();
   });
 
-  it("draws the chat strip at the top of the editor, and the workspaces above every region", async () => {
+  it("draws the chat strip at the top of the editor, and the workspaces in the title bar", async () => {
     // DS-6 (#1836, ADR 0036 as amended 2026-10-12): only the session strip moved. Where it sits
     // on screen is `centre-tabs.e2e.ts`'s; this is the tree that puts it there.
     core();
@@ -1942,10 +1938,10 @@ describe("the status line", () => {
     expect((bar as Element).compareDocumentPosition(panes as Element)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
-    // The workspaces stay where they were: a row across the window, in no region.
-    const workspaces = document.querySelector('[data-strip="Workspaces"]');
-    expect(workspaces).not.toBeNull();
-    expect(workspaces?.closest('[role="region"]')).toBeNull();
+    // The workspaces are the title bar's (#2916), in no region.
+    const workspaces = screen.getByRole("toolbar", { name: "Pinned workspaces" });
+    expect(workspaces.closest('[data-testid="title-bar"]')).not.toBeNull();
+    expect(workspaces.closest('[role="region"]')).toBeNull();
   });
 
   it("says which workspace the window is on, and follows the focus", async () => {

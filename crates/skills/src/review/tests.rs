@@ -252,6 +252,15 @@ fn every_invisible_character_is_marked_and_shown_escaped() {
 }
 
 #[test]
+fn one_line_of_terminal_text_marks_its_line_ends_and_tabs_too() {
+    assert_eq!(
+        escaped_line("a\u{202E}b\u{200B}\x1b[31m\n\t"),
+        "a⟦U+202E⟧b⟦U+200B⟧⟦U+001B⟧[31m⟦U+000A⟧⟦U+0009⟧"
+    );
+    assert_eq!(escaped_line("日本語"), "日本語");
+}
+
+#[test]
 fn variation_selectors_fillers_and_line_separators_are_invisible_too() {
     for c in [
         '\u{FE00}',

@@ -99,11 +99,57 @@ fn pad_fits_exactly_and_never_leaks_a_style_into_the_padding() {
     assert_eq!(pad("charter", 5, Align::Left), "char…");
     // Columns, not characters — a CJK name pads by three, not by six.
     assert_eq!(pad(CJK, 9, Align::Left), "日本語   ");
+}
+
+#[test]
+fn a_fixed_cell_of_purlis_s_own_markup_keeps_its_colour_and_pads_outside_it() {
     // The spaces go OUTSIDE the colour span.
     assert_eq!(
-        pad("\x1b[32mok\x1b[0m", 4, Align::Left),
+        fit("\x1b[32mok\x1b[0m", 4, Align::Left),
         "\x1b[32mok\x1b[0m  "
     );
+    let row = Node::Row {
+        cells: vec![
+            Cell::fixed("\x1b[32mok\x1b[0m", 4, Align::Left),
+            Cell::new("tail"),
+        ],
+        gap: " ".to_string(),
+    };
+    assert_eq!(row.render(80), vec!["\x1b[32mok\x1b[0m   tail"]);
+}
+
+/// SK-47 (#3150): a table cell is untrusted text. What would reorder it, hide in it or command
+/// the terminal from it is shown as `⟦U+XXXX⟧`, and the cell is measured as it is shown.
+#[test]
+fn a_table_cell_shows_bidi_invisible_and_escape_characters_and_is_measured_as_shown() {
+    // Eighteen columns as shown: `a`, eight for each mark, `b`.
+    assert_eq!(column("", ["a\u{202e}b\u{200b}"], 0, None), 18);
+    assert_eq!(
+        pad("a\u{202e}b\u{200b}", 20, Align::Left),
+        "a⟦U+202E⟧b⟦U+200B⟧  "
+    );
+    for c in [
+        '\u{202a}', '\u{202e}', '\u{2066}', '\u{2069}', '\u{200d}', '\u{feff}',
+    ] {
+        assert_eq!(
+            pad(&format!("x{c}"), 9, Align::Left),
+            format!("x⟦U+{:04X}⟧", u32::from(c))
+        );
+    }
+    // A cell is not markup: a colour, or a conceal, from the text itself is shown, not obeyed.
+    assert_eq!(pad("\x1b[8mx", 13, Align::Left), "⟦U+001B⟧[8mx ");
+    // Nor does a line end or a tab shear the columns below it.
+    assert_eq!(pad("a\nb\tc", 19, Align::Left), "a⟦U+000A⟧b⟦U+0009⟧c");
+}
+
+#[test]
+fn markup_keeps_purlis_s_colour_and_shows_bidi_and_invisible_characters_escaped() {
+    let line = "\x1b[32ma\u{202e}b\u{200b}\x1b[0m";
+    assert_eq!(sanitize(line), "\x1b[32ma⟦U+202E⟧b⟦U+200B⟧\x1b[0m");
+    assert_eq!(width(line), 18);
+    assert_eq!(truncate(line, 80), "\x1b[32ma⟦U+202E⟧b⟦U+200B⟧\x1b[0m");
+    // Plain text with nothing to escape is handed back as it is.
+    assert!(matches!(sanitize("日本語 ok"), Cow::Borrowed(_)));
 }
 
 #[test]
@@ -221,4 +267,24 @@ fn the_remainder_of_a_flex_share_goes_to_the_leftmost_columns() {
 fn a_stack_is_its_children_top_to_bottom_each_clamped_on_its_own() {
     let node = Node::stack(["one".to_string(), "two\nthree".to_string()]);
     assert_eq!(node.render(4), vec!["one", "two", "thr…"]);
+}
+
+/// SK-47's accepted cost, pinned: a cell is shown character by character, so an emoji built
+/// with a zero-width joiner or a variation selector shows those as marks rather than joining.
+/// A name is something a reader has to read back, and the joiner is exactly what can hide.
+#[test]
+fn a_joined_emoji_or_a_variation_selector_in_a_cell_shows_its_marks() {
+    assert_eq!(pad("👨\u{200d}👩", 12, Align::Left), "👨⟦U+200D⟧👩");
+    assert_eq!(pad("👍\u{fe0f}", 10, Align::Left), "👍⟦U+FE0F⟧");
+}
+
+/// The column nothing pads is the same text as the rest of the row, so it takes the same rule:
+/// a conceal in it would hide every row printed after it.
+#[test]
+fn a_row_escapes_its_last_unpadded_column_as_it_pads_the_others() {
+    assert_eq!(
+        row(&[("a", 3), ("b\u{202e}", 11)], "end \x1b[8mhid\u{200b}den"),
+        "a  b⟦U+202E⟧  end ⟦U+001B⟧[8mhid⟦U+200B⟧den"
+    );
+    assert_eq!(row(&[], "plain"), "plain");
 }

@@ -66,6 +66,10 @@ pub fn commit_message(name: &str) -> String {
     format!("Publish {name} with purlis")
 }
 
+/// What a publish says before the paths where a file it would commit is not the one file on
+/// disk ([`crate::planegit::ondisk`]).
+const NOT_ONE_FILE: &str = "Not published: a file in the project is not the one file on disk";
+
 /// The folder `root` as git sees it: the top of the repository it is in, or `None` outside one.
 fn top_of(root: &Path) -> Option<PathBuf> {
     let run = git::run(root, &["rev-parse", "--show-toplevel"], git::READ).ok()?;
@@ -458,7 +462,15 @@ impl Hands for OnThisMachine {
         }
         let stages = crate::planegit::save_stages();
         let stages: Vec<&str> = stages.iter().map(String::as_str).collect();
-        git_in(root, &stages, "add the project's files")?;
+        // Each file committed is the one name it has on disk, as a save's are: asked before the
+        // add and again after it, so a refused file's bytes reach no commit, no push and no
+        // object store (`planegit::ondisk`).
+        crate::planegit::ondisk::add_checked(
+            root,
+            &crate::planegit::ondisk::pathspec_of(&stages),
+            NOT_ONE_FILE,
+            || git_in(root, &stages, "add the project's files"),
+        )?;
         let born = git::run(
             root,
             &["rev-parse", "--verify", "--quiet", "HEAD"],

@@ -58,7 +58,7 @@
   font-weight: var(--font-weight-strong);
   color: var(--text-secondary);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
 }
 
 /* A command, a path, a host: the family only. Its size and colour are those of the role it

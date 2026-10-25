@@ -114,15 +114,19 @@
 @import "./ui/panel/panel.css" layer(components);
 @import "./ui/empty-state/empty-state.css" layer(components);
 @import "./ui/status/status.css" layer(components);
+@import "./ui/harness-icon/harness-icon.css" layer(components);
 @import "./ui/dialog/dialog.css" layer(components);
 @import "./ui/tabs/tabs.css" layer(components);
 @import "./ui/rail/rail.css" layer(components);
 @import "./ui/activity/activity.css" layer(components);
+@import "./ui/titlebar/titlebar.css" layer(components);
 @import "./primitives/overlays.css" layer(components);
 @import "./ui/tooltip/tooltip.css" layer(components);
 @import "./ui/popover/popover.css" layer(components);
 @import "./ui/menu/menu.css" layer(components);
 @import "./ui/list/list.css" layer(components);
+/* A chat's pane places the families inside it: the band, the header, the terminal (#3142). */
+@import "./paneFrame.css" layer(components);
 @import "./primitives/text.css" layer(components);
 @import "./theme/forced-colors.css" layer(forced);
 
@@ -148,8 +152,15 @@
   --color-text-faint: var(--text-faint);
   --color-border-subtle: var(--border-subtle);
   --color-border-strong: var(--border-strong);
+  --color-border-control: var(--border-control);
   --color-accent-base: var(--accent-base);
   --color-accent-surface: var(--accent-surface);
+  --color-accent-wash: var(--accent-wash);
+  --color-accent-text: var(--accent-text);
+  --color-accent-fill: var(--accent-fill);
+  --color-accent-fill-hover: var(--accent-fill-hover);
+  --color-accent-fill-edge: var(--accent-fill-edge);
+  --color-accent-fill-text: var(--accent-fill-text);
   --color-focus-ring: var(--focus-ring);
   --color-tab-active: var(--tab-active);
   --color-list-selected: var(--list-selected);

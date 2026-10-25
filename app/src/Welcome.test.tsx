@@ -714,7 +714,8 @@ describe("the welcome's doors (#1812)", () => {
     render(<App />);
 
     const recents = await screen.findByRole("region", { name: "Recent projects" });
-    expect(within(recents).getByRole("row", { name: /elsewhere/ })).toBeInTheDocument();
+    // The region is drawn before the list it holds is read: wait for the row itself.
+    expect(await within(recents).findByRole("row", { name: /elsewhere/ })).toBeInTheDocument();
     expect(screen.queryByText("No recent projects yet")).not.toBeInTheDocument();
   });
 

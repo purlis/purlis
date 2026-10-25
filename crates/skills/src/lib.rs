@@ -66,7 +66,7 @@ pub use handed::{Frontmatter, MOST_BYTES, Refusal, read_skill_md};
 pub use lifecycle::{About, Deprecated, Lifecycle, about_of, set_lifecycle, set_owners};
 pub use lint::{BuiltInLints, Finding, Lint, Severity, SkillFiles, SkillLint};
 pub use load::{Entry, Loaded, Narrowing, POINTER, SkillFolder, by_name, find, load};
-pub use moving::{move_between, move_skill};
+pub use moving::{Unmoved, move_between, move_skill};
 pub use read::{
     DIR_IN_BUNDLE, FILE, frontmatter, in_bundle, listing, parsed, read, scan, scan_dir,
 };
@@ -444,6 +444,60 @@ pub enum Switch {
     /// Not on its own, and the sentence that says why and what can, such as its plugin: the
     /// studio says it plainly rather than draw a switch that does nothing.
     Not(String),
+}
+
+/// `you`, the plugin's name, or `repo <clone>`: whose a skill is, as a person reads it.
+impl std::fmt::Display for Owner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::You => f.write_str("you"),
+            Self::Plugin(plugin) => f.write_str(plugin),
+            Self::Repo(clone) => write!(f, "repo {clone}"),
+        }
+    }
+}
+
+/// [`Owner`] and [`Switch`] on the wire: tagged by `kind`, each field named, as the window's
+/// bindings spell them. serde cannot tag a variant that holds a bare string, so each is
+/// serialized through its named twin here.
+mod wire {
+    #[derive(serde::Serialize)]
+    #[serde(tag = "kind", rename_all = "kebab-case")]
+    pub(super) enum Owner<'a> {
+        You,
+        Plugin { name: &'a str },
+        Repo { name: &'a str },
+    }
+
+    #[derive(serde::Serialize)]
+    #[serde(tag = "kind", rename_all = "kebab-case")]
+    pub(super) enum Switch<'a> {
+        Alone,
+        Not { why: &'a str },
+    }
+}
+
+/// `{"kind": "you"}`, `{"kind": "plugin", "name": …}`, `{"kind": "repo", "name": …}`.
+impl serde::Serialize for Owner {
+    fn serialize<S: serde::Serializer>(&self, to: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::You => wire::Owner::You,
+            Self::Plugin(name) => wire::Owner::Plugin { name },
+            Self::Repo(name) => wire::Owner::Repo { name },
+        }
+        .serialize(to)
+    }
+}
+
+/// `{"kind": "alone"}` or `{"kind": "not", "why": …}`.
+impl serde::Serialize for Switch {
+    fn serialize<S: serde::Serializer>(&self, to: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Alone => wire::Switch::Alone,
+            Self::Not(why) => wire::Switch::Not { why },
+        }
+        .serialize(to)
+    }
 }
 
 /// Where a copy of a skill sits in the plane: its level, and whether it is a local skill.

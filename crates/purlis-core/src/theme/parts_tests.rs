@@ -81,27 +81,30 @@ fn a_theme_rounds_the_buttons_root_to_a_pill() {
 
 #[test]
 fn a_theme_that_names_no_parts_draws_exactly_as_today() {
-    // Purlis Classic names only its tabs' strip look (#2914) and its activity items' (#2917);
-    // nothing it draws falls back.
+    // Purlis Classic names only its tabs' strip look (#2914), its activity items' (#2917), and
+    // what keeps it as it drew when the family defaults took Purlis's (#3177): its rail's 9px
+    // corners, its title bar's 5px chips and its update pill's primary words. Nothing it draws
+    // falls back.
     for theme in built_ins() {
         assert!(
-            theme
-                .parts
-                .keys()
-                .all(|key| key.family == "tabs" || key.family == "activity"),
-            "{} names parts beyond its tabs and its activity items",
+            theme.parts.keys().all(
+                |key| ["tabs", "activity", "rail", "titlebar", "status-item"].contains(&key.family)
+            ),
+            "{} names parts beyond what keeps it as it drew",
             theme.name
         );
         assert!(parts::fallen(theme).is_empty());
     }
-    // Purlis names its panels' fill (#2913), the one its docked tabs join by default (#2914), and
-    // no more: its tabs are the family default and cost nothing to measure.
+    // Purlis names its panels' fill (#2913), the one its docked tabs join by default (#2914),
+    // and the edges it draws none of (#3177): its tooltip's, dialog's and popover's. Its tabs and
+    // its buttons are the family defaults and cost nothing to measure: a button part would have
+    // its consent floors measured at every hue a workspace's colour can take, at every launch.
     let purlis = built_in("purlis").expect("Purlis");
     assert!(
         purlis
             .parts
             .keys()
-            .all(|key| key.family == "panel" || key.family == "tooltip"),
+            .all(|key| ["panel", "tooltip", "dialog", "popover"].contains(&key.family)),
         "{:?}",
         purlis.parts.keys().collect::<Vec<_>>()
     );
@@ -615,7 +618,7 @@ fn keep_blocked_never_takes_allows_edge() {
             .rfind(|line| line.contains("[data-variant=\"secondary\"])"))
             .expect("Keep blocked's rule");
         assert!(
-            keep_blocked.contains("border-color: var(--border-strong);"),
+            keep_blocked.contains("border-color: var(--border-control);"),
             "{keep_blocked}"
         );
     }
@@ -1034,7 +1037,7 @@ fn the_list_family_default_is_what_its_stylesheet_draws() {
 #[test]
 fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
     let manifest = parts::manifest_json();
-    assert_eq!(manifest["version"], 11);
+    assert_eq!(manifest["version"], 12);
     for one in manifest["states"].as_array().unwrap() {
         assert_eq!(one["since"], 1, "{one}");
     }
@@ -1356,6 +1359,10 @@ const MANIFEST_DIGESTS: &[(u32, &str)] = &[
     (
         11,
         "be280ba42efe49bf56ddae1aa28df6e1ee50ce46e77f4a3458af198b01077c39",
+    ),
+    (
+        12,
+        "e9b9b86c1d9ccd89f6a48dfa2b4e5d02873f7b120c69f129a37de052cb3aca37",
     ),
 ];
 
@@ -1909,9 +1916,9 @@ fn a_set_of_states_that_falls_back_draws_a_default_its_floors_hold() {
         .filter(|line| line.contains(focused))
         .collect();
     assert_eq!(written.len(), 2, "{sheet}");
-    assert!(written[1].contains("var(--accent-surface)"), "{sheet}");
+    assert!(written[1].contains("var(--accent-fill)"), "{sheet}");
     assert!(
-        written[1].contains("border-color: var(--accent-base)"),
+        written[1].contains("border-color: var(--accent-fill-edge)"),
         "{sheet}"
     );
 }

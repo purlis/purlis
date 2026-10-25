@@ -142,6 +142,14 @@ describe("renaming a tab (charter-app#254)", () => {
     expect(renameTab(opened, opened.order[0], "mine")).toBe(opened);
   });
 
+  it("answers the very tabs when the name asked for is the one it has", () => {
+    const named = openTab(noTabs(), 7, "3", "steward", "billing bug");
+    const plain = openTab(noTabs(), 7, "3", "steward");
+
+    expect(renameTab(named, named.order[0], "billing bug")).toBe(named);
+    expect(renameTab(plain, plain.order[0], null)).toBe(plain);
+  });
+
   it("answers the same tabs for a tab that is not there", () => {
     const opened = openTab(noTabs(), 7, "3", "steward");
 
@@ -189,6 +197,14 @@ describe("tabs on a workspace's strip", () => {
     // Leaving another workspace's chat on screen under this workspace's empty strip would
     // be the app showing a chat the strip says is not there.
     expect(showWorkspace(three(), "gamma", spread).inFront).toBeUndefined();
+  });
+
+  it("answers the very tabs when the tab it would put in front is in front already", () => {
+    const shown = showWorkspace(three(), "alpha", spread);
+
+    expect(showWorkspace(shown, "alpha", spread)).toBe(shown);
+    const none = showWorkspace(shown, "gamma", spread);
+    expect(showWorkspace(none, "gamma", spread)).toBe(none);
   });
 
   it("changes nothing else about the arrangement", () => {
@@ -315,6 +331,22 @@ describe("tabs and their panes", () => {
       { pane: 1, session: 11 },
       { pane: 3, session: 13 },
     ]);
+  });
+
+  it("hands back the very tabs when the pane asked for already has the focus (#3136)", () => {
+    // Every focus inside a pane asks for it: a click, a select's list opening and closing.
+    // New tabs there draw the whole window again and read the sidebar again each time.
+    const tabs = focusPane(splitFocusedPane(openTab(noTabs(), 11), "row", 12), 1);
+
+    expect(focusPane(tabs, 1)).toBe(tabs);
+    expect(focusPane(tabs, 2)).not.toBe(tabs);
+  });
+
+  it("hands back the very tabs when the tab asked for is in front already", () => {
+    const tabs = openTab(openTab(noTabs(), 11), 12);
+
+    expect(selectTab(tabs, front(tabs))).toBe(tabs);
+    expect(front(selectTab(tabs, tabs.order[0]))).toBe(tabs.order[0]);
   });
 
   it("leaves tabs alone when something that is not there is closed or focused", () => {
@@ -632,6 +664,13 @@ describe("a tab that shows a view (ADR 0043, as amended 2026-09-23)", () => {
     expect(workspaceOf(again, front(again), filed)).toBe("alpha");
   });
 
+  it("answers the very tabs when the view is in front and focused already", () => {
+    // Opening it again changes nothing, and new tabs would redraw the whole window.
+    const open = openView(openTab(noTabs(), 11), STEWARD, "steward", "alpha");
+
+    expect(openView(open, STEWARD, "steward", "alpha")).toBe(open);
+  });
+
   it("tells two views apart by who draws them and what they are about", () => {
     const tabs = [STEWARD, { ...STEWARD, key: "release" }, STATISTICS].reduce(
       (open, view) => openView(open, view, viewKey(view), "alpha"),
@@ -691,6 +730,15 @@ describe("a tab that shows a view (ADR 0043, as amended 2026-09-23)", () => {
 
     it("is in front when nothing else is", () => {
       expect(offerView(noTabs(), STEWARD, "steward", "alpha").inFront).toBe(1);
+    });
+
+    it("stops waiting on the press even when it is in front already", () => {
+      const tabs = selectTab(putViewBack(noTabs(), STATISTICS, "Statistics", "alpha", 0), 1);
+
+      const opened = openView(tabs, STATISTICS, "Statistics", "alpha");
+
+      expect(opened).not.toBe(tabs);
+      expect(focusedContent(opened)).toMatchObject({ kind: "view", waits: false });
     });
 
     it("is not drawn twice when the view is already open", () => {

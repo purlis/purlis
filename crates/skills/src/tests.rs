@@ -640,6 +640,35 @@ fn a_workspace_or_local_skill_never_takes_a_built_in_skills_name() {
     );
 }
 
+/// The toml a link, so the folder is put back, and its way back taken first: share says the
+/// folder moved and the file beside it did not, never "nothing was moved" (SK-45).
+#[cfg(unix)]
+#[test]
+fn share_whose_folder_cannot_be_put_back_says_what_moved() {
+    let plane = Plane::new();
+    let outside = plane._tmp.path().join("outside.toml");
+    std::fs::write(&outside, "grant = \"all\"\n").unwrap();
+    skill(&plane.project_local(), "notes", &whole("notes"));
+    std::os::unix::fs::symlink(&outside, plane.project_local().join("notes.toml")).unwrap();
+    let back_to = plane.project_local().join("notes");
+    let _hook = crate::moving::hook::set(move |moment, _, to| {
+        if moment == crate::moving::hook::Moment::BeforeRename && to == back_to {
+            std::fs::create_dir(to).unwrap();
+        }
+    });
+
+    let refused = share(&plane.root, &Whose::Project, "notes").unwrap_err();
+
+    assert_eq!(
+        refused,
+        "notes could not be moved to skills/notes: its folder was moved to skills/notes and \
+         could not be put back (something of its name is already where it goes), and \
+         skills.local/notes.toml was not moved (it is not a plain folder or file, so purlis \
+         does not move it)"
+    );
+    assert!(plane.project().join("notes/SKILL.md").is_file());
+}
+
 // ---- share --------------------------------------------------------------------------------
 
 #[test]
@@ -1414,6 +1443,19 @@ fn every_levels_local_folder_is_spelled_by_the_one_rule() {
     ] {
         assert!(!in_local_level(outside), "{outside}");
     }
+}
+
+#[test]
+fn an_owner_reads_as_you_its_plugin_or_its_repo() {
+    let shown: Vec<String> = [
+        Owner::You,
+        Owner::Plugin("figma".to_owned()),
+        Owner::Repo("app".to_owned()),
+    ]
+    .iter()
+    .map(ToString::to_string)
+    .collect();
+    assert_eq!(shown, ["you", "figma", "repo app"]);
 }
 
 // ---- links (SK-36) --------------------------------------------------------------------------

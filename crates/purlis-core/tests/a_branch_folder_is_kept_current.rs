@@ -611,3 +611,48 @@ fn an_update_whose_branch_moved_while_it_was_stopped_leaves_the_branch_where_it_
     assert!(said.contains("moved while purlis worked on it"), "{said}");
     assert_eq!(out(&w.clone, &["rev-parse", "refs/heads/p1"]), elsewhere);
 }
+
+/// Whether the object store of the repository `dir` is in holds `sha`.
+fn holds(dir: &Path, sha: &str) -> bool {
+    git::run(dir, &["cat-file", "-e", sha], git::READ).is_ok_and(|run| run.ok())
+}
+
+#[cfg(unix)]
+#[test]
+fn a_resolved_file_with_a_second_name_is_not_staged_and_the_rebase_stays_stopped() {
+    purlis_core::unsteered!();
+    let w = world();
+    let (code, cut) = add(&w, "p1", None);
+    assert_eq!(code, 0, "{cut}");
+    let piece = w.piece("p1");
+    write(&piece, "shared.txt", "a\nmine\nc\n");
+    git(&piece, &["commit", "-q", "-am", "mine"]);
+    w.they_commit("shared.txt", "a\ntheirs\nc\n");
+    let (code, said) = update(&w, "p1", &start(None), &Reach::default());
+    assert_eq!(code, 1, "{said}");
+
+    write(&piece, "shared.txt", "a\nresolved under two names\nc\n");
+    let second = w.plane.join("second-name");
+    std::fs::hard_link(piece.join("shared.txt"), &second).unwrap();
+    let blob = out(&piece, &["hash-object", "shared.txt"]);
+    let head = out(&piece, &["rev-parse", "HEAD"]);
+
+    let (code, said) = update(&w, "p1", &UpdateStep::Continue, &Reach::default());
+    assert_eq!(code, 1, "{said}");
+    assert!(said.contains("has a second name"), "{said}");
+    assert!(said.contains("Nothing was staged"), "{said}");
+    assert_eq!(out(&piece, &["rev-parse", "HEAD"]), head);
+    assert!(
+        !out(&piece, &["ls-files", "-u", "--", "shared.txt"]).is_empty(),
+        "the resolved file was staged"
+    );
+    assert!(
+        !holds(&piece, &blob),
+        "the file's bytes reached the object store"
+    );
+
+    // With one name again, the rebase goes on.
+    std::fs::remove_file(&second).unwrap();
+    let (code, said) = update(&w, "p1", &UpdateStep::Continue, &Reach::default());
+    assert_eq!(code, 0, "{said}");
+}

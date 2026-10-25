@@ -1881,6 +1881,14 @@ export const commands = {
 	skillLevelAccept: (plane: PlaneId, folder: string) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_level_accept", { plane, folder })),
 	/**  The project's skill sources. */
 	skillSources: (plane: PlaneId) => typedError<SkillSource[], string>(__TAURI_INVOKE("skill_sources", { plane })),
+	/**
+	 *  **The sources the studio offers** (SK-22, #2785; decision 42): the first-party catalogue and
+	 *  the well-known skill sources the project does not browse, each with why it is on the list
+	 *  (`purlis_core::skills::first_open::offered_here`). Read beside [`skill_sources`] and not with
+	 *  the studio, since reading the project's sources asks git whether this machine's settings are
+	 *  ignored.
+	 */
+	skillSourcesOffered: (plane: PlaneId) => typedError<OfferedSource[], string>(__TAURI_INVOKE("skill_sources_offered", { plane })),
 	/**  **Adds a skill source**, shared with the project or kept on this machine. */
 	skillSourceAdd: (plane: PlaneId, source: SkillSource) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_source_add", { plane, source })),
 	/**  **Takes a skill source out** of the project's. Skills installed from it stay. */
@@ -7052,6 +7060,23 @@ export type HarnessGlance = {
 	cannot_type: string | null,
 };
 
+/**
+ *  A profile's icon: the glyph of the theme's icon set it is drawn with, or the key of the
+ *  person's own SVG among the answer's, and always the monogram of its harness kind, which the
+ *  window draws where it can draw neither.
+ */
+export type HarnessIconRow = {
+	/**  `spark`, `braces` or `terminal`. */
+	glyph: string | null,
+	/**
+	 *  The file name its SVG is under in the answer's own icons; each is sent once, however
+	 *  many rows name it.
+	 */
+	own: string | null,
+	/**  `C`, `OC`, `CX`. */
+	monogram: string,
+};
+
 /**  A harness, as the window and the core name one to each other: a profile's `kind`. */
 export type HarnessKind = "claude" | "opencode" | "codex";
 
@@ -7601,6 +7626,11 @@ export type MachineProfileRow = {
 	 *  page's warning, in the core's words; null where its harness keeps the sign-in from them.
 	 */
 	commands_can_read_sign_in: string | null,
+	/**
+	 *  What it is drawn with (#2922): its harness's glyph where it stands for the built-in, else
+	 *  its kind's monogram.
+	 */
+	icon: HarnessIconRow,
 };
 
 /**  One project this machine remembers, with what it holds about it. */
@@ -7969,6 +7999,17 @@ export type OfferedSkill = {
 	folder: string,
 	/**  The levels it is installed at from this source, as a person reads them. */
 	installed: string[],
+};
+
+/**
+ *  **A skill source the studio offers** (SK-22, #2785): its name, why it is on the list, and the source Add
+ *  source starts filled in with, kept with the project unless the person picks this machine.
+ */
+export type OfferedSource = {
+	offering: SourceOffering,
+	name: string,
+	why: string,
+	source: SkillSource,
 };
 
 /**
@@ -9177,6 +9218,11 @@ export type ProfileRow = {
 	 *  (#2036). Always sent; optional for the same reason.
 	 */
 	billed_to?: string | null,
+	/**
+	 *  What it is drawn with (#2922): its glyph or its own SVG, and its kind's monogram. Always
+	 *  sent; optional for the same reason.
+	 */
+	icon?: HarnessIconRow | null,
 };
 
 /**
@@ -11354,6 +11400,13 @@ export type SourceCommit = {
 /**  Which settings a source is kept in: the project's, shared with the team, or this machine's. */
 export type SourceKept = "shared" | "local";
 
+/**  Whose list an offered source is on. */
+export type SourceOffering = 
+/**  purlis's own first-party catalogue. */
+"catalogue" | 
+/**  A collection someone else keeps that people use widely. */
+"well-known";
+
 /**  A repository and the branch read from it. */
 export type SourceRemote = {
 	url: string,
@@ -11420,6 +11473,13 @@ export type StaleRemote = {
 /**  Everything the picker draws, read from the plane when it is opened. */
 export type StartOptions = {
 	profiles: ProfileRow[],
+	/**
+	 *  The person's own SVG icons the rows name (#2922), each once, by its file name: what a
+	 *  row's `icon.own` refers to. All of them together are held to one budget, and a row whose
+	 *  file is past it shows its monogram. Always sent; optional in the window's type so a
+	 *  picker drawn from an older answer reads it as none.
+	 */
+	own_icons?: { [key in string]: SvgIcon } | null,
 	/**
 	 *  Profiles charter read and will not use, by name and reason, so a row that is missing
 	 *  is never merely missing.
@@ -11545,6 +11605,8 @@ export type Studio = {
 	harnesses: StudioHarness[],
 	/**  Every skill from outside the plane that has the name of a skill a chat gets, by name. */
 	clashes: StudioClash[],
+	/**  What it offers to start from (SK-22, #2785): the core's `skills::first_open`. */
+	first: StudioFirst,
 };
 
 /**
@@ -11562,6 +11624,23 @@ export type StudioClash = {
 	outside: Level,
 	owner: Owner,
 	outcome: ClashOutcome,
+};
+
+/**
+ *  **What the studio offers when it opens** (SK-22, #2785; decision 42), as the core works it
+ *  out (`purlis_core::skills::first_open`).
+ */
+export type StudioFirst = {
+	/**
+	 *  Whether the project has no skill of its own, so the three starts are offered: make one
+	 *  with a chat, browse skill sources, start blank.
+	 */
+	starts: boolean,
+	/**
+	 *  Where the project's skills are still where only some chat programs read them: how many,
+	 *  and the doctor's fix that moves them (SK-21).
+	 */
+	unmoved: StudioUnmoved | null,
 };
 
 /**  One harness in the studio (SK-6): its plugins and the skills it finds itself. */
@@ -11722,6 +11801,13 @@ export type StudioSkill = {
  */
 export type StudioSwitched = "plugin" | "skill";
 
+/**  The project's skills still to move into the studio's. */
+export type StudioUnmoved = {
+	skills: number,
+	/**  The doctor's fix that moves them, by its id (`planeDoctorFix`). */
+	fix: string,
+};
+
 /**  What one subject is offered. */
 export type SubjectCurations = {
 	/**  `workspace:<name>`, `persona:<name>` or `plane` — the core's own spelling of a subject. */
@@ -11735,6 +11821,25 @@ export type SubjectCurations = {
 	left_out: LeftOut[],
 	/**  Why this subject has no list at all — a workspace deleted a moment ago, say. */
 	trouble: string | null,
+};
+
+/**
+ *  A person's SVG as checked shapes (`purlis_core::safesvg`): the window draws each with its
+ *  own element, and never reads it as markup.
+ */
+export type SvgIcon = {
+	/**  `min-x min-y width height`. */
+	view_box: string,
+	shapes: SvgShape[],
+};
+
+/**
+ *  One shape: `path`, `circle`, `ellipse`, `rect`, `line`, `polyline` or `polygon`, and its
+ *  checked attributes by their SVG names.
+ */
+export type SvgShape = {
+	tag: string,
+	attributes: { [key in string]: string },
 };
 
 /**  The brief a task was sent, and the facts of its sending. */
@@ -12751,6 +12856,8 @@ export type WindowTheme = {
 	motion: WindowMotion,
 	/**  The theme's icon set, by view id: empty when the rails draw the window's own marks. */
 	icons: { [key in string]: WindowIcon },
+	/**  The harness glyphs of its icon set, by name (#2922): empty when the window draws its own. */
+	glyphs: { [key in string]: WindowIcon },
 	/**  The geometry's custom properties, written by the engine, for each density (#2326). */
 	geometry: WindowGeometry,
 	/**  The UI, mono and terminal fonts (#2326). */

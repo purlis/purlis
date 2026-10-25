@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import { anEmptyRecord, copyFixturePlane } from "../harness.js";
 import { bandNotice } from "../reading.js";
+import { chipsSeen } from "../titleBarWorkspaces.js";
 import { openThroughTheTrustQuestion } from "../opening.js";
 
 /**
@@ -63,16 +64,10 @@ async function ask<T>(command: string, args: Record<string, unknown> = {}): Prom
 const pins = () => ask<Pins>("plane_pins", { plane: mine });
 const pinOrder = async () => (await pins()).order;
 
-/** The workspaces the strip is showing, left to right, after the project root's tab. */
+/** The workspaces the title bar's chips show, left to right: the pins, and the one in front
+ *  when it is not pinned (#2916). */
 async function stripNames(): Promise<string[]> {
-  return browser.execute(
-    (selector: string) =>
-      [
-        ...(document.querySelector(selector)?.querySelectorAll('[role="tab"]:not(.plane-root)') ??
-          []),
-      ].map((tab) => tab.querySelector(".workspace-name")?.textContent ?? ""),
-    '[data-strip="Workspaces"]',
-  );
+  return (await chipsSeen()).names;
 }
 
 describe("a pin to a workspace that is gone", function () {

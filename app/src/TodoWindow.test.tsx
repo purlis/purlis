@@ -16,7 +16,7 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { PanelRow, TodoView } from "./bindings";
-import { stripNamed, showThePanel } from "./test-strips";
+import { chipName, showThePanel, stripNamed, workspaceChips } from "./test-strips";
 
 /**
  * **A todo's tab, against the whole window** (#1214): a todo row opens the todo as a view tab on
@@ -306,11 +306,8 @@ describe("a workspace renamed under an open todo (#1248)", () => {
     await userEvent.click(await todoRowFor("Review the rollout plan"));
     await screen.findByTestId("todo-body");
 
-    const workspaces = stripNamed("Workspaces");
-    const alpha = within(workspaces)
-      .getAllByRole("tab")
-      .find((one) => one.querySelector(".workspace-name")?.textContent === "alpha");
-    if (!alpha) throw new Error("no alpha on the strip");
+    const alpha = workspaceChips().find((one) => chipName(one) === "alpha");
+    if (!alpha) throw new Error("no alpha in the title bar");
     fireEvent.contextMenu(alpha);
     await userEvent.click(await screen.findByRole("menuitem", { name: "Rename…" }));
     const dialog = await screen.findByRole("dialog", { name: "Rename workspace alpha" });

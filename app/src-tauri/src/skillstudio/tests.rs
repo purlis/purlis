@@ -90,6 +90,7 @@ fn the_studio_shows_nothing_while_its_flag_is_off() {
             skills: Vec::new(),
             harnesses: Vec::new(),
             clashes: Vec::new(),
+            first: StudioFirst::default(),
         }
     );
 }
@@ -352,6 +353,73 @@ fn a_skills_totals_name_what_it_ran_on_as_a_person_calls_it_and_say_a_start_that
     let runs = runs(root, "deploy", 10);
     assert_eq!(runs[0].started_by, Some(RunStart::Curation));
     assert_eq!(runs[0].ran_on.as_deref(), Some("Claude Code"));
+}
+
+#[test]
+fn a_studio_with_only_built_in_skills_lists_them_and_offers_the_starts() {
+    // SK-22 (#2785): the built-in skills are listed, but they are not the project's, so the
+    // three starts are offered beside them.
+    let tmp = tempfile::tempdir().unwrap();
+    let built_in = tmp.path().join("plugin/skills");
+    let root = tmp.path().join("plane");
+    std::fs::create_dir_all(&root).unwrap();
+    skill(
+        &built_in,
+        "secrets",
+        "---\nname: secrets\ndescription: Keeps secrets.\n---\n",
+    );
+
+    let studio = studio(&root, Some(&built_in), true, None, None, &no_harness());
+
+    assert_eq!(studio.skills.len(), 1);
+    assert!(studio.first.starts);
+    assert_eq!(studio.first.unmoved, None);
+
+    skill(
+        &root.join(".claude/skills"),
+        "deploy",
+        "---\nname: deploy\ndescription: Deploys.\n---\n",
+    );
+    skill(
+        &root.join("skills"),
+        "notify",
+        "---\nname: notify\ndescription: Tells.\n---\n",
+    );
+    let studio = super::studio(&root, Some(&built_in), true, None, None, &no_harness());
+    assert!(!studio.first.starts);
+    assert_eq!(
+        studio.first.unmoved,
+        Some(StudioUnmoved {
+            skills: 1,
+            fix: "project-skills".to_owned(),
+        })
+    );
+}
+
+#[test]
+fn the_window_spells_an_owner_and_a_switch_as_the_command_line_does() {
+    use purlis_core::skills::{Owner as CoreOwner, Switch as CoreSwitch};
+    for owner in [
+        CoreOwner::You,
+        CoreOwner::Plugin("figma".to_owned()),
+        CoreOwner::Repo("app".to_owned()),
+    ] {
+        assert_eq!(
+            serde_json::to_value(Owner::from(owner.clone())).unwrap(),
+            serde_json::to_value(&owner).unwrap(),
+            "{owner:?}"
+        );
+    }
+    for switch in [
+        CoreSwitch::Alone,
+        CoreSwitch::Not("only with its plugin".to_owned()),
+    ] {
+        assert_eq!(
+            serde_json::to_value(SkillSwitch::from(switch.clone())).unwrap(),
+            serde_json::to_value(&switch).unwrap(),
+            "{switch:?}"
+        );
+    }
 }
 
 #[test]

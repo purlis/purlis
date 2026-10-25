@@ -33,6 +33,7 @@ pub use purlis_skills::runs;
 pub use purlis_skills::{review, tree};
 pub mod source;
 pub use purlis_skills::{About, Deprecated, Lifecycle, about_of};
+pub mod first_open;
 pub mod graph;
 pub mod history;
 pub mod lifecycle;
@@ -1401,6 +1402,9 @@ pub struct HarnessInTheStudio {
     pub set: SkillSet,
     /// The skills from outside the plane, with whose each is and how it switches.
     pub outside: Vec<OutsideSkill>,
+    /// Their studio rows (`outside_rows`): what the window and the command line list under
+    /// the harness (SK-34).
+    pub rows: Vec<StudioRow>,
 }
 
 /// **Every harness in the Skill studio** (SK-6, #2769), for a chat in the plane at `plane`, at
@@ -1408,7 +1412,7 @@ pub struct HarnessInTheStudio {
 /// `set` ([`in_the_studio`]), and with `env` read for where each harness keeps its own: one per
 /// harness purlis knows, in the registry's order. Read from the harnesses' own files, never
 /// written.
-pub fn harnesses_in_the_studio(
+fn harnesses_in_the_studio(
     set: &SkillSet,
     plane: &Path,
     workspace: Option<&str>,
@@ -1430,12 +1434,15 @@ pub fn harnesses_in_the_studio(
                 &choices,
                 &clones,
             ));
-            Some(HarnessInTheStudio {
+            let mut one = HarnessInTheStudio {
                 harness,
                 set: set.clone().with_outside(harness.skills(), outside.clone()),
                 group,
                 outside,
-            })
+                rows: Vec::new(),
+            };
+            one.rows = outside_rows(&one, plane);
+            Some(one)
         })
         .collect()
 }
@@ -1528,7 +1535,7 @@ pub struct OutsideRow {
 /// **The studio's rows of the skills from outside the plane `harness` finds** (SK-6, #2769),
 /// each by the name the harness knows it by, on or left out as its set says, with whose it is
 /// and how it switches. In the order they were found.
-pub fn outside_rows(harness: &HarnessInTheStudio, plane: &Path) -> Vec<StudioRow> {
+fn outside_rows(harness: &HarnessInTheStudio, plane: &Path) -> Vec<StudioRow> {
     harness
         .outside
         .iter()
@@ -1728,7 +1735,7 @@ fn badges(
 /// **Each studio row of a harness skill a persona names, with its badge and lint on every
 /// harness that finds it** (SK-8): the rows [`studio_rows`] draws from a persona's `skills:`
 /// list carry no file of their own, so the skill each harness found by that name gives them one.
-pub fn with_harness_badges(rows: &mut [StudioRow], harnesses: &[HarnessInTheStudio], plane: &Path) {
+fn with_harness_badges(rows: &mut [StudioRow], harnesses: &[HarnessInTheStudio], plane: &Path) {
     let found: Vec<(Harness, &[OutsideSkill])> = harnesses
         .iter()
         .map(|one| (one.harness, one.outside.as_slice()))
@@ -1757,6 +1764,36 @@ fn badge_named(rows: &mut [StudioRow], found: &[(Harness, &[OutsideSkill])], pla
     }
 }
 
+/// **Everything the Skill studio lists for one chat** (SK-34, #3008): the rows of the plane's
+/// and the built-in skills (`studio_rows`, each badged on the harnesses that find a copy of
+/// it), and each harness with the skills it finds itself and their rows
+/// (`harnesses_in_the_studio`). What the window and `purlis skill list` both list, so the two
+/// never disagree (spec #2762 decision 26).
+pub struct StudioList {
+    pub rows: Vec<StudioRow>,
+    pub harnesses: Vec<HarnessInTheStudio>,
+}
+
+/// **The studio's list for a chat in the plane at `plane`** (SK-34): at its root or in
+/// `workspace`, as `persona` or on none, with the built-in skills in `built_in` and `env` read
+/// for where each harness keeps its own. Read only.
+pub fn studio_list(
+    built_in: Option<&Path>,
+    plane: &Path,
+    workspace: Option<&str>,
+    persona: Option<&str>,
+    env: &crate::harness_plugin::Env<'_>,
+) -> StudioList {
+    let set = in_the_studio(built_in, plane, workspace, persona);
+    let names = persona
+        .map(|persona| names_of(plane, persona))
+        .unwrap_or_default();
+    let harnesses = harnesses_in_the_studio(&set, plane, workspace, env);
+    let mut rows = studio_rows(&set, plane, &names);
+    with_harness_badges(&mut rows, &harnesses, plane);
+    StudioList { rows, harnesses }
+}
+
 /// What is said of a harness skill a persona names that purlis could not check this machine for
 /// ([`StudioRow::unchecked`]): its plugin is installed, and its skills cannot be listed.
 pub const UNCHECKED: &str =
@@ -1768,7 +1805,7 @@ pub const UNCHECKED: &str =
 /// the plane. Of the copies of one name, the one the chat gets comes first, then each copy left
 /// out from the widest level to the narrowest, as the set lists them (#2767). The one list the
 /// window and the command line draw.
-pub fn studio_rows(set: &SkillSet, plane: &Path, names: &[Reference]) -> Vec<StudioRow> {
+pub(crate) fn studio_rows(set: &SkillSet, plane: &Path, names: &[Reference]) -> Vec<StudioRow> {
     let relative = |path: &Path| {
         path.strip_prefix(plane)
             .unwrap_or(path)

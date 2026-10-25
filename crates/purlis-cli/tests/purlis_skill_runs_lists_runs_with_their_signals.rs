@@ -120,3 +120,43 @@ fn skill_runs_waits_for_the_skill_studio_flag() {
     assert_eq!(out.status.code(), Some(1));
     assert!(stdout(&out).is_empty());
 }
+
+/// SK-47: SIGNALS is the last column of `skill runs`, which nothing pads, and it names the skills
+/// a run holds and the one it ran inside: names a repo or a person chose. They are shown escaped
+/// there as in the SKILL column, so a conceal in one cannot hide the runs listed after it.
+#[test]
+fn skill_runs_shows_a_nested_skill_s_name_escaped_in_every_column() {
+    let p = Project::new();
+    let sly = "sly\x1b[8m\u{202e}x";
+    let rows = [
+        serde_json::json!({"persona": "ops", "run": "01JBRUN0000000000000000003", "skill": sly,
+            "started_by": "skill-tool", "ts": "2026-10-20T10:00:05+00:00"}),
+        serde_json::json!({"asks": 0, "ended": "turn", "ms": 100, "refusals": 0,
+            "run": "01JBRUN0000000000000000003", "tool_calls": 1, "tool_errors": 0,
+            "parent": "01JBRUN0000000000000000001", "ts": "2026-10-20T10:00:06+00:00"}),
+    ];
+    let body: String = rows.iter().map(|row| format!("{row}\n")).collect();
+    std::fs::write(
+        p.at.join("plane/personas/_skills/2026-10.02JBDEVICE00000000000000.jsonl"),
+        body,
+    )
+    .unwrap();
+
+    let out = p.run(&["skill", "runs"], "1");
+
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let text = stdout(&out);
+    assert!(!text.contains(['\x1b', '\u{202e}']), "{text:?}");
+    let shown = "sly⟦U+001B⟧[8m⟦U+202E⟧x";
+    let deploy = text.lines().find(|line| line.contains("deploy  ")).unwrap();
+    assert!(deploy.ends_with(&format!("; ran {shown}")), "{text}");
+    assert!(
+        text.lines()
+            .any(|line| line.contains(shown) && line.ends_with("; inside deploy")),
+        "{text}"
+    );
+}

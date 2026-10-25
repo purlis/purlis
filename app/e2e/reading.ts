@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { browser } from "@wdio/globals";
+import { workspacesListed } from "./titleBarWorkspaces.js";
 
 /**
  * Reading a list the app is drawing — a strip's tabs, their names, their paths — in ONE pass
@@ -94,30 +95,28 @@ export type StripSeen = {
   size: string;
 };
 
-/** What the workspace strip draws now, read in one pass. */
+/** What the project in front has now: its workspaces, as the title bar's ⌄ lists them
+ *  (#2916), and the project and tab in front, read in one pass. */
 export async function stripSeen(): Promise<StripSeen> {
-  return browser.execute(() => {
-    const tabs = [
-      ...document.querySelectorAll<HTMLElement>(
-        '[data-strip="Workspaces"] [role="tab"] .workspace-name',
-      ),
-    ];
+  const listed = (await workspacesListed())
+    .map((one) => one.name)
+    .filter((name) => name !== "Plane root");
+  const rest = await browser.execute(() => {
     const selected = (strip: string) =>
       document.querySelector<HTMLElement>(
         `[data-strip="${strip}"] [role="tab"][aria-selected="true"]`,
       );
     return {
-      names: tabs.map((one) => one.innerText.trim()),
-      held: tabs.map((one) => (one.textContent ?? "").trim()),
       project: selected("Projects")?.getAttribute("data-directory") ?? null,
       tab: selected("Tabs")?.innerText.trim() ?? null,
       size: `${window.innerWidth}×${window.innerHeight}`,
     };
   });
+  return { names: listed, held: listed, ...rest };
 }
 
 /**
- * **Waits until the workspace strip draws exactly `names`**, in order, and fails saying what it
+ * **Waits until the project in front lists exactly the workspaces `names`**, in order, and fails saying what it
  * drew instead: the names, the project and tab in front, and the window's size. One app process
  * serves the whole scenario run, so a strip that is not the fixture plane's is a spec before this
  * one that left the window elsewhere, and the failure names where.

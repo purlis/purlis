@@ -88,7 +88,7 @@
   min-block-size: var(--size-control);
   padding-block: var(--space-1);
   padding-inline: var(--space-4);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-control);
   color: var(--text-secondary);
   font-weight: var(--font-weight-regular);
   text-align: start;

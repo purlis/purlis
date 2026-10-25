@@ -5733,6 +5733,7 @@ dependencies = [
  "purlis-session-protocol",
  "purlis-skills",
  "purlis-terminal",
+ "quick-xml",
  "regex",
  "ring",
  "rustix",

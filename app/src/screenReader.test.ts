@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, renderHook } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { forgetThisLaunch } from "./regions";
 import {
@@ -10,6 +11,7 @@ import {
   onScreenReaderMode,
   screenReaderMode,
   setScreenReaderMode,
+  useScreenReaderMode,
 } from "./screenReader";
 import {
   aboutThisMachine,
@@ -50,6 +52,17 @@ afterEach(() => {
 });
 
 describe("screen-reader mode, kept in the layout file (#629)", () => {
+  it("is followed by a render: turned on or off, what reads it is drawn again", () => {
+    handed({ version: 2, regions: [] });
+    const { result } = renderHook(() => useScreenReaderMode());
+    expect(result.current).toBe(false);
+
+    act(() => setScreenReaderMode(true));
+    expect(result.current).toBe(true);
+    act(() => setScreenReaderMode(false));
+    expect(result.current).toBe(false);
+  });
+
   it("is off where the file says nothing of it", () => {
     expect(loadScreenReaderMode({ version: 2, regions: [] })).toEqual({ on: false, said: [] });
     handed({ version: 2, regions: [] });

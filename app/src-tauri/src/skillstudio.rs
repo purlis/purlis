@@ -217,6 +217,15 @@ pub enum SkillSwitch {
     Not { why: String },
 }
 
+impl From<purlis_core::skills::Switch> for SkillSwitch {
+    fn from(switch: purlis_core::skills::Switch) -> SkillSwitch {
+        match switch {
+            purlis_core::skills::Switch::Alone => SkillSwitch::Alone,
+            purlis_core::skills::Switch::Not(why) => SkillSwitch::Not { why },
+        }
+    }
+}
+
 /// What the project has a harness's plugin at.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
 #[serde(rename_all = "kebab-case")]
@@ -303,11 +312,45 @@ pub struct Studio {
     pub harnesses: Vec<StudioHarness>,
     /// Every skill from outside the plane that has the name of a skill a chat gets, by name.
     pub clashes: Vec<StudioClash>,
+    /// What it offers to start from (SK-22, #2785): the core's `skills::first_open`.
+    pub first: StudioFirst,
+}
+
+/// **What the studio offers when it opens** (SK-22, #2785; decision 42), as the core works it
+/// out (`purlis_core::skills::first_open`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Type)]
+pub struct StudioFirst {
+    /// Whether the project has no skill of its own, so the three starts are offered: make one
+    /// with a chat, browse skill sources, start blank.
+    pub starts: bool,
+    /// Where the project's skills are still where only some chat programs read them: how many,
+    /// and the doctor's fix that moves them (SK-21).
+    pub unmoved: Option<StudioUnmoved>,
+}
+
+/// The project's skills still to move into the studio's.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct StudioUnmoved {
+    pub skills: u32,
+    /// The doctor's fix that moves them, by its id (`planeDoctorFix`).
+    pub fix: String,
+}
+
+impl From<purlis_core::skills::first_open::FirstOpen> for StudioFirst {
+    fn from(first: purlis_core::skills::first_open::FirstOpen) -> Self {
+        StudioFirst {
+            starts: first.starts,
+            unmoved: first.unmoved.map(|unmoved| StudioUnmoved {
+                skills: u32::try_from(unmoved.skills).unwrap_or(u32::MAX),
+                fix: unmoved.fix.id().to_owned(),
+            }),
+        }
+    }
 }
 
 /// The studio of the project at `root`, for a chat at its root (`workspace` `None`) or in
 /// `workspace`, as `persona` or on none, with the built-in skills in `built_in`: nothing while
-/// the flag is off. Its rows are the command line's (`purlis_core::skills::studio_rows`).
+/// the flag is off. Its list is the command line's (`purlis_core::skills::studio_list`).
 pub(crate) fn studio(
     root: &std::path::Path,
     built_in: Option<&std::path::Path>,
@@ -328,25 +371,24 @@ pub(crate) fn studio(
             skills: Vec::new(),
             harnesses: Vec::new(),
             clashes: Vec::new(),
+            first: StudioFirst::default(),
         };
     }
-    let set = purlis_core::skills::in_the_studio(
-        built_in,
-        root,
-        workspace.as_deref(),
-        persona.as_deref(),
-    );
-    let names = persona
-        .as_deref()
-        .map(|persona| purlis_core::skills::names_of(root, persona))
-        .unwrap_or_default();
     let off = workspace
         .as_deref()
         .map(|ws| purlis_core::skills::turned_off(root, ws))
         .unwrap_or_default();
-    let all = purlis_core::skills::harnesses_in_the_studio(&set, root, workspace.as_deref(), env);
-    let mut rows = purlis_core::skills::studio_rows(&set, root, &names);
-    purlis_core::skills::with_harness_badges(&mut rows, &all, root);
+    let purlis_core::skills::StudioList {
+        rows,
+        harnesses: all,
+    } = purlis_core::skills::studio_list(
+        built_in,
+        root,
+        workspace.as_deref(),
+        persona.as_deref(),
+        env,
+    );
+    let first = purlis_core::skills::first_open::first_open(root, &rows).into();
     let skills = rows
         .into_iter()
         .map(|row| {
@@ -388,7 +430,7 @@ pub(crate) fn studio(
             lint: row.lint,
         })
         .collect();
-    let (harnesses, clashes) = harnesses(&all, root);
+    let (harnesses, clashes) = harnesses(&all);
     let workspaces = purlis_core::workspaces::Plane::open(root)
         .workspaces()
         .unwrap_or_default();
@@ -401,6 +443,7 @@ pub(crate) fn studio(
         skills,
         harnesses,
         clashes,
+        first,
     }
 }
 
@@ -408,13 +451,9 @@ pub(crate) fn studio(
 /// its harness can leave it out.
 fn outside_shown(row: purlis_core::skills::StudioRow) -> StudioSkill {
     let (owner, switch) = match row.outside {
-        Some(purlis_core::skills::OutsideRow { owner, switch }) => (
-            Some(owner.into()),
-            Some(match switch {
-                purlis_core::skills::Switch::Alone => SkillSwitch::Alone,
-                purlis_core::skills::Switch::Not(why) => SkillSwitch::Not { why },
-            }),
-        ),
+        Some(purlis_core::skills::OutsideRow { owner, switch }) => {
+            (Some(owner.into()), Some(switch.into()))
+        }
         None => (None, None),
     };
     StudioSkill {
@@ -444,7 +483,6 @@ fn outside_shown(row: purlis_core::skills::StudioRow) -> StudioSkill {
 /// Each harness in the studio, and every clash, for a chat whose plane skills are `set`.
 fn harnesses(
     all: &[purlis_core::skills::HarnessInTheStudio],
-    root: &std::path::Path,
 ) -> (Vec<StudioHarness>, Vec<StudioClash>) {
     use purlis_core::harness_plugin;
     let mut clashes: Vec<StudioClash> = Vec::new();
@@ -490,10 +528,7 @@ fn harnesses(
                         pinned: it.pinned.map(str::to_owned),
                     })
                     .collect(),
-                skills: purlis_core::skills::outside_rows(one, root)
-                    .into_iter()
-                    .map(outside_shown)
-                    .collect(),
+                skills: one.rows.iter().cloned().map(outside_shown).collect(),
             }
         })
         .collect();

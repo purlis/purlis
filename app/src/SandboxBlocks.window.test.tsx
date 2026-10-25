@@ -50,7 +50,19 @@ afterEach(forgetInbox);
 afterEach(() => {
   cleanup();
   clearMocks();
+  vi.useRealTimers();
 });
+
+/**
+ * **Past the settle guard** (#1695): a press on a granting Notice within {@link SETTLE_MS} of its
+ * drawing does nothing. The guard reads the clock, so the clock is moved on rather than waited
+ * for (#3136): only `Date` is faked, from the first settle on, and every timer stays real.
+ */
+const settled = () =>
+  act(() => {
+    if (!vi.isFakeTimers()) vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.now() + SETTLE_MS + 50);
+  });
 
 const PLANE = "/home/dev/plane";
 const ALPHA = `${PLANE}/workspaces/alpha`;
@@ -526,12 +538,6 @@ describe("several hosts refused at once are one Notice (#1637)", FLOW, () => {
     levels: ["chat", "you", "project"],
   });
   const HOSTS = ["a.example.com:443", "b.example.com:443", "c.example.com:443"];
-  /** Past the guard on a press just after a host joined. */
-  const settle = () =>
-    act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, SETTLE_MS + 50));
-    });
-
   it("lists every host, allows each with one press, and restarts the chat once", async () => {
     const { asked } = await aChat();
     await act(() => emit("chat-moved", WAITING));
@@ -553,7 +559,7 @@ describe("several hosts refused at once are one Notice (#1637)", FLOW, () => {
     );
     expect(notice).toHaveTextContent("A host joined this Notice just now, so nothing was allowed.");
     expect(asked("allow_sandbox_block")).toEqual([]);
-    await settle();
+    await settled();
     await userEvent.click(
       within(notice).getByRole("button", { name: "Allow for me on this machine" }),
     );
@@ -581,7 +587,7 @@ describe("several hosts refused at once are one Notice (#1637)", FLOW, () => {
     const full = Array.from({ length: AT_MOST_HOSTS }, (_, at) => `h${at}.example.com:443`);
     for (const host of full) await act(() => emit("chat-sandbox-blocked", ON(host)));
     const notice = await screen.findByRole("status", { name: "Sandbox block" });
-    await settle();
+    await settled();
     // The ninth host drops the first, which named the block: still the same Notice, still guarded.
     await act(() => emit("chat-sandbox-blocked", ON("late.example.com:443")));
     // It joins the Notice once the registry lists it (#1695).
@@ -601,7 +607,7 @@ describe("several hosts refused at once are one Notice (#1637)", FLOW, () => {
     // Every host joins once the registry lists it (#1695): the guard runs from the last join,
     // and the Notice is read once they all have, as the one on screen then.
     for (const host of HOSTS) await screen.findByText(host);
-    await settle();
+    await settled();
     const notice = screen.getByRole("status", { name: "Sandbox block" });
     await userEvent.click(
       within(notice).getByRole("button", { name: "Allow for me on this machine" }),
@@ -616,7 +622,7 @@ describe("several hosts refused at once are one Notice (#1637)", FLOW, () => {
     const now = await screen.findByRole("status", { name: "Sandbox block" });
     await waitFor(() => expect(now).toHaveTextContent("Allowed already"));
     expect(screen.getByText("d.example.com:443")).toBeInTheDocument();
-    await settle();
+    await settled();
     await userEvent.click(
       within(now).getByRole("button", { name: "Allow for me on this machine" }),
     );
@@ -985,7 +991,7 @@ describe("a refused host answered in the Inbox (#1692)", () => {
     const inbox = await screen.findByRole("tabpanel", { name: "Inbox" });
     const allow = await within(inbox).findByRole("button", { name: "Allow for this chat" });
     // An Allow in the Inbox waits for its row to settle (#1695): the person reads it first.
-    await new Promise((resolve) => setTimeout(resolve, SETTLE_MS + 50));
+    await settled();
     held = false;
     await userEvent.click(allow);
 
@@ -1018,7 +1024,7 @@ describe("a refused host answered in the Inbox (#1692)", () => {
     const inbox = await screen.findByRole("tabpanel", { name: "Inbox" });
     const allow = await within(inbox).findByRole("button", { name: "Allow for this chat" });
     // An Allow in the Inbox waits for its row to settle (#1695): the person reads it first.
-    await new Promise((resolve) => setTimeout(resolve, SETTLE_MS + 50));
+    await settled();
     held = false;
     await userEvent.click(allow);
 
@@ -1188,9 +1194,7 @@ describe("a block's Notice is drawn from the ask the registry lists (#1695)", ()
     const drawn = within(notice.parentElement ?? notice).getAllByText("/w/gpj.\\u202eexe\\u200b");
     expect(drawn.length).toBeGreaterThan(0);
     expect(document.body.textContent).not.toMatch(/[\u200B\u202E]/);
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, SETTLE_MS + 50));
-    });
+    await settled();
     await userEvent.click(within(notice).getByRole("button", { name: "Allow only for this chat" }));
     await waitFor(() =>
       expect(
@@ -1224,9 +1228,7 @@ describe("a block's Notice is drawn from the ask the registry lists (#1695)", ()
     await act(() => emit("chat-sandbox-blocked", live));
     const notice = await screen.findByRole("status", { name: "Sandbox block" });
     await waitFor(() => expect(notice).toHaveTextContent(HOLD_RAN_OUT));
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, SETTLE_MS + 50));
-    });
+    await settled();
     await userEvent.click(within(notice).getAllByRole("button")[0]);
     const allowed = await screen.findByRole("status", { name: "Sandbox block" });
     // Nothing is typed into the chat by itself: only the person's press puts the line there.
@@ -1236,9 +1238,7 @@ describe("a block's Notice is drawn from the ask the registry lists (#1695)", ()
     await userEvent.click(retry);
     expect(allowed).toHaveTextContent("appeared just now");
     expect(asked("send_input")).toEqual([]);
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, SETTLE_MS + 50));
-    });
+    await settled();
     await userEvent.click(retry);
     await waitFor(() =>
       expect(asked("send_input")).toEqual([
@@ -1255,9 +1255,7 @@ describe("a block's Notice is drawn from the ask the registry lists (#1695)", ()
     await act(() => emit("chat-moved", WAITING));
     await act(() => emit("chat-sandbox-blocked", live));
     const notice = await screen.findByRole("status", { name: "Sandbox block" });
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, SETTLE_MS + 50));
-    });
+    await settled();
     await userEvent.click(within(notice).getAllByRole("button")[0]);
     await waitFor(() =>
       expect(screen.getByRole("status", { name: "Sandbox block" })).toHaveTextContent(

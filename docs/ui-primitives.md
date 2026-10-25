@@ -254,7 +254,7 @@ primitive, only a native element and native buttons (`tabIndex={0}` on each, for
 argument above about props being the primitive's own does not apply; its props are the line's
 own words instead. What it adds is a type that refuses a line with no way out: `fixes`, `link`,
 `copy` or `onDismiss`, at least one, and always a `cause`. `at="pane"` draws it in its pane's
-row of Notices, above the terminal and never over it (#1647); the default, `at="inbox"`, lists it
+band of warnings, inside the pane above its terminal and never over it (#1647, #3142); the default, `at="inbox"`, lists it
 in the project's Inbox (#1695).
 `Notice.guard.test.ts` fails on a hand-built one. A fix whose press is still on its way
 (`busy`, an Undo in flight, #1190) is `aria-disabled` and `aria-busy`, and ignores a press, so a
@@ -278,23 +278,37 @@ chat stopped on a prompt, qw386) hides it for this run and that wait only (`hide
 so as its tooltip (`dismissSays`): the needs-you list and the tab's hand still show the wait.
 
 In a pane (`at="pane"`), a Notice is one box: its line, and under it what a way out opened. A
-pane's Notices stand in **a row of their own at the top of the pane** (`NoticePaneRow`, #1647),
-and the terminal has the height the row leaves, so no Notice is ever drawn over what a chat
-wrote. They were in the pane's corner, over the terminal, until the operator's screenshot of
-three of them hiding the conversation. In the row they are stacked in `.pane-notices`, in the
+pane's Notices stand in **a band of their own at the top of the pane, inside it**
+(`NoticePaneRow`, #1647, #3142), and the terminal has the height the band and the pane's header
+leave, so no Notice is ever drawn over what a chat wrote. They were in the pane's corner, over
+the terminal, until the operator's screenshot of three of them hiding the conversation; then in a
+row above the pane, between the chosen tab and its pane, until the operator's screenshot of
+2026-10-24 showed it breaking the tab's join. **A pane is three rows** (`paneFrame.css`, the
+operator's variant A): the band, on the terminal's own fill with an 8px runway at its top so the
+chosen tab joins the terminal; the header (`PaneHead`), the chat at a glance at its start and the
+pane's actions at its end (`PaneActions`, the one cluster of split side by side, split stacked and
+close, which a view's pane draws too, #3147); then the terminal, pinned to its bottom so a warning
+coming or going moves its top and never its last line. In the band each Notice is a washed card
+(`wash.warning`, `danger.wash` for trouble, no edge), its words above its ways out, a consent's
+Allow set apart from Keep blocked and the only answer with an edge. The band is a `region`, "Warnings
+for this pane"; a card never shrinks in it, so past its room the cards scroll inside it whole. Esc
+on a warning with a Dismiss puts it away, and the keyboard goes on to the next warning or to the
+terminal, never onto an Allow: a consent is landed on by its line. A consent has no Dismiss and
+Esc leaves it. The press-settle guard (#1695) reads where each line is drawn against the band
+itself, scrolling aside, never its `offsetTop`, which a card positioned for its mark would pin. In the row they are stacked in `.pane-notices`, in the
 order the pane writes them: the shown chat's own, the one that waits for an answer before
 anything starts first, then each hidden chat's. **At most two stand, and the rest are behind
-"+N more"**; it sits beside the stack, so a third Notice takes no line, and
-it opens the rest in the row, closing on Escape (back on "+N more") or a press outside the row.
+"+N more"**, on a row of its own under them, as wide as the longer of "+N more" and the Show
+fewer it says while open (both are drawn in one cell, the one not said hidden); it opens the rest in the band, closing on Escape (back on "+N more") or a press outside it.
 A Notice past two is `hidden` where it is drawn, never moved, so it keeps its state, and one the
-keyboard is on stays until the focus leaves it. The row is never more than three fifths of the
-pane, and inside it the stack is never wider or taller than the pane: the sentence has the row,
+keyboard is on stays until the focus leaves it. The band and the header are never more than
+about half the pane, and inside it the stack is never wider or taller than the pane: the sentence has the row,
 the ways out go under it when they do not fit beside it, and the stack scrolls (#1481). Every
 change of the row's height refits the terminal, which resizes the chat's pty and redraws its
 harness; with two at most, a third Notice and every one after it change only the count. The
-chat at a glance (the gauge, the harness, the breadcrumb) stays in the corner over the
-terminal: one short line. `Notice.pane.test.tsx` holds the shape and the rules, and
-`pane-notices.e2e.ts` measures them, with no Notice over the terminal in a narrow pane and a
+chat at a glance (the gauge, the harness, the breadcrumb) is the header's line, never over the
+terminal. `Notice.pane.test.tsx` and `PaneBand.test.tsx` hold the shape and the rules, and
+`pane-notices.e2e.ts` and `pane-warnings.e2e.ts` measure them, with no Notice over the terminal in a narrow pane and a
 wide one. Everything the window draws is ordered inside `#root`, which is one stacking
 context, so no `z-index` in the window is over a dialog or a menu: those are portaled to the
 body and need no number.
@@ -797,12 +811,34 @@ The chat strip's tabs are drawn by `app/src/ui/tabs`: `TabCell` is one tab's cel
 column (`layout`), the strip and the panel under it (`body`), `tabPart` the label, the `×` and a
 count, and `editorToolbar` the bar over a file. `tabs.css` draws Purlis's docked tabs from those
 attributes; a theme's `tabs.*` parts reach the same ones (`crates/purlis-core/docs/themes.md`,
-Session tabs). The strip keeps its behaviour where it was: the roving focus, the drag, the
-tablist that owns the tabs (`StripTablist`) and the collapse into show-more (`fits.ts`, which
-now counts the theme's gap between tabs). Choosing a tab changes its colour and fill only
-(`tabs.guard.test.ts`; the Docked story measures every tab before and after each choice). The
-other tab strips (projects, workspaces, the activity tabs) move to the family with their own
-shell tickets.
+Session tabs). Choosing a tab changes its colour and fill only (`tabs.guard.test.ts`; the Docked
+story measures every tab before and after each choice).
+
+**The strip is on React Aria's tabs** (#3042, `app/src/ui/tabs/TabStrip.tsx`): `useTabStrip`
+holds the strip's tabs as React Aria does (`useTabListState`), `TabStripRow` is the row that holds
+the cells and its tablist (`useTabList`), and `StripTab` is one tab (`useTab`). They follow the
+WAI-ARIA "Tabs" pattern:
+
+- **The keyboard along it**: Left and Right move to the tab beside, wrapping past either end, Home
+  and End to the first and the last, the direction following the locale. Only these keys are
+  React Aria's, and only pressed on a tab: a `×` or a chip beside a tab keeps its own, Tab goes
+  on to the next stop in the document (the `+`), and a key the tab has taken is its own (a lifted
+  tab's arrows are the drag's).
+- **Manual activation**: moving is not choosing; Enter or Space chooses, through the strip's own
+  press (`tab.select:<id>`), which can do what React Aria's selection cannot: a press on the tab in
+  front showing a task goes back to its chat, and a drag's release is no press.
+- **One Tab stop**: the tab the keyboard is on while it is inside, the chosen tab once it leaves
+  (or the first drawn when the chosen one is collapsed), and the chosen tab again when the tab
+  with the keyboard goes.
+- **Still the strip's own**: the tablist that owns the tabs by id and nothing else (below), the
+  drag along it (`dnd-kit`, `sortable.tsx`; React Aria's drag and drop is for list boxes, grids,
+  tables and trees) and the collapse into show-more (`fits.ts`, which counts the theme's gap
+  between tabs).
+
+`purlis/tabs-family` (an error) refuses a `tab`, `tablist` or `tabpanel` role written by hand,
+the old hand-made tablist (`StripTablist`) and `data-scope="tabs"` outside `src/ui`. The tablists
+still drawn by hand (the workspace strip, the activity bars, the project rail's) are turned off by
+file in `eslint.config.js` until their own tickets move them.
 
 
 ## The activity family: the four corners
@@ -1040,7 +1076,7 @@ its role and writes no `font-size`, `font-weight` or `color` for it.
 | Body      | `ui-text-body`      | what the surface is about: a row's name, an ask's words | 13px                | regular (400) | `text.primary`   |
 | Secondary | `ui-text-secondary` | where, who, a help line under a field                   | 12px                | regular (400) | `text.secondary` |
 | Meta      | `ui-text-meta`      | age, kind, counts, shortcuts: read last                 | 11px                | regular (400) | `text.quiet`     |
-| Label     | `ui-text-label`     | a section label over a group; capitals, spaced `0.06em` | 11px                | strong (600)  | `text.secondary` |
+| Label     | `ui-text-label`     | a section label over a group; capitals, spaced `0.05em` | 11px                | strong (600)  | `text.secondary` |
 | Code      | `ui-text-code`      | a command, a path, a host                               | the role it sits in | regular (400) | inherited        |
 
 The px are at the default 14px text; each size is a core token and scales with the text-size
@@ -1781,12 +1817,14 @@ chat's `×`, fresh mark and task chip, every strip's own `+`), so the `tablist` 
 element that holds them.
 
 - **The strip element** (`.projects`, `.workspaces-strip`, `.tabs`) has no role. It is marked
-  `data-strip="Projects" | "Workspaces" | "Tabs"`, and keeps its cells, its `RovingFocusGroup.Root`
-  (the arrows, Home and End read the order from the document, not from a role), its `DndContext`
-  and the ref `useRoom` measures.
+  `data-strip="Projects" | "Workspaces" | "Tabs"`, and keeps its cells, its keyboard (React Aria's
+  on the chat strip, `TabStripRow`; a `RovingFocusGroup.Root` on the others, whose arrows, Home and
+  End read the order from the document, not from a role), its `DndContext` and the ref `useRoom`
+  measures.
 - **The tablist** is an empty `<span role="tablist" aria-label=…>` first inside it
-  (`StripTablist.tsx`), owning the tabs drawn by id, in order. The stylesheet lays it over the
-  strip with `pointer-events: none`, so it takes no room and no press.
+  (`TabStripRow` on the chat strip, `StripTablist.tsx` on the others), owning the tabs drawn by
+  id, in order. The stylesheet lays it over the strip with `pointer-events: none`, so it takes no
+  room and no press.
 - **Reaching a strip's tabs**: code, the stylesheet and the scenario specs go through
   `[data-strip="…"]`; a vitest finds the tablist by its role and name and takes the strip around
   it with `stripNamed` (`test-strips.ts`), which also holds the tablist to owning exactly the tabs
@@ -2090,6 +2128,17 @@ revealed with `⌥⌘R` and `Shift+Alt+R` (#1143, `Palette.fileKeyOf`), VS Code'
 same two rows. They are read only in the palette's box, so they take nothing from a chat or a
 tab; the line under the files says them while a file is aimed. Keys and not buttons, because a
 listbox option's contents are presentational and a button inside one is not reachable.
+
+**The title bar's workspace key takes one chord from a chat, off a Mac, on purpose** (#2916,
+`workspaceSwitch.opensTheWorkspaces`, the operator's rulings of 2026-10-24): `⌥⌘P` on a Mac and
+`Ctrl+Alt+Shift+P` elsewhere open the workspace popover, read by the physical key (`KeyP`), since
+`⌥` turns P into another letter on a Mac. xterm.js 6.0.0 sends nothing for a `⌘` chord, so on a
+Mac nothing is taken. Off a Mac it would send `ESC ^P` (C-M-p) to a focused chat, which bash, zsh
+and readline leave unbound and Emacs binds to backward-list: the window takes it, as VS Code takes
+its own app keys, so the key works from a chat too. AltGr, which Windows reports as Ctrl+Alt, is
+not the key: a letter typed with AltGr+Shift+P is left alone. `⌘1`–`⌘9`
+go to the project's pins; off a Mac `Ctrl+1`–`9` is the chat's while it has the keyboard. None of
+them acts while a dialog is up.
 
 **Find in a pane is `⌘F` on a Mac and `Ctrl+Shift+F` elsewhere, and takes nothing either** (SI-4,
 `SessionPane.opensFind`). xterm.js 6.0.0 sends nothing for `⌘F`. It would send `\x06` for

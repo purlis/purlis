@@ -18,7 +18,6 @@ import {
 import { listen } from "./here";
 import { CHAT_RESTORED, isRestoring, restoredSince, type ChatRestored } from "./restoringChats";
 import { QueueRead } from "./QueueRead";
-import { CountPill } from "./CountPill";
 import { machineChanged } from "./settings/thisMachine";
 import { MAIN, thisWindow } from "./windows";
 import { createPortal } from "react-dom";
@@ -29,7 +28,7 @@ import {
   ProjectShownProvider,
   useProjectHost,
 } from "./projectShown";
-import { FolderPlus, House, MessageSquarePlus } from "lucide-react";
+import { FolderPlus, MessageSquarePlus } from "lucide-react";
 import {
   commands,
   type AtRisk,
@@ -94,7 +93,9 @@ import {
 } from "./saving";
 import { HARNESS_SETUP, type HarnessSetupAsk } from "./harnessSetup";
 import { curationSubjects, useCurations } from "./curations";
-import { LiveDialog, LiveMark } from "./LiveDialog";
+import { LiveDialog } from "./LiveDialog";
+import { slideIn, takeSlide, wayOf } from "./workspaceSlide";
+import { onPinsChanged } from "./workspacePins";
 import { RemoveFromWorkspace } from "./RemoveFromWorkspace";
 import { DeleteWorkspace } from "./DeleteWorkspace";
 import { Menued } from "./Menus";
@@ -176,6 +177,7 @@ import type { Elsewhere } from "./InboxElsewhere";
 import { sayAboutThisMachine, useAboutThisMachine } from "./windowprefs";
 import { drawWhatIsInForce } from "./Extensions";
 import { useProfileNames } from "./profileNames";
+import { useScreenReaderMode } from "./screenReader";
 import { PersonaMarks, ReloadPersonaMarks } from "./PersonaMark";
 import { usePersonaMarks } from "./usePersonaMarks";
 import { taskChangesTitle, taskChangesView } from "./taskChanges";
@@ -368,7 +370,6 @@ import { AddToAChat } from "./AddToAChat";
 import { handReferences } from "./referencesMany";
 import { DRAFT, isMemory, memoryRefOf } from "./memories";
 import type { FirstTaskDoes } from "./FirstTaskTab";
-import { useTabStop } from "./roving";
 import { onAMac } from "./tabKeys";
 import { opensAShell } from "./shellKey";
 import { EmptyState } from "./ui/empty-state/EmptyState";
@@ -447,7 +448,7 @@ import {
   type FailedBelow,
   type State,
 } from "./chatState";
-import { fitting, LEAST, LEAST_CHIP, LEAST_ROOT, leastAt, useRoom, useWidth } from "./fits";
+import { fitting, LEAST, LEAST_CHIP, leastAt, useRoom } from "./fits";
 import { tabPanelOf, tabsPart } from "./ui/tabs/Tabs";
 import { panelRoot } from "./ui/panel/Panel";
 import { oneChatMidTurn, type Ending } from "./QuitWarning";
@@ -470,11 +471,15 @@ import {
 import { enterSettings, placeOfView } from "./settings/entering";
 import { onceTheKeyboardIsBack } from "./keyboardBack";
 import { SessionOffersLent } from "./sessionOffers";
-import { WorkspaceStrip } from "./WorkspaceStrip";
 import { SKILL_CHAT, type SkillChatAsk } from "./skillDraftAsks";
 import { ChatStrip, NO_ENDED, NO_ROWS } from "./ChatStrip";
-import { type FirstChat, type PlaneReport, type WindowDoing } from "./planeReport";
-import { Doer, Pin } from "./StripMarks";
+import {
+  type FirstChat,
+  type PlaneReport,
+  type ReportedWorkspaces,
+  type WindowDoing,
+} from "./planeReport";
+import { Doer } from "./StripMarks";
 import type { SandboxSaid } from "./SandboxMark";
 import {
   type RestartAct,
@@ -1034,6 +1039,14 @@ export const PlaneView = memo(function PlaneView({
   /** The same, for the pins: a pin is written by the core, so the window asks what the core
    *  now says rather than assuming its own write landed as it expected. */
   const [pinning, setPinning] = useState(0);
+  // Pinned from the title bar while this project is behind another (#2916): read them again.
+  useEffect(
+    () =>
+      onPinsChanged((changed) => {
+        if (changed === plane) setPinning((asked) => asked + 1);
+      }),
+    [plane],
+  );
   /** What the last action answered: one line, or a refusal in the words it came in. The
    *  window draws it, beside the palette that shares it. */
   const [report, setReport] = useState<Said>();
@@ -2452,7 +2465,7 @@ export const PlaneView = memo(function PlaneView({
   /** Every workspace the window can bring forward: **the plane root first, always** (SI-1),
    *  then this project's workspaces — the pinned ones first, in the order they were pinned in,
    *  then the rest in the plane's own order, which is the sidebar's.
-   *  The palette lists all of them; the strip draws fewer (`onWorkspaceStrip`, below). */
+   *  The palette and the title bar's ⌄ list all of them; the title bar's chips are the pins. */
   const strips = useMemo(() => {
     if (sidebar === undefined) return [];
     const names = sidebar.workspaces.map((ws) => ws.name);
@@ -2466,64 +2479,12 @@ export const PlaneView = memo(function PlaneView({
     ];
   }, [pinnedWorkspaces, sidebar]);
 
-  /**
-   * What the workspace strip draws: **the pinned workspaces, and the one you are in** (ADR
-   * 0054). Everything else is behind its show-more button.
-   *
-   * An operator with many workspaces works in about three, and filling the width with whatever
-   * fits put the workspaces nobody was working in beside the three that mattered. So the pins
-   * are the strip, in the order `strips` holds them, and the workspace in front is drawn after
-   * them when it is not one of them — ADR 0039's "the selected tab is always drawn", which is
-   * what says where you are — and goes back behind show-more when you leave it. Nothing else
-   * earns a tab: a workspace that needs you is counted on the show-more button, never moved
-   * onto the strip under the operator's hand.
-   */
-  const onWorkspaceStrip = useMemo(
-    () =>
-      strips.filter(
-        (name) => name === OUTSIDE || pinnedWorkspaces.includes(name) || name === focused,
-      ),
-    [focused, pinnedWorkspaces, strips],
-  );
-
-  /** And which of those the strip has room to draw. The same rule as the chats' one level
-   *  down: when the pins alone do not fit, what does not fit goes behind show-more too, so the
-   *  strip never scrolls and never loses its `+`, which is inside it and whose width comes off
-   *  the room first (`controls`, DS-7). */
-  const {
-    strip: workspaceStrip,
-    controls: workspaceControls,
-    width: workspaceRoom,
-  } = useRoom(onWorkspaceStrip.length);
-  /** The workspace tabs' ids, which the strip's tablist owns them by (#1204). */
-  const workspaceTabId = useTabIds();
   // The floors grow with the window's text (charter-app#283, `fits.leastAt`).
   const windowText = useTextSizes().window;
-  const workspaceLeast = leastAt(LEAST.workspace, windowText);
   const chatLeast = leastAt(LEAST.chat, windowText);
-  // The plane root's tab is an icon and its count pill, never narrower than this
-  // (`.plane-root`), and as wide as it is measured (qw337): that is taken off the room before
-  // the workspaces share what is left, so a root that wears a pill costs the strip the pill.
-  const rootWidth = leastAt(LEAST_ROOT, windowText);
-  const { ref: workspaceRoot, width: rootMeasured } = useWidth(
-    tabsIn(tabs, OUTSIDE, filedIn).length,
-  );
-  const rootTaken = Math.max(rootWidth, rootMeasured);
   // A chip is exactly this wide (`.tab.chip`), and the chat strip fits by it: a chip holding a
   // tab's floor would hide a tab the strip has room for.
   const chipWidth = leastAt(LEAST_CHIP, windowText);
-  const workspacesShown = useMemo(() => {
-    const { shown } = fitting(
-      onWorkspaceStrip.filter((name) => name !== OUTSIDE),
-      focused,
-      workspaceRoom <= 0 ? workspaceRoom : Math.max(1, workspaceRoom - rootTaken),
-      workspaceLeast,
-    );
-    // **The root is always drawn, and always first** (SI-1): it is never hidden behind
-    // show-more, whatever else does not fit.
-    const drawn = [OUTSIDE, ...shown];
-    return { shown: drawn, hidden: strips.filter((name) => !drawn.includes(name)) };
-  }, [focused, onWorkspaceStrip, rootTaken, strips, workspaceRoom, workspaceLeast]);
 
   /**
    * **Each workspace's colour** (charter-app#281), as the core read it out of its
@@ -2621,64 +2582,23 @@ export const PlaneView = memo(function PlaneView({
     [askedBy, chatsByNumber, sidebar, tabs],
   );
 
-  /** How many chats in `workspace` need you: its tab's count, and its share of the count on
-   *  the show-more button when the strip is not drawing it (ADR 0054). One reading of the
-   *  queue for both, so the button goes down exactly when the tab would. */
+  /** How many chats in `workspace` need you: its chip's count in the title bar, and its row's
+   *  in the title bar's switchers (#2916). One reading of the queue for all of them. */
   //
   // **A chat is counted where its tab is** (#1486, V100-40): a task that works in another
   // workspace lives in the tab of the session that asked, so that session's workspace wears
   // it. A chat with no tab is counted where it works, as before.
-  const waitingIn = (queue: readonly number[], workspace: string) =>
-    queue.filter((session) => {
-      const home = homeOf(tabs, session, askedBy);
-      return (
-        (home === undefined ? filedIn(session) : workspaceOf(tabs, home.tab, filedIn)) === workspace
-      );
-    }).length;
-
-  const workspaceMarks = (workspace: string) => {
-    const here = tabsIn(tabs, workspace, filedIn).length;
-    const called = workspace === OUTSIDE ? OUTSIDE_TITLE : workspace;
-    const colour = colourOf(workspace);
-    const root = workspace === OUTSIDE;
-    return (
-      <>
-        {/* Its colour, as a mark in its own accent (charter-app#281) — on the strip and in the
-            menu of what the strip is not drawing, which is why it is here and not a style of
-            the tab alone. Hidden from a screen reader: the name says which workspace. */}
-        {colour !== null && (
-          <span
-            className="workspace-mark"
-            aria-hidden="true"
-            data-colour={colour}
-            style={tintOf(workspace)}
-          />
-        )}
-        {/* The plane root is drawn as an icon alone (SI-1): its tab's `aria-label` and tooltip
-            say what it is. Everything else is drawn by name. **A house** (qw337): the place
-            every chat starts from when it is in no workspace. It was a folder with a root
-            mark, which at a tab's size read as one more folder. */}
-        {root ? (
-          <House className="node-icon" aria-hidden="true" />
-        ) : (
-          <span className="workspace-name">{called}</span>
-        )}
-        {/* LIVE, said: published with the plane (charter-app#301), as a dot right after the
-            name (qw337). LOCAL is the default and draws nothing. */}
-        {liveOf(workspace) && <LiveMark dot />}
-        {/* How many chats are open over there, and how many of them are asking for you, in
-            one pill (`CountPill`, qw337). With the strip below showing one workspace's chats,
-            the first is the answer to "where are the other forty"; scoping the chats to a
-            workspace would otherwise hide a chat that needs you behind a strip nobody is
-            looking at, the same hole the project tabs close one scope up. */}
-        <QueueRead>
-          {(queue) => <CountPill chats={here} needs={waitingIn(queue, workspace)} />}
-        </QueueRead>
-        {/* Last, because it is drawn out of the row, in the tab's top corner (`.pinned`). */}
-        <Pin held={pinnedWorkspaces.includes(workspace)} what="workspace" />
-      </>
-    );
-  };
+  const waitingIn = useCallback(
+    (queue: readonly number[], workspace: string) =>
+      queue.filter((session) => {
+        const home = homeOf(tabs, session, askedBy);
+        return (
+          (home === undefined ? filedIn(session) : workspaceOf(tabs, home.tab, filedIn)) ===
+          workspace
+        );
+      }).length,
+    [askedBy, filedIn, tabs],
+  );
 
   /**
    * The chats the strip shows: the focused workspace's.
@@ -2795,29 +2715,6 @@ export const PlaneView = memo(function PlaneView({
   const notShowing = useChatsSelect(
     chats,
     (states) => byLastActivity(hidden, tabs, lastMoved(states)),
-    sameList,
-  );
-
-  /**
-   * And what the workspace strip's show-more menu lists: the workspaces it is not drawing —
-   * the ones nobody pinned and you are not in, and any pins it had no room for — **most
-   * recently moved first** — the chat strip's rule one level up (ADR 0039, ADR 0054).
-   *
-   * A workspace moved when the last of its chats did. One nothing has been heard about reads
-   * `0` and keeps the strip's order, for `byLastActivity`'s reason.
-   */
-  const workspacesNotShowing = useChatsSelect(
-    chats,
-    (states) => {
-      const movedIn = (workspace: string) =>
-        Math.max(
-          0,
-          ...tabsIn(tabs, workspace, filedIn)
-            .flatMap((id) => panesOf(tabs, id))
-            .map((pane) => movedAt(states, pane.session)),
-        );
-      return [...workspacesShown.hidden].sort((one, other) => movedIn(other) - movedIn(one));
-    },
     sameList,
   );
 
@@ -4844,69 +4741,10 @@ export const PlaneView = memo(function PlaneView({
     [change, isBackground, isPinned, onStrip, pinTab, shown],
   );
 
-  /**
-   * A workspace tab dragged onto another on the workspace strip (SI-6): its pins put in the new
-   * order in the machine store (ADR 0040), after pinning or unpinning it when it crossed.
-   *
-   * **Drawn in the new order at once**, from `pinnedWorkspaces`, which is what the strip is
-   * drawn from; and then asked again of the store, which is the answer. A refusal is said, and
-   * the store's own order comes back with the re-read.
-   *
-   * **Outside every workspace is fixed**: it is not a directory, so it cannot be pinned (the
-   * store refuses a name with a `/` in it), and nothing is put down in its place. A later
-   * change draws it first; `reorder.ts` already keeps a fixed tab where it is.
-   */
-  const dragWorkspace = useCallback(
-    (moved: string, onto: string) => {
-      const pinnedNow = (name: string) => pinnedWorkspaces.includes(name);
-      const made = afterDrop({
-        whole: onWorkspaceStrip,
-        drawn: workspacesShown.shown,
-        moved,
-        onto,
-        isPinned: pinnedNow,
-        isFixed: (name) => name === OUTSIDE,
-      });
-      if (made === undefined) return;
-      const pins = made.order.filter((name) =>
-        name === moved && made.pinned !== undefined ? made.pinned : pinnedNow(name),
-      );
-      setPinnedWorkspaces(pins);
-      /** The core's refusal of one write, or nothing when it was written. */
-      const refusal = (asking: Promise<{ status: "ok" } | { status: "error"; error: string }>) =>
-        asking.then(
-          (said) => (said.status === "error" ? said.error : undefined),
-          (err: unknown) => String(err),
-        );
-      void (async () => {
-        // The pin first, when the drop crossed: arranging never pins (`Store::arrange_workspaces`).
-        const failed =
-          (made.pinned === undefined
-            ? undefined
-            : await refusal(commands.pinWorkspace(plane, moved, made.pinned))) ??
-          (await refusal(commands.arrangeWorkspacePins(plane, pins)));
-        if (failed !== undefined)
-          setReport({ from: "workspace.drag", refused: true, words: failed });
-        setPinning((asked) => asked + 1);
-        // This machine lists the pins in order, and may be on screen (#1240). Read again either
-        // way: a refused write leaves the store as it says, and that is what the group shows.
-        machineChanged();
-      })();
-    },
-    [onWorkspaceStrip, pinnedWorkspaces, plane, workspacesShown.shown],
-  );
-
-  /** What a screen reader hears while a tab is dragged on the chat and workspace strips. */
+  /** What a screen reader hears while a tab is dragged on the chat strip. */
   const chatDragWords = useMemo(
     () => stripAccessibility("tab", (id) => tabs.byId[Number(id)]?.name ?? String(id)),
     [tabs.byId],
-  );
-  const workspaceDragWords = useMemo(
-    () =>
-      stripAccessibility("workspace", (id) =>
-        String(id) === OUTSIDE ? OUTSIDE_TITLE : String(id),
-      ),
-    [],
   );
   const dragSensors = useStripSensors();
 
@@ -7116,6 +6954,10 @@ export const PlaneView = memo(function PlaneView({
   );
   const curations = useCurations(plane, subjects, curationsChanges);
 
+  // The catalogue's screen-reader row says what pressing it does now: it is built again when
+  // the mode is turned on or off, not only when something else draws this view again.
+  const screenReader = useScreenReaderMode();
+
   /**
    * Every action this project's window can do, in one list.
    *
@@ -7201,6 +7043,7 @@ export const PlaneView = memo(function PlaneView({
             away,
             sidePanels,
             profiles: profileNames,
+            screenReader,
             skillStudio: studioOn,
             skillBudgets,
             readOnly: readOnlySaid,
@@ -7261,6 +7104,7 @@ export const PlaneView = memo(function PlaneView({
       profileNames,
       studioOn,
       skillBudgets,
+      screenReader,
     ],
   );
 
@@ -7974,7 +7818,11 @@ export const PlaneView = memo(function PlaneView({
   // **Without what its chats are doing**, which is added as it is reported, below: that changes
   // with every move, and a report rebuilt here for each one was the whole view redrawn for each.
   // **Nor the queue** (#1034), for the same reason: what reads it is added there too (`queued`).
-  const mine = useMemo<Omit<PlaneReport, "ending" | "moved" | "asking" | "offers">>(
+  const mine = useMemo<
+    Omit<PlaneReport, "ending" | "moved" | "asking" | "offers" | "workspaces"> & {
+      workspaces?: Omit<ReportedWorkspaces, "waiting">;
+    }
+  >(
     () => ({
       quiet: quietHere,
       settled,
@@ -7994,8 +7842,21 @@ export const PlaneView = memo(function PlaneView({
       // Where ⌘P's files are found first (FM-7): the cockpit's branch, else the one the
       // explorer picked (FM-5).
       branch: nearBranch,
+      // Its workspaces, for the title bar's chips and switchers (#2916): every one but the
+      // root in the order the palette lists them, the pins first, and the one in front.
+      workspaces:
+        sidebar === undefined
+          ? undefined
+          : {
+              names: strips.filter((name) => name !== OUTSIDE),
+              pins: strips.filter((name) => pinnedWorkspaces.includes(name)),
+              focused,
+            },
     }),
     [
+      focused,
+      pinnedWorkspaces,
+      strips,
       nearBranch,
       ofWorkspace,
       quietHere,
@@ -8030,6 +7891,7 @@ export const PlaneView = memo(function PlaneView({
         to: typeof onReport;
         plane: PlaneId;
         mine: typeof mine;
+        waitingIn: typeof waitingIn;
         quitting: Leaving[];
         doing: State[];
         moved: number;
@@ -8051,6 +7913,7 @@ export const PlaneView = memo(function PlaneView({
         was?.to === onReport &&
         was.plane === plane &&
         was.mine === mine &&
+        was.waitingIn === waitingIn &&
         was.quitting === quitting &&
         was.moved === moved &&
         sameList(was.doing, doing) &&
@@ -8063,6 +7926,7 @@ export const PlaneView = memo(function PlaneView({
         to: onReport,
         plane,
         mine,
+        waitingIn,
         quitting,
         doing,
         moved,
@@ -8070,8 +7934,19 @@ export const PlaneView = memo(function PlaneView({
         queue,
         fromQueue,
       };
+      // Each workspace's count, the root's under its own name, read off the one queue.
+      const workspaces =
+        mine.workspaces === undefined
+          ? undefined
+          : {
+              ...mine.workspaces,
+              waiting: Object.fromEntries(
+                [OUTSIDE, ...mine.workspaces.names].map((name) => [name, waitingIn(queue, name)]),
+              ),
+            };
       onReport(plane, {
         ...mine,
+        workspaces,
         ...fromQueue,
         ending: quitting.map(({ chat }, at) => ({ ...chat, state: doing[at] })),
         moved,
@@ -8079,7 +7954,7 @@ export const PlaneView = memo(function PlaneView({
     };
     report();
     return chats.store.subscribe(report);
-  }, [chats, quitting, mine, onReport, plane, queued]);
+  }, [chats, quitting, mine, onReport, plane, queued, waitingIn]);
 
   const frontChat = frontTab && reopened.find((chat) => chat.session === chatOf(tabs, frontTab.id));
 
@@ -8128,14 +8003,6 @@ export const PlaneView = memo(function PlaneView({
       },
     };
   }, [nameOfListed, plane, showChat, startChatHere, tabs]);
-
-  // Each strip is ONE Tab stop, the selected tab, and the arrows move along it (charter-app#189,
-  // `roving.ts`). Asked here rather than below the early return, because they are hooks.
-  const workspaceStop = useTabStop(focused, workspacesShown.shown);
-  const chatStop = useTabStop(
-    tabs.inFront === undefined ? undefined : String(tabs.inFront),
-    shown.map(String),
-  );
 
   /** **While you were away** (#1514): kept for this project whether or not it is in front,
    *  so a project behind another has its own summary when the person switches to it. */
@@ -8335,6 +8202,24 @@ export const PlaneView = memo(function PlaneView({
 
   /** The element this project draws into, in the window only while it is in front. */
   const host = useProjectHost();
+  /**
+   * **A workspace switch slides the workspace in** (#2916, R114): its side panel, its work and
+   * docked tabs, its right panel and its bottom halves, which are the regions; the activity bars
+   * beside them stay still, as do the rail and the title bar. The way is the step's that asked,
+   * or else the project's order (`workspaceSlide.ts`). Only a switch in the project in front:
+   * coming to the front is the project's, not a workspace switch.
+   */
+  const slidFrom = useRef<string | undefined>(undefined);
+  useLayoutEffect(() => {
+    const from = slidFrom.current;
+    slidFrom.current = focused;
+    if (!inFront || sidebar === undefined) return;
+    if (from === undefined || focused === undefined || from === focused) return;
+    slideIn(
+      host.querySelector<HTMLElement>(".region-frame > .regions"),
+      takeSlide() ?? wayOf(strips, from, focused),
+    );
+  }, [focused, host, inFront, sidebar, strips]);
   /**
    * Whether its view is drawn. **Only coming to the front draws it**; it stays drawn behind
    * another project while it may (`kept`), and is taken down once it may not, or as it leaves
@@ -8630,43 +8515,9 @@ export const PlaneView = memo(function PlaneView({
         <ReadOnlyLine readOnly={readOnly} />
         {/* **A project that lives only on this machine says so, with Publish beside it** (#1820). */}
         <LivesHere plane={plane} />
-        {/* The workspaces of this project, as the second of the three strips (ADR 0036). It is
-          the axis the tmux frame had and the port lost: a top-level tab there was a
-          WORKSPACE and the sessions lived under it, and transposing the app onto projects
-          left the workspace as a heading in the sidebar that nothing selected.
-          One tablist for the axis, and it is this one — the sidebar lists the same
-          workspaces, but as a listing of what each holds rather than as a second answer to
-          "which workspace am I in". */}
-        {/* A `div` and not a `nav`, deliberately: the sidebar is already
-          `nav[aria-label="Workspaces"]`, and a second landmark by that name is two answers
-          to one query — for a screen reader and for every scenario spec that reaches the
-          sidebar by it. The tablist is what this is. */}
-        {/* Drawn once the plane is read, workspaces or none: its `+` is how the first one is
-          made, so a strip that waited for a workspace hid the way to make one. */}
-        {sidebar !== undefined && (
-          <WorkspaceStrip
-            by={by}
-            found={found}
-            press={press}
-            focused={focused}
-            colourOf={colourOf}
-            tintOf={tintOf}
-            workspaceMarks={workspaceMarks}
-            workspacesShown={workspacesShown}
-            workspacesNotShowing={workspacesNotShowing}
-            workspaceTabId={workspaceTabId}
-            workspaceStop={workspaceStop}
-            workspaceStrip={workspaceStrip}
-            workspaceControls={workspaceControls}
-            workspaceLeast={workspaceLeast}
-            rootWidth={rootWidth}
-            workspaceRoot={workspaceRoot}
-            dragSensors={dragSensors}
-            workspaceDragWords={workspaceDragWords}
-            dragWorkspace={dragWorkspace}
-            waitingIn={waitingIn}
-          />
-        )}
+        {/* **The workspaces of this project are in the title bar** (#2916): the project's pins as
+          chips after its name, and every workspace behind its ⌄ (`TitleBarSwitch.tsx`). The
+          strip that drew them here is gone, as the project strip went to the rail (#2915). */}
         {/* **A chat's theme draft is named on the workspace it is drawn in** (#2332): the
           strip under the workspaces, with Keep, Revert and Compare, and the revert key. */}
         <ThemeDraftStrip plane={plane} workspace={ofWorkspace ?? null} />
@@ -8984,7 +8835,6 @@ export const PlaneView = memo(function PlaneView({
                 shown={shown}
                 notShowing={notShowing}
                 chatTabId={chatTabId}
-                chatStop={chatStop}
                 strip={strip}
                 chatControls={chatControls}
                 chatLeast={chatLeast}

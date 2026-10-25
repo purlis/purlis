@@ -94,7 +94,7 @@ describe("the text roles", () => {
   it("a label is in capitals, spaced as the sidebar's titles are", () => {
     const word = wearing("ui-text-label");
     expect(resolved(word, "text-transform")).toBe("uppercase");
-    expect(resolved(word, "letter-spacing")).toBe("0.06em");
+    expect(resolved(word, "letter-spacing")).toBe("0.05em");
   });
 
   it("code is the one monospace family, at the size and colour of what it sits in", () => {

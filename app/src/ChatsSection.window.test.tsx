@@ -24,7 +24,7 @@ import { CARD_DELAY_MS, CARD_LEAVE_MS, CARD_SKIP_MS } from "./ChatsSection";
 import { forgetThisLaunch } from "./regions";
 import { GLOBAL } from "./windowprefs";
 import type { Shown } from "./shownState";
-import { stripNamed } from "./test-strips";
+import { goToWorkspace, rowSays, stripNamed } from "./test-strips";
 import { findByTip, getByTip, tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
@@ -398,14 +398,8 @@ afterEach(() => {
   Reflect.deleteProperty(globalThis, GLOBAL);
 });
 
-/** What the workspace strip's tab for `workspace` says of its counts (`CountPill`): its one
- *  accessible name, or nothing where it draws no pill. */
-function countsOn(workspace: string): string | null {
-  const tab = [
-    ...document.querySelectorAll<HTMLElement>('[data-strip="Workspaces"] [role="tab"]'),
-  ].find((one) => one.querySelector(".workspace-name")?.textContent === workspace);
-  return tab?.querySelector(".count-pill")?.getAttribute("aria-label") ?? null;
-}
+/** What the title bar's ⌄ says of `workspace` (#2916): its name, and what waits in it. */
+const countsOn = (workspace: string) => rowSays(workspace);
 
 describe("the Chats section", () => {
   it("lists every running chat of the project as a tree of which chat started which", async () => {
@@ -885,8 +879,8 @@ describe("the needs-you mark rolling up the tree (#1448)", () => {
 
     // Chat 3 works in beta and is a task of drop commons, whose tab is on alpha's strip: that
     // tab wears it, so alpha's workspace tab counts it and beta's, which holds no tab, does not.
-    await waitFor(() => expect(countsOn("alpha")).toMatch(/, 1 needs you$/));
-    expect(countsOn("beta") ?? "").not.toMatch(/you/);
+    await waitFor(async () => expect(await countsOn("alpha")).toBe("alpha, 1 waiting"));
+    expect(await countsOn("beta")).toBe("beta");
     expect(
       screen.queryByRole("button", { name: /the strip is not showing, where 1 chat needs you$/ }),
     ).toBeNull();
@@ -1487,16 +1481,9 @@ describe("a chat's state, as a word and a shape (#1484)", () => {
   });
 });
 
-/** Focuses a workspace from the strip, which is the axis, once the strip lists it. */
+/** Focuses a workspace from the title bar's ⌄ (#2916), which is the axis. */
 async function focusWorkspace(name: string) {
-  const tab = await waitFor(() => {
-    const found = within(stripNamed("Workspaces"))
-      .getAllByRole("tab")
-      .find((one) => one.querySelector(".workspace-name")?.textContent === name);
-    if (found === undefined) throw new Error(`no ${name} on the workspace strip`);
-    return found;
-  });
-  await userEvent.click(tab);
+  await goToWorkspace(name);
 }
 
 describe("the Chats section follows the focused workspace", () => {

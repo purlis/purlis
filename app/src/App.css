@@ -204,68 +204,6 @@ body {
   min-height: 0;
 }
 
-/* **The three strips are tabs, and this is the shape all three share.**
-
-   They were pill-shaped buttons floating on a bar with a gap between them, which is what the
-   operator meant by *"tabs are not looks like a tabs"*. A tab is a CELL of a strip: it reaches
-   the strip's full height, its neighbour is a hairline away rather than a gap away, and the
-   selected one is lit along the edge that faces what it selects. That is the shape Zed has and
-   VS Code has, and it is the shape the tmux frame charter was ported off had before either.
-
-   **One shape, three depths — and the depths are now drawn, not only coloured.** This used to
-   say the three strips differ by the surface under them and *"never by drawing the three
-   differently"*, on the argument that three different-looking strips are three things to
-   learn. The operator overruled it from the running app: *"tabs should show that PROJECT is
-   holder of workspaces, workspaces are holder of sessions — so style is present that like ZED
-   tabs."* In Zed the project segments are full-width and large and the file tabs sit visibly
-   inside the selected one, and the nesting is legible from the shape before a word is read.
-   Three rows of identically sized cells said nothing about which held which.
-
-   #171 answered that with three signals — **height**, **inset** and **surface**. Two of them
-   stand. **The inset is gone** (charter-app#193), and it went because the operator read it
-   back off the running app as a defect rather than as a signal: *"workspaces tabs and sessions
-   tabs have some padding from left, they should be like project tabs without padding."* An
-   indent is ambiguous by construction — a row that begins 1.1rem in looks exactly like a row
-   somebody padded — and it cost the two inner strips a whole tab's worth of room at ADR 0026's
-   widths for a fact it never managed to state. The rows begin at the same x — except that the
-   project strip is in the title bar now (ADR 0054), and on macOS that starts after the traffic
-   lights.
-
-   **What carries the depth in its place is a shade, and nothing else.** He asked for the
-   layers to differ in the same breath — *"lets make some different styles/collor for each
-   layer"* — and then turned down coloured rules under each strip on sight: *"this is not looks
-   professional, it should be minimalistic, and i prefer to change little bit backgrounds of
-   tabs and little lighter for selected tab, borders are not feeling well."* So each strip is
-   one small step of neutral grey from the next, outermost deepest — `--layer-project`,
-   `--layer-workspace`, `--layer-chat` — and nothing is drawn under or between the rows. The
-   step is meant to be felt rather than noticed; `app/src/theme/theme.ts` holds the group.
-
-   **The selected tab is a step lighter, and that is the whole selection signal.** #171 also lit
-   the selected tab's bottom edge in the accent colour; that went with the rules, on the same
-   instruction. `--layer-selected` is one token for all three strips, lighter than the lightest
-   of them, so the tab you are on reads the same way on every row.
-
-   So the three differ in two ways and no more, each one meaning depth rather than identity:
-   **height** (a project's row is the tallest) and **shade**. #171's *surface* signal is the
-   shade, now in tokens of its own. The tab CELL is still one shape.
-
-   **And a tab's label is centred in its cell**, on all three — the operator's *"lets make tabs
-   labels center aligned"*. It is a property of the cell and not of the strip, so it is written
-   once beside the rest of what a tab is. A chat tab's `×` sits outside the button, so a chat's
-   name is centred in the room the `×` leaves rather than in the whole cell; that is the same
-   rule, not an exception to it.
-
-   **And every strip lays its tabs out the way a browser does**: each takes an equal share of
-   the row, floored at `--least` and capped, and what no longer fits collapses into that
-   strip's show-more button rather than scrolling away. `app/src/fits.ts` is the arithmetic and
-   the argument; `--least` is set on the element from the same constant the arithmetic uses, so
-   the stylesheet and the count cannot disagree. */
-.workspaces-strip {
-  display: flex;
-  align-items: stretch;
-  gap: 0;
-}
-
 /* **The chat strip's tabs** (#2914): along the strip's floor, the room between them the theme's
    (`tabs.layout.gap`, 8px by default, as the prototype draws it), and the strip's end after the
    `+`. How a tab is drawn is the tabs family's (`ui/tabs/tabs.css`); where it sits, and what
@@ -275,44 +213,6 @@ body {
   align-items: flex-end;
   gap: var(--tabs-gap);
   padding-inline-end: var(--space-4);
-}
-
-/* The workspaces of the project in front: the middle of the three strips (ADR 0036). The first
-   row under the title bar, and it begins at the window's left edge — the inset #171 put here is
-   gone (charter-app #193) — and its shade, one step up from the project strip's, is what says
-   which row this is. */
-.workspaces {
-  position: relative;
-  display: flex;
-  align-items: stretch;
-  min-height: var(--size-control);
-  background: var(--layer-workspace);
-}
-
-/* **One line under the workspaces' row, parting it from what it holds** (qw337, the operator
-   on 2026-10-13, with a screenshot of the row running straight into the panels). It is the
-   title bar's own line (`border.subtle`), so the row is framed by the same rule above and
-   below, and it runs the whole width of the row: under the tabs, the `+`, the show-more and
-   the stretch above the activity rail.
-
-   He turned down *coloured* rules under each strip in #193, and this is not one of those: one
-   neutral hairline, under the one row that had nothing between it and the regions below.
-
-   **The tab you are on still joins what it shows.** The line is drawn over the row's last
-   pixel rather than as the row's border, and the selected tab's cell is raised over it, so
-   under that tab its own lighter shade runs through to the content. A border on the row would
-   be outside the strip, which clips what it holds, and no tab could reach across it. */
-.workspaces::after {
-  content: "";
-  position: absolute;
-  inset-inline: 0;
-  bottom: 0;
-  border-bottom: 1px solid var(--border-subtle);
-  pointer-events: none;
-}
-
-.workspaces-strip .workspace:has([aria-selected="true"]) {
-  z-index: 1;
 }
 
 /* **A project this purlis opens read-only says why, once, on its tab** (#826, FR-24): one line
@@ -342,10 +242,13 @@ body {
 /* **The theme draft strip** (#2332, `ThemeDraftStrip.tsx`): the read-only line's shape, on the
    project strip's shade, its words primary text there (a hard floor), beside Keep, Revert and
    Compare. Where Keep puts it, and a save that is not drawn, are said under its name. */
+/* A draft is the workspace's (#2332), so its line is on the workspace's shade (`layer.workspace`,
+   the shade the workspace strip was drawn on until its workspaces moved to the title bar, #2916).
+   Primary words on it: a hard floor, so no draft hides them. */
 .theme-draft-strip {
   align-items: center;
-  /* Primary words on the project strip's shade: a hard floor, so no draft hides them. */
   color: var(--text-primary);
+  background: var(--layer-workspace);
 }
 
 .theme-draft-words {
@@ -391,169 +294,13 @@ body {
   block-size: var(--space-3);
 }
 
-.workspaces-strip {
-  min-height: var(--size-control);
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-/* One tab: the cell, and the hairline that parts it from the next. `.project` is a wrapper
-   holding a tab and its `×`; `.workspace` holds a workspace's tab and, on the focused one, its
-   settings gear (SE-23) — there is nothing about a workspace to close. A chat's tab is the tabs
-   family's cell (`ui/tabs/tabs.css`, #2914), floored at the same `--least`, as wide as its words
-   in Purlis and an equal share in Purlis Classic, so the collapse below is as exact.
-
-   **`flex: 1 1 0` and a floor, which is what makes the collapse exact.** Every tab takes an
-   equal share of its strip and is never drawn narrower than `--least`, so `n` tabs fit in a
-   strip of `width` exactly when `width / n >= least` — arithmetic over one measured number
-   rather than a measurement of fifty boxes. `fits.ts` holds the reasoning, the cost (two chats
-   are drawn as two wide tabs) and the number itself, which is handed to this rule on the
-   element rather than written here a second time. */
-.workspaces-strip .workspace {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 0;
-  flex: 1 1 0;
-  min-width: var(--least);
-  border-inline-end: 1px solid var(--layer-divider);
-}
-
 /* A tab being dragged along its strip (SI-6) passes over its neighbours rather than under them.
    It keeps its own look: where it will land is the gap the others open for it, which says
    enough, and a second look for "being dragged" is one more thing to theme. */
-.workspaces-strip .workspace[data-dragging],
 .tabs .tab[data-dragging] {
   /* Over the selected workspace's cell too, which is raised over its row's line. */
   z-index: 2;
   cursor: grabbing;
-}
-
-/* A cap, so a strip with two chats on it does not draw two tabs half a window wide. The
-   projects have none: the operator asked for *"large full-width segments across the top, each
-   taking an equal share"*, and a cap is the one thing that would stop them filling the row. */
-.workspaces-strip .workspace {
-  max-width: 18rem;
-}
-
-/* `:has` is how a wrapper knows its own button is the selected one. Where it is not supported
-   the button alone takes the surface — the same colour, one hairline narrower — which is a
-   floor rather than an undressed tab.
-
-   **A step lighter than its strip, and nothing more** (charter-app#193): *"little lighter for
-   selected tab"*. There was an accent-coloured edge under it as well, lit along the side facing
-   what it selects; it went with the coloured rules, because it was one of the borders that
-   were *"not feeling well"*, and a background is enough to say which tab you are on. */
-.workspaces-strip .workspace:has([aria-selected="true"]),
-.workspaces-strip [role="tab"][aria-selected="true"] {
-  background: var(--layer-selected);
-}
-
-/* The tab itself: flat, because the cell around it is the shape. Quiet until it is the one you
-   are on, which on a strip of fifty is the only thing that may be loud. */
-.workspaces-strip [role="tab"] {
-  display: flex;
-  align-items: center;
-  align-self: stretch;
-  /* **The label is centred in its cell** — the operator's *"lets make tabs labels center
-     aligned"*, and one of the two halves of charter-app#193's first item. It is on the button
-     rather than on the strip because the button IS the cell on the workspace strip and is the
-     cell less its `×` on the other two, which is where a centred name belongs in both. */
-  justify-content: center;
-  /* What its pin is placed against, in its top corner (`.pinned`). */
-  position: relative;
-  gap: var(--space-2);
-  padding: var(--space-0) var(--space-4);
-  border: 0;
-  border-radius: 0;
-  background: none;
-  color: var(--text-muted);
-  font: inherit;
-  /* **A tab's title is one step under the window's text** (qw337, the operator on
-     2026-10-13: every tab title slightly smaller), on all three strips: `--font-size-md`, the
-     core scale's dense-list size. The rows keep their heights, which are floors and not a
-     share of the text, so a strip is as tall as it was. */
-  font-size: var(--font-size-md);
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-/* **`min-width: 0`, or the name never truncates.** A flex item's floor is its content, so
-   without this a long chat name widens its tab past the share it was given and the strip
-   overflows the arithmetic that decided what fits. This is the line that makes an equal share
-   actually equal.
-
-   **Only where the button is INSIDE a cell**, which is the trap this rule fell into once: a
-   workspace tab was its own cell until SE-23 gave it a gear, and a `min-width: 0` that also
-   matched it took its floor away, so the strip squeezed eight workspaces into the room its
-   arithmetic said four could have. Every strip's floor is now on its cell. */
-.workspaces-strip .workspace > [role="tab"] {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-/* Hover never touches the selected tab: it is already the loudest thing on the strip, and a
-   pointer resting on it should not make it change. */
-.workspaces-strip [role="tab"]:hover:not([aria-selected="true"]) {
-  background: var(--surface-hover);
-  color: var(--text-primary);
-}
-
-.workspaces-strip [role="tab"][aria-selected="true"] {
-  color: var(--text-primary);
-}
-
-/* **The plane root's tab is an icon, not a share of the strip** (SI-1). It is always first, and
-   as wide as what it holds: its icon, and its count pill when it has chats, inside the padding
-   every workspace tab has (qw337; it was a fixed `--root` with no padding, and a count pushed
-   against both edges). Never narrower than `--root`. `PlaneView` measures it (`fits.useWidth`)
-   and takes that off the strip's room before the named workspaces share what is left, so the
-   arithmetic follows this rule. */
-.workspaces-strip .workspace:has(> .plane-root) {
-  flex: none;
-  min-width: var(--root);
-  max-width: none;
-}
-
-/* Inside the cell, because a ring outside it is clipped by the strip that scrolls. */
-.workspaces-strip [role="tab"]:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: var(--focus-ring-inset);
-}
-
-/* **A settings gear** (SE-23, V89i): on the project in front's tab and the focused workspace's,
-   and quiet — invisible until its tab is under the pointer or the keyboard, the vault row's eye's
-   rule (`.vault-reveal`). Flat like the `×` beside it, and it hovers as a view tab's `×` does:
-   it opens a tab and ends nothing. */
-.workspace .gear {
-  display: flex;
-  align-items: center;
-  align-self: stretch;
-  flex: none;
-  padding: 0 var(--space-2);
-  border: 0;
-  border-radius: 0;
-  background: none;
-  color: var(--text-muted);
-  line-height: 1;
-  cursor: pointer;
-  /* No easing: a row's hover is not animated (`docs/design-system.md`, motion). */
-  opacity: 0;
-}
-
-.workspace:hover .gear,
-.workspace:has(:focus-visible) .gear {
-  opacity: 1;
-}
-
-.workspace .gear:hover {
-  background: var(--surface-hover);
-  color: var(--text-primary);
-}
-
-.workspace .gear:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: var(--focus-ring-inset);
 }
 
 /* **A tab's counts, in one pill** (`CountPill.tsx`, qw337): how many chats are open in a
@@ -597,26 +344,6 @@ body {
   box-shadow: 0 0 0 var(--space-1) color-mix(in srgb, var(--accent-base) 35%, transparent);
 }
 
-/* **A workspace's colour** (charter-app#281): a small dot in its own accent before its name,
-   on its tab whether or not it is in front, and in the show-more menu. The tab sets the tinted
-   `--accent-base` on itself (`theme.tintVariables`), so this rule names only the token. A dot
-   and not a bar or a stripe: the operator turned down coloured rules on the strips (#193), and
-   a mark the size of a letter is the least that tells two workspaces apart at a glance. */
-.workspace-mark {
-  flex: none;
-  width: 0.5rem;
-  height: 0.5rem;
-  border-radius: var(--radius-full);
-  background: var(--accent-base);
-}
-
-/* **And its shade**: a coloured workspace's tab is drawn on its own tinted `--layer-workspace`
-   — the strip's shade turned to its hue, at the same luminance — so a tab behind the one in
-   front still says which colour it is. Not under the pointer: hover is drawn as on every tab. */
-.workspaces-strip [role="tab"][data-colour]:not([aria-selected="true"], :hover) {
-  background: var(--layer-workspace);
-}
-
 /* And how many of them are asking for you, which is the hole scoping the chats would
    otherwise open. The same mark the project tabs carry one scope up — **the count of chats
    waiting for the operator is the one thing in this window that exists to be seen**, so it is
@@ -658,7 +385,6 @@ body {
 
    `overflow: hidden` rather than `auto`, so the failure mode if the arithmetic is ever wrong
    is a clipped tab and not a scrollbar creeping back. */
-.workspaces-strip,
 .tabs {
   min-width: 0;
   overflow: hidden;
@@ -794,8 +520,7 @@ body {
 
 /* The name, truncated rather than widening its tab. The whole of it is in the tab's `title`
    and in the palette, which is the surface for reading (ADR 0039). */
-.tab-name,
-.workspace-name {
+.tab-name {
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
@@ -1123,26 +848,26 @@ button.show-more:focus-visible {
 }
 
 /* **Which of a split's panes has the keyboard** (#2914), where a theme draws no line around a
-   pane (Purlis, the operator's ruling of 2026-10-22): the words in its corner (where it came
+   pane (Purlis, the operator's ruling of 2026-10-22): the words in its header (where it came
    from, its work item, its harness, its breadcrumb) are primary, and every other pane's keep their
    muted tier. A split is the panes' own group inside the content panel; one pane is never marked,
    and a split's separator parts the panes. */
 [data-scope="panel"][data-variant="content"]
   [data-group]
   .pane-frame[data-focused]
-  .pane-corner.at-start
+  .pane-head
   :is(.pane-from, .pane-work-item, .pane-harness, .pane-crumbs) {
   color: var(--text-primary);
 }
 
-/* A pane: what purlis has to say of its chats, in a row of its own at the top (#1647), and under
-   it the terminal with what charter draws over it. Everything in a corner is a SIBLING of the
-   element xterm draws into, never a child of it, so nothing charter draws is ever inside the
-   terminal's own DOM — and the pane's body is what those siblings are positioned against.
+/* A pane: what purlis has to say of its chats and the chat at a glance, each in a row of its own
+   at the top (the band and the header, `paneFrame.css`, #3142), and under them the terminal.
+   Everything charter draws is a SIBLING of the element xterm draws into, never a child of it, so
+   nothing charter draws is ever inside the terminal's own DOM.
 
-   **A column: the row of Notices, then the body**, which has whatever height the row leaves.
+   **A column: the band and the header, then the body**, which has whatever height they leave.
    The terminal is refitted to it (`SessionPane`'s `ResizeObserver`), so a Notice takes rows
-   from the terminal and never covers one. A view's pane and an empty one have no row and draw
+   from the terminal and never covers one. A view's pane and an empty one have neither and draw
    their one child at the whole height, as before. */
 .pane-frame {
   position: relative;
@@ -1157,27 +882,20 @@ button.show-more:focus-visible {
   overflow: clip;
 }
 
-/* What a pane shows, under its row of Notices: the terminal (or a task that is away) and the two
-   corners over it. `flex-basis: 0` so its height is the pane's less the row's, never its
-   content's; `position: relative` so the corners and the find bar sit on the terminal, under
-   the row. */
+/* What a pane shows, under its band and its header: the terminal, or a task that is away.
+   `flex-basis: 0` so its height is the pane's less theirs, never its content's; `position:
+   relative` so the find bar sits on the terminal, under the header. */
 .pane-body {
   position: relative;
   flex: 1 1 0;
   min-height: 0;
 }
 
-/* **A pane's two corners, and the only two things in this window that position anything over a
-   terminal.** The gauge (M6.10) and the pane's own controls were each written as "the thing in
-   the pane's top-right", and absolutely positioned there they would have sat on top of each
-   other; they shared one row here for a while so neither had to know the other's width.
-
-   They are in different corners now — the operator: *"context status indicator in pane right
-   corner can be moved to left corner. to not make split and close buttons uggly"* (charter-app
-   #193) — the gauge top-left, the controls top-right. **The property that made the shared row
-   work is kept**: neither the gauge nor the controls position themselves; a corner does, and a
-   third thing arriving in a pane's corner has to go in one of these two, where it collides in
-   review rather than at runtime. */
+/* **A view's corner**: the pane's own controls, over the view at its top right. A chat's pane
+   has none: its chips and its controls are in its header, a row of their own, since the corners
+   over the terminal covered the harness's own first lines (#3142). **Nothing in a corner
+   positions itself**: the corner does (charter-app#193), so a second thing arriving here
+   collides in review rather than at runtime. */
 .pane-corner {
   position: absolute;
   top: var(--space-1);
@@ -1187,24 +905,8 @@ button.show-more:focus-visible {
   gap: var(--space-2);
 }
 
-/* **The start corner: the chat at a glance, on one row.** It held the pane's Notices under that
-   row too (#1481), over the terminal; they have a row of their own above it now (#1647).
-
-   - **Never wider than the pane**: the pane's inner box, less the corner's margin on each side.
-   - **It takes no clicks of its own**: what is under the part of it that draws nothing is the
-     terminal. Its row takes its own. */
-.pane-corner.at-start {
-  left: var(--space-4);
-  max-width: calc(100% - var(--space-4) * 2);
-  pointer-events: none;
-}
-
-.pane-corner.at-start > * {
-  pointer-events: auto;
-}
-
-/* The chat at a glance: the gauge, the harness, where it came from, its work item. One row,
-   as the corner was. */
+/* The chat at a glance: its breadcrumb, its skills, the harness, where it came from, its work
+   item and its gauge. One row, in the pane's header (`PaneHead`). */
 .pane-chips {
   display: flex;
   flex: none;
@@ -1231,7 +933,8 @@ button.show-more:focus-visible {
 }
 
 /* **A pane's row of Notices, above its terminal** (`NoticePaneRow`, #1647): the stack, and
-   beside it "+N more" while more than two have something to say.
+   beside it "+N more" while more than two have something to say. In a chat's pane it is the
+   band, inside the pane on its fill, and `paneFrame.css` places it (#3142).
 
    - **Never over the terminal**: it is in the pane's column, before the body, and the terminal
      has what it leaves.
@@ -1381,20 +1084,17 @@ button.show-more:focus-visible {
   outline-offset: var(--focus-ring-inset);
 }
 
-/* **The gauge floats; it takes no row.** For one build (#207) the pane gave the gauge a row of
-   its own, so as not to cover the start of the terminal's first line. The operator saw the
-   cost at once: *"context usage component position is not absolute and its changing harness
-   container sizes"* — a pane with a gauge was a row shorter than its neighbour without one, and
-   a pane changed height the moment its first usage arrived. The gauge is drawn over the
-   terminal now, exactly as the pane's controls are in the other corner, and the terminal keeps
-   every row whether or not charter has usage for it. */
+/* **The gauge takes no row of its own.** For one build (#207) the pane gave the gauge a row of
+   its own, and the operator saw the cost at once: *"context usage component position is not
+   absolute and its changing harness container sizes"* — a pane with a gauge was a row shorter
+   than its neighbour without one. It floated over the terminal after that, and covered its
+   first line. Now it is on the pane's header (#3142), which every chat's pane has with a gauge or
+   without, so the terminal keeps the same rows whether or not charter has usage for it.
 
-/* **A chat's `ctx`/`cache` gauge** (`app/src/ChatGauge.tsx`): small, in the pane's top-LEFT
-   corner since charter-app#193, drawn over the terminal and taking no row of its own. Raised and
-   bordered so it reads as charter's and not as the program's output.
-
-   **It does not place itself**: `.pane-corner.at-start` holds it. Everything else about it is
-   unchanged — in particular it is always drawn, and never takes the controls' hover rule. */
+   **A chat's `ctx`/`cache` gauge** (`app/src/ChatGauge.tsx`): small, last on the header's line.
+   **It does not place itself**: the header does (`.pane-head`, `paneFrame.css`, which also draws
+   it as words on the pane's fill). It is always drawn, and never takes the controls' hover
+   rule. */
 .chat-gauge {
   display: flex;
   align-items: center;
@@ -1529,21 +1229,17 @@ button.show-more:focus-visible {
    pushed off: the gauge and the harness's name are cut at their right edge, and the breadcrumb
    shrinks by its own rule, below.
 
-   **The line ends before the pane's own controls**, in the other corner: a name in the path is
-   a thing to press, and one drawn under a control that appears on hover would be pressed
-   through it. The room is the width the controls drawn in this pane have, which they measure
-   and say (`--pane-controls`, `PaneDoing`): two for a pane showing a task, three otherwise,
-   and whatever a later control makes it. The figure here is three controls' width, for the
-   frame before they have said theirs. Kept whether the controls are drawn or not, so the line
-   does not move when the pointer comes over. */
+   **The line ends before the pane's own controls**: a name in the path is a thing to press, and
+   one drawn under a control would be pressed through it. Both are in the pane's header, one
+   flex row (#3142), so the line has the room the controls leave, however many they are, and it
+   is kept whether the controls are drawn or not: the line does not move when the pointer comes
+   over. */
 .pane-chips:has(.pane-crumbs) {
   /* **A step closer on a breadcrumb's line** (#3034): the line is the narrowest thing a pane
      draws, and in a theme that keeps a window gutter (Purlis's 8px) two panes in the narrowest
      window leave it a few pixels short of the longest state word beside the items already cut
      to their padding. The space between those items is what gives way, never the state. */
   gap: var(--space-1);
-  max-width: calc(100% - var(--pane-controls, calc(var(--size-control) * 2.75)) - var(--space-3));
-  margin-right: calc(var(--pane-controls, calc(var(--size-control) * 2.75)) + var(--space-3));
   overflow: hidden;
 }
 
@@ -2691,6 +2387,33 @@ button.show-more:focus-visible {
   background-color: transparent;
 }
 
+/* **A workspace switch slides the workspace in** (#2916, R114): the regions, which are its side
+   panel, its work and docked tabs, its right panel and its bottom halves, come in 28px from the
+   side the switch went towards, fading in, over `duration.slide` on the enter ease. The activity
+   bars are outside them and stay still. Marked by `workspaceSlide.slideIn`, which takes the mark
+   off when the slide ends; under reduced motion the duration is none. */
+.regions[data-slide="on"] {
+  animation: workspace-slide-on var(--motion-duration-slide) var(--motion-easing-enter);
+}
+
+.regions[data-slide="back"] {
+  animation: workspace-slide-back var(--motion-duration-slide) var(--motion-easing-enter);
+}
+
+@keyframes workspace-slide-on {
+  from {
+    transform: translateX(28px);
+    opacity: 0;
+  }
+}
+
+@keyframes workspace-slide-back {
+  from {
+    transform: translateX(-28px);
+    opacity: 0;
+  }
+}
+
 .region-row > [data-separator]:hover,
 .region-row > [data-separator][data-dragging] {
   background-color: transparent;
@@ -3010,7 +2733,7 @@ button.show-more:focus-visible {
   margin: 0 0 var(--space-3);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-strong);
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
   color: var(--text-secondary);
   overflow-wrap: anywhere;
 }
@@ -5430,9 +5153,10 @@ button.show-more:focus-visible {
 .title-bar {
   display: flex;
   flex: none;
-  gap: var(--space-5);
+  /* 40px tall with a 10px gap, as the prototype draws it (R90). */
+  gap: calc(var(--space-4) + var(--space-1));
   align-items: center;
-  min-height: 2.1rem;
+  min-height: max(40px, 2.1rem);
   padding: 0 var(--space-4) 0 calc(var(--window-controls, 0px) + var(--space-4));
   font-size: var(--font-size-xs);
   background: var(--surface-deep);
@@ -5444,31 +5168,13 @@ button.show-more:focus-visible {
 }
 
 /* The bar's first controls (#2915): the show for a rail that hides itself, first after the
-   window controls (R91). */
+   window controls (R91); then the project and its pinned workspaces (#2916). */
 .title-bar-leading {
   display: flex;
   flex: 0 1 auto;
-  gap: var(--space-2);
+  gap: calc(var(--space-4) + var(--space-1));
   align-items: center;
   min-width: 0;
-}
-
-/* The project in front, before the workspaces #2916 draws (the prototype's layout D): its name
-   in the quiet tier, a little heavier, cut short rather than pressing on the bar's middle. Its
-   "/" comes with what #2916 draws after it. */
-.title-bar-crumb {
-  display: inline-flex;
-  align-items: center;
-  min-width: 0;
-  font-size: var(--font-size-sm);
-}
-
-.title-bar-project {
-  overflow: hidden;
-  color: var(--text-quiet);
-  font-weight: var(--font-weight-medium);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* The right-hand end, which never gives way. At the far end whether or not there is a strip
@@ -5996,7 +5702,7 @@ nav.piece-files-head {
   color: var(--text-muted);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-strong);
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
 }
 
@@ -6165,7 +5871,7 @@ nav.piece-files-head {
   color: var(--text-muted);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-strong);
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
 }
 
@@ -8207,6 +7913,32 @@ nav.piece-files-head {
 .skill-deleted ul {
   margin: 0;
   padding-left: var(--space-5);
+}
+
+/* The empty studio's three starts (SK-22): side by side where they fit, stacked where not. */
+.skill-starts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: var(--space-3);
+  max-width: 48rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  text-align: left;
+}
+
+.skill-starts > li {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.skill-starts p {
+  margin: 0;
+  font-size: var(--font-size-sm);
 }
 
 /* Skill sources (SK-10): the install review leads with its summary, risky items marked. */

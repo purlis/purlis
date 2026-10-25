@@ -6,6 +6,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { VIEW_MARKS } from "../ActivityBar";
+import { OWN_GLYPHS } from "./harnessGlyphs";
 import { fromLucide, LUCIDE, type LucideNode, toPath } from "./railIcons.vendor";
 
 /**
@@ -32,11 +33,13 @@ async function lucide(name: string): Promise<readonly LucideNode[]> {
 async function converted() {
   const views: Record<string, { paths: string[] }> = {};
   for (const [view, name] of Object.entries(LUCIDE)) views[view] = fromLucide(await lucide(name));
-  return { views };
+  // The harness glyphs are purlis's own drawing, not Lucide's (#2922): the set ships the ones
+  // the window draws, so a theme with no set and Purlis draw the same three.
+  return { views, glyphs: OWN_GLYPHS };
 }
 
 describe("Purlis's icon set", () => {
-  it("is every view's Lucide icon converted, and nothing else", async () => {
+  it("is every view's Lucide icon converted and the window's own harness glyphs, and nothing else", async () => {
     const made = await converted();
     if (process.env.PURLIS_ICONS_WRITE === "1")
       writeFileSync(FILE, `${JSON.stringify(made, null, 2)}\n`);

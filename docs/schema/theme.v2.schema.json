@@ -209,6 +209,12 @@
           "minimum": 0,
           "maximum": 10
         },
+        "radius.control": {
+          "description": "Pixels. Purlis Classic's is 4.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 14
+        },
         "radius.lg": {
           "description": "Pixels. Purlis Classic's is 6.",
           "type": "integer",
@@ -354,8 +360,14 @@
               "text.faint",
               "border.subtle",
               "border.strong",
+              "border.control",
               "accent.base",
               "accent.surface",
+              "accent.wash",
+              "accent.text",
+              "accent.fill",
+              "accent.fill-hover",
+              "accent.fill-edge",
               "focus.ring",
               "tab.active",
               "list.selected",
@@ -369,7 +381,7 @@
               "layer.divider"
             ]
           },
-          "maxItems": 122
+          "maxItems": 129
         },
         "hues": {
           "description": "A workspace colour's hue in this theme: the hue of this colour. A workspace's own #rrggbb is always its own hue.",
@@ -393,7 +405,7 @@
       }
     },
     "parts": {
-      "description": "Component parts (manifest version 11): keys <family>.<part>[.<variant>][.<state>].<property>, the state at rest implied. A property not named is the family default. Inside a state only fill, text, border-colour and shadow may be set, and a tab's flare and hover inset: a state never changes a part's size. `purlis theme parts` lists every family, part, state and property with its bounds.",
+      "description": "Component parts (manifest version 12): keys <family>.<part>[.<variant>][.<state>].<property>, the state at rest implied. A property not named is the family default. Inside a state only fill, text, border-colour and shadow may be set, and a tab's flare and hover inset: a state never changes a part's size. `purlis theme parts` lists every family, part, state and property with its bounds.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -5601,6 +5613,609 @@
         },
         "list.header.font-weight": {
           "$ref": "#/$defs/part-font-weight"
+        },
+        "titlebar.workspace.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.workspace.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.workspace.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "titlebar.workspace.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "titlebar.workspace.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "titlebar.workspace.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "titlebar.workspace.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "titlebar.workspace.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "titlebar.workspace.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "titlebar.workspace.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "titlebar.workspace.height": {
+          "$ref": "#/$defs/part-height"
+        },
+        "titlebar.workspace.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.workspace.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.workspace.hover.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "titlebar.workspace.hover.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "titlebar.workspace.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.workspace.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.workspace.selected.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "titlebar.workspace.selected.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "titlebar.workspace.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.workspace.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.workspace.focused.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "titlebar.workspace.focused.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "titlebar.workspace.pinned.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.workspace.pinned.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.workspace.pinned.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "titlebar.workspace.pinned.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "titlebar.workspace.pinned.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "titlebar.workspace.pinned.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "titlebar.workspace.pinned.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "titlebar.workspace.pinned.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "titlebar.workspace.pinned.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "titlebar.workspace.pinned.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "titlebar.workspace.pinned.height": {
+          "$ref": "#/$defs/part-height"
+        },
+        "titlebar.workspace.pinned.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.workspace.pinned.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.workspace.pinned.hover.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "titlebar.workspace.pinned.hover.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "titlebar.workspace.pinned.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.workspace.pinned.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.workspace.pinned.selected.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "titlebar.workspace.pinned.selected.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "titlebar.workspace.pinned.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.workspace.pinned.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.workspace.pinned.focused.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "titlebar.workspace.pinned.focused.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "titlebar.workspace.unpinned.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.workspace.unpinned.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.workspace.unpinned.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "titlebar.workspace.unpinned.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "titlebar.workspace.unpinned.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "titlebar.workspace.unpinned.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "titlebar.workspace.unpinned.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "titlebar.workspace.unpinned.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "titlebar.workspace.unpinned.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "titlebar.workspace.unpinned.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "titlebar.workspace.unpinned.height": {
+          "$ref": "#/$defs/part-height"
+        },
+        "titlebar.workspace.unpinned.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.workspace.unpinned.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.workspace.unpinned.hover.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "titlebar.workspace.unpinned.hover.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "titlebar.workspace.unpinned.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.workspace.unpinned.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.workspace.unpinned.selected.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "titlebar.workspace.unpinned.selected.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "titlebar.workspace.unpinned.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.workspace.unpinned.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.workspace.unpinned.focused.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "titlebar.workspace.unpinned.focused.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "titlebar.count.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.count.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.count.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.count.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.count.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.count.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.count.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.count.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.count.pinned.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.count.pinned.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.count.pinned.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.count.pinned.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.count.pinned.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.count.pinned.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.count.pinned.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.count.pinned.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.count.unpinned.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.count.unpinned.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.count.unpinned.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.count.unpinned.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.count.unpinned.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.count.unpinned.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.count.unpinned.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.count.unpinned.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.crumb.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.crumb.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.crumb.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "titlebar.crumb.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.crumb.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.crumb.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.crumb.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.crumb.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.crumb.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.crumb.pinned.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.crumb.pinned.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.crumb.pinned.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "titlebar.crumb.pinned.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.crumb.pinned.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.crumb.pinned.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.crumb.pinned.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.crumb.pinned.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.crumb.pinned.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.crumb.unpinned.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.crumb.unpinned.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.crumb.unpinned.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "titlebar.crumb.unpinned.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.crumb.unpinned.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.crumb.unpinned.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.crumb.unpinned.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.crumb.unpinned.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.crumb.unpinned.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.all.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.all.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.all.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "titlebar.all.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.all.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.all.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.all.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.all.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.all.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.all.pinned.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.all.pinned.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.all.pinned.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "titlebar.all.pinned.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.all.pinned.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.all.pinned.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.all.pinned.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.all.pinned.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.all.pinned.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.all.unpinned.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.all.unpinned.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.all.unpinned.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "titlebar.all.unpinned.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.all.unpinned.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.all.unpinned.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.all.unpinned.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.all.unpinned.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.all.unpinned.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.pin.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.pin.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.pin.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "titlebar.pin.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.pin.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.pin.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.pin.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.pin.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.pin.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.pin.pinned.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.pin.pinned.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.pin.pinned.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "titlebar.pin.pinned.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.pin.pinned.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.pin.pinned.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.pin.pinned.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.pin.pinned.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.pin.pinned.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.pin.unpinned.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.pin.unpinned.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.pin.unpinned.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "titlebar.pin.unpinned.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.pin.unpinned.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.pin.unpinned.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.pin.unpinned.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.pin.unpinned.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.pin.unpinned.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.row.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.row.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.row.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "titlebar.row.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.row.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.row.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.row.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.row.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.row.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.row.pinned.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.row.pinned.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.row.pinned.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "titlebar.row.pinned.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.row.pinned.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.row.pinned.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.row.pinned.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.row.pinned.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.row.pinned.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.row.unpinned.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.row.unpinned.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.row.unpinned.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "titlebar.row.unpinned.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.row.unpinned.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.row.unpinned.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.row.unpinned.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.row.unpinned.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.row.unpinned.focused.text": {
+          "$ref": "#/$defs/part-text"
         }
       }
     }
@@ -5709,10 +6324,31 @@
         "border.strong": {
           "$ref": "#/$defs/colour"
         },
+        "border.control": {
+          "$ref": "#/$defs/colour"
+        },
         "accent.base": {
           "$ref": "#/$defs/colour"
         },
         "accent.surface": {
+          "$ref": "#/$defs/colour"
+        },
+        "accent.wash": {
+          "$ref": "#/$defs/colour"
+        },
+        "accent.text": {
+          "$ref": "#/$defs/colour"
+        },
+        "accent.fill": {
+          "$ref": "#/$defs/colour"
+        },
+        "accent.fill-hover": {
+          "$ref": "#/$defs/colour"
+        },
+        "accent.fill-edge": {
+          "$ref": "#/$defs/colour"
+        },
+        "accent.fill-text": {
           "$ref": "#/$defs/colour"
         },
         "focus.ring": {
@@ -6320,6 +6956,12 @@
           "minimum": 0,
           "maximum": 10
         },
+        "radius.control": {
+          "description": "Pixels. Purlis Classic's is 4.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 14
+        },
         "radius.lg": {
           "description": "Pixels. Purlis Classic's is 6.",
           "type": "integer",
@@ -6793,8 +7435,15 @@
         "text.faint",
         "border.subtle",
         "border.strong",
+        "border.control",
         "accent.base",
         "accent.surface",
+        "accent.wash",
+        "accent.text",
+        "accent.fill",
+        "accent.fill-hover",
+        "accent.fill-edge",
+        "accent.fill-text",
         "focus.ring",
         "tab.active",
         "list.selected",
@@ -6921,8 +7570,15 @@
         "text.faint",
         "border.subtle",
         "border.strong",
+        "border.control",
         "accent.base",
         "accent.surface",
+        "accent.wash",
+        "accent.text",
+        "accent.fill",
+        "accent.fill-hover",
+        "accent.fill-edge",
+        "accent.fill-text",
         "focus.ring",
         "tab.active",
         "list.selected",
@@ -7048,8 +7704,15 @@
         "text.faint",
         "border.subtle",
         "border.strong",
+        "border.control",
         "accent.base",
         "accent.surface",
+        "accent.wash",
+        "accent.text",
+        "accent.fill",
+        "accent.fill-hover",
+        "accent.fill-edge",
+        "accent.fill-text",
         "focus.ring",
         "tab.active",
         "list.selected",
@@ -7186,6 +7849,7 @@
                   "enum": [
                     "radius.sm",
                     "radius.md",
+                    "radius.control",
                     "radius.lg",
                     "radius.xl",
                     "radius.full"
@@ -7213,6 +7877,7 @@
                     "enum": [
                       "radius.sm",
                       "radius.md",
+                      "radius.control",
                       "radius.lg",
                       "radius.xl",
                       "radius.full"
@@ -7402,6 +8067,7 @@
           "enum": [
             "radius.sm",
             "radius.md",
+            "radius.control",
             "radius.lg",
             "radius.xl",
             "radius.full"

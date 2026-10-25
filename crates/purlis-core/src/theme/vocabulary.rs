@@ -30,8 +30,15 @@ pub const TOKENS: &[&str] = &[
     "text.faint",
     "border.subtle",
     "border.strong",
+    "border.control",
     "accent.base",
     "accent.surface",
+    "accent.wash",
+    "accent.text",
+    "accent.fill",
+    "accent.fill-hover",
+    "accent.fill-edge",
+    "accent.fill-text",
     "focus.ring",
     "tab.active",
     "list.selected",
@@ -164,13 +171,19 @@ pub const EASINGS: &[&str] = &[
 pub const LONGEST: u32 = 10_000;
 
 /// **The tokens a workspace's colour turns when a theme says nothing about it** (charter-app#281):
-/// the accent, the focus ring, the active-tab wash, the selected row, what is drawn in the accent
-/// (a markdown link, a chart's first series, #2327), and the layer shades. Never the text and
+/// the accent, its surface and the primary's fill at rest and under the pointer (#3177), the
+/// focus ring, the active-tab wash, the selected row, what is drawn in the accent (a markdown
+/// link, a chart's first series, #2327), and the layer shades. Never the text (the primary's
+/// words among it, and the accent's words and wash, which a tint would bring to the danger
+/// colour's hue) and
 /// never the terminal, so every contrast a theme clears still holds. Purlis Classic's recipe,
 /// and the one a theme starts from ([`super::Tint`]).
 pub const TINTED: &[&str] = &[
     "accent.base",
     "accent.surface",
+    "accent.fill",
+    "accent.fill-hover",
+    "accent.fill-edge",
     "focus.ring",
     "tab.active",
     "list.selected",
@@ -213,8 +226,14 @@ pub const TINTABLE: &[&str] = &[
     "text.faint",
     "border.subtle",
     "border.strong",
+    "border.control",
     "accent.base",
     "accent.surface",
+    "accent.wash",
+    "accent.text",
+    "accent.fill",
+    "accent.fill-hover",
+    "accent.fill-edge",
     "focus.ring",
     "tab.active",
     "list.selected",
@@ -267,6 +286,7 @@ pub const GEOMETRY: &[&str] = &[
     "--font-mono",
     "--radius-sm",
     "--radius-md",
+    "--radius-control",
     "--radius-lg",
     "--radius-xl",
     "--radius-full",
@@ -309,6 +329,11 @@ pub const RAIL_VIEWS: &[&str] = &[
     "sessions", "vaults",
 ];
 
+/// **The glyphs a theme's icon set may draw besides its views** (#2922, ruling #2866): the
+/// harness glyphs purlis draws in its own stroke style, which a profile names as its icon and a
+/// built-in harness is drawn with. An icon pack redraws them as it redraws a view.
+pub const GLYPHS: &[&str] = &["spark", "braces", "terminal"];
+
 /// **The quiet tiers a theme leaves out follow the muted it names** (#2902, ADR 0097's
 /// amendment of 2026-10-21). `given` is what one place gives (an appearance, a layer of an
 /// option, a format 1 file) and `below` the values it is laid over (its parent, the appearance
@@ -339,6 +364,40 @@ pub fn follow_muted(
         && follows("text.faint", "text.quiet")
     {
         given.insert("text.faint", quiet);
+    }
+}
+
+/// **The tokens that came in after a theme could already say what they draw**, each beside the
+/// token that drew it before (#3177): a plain control's edge was the strong rule's, the accent's
+/// wash and the primary's fill were its surface, the accent's words were the accent, the
+/// primary's fill under the pointer was the active tab's, its edge was the accent, and its words
+/// were the primary words.
+pub const KIN: [(&str, &str); 7] = [
+    ("border.control", "border.strong"),
+    ("accent.wash", "accent.surface"),
+    ("accent.text", "accent.base"),
+    ("accent.fill", "accent.surface"),
+    ("accent.fill-hover", "tab.active"),
+    ("accent.fill-edge", "accent.base"),
+    ("accent.fill-text", "text.primary"),
+];
+
+/// **A token of [`KIN`] a theme leaves out follows the one that drew it before**, while `below`
+/// draws the two alike, as [`follow_muted`] follows a tier (#3177). So a theme written over
+/// Purlis Classic that colours its accent's surface still fills its primary with it, as it did
+/// before the primary had a fill of its own; one over Purlis, whose filled primary is its own,
+/// keeps Purlis's.
+pub fn follow_kin(
+    given: &mut std::collections::BTreeMap<&'static str, String>,
+    below: &std::collections::BTreeMap<&'static str, String>,
+) {
+    for (token, drew) in KIN {
+        if given.contains_key(token) || below.get(token) != below.get(drew) {
+            continue;
+        }
+        if let Some(value) = given.get(drew).cloned() {
+            given.insert(token, value);
+        }
     }
 }
 

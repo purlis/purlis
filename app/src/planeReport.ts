@@ -81,6 +81,21 @@ export type PlaneReport = {
    * board with one count, so this compares across projects.
    */
   moved: number;
+  /** Its workspaces, once its plane is read: the title bar's chips and switchers (#2916). */
+  workspaces?: ReportedWorkspaces;
+};
+
+/**
+ * **A project's workspaces, as the title bar draws them** (#2916): every one but the plane root,
+ * in the order the palette lists them (the pins first, in the order they were pinned), its pins,
+ * the one in front (the root's own name, `actions.OUTSIDE`, when it is the root), and how many
+ * things wait on the person in each, the root's under its name too.
+ */
+export type ReportedWorkspaces = {
+  names: readonly string[];
+  pins: readonly string[];
+  focused?: string;
+  waiting: Readonly<Record<string, number>>;
 };
 
 /** What a project asks the WINDOW to do, because the window is what holds projects. */

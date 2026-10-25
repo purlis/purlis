@@ -21,7 +21,11 @@ export const purlisUi: {
     | "panel-section-family"
     | "empty-state-family"
     | "status-item-family"
-    | "list-family",
+    | "list-family"
+    | "rail-family"
+    | "activity-family"
+    | "tabs-family"
+    | "titlebar-family",
     Rule.RuleModule
   >;
 };

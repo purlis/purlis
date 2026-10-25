@@ -122,7 +122,7 @@ impl Remote {
 
     /// Checks it, as a sentence where it cannot be used. `committed` holds it to what a file
     /// the team writes may name: an `https://` URL alone, never a folder on this machine.
-    fn check(&self, committed: bool) -> Result<(), String> {
+    pub(crate) fn check(&self, committed: bool) -> Result<(), String> {
         if let Some(why) = url_problem(&self.url, committed) {
             return Err(format!("{:?} cannot be a skill source: {why}", self.url));
         }

@@ -201,9 +201,9 @@ describe("one surface", () => {
       // The footer's row wraps a long answer's words inside the dialog's width, and keeps every
       // answer at least the control's height.
       expect(drawnWith(button, "min-block-size")).toBe("var(--size-control)");
-      expect(drawnWith(button, "border-radius")).toBe("var(--radius-md)");
+      expect(drawnWith(button, "border-radius")).toBe("var(--radius-control)");
     }
-    expect(drawnWith(rename, "background")).toBe("var(--accent-surface)");
+    expect(drawnWith(rename, "background")).toBe("var(--accent-fill)");
     expect(drawnWith(cancel, "background")).toBe("var(--control-base)");
   });
 
@@ -331,8 +331,9 @@ describe("every overlay in the window", () => {
     // The dialogs are the dialog family's, whose answers it draws itself (`ui/dialog/Dialog.tsx`),
     // and are held by its own tests: no Radix dialog is left.
     expect(parts.filter(({ tag }) => /^(Dialog|AlertDialog)\./.test(tag))).toEqual([]);
-    // The cards are the popover family's: a chat row's, a list row's and a refused name's.
-    expect(families.filter(({ tag }) => /Popover/.test(tag)).length).toBe(3);
+    // The cards are the popover family's: a chat row's, a list row's and a refused name's; and
+    // the title bar's two switchers (#2916).
+    expect(families.filter(({ tag }) => /Popover/.test(tag)).length).toBe(5);
     expect(parts.filter(({ tag }) => tag === "Popover.Content").length).toBe(0);
   });
 

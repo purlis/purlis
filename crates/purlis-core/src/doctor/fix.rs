@@ -154,11 +154,20 @@ pub enum FixId {
     /// preview is off on this machine, on a project with uncommitted changes or outside git, and
     /// where the move would leave any chat without one of its skills ([`project_skills`]).
     ProjectSkills,
+    /// **`live-skills`** (SK-28, #2875): adds to the project's `.gitignore` the skills lines an
+    /// older one lacks, and nothing else. Inside the LIVE block, after each LIVE workspace's
+    /// last line, the pair that publishes its `skills/` (SK-4); at the end, under a header, the
+    /// `skills.local/` line of the project, of the workspaces and of the personas, by the one
+    /// level rule. Every line already there is kept where it is; the block's other lines are
+    /// `workspace-reinit`'s. It reads the file back as git reads it, and says any line still
+    /// missing. It commits nothing. Offered by the `live skills` row. It refuses, writing
+    /// nothing, where `.gitignore` is a symbolic link, which git does not read.
+    LiveSkills,
 }
 
 impl FixId {
     /// Every fix, in the order `charter doctor --fix` applies them.
-    pub const ALL: [FixId; 12] = [
+    pub const ALL: [FixId; 13] = [
         FixId::RenameLocal,
         FixId::PluginInstall,
         FixId::Reinit,
@@ -171,6 +180,7 @@ impl FixId {
         FixId::WorkspaceReinit,
         FixId::HandoffRule,
         FixId::ProjectSkills,
+        FixId::LiveSkills,
     ];
 
     /// The id, as `charter doctor --fix <id>`, `--json` and the window spell it.
@@ -188,6 +198,7 @@ impl FixId {
             Self::WorkspaceReinit => "workspace-reinit",
             Self::HandoffRule => "handoff-rule",
             Self::ProjectSkills => "project-skills",
+            Self::LiveSkills => "live-skills",
         }
     }
 
@@ -318,6 +329,7 @@ fn applied(root: &Path, id: FixId, machine: Option<&crate::plugin_install::Machi
         FixId::WorkspaceReinit => workspace_reinit(root),
         FixId::HandoffRule => handoff_rule(root),
         FixId::ProjectSkills => project_skills::apply(root),
+        FixId::LiveSkills => live_skills(root),
         FixId::PluginInstall | FixId::RenameLocal => unreachable!("answered above"),
     }
 }
@@ -391,12 +403,7 @@ pub fn moved(moved: crate::renamelocal::Moved) -> Fixed {
 
 fn local_ignore(root: &Path) -> Fixed {
     if crate::scaffold::gitignore_is_a_link(root) {
-        return Fixed::Refused(
-            "this project's .gitignore is a symbolic link, which git does not read, so a line \
-             added to it would change nothing; nothing was written. Replace the link with a \
-             real .gitignore, then run the fix again."
-                .to_owned(),
-        );
+        return Fixed::Refused(crate::scaffold::GITIGNORE_IS_A_LINK.to_owned());
     }
     let check = crate::profiles::ignore_check(root);
     if check.passes() {
@@ -510,6 +517,96 @@ fn discover(root: &Path, caller: &crate::forge::Caller) -> Fixed {
         said,
         complete: true,
     }
+}
+
+/// `live-skills`: the skills lines an older LIVE block lacks, added and said line by line.
+fn live_skills(root: &Path) -> Fixed {
+    if crate::scaffold::gitignore_is_a_link(root) {
+        return Fixed::Refused(crate::scaffold::GITIGNORE_IS_A_LINK.to_owned());
+    }
+    let gitignore = super::fsx::path_field(&root.join(".gitignore"));
+    let wanted = match crate::wscmd::add_skills_lines(root) {
+        Ok(wanted) => wanted,
+        Err(e) => return Fixed::Refused(format!("{gitignore}: {e}; nothing was written")),
+    };
+    let patterns = wanted.patterns.iter().map(|name| pattern_said(name));
+    if wanted.is_empty() {
+        let mut said =
+            vec!["✓ .gitignore has every skills line it needs — nothing to do.".to_owned()];
+        said.extend(patterns);
+        return Fixed::Ran {
+            said,
+            complete: true,
+        };
+    }
+    // What was added is what git reads now that it did not before: asked of the file read back,
+    // never of what was meant to be written, so a "✓ added" is never said of a line that is not.
+    let left = match crate::wscmd::skills_lines_missing(root) {
+        Ok(left) => left,
+        Err(e) => {
+            return Fixed::Ran {
+                said: vec![format!("✗ {gitignore} could not be read back: {e}")],
+                complete: false,
+            };
+        }
+    };
+    let now_read = |line: &String, still: &[String]| !still.contains(line);
+    let mut said: Vec<String> = Vec::new();
+    for (name, lines) in &wanted.unpublished {
+        let still = left.unpublished.get(name).map_or(&[][..], Vec::as_slice);
+        let added: Vec<&str> = lines
+            .iter()
+            .filter(|line| now_read(line, still))
+            .map(String::as_str)
+            .collect();
+        if !added.is_empty() {
+            said.push(format!(
+                "✓ .gitignore now publishes {name}'s skills: added {}",
+                added.join(", ")
+            ));
+        }
+    }
+    let added: Vec<&str> = wanted
+        .unignored
+        .iter()
+        .filter(|line| now_read(line, &left.unignored))
+        .map(String::as_str)
+        .collect();
+    if !added.is_empty() {
+        said.push(format!(
+            "✓ .gitignore keeps local skills on this machine now: added {}",
+            added.join(", ")
+        ));
+    }
+    said.extend(patterns);
+    let still: Vec<&str> = left
+        .unpublished
+        .values()
+        .flatten()
+        .chain(&left.unignored)
+        .map(String::as_str)
+        .collect();
+    if !still.is_empty() {
+        said.push(format!(
+            "✗ {gitignore} still lacks {} as git reads it; fix those lines by hand.",
+            still.join(", ")
+        ));
+    }
+    said.push("• Nothing was committed.".to_owned());
+    Fixed::Ran {
+        said,
+        complete: still.is_empty(),
+    }
+}
+
+/// What the `live skills` row and its fix say of a name the LIVE block marks that git reads as
+/// a pattern: no line is spelled from it.
+pub(crate) fn pattern_said(name: &str) -> String {
+    format!(
+        "• the LIVE block names `{}`, which git reads as a pattern and not one workspace, so \
+         no skills line is added for it",
+        super::one_line(name, super::DISPLAY_LIMIT)
+    )
 }
 
 fn workspace_reinit(root: &Path) -> Fixed {

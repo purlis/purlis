@@ -30,7 +30,7 @@ story picks a theme of its own; each cell is a Vitest project of its own, `stori
 | Theme | Appearances | Densities | Pictures |
 | --- | --- | --- | --- |
 | Purlis Classic (`purlis-classic`) | `dark`, `light` | `comfortable`, `compact` | dark and light, comfortable |
-| Purlis (`purlis`) | `dark`, `light`, `dark-high-contrast` | `comfortable`, `compact` | dark and light, comfortable |
+| Purlis (`purlis`) | `dark`, `light`, `dark-high-contrast` | `comfortable`, `compact` | dark, light and dark high contrast, comfortable |
 
 Every cell renders the story, plays its keyboard path and runs axe. A picture is taken only in
 the cells `app/.storybook/pictured.json` names, each its own baseline, named for its theme and
@@ -39,7 +39,8 @@ appearance: `<story id>_<theme>_<appearance>-<browser>-linux.png`, so
 appearance in WebKit. A cell's name is `<theme>_<appearance>`, and `_compact` after it for the
 compact density, which its pictures' names carry too
 (`ui-button-primary_purlis_dark_compact-webkit-linux.png`). Any cell can be pictured by adding its
-name to `pictured.json`; four are today, to keep the `stories` job short, and axe and the
+name to `pictured.json`; five are today (Purlis's high contrast since #2924, so its derived
+look is seen beside dark and light), to keep the `stories` job short, and axe and the
 keyboard run in all ten. A picture's name is held to the names `tools/story-baselines.mjs`
 takes, cell by cell, in `tools/story-baselines.test.mjs`.
 

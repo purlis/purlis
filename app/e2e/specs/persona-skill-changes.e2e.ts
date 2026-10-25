@@ -151,7 +151,14 @@ describe("changing a persona's own skills", function () {
       timeout: 20_000,
       timeoutMsg: "the skill never landed in the project's skills",
     });
+    // The move puts the folder in place first and writes the persona's `skills:` line after
+    // (`verbs::move_to`), so the folder alone does not say the line is written yet.
+    const listed = new RegExp(`^skills:.*${RENAMED}`, "m");
+    await browser.waitUntil(async () => listed.test(readFileSync(file, "utf8")), {
+      timeout: 20_000,
+      timeoutMsg: `${PERSONA}'s skills: line never named ${RENAMED} after the move`,
+    });
     expect(existsSync(own(RENAMED))).toBe(false);
-    expect(readFileSync(file, "utf8")).toMatch(new RegExp(`^skills:.*${RENAMED}`, "m"));
+    expect(readFileSync(file, "utf8")).toMatch(listed);
   });
 });

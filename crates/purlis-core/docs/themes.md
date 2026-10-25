@@ -169,7 +169,8 @@ over the appearance as its colours are.
 | `line-height.tight` | × text | 1–1.4 | 1.2 | 1.2 | a compact line: counts |
 | `line-height.body` | × text | 1.2–1.8 | 1.4 | 1.3 | the window's own line, and every line the fit checks hold |
 | `radius.sm` | px | 0–8 | 3 | 3 | labels, chips, crumbs, badges, checkboxes, error and report boxes |
-| `radius.md` | px | 0–10 | 4 | 4 | buttons, fields, selects, menu rows, a list's rows, Notices, the palette's rows, Inbox asks |
+| `radius.md` | px | 0–10 | 4 | 4 | menu rows, Notices, the palette's rows, Inbox asks, a tab's hover pill and its `×` |
+| `radius.control` | px | 0–14 | 4 | 4 | an md control's corner: buttons, fields, selects, a list's rows, title-bar chips, a tab's top (#3113) |
 | `radius.lg` | px | 0–14 | 6 | 6 | dialogs, popovers, menus, tooltips, segmented controls |
 | `radius.xl` | px | 0–18 | 8 | 8 | the Welcome page's doors, nothing else |
 | `radius.full` | px | 0–9999 | 9999 | 9999 | pills: counts, toggle tracks |
@@ -199,8 +200,8 @@ not a token: words with no size of their own (a list row's, a paragraph's) follo
 The project strip sits in the title bar, whose height no token reaches yet. **Still square,
 whatever `radius.*` says:** the project and workspace strip tabs, the settings gear on a strip,
 and every tree row. The session tabs and their `×` are rounded through their parts ([Session
-tabs](#session-tabs)), and a list's rows by `radius.md` (the list family, since manifest version
-11). **The focus ring tokens reach every focus ring**, the strip tabs', a tab's `×` closer's and
+tabs](#session-tabs)), and a list's rows by `radius.control` (the list family, since manifest
+version 11; `radius.md` before #3177). **The focus ring tokens reach every focus ring**, the strip tabs', a tab's `×` closer's and
 the strip gear's among them; a ring that sits half as far out or in draws half the offset. Under
 forced colours the ring is drawn in the system's `Highlight` at the theme's width and offset:
 forced colours replace colour, not geometry.
@@ -718,6 +719,32 @@ address as `theme_schema`. An address at `main` would offer tokens your purlis d
 yet, and it leaves those out. The `v2` is the format: within it the schema only ever grows, so
 a theme valid against one release's schema is valid against every later release's. purlis
 itself never fetches the address; only your editor does.
+
+### Tokens added after themes existed
+
+The Figma pass added eight keys to format 2 (operator ruling 2026-10-25, #3177, #3113):
+`border.control` (a plain control's edge: the secondary button's, a field's, a select's),
+`accent.wash` (a chosen activity button's ground), `accent.text` (words and icons in the
+accent on its surface or wash), `accent.fill`, `accent.fill-hover`, `accent.fill-edge` and
+`accent.fill-text` (the primary button's ground, its ground under the pointer, its edge and its
+words, held to 4.5:1), and the geometry token `radius.control` (an md control's corner). **A
+theme that leaves one out draws as it did before it existed**: while the theme it extends draws
+the new token and the token that drew its part before alike, as Purlis Classic does, the new one
+follows the value the theme gives the old one (`vocabulary::KIN`):
+
+| new | follows |
+|---|---|
+| `border.control` | `border.strong` |
+| `accent.wash` | `accent.surface` |
+| `accent.text` | `accent.base` |
+| `accent.fill` | `accent.surface` |
+| `accent.fill-hover` | `tab.active` |
+| `accent.fill-edge` | `accent.base` |
+| `accent.fill-text` | `text.primary` |
+
+Over Purlis, whose primary is filled and whose controls draw no edge, a theme keeps Purlis's
+values unless it names them. `radius.control` is Classic's `radius.md`, 4, where a theme names
+neither.
 
 ## Importing a theme
 

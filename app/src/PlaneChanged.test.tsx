@@ -8,7 +8,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import { forgetThisLaunch } from "./regions";
 import type { PlaneAnswer } from "./bindings";
-import { stripNamed } from "./test-strips";
+import { chipName, workspaceChips } from "./test-strips";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
@@ -363,10 +363,8 @@ describe("the readers of the plane, told what changed", () => {
     const { asked, changed } = core();
     render(<App />);
     await waitFor(() => expect(todoRows()).toHaveLength(2));
-    const workspaceTabs = () =>
-      within(stripNamed("Workspaces"))
-        .queryAllByRole("tab")
-        .map((tab) => tab.textContent ?? "");
+    // The title bar's chips (#2916): the workspace in front is one of them.
+    const workspaceTabs = () => workspaceChips().map(chipName);
     const drawn = (name: string) => workspaceTabs().some((tab) => tab.includes(name));
     // What the core says a todo of alpha concerns.
     const todos: PlaneAnswer[] = [
