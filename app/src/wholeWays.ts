@@ -47,7 +47,7 @@ export function fitWays(group: HTMLElement): void {
   // **Then their padding too, the last first** (#3144): in the narrowest pane, with every way
   // set aside, what is left of those items is what the state word still lacks. Set aside, an
   // item keeps its place on the line at no width, drawn as nothing and out of the tab sequence
-  // (`App.css`), and comes back with the room.
+  // (`paneFrame.css`), and comes back with the room.
   if (short()) setAsideUntilWhole(others, short);
 }
 

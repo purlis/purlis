@@ -1224,18 +1224,6 @@ button.show-more:focus-visible {
   flex-shrink: 1000000;
 }
 
-/* **An item of the line set aside** (`wholeWays.ts`, #3144): in the narrowest pane, once both
-   ways to end the task are, the gauge, the harness's name and Brief give up the padding they
-   were cut to, the last first, so the state word stays whole. It keeps its place on the line at
-   no width, drawn as nothing and out of the tab sequence, and comes back with the room. */
-.pane-chips:has(.pane-crumbs) > [data-away]:not(.pane-task-ends) {
-  flex: 0 0 0;
-  width: 0;
-  padding-inline: 0;
-  border-inline-width: 0;
-  visibility: hidden;
-}
-
 /* **What gives way inside the breadcrumb, in order.**
 
    - `in <workspace>` first, to nothing: it is in the tooltip.
