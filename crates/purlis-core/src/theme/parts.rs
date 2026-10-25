@@ -1067,6 +1067,12 @@ pub const MANIFEST: &[Family] = &[
                 description: "A second line under an icon button's name.",
                 properties: &[Prop::Text],
             },
+            Part {
+                name: "shortcut",
+                since: NEXT,
+                description: "The key that does what its target does, after its words.",
+                properties: &[Prop::Text, Prop::FontSize],
+            },
         ],
         variants: &[],
         // Drawn over the window, wherever its target is: on the grounds an overlay stands on.
@@ -1080,7 +1086,7 @@ pub const MANIFEST: &[Family] = &[
         defaults: tooltip_look,
         states: &[],
         focused: "[data-focus-visible]",
-        words: &[("detail", "text.secondary")],
+        words: &[("detail", "text.secondary"), ("shortcut", "text.quiet")],
         corner_most: None,
         around: &[],
         fills: &[],
