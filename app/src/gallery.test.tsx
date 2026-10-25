@@ -20,6 +20,7 @@ import {
 import { drawnWith } from "./cascade.testkit";
 import { complaints } from "./theme/complaints.testkit";
 import { BUILT_IN, DEFAULT_THEME, drawIn } from "./theme/theme";
+import { selectNamed } from "./ui/select/select.testkit";
 
 /**
  * **The component set, drawn as one gallery** (DS-3 #626, line 2).
@@ -251,7 +252,7 @@ describe("the gallery", () => {
     expect(screen.getByRole("textbox", { name: "Hosts" })).toBeInTheDocument();
     expect(screen.getByRole("slider", { name: "Size" })).toBeInTheDocument();
     expect(screen.getByRole("radiogroup", { name: "Letter" })).toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "Shell" })).toBeInTheDocument();
+    expect(selectNamed("Shell")).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Push after saving" })).toBeInTheDocument();
     expect(screen.getByRole("switch", { name: "Play a sound" })).toBeInTheDocument();
     expect(screen.getByRole("group", { name: "Repos" })).toBeInTheDocument();
@@ -343,8 +344,8 @@ describe("the gallery by keyboard", () => {
       "input Size",
       // A radio group is one stop, on its pick; Gamma is out of reach.
       "radio Alpha",
-      // The select is Radix's: a combobox that opens its list (#1860).
-      "combobox Shell",
+      // The select is the select family's: a button that opens its list (#2906).
+      "button Shell",
       "checkbox Push after saving",
       "switch Play a sound",
       "checkbox Alpha",
@@ -397,14 +398,16 @@ describe("the gallery by keyboard", () => {
     // A row's reset and Undo, on Space and on Enter.
     expect(await doing(() => press("button", "Reset name", " "))).toContain("reset");
     expect(await doing(() => press("button", "Undo", "{Enter}"))).toContain("undo");
-    // A select opens on Enter, and an arrow and Enter pick past the option out of reach.
-    expect(
-      await doing(async () => {
-        await press("combobox", "Shell", "{Enter}");
-        await screen.findByRole("listbox");
-        await user.keyboard("{ArrowDown}{ArrowDown}{Enter}");
-      }),
-    ).toContain("select=b");
+    // A select opens on Enter; the arrows reach the option out of reach, which says why and
+    // picks nothing on Enter (D-2906-11), and an arrow back and Enter pick.
+    const picked = await doing(async () => {
+      selectNamed("Shell").focus();
+      await user.keyboard("{Enter}");
+      await screen.findByRole("listbox");
+      await user.keyboard("{ArrowDown}{ArrowDown}{Enter}{ArrowUp}{Enter}");
+    });
+    expect(picked).toContain("select=b");
+    expect(picked).not.toContain("select=c");
     // A toggle, a switch and a box of a few, on Space.
     expect(await doing(() => press("checkbox", "Push after saving", " "))).toContain("toggle=true");
     expect(await doing(() => press("switch", "Play a sound", " "))).toEqual(["switch=true"]);

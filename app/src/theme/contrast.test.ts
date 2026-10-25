@@ -211,10 +211,10 @@ describe("every pair a stylesheet draws", () => {
   });
 
   it("is found where a state rule sets a background on its own, under its base rule's colour", () => {
-    // A menu row under the pointer (`primitives/controls.css`) sets only the row's fill; the words on it
-    // are the colour `.ui-menu-item` gives them.
-    expect(derivedBy.get("text.primary on tab.active")).toContain(
-      ".ui-menu-item:hover:not([data-disabled]) over .ui-menu-item",
+    // A segment under the pointer (`primitives/controls.css`) sets only the segment's fill; the
+    // words on it are the colour `.ui-segmented-item` gives them.
+    expect(derivedBy.get("text.secondary on control.hover")).toContain(
+      ".ui-segmented-item:hover:not([data-disabled]) over .ui-segmented-item",
     );
   });
 
