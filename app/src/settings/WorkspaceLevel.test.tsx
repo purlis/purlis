@@ -23,7 +23,7 @@ import type {
 } from "../bindings";
 import { BUILT_IN } from "../theme/theme";
 import { retype, textOf } from "../editor/typing.testkit";
-import { offeredIn, pickIn } from "../primitives/select.testkit";
+import { offeredIn, pickIn } from "../ui/select/select.testkit";
 import { PURLIS_LIGHT } from "../theme/handed.testkit";
 
 /** Two custom colours, as `#rrggbb`: taken from the built-in themes, because no colour is written
@@ -1167,7 +1167,7 @@ describe("Settings at a workspace's level, as a view", () => {
       />,
     );
 
-    expect(await screen.findByRole("heading", { name: "Settings · alpha" })).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "Settings · alpha" })).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: "Workspace" })).toHaveAttribute(
       "aria-checked",
       "true",

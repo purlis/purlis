@@ -16,8 +16,10 @@
 //!   Unicode version: general category `Cc`, `Cf`, `Cs`, `Zl` or `Zp`, any whitespace but the
 //!   space, and every Default_Ignorable_Code_Point. No hand list.
 //! - **Where, in context**: [`hidden`]. A joiner doing its one job inside a script or an
-//!   emoji, and an emoji's presentation selector, read as text (ruling D-1301). Everything
-//!   else the table names is hidden.
+//!   emoji, an emoji's presentation selector, and the selector or tags a keycap or an RGI flag
+//!   is spelled with, read as text (ruling D-1301). Which characters are emoji is the UCD's
+//!   answer too ([`tables::EXTENDED_PICTOGRAPHIC`], #3219). Everything else the table names
+//!   is hidden.
 //! - **How it is shown**: [`marked`], each hidden character as `⟦U+XXXX⟧`, or [`unhidden`],
 //!   each dropped, where a text is only drawn.
 //!
@@ -88,13 +90,17 @@ pub enum Breaks {
 /// - a ZERO WIDTH NON-JOINER between two letters of the Arabic script, as Persian writes it;
 /// - either joiner after a letter or a virama of the Brahmic scripts (Devanagari to Malayalam)
 ///   and before a letter of them: a ZWJ asks for a half form, a ZWNJ keeps the virama shown;
-/// - one presentation selector (VS15 or VS16) straight after an emoji, as in `❤️`;
+/// - one presentation selector (VS15 or VS16) straight after an emoji (Extended_Pictographic),
+///   as in `❤️` and `©️`;
+/// - the selector of a keycap (`#️⃣`) and the tags of an RGI flag (England, Scotland, Wales),
+///   which are those emoji's own spelling ([`tables::EMOJI_SEQUENCES`]);
 /// - and, with [`Breaks::Kept`], a line end and a tab.
 ///
 /// Each of those only changes how its neighbours are drawn: none can reorder text or hide a
 /// word. Anywhere else (at either end, doubled, between Latin letters, a second selector, a
-/// supplement selector) it is hidden like every other format character, since a run of
-/// selectors after an emoji is exactly how text is smuggled behind one.
+/// supplement selector, a tag outside an RGI flag) it is hidden like every other format
+/// character, since a run of selectors or tags after an emoji is exactly how text is smuggled
+/// behind one.
 pub fn hidden(text: &str, breaks: Breaks) -> impl Iterator<Item = char> {
     flagged(text, breaks)
         .into_iter()
@@ -139,13 +145,41 @@ pub fn unhidden(text: &str, breaks: Breaks) -> String {
 /// Each character of `text`, with whether it is hidden there ([`hidden`]).
 fn flagged(text: &str, breaks: Breaks) -> Vec<(char, bool)> {
     let chars: Vec<char> = text.chars().collect();
+    let spelled = in_emoji_sequence(&chars);
     (0..chars.len())
         .map(|at| {
             let ch = chars[at];
             let kept = breaks == Breaks::Kept && matches!(ch, '\n' | '\t');
-            (ch, invisible(ch) && !kept && !does_its_job(&chars, at))
+            (
+                ch,
+                invisible(ch) && !kept && !spelled[at] && !does_its_job(&chars, at),
+            )
         })
         .collect()
+}
+
+/// For each of `chars`, whether it is part of a keycap or an RGI tag sequence
+/// ([`tables::EMOJI_SEQUENCES`]): an emoji whose selector or tags are its own spelling, as
+/// `#️⃣` and the flag of Scotland are. Anything that only looks like one (a tag run after a
+/// black flag that no platform draws as a flag, a run with no cancel tag) is not, and is
+/// judged character by character.
+fn in_emoji_sequence(chars: &[char]) -> Vec<bool> {
+    let mut spelled = vec![false; chars.len()];
+    let mut at = 0;
+    while at < chars.len() {
+        let rest = &chars[at..];
+        match tables::EMOJI_SEQUENCES
+            .iter()
+            .find(|sequence| rest.starts_with(sequence))
+        {
+            Some(sequence) => {
+                spelled[at..at + sequence.len()].fill(true);
+                at += sequence.len();
+            }
+            None => at += 1,
+        }
+    }
+    spelled
 }
 
 /// ZERO WIDTH JOINER: joins two emoji into one, or asks a Brahmic consonant for its half form.
@@ -169,7 +203,7 @@ fn does_its_job(chars: &[char], at: usize) -> bool {
                 Some(selector) if PRESENTATION.contains(&selector) => {
                     at.checked_sub(2).is_some_and(|i| pictographic(chars[i]))
                 }
-                Some(before) => pictographic(before),
+                Some(before) => pictographic(before) || emoji_modifier(before),
                 None => false,
             };
             (emoji_before && after.is_some_and(pictographic)) || brahmic
@@ -193,14 +227,19 @@ fn virama(c: char) -> bool {
     matches!(cp, 0x0900..=0x0D7F) && (cp & 0x7F == 0x4D || matches!(cp, 0x0D3B | 0x0D3C))
 }
 
-/// Is `c` an emoji a ZWJ sequence is made of: the pictographic blocks (symbols, dingbats,
-/// arrows and the emoji planes) and the skin-tone modifiers in them. A close reading of
-/// Unicode's Extended_Pictographic, without a table of its own.
+/// Is `c` an emoji a presentation selector or a ZWJ may follow: Unicode's
+/// Extended_Pictographic ([`tables::EXTENDED_PICTOGRAPHIC`], from `emoji-data.txt`), which
+/// holds `©`, `‼`, `▶` and `㊗` as well as the emoji planes.
+/// The property also holds reserved, unassigned codepoints (U+1FC00-U+1FFFD, for one), so one
+/// selector or ZWJ after one of them reads as text: negligible, since they draw nothing.
 fn pictographic(c: char) -> bool {
-    matches!(
-        c as u32,
-        0x2300..=0x23FF | 0x2600..=0x27BF | 0x2B00..=0x2BFF | 0x1F000..=0x1FAFF
-    )
+    in_table(c, &tables::EXTENDED_PICTOGRAPHIC)
+}
+
+/// Is `c` a skin-tone modifier ([`tables::EMOJI_MODIFIER`]), which a ZWJ may follow, as in a
+/// coder with a skin tone?
+fn emoji_modifier(c: char) -> bool {
+    in_table(c, &tables::EMOJI_MODIFIER)
 }
 
 /// Is `c` a letter of the Arabic script, in which Persian, Urdu and others are written: the

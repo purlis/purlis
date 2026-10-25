@@ -21,6 +21,7 @@ import type {
   SettingsFile,
   SettingsWhich,
 } from "../bindings";
+import { querySelectNamed } from "../ui/select/select.testkit";
 
 /**
  * **Settings › Project › Sandbox explains what a chat here can do** (#1340): one sentence at the
@@ -384,7 +385,7 @@ describe("Settings › Project › Sandbox", () => {
     expect(status).toHaveTextContent("On for everyone in this project.");
     // Where a person turns it down for their own chats (#2071).
     expect(within(status).getByRole("button", { name: "Change your level" })).toBeInTheDocument();
-    expect(within(page).queryByRole("combobox", { name: "Sandbox mode" })).toBeNull();
+    expect(querySelectNamed("Sandbox mode", page)).toBeNull();
     expect(within(page).queryByRole("button", { name: "Reset" })).toBeNull();
   });
 

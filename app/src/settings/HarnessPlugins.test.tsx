@@ -9,7 +9,7 @@ import { SettingsTab } from "./SettingsTab";
 import { forgetThisLaunch } from "../regions";
 import { GLOBAL } from "../windowprefs";
 import type { HarnessPlugins, ProjectSettings as Both, SettingsFile } from "../bindings";
-import { pickIn } from "../primitives/select.testkit";
+import { pickIn } from "../ui/select/select.testkit";
 
 /**
  * The **Plugins** group of the Settings tab's Project level (charter-app#274, ADR 0050; carried
