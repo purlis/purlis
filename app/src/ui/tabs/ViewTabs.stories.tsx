@@ -546,22 +546,23 @@ export const Settings: Story = {
 };
 
 /**
- * **Settings with the pane's actions drawn**, as the pointer over the pane brings them: the
+ * **Settings with the pane's actions drawn**, as the keyboard on them brings them: the
  * chat pane's cluster at the top right, at the end of the levels' row and over nothing.
  */
 export const SettingsActionsShown: Story = {
   args: { shown: "settings" },
   play: async ({ canvas, canvasElement, userEvent }) => {
     await oneWithItsTab(canvasElement, "Settings");
-    atRest();
-    // The pointer over the view, as a person brings the actions: drawn, with no tooltip, since
-    // no one of them is pointed at.
-    const view = canvasElement.querySelector(".view-pane") as HTMLElement;
-    await userEvent.hover(view);
-    const split = canvas.getByRole("button", { name: "Split right" });
-    await waitFor(() => expect(split).toBeVisible());
-    await waitFor(() => expect(getComputedStyle(split).opacity).toBe("1"));
     expect(pressableUnderTheActions(canvasElement)).toEqual([]);
+    // The keyboard on the first of them draws the cluster; Esc puts its tooltip away, so the
+    // picture shows the actions in place and nothing over them.
+    const split = canvas.getByRole("button", { name: "Split right" });
+    split.focus();
+    await waitFor(() => expect(split).toBeVisible());
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(within(document.body).queryByRole("tooltip")).toBeNull());
+    expect(split).toHaveFocus();
+    expectFocusInSight();
   },
 };
 
