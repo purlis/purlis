@@ -13,6 +13,8 @@ import { fileURLToPath } from "node:url";
 
 import {
   PARTS,
+  literals,
+  literalsIn,
   markers,
   mode,
   pending,
@@ -160,4 +162,65 @@ test("this repository's own NEXT definition is never counted as one left", () =>
     const [file, line] = one.split(":");
     if (file === PARTS) assert.doesNotMatch(lines[Number(line) - 1], /pub const NEXT/, one);
   }
+});
+
+const LITERAL_RS = `pub const VERSION: u32 = 12;
+pub const NEXT: u32 = VERSION + 1;
+
+pub const CHIP: Family = Family {
+    name: "chip",
+    since: 13,
+    parts: &[Part { name: "root", since: 12, height: 13, description: "since: 13" }],
+};
+
+impl Prop {
+    fn since(self) -> u32 {
+        match self {
+            Self::Brand => 13, // => 13
+            _ => 1,
+        }
+    }
+
+    fn height(self) -> u32 {
+        match self {
+            Self::Brand => 13,
+            _ => 1,
+        }
+    }
+}
+`;
+
+test("a literal VERSION + 1 as a since is found, in a field and in a since() arm only", () => {
+  assert.deepEqual(
+    literals(LITERAL_RS, 13).map((one) => one.line),
+    [6, 13],
+  );
+  // A released version, a size of 13 and the words in a comment or a string are not one.
+  assert.deepEqual(literals(LITERAL_RS, 14), []);
+});
+
+test("--check refuses a literal VERSION + 1, and the release step gives it its version", () => {
+  const root = tree({
+    [PARTS]: LITERAL_RS,
+    "tools/theme-parts-release.mjs": readFileSync(SCRIPT, "utf8"),
+  });
+  const copy = join(root, "tools/theme-parts-release.mjs");
+  const run = (...args) => spawnSync(process.execPath, [copy, ...args], { encoding: "utf8" });
+  const refused = run("--check");
+  assert.equal(refused.status, 1, refused.stderr);
+  assert.match(refused.stderr, /parts\.rs:6\n.*parts\.rs:13/s);
+  assert.deepEqual(pending(root).length, 2);
+  // No NEXT to replace, but what it says is unreleased: the release still raises the version.
+  assert.equal(release(root), 13);
+  assert.deepEqual(literalsIn(root), []);
+  assert.equal(run("--check").status, 0);
+});
+
+test("this repository writes no literal VERSION + 1 as a since: an addition is since NEXT", () => {
+  assert.deepEqual(
+    literalsIn(REPO),
+    [],
+    "write each of these as `since: NEXT` (`super::NEXT` in a family's own file); a literal " +
+      "VERSION + 1 is never given a version by the release step and would ship unpinned",
+  );
 });

@@ -8,11 +8,13 @@
 // `tools/changelog-fold.mjs`:
 //
 //   node tools/theme-parts-release.mjs            release prep: every `NEXT` written in code
-//                                                 becomes VERSION + 1, VERSION is raised, the
-//                                                 new version's digest is pinned and the theme
-//                                                 schema written again (both through cargo)
-//   node tools/theme-parts-release.mjs --check    exit 1 when a `NEXT` is left: the release
-//                                                 workflow refuses a stable tag on it
+//                                                 becomes VERSION + 1, VERSION is raised, then
+//                                                 the digest is pinned and the theme schema
+//                                                 written again (both through cargo, on every
+//                                                 run, so a run cut short is finished by the next)
+//   node tools/theme-parts-release.mjs --check    exit 1 when a `NEXT` or a literal VERSION + 1 is
+//                                                 left: the release workflow refuses a stable tag
+//                                                 on it
 //   node tools/theme-parts-release.mjs --no-cargo the rewrite alone, for a test
 //   node tools/theme-parts-release.mjs --help     say this; any other argument is refused (exit 2)
 //
@@ -21,6 +23,11 @@
 // its own definition. The files read are the theme engine's (`crates/purlis-core/src/theme/`)
 // and the CLI's theme tests. A family file names it `super::NEXT` and a test `parts::NEXT`; an
 // import of it would be replaced too and not compile, so it is never imported.
+//
+// **A literal VERSION + 1 is refused too** (`since: 13` while VERSION is 12, or `=> 13` in a
+// `since()`): it says an addition no release has shipped, and no NEXT carries it to the release
+// step, so it would ship unpinned under the old version. `tools/theme-parts-release.test.mjs`
+// fails on one in this repository, so a pull request that writes one is told in its own CI.
 import { spawnSync } from "node:child_process";
 import { readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -28,11 +35,9 @@ import { fileURLToPath } from "node:url";
 
 /** Where the manifest's version is, and the files a `NEXT` is looked for in. */
 export const PARTS = "crates/purlis-core/src/theme/parts.rs";
-export const DIRS = [
-  "crates/purlis-core/src/theme",
-  "crates/purlis-cli/src",
-  "crates/purlis-cli/tests",
-];
+export const DIRS = ["crates/purlis-core/src/theme"];
+/** The files outside them that hold manifest tests. */
+export const FILES = ["crates/purlis-cli/tests/theme.rs"];
 
 const VERSION_LINE = /^pub const VERSION: u32 = (\d+);$/m;
 const DEFINITION = "pub const NEXT: u32 = VERSION + 1;";
@@ -129,6 +134,48 @@ export function markers(text) {
   return found;
 }
 
+/** Where `fn since(` bodies are in `code`, as `[start, end)` pairs. */
+function sinceBodies(code) {
+  const bodies = [];
+  for (const one of code.matchAll(/\bfn since\s*\(/g)) {
+    const open = code.indexOf("{", one.index);
+    if (open === -1) continue;
+    let depth = 0;
+    for (let i = open; i < code.length; i += 1) {
+      if (code[i] === "{") depth += 1;
+      else if (code[i] === "}" && (depth -= 1) === 0) {
+        bodies.push([open, i + 1]);
+        break;
+      }
+    }
+  }
+  return bodies;
+}
+
+/**
+ * Every literal `next` written in code in `text` as a `since`: a field `since: <next>`, or an arm
+ * `=> <next>` inside a `fn since(`, as `{ index, line }`.
+ */
+export function literals(text, next) {
+  const found = [];
+  const line = (index) => text.slice(0, index).split("\n").length;
+  const spans = codeSpans(text);
+  // The code alone, comments and strings blanked to spaces, so a body's braces are its own.
+  let code = " ".repeat(text.length).split("");
+  for (const [from, to] of spans) for (let i = from; i < to; i += 1) code[i] = text[i];
+  code = code.join("");
+  for (const one of code.matchAll(/\bsince\s*:\s*(\d+)\b/g)) {
+    if (Number(one[1]) === next) found.push({ index: one.index, line: line(one.index) });
+  }
+  for (const [from, to] of sinceBodies(code)) {
+    for (const one of code.slice(from, to).matchAll(/=>\s*(\d+)\b/g)) {
+      if (Number(one[1]) === next)
+        found.push({ index: from + one.index, line: line(from + one.index) });
+    }
+  }
+  return found.sort((a, b) => a.index - b.index);
+}
+
 /** `text` with every `NEXT` in code replaced by `version`. */
 export function replace(text, version) {
   let out = text;
@@ -162,19 +209,37 @@ export function files(root) {
     }
   };
   for (const dir of DIRS) walk(dir);
-  return all.sort();
+  return [...all, ...FILES].sort();
 }
 
-/** Every `NEXT` left in `root`'s files, as `<file>:<line>`. */
-export function pending(root) {
+function read(root, file) {
+  try {
+    return readFileSync(join(root, file), "utf8");
+  } catch {
+    return "";
+  }
+}
+
+/** Every literal VERSION + 1 written as a `since` in `root`'s files, as `<file>:<line>`. */
+export function literalsIn(root) {
+  const next = versionIn(read(root, PARTS)) + 1;
   return files(root).flatMap((file) =>
-    markers(readFileSync(join(root, file), "utf8")).map((one) => `${file}:${one.line}`),
+    literals(read(root, file), next).map((one) => `${file}:${one.line}`),
   );
 }
 
+/** Every `NEXT` and literal VERSION + 1 left in `root`'s files, as `<file>:<line>`. */
+export function pending(root) {
+  const markersLeft = files(root).flatMap((file) =>
+    markers(read(root, file)).map((one) => `${file}:${one.line}`),
+  );
+  return [...markersLeft, ...literalsIn(root)];
+}
+
 /**
- * The release step's rewrite: every `NEXT` becomes VERSION + 1 and VERSION is raised to it.
- * Returns the new version, or `null` when nothing was `since: NEXT`.
+ * The release step's rewrite: every `NEXT` becomes VERSION + 1 and VERSION is raised to it (a
+ * literal VERSION + 1 already says it). Returns the new version, or `null` when nothing was
+ * unreleased.
  */
 export function release(root) {
   const left = pending(root);
@@ -183,7 +248,7 @@ export function release(root) {
   const version = versionIn(readFileSync(parts, "utf8")) + 1;
   for (const file of files(root)) {
     const path = join(root, file);
-    const text = readFileSync(path, "utf8");
+    const text = read(root, file);
     const replaced = replace(text, version);
     if (replaced !== text) writeFileSync(path, replaced);
   }
@@ -232,22 +297,25 @@ function main() {
     const left = pending(root);
     if (left.length > 0) {
       console.error(
-        `::error title=Theme parts manifest::${left.length} \`NEXT\` left, so the manifest holds additions no version names: run \`node tools/theme-parts-release.mjs\` in release prep (docs/updating.md).\n${left.join("\n")}`,
+        `::error title=Theme parts manifest::${left.length} \`NEXT\` or literal VERSION + 1 left, so the manifest holds additions no version names: write a literal one as \`since: NEXT\`, and run \`node tools/theme-parts-release.mjs\` in release prep (docs/updating.md).\n${left.join("\n")}`,
       );
       process.exit(1);
     }
-    console.log("No `NEXT` left: every manifest addition has its version.");
-    return;
-  }
-  const version = release(root);
-  if (version === null) {
     console.log(
-      `Nothing in the manifest is since NEXT: it stays at version ${versionIn(readFileSync(join(root, PARTS), "utf8"))}.`,
+      "No `NEXT` and no literal VERSION + 1 left: every manifest addition has its version.",
     );
     return;
   }
-  console.log(`The manifest is now version ${version}.`);
+  const raised = release(root);
+  const version = versionIn(read(root, PARTS));
+  console.log(
+    raised === null
+      ? `Nothing in the manifest is since NEXT: it stays at version ${version}.`
+      : `The manifest is now version ${version}.`,
+  );
   if (!asked.cargo) return;
+  // Both, every run: each writes only what is missing or stale, so a run that a failure cut
+  // short after the rewrite is finished by the next.
   cargo(root, { PURLIS_THEME_PARTS_PIN: "1" }, "every_released_manifest_keeps_its_digest");
   cargo(root, { PURLIS_THEME_SCHEMA_WRITE: "1" }, "the_published_schema");
   console.log(`Version ${version}'s digest is pinned and the theme schema written: commit them.`);

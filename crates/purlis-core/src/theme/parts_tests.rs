@@ -1372,7 +1372,10 @@ const MANIFEST_DIGESTS: &[(u32, &str)] = &[
 ];
 
 /// The prose of the manifest, which a theme is never written against: every `description`, and
-/// the sentences that say the grammar's rest and why a state keeps a size.
+/// the sentences that say the grammar's rest and why a state keeps a size. [`contract`] drops a
+/// key of one of these names **at every depth**, so a contract key ever named `description`,
+/// `rest` or `no_size_in_a_state` (a map keyed by a state called "rest", say) would be dropped
+/// unseen: name such a key otherwise, or narrow this filter to the paths it means.
 const PROSE: [&str; 3] = ["description", "rest", "no_size_in_a_state"];
 
 /// **The manifest's contract**: what a theme is written against (the families, parts, variants,

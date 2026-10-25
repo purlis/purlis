@@ -275,9 +275,12 @@ key by key. A property typed in its CSS spelling (`border-color`) is told the na
 and it grows once per release that adds a family, a part, a variant, a state or a property, never
 once per change (ADR 0103, amended 2026-10-25). What has been added since the last release is
 listed with `since` one above `version`: a dev build can carry such additions, and a stable
-release gives them that version. The schema says the same: `manifest version 12, plus unreleased
-additions marked since 13`. The manifest never takes anything away, and what a release shipped
-never changes: a test holds the manifest as of each released version to its digest.
+release gives them that version. The schema says the same: `manifest version <VERSION>, plus
+unreleased additions marked since <NEXT>`, where NEXT is VERSION + 1. The manifest never takes
+anything away, and what the last release shipped never changes: a test holds the manifest as of
+the last released version to that version's digest, taken over its contract (the families,
+parts, variants, states and properties, their bounds and `since`), so a reworded description is
+no change to it.
 
 **The key** is `<family>.<part>[.<variant>][.<state>].<property>`. The state at rest is implied: a
 key with no state is the part at rest, and in every state that does not set the property. A key

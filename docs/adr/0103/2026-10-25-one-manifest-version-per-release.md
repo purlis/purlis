@@ -22,8 +22,10 @@ and merge after the one before it.
   release prep (`docs/updating.md`), beside the changelog fold, turns every `NEXT` written in
   code into `VERSION + 1`, raises `VERSION`, pins the new digest
   (`PURLIS_THEME_PARTS_PIN=1`) and writes the theme schema again. A release with nothing since
-  `NEXT` keeps its version. The release workflow refuses a stable tag while a `NEXT` is left
-  (`--check`); a dev build carries them.
+  `NEXT` keeps its version; its cargo steps run on every run, so a run cut short is finished by
+  the next. The release workflow refuses a stable tag while a `NEXT`, or a literal
+  `VERSION + 1` written as a `since`, is left (`--check`); a dev build carries them. A literal
+  `VERSION + 1` also fails the tools' tests on the pull request that writes it.
 - **What is said is honest**: `purlis theme parts` prints `version` as the last release's, and
   an unreleased addition with `since` one above it; the schema says "manifest version N, plus
   unreleased additions marked since N + 1" while there are any.
