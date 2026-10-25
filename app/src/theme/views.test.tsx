@@ -929,6 +929,7 @@ const ORDINARY: Answers = {
         title: "Claude Code",
         unsupported: null,
         only_off: null,
+        repo_left_out: [],
         trouble: null,
         plugins: [
           {
