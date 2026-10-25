@@ -62,7 +62,7 @@ pub use budget::{Budget, Over, Spent};
 pub use compat::{Compat, Field, Fit, Honours, ManualOnly, compat, handed_text, widening_said};
 pub use declared::{Argument, Declared, Given, declared};
 pub use grant::{Grant, grant_file, grant_of, set_grant};
-pub use handed::{Frontmatter, MOST_BYTES, Refusal, read_skill_md};
+pub use handed::{Frontmatter, MOST_BYTES, Refusal, read_skill_md, read_skill_md_of};
 pub use lifecycle::{About, Deprecated, Lifecycle, about_of, set_lifecycle, set_owners};
 pub use lint::{BuiltInLints, Finding, Lint, Severity, SkillFiles, SkillLint};
 pub use load::{Entry, Loaded, Narrowing, POINTER, SkillFolder, by_name, find, load};
@@ -294,6 +294,13 @@ pub enum Reason {
     /// A harness or repo skill named as one of purlis's built-in skills, which never loses to
     /// any other copy (SK-6): the chat is handed purlis's.
     HiddenByBuiltIn,
+    /// A plane skill a repo copy could hide, where purlis could not list a skills folder of the
+    /// chat's clone whole ([`Unread::Crowded`], SK-44): left out, since purlis cannot tell whether
+    /// the repo has a skill of its name.
+    RepoUnread {
+        /// The clone's name.
+        repo: String,
+    },
     /// A plane skill its project archived (SK-19, decision 62): it never loads, takes no name
     /// from another copy, and is restored by making it active again.
     Archived,
@@ -371,6 +378,11 @@ impl std::fmt::Display for Reason {
             }
             Self::OffForTheHarness => f.write_str("turned off for this project's chats"),
             Self::HiddenByBuiltIn => f.write_str("hidden by purlis's built-in skill of this name"),
+            Self::RepoUnread { repo } => write!(
+                f,
+                "purlis could not read the skills folder of {repo} whole, so a copy of this \
+                 skill may be there, and a chat in that repo would get that one"
+            ),
             Self::Archived => {
                 f.write_str("archived: it never loads until it is restored from its tab")
             }
@@ -423,6 +435,26 @@ pub struct OutsideSkill {
     pub switch: Switch,
     /// Whether the project turned it off for this harness's chats.
     pub off: bool,
+    /// Why purlis did not read it, where it did not (SK-44): listed for a person to see, its
+    /// `description` the sentence that says so, and never linted or badged.
+    pub unread: Option<Unread>,
+}
+
+/// **Why purlis did not read a skill from outside the plane** (SK-44, #3133). The harness may
+/// still load what is there.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Unread {
+    /// Its folder is a link purlis does not follow. Named by its folder's name, which the
+    /// harness loads it by: it takes that name as any repo skill does.
+    Link,
+    /// Its `SKILL.md` is one purlis does not read: a hard link in a clone, or larger than
+    /// [`MOST_BYTES`]. Named by its folder's name, as [`Self::Link`] is.
+    Refused,
+    /// No one skill: a folder purlis could not list whole (more names than it reads, or a read
+    /// that failed partway), named by its own name. A skill
+    /// of any name may be in it, so a repo's leaves out every plane skill its harness would let
+    /// a repo copy hide ([`Reason::RepoUnread`]), and it takes no name itself.
+    Crowded,
 }
 
 /// Whose a skill from outside the plane is.
@@ -574,6 +606,35 @@ impl SkillSet {
         outside: impl IntoIterator<Item = OutsideSkill>,
     ) -> Self {
         for one in outside {
+            if one.unread == Some(Unread::Crowded) {
+                // Fail closed: any plane skill may have a repo copy purlis did not read.
+                let repo = match &one.owner {
+                    Owner::Repo(repo) => Some(repo.clone()),
+                    Owner::You | Owner::Plugin(_) => None,
+                };
+                if let Some(repo) = repo.filter(|_| !one.off && route != Route::Plugin) {
+                    let (hidden, kept) = std::mem::take(&mut self.effective)
+                        .into_iter()
+                        .partition(|e| e.route != Route::Own && e.origin != Origin::BuiltIn);
+                    self.effective = kept;
+                    self.left_out
+                        .extend(hidden.into_iter().map(|hidden: Effective| {
+                            LeftOut {
+                                name: hidden.skill.name,
+                                origin: hidden.origin,
+                                local: hidden.local,
+                                folder: hidden
+                                    .skill
+                                    .path
+                                    .parent()
+                                    .map(Path::to_path_buf)
+                                    .unwrap_or_default(),
+                                reason: Reason::RepoUnread { repo: repo.clone() },
+                            }
+                        }));
+                }
+                continue;
+            }
             let handed = (!one.off)
                 .then(|| {
                     self.effective

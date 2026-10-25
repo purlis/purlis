@@ -379,3 +379,45 @@ fn a_skill_named_with_bidi_and_zero_width_characters_is_listed_escaped_and_lined
         "the LEVEL column lines up:\n{sly}\n{tool}"
     );
 }
+
+#[test]
+fn a_repo_skills_folder_purlis_cannot_list_whole_is_one_row_that_says_why() {
+    // SK-44 (#3133): past the most names purlis reads of one folder, none is read.
+    let project = Project::new();
+    for n in 0..2000 {
+        std::fs::write(project.clone_skills().join(format!("f{n}")), "").unwrap();
+    }
+
+    let out = project.run(&["skill", "list", "-w", "alpha", "--json"]);
+
+    assert!(out.status.success(), "{}", stderr(&out));
+    let text = stdout(&out);
+    assert!(!text.contains("left out: left out"), "{text}");
+    let doc: serde_json::Value = serde_json::from_str(&text).unwrap();
+    let claude = doc["harnesses"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|one| one["harness"] == "claude")
+        .expect("Claude Code listed");
+    let repo: Vec<(&str, &str)> = claude["skills"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|skill| skill["level"] == "repo")
+        .map(|skill| {
+            (
+                skill["name"].as_str().unwrap(),
+                skill["description"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        repo,
+        [(
+            "skills",
+            "A folder of more than 2000 names, the most purlis reads of one, so none of its \
+             skills is read here. A chat still finds them."
+        )]
+    );
+}
