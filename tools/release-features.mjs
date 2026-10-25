@@ -1,14 +1,20 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-// No release build carries a crate's test-only feature (#2216).
+// No release build carries a crate's test-only feature (#2216, #3180).
 //
-// `purlis-session-protocol`'s `any-stream` holds its test-only stand-ins (a link served over
-// any stream, a device taken as proved, the link's stand-in handshake). Its own tests and its
-// users' tests ask for it from `[dev-dependencies]`, which Cargo leaves out of a build that is
-// not a test. This reads every build the shipping workflows make, asks Cargo which features
-// that build resolves for the crate (`cargo tree -e normal,build,features`, every target,
-// nothing compiled), and fails with an error on the manifest that turned the feature on.
+// `TEST_ONLY` lists them: `purlis-session-protocol`'s `any-stream` (its test-only stand-ins: a
+// link served over any stream, a device taken as proved, the link's stand-in handshake),
+// `purlis-core`'s `fenced` (the plane fence), and every crate's `test-support` (what a test of
+// another crate reaches in, such as `purlis-skills`' mover hook). Their tests ask for them from
+// `[dev-dependencies]`, which Cargo leaves out of a build that is not a test. This reads every
+// build the shipping workflows make, asks Cargo which features that build resolves for each
+// crate (`cargo tree -e normal,build,features`, every target, nothing compiled), and fails with
+// an error on the manifest that turned a feature on.
+//
+// The list is checked against the workspace too: a package's `test-support` feature that
+// `TEST_ONLY` leaves out, a listed feature no package has, and one with no `CANARY` are errors,
+// so a new test hook is caught here rather than kept out by the resolver alone.
 //
 // It fails closed. A build line it cannot read whole, a feature flag on one, a cargo
 // subcommand it does not know, cargo called by path or through a variable, a workflow that
@@ -46,14 +52,57 @@ export const NOT_SHIPPING = {
   "stress.yml": "the stress and scale measurements: its builds run tests and benchmarks only",
 };
 
-/** The features only a test may turn on. */
-export const TEST_ONLY = [{ crate: "purlis-session-protocol", feature: "any-stream" }];
+/** The name a crate gives the feature only another crate's tests turn on; each is in `TEST_ONLY`. */
+export const TEST_SUPPORT = "test-support";
 
-/** A crate whose `[dev-dependencies]` turns each test-only feature on: the canary's build. */
-export const CANARY = { "purlis-session-protocol/any-stream": "purlis-host" };
+/** The features only a test may turn on. */
+export const TEST_ONLY = [
+  { crate: "purlis-session-protocol", feature: "any-stream" },
+  { crate: "purlis-core", feature: "fenced" },
+  { crate: "purlis-core", feature: TEST_SUPPORT },
+  { crate: "purlis-host", feature: TEST_SUPPORT },
+  { crate: "purlis-skills", feature: TEST_SUPPORT },
+  { crate: "purlis-terminal", feature: TEST_SUPPORT },
+];
+
+/**
+ * A crate whose `[dev-dependencies]` turns each test-only feature on: the canary's build. Never
+ * the feature's own crate, whose tests ask for it through a dependency on itself.
+ */
+export const CANARY = {
+  "purlis-session-protocol/any-stream": "purlis-host",
+  "purlis-core/fenced": "purlis-cli",
+  "purlis-core/test-support": "purlis-cli",
+  "purlis-host/test-support": "purlis-app",
+  "purlis-skills/test-support": "purlis-core",
+  "purlis-terminal/test-support": "purlis-core",
+};
 
 /** The Tauri project `tauri build` builds, run from `app/`. */
 export const TAURI_PROJECT = "app/src-tauri";
+
+// ---------------------------------------------------------------------------------------------
+// The list, against the workspace
+
+/**
+ * The errors in `testOnly` and `canary` against the workspace's `packages` (`cargo metadata`'s,
+ * each `{ name, features }`): a `test-support` feature the list leaves out, a listed feature no
+ * package has, and one with no canary.
+ */
+export function listErrors(packages, testOnly = TEST_ONLY, canary = CANARY) {
+  const listed = new Set(testOnly.map(({ crate, feature }) => `${crate}/${feature}`));
+  const has = new Set(packages.flatMap(({ name, features }) => Object.keys(features ?? {}).map((f) => `${name}/${f}`)));
+  const unlisted = packages
+    .filter(({ name, features }) => Object.hasOwn(features ?? {}, TEST_SUPPORT) && !listed.has(`${name}/${TEST_SUPPORT}`))
+    .map(({ name }) => `${name}/${TEST_SUPPORT} is a test-only feature TEST_ONLY does not list: list it, with a CANARY`);
+  const gone = [...listed]
+    .filter((f) => !has.has(f))
+    .map((f) => `TEST_ONLY lists ${f}, and no package of the workspace has it`);
+  const unwatched = [...listed]
+    .filter((f) => has.has(f) && !Object.hasOwn(canary, f))
+    .map((f) => `TEST_ONLY lists ${f} with no CANARY to show this check still sees it`);
+  return [...unlisted, ...gone, ...unwatched];
+}
 
 // ---------------------------------------------------------------------------------------------
 // `cargo tree --prefix depth -i <crate> -e …,features`
@@ -421,8 +470,12 @@ function main() {
     return metadataOf.get(manifest);
   };
 
+  const listed = listErrors(metadata("Cargo.toml").packages);
+  for (const error of listed) errors.push(`::error file=tools/release-features.mjs,title=the test-only list::${error}`);
+
   for (const test of TEST_ONLY) {
     const canary = CANARY[`${test.crate}/${test.feature}`];
+    if (!canary) continue;
     const seen = enablers(tree({ manifest: "Cargo.toml", packages: [canary], crate: test.crate, edges: "normal,build,dev,features" }), test);
     if (!seen.some((f) => f.name === canary)) {
       errors.push(`::error file=tools/release-features.mjs,title=canary::${canary}'s dev-dependency turns on ${test.crate}'s \`${test.feature}\`, and this check no longer sees it there`);
