@@ -184,11 +184,37 @@ describe("the family's look, from the tokens (button.css)", () => {
       heldToTheTokens(screen.getByRole("button", { name: `Save ${variant}` }));
     heldToTheTokens(
       screen.getByRole("button", { name: "Small" }),
-      "max(var(--size-chrome), var(--space-7))",
+      "max(24px, var(--size-chrome), var(--space-7))",
     );
     heldToTheTokens(
       screen.getByRole("button", { name: "Large" }),
       "calc(var(--size-control) + var(--space-2))",
+    );
+  });
+
+  // WCAG 2.5.8 (#3210): the compact density draws the chrome at 18px, so the floor is 24 CSS px,
+  // as a target is measured, under the chrome's height and the scale's; and as wide, for a
+  // button whose words are one glyph. A row that wraps keeps the same floor.
+  it("never draws an sm button under the 24px target, in any density or text size", () => {
+    render(
+      <>
+        <Button size="sm">A</Button>
+        <ToggleButton size="sm">B</ToggleButton>
+        <IconButton size="sm" icon={<Plus />} aria-label="Add" />
+        <ButtonRow size="sm" aria-label="Wrapping">
+          <Button>Wrapped</Button>
+        </ButtonRow>
+      </>,
+    );
+    for (const name of ["A", "B", "Add"]) {
+      const button = screen.getByRole("button", { name });
+      expect(drawnWith(button, "block-size"), name).toBe(
+        "max(24px, var(--size-chrome), var(--space-7))",
+      );
+      expect(drawnWith(button, "min-inline-size"), name).toBe("24px");
+    }
+    expect(drawnWith(screen.getByRole("button", { name: "Wrapped" }), "min-block-size")).toBe(
+      "max(24px, var(--size-chrome), var(--space-7))",
     );
   });
 

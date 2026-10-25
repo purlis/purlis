@@ -1487,9 +1487,9 @@ button.show-more:focus-visible {
    gives anything, and is cut at its own edge. Only once every such item is down to that does
    the breadcrumb shrink, by its own order: the names, and the state word last.
 
-   **Clear of its neighbours** (WCAG 2.5.8): a small icon button is under 24px in the compact
-   density, and the line's gap is a hairline, so a step on either side keeps a 24px circle around
-   it clear of the breadcrumb's last name and of the ways beside it. */
+   **Clear of its neighbours**: the line's gap is a hairline, so a step on either side keeps it
+   apart from the breadcrumb's last name and from the ways beside it. A small button is never
+   under 24px, in either density (#3210). */
 .pane-brief {
   flex: 0 1 auto;
   margin-inline: var(--space-2);
