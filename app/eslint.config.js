@@ -85,12 +85,13 @@ export default tseslint.config(
       "purlis/button-family": ["error", { otherFamilies: OTHER_FAMILIES }],
       // A box a person types in is the field family's, since #2905.
       "purlis/field-family": "error",
-      "purlis/select-family": "warn",
+      // A select and a box with suggestions are the select and combobox families', since #2906.
+      "purlis/select-family": "error",
       "purlis/choice-family": "warn",
       // The menu, context menu and popover families have moved (#2909).
       "purlis/menu-family": "error",
       "purlis/dialog-family": "error",
-      "purlis/tooltip-family": ["error", { handsOn: ["Select"] }],
+      "purlis/tooltip-family": "error",
       "purlis/panel-family": "error",
       "purlis/panel-section-family": "error",
       "purlis/empty-state-family": "error",
@@ -125,10 +126,5 @@ export default tseslint.config(
       "src/StripTablist.tsx",
     ],
     rules: { "purlis/tabs-family": "off" },
-  },
-  // The select's list is drawn in the old menu classes until the select family moves (#2906).
-  {
-    files: ["src/primitives/Select.tsx"],
-    rules: { "purlis/menu-family": "off" },
   },
 );

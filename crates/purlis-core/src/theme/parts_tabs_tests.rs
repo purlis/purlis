@@ -402,6 +402,8 @@ fn the_manifest_names_the_tabs_and_the_editor_toolbar() {
             "activity",
             "list",
             "titlebar",
+            "select",
+            "combobox",
             "panel-separator"
         ]
     );

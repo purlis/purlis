@@ -66,8 +66,8 @@ const MADE = [TODAY_ALPHA, TODAY_BETA, EARLIER_ALPHA];
 
 const TAB = "Dispatches";
 const PANE = '[data-testid="view-pane-charter-dispatches-"]';
-const BY_WORKSPACE = `${PANE} [role="combobox"][aria-label="Filter by workspace"]`;
-const BY_DATE = `${PANE} [role="combobox"][aria-label="Filter by date"]`;
+const BY_WORKSPACE = `${PANE} [data-scope="select"][data-part="root"][aria-label="Filter by workspace"]`;
+const BY_DATE = `${PANE} [data-scope="select"][data-part="root"][aria-label="Filter by date"]`;
 
 /** An ended task's record, as the app writes one (`dispatchrecord::Record`, version 1). */
 function recordOf(made: Made): string {
