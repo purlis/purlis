@@ -1736,6 +1736,24 @@ not.
 **Outcome eval**:
 A grade of how well a skill does its job on fixture tasks.
 
+**Grade** (of a skill):
+One run of a grading framework on a copy of a skill: its trigger tests (and, later, its outcome
+evals) run as real chats in each **arm**, scored and recorded in the **eval record** against the
+version the copy held. A grade shows what it runs and spends before it starts, and starts only on
+the person's press (ADR 0105).
+_Avoid_: test run, benchmark, eval (alone)
+
+**Arm** (of a grade):
+One side of a grade's comparison: the skill as it is, no skill at all, or the skill's previous
+version. Each fixture runs in every arm, and the difference is the arm with the skill against the
+baseline.
+_Avoid_: configuration, variant
+
+**Eval record**:
+The project's committed log of grades, one row per grade, beside the skill log. A grade is tied to
+a skill's version by what its folder held. Results never go in the skill's folder.
+_Avoid_: results file, benchmark
+
 The skills' relationships: a **project skill** reaches a workspace only through a **grant**; a
 **persona skill** adds to what the chat has where it runs; when two levels hold a skill of the
 same name the narrower wins (persona, then workspace, then project, and local over shared), and

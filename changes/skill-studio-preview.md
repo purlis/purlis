@@ -92,6 +92,18 @@
   offered *Move them*, the same one-commit move as `purlis doctor --fix project-skills`. The
   commit reaches everyone in the project, and a teammate on an older purlis opens it read-only
   until they update.
+- **Grade a skill's trigger tests** (Skill studio preview, #2779). A skill can carry trigger tests:
+  queries it should start on, and near misses it should leave alone. _Grade…_ on a skill's tab
+  first shows what a grade runs: how many chats, each test as the chat will read it (a character
+  no reader would see marked), what the skill's last grade spent, and that the chats are paid for
+  by the profile you pick, as any chat is. Nothing runs until you press _Grade_. Each test then
+  runs in a chat of its own, three times with the skill and three times without it, in a
+  throwaway folder under the project's sandbox. Those chats get no tab, and each ends as soon as
+  the skill starts. The tab says how far the grade has got and offers _Stop_. The skill's
+  _Grades_ panel shows each grade: the version it graded, what it ran on, the tests passed, each
+  side's pass rate and the difference the skill made. Each version in its history shows its
+  newest grade. Grades are kept in the project beside its skill runs, so the team sees them, and
+  a run a grade started says so. `purlis skill grade` prints the same plan and the grades.
 
 ### Fixed
 
