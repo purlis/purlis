@@ -197,15 +197,15 @@
    control height; sm is the chrome's, and never under 24px, the target size WCAG 2.5.8 asks
    for; lg is a step over md, only beside a list's main filter field.
 
-   **sm's floor is 24 CSS px, tall and wide** (#3210), as WCAG measures a target and as the status
-   item holds it (R115): the compact density draws the chrome at 18px and the scale's 24 at 16,
-   and a smaller text size shrinks both, so neither token alone keeps it. Over the floor it grows
-   with the chrome and the scale, as it did.
+   **sm's floor is 24 CSS px tall** (#3210), as WCAG measures a target and as the status item
+   holds it (R115): the compact density draws the chrome at 18px and the scale's 24 at 16, and a
+   smaller text size shrinks both, so neither token alone keeps it. Over the floor it grows with
+   the chrome and the scale, as it did. An icon button is as wide as it is tall; one with words
+   is as wide as they are, and a line that squeezes it to give way is the view's choice.
    --------------------------------------------------------------------------------------------- */
 
 [data-scope="button"][data-part="root"][data-size="sm"] {
   block-size: max(24px, var(--size-chrome), var(--space-7));
-  min-inline-size: 24px;
   padding-inline: var(--space-3);
   gap: var(--space-1);
   font-size: var(--font-size-sm);
