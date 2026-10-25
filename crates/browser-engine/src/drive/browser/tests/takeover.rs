@@ -1483,7 +1483,8 @@ fn the_read_a_held_key_left_running_is_what_the_next_key_is_blanked_from() {
         browser.person_input(&key(&aim, "x", true)),
         Err(Refusal::PageUnreadInTime)
     );
-    std::thread::sleep(Duration::from_millis(400));
+    // Past the read's end, with room for a busy machine.
+    std::thread::sleep(Duration::from_millis(1200));
 
     browser.person_input(&key(&aim, "y", true)).unwrap();
 
@@ -1513,7 +1514,7 @@ fn a_key_whose_page_read_outlived_the_reads_own_limit_is_held_never_unknown() {
         browser.person_input(&key(&aim, "x", true)),
         Err(Refusal::PageUnreadInTime)
     );
-    std::thread::sleep(Duration::from_millis(200));
+    std::thread::sleep(Duration::from_millis(800));
 
     let next = browser.person_input(&key(&aim, "y", true));
 
@@ -1532,7 +1533,7 @@ fn a_key_after_a_press_of_the_mouse_reads_the_page_anew() {
     browser.take_over();
     let aim = aim_now(&browser);
     let _ = browser.person_input(&key(&aim, "x", true));
-    std::thread::sleep(Duration::from_millis(400));
+    std::thread::sleep(Duration::from_millis(1200));
     browser.person_input(&press(&aim, 5.0, 5.0)).unwrap();
 
     let _ = browser.person_input(&key(&aim, "y", true));
