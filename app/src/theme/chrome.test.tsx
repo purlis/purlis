@@ -658,7 +658,7 @@ const DIALOGS: Opened[] = [
               most_skills: 30,
               most_chars: 6000,
               hidden: 0,
-              pins_over: false,
+              still_over: null,
               warns: "both",
             },
           }}

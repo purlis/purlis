@@ -73,7 +73,7 @@ pub use read::{
 };
 use reference::Seen;
 pub use reference::{BUILT_IN_PREFIXES, OnMachine, Reference};
-pub use router::{Hidden, HiddenWhy, INDEX, Index, Router, Routing};
+pub use router::{Hidden, HiddenWhy, INDEX, Index, Router, Routing, StillOver};
 pub use share::{Shared, named, named_at, share};
 pub use stamp::{Reload, Stamp};
 
@@ -312,6 +312,9 @@ pub enum Reason {
     /// A plane skill named as purlis's index skill ([`router::INDEX`], ADR 0102 §2), which a
     /// router shows in its place: it never loads until it is renamed.
     IndexName,
+    /// A harness or repo skill named as purlis's index skill (SK-15): the name is purlis's in
+    /// every chat, so the index a router hands is the one copy of it.
+    HiddenByIndex,
 }
 
 /// What a folder lacks to be a whole skill.
@@ -395,6 +398,7 @@ impl std::fmt::Display for Reason {
             Self::IndexName => f.write_str(
                 "purlis's index skill has this name, so this skill never loads: rename it",
             ),
+            Self::HiddenByIndex => f.write_str("hidden by purlis's index skill of this name"),
         }
     }
 }
@@ -659,6 +663,18 @@ impl SkillSet {
                 .parent()
                 .map(Path::to_path_buf)
                 .unwrap_or_default();
+            // The index skill's name is purlis's on every route, whether or not a router hands
+            // one to this chat (SK-15).
+            if one.id == router::INDEX && !one.off {
+                self.left_out.push(LeftOut {
+                    name: one.id,
+                    origin: one.origin,
+                    local: false,
+                    folder,
+                    reason: Reason::HiddenByIndex,
+                });
+                continue;
+            }
             // A built-in skill never loses to any other copy: purlis's is the one handed, and
             // the other is listed as hidden by it, whatever the route.
             if handed.is_some_and(|at| self.effective[at].origin == Origin::BuiltIn) {

@@ -47,7 +47,7 @@ const BUDGET: SkillBudget = {
   most_skills: 30,
   most_chars: 6000,
   hidden: 0,
-  pins_over: false,
+  still_over: null,
   warns: null,
 };
 
@@ -160,11 +160,26 @@ describe("Use skill…", () => {
       "3 skills of 30 · 1,234 of 6,000 characters · 2 skills in the index skill",
     );
     expect(warnsSaid(over)).toMatch(/so 2 skills are hidden behind the index skill/);
-    expect(warnsSaid({ ...over, pins_over: true })).toMatch(
-      /pinned skills alone are past purlis's skill budget/,
+    expect(warnsSaid({ ...over, still_over: "pins" })).toMatch(
+      /pinned skills are past purlis's skill budget.*`purlis skill pin <name> --off`/,
+    );
+    expect(warnsSaid({ ...over, still_over: "not-hideable" })).toMatch(
+      /purlis's own skills and the ones this chat's tool and repos bring are past/,
     );
     opened(
-      skills([skill("deploy"), skill("review", { hidden: "hidden by the built-in router" })], over),
+      skills(
+        [
+          skill("deploy"),
+          skill("review", {
+            hidden: {
+              router: "built-in",
+              why: "over-budget",
+              said: "hidden by the built-in router",
+            },
+          }),
+        ],
+        over,
+      ),
     );
     const rows = screen.getAllByTestId("use-skill-row");
     expect(within(rows[1]).getByText("· in the index skill")).toBeTruthy();

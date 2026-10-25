@@ -1521,8 +1521,11 @@ fn level(row: &StudioRow) -> String {
 fn state(row: &StudioRow) -> String {
     match &row.left_out {
         None if row.unchecked => format!("on: {}", purlis_core::skills::UNCHECKED),
-        None => match &row.hidden {
-            Some(why) => format!("on, {why}"),
+        None => match row.hidden.first() {
+            Some(first) => {
+                let on: Vec<&str> = row.hidden.iter().map(|one| one.harness.title()).collect();
+                format!("on, {} (on {})", first.hidden, on.join(", "))
+            }
             None if row.pinned => "on, pinned".to_owned(),
             None => "on".to_owned(),
         },
@@ -1543,7 +1546,16 @@ fn row_json(row: &StudioRow) -> Value {
         "written": row.written,
         "named": row.named,
         "unchecked": row.unchecked,
-        "hidden": row.hidden,
+        "hidden": row
+            .hidden
+            .iter()
+            .map(|one| json!({
+                "harness": one.harness.title(),
+                "router": one.hidden.router,
+                "why": one.hidden.why,
+                "said": one.hidden.to_string(),
+            }))
+            .collect::<Vec<_>>(),
         "pinned": row.pinned,
     })
 }

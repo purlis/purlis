@@ -16,7 +16,7 @@ pub(crate) const KEY: &str = "skills";
 
 /// The key a persona's definition pins skills by (SK-15, ADR 0102 §4): a comma-separated list of
 /// names its chats always list.
-pub const PINS_KEY: &str = "pinned-skills";
+pub(crate) const PINS_KEY: &str = "pinned-skills";
 
 /// **How many skills `persona` brings into every workspace** (SK-5, #2768), in the plane at
 /// `plane`: its own skills, and each other skill its `skills:` list names. What its page's

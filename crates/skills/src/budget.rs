@@ -61,7 +61,7 @@ pub enum Over {
 impl Spent {
     /// **Whether the set is over its budget**: more skills or more characters than it holds,
     /// where a router hides skills behind the index (ADR 0102 §2).
-    pub fn over(&self) -> bool {
+    pub(crate) fn over(&self) -> bool {
         self.skills > self.budget.skills || self.chars > self.budget.chars
     }
 

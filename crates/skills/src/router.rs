@@ -15,8 +15,8 @@
 //!
 //! - **a built-in skill**, which comes with purlis's own plugin on every route, whole;
 //! - **a harness or repo skill**, which its harness lists itself ([`crate::Route::Own`]);
-//! - **a pinned skill** (ADR 0102 §4): pins count first, and where they alone are over the
-//!   budget they are all listed and the set says so ([`Routing::pins_over`]);
+//! - **a pinned skill** (ADR 0102 §4): pins count first, and where they are over the budget
+//!   they are all listed and the set says so ([`Routing::still_over`]);
 //! - **a manual-only skill**, which no listing holds and so costs nothing (ADR 0102 as amended
 //!   2026-10-22), and which its harness must still be handed for Use skill… to start it.
 //!
@@ -40,7 +40,6 @@ pub(crate) const MOST_LINE_CHARS: usize = 120;
 /// **A skill router** (ADR 0102 §1): what decides which skills a chat's listing shows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
-#[non_exhaustive]
 pub enum Router {
     /// purlis's own (ADR 0102 §2): everything below the budget, the pins and the index above it.
     BuiltIn,
@@ -58,7 +57,6 @@ impl Router {
 /// Why a router hid a skill.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
-#[non_exhaustive]
 pub enum HiddenWhy {
     /// The chat's set is over its skill budget, and the skill is not pinned.
     OverBudget,
@@ -82,6 +80,18 @@ impl std::fmt::Display for Hidden {
     }
 }
 
+/// **What is still over the budget once a router hid all it may** (ADR 0102 §4): then all of it
+/// is listed, and the chat's budget says which.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum StillOver {
+    /// What no pin decides is over by itself: the built-in skills, the harness's and the repos'
+    /// own (and the index), which no router hides.
+    NotHideable,
+    /// Those fit, and the pins on top of them do not.
+    Pins,
+}
+
 /// **What a router made of a chat's set**: which router, what it hid, and the pins.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Routing {
@@ -90,10 +100,8 @@ pub struct Routing {
     pub hidden: Vec<Hidden>,
     /// The chat's pins that name a skill of its set, by name: never hidden.
     pub pinned: Vec<String>,
-    /// Whether what it cannot hide (the pins, the built-in skills, the harness's own and the
-    /// index) is over the budget by itself: then all of it is listed, and the chat's budget says
-    /// the pins are why.
-    pub pins_over: bool,
+    /// What is still over the budget with everything it may hide hidden, where something is.
+    pub still_over: Option<StillOver>,
 }
 
 /// **The index skill of a chat** (ADR 0102 §2): the `SKILL.md` its route hands it.
@@ -108,10 +116,11 @@ impl SkillSet {
     /// a skill it hides is still in [`SkillSet::effective`], and named by [`Self::hidden_by_router`].
     #[must_use]
     pub fn routed(mut self, budget: Budget, pins: &[String]) -> Self {
+        let pins: std::collections::HashSet<&str> = pins.iter().map(String::as_str).collect();
         let pinned: Vec<String> = self
             .effective
             .iter()
-            .filter(|e| pins.contains(&e.skill.name))
+            .filter(|e| pins.contains(e.skill.name.as_str()))
             .map(|e| e.skill.name.clone())
             .collect();
         let listed: Vec<(&Effective, crate::Declared)> = self
@@ -121,33 +130,44 @@ impl SkillSet {
             .map(|e| (e, crate::declared(&e.skill)))
             .collect();
         let mut hidden = Vec::new();
-        let mut pins_over = false;
+        let mut still_over = None;
         if cost(listed.iter(), budget).over() {
-            let (hide, keep): (Vec<_>, Vec<_>) = listed
+            // Fixed: what no router hides whatever is pinned. Pinned: what only a pin keeps.
+            let (could, fixed): (Vec<_>, Vec<_>) = listed
                 .iter()
-                .partition(|(e, declared)| hideable(e, declared, &pinned));
-            if !hide.is_empty() {
-                let mut kept = cost(keep.into_iter(), budget);
-                kept.skills += 1;
-                kept.chars += INDEX_DESCRIPTION.chars().count();
-                pins_over = kept.over();
-                hidden = hide
-                    .iter()
-                    .map(|(e, _)| Hidden {
-                        name: e.skill.name.clone(),
-                        router: Router::BuiltIn,
-                        why: HiddenWhy::OverBudget,
-                    })
-                    .collect();
+                .partition(|(e, declared)| hideable(e, declared));
+            let (pinned_ones, hide): (Vec<_>, Vec<_>) = could
+                .into_iter()
+                .partition(|(e, _)| pins.contains(e.skill.name.as_str()));
+            let index = usize::from(!hide.is_empty());
+            let with_index = |mut spent: crate::Spent| {
+                spent.skills += index;
+                spent.chars += index * INDEX_DESCRIPTION.chars().count();
+                spent
+            };
+            still_over = if with_index(cost(fixed.iter().copied(), budget)).over() {
+                Some(StillOver::NotHideable)
+            } else if with_index(cost(fixed.iter().chain(&pinned_ones).copied(), budget)).over() {
+                Some(StillOver::Pins)
             } else {
-                pins_over = true;
-            }
+                None
+            };
+            // In the set's order, by name, so a lookup is a search.
+            hidden = hide
+                .iter()
+                .map(|(e, _)| Hidden {
+                    name: e.skill.name.clone(),
+                    router: Router::BuiltIn,
+                    why: HiddenWhy::OverBudget,
+                })
+                .collect();
+            hidden.sort_by(|a: &Hidden, b: &Hidden| a.name.cmp(&b.name));
         }
         self.routing = Some(Routing {
             router: Router::BuiltIn,
             hidden,
             pinned,
-            pins_over,
+            still_over,
         });
         self
     }
@@ -155,11 +175,11 @@ impl SkillSet {
     /// **Why a router hid `name` from this chat's listing**, or `None` where it is listed or no
     /// router ran.
     pub fn hidden_by_router(&self, name: &str) -> Option<&Hidden> {
-        self.routing
-            .as_ref()?
-            .hidden
-            .iter()
-            .find(|hidden| hidden.name == name)
+        let hidden = &self.routing.as_ref()?.hidden;
+        hidden
+            .binary_search_by(|one| one.name.as_str().cmp(name))
+            .ok()
+            .map(|at| &hidden[at])
     }
 
     /// Whether the chat's pins name `name`, a skill of its set.
@@ -178,16 +198,22 @@ impl SkillSet {
 
     /// **The chat's index skill**, where a router hid any skill: every hidden one by name and
     /// one line, the deprecated ones after the rest with their replacements, and how to load one.
+    ///
+    /// The model reads it, so nothing in it is hidden from a person reading it too: a name is
+    /// listed only where it is a skill's name by the open format's grammar (64 characters at
+    /// most), and the others are counted; a description is folded onto one line, cut at
+    /// [`MOST_LINE_CHARS`], and each character a reader would not see in it (an invisible, bidi
+    /// or tag character) is written as its mark ([`purlis_unicode::marked`]).
     pub fn index(&self) -> Option<Index> {
         let routing = self.routing.as_ref()?;
         if routing.hidden.is_empty() {
             return None;
         }
-        let mut hidden: Vec<&Effective> = self
+        let (mut hidden, odd): (Vec<&Effective>, Vec<&Effective>) = self
             .effective
             .iter()
             .filter(|e| self.hidden_by_router(&e.skill.name).is_some())
-            .collect();
+            .partition(|e| crate::change::name_problem(&e.skill.name).is_none());
         hidden.sort_by(|a, b| {
             a.deprecated
                 .is_some()
@@ -207,7 +233,11 @@ impl SkillSet {
                 one_line(&e.skill.description)
             ));
             if let Some(deprecated) = &e.deprecated {
-                match &deprecated.replacement {
+                match deprecated
+                    .replacement
+                    .as_deref()
+                    .filter(|instead| crate::change::name_problem(instead).is_none())
+                {
                     Some(instead) => {
                         text.push_str(&format!(" (deprecated: use `{instead}` instead)"));
                     }
@@ -215,6 +245,17 @@ impl SkillSet {
                 }
             }
             text.push('\n');
+        }
+        match odd.len() {
+            0 => {}
+            1 => text.push_str(
+                "\n1 more skill has a name that is not a skill name, so it is not listed here: \
+                 `skill_find` finds it.\n",
+            ),
+            more => text.push_str(&format!(
+                "\n{more} more skills have names that are not skill names, so they are not \
+                 listed here: `skill_find` finds them.\n"
+            )),
         }
         Some(Index { text })
     }
@@ -228,30 +269,28 @@ fn cost<'a>(
     crate::budget::spent(listed.map(|(e, declared)| (&e.skill, declared)), budget)
 }
 
-/// Whether the built-in router may hide `e`: a skill purlis hands from the plane, by a route
-/// that lists it, that is neither pinned nor manual-only.
-fn hideable(e: &Effective, declared: &crate::Declared, pinned: &[String]) -> bool {
+/// Whether the built-in router may hide `e` where nothing pins it: a skill purlis hands from the
+/// plane, by a route that lists it, that is not manual-only.
+fn hideable(e: &Effective, declared: &crate::Declared) -> bool {
     e.origin.of_the_plane()
         && matches!(e.route, Route::Plugin | Route::Config | Route::Briefing)
         && !declared.manual
-        && !pinned.contains(&e.skill.name)
 }
 
-/// `description` on one line: every run of white space or control characters one space, cut at
-/// [`MOST_LINE_CHARS`] with `…`.
+/// `description` on one line: every run of white space one space, cut at [`MOST_LINE_CHARS`]
+/// with `…`, then each character a reader would not see written as its mark.
 fn one_line(description: &str) -> String {
-    let words: Vec<&str> = description
-        .split(|c: char| c.is_whitespace() || c.is_control())
-        .filter(|word| !word.is_empty())
-        .collect();
+    let words: Vec<&str> = description.split_whitespace().collect();
     let line = words.join(" ");
-    if line.chars().count() <= MOST_LINE_CHARS {
-        return line;
-    }
-    let mut cut: String = line.chars().take(MOST_LINE_CHARS).collect();
-    cut.truncate(cut.trim_end().len());
-    cut.push('…');
-    cut
+    let cut = if line.chars().count() <= MOST_LINE_CHARS {
+        line
+    } else {
+        let mut cut: String = line.chars().take(MOST_LINE_CHARS).collect();
+        cut.truncate(cut.trim_end().len());
+        cut.push('…');
+        cut
+    };
+    purlis_unicode::marked(&cut, purlis_unicode::Breaks::Marked)
 }
 
 #[cfg(test)]

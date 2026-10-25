@@ -656,8 +656,8 @@ export function SkillStudioTab({
                   <td>
                     {skill.on
                       ? (skill.unchecked ??
-                        (skill.hidden !== null
-                          ? `On, ${skill.hidden}`
+                        (skill.hidden.length > 0
+                          ? `On, ${skill.hidden[0].hidden.said} (on ${skill.hidden.map((one) => one.title).join(", ")})`
                           : skill.pinned
                             ? "On, pinned"
                             : "On"))

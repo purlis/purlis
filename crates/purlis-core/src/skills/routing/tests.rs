@@ -9,9 +9,7 @@ use std::path::{Path, PathBuf};
 
 use super::*;
 use crate::harness::Harness;
-use crate::skills::{
-    ChatSkills, DIR_IN_BUNDLE, INDEX, Running, for_use_skill, in_the_studio, of_a_chat, studio_rows,
-};
+use crate::skills::{ChatSkills, DIR_IN_BUNDLE, INDEX, Running, for_use_skill, of_a_chat};
 
 /// The most skills a chat lists on every harness (ADR 0102 as amended 2026-10-21).
 const MOST: usize = 30;
@@ -127,8 +125,8 @@ fn above_the_budget_a_chat_is_handed_the_index_in_place_of_the_hidden_skills() {
     assert!(index.contains("- `skill-34`: Does thing 34."), "{index}");
     let chat = for_use_skill(&running(root, &bundle, None));
     assert_eq!(hidden(&chat).len(), MOST + 5);
-    assert!(chat.spent.over());
-    assert!(!chat.pins_over);
+    assert!(chat.spent.warns().is_some());
+    assert_eq!(chat.still_over, None);
 }
 
 #[test]
@@ -234,8 +232,18 @@ fn a_workspaces_pins_that_are_no_list_of_names_pin_nothing_and_a_save_refuses_th
     assert!(crate::settings::workspace::skills_refused(&table, "workspace.json").is_empty());
 }
 
+/// The studio's list of a chat in `smart-ide`, with no harness of this machine's read.
+fn studio(root: &Path, bundle: &Path) -> crate::skills::StudioList {
+    let env = crate::harness_plugin::Env {
+        chat: &[],
+        home: Some(root.join("home")),
+        process: false,
+    };
+    crate::skills::studio_list(Some(bundle), root, Some("smart-ide"), None, &env)
+}
+
 #[test]
-fn the_studio_says_why_the_router_hid_a_skill_and_which_are_pinned() {
+fn the_studio_says_why_each_harnesss_router_hid_a_skill_and_which_are_pinned() {
     let (tmp, bundle) = a_plane_of(MOST + 5);
     let root = tmp.path();
     pin(
@@ -246,25 +254,64 @@ fn the_studio_says_why_the_router_hid_a_skill_and_which_are_pinned() {
     )
     .unwrap();
 
-    let set = in_the_studio(Some(&bundle), root, Some("smart-ide"), None);
-    let rows = studio_rows(&set, root, &[]);
+    let list = studio(root, &bundle);
 
-    let row = |name: &str| rows.iter().find(|row| row.name == name).expect(name);
+    let row = |name: &str| list.rows.iter().find(|row| row.name == name).expect(name);
+    let hidden = &row("skill-00").hidden;
     assert_eq!(
-        row("skill-00").hidden.as_deref(),
-        Some(
-            "hidden by the built-in router: over this chat's skill budget, so it is in the index \
-             skill"
-        )
+        hidden.len(),
+        Harness::ALL.len(),
+        "every harness's budget is past"
+    );
+    assert!(
+        Harness::ALL
+            .iter()
+            .all(|harness| hidden.iter().any(|one| one.harness == *harness))
+    );
+    assert_eq!(
+        hidden[0].hidden.to_string(),
+        "hidden by the built-in router: over this chat's skill budget, so it is in the index skill"
     );
     assert_eq!(row("skill-00").left_out, None, "hidden, never left out");
     assert!(row("skill-03").pinned);
-    assert_eq!(row("skill-03").hidden, None);
-    assert_eq!(
-        row("handoff").hidden,
-        None,
+    assert!(row("skill-03").hidden.is_empty());
+    assert!(
+        row("handoff").hidden.is_empty(),
         "a built-in skill is never hidden"
     );
+}
+
+#[test]
+fn the_studio_routes_each_harness_by_its_own_budget() {
+    // Under 30 skills and 6,000 characters of descriptions, but not once Codex's briefing counts
+    // each skill's path too.
+    let (tmp, bundle) = a_plane_of(0);
+    let root = tmp.path();
+    for at in 0..28 {
+        let name = format!("long-{at:02}");
+        write(
+            &root.join("skills").join(&name),
+            &format!(
+                "---\nname: {name}\ndescription: {}\n---\n\nbody\n",
+                "w".repeat(210)
+            ),
+        );
+        std::fs::write(
+            root.join("skills").join(format!("{name}.toml")),
+            "grant = \"all\"\n",
+        )
+        .unwrap();
+    }
+
+    let list = studio(root, &bundle);
+
+    let row = list
+        .rows
+        .iter()
+        .find(|row| row.name == "long-00")
+        .expect("long-00");
+    let on: Vec<Harness> = row.hidden.iter().map(|one| one.harness).collect();
+    assert_eq!(on, [Harness::Codex]);
 }
 
 #[test]
@@ -283,9 +330,16 @@ fn use_skill_asks_a_chat_to_load_a_hidden_skill_and_holds_no_run_for_it() {
             typing.text, "Load the skill skill-07 with skill_load and follow it.",
             "{harness:?}"
         );
-        assert!(typing.held.is_none(), "the load opens the run");
+        assert_eq!(
+            typing.start,
+            crate::skills::Start::ByLoad,
+            "the load opens the run"
+        );
         let built_in = chat.typed("handoff", &[]).unwrap();
-        assert!(built_in.held.is_some(), "a listed skill is typed as before");
+        assert!(
+            matches!(built_in.start, crate::skills::Start::Held(_)),
+            "a listed skill is typed as before"
+        );
     }
 }
 
@@ -293,7 +347,7 @@ fn use_skill_asks_a_chat_to_load_a_hidden_skill_and_holds_no_run_for_it() {
 fn the_stamp_of_a_chat_changes_when_what_its_index_names_changes() {
     let (tmp, _bundle) = a_plane_of(MOST + 5);
     let root = tmp.path();
-    let before = crate::skills::stamp_of(root, Some("smart-ide"), None, Harness::Codex);
+    let before = crate::skills::stamp_of(root, Some("smart-ide"), None, Harness::Codex, None);
 
     write(
         &root.join("skills/skill-99"),
@@ -302,7 +356,7 @@ fn the_stamp_of_a_chat_changes_when_what_its_index_names_changes() {
     std::fs::write(root.join("skills/skill-99.toml"), "grant = \"all\"\n").unwrap();
 
     assert_ne!(
-        crate::skills::stamp_of(root, Some("smart-ide"), None, Harness::Codex),
+        crate::skills::stamp_of(root, Some("smart-ide"), None, Harness::Codex, None),
         before
     );
 }
@@ -348,4 +402,73 @@ fn a_briefed_chat_over_the_budget_is_briefed_on_the_index_and_not_on_what_it_hid
     assert!(briefing.contains(INDEX), "{briefing}");
     assert!(briefing.contains("handoff"), "{briefing}");
     assert!(!briefing.contains("skill-07"), "{briefing}");
+}
+
+#[test]
+fn a_chat_the_built_in_skills_put_past_the_budget_is_stamped_with_its_index() {
+    // 26 plane skills fit the budget alone; with six built-in skills they do not.
+    let (tmp, bundle) = a_plane_of(26);
+    let root = tmp.path();
+    for name in ["secrets", "theme", "browser", "update", "persona"] {
+        write(
+            &bundle.join(name),
+            &format!("---\nname: {name}\ndescription: Purlis's {name}.\n---\n"),
+        );
+    }
+    assert!(
+        laid_out(root, &bundle, None)
+            .iter()
+            .any(|name| name == INDEX)
+    );
+
+    let with =
+        crate::skills::stamp_of(root, Some("smart-ide"), None, Harness::Codex, Some(&bundle));
+    let without = crate::skills::stamp_of(root, Some("smart-ide"), None, Harness::Codex, None);
+    assert_ne!(with, without, "the built-in skills decide what is hidden");
+
+    // A hidden skill's description is only in the index: changing it changes the stamp.
+    write(
+        &root.join("skills/skill-05"),
+        "---\nname: skill-05\ndescription: Does something else.\n---\n",
+    );
+    assert_ne!(
+        crate::skills::stamp_of(root, Some("smart-ide"), None, Harness::Codex, Some(&bundle)),
+        with
+    );
+}
+
+#[test]
+fn pins_past_their_limits_are_none_and_say_why() {
+    let (tmp, _bundle) = a_plane_of(1);
+    let root = tmp.path();
+    let manifest = root.join("workspaces/smart-ide/workspace.json");
+    let many: Vec<String> = (0..=MOST_PINS).map(|at| format!("\"pin-{at}\"")).collect();
+    std::fs::write(
+        &manifest,
+        format!(
+            r#"{{"settings": {{"skills": {{"pinned": [{}]}}}}}}"#,
+            many.join(", ")
+        ),
+    )
+    .unwrap();
+    let too_many = pins_of(root, Some("smart-ide"), None).unwrap_err();
+    assert!(too_many.contains("more than 64 pins"), "{too_many}");
+
+    std::fs::write(
+        &manifest,
+        r#"{"settings": {"skills": {"pinned": ["skill-00", "Not A Name"]}}}"#,
+    )
+    .unwrap();
+    let odd = pins_of(root, Some("smart-ide"), None).unwrap_err();
+    assert!(odd.contains("not a skill's name"), "{odd}");
+
+    std::fs::write(
+        &manifest,
+        r#"{"settings": {"skills": {"pinned": ["skill-00", "skill-00"]}}}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        pins_of(root, Some("smart-ide"), None).unwrap(),
+        ["skill-00"]
+    );
 }

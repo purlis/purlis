@@ -147,7 +147,7 @@ fn a_pinned_skill_is_never_hidden_and_counts_first() {
     assert_eq!(names(set.listed()), ["handoff", "lint"]);
     let routing = set.routing.as_ref().expect("routed");
     assert_eq!(routing.pinned, ["lint"]);
-    assert!(!routing.pins_over);
+    assert_eq!(routing.still_over, None);
     assert!(set.is_pinned("lint"));
     assert!(!set.index().expect("an index").text.contains("`lint`"));
 }
@@ -164,7 +164,10 @@ fn pins_over_the_budget_are_all_listed_and_say_so() {
         names(set.listed()),
         ["deploy", "handoff", "lint", "release"]
     );
-    assert!(set.routing.as_ref().expect("routed").pins_over);
+    assert_eq!(
+        set.routing.as_ref().expect("routed").still_over,
+        Some(StillOver::Pins)
+    );
     assert_eq!(set.index(), None, "nothing is hidden, so no index");
 }
 
@@ -228,7 +231,7 @@ fn a_description_is_one_line_in_the_index_however_it_is_written() {
     skill(
         &plane.join(PROJECT_DIR),
         "wordy",
-        &format!("First\t\u{1b}  second {long}"),
+        &format!("First\t  second {long}"),
         "",
     );
 
@@ -287,7 +290,111 @@ fn the_index_costs_one_skill_and_its_description_of_what_is_left_listed() {
     let set = set_at_the_root(&plane, &built_in).routed(skills(2), &["lint".to_owned()]);
 
     let routing = set.routing.as_ref().expect("routed");
-    assert!(routing.pins_over, "handoff, lint and the index are three");
+    assert_eq!(
+        routing.still_over,
+        Some(StillOver::Pins),
+        "handoff, lint and the index are three"
+    );
     assert_eq!(names(set.listed()), ["handoff", "lint"]);
     assert!(set.index().is_some());
+}
+
+#[test]
+fn what_no_pin_decides_over_the_budget_is_said_apart_from_the_pins() {
+    // No pins at all, and more built-in skills than the budget holds.
+    let tmp = tempfile::tempdir().unwrap();
+    let built_in = tmp.path().join("bundle");
+    let plane = tmp.path().join("plane");
+    for name in ["handoff", "secrets", "theme"] {
+        skill(&built_in, name, "Purlis's own.", "");
+    }
+    skill(&plane.join(PROJECT_DIR), "deploy", "Deploys.", "");
+
+    let set = set_at_the_root(&plane, &built_in).routed(skills(2), &[]);
+
+    let routing = set.routing.as_ref().expect("routed");
+    assert_eq!(routing.still_over, Some(StillOver::NotHideable));
+    assert!(routing.pinned.is_empty());
+    assert_eq!(names(set.listed()), ["handoff", "secrets", "theme"]);
+}
+
+#[test]
+fn the_index_shows_no_character_a_reader_would_not_see() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (plane, built_in) = three(tmp.path());
+    // A description with a right-to-left override, a zero width space and a tag character.
+    skill(
+        &plane.join(PROJECT_DIR),
+        "sneaky",
+        "Safe\u{202E}txet\u{200B}word\u{E0041}end.",
+        "",
+    );
+    // A name with them is no skill's name by the format's grammar.
+    skill(&plane.join(PROJECT_DIR), "odd", "Odd one.", "");
+    std::fs::write(
+        plane.join(PROJECT_DIR).join("odd").join("SKILL.md"),
+        "---\nname: odd\u{202E}\u{200B}\u{E0041}x\ndescription: Odd one.\n---\n\nbody\n",
+    )
+    .unwrap();
+
+    let index = set_at_the_root(&plane, &built_in)
+        .routed(skills(3), &[])
+        .index()
+        .expect("an index")
+        .text;
+
+    for hidden in ['\u{202E}', '\u{200B}', '\u{E0041}'] {
+        assert!(!index.contains(hidden), "{hidden:?} in {index}");
+    }
+    assert!(
+        index.contains("- `sneaky`: Safe⟦U+202E⟧txet⟦U+200B⟧word⟦U+E0041⟧end."),
+        "{index}"
+    );
+    assert!(!index.contains("odd"), "{index}");
+    assert!(
+        index.contains("1 more skill has a name that is not a skill name"),
+        "{index}"
+    );
+}
+
+#[test]
+fn a_repo_or_harness_skill_named_as_the_index_is_hidden_by_it() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (plane, built_in) = three(tmp.path());
+    let folder = tmp.path().join("clone/skills-of-the-repo").join(INDEX);
+    skill(folder.parent().unwrap(), INDEX, "The repo's.", "");
+    let outside = |origin, owner| crate::OutsideSkill {
+        skill: crate::Skill {
+            name: INDEX.to_owned(),
+            description: "The repo's.".to_owned(),
+            path: folder.join("SKILL.md"),
+        },
+        root: tmp.path().join("clone"),
+        origin,
+        id: INDEX.to_owned(),
+        owner,
+        switch: crate::Switch::Alone,
+        off: false,
+        unread: None,
+    };
+
+    for (origin, owner) in [
+        (crate::Origin::Repo, crate::Owner::Repo("app".to_owned())),
+        (crate::Origin::Harness, crate::Owner::You),
+    ] {
+        let set = set_at_the_root(&plane, &built_in)
+            .with_outside(Route::Config, [outside(origin, owner)]);
+
+        assert!(set.effective.iter().all(|e| e.skill.name != INDEX));
+        let left = set
+            .left_out
+            .iter()
+            .find(|l| l.name == INDEX)
+            .expect("left out");
+        assert_eq!(left.reason, Reason::HiddenByIndex, "{origin:?}");
+        assert_eq!(
+            left.reason.to_string(),
+            "hidden by purlis's index skill of this name"
+        );
+    }
 }

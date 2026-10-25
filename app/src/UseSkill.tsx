@@ -19,6 +19,7 @@ import { ListBox, ListOption } from "./ui/list/List";
 import { RowBelow, RowDescription, RowLabel } from "./ui/list/Row";
 import { Button } from "./ui/button/Button";
 import { counted } from "./dispatches";
+import { codeSpans } from "./PanelList";
 import { useSkillStudioOn } from "./skillStudio";
 import {
   commands,
@@ -61,8 +62,10 @@ export function warnsSaid(budget: SkillBudget): string | undefined {
           ? "skills' descriptions are"
           : undefined;
   if (what === undefined) return undefined;
-  if (budget.pins_over)
-    return `This chat's pinned skills alone are past purlis's skill budget, so all of them are listed. Unpin some, or make some manual-only.`;
+  if (budget.still_over === "not-hideable")
+    return `purlis's own skills and the ones this chat's tool and repos bring are past purlis's skill budget by themselves, so all of them are listed. Turn some of the tool's or repos' skills off in the Skill studio.`;
+  if (budget.still_over === "pins")
+    return `This chat's pinned skills are past purlis's skill budget, so all of them are listed. Unpin some with \`purlis skill pin <name> --off\`, or make some manual-only.`;
   if (budget.hidden > 0)
     return `This chat's ${what} past purlis's skill budget, so ${counted(budget.hidden, "skill is", "skills are")} hidden behind the index skill, which the chat loads them from. Make some skills manual-only, or turn some off for this workspace.`;
   return `This chat's ${what} near or past purlis's skill budget, past which some are hidden behind the index skill. Make some skills manual-only, or turn some off for this workspace.`;
@@ -173,7 +176,7 @@ export function UseSkill({
         )}
         {warning !== undefined && (
           <p className="honest use-skill-over" role="status">
-            <TriangleAlert aria-hidden="true" /> {warning}
+            <TriangleAlert aria-hidden="true" /> {codeSpans(warning)}
           </p>
         )}
 

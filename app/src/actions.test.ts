@@ -4326,7 +4326,7 @@ describe("Use skill… on a chat's tab (#2775)", () => {
       most_skills: 30,
       most_chars: 6000,
       hidden: 0,
-      pins_over: false,
+      still_over: null,
       warns: "skills" as const,
     };
     const offers = catalogue(

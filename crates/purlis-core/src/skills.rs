@@ -25,7 +25,7 @@ pub use purlis_skills::{
     grant_file, grant_of, handed_text, in_bundle, level_dir, level_shown, listing, named, named_at,
     persona_dir, read, scan, set_grant, share,
 };
-pub use purlis_skills::{Hidden, HiddenWhy, INDEX, Index, Router, Routing};
+pub use purlis_skills::{Hidden, HiddenWhy, INDEX, Index, Router, Routing, StillOver};
 pub use purlis_skills::{SkillFiles, SkillLint};
 
 /// Skill runs: the span from the moment a skill starts to the end of the turn (SK-3).
@@ -48,7 +48,8 @@ mod on_machine;
 pub mod persona;
 mod routing;
 
-pub use routing::{PinnedBy, pin, pinned_in, pins_of};
+pub use routing::PinnedBy;
+pub(crate) use routing::{pin, pins_of};
 
 pub use on_machine::on_machine;
 pub(crate) use on_machine::{folders, skill_dirs};
@@ -830,9 +831,9 @@ pub struct ChatSkills {
     pub workspace: Option<String>,
     pub offered: Vec<Offered>,
     pub spent: Spent,
-    /// Whether what the router cannot hide (the pins among it) is over the budget by itself
-    /// (ADR 0102 §4): the budget then says the pins are why.
-    pub pins_over: bool,
+    /// What is still over the budget once the router hid all it may (ADR 0102 §4): the pins, or
+    /// what no pin decides. The budget then says which.
+    pub still_over: Option<StillOver>,
 }
 
 /// **The skills of chat `chat`, as Use skill… offers them** (SK-12): exactly its set, worked out
@@ -856,10 +857,7 @@ pub fn for_use_skill(chat: &Running<'_>) -> ChatSkills {
         None,
         Some(chat.harness.skill_budget()),
     );
-    let pins_over = set
-        .routing
-        .as_ref()
-        .is_some_and(|routing| routing.pins_over);
+    let still_over = set.routing.as_ref().and_then(|routing| routing.still_over);
     let hidden = |name: &str| set.hidden_by_router(name).cloned();
     let offered: Vec<Offered> = set
         .effective
@@ -889,7 +887,7 @@ pub fn for_use_skill(chat: &Running<'_>) -> ChatSkills {
         workspace: chat.workspace.map(str::to_owned),
         offered,
         spent,
-        pins_over,
+        still_over,
     }
 }
 
@@ -900,9 +898,18 @@ pub struct Typing {
     pub text: String,
     /// The run it starts once its prompt is sent, its id minted now: the name the harness knows
     /// the skill by, which copy it is, and how its start is confirmed
-    /// ([`crate::skillspan::Typed`]). `None` for a skill a router hid, which is loaded with
-    /// `skill_load`: the load opens its run.
-    pub held: Option<crate::skillspan::Typed>,
+    /// ([`crate::skillspan::Typed`]), or that the load starts it.
+    pub start: Start,
+}
+
+/// **How the run of a skill Use skill… typed starts.**
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Start {
+    /// Once its prompt is sent: the run is held for it ([`crate::skillspan::Typed`]).
+    Held(crate::skillspan::Typed),
+    /// When the chat loads it with `skill_load`, which opens its run: a skill a router hid,
+    /// whose harness was not handed it (SK-15).
+    ByLoad,
 }
 
 impl ChatSkills {
@@ -921,7 +928,7 @@ impl ChatSkills {
         if offered.hidden.is_some() {
             return Ok(Typing {
                 text: load_text(&offered.effective.skill.name, &given),
-                held: None,
+                start: Start::ByLoad,
             });
         }
         let text = self
@@ -931,7 +938,7 @@ impl ChatSkills {
                 origin: offered.effective.origin,
                 given: &given,
             });
-        let held = Some(crate::skillspan::Typed {
+        let held = Start::Held(crate::skillspan::Typed {
             skill: offered.known_as.clone(),
             run: ulid::Ulid::generate(),
             workspace: self.workspace.clone(),
@@ -942,7 +949,7 @@ impl ChatSkills {
             text: crate::skillspan::PromptMarks::digest(&text),
             confirmed: self.harness.typed_start(),
         });
-        Ok(Typing { text, held })
+        Ok(Typing { text, start: held })
     }
 }
 
@@ -963,16 +970,20 @@ fn load_text(name: &str, given: &Given) -> String {
 /// starts and again when the project's skills change; where they differ, the chat's harness does
 /// not take the change in by itself ([`Harness::skills_reload`]) and its tab offers a restart.
 /// An empty stamp where the project's skills do not reach its chats ([`reach_chats_here`]).
+///
+/// The built-in skills in `built_in` count against the chat's budget as they do where the chat
+/// is armed (SK-15), so what its router hides, and so its index, is what the chat was handed.
 pub fn stamp_now(
     plane: &Path,
     workspace: Option<&str>,
     persona: Option<&str>,
     harness: Harness,
+    built_in: Option<&Path>,
 ) -> Stamp {
     if !reach_chats_here(plane) {
         return Stamp::default();
     }
-    stamp_of(plane, workspace, persona, harness)
+    stamp_of(plane, workspace, persona, harness, built_in)
 }
 
 /// [`stamp_now`] whatever the flag says: for a caller that asked the flag once for many chats.
@@ -981,6 +992,7 @@ pub fn stamp_of(
     workspace: Option<&str>,
     persona: Option<&str>,
     harness: Harness,
+    built_in: Option<&Path>,
 ) -> Stamp {
     let at = PlaneSkills {
         plane,
@@ -989,7 +1001,7 @@ pub fn stamp_of(
         repo: &[],
     };
     let set = ask(
-        None,
+        built_in,
         Some(at),
         persona,
         harness.skills(),
@@ -1050,9 +1062,14 @@ fn ask(
     };
     match budget {
         Some(budget) => {
-            let pins = plane
-                .map(|at| pins_of(at.plane, at.workspace, persona))
-                .unwrap_or_default();
+            let pins = match plane.map(|at| pins_of(at.plane, at.workspace, persona)) {
+                Some(Ok(pins)) => pins,
+                Some(Err(why)) => {
+                    tracing::warn!("purlis: {why}");
+                    Vec::new()
+                }
+                None => Vec::new(),
+            };
             set.routed(budget, &pins)
         }
         None => set,
@@ -1393,25 +1410,15 @@ pub fn in_the_studio(
             .flat_map(|harness| on_machine(harness, &env))
             .collect::<Vec<_>>()
     });
+    // Not routed here: each harness's own set is, by its own budget ([`studio_list`]).
     ask(
         built_in,
         Some(at),
         persona,
         Route::Plugin,
         here.as_deref(),
-        Some(studio_budget()),
+        None,
     )
-}
-
-/// **The budget the studio routes a chat's set by**: that of the harness whose route it reads
-/// the set as ([`Route::Plugin`]), so what it says is hidden is what such a chat would have
-/// hidden.
-fn studio_budget() -> Budget {
-    Harness::ALL
-        .iter()
-        .find(|harness| harness.skills() == Route::Plugin)
-        .unwrap_or(&Harness::ALL[0])
-        .skill_budget()
 }
 
 /// **Every harness the project's profiles run**, in the registry's order, or Claude Code alone
@@ -1556,6 +1563,7 @@ fn harnesses_in_the_studio(
     set: &SkillSet,
     plane: &Path,
     workspace: Option<&str>,
+    pins: &[String],
     env: &crate::harness_plugin::Env<'_>,
     known: &Known,
 ) -> Vec<HarnessInTheStudio> {
@@ -1577,7 +1585,11 @@ fn harnesses_in_the_studio(
             ));
             let mut one = HarnessInTheStudio {
                 harness,
-                set: set.clone().with_outside(harness.skills(), outside.clone()),
+                // Routed by this harness's own budget, with what it finds itself counted (SK-15).
+                set: set
+                    .clone()
+                    .with_outside(harness.skills(), outside.clone())
+                    .routed(harness.skill_budget(), pins),
                 group,
                 outside,
                 rows: Vec::new(),
@@ -1664,11 +1676,19 @@ pub struct StudioRow {
     pub lifecycle: Lifecycle,
     /// Who looks after it, informational (SK-19). Empty for a skill that is not the plane's.
     pub owners: Vec<String>,
-    /// Why a router hid it from the chat's listing, in one line, where it did (SK-15, ADR 0102
-    /// §7): the chat still has it, and loads it with `skill_load`.
-    pub hidden: Option<String>,
+    /// Each harness whose chat a router hid it from the listing of, and why (SK-15, ADR 0102
+    /// §7), each by that harness's own budget: the chat still has it, and loads it with
+    /// `skill_load`. Empty where every harness lists it.
+    pub hidden: Vec<HiddenOn>,
     /// Whether the chat's workspace or persona pins it, so no router hides it (ADR 0102 §4).
     pub pinned: bool,
+}
+
+/// **A skill a router hid on one harness's chats** (SK-15).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HiddenOn {
+    pub harness: Harness,
+    pub hidden: Hidden,
 }
 
 /// What a studio row says of a skill from outside the plane.
@@ -1730,7 +1750,7 @@ fn outside_rows(harness: &HarnessInTheStudio, plane: &Path, known: &Known) -> Ve
                 lint,
                 lifecycle: Lifecycle::Active,
                 owners: Vec::new(),
-                hidden: None,
+                hidden: Vec::new(),
                 pinned: false,
             }
         })
@@ -1953,10 +1973,29 @@ pub fn studio_list(
         .map(|persona| names_of(plane, persona))
         .unwrap_or_default();
     let known = Known::of(plane);
-    let harnesses = harnesses_in_the_studio(&set, plane, workspace, env, &known);
+    let pins = pins_of(plane, workspace, persona).unwrap_or_default();
+    let harnesses = harnesses_in_the_studio(&set, plane, workspace, &pins, env, &known);
     let mut rows = studio_rows(&set, plane, &names);
     with_harness_badges(&mut rows, &harnesses, &known);
+    with_routing(&mut rows, &harnesses);
     StudioList { rows, harnesses }
+}
+
+/// **What each harness's router made of the rows' skills** (SK-15): on a row the chat gets,
+/// every harness whose own set, routed by its own budget, hides it, and whether a pin keeps it.
+fn with_routing(rows: &mut [StudioRow], harnesses: &[HarnessInTheStudio]) {
+    for row in rows.iter_mut().filter(|row| row.left_out.is_none()) {
+        row.hidden = harnesses
+            .iter()
+            .filter_map(|one| {
+                one.set.hidden_by_router(&row.name).map(|hidden| HiddenOn {
+                    harness: one.harness,
+                    hidden: hidden.clone(),
+                })
+            })
+            .collect();
+        row.pinned = harnesses.iter().any(|one| one.set.is_pinned(&row.name));
+    }
 }
 
 /// What is said of a harness skill a persona names that purlis could not check this machine for
@@ -2011,8 +2050,9 @@ pub(crate) fn studio_rows(set: &SkillSet, plane: &Path, names: &[Reference]) -> 
                     .clone()
                     .map_or(Lifecycle::Active, Lifecycle::Deprecated),
                 owners: owners(e.origin, folder),
-                hidden: set.hidden_by_router(&e.skill.name).map(ToString::to_string),
-                pinned: set.is_pinned(&e.skill.name),
+                // Each harness's router, by its own budget ([`with_routing`]).
+                hidden: Vec::new(),
+                pinned: false,
             }
         })
         .chain(set.from_the_harness.iter().map(|h| {
@@ -2034,7 +2074,7 @@ pub(crate) fn studio_rows(set: &SkillSet, plane: &Path, names: &[Reference]) -> 
                 lint: Vec::new(),
                 lifecycle: Lifecycle::Active,
                 owners: Vec::new(),
-                hidden: None,
+                hidden: Vec::new(),
                 pinned: false,
             }
         }))
@@ -2073,7 +2113,7 @@ pub(crate) fn studio_rows(set: &SkillSet, plane: &Path, names: &[Reference]) -> 
                     Lifecycle::Active
                 },
                 owners: owners(l.origin, &l.folder),
-                hidden: None,
+                hidden: Vec::new(),
                 pinned: false,
             }
         }))

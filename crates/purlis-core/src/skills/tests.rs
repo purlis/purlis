@@ -907,7 +907,9 @@ fn use_skill_types_a_skill_of_the_set_in_its_harnesss_syntax_and_holds_the_run_i
         });
         let typing = chat.typed("review", &values).unwrap();
         assert_eq!(typing.text, text, "{harness:?}");
-        let held = typing.held.expect("a listed skill's run is held");
+        let Start::Held(held) = typing.start else {
+            panic!("a listed skill's run is held")
+        };
         assert_eq!(held.skill, known_as, "{harness:?}");
         assert_eq!(held.confirmed, confirmed, "{harness:?}");
         assert_eq!(held.workspace.as_deref(), Some("smart-ide"));
@@ -989,7 +991,7 @@ fn the_studio_lists_each_harnesss_own_skills_beside_the_projects_and_marks_a_cla
     };
 
     let set = in_the_studio(None, &plane, None, None);
-    let harnesses = harnesses_in_the_studio(&set, &plane, None, &env, &Known::of(&plane));
+    let harnesses = harnesses_in_the_studio(&set, &plane, None, &[], &env, &Known::of(&plane));
 
     let titles: Vec<&str> = harnesses.iter().map(|h| h.group.adapter.title()).collect();
     assert_eq!(titles, ["Claude Code", "opencode", "Codex"]);

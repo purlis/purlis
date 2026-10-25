@@ -36,7 +36,7 @@ const deploy = {
   folder: "skills/deploy",
   compat: [],
   lint: [],
-  hidden: null,
+  hidden: [],
   pinned: false,
   written: "deploy",
   named: false,
@@ -159,7 +159,7 @@ describe("the Skill studio's changes", () => {
       folder: "workspaces/ops/skills/triage",
       compat: [],
       lint: [],
-      hidden: null,
+      hidden: [],
       pinned: false,
     };
     const asked = core([triage], "ops", {
