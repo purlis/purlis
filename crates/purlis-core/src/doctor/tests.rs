@@ -854,7 +854,10 @@ fn a_push_record_cannot_forge_a_row_of_the_table() {
         r.detail,
         "a memory commit went to 'x⟦U+000A⟧  ✓  forged landed', not main⟦U+000A⟧  ✓  forged branch"
     );
-    assert!(r.hint.contains("Open it: u\\x0a  ✓  forged url "), "{r:?}");
+    assert!(
+        r.hint.contains("Open it: u⟦U+000A⟧  ✓  forged url "),
+        "{r:?}"
+    );
     let table = super::table(std::slice::from_ref(&r), false);
     assert!(!table.contains("\n  ✓  forged"), "{table}");
 
@@ -866,7 +869,7 @@ fn a_push_record_cannot_forge_a_row_of_the_table() {
     let r = one(&root, "plane root");
     assert!(!r.hint.contains('\n'), "{r:?}");
     assert!(
-        r.hint.contains("origin/main\\x0a  ✓  forged branch`"),
+        r.hint.contains("origin/main⟦U+000A⟧  ✓  forged branch`"),
         "{r:?}"
     );
 }
@@ -1264,7 +1267,7 @@ fn a_workspace_name_with_a_newline_in_it_cannot_forge_a_row() {
         &["fetch", "-q"],
     );
     let r = one(&root, "workspace clones");
-    assert_eq!(r.detail, "x\\x0a  \u{2713}  forged/svc (1 behind)");
+    assert_eq!(r.detail, "x⟦U+000A⟧  \u{2713}  forged/svc (1 behind)");
 }
 
 #[cfg(unix)]
