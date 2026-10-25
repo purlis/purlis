@@ -215,6 +215,8 @@ pub struct Planned {
     /// The trigger tests left out, by their place in the file, each with why: a query a chat
     /// cannot be started on ([`crate::handoff::bad_message`]).
     pub left_out: Vec<(usize, String)>,
+    /// The token cap the grade is held to ([`cap::token_cap`]).
+    pub cap: cap::Cap,
 }
 
 /// **The plan of grading the copy of `name` at `level`** in the project at `root`.
@@ -285,6 +287,7 @@ pub fn planned(root: &Path, level: &Level, name: &str) -> Result<Planned, String
         estimate,
         unseen,
         left_out,
+        cap: cap::token_cap(root),
     })
 }
 
@@ -312,6 +315,8 @@ pub fn version_of(root: &Path, level: &Level, name: &str) -> (Content, Option<St
     };
     (content, commit)
 }
+
+pub mod cap;
 
 #[cfg(test)]
 mod tests;

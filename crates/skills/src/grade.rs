@@ -114,6 +114,9 @@ pub enum ChatEnd {
     NotStarted { why: String },
     /// The person stopped the grade while it ran.
     Cancelled,
+    /// The grade reached its token cap while it ran, and the host ended it. It is no run: it
+    /// was cut short before it could say what it would have started.
+    OverCap,
 }
 
 /// **The run-chat result**: what one chat did.
@@ -149,8 +152,9 @@ impl ChatRan {
 
 /// **The host a grade asks for its chats**: purlis's, or a test's.
 pub trait Chats {
-    /// Runs `chat` and answers what it did.
-    fn run(&mut self, chat: &RunChat) -> ChatRan;
+    /// Runs `chat` and answers what it did. `tokens_left` is what the grade may still spend
+    /// before its cap: the host ends the chat once it has spent more ([`ChatEnd::OverCap`]).
+    fn run(&mut self, chat: &RunChat, tokens_left: Option<u64>) -> ChatRan;
     /// Whether the person stopped the grade: no chat is asked for after.
     fn cancelled(&self) -> bool;
 }
@@ -256,6 +260,12 @@ pub enum GradeEnd {
     Cancelled,
     /// Chats stopped starting ([`NOT_STARTED_IN_A_ROW`]), so it stopped asking for more.
     ChatsDidNotStart,
+    /// It reached its token cap: the chat running then was ended, and no more were asked for
+    /// (the operator's ruling of 2026-10-26).
+    OverCap,
+    /// A chat that ran did not say what it spent, so the grade could not be held to its cap
+    /// and stopped asking for more.
+    SpendNotReported,
 }
 
 /// **The grade report**: the scores per trigger test and arm, each arm's summary, and the
@@ -271,6 +281,9 @@ pub struct GradeReport {
     pub ended: GradeEnd,
     /// Why the chats stopped starting, where they did: the last one's sentence.
     pub not_started: Option<String>,
+    /// The cap it was held to, and the tokens its chats spent, where they said.
+    pub cap: Option<u64>,
+    pub spent_tokens: Option<u64>,
 }
 
 impl GradeReport {
@@ -297,9 +310,11 @@ impl GradeReport {
 
 /// **Grades `request` with purlis's built-in runner**, asking `chats` for every chat: each run in
 /// turn, every trigger test in it, every arm for each, so a grade the person stops has scored
-/// every arm alike so far. Outcome evals are shown and not run by this runner (#3235): [`Plan`] says how
+/// every arm alike so far. Held to `cap` tokens where one is given: each chat is told what is
+/// left, the grade stops at the cap, and a chat that does not say what it spent stops it too, as
+/// the cap could not be held after it. Outcome evals are shown and not run by this runner (#3235): [`Plan`] says how
 /// many wait.
-pub fn grade(request: &GradeRequest, chats: &mut dyn Chats) -> GradeReport {
+pub fn grade(request: &GradeRequest, chats: &mut dyn Chats, cap: Option<u64>) -> GradeReport {
     let skill = request.skill.as_str();
     // ran[test][arm] = each run's result, in run order.
     let mut ran: Vec<Vec<Vec<ChatRan>>> =
@@ -307,6 +322,7 @@ pub fn grade(request: &GradeRequest, chats: &mut dyn Chats) -> GradeReport {
     let mut ended = GradeEnd::Whole;
     let mut not_started_in_a_row = 0u32;
     let mut not_started: Option<String> = None;
+    let mut spent: Option<u64> = None;
     'runs: for _run in 0..request.runs {
         for (t, test) in request.triggers.iter().enumerate() {
             for (a, arm) in request.arms.iter().enumerate() {
@@ -314,10 +330,21 @@ pub fn grade(request: &GradeRequest, chats: &mut dyn Chats) -> GradeReport {
                     ended = GradeEnd::Cancelled;
                     break 'runs;
                 }
-                let result = chats.run(&RunChat {
-                    arm: *arm,
-                    prompt: test.query.clone(),
-                });
+                let left = cap.map(|cap| cap.saturating_sub(spent.unwrap_or(0)));
+                if left == Some(0) {
+                    ended = GradeEnd::OverCap;
+                    break 'runs;
+                }
+                let result = chats.run(
+                    &RunChat {
+                        arm: *arm,
+                        prompt: test.query.clone(),
+                    },
+                    left,
+                );
+                if let Some(tokens) = result.tokens {
+                    spent = Some(spent.unwrap_or(0).saturating_add(tokens));
+                }
                 match &result.end {
                     ChatEnd::NotStarted { why } => {
                         not_started_in_a_row += 1;
@@ -328,9 +355,23 @@ pub fn grade(request: &GradeRequest, chats: &mut dyn Chats) -> GradeReport {
                         ended = GradeEnd::Cancelled;
                         break 'runs;
                     }
+                    ChatEnd::OverCap => {
+                        ran[t][a].push(result);
+                        ended = GradeEnd::OverCap;
+                        break 'runs;
+                    }
                     ChatEnd::Turn | ChatEnd::TimedOut => not_started_in_a_row = 0,
                 }
+                let unreported = cap.is_some() && result.ran() && result.tokens.is_none();
                 ran[t][a].push(result);
+                if unreported {
+                    ended = GradeEnd::SpendNotReported;
+                    break 'runs;
+                }
+                if cap.is_some_and(|cap| spent.unwrap_or(0) >= cap) {
+                    ended = GradeEnd::OverCap;
+                    break 'runs;
+                }
                 if not_started_in_a_row >= NOT_STARTED_IN_A_ROW {
                     ended = GradeEnd::ChatsDidNotStart;
                     break 'runs;
@@ -425,6 +466,8 @@ pub fn grade(request: &GradeRequest, chats: &mut dyn Chats) -> GradeReport {
         not_started: (ended == GradeEnd::ChatsDidNotStart)
             .then_some(not_started)
             .flatten(),
+        cap,
+        spent_tokens: spent,
     }
 }
 

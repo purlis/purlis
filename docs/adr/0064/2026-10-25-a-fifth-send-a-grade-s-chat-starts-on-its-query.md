@@ -1,6 +1,7 @@
 # Amended 2026-10-25: a fifth send, a grade's chat starting on its trigger test's query (#2779)
 
-ADR 0061's amendment of the same day records it: a grade (ADR 0105) starts each of its chats on
+**Confirmed by the operator 2026-10-26** (on #3229). ADR 0061's amendment of the same day
+records it: a grade (ADR 0105) starts each of its chats on
 one trigger test's query, sent as the chat's first message. It is a send at a chat's start, as
 Fix on a save is (the third, 2026-10-14), and is held the way that one is: nothing is typed, so
 there is no prompt of a harness's for an Enter to land on, and a harness with no measured way of

@@ -85,6 +85,8 @@ fn report(passed_with: bool) -> GradeReport {
         delta: Some(0.5),
         ended: GradeEnd::Whole,
         not_started: None,
+        cap: None,
+        spent_tokens: None,
     }
 }
 

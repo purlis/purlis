@@ -633,6 +633,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // The person's own press in their window, after the plan showed what it costs.
     "skill_grade_start",
     "skill_grade_stop",
+    // A grade's token cap (#2779): what this machine's grades may spend, in its own settings
+    // file. The person's own press in their window.
+    "skill_grade_set_cap",
     // Accepting a workspace or persona folder a chat could have made (SK-9): its skills then
     // reach chats, so only the person's own press in their window does it.
     "skill_level_accept",

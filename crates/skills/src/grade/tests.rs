@@ -10,6 +10,9 @@ struct Scripted {
     asked: Vec<RunChat>,
     cancel_after: Option<usize>,
     not_starting: bool,
+    /// What each chat says it spent, or nothing; and what each was told was left.
+    tokens: Option<u64>,
+    left: Vec<Option<u64>>,
 }
 
 impl Scripted {
@@ -19,14 +22,17 @@ impl Scripted {
             asked: Vec::new(),
             cancel_after: None,
             not_starting: false,
+            tokens: Some(1000),
+            left: Vec::new(),
         }
     }
 }
 
 impl Chats for Scripted {
-    fn run(&mut self, chat: &RunChat) -> ChatRan {
+    fn run(&mut self, chat: &RunChat, tokens_left: Option<u64>) -> ChatRan {
         let n = self.asked.len();
         self.asked.push(chat.clone());
+        self.left.push(tokens_left);
         if self.not_starting {
             return ChatRan {
                 chat: None,
@@ -42,7 +48,7 @@ impl Chats for Scripted {
         ChatRan {
             chat: Some(format!("chat-{n}")),
             started: (self.starts)(chat.arm, &chat.prompt, n),
-            tokens: Some(1000 + n as u64),
+            tokens: self.tokens,
             cost_usd: None,
             ms: 2000,
             end: ChatEnd::Turn,
@@ -107,7 +113,7 @@ fn the_plan_is_one_chat_per_test_arm_and_run_and_says_what_waits() {
 #[test]
 fn a_skill_that_starts_when_it_should_scores_above_no_skill() {
     let mut host = Scripted::of(a_good_skill);
-    let report = grade(&request(), &mut host);
+    let report = grade(&request(), &mut host, None);
     assert_eq!(host.asked.len(), 12, "every test in every arm, three times");
     assert_eq!(report.ended, GradeEnd::Whole);
     assert_eq!(report.grader, BUILT_IN);
@@ -142,7 +148,7 @@ fn a_skill_that_starts_on_everything_fails_its_near_misses() {
             Vec::new()
         }
     });
-    let report = grade(&request(), &mut host);
+    let report = grade(&request(), &mut host, None);
     let missed = report
         .triggers
         .iter()
@@ -155,7 +161,7 @@ fn a_skill_that_starts_on_everything_fails_its_near_misses() {
 #[test]
 fn another_skill_starting_is_no_trigger_of_this_one() {
     let mut host = Scripted::of(|_, _, _| vec!["pdf-tools".into(), "other:pdfs".into()]);
-    let report = grade(&request(), &mut host);
+    let report = grade(&request(), &mut host, None);
     assert!(
         report.triggers.iter().all(|score| score.triggered == 0),
         "{report:?}"
@@ -176,7 +182,7 @@ fn a_rate_at_the_threshold_triggers() {
             Vec::new()
         }
     });
-    let report = grade(&asked, &mut host);
+    let report = grade(&asked, &mut host, None);
     assert_eq!(report.triggers[0].rate, Some(0.5));
     assert_eq!(report.triggers[0].pass, Some(true));
     let stat = report.arm(Arm::With).unwrap().pass_rate.unwrap();
@@ -188,7 +194,7 @@ fn a_rate_at_the_threshold_triggers() {
 fn a_cancelled_grade_asks_for_nothing_more_and_scores_what_ran() {
     let mut host = Scripted::of(a_good_skill);
     host.cancel_after = Some(4);
-    let report = grade(&request(), &mut host);
+    let report = grade(&request(), &mut host, None);
     assert_eq!(host.asked.len(), 4);
     assert_eq!(report.ended, GradeEnd::Cancelled);
     assert_eq!(
@@ -202,7 +208,7 @@ fn a_cancelled_grade_asks_for_nothing_more_and_scores_what_ran() {
 fn chats_that_do_not_start_end_the_grade_with_why() {
     let mut host = Scripted::of(a_good_skill);
     host.not_starting = true;
-    let report = grade(&request(), &mut host);
+    let report = grade(&request(), &mut host, None);
     assert_eq!(host.asked.len(), NOT_STARTED_IN_A_ROW as usize);
     assert_eq!(report.ended, GradeEnd::ChatsDidNotStart);
     assert_eq!(
@@ -248,5 +254,64 @@ fn the_four_messages_are_spelled_as_the_adr_says() {
         })
         .unwrap(),
         serde_json::json!({"arm": "without", "prompt": "p"})
+    );
+}
+
+#[test]
+fn a_grade_stops_at_its_token_cap_and_says_what_it_spent() {
+    let mut host = Scripted::of(a_good_skill);
+    let report = grade(&request(), &mut host, Some(3500));
+    assert_eq!(
+        host.asked.len(),
+        4,
+        "the fourth chat took it past 3,500 tokens"
+    );
+    assert_eq!(
+        host.left,
+        vec![Some(3500), Some(2500), Some(1500), Some(500)],
+        "each chat is told what is left"
+    );
+    assert_eq!(report.ended, GradeEnd::OverCap);
+    assert_eq!((report.cap, report.spent_tokens), (Some(3500), Some(4000)));
+}
+
+#[test]
+fn a_chat_the_host_ended_at_the_cap_is_no_run_and_ends_the_grade() {
+    struct AtTheCap;
+    impl Chats for AtTheCap {
+        fn run(&mut self, _: &RunChat, left: Option<u64>) -> ChatRan {
+            ChatRan {
+                chat: Some("01".into()),
+                started: Vec::new(),
+                tokens: left.map(|left| left + 1),
+                cost_usd: None,
+                ms: 10,
+                end: ChatEnd::OverCap,
+            }
+        }
+        fn cancelled(&self) -> bool {
+            false
+        }
+    }
+    let report = grade(&request(), &mut AtTheCap, Some(2000));
+    assert_eq!(report.ended, GradeEnd::OverCap);
+    assert_eq!(report.spent_tokens, Some(2001));
+    let with = report.arm(Arm::With).unwrap();
+    assert_eq!((with.chats, with.not_run), (0, 1));
+}
+
+#[test]
+fn a_chat_that_does_not_say_what_it_spent_stops_a_capped_grade() {
+    let mut host = Scripted::of(a_good_skill);
+    host.tokens = None;
+    let report = grade(&request(), &mut host, Some(200_000));
+    assert_eq!(host.asked.len(), 1);
+    assert_eq!(report.ended, GradeEnd::SpendNotReported);
+
+    let mut uncapped = Scripted::of(a_good_skill);
+    uncapped.tokens = None;
+    assert_eq!(
+        grade(&request(), &mut uncapped, None).ended,
+        GradeEnd::Whole
     );
 }

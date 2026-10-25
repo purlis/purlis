@@ -15,14 +15,21 @@ import { counted } from "./dispatches";
 import { Notice } from "./Notice";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { EmptyState } from "./ui/empty-state/EmptyState";
+import { TextField } from "./ui/field/Field";
 import { Select } from "./primitives/Select";
 
 /** The project's default profile, in the picker. */
 const DEFAULT = "";
 
+/** A number of tokens as the window says it: `200,000 tokens`. */
+export function tokensSaid(tokens: number): string {
+  return `${Math.round(tokens).toLocaleString("en-US")} ${tokens === 1 ? "token" : "tokens"}`;
+}
+
 /** How a grade that ended is said, in one line. */
 export function endedSaid(step: SkillGradeStep): string {
   const chats = counted(step.ran, "chat", "chats");
+  const spent = step.tokens === null ? "" : `, having spent ${tokensSaid(step.tokens)}`;
   switch (step.ended) {
     case "whole":
       return `Graded in ${chats}. The scorecard is in Grades below.`;
@@ -30,6 +37,10 @@ export function endedSaid(step: SkillGradeStep): string {
       return `Stopped after ${chats}. What ran is scored in Grades below.`;
     case "chats-did-not-start":
       return `The grade stopped: its chats did not start. ${step.said ?? ""}`.trim();
+    case "over-cap":
+      return `Stopped at its cap of ${tokensSaid(step.cap ?? 0)} after ${chats}${spent}. What ran is scored in Grades below.`;
+    case "spend-not-reported":
+      return `Stopped after ${chats}: ${step.said ?? "a chat did not say what it spent, so the grade could not be held to its cap."}`;
     default:
       return "";
   }
@@ -121,6 +132,8 @@ export function SkillGrade({
             grade: answer.data,
             ran: 0,
             of: plan?.chats ?? 0,
+            tokens: null,
+            cap: plan?.token_cap ?? 0,
             ended: null,
             said: null,
           });
@@ -144,7 +157,11 @@ export function SkillGrade({
       {running ? (
         <ButtonRow>
           <p data-testid="skill-grade-running">
-            Grading {name}: {step.ran} of {counted(step.of, "chat", "chats")} done.
+            Grading {name}: {step.ran} of {counted(step.of, "chat", "chats")} done
+            {step.tokens === null
+              ? ""
+              : `, ${tokensSaid(step.tokens)} of ${tokensSaid(step.cap ?? 0)}`}
+            .
           </p>
           <Button
             size="sm"
@@ -178,6 +195,14 @@ export function SkillGrade({
         <GradePlan
           name={name}
           plan={plan}
+          onCap={(tokens) =>
+            void commands.skillGradeSetCap(plane, level, name, tokens).then((answer) => {
+              if (answer.status === "ok") {
+                setPlan(answer.data);
+                setSaid(undefined);
+              } else setSaid({ tone: "trouble", text: answer.error });
+            })
+          }
           profiles={profiles}
           profile={profile}
           onProfile={setProfile}
@@ -193,6 +218,7 @@ export function SkillGrade({
 function GradePlan({
   name,
   plan,
+  onCap,
   profiles,
   profile,
   onProfile,
@@ -201,6 +227,7 @@ function GradePlan({
 }: {
   name: string;
   plan: SkillGradePlan;
+  onCap: (tokens: number) => void;
   profiles: readonly ProfileRow[];
   profile: string;
   onProfile: (to: string) => void;
@@ -212,6 +239,8 @@ function GradePlan({
     ...profiles.map((one) => ({ value: one.name, label: one.name })),
   ];
   const nothing = plan.tests.length === 0;
+  const [cap, setCap] = useState(String(plan.token_cap ?? 0));
+  const capped = Number(cap.replace(/[,\s]/g, ""));
   return (
     <div data-testid="skill-grade-plan">
       {plan.tests_refused !== null && (
@@ -231,9 +260,11 @@ function GradePlan({
             Grading runs {counted(plan.chats, "chat", "chats")}, one turn each: each of the{" "}
             {counted(plan.tests.length, "trigger test", "trigger tests")}{" "}
             {counted(plan.runs, "time", "times")} with the skill and{" "}
-            {counted(plan.runs, "time", "times")} without it. {costSaid(plan)} The chats run on the
-            profile you pick, under this project's sandbox, and its account pays for them as for any
-            chat.
+            {counted(plan.runs, "time", "times")} without it. {costSaid(plan)} It stops once its
+            chats have spent {tokensSaid(plan.token_cap ?? 0)}
+            {plan.cap_set_here ? ", the cap you set on this machine" : ", the default cap"}. The
+            chats run on the profile you pick, under this project's sandbox, and its account pays
+            for them as for any chat.
           </p>
           <ol aria-label={`Trigger tests of ${name}`}>
             {plan.tests.map((test, at) => (
@@ -261,6 +292,24 @@ function GradePlan({
       )}
       {plan.outcomes_refused !== null && (
         <p className="honest">The outcome evals could not be read: {plan.outcomes_refused}</p>
+      )}
+      {!nothing && (
+        <ButtonRow>
+          <TextField
+            size="sm"
+            aria-label="Token cap"
+            inputMode="numeric"
+            value={cap}
+            onChange={setCap}
+          />
+          <Button
+            size="sm"
+            isDisabled={!Number.isInteger(capped) || capped === plan.token_cap}
+            onPress={() => onCap(capped)}
+          >
+            Set the cap
+          </Button>
+        </ButtonRow>
       )}
       <ButtonRow>
         {!nothing && (

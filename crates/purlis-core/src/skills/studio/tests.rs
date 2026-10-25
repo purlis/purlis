@@ -201,6 +201,8 @@ fn a_grade() -> super::super::grades::Graded {
             delta: Some(0.5),
             ended: GradeEnd::Whole,
             not_started: None,
+            cap: None,
+            spent_tokens: None,
         },
         spent: super::super::grades::Spent {
             chats: 12,

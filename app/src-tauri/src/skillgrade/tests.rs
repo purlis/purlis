@@ -27,6 +27,10 @@ fn planned(query: &str) -> Planned {
         estimate: None,
         unseen: vec![0],
         left_out: vec![(1, "it starts with a dash".into())],
+        cap: grades::cap::Cap {
+            tokens: 50_000,
+            from: grades::cap::From::Yours,
+        },
     }
 }
 
@@ -44,6 +48,7 @@ fn the_plan_shows_each_query_as_the_chat_reads_it_and_what_is_left_out() {
     );
     assert!(plan.outcomes_refused.is_some());
     assert_eq!(plan.tests_refused, None);
+    assert_eq!((plan.token_cap, plan.cap_set_here), (50_000.0, true));
 }
 
 #[test]

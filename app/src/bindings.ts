@@ -1899,6 +1899,12 @@ export const commands = {
 	 *  scored and recorded.
 	 */
 	skillGradeStop: (plane: PlaneId, grade: string) => typedError<null, string>(__TAURI_INVOKE("skill_grade_stop", { plane, grade })),
+	/**
+	 *  **Sets the token cap a grade in the project is held to**, on this machine (#2779; the
+	 *  operator's ruling of 2026-10-26): the person who pays for the chats sets it, and the plan shows
+	 *  it before Grade is pressed. The answer is the plan of `skill` at `level` again, with it.
+	 */
+	skillGradeSetCap: (plane: PlaneId, level: SkillLevel, skill: string, tokens: number | null) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_grade_set_cap", { plane, level, skill, tokens })),
 	/**  The project's skill sources. */
 	skillSources: (plane: PlaneId) => typedError<SkillSource[], string>(__TAURI_INVOKE("skill_sources", { plane })),
 	/**
@@ -6907,7 +6913,11 @@ export type GoneProject = {
 };
 
 /**  How a grade ended, as the window is told it. */
-export type GradeEnded = "whole" | "stopped" | "chats-did-not-start";
+export type GradeEnded = "whole" | "stopped" | "chats-did-not-start" | 
+/**  It reached its token cap. */
+"over-cap" | 
+/**  A chat did not say what it spent, so the cap could not be held. */
+"spend-not-reported";
 
 /**  What a grade's chats spent last time, worked out for this one. */
 export type GradeEstimate = {
@@ -11226,6 +11236,9 @@ export type SkillGradePlan = {
 	estimate: GradeEstimate | null,
 	/**  The grade of this skill running now, where one is. */
 	running: string | null,
+	/**  The tokens a grade may spend before it stops, and whether this machine set it. */
+	token_cap: number | null,
+	cap_set_here: boolean,
 };
 
 /**
@@ -11238,6 +11251,9 @@ export type SkillGradeStep = {
 	grade: string,
 	ran: number,
 	of: number,
+	/**  What its chats have spent so far, where they said, and the cap it is held to. */
+	tokens: number | null,
+	cap: number | null,
 	/**  How it ended, once it has. */
 	ended: GradeEnded | null,
 	/**

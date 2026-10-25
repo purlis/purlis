@@ -94,6 +94,9 @@ pub struct SkillGradePlan {
     pub estimate: Option<GradeEstimate>,
     /// The grade of this skill running now, where one is.
     pub running: Option<String>,
+    /// The tokens a grade may spend before it stops, and whether this machine set it.
+    pub token_cap: f64,
+    pub cap_set_here: bool,
 }
 
 impl SkillGradePlan {
@@ -146,6 +149,8 @@ impl SkillGradePlan {
                 chats_then: estimate.chats_then,
             }),
             running,
+            token_cap: planned.cap.tokens as f64,
+            cap_set_here: planned.cap.from == grades::cap::From::Yours,
         }
     }
 }
@@ -157,6 +162,10 @@ pub enum GradeEnded {
     Whole,
     Stopped,
     ChatsDidNotStart,
+    /// It reached its token cap.
+    OverCap,
+    /// A chat did not say what it spent, so the cap could not be held.
+    SpendNotReported,
 }
 
 impl From<GradeEnd> for GradeEnded {
@@ -165,6 +174,8 @@ impl From<GradeEnd> for GradeEnded {
             GradeEnd::Whole => GradeEnded::Whole,
             GradeEnd::Cancelled => GradeEnded::Stopped,
             GradeEnd::ChatsDidNotStart => GradeEnded::ChatsDidNotStart,
+            GradeEnd::OverCap => GradeEnded::OverCap,
+            GradeEnd::SpendNotReported => GradeEnded::SpendNotReported,
         }
     }
 }
@@ -178,6 +189,9 @@ pub struct SkillGradeStep {
     pub grade: String,
     pub ran: u32,
     pub of: u32,
+    /// What its chats have spent so far, where they said, and the cap it is held to.
+    pub tokens: Option<f64>,
+    pub cap: f64,
     /// How it ended, once it has.
     pub ended: Option<GradeEnded>,
     /// What the window says of its end: why its chats did not start, or that it was not
@@ -274,11 +288,16 @@ pub(crate) async fn skill_grade_start(
             );
         }
         let of = grading::plan(&request).chats;
+        // The cap the plan showed, read again as the grade starts: the one it is held to.
+        let cap = planned.cap.tokens;
         let grade = id.clone();
         std::thread::Builder::new()
             .name("purlis-grade".to_owned())
             .spawn(move || {
-                let tell = |ran: u32, ended: Option<GradeEnded>, said: Option<String>| {
+                let tell = |ran: u32,
+                            tokens: Option<u64>,
+                            ended: Option<GradeEnded>,
+                            said: Option<String>| {
                     let _ = app.emit(
                         EVENT,
                         SkillGradeStep {
@@ -287,12 +306,14 @@ pub(crate) async fn skill_grade_start(
                             grade: grade.clone(),
                             ran,
                             of,
+                            tokens: tokens.map(|tokens| tokens as f64),
+                            cap: cap as f64,
                             ended,
                             said,
                         },
                     );
                 };
-                tell(0, None, None);
+                tell(0, None, None, None);
                 let mut chats = InChats {
                     held: &held,
                     level: &level,
@@ -300,11 +321,11 @@ pub(crate) async fn skill_grade_start(
                     profile: &profile,
                     stop: &stop,
                     spent: Spent::default(),
-                    tell: &|ran| tell(ran, None, None),
+                    tell: &|ran, tokens| tell(ran, tokens, None, None),
                     harness: None,
                 };
                 let (version, commit) = grades::version_of(&root, &level, &skill);
-                let report = grading::grade(&request, &mut chats);
+                let report = grading::grade(&request, &mut chats, Some(cap));
                 let harness = chats.harness.take();
                 let spent = chats.spent;
                 let graded = Graded {
@@ -326,6 +347,11 @@ pub(crate) async fn skill_grade_start(
                 running().remove(&grade);
                 let said = match (&graded.report.not_started, recorded) {
                     (Some(why), _) => Some(why.clone()),
+                    (None, Some(_)) if graded.report.ended == GradeEnd::SpendNotReported => Some(
+                        "This profile's chats do not say what they spend, so a grade on it cannot \
+                         be held to its cap."
+                            .to_owned(),
+                    ),
                     (None, None) => Some(
                         "The grade ran, but this project could not be written, so it was not \
                          recorded."
@@ -333,13 +359,45 @@ pub(crate) async fn skill_grade_start(
                     ),
                     (None, Some(_)) => None,
                 };
-                tell(graded.spent.chats, Some(graded.report.ended.into()), said);
+                tell(
+                    graded.spent.chats,
+                    graded.report.spent_tokens,
+                    Some(graded.report.ended.into()),
+                    said,
+                );
             })
             .map_err(|why| {
                 running().remove(&id);
                 format!("The grade could not start ({why}).")
             })?;
         Ok(id)
+    })
+    .await
+}
+
+/// **Sets the token cap a grade in the project is held to**, on this machine (#2779; the
+/// operator's ruling of 2026-10-26): the person who pays for the chats sets it, and the plan shows
+/// it before Grade is pressed. The answer is the plan of `skill` at `level` again, with it.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_grade_set_cap(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    level: SkillLevel,
+    skill: String,
+    tokens: f64,
+) -> Result<SkillGradePlan, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("setting a grade's cap", move || {
+        flag_on()?;
+        if !tokens.is_finite() || tokens.fract() != 0.0 || tokens < 0.0 {
+            return Err(
+                "A grade's cap is a whole number of tokens, so nothing was changed.".into(),
+            );
+        }
+        grades::cap::set_token_cap(held.root(), tokens as u64)?;
+        let planned = grades::planned(held.root(), &(&level).into(), &skill)?;
+        Ok(SkillGradePlan::of(&planned, running_of(&plane, &skill)))
     })
     .await
 }
@@ -368,7 +426,7 @@ struct InChats<'a> {
     stop: &'a AtomicBool,
     /// What the chats that ran so far spent, and who is told each.
     spent: Spent,
-    tell: &'a dyn Fn(u32),
+    tell: &'a dyn Fn(u32, Option<u64>),
     /// The harness the chats ran on, as the first that started said.
     harness: Option<String>,
 }
@@ -378,24 +436,25 @@ impl Chats for InChats<'_> {
         self.stop.load(Ordering::SeqCst)
     }
 
-    fn run(&mut self, chat: &RunChat) -> ChatRan {
-        let ran = self.run_one(chat);
+    fn run(&mut self, chat: &RunChat, tokens_left: Option<u64>) -> ChatRan {
+        let ran = self.run_one(chat, tokens_left);
+        // What every chat that started spent counts toward the cap, a chat ended at it too.
+        if let Some(tokens) = ran.tokens {
+            *self.spent.tokens.get_or_insert(0) += tokens;
+        }
+        if let Some(cost) = ran.cost_usd {
+            *self.spent.cost_usd.get_or_insert(0.0) += cost;
+        }
         if matches!(ran.end, ChatEnd::Turn | ChatEnd::TimedOut) {
             self.spent.chats += 1;
-            if let Some(tokens) = ran.tokens {
-                *self.spent.tokens.get_or_insert(0) += tokens;
-            }
-            if let Some(cost) = ran.cost_usd {
-                *self.spent.cost_usd.get_or_insert(0.0) += cost;
-            }
-            (self.tell)(self.spent.chats);
+            (self.tell)(self.spent.chats, self.spent.tokens);
         }
         ran
     }
 }
 
 impl InChats<'_> {
-    fn run_one(&mut self, chat: &RunChat) -> ChatRan {
+    fn run_one(&mut self, chat: &RunChat, tokens_left: Option<u64>) -> ChatRan {
         let not_started = |why: String| ChatRan {
             chat: None,
             started: Vec::new(),
@@ -448,6 +507,19 @@ impl InChats<'_> {
                 .map(|harness| harness.name().to_owned());
         }
         let session = started.session;
+        let id = self.held.chats().chat_at(session).and_then(|at| at.id);
+        // What the chat has spent so far, as its harness last said: read each look, so a chat
+        // that passes the grade's cap is ended in it.
+        let spent_now = || {
+            id.as_deref()
+                .and_then(|id| purlis_core::usage::spent(&root, id))
+                .and_then(|spent| {
+                    spent
+                        .input_tokens
+                        .zip(spent.output_tokens)
+                        .map(|(input, output)| input + output)
+                })
+        };
         let mut skills: Vec<String> = Vec::new();
         let end = match &told {
             None => ChatEnd::TimedOut,
@@ -457,6 +529,11 @@ impl InChats<'_> {
                 }
                 if began.elapsed() >= CHAT_TIME {
                     break ChatEnd::TimedOut;
+                }
+                if let (Some(left), Some(now)) = (tokens_left, spent_now())
+                    && now > left
+                {
+                    break ChatEnd::OverCap;
                 }
                 match heard.recv_timeout(LOOK_EVERY) {
                     Ok(Watched::Started(name)) => {
@@ -475,7 +552,6 @@ impl InChats<'_> {
                 }
             },
         };
-        let id = self.held.chats().chat_at(session).and_then(|at| at.id);
         let spent = id
             .as_deref()
             .and_then(|id| purlis_core::usage::spent(&root, id));

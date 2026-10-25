@@ -27,6 +27,8 @@ function plan(over: Partial<SkillGradePlan> = {}): SkillGradePlan {
     outcomes_refused: null,
     estimate: null,
     running: null,
+    token_cap: 200000,
+    cap_set_here: false,
     ...over,
   };
 }
@@ -57,6 +59,9 @@ describe("Grade, cost first", () => {
     );
     expect(cost.textContent).toContain("has not been graded here before");
     expect(cost.textContent).toContain("its account pays for them");
+    expect(cost.textContent).toContain(
+      "It stops once its chats have spent 200,000 tokens, the default cap.",
+    );
     expect(screen.getAllByTestId("skill-grade-test")[1].textContent).toContain(
       "holds a character no reader would see",
     );
@@ -84,6 +89,8 @@ describe("Grade, cost first", () => {
       grade: "01GRADE",
       ran: 4,
       of: 12,
+      tokens: 8000,
+      cap: 200000,
       ended: "stopped",
       said: null,
     });
@@ -117,9 +124,56 @@ describe("Grade, cost first", () => {
         grade: "g",
         ran: 1,
         of: 12,
+        tokens: null,
+        cap: 200000,
         ended: "chats-did-not-start",
         said: "The default profile is signed out.",
       }),
     ).toBe("The grade stopped: its chats did not start. The default profile is signed out.");
+  });
+});
+
+describe("a grade's token cap", () => {
+  it("is set from the plan, before anything runs, and the plan says it again", async () => {
+    const asked: Array<{ cmd: string; args: unknown }> = [];
+    mockIPC((cmd, args) => {
+      asked.push({ cmd, args });
+      if (cmd === "skill_grade_plan") return plan();
+      if (cmd === "skill_grade_set_cap") return plan({ token_cap: 50000, cap_set_here: true });
+      if (cmd === "start_options") return { profiles: [] };
+      return null;
+    });
+    render(<SkillGrade plane="p" name="deploy" level={LEVEL} onGraded={() => undefined} />);
+    fireEvent.click(screen.getByRole("button", { name: "Grade…" }));
+    const field = await screen.findByRole("textbox", { name: "Token cap" });
+    fireEvent.change(field, { target: { value: "50,000" } });
+    fireEvent.click(screen.getByRole("button", { name: "Set the cap" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("skill-grade-cost").textContent).toContain(
+        "have spent 50,000 tokens, the cap you set on this machine.",
+      ),
+    );
+    expect(asked.find((one) => one.cmd === "skill_grade_set_cap")?.args).toMatchObject({
+      tokens: 50000,
+    });
+    expect(asked.some((one) => one.cmd === "skill_grade_start")).toBe(false);
+  });
+
+  it("says a grade stopped at its cap, and what it spent", () => {
+    expect(
+      endedSaid({
+        plane: "p",
+        skill: "deploy",
+        grade: "g",
+        ran: 9,
+        of: 12,
+        tokens: 201345,
+        cap: 200000,
+        ended: "over-cap",
+        said: null,
+      }),
+    ).toBe(
+      "Stopped at its cap of 200,000 tokens after 9 chats, having spent 201,345 tokens. What ran is scored in Grades below.",
+    );
   });
 });

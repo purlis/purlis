@@ -3,8 +3,8 @@
 Ticket #2779 (SK-16), building what the operator agreed on 2026-10-20 (spec #2762, decisions 22
 and 43: a grade runs real chats; [ADR 0101](../0101-the-skill-studio-is-built-from-six-extension-capabilities-and-an-extension-that-declares-one-is-confined.md) §5), recorded in
 [ADR 0105](../0105-a-grade-is-real-chats-purlis-runs-cost-first-scored-by-skill-runs-and-recorded-against-the-skills-version.md) §3.
-**This amendment asks for the operator's confirmation**: it is the first send whose text purlis did
-not write.
+**Confirmed by the operator 2026-10-26** (on #3229), with the safeguards below as built: it is the
+first send whose text purlis did not write.
 
 A **grade's chat** is the second chat this record's machinery starts on a sent message
 (`curation::start_graded`, `SentFor::Grade`). Its first message is one trigger test's query,

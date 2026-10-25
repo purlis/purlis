@@ -1148,6 +1148,15 @@ fn grade_said(
             for (at, why) in &planned.left_out {
                 text.push_str(&format!("Test {} is left out: {why}\n", at + 1));
             }
+            text.push_str(&format!(
+                "A grade stops once its chats have spent {} ({}; [skill_grades] token_cap in \
+                 charter.local.toml sets it).\n",
+                counted(planned.cap.tokens, "token", "tokens"),
+                match planned.cap.from {
+                    purlis_core::skills::grades::cap::From::Default => "the default",
+                    purlis_core::skills::grades::cap::From::Yours => "this machine's cap",
+                }
+            ));
             text.push_str("Grade it from its tab in the Skill studio, which shows this first.\n");
         }
         _ => text.push_str(&format!(
