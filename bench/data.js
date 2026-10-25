@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792964877130,
+  "lastUpdate": 1792966632559,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -24906,6 +24906,48 @@ window.BENCHMARK_DATA = {
             "value": 101.3610405,
             "unit": "ms",
             "extra": "median of 5 runs: 100.972, 101.206, 101.361, 101.743, 103.217 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d45abd82606b813c560bb78084396a6bf6c4c990",
+          "message": "Prove close_proxy alone ends a tunnel carried mid-question (#3243)\n\n* Prove close_proxy alone ends a tunnel carried mid-question (#3215)\n\nThe test dropped the question right after close_proxy, and that drop also\nends the connection, so it could not tell which one did. It now asserts the\ntunnel ends while the question is still being answered.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Keep the tunnel open from example.com's side so its end is the proxy's (#3215)\n\nThe test's ClientHello had no key share, groups or signature algorithms, so\nexample.com answered it with an alert and hung up: the tunnel ended in under\na tenth of a second whether or not close_proxy cut it (a mutant with the cut\nremoved passed on CI). open_tunnel now sends a ClientHello a server goes on\nwith, and the test asserts the tunnel stays open before it is ended.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-26T01:56:29+04:00",
+          "tree_id": "4a47cca7fb6e88d38c8c0cba77c1ede35cfb3bfd",
+          "url": "https://github.com/purlis/purlis/commit/d45abd82606b813c560bb78084396a6bf6c4c990"
+        },
+        "date": 1792966628916,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.503811,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.493, 0.499, 0.504, 0.536, 0.541 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.959083,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.572, 16.946, 16.959, 16.966, 17.431 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.79854950000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.435, 103.503, 103.799, 103.940, 105.135 ms"
           }
         ]
       }
