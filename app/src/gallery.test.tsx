@@ -341,8 +341,9 @@ describe("the gallery by keyboard", () => {
       "slider Size",
       // A radio group is one stop, on its pick; Gamma is out of reach.
       "radio Alpha",
-      // The select is the select family's: a button that opens its list (#2906).
-      "button Shell",
+      // The select is the select family's: a button that opens its list (#2906), named by what
+      // it holds, then its own name.
+      "button Alpha Shell",
       "checkbox Push after saving",
       "switch Play a sound",
       "checkbox Alpha",

@@ -1004,9 +1004,9 @@ What every class holds to:
   cannot pull its ring inside. A view still places a control (margin, width, flex, order), which
   no class sets. The sizes a view may hand a class are a leading icon's (`--ui-input-lead-*`).
 
-`app/src/primitives/controls.test.tsx` holds each control: its height and ring through the window's
-cascade (`cascade.testkit.ts`, which reads `primitives/controls.css` as the layer above `App.css`), its
-keyboard behaviour on the real Radix primitive, and its announced name.
+`app/src/primitives/controls.test.tsx` holds `primitives/controls.css` in the `components` layer
+and holds it empty: every control it drew is a family's now, and no control's rule comes back
+into it.
 
 **Moving a surface onto a class** is its own ticket, one surface at a time: put the class on the
 control, delete the view's rule that drew it, and keep the view's placement. Until then a control
