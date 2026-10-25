@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792967248226,
+  "lastUpdate": 1792970004254,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -7432,6 +7432,42 @@ window.BENCHMARK_DATA = {
             "value": 293.6,
             "unit": "MB",
             "extra": "median of 6 samples: 330.9, 296.6, 292.9, 293.1, 294, 207.4 MB; window 171.5 MB, session host 122.3 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d45abd82606b813c560bb78084396a6bf6c4c990",
+          "message": "Prove close_proxy alone ends a tunnel carried mid-question (#3243)\n\n* Prove close_proxy alone ends a tunnel carried mid-question (#3215)\n\nThe test dropped the question right after close_proxy, and that drop also\nends the connection, so it could not tell which one did. It now asserts the\ntunnel ends while the question is still being answered.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Keep the tunnel open from example.com's side so its end is the proxy's (#3215)\n\nThe test's ClientHello had no key share, groups or signature algorithms, so\nexample.com answered it with an alert and hung up: the tunnel ended in under\na tenth of a second whether or not close_proxy cut it (a mutant with the cut\nremoved passed on CI). open_tunnel now sends a ClientHello a server goes on\nwith, and the test asserts the tunnel stays open before it is ended.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-26T01:56:29+04:00",
+          "tree_id": "4a47cca7fb6e88d38c8c0cba77c1ede35cfb3bfd",
+          "url": "https://github.com/purlis/purlis/commit/d45abd82606b813c560bb78084396a6bf6c4c990"
+        },
+        "date": 1792970001938,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 605,
+            "unit": "MB",
+            "extra": "median of 3 samples: 539, 605, 624 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 457.8,
+            "unit": "MB",
+            "extra": "median of 6 samples: 445.8, 451.7, 456.6, 458.9, 459.9, 616.1 MB; window 236.7 MB, session host 221.1 MB"
           }
         ]
       }
