@@ -3,6 +3,7 @@
 
 import { browser, expect, $$ } from "@wdio/globals";
 import { READY } from "../harness.js";
+import { endChatsStartedHere, startAChat, type Started } from "../started.js";
 
 /**
  * **Focus mode on the real window** (#2921, spec #2897 N32): ⌘⇧↩ (Ctrl+Shift+Enter off a Mac)
@@ -112,21 +113,35 @@ async function terminalNow(): Promise<{ marked: boolean; text: string }> {
 describe("focus mode", function () {
   this.timeout(180_000);
 
+  /** The chat this spec started, where the window had none in front with a terminal. */
+  let started: Started | undefined;
+
+  /** Whether the pane in front shows the harness's ready line. */
+  const aPaneIsReady = async () => {
+    const panes = await $$('[data-testid="pane"]').getElements();
+    if (panes.length === 0) return false;
+    return (await panes[0].$(".xterm-rows").getText()).includes(READY);
+  };
+
   before(async () => {
     await browser.$(FRAME).waitForExist({ timeout: 30_000 });
-    await browser.waitUntil(
-      async () => {
-        const panes = await $$('[data-testid="pane"]').getElements();
-        if (panes.length === 0) return false;
-        return (await panes[0].$(".xterm-rows").getText()).includes(READY);
-      },
-      { timeout: 60_000, interval: 250, timeoutMsg: `no pane showed ${READY}` },
-    );
+    const ready = await browser
+      .waitUntil(aPaneIsReady, { timeout: 5_000, interval: 250 })
+      .then(() => true)
+      .catch(() => false);
+    // A terminal to watch: the window's own, else a chat of this spec's, ended after.
+    if (!ready) started = await startAChat();
+    await browser.waitUntil(aPaneIsReady, {
+      timeout: 60_000,
+      interval: 250,
+      timeoutMsg: `no pane showed ${READY}`,
+    });
     if (await inFocusMode()) await focusModeTo(false);
   });
 
   after(async () => {
     if (await inFocusMode()) await focusModeTo(false);
+    await endChatsStartedHere([started]);
   });
 
   it("hides the rail, the bars and the panels, and brings each back at its size", async () => {
