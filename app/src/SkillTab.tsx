@@ -127,7 +127,7 @@ function SkillTotals({ plane, name, changed }: { plane: string; name: string; ch
   if (stats === undefined || stats.by_persona.length === 0) return null;
   return (
     <section aria-labelledby="skill-totals-heading" data-testid="skill-totals">
-      <h3 id="skill-totals-heading">Totals</h3>
+      <h2 id="skill-totals-heading">Totals</h2>
       {GROUPINGS.map(({ key, heading, column, none }) => (
         <table
           key={key}
@@ -222,7 +222,7 @@ export function SkillTab({
       <SkillDetailsPanel plane={plane} name={name} changed={changed} />
       <SkillTotals plane={plane} name={name} changed={changed} />
       <section aria-labelledby="skill-runs-heading" data-testid="skill-runs">
-        <h3 id="skill-runs-heading">Runs</h3>
+        <h2 id="skill-runs-heading">Runs</h2>
         {refused !== undefined ? (
           <EmptyState
             headline={`purlis could not read the runs of ${name}`}

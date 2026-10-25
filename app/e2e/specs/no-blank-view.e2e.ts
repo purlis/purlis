@@ -133,8 +133,7 @@ async function panelOf(bar: string, view: string): Promise<Body | null> {
 
 /** How a view tab is drawn around what it holds (#3147), read once. */
 type Around = {
-  /** Headings of its own at the top levels, and elements at its top whose own words are its
-   *  tab's name. */
+  /** Headings that say its tab's name, and elements at its top whose own words are it. */
   titles: string[];
   /** The fill of its first row, where it has one. */
   firstFill: string | null;
@@ -144,55 +143,63 @@ type Around = {
   actions: { top: number; right: number } | null;
 };
 
-/** How the view tab called `title` is drawn around what it holds. */
-async function aroundOf(title: string): Promise<Around | null> {
-  return browser.execute((called: string) => {
-    const pane = [...document.querySelectorAll<HTMLElement>("section.view-pane")].find(
-      (one) => one.getAttribute("aria-label") === called && one.getBoundingClientRect().width > 0,
-    );
-    if (!pane) return null;
-    // Where a title would be: the view's top, down to the pane's actions' row and a little.
-    const top = pane.getBoundingClientRect().top;
-    const titles = [
-      ...[...pane.querySelectorAll("h1, h2")].map((one) => `heading: ${one.textContent ?? ""}`),
-      ...[...pane.querySelectorAll<HTMLElement>("*")]
-        .filter(
-          (one) =>
-            one.getBoundingClientRect().top - top < 48 &&
-            [...one.childNodes].some(
-              (node) => node.nodeType === Node.TEXT_NODE && (node.textContent ?? "").trim() !== "",
-            ) &&
-            (one.innerText ?? "").trim() === called,
-        )
-        .map((one) => `words: <${one.tagName.toLowerCase()} class="${one.className}">`),
-    ];
-    const first = pane.querySelector(":scope > .view-head");
-    const panel = pane.closest('[role="tabpanel"]');
-    const tab = document.getElementById(panel?.getAttribute("aria-labelledby") ?? "");
-    const frame = pane.closest(".pane-frame");
-    const actions = frame?.querySelector(":scope > .pane-head > .pane-actions");
-    const own = frame?.getBoundingClientRect();
-    const at = actions?.getBoundingClientRect();
-    return {
-      titles,
-      firstFill: first === null ? null : getComputedStyle(first).backgroundColor,
-      namedByItsTab:
-        tab !== null &&
-        tab.getAttribute("aria-selected") === "true" &&
-        (tab.querySelector(".tab-name")?.textContent ?? "").trim() === called,
-      actions:
-        own === undefined || at === undefined
-          ? null
-          : { top: at.top - own.top, right: own.right - at.right },
-    };
-  }, title);
+/** How the view whose region is named `region`, in the tab called `tab`, is drawn around what
+ *  it holds. A view's region is named by its title; a vault's is `Vault <name>`. */
+async function aroundOf(region: string, tab = region): Promise<Around | null> {
+  return browser.execute(
+    (named: string, called: string) => {
+      const pane = [...document.querySelectorAll<HTMLElement>("section.view-pane")].find(
+        (one) => one.getAttribute("aria-label") === named && one.getBoundingClientRect().width > 0,
+      );
+      if (!pane) return null;
+      // Where a title would be: the view's top, down to the pane's actions' row and a little.
+      const top = pane.getBoundingClientRect().top;
+      const titles = [
+        ...[...pane.querySelectorAll("h1, h2, h3, h4, h5, h6")]
+          .filter((one) => (one.textContent ?? "").trim() === called)
+          .map((one) => `heading: ${one.textContent ?? ""}`),
+        ...[...pane.querySelectorAll<HTMLElement>("*")]
+          .filter(
+            (one) =>
+              one.getBoundingClientRect().top - top < 48 &&
+              [...one.childNodes].some(
+                (node) =>
+                  node.nodeType === Node.TEXT_NODE && (node.textContent ?? "").trim() !== "",
+              ) &&
+              (one.innerText ?? "").trim() === called,
+          )
+          .map((one) => `words: <${one.tagName.toLowerCase()} class="${one.className}">`),
+      ];
+      const first = pane.querySelector(":scope > .view-head");
+      const panel = pane.closest('[role="tabpanel"]');
+      const tab = document.getElementById(panel?.getAttribute("aria-labelledby") ?? "");
+      const frame = pane.closest(".pane-frame");
+      const actions = frame?.querySelector(":scope > .pane-head > .pane-actions");
+      const own = frame?.getBoundingClientRect();
+      const at = actions?.getBoundingClientRect();
+      return {
+        titles,
+        firstFill: first === null ? null : getComputedStyle(first).backgroundColor,
+        namedByItsTab:
+          tab !== null &&
+          tab.getAttribute("aria-selected") === "true" &&
+          (tab.querySelector(".tab-name")?.textContent ?? "").trim() === called,
+        actions:
+          own === undefined || at === undefined
+            ? null
+            : { top: at.top - own.top, right: own.right - at.right },
+      };
+    },
+    region,
+    tab,
+  );
 }
 
 /** A view tab is one piece with its tab: no title, no band, the pane's actions in their place,
  *  in the panel its tab names. */
-async function onePiece(title: string): Promise<void> {
-  const around = await aroundOf(title);
-  if (around === null) throw new Error(`no view tab called ${title} on screen`);
+async function onePiece(region: string, tab = region): Promise<void> {
+  const around = await aroundOf(region, tab);
+  if (around === null) throw new Error(`no view tab called ${tab} on screen`);
   expect(around.titles).toEqual([]);
   if (around.firstFill !== null) expect(around.firstFill).toBe("rgba(0, 0, 0, 0)");
   expect(around.namedByItsTab).toBe(true);
@@ -357,26 +364,8 @@ describe("no blank view", function () {
     // A vault's region is named for a screen reader as `Vault <name>`; its tab is its name.
     const named = `Vault ${VAULT}`;
     drawn(`the ${VAULT} tab`, await settled(VAULT, () => viewTab(named)));
-    const around = await aroundOf(named);
-    expect(around).not.toBeNull();
-    // Its tab's name, the vault's, is nowhere in it as words of its own.
-    expect(
-      await browser.execute(
-        (vault: string, region: string) =>
-          [...document.querySelectorAll<HTMLElement>(`section[aria-label="${region}"] *`)].some(
-            (one) =>
-              [...one.childNodes].some(
-                (node) =>
-                  node.nodeType === Node.TEXT_NODE && (node.textContent ?? "").trim() === vault,
-              ),
-          ),
-        VAULT,
-        named,
-      ),
-    ).toBe(false);
-    expect(around?.titles.filter((one) => one.startsWith("heading"))).toEqual([]);
-    if (around?.firstFill !== null) expect(around?.firstFill).toBe("rgba(0, 0, 0, 0)");
-    expect(around?.actions?.top).toBeLessThanOrEqual(16);
-    expect(around?.actions?.right).toBeLessThanOrEqual(16);
+    // No title, no band, the actions in place, and in the panel its tab, the vault's name,
+    // names.
+    await onePiece(named, VAULT);
   });
 });

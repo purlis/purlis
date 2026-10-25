@@ -96,10 +96,10 @@ export function HarnessSetupTab({
     <div className="harness-setup">
       {/* A look that failed found nothing, which is not the same as finding no harness. */}
       {found === undefined ? (
-        <h3>purlis could not look at this machine</h3>
+        <h2>purlis could not look at this machine</h2>
       ) : (
         <>
-          <h3>{any ? "A harness is installed" : "No harness found"}</h3>
+          <h2>{any ? "A harness is installed" : "No harness found"}</h2>
           {any ? (
             <p className="came-back">
               Start a chat and pick it. A harness that is not signed in asks for its own login when
@@ -153,7 +153,7 @@ export function HarnessSetupTab({
 
       {local.length > 0 ? (
         <section aria-labelledby="harness-setup-local">
-          <h3 id="harness-setup-local">A model on this machine</h3>
+          <h2 id="harness-setup-local">A model on this machine</h2>
           {local.map((one) => (
             <p className="came-back" key={one.title}>
               {one.title} is running on this machine, at <code>{one.base_url}</code>. {one.harness}{" "}

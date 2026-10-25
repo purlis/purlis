@@ -475,7 +475,7 @@ export function SavingView({
               {said.join("\n")}
             </pre>
           )}
-          <h3 className="saving-recent">Recent saves</h3>
+          <h2 className="saving-recent">Recent saves</h2>
           {saving.journal.length === 0 ? (
             <EmptyState
               variant="panel"

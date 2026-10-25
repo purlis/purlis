@@ -424,9 +424,9 @@ export function DispatchesTab({
                             : [row.messages === 1 ? "1 message" : `${row.messages} messages`]),
                         ].join(" · ")}
                       </p>
-                      <h3>Brief</h3>
+                      <h2>Brief</h2>
                       <pre>{row.brief}</pre>
-                      <h3>Report</h3>
+                      <h2>Report</h2>
                       {row.report === null ? (
                         <p className="none">
                           {row.ended === null ? "Not reported yet." : "It ended with none."}
@@ -438,7 +438,7 @@ export function DispatchesTab({
                           them: said as its claim, never as a fact purlis checked. */}
                       {row.changed !== null && (
                         <>
-                          <h3>What it says changed</h3>
+                          <h2>What it says changed</h2>
                           <pre>{row.changed}</pre>
                         </>
                       )}
@@ -495,7 +495,7 @@ export function DispatchesTab({
 function NotStarted({ rows }: { rows: NotStartedRow[] }) {
   return (
     <section className="dispatches-not-started" aria-label="Dispatches that did not start">
-      <h3>Not started</h3>
+      <h2>Not started</h2>
       <ul>
         {rows.map((row, at) => (
           <li key={at} data-testid="dispatch-not-started" data-state={row.state}>

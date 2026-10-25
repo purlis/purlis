@@ -5456,6 +5456,12 @@ button.show-more:focus-visible {
   text-overflow: ellipsis;
 }
 
+/* **A view's own headings start at h2** (#3147): the tab names the view, so the first heading
+   in it is the one under the tab. Drawn at the size the old h3 had, unless a role says more. */
+.view-body h2:not([class*="ui-text"]) {
+  font-size: var(--font-size-base);
+}
+
 .view-body {
   flex: 1 1 auto;
   min-height: 0;
@@ -5559,6 +5565,11 @@ nav.piece-files-head {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The path alone, where the tab already names the file (#3147): quiet words, never a title. */
+.piece-files-head code[data-path-only] {
+  color: var(--text-quiet);
 }
 
 .piece-files-actions {
@@ -5694,7 +5705,7 @@ nav.piece-files-head {
   color: var(--text-muted);
 }
 
-.dispatch-read h3 {
+.dispatch-read h2 {
   margin: 0 0 var(--space-2);
   color: var(--text-muted);
   font-size: var(--font-size-xs);
@@ -5863,7 +5874,7 @@ nav.piece-files-head {
   font-size: var(--font-size-sm);
 }
 
-.session-dispatches h3 {
+.session-dispatches h2 {
   margin: 0 0 var(--space-2);
   color: var(--text-muted);
   font-size: var(--font-size-xs);
@@ -7139,7 +7150,7 @@ nav.piece-files-head {
   outline-offset: var(--focus-ring-offset);
 }
 
-.ui-setting-group h3 {
+.ui-setting-group :is(h2, h3) {
   margin: 0;
   font-size: var(--font-size-md);
 }
@@ -7344,7 +7355,7 @@ nav.piece-files-head {
   gap: var(--space-3);
 }
 
-.ui-collection-head h4 {
+.ui-collection-head h3 {
   margin: 0;
   font-size: var(--font-size-sm);
   color: var(--text-primary);
