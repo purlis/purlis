@@ -1,0 +1,169 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **The select and combobox families' default** (#2906, ADR 0103, ADR 0104): how `Select` and
+   `ComboBox` are drawn when a theme names none of their parts. Each is keyed on the wrapper's
+   attributes and React Aria's state attributes, never on a class:
+
+   - `select`: the button that shows what is picked (`root`), what it shows while nothing is
+     (`placeholder`) and the `chevron` at its end;
+   - `combobox`: the box typed in (`root`), the input inside it and the `chevron` at its end.
+
+   **Both are the text input's box** (`ui/field/field.css`): the same ground, edge, corner and
+   sizes, so a select and a text field in one form are one look. Their lists stand on the
+   popover family's `menu` surface (`ui/popover/popover.css`) and their options are the menu
+   family's rows (`ui/menu/menu.css`).
+
+   **In the `components` layer** (`styles.css`), above `App.css`: a view places a select (margin,
+   width, flex, order) and nothing it writes redraws one. **Only tokens**, one `var()` per colour.
+
+   **A state never changes size** (#2800): under the pointer, focused, open or unavailable, a box
+   changes a colour or a ring, never a padding, a border width or a height. */
+
+/* ---------------------------------------------------------------------------------------------
+   The boxes, at rest, md.
+   --------------------------------------------------------------------------------------------- */
+
+/* React Aria's own root around the button (and a form's hidden select) draws nothing: the
+   button is the select. */
+[data-scope="select"][data-part="field"] {
+  display: contents;
+}
+
+[data-scope="select"][data-part="root"],
+[data-scope="combobox"][data-part="root"] {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  box-sizing: border-box;
+  min-inline-size: 0;
+  block-size: var(--size-control);
+  margin: 0;
+  padding-block: 0;
+  padding-inline: var(--space-4) var(--space-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-control);
+  color: var(--text-primary);
+  background-color: var(--surface-sunken);
+  font: inherit;
+  font-size: var(--font-size-base);
+  text-align: start;
+}
+
+[data-scope="select"][data-part="root"] {
+  cursor: default;
+  outline: none;
+}
+
+[data-scope="combobox"][data-part="root"] {
+  cursor: text;
+}
+
+/* What is picked, one line: a long name gives way to an ellipsis, and the chevron keeps its
+   place at the end. */
+[data-scope="select"][data-part="value"] {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* **What it shows while nothing is picked**, in the quiet tier (R64), as a field's placeholder. */
+[data-scope="select"][data-part="placeholder"] {
+  color: var(--text-quiet);
+}
+
+/* The element typed in fills its box and draws nothing of its own: the box is the combobox. */
+[data-scope="combobox"][data-part="root"] > input {
+  flex: 1 1 auto;
+  align-self: stretch;
+  box-sizing: border-box;
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  outline: none;
+  color: inherit;
+  background: none;
+  font: inherit;
+  appearance: none;
+}
+
+[data-scope="combobox"][data-part="root"] > input::placeholder {
+  color: var(--text-quiet);
+}
+
+/* **The chevron**, drawn, in the quiet tier (R64): a mark, held at 3:1. A combobox's is a press
+   target of its own, which opens every suggestion; it takes no ring of its own, since the
+   keyboard stays in the box. */
+[data-scope="select"][data-part="chevron"],
+[data-scope="combobox"][data-part="chevron"] {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  color: var(--text-quiet);
+  background: none;
+  cursor: default;
+}
+
+[data-scope="select"][data-part="chevron"] > svg,
+[data-scope="combobox"][data-part="chevron"] > svg {
+  inline-size: var(--font-size-md);
+  block-size: var(--font-size-md);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   States.
+   --------------------------------------------------------------------------------------------- */
+
+/* Unavailable: its words and its chevron in the faint tier, on its own ground and edge, so
+   nothing moves. */
+[data-scope="select"][data-part="root"][data-disabled],
+[data-scope="combobox"][data-part="root"][data-disabled],
+[data-scope="select"][data-part="root"][data-disabled] [data-part="chevron"],
+[data-scope="select"][data-part="root"][data-disabled] [data-part="placeholder"],
+[data-scope="combobox"][data-part="root"][data-disabled] [data-part="chevron"] {
+  color: var(--text-faint);
+}
+
+/* The ring: 2px in the focus colour at 2px outside the box (R162). A select is a button, ringed
+   from the keyboard; a combobox whenever it holds the caret, as a text box is. */
+[data-scope="select"][data-part="root"][data-focus-visible],
+[data-scope="combobox"][data-part="root"][data-focus-within] {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   Sizes: sm 24, md 28, lg 32 at the default text size and density (#2793, #2877), as the text
+   input's. One size per row.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="select"][data-part="root"][data-size="sm"],
+[data-scope="combobox"][data-part="root"][data-size="sm"] {
+  block-size: max(var(--size-chrome), var(--space-7));
+  padding-inline: var(--space-3) var(--space-2);
+  gap: var(--space-1);
+  font-size: var(--font-size-sm);
+}
+
+[data-scope="select"][data-part="root"][data-size="lg"],
+[data-scope="combobox"][data-part="root"][data-size="lg"] {
+  block-size: calc(var(--size-control) + var(--space-2));
+  padding-inline: var(--space-5) var(--space-4);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   The list: the popover family's `menu` surface, at least as wide as its box.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="popover"][data-part="root"][data-of="select"] {
+  --menu-min: max(var(--trigger-width), calc(var(--space-8) * 6));
+  --menu-max: max(var(--trigger-width), calc(var(--space-8) * 12));
+}

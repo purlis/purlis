@@ -9,6 +9,7 @@ import { notificationPrefs } from "../notificationPrefs";
 import { forgetThisLaunch } from "../regions";
 import type { LiveSetting } from "./groups";
 import { notificationsGroup } from "./notifications";
+import { selectNamed } from "../ui/select/select.testkit";
 
 /**
  * **Settings › You › Notifications** (#1989): the quiet hours, off until turned on, each time
@@ -40,11 +41,11 @@ describe("quiet hours", () => {
     );
     const on = screen.getByRole("switch");
     expect(on).not.toBeChecked();
-    expect(screen.getByRole("combobox", { name: "Quiet from" })).toBeDisabled();
+    expect(selectNamed("Quiet from")).toBeDisabled();
 
     await userEvent.click(on);
 
     expect(notificationPrefs().quiet.on).toBe(true);
-    await waitFor(() => expect(screen.getByRole("combobox", { name: "Quiet from" })).toBeEnabled());
+    await waitFor(() => expect(selectNamed("Quiet from")).toBeEnabled());
   });
 });

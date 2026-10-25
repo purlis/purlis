@@ -11,7 +11,7 @@ import type { LiveSetting } from "./groups";
 import { SETTINGS_ACTION, type SettingsActionAsk } from "./links";
 import { ReadOnlySaid } from "../ReadOnlyLine";
 import { drawnWith } from "../cascade.testkit";
-import { offeredIn, pickIn } from "../primitives/select.testkit";
+import { findSelectNamed, offeredIn, pickIn } from "../ui/select/select.testkit";
 import { hoverTipOf, tipOf } from "../ui/tooltip/tooltip.testkit";
 
 /**
@@ -343,7 +343,7 @@ describe("Settings › Project › Dispatch", () => {
     const { saves } = core(page({ rows: [row("project", ""), row("workspace", "alpha")] }));
     render(<Page />);
 
-    const pick = await screen.findByRole("combobox", { name: "Override for" });
+    const pick = await findSelectNamed("Override for");
     // What has a row already is not offered again.
     await waitFor(async () =>
       expect(await offeredIn(pick)).toEqual([
