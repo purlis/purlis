@@ -2,27 +2,31 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! **A save commits a file only as the one name it has on disk** (the plane's save and a
-//! repo's): each staged path that is not a deletion is looked at once the `git add` is done,
-//! and one the readers would not read is taken out of the index again and not committed.
+//! repo's, and each commit made as a save makes one): each file is staged from one open
+//! descriptor, and each staged path that is not a deletion is looked at again once it is staged.
+//! One the readers would not read is not staged, or is taken out of the index again, and is not
+//! committed.
 //!
 //! The readers ([`crate::held`], [`crate::files`]) already refuse a file with a second name, a
 //! hard link, since its bytes can be another file's. A save holds itself to the same rule, and
-//! to one more: what is staged is the file on disk now, so a file swapped or removed after the
-//! add is not committed on the strength of bytes nobody looks at again.
+//! to one more: what is staged is the file on disk now, so a file swapped or removed after it
+//! was staged is not committed on the strength of bytes nobody looks at again.
 //!
-//! **Asked before the add, and again after it.** Before: each file the add would stage is
-//! looked at, and one with a second name refuses the save with nothing staged, so its bytes
-//! are never written into the repository's object store ([`second_names_ahead`]). After: the
-//! index is what the commit carries, and it can hold rows staged before the save ran, which a
-//! listing of the working tree does not see, and the add itself is a gap in which a file can
-//! change ([`not_as_staged`]). The blob of a row refused then is taken out of the object store
-//! again where it is a loose object nothing else reaches ([`refused`]); a packed object, or one
-//! a ref, a reflog or an index reaches, is never touched.
+//! **Every save stages each file from one open descriptor** ([`stage_named`]): the file is
+//! opened without following a link, its descriptor is asked that it is a regular file with one
+//! name, and the bytes git stores are read from that descriptor. A file with a second name is
+//! never hashed, so its bytes never reach the repository's object store, and the bytes
+//! committed are the bytes that were checked, whatever has the name a moment later. A link, a
+//! folder (a nested repository) and a deletion are staged by `git add`, which reads no file's
+//! bytes.
 //!
-//! **A save of named paths stages each file from one open descriptor** ([`stage_named`]): the
-//! file is opened without following a link, its descriptor is asked that it is a regular file
-//! with one name, and the bytes git stores are read from that descriptor. The bytes committed
-//! are the bytes that were checked, whatever has the name a moment later.
+//! **Asked before the staging, and again after it.** Before: each file the staging would take
+//! is looked at, and one with a second name refuses the save with nothing staged
+//! ([`second_names_ahead`]). After: the index is what the commit carries, and it can hold rows
+//! staged before the save ran, which a listing of the working tree does not see, and a file can
+//! change once it is staged ([`not_as_staged`]). The blob of a row refused then is taken out of
+//! the object store again where it is a loose object nothing else reaches ([`refused`]); a
+//! packed object, or one a ref, a reflog or an index reaches, is never touched.
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -425,23 +429,29 @@ pub(crate) fn refused_ahead(found: &Result<Vec<Held>, String>) -> Option<Refusal
     })
 }
 
-/// **Stages with `add` in the repository at `root` as a save does, for a commit made outside a
-/// save** (a publish, a new project's first commit, a doctor fix): [`second_names_ahead`] of
-/// `pathspec` before `add` runs, then [`not_as_staged`] of the whole index once it has, with
-/// what [`refused`] takes back. `Err` with `add`'s own words where it failed, or with
-/// `refused_as`, a colon, then each path's line and what became of them; nothing is committed
-/// either way.
+/// **Stages `pathspec` (all of the tree where it is empty) in the repository at `root` as a
+/// save does, for a commit made outside a save** (a publish, a new project's first commit, a
+/// doctor fix): [`second_names_ahead`] before anything is staged, then each file staged from one
+/// open descriptor ([`stage_named`]), then [`not_as_staged`] of the whole index, with what
+/// [`refused`] takes back. `Err` with `failed_as`, a colon and git's words where git could not
+/// stage them, or with `refused_as`, a colon, then each path's line and what became of them;
+/// nothing is committed either way.
 pub(crate) fn add_checked(
     root: &Path,
     pathspec: &[&str],
     refused_as: &str,
-    add: impl FnOnce() -> Result<(), String>,
+    failed_as: &str,
 ) -> Result<(), String> {
     let refusal = match refused_ahead(&second_names_ahead(root, pathspec)) {
         Some(refusal) => refusal,
         None => {
-            add()?;
-            match refused(root, &not_as_staged(root)) {
+            #[cfg(test)]
+            super::tests::before_the_add(root);
+            let held = stage_named(root, pathspec, |_| false)
+                .map_err(|said| format!("{failed_as}: {said}"))?;
+            #[cfg(test)]
+            super::tests::after_the_add(root);
+            match refused(root, &Ok(held)).or_else(|| refused(root, &not_as_staged(root))) {
                 Some(refusal) => refusal,
                 None => return Ok(()),
             }
@@ -567,7 +577,7 @@ fn remove_loose(objects: &Path, sha: &str) {
 #[cfg(not(unix))]
 fn remove_loose(_: &Path, _: &str) {}
 
-/// What a file a save of named paths stages is, asked of one open descriptor ([`opened`]).
+/// What a file a save stages is, asked of one open descriptor ([`opened`]).
 pub(super) enum OnDisk {
     /// A regular file with one name, open to read, and whether its owner may run it.
     File(std::fs::File, bool),
@@ -612,8 +622,8 @@ pub(super) fn opened(_: &Path, _: &str) -> OnDisk {
     OnDisk::Other
 }
 
-/// **Stages what a `git add -A` of the literal pathspecs `specs` would, each regular file from
-/// one open descriptor**, leaving out each path `kept_out` names. A file whose descriptor says
+/// **Stages what a `git add -A` of the pathspecs `specs` (all of the tree where there are none)
+/// would, each regular file from one open descriptor**, leaving out each path `kept_out` names. A file whose descriptor says
 /// it has a second name is not staged, and is answered, for the save to refuse as it refuses
 /// one [`not_as_staged`] finds. A link, a folder or a removed file is staged by `git add`.
 /// `Err` with git's words where git could not list or stage them.
@@ -662,7 +672,12 @@ pub(crate) fn stage_named(
     // a change: recorded now, where the file still holds what was staged. One that changed
     // since stays a change, which [`not_as_staged`] then refuses. Never with paths: handed one,
     // `update-index` stages that file again from its name.
-    run_ok(root, &["update-index", "-q", "--refresh"])?;
+    // The index write that adds git's untracked cache, as a save's `git add` did (FD-11,
+    // [`git::UNTRACKED_CACHE`]).
+    run_ok(
+        root,
+        &git::with_untracked_cache(root, &["update-index", "-q", "--refresh"]),
+    )?;
     Ok(held)
 }
 

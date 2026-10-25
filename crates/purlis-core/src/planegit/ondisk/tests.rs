@@ -263,3 +263,51 @@ fn only_a_row_git_does_not_look_at_waits_for_the_secret_guard() {
     assert_eq!(first, Err("no".to_owned()));
     assert!(after.is_empty());
 }
+
+/// A file given a second name after `add_checked` looked and before it staged: its descriptor
+/// shows the second name, so its bytes are never hashed into the object store.
+#[cfg(unix)]
+#[test]
+fn a_second_name_made_as_a_checked_add_stages_never_reaches_the_object_store() {
+    use crate::planegit::tests::{AFTER_THE_ADD, BEFORE_THE_ADD, doing_at};
+
+    let (_dir, root) = staged();
+    run(&root, &["commit", "-q", "-m", "two"]);
+    std::fs::write(root.join("c.md"), "two names by now: canary-b61a93\n").unwrap();
+    let second = root.parent().unwrap().join("second-name");
+
+    let stored_once_staged = std::rc::Rc::new(std::cell::Cell::new(None));
+    let added = doing_at(
+        &BEFORE_THE_ADD,
+        {
+            let second = second.clone();
+            move |root: &Path| std::fs::hard_link(root.join("c.md"), &second).unwrap()
+        },
+        || {
+            doing_at(
+                &AFTER_THE_ADD,
+                {
+                    let stored = stored_once_staged.clone();
+                    let second = second.clone();
+                    move |root: &Path| {
+                        stored.set(Some(crate::testgit::stores_file(root, &second)));
+                    }
+                },
+                || add_checked(&root, &[], "Refused", "Failed"),
+            )
+        },
+    );
+
+    assert_eq!(
+        stored_once_staged.get(),
+        Some(false),
+        "the file's bytes were hashed into the object store: {added:?}"
+    );
+    let said = added.expect_err("the add is refused");
+    assert!(
+        said.starts_with("Refused: c.md has a second name (a hard link)"),
+        "{said}"
+    );
+    assert!(!crate::testgit::stores_file(&root, &second));
+    assert_eq!(run(&root, &["diff", "--cached", "--name-only"]), "");
+}

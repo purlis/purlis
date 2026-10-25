@@ -306,11 +306,32 @@ fn commit_push(
         return 0;
     }
 
-    // As the plane's save, before anything is staged: a file the add would take that has a
-    // second name refuses the save here, so its bytes never reach the clone's object store.
-    if let Some(refusal) =
-        planegit::ondisk::refused_ahead(&planegit::ondisk::second_names_ahead(clone, &[]))
-    {
+    // As the plane's save: a file the staging would take that has a second name refuses the
+    // save before anything is staged, and each file is then staged from one open descriptor,
+    // so a file with a second name is never hashed into the clone's object store
+    // (`planegit::ondisk`). Staging's failure decides, never the probe after it.
+    let refusal =
+        match planegit::ondisk::refused_ahead(&planegit::ondisk::second_names_ahead(clone, &[])) {
+            Some(refusal) => Some(refusal),
+            None => {
+                #[cfg(test)]
+                tests::before_the_add(clone);
+                let held = match planegit::ondisk::stage_named(clone, &[], |_| false) {
+                    Ok(held) => held,
+                    Err(said) => {
+                        say(Say::Fail(format!(
+                            "Not saved: git could not stage the changes in {at} — {said}"
+                        )));
+                        return 1;
+                    }
+                };
+                #[cfg(test)]
+                tests::after_the_add(clone);
+                // A file whose own descriptor showed a second name was not staged.
+                planegit::ondisk::refused(clone, &Ok(held))
+            }
+        };
+    if let Some(refusal) = refusal {
         say(Say::Fail(format!(
             "Not saved: a file in {at} is not the one file on disk:"
         )));
@@ -321,17 +342,6 @@ fn commit_push(
         attempt.outcome = "blocked";
         attempt.detail = planegit::ondisk::NOT_AS_STAGED.into();
         attempt.commit = rev(clone, "HEAD");
-        return 1;
-    }
-    // As the plane's save: the add's exit status decides, never the probe after it.
-    // Untimed, as the plane's: an `add` killed at a deadline leaves `index.lock` behind.
-    // The write that adds git's untracked cache to the index (FD-11, `git::UNTRACKED_CACHE`).
-    let added = git::run_untimed(clone, &git::with_untracked_cache(clone, &["add", "-A"]));
-    if !added.as_ref().is_ok_and(git::Run::ok) {
-        let said = added.map_or_else(|e| e.to_string(), |run| planegit::tail(&run));
-        say(Say::Fail(format!(
-            "Not saved: git could not stage the changes in {at} — {said}"
-        )));
         return 1;
     }
     let probe = git::run(clone, &["diff", "--cached", "--quiet"], git::READ)

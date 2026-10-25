@@ -462,14 +462,14 @@ impl Hands for OnThisMachine {
         }
         let stages = crate::planegit::save_stages();
         let stages: Vec<&str> = stages.iter().map(String::as_str).collect();
-        // Each file committed is the one name it has on disk, as a save's are: asked before the
-        // add and again after it, so a refused file's bytes reach no commit, no push and no
-        // object store (`planegit::ondisk`).
+        // Each file committed is the one name it has on disk, as a save's are: staged from one
+        // open descriptor and asked again once staged, so a refused file's bytes reach no
+        // commit, no push and no object store (`planegit::ondisk`).
         crate::planegit::ondisk::add_checked(
             root,
             &crate::planegit::ondisk::pathspec_of(&stages),
             NOT_ONE_FILE,
-            || git_in(root, &stages, "add the project's files"),
+            "git could not add the project's files",
         )?;
         let born = git::run(
             root,
