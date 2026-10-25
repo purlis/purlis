@@ -403,8 +403,8 @@ describe("the Dispatches tab", () => {
     const reads = () => asked.filter((one) => one.cmd === "plane_sidebar").length;
     const before = reads();
 
-    await pickIn(screen.getByRole("combobox", { name: "Filter by persona" }), "devops");
-    await pickIn(screen.getByRole("combobox", { name: "Filter by asking chat" }), "planner 2");
+    await pickIn(selectNamed("Filter by persona"), "devops");
+    await pickIn(selectNamed("Filter by asking chat"), "planner 2");
 
     expect(reads()).toBe(before);
   });
