@@ -8,7 +8,7 @@ import { List, ListRow, ListRowSection, type RowMenu } from "./ui/list/List";
 import { ListFilter, noMatchSaid, type Noun } from "./ui/list/ListFilter";
 import { RowLabel, RowTrail } from "./ui/list/Row";
 import { Menu, MenuItem, MenuTrigger, MenuWords } from "./ui/menu/Menu";
-import { SKILL_STARTS, NEW_SKILL, SkillStarts, type SkillStart } from "./SkillStarts";
+import { SKILL_STARTS, NEW_SKILL_MENU, SkillStarts, type SkillStart } from "./SkillStarts";
 import { MARK_SAID, markOf, tipOf, type ListedSkill, type SkillGroup } from "./skillsListing";
 
 /** What the view's filter calls its rows. */
@@ -74,7 +74,7 @@ export function SkillsList({
         </Button>
         <MenuTrigger>
           <Button variant="ghost" icon={<Plus aria-hidden="true" />} isDisabled={busy}>
-            {NEW_SKILL}
+            {NEW_SKILL_MENU}
           </Button>
           <Menu
             aria-label="Ways to start a skill"
@@ -94,7 +94,14 @@ export function SkillsList({
         </ToggleButton>
       )}
       {notice}
-      {starts && <SkillStarts busy={busy} onStart={onStart} testid="skills-view-empty" />}
+      {starts && (
+        <SkillStarts
+          busy={busy}
+          onStart={onStart}
+          from={NEW_SKILL_MENU}
+          testid="skills-view-empty"
+        />
+      )}
       {filtered && (
         <ListFilter
           noun={SKILLS_NOUN}

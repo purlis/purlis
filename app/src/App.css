@@ -7849,6 +7849,12 @@ nav.piece-files-head {
   padding: var(--space-2);
 }
 
+/* Only the list gives way to a short sidebar: a control squeezed below its height is a target
+   too small to press (WCAG 2.5.8). */
+.skills-view > * {
+  flex-shrink: 0;
+}
+
 .skills-view .skill-starts {
   grid-template-columns: 1fr;
 }
@@ -7857,8 +7863,8 @@ nav.piece-files-head {
   align-self: flex-start;
 }
 
-.skills-view-list {
-  flex: 1;
+.skills-view > .skills-view-list {
+  flex: 1 1 0;
   min-block-size: 0;
   overflow: auto;
 }

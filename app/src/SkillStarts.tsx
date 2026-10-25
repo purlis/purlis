@@ -18,6 +18,10 @@ export type SkillStart = "draft" | "sources" | "blank";
 /** New skill's words, on the studio's toolbar, its starts and the Skills view alike. */
 export const NEW_SKILL = "New skill";
 
+/** **The Skills view's New skill** (#3266): the three starts as a menu, so its words are the
+ *  studio's own and an ellipsis, and no button in the window is named twice. */
+export const NEW_SKILL_MENU = `${NEW_SKILL}…`;
+
 /** The words of the act that opens a chat to draft a skill, wherever it is offered. */
 export const DRAFT_WITH_A_CHAT = "Ask a chat to draft a skill";
 
@@ -55,38 +59,48 @@ export const SKILL_STARTS: readonly {
 /**
  * **What a project with no skill of its own is offered** (SK-22, decision 42): the claim that it
  * has none, that its chats still get the skills listed, and the three starts. The Skill studio
- * and the Skills view (#3266) draw this one; each says what a start does there.
+ * draws the starts as buttons; the Skills view (#3266), whose New skill… holds them as a menu,
+ * names that instead (`from`), so each start is one button in the window, never two of a name.
  */
 export function SkillStarts({
   busy,
   onStart,
+  from,
   testid = "skill-studio-empty",
 }: {
   busy: boolean;
   onStart: (start: SkillStart) => void;
+  /** Where the starts are instead of here, by the words of what holds them. */
+  from?: string;
   testid?: string;
 }) {
   return (
     <EmptyState
       headline="This project has no skills of its own yet"
-      body="Every chat still gets the skills listed here. Start one of the project's own:"
+      body={
+        from === undefined
+          ? "Every chat still gets the skills listed here. Start one of the project's own:"
+          : `Every chat still gets the skills listed here. Start one of the project's own from ${from}`
+      }
       mark={Sparkles}
       testid={testid}
       action={
-        <ul className="skill-starts" aria-label="Ways to start a skill">
-          {SKILL_STARTS.map(({ start, label, about, mark: Mark }) => (
-            <li key={start}>
-              <Button
-                icon={<Mark aria-hidden="true" />}
-                isDisabled={busy}
-                onPress={() => onStart(start)}
-              >
-                {label}
-              </Button>
-              <p className="honest">{about}</p>
-            </li>
-          ))}
-        </ul>
+        from !== undefined ? undefined : (
+          <ul className="skill-starts" aria-label="Ways to start a skill">
+            {SKILL_STARTS.map(({ start, label, about, mark: Mark }) => (
+              <li key={start}>
+                <Button
+                  icon={<Mark aria-hidden="true" />}
+                  isDisabled={busy}
+                  onPress={() => onStart(start)}
+                >
+                  {label}
+                </Button>
+                <p className="honest">{about}</p>
+              </li>
+            ))}
+          </ul>
+        )
       }
     />
   );

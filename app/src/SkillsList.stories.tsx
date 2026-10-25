@@ -134,16 +134,22 @@ export const ByLevel: Story = {
 };
 
 /**
- * **A project with no skill of its own**: the studio's claim and its three starts over the
- * skills its chats already get, each start reached by Tab.
+ * **A project with no skill of its own**: the studio's claim over the skills its chats already
+ * get, naming New skill…, whose menu holds the three starts: Enter opens it, Enter starts one.
  */
 export const NoSkillsOfItsOwn: Story = {
   render: () => <Skills starts rows={OPS.filter((row) => row.skill.level === "built-in")} />,
   play: async ({ canvas, userEvent }) => {
-    const starts = canvas.getByRole("list", { name: "Ways to start a skill" });
-    const draft = within(starts).getByRole("button", { name: "Ask a chat to draft a skill" });
-    draft.focus();
-    await untilFocused(() => draft, "Skills: the first start has the keyboard");
+    expect(canvas.getByTestId("skills-view-empty")).toHaveTextContent("from New skill…");
+    const button = canvas.getByRole("button", { name: "New skill…" });
+    button.focus();
+    await untilFocused(() => button, "Skills: New skill… has the keyboard");
+    await userEvent.keyboard("{Enter}");
+    const menu = await screen.findByRole("menu", { name: "Ways to start a skill" });
+    await untilFocused(
+      () => within(menu).getByRole("menuitem", { name: /Ask a chat/ }),
+      "Skills: the menu opens on its first start",
+    );
     await userEvent.keyboard("{Enter}");
     await waitFor(() => expect(canvas.getByRole("status")).toHaveTextContent("Started draft"));
     expectFocusInSight();

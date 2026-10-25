@@ -305,7 +305,7 @@ describe("the view's header", () => {
     const hands = view();
     await list();
 
-    await userEvent.click(screen.getByRole("button", { name: "New skill" }));
+    await userEvent.click(screen.getByRole("button", { name: "New skill…" }));
     const starts = await screen.findByRole("menu", { name: "Ways to start a skill" });
     expect(
       within(starts)
@@ -322,7 +322,7 @@ describe("the view's header", () => {
       { plane: "p", kind: "draft", level: { at: "workspace", name: "ops", local: false } },
     ]);
 
-    await userEvent.click(screen.getByRole("button", { name: "New skill" }));
+    await userEvent.click(screen.getByRole("button", { name: "New skill…" }));
     const again = await screen.findByRole("menu", { name: "Ways to start a skill" });
     await userEvent.click(within(again).getByRole("menuitem", { name: /blank template/ }));
     expect(hands.onOpenView).toHaveBeenLastCalledWith(
@@ -388,18 +388,19 @@ describe("Only this chat's", () => {
 });
 
 describe("a project with no skill of its own", () => {
-  it("is offered the studio's claim and its three starts", async () => {
+  it("is offered the studio's claim, and its three starts under New skill…", async () => {
     core(() =>
       studio([skill("secrets", { level: "built-in" })], { first: { starts: true, unmoved: null } }),
     );
     view();
     const empty = await screen.findByTestId("skills-view-empty");
     expect(within(empty).getByText("This project has no skills of its own yet")).toBeVisible();
-    expect(
-      within(within(empty).getByRole("list", { name: "Ways to start a skill" })).getAllByRole(
-        "listitem",
-      ),
-    ).toHaveLength(3);
+    // Its three starts are New skill…'s, so no start is a button of a name the studio's is too.
+    expect(empty).toHaveTextContent("Start one of the project's own from New skill…");
+    expect(within(empty).queryByRole("button")).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "New skill…" }));
+    const starts = await screen.findByRole("menu", { name: "Ways to start a skill" });
+    expect(within(starts).getAllByRole("menuitem")).toHaveLength(3);
     // The skills its chats already get are listed under it.
     expect(rowOf("secrets")).toBeInTheDocument();
   });
