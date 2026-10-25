@@ -739,9 +739,12 @@ fn the_quiet_ghost_is_a_variant_of_the_next_manifest_held_to_its_words_floor() {
     assert_eq!(held["text"], "text.quiet");
     assert_eq!(held["border"], "transparent");
     assert_eq!(held["hover"], "surface.hover");
-    // The built-in themes draw it clear of its floor on every ground a button stands on.
+    // A theme's own quiet look is measured: words it changes that still clear the floor on
+    // every ground a button stands on raise nothing. (A rule equal to the default is not
+    // measured here; the built-in themes' quiet tier is held by `check::PAIRS`, which
+    // `every_built_in_still_clears_the_check` runs.)
     let clean = load(&with_parts(
-        json!({ "button.root.quiet.text": "text.quiet" }),
+        json!({ "button.root.quiet.text": "text.primary" }),
     ));
     assert!(
         parts::fallen(clean.theme.first()).is_empty(),
@@ -841,9 +844,11 @@ fn the_buttons_family_default_is_what_button_css_draws() {
             "text": token(first("color", &[own, base])),
             "border": token(declared(own, "border-color").unwrap_or(base_border)),
             "hover": token(first("background-color", &[own_hover, own, base_hover])),
+            // The words under the pointer: the quiet ghost's come up to the primary (#3214).
+            "hover_text": token(first("color", &[own_hover, own, base])),
         });
         let held = parts::defaults_json(variant);
-        for key in ["fill", "text", "border", "hover"] {
+        for key in ["fill", "text", "border", "hover", "hover_text"] {
             assert_eq!(held[key], drawn[key], "{variant}'s {key}");
         }
     }

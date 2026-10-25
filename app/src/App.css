@@ -671,9 +671,9 @@ body {
    `bare`; `N more` is a quiet button with words, which wears `show-more`. */
 
 /* **`End this pane's chat` is not on the bar any more** — it is in each pane's own corner, and
-   `.pane-doing > .ends-a-chat` in `paneFrame.css` is where its danger hover now lives. The rule that was here
-   is gone with the button rather than left behind matching nothing: dead CSS is how a rule
-   comes to be copied for a reason that stopped being true. */
+   `.pane-doing > .ends-a-chat` in `paneFrame.css` is where its danger hover now lives. The
+   rule that was here is gone with the button rather than left behind matching nothing: dead
+   CSS is how a rule comes to be copied for a reason that stopped being true. */
 
 .trouble {
   margin: 0;

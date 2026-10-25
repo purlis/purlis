@@ -1443,6 +1443,7 @@ pub(super) fn defaults_json(variant: &str) -> Value {
         "text": rest.text,
         "border": rest.border,
         "hover": hover.fill,
+        "hover_text": hover.text,
         "selected": { "fill": selected.fill, "border": selected.border },
         "selected_hover": { "fill": both.fill, "border": both.border },
     })

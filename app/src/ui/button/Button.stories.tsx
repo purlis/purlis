@@ -101,6 +101,45 @@ export const Quiet: Story = {
   args: { variant: "quiet", label: "3 more" },
   play: pressedByTheKeyboard,
 };
+/**
+ * **The quiet ghost as the window draws it** (#3214): small icon marks in a pane's corner, split
+ * and close, where the close that ends a chat takes the danger colour under the pointer
+ * (`paneFrame.css`), and the split keeps the quiet hover.
+ */
+export const QuietPaneMarks: Story = {
+  render: () => (
+    // The pane's group shows itself on the pane's hover or focus; here it is always shown.
+    <div className="pane-doing" style={{ visibility: "visible" }}>
+      <IconButton icon={<Plus />} aria-label="Split right" variant="quiet" size="sm" />
+      <IconButton
+        icon={<X />}
+        aria-label="End this pane's chat"
+        variant="quiet"
+        size="sm"
+        className="ends-a-chat"
+      />
+      <span data-testid="danger" style={{ background: "var(--danger-surface)" }} />
+    </div>
+  ),
+  play: async ({ canvas, userEvent }) => {
+    const split = canvas.getByRole("button", { name: "Split right" });
+    const close = canvas.getByRole("button", { name: "End this pane's chat" });
+    for (const one of [split, close]) {
+      const box = one.getBoundingClientRect();
+      await expect(box.height).toBeGreaterThanOrEqual(24);
+      await expect(Math.round(box.width)).toBe(Math.round(box.height));
+    }
+    const danger = getComputedStyle(canvas.getByTestId("danger")).backgroundColor;
+    await userEvent.hover(close);
+    await waitFor(() => expect(getComputedStyle(close).backgroundColor).toBe(danger));
+    await userEvent.hover(split);
+    await waitFor(() => expect(getComputedStyle(split).backgroundColor).not.toBe(danger));
+    await userEvent.unhover(split);
+    await userEvent.tab();
+    await expect(split).toHaveFocus();
+    expectFocusInSight();
+  },
+};
 export const Link: Story = {
   args: { variant: "link", label: "Open its settings" },
   play: pressedByTheKeyboard,

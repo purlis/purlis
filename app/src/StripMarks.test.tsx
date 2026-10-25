@@ -8,6 +8,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { Closer, Doer, MARKS, Pin, ShowMore } from "./StripMarks";
+import { PaneDoing } from "./LayoutPanes";
+import { drawnWith } from "./cascade.testkit";
 import type { Offer } from "./actions";
 
 /**
@@ -338,5 +340,47 @@ describe("each strip says which layer it is, by shade rather than by indent or l
         "0",
       );
     }
+  });
+});
+
+/**
+ * **A pane's close that ends a chat says so under the pointer** (#3214): the quiet ghost's hover
+ * would draw it as light as a split, so `paneFrame.css` gives it the danger colour, as a tab's
+ * `×` has. A close that ends nothing (a view's, a task's minimise) keeps the quiet hover.
+ */
+describe("a pane's split and close", () => {
+  function drawn(ends: boolean) {
+    const close = offer("pane.close", ends ? "End this pane's chat" : "Close this view", {
+      does: { verb: "closePane", ends },
+    });
+    render(
+      <PaneDoing
+        pane={0}
+        offerFor={(id) => (id === "pane.split.right" ? offer(id, "Split right") : undefined)}
+        closeOf={() => close}
+        onPaneDoes={() => {}}
+      />,
+    );
+    return {
+      split: screen.getByRole("button", { name: "Split right" }),
+      close: screen.getByRole("button", { name: close.title }),
+    };
+  }
+
+  it("draws the close that ends a chat in the danger colour under the pointer", () => {
+    const { split, close } = drawn(true);
+    expect(close).toHaveAttribute("data-variant", "quiet");
+    expect(close).toHaveClass("ends-a-chat");
+    expect(drawnWith(close, "background-color", { hover: true })).toBe("var(--danger-surface)");
+    expect(drawnWith(close, "color", { hover: true })).toBe("var(--danger-text)");
+    // At rest it is as quiet as the split beside it, and the split keeps the quiet hover.
+    expect(drawnWith(close, "color")).toBe("var(--text-quiet)");
+    expect(drawnWith(split, "background-color", { hover: true })).toBe("var(--surface-hover)");
+  });
+
+  it("keeps the quiet hover on a close that ends nothing", () => {
+    const { close } = drawn(false);
+    expect(close).not.toHaveClass("ends-a-chat");
+    expect(drawnWith(close, "background-color", { hover: true })).toBe("var(--surface-hover)");
   });
 });

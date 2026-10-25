@@ -275,9 +275,12 @@ export function ShowMore({
         aria-haspopup="menu"
         aria-expanded={open !== false}
         onPointerDown={(event) => event.preventDefault()}
-        // A press by Enter or Space lands on the menu's first row.
+        // A press by Enter or Space, or a screen reader's (a virtual press), lands on the
+        // menu's first row.
         onPress={(event) =>
-          setOpen((up) => (up ? false : event.pointerType === "keyboard" ? "first" : true))
+          setOpen((up) =>
+            up ? false : ["keyboard", "virtual"].includes(event.pointerType) ? "first" : true,
+          )
         }
         onKeyDown={opensOnTheArrows(open !== false, setOpen)}
       >
