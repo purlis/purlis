@@ -466,14 +466,12 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 .rows
                 .iter()
                 .map(|row| (None, row))
-                .chain(
-                    list.harnesses.iter().flat_map(|one| {
-                        one.rows
-                            .iter()
-                            .chain(&one.repo_left_out)
-                            .map(|row| (Some(one.harness), row))
-                    }),
-                )
+                .chain(list.harnesses.iter().flat_map(|one| {
+                    one.rows
+                        .iter()
+                        .chain(&one.repo_left_out)
+                        .map(|row| (Some(one.harness), row))
+                }))
                 .filter(|(_, row)| row.name == name)
                 .collect();
             if copies.is_empty() {

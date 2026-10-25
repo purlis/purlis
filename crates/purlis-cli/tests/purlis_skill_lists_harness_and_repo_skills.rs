@@ -428,7 +428,11 @@ fn skill_list_says_under_codex_and_opencode_which_skills_a_repo_leaves_out_and_w
     // place of the workspace's (decision 51), and the list says so under each, once.
     let project = Project::new();
     let root = project.at.join("plane");
-    write_skill(&root.join("workspaces/alpha/skills"), "deploy", "Deploys alpha.");
+    write_skill(
+        &root.join("workspaces/alpha/skills"),
+        "deploy",
+        "Deploys alpha.",
+    );
     write_skill(
         &root.join("workspaces/alpha/app/.agents/skills"),
         "deploy",

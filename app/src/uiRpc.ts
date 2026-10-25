@@ -922,6 +922,8 @@ export const commands = {
 	no_built_in: string[],
 	/**  Skills the chat would have loaded that could not be loaded, each with why. */
 	broken: SkillBroken[],
+	/**  The project's skills the repo the chat works in leaves out, each with why (SK-53). */
+	by_a_repo: SkillBroken[],
 } | null, string>(__TAURI_INVOKE("chat_skills_missing", { plane, session })),
 	putAwayChatSkillsMissing: __WINDOW_ONLY_RESULT,
 	/**  The templates a new skill can start from. */
@@ -9479,6 +9481,8 @@ export type SkillsMissing = {
 	no_built_in: string[],
 	/**  Skills the chat would have loaded that could not be loaded, each with why. */
 	broken: SkillBroken[],
+	/**  The project's skills the repo the chat works in leaves out, each with why (SK-53). */
+	by_a_repo: SkillBroken[],
 };
 
 /**  What the window says about a slow launch: its line, and the relaunch that line suggests. */
@@ -9792,6 +9796,11 @@ export type StudioHarness = {
 	plugins: StudioPlugin[],
 	/**  The skills it finds itself, read only, each by the name it knows it by. */
 	skills: StudioSkill[],
+	/**
+	 *  The project's skills a repo of the workspace leaves out of its chats in that clone, each
+	 *  with why (SK-53): the core's `HarnessInTheStudio::repo_left_out`.
+	 */
+	repo_left_out: StudioSkill[],
 };
 
 /**  A level a skill can be moved to or made at, and its words. */

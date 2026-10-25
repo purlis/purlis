@@ -512,6 +512,7 @@ function withClaudeCode(offLangfuse: boolean) {
         title: "Claude Code",
         unsupported: null,
         only_off: null,
+        repo_left_out: [],
         trouble: null,
         plugins: [
           {
@@ -580,6 +581,7 @@ function withClaudeCode(offLangfuse: boolean) {
         title: "opencode",
         unsupported: "plugins for opencode are not supported yet — it has no switch",
         only_off: null,
+        repo_left_out: [],
         trouble: null,
         plugins: [],
         skills: [],
@@ -679,6 +681,7 @@ describe("each program's own skills in the Skill studio (SK-6)", () => {
       title: "Codex",
       unsupported: null,
       only_off: "Codex is handed a plugin only to turn it off",
+      repo_left_out: [],
       trouble: null,
       plugins: [
         {
@@ -736,13 +739,13 @@ describe("each program's own skills in the Skill studio (SK-6)", () => {
 
     const section = await screen.findByTestId("skill-studio-opencode");
     expect(
-      within(section).getByText("opencode chats in a repo here start without 1 skill of this project's:"),
+      within(section).getByText(
+        "opencode chats in a repo here start without 1 skill of this project's:",
+      ),
     ).toBeInTheDocument();
     const row = within(section).getByTestId("repo-left-out-opencode-ship");
     expect(row).toHaveTextContent("workspace");
-    expect(row).toHaveTextContent(
-      "Left out: purlis could not read the skills folder of web whole",
-    );
+    expect(row).toHaveTextContent("Left out: purlis could not read the skills folder of web whole");
     expect(
       within(screen.getByTestId("skill-studio-claude")).queryByText(/start without/),
     ).toBeNull();

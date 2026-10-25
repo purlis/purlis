@@ -532,7 +532,12 @@ fn harnesses(
                     })
                     .collect(),
                 skills: one.rows.iter().cloned().map(outside_shown).collect(),
-                repo_left_out: one.repo_left_out.iter().cloned().map(outside_shown).collect(),
+                repo_left_out: one
+                    .repo_left_out
+                    .iter()
+                    .cloned()
+                    .map(outside_shown)
+                    .collect(),
             }
         })
         .collect();

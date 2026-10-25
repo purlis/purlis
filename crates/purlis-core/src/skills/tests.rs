@@ -1583,11 +1583,15 @@ fn a_chat_in_a_clone_is_told_which_skills_its_repo_leaves_out_and_why() {
         )]
     );
     let mut in_web = said(Harness::Codex, &web);
-    in_web.sort();
+    in_web.sort_by(|a, b| a.0.cmp(&b.0));
     assert_eq!(
         in_web,
         [
-            ("review".to_owned(), Origin::Workspace, WEB_UNREAD.to_owned()),
+            (
+                "review".to_owned(),
+                Origin::Workspace,
+                WEB_UNREAD.to_owned()
+            ),
             ("ship".to_owned(), Origin::Workspace, WEB_UNREAD.to_owned()),
         ]
     );
@@ -1627,7 +1631,7 @@ fn the_studio_lists_under_each_harness_the_skills_a_repo_leaves_out_of_its_chats
             .iter()
             .map(|row| (row.name.clone(), row.origin, row.left_out.clone()))
             .collect();
-        rows.sort();
+        rows.sort_by(|a, b| a.0.cmp(&b.0).then(a.2.cmp(&b.2)));
         rows
     };
     for harness in [Harness::Codex, Harness::Opencode] {
