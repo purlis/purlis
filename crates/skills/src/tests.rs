@@ -1638,8 +1638,8 @@ fn a_repo_skills_folder_purlis_could_not_list_takes_no_name_and_leaves_out_every
             Vec::<(&str, Origin, bool)>::new(),
             "{route:?}"
         );
-        let why = "left out: purlis could not read a skills folder in this repo whole, so a copy \
-                   of this skill may be there, and a chat in the repo would get that one"
+        let why = "purlis could not read the skills folder of api whole, so a copy of this \
+                   skill may be there, and a chat in that repo would get that one"
             .to_owned();
         assert_eq!(
             left_out(&set),

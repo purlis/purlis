@@ -62,7 +62,7 @@ pub use budget::{Budget, Over, Spent};
 pub use compat::{Compat, Field, Fit, Honours, ManualOnly, compat, handed_text, widening_said};
 pub use declared::{Argument, Declared, Given, declared};
 pub use grant::{Grant, grant_file, grant_of, set_grant};
-pub use handed::{Frontmatter, MOST_BYTES, Refusal, read_skill_md};
+pub use handed::{Frontmatter, MOST_BYTES, Refusal, read_skill_md, read_skill_md_of};
 pub use lifecycle::{About, Deprecated, Lifecycle, about_of, set_lifecycle, set_owners};
 pub use lint::{BuiltInLints, Finding, Lint, Severity, SkillFiles, SkillLint};
 pub use load::{Entry, Loaded, Narrowing, POINTER, SkillFolder, by_name, find, load};
@@ -297,7 +297,10 @@ pub enum Reason {
     /// A plane skill a repo copy could hide, where purlis could not list a skills folder of the
     /// chat's clone whole ([`Unread::Crowded`], SK-44): left out, since purlis cannot tell whether
     /// the repo has a skill of its name.
-    RepoUnread,
+    RepoUnread {
+        /// The clone's name.
+        repo: String,
+    },
     /// A plane skill its project archived (SK-19, decision 62): it never loads, takes no name
     /// from another copy, and is restored by making it active again.
     Archived,
@@ -375,9 +378,10 @@ impl std::fmt::Display for Reason {
             }
             Self::OffForTheHarness => f.write_str("turned off for this project's chats"),
             Self::HiddenByBuiltIn => f.write_str("hidden by purlis's built-in skill of this name"),
-            Self::RepoUnread => f.write_str(
-                "left out: purlis could not read a skills folder in this repo whole, so a copy \
-                 of this skill may be there, and a chat in the repo would get that one",
+            Self::RepoUnread { repo } => write!(
+                f,
+                "purlis could not read the skills folder of {repo} whole, so a copy of this \
+                 skill may be there, and a chat in that repo would get that one"
             ),
             Self::Archived => {
                 f.write_str("archived: it never loads until it is restored from its tab")
@@ -604,7 +608,11 @@ impl SkillSet {
         for one in outside {
             if one.unread == Some(Unread::Crowded) {
                 // Fail closed: any plane skill may have a repo copy purlis did not read.
-                if !one.off && one.origin == Origin::Repo && route != Route::Plugin {
+                let repo = match &one.owner {
+                    Owner::Repo(repo) => Some(repo.clone()),
+                    Owner::You | Owner::Plugin(_) => None,
+                };
+                if let Some(repo) = repo.filter(|_| !one.off && route != Route::Plugin) {
                     let (hidden, kept) = std::mem::take(&mut self.effective)
                         .into_iter()
                         .partition(|e| e.route != Route::Own && e.origin != Origin::BuiltIn);
@@ -621,7 +629,7 @@ impl SkillSet {
                                     .parent()
                                     .map(Path::to_path_buf)
                                     .unwrap_or_default(),
-                                reason: Reason::RepoUnread,
+                                reason: Reason::RepoUnread { repo: repo.clone() },
                             }
                         }));
                 }

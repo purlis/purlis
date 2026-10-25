@@ -1122,15 +1122,8 @@ impl Folder {
         })
     }
 
-    /// `name`'s text, read as [`read_opened`] reads, never through a link: a config, of at most
-    /// [`MOST_PROJECT_CONFIG_BYTES`].
+    /// `name`'s text, read as [`read_opened`] reads, never through a link.
     fn read(&self, name: &str) -> Result<Option<String>, ()> {
-        self.read_at_most(name, MOST_PROJECT_CONFIG_BYTES)
-    }
-
-    /// `name`'s text, of at most `most` bytes, read as [`read_opened`] reads, never through a
-    /// link.
-    fn read_at_most(&self, name: &str, most: u64) -> Result<Option<String>, ()> {
         use rustix::fs::OFlags;
         let opened = rustix::fs::openat(
             &self.0,
@@ -1138,7 +1131,10 @@ impl Folder {
             OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC,
             rustix::fs::Mode::empty(),
         );
-        read_opened(opened.map(std::fs::File::from).map_err(Into::into), most)
+        read_opened(
+            opened.map(std::fs::File::from).map_err(Into::into),
+            MOST_PROJECT_CONFIG_BYTES,
+        )
     }
 
     /// Every name in this folder that is text, in no order, or why it is not listed whole
@@ -1201,15 +1197,11 @@ impl Folder {
     }
 
     fn read(&self, name: &str) -> Result<Option<String>, ()> {
-        self.read_at_most(name, MOST_PROJECT_CONFIG_BYTES)
-    }
-
-    fn read_at_most(&self, name: &str, most: u64) -> Result<Option<String>, ()> {
         let path = self.0.join(name);
         if self.kind(name, false) == Some(Kind::Link) {
             return Err(());
         }
-        read_opened(std::fs::File::open(path), most)
+        read_opened(std::fs::File::open(path), MOST_PROJECT_CONFIG_BYTES)
     }
 
     fn names(&self) -> Result<Vec<String>, NotListed> {

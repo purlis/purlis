@@ -1475,3 +1475,43 @@ fn a_repo_skills_folder_purlis_could_not_list_leaves_the_plane_skills_out_of_a_c
     assert_eq!(after[0].unread, Some(purlis_skills::Unread::Crowded));
     assert_eq!(lay_out(&after), None, "no plane skill is handed");
 }
+
+#[cfg(unix)]
+#[test]
+fn a_skill_of_the_persons_own_that_is_a_hard_link_is_badged_and_never_refused() {
+    // SK-44 (#3133): the Nix store, `cp -al` and `rsync --link-dest` leave the person's own
+    // skills as hard links. purlis reads them for its badges and lint as it lists them, so
+    // their row says what each harness does with them and carries no refusal.
+    let tmp = tempfile::tempdir().unwrap();
+    let plane = tmp.path().join("plane");
+    std::fs::create_dir_all(&plane).unwrap();
+    std::fs::write(plane.join("charter.toml"), "[plane]\n").unwrap();
+    let store = tmp.path().join("store/nix");
+    std::fs::create_dir_all(&store).unwrap();
+    std::fs::write(
+        store.join("SKILL.md"),
+        "---\nname: nix\ndescription: Comes from the store, linked in by the person.\n---\n",
+    )
+    .unwrap();
+    let config = tmp.path().join("claude-config");
+    std::fs::create_dir_all(config.join("skills/nix")).unwrap();
+    std::fs::hard_link(store.join("SKILL.md"), config.join("skills/nix/SKILL.md")).unwrap();
+    let chat = [("CLAUDE_CONFIG_DIR".to_owned(), config.display().to_string())];
+    let env = crate::harness_plugin::Env {
+        chat: &chat,
+        home: Some(tmp.path().join("home")),
+        process: false,
+    };
+
+    let list = studio_list(None, &plane, None, None, &env);
+
+    let row = list
+        .harnesses
+        .iter()
+        .find(|one| one.harness == Harness::ClaudeCode)
+        .and_then(|one| one.rows.iter().find(|row| row.name == "nix"))
+        .expect("nix listed");
+    assert_eq!(row.compat.len(), 1, "{:?}", row.compat);
+    assert!(!row.compat[0].compat.widens(), "{:?}", row.compat);
+    assert_eq!(row.lint, Vec::<String>::new());
+}

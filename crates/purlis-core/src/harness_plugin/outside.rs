@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 
 use purlis_skills::{Origin, OutsideSkill, Owner, Skill, Switch, Unread};
 
-use super::{Adapter, Child, Choices, Env, Folder, Kind, SkillsAt};
+use super::{Adapter, Child, Choices, Env, Folder, SkillsAt};
 
 /// One skill [`skills_in`] found: the skill, the root its `SKILL.md` is read from, and why
 /// purlis did not read it, where it did not.
@@ -168,11 +168,11 @@ fn walk(top: &Folder, rel: &str) -> Option<Folder> {
 /// `SKILL.md` is read from: `root` where links are named, its own folder where they are followed.
 /// A folder that is not a whole skill is not listed: it is no skill the harness loads either.
 ///
-/// **Each `SKILL.md` is read with one limit, [`purlis_skills::MOST_BYTES`], never through a
-/// link** (SK-44). In a clone (`Links::Named`), as every skill's own file is
-/// ([`purlis_skills::read_skill_md`]): through folders held from its root, a hard link refused.
-/// In the person's own folders (`Links::Followed`), through the folder held open, a hard link
-/// read: the Nix store, `cp -al` and `rsync --link-dest` leave them there. One purlis does not
+/// **Each `SKILL.md` is read by the one reader of a skill's own file**
+/// ([`purlis_skills::read_skill_md_of`], SK-44): through folders held from its root, never
+/// through a link, of at most [`purlis_skills::MOST_BYTES`]; a hard link refused in a clone
+/// (`Links::Named`) and read in the person's own folders (`Links::Followed`), where the Nix store,
+/// `cp -al` and `rsync --link-dest` leave them. One purlis does not
 /// read is listed by its folder's name, saying so ([`Unread::Refused`]), as a link is
 /// ([`Unread::Link`]); and a `dir` purlis cannot list whole is read for none of them, and listed
 /// once by its own name ([`Unread::Crowded`]).
@@ -214,8 +214,8 @@ fn skills_in(dir: &Folder, shown: &Path, links: Links, root: &Path) -> Vec<Found
     let mut out = Vec::new();
     for name in names {
         let path = shown.join(&name).join(purlis_skills::FILE);
-        let folder = match dir.child(&name, links == Links::Followed) {
-            Child::Folder(folder) => folder,
+        match dir.child(&name, links == Links::Followed) {
+            Child::Folder(_) => {}
             Child::Link => {
                 out.push(unread(
                     &name,
@@ -227,31 +227,18 @@ fn skills_in(dir: &Folder, shown: &Path, links: Links, root: &Path) -> Vec<Found
                 continue;
             }
             Child::Absent => continue,
+        }
+        let (root, origin) = match links {
+            Links::Named => (root.to_path_buf(), Origin::Repo),
+            Links::Followed => (shown.join(&name), Origin::Harness),
         };
-        let (text, root) = match links {
-            Links::Named => match purlis_skills::read_skill_md(root, &path) {
-                Ok(text) => (text, root.to_path_buf()),
-                Err(purlis_skills::Refusal::FileLink | purlis_skills::Refusal::TooLarge) => {
-                    out.push(unread(&name, refused.clone(), Unread::Refused));
-                    continue;
-                }
-                Err(_) => continue,
-            },
-            Links::Followed => {
-                match folder.read_at_most(purlis_skills::FILE, purlis_skills::MOST_BYTES) {
-                    Ok(Some(text)) => (text, shown.join(&name)),
-                    Ok(None) => continue,
-                    Err(()) => {
-                        if matches!(
-                            folder.kind(purlis_skills::FILE, false),
-                            Some(Kind::File | Kind::Link)
-                        ) {
-                            out.push(unread(&name, refused.clone(), Unread::Refused));
-                        }
-                        continue;
-                    }
-                }
+        let text = match purlis_skills::read_skill_md_of(&root, &path, origin) {
+            Ok(text) => text,
+            Err(purlis_skills::Refusal::FileLink | purlis_skills::Refusal::TooLarge) => {
+                out.push(unread(&name, refused.clone(), Unread::Refused));
+                continue;
             }
+            Err(_) => continue,
         };
         if let Ok(skill) = purlis_skills::parsed(&text, path) {
             out.push((skill, root, None));

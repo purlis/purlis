@@ -1633,19 +1633,20 @@ pub fn lint(plane: &Path, level: &verbs::Level, name: &str, text: &str) -> Vec<F
 /// skill, read where it lies by the one reader that follows no link, each finding as anywhere
 /// but the editor says it ([`Finding::shown`]). What its studio row shows.
 fn outside_lint(known: &Known, skill: &OutsideSkill) -> Vec<String> {
-    let findings = match purlis_skills::read_skill_md(&skill.root, &skill.skill.path) {
-        Ok(text) => linted(
-            known,
-            Some((&skill.root, &skill.skill.path)),
-            &skill.skill.name,
-            &text,
-            skill.origin,
-        ),
-        Err(why) => vec![Finding {
-            severity: purlis_skills::Severity::Warns,
-            lint: purlis_skills::Lint::Refused(why),
-        }],
-    };
+    let findings =
+        match purlis_skills::read_skill_md_of(&skill.root, &skill.skill.path, skill.origin) {
+            Ok(text) => linted(
+                known,
+                Some((&skill.root, &skill.skill.path)),
+                &skill.skill.name,
+                &text,
+                skill.origin,
+            ),
+            Err(why) => vec![Finding {
+                severity: purlis_skills::Severity::Warns,
+                lint: purlis_skills::Lint::Refused(why),
+            }],
+        };
     findings.iter().filter_map(Finding::shown).collect()
 }
 
@@ -1707,7 +1708,7 @@ fn badges(
     origin: Origin,
     harnesses: &[Harness],
 ) -> Vec<HarnessCompat> {
-    let text = purlis_skills::read_skill_md(root, path);
+    let text = purlis_skills::read_skill_md_of(root, path, origin);
     harnesses
         .iter()
         .map(|harness| HarnessCompat {

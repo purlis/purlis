@@ -26,6 +26,16 @@ pub(crate) enum NotRead {
     TooLarge,
 }
 
+/// Whether a file with a second name (a hard link) is read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HardLinks {
+    /// Refused: it reaches past its folder as a link does. A folder a chat can write.
+    Refused,
+    /// Read: the person's own folders, where the Nix store, `cp -al` and `rsync --link-dest`
+    /// leave them (SK-44).
+    Read,
+}
+
 /// The end of a sentence about the file: "it cannot be read (…)", "it is not a plain file", "it
 /// is too large". The one way a file [`read_plain`] read nothing is said.
 impl std::fmt::Display for NotRead {
@@ -78,8 +88,9 @@ fn parts(rel: &Path) -> Option<Vec<&OsStr>> {
 
 /// **The text of `file`, opened as the plain file `meta` says it is**, of at most `most` bytes:
 /// refused where it is no plain file, has a second name (a hard link, which reaches past its
-/// folder as a link does), or is larger. The one reader under [`read_plain`] and [`Folder::read`].
-fn read_opened(file: std::fs::File, most: u64) -> Result<String, NotRead> {
+/// folder as a link does) and `hard_links` refuses it, or is larger. The one reader under
+/// [`read_plain`] and [`Folder::read`].
+fn read_opened(file: std::fs::File, most: u64, hard_links: HardLinks) -> Result<String, NotRead> {
     use std::io::Read as _;
     let unreadable = |why: std::io::Error| NotRead::Unreadable(why.to_string());
     let meta = file.metadata().map_err(unreadable)?;
@@ -89,10 +100,12 @@ fn read_opened(file: std::fs::File, most: u64) -> Result<String, NotRead> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt as _;
-        if meta.nlink() > 1 {
+        if meta.nlink() > 1 && hard_links == HardLinks::Refused {
             return Err(NotRead::NotPlain);
         }
     }
+    #[cfg(not(unix))]
+    let _ = hard_links;
     if meta.len() > most {
         return Err(NotRead::TooLarge);
     }
@@ -128,7 +141,7 @@ pub(crate) fn read_plain(path: &Path, most: u64) -> Result<String, NotRead> {
             return Err(NotRead::NotPlain);
         }
     }
-    read_opened(file, most)
+    read_opened(file, most, HardLinks::Refused)
 }
 
 /// A folder held open, and the path it is shown at.
@@ -246,8 +259,18 @@ impl Folder {
     }
 
     /// **The text of the plain file `name` in it**, of at most `most` bytes, never through a
-    /// link ([`read_opened`]).
+    /// link, and a hard link refused ([`read_opened`]).
     pub(crate) fn read(&self, name: &OsStr, most: u64) -> Result<String, NotRead> {
+        self.read_as(name, most, HardLinks::Refused)
+    }
+
+    /// [`Self::read`], a hard link read or refused as `hard_links` says.
+    pub(crate) fn read_as(
+        &self,
+        name: &OsStr,
+        most: u64,
+        hard_links: HardLinks,
+    ) -> Result<String, NotRead> {
         use rustix::fs::OFlags;
         let opened = rustix::fs::openat(
             &self.fd,
@@ -256,7 +279,7 @@ impl Folder {
             rustix::fs::Mode::empty(),
         );
         match opened {
-            Ok(fd) => read_opened(std::fs::File::from(fd), most),
+            Ok(fd) => read_opened(std::fs::File::from(fd), most, hard_links),
             Err(_) if matches!(self.kind(name), Some(Kind::Link { .. })) => Err(NotRead::NotPlain),
             Err(why) => Err(NotRead::Unreadable(why.to_string())),
         }
@@ -303,6 +326,15 @@ impl Folder {
     }
 
     pub(crate) fn read(&self, name: &OsStr, most: u64) -> Result<String, NotRead> {
+        read_plain(&self.shown.join(name), most)
+    }
+
+    pub(crate) fn read_as(
+        &self,
+        name: &OsStr,
+        most: u64,
+        _hard_links: HardLinks,
+    ) -> Result<String, NotRead> {
         read_plain(&self.shown.join(name), most)
     }
 }
