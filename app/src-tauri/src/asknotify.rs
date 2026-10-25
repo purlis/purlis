@@ -382,7 +382,9 @@ pub fn plain_within(name: &str, most: usize) -> String {
             gap = !out.is_empty();
             continue;
         }
-        if one.is_control() || is_direction_mark(one) {
+        // The marks that turn the direction of the text after them: purlis's generated
+        // Bidi_Control table (SK-49).
+        if one.is_control() || purlis_unicode::bidi_control(one) {
             continue;
         }
         if gap {
@@ -402,11 +404,6 @@ fn capped(text: &str, most: usize) -> String {
     let mut cut: String = text.chars().take(most.saturating_sub(1)).collect();
     cut.push('…');
     cut
-}
-
-/// The marks that turn the direction of the text after them.
-fn is_direction_mark(one: char) -> bool {
-    matches!(one, '\u{200e}' | '\u{200f}' | '\u{061c}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
 }
 
 /// **The person's quiet hours** (#1989): from a time of day until another, in minutes since

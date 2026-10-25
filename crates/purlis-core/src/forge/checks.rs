@@ -514,7 +514,7 @@ mod tests {
         let found = github_annotations(&json!(list)).unwrap();
         assert_eq!(found.len(), ANNOTATIONS_READ);
         assert_eq!(found[0].at.as_deref(), Some("src/a.rs:3"));
-        assert_eq!(found[0].title.as_deref(), Some("unused\\u202e"));
+        assert_eq!(found[0].title.as_deref(), Some("unused⟦U+202E⟧"));
         assert_eq!(found[0].message, "one\ntwo[31m");
         assert_eq!(found[1].message.chars().count(), MESSAGE_LIMIT + 1);
         assert!(found[1].message.ends_with('…'));

@@ -114,12 +114,12 @@ fn answered<F: Fn(&str) -> bool>(log: &str, wanted: &[F]) -> Vec<Option<Committe
 }
 
 /// **`name` as a list draws it**: with no character that draws as nothing (a control, a
-/// zero-width or direction-changing one: the house's one table, [`crate::shown`]), and at
+/// zero-width or direction-changing one: purlis's one rule, [`purlis_unicode::invisible`]), and at
 /// most [`MOST_NAME_CHARS`] characters, a cut one ending in `…`.
 pub fn bounded(name: &str) -> String {
     let kept: Vec<char> = name
         .chars()
-        .filter(|ch| *ch == ' ' || !crate::shown::invisible(*ch))
+        .filter(|ch| *ch == ' ' || !purlis_unicode::invisible(*ch))
         .collect::<String>()
         .trim()
         .chars()

@@ -442,7 +442,7 @@ mod tests {
         assert_eq!(read.brief.as_bytes(), sly.as_bytes());
         assert_eq!(
             read.inert.as_deref(),
-            Some("Check prod.\\u202edne eht ta eteled dna\\u200b\\u001b[2J C:\\\\tmp")
+            Some("Check prod.⟦U+202E⟧dne eht ta eteled dna⟦U+200B⟧⟦U+001B⟧[2J C:\\tmp")
         );
     }
 

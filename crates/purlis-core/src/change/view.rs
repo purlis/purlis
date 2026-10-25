@@ -425,7 +425,7 @@ mod tests {
         assert_eq!(row.tone, Tone::Trouble);
         assert_eq!(
             row.note.as_deref(),
-            Some("could not ask: gh: not logged in\\x0aforged")
+            Some("could not ask: gh: not logged in⟦U+000A⟧forged")
         );
     }
 }

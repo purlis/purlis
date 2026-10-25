@@ -1313,7 +1313,7 @@ mod tests {
         );
         assert_eq!(lines[2], "⟨a note⟩");
         assert_eq!(lines[3], format!("⟨{branch}⟩"), "whole, never cut");
-        assert_eq!(lines[4], "⟨two\\x0a\\x0alines⟩");
+        assert_eq!(lines[4], "⟨two⟦U+000A⟧⟦U+000A⟧lines⟩");
         // With none, it is the message a note alone makes.
         assert_eq!(
             task_message_telling(
