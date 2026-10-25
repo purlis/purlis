@@ -1261,12 +1261,13 @@ button.show-more:focus-visible {
   opacity: 0.92;
 }
 
-/* **The two ways to end the task a pane shows** (#1488), beside its path: words, in the line's
-   own quiet colours, and no cross.
+/* **The two ways to end the task a pane shows** (#1488), beside its path: words, small buttons
+   of the family (#3129), and no cross. The group is as tall as they are, and clips nothing, so
+   a way's focus ring is drawn whole.
 
    **Each is drawn whole or not at all, never cut mid-word, and the group does not shrink.**
    Which of them are drawn is measured (`wholeWays.ts`), as the tab strip measures its tabs:
-   a way that does not fit is set aside, below the group's one line, where its clip hides it.
+   a way that does not fit is set aside, below the group's one line, out of sight.
    So the line gives up the harness's name first, then the breadcrumb's names, then the ways,
    and the state word last. */
 .pane-task-ends {
@@ -1275,8 +1276,6 @@ button.show-more:focus-visible {
   flex: none;
   gap: 0 var(--space-2);
   align-items: center;
-  height: var(--size-chrome);
-  overflow: hidden;
   white-space: nowrap;
 }
 
