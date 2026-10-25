@@ -264,7 +264,8 @@ const VIEW_TABS: { typed: string; id: string; title: string | null }[] = [
   { typed: "Open dispatches", id: "dispatches.show", title: "Dispatches" },
   { typed: "Open shared memory", id: "memory.shared", title: "Shared memory" },
   { typed: "Open Skill studio", id: "skills.studio", title: "Skill studio" },
-  { typed: "Settings", id: "settings.show", title: "Settings" },
+  // At the focused workspace's level, as the palette opens it there (`PlaneView`).
+  { typed: "Settings", id: "settings.show", title: "Settings · alpha" },
   { typed: "Show what steward is", id: "persona.show:steward", title: "steward" },
 ];
 
