@@ -551,6 +551,12 @@ export const ConsentClamped: Story = {
     const allow = within(vault).getByRole("button", { name: "Allow steward to use this vault" });
     const stack = vault.closest(".pane-notices") as HTMLElement;
     await waitFor(() => expect(stack.scrollHeight).toBeGreaterThan(stack.clientHeight + 24));
+    // The band laid out once it overflowed (its scrollbar can take room and wrap the words):
+    // start from a consent that has stood still for the settle time, and is pressed as it is.
+    await new Promise((done) => setTimeout(done, SETTLE_MS + 100));
+    await userEvent.click(allow);
+    expect(allowed).toEqual(["forge"]);
+    allowed.length = 0;
 
     // The person scrolls the band to its end: a scroll, and no move.
     stack.scrollTop = stack.scrollHeight;

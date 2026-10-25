@@ -772,12 +772,14 @@ describe("a granting answer on a pane that moved while its line stood still (#31
             cause="vault-refused:7:forge"
             at="pane"
             label="Vault"
-            fixes={[
-              ...(asks
-                ? [{ label: "Allow forge", onPress: () => allowed.push("forge"), allows: true }]
-                : []),
-              { label: "Keep blocked", onPress: () => undefined },
-            ]}
+            fixes={
+              asks
+                ? [
+                    { label: "Allow forge", onPress: () => allowed.push("forge"), allows: true },
+                    { label: "Keep blocked", onPress: () => undefined },
+                  ]
+                : [{ label: "Keep blocked", onPress: () => undefined }]
+            }
           >
             purlis did not open vault forge.
           </Notice>
