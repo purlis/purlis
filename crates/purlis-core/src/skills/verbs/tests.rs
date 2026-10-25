@@ -896,6 +896,161 @@ fn a_delete_still_running_is_never_finished_by_another_start() {
 }
 
 #[test]
+fn a_delete_neither_committed_nor_put_back_keeps_its_note_and_the_next_start_puts_it_back() {
+    // The save signs and the signer refuses, so no commit; and git's index is locked from the
+    // removal on, so the files cannot be put back either.
+    let tmp = committed_plane();
+    let root = tmp.path().to_path_buf();
+    std::fs::write(
+        root.join("charter.toml"),
+        "schema = 1\n\n[plane]\nmode = \"commit\"\nsign = true\n",
+    )
+    .unwrap();
+    run(&root, &["add", "charter.toml"]);
+    run(&root, &["commit", "-q", "-m", "signs"]);
+    run(&root, &["config", "gpg.program", "false"]);
+    let before = head_of(&root);
+    let locked = root.join(".git/index.lock");
+    let refused = {
+        let _hook = cut::set({
+            let locked = locked.clone();
+            move |at| {
+                if at == cut::Step::Unstaged {
+                    std::fs::write(&locked, "").unwrap();
+                }
+            }
+        });
+        did(&root, |cx| delete(cx, &Level::project(), "release"))
+    };
+
+    let why = refused.unwrap_err();
+    assert!(why.contains("tries again"), "{why}");
+    assert!(!root.join("skills/release/SKILL.md").exists());
+    assert_eq!(
+        notes_left(&root).len(),
+        1,
+        "the note stays for the next start"
+    );
+
+    std::fs::remove_file(&locked).unwrap();
+    let ((), lines) = on(&root, None, interrupted);
+
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert!(
+        matches!(&lines[0], Say::Info(text) if text.contains("put back")),
+        "{lines:?}"
+    );
+    assert_eq!(head_of(&root), before);
+    assert!(root.join("skills/release/SKILL.md").exists());
+    assert_eq!(run(&root, &["status", "--porcelain"]).line(), "");
+    assert!(notes_left(&root).is_empty());
+}
+
+#[test]
+fn a_start_that_can_neither_finish_nor_put_back_warns_and_keeps_the_note() {
+    let tmp = committed_plane();
+    let root = tmp.path();
+    delete_cut_short_at(root, cut::Step::Unstaged);
+    // The save refuses from now on, and git's index is locked: nothing can land or come back.
+    std::fs::write(
+        root.join("charter.toml"),
+        "schema = 1\n\n[plane]\nmode = \"commit\"\nsign = true\n",
+    )
+    .unwrap();
+    run(root, &["config", "gpg.program", "false"]);
+    std::fs::write(root.join(".git/index.lock"), "").unwrap();
+
+    let ((), lines) = on(root, None, interrupted);
+
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert!(
+        matches!(&lines[0], Say::Warn(text) if text.contains("could not be finished or put back")),
+        "{lines:?}"
+    );
+    assert_eq!(notes_left(root).len(), 1, "tried again next time");
+}
+
+#[test]
+fn a_delete_cut_short_whose_skill_is_back_says_it_is_still_here_and_unstages_its_removal() {
+    let tmp = committed_plane();
+    let root = tmp.path();
+    let before = head_of(root);
+    delete_cut_short_at(root, cut::Step::Removed);
+    // The files are back in the working tree, the removal still staged.
+    run(
+        root,
+        &[
+            "restore",
+            "--source=HEAD",
+            "--worktree",
+            "--",
+            "skills/release",
+        ],
+    );
+    assert_eq!(
+        run(root, &["status", "--porcelain", "--untracked-files=no"]).line(),
+        "D  skills/release/SKILL.md"
+    );
+
+    let ((), lines) = on(root, None, interrupted);
+
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert!(
+        matches!(&lines[0], Say::Info(text) if text.contains("release") && text.contains("still here")),
+        "{lines:?}"
+    );
+    assert_eq!(head_of(root), before);
+    assert_eq!(
+        run(root, &["status", "--porcelain"]).line(),
+        "",
+        "the index is as the last commit has it"
+    );
+    assert!(notes_left(root).is_empty());
+}
+
+#[test]
+fn a_planted_or_broken_note_is_taken_away_and_nothing_else_is_done() {
+    let tmp = committed_plane();
+    let root = tmp.path();
+    let before = head_of(root);
+    let dir = crate::plane::state_dir(root).join(DELETING_DIR);
+    std::fs::create_dir_all(&dir).unwrap();
+    for (name, text) in [
+        ("1-up", "skills\n..\n"),
+        ("2-nested", "skills\na/b\n"),
+        ("3-more", "skills\nrelease\nskills/deploy\n"),
+        ("4-nowhere", "elsewhere\nrelease\n"),
+        ("5-empty", ""),
+    ] {
+        std::fs::write(dir.join(name), text).unwrap();
+    }
+
+    let ((), lines) = on(root, None, interrupted);
+
+    assert!(lines.is_empty(), "{lines:?}");
+    assert!(notes_left(root).is_empty());
+    assert_eq!(head_of(root), before);
+    assert_eq!(run(root, &["status", "--porcelain"]).line(), "");
+    assert!(root.join("skills/release/SKILL.md").exists());
+    assert!(root.join("skills/deploy/SKILL.md").exists());
+}
+
+#[test]
+fn a_note_whose_writer_died_before_it_was_named_is_taken_away() {
+    let tmp = committed_plane();
+    let root = tmp.path();
+    let dir = crate::plane::state_dir(root).join(DELETING_DIR);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join(".1-release"), "skills\nrelease\n").unwrap();
+
+    let ((), lines) = on(root, None, interrupted);
+
+    assert!(lines.is_empty(), "{lines:?}");
+    assert!(notes_left(root).is_empty());
+    assert!(root.join("skills/release/SKILL.md").exists());
+}
+
+#[test]
 fn files_git_ignores_left_in_a_deleted_skills_folder_do_not_hide_it_from_restore() {
     let tmp = committed_plane();
     let root = tmp.path();

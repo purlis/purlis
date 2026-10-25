@@ -245,10 +245,10 @@ describe("the Skill studio", () => {
     expect(calls.filter((cmd) => cmd === "skill_studio")).toHaveLength(2);
   });
 
-  it("says a skill delete a crash cut short, finished as it opens, and reads its skills again", async () => {
-    // SK-35 (#3013): the core finishes or undoes it, and the studio says which in one line.
+  /** A studio with no skills, whose core answers the deletes cut short with `ended`, and
+   *  records every command asked. */
+  function cutShort(ended: { settled: string[]; unsettled: string[] }) {
     const calls: string[] = [];
-    const line = "release's delete was cut short; it is finished now, and Restore brings it back";
     mockIPC((cmd) => {
       calls.push(cmd);
       if (cmd === "skill_studio")
@@ -263,18 +263,41 @@ describe("the Skill studio", () => {
           harnesses: [],
           clashes: [],
         };
-      if (cmd === "skills_deleted") return [];
-      if (cmd === "skill_deletes_cut_short") return { notes: [line] };
+      if (cmd === "skill_deletes_cut_short") return ended;
       return [];
     });
+    return calls;
+  }
+
+  it("says a skill delete a crash cut short, finished as it opens, and reads its skills again", async () => {
+    // SK-35 (#3013): the core finishes or undoes it, and the studio says which in one line.
+    const line = "release's delete was cut short; it is finished now, and Restore brings it back";
+    const calls = cutShort({ settled: [line], unsettled: [] });
     render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
 
     const notice = await screen.findByRole("status", { name: /Skill delete cut short/ });
     expect(notice).toHaveTextContent(line);
+    expect(notice).not.toHaveClass("notice-trouble");
     await waitFor(() =>
       expect(calls.filter((cmd) => cmd === "skill_studio").length).toBeGreaterThanOrEqual(2),
     );
     expect(calls.filter((cmd) => cmd === "skill_deletes_cut_short")).toHaveLength(1);
+  });
+
+  it("shows a skill delete it could neither finish nor put back as trouble", async () => {
+    const failed =
+      "release's delete was cut short and could not be finished or put back: the project's " +
+      "last commit still has it, and purlis tries again next time";
+    const finished =
+      "deploy's delete was cut short; it is finished now, and Restore brings it back";
+    cutShort({ settled: [finished], unsettled: [failed] });
+    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
+
+    const notice = await screen.findByRole("status", {
+      name: /A skill delete could not be finished/,
+    });
+    expect(notice).toHaveClass("notice-trouble");
+    expect(notice).toHaveTextContent(`${failed} ${finished}`);
   });
 
   it("says it is not on while its flag is off", async () => {

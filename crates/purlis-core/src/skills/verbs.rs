@@ -890,6 +890,10 @@ const KEPT_FROM: &str = "from";
 /// a crash, a quit or a failed git cut short, which [`interrupted`] finishes or undoes.
 const DELETING_DIR: &str = "skills-deleting";
 
+/// The folders of this machine's state that skill deletes keep, which only purlis writes: a
+/// chat's sandbox denies writing them (`crate::sandbox`).
+pub(crate) const KEPT_BY_DELETES: [&str; 2] = [DELETED_DIR, DELETING_DIR];
+
 /// Where a deleted skill can be restored from.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Kept(Source);
@@ -1022,7 +1026,13 @@ fn deleted_by_git(
     let removed = removal_committed(cx, name, folder_rel, toml_rel, &specs);
     #[cfg(test)]
     cut::at(cut::Step::Committed);
-    note.end();
+    if removed == Err(false) {
+        // Neither committed nor put back: the note stays, let go of, so the next start tries
+        // again ([`interrupted`]).
+        note.left();
+    } else {
+        note.end();
+    }
     match removed {
         Ok(after) => {
             cx.done(format!(
@@ -1035,7 +1045,7 @@ fn deleted_by_git(
         )),
         Err(false) => Err(format!(
             "{name}'s commit could not be made, and it could not be put back: the project's \
-             last commit still has it"
+             last commit still has it, and purlis tries again next time"
         )),
     }
 }
@@ -1123,6 +1133,10 @@ impl Deleting {
     fn end(self) {
         store::note_ended(&self.state, DELETING_DIR, &self.note);
     }
+
+    /// Lets go of the lock and leaves the note: the delete did not end, and the next start
+    /// finishes or undoes it as one a crash cut short.
+    fn left(self) {}
 }
 
 /// The level and the skill folder a delete's note names, or `None` where it names no level, or
@@ -1151,25 +1165,46 @@ fn noted(text: &str) -> Option<(Level, String)> {
 pub fn interrupted(cx: &mut Ctx<'_>) {
     let state = crate::plane::state_dir(cx.plane);
     for (note, held, text) in store::notes_left(&state, DELETING_DIR) {
-        match noted(&text) {
-            Some((level, folder)) => {
-                if let Some(line) = finished_or_undone(cx, &level, &folder) {
+        let settled = match noted(&text) {
+            Some((level, folder)) => match finished_or_undone(cx, &level, &folder) {
+                Some(Ended::Settled(line)) => {
                     (cx.say)(Say::Info(line));
+                    true
                 }
+                // Neither finished nor put back: said, and the note is left for the next start.
+                Some(Ended::Unsettled(line)) => {
+                    (cx.say)(Say::Warn(line));
+                    false
+                }
+                None => true,
+            },
+            None => {
+                tracing::warn!(
+                    target: "purlis::skills",
+                    "a note of a skill's delete named no skill, and was taken away: {note}"
+                );
+                true
             }
-            None => tracing::warn!(
-                target: "purlis::skills",
-                "a note of a skill's delete named no skill, and was taken away: {note}"
-            ),
+        };
+        if settled {
+            store::note_ended(&state, DELETING_DIR, &note);
         }
-        store::note_ended(&state, DELETING_DIR, &note);
         drop(held);
     }
 }
 
-/// What [`interrupted`] says of the delete of the skill in `folder` at `level` it finished or
-/// undid, or `None` where its commit had landed.
-fn finished_or_undone(cx: &mut Ctx<'_>, level: &Level, folder: &str) -> Option<String> {
+/// How [`interrupted`] left a delete cut short, in the line it says.
+enum Ended {
+    /// Finished, or put back: the note goes.
+    Settled(String),
+    /// Neither: the project's last commit still has the skill, and the note stays for the next
+    /// start to try again.
+    Unsettled(String),
+}
+
+/// How [`interrupted`] finished or undid the delete of the skill in `folder` at `level`, or
+/// `None` where its commit had landed.
+fn finished_or_undone(cx: &mut Ctx<'_>, level: &Level, folder: &str) -> Option<Ended> {
     let plane = cx.plane;
     let folder_rel = format!("{}/{folder}", level.rel()?);
     let toml_rel = rel(plane, &beside(&plane.join(&folder_rel)));
@@ -1184,22 +1219,25 @@ fn finished_or_undone(cx: &mut Ctx<'_>, level: &Level, folder: &str) -> Option<S
         .symlink_metadata()
         .is_ok()
     {
-        return Some(format!(
+        return Some(Ended::Settled(format!(
             "{name}'s delete was cut short before it removed anything, so it is still here"
-        ));
+        )));
     }
+    let unsettled = || {
+        Ended::Unsettled(format!(
+            "{name}'s delete was cut short and could not be finished or put back: the project's \
+             last commit still has it, and purlis tries again next time"
+        ))
+    };
     let paths = [folder_rel.clone(), toml_rel.clone()];
     if crate::planegit::paths_unsaved(plane, &paths).is_some() {
         return Some(if put_back(plane, &specs) {
-            format!(
+            Ended::Settled(format!(
                 "{name}'s delete was cut short and the project cannot save it now, so it was \
                  put back"
-            )
+            ))
         } else {
-            format!(
-                "{name}'s delete was cut short and could not be finished or put back: the \
-                 project's last commit still has it"
-            )
+            unsettled()
         });
     }
     // The save's own lines go to the log: this says how the delete ended, in one line.
@@ -1212,16 +1250,13 @@ fn finished_or_undone(cx: &mut Ctx<'_>, level: &Level, folder: &str) -> Option<S
     };
     Some(
         match removal_committed(&mut inner, &name, &folder_rel, &toml_rel, &specs) {
-            Ok(_) => format!(
+            Ok(_) => Ended::Settled(format!(
                 "{name}'s delete was cut short; it is finished now, and Restore brings it back"
-            ),
-            Err(true) => format!(
+            )),
+            Err(true) => Ended::Settled(format!(
                 "{name}'s delete was cut short and could not be finished, so it was put back"
-            ),
-            Err(false) => format!(
-                "{name}'s delete was cut short and could not be finished or put back: the \
-                 project's last commit still has it"
-            ),
+            )),
+            Err(false) => unsettled(),
         },
     )
 }
@@ -1753,7 +1788,22 @@ mod store {
 
     pub(super) fn put_away(_: &Path, _: &str, _: &str, _: &str) {}
 
-    // A delete's note where no folder can be held open: by path, as nothing else here is kept.
+    // A delete's note where no folder can be held open: by path, written whole under a dot-name
+    // and renamed into place already locked, as on Unix, and opened without following a link
+    // (on Windows, the reparse point itself).
+
+    /// The options a note is opened with: never through a link where the system can say so.
+    fn options() -> std::fs::OpenOptions {
+        #[allow(unused_mut)]
+        let mut options = std::fs::OpenOptions::new();
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt as _;
+            // FILE_FLAG_OPEN_REPARSE_POINT: the link itself, never what it names.
+            options.custom_flags(0x0020_0000);
+        }
+        options
+    }
 
     pub(super) fn note_begun(
         state: &Path,
@@ -1764,13 +1814,21 @@ mod store {
         use std::io::Write as _;
         let at = state.join(dir);
         std::fs::create_dir_all(&at)?;
-        let mut file = std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(at.join(note))?;
-        file.lock()?;
-        file.write_all(text.as_bytes())?;
-        Ok(file)
+        let writing = at.join(format!(".{note}"));
+        let mut file = options().write(true).create_new(true).open(&writing)?;
+        let written = file
+            .lock()
+            .and_then(|()| file.write_all(text.as_bytes()))
+            .and_then(|()| file.sync_all())
+            .and_then(|()| std::fs::rename(&writing, at.join(note)));
+        match written {
+            Ok(()) => Ok(file),
+            Err(why) => {
+                drop(file);
+                let _ = std::fs::remove_file(&writing);
+                Err(why)
+            }
+        }
     }
 
     pub(super) fn note_ended(state: &Path, dir: &str, note: &str) {
@@ -1787,10 +1845,19 @@ mod store {
             let Ok(name) = one.file_name().into_string() else {
                 continue;
             };
-            let Ok(file) = std::fs::File::open(one.path()) else {
+            // A plain file alone: never a link or a folder.
+            if !std::fs::symlink_metadata(one.path()).is_ok_and(|meta| meta.file_type().is_file()) {
+                continue;
+            }
+            let Ok(file) = options().read(true).open(one.path()) else {
                 continue;
             };
             if file.try_lock().is_err() {
+                continue;
+            }
+            if name.starts_with('.') {
+                drop(file);
+                let _ = std::fs::remove_file(one.path());
                 continue;
             }
             let mut text = String::new();

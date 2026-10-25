@@ -3487,6 +3487,14 @@ export type DeletedSkill = {
 	label: string,
 };
 
+/**  What became of the skill deletes a crash or a quit cut short, one line each (SK-35, #3013). */
+export type DeletesCutShort = {
+	/**  Finished, or put back. */
+	settled: string[],
+	/**  Neither finished nor put back: tried again the next time the studio opens. */
+	unsettled: string[],
+};
+
 /**  Why a grant the person accepted before waits for a yes again. */
 export type DispatchAgain = 
 /**  A commit of the project's history took it out, and the file holds it again. */

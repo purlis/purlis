@@ -1815,7 +1815,7 @@ export const commands = {
 	 *  **Finishes or undoes every skill delete a crash or a quit cut short** (SK-35, #3013), as the
 	 *  studio opens, and answers one line for each.
 	 */
-	skillDeletesCutShort: (plane: PlaneId) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_deletes_cut_short", { plane })),
+	skillDeletesCutShort: (plane: PlaneId) => typedError<DeletesCutShort, string>(__TAURI_INVOKE("skill_deletes_cut_short", { plane })),
 	/**  The deleted skills Restore can bring back, newest first. */
 	skillsDeleted: (plane: PlaneId) => typedError<DeletedSkill[], string>(__TAURI_INVOKE("skills_deleted", { plane })),
 	/**
@@ -5314,6 +5314,14 @@ export type DeletedSkill = {
 	level: SkillLevel,
 	/**  Its level as a person reads it: `project`, `local workspace ops`. */
 	label: string,
+};
+
+/**  What became of the skill deletes a crash or a quit cut short, one line each (SK-35, #3013). */
+export type DeletesCutShort = {
+	/**  Finished, or put back. */
+	settled: string[],
+	/**  Neither finished nor put back: tried again the next time the studio opens. */
+	unsettled: string[],
 };
 
 /**  Why a grant the person accepted before waits for a yes again. */

@@ -5,4 +5,5 @@
   from the Skill studio and from Restore until the next save, and every later delete was kept on
   this machine instead of saved. Now the Skill studio, or the next `purlis skill` change, finishes
   the delete in one commit, so Restore brings it back from there. If the project cannot save it
-  then, the skill is put back. A Notice says which.
+  then, the skill is put back. A Notice says which, and if neither works it says so as trouble
+  and tries again the next time.

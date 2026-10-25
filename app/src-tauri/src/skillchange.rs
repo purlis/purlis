@@ -442,6 +442,15 @@ pub(crate) async fn skill_delete(
     .await
 }
 
+/// What became of the skill deletes a crash or a quit cut short, one line each (SK-35, #3013).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Type)]
+pub struct DeletesCutShort {
+    /// Finished, or put back.
+    pub settled: Vec<String>,
+    /// Neither finished nor put back: tried again the next time the studio opens.
+    pub unsettled: Vec<String>,
+}
+
 /// **Finishes or undoes every skill delete a crash or a quit cut short** (SK-35, #3013), as the
 /// studio opens, and answers one line for each.
 #[tauri::command]
@@ -449,16 +458,32 @@ pub(crate) async fn skill_delete(
 pub(crate) async fn skill_deletes_cut_short(
     planes: tauri::State<'_, crate::planes::Planes>,
     plane: crate::planes::PlaneId,
-) -> Result<SkillChanged, String> {
+) -> Result<DeletesCutShort, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("finishing a skill delete", move || {
         flag_on()?;
-        heard(held.root(), |cx| {
-            verbs::interrupted(cx);
-            Ok(())
-        })
+        Ok(cut_short(held.root()))
     })
     .await
+}
+
+/// [`skill_deletes_cut_short`] in the project at `root`: the core's lines, a warning being one
+/// it could neither finish nor undo.
+pub(crate) fn cut_short(root: &std::path::Path) -> DeletesCutShort {
+    let mut ended = DeletesCutShort::default();
+    let mut say = |line: Say| match line {
+        Say::Warn(text) | Say::Fail(text) => ended.unsettled.push(text),
+        Say::Info(text) => ended.settled.push(text),
+        Say::Done(_) | Say::Plain(_) | Say::Out(_) => {}
+    };
+    let built_in = built_in();
+    verbs::interrupted(&mut verbs::Ctx {
+        plane: root,
+        built_in: built_in.as_deref(),
+        by: By::Window,
+        say: &mut say,
+    });
+    ended
 }
 
 /// The deleted skills Restore can bring back, newest first.
