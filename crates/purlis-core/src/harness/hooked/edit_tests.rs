@@ -334,9 +334,24 @@ fn a_change_with_a_joiner_doing_its_job_may_be_allowed_and_one_between_latin_let
         "Edit",
         serde_json::json!({"file_path": "/w/a", "old_string": "ab", "new_string": "a\u{200D}b"}),
     );
-    let ask = ask(Source::ClaudeCode, &payload);
-    assert_eq!(not_shown(&ask), Some(Unshown::DrawnOtherwise));
-    assert_eq!(ids(&ask), ["deny"]);
+    let latin = ask(Source::ClaudeCode, &payload);
+    assert_eq!(not_shown(&latin), Some(Unshown::DrawnOtherwise));
+    assert_eq!(ids(&latin), ["deny"]);
+    // The line and paragraph separators stay hidden: an editor may break a line on them.
+    for separator in ['\u{2028}', '\u{2029}'] {
+        let payload = asked(
+            "Edit",
+            serde_json::json!({"file_path": "/w/a", "old_string": "ab",
+                "new_string": format!("a{separator}b")}),
+        );
+        let separated = ask(Source::ClaudeCode, &payload);
+        assert_eq!(
+            not_shown(&separated),
+            Some(Unshown::DrawnOtherwise),
+            "{separator:?}"
+        );
+        assert_eq!(ids(&separated), ["deny"], "{separator:?}");
+    }
 }
 
 #[test]

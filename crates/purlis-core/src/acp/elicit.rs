@@ -491,7 +491,10 @@ pub fn plain(text: &str, most: usize, lines: bool) -> String {
         })
         .collect();
     let shown = purlis_unicode::unhidden(&broken, purlis_unicode::Breaks::Kept);
-    super::cut(shown.trim().to_owned(), most)
+    // A cut can end the text on a joiner whose neighbour it took away, as a ZWJ left before
+    // the `…`: read again, it is hidden there and dropped.
+    let cut = super::cut(shown.trim().to_owned(), most);
+    purlis_unicode::unhidden(&cut, purlis_unicode::Breaks::Kept)
 }
 
 #[cfg(test)]

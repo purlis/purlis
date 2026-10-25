@@ -194,6 +194,19 @@ fn a_persian_label_keeps_its_non_joiner_and_a_joiner_between_latin_letters_is_dr
 }
 
 #[test]
+fn a_label_cut_after_a_joiner_drops_the_joiner_it_left_before_the_ellipsis() {
+    // The cut keeps `most - 3` bytes: the padding, the man and the ZWJ, but not the woman.
+    let padding = "a".repeat(MOST_LABEL_BYTES - '…'.len_utf8() - 7);
+    let label = plain(
+        &format!("{padding}\u{1F468}\u{200D}\u{1F469}"),
+        MOST_LABEL_BYTES,
+        false,
+    );
+    assert_eq!(label, format!("{padding}\u{1F468}…"));
+    assert!(label.len() <= MOST_LABEL_BYTES);
+}
+
+#[test]
 fn an_elicitation_is_raised_as_an_ask_only_the_window_answers_with_no_deadline() {
     let ask = token_form().ask("s-1");
     assert!(ask.elicits_secret);
