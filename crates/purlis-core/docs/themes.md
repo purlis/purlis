@@ -720,6 +720,32 @@ yet, and it leaves those out. The `v2` is the format: within it the schema only 
 a theme valid against one release's schema is valid against every later release's. purlis
 itself never fetches the address; only your editor does.
 
+### Tokens added after themes existed
+
+The Figma pass added eight keys to format 2 (operator ruling 2026-10-25, #3177, #3113):
+`border.control` (a plain control's edge: the secondary button's, a field's, a select's),
+`accent.wash` (a chosen activity button's ground), `accent.text` (words and icons in the
+accent on its surface or wash), `accent.fill`, `accent.fill-hover`, `accent.fill-edge` and
+`accent.fill-text` (the primary button's ground, its ground under the pointer, its edge and its
+words, held to 4.5:1), and the geometry token `radius.control` (an md control's corner). **A
+theme that leaves one out draws as it did before it existed**: while the theme it extends draws
+the new token and the token that drew its part before alike, as Purlis Classic does, the new one
+follows the value the theme gives the old one (`vocabulary::KIN`):
+
+| new | follows |
+|---|---|
+| `border.control` | `border.strong` |
+| `accent.wash` | `accent.surface` |
+| `accent.text` | `accent.base` |
+| `accent.fill` | `accent.surface` |
+| `accent.fill-hover` | `tab.active` |
+| `accent.fill-edge` | `accent.base` |
+| `accent.fill-text` | `text.primary` |
+
+Over Purlis, whose primary is filled and whose controls draw no edge, a theme keeps Purlis's
+values unless it names them. `radius.control` is Classic's `radius.md`, 4, where a theme names
+neither.
+
 ## Importing a theme
 
 `purlis theme import <file>` makes a theme folder from a theme you already have:
