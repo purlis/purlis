@@ -48,3 +48,15 @@ fn every_cell_of_a_row_is_shown_escaped_the_last_one_too() {
     let at = |line: &str| line[..line.find(" b ").unwrap()].chars().count();
     assert_eq!(at(&lines[0]), at(&lines[1]), "{lines:#?}");
 }
+
+/// SK-50 (#3173): what a piece was declared before is read from a log any host's worker
+/// writes. `sanitize` let an SGR in it take effect; it is escaped now, as the piece name is.
+#[test]
+fn an_earlier_declaration_read_from_the_log_is_shown_escaped() {
+    let line = already_declared("pie\u{200b}ce", "done \x1b[8mhid\u{202e}", Event::Abandoned);
+    assert_eq!(
+        line,
+        "'pie⟦U+200B⟧ce' was already declared done ⟦U+001B⟧[8mhid⟦U+202E⟧ — recording \
+         abandoned over it (the earlier one stays in the log)."
+    );
+}
