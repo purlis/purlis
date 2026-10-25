@@ -27,6 +27,9 @@ import { playwright } from "@vitest/browser-playwright";
 import type { TestProjectInlineConfiguration } from "vitest/config";
 import { cellsOf, type BuiltInThemes, type Cell } from "./matrix.ts";
 
+/** Chromium's flag for greyscale text, which draws the same whatever ran before it. */
+const LCD_OFF = ["--disable-lcd-text"];
+
 /** The environment variable that turns the screenshot gate on. */
 export const PICTURES = "PURLIS_STORY_PICTURES";
 
@@ -58,7 +61,16 @@ export function stories(): TestProjectInlineConfiguration[] {
         provider: playwright({}),
         // The engine purlis ships in on macOS and Linux (WKWebView, WebKitGTK), and the one
         // Windows' WebView2 is.
-        instances: [{ browser: "chromium" }, { browser: "webkit" }],
+        //
+        // **Chromium draws its words greyscale** (`--disable-lcd-text`). Its subpixel text takes
+        // each glyph from a cache every story file in the run shares, so a word could come out
+        // a pixel apart depending on what the stories before it drew: the List family's
+        // `ToChooseFrom` drew three different pictures in eight identical runs (one picture
+        // whenever its file ran alone), and the same picture in all eight with greyscale text.
+        instances: [
+          { browser: "chromium", provider: playwright({ launchOptions: { args: LCD_OFF } }) },
+          { browser: "webkit" },
+        ],
       },
     },
   }));
