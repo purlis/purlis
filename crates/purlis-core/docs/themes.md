@@ -421,7 +421,7 @@ of their corners is clamped to half their own box (`min(r, 50%)`; `full` is `50%
 its words in that height. `panel.root.corner-radius` sets one panel's corners over the theme's
 `panel.corner-radius` token, which sets every panel's.
 **The tooltip** (`tooltip`, manifest version 5, #2908) has a `root`, its surface, and a `detail`, an icon button's
-second line, and since manifest version 13 (#2921) a `shortcut`, the key that does what its target
+second line, and since the next release's manifest version (#2921) a `shortcut`, the key that does what its target
 does, after its words. A theme sets the surface's fill, words, edge colour and width, corners and shadow;
 its size is its words', so none of its sizes is a theme's. Purlis draws it with corners of 8 and
 no edge: `"tooltip.root.corner-radius": 8`, `"tooltip.root.border-width": 0`.
