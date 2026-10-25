@@ -218,6 +218,8 @@ fn virama(c: char) -> bool {
 /// Is `c` an emoji a presentation selector or a ZWJ may follow: Unicode's
 /// Extended_Pictographic ([`tables::EXTENDED_PICTOGRAPHIC`], from `emoji-data.txt`), which
 /// holds `©`, `‼`, `▶` and `㊗` as well as the emoji planes.
+/// The property also holds reserved, unassigned codepoints (U+1FC00-U+1FFFD, for one), so one
+/// selector or ZWJ after one of them reads as text: negligible, since they draw nothing.
 fn pictographic(c: char) -> bool {
     in_table(c, &tables::EXTENDED_PICTOGRAPHIC)
 }
