@@ -65,7 +65,7 @@ export function ChatNetworkTab({ plane, session }: { plane: PlaneId; session?: n
   return (
     <div className="chat-network">
       <section aria-label="Can reach now">
-        <h3>Can reach now</h3>
+        <h2>Can reach now</h2>
         {/* An administrator's managed Claude Code settings outrank purlis's (#1699): said,
             never changed, since the setting is theirs. The file named is theirs, as data. */}
         {network.local_ports != null && <p className="chat-network-local">{network.local_ports}</p>}
@@ -96,7 +96,7 @@ export function ChatNetworkTab({ plane, session }: { plane: PlaneId; session?: n
           Drawn only where there is one: a chat with no browser site says nothing of it. */}
       {network.browser_sites.length > 0 && (
         <section aria-label="Only its browser can reach">
-          <h3 className="ui-text-heading">Only its browser can reach</h3>
+          <h2 className="ui-text-heading">Only its browser can reach</h2>
           <p className="ui-text-secondary">
             You allowed these for its browser alone. Its commands reach one only where it is allowed
             for them as well.
@@ -114,7 +114,7 @@ export function ChatNetworkTab({ plane, session }: { plane: PlaneId; session?: n
         </section>
       )}
       <section aria-label="Refused">
-        <h3>Refused</h3>
+        <h2>Refused</h2>
         {network.refused.length === 0 ? (
           <EmptyState
             variant="panel"

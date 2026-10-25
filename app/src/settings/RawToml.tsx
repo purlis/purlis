@@ -164,7 +164,7 @@ export function RawEditor({
 
   return (
     <section className="ui-setting-group ui-raw" aria-labelledby={heading}>
-      <h3 id={heading}>{name}</h3>
+      <h2 id={heading}>{name}</h2>
       <p className="ui-setting-help">
         {raw.as === "TOML" ? "The whole file, comments and all." : "The whole file."} {raw.kept}
         {!file.exists && " Not created yet: the first save creates it."} Nothing is written until
