@@ -131,7 +131,7 @@ hex id, a harness or profile that is no plain name, a stamp that is no time) is 
 - The skill log holds grade runs, marked as theirs.
 - Outcome evals, the previous version as an arm, the Grader extension's protocol over the
   executor, the opt-in after each edit, opening a grade's chat, a model picked per grade, the
-  terminal running a grade, and routers graded by trigger tests follow as tickets of M65.
+  terminal running a grade, and routers graded by trigger tests follow as #3235 to #3242.
 
 ## Amendments
 

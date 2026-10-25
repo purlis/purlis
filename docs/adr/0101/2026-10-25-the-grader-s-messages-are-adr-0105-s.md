@@ -15,5 +15,5 @@ Two of §5's words are made exact there:
   more from the rest of the turn.
 
 The Grader **extension's** question, a grade request whose answer comes after requests of its own
-(protocol 4 of the executor), follows as its own ticket. Until then the built-in runner, in core
+(protocol 4 of the executor), follows as #3236. Until then the built-in runner, in core
 code behind the same messages, is the only Grader.
