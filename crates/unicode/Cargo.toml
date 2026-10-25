@@ -1,0 +1,15 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "purlis-unicode"
+description = "purlis's one rule for a character a reader does not see, and its one mark: the Unicode tables generated from CPython and the UCD, and the joiners that stay text inside a script or an emoji"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true

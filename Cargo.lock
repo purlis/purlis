@@ -5733,6 +5733,7 @@ dependencies = [
  "purlis-session-protocol",
  "purlis-skills",
  "purlis-terminal",
+ "purlis-unicode",
  "quick-xml",
  "regex",
  "ring",
@@ -5840,6 +5841,7 @@ dependencies = [
 name = "purlis-skills"
 version = "0.4.2"
 dependencies = [
+ "purlis-unicode",
  "rustix",
  "serde",
  "tempfile",
@@ -5867,6 +5869,10 @@ dependencies = [
  "thiserror 2.0.21",
  "unicode-width",
 ]
+
+[[package]]
+name = "purlis-unicode"
+version = "0.4.2"
 
 [[package]]
 name = "quick-error"
