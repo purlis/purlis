@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792953296522,
+  "lastUpdate": 1792955186864,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -24738,6 +24738,48 @@ window.BENCHMARK_DATA = {
             "value": 104.19759350000001,
             "unit": "ms",
             "extra": "median of 5 runs: 103.532, 103.642, 104.198, 104.925, 105.695 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "505e4d3f38a57e0e94629a7bb83b0332ea483226",
+          "message": "View tabs carry no title of their own: one piece from tab to content (#3147) (#3207)\n\n* View tab stories: Settings, a vault, a persona, the shared memory as main draws them (#3147)\n\nThe before look for #3147: each view tab with its title band and the pane's\ncorner, so the next commit's baselines show what changes.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* View tabs carry no title of their own: one piece from tab to content (#3147)\n\nThe operator's ruling of 2026-10-24: a view tab's content repeats neither\nits name nor its icon, and starts on the fill its chosen tab joins, with no\nband of its own.\n\n- ViewPane, VaultTab and SkillTab draw no title. ViewPane's first row keeps\n  what can be done to what the view is about, and whose an extension's view\n  is as quiet words; a vault's first row keeps its provider and count.\n  Settings draws its own first row, its levels.\n- A view's pane draws the chat pane's PaneHead and PaneActions, unchanged,\n  at the same place, over the view's first row, which keeps their room.\n  The old pane corner is gone.\n- The content panel is still the chosen tab's tabpanel, named by it.\n- Stories for Settings, a vault, a persona and the shared memory hold it in\n  every cell; no-blank-view checks the same in the built app.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* no-blank-view: Settings opens at the focused workspace's level (#3147)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* View tabs: nothing scrolls under the pane's actions; toolbars and headings (#3147 review)\n\n- Settings' levels row stays at the top as its body scrolls, on the view's\n  own fill, so nothing passes under the pane's actions. A view's first row\n  is now past the actions' row, so the scrolling body starts below them.\n- A file's and a comparison's toolbar is the view's first row, with no\n  empty row above it, and says the path alone, quiet: the tab is the name\n  (R146).\n- A view's own headings start at h2 under the tab: SettingGroup (h3 kept\n  in a dialog), the raw file editor, and the task changes, dispatches,\n  network, harness setup, session record, Skill studio, skill, first task\n  and saving views.\n- Stories scroll every view and check that nothing pressable is under the\n  actions; a File story and one with the actions drawn. no-blank-view\n  checks that the vault's panel is named by its tab.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* View tab stories: the pane in a sized split box, so each view scrolls (#3147)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* View tab stories: Settings tall enough to scroll in compact, rows a whole target apart (#3147)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* View tab stories: the actions drawn by the pointer, with no tooltip over them (#3147)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* View tab stories: the actions drawn by the keyboard, their tooltip put away (#3147)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* first-task scenario: a run is headed by its h2 now (#3147)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* SkillTab test: the studio panels are headed by h2s in a view (#3147)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-25T23:04:44+04:00",
+          "tree_id": "cb42bc1866c67b01522a8d4e4f128f35b3b6138c",
+          "url": "https://github.com/purlis/purlis/commit/505e4d3f38a57e0e94629a7bb83b0332ea483226"
+        },
+        "date": 1792955184320,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.41167349999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.408, 0.411, 0.412, 0.418, 0.421 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2795755,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.205, 16.237, 16.280, 16.740, 16.973 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.591517,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.785, 101.169, 101.592, 101.733, 102.629 ms"
           }
         ]
       }
