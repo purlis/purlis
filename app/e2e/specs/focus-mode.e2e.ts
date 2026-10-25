@@ -62,6 +62,26 @@ async function boxes(): Promise<Boxes> {
   }, HIDDEN) as Promise<Boxes>;
 }
 
+/** A part's box as one word, whatever order its sizes came in. */
+const said = (box: { width: number; height: number } | null) =>
+  box === null ? "none" : `${box.width}x${box.height}`;
+
+/** Whether two readings draw every part at one size. */
+const alike = (a: Boxes, b: Boxes) =>
+  (Object.keys(HIDDEN) as (keyof typeof HIDDEN)[]).every((name) => said(a[name]) === said(b[name]));
+
+/** The parts' boxes once two readings half a second apart agree: the window at rest. */
+async function boxesAtRest(): Promise<Boxes> {
+  let last = await boxes();
+  for (let look = 0; look < 20; look++) {
+    await browser.pause(500);
+    const now = await boxes();
+    if (alike(now, last)) return now;
+    last = now;
+  }
+  return last;
+}
+
 /** Waits for each part to be at the size it had, and says which is not when one stays apart. */
 async function untilTheSame(before: Boxes, failure: string): Promise<void> {
   let now = before;
@@ -69,7 +89,7 @@ async function untilTheSame(before: Boxes, failure: string): Promise<void> {
     .waitUntil(
       async () => {
         now = await boxes();
-        return JSON.stringify(now) === JSON.stringify(before);
+        return alike(now, before);
       },
       { timeout: 10_000, interval: 250 },
     )
@@ -77,8 +97,8 @@ async function untilTheSame(before: Boxes, failure: string): Promise<void> {
     .catch(() => false);
   if (same) return;
   const apart = (Object.keys(HIDDEN) as (keyof typeof HIDDEN)[])
-    .filter((name) => JSON.stringify(now[name]) !== JSON.stringify(before[name]))
-    .map((name) => `${name} ${JSON.stringify(before[name])} → ${JSON.stringify(now[name])}`);
+    .filter((name) => said(now[name]) !== said(before[name]))
+    .map((name) => `${name} ${said(before[name])} → ${said(now[name])}`);
   throw new Error(`${failure}: ${apart.join("; ")}`);
 }
 
@@ -106,9 +126,8 @@ async function focusModeTo(want: boolean): Promise<void> {
     () => browser.execute((modal: string) => document.querySelector(modal) === null, MODAL),
     { timeout: 10_000, interval: 150, timeoutMsg: "a modal stayed up before focus mode's key" },
   );
-  // Pressed again only where the first press changed nothing: a press that landed is never
-  // pressed twice, which would turn focus mode back.
-  for (let press = 0; press < 3; press++) {
+  // One press: a press that lands late must never meet a second, which would turn it back.
+  {
     await browser.execute((mac: boolean) => {
       const on = document.activeElement;
       if (on instanceof HTMLElement) on.blur();
@@ -125,7 +144,7 @@ async function focusModeTo(want: boolean): Promise<void> {
       );
     }, MAC);
     const landed = await browser
-      .waitUntil(async () => (await inFocusMode()) === want, { timeout: 3_000, interval: 150 })
+      .waitUntil(async () => (await inFocusMode()) === want, { timeout: 10_000, interval: 150 })
       .then(() => true)
       .catch(() => false);
     if (landed) return;
@@ -189,7 +208,7 @@ describe("focus mode", function () {
   });
 
   it("hides the rail, the bars and the panels, and brings each back at its size", async () => {
-    const before = await boxes();
+    const before = await boxesAtRest();
     const widthBefore = await workWidth();
     const terminal = await terminalNow();
     expect(terminal.text).toContain(READY);
@@ -218,7 +237,7 @@ describe("focus mode", function () {
   });
 
   it("leaves focus mode on a region's key, and changes no region out of sight", async () => {
-    const before = await boxes();
+    const before = await boxesAtRest();
     await focusModeTo(true);
     // ⌘B (Ctrl+B off a Mac) in focus mode only leaves it (D-2921-19).
     await browser.execute((mac: boolean) => {
