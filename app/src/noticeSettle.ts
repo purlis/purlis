@@ -1,7 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { createContext, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createContext, useCallback, useRef, useState } from "react";
+import { useWayPlaces } from "./wayPlaces";
 
 /**
  * How long after a question formed, or after the tasks it lists changed, a press on it does
@@ -32,8 +33,6 @@ export const grants = (cause: string) =>
  *  every Notice answer with `allows` is (ADR 0097 §6). */
 export const grantsByLook = (way: Element) => way.closest('[data-variant="grants"]') !== null;
 
-const now = () => Date.now();
-
 /**
  * **What a press on a Notice's way out asks first** (#1695, #2904): whether the place it is
  * drawn in lets it act now. A list of Notices that come and go provides one ({@link
@@ -42,56 +41,50 @@ const now = () => Date.now();
  */
 export const NoticeWayGuard = createContext<(way: Element) => boolean>(() => true);
 
+/** **Whether a way out of the Notice whose cause is `cause` waits to settle**: it grants by its
+ *  look, or its Notice grants by its cause. */
+const waits = (way: Element, cause: string) => grantsByLook(way) || grants(cause);
+
 /**
  * **The Notices' move-settle guard** (#1695, train 50's and train 54's reviews): a Notice that
  * grants something is drawn among others that come and go, so a press on one of its ways out
- * within {@link SETTLE_MS} of it moving does nothing, and says why. Where each Notice stands is
- * read after every change under `at` and again at the press: one that differs is a move.
+ * within {@link SETTLE_MS} of that way out moving does nothing, and says why.
  *
- * **Where a Notice stands is read against the root itself**, never against the Notice's
- * `offsetParent`: a box drawn with a position of its own (a pane warning's mark, #3142) would make
- * itself that parent, and then a Notice going or arriving above another would read as no move
- * at all. The place is the line's top less the root's, with what the boxes between them have
- * scrolled added back, so scrolling a list is not a move and a layout change is.
+ * **What is read is each granting way out's own box on screen** (#3167, `useWayPlaces`), never
+ * its line's: the line can keep its top while a way out in it moves (its words wrap again at a
+ * new width), and the band that scrolls the line can be made to scroll back (what is below it
+ * got shorter) and slide it on screen while its place inside the band stays put. Both are moves;
+ * the person's own scroll is not.
  *
  * `firstDrawn` says whether a Notice's first drawing counts as a move. In the Inbox it does, as
  * an ask's Allow waits on its first drawing. On a pane it does not: a Notice there arrives
  * where the person is already looking, and only a move (one above it going, say) can put a way
- * out under a pointer that was aimed at something else.
+ * out under a pointer that was aimed at something else. A granting way out drawn into a Notice
+ * already standing is a move on a pane too: it is drawn where something else was aimed at.
  */
 export function useNoticeSettle<T extends HTMLElement>(firstDrawn: "moves" | "stands") {
   const at = useRef<T>(null);
-  const placed = useRef(new WeakMap<Element, { top: number; at: number }>());
   const [said, setSaid] = useState<string>();
-  const look = useCallback(
-    (one: Element) => {
-      const root = at.current;
-      let top = one.getBoundingClientRect().top - (root?.getBoundingClientRect().top ?? 0);
-      for (let el = one.parentElement; el !== null && el !== root; el = el.parentElement)
-        top += el.scrollTop;
-      const was = placed.current.get(one);
-      if (was === undefined) {
-        placed.current.set(one, { top, at: firstDrawn === "moves" ? now() : -Infinity });
-      } else if (was.top !== top) {
-        placed.current.set(one, { top, at: now() });
+  // The lines read so far, and for each way out whether its line was already drawn before it.
+  const lines = useRef(new WeakSet<Element>());
+  const later = useRef(new WeakMap<Element, boolean>());
+  const ways = useCallback(function* (root: T) {
+    for (const line of root.querySelectorAll("[data-cause]")) {
+      const known = lines.current.has(line);
+      lines.current.add(line);
+      const cause = line.getAttribute("data-cause") ?? "";
+      for (const way of line.querySelectorAll("button")) {
+        if (!waits(way, cause)) continue;
+        if (!later.current.has(way)) later.current.set(way, known);
+        yield way;
       }
-      return placed.current.get(one)?.at ?? now();
-    },
+    }
+  }, []);
+  const firstMoves = useCallback(
+    (way: Element) => firstDrawn === "moves" || later.current.get(way) === true,
     [firstDrawn],
   );
-  const lookAll = useCallback(() => {
-    for (const one of at.current?.querySelectorAll("[data-cause]") ?? []) look(one);
-  }, [look]);
-  useLayoutEffect(() => {
-    lookAll();
-  });
-  useEffect(() => {
-    const root = at.current;
-    if (root === null || typeof MutationObserver === "undefined") return;
-    const watching = new MutationObserver(lookAll);
-    watching.observe(root, { childList: true, subtree: true });
-    return () => watching.disconnect();
-  }, [lookAll]);
+  const { movedAt } = useWayPlaces(at, ways, firstMoves);
   const allows = (way: Element): boolean => {
     const notice = way.closest("[data-cause]");
     const cause = notice?.getAttribute("data-cause");
@@ -99,8 +92,8 @@ export function useNoticeSettle<T extends HTMLElement>(firstDrawn: "moves" | "st
     // **Any answer that grants waits**, whatever Notice it is on (#3142): the button family's
     // grants variant (a way out with `allows`) is the one rule, and the causes above add the
     // answers that grant without it.
-    if (!grantsByLook(way) && !grants(cause)) return true;
-    if (now() - look(notice) < SETTLE_MS) {
+    if (!waits(way, cause)) return true;
+    if (Date.now() - movedAt(way) < SETTLE_MS) {
       setSaid(NOTICE_MOVED_JUST_NOW);
       return false;
     }

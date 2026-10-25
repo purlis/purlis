@@ -315,11 +315,16 @@ describe("a grant is never sent from a row that just moved", () => {
 
   it("sends no Allow pressed just after the row was laid out lower, though nothing it lists moved", async () => {
     const answered: string[] = [];
-    render(<Updated refused={[refusal()]} answer={(_, how) => answered.push(how)} />);
-    await read();
-    // Something above grew without drawing this row again: only its place says so.
-    const top = vi.spyOn(HTMLElement.prototype, "offsetTop", "get").mockReturnValue(48);
+    // jsdom lays nothing out: every box stands at `lower` on screen (#3167, the Allow's own box).
+    let lower = 0;
+    const top = vi
+      .spyOn(Element.prototype, "getBoundingClientRect")
+      .mockImplementation(() => DOMRect.fromRect({ x: 0, y: lower, width: 100, height: 30 }));
     try {
+      render(<Updated refused={[refusal()]} answer={(_, how) => answered.push(how)} />);
+      await read();
+      // Something above grew without drawing this row again: only where its Allow is says so.
+      lower = 48;
       await user.click(screen.getByRole("button", { name: ALLOW }));
       expect(answered).toEqual([]);
 
@@ -328,6 +333,36 @@ describe("a grant is never sent from a row that just moved", () => {
       expect(answered).toEqual(["allow"]);
     } finally {
       top.mockRestore();
+    }
+  });
+
+  it("sends no Allow pressed just after its words wrapped it elsewhere, the row's top unchanged (#3167)", async () => {
+    const answered: string[] = [];
+    // The window is narrowed: the row stays where it was, its words take one more line and the
+    // Allow goes down and to the start of its row of answers.
+    let wide = true;
+    const rect = vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: Element,
+    ) {
+      if (this.closest('[data-variant="grants"]') === null) {
+        return DOMRect.fromRect({ x: 0, y: 0, width: 400, height: 120 });
+      }
+      return DOMRect.fromRect(
+        wide ? { x: 220, y: 60, width: 90, height: 24 } : { x: 12, y: 84, width: 90, height: 24 },
+      );
+    });
+    try {
+      render(<Updated refused={[refusal()]} answer={(_, how) => answered.push(how)} />);
+      await read();
+      wide = false;
+      await user.click(screen.getByRole("button", { name: ALLOW }));
+      expect(answered).toEqual([]);
+
+      await read();
+      await user.click(screen.getByRole("button", { name: ALLOW }));
+      expect(answered).toEqual(["allow"]);
+    } finally {
+      rect.mockRestore();
     }
   });
 
