@@ -868,6 +868,18 @@ fn client_hello(name: &str) -> Vec<u8> {
 
 /// [`client_hello`], carrying an encrypted ClientHello (ECH) after its server name where `ech`.
 fn client_hello_with(name: &str, ech: bool) -> Vec<u8> {
+    let mut extra = Vec::new();
+    if ech {
+        extra.extend(0xfe0du16.to_be_bytes());
+        extra.extend(4u16.to_be_bytes());
+        extra.extend([0, 0, 1, 0]);
+    }
+    client_hello_carrying(name, &extra)
+}
+
+/// A TLS record holding a TLS 1.3 ClientHello naming `name`, with the extensions `extra` after
+/// its server name.
+fn client_hello_carrying(name: &str, extra: &[u8]) -> Vec<u8> {
     let name = name.as_bytes();
     let mut list = Vec::new();
     list.extend(u16::try_from(3 + name.len()).expect("short").to_be_bytes());
@@ -881,11 +893,7 @@ fn client_hello_with(name: &str, ech: bool) -> Vec<u8> {
     extensions.extend(0u16.to_be_bytes());
     extensions.extend(u16::try_from(list.len()).expect("short").to_be_bytes());
     extensions.extend(list);
-    if ech {
-        extensions.extend(0xfe0du16.to_be_bytes());
-        extensions.extend(4u16.to_be_bytes());
-        extensions.extend([0, 0, 1, 0]);
-    }
+    extensions.extend(extra);
     let mut hello = vec![3, 3];
     hello.extend([7u8; 32]);
     hello.push(0);
@@ -1084,7 +1092,7 @@ fn open_tunnel(proxy: &crate::sandbox::egress::Proxy, host: &str) -> Option<std:
         );
         return None;
     }
-    stream.write_all(&client_hello(host)).ok()?;
+    stream.write_all(&answered_client_hello(host)).ok()?;
     let mut answered = [0u8; 1];
     let carried = matches!(stream.read(&mut answered), Ok(1));
     assert!(
@@ -1092,6 +1100,50 @@ fn open_tunnel(proxy: &crate::sandbox::egress::Proxy, host: &str) -> Option<std:
         "on CI, {host} did not answer through the tunnel"
     );
     carried.then_some(stream)
+}
+
+/// **A ClientHello naming `name` that a real server goes on with**: [`client_hello`] lacks the
+/// key share, groups and signature algorithms TLS 1.3 needs, so a server answers it with an
+/// alert and hangs up, which ends a tunnel whatever the proxy does. Given these, it sends its
+/// side of the handshake and waits for the client's.
+fn answered_client_hello(name: &str) -> Vec<u8> {
+    let mut extra = Vec::new();
+    // supported_groups: x25519.
+    extra.extend(10u16.to_be_bytes());
+    extra.extend(4u16.to_be_bytes());
+    extra.extend([0, 2, 0, 0x1d]);
+    // signature_algorithms: rsa_pss_rsae_sha256, ecdsa_secp256r1_sha256, rsa_pkcs1_sha256.
+    extra.extend(13u16.to_be_bytes());
+    extra.extend(8u16.to_be_bytes());
+    extra.extend([0, 6, 8, 4, 4, 3, 4, 1]);
+    // key_share: one x25519 public key, the curve's base point.
+    extra.extend(51u16.to_be_bytes());
+    extra.extend(38u16.to_be_bytes());
+    extra.extend(36u16.to_be_bytes());
+    extra.extend(0x1du16.to_be_bytes());
+    extra.extend(32u16.to_be_bytes());
+    extra.push(9);
+    extra.extend([0u8; 31]);
+    client_hello_carrying(name, &extra)
+}
+
+/// Whether `stream` is still open after a quiet spell, whatever it had left to read: the far
+/// side has not hung up on its own, so only the proxy can end it now.
+fn stays_open(stream: &std::net::TcpStream) -> bool {
+    use std::io::Read;
+    let mut stream = stream;
+    let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(2)));
+    let mut chunk = [0u8; 4096];
+    loop {
+        match stream.read(&mut chunk) {
+            Ok(0) => return false,
+            Ok(_) => continue,
+            Err(why) => {
+                return why.kind() == std::io::ErrorKind::WouldBlock
+                    || why.kind() == std::io::ErrorKind::TimedOut;
+            }
+        }
+    }
 }
 
 /// Whether `stream` reaches its end within a few seconds, whatever it still had to read.
@@ -1121,14 +1173,22 @@ fn a_tunnel_carried_during_a_question_ends_with_it_and_when_its_proxy_closes() {
             // Off CI, where `open_tunnel` holds it to, a machine with no network says nothing here.
             return;
         };
-        if close {
-            close_proxy(id);
-        }
-        drop(asking);
-        drop(proxy);
         assert!(
-            ends_promptly(tunnel),
-            "the tunnel outlived its question (closed for good: {close})"
+            stays_open(&tunnel),
+            "example.com hung up on the tunnel itself, so its end would prove nothing"
         );
+        if close {
+            // The question is still being answered: only `close_proxy` can end the tunnel here.
+            close_proxy(id);
+            assert!(
+                ends_promptly(tunnel),
+                "the tunnel outlived its proxy closing for good, mid-question"
+            );
+            drop(asking);
+        } else {
+            drop(asking);
+            assert!(ends_promptly(tunnel), "the tunnel outlived its question");
+        }
+        drop(proxy);
     }
 }
