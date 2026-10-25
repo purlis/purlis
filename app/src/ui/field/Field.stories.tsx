@@ -182,27 +182,31 @@ export const LongRefusalLastInADialog: Story = {
   parameters: { screenshot: "page" },
   render: () => <RefusedLast />,
   play: async ({ userEvent }) => {
-    // A dialog is drawn over the page, outside the story's page.
+    // A dialog is drawn over the page, outside the story's page; each part is found again where
+    // it is asked about, as the dialog may draw its body anew as it opens.
     const page = within(document.body);
-    const dialog = await page.findByRole("dialog", { name: "New workspace" });
-    const box = page.getByRole("textbox", { name: "Profile" });
-    await expect(box).toHaveAccessibleDescription(LONG_REFUSAL);
-    const room = dialog.querySelector("[data-error-room]") as HTMLElement;
-    await waitFor(() => expect(room).toHaveAttribute("data-clipped"));
-    const whole = room.querySelector("[data-whole]") as HTMLElement;
-    const body = dialog.querySelector('[data-scope="dialog"][data-part="body"]') as HTMLElement;
+    const dialog = async () => page.findByRole("dialog", { name: "New workspace" });
+    const whole = async () =>
+      (await dialog()).querySelector(
+        "[data-error-room][data-clipped] > [data-whole]",
+      ) as HTMLElement;
+    const body = async () =>
+      (await dialog()).querySelector('[data-scope="dialog"][data-part="body"]') as HTMLElement;
     await waitFor(() => expect(page.getByRole("textbox", { name: "Name" })).toHaveFocus());
+    await expect(page.getByRole("textbox", { name: "Profile" })).toHaveAccessibleDescription(
+      LONG_REFUSAL,
+    );
     await userEvent.tab();
-    await expect(box).toHaveFocus();
+    await expect(page.getByRole("textbox", { name: "Profile" })).toHaveFocus();
     expectFocusInSight();
-    await expect(whole).toBeVisible();
+    await waitFor(async () => expect(await whole()).toBeVisible());
     // In sight: its last line is inside what the body shows.
-    await waitFor(() =>
-      expect(Math.round(whole.getBoundingClientRect().bottom)).toBeLessThanOrEqual(
-        Math.round(body.getBoundingClientRect().bottom),
+    await waitFor(async () =>
+      expect(Math.round((await whole()).getBoundingClientRect().bottom)).toBeLessThanOrEqual(
+        Math.round((await body()).getBoundingClientRect().bottom),
       ),
     );
-    await expect(getComputedStyle(whole).pointerEvents).toBe("none");
+    await expect(getComputedStyle(await whole()).pointerEvents).toBe("none");
   },
 };
 
