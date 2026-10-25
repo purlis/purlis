@@ -127,11 +127,15 @@ async function focusModeTo(want: boolean): Promise<void> {
     { timeout: 10_000, interval: 150, timeoutMsg: "a modal stayed up before focus mode's key" },
   );
   // One press: a press that lands late must never meet a second, which would turn it back.
-  {
-    await browser.execute((mac: boolean) => {
+  // What the page said as it was pressed, for the failure: whether a handler claimed the key
+  // (`defaultPrevented`), whether a modal was up at that moment, where the keyboard was.
+  const pressed = await browser.execute(
+    (mac: boolean, modal: string) => {
       const on = document.activeElement;
       if (on instanceof HTMLElement) on.blur();
-      document.body.dispatchEvent(
+      const at = document.activeElement?.tagName ?? "none";
+      const modalUp = document.querySelector(modal) !== null;
+      const claimed = !document.body.dispatchEvent(
         new KeyboardEvent("keydown", {
           key: "Enter",
           code: "Enter",
@@ -142,23 +146,26 @@ async function focusModeTo(want: boolean): Promise<void> {
           cancelable: true,
         }),
       );
-    }, MAC);
-    const landed = await browser
-      .waitUntil(async () => (await inFocusMode()) === want, { timeout: 10_000, interval: 150 })
-      .then(() => true)
-      .catch(() => false);
-    if (landed) return;
-  }
+      const windows = document.querySelectorAll("main.window").length;
+      return `claimed ${claimed}, a modal ${modalUp ? "up" : "not up"} as it was pressed, the keyboard on ${at}, ${windows} window(s)`;
+    },
+    MAC,
+    MODAL,
+  );
+  const landed = await browser
+    .waitUntil(async () => (await inFocusMode()) === want, { timeout: 10_000, interval: 150 })
+    .then(() => true)
+    .catch(() => false);
+  if (landed) return;
   // What held the key back, said in the failure: the modal up, if one is.
   const held = await browser.execute((modal: string) => {
     const up = document.querySelector<HTMLElement>(modal);
-    const rows = document.querySelectorAll('[data-scope="list"][data-part="root"]').length;
     return up === null
-      ? `no modal up; ${rows} list rows drawn`
-      : `a modal up: ${up.getAttribute("aria-label") ?? up.dataset.testid ?? up.className}`;
+      ? "no modal up now"
+      : `a modal up now: ${up.getAttribute("aria-label") ?? up.dataset.testid ?? up.className}`;
   }, MODAL);
   throw new Error(
-    `${MAC ? "⌘⇧↩" : "Ctrl+Shift+Enter"} did not turn focus mode ${want ? "on" : "off"} (${held})`,
+    `${MAC ? "⌘⇧↩" : "Ctrl+Shift+Enter"} did not turn focus mode ${want ? "on" : "off"} (${pressed}; ${held})`,
   );
 }
 
