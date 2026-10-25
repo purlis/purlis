@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792924149312,
+  "lastUpdate": 1792927301357,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -7108,6 +7108,42 @@ window.BENCHMARK_DATA = {
             "value": 284.4,
             "unit": "MB",
             "extra": "median of 6 samples: 319.9, 297, 299.7, 270.8, 271.8, 226.8 MB; window 172.3 MB, session host 111.1 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "654fde520d70448622f5a435113024a28f8654db",
+          "message": "Release check lists every test-only crate feature (#3199)\n\ntools/release-features.mjs named only purlis-session-protocol/any-stream.\nTEST_ONLY now lists purlis-core's fenced and the test-support features of\npurlis-core, purlis-host, purlis-skills and purlis-terminal, each with a\ncanary from another crate's dev-dependencies. The check also reads the\nworkspace's packages: a test-support feature the list leaves out, a listed\nfeature no package has, or one with no canary is an error, so a new test\nhook is caught by CI rather than kept out by the resolver alone.\n\nCloses #3180\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-25T14:29:08+04:00",
+          "tree_id": "c62091235f00ac16c785399a2d3f4b1bb88fce61",
+          "url": "https://github.com/purlis/purlis/commit/654fde520d70448622f5a435113024a28f8654db"
+        },
+        "date": 1792927298030,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 1137,
+            "unit": "MB",
+            "extra": "median of 3 samples: 940, 1137, 1161 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 289.3,
+            "unit": "MB",
+            "extra": "median of 6 samples: 340.4, 294.1, 292.3, 283.8, 286.4, 211.8 MB; window 171.9 MB, session host 116.7 MB"
           }
         ]
       }
