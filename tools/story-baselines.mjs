@@ -257,7 +257,8 @@ export function problems(
 }
 
 /** Copies the baseline of every live story in `app` that takes a picture to `out`, under the
- *  same path, and says which: an obsolete one is left out, so `take` deletes it. */
+ *  same path, and says which: an obsolete one is left out, so `take` deletes it. Refuses an
+ *  index with no live story. */
 export function gather(
   app,
   index,
@@ -266,6 +267,12 @@ export function gather(
   unpictured = [],
 ) {
   const live = liveStories(index, cells);
+  // Gathering nothing deletes every baseline, so that takes a live story to say so: an index
+  // with none (a broken stories glob or indexer) is refused, never read as "delete them all".
+  if ([...live.values()].every((pictures) => pictures.size === 0))
+    throw new Error(
+      "the story index has no story that runs as a test in a pictured cell, so no baseline was gathered",
+    );
   const off = picturesOf(unpictured, cells);
   const all = baselinesIn(app).filter((path) => {
     if (!BASELINE.test(path)) return false;

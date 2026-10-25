@@ -162,9 +162,10 @@ digest (`tools/story-image.mjs`).
    refuses a branch behind its base, runs every story in the pinned image, writes each picture
    that is new or differs, deletes every baseline whose story is gone or takes no picture, pushes
    both to the branch as one commit, takes the label off and comments which baselines it drew
-   and which it deleted. What it commits is only whole PNG baselines within a size and a count limit, and the deletion
-   of other files in `__screenshots__` directories, checked by the base branch's own copy of
-   `tools/story-baselines.mjs`.
+   and which it deleted. What it commits is only whole PNG baselines within a size and a count
+   limit, and the deletion of other files in `__screenshots__` directories, checked by the base
+   branch's own copy of `tools/story-baselines.mjs`. It gathers nothing only when every story the
+   index has takes no picture; an index with no story that runs as a test fails the job.
 3. Review the pictures in the pull request's diff, which shows each one beside the one it
    replaces.
 4. The job starts the `stories` check on the new commit itself. The other checks of a push made

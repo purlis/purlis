@@ -263,7 +263,7 @@ jobs:
                 echo
               fi
               if [ -n "$DELETED" ]; then
-                echo "These baselines were deleted, as no story that runs as a test draws them in a pictured cell:"
+                echo "These baselines were deleted, as no story that runs as a test draws them in a pictured cell, or it takes no picture:"
                 echo
                 if [ "$many" = 1 ]; then counted "$DELETED"; else listed "$DELETED"; fi
                 echo

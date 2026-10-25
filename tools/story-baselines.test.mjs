@@ -506,3 +506,31 @@ test("the stories that take no picture are read from each browser's report", () 
   );
   assert.throws(() => unpicturedIn([{ failures: [] }]), /not a stories report/);
 });
+
+test("gather refuses an index with no live story, rather than gather nothing", () => {
+  const app = tree({
+    "src/settings/Choice.stories.tsx": "",
+    [`${SHOT}-webkit-linux.png`]: PNG,
+  });
+  const out = mkdtempSync(join(tmpdir(), "story-baselines-out-"));
+  for (const [index, cells] of [
+    [indexOf([]), CELLS],
+    [
+      indexOf([
+        ["settings-choice--radios", "src/settings/Choice.stories.tsx", ["dev"]],
+      ]),
+      CELLS,
+    ],
+    [INDEX, []],
+  ])
+    assert.throws(
+      () => gather(app, index, out, cells),
+      /no story that runs as a test/,
+    );
+  assert.equal(existsSync(join(out, `${SHOT}-webkit-linux.png`)), false);
+  // Every live story taking no picture is evidence enough: nothing is gathered.
+  const off = [
+    { file: "src/settings/Choice.stories.tsx", id: "settings-choice--radios" },
+  ];
+  assert.deepEqual(gather(app, INDEX, out, CELLS, off), []);
+});

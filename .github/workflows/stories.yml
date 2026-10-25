@@ -69,6 +69,7 @@ jobs:
       # failures are kept by `tools/story-failures.mjs`'s reporter rather than Vitest's JSON
       # one, which keeps an error's stack alone: WebKit's does not repeat the message.
       - name: The stories, in Chromium and in WebKit
+        id: stories
         run: |
           failed=0
           for browser in chromium webkit; do
@@ -79,9 +80,9 @@ jobs:
           exit "$failed"
       # Storybook's own index says which stories there are, and the run's reports which of them
       # take no picture (`screenshot: false`, which no index has); a baseline of any other is
-      # obsolete. After the stories, whether they passed or not.
+      # obsolete. After the stories, whether they passed or not (not when they never ran).
       - name: Every baseline was drawn in this image, of a story there is that takes a picture
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.stories.conclusion != 'skipped' }}
         run: |
           npx storybook index --disable-telemetry --quiet -c .storybook \
             -o "$RUNNER_TEMP/stories-index.json"
