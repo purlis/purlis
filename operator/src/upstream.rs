@@ -14,8 +14,10 @@
 
 use crate::resources::{Claim, Pool};
 use k8s_openapi::api::core::v1::{
-    Capabilities, Container, PodSpec, PodTemplateSpec, SeccompProfile, SecurityContext,
+    Capabilities, Container, EmptyDirVolumeSource, PodSpec, PodTemplateSpec, SeccompProfile,
+    SecurityContext, Volume, VolumeMount,
 };
+use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::{Condition, ObjectMeta, OwnerReference};
 use kube::{CustomResource, Resource, ResourceExt};
 use schemars::JsonSchema;
@@ -36,6 +38,37 @@ pub const CONTROLLER_DIGEST: &str =
 
 /// The name of the container that runs `purlis serve` in a runner's pod.
 pub const RUNNER_CONTAINER: &str = "runner";
+
+/// **The runner pod's first step** (#2056): it runs before anything else in the pod, makes the
+/// runner's link key, hands its private half to the runner over [`LINK_FOLDER`] and publishes
+/// its public half as its termination message, for the operator to vouch for
+/// ([`crate::vouch`]).
+pub const KEY_STEP: &str = "link-key";
+
+/// The folder in memory, shared by the pod's two containers alone, the key is handed over in.
+/// Its path is the runner image contract's (docs/cluster-operator.md); the desktop's pairing
+/// names the key there.
+pub const LINK_FOLDER: &str = "/run/purlis-link";
+
+/// The volume [`LINK_FOLDER`] is.
+const LINK_VOLUME: &str = "purlis-link";
+
+/// Where a container's termination message is written, which the cluster then shows in the
+/// pod's status: Kubernetes' own default, named so a change of default never moves it.
+pub const TERMINATION_LOG: &str = "/dev/termination-log";
+
+/// What [`KEY_STEP`] runs, after the image's own entrypoint (`purlis`).
+pub fn key_step_args() -> Vec<String> {
+    [
+        "bridge",
+        "--make-key",
+        &format!("{LINK_FOLDER}/link-key"),
+        "--publish",
+        TERMINATION_LOG,
+    ]
+    .map(str::to_owned)
+    .to_vec()
+}
 
 /// A runner's pod, as upstream keeps it for a pool.
 #[derive(CustomResource, Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -78,12 +111,15 @@ pub struct SandboxClaimSpec {
     pub warm_pool_ref: Reference,
 }
 
-/// What upstream says about its claim: purlis reads its `Ready` condition.
+/// What upstream says about its claim: purlis reads its `Ready` condition, and the sandbox it
+/// made, whose pod has its name.
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SandboxClaimStatus {
     #[serde(default)]
     pub conditions: Vec<Condition>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sandbox: Option<Reference>,
 }
 
 /// A reference to an object of the same namespace, by name.
@@ -265,22 +301,30 @@ pub fn claims_holding(held: &ObjectMeta, pool: &Pool, claims: &[&Claim]) -> Vec<
 /// the runner image contract), as a user who is not root, with no added privilege, no
 /// Kubernetes credential and no service addresses.
 pub fn template_for(pool: &Pool, namespace: &str, owners: Vec<OwnerReference>) -> SandboxTemplate {
+    let link_folder = || {
+        Some(vec![VolumeMount {
+            name: LINK_VOLUME.to_owned(),
+            mount_path: LINK_FOLDER.to_owned(),
+            ..VolumeMount::default()
+        }])
+    };
     let runner = Container {
         name: RUNNER_CONTAINER.to_owned(),
         image: Some(pool.spec.image.clone()),
-        security_context: Some(SecurityContext {
-            run_as_non_root: Some(true),
-            allow_privilege_escalation: Some(false),
-            capabilities: Some(Capabilities {
-                drop: Some(vec!["ALL".to_owned()]),
-                add: None,
-            }),
-            seccomp_profile: Some(SeccompProfile {
-                type_: "RuntimeDefault".to_owned(),
-                localhost_profile: None,
-            }),
-            ..SecurityContext::default()
-        }),
+        volume_mounts: link_folder(),
+        security_context: Some(confined()),
+        ..Container::default()
+    };
+    // The pod's first step makes the runner's link key, and publishes it as its termination
+    // message (#2056).
+    let key_step = Container {
+        name: KEY_STEP.to_owned(),
+        image: Some(pool.spec.image.clone()),
+        args: Some(key_step_args()),
+        volume_mounts: link_folder(),
+        termination_message_path: Some(TERMINATION_LOG.to_owned()),
+        termination_message_policy: Some("File".to_owned()),
+        security_context: Some(confined()),
         ..Container::default()
     };
     SandboxTemplate {
@@ -289,13 +333,40 @@ pub fn template_for(pool: &Pool, namespace: &str, owners: Vec<OwnerReference>) -
             pod_template: PodTemplateSpec {
                 metadata: None,
                 spec: Some(PodSpec {
+                    init_containers: Some(vec![key_step]),
                     containers: vec![runner],
+                    volumes: Some(vec![Volume {
+                        name: LINK_VOLUME.to_owned(),
+                        empty_dir: Some(EmptyDirVolumeSource {
+                            medium: Some("Memory".to_owned()),
+                            size_limit: Some(Quantity("1Mi".to_owned())),
+                        }),
+                        ..Volume::default()
+                    }]),
                     automount_service_account_token: Some(false),
                     enable_service_links: Some(false),
                     ..PodSpec::default()
                 }),
             },
         },
+    }
+}
+
+/// How every container of a runner's pod is confined: a user who is not root, every capability
+/// dropped, no privilege escalation, the runtime's default seccomp profile.
+fn confined() -> SecurityContext {
+    SecurityContext {
+        run_as_non_root: Some(true),
+        allow_privilege_escalation: Some(false),
+        capabilities: Some(Capabilities {
+            drop: Some(vec!["ALL".to_owned()]),
+            add: None,
+        }),
+        seccomp_profile: Some(SeccompProfile {
+            type_: "RuntimeDefault".to_owned(),
+            localhost_profile: None,
+        }),
+        ..SecurityContext::default()
     }
 }
 

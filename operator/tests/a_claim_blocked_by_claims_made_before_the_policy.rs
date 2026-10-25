@@ -33,7 +33,10 @@ fn claim(name: &str, uid: &str, pool: &str) -> Claim {
             uid: Some(uid.into()),
             ..ObjectMeta::default()
         },
-        spec: ClaimSpec { pool: pool.into() },
+        spec: ClaimSpec {
+            pool: pool.into(),
+            requester: "ada@example.com".into(),
+        },
         status: None,
     }
 }

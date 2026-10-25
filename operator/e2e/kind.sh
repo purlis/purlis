@@ -8,14 +8,15 @@
 # recorded beside the vendored release, checked against the registry), then purlis's definitions,
 # policy and operator installed by the Helm chart (charts/purlis-cluster-operator/), as
 # docs/cluster-operator.md installs them. The cluster then shows the plain manifests in deploy/
-# would change nothing, and `tests/on_a_kind_cluster.rs` runs. Everything it started is removed
-# when it ends, unless KEEP=1.
+# would change nothing, `tests/on_a_kind_cluster.rs` runs, and then the desktop's side: a chat on
+# a cluster runner through the link (crates/purlis-core/tests/, #2056). Everything it started is
+# removed when it ends, unless KEEP=1.
 #
 #   operator/e2e/kind.sh <runner image> <operator image>
 #
 # Both images are local ones (`docker image ls`): the runner image (runner-image/Dockerfile, or
 # any image that keeps its contract) and the operator's (operator/Dockerfile). Needs docker,
-# kind, kubectl, helm (v4), cargo and node on PATH. `.github/workflows/operator.yml` runs it.
+# kind, kubectl, helm (v4), cargo, node and openssl on PATH. `.github/workflows/operator.yml` runs it.
 
 set -eu
 
@@ -163,6 +164,12 @@ step "purlis's definitions, policy and operator, by the chart"
 # restricted Pod Security Standard are admitted in it, so the operator's pod has to.
 kubectl --context "$context" create namespace purlis-system
 kubectl --context "$context" label namespace purlis-system pod-security.kubernetes.io/enforce=restricted
+# The key the operator signs runners' link keys with, made before it is installed, as
+# docs/cluster-operator.md makes it (#2056).
+openssl genpkey -algorithm ed25519 -out "$helm_home/signing-key.pem"
+kubectl --context "$context" -n purlis-system create secret generic purlis-cluster-operator-signing-key \
+  --from-file=key.pem="$helm_home/signing-key.pem" >/dev/null
+rm -f "$helm_home/signing-key.pem"
 # The chart's own default names the image, as in the install a person downloads.
 helm install purlis-cluster-operator "$install/charts/purlis-cluster-operator" --kube-context "$context" --namespace purlis-system \
   --wait --timeout 180s
@@ -190,6 +197,14 @@ step "the tests"
 kubectl config use-context "$context" >/dev/null
 PURLIS_RUNNER_IMAGE=$runner cargo test --manifest-path "$here/Cargo.toml" --locked \
   --test on_a_kind_cluster -- --ignored --test-threads=1
+
+step "a chat runs on a cluster runner, through the link"
+# The desktop's side (#2056), from the root workspace: a Claim made as this kubeconfig's user,
+# the operator's statement checked against the key the Pool names, a pairing over kubectl exec
+# that must agree with it, then a link through kubectl exec and a chat on it.
+CLUSTER_POOL_TEST_IMAGE=$runner CLUSTER_POOL_TEST_CONTEXT=$context \
+  cargo test --manifest-path "$repo/Cargo.toml" --locked -p purlis-core \
+  --test a_chat_runs_on_a_cluster_runner_through_kubectl_exec -- --test-threads=1
 
 step "uninstalled, the chart leaves the definitions and the policy"
 helm uninstall purlis-cluster-operator --kube-context "$context" --namespace purlis-system --wait

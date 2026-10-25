@@ -24,6 +24,8 @@ pub mod cistate;
 pub mod cliname;
 pub mod clipath;
 pub mod cloneupdate;
+#[cfg(unix)]
+pub mod clusterpool;
 pub mod codelink;
 pub mod commitgate;
 pub mod commitguard;

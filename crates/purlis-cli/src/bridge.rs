@@ -11,6 +11,11 @@
 //! runner's device id and makes its link key, and writes the runner's own device id and public key on its standard
 //! output for the desktop to keep. It is the bridge's one act that is not a pipe. The
 //! connector's own login vouches for this one exchange; after it, the keys decide.
+//!
+//! On a cluster runner (#2056) the key is made as the pod starts, by `purlis bridge --make-key
+//! <file> --publish <file>`, the pod's first step: its private half is handed to the pairing,
+//! and its public half written where the cluster shows it, for the operator to vouch for.
+//! `purlis bridge --pair --key-made-at-start <file>` then pairs with that key.
 
 use std::io::{BufRead, Read, Write};
 use std::time::{Duration, Instant};
@@ -18,11 +23,30 @@ use std::time::{Duration, Instant};
 /// How long the bridge waits for the host's link socket, for a host that is still starting.
 const HOST_WITHIN: Duration = Duration::from_secs(60);
 
-pub fn run(pair: bool) -> Result<u8, String> {
+/// What the bridge is asked to do.
+pub enum Asked {
+    /// Be a pipe to the host's link socket.
+    Pipe,
+    /// Pair the runner, with a new key, or with the key its pod made as it started.
+    Pair {
+        key_made_at_start: Option<std::path::PathBuf>,
+    },
+    /// Make a cluster runner's link key as its pod starts (#2056).
+    MakeKey {
+        handoff: std::path::PathBuf,
+        published: std::path::PathBuf,
+    },
+}
+
+pub fn run(asked: Asked) -> Result<u8, String> {
+    if let Asked::MakeKey { handoff, published } = &asked {
+        purlis_core::runnerlink::make_at_start(handoff, published)?;
+        return Ok(0);
+    }
     let config = purlis_core::machine::config_root()
         .ok_or("there is no home folder, so this runner keeps no link key")?;
     let folder = purlis_core::machine::charterd(&config);
-    if pair {
+    if let Asked::Pair { key_made_at_start } = &asked {
         let mut line = String::new();
         std::io::stdin()
             .lock()
@@ -30,7 +54,12 @@ pub fn run(pair: bool) -> Result<u8, String> {
             .read_line(&mut line)
             .map_err(|why| format!("the desktop's device id and key could not be read: {why}"))?;
         let desktop = purlis_core::runnerlink::from_line(&line)?;
-        let ours = purlis_core::runnerlink::pair(&config, &desktop)?;
+        let ours = match key_made_at_start {
+            Some(handoff) => {
+                purlis_core::runnerlink::pair_with_key_made_at_start(&config, &desktop, handoff)?
+            }
+            None => purlis_core::runnerlink::pair(&config, &desktop)?,
+        };
         let mut out = std::io::stdout().lock();
         writeln!(out, "{}", purlis_core::runnerlink::to_line(&ours))
             .and_then(|()| out.flush())

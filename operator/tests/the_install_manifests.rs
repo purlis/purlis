@@ -133,6 +133,7 @@ fn the_operator_may_do_exactly_what_it_needs() {
     }
     rules.sort();
     let wanted = [
+        ("", "pods", "get"),
         (
             "admissionregistration.k8s.io",
             "validatingadmissionpolicybindings",
@@ -156,6 +157,7 @@ fn the_operator_may_do_exactly_what_it_needs() {
         ("runners.purlis.dev", "claims", "list,watch"),
         ("runners.purlis.dev", "claims/status", "patch"),
         ("runners.purlis.dev", "pools", "get,list,watch"),
+        ("runners.purlis.dev", "pools/status", "patch"),
     ]
     .map(|(g, r, v)| (g.to_owned(), r.to_owned(), v.to_owned()));
     assert_eq!(rules, wanted);
@@ -196,6 +198,36 @@ fn the_operator_runs_as_a_user_who_is_not_root_with_nothing_added() {
     assert_eq!(pod["containers"].as_array().map(Vec::len), Some(1));
 }
 
+/// Its signing key (#2056) is a Secret the kubelet mounts in its pod, read-only, for its user's
+/// group alone: the operator holds no right to read a Secret.
+#[test]
+fn the_operators_signing_key_is_mounted_from_its_secret_by_the_kubelet() {
+    let documents = documents("operator.yaml");
+    let deployment = documents
+        .iter()
+        .find(|d| d["kind"] == "Deployment")
+        .expect("the operator's deployment");
+    let pod = &deployment["spec"]["template"]["spec"];
+    let volumes = pod["volumes"].as_array().expect("volumes");
+    assert_eq!(volumes.len(), 1, "{volumes:?}");
+    let secret = &volumes[0]["secret"];
+    assert_eq!(secret["secretName"], "purlis-cluster-operator-signing-key");
+    assert_eq!(secret["defaultMode"], 0o440);
+    assert_eq!(pod["securityContext"]["fsGroup"], 65532);
+    let mounts = pod["containers"][0]["volumeMounts"]
+        .as_array()
+        .expect("mounts");
+    assert_eq!(mounts.len(), 1);
+    assert_eq!(mounts[0]["name"], volumes[0]["name"]);
+    assert_eq!(mounts[0]["readOnly"], true);
+    let path = format!(
+        "{}/{}",
+        mounts[0]["mountPath"].as_str().unwrap(),
+        secret["items"][0]["path"].as_str().unwrap()
+    );
+    assert_eq!(path, purlis_cluster_operator::vouch::SIGNING_KEY_PATH);
+}
+
 #[test]
 fn a_claim_is_admitted_only_for_someone_the_cluster_lets_use_its_pool() {
     let documents = documents("policy.yaml");
@@ -213,11 +245,22 @@ fn a_claim_is_admitted_only_for_someone_the_cluster_lets_use_its_pool() {
     assert_eq!(strings(&rules[0]["resources"]), ["claims"]);
     assert_eq!(strings(&rules[0]["operations"]), ["CREATE"]);
     let validations = spec["validations"].as_array().expect("validations");
-    assert_eq!(validations.len(), 1, "{spec}");
-    let expression = validations[0]["expression"].as_str().expect("expression");
+    assert_eq!(validations.len(), 2, "{spec}");
+    let expression = |at: usize| {
+        validations[at]["expression"]
+            .as_str()
+            .expect("expression")
+            .split_whitespace()
+            .collect::<String>()
+    };
     assert_eq!(
-        expression.split_whitespace().collect::<String>(),
+        expression(0),
         "authorizer.group('runners.purlis.dev').resource('pools').name(object.spec.pool).check('use').allowed()"
+    );
+    // Who asked is stamped as the cluster signed them in (#2056).
+    assert_eq!(
+        expression(1),
+        "object.spec.requester==request.userInfo.username"
     );
 
     let binding = documents
