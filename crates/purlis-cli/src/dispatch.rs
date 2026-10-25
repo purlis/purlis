@@ -196,7 +196,7 @@ pub fn dispatch(
     waits: Option<u32>,
 ) -> ExitCode {
     let Some(name) = name else {
-        voice::err(&format!(
+        voice::err(format!(
             "{SAYS} a task needs a name, which the new chat is called and listed under: add \
              --name \"<task>\". {NOTHING}"
         ));

@@ -246,10 +246,13 @@ pub fn use_workspace(
     say: Sink,
 ) -> u8 {
     if !crate::contain::workspace_name_ok(name) {
-        say(Say::Fail(format!(
-            "invalid workspace name '{}'",
-            crate::personas::one_line(name)
-        )));
+        say(Say::Fail(
+            format!(
+                "invalid workspace name '{}'",
+                crate::personas::one_line(name)
+            )
+            .into(),
+        ));
         return 1;
     }
     let plane = crate::workspaces::Plane::open(root);
@@ -260,16 +263,20 @@ pub fn use_workspace(
     // into one. The two conditions are one decision — "charter was not asked to make this" —
     // so they read as one.
     if !there && !create {
-        say(Say::Fail(format!("no workspace named '{name}'.")));
+        say(Say::Fail(format!("no workspace named '{name}'.").into()));
         let close = near(name, &existing);
         if !close.is_empty() {
-            say(Say::Info(format!("  Did you mean: {}?", close.join(", "))));
+            say(Say::Info(
+                format!("  Did you mean: {}?", close.join(", ")).into(),
+            ));
         } else if !existing.is_empty() {
-            say(Say::Info(format!("  Existing: {}", existing.join(", "))));
+            say(Say::Info(
+                format!("  Existing: {}", existing.join(", ")).into(),
+            ));
         }
-        say(Say::Info(format!(
-            "  Create it: purlis workspace use {name} --create"
-        )));
+        say(Say::Info(
+            format!("  Create it: purlis workspace use {name} --create").into(),
+        ));
         return 1;
     }
 
@@ -278,7 +285,7 @@ pub fn use_workspace(
     // session to is one charter has just brought up to the layout it writes.
     if let Err(why) = crate::wscmd::ensure::ensure(root, name, now, &crate::wscmd::ensure::author())
     {
-        say(Say::Fail(why));
+        say(Say::Fail(why.into()));
         return 1;
     }
 
@@ -286,11 +293,11 @@ pub fn use_workspace(
     match set_active(root, name, ids, force) {
         Scope::Locked => {
             let held = before.unwrap_or_else(|| "?".to_string());
-            say(Say::Fail(locked_msg(name, &held)));
+            say(Say::Fail(locked_msg(name, &held).into()));
             2
         }
         Scope::Unwritten => {
-            say(Say::Fail(unwritten_msg(name)));
+            say(Say::Fail(unwritten_msg(name).into()));
             1
         }
         scope => {
@@ -323,15 +330,18 @@ pub(crate) fn announce(
     say: Sink,
 ) {
     if scope == Scope::Unwritten {
-        say(Say::Fail(unwritten_msg(name)));
+        say(Say::Fail(unwritten_msg(name).into()));
         return;
     }
     if scope == Scope::None {
-        say(Say::Warn(format!(
-            "Nothing was persisted: this process has no session id and no pane id, so there is \
+        say(Say::Warn(
+            format!(
+                "Nothing was persisted: this process has no session id and no pane id, so there is \
              nowhere to keep '{name}' selected. Pass `--workspace {name}` per command, or set \
              `$CHARTER_WORKSPACE={name}`."
-        )));
+            )
+            .into(),
+        ));
         return;
     }
     let locked = is_locked(root, ids);
@@ -339,11 +349,14 @@ pub(crate) fn announce(
         (Some(was), now) if now != Some(was) => "re-locked to",
         _ => "set to",
     };
-    say(Say::Done(format!(
-        "Active workspace {verb} '{name}'{} — {}.",
-        scope_note(root, scope),
-        lock_words(name, locked.as_deref())
-    )));
+    say(Say::Done(
+        format!(
+            "Active workspace {verb} '{name}'{} — {}.",
+            scope_note(root, scope),
+            lock_words(name, locked.as_deref())
+        )
+        .into(),
+    ));
 }
 
 /// **Points the selection at `fallback` after workspace `removed` was removed** (#2103):
@@ -353,17 +366,20 @@ pub(crate) fn announce(
 pub fn reset_after_removal(root: &Path, removed: &str, fallback: &str, ids: &Ids, say: Sink) -> u8 {
     match set_active(root, fallback, ids, true) {
         Scope::Unwritten => {
-            say(Say::Fail(unwritten_msg(fallback)));
-            say(Say::Info(format!(
-                "Workspace '{removed}' was removed; the selection still names it until one is \
+            say(Say::Fail(unwritten_msg(fallback).into()));
+            say(Say::Info(
+                format!(
+                    "Workspace '{removed}' was removed; the selection still names it until one is \
                  written."
-            )));
+                )
+                .into(),
+            ));
             1
         }
         _ => {
-            say(Say::Info(format!(
-                "Active workspace reset to '{fallback}'."
-            )));
+            say(Say::Info(
+                format!("Active workspace reset to '{fallback}'.").into(),
+            ));
             0
         }
     }
@@ -437,10 +453,13 @@ pub(crate) fn warn_env_override(name: &str, say: Sink) {
         return;
     }
     let shown = crate::personas::one_line(env);
-    say(Say::Warn(format!(
-        "$CHARTER_WORKSPACE='{shown}' is set and takes precedence — commands in this session \
+    say(Say::Warn(
+        format!(
+            "$CHARTER_WORKSPACE='{shown}' is set and takes precedence — commands in this session \
          will still act on '{shown}', not '{name}'."
-    )));
+        )
+        .into(),
+    ));
 }
 
 /// Up to three of `names` that look like `name` — `difflib.get_close_matches(n=3, cutoff=0.6)`.
@@ -490,13 +509,16 @@ fn distance(a: &str, b: &str) -> usize {
 pub fn unlock_command(root: &Path, ids: &Ids, say: Sink) -> u8 {
     if unlock(root, ids) {
         say(Say::Done(
-            "Workspace unlocked for this session — `purlis workspace use <name>` can switch \
+            ("Workspace unlocked for this session — `purlis workspace use <name>` can switch \
              now."
-                .to_string(),
+                .to_string())
+            .into(),
         ));
     } else {
         say(Say::Info(
-            "No workspace lock was set for this session (nothing to unlock).".to_string(),
+            "No workspace lock was set for this session (nothing to unlock)."
+                .to_string()
+                .into(),
         ));
     }
     0
@@ -522,12 +544,14 @@ pub fn default_command(root: &Path, name: Option<&str>, clear: bool, say: Sink) 
         return match std::fs::remove_file(default_file(root)) {
             Ok(()) => {
                 say(Say::Done(
-                    "Cleared the declared default workspace.".to_string(),
+                    "Cleared the declared default workspace.".to_string().into(),
                 ));
                 0
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                say(Say::Info("No default workspace was declared.".to_string()));
+                say(Say::Info(
+                    "No default workspace was declared.".to_string().into(),
+                ));
                 0
             }
             // The OS's own words beside the path, and no cause of charter's: a read-only
@@ -535,10 +559,13 @@ pub fn default_command(root: &Path, name: Option<&str>, clear: bool, say: Sink) 
             // one to name is the ADR 0009 failure. A failed unlink removes nothing, so there
             // is no partial state to read back.
             Err(e) => {
-                say(Say::Fail(format!(
-                    "could not remove {} ({e}) — the declared default is left as it was.",
-                    default_file(root).display()
-                )));
+                say(Say::Fail(
+                    format!(
+                        "could not remove {} ({e}) — the declared default is left as it was.",
+                        default_file(root).display()
+                    )
+                    .into(),
+                ));
                 1
             }
         };
@@ -546,15 +573,20 @@ pub fn default_command(root: &Path, name: Option<&str>, clear: bool, say: Sink) 
     let Some(name) = name.filter(|n| !n.is_empty()) else {
         return match crate::active::declared_default_workspace(root) {
             Some(cur) => {
-                say(Say::Info(format!("Declared default workspace: {cur}")));
+                say(Say::Info(
+                    format!("Declared default workspace: {cur}").into(),
+                ));
                 0
             }
             None => {
-                say(Say::Info(format!(
-                    "No declared default — a session with nothing else selected lands on '{}'. \
+                say(Say::Info(
+                    format!(
+                        "No declared default — a session with nothing else selected lands on '{}'. \
                      Set one: purlis workspace default <ws>",
-                    crate::active::plane_default_workspace(root)
-                )));
+                        crate::active::plane_default_workspace(root)
+                    )
+                    .into(),
+                ));
                 0
             }
         };
@@ -564,18 +596,21 @@ pub fn default_command(root: &Path, name: Option<&str>, clear: bool, say: Sink) 
     // and wrote it into a committed file every future session reads (charter#442). "A path
     // that exists" was never the question being asked.
     if !crate::contain::workspace_name_ok(name) {
-        say(Say::Fail(format!(
-            "'{}' is not a workspace name (letters, digits, '.', '_', '-'; must not start \
+        say(Say::Fail(
+            format!(
+                "'{}' is not a workspace name (letters, digits, '.', '_', '-'; must not start \
              with a dot). This file is committed and read on every session start, so a value \
              that is not a name is refused here.",
-            crate::personas::one_line(name)
-        )));
+                crate::personas::one_line(name)
+            )
+            .into(),
+        ));
         return 1;
     }
     if !wscmd::workspace_dir_exists(root, name) {
-        say(Say::Fail(format!(
-            "no workspace '{name}' (create it: purlis workspace create {name})"
-        )));
+        say(Say::Fail(
+            format!("no workspace '{name}' (create it: purlis workspace create {name})").into(),
+        ));
         return 1;
     }
     let path = default_file(root);
@@ -586,21 +621,28 @@ pub fn default_command(root: &Path, name: Option<&str>, clear: bool, say: Sink) 
         .and_then(|()| std::fs::create_dir_all(root.join("workspaces")))
         .and_then(|()| std::fs::write(&path, format!("{name}\n")))
     {
-        say(Say::Fail(format!(
-            "could not write {} ({}) — the declared default is left as it was.",
-            path.display(),
-            crate::rewrite::os_words(&why)
-        )));
+        say(Say::Fail(
+            format!(
+                "could not write {} ({}) — the declared default is left as it was.",
+                path.display(),
+                crate::rewrite::os_words(&why)
+            )
+            .into(),
+        ));
         return 1;
     }
-    say(Say::Done(format!(
-        "Default workspace set to '{name}' — sessions land here when nothing else has decided."
-    )));
+    say(Say::Done(
+        format!(
+            "Default workspace set to '{name}' — sessions land here when nothing else has decided."
+        )
+        .into(),
+    ));
     say(Say::Info(
-        "  Committed, so it travels with the plane. It is read LAST, so an explicit \
+        ("  Committed, so it travels with the plane. It is read LAST, so an explicit \
          `--workspace`, $CHARTER_WORKSPACE, the tree you are standing in, or a \
          session/terminal selection all still win."
-            .to_string(),
+            .to_string())
+        .into(),
     ));
     0
 }

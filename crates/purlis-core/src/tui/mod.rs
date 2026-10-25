@@ -670,6 +670,12 @@ impl Markup {
         self
     }
 
+    /// `more` after this: two lines of markup are one, and neither is read again.
+    pub fn then(mut self, more: Markup) -> Self {
+        self.0.push_str(&more.0);
+        self
+    }
+
     /// `inner` in purlis's colour `sgr`, reset after it.
     pub fn styled(mut self, sgr: Sgr, inner: Markup) -> Self {
         self.0.push_str(sgr.escape());
@@ -686,6 +692,142 @@ impl Markup {
 impl std::fmt::Display for Markup {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.0)
+    }
+}
+
+impl Markup {
+    /// `lines`, one after another, each on a line of its own.
+    ///
+    /// The line ends are purlis's own layout. A line end inside a line is still marked
+    /// ([`text`](Markup::text)), so a name cannot start a line purlis did not write.
+    pub fn lines(lines: impl IntoIterator<Item = Markup>) -> Markup {
+        let mut out = Markup::new();
+        for (i, line) in lines.into_iter().enumerate() {
+            if i > 0 {
+                out.0.push('\n');
+            }
+            out.0.push_str(&line.0);
+        }
+        out
+    }
+
+    /// Each line of `text` escaped as [`text`](Markup::text), on lines of its own: for a
+    /// message purlis laid out over lines with values in it, or for what git said. A line end
+    /// still ends a line, but nothing else hidden gets through, and every line is shown.
+    pub fn lines_of(text: &str) -> Markup {
+        Markup::lines(text.split('\n').map(|line| Markup::new().text(line)))
+    }
+
+    /// The line cut to at most `at_most` characters as shown, with ` …` after a cut.
+    ///
+    /// purlis's own colour is not counted and never cut through: a cut inside a styled span
+    /// closes it with [`RESET`], so the style cannot run on past the line.
+    pub fn shortened(self, at_most: usize) -> Markup {
+        if strip_ansi(&self.0).chars().count() <= at_most {
+            return self;
+        }
+        let (mut out, mut counted, mut open) = (String::new(), 0, false);
+        let mut rest = self.0.as_str();
+        while counted < at_most {
+            let Some(ch) = rest.chars().next() else { break };
+            if ch == '\x1b' {
+                // Only purlis's own SGR is ever raw in a Markup: `ESC [ … m`, taken whole.
+                let end = rest.find('m').map_or(rest.len(), |m| m + 1);
+                open = &rest[..end] != RESET;
+                out.push_str(&rest[..end]);
+                rest = &rest[end..];
+                continue;
+            }
+            out.push(ch);
+            counted += 1;
+            rest = &rest[ch.len_utf8()..];
+        }
+        if open {
+            out.push_str(RESET);
+        }
+        out.push_str(" …");
+        Markup(out)
+    }
+}
+
+/// **Words purlis writes are its own; anything made at run time enters escaped.**
+///
+/// A message line (`voice::info`, a command's `Say`) takes `impl Into<Markup>`, so a literal
+/// is [`Markup::own`] and a `String` — a `format!` that splices a skill's, a repo's or a
+/// piece's name, a reason, a path — is [`Markup::text`], whole (SK-54, #3225). Escaping
+/// purlis's own words along with it changes nothing: they hold nothing the one rule marks.
+/// There is no conversion from a borrowed `&str`, which may have been read at run time: own
+/// it as a `String`, or splice it with `text`.
+impl From<&'static str> for Markup {
+    fn from(words: &'static str) -> Self {
+        Markup::new().own(words)
+    }
+}
+
+impl From<String> for Markup {
+    fn from(text: String) -> Self {
+        Markup::new().text(text)
+    }
+}
+
+/// Read as the text it shows. The only way to change it is to build another `Markup`.
+impl std::ops::Deref for Markup {
+    type Target = str;
+
+    fn deref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl PartialEq<str> for Markup {
+    fn eq(&self, other: &str) -> bool {
+        self.0 == other
+    }
+}
+
+impl PartialEq<&str> for Markup {
+    fn eq(&self, other: &&str) -> bool {
+        self.0 == *other
+    }
+}
+
+impl PartialEq<String> for Markup {
+    fn eq(&self, other: &String) -> bool {
+        &self.0 == other
+    }
+}
+
+impl PartialEq<Markup> for str {
+    fn eq(&self, other: &Markup) -> bool {
+        self == other.0
+    }
+}
+
+impl PartialEq<Markup> for &str {
+    fn eq(&self, other: &Markup) -> bool {
+        *self == other.0
+    }
+}
+
+impl PartialEq<Markup> for String {
+    fn eq(&self, other: &Markup) -> bool {
+        *self == other.0
+    }
+}
+
+/// On the wire (a brokered command's lines over the hook socket) a `Markup` is its text.
+impl serde::Serialize for Markup {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&self.0)
+    }
+}
+
+/// Read back off the wire **escaped again**, as [`Markup::text`]: what arrives is bytes, not
+/// markup this process built, so it cannot be a way in for raw text. Marking is idempotent,
+/// so a line the other end escaped reads back the same.
+impl<'de> serde::Deserialize<'de> for Markup {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        String::deserialize(d).map(Markup::from)
     }
 }
 

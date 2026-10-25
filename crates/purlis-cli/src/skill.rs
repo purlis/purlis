@@ -486,7 +486,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 .filter(|(_, row)| row.name == name)
                 .collect();
             if copies.is_empty() {
-                voice::err(&format!(
+                voice::err(format!(
                     "No skill is named {name:?} here. `purlis skill list` lists every one."
                 ));
                 return Ok(2);
@@ -596,7 +596,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 match Grant::from_words(&grant) {
                     Ok(grant) => Some(grant),
                     Err(why) => {
-                        voice::err(&format!(
+                        voice::err(format!(
                             "{why}: --grant takes root, all, or workspace names"
                         ));
                         return Ok(2);
@@ -604,7 +604,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 }
             };
             if verbs::needs_grant(&level, &target) && grant.is_none() {
-                voice::err(&format!(
+                voice::err(format!(
                     "{}. Add --grant root, --grant all, or --grant <workspace>…",
                     verbs::GRANT_NEEDED
                 ));
@@ -644,7 +644,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 .into_iter()
                 .find(|one| one.name == name)
             else {
-                voice::err(&format!(
+                voice::err(format!(
                     "No deleted skill named {name:?} can be restored: `purlis skill restore` lists those that can."
                 ));
                 return Ok(2);
@@ -662,14 +662,14 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             Ok(changed) => {
                 if !changed {
                     let state = if on { "on" } else { "off" };
-                    voice::ok(&format!("{name} was already {state} in {workspace}."));
+                    voice::ok(already_switched(&name, state, &workspace));
                 }
                 Ok(0)
             }
             Err(why) => {
                 voice::err(&why);
                 if on && why.contains("would reach it") {
-                    voice::info(&format!(
+                    voice::info(format!(
                         "To grant it: purlis skill grant {name} {workspace}"
                     ));
                 }
@@ -680,7 +680,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             let grant = match Grant::from_words(&grant) {
                 Ok(grant) => grant,
                 Err(why) => {
-                    voice::err(&format!(
+                    voice::err(format!(
                         "{why}. Say where it reaches: root (the project's root only), all (every \
                          workspace), or the workspaces' names. To turn it off in a workspace: \
                          purlis skill grant <name> -w <workspace> --off"
@@ -827,7 +827,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 }
                 print!("{}", diff.text);
                 if diff.cut {
-                    voice::info(&format!(
+                    voice::info(format!(
                         "The diff is cut at {} KiB.",
                         history::MOST_DIFF / 1024
                     ));
@@ -925,7 +925,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             match lifecycle::set_owners(&mut cx, &at.level(), &name, &owners) {
                 Ok(true) => Ok(0),
                 Ok(false) => {
-                    voice::ok(&format!("{name}'s owners were already those."));
+                    voice::ok(owners_unchanged(&name));
                     Ok(0)
                 }
                 Err(why) => {
@@ -947,7 +947,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 println!("{line}");
             }
             if node.cut {
-                voice::info(&format!(
+                voice::info(format!(
                     "The project holds more than {} skills, and the rest were not read.",
                     purlis_core::skills::graph::MOST_SKILLS
                 ));
@@ -958,6 +958,33 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
 }
 
 /// One deleted skill as `skill restore` lists it: its name and its level, each escaped.
+/// `<name> was already on in <workspace>.`: both names are spliced escaped (SK-54, #3225).
+fn already_switched(name: &str, state: &'static str, workspace: &str) -> Markup {
+    Markup::new()
+        .text(name)
+        .own(" was already ")
+        .own(state)
+        .own(" in ")
+        .text(workspace)
+        .own(".")
+}
+
+/// `<name>'s owners were already those.`, the name escaped (SK-54).
+fn owners_unchanged(name: &str) -> Markup {
+    Markup::new()
+        .text(name)
+        .own("'s owners were already those.")
+}
+
+/// `<name> was already <state>.`, the name escaped (SK-54).
+fn already_in(name: &str, lifecycle: &Lifecycle) -> Markup {
+    Markup::new()
+        .text(name)
+        .own(" was already ")
+        .own(lifecycle.word())
+        .own(".")
+}
+
 fn restorable(name: &str, level: &Level) -> Markup {
     Markup::new().text(name).own("  ").text(level)
 }
@@ -1013,7 +1040,7 @@ fn lifecycle_set(
     match lifecycle::set(cx, level, name, lifecycle) {
         Ok(true) => Ok(0),
         Ok(false) => {
-            voice::ok(&format!("{name} was already {}.", lifecycle.word()));
+            voice::ok(already_in(name, lifecycle));
             Ok(0)
         }
         Err(why) => {
@@ -1193,7 +1220,7 @@ fn install(
         match Grant::from_words(grant) {
             Ok(grant) => Some(grant),
             Err(why) => {
-                voice::err(&format!(
+                voice::err(format!(
                     "{why}: --grant takes root, all, or workspace names"
                 ));
                 return Ok(2);
@@ -1498,17 +1525,17 @@ fn say_users(users: &verbs::Users) {
             .map(|persona| format!("chats as {persona}, in every workspace")),
     );
     if !reach.is_empty() {
-        voice::info(&format!("Used by {}", reach.join(", ")));
+        voice::info(format!("Used by {}", reach.join(", ")));
     }
     if !users.personas.is_empty() {
-        voice::info(&format!(
+        voice::info(format!(
             "Named by {}: {}",
             purlis_core::counts::counted(users.personas.len(), "persona", "personas"),
             users.personas.join(", ")
         ));
     }
     if !users.skills.is_empty() {
-        voice::info(&format!(
+        voice::info(format!(
             "Named by {}: {}",
             purlis_core::counts::counted(users.skills.len(), "skill", "skills"),
             users.skills.join(", ")

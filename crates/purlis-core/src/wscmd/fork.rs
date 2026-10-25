@@ -108,15 +108,20 @@ pub fn fork(request: &Request, say: Sink) -> u8 {
     // The fork's name first, and BEFORE it is joined onto any path: `Path::join` throws the
     // prefix away when handed an absolute path and `..` walks out of the plane (charter#442).
     let Ok(fresh) = plane.workspace(new) else {
-        say(Say::Fail(format!(
-            "invalid workspace name '{}' (use lowercase letters, digits, . _ -)",
-            crate::personas::one_line(new)
-        )));
+        say(Say::Fail(
+            format!(
+                "invalid workspace name '{}' (use lowercase letters, digits, . _ -)",
+                crate::personas::one_line(new)
+            )
+            .into(),
+        ));
         return 1;
     };
     if src == new {
         say(Say::Fail(
-            "source and fork names are the same — nothing to fork.".to_string(),
+            "source and fork names are the same — nothing to fork."
+                .to_string()
+                .into(),
         ));
         return 1;
     }
@@ -126,23 +131,23 @@ pub fn fork(request: &Request, say: Sink) -> u8 {
     let parent = match plane.workspace(src) {
         Ok(parent) if parent.dir().exists() => parent,
         _ => {
-            say(Say::Fail(format!(
-                "no workspace '{}'",
-                crate::personas::one_line(src)
-            )));
+            say(Say::Fail(
+                format!("no workspace '{}'", crate::personas::one_line(src)).into(),
+            ));
             return 1;
         }
     };
     if fresh.dir().exists() {
-        say(Say::Fail(format!(
-            "workspace '{new}' already exists — pick another name or remove it first."
-        )));
+        say(Say::Fail(
+            format!("workspace '{new}' already exists — pick another name or remove it first.")
+                .into(),
+        ));
         return 1;
     }
 
     let author = ensure::author();
     if let Err(why) = ensure::ensure(root, new, now, &author) {
-        say(Say::Fail(why));
+        say(Say::Fail(why.into()));
         return 1;
     }
 
@@ -271,18 +276,23 @@ pub fn fork(request: &Request, say: Sink) -> u8 {
     }
     let mode = if live { "LIVE" } else { "LOCAL" };
     if missed.is_empty() {
-        say(Say::Done(format!(
-            "Forked '{src}' → '{new}' — charter + context + memo copied ({mode})."
-        )));
+        say(Say::Done(
+            format!("Forked '{src}' → '{new}' — charter + context + memo copied ({mode}).").into(),
+        ));
     } else {
         // Not "copied": the sentence says what the fork does NOT have, each path follows, and
         // the exit at the end says it.
-        say(Say::Warn(format!(
-            "Forked '{src}' → '{new}' ({mode}) without the {not_carried} purlis could not read \
+        say(Say::Warn(
+            format!(
+                "Forked '{src}' → '{new}' ({mode}) without the {not_carried} purlis could not read \
              in '{src}':"
-        )));
+            )
+            .into(),
+        ));
         for (path, code) in &missed {
-            say(Say::Fail(crate::memstore::cannot_check(root, path, *code)));
+            say(Say::Fail(
+                crate::memstore::cannot_check(root, path, *code).into(),
+            ));
         }
     }
     if !extension_carried.is_empty() {
@@ -290,21 +300,27 @@ pub fn fork(request: &Request, say: Sink) -> u8 {
             .iter()
             .map(|it| format!("{it}/"))
             .collect();
-        say(Say::Info(format!(
-            "Carried the {} extensions keep in '{src}': {}",
-            plural(folders.len(), "folder", "folders"),
-            folders.join(", ")
-        )));
+        say(Say::Info(
+            format!(
+                "Carried the {} extensions keep in '{src}': {}",
+                plural(folders.len(), "folder", "folders"),
+                folders.join(", ")
+            )
+            .into(),
+        ));
     }
     let inherited = fresh.todos().map(|t| t.len()).unwrap_or(0);
     if inherited > 0 {
         // Said out loud because the two lists are independent from here: whoever forked now
         // owns a second copy of this intent, not a view of the first.
-        say(Say::Info(format!(
-            "Inherited {} from '{src}' — the fork's own list now: purlis \
+        say(Say::Info(
+            format!(
+                "Inherited {} from '{src}' — the fork's own list now: purlis \
              ws todo --workspace {new}",
-            counted(inherited, "open todo", "open todos")
-        )));
+                counted(inherited, "open todo", "open todos")
+            )
+            .into(),
+        ));
     }
     // Which source each repo came from. A snapshot promises its branch was pushed; a clone
     // found on disk promises only that it is checked out here right now, and `restore` on
@@ -312,23 +328,29 @@ pub fn fork(request: &Request, say: Sink) -> u8 {
     // use beats a drift warning that would fire on every workspace nobody has snapshotted —
     // which is most of them, by design.
     if !disk_only.is_empty() {
-        say(Say::Info(format!(
-            "  {} of them come from clones on disk, not from a snapshot ({}) — their branch is \
+        say(Say::Info(
+            format!(
+                "  {} of them come from clones on disk, not from a snapshot ({}) — their branch is \
              whatever is checked out now, which may not be pushed. `purlis workspace snapshot \
              {src}` records them properly.",
-            disk_only.len(),
-            disk_only.join(", ")
-        )));
+                disk_only.len(),
+                disk_only.join(", ")
+            )
+            .into(),
+        ));
     }
     if restore && !repos.is_empty() {
         // Where charter runs `workspace restore`, and now so does this. The fork's exit is
         // still charter's — `restore`'s status OR'd with whether a piece went unread — so a
         // fork that inherited everything and could not clone one repo is not reported as a
         // fork that lost context.
-        say(Say::Info(format!(
-            "Cloning {}…",
-            counted(repos.len(), "inherited repo", "inherited repos")
-        )));
+        say(Say::Info(
+            format!(
+                "Cloning {}…",
+                counted(repos.len(), "inherited repo", "inherited repos")
+            )
+            .into(),
+        ));
         // Python's `restore(...) or int(bool(missed))`: the restore's own failure first, and
         // the unread-context exit only where the restore itself went fine.
         let rc = wscmd::restore::after_fork(root, new, now, say);
@@ -338,19 +360,25 @@ pub fn fork(request: &Request, say: Sink) -> u8 {
             u8::from(!missed.is_empty())
         };
     } else if !repos.is_empty() {
-        say(Say::Info(format!(
-            "Clone its {}: purlis workspace restore {new}  (or re-run fork \
+        say(Say::Info(
+            format!(
+                "Clone its {}: purlis workspace restore {new}  (or re-run fork \
              with --restore).",
-            counted(repos.len(), "inherited repo", "inherited repos")
-        )));
+                counted(repos.len(), "inherited repo", "inherited repos")
+            )
+            .into(),
+        ));
     } else {
-        say(Say::Info(format!(
-            "No repos on '{src}' — neither a snapshot nor clones on disk. Clone into the fork: \
+        say(Say::Info(
+            format!(
+                "No repos on '{src}' — neither a snapshot nor clones on disk. Clone into the fork: \
              purlis clone <repo> -w {new}"
-        )));
+            )
+            .into(),
+        ));
     }
     if live {
-        say(Say::Info("Share the fork: purlis save".to_string()));
+        say(Say::Info("Share the fork: purlis save".to_string().into()));
     }
     u8::from(!missed.is_empty())
 }

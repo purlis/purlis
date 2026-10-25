@@ -67,10 +67,10 @@ mod whereworking;
 pub(crate) fn speak(line: purlis_core::repocmd::Say) {
     use purlis_core::repocmd::Say;
     match line {
-        Say::Info(text) => voice::info(&text),
-        Say::Done(text) => voice::ok(&text),
-        Say::Warn(text) => voice::warn(&text),
-        Say::Fail(text) => voice::err(&text),
+        Say::Info(text) => voice::info(text),
+        Say::Done(text) => voice::ok(text),
+        Say::Warn(text) => voice::warn(text),
+        Say::Fail(text) => voice::err(text),
         // `raise SystemExit(message)`, which prints the message as it is — on stderr, where
         // every other mark goes.
         Say::Plain(text) => eprintln!("{text}"),
@@ -766,14 +766,14 @@ fn stop_every_agent() -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(not_kept) if not_kept.journaled => {
-            voice::warn(&format!(
+            voice::warn(format!(
                 "The stop is kept, but not as it should be: {not_kept}. A running app still \
                  hears it; re-arm from its title bar."
             ));
             ExitCode::FAILURE
         }
         Err(not_kept) => {
-            voice::err(&format!("Agents were NOT stopped: {not_kept}."));
+            voice::err(format!("Agents were NOT stopped: {not_kept}."));
             voice::info("Use Stop all on the purlis app's title bar instead.");
             ExitCode::FAILURE
         }
@@ -942,7 +942,7 @@ fn kept_in_the_data_home(hosting: purlis_host::Hosting) -> purlis_host::Hosting 
     };
     // A data home inside a work tree or a project keeps nothing (ADR 0075 §6).
     if let Some(why) = purlis_core::datahome::refusal(&data) {
-        voice::err(&format!("this host keeps no projects of its own: {why}"));
+        voice::err(format!("this host keeps no projects of its own: {why}"));
         return hosting;
     }
     hosting.keeping_projects_in(data.join(purlis_core::datahome::PROJECTS))
@@ -2383,15 +2383,15 @@ fn gl_refresh(ws: &str, detach: bool, now: Option<&str>) -> ExitCode {
     // refresh will not fetch for, and the row it feeds will stay empty until somebody is told
     // why.
     for (name, why) in &found.refused {
-        voice::warn(&format!("{name} is not refreshed — {why}"));
+        voice::warn(format!("{name} is not refreshed — {why}"));
     }
     let trees = found.trees;
     if trees.is_empty() {
-        voice::info(&format!("No repos in workspace '{ws}'."));
+        voice::info(format!("No repos in workspace '{ws}'."));
         return ExitCode::SUCCESS;
     }
     let cache = glrefresh::refresh(&root, &trees, stamp);
-    voice::ok(&format!(
+    voice::ok(format!(
         "Refreshed forge state for {} tree(s) in '{ws}'.",
         trees.len()
     ));
@@ -2424,7 +2424,7 @@ fn gl_refresh(ws: &str, detach: bool, now: Option<&str>) -> ExitCode {
                 .unwrap_or_default()
                 .to_string_lossy()
                 .into_owned();
-            voice::info(&format!("  {name}: {}", bits.join(" · ")));
+            voice::info(format!("  {name}: {}", bits.join(" · ")));
         }
     }
     ExitCode::SUCCESS
@@ -3287,7 +3287,7 @@ fn run(command: Command) -> Result<u8, String> {
             let chosen =
                 purlis_core::active::workspace(&here.asking(None, here.workspace_env.as_deref()));
             println!("{}", chosen.name);
-            voice::info(&format!(
+            voice::info(format!(
                 "via {}",
                 purlis_core::active::workspace_source(&here.ids, chosen.rung)
             ));
@@ -3402,7 +3402,7 @@ fn run(command: Command) -> Result<u8, String> {
             match text.as_deref().filter(|t| !t.is_empty()) {
                 Some(text) => {
                     ws.set_vision(text).map_err(|e| e.to_string())?;
-                    voice::ok(&format!(
+                    voice::ok(format!(
                         "Vision set for '{0}' → workspaces/{0}/workspace.md",
                         ws.name()
                     ));
@@ -3601,7 +3601,7 @@ fn todo(
             let (open, unread) = purlis_core::memstore::read_entries(root, &dir);
             voice::unread(root, &unread);
             if open.is_empty() {
-                voice::info(&format!(
+                voice::info(format!(
                     "No open todos in '{name}'. Record one: purlis ws todo \"<what>\""
                 ));
                 return 0;
@@ -3633,7 +3633,7 @@ fn todo(
         // leave the one it meant to close open.
         [verb] if verb == "promote" => {
             voice::err("`todo promote` needs the slug of the todo to promote.");
-            voice::info(&format!("  The slug is the first column: {see}"));
+            voice::info(format!("  The slug is the first column: {see}"));
             voice::info(
                 "  To record a todo actually called \"promote\", capitalise it or add a word: \
                  purlis ws todo \"Promote …\"",
@@ -3641,17 +3641,17 @@ fn todo(
             1
         }
         [verb] if verb == "done" || verb == "forget" => {
-            voice::err(&format!(
+            voice::err(format!(
                 "`todo {verb}` needs the slug of the todo to close."
             ));
-            voice::info(&format!("  The slug is the first column: {see}"));
+            voice::info(format!("  The slug is the first column: {see}"));
             let capital: String = verb
                 .chars()
                 .take(1)
                 .flat_map(char::to_uppercase)
                 .chain(verb.chars().skip(1))
                 .collect();
-            voice::info(&format!(
+            voice::info(format!(
                 "  To record a todo actually called \"{verb}\", capitalise it or add a word: \
                  purlis ws todo \"{capital} …\""
             ));
@@ -3667,7 +3667,7 @@ fn todo(
                 }
                 Err(refused @ purlis_core::workspaces::RecordRefused::AlreadyListed(_)) => {
                     voice::err(&refused.to_string());
-                    voice::info(&format!("  See it: {see}"));
+                    voice::info(format!("  See it: {see}"));
                     1
                 }
                 Err(refused) => {
@@ -3688,7 +3688,7 @@ fn todo(
 
 /// What `ws todo "<text>"` says once the todo is recorded in workspace `name`, at `path`.
 fn said_todo_recorded(plane: &Plane, name: &str, path: &str) {
-    voice::ok(&format!(
+    voice::ok(format!(
         "Todo recorded in '{name}' → workspaces/{name}/todos/{}",
         std::path::Path::new(path)
             .file_name()
@@ -3696,7 +3696,7 @@ fn said_todo_recorded(plane: &Plane, name: &str, path: &str) {
             .to_string_lossy()
     ));
     if !plane.is_live(name) {
-        voice::info(&format!(
+        voice::info(format!(
             "  '{name}' is LOCAL (private) — todos stay on disk, not committed."
         ));
     }
@@ -3746,7 +3746,7 @@ fn promote_todo(
     let device = match purlis_core::machine::this_device_id() {
         Ok(device) => device,
         Err(why) => {
-            voice::err(&format!(
+            voice::err(format!(
                 "this device has no id, so the work link log has no file to write: {why}"
             ));
             return 1;
@@ -3763,7 +3763,7 @@ fn promote_todo(
                 Some(label) => format!(", labelled {label}"),
                 None => ", with no workspace label".to_string(),
             };
-            voice::info(&format!(
+            voice::info(format!(
                 "Opening an issue in {} ({} at {}, {}) with the todo's title and text{label}.",
                 target.name,
                 target.path(),
@@ -3771,7 +3771,7 @@ fn promote_todo(
                 about.visibility.readers()
             ));
         }
-        Step::Created(item) => voice::info(&format!("  Opened {} — {}", item.key, item.url)),
+        Step::Created(item) => voice::info(format!("  Opened {} — {}", item.key, item.url)),
     };
     match promote::promote(
         ws,
@@ -3786,7 +3786,7 @@ fn promote_todo(
         Ok(done) => {
             // The close is `ws todo done`'s, so it says what `done` says about the journal.
             memory::said_remembered(plane, ws.name(), &done.journal, false);
-            voice::ok(&format!(
+            voice::ok(format!(
                 "Promoted '{}' in '{}' to {} — the todo is closed, and its work links now reach \
                  the issue.",
                 done.title,

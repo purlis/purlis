@@ -442,7 +442,7 @@ pub fn recall(here: &crate::Here, args: RecallArgs) -> Result<Code, String> {
             .map(str::to_string)
             .collect();
         if scopes.is_empty() {
-            voice::err(&format!(
+            voice::err(format!(
                 "invalid --scope; choose from {}",
                 recall::SCOPES.join(", ")
             ));
@@ -552,7 +552,7 @@ pub fn recall(here: &crate::Here, args: RecallArgs) -> Result<Code, String> {
                     .join(", ")
             };
             let verb = if dropped.len() == 1 { "is" } else { "are" };
-            voice::info(&format!(
+            voice::info(format!(
                 "Nothing searchable in {} — {named} {verb} too short or too common to rank. \
                  Try a distinctive word.",
                 purlis_core::pyrepr::repr_str(q)
@@ -566,11 +566,9 @@ pub fn recall(here: &crate::Here, args: RecallArgs) -> Result<Code, String> {
         let when = since
             .map(|d| format!(" recorded since {}", d.format("%Y-%m-%d")))
             .unwrap_or_default();
-        voice::info(&format!(
-            "No memories {what} across {place}{when}{skipped}."
-        ));
+        voice::info(format!("No memories {what} across {place}{when}{skipped}."));
         if got.undated > 0 {
-            voice::info(&format!(
+            voice::info(format!(
                 "{} skipped — no recorded date to compare.",
                 counted(got.undated, "undated memory", "undated memories")
             ));
@@ -611,7 +609,7 @@ pub fn recall(here: &crate::Here, args: RecallArgs) -> Result<Code, String> {
         }
     }
     print!("{out}");
-    voice::info(&format!(
+    voice::info(format!(
         "{} across {place}{skipped}.{}",
         counted(results.len(), "memory", "memories"),
         if args.full {
@@ -621,19 +619,19 @@ pub fn recall(here: &crate::Here, args: RecallArgs) -> Result<Code, String> {
         }
     ));
     if truncated {
-        voice::info(&format!(
+        voice::info(format!(
             "Showing {} — pass --limit 0 for all.",
             results.len()
         ));
     }
     if got.undated > 0 {
-        voice::info(&format!(
+        voice::info(format!(
             "{} skipped by --since — no recorded date.",
             counted(got.undated, "undated memory", "undated memories")
         ));
     }
     if got.undated_refs > 0 {
-        voice::info(&format!(
+        voice::info(format!(
             "{} not searched — `--since` filters by recorded date and refs carry \
              none. Drop --since to include them.",
             counted(got.undated_refs, "ref doc", "ref docs")
@@ -685,7 +683,7 @@ fn say_unread_workspaces(root: &Path) {
     for (path, code) in unread {
         let name = path.file_name().unwrap_or_default().to_string_lossy();
         let shown = path.to_string_lossy();
-        voice::err(&format!(
+        voice::err(format!(
             "workspace '{name}' cannot be checked — purlis changes nothing it cannot see; {}.",
             voice::uncheckable_fix(code, &shown, &shown)
         ));
@@ -806,8 +804,8 @@ pub fn workspace_recall(plane: &Plane, name: &str, query: Option<&str>) -> Resul
     }
     if results.is_empty() {
         match query {
-            Some(q) => voice::info(&format!("No memories in '{name}' match '{q}'.")),
-            None => voice::info(&format!(
+            Some(q) => voice::info(format!("No memories in '{name}' match '{q}'.")),
+            None => voice::info(format!(
                 "workspace '{name}' has no memories yet. Add one: purlis workspace remember \
                  \"<text>\""
             )),
@@ -827,7 +825,7 @@ pub fn workspace_recall(plane: &Plane, name: &str, query: Option<&str>) -> Resul
         ));
     }
     print!("{out}");
-    voice::info(&format!(
+    voice::info(format!(
         "{} in workspaces/{name}/memory/ — read one: cat workspaces/{name}/memory/<file>",
         counted(results.len(), "memory", "memories")
     ));
@@ -1118,7 +1116,7 @@ pub fn workspace_optimize(
         Some(name) => {
             let exists = plane.workspace(name).is_ok_and(|ws| ws.dir().exists());
             if !exists {
-                voice::err(&format!("no workspace '{name}'"));
+                voice::err(format!("no workspace '{name}'"));
                 return Ok(1);
             }
             vec![name.to_string()]
@@ -1193,7 +1191,7 @@ pub fn persona(here: &crate::Here, command: PersonaCommand) -> Result<Code, Stri
             let found =
                 purlis_core::active::persona(&here.asking(None, here.persona_env.as_deref()));
             println!("{}", found.name.as_deref().unwrap_or("(none)"));
-            voice::info(&format!(
+            voice::info(format!(
                 "via {}",
                 purlis_core::personas::one_line(found.rung.label())
             ));
@@ -1813,7 +1811,7 @@ fn said_persona_remembered(
 ) {
     let kind = if ephemeral { "ephemeral" } else { "persistent" };
     let place = format!("{}{kind}", if shared { "shared " } else { "" });
-    voice::ok(&format!("Remembered ({place}) → {shown}"));
+    voice::ok(format!("Remembered ({place}) → {shown}"));
     if ephemeral {
         return;
     }
@@ -1870,9 +1868,9 @@ fn persona_recall(
         let code = if unread.is_empty() { 0 } else { 1 };
         if hits.is_empty() {
             if unread.is_empty() {
-                voice::info(&format!("no memory of '{q}' for '{name}'."));
+                voice::info(format!("no memory of '{q}' for '{name}'."));
             } else {
-                voice::info(&format!(
+                voice::info(format!(
                     "nothing matching '{q}' in the memory purlis could read for '{name}'."
                 ));
             }
@@ -1947,7 +1945,7 @@ fn persona_recall(
     print!("{out}");
     voice::unread(root, &unread);
     if !printed && unread.is_empty() {
-        voice::info(&format!(
+        voice::info(format!(
             "persona '{name}' has no memories yet. Add one: purlis persona remember {name} \"<fact>\""
         ));
     }

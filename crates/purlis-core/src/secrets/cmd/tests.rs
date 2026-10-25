@@ -769,9 +769,9 @@ fn cp_writes_a_new_file_at_0600_and_records_that_it_did() {
     assert_eq!(mode(&dest), 0o600);
     assert_eq!(
         io.said,
-        [Say::Ok(format!(
-            "Wrote 'p/k' to {shown} (0600). Value not shown."
-        ))]
+        [Say::Ok(
+            format!("Wrote 'p/k' to {shown} (0600). Value not shown.").into()
+        )]
     );
     let events = plane.trace();
     assert_eq!(events.len(), 1);
@@ -816,7 +816,7 @@ fn cp_refuses_an_existing_file_unless_forced_and_then_says_it_overwrote_it() {
     assert_eq!(mode(&dest), 0o600);
     assert_eq!(
         io.said[0],
-        Say::Warn(format!("Overwrote {shown} and set it to 0600."))
+        Say::Warn(format!("Overwrote {shown} and set it to 0600.").into())
     );
     assert_eq!(plane.trace()[0]["overwrote"], true);
 }

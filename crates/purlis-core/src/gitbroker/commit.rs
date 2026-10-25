@@ -436,9 +436,10 @@ fn made(
             unstage(top);
             here.forget();
             lines.push(Say::Info(
-                "an earlier commit for this chat was interrupted after it staged; what it \
+                ("an earlier commit for this chat was interrupted after it staged; what it \
                  had staged was unstaged first, and the files are as they were"
-                    .to_owned(),
+                    .to_owned())
+                .into(),
             ));
         }
         Some(1) => {
@@ -507,10 +508,13 @@ fn made(
         }
     };
     for hook in here.hooks_not_run() {
-        lines.push(Say::Warn(format!(
-            "this repository's {hook} hook was not run: for a sandboxed chat, purlis \
+        lines.push(Say::Warn(
+            format!(
+                "this repository's {hook} hook was not run: for a sandboxed chat, purlis \
              commits with hooks off"
-        )));
+            )
+            .into(),
+        ));
     }
     let trailers = crate::provenance::trailers_for(root, top, chat);
     let message = crate::provenance::append(&ask.message, &trailers, None);
@@ -545,10 +549,13 @@ fn made(
     let id = said(top, &["rev-parse", "HEAD"])?.unwrap_or_default();
     lines.insert(
         0,
-        Say::Done(format!(
-            "committed {id} on {branch}: {}",
-            counted(staged.len(), "file", "files")
-        )),
+        Say::Done(
+            format!(
+                "committed {id} on {branch}: {}",
+                counted(staged.len(), "file", "files")
+            )
+            .into(),
+        ),
     );
     Ok(lines)
 }

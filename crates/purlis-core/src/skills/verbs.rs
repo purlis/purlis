@@ -238,7 +238,7 @@ impl Ctx<'_> {
             }
         }
         if let Some(why) = crate::planegit::paths_unsaved(self.plane, &unique) {
-            (self.say)(Say::Info(why));
+            (self.say)(Say::Info(why.into()));
             return;
         }
         let message = format!("{} {message}", crate::names::BINARY.writes_for(self.plane));
@@ -267,9 +267,10 @@ impl Ctx<'_> {
         );
         if code != 0 {
             (self.say)(Say::Warn(
-                "The change is made, and it could not be saved yet: the next save takes it, and \
+                ("The change is made, and it could not be saved yet: the next save takes it, and \
                  Saving says why."
-                    .to_owned(),
+                    .to_owned())
+                .into(),
             ));
         }
     }
@@ -291,12 +292,12 @@ impl Ctx<'_> {
 
     /// Says `line` as a warning.
     pub(in crate::skills) fn warn(&mut self, line: String) {
-        (self.say)(Say::Warn(line));
+        (self.say)(Say::Warn(line.into()));
     }
 
     /// Says `line` as done.
     pub(in crate::skills) fn done(&mut self, line: String) {
-        (self.say)(Say::Done(line));
+        (self.say)(Say::Done(line.into()));
     }
 }
 
@@ -506,9 +507,9 @@ pub fn edit(
     }
     let folder = find(plane, level, name)?;
     if was == now {
-        (cx.say)(Say::Info(format!(
-            "{name} is unchanged, so nothing was saved."
-        )));
+        (cx.say)(Say::Info(
+            format!("{name} is unchanged, so nothing was saved.").into(),
+        ));
         return Ok(folder);
     }
     let file = format!("{}/SKILL.md", rel(plane, &folder));
@@ -1180,12 +1181,12 @@ pub fn interrupted(cx: &mut Ctx<'_>) {
         let settled = match noted(&text) {
             Some((level, folder)) => match finished_or_undone(cx, &level, &folder) {
                 Some(Ended::Settled(line)) => {
-                    (cx.say)(Say::Info(line));
+                    (cx.say)(Say::Info(line.into()));
                     true
                 }
                 // Neither finished nor put back: said, and the note is left for the next start.
                 Some(Ended::Unsettled(line)) => {
-                    (cx.say)(Say::Warn(line));
+                    (cx.say)(Say::Warn(line.into()));
                     false
                 }
                 None => true,

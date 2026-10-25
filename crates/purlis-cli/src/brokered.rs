@@ -220,7 +220,7 @@ pub fn said_by_the_app(write: Write) -> Option<u8> {
         Ok(_) => None,
         Err(e) if not_taken(&e) => None,
         Err(e) => {
-            crate::voice::err(&format!(
+            crate::voice::err(format!(
                 "the app took this and did not answer ({e}), so it may already be done. \
                  Nothing was done again here: list them to see."
             ));

@@ -84,7 +84,7 @@ fn warnings(plane: &Path, name: &str) -> Vec<String> {
     assert_eq!(code, 0, "{said:?}");
     said.into_iter()
         .filter_map(|line| match line {
-            Say::Warn(text) => Some(text),
+            Say::Warn(text) => Some(text.to_string()),
             _ => None,
         })
         .collect()

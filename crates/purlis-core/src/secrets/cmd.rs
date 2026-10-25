@@ -21,14 +21,17 @@ use serde_json::Value;
 use super::persons_own::{self, Verb};
 use super::registry::{self, Vault};
 use super::{Ctx, VaultError, fingerprint, keyring, onepassword, plain_file, reference};
+use crate::tui::Markup;
 
 /// One line in charter's voice — `util.info/ok/warn/err`, all on stderr.
 #[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// Each holds [`Markup`]: a name or a value read at run time enters it escaped (SK-54).
 pub enum Say {
-    Info(String),
-    Ok(String),
-    Warn(String),
-    Err(String),
+    Info(Markup),
+    Ok(Markup),
+    Warn(Markup),
+    Err(Markup),
 }
 
 /// Where a command's words and bytes go.
@@ -249,11 +252,11 @@ pub fn list(ctx: &Ctx, vault: &str, io: &mut dyn Io) -> i32 {
     };
     match found {
         Err(e) => {
-            io.say(Say::Err(e.message));
+            io.say(Say::Err(Markup::lines_of(&e.message)));
             1
         }
         Ok(keys) if keys.is_empty() => {
-            io.say(Say::Info(format!("Vault '{vault}' has no secrets.")));
+            io.say(Say::Info(format!("Vault '{vault}' has no secrets.").into()));
             0
         }
         Ok(keys) => {
@@ -292,7 +295,7 @@ pub fn list_or_vaults(ctx: &Ctx, vault: Option<&str>, io: &mut dyn Io) -> i32 {
 /// (ruling V90d), said by the next command that read one of its values.
 pub fn say_held_note(ctx: &Ctx, v: &Vault, io: &mut dyn Io) {
     if let Some(note) = held_note(ctx, v) {
-        io.say(Say::Info(note));
+        io.say(Say::Info(note.into()));
     }
 }
 
@@ -328,7 +331,7 @@ pub fn get(ctx: &Ctx, vault: &str, key: &str, reveal: bool, force: bool, io: &mu
     let value = match read_saying(ctx, vault, key, io) {
         Ok(value) => value,
         Err(e) => {
-            io.say(Say::Err(e.message));
+            io.say(Say::Err(Markup::lines_of(&e.message)));
             return 1;
         }
     };
@@ -386,7 +389,7 @@ pub fn audit(ctx: &Ctx, vault: &str, days: i64, io: &mut dyn Io) -> i32 {
     let v = match provider(ctx, vault) {
         Ok(v) => v,
         Err(e) => {
-            io.say(Say::Err(e.message));
+            io.say(Say::Err(Markup::lines_of(&e.message)));
             return 1;
         }
     };
@@ -395,22 +398,25 @@ pub fn audit(ctx: &Ctx, vault: &str, days: i64, io: &mut dyn Io) -> i32 {
         "plain-file" => plain_file::ages(ctx, &v, today),
         "keyring" => keyring::ages(ctx, &v, today),
         _ => {
-            io.say(Say::Info(format!(
-                "vault '{vault}' ({}) manages rotation externally — no age tracking.",
-                v.provider
-            )));
+            io.say(Say::Info(
+                format!(
+                    "vault '{vault}' ({}) manages rotation externally — no age tracking.",
+                    v.provider
+                )
+                .into(),
+            ));
             return 0;
         }
     };
     let ages = match ages {
         Ok(a) => a,
         Err(e) => {
-            io.say(Say::Err(e.message));
+            io.say(Say::Err(Markup::lines_of(&e.message)));
             return 1;
         }
     };
     if ages.is_empty() {
-        io.say(Say::Info(format!("vault '{vault}' has no secrets.")));
+        io.say(Say::Info(format!("vault '{vault}' has no secrets.").into()));
         return 0;
     }
     let mut stale: Vec<(&String, i64)> = ages
@@ -425,21 +431,20 @@ pub fn audit(ctx: &Ctx, vault: &str, days: i64, io: &mut dyn Io) -> i32 {
         .collect();
     unknown.sort();
     for (k, d) in &stale {
-        io.say(Say::Warn(format!(
-            "{vault}/{k}: {d} days old — consider rotating"
-        )));
+        io.say(Say::Warn(
+            format!("{vault}/{k}: {d} days old — consider rotating").into(),
+        ));
     }
     if stale.is_empty() {
-        io.say(Say::Ok(format!(
-            "no secrets in '{vault}' older than {days} days."
-        )));
+        io.say(Say::Ok(
+            format!("no secrets in '{vault}' older than {days} days.").into(),
+        ));
     }
     if !unknown.is_empty() {
         let names: Vec<&str> = unknown.iter().map(|s| s.as_str()).collect();
-        io.say(Say::Info(format!(
-            "age unknown (set before tracking): {}",
-            names.join(", ")
-        )));
+        io.say(Say::Info(
+            format!("age unknown (set before tracking): {}", names.join(", ")).into(),
+        ));
     }
     if stale.is_empty() { 0 } else { 1 }
 }
@@ -535,19 +540,22 @@ pub fn set(ctx: &Ctx, vault: &str, key: &str, from: &SetFrom, io: &mut dyn Io) -
     })();
     match outcome {
         Ok((value, unheld)) => {
-            io.say(Say::Ok(format!(
-                "Set '{key}' in vault '{vault}' ({}). Value not shown.",
-                fingerprint::size_band(&value)
-            )));
+            io.say(Say::Ok(
+                format!(
+                    "Set '{key}' in vault '{vault}' ({}). Value not shown.",
+                    fingerprint::size_band(&value)
+                )
+                .into(),
+            ));
             // Ruling V90a: an item the store could not hold to charter's app is said, never
             // left to look held.
             if unheld {
-                io.say(Say::Warn(keyring::unheld_sentence(key)));
+                io.say(Say::Warn(keyring::unheld_sentence(key).into()));
             }
             0
         }
         Err(e) => {
-            io.say(Say::Err(e.message));
+            io.say(Say::Err(Markup::lines_of(&e.message)));
             1
         }
     }
@@ -560,11 +568,13 @@ pub fn rm(ctx: &Ctx, vault: &str, key: &str, io: &mut dyn Io) -> i32 {
     }
     match provider(ctx, vault).and_then(|v| delete(ctx, &v, key)) {
         Ok(()) => {
-            io.say(Say::Ok(format!("Removed '{key}' from vault '{vault}'.")));
+            io.say(Say::Ok(
+                format!("Removed '{key}' from vault '{vault}'.").into(),
+            ));
             0
         }
         Err(e) => {
-            io.say(Say::Err(e.message));
+            io.say(Say::Err(Markup::lines_of(&e.message)));
             1
         }
     }
@@ -809,15 +819,20 @@ fn cp_unix(ctx: &Ctx, vault: &str, key: &str, dest: &str, force: bool, io: &mut 
     let dest = super::expanduser(dest, &ctx.env);
     let shown = dest.display().to_string();
     if let Some(refusal) = cp_dest_refusal(&dest, force) {
-        io.say(Say::Err(format!("Refusing to write a secret: {refusal}")));
+        io.say(Say::Err(
+            format!("Refusing to write a secret: {refusal}").into(),
+        ));
         return 2;
     }
     if let Some(unignored) =
         super::vaultcmd::unignored_plaintext(ctx, &abspath(&dest).to_string_lossy())
     {
-        io.say(Say::Err(format!(
-            "Refusing to write a secret: {unignored} — the next `purlis save` would commit it."
-        )));
+        io.say(Say::Err(
+            format!(
+                "Refusing to write a secret: {unignored} — the next `purlis save` would commit it."
+            )
+            .into(),
+        ));
         io.say(Say::Info(
             "  Add it to .gitignore, write it under .charter/, or pick a path outside the plane."
                 .into(),
@@ -840,7 +855,7 @@ fn cp_unix(ctx: &Ctx, vault: &str, key: &str, dest: &str, force: bool, io: &mut 
                      missing directory level; create the parent yourself if you meant this.",
                     parent.display(),
                     strerror(&e)
-                )));
+                ).into()));
                 return 2;
             }
         }
@@ -858,10 +873,13 @@ fn cp_unix(ctx: &Ctx, vault: &str, key: &str, dest: &str, force: bool, io: &mut 
         Ok(fd) => fd,
         Err(e) => {
             let e = std::io::Error::from(e);
-            io.say(Say::Err(format!(
-                "Refusing to write a secret: cannot open {shown} ({}).",
-                strerror(&e)
-            )));
+            io.say(Say::Err(
+                format!(
+                    "Refusing to write a secret: cannot open {shown} ({}).",
+                    strerror(&e)
+                )
+                .into(),
+            ));
             return 2;
         }
     };
@@ -876,10 +894,13 @@ fn cp_unix(ctx: &Ctx, vault: &str, key: &str, dest: &str, force: bool, io: &mut 
         Ok(st) => st,
         Err(e) => {
             abandon(file);
-            io.say(Say::Err(format!(
-                "Refusing to write a secret: cannot inspect {shown} ({}).",
-                strerror(&std::io::Error::from(e))
-            )));
+            io.say(Say::Err(
+                format!(
+                    "Refusing to write a secret: cannot inspect {shown} ({}).",
+                    strerror(&std::io::Error::from(e))
+                )
+                .into(),
+            ));
             return 2;
         }
     };
@@ -890,24 +911,27 @@ fn cp_unix(ctx: &Ctx, vault: &str, key: &str, dest: &str, force: bool, io: &mut 
         io.say(Say::Err(format!(
             "Refusing to write a secret: {shown} is {kind}, not a regular file — whatever the path \
              looked like before it was opened."
-        )));
+        ).into()));
         return 2;
     }
     #[allow(clippy::unnecessary_cast)] // `st_dev` is `i32` on macOS, `u64` on Linux
     let id = (opened.st_dev as u64, opened.st_ino as u64);
     if let Some((_, which)) = own_streams().into_iter().find(|(k, _)| *k == id) {
         abandon(file);
-        io.say(Say::Err(format!(
-            "Refusing to write a secret: {}",
-            own_stream_refusal(&shown, which)
-        )));
+        io.say(Say::Err(
+            format!(
+                "Refusing to write a secret: {}",
+                own_stream_refusal(&shown, which)
+            )
+            .into(),
+        ));
         return 2;
     }
     let value = match read_saying(ctx, vault, key, io) {
         Ok(v) => v,
         Err(e) => {
             abandon(file);
-            io.say(Say::Err(e.message));
+            io.say(Say::Err(Markup::lines_of(&e.message)));
             return 1;
         }
     };
@@ -928,18 +952,19 @@ fn cp_unix(ctx: &Ctx, vault: &str, key: &str, dest: &str, force: bool, io: &mut 
         .set_len(0)
         .and_then(|()| std::io::Write::write_all(&mut file, value.as_bytes()));
     if let Err(e) = written {
-        io.say(Say::Err(format!(
-            "cannot write {shown} ({}).",
-            strerror(&e)
-        )));
+        io.say(Say::Err(
+            format!("cannot write {shown} ({}).", strerror(&e)).into(),
+        ));
         return 1;
     }
     if force && !created {
-        io.say(Say::Warn(format!("Overwrote {shown} and set it to 0600.")));
+        io.say(Say::Warn(
+            format!("Overwrote {shown} and set it to 0600.").into(),
+        ));
     }
-    io.say(Say::Ok(format!(
-        "Wrote '{vault}/{key}' to {shown} (0600). Value not shown."
-    )));
+    io.say(Say::Ok(
+        format!("Wrote '{vault}/{key}' to {shown} (0600). Value not shown.").into(),
+    ));
     0
 }
 

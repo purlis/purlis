@@ -74,7 +74,7 @@ pub fn run(here: &Here, command: SessionCommand) -> Result<Code, String> {
             let place = here.place(workspace.as_deref());
             let records = sessionrecord::list(here.plane.root(), &place);
             if records.is_empty() {
-                voice::info(&format!("No session records at {}.", place.said()));
+                voice::info(format!("No session records at {}.", place.said()));
             }
             for listed in records {
                 println!(
@@ -132,7 +132,7 @@ fn record(
             for warning in &saved.warnings {
                 voice::warn(warning);
             }
-            voice::ok(&format!("Session record → {}", saved.shown));
+            voice::ok(format!("Session record → {}", saved.shown));
             println!("{}", saved.shown);
             if saved.tab_warns {
                 voice::warn(&saved.tab);

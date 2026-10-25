@@ -329,3 +329,50 @@ fn purlis_s_own_colour_still_shows_around_escaped_text() {
 fn own_words_holding_a_c1_csi_fail_a_test_build() {
     let _ = Markup::new().own("a\u{9b}8m");
 }
+
+/// SK-54 (#3225): a message line takes `impl Into<Markup>`, so a literal is purlis's own words
+/// and a `String` — a `format!` that spliced a name — enters escaped, whole.
+#[test]
+fn a_string_becomes_markup_escaped_and_a_literal_as_written() {
+    let name = "n\x1b[8ma\u{202e}m\u{200b}e";
+    let line: Markup = format!("saved {name}\tthere\n").into();
+    assert_eq!(
+        line.as_str(),
+        "saved n⟦U+001B⟧[8ma⟦U+202E⟧m⟦U+200B⟧e⟦U+0009⟧there⟦U+000A⟧"
+    );
+    let own: Markup = "purlis's own words".into();
+    assert_eq!(own, "purlis's own words");
+}
+
+/// SK-54: purlis lays a message out over lines, and a line end inside a line is still marked.
+#[test]
+fn markup_lines_keep_purlis_s_line_ends_and_mark_a_value_s() {
+    let two = Markup::lines(["first:".into(), format!("  got a\nb\u{200b}").into()]);
+    assert_eq!(two.as_str(), "first:\n  got a⟦U+000A⟧b⟦U+200B⟧");
+    assert_eq!(
+        Markup::lines_of("fatal: x\x1b[2J\nhint: y\u{202e}").as_str(),
+        "fatal: x⟦U+001B⟧[2J\nhint: y⟦U+202E⟧"
+    );
+}
+
+/// SK-54: a line from the hook socket is bytes, so it is read back escaped again; a line
+/// purlis escaped reads back the same.
+#[test]
+fn markup_read_off_the_wire_is_escaped_again() {
+    let sent = Markup::new().text("a\x1b[8mb");
+    let wire = serde_json::to_string(&sent).unwrap();
+    assert_eq!(serde_json::from_str::<Markup>(&wire).unwrap(), sent);
+    let forged: Markup = serde_json::from_str("\"x\\u001b[8my\"").unwrap();
+    assert_eq!(forged.as_str(), "x⟦U+001B⟧[8my");
+}
+
+/// SK-54: a long line is cut by what it shows, never through purlis's own colour.
+#[test]
+fn a_shortened_line_never_cuts_through_purlis_s_colour() {
+    let line = Markup::new()
+        .styled(Sgr::Red, Markup::new().own("abcdef"))
+        .own("gh");
+    assert_eq!(line.clone().shortened(8), line);
+    assert_eq!(line.shortened(3).as_str(), "\x1b[31mabc\x1b[0m …");
+    assert_eq!(Markup::new().own("abcdef").shortened(2).as_str(), "ab …");
+}

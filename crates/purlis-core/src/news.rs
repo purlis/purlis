@@ -71,7 +71,7 @@ impl Report {
     fn refused(line: String, code: u8) -> Self {
         Report {
             out: String::new(),
-            said: vec![Say::Err(line)],
+            said: vec![Say::Err(line.into())],
             code,
         }
     }
@@ -141,9 +141,10 @@ fn one(changelog: &str, version: &str) -> Report {
         Ok(section) if section.notes.is_empty() => Report {
             out: String::new(),
             said: vec![Say::Info(
-                "nothing is unreleased yet: every change this build has is in a released \
+                ("nothing is unreleased yet: every change this build has is in a released \
                  version."
-                    .to_owned(),
+                    .to_owned())
+                .into(),
             )],
             code: 0,
         },
