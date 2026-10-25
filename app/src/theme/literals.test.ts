@@ -455,7 +455,13 @@ describe("the stylesheet and the vocabulary agree", () => {
    * differ. Listed by hand, so that adding one is a decision somebody makes in this file
    * rather than a hole that opens quietly; the test below holds each to being really set.
    */
-  const fromTheWindow = ["--least", "--chip", "--window-controls", "--dialog-height", "--tree-depth"];
+  const fromTheWindow = [
+    "--least",
+    "--chip",
+    "--window-controls",
+    "--dialog-height",
+    "--tree-depth",
+  ];
 
   /**
    * **What Radix measures and sets** on the content of a primitive it positions: a select's list
