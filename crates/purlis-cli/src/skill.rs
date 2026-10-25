@@ -435,17 +435,29 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                             "title": one.harness.title(),
                             "skills": one.rows.iter().map(|row| outside_json(one.harness, row))
                                 .collect::<Vec<_>>(),
+                            "repo_left_out": one.repo_left_out.iter().map(row_json)
+                                .collect::<Vec<_>>(),
                         })).collect::<Vec<_>>(),
                     })
                 );
             } else {
                 print!("{}", table(&list.rows));
-                for one in list.harnesses.iter().filter(|one| !one.rows.is_empty()) {
-                    print!(
-                        "\n{} finds these itself, read only:\n{}",
-                        one.harness.title(),
-                        outside_table(&one.rows)
-                    );
+                for one in &list.harnesses {
+                    if !one.rows.is_empty() {
+                        print!(
+                            "\n{} finds these itself, read only:\n{}",
+                            one.harness.title(),
+                            outside_table(&one.rows)
+                        );
+                    }
+                    // What a repo takes from its chats, never a silent drop (SK-53).
+                    if !one.repo_left_out.is_empty() {
+                        print!(
+                            "\n{} chats in a repo here start without these:\n{}",
+                            one.harness.title(),
+                            table(&one.repo_left_out)
+                        );
+                    }
                 }
             }
             Ok(0)
@@ -465,11 +477,12 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 .rows
                 .iter()
                 .map(|row| (None, row))
-                .chain(
-                    list.harnesses
+                .chain(list.harnesses.iter().flat_map(|one| {
+                    one.rows
                         .iter()
-                        .flat_map(|one| one.rows.iter().map(|row| (Some(one.harness), row))),
-                )
+                        .chain(&one.repo_left_out)
+                        .map(|row| (Some(one.harness), row))
+                }))
                 .filter(|(_, row)| row.name == name)
                 .collect();
             if copies.is_empty() {

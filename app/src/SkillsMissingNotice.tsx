@@ -12,7 +12,8 @@ import { SKILL_STUDIO_SHOW, skillStudioAs } from "./skillStudio";
  * **The skills a chat started without, on its tab** (SK-5, #2768; SK-8, #2771; spec decision
  * 41): never a silent drop. An installed skill this machine does not have for the chat's
  * harness, and a built-in skill purlis has none of, each named as the persona's skills write it;
- * and a skill the chat would have loaded that could not be loaded, with why. It offers
+ * a skill the chat would have loaded that could not be loaded, with why; and one the repo it
+ * works in leaves out, with why (SK-53). It offers
  *
  * - **Open in Skill studio**: the studio on the chat's persona, or on a chat at the project's
  *   root, where the name is taken out, the skill is fixed in its editor, or it is seen for what
@@ -79,6 +80,12 @@ export function missingSays(chat: string, said: SkillsMissing): string {
   if (said.broken.length > 0)
     lines.push(
       `${chat} started without ${counted(said.broken.length, "skill that could not be loaded", "skills that could not be loaded")}: ${said.broken
+        .map((one) => `${one.name} (${one.label}), ${one.why}`)
+        .join("; ")}.`,
+    );
+  if (said.by_a_repo.length > 0)
+    lines.push(
+      `${chat} started without ${counted(said.by_a_repo.length, "skill", "skills")} because of the repo it works in: ${said.by_a_repo
         .map((one) => `${one.name} (${one.label}), ${one.why}`)
         .join("; ")}.`,
     );
