@@ -589,16 +589,11 @@ body {
   width: calc(var(--space-4) + var(--space-1));
   height: calc(var(--space-4) + var(--space-1));
 }
-/* On the strip the mark is a button beside the tab, pressing Start fresh (NO-3): the same quiet
-   mark, with nothing of a button's chrome until it is under the pointer. */
+/* On the strip the mark is a button beside the tab, pressing Start fresh (NO-3): a small icon
+   button of the family (`PlaneUpdated.tsx`, #3129), which draws it. Its place only, here. */
 .fresh-mark {
-  background: none;
-  border: none;
-  padding: 0;
-  cursor: pointer;
-}
-.fresh-mark:hover {
-  color: var(--text-primary);
+  flex: none;
+  margin-left: var(--space-2);
 }
 
 /* **A chat's browsers on its tab** (#2024): each a live thumbnail beside the tab, as the fresh
@@ -670,46 +665,21 @@ body {
   color: var(--text-primary);
 }
 
-/* The bar's own controls — `+`, the two splits, `End this pane's chat`, the region toggles.
-   Each carries an icon beside its words (`PlaneView`'s `Doer`), so this is a flex row: the
-   words stay, because an icon-only bar is a bar an operator has to learn. */
-.bar button {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  color: var(--text-primary);
-  background: var(--control-base);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  padding: var(--space-1) var(--space-3);
-  font: inherit;
-  cursor: pointer;
-}
-
-.bar button:hover:not(:disabled, [aria-disabled="true"]) {
-  border-color: var(--accent-base);
-}
-
-.bar button:is(:disabled, [aria-disabled="true"]) {
-  opacity: 0.45;
-  cursor: default;
-}
+/* **No rule dresses every button on the bar** (#3129): one that did drew a bordered box around
+   any button it reached that did not say the whole of what it is, the fresh mark among them. A
+   button of the family draws itself; each mark below says all of its own look. */
 
 /* **A `+` drawn as a tab rather than as a button** — the operator's *"it should looks like
    new tab, without label — just icon"*. It is the same square at the end of every strip, so
    an operator learns it once; its accessible name is the catalogue's own words, which is the
    one condition `docs/design-system.md` puts on an icon with no text beside it.
 
-   Written as `button.bare` and placed here on purpose: `.bar button` above dresses every
-   button on the bar, and a plain `.bare` would lose to it on specificity and draw a bordered
-   box with a `+` in it.
-
-   **And it says the whole of what it is, rather than the half the bar does not already say.**
-   It used to inherit `display`, `font` and `cursor` from `.bar button`,
-   which was true of the only two strips that had one — and then charter-app#193 put a `+` on
-   the workspace strip, where there is no such rule, and the same class drew an inline box at
-   the browser's own font with its icon off centre. A rule that works in two places because of
-   where it is written is one that breaks at the third. */
+   **It says the whole of what it is.** It used to inherit `display`, `font` and `cursor` from a
+   rule that dressed every button on the bar, which was true of the only two strips that had
+   one — and then charter-app#193 put a `+` on the workspace strip, where there is no such rule,
+   and the same class drew an inline box at the browser's own font with its icon off centre. A
+   rule that works in two places because of where it is written is one that breaks at the
+   third. */
 button.bare {
   display: inline-flex;
   align-items: center;
@@ -740,7 +710,7 @@ button.bare:focus-visible {
 /* **`N more` is one of the strip's own controls, and is drawn as one** — the operator's
    *"lets make 'N more' button looks like that buttons, to have all buttons in same style"*
    (charter-app#193). It was three different buttons: a bordered control box on the chat strip
-   (`.bar button`), a borderless one on the project strip, which is gone (#2915), and a third
+   (from a rule that dressed every button on the bar, gone since #3129), a borderless one on the project strip, which is gone (#2915), and a third
    rule of its own on the workspace strip that drew a bordered box with a different padding
    from the chat strip's. Three looks for one control, and the difference was never anything
    about the control — it was which ancestor's rule happened to reach it.
@@ -753,13 +723,7 @@ button.bare:focus-visible {
 
    **Not `.bare` itself**, because `.bare` means *an icon and no words* and this has words: it
    keeps its own padding for them and takes no `min-width`, so it is as wide as `12 more` is
-   and no wider. `Doer`'s `iconOnly` is the other half of that distinction, in the JSX.
-
-   **Written as `button.show-more`, for `button.bare`'s reason one rule up**: `.bar button`
-   dresses every button on the bar, at
-   one class and one element, so a plain `.show-more` would lose to whichever of them reached
-   it and this would still be three buttons. A tie on specificity is won by source order, and
-   this is below both. */
+   and no wider. `Doer`'s `iconOnly` is the other half of that distinction, in the JSX. */
 button.show-more {
   display: inline-flex;
   align-items: center;
@@ -849,14 +813,15 @@ button.show-more:focus-visible {
 
 /* **Which of a split's panes has the keyboard** (#2914), where a theme draws no line around a
    pane (Purlis, the operator's ruling of 2026-10-22): the words in its header (where it came
-   from, its work item, its harness, its breadcrumb) are primary, and every other pane's keep their
-   muted tier. A split is the panes' own group inside the content panel; one pane is never marked,
-   and a split's separator parts the panes. */
+   from, its work item, its harness, its breadcrumb) are primary, and every other pane's keep
+   their muted tier. The harness is a button of the family (#3129), so its tier is drawn with the
+   family, in `paneFrame.css`. A split is the panes' own group inside the content panel; one pane
+   is never marked, and a split's separator parts the panes. */
 [data-scope="panel"][data-variant="content"]
   [data-group]
   .pane-frame[data-focused]
   .pane-head
-  :is(.pane-from, .pane-work-item, .pane-harness, .pane-crumbs) {
+  :is(.pane-from, .pane-work-item, .pane-crumbs) {
   color: var(--text-primary);
 }
 
@@ -915,10 +880,11 @@ button.show-more:focus-visible {
   max-width: 100%;
 }
 
-/* **The line is one height** (#2484): each chip on it is the chrome height, as the ways to end
-   a task beside them are, so no chip stands shorter than its neighbour. What each says is
-   centred in it (`align-items` or `align-content` in the chip's own rule). The heights guard
-   holds every chip here (`PANE_LINE_CHIPS`). */
+/* **The line's words are one height** (#2484): each chip that is words (the breadcrumb, the
+   gauge, where a chat came from, its work item) is the chrome height. Its buttons (Brief, the
+   harness, the skills, a task's ways) are the family's small size, which the family draws a step
+   taller and which wins over this; the line centres both, so nothing stands off its middle. The
+   heights guard holds every chip here (`PANE_LINE_CHIPS`). */
 .pane-chips
   > :is(
     .pane-crumbs,
@@ -1134,26 +1100,15 @@ button.show-more:focus-visible {
 }
 
 /* The harness a chat runs, at a glance (HP-19): a button, because it opens the harness's card
-   tab. Drawn like its neighbours in the corner, and never wider than one. */
+   tab, drawn by the family as the skills chip beside it is (ghost, small; `HarnessCard.tsx`,
+   #3129). Its place only, here: never wider than one, a long name cut at its end. */
 .pane-harness {
   max-width: 16rem;
-  overflow: hidden;
-  padding: 0 var(--space-2);
-  font-size: var(--font-size-xs);
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  color: var(--text-muted);
-  background: var(--surface-raised);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  opacity: 0.92;
-  cursor: pointer;
 }
 
-.pane-harness:hover,
-.pane-harness:focus-visible {
-  color: var(--text-primary);
-  opacity: 1;
+.pane-harness [data-part="label"] {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* **A chat's skills** (`SkillsChip`, #2775): how many it lists, and Use skill… for it, drawn by
@@ -1307,12 +1262,13 @@ button.show-more:focus-visible {
   opacity: 0.92;
 }
 
-/* **The two ways to end the task a pane shows** (#1488), beside its path: words, in the line's
-   own quiet colours, and no cross.
+/* **The two ways to end the task a pane shows** (#1488), beside its path: words, small buttons
+   of the family (#3129), and no cross. The group is as tall as they are, and clips nothing, so
+   a way's focus ring is drawn whole.
 
    **Each is drawn whole or not at all, never cut mid-word, and the group does not shrink.**
    Which of them are drawn is measured (`wholeWays.ts`), as the tab strip measures its tabs:
-   a way that does not fit is set aside, below the group's one line, where its clip hides it.
+   a way that does not fit is set aside, below the group's one line, out of sight.
    So the line gives up the harness's name first, then the breadcrumb's names, then the ways,
    and the state word last. */
 .pane-task-ends {
@@ -1321,8 +1277,6 @@ button.show-more:focus-visible {
   flex: none;
   gap: 0 var(--space-2);
   align-items: center;
-  height: var(--size-chrome);
-  overflow: hidden;
   white-space: nowrap;
 }
 
@@ -1333,30 +1287,12 @@ button.show-more:focus-visible {
   visibility: hidden;
 }
 
+/* Each way, and the second step's two answers, is a button of the family (`TaskEnd.tsx`,
+   #3129), which draws it: a way small, as the line's chips are. Their place only, here: whole,
+   never squeezed. */
 .pane-task-ends .task-end,
 .task-end-confirm button {
   flex: none;
-  height: var(--size-chrome);
-  padding: 0 var(--space-2);
-  font: inherit;
-  font-size: var(--font-size-xs);
-  line-height: 1;
-  color: var(--text-secondary);
-  background: var(--surface-raised);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  cursor: pointer;
-}
-
-.pane-task-ends .task-end:hover,
-.task-end-confirm button:hover:not(:disabled, [aria-disabled="true"]) {
-  color: var(--text-primary);
-}
-
-.pane-task-ends .task-end[aria-disabled="true"],
-.task-end-confirm button:is(:disabled, [aria-disabled="true"]) {
-  opacity: 0.45;
-  cursor: not-allowed;
 }
 
 /* **The second step of ending a task, where the press was made** (#1488): what is asked, the
@@ -1417,10 +1353,6 @@ button.show-more:focus-visible {
 
 .task-end-confirm .task-end-says {
   white-space: normal;
-}
-
-.task-end-confirm button.ends-it {
-  color: var(--text-primary);
 }
 
 .chats-section li:has(> .task-end-confirm) {
@@ -1547,44 +1479,20 @@ button.show-more:focus-visible {
 }
 
 /* **Brief, on the breadcrumb line** (#1494, `Brief.tsx`): one small icon button after the
-   breadcrumb, in the line's own quiet box, as tall as the breadcrumb beside it.
+   breadcrumb, a ghost icon button of the family (#3129), which draws it; its place only, here.
 
    **An item of the line, and not part of the breadcrumb**, so the line's rule for every such
    item holds it (`.pane-chips:has(.pane-crumbs) > :not(.pane-crumbs)`, which outranks the
    `flex` here): it gives way with the gauge and the harness's name, before the breadcrumb
-   gives anything, and is cut at its own edge. Its padding and border do not shrink. Only once
-   every such item is down to that does the breadcrumb shrink, by its own order: the names,
-   and the state word last. */
+   gives anything, and is cut at its own edge. Only once every such item is down to that does
+   the breadcrumb shrink, by its own order: the names, and the state word last.
+
+   **Clear of its neighbours** (WCAG 2.5.8): a small icon button is under 24px in the compact
+   density, and the line's gap is a hairline, so a step on either side keeps a 24px circle around
+   it clear of the breadcrumb's last name and of the ways beside it. */
 .pane-brief {
-  display: flex;
   flex: 0 1 auto;
-  align-items: center;
-  align-self: stretch;
-  justify-content: center;
-  padding: 0 var(--space-2);
-  font: inherit;
-  font-size: var(--font-size-xs);
-  color: var(--text-secondary);
-  background: var(--surface-raised);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  opacity: 0.92;
-  cursor: pointer;
-}
-
-.pane-brief svg {
-  flex: none;
-  width: 0.8rem;
-  height: 0.8rem;
-}
-
-.pane-brief:hover {
-  color: var(--text-primary);
-}
-
-.pane-brief:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: var(--focus-ring-inset);
+  margin-inline: var(--space-2);
 }
 
 /* **Words for a screen reader and for nobody else**: what a drawn separator stands for. Clipped
@@ -4538,8 +4446,10 @@ button.show-more:focus-visible {
   color: var(--text-secondary);
 }
 
-.welcome button,
-.onboarding-on button {
+/* **The welcome's cards**: a door and a repo to get, each a card pressed whole, not a button of
+   the family (the card family's, `eslint.config.js`). Every other button on the welcome and the
+   guided steps is the family's and draws itself (#3129); no rule here reaches one. */
+.welcome :is(.welcome-door, .repo-card) {
   padding: var(--space-2) var(--space-5);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
@@ -4549,13 +4459,11 @@ button.show-more:focus-visible {
   cursor: pointer;
 }
 
-.welcome button:hover:not(:disabled, [aria-disabled="true"]),
-.onboarding-on button:hover:not(:disabled, [aria-disabled="true"]) {
+.welcome :is(.welcome-door, .repo-card):hover:not(:disabled, [aria-disabled="true"]) {
   background: var(--surface-hover);
 }
 
-.welcome button:is(:disabled, [aria-disabled="true"]),
-.onboarding-on button:is(:disabled, [aria-disabled="true"]) {
+.welcome :is(.welcome-door, .repo-card):is(:disabled, [aria-disabled="true"]) {
   opacity: 0.45;
   cursor: default;
 }
@@ -7520,31 +7428,8 @@ nav.piece-files-head {
   margin-inline-start: auto;
 }
 
-.ui-setting-control > .ui-field + button,
-.ui-setting-reset {
-  padding: var(--space-1) var(--space-4);
-  color: var(--text-primary);
-  background: var(--control-base);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  font: inherit;
-  cursor: pointer;
-}
-
-.ui-setting-control > .ui-field + button:hover:not(:disabled, [aria-disabled="true"]),
-.ui-setting-reset:hover:not(:disabled, [aria-disabled="true"]) {
-  background: var(--control-hover);
-}
-
-.ui-setting-control > .ui-field + button:is(:disabled, [aria-disabled="true"]),
-.ui-setting-reset:is(:disabled, [aria-disabled="true"]) {
-  cursor: default;
-  color: var(--text-muted);
-}
-
 /* A form's buttons (SettingActions, V89j): the row a form ends in, under its rows or as a
-   dialog's answers. Drawn as a row's reset is, a step larger, and unavailable said by more than
-   a shade: the cursor stops offering it too. */
+   dialog's answers. Its buttons, as a row's reset and undo, are the family's (#3129). */
 .ui-setting-actions {
   display: flex;
   flex-wrap: wrap;

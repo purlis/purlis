@@ -6,6 +6,7 @@ import { RefreshCw } from "lucide-react";
 
 import type { Offer } from "./actions";
 import { commands, type PlaneId, type PlaneUpdated } from "./bindings";
+import { IconButton } from "./ui/button/Button";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /** The files each chat started on that have changed since, by session. */
@@ -97,7 +98,9 @@ export function PlaneUpdatedMark({ files }: { files?: readonly string[] }) {
  * **The mark on the strip, as the way out it names** (NO-3): the same mark, drawn as a button
  * beside the tab rather than inside it — a button cannot sit in the tab's own — that presses the
  * catalogue's `tab.fresh:<id>`, the row the palette and the tab's menu list. So its accessible
- * name is the row's words, and the question it asks is the row's (`PlaneView`'s `ChatAsk`).
+ * name is the row's words, and the question it asks is the row's (`PlaneView`'s `ChatAsk`). A
+ * small icon button of the family (#3129), plain as the strip has always drawn it, with the
+ * files that moved as its tooltip's second line.
  *
  * **Not a Tab stop**, for `Closer`'s reason (charter-app#189): the strip is one stop, and a
  * keyboard reaches the same row from the palette or the tab's menu. So the tab is **described
@@ -118,20 +121,16 @@ export function FreshMark({
 }) {
   if (!offer || !files || !freshMarkShown(offer, files)) return null;
   return (
-    <Tooltip
-      tip={`Project updated since this chat started: ${files.join(", ")}. Press to start it fresh on what is there now.`}
-    >
-      <button
-        id={id}
-        type="button"
-        className="plane-updated fresh-mark"
-        tabIndex={-1}
-        aria-label={`${offer.title} — project updated since this chat started`}
-        onClick={() => onPress(offer)}
-      >
-        <RefreshCw />
-      </button>
-    </Tooltip>
+    <IconButton
+      id={id}
+      size="sm"
+      className="fresh-mark"
+      excludeFromTabOrder
+      icon={<RefreshCw aria-hidden="true" />}
+      tooltip={`Project updated since this chat started: ${files.join(", ")}. Press to start it fresh on what is there now.`}
+      aria-label={`${offer.title} — project updated since this chat started`}
+      onPress={() => onPress(offer)}
+    />
   );
 }
 
