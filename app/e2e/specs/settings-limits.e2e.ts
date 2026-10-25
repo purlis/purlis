@@ -254,8 +254,8 @@ describe("the limits' lines and the set's native controls, in the real WebView",
    * - The embedded WebDriver (`tauri-plugin-wdio-webdriver` 1.4.0, `platform/executor.rs`)
    *   presses a key by dispatching a script-made `KeyboardEvent` at `document.activeElement`.
    *   Such an event is untrusted, and an engine runs no default action for one: a range never
-   *   steps on it, on macOS and Linux alike (train 59's runs). The select is Radix's (#1860),
-   *   whose keys are the app's own, so the driver's key does act there.
+   *   steps on it, on macOS and Linux alike (train 59's runs). The select is the select
+   *   family's (#2906), whose keys are the app's own, so the driver's key does act there.
    *   The driver acts out only a radio's arrows and a text box's typing itself.
    * - So the spec checks what the app decides: the control holds the keyboard, the key arrives
    *   at it, and no handler of the window's prevents it or stops it on its way up. What the
@@ -331,10 +331,11 @@ describe("the limits' lines and the set's native controls, in the real WebView",
   it("lets an arrow reach the select of Add an override, which opens its list on it (#626, #1860)", async () => {
     await goTo("Project", "Dispatch");
     await $(NOTE).waitForDisplayed({ timeout: 20_000 });
-    // The override pick: the one select in the limits (`Choice kind="select"`), Radix's since
-    // #1860. Its keys are the app's own (Radix's), not the engine's, so the driver's arrow acts
-    // them out: the key reaches the select, travels on to the window, and opens the list.
-    const select = '.dispatch-limits [role="combobox"]';
+    // The override pick: the one select in the limits (`Choice kind="select"`), the select
+    // family's since #2906. Its keys are the app's own (React Aria's), not the engine's, so the
+    // driver's arrow acts them out: the key reaches the select, travels on to the window, and
+    // opens the list.
+    const select = '.dispatch-limits [data-scope="select"][data-part="root"]';
     const seen = await aKeyReaches(select, "ArrowDown");
     expect({ atControl: seen.atControl, atWindow: seen.atWindow }).toEqual({
       atControl: true,

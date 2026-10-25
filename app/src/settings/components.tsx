@@ -12,7 +12,7 @@ import {
 } from "react";
 import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
 import { Info, ListFilter } from "lucide-react";
-import { Select } from "../primitives/Select";
+import { Select } from "../ui/select/Select";
 import { useTabStop } from "../roving";
 import { Button } from "../ui/button/Button";
 import { Checkbox, CheckboxGroup, RovingCheckbox } from "../ui/choice/Checkbox";
@@ -493,10 +493,6 @@ type Tied = { ids: RowIds };
  *  long value does not push a table past its page. */
 const narrow = (ids: RowIds) => (ids.label === undefined ? [] : ["min-w-0", "max-w-full"]);
 
-/** A select's look and place: the one select's own `ui-select`, one control tall like the Reset
- *  beside it (DS-8, #1840). */
-const rowless = (ids: RowIds) => ["ui-field", ...narrow(ids)].join(" ");
-
 /** A box's place in its row (`ui-setting-box`): the field family draws it (`ui/field`, #2905). */
 const boxPlace = (ids: RowIds) => ["ui-setting-box", ...narrow(ids)].join(" ");
 
@@ -685,14 +681,15 @@ export type Option = {
 /**
  * **A value picked**, each from its family in `ui/choice` (#2907): `radio` one of a few, each
  * with a line on what it does (the radio group); `cards` one of a few compared before picking
- * (the option cards: Start a chat's harnesses); `select` one of many (the one select, Radix's,
- * `primitives/Select.tsx`); `switch` a setting on or off, in force the moment it is turned (the
- * switch, #1860); `toggle` an option of a form on or off, done only when its button is pressed
- * (a checkbox); `checks` any of a few, each ticked on its own (a checkbox per option, in a group
- * the row names — the repos a workspace takes, the files offered to memory; DS-3e); `chips` any
- * of a few too, drawn small and side by side over the list they narrow (the Chats list's state
- * chips, #1687): **one Tab stop**, with the arrow keys between them and Space ticking the one the
- * keyboard is on, so a list's filter costs the keyboard one stop however many chips it has.
+ * (the option cards: Start a chat's harnesses); `select` one of many (the select family,
+ * `ui/select/Select.tsx`, #2906); `switch` a setting on or off, in force the moment it is turned
+ * (the switch, #1860); `toggle` an option of a form on or off, done only when its button is
+ * pressed (a checkbox); `checks` any of a few, each ticked on its own (a checkbox per option, in
+ * a group the row names — the repos a workspace takes, the files offered to memory; DS-3e);
+ * `chips` any of a few too, drawn small and side by side over the list they narrow (the Chats
+ * list's state chips, #1687): **one Tab stop**, with the arrow keys between them and Space
+ * ticking the one the keyboard is on, so a list's filter costs the keyboard one stop however many
+ * chips it has.
  */
 export type ChoiceProps = Tied &
   (
@@ -828,22 +825,28 @@ export function Choice(props: ChoiceProps) {
     );
   if (props.kind === "select")
     return (
-      <Tooltip tip={ids.title}>
-        <Select
-          id={ids.id}
-          className={rowless(ids)}
-          value={props.value ?? ""}
-          // An option out of reach is the prompt a pick starts on and cannot go back to.
-          options={[
-            ...(props.unset !== undefined ? [{ value: "", label: props.unset }] : []),
-            ...props.options,
-          ]}
-          disabled={props.disabled}
-          aria-label={ids.label}
-          aria-describedby={ids.describedBy}
-          onValueChange={props.onValueChange}
-        />
-      </Tooltip>
+      <Select
+        id={ids.id}
+        className={narrow(ids).join(" ") || undefined}
+        tooltip={ids.title}
+        value={props.value ?? ""}
+        // An option out of reach is the prompt a pick starts on and cannot go back to.
+        options={[
+          ...(props.unset !== undefined ? [{ value: "", label: props.unset }] : []),
+          ...props.options.map((one) => ({
+            value: one.value,
+            label: one.label,
+            isDisabled: one.disabled,
+            tooltip: one.title,
+          })),
+        ]}
+        isDisabled={props.disabled}
+        // Named by its row's label, which React Aria says after what it holds.
+        aria-label={ids.label}
+        aria-labelledby={ids.label === undefined ? ids.labelledBy : undefined}
+        aria-describedby={ids.describedBy}
+        onValueChange={props.onValueChange}
+      />
     );
   if (props.kind === "cards")
     return (

@@ -118,7 +118,7 @@ tester.run("purlis/field-family", purlisUi.rules["field-family"], {
     { code: `<input type="range" min={1} max={9} />` },
     { code: `<input type="color" />` },
     { code: `<input type="hidden" name="at" value={at} />` },
-    // The palette's box is a combobox's, which the combobox family moves.
+    // A combobox's box is the select family's rule's to refuse.
     { code: `<input role="combobox" aria-expanded="true" />` },
   ],
   invalid: [
@@ -136,10 +136,26 @@ tester.run("purlis/field-family", purlisUi.rules["field-family"], {
 });
 
 tester.run("purlis/select-family", purlisUi.rules["select-family"], {
-  valid: [{ code: `<Select value={x} onValueChange={setX} />` }],
+  valid: [
+    { code: `<Select aria-label="Kind" value={x} options={kinds} onValueChange={setX} />` },
+    { code: `<ComboBox label="Add a skill" value={x} suggestions={known} onChange={setX} />` },
+    { code: `<ListComboBox controls={["rows"]} aimed={at} value={q} onChange={setQ} />` },
+    // A role held in a value is a selector, not a combobox drawn by hand.
+    { code: `<div data-role="combobox">x</div>` },
+    { code: `<button aria-haspopup="menu">More</button>` },
+    // A role decided at run time is no hand-written combobox.
+    { code: `<div role={kind} />` },
+  ],
   invalid: [
-    { code: `<select value={x} />`, errors: [{ messageId: "unmoved" }] },
-    { code: `<input role="combobox" />`, errors: [{ messageId: "unmoved" }] },
+    { code: `<select value={x} />`, errors: [{ messageId: "raw" }] },
+    { code: `<datalist id="known" />`, errors: [{ messageId: "raw" }] },
+    { code: `<input role="combobox" />`, errors: [{ messageId: "role" }] },
+    { code: `<TextField role="combobox" value={q} />`, errors: [{ messageId: "role" }] },
+    { code: `<div aria-haspopup="listbox">Pick</div>`, errors: [{ messageId: "role" }] },
+    { code: `<input role={"combobox"} />`, errors: [{ messageId: "role" }] },
+    { code: "<div role={`combobox`} />", errors: [{ messageId: "role" }] },
+    { code: `<div aria-haspopup={"listbox"}>Pick</div>`, errors: [{ messageId: "role" }] },
+    { code: `<button className="ui-select wide" />`, errors: [{ messageId: "oldClass" }] },
   ],
 });
 

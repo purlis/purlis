@@ -13,7 +13,7 @@ import {
   SettingRow,
   SettingsLayout,
 } from "./components";
-import { pickIn } from "../primitives/select.testkit";
+import { pickIn, selectNamed } from "../ui/select/select.testkit";
 import { hoverTipOf, tipOf } from "../ui/tooltip/tooltip.testkit";
 
 afterEach(cleanup);
@@ -283,7 +283,7 @@ describe("a select", () => {
         )}
       />,
     );
-    expect(screen.getByRole("combobox", { name: "Override for" })).toBeDisabled();
+    expect(selectNamed("Override for")).toBeDisabled();
   });
 });
 
@@ -445,7 +445,7 @@ describe("a control with no row: a table's cell or a pick inside a sentence", ()
         onValueChange={onValueChange}
       />,
     );
-    const where = screen.getByRole("combobox", { name: "In which workspace" });
+    const where = selectNamed("In which workspace");
     expect(where).toHaveTextContent("choose where it holds");
     await expect(pickIn(where, "choose where it holds")).rejects.toThrow(/out of reach/);
     expect(onValueChange).not.toHaveBeenCalled();

@@ -3,15 +3,12 @@
 
 import {
   createContext,
-  createElement,
   memo,
   useContext,
   useEffect,
   useLayoutEffect,
   useRef,
   useState,
-  type ComponentPropsWithRef,
-  type ElementType,
   type ReactNode,
 } from "react";
 
@@ -123,7 +120,7 @@ const OVER_THE_WINDOW = [
  * switched to and closes with the switch.
  *
  * **A project that leaves the front with something over the window is not kept** (`PlaneView`):
- * the backstop behind {@link onlyWhileShown}, which is what keeps a project's overlays off the
+ * the backstop behind the families' surfaces (`useProjectShown`), which keep a project's overlays off the
  * window while it is behind. A dialog a part of its view opened is drawn outside the project's
  * element, so it would stay up over the project that came forward: "Delete persona steward?"
  * asked in one project, answered over another, and done in the first. Should one ever be drawn
@@ -290,41 +287,6 @@ const LastShown = memo(
   // "Equal", so not drawn again, whenever the project is not shown.
   (_, next) => !next.shown,
 );
-
-/**
- * `Part`, **drawn only while the project it is under is in front**: for each part of an overlay
- * that puts something over the whole window (`overlays/`). Its props are its own, a `ref`
- * among them, so it stands in for `Part` wherever `Part` was written.
- *
- * This is what makes it impossible for a project kept behind another to draw over the window,
- * whenever the overlay was opened. A kept view is not drawn again by its parent, but a part of it
- * can still set its own state: the answer to a question it asked the core arrives, and it opens
- * its confirm. The overlay's own portal is what asks whether the project is shown, so that
- * confirm is drawn when the person is back in the project it is about, and until then nothing of
- * it is mounted: no dialog, and none of what a dialog does to the document as it mounts (the
- * focus held in it, the rest of the window made unpressable).
- */
-export function onlyWhileShown<T extends ElementType>(Part: T): T {
-  function WhileShown(props: ComponentPropsWithRef<T>) {
-    return useProjectShown() ? createElement(Part, props) : null;
-  }
-  return WhileShown as unknown as T;
-}
-
-/**
- * {@link onlyWhileShown} for an overlay's portal, **which stays and holds nothing** while its
- * project is behind, where a part that draws would go altogether. A portal is written around
- * every menu and dialog whether or not it is open, a tab's own menu among them, so taking each
- * one out and putting it back would be a hundred parts mounted on every switch for nothing
- * that is drawn. With nothing in it, it draws nothing, and what it holds is drawn only while
- * the project is in front, which is the point.
- */
-export function holdingOnlyWhileShown<T extends ElementType>(Portal: T): T {
-  function WhileShown(props: ComponentPropsWithRef<T>) {
-    return createElement(Portal, useProjectShown() ? props : { ...props, children: null });
-  }
-  return WhileShown as unknown as T;
-}
 
 /**
  * Draws its children only while the project is in front: what is asked over the whole window,
