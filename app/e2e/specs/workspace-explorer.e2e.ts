@@ -634,7 +634,7 @@ describe("the explorer", () => {
     const readme = await tree.$('[data-row="file:svc/fix-login:README.md"]');
     await readme.waitForExist({ timeout: 20_000 });
     await readme.click();
-    const preview = await $('[aria-label="README.md"]');
+    const preview = await $('section.piece-files-shown[aria-label="README.md"]');
     await browser.waitUntil(async () => (await preview.getText()).includes("svc"), {
       timeout: 20_000,
       timeoutMsg: "the preview never drew README.md",

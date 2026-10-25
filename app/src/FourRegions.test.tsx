@@ -919,7 +919,7 @@ describe("the Search and Changes views", () => {
     const state = within(view).getByLabelText("Repository state");
     await waitFor(() => expect(within(state).getByTestId("repo-svc")).toHaveTextContent("main"));
     expect(
-      within(state).getByRole("row", { name: "changes: 3 changed, 1 untracked" }),
+      within(state).getByRole("row", { name: "3 changed, 1 untracked, changes" }),
     ).toBeInTheDocument();
     expect(within(state).getByTestId("ci-svc")).toHaveTextContent("not fetched");
   });

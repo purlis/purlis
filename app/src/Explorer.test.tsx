@@ -717,11 +717,14 @@ describe("the explorer on the shared styles", () => {
       expect(row).toHaveAttribute("data-size", "sm");
       expect(drawnWith(row, "min-block-size")).toBe("var(--size-chrome)");
       expect(drawnWith(row, "padding-inline-start")).toContain("var(--tree-step)");
-      // Under the pointer: the pill, but the current row keeps its wash.
+      // Under the pointer: the pill, but the current row keeps its wash, and a line, which runs
+      // nothing, takes none.
       expect(drawnWith(row, "background-color", { hover: true })).toBe(
         row.getAttribute("aria-current") === "true"
           ? "var(--list-selected)"
-          : "var(--surface-hover)",
+          : row.hasAttribute("data-line")
+            ? "transparent"
+            : "var(--surface-hover)",
       );
     }
     // The picked spot is drawn as a chosen row is.
@@ -741,9 +744,11 @@ describe("the explorer on the shared styles", () => {
     draw({ state: state({ pieces: {} }) });
     const [pending] = ofClone("svc").filter((one) => one.matches(".pending"));
     if (pending === undefined) throw new Error("the clone says nothing while git is asked");
-    // One level under the clone's row: the branches' level, a line of the tree.
+    // One level under the clone's row: the branches' level, the tree's loading row, which the
+    // arrows pass; the clone says it is busy meanwhile.
     expect(pending).toHaveAttribute("aria-level", "3");
-    expect(pending).toHaveAttribute("data-line");
+    expect(pending).toHaveAttribute("data-part", "pending");
+    expect(screen.getByTestId("clone-svc")).toHaveAttribute("aria-busy", "true");
   });
 });
 

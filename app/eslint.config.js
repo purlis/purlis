@@ -128,11 +128,7 @@ export default tseslint.config(
   // moves it onto the tree family (#2911): the Chats list with the browsers and finished tasks
   // under a chat (#3198).
   {
-    files: [
-      "src/ChatsSection.tsx",
-      "src/ChatBrowsersShown.tsx",
-      "src/FinishedTasks.tsx",
-    ],
+    files: ["src/ChatsSection.tsx", "src/ChatBrowsersShown.tsx", "src/FinishedTasks.tsx"],
     rules: { "purlis/tree-family": "off" },
   },
 );

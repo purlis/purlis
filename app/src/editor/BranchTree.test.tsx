@@ -268,10 +268,18 @@ describe("the file tab's tree, the tree family's (#2911)", () => {
     const readme = await screen.findByRole("row", { name: /^README\.md/ });
     await userEvent.click(readme);
     expect(picked).toEqual(["README.md"]);
+    // Enter on it picks it too, and Enter on the file shown shows it again.
+    await userEvent.keyboard("{Enter}");
+    expect(readme).toHaveFocus();
+    expect(picked).toEqual(["README.md", "README.md"]);
     const src = screen.getByRole("row", { name: /^src/ });
     await userEvent.click(src);
     expect(src).toHaveAttribute("aria-expanded", "true");
-    expect(picked).toEqual(["README.md"]);
+    expect(picked).toEqual(["README.md", "README.md"]);
+    // Enter on a folder closes it, and picks nothing.
+    await userEvent.keyboard("{Enter}");
+    expect(src).toHaveAttribute("aria-expanded", "false");
+    expect(picked).toEqual(["README.md", "README.md"]);
   });
 
   it("shows the file shown again on a press, and stops the Tab on it", async () => {

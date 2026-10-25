@@ -246,6 +246,24 @@ describe("the branch cockpit", () => {
     expect(onFocus).toHaveBeenLastCalledWith(undefined);
   });
 
+  it("steps back out on one Esc from a file's row the keyboard is on", async () => {
+    core({ ahead: 0, behind: 0, base: "main" });
+    const onFocus = vi.fn();
+    draw({ onFocus });
+    const tree = screen.getByRole("treegrid", { name: "Files of fix/one" });
+    const readme = await within(tree).findByRole("row", { name: /README\.md/ });
+
+    within(tree)
+      .getByRole("row", { name: /^Files/ })
+      .focus();
+    await userEvent.keyboard("{ArrowDown}");
+    await waitFor(() => expect(readme).toHaveFocus());
+    // A file's path is the pointer's tooltip alone: no tooltip is up to spend the Esc on.
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    await userEvent.keyboard("{Escape}");
+    expect(onFocus).toHaveBeenLastCalledWith(undefined);
+  });
+
   it("moves between its rows with the arrows", async () => {
     core({ ahead: 0, behind: 0, base: "main" });
     draw();

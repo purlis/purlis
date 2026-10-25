@@ -2834,14 +2834,16 @@ body {
   rotate: 90deg;
 }
 
-/* What git ignores, shown on request: there, and plainly not the branch's own work. */
-.explorer .file-node[data-ignored] {
-  opacity: 0.55;
-}
-
 /* A file charter will not open says so beside it; its name is quieter than an openable one. */
 .explorer .file-node[data-refused] .spot-name {
   color: var(--text-muted);
+}
+
+/* What git ignores, shown on request: there, and plainly not the branch's own work. It never
+   opens, so its name is in the faint tier, a disabled row's (no opacity, #2794·4). After the
+   refused rule, which an ignored file is too. */
+.explorer .file-node[data-ignored] .spot-name {
+  color: var(--text-faint);
 }
 
 /* *Changed only*, *Show ignored files* and the picked rows' buttons: small toggles and buttons

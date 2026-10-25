@@ -174,8 +174,8 @@ describe("picking several rows of a branch's files (#1151)", () => {
     expect(item("c.txt")).toHaveFocus();
     // Read out as it changes, to a screen reader only.
     expect(said()).toBe("3 picked");
-    // The first Esc takes the row's tooltip down (WCAG 1.4.13); the next lets the picks go.
-    await userEvent.keyboard("{Escape}{Escape}");
+    // One Esc: a file's path tooltip is the pointer's alone, so none is up to take it.
+    await userEvent.keyboard("{Escape}");
     expect(picked()).toEqual([]);
     expect(said()).toBe("");
   });

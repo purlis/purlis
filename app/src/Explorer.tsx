@@ -4,15 +4,7 @@
 import { LiveMark } from "./LiveDialog";
 import { NamedNotReadWords, namedNotRead, namedNotReadSaid } from "./ExplorerRefused";
 import { Notice } from "./Notice";
-import {
-  useEffect,
-  useContext,
-  useId,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useEffect, useContext, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ChevronRight,
   Files,
@@ -64,7 +56,7 @@ import { PanelSectionTitle } from "./ui/panel/Panel";
 import { Count } from "./ui/badge/Badge";
 import { HeadActions } from "./viewHead";
 import { Tooltip } from "./ui/tooltip/Tooltip";
-import { Tree, TreeLine, TreeRow, type Key, type PressEvent } from "./ui/tree/Tree";
+import { Tree, TreeLine, TreePending, TreeRow, type Key, type PressEvent } from "./ui/tree/Tree";
 import type { RowMenu } from "./ui/list/List";
 
 /**
@@ -571,6 +563,7 @@ export function Explorer({
               <>
                 <FilesFilter filter={filter} onFilter={setFilter} />
                 <Tree
+                  fit="content"
                   aria-label={`Files of ${OUTSIDE_TITLE}`}
                   data-testid="files"
                   size="sm"
@@ -740,7 +733,7 @@ export function Explorer({
           </ReadRefused>
         )}
         {filterBox}
-        <Tree aria-label={`Files of ${name}`} size="sm" {...fileTree}>
+        <Tree aria-label={`Files of ${name}`} size="sm" fit="content" {...fileTree}>
           {filesOf(ref.repo, ref.piece, `files-${ref.repo}-${ref.piece}`)}
         </Tree>
         {pickedBar}
@@ -809,7 +802,13 @@ export function Explorer({
           project={plane}
         >
           {filterBox}
-          <Tree aria-label={`Files of ${filesName}`} data-testid="files" size="sm" {...fileTree}>
+          <Tree
+            aria-label={`Files of ${filesName}`}
+            data-testid="files"
+            size="sm"
+            fit="content"
+            {...fileTree}
+          >
             {filesTop === undefined || topLevel === undefined
               ? clones.map((repo) => filesOf(repo, null, `files-${repo}`, repo))
               : [
@@ -944,6 +943,7 @@ function ReposSection({
           row they explain. */}
       <Tree
         aria-label="Repos and branches"
+        fit="content"
         size="sm"
         stopAt={picked}
         expandedKeys={[ROOT, ...clones.filter(open).map(cloneRow)]}
@@ -994,6 +994,7 @@ function ReposSection({
               menu={catalogueMenu({ on: "clone", repo }, offers, onPress)}
               // Why its branches could not be listed, beside its row (#1476).
               tip={piecesRefused[repo]}
+              busy={pieces[repo] === undefined && piecesRefused[repo] === undefined}
               hasChildItems
               content={
                 <>
@@ -1093,16 +1094,10 @@ function cloneItems({
     );
   if (pieces[repo] === undefined)
     return (
-      <TreeLine
-        key="pending"
-        id={line("pending")}
-        textValue="Asking git…"
-        className="pending"
-        data-clone={repo}
-      >
+      <TreePending key="pending" className="pending" data-clone={repo}>
         <LoaderCircle className="node-icon spinning" />
         <span>Asking git…</span>
-      </TreeLine>
+      </TreePending>
     );
   if (pieces[repo].length === 0)
     return (
@@ -1677,6 +1672,7 @@ function FilesRow({
       className="file-node"
       data-row={id}
       data-mark={marked?.mark}
+      busy={level !== undefined && "pending" in level}
       hasChildItems
       // A folder's menu (FM-10). The branch's own *Files* row has one too (#1143): its folder
       // placed whole, the rows its branch's row offers (`actions.fileRows`).
@@ -1729,10 +1725,10 @@ function folderItems(branch: BranchFolderRef, level: Level, at: FileRows): React
   const line = (what: string) => `${fileRow(branch)}#${what}`;
   if ("pending" in level)
     return [
-      <TreeLine key="pending" id={line("pending")} textValue="Reading…" className="pending">
+      <TreePending key="pending" className="pending">
         <LoaderCircle className="node-icon spinning" />
         <span>Reading…</span>
-      </TreeLine>,
+      </TreePending>,
     ];
   if ("trouble" in level)
     return [
@@ -1873,10 +1869,10 @@ export function TopItems({
 }) {
   if (!("pending" in level)) return <FolderItems branch={top} level={level} at={at} />;
   return (
-    <TreeLine id={`${fileRow(top)}#pending`} textValue={reading} className="pending">
+    <TreePending className="pending">
       <LoaderCircle className="node-icon spinning" />
       <span>{reading}</span>
-    </TreeLine>
+    </TreePending>
   );
 }
 
@@ -1945,7 +1941,10 @@ function FileRow({ branch, entry, at }: { branch: BranchFolderRef; entry: Child;
       data-ignored={entry.ignored ? "" : undefined}
       data-mark={entry.marked?.mark}
       unavailable={refused !== undefined}
+      // Why it does not open is said on the keyboard too; its path, which only repeats the row,
+      // is the pointer's alone, so no arrow step pops it and no Esc is spent on it.
       tip={refused ?? path}
+      tipToPointer={refused === undefined}
       menu={fileMenu({ on: "file", at: pathOn(at, path), kind: entry.kind, refused }, at, line)}
       carries={carriedBy(at, path, false, refused)}
       content={

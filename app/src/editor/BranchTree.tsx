@@ -144,18 +144,26 @@ export function BranchTree({
   const level = levelOf(files, top);
   return (
     <div className="explorer piece-files-tree ui-text-body">
-      <Tree
-        ref={treeRef}
-        aria-label={`Files of ${placeName(place)}`}
-        data-testid="piece-files-tree"
-        size="sm"
-        expandedKeys={openFileRows(rows)}
-        onExpandedChange={foldFileRows(rows, fold)}
-        // **The file shown is the tree's chosen row** (FM-2): a press on a file, or Enter, shows
-        // it (again, if it is shown), the arrows never do, and the tree's Tab stop is on it.
-        stopAt={pickedRow}
-      >
-        {"trouble" in level ? null : (
+      {/* A branch that could not be read says why, in place of a tree with nothing in it to
+          stop on. */}
+      {"trouble" in level ? (
+        <p className="trouble" role="alert" data-testid="piece-files-trouble">
+          {level.trouble}
+        </p>
+      ) : (
+        <Tree
+          ref={treeRef}
+          fit="content"
+          aria-label={`Files of ${placeName(place)}`}
+          data-testid="piece-files-tree"
+          size="sm"
+          expandedKeys={openFileRows(rows)}
+          onExpandedChange={foldFileRows(rows, fold)}
+          // **The file shown is the tree's chosen row** (FM-2): a press on a file, or Enter,
+          // shows it (again, if it is shown), the arrows never do, and the tree's Tab stop is on
+          // it.
+          stopAt={pickedRow}
+        >
           <TopItems
             top={top}
             level={level}
@@ -171,12 +179,7 @@ export function BranchTree({
               shown: picked ?? "",
             }}
           />
-        )}
-      </Tree>
-      {"trouble" in level && (
-        <p className="trouble" role="alert" data-testid="piece-files-trouble">
-          {level.trouble}
-        </p>
+        </Tree>
       )}
       <ToggleButton
         size="sm"
