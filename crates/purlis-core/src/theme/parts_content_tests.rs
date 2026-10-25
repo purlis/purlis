@@ -603,7 +603,28 @@ fn a_chat_pane_s_band_draws_its_notices_ground_and_words_itself() {
         })
         .collect();
     assert_eq!(notice.len(), 4, "{sheet}");
-    for line in notice {
-        assert!(line.contains(":not([data-placement=\"pane\"])"), "{line}");
+    for line in &notice {
+        // Once, on the Notice's root alone: a part inside it is reached as written, under any
+        // Notice but one in a pane.
+        assert_eq!(
+            line.matches(":not([data-placement=\"pane\"])").count(),
+            1,
+            "{line}"
+        );
+        assert!(
+            line.contains(
+                "[data-scope=\"notice\"][data-part=\"root\"]:not([data-placement=\"pane\"])"
+            ),
+            "{line}"
+        );
+    }
+    for part in ["message", "whose"] {
+        let inner = format!(
+            ":not([data-placement=\"pane\"]) [data-scope=\"notice\"][data-part=\"{part}\"])"
+        );
+        assert!(
+            notice.iter().any(|line| line.contains(&inner)),
+            "{part}: {notice:?}"
+        );
     }
 }

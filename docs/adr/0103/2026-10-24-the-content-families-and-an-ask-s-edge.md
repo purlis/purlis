@@ -22,7 +22,11 @@ wrapper's attributes alone. None is a control: each is a box as tall as what it 
   by its own row inside the pane and outside the terminal, its wash and its mark. **The band's
   wash and words are the window's**: a theme's Notice colours (`notice.*.fill`, `notice.*.text`)
   reach a Notice anywhere but in a pane, so the band always draws the state washes, which no
-  tint turns, and no theme can draw a band Notice in the terminal's own fill. Its other keys
+  tint turns, and no theme can draw a band Notice in the terminal's own fill. **So the Notice's edge
+  hold is close to unused today**: the band draws no edge, an Inbox row draws none, and a Notice
+  alone on a page draws a decorative hairline, not the waiting edge; only the family's own pane
+  row outside a band draws it. The hold is kept so that a placement that draws the edge again
+  keeps it in every theme. Its other keys
   (corners, room) still reach it.
 - **`badge`** (`neutral`, `accent`, `waiting`, `ok`) and **`count`** (`neutral`,
   `accent`, `waiting`, `hot`, and its `group` part): pills whose words are measured on their own
