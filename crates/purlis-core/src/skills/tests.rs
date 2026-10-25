@@ -991,7 +991,7 @@ fn the_studio_lists_each_harnesss_own_skills_beside_the_projects_and_marks_a_cla
     };
 
     let set = in_the_studio(None, &plane, None, None);
-    let harnesses = harnesses_in_the_studio(&set, &plane, None, &env, &Known::of(&plane));
+    let harnesses = harnesses_in_the_studio(&set, &plane, None, &[], &env, &Known::of(&plane));
 
     let titles: Vec<&str> = harnesses.iter().map(|h| h.group.adapter.title()).collect();
     assert_eq!(titles, ["Claude Code", "opencode", "Codex"]);
@@ -1514,4 +1514,150 @@ fn a_skill_of_the_persons_own_that_is_a_hard_link_is_badged_and_never_refused() 
     assert_eq!(row.compat.len(), 1, "{:?}", row.compat);
     assert!(!row.compat[0].compat.widens(), "{:?}", row.compat);
     assert_eq!(row.lint, Vec::<String>::new());
+}
+
+/// A plane whose workspace `alpha` has the skills `review` and `ship`, and the clones `api`,
+/// which brings its own `review` for Codex, and `web`, whose skills folder holds more names than
+/// purlis reads (SK-53). Its temporary folder, the plane, and the two clones.
+fn a_workspace_whose_repos_leave_skills_out() -> (tempfile::TempDir, PathBuf, PathBuf, PathBuf) {
+    let tmp = tempfile::tempdir().unwrap();
+    let plane = tmp.path().join("plane");
+    std::fs::create_dir_all(&plane).unwrap();
+    std::fs::write(plane.join("charter.toml"), "[plane]\n").unwrap();
+    let api = plane.join("workspaces/alpha/api");
+    let web = plane.join("workspaces/alpha/web");
+    for clone in [&api, &web] {
+        std::fs::create_dir_all(clone.join(".git")).unwrap();
+        std::fs::create_dir_all(clone.join(".agents/skills")).unwrap();
+    }
+    for (dir, name) in [
+        (plane.join("workspaces/alpha/skills"), "review"),
+        (plane.join("workspaces/alpha/skills"), "ship"),
+        (api.join(".agents/skills"), "review"),
+    ] {
+        std::fs::create_dir_all(dir.join(name)).unwrap();
+        std::fs::write(
+            dir.join(name).join("SKILL.md"),
+            format!("---\nname: {name}\ndescription: Does {name}.\n---\n"),
+        )
+        .unwrap();
+    }
+    for n in 0..=2000 {
+        std::fs::write(web.join(".agents/skills").join(format!("f{n}")), "").unwrap();
+    }
+    (tmp, plane, api, web)
+}
+
+const HIDDEN_BY_THE_REPO: &str = "hidden by the repo skill of this name";
+const WEB_UNREAD: &str = "purlis could not read the skills folder of web whole, so a copy of \
+                          this skill may be there, and a chat in that repo would get that one";
+
+#[test]
+fn a_chat_in_a_clone_is_told_which_skills_its_repo_leaves_out_and_why() {
+    // SK-53 (#3213), decision 41: never a silent drop. A Codex chat in `api` gets the repo's
+    // `review` in place of the workspace's (decision 51); one in `web` gets none of the
+    // workspace's, since purlis could not read that clone's skills folder whole (SK-44).
+    let (tmp, plane, api, web) = a_workspace_whose_repos_leave_skills_out();
+    let env = crate::harness_plugin::Env {
+        chat: &[],
+        home: Some(tmp.path().join("home")),
+        process: false,
+    };
+    let said = |harness: Harness, cwd: &Path| {
+        not_here(&plane, Some("alpha"), None, None, harness, &env, Some(cwd))
+            .map(|not| {
+                not.by_a_repo
+                    .into_iter()
+                    .map(|one| (one.name, one.origin, one.why.to_string()))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default()
+    };
+
+    assert_eq!(
+        said(Harness::Codex, &api),
+        [(
+            "review".to_owned(),
+            Origin::Workspace,
+            HIDDEN_BY_THE_REPO.to_owned()
+        )]
+    );
+    let mut in_web = said(Harness::Codex, &web);
+    in_web.sort_by(|a, b| a.0.cmp(&b.0));
+    assert_eq!(
+        in_web,
+        [
+            (
+                "review".to_owned(),
+                Origin::Workspace,
+                WEB_UNREAD.to_owned()
+            ),
+            ("ship".to_owned(), Origin::Workspace, WEB_UNREAD.to_owned()),
+        ]
+    );
+    assert_eq!(
+        said(Harness::ClaudeCode, &web),
+        [],
+        "Claude Code's chats get the workspace's skills as their own plugin"
+    );
+    assert_eq!(
+        said(Harness::Codex, &plane.join("workspaces/alpha")),
+        [],
+        "a chat in no clone"
+    );
+}
+
+#[test]
+fn the_studio_lists_under_each_harness_the_skills_a_repo_leaves_out_of_its_chats() {
+    // SK-53 (#3213): the plane's rows are a set worked out with no repo skills, so what a repo
+    // takes from a Codex or opencode chat is listed under that harness, with why. `api`'s copy
+    // took `review` first, so `web` is why `ship` alone is left out.
+    let (tmp, plane, _api, _web) = a_workspace_whose_repos_leave_skills_out();
+    let env = crate::harness_plugin::Env {
+        chat: &[],
+        home: Some(tmp.path().join("home")),
+        process: false,
+    };
+
+    let list = studio_list(None, &plane, Some("alpha"), None, &env);
+
+    let left_out = |harness: Harness| {
+        let mut rows: Vec<(String, Origin, Option<String>)> = list
+            .harnesses
+            .iter()
+            .find(|one| one.harness == harness)
+            .unwrap_or_else(|| panic!("{harness:?} listed"))
+            .repo_left_out
+            .iter()
+            .map(|row| (row.name.clone(), row.origin, row.left_out.clone()))
+            .collect();
+        rows.sort_by(|a, b| a.0.cmp(&b.0).then(a.2.cmp(&b.2)));
+        rows
+    };
+    for harness in [Harness::Codex, Harness::Opencode] {
+        assert_eq!(
+            left_out(harness),
+            [
+                (
+                    "review".to_owned(),
+                    Origin::Workspace,
+                    Some(HIDDEN_BY_THE_REPO.to_owned())
+                ),
+                (
+                    "ship".to_owned(),
+                    Origin::Workspace,
+                    Some(WEB_UNREAD.to_owned())
+                ),
+            ],
+            "{harness:?}"
+        );
+    }
+    assert_eq!(left_out(Harness::ClaudeCode), []);
+    assert!(
+        list.rows
+            .iter()
+            .filter(|row| row.name == "ship")
+            .all(|row| row.left_out.is_none()),
+        "the plane's own rows are a chat's in no clone"
+    );
 }

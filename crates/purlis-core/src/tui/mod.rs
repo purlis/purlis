@@ -16,7 +16,9 @@
 //! character — before anything is measured or clamped (charter #326). What is left that could
 //! reorder or hide text, a bidi override or a zero-width character, is shown as `⟦U+XXXX⟧`.
 //! A table cell is not markup at all: [`pad`] and [`column`] take untrusted text and escape
-//! every one of those characters, escape included, before they measure it (SK-47).
+//! every one of those characters, escape included, before they measure it (SK-47). A line
+//! that mixes purlis's words and colour with untrusted values is a [`Markup`], which takes a
+//! value only through an escaping splice (SK-50).
 //!
 //! # A column is what Python says it is, character for character
 //!
@@ -590,6 +592,101 @@ fn render_columns(columns: &[(Block, Option<usize>)], gap: &str, width: usize) -
             finish(&truncate(&row, width))
         })
         .collect()
+}
+
+// --------------------------------------------------------------------------------------- //
+// markup, by type                                                                           //
+// --------------------------------------------------------------------------------------- //
+
+/// purlis's own colours: the only SGR a [`Markup`] can hold.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Sgr {
+    Bold,
+    Dim,
+    Red,
+    Green,
+    Yellow,
+    Cyan,
+}
+
+impl Sgr {
+    fn escape(self) -> &'static str {
+        match self {
+            Sgr::Bold => "\x1b[1m",
+            Sgr::Dim => "\x1b[2m",
+            Sgr::Red => "\x1b[31m",
+            Sgr::Green => "\x1b[32m",
+            Sgr::Yellow => "\x1b[33m",
+            Sgr::Cyan => "\x1b[36m",
+        }
+    }
+}
+
+/// **A line of markup that untrusted text can only enter escaped (SK-50, #3173).**
+///
+/// [`pad`] and [`fit`] both take a `&str`, so a name spliced into markup with `format!` was
+/// still a plain string, and nothing stopped a skill's, a record's or an extension's name from
+/// carrying a conceal (`\x1b[8m`), a bidi override or a zero-width character to the terminal.
+/// A `Markup` is built from three things only:
+///
+/// - [`text`](Markup::text): any value purlis did not write, marked by the one rule
+///   ([`purlis_unicode::marked`], line ends and tabs too), so it is shown and never obeyed;
+/// - [`own`](Markup::own): purlis's own words, a `&'static str` — a literal in the source, so
+///   no value read at run time can be passed here;
+/// - [`styled`](Markup::styled): purlis's own colour ([`Sgr`]) around another `Markup`, closed
+///   with [`RESET`] so it cannot bleed past its span.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Markup(String);
+
+impl Markup {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Splice `text`, which purlis did not write, escaped: every control (an escape included),
+    /// bidi, zero-width and tag character, and every line end and tab, as `⟦U+XXXX⟧`.
+    pub fn text(mut self, text: impl std::fmt::Display) -> Self {
+        self.0.push_str(&marked_line(&text.to_string()));
+        self
+    }
+
+    /// purlis's own words, as written. A literal carries no escape and nothing hidden: colour
+    /// is [`styled`], and a test build fails on any character the one rule would mark (an
+    /// escape, a C1 CSI U+009B, a bidi or a zero-width character). A line end or a tab may be
+    /// purlis's own layout, so those two are let through.
+    ///
+    /// `&'static str` keeps run-time values out by convention, not by proof: a string made
+    /// `'static` with `Box::leak` gets past it. A value purlis did not write goes through
+    /// [`text`], always.
+    ///
+    /// [`styled`]: Markup::styled
+    /// [`text`]: Markup::text
+    pub fn own(mut self, words: &'static str) -> Self {
+        debug_assert!(
+            marked(words, Breaks::Kept) == words,
+            "purlis's own words hold a character the one rule marks: {words:?}"
+        );
+        self.0.push_str(words);
+        self
+    }
+
+    /// `inner` in purlis's colour `sgr`, reset after it.
+    pub fn styled(mut self, sgr: Sgr, inner: Markup) -> Self {
+        self.0.push_str(sgr.escape());
+        self.0.push_str(&inner.0);
+        self.0.push_str(RESET);
+        self
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for Markup {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
 }
 
 /// `text` as one cell or line of a table shows it: every hidden character, line end and tab

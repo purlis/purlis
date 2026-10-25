@@ -109,3 +109,8 @@
   256 KiB. In your own skills folder, it is a link or larger than 256 KiB. A hard link is read
   there, as the Nix store, `cp -al` and `rsync --link-dest` leave them. Such a skill used to
   vanish from the list.
+- **A chat is told which project skills its repo leaves out** (Skill studio preview, #3213).
+  On Codex and opencode, a repo's own copy of a skill replaces the project's, and a repo whose
+  skills folder purlis can't read whole leaves out all of the project's skills. The chat's tab
+  now names each skill it starts without because of its repo, and why. The Skill studio and
+  `purlis skill list` list them under each program.
