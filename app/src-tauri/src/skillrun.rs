@@ -43,11 +43,24 @@ pub struct ChatSkillRun {
 /// Told each change of a chat's open run.
 pub type Teller = Arc<dyn Fn(ChatSkillRun) + Send + Sync + 'static>;
 
+/// **What a watched chat did** (SK-16): what a grade waits for of the chat it asked purlis for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Watched {
+    /// A run of this skill started in it, by the name its harness started it by.
+    Started(String),
+    /// Its turn ended.
+    TurnEnded,
+    /// It closed, or its session ended.
+    Closed,
+}
+
 /// The open skill runs of one project's chats.
 pub struct SkillRuns {
     plane: PlaneId,
     runs: Mutex<Tracker>,
     teller: Mutex<Option<Teller>>,
+    /// The chats a grade watches, by number, each told what it did ([`Self::watch`]).
+    watched: Mutex<std::collections::HashMap<u32, std::sync::mpsc::Sender<Watched>>>,
 }
 
 impl SkillRuns {
@@ -57,7 +70,35 @@ impl SkillRuns {
             plane,
             runs: Mutex::new(Tracker::default()),
             teller: Mutex::new(None),
+            watched: Mutex::new(std::collections::HashMap::new()),
         })
+    }
+
+    /// **Watches chat `chat`** for a grade (SK-16): each skill run that starts in it, the end of
+    /// its turn and its close are told to what this answers, until [`Self::unwatch`]. Asked
+    /// before the chat starts, so nothing it does is missed.
+    pub fn watch(&self, chat: u32) -> std::sync::mpsc::Receiver<Watched> {
+        let (tell, told) = std::sync::mpsc::channel();
+        self.watched().insert(chat, tell);
+        told
+    }
+
+    /// Stops watching chat `chat`.
+    pub fn unwatch(&self, chat: u32) {
+        self.watched().remove(&chat);
+    }
+
+    fn watched(
+        &self,
+    ) -> MutexGuard<'_, std::collections::HashMap<u32, std::sync::mpsc::Sender<Watched>>> {
+        self.watched.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Tells the grade watching chat `chat`, where one does.
+    fn tell_watching(&self, chat: u32, what: Watched) {
+        if let Some(tell) = self.watched().get(&chat) {
+            let _ = tell.send(what);
+        }
     }
 
     /// Who is told each change from now on.
@@ -69,7 +110,7 @@ impl SkillRuns {
     /// inside a run counts toward it ([`Tracker::call`]).
     pub fn heard(&self, call: &purlis_core::hookwire::ToolCall) {
         let key = call.chat.to_string();
-        let told = {
+        let (told, opened) = {
             let mut runs = self.runs();
             let was = open_of(&runs, &key);
             runs.call(&key, call, now_ms(), || None);
@@ -77,8 +118,16 @@ impl SkillRuns {
             if now == was {
                 return;
             }
-            now
+            // A call only opens runs: an innermost run of another id is one that opened.
+            let opened = now
+                .as_ref()
+                .filter(|now| was.as_ref().is_none_or(|was| was.id != now.id))
+                .map(|now| now.skill.clone());
+            (now, opened)
         };
+        if let Some(skill) = opened {
+            self.tell_watching(call.chat, Watched::Started(skill));
+        }
         self.tell(call.chat, told);
     }
 
@@ -90,6 +139,20 @@ impl SkillRuns {
         let told = {
             let mut runs = self.runs();
             let reported = runs.report(&key, report, now_ms(), || None);
+            if report.agent.is_none() {
+                match report.event {
+                    purlis_core::state::Event::Stop => {
+                        self.tell_watching(report.chat, Watched::TurnEnded);
+                    }
+                    purlis_core::state::Event::SessionEnd => {
+                        self.tell_watching(report.chat, Watched::Closed);
+                    }
+                    _ => {}
+                }
+            }
+            for opened in &reported.opened {
+                self.tell_watching(report.chat, Watched::Started(opened.skill.clone()));
+            }
             if reported.closed.is_empty() && reported.opened.is_empty() {
                 return;
             }
@@ -112,6 +175,7 @@ impl SkillRuns {
 
     /// Chat `chat` is closed: a run open in it goes with it, and the window is told.
     pub fn closed(&self, chat: u32) {
+        self.tell_watching(chat, Watched::Closed);
         let closed = self
             .runs()
             .close(&chat.to_string(), Ended::Session, now_ms());

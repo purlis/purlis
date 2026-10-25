@@ -11,7 +11,8 @@ use purlis_skills::grade::{ArmScore, GradeEnd, Stat, TriggerScore};
 use super::*;
 use crate::testgit::run;
 
-const SKILL: &str = "---\nname: deploy\ndescription: Ships the build to production.\n---\n\nStep one.\n";
+const SKILL: &str =
+    "---\nname: deploy\ndescription: Ships the build to production.\n---\n\nStep one.\n";
 
 const TRIGGERS: &str = r#"[
     {"query": "ship it to production", "should_trigger": true},
@@ -40,7 +41,17 @@ fn plane() -> tempfile::TempDir {
     run(root, &["config", "user.name", "Fixture"]);
     run(root, &["config", "user.email", "fixture@example.invalid"]);
     run(root, &["add", "-A"]);
-    run(root, &["-c", "commit.gpgsign=false", "commit", "-q", "-m", "make deploy"]);
+    run(
+        root,
+        &[
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "-q",
+            "-m",
+            "make deploy",
+        ],
+    );
     tmp
 }
 
@@ -135,7 +146,11 @@ fn a_grade_is_recorded_against_the_version_its_folder_holds() {
     assert_eq!(read[0].commit, commit);
     assert_eq!(read[0].report, report(true));
 
-    std::fs::write(root.join("skills/deploy/SKILL.md"), format!("{SKILL}More.\n")).unwrap();
+    std::fs::write(
+        root.join("skills/deploy/SKILL.md"),
+        format!("{SKILL}More.\n"),
+    )
+    .unwrap();
     let (changed, none) = version_of(root, &Level::project(), "deploy");
     assert_eq!((changed, none), (Content::Uncommitted, None));
 }
@@ -155,9 +170,21 @@ fn the_record_is_read_newest_first_and_a_row_it_cannot_take_is_skipped() {
         "desk",
     );
     let file = path_for(root, chrono::Utc::now(), "laptop");
-    let mut newer = serde_json::to_value(graded(root, "later", "2026-10-26T00:00:00+00:00", Spent::default())).unwrap();
+    let mut newer = serde_json::to_value(graded(
+        root,
+        "later",
+        "2026-10-26T00:00:00+00:00",
+        Spent::default(),
+    ))
+    .unwrap();
     newer["v"] = (VERSION + 1).into();
-    let mut other = serde_json::to_value(graded(root, "other", "2026-10-27T00:00:00+00:00", Spent::default())).unwrap();
+    let mut other = serde_json::to_value(graded(
+        root,
+        "other",
+        "2026-10-27T00:00:00+00:00",
+        Spent::default(),
+    ))
+    .unwrap();
     other["skill"] = "release".into();
     let mut text = std::fs::read_to_string(&file).unwrap();
     text.push_str("{not json\n");
@@ -179,7 +206,13 @@ fn a_record_file_that_is_a_link_is_never_read() {
     let root = plane.path();
     let elsewhere = tempfile::tempdir().unwrap();
     let target = elsewhere.path().join("grades.jsonl");
-    let row = serde_json::to_value(graded(root, "linked", "2026-10-25T10:00:00+00:00", Spent::default())).unwrap();
+    let row = serde_json::to_value(graded(
+        root,
+        "linked",
+        "2026-10-25T10:00:00+00:00",
+        Spent::default(),
+    ))
+    .unwrap();
     std::fs::write(&target, format!("{row}\n")).unwrap();
     std::fs::create_dir_all(root.join("personas/_grades")).unwrap();
     std::os::unix::fs::symlink(&target, root.join("personas/_grades/2026-10.x.jsonl")).unwrap();
@@ -256,4 +289,21 @@ fn a_skills_history_shows_each_versions_newest_grade() {
             fixtures: 1
         })
     );
+}
+
+#[test]
+fn a_query_no_chat_can_be_started_on_is_left_out_with_why() {
+    let plane = plane();
+    let root = plane.path();
+    std::fs::write(
+        root.join("skills/deploy/evals/triggers.json"),
+        r#"[{"query": "--help", "should_trigger": false}, {"query": "ship it", "should_trigger": true}]"#,
+    )
+    .unwrap();
+    let planned = planned(root, &Level::project(), "deploy").unwrap();
+    assert_eq!(planned.left_out.len(), 1);
+    assert_eq!(planned.left_out[0].0, 0);
+    let request = planned.request.unwrap();
+    assert_eq!(request.triggers.len(), 1);
+    assert_eq!(request.triggers[0].query, "ship it");
 }

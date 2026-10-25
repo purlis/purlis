@@ -166,6 +166,12 @@ pub struct Chat {
     /// [`Self::has_tab`] is the one answer. `false` is every record written before this field
     /// — not a format change, for [`Self::pinned`]'s reason.
     pub tab_opened: bool,
+    /// **Whether a grade runs this chat** (SK-16, #2779): one trigger test's chat, in a
+    /// throwaway piece, which the grade watches and closes. It has no tab and is never listed,
+    /// and a relaunch never starts it again: its grade ended with the run it was in. `false` is
+    /// every other chat, and every record written before this field — not a format change, for
+    /// [`Self::pinned`]'s reason.
+    pub graded: bool,
     /// The chat this chat's tab shows in place of it, by that chat's [`Self::number`], where the
     /// person switched the tab to one (#1486): a task below this chat, at any depth.
     ///
@@ -245,13 +251,15 @@ pub struct Chat {
 
 impl Chat {
     /// Whether the window draws this chat as a tab (#1447): every chat but a task chat the
-    /// person has not opened, which is listed in the Chats section and nowhere on the strip.
+    /// person has not opened, which is listed in the Chats section and nowhere on the strip,
+    /// and a grade's chat, which is drawn nowhere ([`Self::graded`]).
     pub fn has_tab(&self) -> bool {
-        self.tab_opened
-            || self
-                .from
-                .as_ref()
-                .is_none_or(|from| from.mode != Mode::Task)
+        !self.graded
+            && (self.tab_opened
+                || self
+                    .from
+                    .as_ref()
+                    .is_none_or(|from| from.mode != Mode::Task))
     }
 }
 
@@ -1527,6 +1535,10 @@ struct ChatOnDisk {
     /// they do, so a project with no task chat writes the record it always wrote.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     tab_opened: bool,
+    /// [`Chat::graded`]: a grade's chat. Absent for every other chat, so a project that never
+    /// graded a skill writes the record it always wrote.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    graded: bool,
     /// The chat this chat's tab shows in place of it, by number — see [`Chat::shows`]. Absent
     /// (zero) while the tab shows its own chat, so a project where no tab was switched to a
     /// task writes the record it always wrote.
@@ -1774,6 +1786,7 @@ impl From<&Record> for OnDisk {
                         serde_json::Value::String(held.persona.clone().unwrap_or_default())
                     }),
                     tab_opened: chat.tab_opened,
+                    graded: chat.graded,
                     shows: chat.shows.unwrap_or_default(),
                     beside: chat.beside.unwrap_or_default(),
                     renamed_from: chat.renamed_from.clone().unwrap_or_default(),
@@ -1849,6 +1862,7 @@ impl From<ChatOnDisk> for Chat {
             number: (chat.number > 0).then_some(chat.number),
             label: label(&chat.label).ok().flatten(),
             tab_opened,
+            graded: chat.graded,
             from,
             reopened: ReopenedTask::read(&chat.reopened),
             held: chat.held.map(|value| HeldGrants {

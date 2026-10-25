@@ -174,8 +174,9 @@ pub struct Estimate {
 }
 
 /// **What grading a copy would run, before anything runs** (decision 22): its fixtures, the
-/// request, the plan, the estimate, and the trigger tests whose query holds a character no reader
-/// would see, by their place, which the plan marks as the install review does.
+/// request, the plan, the estimate, the trigger tests whose query holds a character no reader
+/// would see, by their place, which the plan marks as the install review does, and the ones no
+/// chat can be started on, which the grade leaves out.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct Planned {
     pub skill: String,
@@ -185,23 +186,43 @@ pub struct Planned {
     pub plan: Option<Plan>,
     pub estimate: Option<Estimate>,
     pub unseen: Vec<usize>,
+    /// The trigger tests left out, by their place in the file, each with why: a query a chat
+    /// cannot be started on ([`crate::handoff::bad_message`]).
+    pub left_out: Vec<(usize, String)>,
 }
 
 /// **The plan of grading the copy of `name` at `level`** in the project at `root`.
 pub fn planned(root: &Path, level: &Level, name: &str) -> Result<Planned, String> {
     let folder = find(root, level, name)?;
     let fixtures = grade::fixtures_of(root, Path::new(&rel(root, &folder)), name);
-    let request = fixtures
+    let mut left_out: Vec<(usize, String)> = Vec::new();
+    let sendable: Vec<grade::TriggerTest> = fixtures
         .triggers
         .read()
-        .filter(|tests| !tests.is_empty())
-        .map(|tests| GradeRequest {
-            skill: name.to_owned(),
-            triggers: tests.clone(),
-            outcomes: fixtures.outcomes.read().cloned().unwrap_or_default(),
-            arms: ARMS.to_vec(),
-            runs: RUNS,
-        });
+        .map(|tests| {
+            tests
+                .iter()
+                .enumerate()
+                .filter(
+                    |(at, test)| match crate::handoff::bad_message(&test.query) {
+                        Some(bad) => {
+                            left_out.push((*at, bad.say()));
+                            false
+                        }
+                        None => true,
+                    },
+                )
+                .map(|(_, test)| test.clone())
+                .collect()
+        })
+        .unwrap_or_default();
+    let request = (!sendable.is_empty()).then(|| GradeRequest {
+        skill: name.to_owned(),
+        triggers: sendable,
+        outcomes: fixtures.outcomes.read().cloned().unwrap_or_default(),
+        arms: ARMS.to_vec(),
+        runs: RUNS,
+    });
     let plan = request.as_ref().map(grade::plan);
     let estimate = plan.and_then(|plan| {
         let last = grades_of(root, name, Some(level)).into_iter().next()?;
@@ -237,6 +258,7 @@ pub fn planned(root: &Path, level: &Level, name: &str) -> Result<Planned, String
         plan,
         estimate,
         unseen,
+        left_out,
     })
 }
 
@@ -250,15 +272,17 @@ pub fn version_of(root: &Path, level: &Level, name: &str) -> (Content, Option<St
         .unwrap_or(Content::Uncommitted);
     let commit = match &content {
         Content::Uncommitted => None,
-        Content::Tree(tree) => super::history::history(root, level, name)
-            .ok()
-            .and_then(|history| {
-                history
-                    .versions
-                    .into_iter()
-                    .find(|version| &version.tree == tree)
-                    .map(|version| version.commit)
-            }),
+        Content::Tree(tree) => {
+            super::history::history(root, level, name)
+                .ok()
+                .and_then(|history| {
+                    history
+                        .versions
+                        .into_iter()
+                        .find(|version| &version.tree == tree)
+                        .map(|version| version.commit)
+                })
+        }
     };
     (content, commit)
 }

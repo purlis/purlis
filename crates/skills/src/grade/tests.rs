@@ -50,7 +50,8 @@ impl Chats for Scripted {
     }
 
     fn cancelled(&self) -> bool {
-        self.cancel_after.is_some_and(|after| self.asked.len() >= after)
+        self.cancel_after
+            .is_some_and(|after| self.asked.len() >= after)
     }
 }
 
@@ -156,10 +157,7 @@ fn another_skill_starting_is_no_trigger_of_this_one() {
     let mut host = Scripted::of(|_, _, _| vec!["pdf-tools".into(), "other:pdfs".into()]);
     let report = grade(&request(), &mut host);
     assert!(
-        report
-            .triggers
-            .iter()
-            .all(|score| score.triggered == 0),
+        report.triggers.iter().all(|score| score.triggered == 0),
         "{report:?}"
     );
 }
@@ -171,7 +169,13 @@ fn a_rate_at_the_threshold_triggers() {
     asked.runs = 4;
     asked.arms = vec![Arm::With];
     asked.triggers.truncate(1);
-    let mut host = Scripted::of(|_, _, n| if n % 2 == 0 { vec!["pdf".into()] } else { Vec::new() });
+    let mut host = Scripted::of(|_, _, n| {
+        if n % 2 == 0 {
+            vec!["pdf".into()]
+        } else {
+            Vec::new()
+        }
+    });
     let report = grade(&asked, &mut host);
     assert_eq!(report.triggers[0].rate, Some(0.5));
     assert_eq!(report.triggers[0].pass, Some(true));
@@ -201,7 +205,10 @@ fn chats_that_do_not_start_end_the_grade_with_why() {
     let report = grade(&request(), &mut host);
     assert_eq!(host.asked.len(), NOT_STARTED_IN_A_ROW as usize);
     assert_eq!(report.ended, GradeEnd::ChatsDidNotStart);
-    assert_eq!(report.not_started.as_deref(), Some("the profile is signed out"));
+    assert_eq!(
+        report.not_started.as_deref(),
+        Some("the profile is signed out")
+    );
     assert_eq!(report.delta, None);
     assert!(report.triggers.iter().all(|score| score.pass.is_none()));
     assert_eq!(report.arm(Arm::With).unwrap().not_run, 1);
@@ -225,9 +232,7 @@ fn the_four_messages_are_spelled_as_the_adr_says() {
         tokens: None,
         cost_usd: None,
         ms: 5,
-        end: ChatEnd::NotStarted {
-            why: "no".into(),
-        },
+        end: ChatEnd::NotStarted { why: "no".into() },
     };
     assert_eq!(
         serde_json::to_value(&ran).unwrap(),

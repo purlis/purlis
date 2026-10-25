@@ -3829,6 +3829,14 @@ impl Chats {
         Ok((session, failed))
     }
 
+    /// **Whether chat `session` is a grade's** (SK-16), which the window draws nowhere: its
+    /// record's [`purlis_core::reopen::Chat::graded`].
+    pub fn kept_from_the_window(&self, session: u32) -> bool {
+        lock(&self.open)
+            .get(&session)
+            .is_some_and(|one| one.chat.graded)
+    }
+
     /// Ends a chat. It is no longer one a quit would record.
     pub fn close(&self, session: u32) -> Result<(), String> {
         lock(&self.starting_as).remove(&session);
@@ -5078,6 +5086,9 @@ impl Chats {
         let chats: Vec<(Chat, Why)> = record
             .chats
             .iter()
+            // A grade's chat is never started again: its grade ended with the run it was in
+            // (SK-16). Its throwaway piece goes once no chat stands in it.
+            .filter(|chat| !chat.graded)
             .map(|chat| match &chat.identity.id {
                 Some(id) if seen.insert(id.clone()) => (chat.clone(), Why::Relaunch),
                 _ => (

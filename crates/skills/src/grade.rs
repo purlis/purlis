@@ -45,7 +45,9 @@ pub const NOT_STARTED_IN_A_ROW: u32 = 2;
 pub const BUILT_IN: &str = "purlis";
 
 /// **One side of a grade's comparison.**
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
 #[serde(rename_all = "kebab-case")]
 pub enum Arm {
     /// The skill as it is now.

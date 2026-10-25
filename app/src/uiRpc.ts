@@ -979,6 +979,10 @@ export const commands = {
 	skillDraftChat: __WINDOW_ONLY_RESULT,
 	skillDraftTry: __WINDOW_ONLY_RESULT,
 	skillLevelAccept: __WINDOW_ONLY_RESULT,
+	/**  **What grading the copy of `skill` at `level` would run**, before anything runs. */
+	skillGradePlan: (plane: PlaneId, level: SkillLevel, skill: string) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_grade_plan", { plane, level, skill })),
+	skillGradeStart: __WINDOW_ONLY_RESULT,
+	skillGradeStop: __WINDOW_ONLY_RESULT,
 	skillSources: __WINDOW_ONLY_RESULT,
 	skillSourcesOffered: __WINDOW_ONLY_RESULT,
 	skillSourceAdd: __WINDOW_ONLY_RESULT,
@@ -2018,6 +2022,8 @@ export const ENGINE_SANDBOX_NEEDED = "engine-sandbox-needed" as const;
 export const PERSONA_SCOPE_KEY = "persona/" as const;
 
 export const SESSION_BUS_ANSWERS = "session-bus://answers" as const;
+
+export const SKILL_GRADE = "skill-grade" as const;
 
 export const SKILL_RUNS_PANEL = "runs" as const;
 
@@ -5058,6 +5064,26 @@ export type GoneProject = {
 	path: string,
 	/**  The line the window draws: the path, short, and why it is gone. */
 	said: string,
+};
+
+/**  How a grade ended, as the window is told it. */
+export type GradeEnded = "whole" | "stopped" | "chats-did-not-start";
+
+/**  What a grade's chats spent last time, worked out for this one. */
+export type GradeEstimate = {
+	tokens: number | null,
+	cost_usd: number | null,
+	/**  The chats of the grade it is worked out from. */
+	chats_then: number,
+};
+
+/**  One trigger test, as the plan shows it before anything runs. */
+export type GradeQuery = {
+	/**  The query as the chat will read it, each character no reader would see marked. */
+	query: string,
+	should_trigger: boolean,
+	/**  Whether it holds a character no reader would see. */
+	hides: boolean,
 };
 
 /**  Who a grant is for, as the window sends it ([`sandbox::grant::Level`]). */
@@ -8376,6 +8402,8 @@ export type RunStart =
 "curation" | 
 /**  A trigger sent the prompt. */
 "trigger" | 
+/**  A grade sent the prompt: a trigger test's chat. */
+"grade" | 
 /**  A start a newer purlis wrote. */
 "unknown";
 
@@ -9341,6 +9369,44 @@ export type SkillGrade = {
 	fixtures: number,
 };
 
+/**  **What grading a copy would run, before anything runs** (decision 22). */
+export type SkillGradePlan = {
+	/**  The trigger tests it runs, in the file's order. */
+	tests: GradeQuery[],
+	/**  The chats it runs in all, each one turn, and how many times each test runs in each arm. */
+	chats: number,
+	runs: number,
+	/**  Why the trigger tests could not be read, where they were not. */
+	tests_refused: string | null,
+	/**  The trigger tests left out, each with why: a query no chat can be started on. */
+	left_out: string[],
+	/**  The outcome evals the skill has, which this version does not grade yet. */
+	outcome_evals: number,
+	outcomes_refused: string | null,
+	estimate: GradeEstimate | null,
+	/**  The grade of this skill running now, where one is. */
+	running: string | null,
+};
+
+/**
+ *  **One step of a grade**, as [`EVENT`] tells the window: how many of its chats have run, and,
+ *  once it is over, how it ended and what it says.
+ */
+export type SkillGradeStep = {
+	plane: PlaneId,
+	skill: string,
+	grade: string,
+	ran: number,
+	of: number,
+	/**  How it ended, once it has. */
+	ended: GradeEnded | null,
+	/**
+	 *  What the window says of its end: why its chats did not start, or that it was not
+	 *  recorded.
+	 */
+	said: string | null,
+};
+
 /**  Where a project skill reaches, as the studio sets it. */
 export type SkillGrant = 
 /**  Chats at the project's root alone. */
@@ -9380,8 +9446,8 @@ export type SkillLintLevel =
 "warns";
 
 /**
- *  **One panel on a skill's tab** (ADR 0101 §6), as the window draws it: purlis's Runs panel,
- *  then each panel an extension that declares `studio-panel` adds, each answered in panel blocks
+ *  **One panel on a skill's tab** (ADR 0101 §6), as the window draws it: purlis's Grades and Runs
+ *  panels, then each panel an extension that declares `studio-panel` adds, each answered in panel blocks
  *  or refused with the core's sentence.
  */
 export type SkillPanel = {
@@ -9398,7 +9464,7 @@ export type SkillPanel = {
  *  **Which panel on a skill's tab**, as the window holds it: purlis's Runs panel, or one an
  *  extension adds, by its id and the panel's.
  */
-export type SkillPanelKey = { kind: "runs" } | { kind: "extension"; extension: string; panel: string };
+export type SkillPanelKey = { kind: "grades" } | { kind: "runs" } | { kind: "extension"; extension: string; panel: string };
 
 /**  A skill source as the studio shows and adds one. */
 export type SkillSource = {

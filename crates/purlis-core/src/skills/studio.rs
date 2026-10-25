@@ -360,11 +360,9 @@ fn share_said(share: f64) -> String {
 fn arm_said(graded: &super::grades::Graded, arm: purlis_skills::grade::Arm) -> String {
     match graded.report.arm(arm).and_then(|score| score.pass_rate) {
         None => "Not run".to_owned(),
-        Some(stat) if stat.stddev > 0.0 => format!(
-            "{} ± {:.0}",
-            share_said(stat.mean),
-            stat.stddev * 100.0
-        ),
+        Some(stat) if stat.stddev > 0.0 => {
+            format!("{} ± {:.0}", share_said(stat.mean), stat.stddev * 100.0)
+        }
         Some(stat) => share_said(stat.mean),
     }
 }

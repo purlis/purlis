@@ -613,11 +613,18 @@ fn a_grades_arms_hand_a_chat_the_skill_without_its_fixtures_or_no_skill_at_all()
     let with = lay_out_arm(root, Some((&Level::project(), "deploy"))).unwrap();
     let skills_from = tried(root, &with.piece).expect("the piece is a try's");
     let set = crate::skills::in_the_studio(None, &skills_from, None, None);
-    let names: Vec<&str> = set.effective.iter().map(|e| e.skill.name.as_str()).collect();
+    let names: Vec<&str> = set
+        .effective
+        .iter()
+        .map(|e| e.skill.name.as_str())
+        .collect();
     assert_eq!(names, ["deploy"]);
     let laid = skills_from.join("skills/deploy");
     assert!(laid.join("notes.md").is_file());
-    assert!(!laid.join("evals").exists(), "the fixtures stay out of the chat's reach");
+    assert!(
+        !laid.join("evals").exists(),
+        "the fixtures stay out of the chat's reach"
+    );
 
     let without = lay_out_arm(root, None).unwrap();
     let none_from = tried(root, &without.piece).expect("the piece is a try's");

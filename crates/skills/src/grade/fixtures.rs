@@ -102,7 +102,8 @@ pub fn fixtures_of(root: &Path, skill_rel: &Path, name: &str) -> Fixtures {
             };
         }
         crate::held::Opened::Link => {
-            let why = format!("{name}'s {EVALS_DIR} folder is a link, which purlis never reads through");
+            let why =
+                format!("{name}'s {EVALS_DIR} folder is a link, which purlis never reads through");
             return Fixtures {
                 triggers: Read::Refused(why.clone()),
                 outcomes: Read::Refused(why),
@@ -182,9 +183,9 @@ fn prompt_of(value: Option<&serde_json::Value>, what: &str) -> Result<String, St
 /// `{query, should_trigger}`, at most [`MOST_TRIGGER_TESTS`], no query twice.
 pub fn triggers_of(text: &str) -> Result<Vec<TriggerTest>, String> {
     let doc = json_of(text, TRIGGER_FILE)?;
-    let list = doc.as_array().ok_or_else(|| {
-        format!("{EVALS_DIR}/{TRIGGER_FILE} is not a list of trigger tests")
-    })?;
+    let list = doc
+        .as_array()
+        .ok_or_else(|| format!("{EVALS_DIR}/{TRIGGER_FILE} is not a list of trigger tests"))?;
     if list.len() > MOST_TRIGGER_TESTS {
         return Err(format!(
             "{EVALS_DIR}/{TRIGGER_FILE} has {} trigger tests, and purlis grades at most \

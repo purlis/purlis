@@ -27,6 +27,8 @@ pub use purlis_skills::{
 };
 pub use purlis_skills::{SkillFiles, SkillLint};
 
+/// A skill's grading (SK-16): its fixtures, the four messages and the built-in runner.
+pub use purlis_skills::grade;
 /// Skill runs: the span from the moment a skill starts to the end of the turn (SK-3).
 pub use purlis_skills::runs;
 /// The install review's summary and a source's tree (SK-10).

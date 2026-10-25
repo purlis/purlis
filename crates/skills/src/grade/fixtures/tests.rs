@@ -34,7 +34,10 @@ fn a_trigger_file_that_is_not_whole_is_refused_whole() {
         ("{}", "not a list"),
         ("[1]", "not an object"),
         (r#"[{"query": "x"}]"#, "should_trigger"),
-        (r#"[{"query": "x", "should_trigger": "yes"}]"#, "should_trigger"),
+        (
+            r#"[{"query": "x", "should_trigger": "yes"}]"#,
+            "should_trigger",
+        ),
         (r#"[{"should_trigger": true}]"#, "no text"),
         (r#"[{"query": "  ", "should_trigger": true}]"#, "empty"),
         (
@@ -57,7 +60,10 @@ fn a_trigger_file_is_held_to_its_limits_before_any_test_is_read() {
     assert!(why.contains("at most 100"), "{why}");
 
     let long = "a".repeat(MOST_PROMPT_BYTES + 1);
-    let why = triggers_of(&format!(r#"[{{"query": "{long}", "should_trigger": true}}]"#)).unwrap_err();
+    let why = triggers_of(&format!(
+        r#"[{{"query": "{long}", "should_trigger": true}}]"#
+    ))
+    .unwrap_err();
     assert!(why.contains("longer than 8 KiB"), "{why}");
 
     let huge = format!("[\"{}\"]", "a".repeat(MOST_FIXTURE_BYTES as usize));
@@ -66,7 +72,10 @@ fn a_trigger_file_is_held_to_its_limits_before_any_test_is_read() {
 
     let deep = format!("{}{}", "[".repeat(5000), "]".repeat(5000));
     let why = triggers_of(&deep).unwrap_err();
-    assert!(why.contains("not JSON"), "nesting past serde_json's depth is refused: {why}");
+    assert!(
+        why.contains("not JSON"),
+        "nesting past serde_json's depth is refused: {why}"
+    );
 }
 
 #[test]

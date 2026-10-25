@@ -2685,3 +2685,29 @@ fn the_restart_marker_is_not_written_through_a_link() {
     assert!(mark_restart_to_update(config.path()).is_err());
     assert!(!elsewhere.path().join("planted").exists());
 }
+
+// ----- a grade's chat is drawn nowhere (SK-16, #2779) -------------------------------------
+
+#[test]
+fn a_grades_chat_has_no_tab_and_only_its_record_says_so() {
+    let plane = tempfile::tempdir().unwrap();
+    let record = Record {
+        chats: vec![
+            Chat {
+                graded: true,
+                ..claude("3", None)
+            },
+            claude("4", None),
+        ],
+        ..Default::default()
+    };
+    assert!(!record.chats[0].has_tab());
+    assert!(record.chats[1].has_tab());
+    write(plane.path(), &record).unwrap();
+
+    let text = std::fs::read_to_string(path(plane.path())).unwrap();
+    assert_eq!(text.matches(r#""graded""#).count(), 1, "{text}");
+    let back = read(plane.path()).chats;
+    assert!(back[0].graded);
+    assert!(!back[1].graded);
+}
