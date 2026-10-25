@@ -23,6 +23,8 @@ import { noDialogIsLeftUp } from "../opening.js";
 const MAC = process.platform === "darwin";
 const FRAME = ".region-frame[data-cycle]";
 const WINDOW = "main.window";
+/** A modal dialog as the key registry finds one (`keys/contexts.ts`): read here, never imported. */
+const MODAL = '[data-scope="dialog"][data-part="root"], [role="alertdialog"]';
 
 /** What focus mode hides, as `keys/focusMode.ts` names it: read here, never imported. */
 const HIDDEN = {
@@ -77,41 +79,47 @@ async function workWidth(): Promise<number> {
 
 /** Focus mode's key, from the page, until the window is `want`. */
 async function focusModeTo(want: boolean): Promise<void> {
-  // A modal keeps the window's keys (the operator's ruling): none is left up for this.
+  // A modal keeps the window's keys (the operator's ruling): none is left up for this, and one
+  // still leaving (its exit drawn) is waited out.
   await noDialogIsLeftUp();
-  await browser.execute(() => {
-    const on = document.activeElement;
-    if (on instanceof HTMLElement) on.blur();
-  });
-  await browser.execute((mac: boolean) => {
-    (document.activeElement ?? document.body).dispatchEvent(
-      new KeyboardEvent("keydown", {
-        key: "Enter",
-        code: "Enter",
-        shiftKey: true,
-        metaKey: mac,
-        ctrlKey: !mac,
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
-  }, MAC);
-  const landed = await browser
-    .waitUntil(async () => (await inFocusMode()) === want, { timeout: 5_000, interval: 150 })
-    .then(() => true)
-    .catch(() => false);
-  if (landed) return;
+  await browser.waitUntil(
+    () => browser.execute((modal: string) => document.querySelector(modal) === null, MODAL),
+    { timeout: 10_000, interval: 150, timeoutMsg: "a modal stayed up before focus mode's key" },
+  );
+  // Pressed again only where the first press changed nothing: a press that landed is never
+  // pressed twice, which would turn focus mode back.
+  for (let press = 0; press < 3; press++) {
+    await browser.execute((mac: boolean) => {
+      const on = document.activeElement;
+      if (on instanceof HTMLElement) on.blur();
+      document.body.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Enter",
+          code: "Enter",
+          shiftKey: true,
+          metaKey: mac,
+          ctrlKey: !mac,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    }, MAC);
+    const landed = await browser
+      .waitUntil(async () => (await inFocusMode()) === want, { timeout: 3_000, interval: 150 })
+      .then(() => true)
+      .catch(() => false);
+    if (landed) return;
+  }
   // What held the key back, said in the failure: the modal up, if one is.
-  const modal = await browser.execute(() => {
-    const up = document.querySelector<HTMLElement>(
-      '[data-scope="dialog"][data-part="root"], [role="alertdialog"]',
-    );
+  const held = await browser.execute((modal: string) => {
+    const up = document.querySelector<HTMLElement>(modal);
+    const rows = document.querySelectorAll('[data-scope="list"][data-part="root"]').length;
     return up === null
-      ? "no modal"
-      : `a modal: ${up.getAttribute("aria-label") ?? up.dataset.testid ?? up.className}`;
-  });
+      ? `no modal up; ${rows} list rows drawn`
+      : `a modal up: ${up.getAttribute("aria-label") ?? up.dataset.testid ?? up.className}`;
+  }, MODAL);
   throw new Error(
-    `${MAC ? "⌘⇧↩" : "Ctrl+Shift+Enter"} did not turn focus mode ${want ? "on" : "off"} (${modal} up)`,
+    `${MAC ? "⌘⇧↩" : "Ctrl+Shift+Enter"} did not turn focus mode ${want ? "on" : "off"} (${held})`,
   );
 }
 
