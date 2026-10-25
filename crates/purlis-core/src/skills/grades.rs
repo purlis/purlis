@@ -89,6 +89,32 @@ impl Graded {
     pub fn content(&self) -> Option<Content> {
         Content::parse(&self.tree)
     }
+
+    /// **Whether a row read back says only what purlis writes**: a tree or `uncommitted`, a
+    /// commit that is a whole hex id, a harness and a profile that are plain names, and a stamp
+    /// of a time's shape. A teammate's purlis writes the record, and a person reads these words
+    /// in the window and the terminal, so a row that says anything else is skipped.
+    fn sound(&self) -> bool {
+        let hex = |word: &str| {
+            matches!(word.len(), 40 | 64)
+                && word
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        };
+        let plain = |word: &str| {
+            !word.is_empty()
+                && word.len() <= 64
+                && word
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b))
+        };
+        self.content().is_some()
+            && self.commit.as_deref().is_none_or(hex)
+            && self.harness.as_deref().is_none_or(plain)
+            && self.profile.as_deref().is_none_or(plain)
+            && plain(&self.grade)
+            && chrono::DateTime::parse_from_rfc3339(&self.ts).is_ok()
+    }
 }
 
 /// The level `level` is recorded by: its folder relative to the plane, or `None` for a local
@@ -150,7 +176,7 @@ pub fn grades_of(root: &Path, name: &str, level: Option<&Level>) -> Vec<Graded> 
             .into_iter()
             .filter(|line| line.len() <= MOST_LINE_BYTES)
             .filter_map(|line| serde_json::from_str::<Graded>(line).ok())
-            .filter(|row| row.v <= VERSION && row.skill == name)
+            .filter(|row| row.v <= VERSION && row.skill == name && row.sound())
             .filter(|row| match &wanted {
                 None => true,
                 Some(word) => row.level.is_none() || row.level == *word,

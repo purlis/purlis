@@ -18,6 +18,14 @@ import { Notice } from "./Notice";
 import { Button } from "./ui/button/Button";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { TextField } from "./ui/field/Field";
+import { SkillGrade } from "./SkillGrade";
+
+/** A version's newest grade, as its row says it (SK-16): the trigger tests that passed with it. */
+export function gradeSaid(version: SkillVersion): string {
+  const grade = version.grade;
+  if (grade === null) return "Not graded";
+  return `${grade.passed} of ${counted(grade.fixtures, "trigger test", "trigger tests")} passed`;
+}
 
 /** A copy's state, as its tab says it in one line. */
 export function lifecycleSaid(name: string, lifecycle: SkillLifecycle): string {
@@ -70,10 +78,13 @@ export function SkillDetailsPanel({
   plane,
   name,
   changed,
+  onGraded,
 }: {
   plane: string;
   name: string;
   changed: number;
+  /** Told when a grade of the skill ended (SK-16), so the tab reads its grades again. */
+  onGraded?: () => void;
 }) {
   const [page, setPage] = useState<SkillDetails>();
   const [refused, setRefused] = useState<string>();
@@ -176,6 +187,14 @@ export function SkillDetailsPanel({
               commands.skillOwners(plane, copy.level, name, owners),
             )
           }
+        />
+      )}
+      {copy !== undefined && (
+        <SkillGrade
+          plane={plane}
+          name={name}
+          level={copy.level}
+          onGraded={onGraded ?? (() => setDone((n) => n + 1))}
         />
       )}
       {copy !== undefined && (
@@ -338,6 +357,7 @@ function History({
               <th scope="col">By</th>
               <th scope="col">Change</th>
               <th scope="col">Runs on it</th>
+              <th scope="col">Grade</th>
               <th scope="col">
                 <span className="visually-hidden">Actions</span>
               </th>
@@ -404,6 +424,7 @@ function VersionRow({
         <td>{version.author}</td>
         <td>{version.subject}</td>
         <td>{runsSaid(version.runs)}</td>
+        <td>{gradeSaid(version)}</td>
         <td>
           <Button size="sm" variant="ghost" aria-expanded={open} onPress={onShow}>
             {open ? "Hide changes" : "Show changes"}

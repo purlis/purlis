@@ -193,20 +193,20 @@ struct Running {
 }
 
 /// **The grades running in this app**, by id: one per project at a time.
-static RUNNING: Mutex<Option<HashMap<String, Running>>> = Mutex::new(None);
+static RUNNING: std::sync::LazyLock<Mutex<HashMap<String, Running>>> =
+    std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
-fn running<R>(with: impl FnOnce(&mut HashMap<String, Running>) -> R) -> R {
-    let mut held = RUNNING.lock().unwrap_or_else(PoisonError::into_inner);
-    with(held.get_or_insert_with(HashMap::new))
+/// The grades running now, held.
+fn running() -> std::sync::MutexGuard<'static, HashMap<String, Running>> {
+    RUNNING.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 /// The grade of `skill` running in `plane` now, by id.
 fn running_of(plane: &PlaneId, skill: &str) -> Option<String> {
-    running(|all| {
-        all.iter()
-            .find(|(_, one)| one.plane == *plane && one.skill == skill)
-            .map(|(id, _)| id.clone())
-    })
+    running()
+        .iter()
+        .find(|(_, one)| one.plane == *plane && one.skill == skill)
+        .map(|(id, _)| id.clone())
 }
 
 /// **What grading the copy of `skill` at `level` would run**, before anything runs.
@@ -255,7 +255,8 @@ pub(crate) async fn skill_grade_start(
         };
         let id = purlis_core::reopen::mint();
         let stop = Arc::new(AtomicBool::new(false));
-        running(|all| {
+        {
+            let mut all = running();
             if all.values().any(|one| one.plane == plane) {
                 return Err(
                     "A grade is running in this project already: stop it, or wait for it to \
@@ -271,8 +272,7 @@ pub(crate) async fn skill_grade_start(
                     stop: Arc::clone(&stop),
                 },
             );
-            Ok(())
-        })?;
+        }
         let of = grading::plan(&request).chats;
         let grade = id.clone();
         std::thread::Builder::new()
@@ -323,7 +323,7 @@ pub(crate) async fn skill_grade_start(
                 };
                 let recorded =
                     grades::record(&root, &graded, &purlis_core::machine::this_log_name());
-                running(|all| all.remove(&grade));
+                running().remove(&grade);
                 let said = match (&graded.report.not_started, recorded) {
                     (Some(why), _) => Some(why.clone()),
                     (None, None) => Some(
@@ -336,7 +336,7 @@ pub(crate) async fn skill_grade_start(
                 tell(graded.spent.chats, Some(graded.report.ended.into()), said);
             })
             .map_err(|why| {
-                running(|all| all.remove(&id));
+                running().remove(&id);
                 format!("The grade could not start ({why}).")
             })?;
         Ok(id)
@@ -349,13 +349,13 @@ pub(crate) async fn skill_grade_start(
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_grade_stop(plane: PlaneId, grade: String) -> Result<(), String> {
-    running(|all| match all.get(&grade) {
+    match running().get(&grade) {
         Some(one) if one.plane == plane => {
             one.stop.store(true, Ordering::SeqCst);
             Ok(())
         }
         _ => Err("That grade is not running any more.".to_owned()),
-    })
+    }
 }
 
 /// **This app's host for the built-in runner**: each chat a grade asks for runs in the project,

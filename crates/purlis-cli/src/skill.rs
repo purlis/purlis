@@ -312,6 +312,20 @@ pub enum SkillCommand {
         #[arg(long)]
         json: bool,
     },
+    /// A skill's grades, and what grading it runs before anything does: its trigger tests, the
+    /// chats a grade runs (each test three times with the skill and three without it, one turn
+    /// each) and what its last grade spent per chat; then each grade the project's eval record
+    /// holds, newest first, with each arm's pass rate and the difference the skill made. A
+    /// grade runs from the skill's tab in the Skill studio, which shows this plan first.
+    Grade {
+        /// The skill's name, as `purlis skill list` prints it.
+        name: String,
+        #[command(flatten)]
+        at: LevelArgs,
+        /// Answer as JSON, for a chat or a script.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 /// The level a skill is at: the project's root, a workspace or a persona; shared, or local.
@@ -385,6 +399,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                     ..
                 }
                 | SkillCommand::Runs { .. }
+                | SkillCommand::Grade { .. }
                 | SkillCommand::History { .. }
                 | SkillCommand::Uses { .. }
         );
@@ -825,6 +840,24 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 Ok(1)
             }
         },
+        SkillCommand::Grade { name, at, json } => {
+            let level = at.level();
+            match purlis_core::skills::grades::planned(root, &level, &name) {
+                Ok(planned) => {
+                    let graded = purlis_core::skills::grades::grades_of(root, &name, Some(&level));
+                    if json {
+                        println!("{}", json!({ "plan": planned, "grades": graded }));
+                    } else {
+                        print!("{}", grade_said(&planned, &graded));
+                    }
+                    Ok(0)
+                }
+                Err(why) => {
+                    voice::err(&why);
+                    Ok(1)
+                }
+            }
+        }
         SkillCommand::History { name, at, json, .. } => {
             match history::history(root, &at.level(), &name) {
                 Ok(versions) if json => {
@@ -1003,6 +1036,112 @@ fn versions_table(name: &str, history: &history::History) -> String {
         text.push_str(&format!(
             "On changes not committed: {}\n",
             runs_said(&history.uncommitted)
+        ));
+    }
+    text
+}
+
+/// **`purlis skill grade`'s text**: the plan, cost first, then each grade, newest first.
+fn grade_said(
+    planned: &purlis_core::skills::grades::Planned,
+    graded: &[purlis_core::skills::grades::Graded],
+) -> String {
+    use purlis_core::skills::grade::{Arm, Read};
+    let name = &planned.skill;
+    let mut text = String::new();
+    if let Read::Refused(why) = &planned.fixtures.triggers {
+        text.push_str(&format!("Its trigger tests could not be read: {why}\n"));
+    }
+    match (&planned.request, planned.plan) {
+        (Some(request), Some(plan)) => {
+            text.push_str(&format!(
+                "Grading {name} runs {}, one turn each: each of {} {} with the skill and {} \
+                 without it.\n",
+                counted(plan.chats, "chat", "chats"),
+                counted(plan.trigger_tests, "trigger test", "trigger tests"),
+                counted(u32::from(request.runs), "time", "times"),
+                counted(u32::from(request.runs), "time", "times"),
+            ));
+            match planned.estimate {
+                Some(estimate) if estimate.tokens.is_some() || estimate.cost_usd.is_some() => {
+                    let mut parts = Vec::new();
+                    if let Some(tokens) = estimate.tokens {
+                        parts.push(format!("about {tokens} tokens"));
+                    }
+                    if let Some(cost) = estimate.cost_usd {
+                        parts.push(format!("about ${cost:.2}"));
+                    }
+                    text.push_str(&format!(
+                        "From its last grade, of {}, a grade spends {}.\n",
+                        counted(estimate.chats_then, "chat", "chats"),
+                        parts.join(", ")
+                    ));
+                }
+                _ => text.push_str(
+                    "It has not been graded here before, so what a grade spends is not known yet.\n",
+                ),
+            }
+            for (at, test) in request.triggers.iter().enumerate() {
+                text.push_str(&format!(
+                    "  {}. {}  ({})\n",
+                    at + 1,
+                    purlis_core::skills::review::escaped_line(&test.query),
+                    if test.should_trigger {
+                        "should start it"
+                    } else {
+                        "should leave it alone"
+                    }
+                ));
+            }
+            for (at, why) in &planned.left_out {
+                text.push_str(&format!("Test {} is left out: {why}\n", at + 1));
+            }
+            text.push_str("Grade it from its tab in the Skill studio, which shows this first.\n");
+        }
+        _ => text.push_str(&format!(
+            "{name} has no trigger tests to grade: the queries it should start on and the near \
+             misses it should leave alone, in its evals/triggers.json.\n"
+        )),
+    }
+    if let Some(evals) = planned
+        .fixtures
+        .outcomes
+        .read()
+        .filter(|evals| !evals.is_empty())
+    {
+        text.push_str(&format!(
+            "{} {} for a later purlis: grades run the trigger tests alone.\n",
+            counted(evals.len(), "outcome eval", "outcome evals"),
+            if evals.len() == 1 { "waits" } else { "wait" }
+        ));
+    }
+    if graded.is_empty() {
+        text.push_str(&format!("No grades of {name} yet.\n"));
+        return text;
+    }
+    text.push_str("\nGrades, newest first:\n");
+    for one in graded {
+        let rate = |arm: Arm| {
+            one.report
+                .arm(arm)
+                .and_then(|score| score.pass_rate)
+                .map_or_else(
+                    || "not run".to_owned(),
+                    |stat| format!("{:.0}%", stat.mean * 100.0),
+                )
+        };
+        let (passed, of) = one.report.passed_with();
+        text.push_str(&format!(
+            "  {}  {}  {passed} of {of} tests passed  with {}  without {}{}  ({})\n",
+            purlis_core::skills::review::escaped_line(&one.ts),
+            one.commit.as_deref().map_or("uncommitted", history::short),
+            rate(Arm::With),
+            rate(Arm::Without),
+            one.report
+                .delta
+                .map(|delta| format!("  difference {:+.0} points", delta * 100.0))
+                .unwrap_or_default(),
+            counted(one.spent.chats, "chat", "chats"),
         ));
     }
     text

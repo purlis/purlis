@@ -307,3 +307,38 @@ fn a_query_no_chat_can_be_started_on_is_left_out_with_why() {
     assert_eq!(request.triggers.len(), 1);
     assert_eq!(request.triggers[0].query, "ship it");
 }
+
+#[test]
+fn a_row_that_says_more_than_purlis_writes_is_skipped() {
+    let plane = plane();
+    let root = plane.path();
+    record(
+        root,
+        &graded(root, "kept", "2026-10-25T10:00:00+00:00", Spent::default()),
+        "laptop",
+    );
+    let file = path_for(root, chrono::Utc::now(), "laptop");
+    let mut text = std::fs::read_to_string(&file).unwrap();
+    for (key, value) in [
+        ("commit", serde_json::json!("\u{1b}[31mnot a commit")),
+        ("harness", serde_json::json!("claude\u{202e}")),
+        ("tree", serde_json::json!("../../etc")),
+        ("ts", serde_json::json!("yesterday")),
+    ] {
+        let mut row = serde_json::to_value(graded(
+            root,
+            "bad",
+            "2026-10-26T10:00:00+00:00",
+            Spent::default(),
+        ))
+        .unwrap();
+        row[key] = value;
+        text.push_str(&format!("{row}\n"));
+    }
+    std::fs::write(&file, text).unwrap();
+    let ids: Vec<String> = grades_of(root, "deploy", None)
+        .into_iter()
+        .map(|one| one.grade)
+        .collect();
+    assert_eq!(ids, vec!["kept".to_owned()]);
+}
