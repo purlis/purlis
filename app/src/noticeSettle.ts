@@ -60,25 +60,28 @@ const waits = (way: Element, cause: string) => grantsByLook(way) || grants(cause
  * an ask's Allow waits on its first drawing. On a pane it does not: a Notice there arrives
  * where the person is already looking, and only a move (one above it going, say) can put a way
  * out under a pointer that was aimed at something else. On a pane, a granting way out drawn into
- * a Notice already standing, or a granting Notice drawn while the band holds another (or held one
- * within the settle time), is a move too: it is drawn where something else was aimed at. Only
- * the first Notice into an empty band stands as it arrives.
+ * a Notice already standing, or a granting Notice drawn while the band holds another (however
+ * long that one stood) or went empty within the settle time, is a move too: it is drawn where
+ * something else was aimed at. Only the first Notice into a band empty for longer stands.
  */
 export function useNoticeSettle<T extends HTMLElement>(firstDrawn: "moves" | "stands") {
   const at = useRef<T>(null);
   const [said, setSaid] = useState<string>();
-  // The lines read so far; for each way out whether its first drawing is a move; and when the
-  // root last held a Notice already drawn.
+  // The lines read so far; for each way out whether its first drawing is a move; whether the
+  // last read found a Notice; and when the root last went empty.
   const lines = useRef(new WeakSet<Element>());
   const later = useRef(new WeakMap<Element, boolean>());
-  const heldAt = useRef(-Infinity);
+  const hadAny = useRef(false);
+  const emptiedAt = useRef(-Infinity);
   const ways = useCallback(function* (root: T) {
     const all = [...root.querySelectorAll("[data-cause]")];
     const now = Date.now();
-    // **Drawn where another Notice stood** (#3167): the root holds one drawn before, or held
-    // one within the settle time, so a pointer may be aimed at what this one now covers.
-    const held = all.some((line) => lines.current.has(line)) || now - heldAt.current < SETTLE_MS;
-    if (all.length > 0) heldAt.current = now;
+    // **Drawn where another Notice stood** (#3167): the last read found one here, however long
+    // it had stood, or the root went empty within the settle time, so a pointer may be aimed
+    // at what this one now covers.
+    const held = hadAny.current || now - emptiedAt.current < SETTLE_MS;
+    if (all.length === 0 && hadAny.current) emptiedAt.current = now;
+    hadAny.current = all.length > 0;
     for (const line of all) {
       const known = lines.current.has(line);
       lines.current.add(line);

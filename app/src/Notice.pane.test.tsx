@@ -873,6 +873,45 @@ describe("a granting Notice that arrives in a pane's band (#3167, D-3167-5)", ()
     expect(allowed).toEqual(["forge"]);
   });
 
+  it("holds a consent drawn in the same render that took away a warning that stood long", async () => {
+    let clock = 1_000_000;
+    const now = vi.spyOn(Date, "now").mockImplementation(() => clock);
+    try {
+      const allowed: string[] = [];
+      const { rerender } = render(<Band shown="warning" allowed={allowed} />);
+      // The warning stands still for 10 s, and nothing reads the band in between.
+      clock += 10_000;
+      rerender(<Band shown="consent" allowed={allowed} />);
+      await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+      expect(allowed).toEqual([]);
+      expect(screen.getByText(NOTICE_MOVED_JUST_NOW)).toBeTruthy();
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it("holds a consent drawn just after a warning that stood long was put away", async () => {
+    let clock = 1_000_000;
+    const now = vi.spyOn(Date, "now").mockImplementation(() => clock);
+    try {
+      const allowed: string[] = [];
+      const { rerender } = render(<Band shown="warning" allowed={allowed} />);
+      clock += 10_000;
+      rerender(<Band shown="none" allowed={allowed} />);
+      clock += 200;
+      rerender(<Band shown="consent" allowed={allowed} />);
+      await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+      expect(allowed).toEqual([]);
+
+      // Once it has stood for the settle time, the same press allows.
+      clock += 2000;
+      await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+      expect(allowed).toEqual(["forge"]);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
   it("holds its Allow when it arrives beside another Notice, or where one just left", async () => {
     let clock = 1_000_000;
     const now = vi.spyOn(Date, "now").mockImplementation(() => clock);
