@@ -456,23 +456,17 @@ describe("the stylesheet and the vocabulary agree", () => {
   const fromTheWindow = ["--least", "--chip", "--window-controls", "--dialog-height"];
 
   /**
-   * **What Radix measures and sets** on the content of a primitive it positions: a select's list
-   * is as wide as its trigger and as tall as the room beside it (`primitives/Select.tsx`, #1860).
-   * Radix sets each on the element it draws, so no stylesheet can declare it; listed by hand,
-   * one at a time, as the window's are.
+   * **What the primitives measure and set** on the content of an overlay they position: a
+   * select's list is at least as wide as its button (React Aria's `--trigger-width`,
+   * `ui/select/select.css`, #2906). The primitive sets each on the element it draws, so no
+   * stylesheet can declare it; listed by hand, one at a time, as the window's are.
    */
-  const fromRadix = [
-    "--radix-select-trigger-width",
-    "--radix-select-content-available-height",
-    // A menu is never taller than the room beside what opened it (`primitives/controls.css`).
-    "--radix-context-menu-content-available-height",
-    "--radix-dropdown-menu-content-available-height",
-  ];
+  const fromThePrimitives = ["--trigger-width"];
 
   it("every custom property the stylesheet reads is a token, its own, a primitive's, or the window's", () => {
     // A `var(--typo)` resolves to nothing and the rule silently disappears, which is the one
     // failure mode of a token layer that no screenshot catches.
-    const known = new Set([...declared, ...ownProperties, ...fromTheWindow, ...fromRadix]);
+    const known = new Set([...declared, ...ownProperties, ...fromTheWindow, ...fromThePrimitives]);
     expect([...used].filter((name) => !known.has(name))).toEqual([]);
   });
 
