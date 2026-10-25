@@ -415,7 +415,7 @@ fn started_server(
     let feed = super::mcpstart::Feed::new(stdin_of(io), true);
     // Once a run has started, the stdin is the feed's: nothing may then run here instead.
     let given_over = |io: &mut dyn Io| {
-        io.say(Say::Err(GIVEN_OVER.to_owned().into()));
+        io.say(Say::Err(GIVEN_OVER.into()));
         Some(1)
     };
     for last in [false, true] {
@@ -454,7 +454,7 @@ fn started_server(
             }
             Outcome::Ended { .. } => {}
         }
-        io.say(Say::Info(AGAIN.to_owned().into()));
+        io.say(Say::Info(AGAIN.into()));
         std::thread::sleep(RETRY_AFTER);
     }
     None

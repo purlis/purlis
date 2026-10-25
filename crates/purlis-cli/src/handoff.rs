@@ -229,7 +229,7 @@ pub fn handoff(here: &crate::Here, args: &Args) -> ExitCode {
     let brief = match read_brief() {
         Ok(brief) => brief,
         Err(refusal) => {
-            voice::err(refusal.say(ws).to_string());
+            voice::err(refusal.say(ws));
             return ExitCode::FAILURE;
         }
     };

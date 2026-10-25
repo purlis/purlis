@@ -387,7 +387,7 @@ pub fn exec(ctx: &Ctx, req: &Request, io: &mut dyn Io) -> i32 {
     let v = match cmd::provider(ctx, &req.vault) {
         Ok(v) => v,
         Err(e) => {
-            io.say(Say::Err(Markup::lines_of(&e.message)));
+            io.say(Say::Err(e.message.into()));
             return 1;
         }
     };
@@ -426,6 +426,8 @@ pub fn exec(ctx: &Ctx, req: &Request, io: &mut dyn Io) -> i32 {
     // No app took it: a sandboxed chat still never reads the keyring here (#1638).
     if let Some(why) = super::brokered::refused_in_this_chat(ctx, &v, super::brokered::Reader::Exec)
     {
+        // purlis's own refusal over two lines, naming a registered vault, whose name the
+        // registry holds to letters, digits, '.', '_' and '-'.
         io.say(Say::Err(Markup::lines_of(&why)));
         return 1;
     }
@@ -433,7 +435,7 @@ pub fn exec(ctx: &Ctx, req: &Request, io: &mut dyn Io) -> i32 {
     let env = match child_env(ctx, &req.vault) {
         Ok(env) => env,
         Err(e) => {
-            io.say(Say::Err(Markup::lines_of(&e.message)));
+            io.say(Say::Err(e.message.into()));
             return 1;
         }
     };

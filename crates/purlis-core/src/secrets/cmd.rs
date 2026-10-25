@@ -252,7 +252,7 @@ pub fn list(ctx: &Ctx, vault: &str, io: &mut dyn Io) -> i32 {
     };
     match found {
         Err(e) => {
-            io.say(Say::Err(Markup::lines_of(&e.message)));
+            io.say(Say::Err(e.message.into()));
             1
         }
         Ok(keys) if keys.is_empty() => {
@@ -331,7 +331,7 @@ pub fn get(ctx: &Ctx, vault: &str, key: &str, reveal: bool, force: bool, io: &mu
     let value = match read_saying(ctx, vault, key, io) {
         Ok(value) => value,
         Err(e) => {
-            io.say(Say::Err(Markup::lines_of(&e.message)));
+            io.say(Say::Err(e.message.into()));
             return 1;
         }
     };
@@ -389,7 +389,7 @@ pub fn audit(ctx: &Ctx, vault: &str, days: i64, io: &mut dyn Io) -> i32 {
     let v = match provider(ctx, vault) {
         Ok(v) => v,
         Err(e) => {
-            io.say(Say::Err(Markup::lines_of(&e.message)));
+            io.say(Say::Err(e.message.into()));
             return 1;
         }
     };
@@ -411,7 +411,7 @@ pub fn audit(ctx: &Ctx, vault: &str, days: i64, io: &mut dyn Io) -> i32 {
     let ages = match ages {
         Ok(a) => a,
         Err(e) => {
-            io.say(Say::Err(Markup::lines_of(&e.message)));
+            io.say(Say::Err(e.message.into()));
             return 1;
         }
     };
@@ -555,7 +555,7 @@ pub fn set(ctx: &Ctx, vault: &str, key: &str, from: &SetFrom, io: &mut dyn Io) -
             0
         }
         Err(e) => {
-            io.say(Say::Err(Markup::lines_of(&e.message)));
+            io.say(Say::Err(e.message.into()));
             1
         }
     }
@@ -574,7 +574,7 @@ pub fn rm(ctx: &Ctx, vault: &str, key: &str, io: &mut dyn Io) -> i32 {
             0
         }
         Err(e) => {
-            io.say(Say::Err(Markup::lines_of(&e.message)));
+            io.say(Say::Err(e.message.into()));
             1
         }
     }
@@ -931,7 +931,7 @@ fn cp_unix(ctx: &Ctx, vault: &str, key: &str, dest: &str, force: bool, io: &mut 
         Ok(v) => v,
         Err(e) => {
             abandon(file);
-            io.say(Say::Err(Markup::lines_of(&e.message)));
+            io.say(Say::Err(e.message.into()));
             return 1;
         }
     };

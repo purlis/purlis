@@ -437,7 +437,7 @@ pub fn optimize(
                 .into(),
         ));
     } else if actions_total == 0 {
-        say(Say::Info(how.tidy.to_string().into()));
+        say(Say::Info(how.tidy.into()));
     }
     if unread.is_empty() { 0 } else { 1 }
 }

@@ -259,7 +259,7 @@ fn init_into_an_empty_directory_says_what_it_wrote_line_for_line() {
     if !guard_created {
         said.push(Say::Info(format!("  already present: {guard}").into()));
     }
-    said.push(Say::Info(NEXT.to_owned().into()));
+    said.push(Say::Info(NEXT.into()));
     assert_eq!(outcome.said, said);
     assert_eq!(outcome.code, 0);
     for dir in BASELINE_DIRS {
@@ -303,7 +303,7 @@ fn init_twice_says_the_plane_is_already_set_up_and_what_it_found() {
                  .claude/settings.json (plane-root guard already wired)"
                     .into()
             ),
-            Say::Info(NEXT.to_owned().into()),
+            Say::Info(NEXT.into()),
         ]
     );
     assert_eq!(outcome.code, 0);

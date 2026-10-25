@@ -558,7 +558,7 @@ fn cut_pinned(
     if pinned.holds() {
         code
     } else {
-        say(Say::Fail(REPLACED.to_owned().into()));
+        say(Say::Fail(REPLACED.into()));
         code.max(1)
     }
 }

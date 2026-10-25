@@ -711,9 +711,13 @@ impl Markup {
         out
     }
 
-    /// Each line of `text` escaped as [`text`](Markup::text), on lines of its own: for a
-    /// message purlis laid out over lines with values in it, or for what git said. A line end
-    /// still ends a line, but nothing else hidden gets through, and every line is shown.
+    /// Each line of `text` escaped as [`text`](Markup::text), on lines of its own.
+    ///
+    /// **The one splice that keeps a line end.** It is for purlis's own layout only: a message
+    /// purlis wrote over several lines (a refusal with its heredoc, a hint under a sentence),
+    /// or git's output shown line by line under purlis's own line. Never for a string that
+    /// splices a name or a reason at run time; that is [`Markup::lines`] of
+    /// [`text`](Markup::text) values, so the value's own line end is marked.
     pub fn lines_of(text: &str) -> Markup {
         Markup::lines(text.split('\n').map(|line| Markup::new().text(line)))
     }
@@ -754,13 +758,14 @@ impl Markup {
 ///
 /// A message line (`voice::info`, a command's `Say`) takes `impl Into<Markup>`, so a literal
 /// is [`Markup::own`] and a `String` — a `format!` that splices a skill's, a repo's or a
-/// piece's name, a reason, a path — is [`Markup::lines_of`], whole (SK-54, #3225): every
-/// control (an escape included), bidi, zero-width and tag character, and every tab, is
-/// marked, and only its line ends stay, because a message's sentence is often purlis's own
-/// layout over lines. A value whose line ends must be marked too, a name or a reason in a
-/// line of its own, is spliced with [`text`](Markup::text). Escaping purlis's own words
-/// changes nothing: they hold nothing the one rule marks. There is no conversion from a
-/// borrowed `&str`, which may have been read at run time: own it as a `String`, or splice it.
+/// piece's name, a reason, a path, what git said — is [`Markup::text`], whole (SK-54,
+/// #3225): every control (an escape included), bidi, zero-width and tag character, and every
+/// line end and tab, is marked. A name holding `\n✓ done` therefore stays on its line and
+/// cannot write one that reads as purlis's. A message purlis lays out over lines says so:
+/// [`Markup::lines`], or [`Markup::lines_of`] for a string that is purlis's own layout.
+/// Escaping purlis's own words changes nothing: they hold nothing the one rule marks. There
+/// is no conversion from a borrowed `&str`, which may have been read at run time: own it as
+/// a `String`, or splice it with `text`.
 impl From<&'static str> for Markup {
     fn from(words: &'static str) -> Self {
         Markup::new().own(words)
@@ -769,7 +774,7 @@ impl From<&'static str> for Markup {
 
 impl From<String> for Markup {
     fn from(text: String) -> Self {
-        Markup::lines_of(&text)
+        Markup::new().text(text)
     }
 }
 
@@ -825,12 +830,14 @@ impl serde::Serialize for Markup {
     }
 }
 
-/// Read back off the wire **escaped again**, as a `String` is: what arrives is bytes, not
-/// markup this process built, so it cannot be a way in for raw text. Marking is idempotent,
-/// so a line the other end escaped reads back the same.
+/// Read back off the wire **escaped again**, by [`Markup::lines_of`]: what arrives is bytes,
+/// not markup this process built, so it cannot be a way in for an escape, a bidi or a
+/// zero-width character. Its line ends stay, because the app that sent it marked every line
+/// end a value held, so a raw one is the layout it built; and marking is idempotent, so a
+/// well-formed line, one line or several, reads back the same.
 impl<'de> serde::Deserialize<'de> for Markup {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        String::deserialize(d).map(Markup::from)
+        String::deserialize(d).map(|text| Markup::lines_of(&text))
     }
 }
 

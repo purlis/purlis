@@ -75,14 +75,12 @@ pub struct UpdateArgs {
 pub fn update_report(args: &UpdateArgs) -> Report {
     let mut report = Report::new_public();
     report.said.push(Say::Warn(not_the_installer().into()));
-    report
-        .said
-        .push(Say::Info(WHAT_IT_BROUGHT.to_owned().into()));
+    report.said.push(Say::Info(WHAT_IT_BROUGHT.into()));
     if !args.to.is_empty() {
-        report.said.push(Say::Warn(NO_TARGET.to_owned().into()));
+        report.said.push(Say::Warn(NO_TARGET.into()));
     }
     if args.bump {
-        report.said.push(Say::Warn(NO_BUMP.to_owned().into()));
+        report.said.push(Say::Warn(NO_BUMP.into()));
     }
     report
 }

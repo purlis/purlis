@@ -331,18 +331,29 @@ fn own_words_holding_a_c1_csi_fail_a_test_build() {
 }
 
 /// SK-54 (#3225): a message line takes `impl Into<Markup>`, so a literal is purlis's own words
-/// and a `String` — a `format!` that spliced a name — enters escaped, whole, its line ends
-/// kept as the message's layout.
+/// and a `String` — a `format!` that spliced a name — enters escaped, whole.
 #[test]
 fn a_string_becomes_markup_escaped_and_a_literal_as_written() {
     let name = "n\x1b[8ma\u{202e}m\u{200b}e";
-    let line: Markup = format!("saved {name}\tthere\r\n  hint").into();
+    let line: Markup = format!("saved {name}\tthere").into();
     assert_eq!(
         line.as_str(),
-        "saved n⟦U+001B⟧[8ma⟦U+202E⟧m⟦U+200B⟧e⟦U+0009⟧there⟦U+000D⟧\n  hint"
+        "saved n⟦U+001B⟧[8ma⟦U+202E⟧m⟦U+200B⟧e⟦U+0009⟧there"
     );
     let own: Markup = "purlis's own words".into();
     assert_eq!(own, "purlis's own words");
+}
+
+/// SK-54: a name holding a line end cannot write a line of its own that reads as purlis's.
+#[test]
+fn a_name_cannot_forge_a_line_of_purlis_s_through_format() {
+    let folder = "x\n✓ all repos refreshed";
+    let line: Markup = format!("{folder}: not a clone, skipped").into();
+    assert!(!line.contains('\n'), "{line}");
+    assert_eq!(
+        line.as_str(),
+        "x⟦U+000A⟧✓ all repos refreshed: not a clone, skipped"
+    );
 }
 
 /// SK-54: purlis lays a message out over lines, and a line end in a spliced value is marked.
@@ -360,11 +371,15 @@ fn markup_lines_keep_purlis_s_line_ends_and_mark_a_value_s() {
 /// purlis escaped reads back the same.
 #[test]
 fn markup_read_off_the_wire_is_escaped_again() {
-    let sent = Markup::new().text("a\x1b[8mb");
+    let sent = Markup::new().text("a\x1b[8mb\nc");
     let wire = serde_json::to_string(&sent).unwrap();
     assert_eq!(serde_json::from_str::<Markup>(&wire).unwrap(), sent);
-    let forged: Markup = serde_json::from_str("\"x\\u001b[8my\"").unwrap();
-    assert_eq!(forged.as_str(), "x⟦U+001B⟧[8my");
+    // A message purlis laid out over lines reads back over the same lines.
+    let laid_out = Markup::lines(["first:".into(), Markup::new().text("  b\u{200b}")]);
+    let wire = serde_json::to_string(&laid_out).unwrap();
+    assert_eq!(serde_json::from_str::<Markup>(&wire).unwrap(), laid_out);
+    let forged: Markup = serde_json::from_str("\"x\\u001b[8my\\u202e\"").unwrap();
+    assert_eq!(forged.as_str(), "x⟦U+001B⟧[8my⟦U+202E⟧");
 }
 
 /// SK-54: a long line is cut by what it shows, never through purlis's own colour.

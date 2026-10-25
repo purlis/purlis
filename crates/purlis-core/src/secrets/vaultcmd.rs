@@ -238,8 +238,8 @@ fn file_owner(ctx: &Ctx, file: &str, name: &str) -> Option<String> {
 /// purlis cannot tell: a chat is never the one supplying a vault's token.
 fn add_with_a_token(ctx: &Ctx, req: &AddRequest, io: &mut dyn Io) -> i32 {
     use super::setup;
-    let refuse = |io: &mut dyn Io, why: String| {
-        io.say(Say::Err(why.into()));
+    let refuse = |io: &mut dyn Io, why: Markup| {
+        io.say(Say::Err(why));
         1
     };
     if req.provider != "1password" {
@@ -256,16 +256,17 @@ fn add_with_a_token(ctx: &Ctx, req: &AddRequest, io: &mut dyn Io) -> i32 {
                 "--token-stdin keeps the token in {} and binds no variable, so it is not given \
                  with --token-env or --env. Leave those out.",
                 super::keyring::STORE_NAME
-            ),
+            )
+            .into(),
         );
     }
     match setup::in_a_chat(ctx) {
         setup::Where::Outside => {}
         setup::Where::Inside => return refuse(io, setup::NOT_FROM_A_CHAT.into()),
-        setup::Where::Unsure(why) => return refuse(io, setup::could_not_tell(&why)),
+        setup::Where::Unsure(why) => return refuse(io, setup::could_not_tell(&why).into()),
     }
     if !registry::name_ok(&req.name) {
-        return refuse(io, registry::name_refusal(&req.name));
+        return refuse(io, registry::name_refusal(&req.name).into());
     }
     let existing = if req.force {
         None
@@ -278,12 +279,15 @@ fn add_with_a_token(ctx: &Ctx, req: &AddRequest, io: &mut dyn Io) -> i32 {
     let Some(op_vault) = req.op_vault.as_deref().filter(|v| !v.is_empty()) else {
         return refuse(
             io,
-            format!(
+            Markup::lines([
                 "--op-vault is required for a 1password vault: which 1Password vault should \
-                 purlis create its items in?\n  purlis vault add {} --provider 1password \
-                 --op-vault Engineering --token-stdin",
-                req.name
-            ),
+                 purlis create its items in?"
+                    .into(),
+                Markup::new()
+                    .own("  purlis vault add ")
+                    .text(&req.name)
+                    .own(" --provider 1password --op-vault Engineering --token-stdin"),
+            ]),
         );
     };
     let place = setup::Place {
@@ -308,7 +312,7 @@ fn add_with_a_token(ctx: &Ctx, req: &AddRequest, io: &mut dyn Io) -> i32 {
     );
     let made = match made {
         Ok(made) => made,
-        Err(e) => return refuse(io, e.message),
+        Err(e) => return refuse(io, e.message.into()),
     };
     let where_ = if req.share {
         "shared — commit vaults.json"
@@ -356,7 +360,7 @@ fn token_tested(
     let token = match setup::clean_token(&given) {
         Ok(token) => token,
         Err(e) => {
-            io.say(Say::Err(Markup::lines_of(&e.message)));
+            io.say(Say::Err(e.message.into()));
             return None;
         }
     };
@@ -589,7 +593,7 @@ pub fn add(ctx: &Ctx, req: &AddRequest, io: &mut dyn Io) -> i32 {
             }
             Ok(None) => {}
             Err(e) => {
-                io.say(Say::Err(Markup::lines_of(&e.message)));
+                io.say(Say::Err(e.message.into()));
                 return 1;
             }
         }
@@ -597,7 +601,7 @@ pub fn add(ctx: &Ctx, req: &AddRequest, io: &mut dyn Io) -> i32 {
             if let Some(value) = cfg.get(key).and_then(Value::as_str)
                 && let Err(e) = onepassword::not_a_flag(key, &req.name, value)
             {
-                io.say(Say::Err(Markup::lines_of(&e.message)));
+                io.say(Say::Err(e.message.into()));
                 return 1;
             }
         }
@@ -629,7 +633,7 @@ pub fn add(ctx: &Ctx, req: &AddRequest, io: &mut dyn Io) -> i32 {
         req.force,
         req.share,
     ) {
-        io.say(Say::Err(Markup::lines_of(&e.message)));
+        io.say(Say::Err(e.message.into()));
         return 1;
     }
     if let Some(replaced) = replaced {
@@ -676,7 +680,7 @@ pub fn add(ctx: &Ctx, req: &AddRequest, io: &mut dyn Io) -> i32 {
     let v = match registry::vault(ctx, &req.name) {
         Ok(v) => v,
         Err(e) => {
-            io.say(Say::Err(Markup::lines_of(&e.message)));
+            io.say(Say::Err(e.message.into()));
             return 1;
         }
     };
@@ -862,7 +866,7 @@ pub fn list(ctx: &Ctx, io: &mut dyn Io) -> i32 {
     let doc = match registry::load_registry(ctx) {
         Ok(d) => d,
         Err(e) => {
-            io.say(Say::Err(Markup::lines_of(&e.message)));
+            io.say(Say::Err(e.message.into()));
             return 1;
         }
     };
@@ -950,7 +954,7 @@ pub fn verify(ctx: &Ctx, name: Option<&str>, io: &mut dyn Io) -> i32 {
         None => match registry::load_registry(ctx) {
             Ok(doc) => registry::vaults(&doc).keys().cloned().collect(),
             Err(e) => {
-                io.say(Say::Err(Markup::lines_of(&e.message)));
+                io.say(Say::Err(e.message.into()));
                 return 1;
             }
         },
@@ -1150,7 +1154,7 @@ pub fn remove(ctx: &Ctx, name: &str, io: &mut dyn Io) -> i32 {
             0
         }
         Err(e) => {
-            io.say(Say::Err(Markup::lines_of(&e.message)));
+            io.say(Say::Err(e.message.into()));
             1
         }
     }

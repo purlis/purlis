@@ -137,7 +137,7 @@ pub fn commit(
         }
     };
     if !purlis_core::sandbox::chat_is_sandboxed() {
-        say(Say::Fail(broker::PLAIN_GIT.to_owned().into()));
+        say(Say::Fail(broker::PLAIN_GIT.into()));
         return 1;
     }
     let forwarded = asked(
