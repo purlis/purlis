@@ -123,10 +123,10 @@ impl<'a> Studio<'a> {
             .collect()
     }
 
-    /// **The panels on `skill`'s tab**, in the project at `plane`: purlis's Runs panel first, then
-    /// each extension's, each answered or refused with a sentence.
+    /// **The panels on `skill`'s tab**, in the project at `plane`: purlis's Grades and Runs panels
+    /// first, then each extension's, each answered or refused with a sentence.
     pub fn panels(&self, plane: &Path, skill: &str) -> Vec<Answered> {
-        let mut out = vec![Answered::of(&RunsPanel { plane }, skill)];
+        let mut out = own_panels(plane, skill);
         let asked = self.declaring(Capability::StudioPanel);
         if asked.is_empty() {
             return out;
@@ -148,6 +148,15 @@ impl<'a> Studio<'a> {
         }
         out
     }
+}
+
+/// **purlis's own panels on `skill`'s tab**, in the project at `plane`: its Grades panel, then
+/// its Runs panel. What every skill's tab draws first, with a studio or without one.
+pub fn own_panels(plane: &Path, skill: &str) -> Vec<Answered> {
+    vec![
+        Answered::of(&GradesPanel { plane }, skill),
+        Answered::of(&RunsPanel { plane }, skill),
+    ]
 }
 
 // ---------------------------------------------------------------------------------------
@@ -284,6 +293,7 @@ pub trait StudioPanel {
 /// extension's id and the panel's.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PanelKey {
+    Grades,
     Runs,
     Extension { extension: String, panel: String },
 }
@@ -308,6 +318,138 @@ impl Answered {
             blocks: panel.blocks(skill),
         }
     }
+}
+
+/// **purlis's Grades panel** (SK-16, #2779), the built-in runner's scorecard: every grade of the
+/// skill the eval record holds, newest first, with the version it graded, what its chats ran on,
+/// each arm's pass rate and the difference the skill made. A pass or a fail comes from here
+/// alone, never from a run (decision 24).
+#[derive(Debug, Clone, Copy)]
+pub struct GradesPanel<'a> {
+    pub plane: &'a Path,
+}
+
+impl StudioPanel for GradesPanel<'_> {
+    fn key(&self) -> PanelKey {
+        PanelKey::Grades
+    }
+
+    fn title(&self) -> String {
+        "Grades".to_owned()
+    }
+
+    fn by(&self) -> Option<String> {
+        None
+    }
+
+    fn blocks(&self, skill: &str) -> Result<Vec<Block>, String> {
+        Ok(grades_blocks(
+            &super::grades::grades_of(self.plane, skill, None),
+            skill,
+        ))
+    }
+}
+
+/// A share as a person reads it: `67%`.
+fn share_said(share: f64) -> String {
+    format!("{:.0}%", share * 100.0)
+}
+
+/// An arm's pass rate as its cell says it: the mean, and the spread over the runs where there is
+/// one (`67% ± 12`).
+fn arm_said(graded: &super::grades::Graded, arm: purlis_skills::grade::Arm) -> String {
+    match graded.report.arm(arm).and_then(|score| score.pass_rate) {
+        None => "Not run".to_owned(),
+        Some(stat) if stat.stddev > 0.0 => format!(
+            "{} ± {:.0}",
+            share_said(stat.mean),
+            stat.stddev * 100.0
+        ),
+        Some(stat) => share_said(stat.mean),
+    }
+}
+
+/// The Grades panel's blocks for `grades` of `skill`: a sentence on what a grade is, then the
+/// table, or the empty table's claim and its way on.
+fn grades_blocks(grades: &[super::grades::Graded], skill: &str) -> Vec<Block> {
+    use purlis_skills::grade::{Arm, GradeEnd};
+    let mut out = Vec::new();
+    if !grades.is_empty() {
+        out.push(Block::Note {
+            text: format!(
+                "Each grade ran the skill's trigger tests in chats with the skill and without \
+                 it, {} each, and counts the tests each chat got right.",
+                crate::counts::counted(purlis_skills::grade::RUNS, "time", "times")
+            ),
+            tone: Tone::Plain,
+        });
+    }
+    let rows = grades
+        .iter()
+        .map(|graded| {
+            let (passed, of) = graded.report.passed_with();
+            TableRow {
+                key: graded.grade.clone(),
+                cells: vec![
+                    said_at(&graded.ts),
+                    match (&graded.commit, graded.content()) {
+                        (Some(commit), _) => commit.chars().take(7).collect(),
+                        (None, Some(crate::skilluse::Content::Uncommitted)) => {
+                            "Changes not saved".to_owned()
+                        }
+                        (None, _) => "Not known".to_owned(),
+                    },
+                    graded
+                        .harness
+                        .as_deref()
+                        .map(crate::skilluse::harness_title)
+                        .unwrap_or_else(|| "Not recorded".to_owned()),
+                    format!("{passed} of {of}"),
+                    arm_said(graded, Arm::With),
+                    arm_said(graded, Arm::Without),
+                    graded
+                        .report
+                        .delta
+                        .map(|delta| format!("{:+.0} points", delta * 100.0))
+                        .unwrap_or_default(),
+                    crate::counts::counted(u64::from(graded.spent.chats), "chat", "chats"),
+                    match graded.report.ended {
+                        GradeEnd::Whole => "Finished",
+                        GradeEnd::Cancelled => "Stopped",
+                        GradeEnd::ChatsDidNotStart => "Chats did not start",
+                    }
+                    .to_owned(),
+                ],
+            }
+        })
+        .collect();
+    out.push(Block::Table(Table {
+        caption: format!("Grades of {skill}"),
+        columns: [
+            "Graded",
+            "Version",
+            "Ran on",
+            "Tests passed",
+            "With the skill",
+            "Without it",
+            "Difference",
+            "Chats",
+            "Ended",
+        ]
+        .map(str::to_owned)
+        .to_vec(),
+        rows,
+        empty: Empty {
+            headline: format!("No grades of {skill} yet"),
+            body: Some(
+                "Grade runs the skill's trigger tests in chats with the skill and without it, \
+                 once you have seen what it costs."
+                    .into(),
+            ),
+            offer: None,
+        },
+    }));
+    out
 }
 
 /// How many runs the Runs panel lists at most.
