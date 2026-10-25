@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792934899747,
+  "lastUpdate": 1792934920035,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -14576,6 +14576,42 @@ window.BENCHMARK_DATA = {
             "value": 731.2,
             "unit": "MB",
             "extra": "median of 6 samples: 668.1, 701.4, 728.9, 733.6, 734.4, 815.4 MB; window 431.9 MB, session host 299.3 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "218ed6204904108fe6c1a8d9fbb33a38040e1a49",
+          "message": "Whole-tree saves stage each file from one open handle (#3201)\n\nA plane save of the whole tree, a repo save, and each commit made as a\nsave makes one (a publish, a new project's first commit, a doctor fix)\nnow stage through ondisk::stage_named, as a save of named paths already\ndid: each regular file is opened without following a link, its\ndescriptor must show one name, and git hashes the bytes from that\ndescriptor. A file with a second name is never hashed into the object\nstore. Links, nested repositories and deletions are still staged by\ngit add. The checks before and after staging stay as a backstop, and\nthe index write still adds git's untracked cache.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-25T16:19:51+04:00",
+          "tree_id": "c433fc07077c4ff0306f69404c37c6dcd05ee27f",
+          "url": "https://github.com/purlis/purlis/commit/218ed6204904108fe6c1a8d9fbb33a38040e1a49"
+        },
+        "date": 1792934917123,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1596.7,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1495.3, 1596.7, 1759.2 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 709.5,
+            "unit": "MB",
+            "extra": "median of 6 samples: 668.1, 693, 703.8, 715.2, 716, 801.4 MB; window 428.9 MB, session host 280.5 MB"
           }
         ]
       }
