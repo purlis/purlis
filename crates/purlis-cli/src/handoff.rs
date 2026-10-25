@@ -229,7 +229,7 @@ pub fn handoff(here: &crate::Here, args: &Args) -> ExitCode {
     let brief = match read_brief() {
         Ok(brief) => brief,
         Err(refusal) => {
-            voice::err(&refusal.say(ws));
+            voice::err(refusal.say(ws).to_string());
             return ExitCode::FAILURE;
         }
     };
@@ -284,7 +284,7 @@ pub fn handoff(here: &crate::Here, args: &Args) -> ExitCode {
             said.push('\n');
             said.push_str(&handoff::stamped_message_note(brief.len()));
         }
-        voice::err(&said);
+        voice::err(said.to_string());
         return ExitCode::FAILURE;
     }
 
@@ -306,7 +306,7 @@ pub fn handoff(here: &crate::Here, args: &Args) -> ExitCode {
             // What the app said about the profile it started on (#1445, D-1445-8): the new chat
             // is not on its persona's own. One line, contained: it names a value out of a file.
             if let Some(note) = note {
-                voice::info(&whole(&note));
+                voice::info(whole(&note).to_string());
             }
             return ExitCode::SUCCESS;
         }
@@ -331,7 +331,7 @@ pub fn handoff(here: &crate::Here, args: &Args) -> ExitCode {
             to,
             waiting: Some(first),
         } => {
-            voice::err(&not_held(from.as_deref(), &to, &first));
+            voice::err(not_held(from.as_deref(), &to, &first).to_string());
             return ExitCode::FAILURE;
         }
         // Held, not refused: it opens by itself once memory frees (#1467).
@@ -368,7 +368,7 @@ pub fn handoff(here: &crate::Here, args: &Args) -> ExitCode {
             "  '{ws}' was not created either: --create makes it when the app opens the chat."
         ));
     }
-    voice::err(&said);
+    voice::err(said.to_string());
     ExitCode::FAILURE
 }
 
@@ -417,8 +417,8 @@ fn as_a_task(
             ExitCode::SUCCESS
         }
         Err(why) => {
-            voice::err(&why);
-            voice::info(&handoff::reported_as_a_task());
+            voice::err(why.to_string());
+            voice::info(handoff::reported_as_a_task().to_string());
             ExitCode::FAILURE
         }
     }

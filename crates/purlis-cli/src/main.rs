@@ -729,10 +729,10 @@ fn say_lines(said: &[purlis_core::scaffold::Say]) {
     use purlis_core::scaffold::Say;
     for line in said {
         match line {
-            Say::Info(text) => voice::info(text),
-            Say::Ok(text) => voice::ok(text),
-            Say::Warn(text) => voice::warn(text),
-            Say::Err(text) => voice::err(text),
+            Say::Info(text) => voice::info(text.clone()),
+            Say::Ok(text) => voice::ok(text.clone()),
+            Say::Warn(text) => voice::warn(text.clone()),
+            Say::Err(text) => voice::err(text.clone()),
         }
     }
 }
@@ -874,7 +874,7 @@ fn bridge(pair: bool) -> ExitCode {
     match bridge::run(pair) {
         Ok(code) => ExitCode::from(code),
         Err(why) => {
-            voice::err(&why);
+            voice::err(why.to_string());
             ExitCode::FAILURE
         }
     }
@@ -2773,7 +2773,7 @@ fn repo_command(command: &Command) -> Option<ExitCode> {
             let cfg = match purlis_core::forge::load_config(&root) {
                 Ok(cfg) => cfg,
                 Err(why) => {
-                    eprintln!("{}", Say::Plain(why));
+                    eprintln!("{}", Say::Plain(why.into()));
                     return Some(ExitCode::FAILURE);
                 }
             };
@@ -2997,7 +2997,7 @@ fn workspace_command(command: &Command) -> Option<ExitCode> {
                 && let Some(note) =
                     purlis_core::skills::levels::vouch_if_made(&root, &owner, was_there)
             {
-                say(purlis_core::repocmd::Say::Info(note));
+                say(purlis_core::repocmd::Say::Info(note.into()));
             }
             if code == 0 {
                 heard.push(ExtensionEvent::WorkspaceCreated {
@@ -3388,7 +3388,7 @@ fn run(command: Command) -> Result<u8, String> {
                     }
                     brokered::Named::Here => {}
                     brokered::Named::Refused(why) => {
-                        voice::err(&why);
+                        voice::err(why.to_string());
                         return Ok(1);
                     }
                 }
@@ -3535,7 +3535,7 @@ fn run(command: Command) -> Result<u8, String> {
                     brokered::Named::Own => true,
                     brokered::Named::Here => false,
                     brokered::Named::Refused(why) => {
-                        voice::err(&why);
+                        voice::err(why.to_string());
                         return Ok(1);
                     }
                 }
@@ -3666,12 +3666,12 @@ fn todo(
                     0
                 }
                 Err(refused @ purlis_core::workspaces::RecordRefused::AlreadyListed(_)) => {
-                    voice::err(&refused.to_string());
+                    voice::err(refused.to_string());
                     voice::info(format!("  See it: {see}"));
                     1
                 }
                 Err(refused) => {
-                    voice::err(&refused.to_string());
+                    voice::err(refused.to_string());
                     1
                 }
             }
@@ -3733,13 +3733,13 @@ fn promote_todo(
     let root = plane.root();
     let slug = purlis_core::memstore::py_strip(slug);
     if !purlis_core::contain::segment_ok(slug) {
-        voice::err(&purlis_core::repocmd::clone::not_a_segment(slug));
+        voice::err(purlis_core::repocmd::clone::not_a_segment(slug).to_string());
         return 1;
     }
     let target = match promote::target(root, ws.name(), repo) {
         Ok(target) => target,
         Err(why) => {
-            voice::err(&why);
+            voice::err(why.to_string());
             return 1;
         }
     };
@@ -3796,7 +3796,7 @@ fn promote_todo(
             0
         }
         Err(why) => {
-            voice::err(&why);
+            voice::err(why.to_string());
             1
         }
     }
@@ -4311,7 +4311,7 @@ fn main() -> ExitCode {
         return match mcp::serve() {
             Ok(code) => ExitCode::from(code),
             Err(why) => {
-                voice::err(&why);
+                voice::err(why.to_string());
                 ExitCode::FAILURE
             }
         };

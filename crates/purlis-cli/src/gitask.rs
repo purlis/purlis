@@ -132,12 +132,12 @@ pub fn commit(
     let (message, stage) = match commit_ask(message, all, amend, paths) {
         Ok(ask) => ask,
         Err(why) => {
-            say(Say::Fail(why));
+            say(Say::Fail(why.into()));
             return 2;
         }
     };
     if !purlis_core::sandbox::chat_is_sandboxed() {
-        say(Say::Fail(broker::PLAIN_GIT.to_owned()));
+        say(Say::Fail(broker::PLAIN_GIT.to_owned().into()));
         return 1;
     }
     let forwarded = asked(
@@ -155,7 +155,7 @@ pub fn commit(
             "the app that started this chat did not take the commit: it may be older than \
              this command. Nothing was committed. Ask the person to update purlis, or to \
              commit from their own terminal"
-                .to_owned(),
+                .into(),
         ));
         1
     })
@@ -200,13 +200,13 @@ pub fn told(forwarded: Forwarded, say: &mut dyn FnMut(Say)) -> Option<u8> {
             Some(code)
         }
         Forwarded::Refused(why) => {
-            say(Say::Fail(format!(
-                "the app did not run this for the chat: {why}"
-            )));
+            say(Say::Fail(
+                format!("the app did not run this for the chat: {why}").into(),
+            ));
             Some(1)
         }
         Forwarded::Unsure(why) => {
-            say(Say::Fail(why));
+            say(Say::Fail(why.into()));
             Some(1)
         }
         Forwarded::NotTaken => None,
@@ -334,7 +334,10 @@ mod tests {
         let mut printed = Vec::new();
         let code = told(
             Forwarded::Said {
-                lines: vec![Say::Info("a".to_owned()), Say::Fail("b".to_owned())],
+                lines: vec![
+                    Say::Info("a".to_owned().into()),
+                    Say::Fail("b".to_owned().into()),
+                ],
                 code: 2,
             },
             &mut |line| printed.push(line),
@@ -342,7 +345,10 @@ mod tests {
         assert_eq!(code, Some(2));
         assert_eq!(
             printed,
-            [Say::Info("a".to_owned()), Say::Fail("b".to_owned())]
+            [
+                Say::Info("a".to_owned().into()),
+                Say::Fail("b".to_owned().into())
+            ]
         );
         assert_eq!(told(Forwarded::NotTaken, &mut |_| {}), None);
     }

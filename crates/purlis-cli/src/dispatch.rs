@@ -205,13 +205,13 @@ pub fn dispatch(
     // The name and the persona are asked before the read: neither needs the brief, and a
     // refusal that waited for stdin would wait on a terminal.
     if let Err(why) = checked(here, to, name).and_then(|_| placed(options.place)) {
-        voice::err(&why);
+        voice::err(why.to_string());
         return ExitCode::FAILURE;
     }
     let brief = match read_brief() {
         Ok(brief) => brief,
         Err(why) => {
-            voice::err(&why);
+            voice::err(why.to_string());
             return ExitCode::FAILURE;
         }
     };
@@ -235,7 +235,7 @@ fn said(answered: Result<String, String>) -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(why) => {
-            voice::err(&why);
+            voice::err(why.to_string());
             ExitCode::FAILURE
         }
     }

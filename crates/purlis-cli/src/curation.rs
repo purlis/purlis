@@ -124,7 +124,7 @@ pub fn persona(root: &std::path::Path, command: PersonaCuration) -> Result<Code,
                     Ok(0)
                 }
                 Err(refused) => {
-                    voice::err(&refused);
+                    voice::err(refused.to_string());
                     Ok(1)
                 }
             }
@@ -137,7 +137,7 @@ pub fn persona(root: &std::path::Path, command: PersonaCuration) -> Result<Code,
                 Ok(0)
             }
             Err(refused) => {
-                voice::err(&refused);
+                voice::err(refused.to_string());
                 Ok(1)
             }
         },
@@ -240,14 +240,14 @@ pub fn run(root: &std::path::Path, command: CurationCommand) -> Result<Code, Str
             let subject = match Subject::parse(&subject) {
                 Ok(subject) => subject,
                 Err(refused) => {
-                    voice::err(&refused);
+                    voice::err(refused.to_string());
                     return Ok(2);
                 }
             };
             let resolution = match curation::resolve(root, &subject) {
                 Ok(resolution) => resolution,
                 Err(refused) => {
-                    voice::err(&refused);
+                    voice::err(refused.to_string());
                     return Ok(1);
                 }
             };
@@ -278,7 +278,7 @@ pub fn run(root: &std::path::Path, command: CurationCommand) -> Result<Code, Str
                 voice::info("Nothing is offered on this subject.");
             }
             for warning in &resolution.warnings {
-                voice::warn(warning);
+                voice::warn(warning.to_string());
             }
             Ok(0)
         }

@@ -99,7 +99,7 @@ pub fn run(here: &Here, command: SessionCommand) -> Result<Code, String> {
                     Ok(0)
                 }
                 Err(why) => {
-                    voice::err(&why);
+                    voice::err(why.to_string());
                     Ok(1)
                 }
             }
@@ -130,19 +130,19 @@ fn record(
     match write(here, title, &body, pieces, workspace, now, false) {
         Ok(saved) => {
             for warning in &saved.warnings {
-                voice::warn(warning);
+                voice::warn(warning.to_string());
             }
             voice::ok(format!("Session record → {}", saved.shown));
             println!("{}", saved.shown);
             if saved.tab_warns {
-                voice::warn(&saved.tab);
+                voice::warn(saved.tab.to_string());
             } else {
-                voice::info(&saved.tab);
+                voice::info(saved.tab.to_string());
             }
             Ok(0)
         }
         Err(NotWritten::Refused(why)) => {
-            voice::err(&why);
+            voice::err(why.to_string());
             Ok(2)
         }
         Err(NotWritten::Failed(why)) => Err(why),

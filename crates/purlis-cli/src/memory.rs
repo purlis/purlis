@@ -413,7 +413,7 @@ fn session() -> String {
 /// uncommitted later.
 fn reactive(plane: &Plane) {
     if let Some(line) = purlis_core::wscmd::memory::next_save(plane.root()) {
-        voice::info(&line);
+        voice::info(line.to_string());
     }
 }
 
@@ -430,7 +430,7 @@ pub fn recall(here: &crate::Here, args: RecallArgs) -> Result<Code, String> {
     if let Some(name) = &persona
         && let Some(refused) = purlis_core::personas::name_refusal(root, name)
     {
-        voice::err(&refused);
+        voice::err(refused.to_string());
         return Ok(1);
     }
     let mut scopes: Vec<String> = recall::DEFAULT_SCOPES.map(str::to_string).to_vec();
@@ -458,7 +458,7 @@ pub fn recall(here: &crate::Here, args: RecallArgs) -> Result<Code, String> {
         match recall::parse_since(value, today) {
             Ok(day) => since = Some(day),
             Err(message) => {
-                voice::err(&message);
+                voice::err(message.to_string());
                 return Ok(2);
             }
         }
@@ -480,7 +480,7 @@ pub fn recall(here: &crate::Here, args: RecallArgs) -> Result<Code, String> {
             None => None,
             Some(name) => {
                 if let Err(e) = plane.workspace(&name) {
-                    voice::err(&e.to_string());
+                    voice::err(e.to_string());
                     return Ok(1);
                 }
                 Some(Workspaces::One(name))
@@ -709,7 +709,7 @@ pub fn workspace_remember(
     let path = match ws.remember_titled(text, title, stamp(now)?) {
         Ok(path) => path,
         Err(e) => {
-            voice::err(&e.to_string());
+            voice::err(e.to_string());
             return Ok(1);
         }
     };
@@ -746,7 +746,7 @@ pub fn workspace_remember_typed(
             }
             Named::Here => {}
             Named::Refused(why) => {
-                voice::err(&why);
+                voice::err(why.to_string());
                 return Ok(1);
             }
         }
@@ -768,7 +768,7 @@ fn its_own_by_the_app(here: &crate::Here, workspace: Option<&str>, write: Write)
         Named::Own => crate::brokered::said_by_the_app(write),
         Named::Here => None,
         Named::Refused(why) => {
-            voice::err(&why);
+            voice::err(why.to_string());
             Some(1)
         }
     }
@@ -1044,7 +1044,7 @@ pub fn move_memory(
         }
         (own_from, _) if crate::brokered::sandboxed() => {
             let other = if own_from.is_none() { from } else { to };
-            voice::err(&match other {
+            voice::err(match other {
                 Scope::Persona(name) => {
                     crate::brokered::not_its_persona(name, here.active_persona(None).as_deref())
                 }
@@ -1106,7 +1106,7 @@ pub fn workspace_optimize(
                 }
                 None => "It works in no workspace".to_owned(),
             };
-            voice::err(&crate::brokered::not_its_workspace(&what, &instead));
+            voice::err(crate::brokered::not_its_workspace(&what, &instead).to_string());
             return Ok(1);
         }
     }
@@ -1151,7 +1151,7 @@ pub fn workspace_optimize(
 fn persona_ok(root: &Path, name: &str) -> bool {
     match purlis_core::personas::name_refusal(root, name) {
         Some(refused) => {
-            voice::err(&refused);
+            voice::err(refused.to_string());
             false
         }
         None => true,
@@ -1246,7 +1246,7 @@ pub fn persona(here: &crate::Here, command: PersonaCommand) -> Result<Code, Stri
                 && let Some(note) =
                     purlis_core::skills::levels::vouch_if_made(root, &owner, was_there)
             {
-                sink(purlis_core::repocmd::Say::Info(note));
+                sink(purlis_core::repocmd::Say::Info(note.into()));
             }
             Ok(code)
         }
@@ -1269,7 +1269,7 @@ pub fn persona(here: &crate::Here, command: PersonaCommand) -> Result<Code, Stri
                 .is_none()
                 .then(|| plane.root().join("personas").join(&name));
             if crate::brokered::removal_held(plane.root(), target.as_deref()) {
-                voice::err(&crate::brokered::no_persona_removal_in_a_sandbox(&name));
+                voice::err(crate::brokered::no_persona_removal_in_a_sandbox(&name).to_string());
                 return Ok(1);
             }
             let selection =
@@ -1329,7 +1329,7 @@ pub fn persona(here: &crate::Here, command: PersonaCommand) -> Result<Code, Stri
             if let Some(why) =
                 refused_in_a_sandbox(here, named.filter(|_| !own && !shared), ephemeral)
             {
-                voice::err(&why);
+                voice::err(why.to_string());
                 return Ok(1);
             }
             if (shared || own) && !ephemeral && now.is_none() {
@@ -1557,7 +1557,7 @@ pub fn persona(here: &crate::Here, command: PersonaCommand) -> Result<Code, Stri
             to,
         } => {
             if let Some(refused) = purlis_core::personas::name_refusal(plane.root(), &name) {
-                voice::err(&refused);
+                voice::err(refused.to_string());
                 return Ok(1);
             }
             let from = if shared {
@@ -1570,10 +1570,10 @@ pub fn persona(here: &crate::Here, command: PersonaCommand) -> Result<Code, Stri
                 && here.active_persona(None).as_deref() != Some(name.as_str())
                 && crate::brokered::sandboxed()
             {
-                voice::err(&crate::brokered::not_its_persona(
-                    &name,
-                    here.active_persona(None).as_deref(),
-                ));
+                voice::err(
+                    crate::brokered::not_its_persona(&name, here.active_persona(None).as_deref())
+                        .to_string(),
+                );
                 return Ok(1);
             }
             move_memory(here, &from, &slug, &to.scope(), Some(&name))
@@ -1688,7 +1688,7 @@ fn refused_in_a_sandbox(
 fn persona_verb(here: &crate::Here, name: &str, ephemeral: bool, write: Write) -> Option<Code> {
     let own = here.active_persona(None).as_deref() == Some(name);
     if let Some(why) = refused_in_a_sandbox(here, (!own).then_some(name), ephemeral) {
-        voice::err(&why);
+        voice::err(why.to_string());
         return Some(1);
     }
     if !own || ephemeral {
@@ -1717,7 +1717,7 @@ fn persona_optimize(
         if !crate::brokered::sandboxed() {
             return None;
         }
-        voice::err(&match name.filter(|n| !n.is_empty()) {
+        voice::err(match name.filter(|n| !n.is_empty()) {
             Some(name) => crate::brokered::not_its_persona(name, own.as_deref()),
             None => "a sandboxed chat curates only its own persona's memory and shared memory, \
                      and this would curate every persona's: nothing was changed. Name its own \
@@ -1781,7 +1781,7 @@ fn persona_remember(
     let path = match written {
         Ok(path) => path,
         Err(e) => {
-            voice::err(&e);
+            voice::err(e.to_string());
             return Ok(1);
         }
     };
@@ -1836,7 +1836,7 @@ pub fn said_forwarded(
             Some(0)
         }
         Forwarded::Refused(why) | Forwarded::Unsure(why) => {
-            voice::err(&why);
+            voice::err(why.to_string());
             Some(1)
         }
         Forwarded::NotTaken(_) => None,

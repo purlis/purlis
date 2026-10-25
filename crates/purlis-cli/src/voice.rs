@@ -102,7 +102,7 @@ pub fn rel(root: &Path, path: &Path) -> String {
 /// path worded two ways is two different repairs for one directory.
 pub fn unread(root: &Path, unread: &purlis_core::memstore::Unread) {
     for (path, code) in unread {
-        err(&purlis_core::memstore::cannot_check(root, path, *code));
+        err(purlis_core::memstore::cannot_check(root, path, *code).to_string());
     }
 }
 

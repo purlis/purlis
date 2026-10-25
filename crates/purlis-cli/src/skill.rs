@@ -547,14 +547,14 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             let (_, was) = match verbs::text_of(root, &level, &name) {
                 Ok(read) => read,
                 Err(why) => {
-                    voice::err(&why);
+                    voice::err(why.to_string());
                     return Ok(1);
                 }
             };
             let now = match new_text(from.as_deref(), &was) {
                 Ok(now) => now,
                 Err(why) => {
-                    voice::err(&why);
+                    voice::err(why.to_string());
                     return Ok(1);
                 }
             };
@@ -580,7 +580,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             let mut name = name;
             if let Some(new) = new {
                 if let Err(why) = verbs::rename(&mut cx, &level, &name, &new) {
-                    voice::err(&why);
+                    voice::err(why.to_string());
                     return Ok(1);
                 }
                 name = new;
@@ -623,7 +623,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             match verbs::users(root, &level, &name) {
                 Ok(users) => say_users(&users),
                 Err(why) => {
-                    voice::err(&why);
+                    voice::err(why.to_string());
                     return Ok(1);
                 }
             }
@@ -667,7 +667,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 Ok(0)
             }
             Err(why) => {
-                voice::err(&why);
+                voice::err(why.to_string());
                 if on && why.contains("would reach it") {
                     voice::info(format!(
                         "To grant it: purlis skill grant {name} {workspace}"
@@ -691,7 +691,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             match verbs::grant(&mut cx, &name, &grant) {
                 Ok(_) => Ok(0),
                 Err(why) => {
-                    voice::err(&why);
+                    voice::err(why.to_string());
                     Ok(1)
                 }
             }
@@ -701,7 +701,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             match verbs::share(&mut cx, &at.level().at, &name) {
                 Ok(_) => Ok(0),
                 Err(why) => {
-                    voice::err(&why);
+                    voice::err(why.to_string());
                     Ok(1)
                 }
             }
@@ -735,14 +735,14 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
         } => match source::confirm(&mut cx, &Remote { url, branch }) {
             Ok(_) => Ok(0),
             Err(why) => {
-                voice::err(&esc(&why));
+                voice::err(esc(&why).to_string());
                 Ok(1)
             }
         },
         SkillCommand::Update { name: None, .. } => {
             let found = source::updates(root);
             for one in &found.unasked {
-                voice::warn(&esc(&format!("{} ({}): {}", one.name, one.level, one.why)));
+                voice::warn(esc(&format!("{} ({}): {}", one.name, one.level, one.why)).to_string());
             }
             for one in &found.unconfirmed {
                 println!(
@@ -785,7 +785,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             let update = match source::update_review(root, &level, &name) {
                 Ok(update) => update,
                 Err(why) => {
-                    voice::err(&esc(&why));
+                    voice::err(esc(&why).to_string());
                     return Ok(1);
                 }
             };
@@ -823,7 +823,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                     return Ok(0);
                 }
                 for line in &diff.unseen {
-                    voice::warn(line);
+                    voice::warn(line.to_string());
                 }
                 print!("{}", diff.text);
                 if diff.cut {
@@ -835,7 +835,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 Ok(0)
             }
             Err(why) => {
-                voice::err(&why);
+                voice::err(why.to_string());
                 Ok(1)
             }
         },
@@ -850,7 +850,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                     Ok(0)
                 }
                 Err(why) => {
-                    voice::err(&why);
+                    voice::err(why.to_string());
                     Ok(1)
                 }
             }
@@ -866,7 +866,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             // leaves what widens out when it hands the skill over).
             match history::revert_widens(root, &level, &name, &commit) {
                 Ok(Some(widens)) => {
-                    voice::warn(&widens);
+                    voice::warn(widens.to_string());
                     if !yes && !asked(&format!("Revert {name} to {}?", history::short(&commit))) {
                         voice::info("Nothing was reverted.");
                         return Ok(1);
@@ -874,7 +874,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 }
                 Ok(None) => {}
                 Err(why) => {
-                    voice::err(&why);
+                    voice::err(why.to_string());
                     return Ok(1);
                 }
             }
@@ -917,7 +917,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                         Ok(0)
                     }
                     Err(why) => {
-                        voice::err(&why);
+                        voice::err(why.to_string());
                         Ok(1)
                     }
                 };
@@ -929,7 +929,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                     Ok(0)
                 }
                 Err(why) => {
-                    voice::err(&why);
+                    voice::err(why.to_string());
                     Ok(1)
                 }
             }
@@ -1044,7 +1044,7 @@ fn lifecycle_set(
             Ok(0)
         }
         Err(why) => {
-            voice::err(&why);
+            voice::err(why.to_string());
             Ok(1)
         }
     }
@@ -1197,7 +1197,7 @@ fn install(
         let browse = match source::browse(root, source) {
             Ok(browse) => browse,
             Err(why) => {
-                voice::err(&esc(&why));
+                voice::err(esc(&why).to_string());
                 return Ok(1);
             }
         };
@@ -1230,7 +1230,7 @@ fn install(
     let review = match source::review(root, source, names) {
         Ok(review) => review,
         Err(why) => {
-            voice::err(&esc(&why));
+            voice::err(esc(&why).to_string());
             return Ok(1);
         }
     };
@@ -1254,9 +1254,12 @@ fn install(
     if listed.iter().all(|one| one.source.remote != source.remote)
         && let Err(why) = source::add(cx, source, which)
     {
-        voice::warn(&esc(&format!(
-            "The source was not added to this project's sources: {why}"
-        )));
+        voice::warn(
+            esc(&format!(
+                "The source was not added to this project's sources: {why}"
+            ))
+            .to_string(),
+        );
     }
     done(source::install(
         cx,
@@ -1445,7 +1448,7 @@ fn done<T>(answer: Result<T, String>) -> Result<Code, String> {
         Ok(_) => Ok(0),
         Err(why) => {
             // A refusal may quote a source's own words: escaped like everything else it says.
-            voice::err(&esc(&why));
+            voice::err(esc(&why).to_string());
             Ok(1)
         }
     }
