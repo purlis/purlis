@@ -22,7 +22,7 @@ import {
 import { counted } from "./dispatches";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { Notice } from "./Notice";
-import { Select } from "./primitives/Select";
+import { Select } from "./ui/select/Select";
 import { Field, SettingRow } from "./settings/components";
 import { labelOf, picking, sameLevel } from "./skillChanges";
 

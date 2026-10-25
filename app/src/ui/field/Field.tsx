@@ -125,9 +125,9 @@ interface Common<E extends HTMLElement> extends Handlers<E> {
    *  mark on its item. */
   [data: `data-${string}`]: string | number | boolean | undefined;
   /**
-   * **A box that drives a list of its own** (the palette): its role and the ARIA that ties it to
-   * the list, which the box hands on as they are. The list and its keys stay the caller's until
-   * the combobox family moves (#2906).
+   * **A box that drives a list of its own**: its role and the ARIA that ties it to the list, which
+   * the box hands on as they are. Only the combobox family writes them (`ListComboBox`,
+   * `ui/select/ComboBox`, #2906); `purlis/select-family` refuses a `role="combobox"` anywhere else.
    */
   role?: "combobox";
   "aria-expanded"?: boolean | "true" | "false";
@@ -146,8 +146,6 @@ interface OneLine extends Common<HTMLInputElement> {
   icon?: ReactNode;
   /** The box's width in characters, for a box as wide as what it holds (a table's cell). */
   columns?: number;
-  /** A `<datalist>`'s id: the suggestions the box offers. */
-  list?: string;
   /** Keep the keyboard and the caret here when the field is drawn again (R168): a name unique to
    *  this field in the window, such as `chats-filter`. */
   keepsFocus?: string;
@@ -550,7 +548,7 @@ function elementProps<E extends HTMLElement>(props: Common<E>, left: () => boole
 export function TextField(props: TextFieldProps) {
   const { described, reason } = useReason(props as OneLine & { type?: string });
   const one = described;
-  const { type = "text", size = "md", icon, columns, list, keepsFocus, inputRef, ref } = one;
+  const { type = "text", size = "md", icon, columns, keepsFocus, inputRef, ref } = one;
   const box = useRef<HTMLInputElement>(null);
   const element = useCallback(() => box.current, []);
   const { said, left } = useInline(one.value, one.validate, one.error, element);
@@ -634,7 +632,6 @@ export function TextField(props: TextFieldProps) {
               readOnly={one.isReadOnly}
               required={one.isRequired}
               size={columns}
-              list={list}
               aria-label={one["aria-label"]}
               aria-labelledby={one["aria-labelledby"]}
               aria-describedby={described}
@@ -665,7 +662,7 @@ export function TextField(props: TextFieldProps) {
         >
           {glass}
           <Tooltip tip={one.tooltip}>
-            <Input {...elementProps(one, left)} ref={refs} size={columns} list={list} />
+            <Input {...elementProps(one, left)} ref={refs} size={columns} />
           </Tooltip>
         </Group>
         {reason}
