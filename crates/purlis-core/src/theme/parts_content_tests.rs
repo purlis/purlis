@@ -524,6 +524,11 @@ fn a_family_measured_as_written_alone_falls_as_it_would_in_every_tint() {
         json!({ "button.root.primary.border-colour": "transparent", "button.root.secondary.border-colour": "transparent", "button.root.ghost.border-colour": "transparent" }),
         json!({ "button.root.border-width": 2, "button.root.grants.border-width": 2 }),
         json!({ "card.root.ask.border-width": 2, "notice.root.corner-radius": 4 }),
+        // A card's or a Notice's ground alone: one of the button family's grounds (#2912).
+        json!({ "card.root.fill": "surface.base", "card.root.border-width": 0 }),
+        json!({ "notice.root.fill": "surface.base", "card.root.ask.fill": "surface.raised" }),
+        json!({ "card.root.fill": "transparent", "notice.root.trouble.fill": "surface.raised" }),
+        json!({ "card.root.fill": "surface.base", "card.root.ask.border-colour": "surface.base" }),
         json!({ "button.root.corner-radius": "full", "button.root.padding": [2, 12] }),
     ];
     for parts in themes {

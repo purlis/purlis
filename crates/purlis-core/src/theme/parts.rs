@@ -2669,6 +2669,9 @@ fn held_from(
     let consents = MANIFEST.iter().any(|family| {
         family.variants.iter().any(|one| one.consent.is_some())
             && rules.iter().any(|rule| std::ptr::eq(rule.family, family))
+            // Built only for a family measured in them (#2912): one measured as written alone
+            // needs none.
+            && (colours(&rules, family) || every_tint())
     });
     if consents && !theme.tint.tabs().is_empty() {
         drawn_in.extend(
@@ -2712,14 +2715,7 @@ fn held_from(
         // token-level floors hold in each tint (`floors.rs`, #2526), and what the theme sets (an
         // edge's width, a size) is the same in every tint. A family whose rules set a colour is
         // measured in every tint, as before.
-        let colours = rules.iter().any(|rule| {
-            std::ptr::eq(rule.family, family)
-                && !rule.fallback
-                && rule.values.iter().any(|(property, value)| {
-                    property.is_colour() && !edge_taken_off(rule, *property, *value)
-                })
-        });
-        let drawn_in: &[ResolvedTheme] = if colours || every_tint() {
+        let drawn_in: &[ResolvedTheme] = if colours(&rules, family) || every_tint() {
             &drawn_in
         } else {
             &drawn_in[..1]
@@ -2811,6 +2807,33 @@ pub(super) fn fallen_in_every_tint(theme: &ResolvedTheme) -> Vec<Fell> {
 /// **Whether a rule's colour only takes an edge off a variant that carries no consent**: the same
 /// in every tint, and it only stands that variant further from the answers the floors hold apart
 /// from it (#2912).
+/// **Whether `family`'s rules set a colour a tint can change what its consent floors read**: any
+/// colour but an edge taken off a variant with no consent ([`edge_taken_off`]) and the ground of
+/// a family that holds answers ([`ground_held`]).
+fn colours(rules: &[Rule], family: &Family) -> bool {
+    rules.iter().any(|rule| {
+        std::ptr::eq(rule.family, family)
+            && !rule.fallback
+            && rule.values.iter().any(|(property, value)| {
+                property.is_colour()
+                    && !edge_taken_off(rule, *property, *value)
+                    && !ground_held(rule, *property)
+            })
+    })
+}
+
+/// **Whether a rule only sets the ground of a family that holds answers** (a card's or a
+/// Notice's fill at rest, #2912): that ground is one of the button family's own grounds or none
+/// (a key naming any other is refused), on which the floors hold Allow apart from the primary in
+/// every tint already; and a tint keeps each colour's luminance, so the ask's edge contrasts with
+/// it as written in every tint, while its edge, the family's own, is no nearer the accent in any.
+fn ground_held(rule: &Rule, property: Prop) -> bool {
+    property == Prop::Fill
+        && rule.part == 0
+        && rule.state.is_none()
+        && content::HOLDS_ANSWERS.contains(&rule.family.name)
+}
+
 fn edge_taken_off(rule: &Rule, property: Prop, value: PartValue) -> bool {
     property == Prop::BorderColour
         && value == PartValue::Colour(TRANSPARENT)

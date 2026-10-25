@@ -836,7 +836,7 @@ describe("a Notice in a pane", () => {
     }
     const reached = await browser.execute(() => {
       const buttons = document.querySelectorAll<HTMLElement>(
-        '[data-raised="pane-notices.e2e"] [data-placement=pane] > [data-scope=button-row] > button',
+        '[data-raised="pane-notices.e2e"][data-placement=pane] > [data-scope=button-row] > button',
       );
       const last = buttons[buttons.length - 1];
       last?.focus();
@@ -1047,7 +1047,7 @@ describe("a Notice in a pane", () => {
         underScrolls: under ? under.scrollHeight > under.clientHeight + 1 : false,
         line: box(
           document.querySelector(
-            '[data-raised="pane-notices.e2e"] [data-placement=pane] > [data-scope=button-row]',
+            '[data-raised="pane-notices.e2e"][data-placement=pane] > [data-scope=button-row]',
           ),
         ),
         pre: box(document.querySelector('[data-raised="pane-notices.e2e"] pre')),

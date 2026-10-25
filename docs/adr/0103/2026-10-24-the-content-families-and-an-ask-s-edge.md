@@ -37,7 +37,8 @@ the surface under it: a panel's fill a theme sets is held, and the other part-se
 the open #3083.
 
 **A family whose rules set no colour is measured as written** (and one whose only colour takes an
-edge off a variant that carries no consent): its consent variants are drawn in its own colours
+edge off a variant that carries no consent, or sets the ground of a card or a Notice, which is
+one of the button family's grounds and keeps its luminance in every tint): its consent variants are drawn in its own colours
 in every tint, which the token-level floors hold in each tint, so the engine does not measure
 it again per tint. Every other family is measured in every tint, as before.
 
