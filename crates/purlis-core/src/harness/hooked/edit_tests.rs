@@ -313,6 +313,33 @@ fn the_mark_written_in_a_text_with_no_crlf_is_drawn_as_itself() {
 }
 
 #[test]
+fn a_change_with_a_joiner_doing_its_job_may_be_allowed_and_one_between_latin_letters_may_not() {
+    // #3220: the window judges a change's text by purlis's one rule (D-1301), not one
+    // character at a time, so a family emoji and a Persian word read as the text they are.
+    for content in [
+        "family: \u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}\n",
+        "\u{645}\u{6CC}\u{200C}\u{62E}\u{648}\u{627}\u{647}\u{645}\n",
+    ] {
+        let payload = asked(
+            "Write",
+            serde_json::json!({"file_path": "/w/notes.md", "content": content}),
+        );
+        assert_eq!(
+            ids(&ask(Source::ClaudeCode, &payload)),
+            ["allow", "deny"],
+            "{content:?}"
+        );
+    }
+    let payload = asked(
+        "Edit",
+        serde_json::json!({"file_path": "/w/a", "old_string": "ab", "new_string": "a\u{200D}b"}),
+    );
+    let ask = ask(Source::ClaudeCode, &payload);
+    assert_eq!(not_shown(&ask), Some(Unshown::DrawnOtherwise));
+    assert_eq!(ids(&ask), ["deny"]);
+}
+
+#[test]
 fn a_tab_and_a_newline_are_drawn_as_they_are() {
     let payload = asked(
         "Write",
