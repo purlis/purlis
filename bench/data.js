@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792940293163,
+  "lastUpdate": 1792942273006,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -24570,6 +24570,48 @@ window.BENCHMARK_DATA = {
             "value": 101.3243165,
             "unit": "ms",
             "extra": "median of 5 runs: 100.477, 101.153, 101.324, 101.669, 101.681 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b7c4bf37f4277c97cd3c0d70c9d8675c1baba485",
+          "message": "stories: Chromium draws its words greyscale, so a picture is the same every run (#3212)\n\n* stories: Chromium draws its words greyscale, so a picture is the same every run\n\nThe List family's ToChooseFrom picture failed the stories job on main and\non every pull request, in a different two or three Purlis cells each time.\nIts pictures differed by one pixel of one glyph (the r of \"designer\"),\ndrawn in Chromium's subpixel (LCD) text: Chromium takes each glyph from a\ncache the whole run shares, so the glyph came out a pixel apart depending\non which stories ran before it. Alone, the file drew one picture every\ntime; in the full run it drew three different ones in eight runs.\n\nChromium is launched with --disable-lcd-text for the stories, and drew the\nsame picture in all eight runs. The Chromium baselines are redrawn by the\nupdate-baselines label.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-25T19:01:43+04:00",
+          "tree_id": "c4e6d13b0b2dd58c3dee8ee90fde5e29af5770e4",
+          "url": "https://github.com/purlis/purlis/commit/b7c4bf37f4277c97cd3c0d70c9d8675c1baba485"
+        },
+        "date": 1792942271060,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5185405000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.505, 0.515, 0.519, 0.529, 0.540 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.562418,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.363, 16.415, 16.562, 16.836, 17.315 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.555415,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.225, 103.300, 103.555, 103.625, 107.282 ms"
           }
         ]
       }
