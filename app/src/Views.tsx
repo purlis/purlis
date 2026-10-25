@@ -8,6 +8,7 @@ import {
   useEffect,
   useId,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -634,6 +635,8 @@ export function ViewPane({
             plane={plane}
             {...skillOfView(view)}
             changed={changed + onDisk}
+            offerFor={offerFor}
+            onPress={onPress}
           />
         ) : isDispatches(view) ? (
           /* The project's dispatches (#1452), read from the app's own records. A row opens its
@@ -1172,8 +1175,9 @@ function memberAt(
   return undefined;
 }
 
-/** An answer's blocks, each drawn with what a panel's is drawn with. */
-function AnsweredBlocks({
+/** An answer's blocks, each drawn with what a panel's is drawn with: a view's, and a studio
+ *  panel's on a skill's tab (ADR 0101 §6). */
+export function AnsweredBlocks({
   blocks,
   label,
   onAct,
@@ -1182,9 +1186,12 @@ function AnsweredBlocks({
   onPress,
   listHead,
   besideRow,
+  current,
 }: {
   blocks: readonly PanelBlock[];
   label: string;
+  /** The row a table marks as the one the tab was opened on, by its key: a skill run's. */
+  current?: string;
   /** What a list is headed by, from its rows: a change's Push (#474). */
   listHead?: (at: number) => ReactNode;
   /** A refusal to say beside a row, in the core's words: a Land's (#474). */
@@ -1226,6 +1233,14 @@ function AnsweredBlocks({
           <Chart key={at} chart={block} />
         ) : block.kind === "facts" ? (
           <Facts key={at} facts={block} />
+        ) : block.kind === "table" ? (
+          <Table
+            key={at}
+            table={block}
+            current={current}
+            offerFor={onPress === undefined ? undefined : lookUp}
+            onPress={onPress}
+          />
         ) : (
           <Fragment key={at}>
             {listHead?.(at)}
@@ -1267,6 +1282,89 @@ function AnsweredBlocks({
         ),
       )}
     </>
+  );
+}
+
+/** A table block, as the wire carries it. */
+export type TableBlock = Extract<PanelBlock, { kind: "table" }>;
+
+/**
+ * **Rows of words under named columns** — `purlis_core::panel::Block::Table`: a skill's Runs
+ * panel, and a studio panel's. A `<table>` with headed columns, so a screen reader reads each
+ * cell with its column; the row the tab was opened on (`current`) is marked and scrolled to.
+ * With no rows, the block's own claim and what to do, as a list's empty state says them.
+ */
+export function Table({
+  table,
+  current,
+  offerFor,
+  onPress,
+}: {
+  table: TableBlock;
+  current?: string;
+  /** The catalogue, for purlis's own tables: the empty state's way out is one of its rows. */
+  offerFor?: (id: string) => Offer | undefined;
+  onPress?: (offer: Offer) => void;
+}) {
+  const shown = useRef<HTMLTableRowElement>(null);
+  useEffect(() => {
+    shown.current?.scrollIntoView?.({ block: "nearest" });
+  }, [table, current]);
+  if (table.rows.length === 0) {
+    // **The way out is the catalogue's row** (#1156), as a list's empty state's is: drawn only
+    // while the catalogue offers it.
+    const offer = table.empty.offer === null ? undefined : offerFor?.(table.empty.offer);
+    return (
+      <EmptyState
+        variant="panel"
+        headline={table.empty.headline}
+        body={table.empty.body ?? undefined}
+        action={
+          offer === undefined || onPress === undefined ? undefined : (
+            <Button
+              variant="primary"
+              isDisabled={!offer.available}
+              tooltip={offer.available ? offer.note : offer.reason}
+              onPress={() => onPress(offer)}
+            >
+              {offer.title}
+            </Button>
+          )
+        }
+        testid="table-empty"
+      />
+    );
+  }
+  return (
+    <table className="ui-table" aria-label={table.caption}>
+      <thead>
+        <tr>
+          {table.columns.map((column, at) => (
+            /* By position: two columns may share a heading, and the order is the producer's. */
+            <th key={at} scope="col">
+              {column}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {table.rows.map((row) => {
+          const isCurrent = current !== undefined && row.key === current;
+          return (
+            <tr
+              key={row.key}
+              ref={isCurrent ? shown : undefined}
+              data-testid={`table-row-${row.key}`}
+              aria-current={isCurrent || undefined}
+            >
+              {row.cells.map((cell, at) => (
+                <td key={at}>{cell}</td>
+              ))}
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
   );
 }
 

@@ -196,3 +196,10 @@ version, with every earlier version still answered.
   waits. A private git source signs in through purlis (ADR 0100 §5).
 - `CONTEXT.md` gains the six studio capabilities, and its **Extension** and **Capability** say
   which extensions are confined.
+
+## Amendments
+
+The amendments to this decision are files of their own in [`0101/`](0101/), one per
+amendment, named `<yyyy-mm-dd>-<slug>.md`. A new amendment is a new file there and never a
+section added to this record, so two pull requests that amend it do not touch the same lines
+(#1982).

@@ -396,6 +396,43 @@ pub fn refused_address(ip: IpAddr, own: &[IpAddr]) -> bool {
             .any(|one| refused_as_itself(IpAddr::V4(one), own))
 }
 
+/// **Whether `ip` is in a private or special-use range** (RFC 6890 and its updates): every
+/// address [`refused_address`] refuses, and besides it the private networks (RFC 1918), shared
+/// address space (RFC 6598), the IETF, documentation and benchmarking ranges, the reserved and
+/// broadcast ones, unique local and discard-only IPv6 (RFC 4193, RFC 6666), and the IPv6
+/// documentation range. An IPv6 address that carries an IPv4 one (mapped, NAT64, 6to4, Teredo)
+/// is judged by that one too. What a confined extension's proxy never reaches (ADR 0101 §2).
+pub fn special_use(ip: IpAddr) -> bool {
+    if refused_address(ip, &[]) {
+        return true;
+    }
+    let v4 = |ip: Ipv4Addr| {
+        let [a, b, c, _] = ip.octets();
+        ip.is_private()
+            || (a == 100 && (64..128).contains(&b))
+            || (a == 192 && b == 0 && c == 0)
+            || (a == 192 && b == 0 && c == 2)
+            || (a == 198 && (18..20).contains(&b))
+            || (a == 198 && b == 51 && c == 100)
+            || (a == 203 && b == 0 && c == 113)
+            || (a == 192 && b == 88 && c == 99)
+            || a >= 240
+    };
+    match ip {
+        IpAddr::V4(ip) => v4(ip),
+        IpAddr::V6(ip) => {
+            let [first, second, ..] = ip.segments();
+            let carried: Vec<Ipv4Addr> =
+                carried_v4(ip).into_iter().chain(tunnelled_v4(ip)).collect();
+            (first & 0xfe00) == 0xfc00
+                || (first == 0x2001 && second == 0x0db8)
+                || (first == 0x0100 && ip.segments()[1..4] == [0, 0, 0])
+                || (first == 0x2001 && second < 0x0200)
+                || carried.into_iter().any(v4)
+        }
+    }
+}
+
 /// [`refused_address`], with a Teredo or ISATAP address judged as itself alone.
 pub(super) fn refused_as_itself(ip: IpAddr, own: &[IpAddr]) -> bool {
     if own.contains(&ip) {
