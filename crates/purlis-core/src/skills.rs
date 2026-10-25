@@ -13,7 +13,9 @@
 
 use std::path::{Path, PathBuf};
 
-pub use purlis_skills::change::{Problem, Template, check};
+pub use purlis_skills::change::{
+    BuiltInTemplates, Offer, Problem, SkillTemplate, Template, TemplateId, check,
+};
 pub use purlis_skills::{
     Argument, At, BUILT_IN_PREFIXES, Budget, Chat, Clash, Compat, DIR_IN_BUNDLE, Declared,
     Effective, Field, Finding, Fit, FromHarness, Given, Grant, HarnessSkills, Honours, LOCAL_DIR,
@@ -23,6 +25,7 @@ pub use purlis_skills::{
     grant_file, grant_of, handed_text, in_bundle, level_dir, level_shown, listing, named, named_at,
     persona_dir, read, scan, set_grant, share,
 };
+pub use purlis_skills::{SkillFiles, SkillLint};
 
 /// Skill runs: the span from the moment a skill starts to the end of the turn (SK-3).
 pub use purlis_skills::runs;
@@ -34,6 +37,7 @@ pub mod first_open;
 pub mod graph;
 pub mod history;
 pub mod lifecycle;
+pub mod studio;
 pub mod verbs;
 
 use crate::harness::{Harness, Kit};
@@ -1648,6 +1652,19 @@ impl Known {
 /// lint the editor and the command line show; a save waits only on a finding that
 /// [`LintLevel::Blocks`].
 pub fn lint(plane: &Path, level: &verbs::Level, name: &str, text: &str) -> Vec<Finding> {
+    lint_with(plane, level, name, text, &[])
+}
+
+/// [`lint`], and then what each of `more` finds: the lints of the extensions that declare
+/// `skill-lint` ([`studio::Studio::lints`]), asked through the interface purlis's own answers by
+/// (ADR 0101 §1). Theirs follow purlis's, and only warn.
+pub fn lint_with(
+    plane: &Path,
+    level: &verbs::Level,
+    name: &str,
+    text: &str,
+    more: &[&dyn purlis_skills::SkillLint],
+) -> Vec<Finding> {
     let path = verbs::text_of(plane, level, name)
         .ok()
         .map(|(path, _)| path);
@@ -1657,6 +1674,7 @@ pub fn lint(plane: &Path, level: &verbs::Level, name: &str, text: &str) -> Vec<F
         name,
         text,
         level.origin(),
+        more,
     )
 }
 
@@ -1672,6 +1690,7 @@ fn outside_lint(known: &Known, skill: &OutsideSkill) -> Vec<String> {
                 &skill.skill.name,
                 &text,
                 skill.origin,
+                &[],
             ),
             Err(why) => vec![Finding {
                 severity: purlis_skills::Severity::Warns,
@@ -1691,6 +1710,7 @@ fn linted(
     name: &str,
     text: &str,
     origin: Origin,
+    more: &[&dyn purlis_skills::SkillLint],
 ) -> Vec<Finding> {
     use purlis_skills::SkillLint;
     // Read through the skill's folder held from its root, never through a link (SK-36).
@@ -1710,18 +1730,23 @@ fn linted(
                 .collect()
         })
         .unwrap_or_default();
-    purlis_skills::BuiltInLints {
+    let files = purlis_skills::SkillFiles {
+        name,
+        text,
+        others: &others,
+        origin,
+    };
+    let mut findings = purlis_skills::BuiltInLints {
         namespace: LINKED_PLUGIN,
         plane: &known.plane,
         built_in: &known.built_in,
         has: &crate::programs::on_path,
     }
-    .findings(&purlis_skills::SkillFiles {
-        name,
-        text,
-        others: &others,
-        origin,
-    })
+    .findings(&files);
+    for lint in more {
+        findings.extend(lint.findings(&files));
+    }
+    findings
 }
 
 /// **A skill's compatibility badge on one harness** (SK-8, #2771): what the studio draws for it.

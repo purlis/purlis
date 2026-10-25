@@ -14,12 +14,13 @@
 use std::path::Path;
 
 use clap::{Args, Subcommand, ValueEnum};
+use purlis_core::executor::Executor;
 use purlis_core::harness::Harness;
 use purlis_core::skills::review::escaped as esc;
 use purlis_core::skills::source::{self, Remote, Source, VaultEntry};
 use purlis_core::skills::verbs::{self, By, Level};
 use purlis_core::skills::{
-    Deprecated, Grant, Lifecycle, StudioRow, Switch, Template, history, lifecycle,
+    Deprecated, Grant, Lifecycle, StudioRow, Switch, Template, TemplateId, history, lifecycle,
 };
 use serde_json::{Value, json};
 
@@ -94,9 +95,18 @@ pub enum SkillCommand {
         /// What it does and when to use it, in one line.
         #[arg(long, short = 'd')]
         description: String,
-        /// What it starts from.
-        #[arg(long, value_enum, default_value = "blank")]
+        /// What it starts from, of purlis's own templates.
+        #[arg(
+            long,
+            value_enum,
+            default_value = "blank",
+            conflicts_with = "extension_template"
+        )]
         template: TemplateArg,
+        /// Start from a template an extension offers instead: the extension's id, then the
+        /// template's.
+        #[arg(long, num_args = 2, value_names = ["EXTENSION", "TEMPLATE"])]
+        extension_template: Option<Vec<String>>,
         #[command(flatten)]
         at: LevelArgs,
     },
@@ -329,7 +339,7 @@ impl LevelArgs {
     }
 }
 
-/// A new skill's template, as the command line names it.
+/// One of purlis's own templates, as the command line names it.
 #[derive(Clone, Copy, ValueEnum)]
 pub enum TemplateArg {
     Blank,
@@ -502,14 +512,35 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             name,
             description,
             template,
+            extension_template,
             at,
-        } => done(verbs::create(
-            &mut cx,
-            &at.level(),
-            &name,
-            &description,
-            template.into(),
-        )),
+        } => {
+            let template = match extension_template.as_deref() {
+                Some([extension, template]) => TemplateId::Extension {
+                    extension: extension.clone(),
+                    template: template.clone(),
+                },
+                _ => TemplateId::BuiltIn(template.into()),
+            };
+            // purlis's own templates, and each extension's that declares `skill-template`, asked
+            // through the executor's gate as the studio asks them (ADR 0101).
+            let executor =
+                Executor::with_built_in(purlis_core::extension::BuiltIn::of_this_program());
+            done(purlis_core::skills::studio::with_studio(
+                &executor,
+                root,
+                |studio| {
+                    verbs::create(
+                        &mut cx,
+                        &at.level(),
+                        &name,
+                        &description,
+                        &purlis_core::skills::studio::Templates { studio },
+                        &template,
+                    )
+                },
+            ))
+        }
         SkillCommand::Edit { name, from, at } => {
             let level = at.level();
             let (_, was) = match verbs::text_of(root, &level, &name) {

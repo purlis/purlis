@@ -1,0 +1,36 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "studio-probe"
+version.workspace = true
+description = "Test-only: an extension that adds a skill source, a lint, a template and a panel to the Skill studio, and tries to reach past its sandbox, so the studio capabilities and their confinement are proven through the real executor"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+# **No dependency on purlis-core**, for extension-probe's reason: an extension is written the way
+# a stranger would write one, knowing the protocol and nothing of purlis's insides.
+[dependencies]
+serde_json.workspace = true
+
+[dev-dependencies]
+purlis-core.workspace = true
+purlis-skills.workspace = true
+# The test binary applies the sandbox on Linux as `purlis _sandbox` does: the executor starts a
+# confined program under its own running program.
+purlis-linux-sandbox.workspace = true
+tempfile.workspace = true
+
+# The confinement is tried through the real executor, which on Linux applies the sandbox with
+# its own running program (`<program> _sandbox …`): here that is this test binary, so it serves
+# the wrap before anything else, and runs its tests with a runner of its own.
+[[test]]
+name = "a_studio_extension_is_confined"
+path = "tests/a_studio_extension_is_confined.rs"
+harness = false
+
+[lints]
+workspace = true

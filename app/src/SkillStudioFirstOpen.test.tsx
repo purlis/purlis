@@ -90,7 +90,8 @@ function core(
     if (cmd === "skills_deleted" || cmd === "skill_drafts" || cmd === "skill_sources") return [];
     if (cmd === "skill_sources_offered") return offered;
     if (cmd === "skill_updates") return { offers: [], unconfirmed: [], unasked: [] };
-    if (cmd === "skill_templates") return [{ id: "blank", label: "Blank", about: "Empty." }];
+    if (cmd === "skill_templates")
+      return [{ id: { kind: "blank" }, label: "Blank", about: "Empty." }];
     return { notes: [] };
   });
   return asked;

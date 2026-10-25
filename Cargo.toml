@@ -3,10 +3,10 @@
 
 [workspace]
 resolver = "3"
-members = ["crates/purlis-core", "crates/purlis-cli", "crates/fake-harness", "crates/persona-statistics", "crates/extension-probe", "crates/release-manifest", "crates/changelog", "crates/stand-in", "crates/session-protocol", "crates/same-user", "crates/terminal", "crates/browser-engine", "crates/host", "crates/linux-sandbox", "crates/skills", "crates/unicode", "app/src-tauri"]
+members = ["crates/purlis-core", "crates/purlis-cli", "crates/fake-harness", "crates/persona-statistics", "crates/extension-probe", "crates/studio-probe", "crates/release-manifest", "crates/changelog", "crates/stand-in", "crates/session-protocol", "crates/same-user", "crates/terminal", "crates/browser-engine", "crates/host", "crates/linux-sandbox", "crates/skills", "crates/unicode", "app/src-tauri"]
 # Plain `cargo test` and `cargo clippy` cover the crates that need no built frontend.
 # The app crate compiles `app/dist` into itself, so it is checked through `npm run tauri`.
-default-members = ["crates/purlis-core", "crates/purlis-cli", "crates/fake-harness", "crates/persona-statistics", "crates/extension-probe", "crates/release-manifest", "crates/changelog", "crates/stand-in", "crates/session-protocol", "crates/same-user", "crates/terminal", "crates/browser-engine", "crates/host", "crates/linux-sandbox", "crates/skills", "crates/unicode"]
+default-members = ["crates/purlis-core", "crates/purlis-cli", "crates/fake-harness", "crates/persona-statistics", "crates/extension-probe", "crates/studio-probe", "crates/release-manifest", "crates/changelog", "crates/stand-in", "crates/session-protocol", "crates/same-user", "crates/terminal", "crates/browser-engine", "crates/host", "crates/linux-sandbox", "crates/skills", "crates/unicode"]
 
 [workspace.package]
 version = "0.4.2"

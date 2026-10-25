@@ -401,7 +401,6 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
             "chats_that_would_not_start",
             "chats_plane_updated",
             "skill_move_needs_grant",
-            "skill_templates",
             "chat_states",
             "chat_doings",
             // The skill run open in each chat (SK-3): in memory.

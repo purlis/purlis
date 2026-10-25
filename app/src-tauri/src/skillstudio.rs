@@ -797,6 +797,102 @@ pub(crate) async fn skill_runs(
     .await
 }
 
+/// **Which panel on a skill's tab**, as the window holds it: purlis's Runs panel, or one an
+/// extension adds, by its id and the panel's.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum SkillPanelKey {
+    Runs,
+    Extension { extension: String, panel: String },
+}
+
+/// The word [`SkillPanelKey::Runs`] is told to the window by, which it names that panel by.
+pub(crate) const RUNS_PANEL: &str = "runs";
+
+impl From<purlis_core::skills::studio::PanelKey> for SkillPanelKey {
+    fn from(key: purlis_core::skills::studio::PanelKey) -> SkillPanelKey {
+        use purlis_core::skills::studio::PanelKey;
+        match key {
+            PanelKey::Runs => SkillPanelKey::Runs,
+            PanelKey::Extension { extension, panel } => {
+                SkillPanelKey::Extension { extension, panel }
+            }
+        }
+    }
+}
+
+/// **One panel on a skill's tab** (ADR 0101 §6), as the window draws it: purlis's Runs panel,
+/// then each panel an extension that declares `studio-panel` adds, each answered in panel blocks
+/// or refused with the core's sentence.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct SkillPanel {
+    pub key: SkillPanelKey,
+    pub title: String,
+    /// The extension that adds it, by name, or null for purlis's own.
+    pub by: Option<String>,
+    pub blocks: Vec<crate::panels::PanelBlock>,
+    /// Why it has no blocks, in the core's words, or null where it answered.
+    pub refused: Option<String>,
+}
+
+/// The panels on skill `skill`'s tab in the project at `root`, asked with `studio`.
+pub(crate) fn panels(
+    root: &std::path::Path,
+    skill: &str,
+    studio: Option<purlis_core::skills::studio::Studio<'_>>,
+) -> Vec<SkillPanel> {
+    use purlis_core::skills::studio::{Answered, RunsPanel};
+    let answered = match studio {
+        Some(studio) => studio.panels(root, skill),
+        None => vec![Answered::of(&RunsPanel { plane: root }, skill)],
+    };
+    answered
+        .into_iter()
+        .map(|panel| {
+            let (blocks, refused) = match panel.blocks {
+                Ok(blocks) => (
+                    blocks.iter().map(crate::panels::PanelBlock::from).collect(),
+                    None,
+                ),
+                Err(why) => (Vec::new(), Some(why)),
+            };
+            SkillPanel {
+                key: panel.key.into(),
+                title: panel.title,
+                by: panel.by,
+                blocks,
+                refused,
+            }
+        })
+        .collect()
+}
+
+/// **The panels on skill `skill`'s tab** (ADR 0101 §6): purlis's Runs panel, which lists every
+/// run of the skill, newest first, then each extension's. None while the flag is off. On a
+/// blocking thread, as it reads the project's skill log and asks each extension.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_panels(
+    views: tauri::State<'_, crate::views::Views>,
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    skill: String,
+) -> Result<Vec<SkillPanel>, String> {
+    let held = planes.held(&plane)?;
+    let executor = views.executor();
+    crate::off_the_window("reading the skill's panels", move || {
+        if !purlis_core::skills::studio_on_here() {
+            return Ok(Vec::new());
+        }
+        Ok(purlis_core::skills::studio::with_studio(
+            &executor,
+            held.root(),
+            |studio| panels(held.root(), &skill, studio),
+        ))
+    })
+    .await
+}
+
 /// Whether the Skill studio is on in this window: this machine's flag, or the variable over it.
 #[tauri::command]
 #[specta::specta]

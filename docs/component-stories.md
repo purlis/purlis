@@ -119,6 +119,11 @@ npm run storybook                        # the stories in Storybook, on http://l
 on any machine but the pinned image it would differ from its baseline without anything being
 wrong. A local run checks rendering, the keyboard and axe, and takes no picture.
 
+**Chromium draws its words greyscale** in every story run (`--disable-lcd-text`,
+`app/.storybook/vitest.project.ts`). Its subpixel text takes each glyph from a cache the whole
+run shares, so a picture could differ by a pixel with the stories that ran before it; greyscale
+text draws the same each time.
+
 **What a failure says.** In CI, each story that fails is one annotation on the `stories` check,
 titled `<story> in <browser>, <cell>`: its file, the gate it failed (`renders`, `keyboard`,
 `accessibility` or `screenshot`), the first line of why, and the axe rules it broke. It says the

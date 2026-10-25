@@ -7257,6 +7257,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "studio-probe"
+version = "0.4.2"
+dependencies = [
+ "purlis-core",
+ "purlis-linux-sandbox",
+ "purlis-skills",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "subtle"
 version = "2.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

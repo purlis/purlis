@@ -762,6 +762,81 @@ const ORDINARY: Answers = {
     used_by: ["release"],
     uses_cut: false,
   },
+  // The skill tab's panels, as the core answers them (ADR 0101 §6): the Runs panel's table.
+  skill_panels: [
+    {
+      key: { kind: "runs" },
+      title: "Runs",
+      by: null,
+      refused: null,
+      blocks: [
+        {
+          kind: "note",
+          text: "Each time a chat used the skill, from then until its turn ended. What happened inside it, never a verdict.",
+          tone: "plain",
+        },
+        {
+          kind: "table",
+          caption: "Runs of deploy",
+          columns: [
+            "Started",
+            "Persona",
+            "Ran on",
+            "Started by",
+            "Ended",
+            "Tool calls",
+            "Errors",
+            "Refused",
+            "Asks",
+            "Tokens",
+            "Time",
+            "Nested",
+          ],
+          rows: [
+            {
+              key: "01JBRUN0000000000000000001",
+              cells: [
+                "2026-10-20 10:00 UTC",
+                "ops",
+                "Claude Code",
+                "The chat started it",
+                "With its turn",
+                "7",
+                "1",
+                "2",
+                "1",
+                "5300",
+                "12 s",
+                "",
+              ],
+            },
+            {
+              key: "before-1",
+              cells: [
+                "2026-03-02 09:00 UTC",
+                "No persona",
+                "Not recorded",
+                "From before runs were recorded",
+                "Not recorded",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+              ],
+            },
+          ],
+          empty: {
+            headline: "No runs of deploy yet",
+            body: "A run starts when a chat uses the skill, and ends with its turn.",
+            offer: "chat.new",
+          },
+        },
+      ],
+    },
+  ],
   skill_runs: [
     {
       id: "01JBRUN0000000000000000001",
@@ -1337,6 +1412,23 @@ const STATES: State[] = [
     view: { from: null, view: "skill", key: "deploy" },
     answers: {
       skill_runs: [],
+      skill_panels: [
+        {
+          key: { kind: "runs" },
+          title: "Runs",
+          by: null,
+          refused: null,
+          blocks: [
+            {
+              kind: "table",
+              caption: "Runs of deploy",
+              columns: ["Started"],
+              rows: [],
+              empty: { headline: "No runs of deploy yet", body: null, offer: "chat.new" },
+            },
+          ],
+        },
+      ],
       skill_stats: { by_harness: [], by_persona: [], by_workspace: [] },
     },
     drawn: /No runs of deploy yet/,
