@@ -159,9 +159,15 @@ describe("a tint", () => {
     const theme = classicAppearances().find((one) => one.id === id)?.theme as Theme;
     for (const { name: colour, hue } of theme.tint.hues) {
       const accent = tinted(theme, colour).values["accent.base"];
+      // Where it gives way to the waiting amber (#3130), the accent is drawn as written or near a
+      // grey, which has no hue to keep.
+      const own = hueOf(accent);
+      if (accent === theme.values["accent.base"] || own === undefined) continue;
       // Within a few degrees: the hex is rounded to eight bits a channel.
-      // Within a few more where the tint gave less colour to keep the accent apart from danger.
-      expect(apart(hueOf(accent) ?? Number.NaN, hue), `${colour}: ${accent}`).toBeLessThan(6);
+      // Within a few more where the tint gave less colour to keep it apart, eight bits a channel
+      // turning a quiet colour's hue further.
+      const within = accent === tintHex(theme.values["accent.base"], hue) ? 6 : 25;
+      expect(apart(own, hue), `${colour}: ${accent}`).toBeLessThan(within);
     }
   });
 
