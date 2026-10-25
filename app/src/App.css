@@ -2060,22 +2060,14 @@ button.show-more:focus-visible {
    surface edged in the waiting colour (`.ui-inline-surface-waiting`, #1855), so the two read as
    one thing; this places it. */
 /* **Never taller than the pane** (#1483's dispatch question in a short pane): the box may
-   shrink in the stack, the line and its answers never do, and what a way out opened under them
-   gives way first, its brief before anything else, then by scrolling. Every answer stays whole
-   and reachable, and nothing is drawn over another.
-
-   **The box is never shorter than its line** (#3144): two rows, the line as tall as its
-   answers wrap to and what was opened taking what is left, down to nothing. So the box's least
-   height (`min-content`) is the line's, a narrow pane whose answers wrap onto more rows makes
-   the box taller rather than drawing an answer past its edge, and past the row's height the
-   stack scrolls (`.pane-notices`). */
+   shrink in the stack (`flex` and `min-height: 0`), the line and its answers never do, and
+   what a way out opened under them gives way first, its brief before anything else, then by
+   scrolling. Every answer stays whole and reachable, and nothing is drawn over another. */
 .notice-pane-box {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   flex: 0 1 auto;
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, auto);
-  align-content: start;
-  min-height: min-content;
+  min-height: 0;
   min-width: 0;
   max-width: 100%;
   font-size: var(--font-size-xs);

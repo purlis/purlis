@@ -9,7 +9,7 @@
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
-import { expect } from "storybook/test";
+import { expect, waitFor } from "storybook/test";
 import {
   Brain,
   FolderGit2,
@@ -178,8 +178,10 @@ export const TheLeftColumn: Story = {
     // The keyboard let go, so the picture shows the chosen item at rest: Classic's accent edge
     // along its left, not under the focus ring.
     const chosen = context.canvas.getAllByRole("button")[1];
-    chosen.blur();
-    await expect(chosen).not.toHaveAttribute("data-focus-visible");
+    await expect(chosen).toHaveAttribute("data-selected");
+    (chosen.ownerDocument.activeElement as HTMLElement | null)?.blur();
+    // The item hears its blur and draws it on React's next commit, not in the same task.
+    await waitFor(() => expect(chosen).not.toHaveAttribute("data-focus-visible"));
     await expect(chosen).toHaveAttribute("data-selected");
   },
 };
