@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792927301357,
+  "lastUpdate": 1792931897261,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -14504,6 +14504,42 @@ window.BENCHMARK_DATA = {
             "value": 701.7,
             "unit": "MB",
             "extra": "median of 6 samples: 662.6, 686.9, 694.1, 709.3, 710.1, 765.1 MB; window 431.7 MB, session host 270.1 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2d89a14d7a21dda4a28de816da58ea3ac32ac8e7",
+          "message": "SK-35: a skill delete cut short between removal and commit is finished or put back (#3204)\n\n* SK-35: a skill delete cut short between removal and commit is finished or put back\n\nA delete by git holds a note locked in the state folder's skills-deleting/\nwhile it runs. verbs::interrupted finds a note nothing holds, takes the\nskill's removal out of the index, commits it where its commit can land now\nor puts the files back as HEAD has them, and says which in one line. The\nSkill studio runs it as it opens (skill_deletes_cut_short) and purlis skill\nbefore any change.\n\nCloses #3013\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-35 review: keep an unsettled delete's note, test every branch, deny chats the delete state\n\n- A delete neither committed nor put back keeps its note for the next start,\n  and recovery that can do neither warns and keeps it too.\n- The studio shows such a line in the trouble tone (skill_deletes_cut_short\n  answers settled and unsettled lines).\n- Tests: the still-here branch, planted and broken notes, a dead writer's\n  dot-note, and both unsettled paths through the cut hook.\n- Windows writes a dot-name and renames it into place, opening the reparse\n  point itself.\n- A chat's sandbox denies writing skills-deleting/ and skills-deleted/.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-25T15:50:00+04:00",
+          "tree_id": "548875810eacc62aedf9c464ea1187a55294c580",
+          "url": "https://github.com/purlis/purlis/commit/2d89a14d7a21dda4a28de816da58ea3ac32ac8e7"
+        },
+        "date": 1792931895143,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1593.7,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1466.3, 1593.7, 1723.5 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 731.2,
+            "unit": "MB",
+            "extra": "median of 6 samples: 668.1, 701.4, 728.9, 733.6, 734.4, 815.4 MB; window 431.9 MB, session host 299.3 MB"
           }
         ]
       }
