@@ -311,6 +311,12 @@ fn a_selector_or_a_tag_outside_an_emoji_sequence_is_still_marked() {
 /// (U+2300 DIAMETER SIGN, U+2B00 NORTH EAST WHITE ARROW) take no selector.
 #[test]
 fn a_symbol_in_an_emoji_block_that_is_no_emoji_takes_no_selector() {
-    assert_eq!(marked("\u{2300}\u{FE0F}", Breaks::Marked), "\u{2300}⟦U+FE0F⟧");
-    assert_eq!(marked("\u{2B00}\u{FE0F}", Breaks::Marked), "\u{2B00}⟦U+FE0F⟧");
+    assert_eq!(
+        marked("\u{2300}\u{FE0F}", Breaks::Marked),
+        "\u{2300}⟦U+FE0F⟧"
+    );
+    assert_eq!(
+        marked("\u{2B00}\u{FE0F}", Breaks::Marked),
+        "\u{2B00}⟦U+FE0F⟧"
+    );
 }
