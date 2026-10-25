@@ -97,7 +97,14 @@ function Rows({ names, action }: { names: readonly string[]; action: string }) {
         <li
           key={name}
           className="panel-row"
-          style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}
+          // A row's own step above and below, so its button is a whole target from the next
+          // one's in every density (WCAG 2.5.8).
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            paddingBlock: "var(--space-2)",
+          }}
         >
           <span className="row-text">{name}</span>
           <Button size="sm">{action}</Button>
@@ -183,7 +190,20 @@ function Body({ shown }: { shown: Shown }): ReactNode {
           filter=""
           onFilterChange={() => undefined}
         >
-          {["General", "Chats", "Sandbox", "Forges", "Theme", "Limits"].map((label) => (
+          {[
+            "General",
+            "Chats",
+            "Sandbox",
+            "Forges",
+            "Theme",
+            "Limits",
+            "Editors",
+            "Profiles",
+            "Personas",
+            "Workspaces",
+            "Skills",
+            "Saving",
+          ].map((label) => (
             <SettingGroup
               key={label}
               label={label}
