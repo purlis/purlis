@@ -546,17 +546,21 @@ export const Settings: Story = {
 };
 
 /**
- * **Settings with the pane's actions drawn**, as the keyboard or the pointer brings them: the
+ * **Settings with the pane's actions drawn**, as the pointer over the pane brings them: the
  * chat pane's cluster at the top right, at the end of the levels' row and over nothing.
  */
 export const SettingsActionsShown: Story = {
   args: { shown: "settings" },
-  play: async ({ canvas, canvasElement }) => {
+  play: async ({ canvas, canvasElement, userEvent }) => {
     await oneWithItsTab(canvasElement, "Settings");
+    atRest();
+    // The pointer over the view, as a person brings the actions: drawn, with no tooltip, since
+    // no one of them is pointed at.
+    const view = canvasElement.querySelector(".view-pane") as HTMLElement;
+    await userEvent.hover(view);
     const split = canvas.getByRole("button", { name: "Split right" });
-    split.focus();
     await waitFor(() => expect(split).toBeVisible());
-    expectFocusInSight();
+    await waitFor(() => expect(getComputedStyle(split).opacity).toBe("1"));
     expect(pressableUnderTheActions(canvasElement)).toEqual([]);
   },
 };
