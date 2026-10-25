@@ -926,6 +926,54 @@ mod tests {
         assert!(cannot_report.is_empty());
     }
 
+    /// SK-16 (the operator's ruling of 2026-10-26): a grade's chat loads purlis's MCP server alone,
+    /// started to answer only its read tools; any other chat loads the person's servers too.
+    #[test]
+    fn a_grades_chat_loads_purlis_s_server_alone_with_its_read_tools() {
+        let empty = tempfile::tempdir().expect("a directory");
+        let armed = |graded: bool| {
+            let StateHooks::ThisSessionOnly { args, .. } = adapter().arm(
+                Kit {
+                    skills: None,
+                    binary: std::path::Path::new("/bin/charter"),
+                    plugin: Some(std::path::Path::new("/app/plugin")),
+                    persona: None,
+                    graded,
+                },
+                Some(empty.path()),
+                &crate::harness_plugin::Chosen::new(),
+                None,
+            ) else {
+                panic!("armed per session");
+            };
+            args
+        };
+        let graded = armed(true);
+        assert!(
+            graded.contains(&"--strict-mcp-config".to_owned()),
+            "{graded:?}"
+        );
+        let at = graded
+            .iter()
+            .position(|arg| arg == "--mcp-config")
+            .expect("--mcp-config");
+        let config: serde_json::Value = serde_json::from_str(&graded[at + 1]).expect("JSON");
+        assert_eq!(
+            config["mcpServers"][crate::chattools::SERVER]["args"],
+            serde_json::json!([crate::chattools::SUBCOMMAND, crate::chattools::GRADED_ARG])
+        );
+        let ordinary = armed(false);
+        assert!(
+            !ordinary.contains(&"--strict-mcp-config".to_owned()),
+            "{ordinary:?}"
+        );
+        assert!(
+            !ordinary
+                .iter()
+                .any(|arg| arg.contains(crate::chattools::GRADED_ARG))
+        );
+    }
+
     #[test]
     fn a_claude_code_chat_is_handed_charter_s_mcp_server_for_that_chat_alone() {
         // HP-7: `--mcp-config` loads a server for this session and writes nothing.
