@@ -40,22 +40,27 @@ const FAINT: ReadonlySet<string> = new Set([
   '[data-part="pin"][data-scope="titlebar"]',
   '[data-part="row"][data-scope="titlebar"][data-unavailable]',
   // A menu's row that cannot run (#2909), and an option of a select's list that cannot be
-  // chosen.
+  // chosen, which is a menu's row (#2906).
   '[data-scope="menu"][data-part="root"][data-disabled]',
   '[data-scope="menu"][data-part="root"][data-unavailable]',
-  ".ui-menu-item[data-disabled]",
   // A list's row that cannot be used (#2911).
   '[data-scope="list"][data-part="root"][data-disabled]',
   '[data-scope="list"][data-part="root"][data-unavailable]',
   // A tree's row that cannot be used (#2911).
   '[data-scope="tree"][data-part="root"][data-disabled]',
+  // An unavailable select's or combobox's words and marks (#2906).
+  '[data-scope="select"][data-part="root"][data-disabled]',
+  '[data-scope="combobox"][data-part="root"][data-disabled]',
+  '[data-scope="select"][data-part="root"][data-disabled] [data-part="chevron"]',
+  '[data-scope="select"][data-part="root"][data-disabled] [data-part="placeholder"]',
+  '[data-scope="combobox"][data-part="root"][data-disabled] [data-part="chevron"]',
 ]);
 
 /** Informational words, each drawn in quiet: line numbers, placeholders, counts, paths, group
  *  labels and the meta role (an age, a kind, a count, a shortcut). */
 const QUIET: readonly string[] = [
   ".ui-text-meta",
-  ".ui-select[data-placeholder]",
+  '[data-scope="select"][data-part="placeholder"]',
   ".pane-find-count",
   ".ui-level-count",
   // A status cell's word before its count (#2913).

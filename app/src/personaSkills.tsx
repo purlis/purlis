@@ -5,7 +5,8 @@ import { useId, useState } from "react";
 import { commands, type PersonaSkillChange, type PlaneId } from "./bindings";
 import { Notice } from "./Notice";
 import { Button } from "./ui/button/Button";
-import { Form, TextField } from "./ui/field/Field";
+import { Form } from "./ui/field/Field";
+import { ComboBox } from "./ui/select/ComboBox";
 
 /**
  * **A persona's skills in the Skill studio** (SK-5, #2768; spec decision 35): the studio filtered
@@ -52,7 +53,6 @@ export function PersonaSkillAdd({
   const [busy, setBusy] = useState(false);
   const [refused, setRefused] = useState<string>();
   const input = useId();
-  const suggestions = useId();
 
   const add = async () => {
     const name = written.trim();
@@ -76,10 +76,10 @@ export function PersonaSkillAdd({
         void add();
       }}
     >
-      <TextField
+      <ComboBox
         id={input}
         label="Add a skill"
-        list={suggestions}
+        suggestions={known}
         value={written}
         placeholder="Its name, as the Skill studio lists it"
         isDisabled={busy || readOnly !== undefined}
@@ -87,11 +87,6 @@ export function PersonaSkillAdd({
         onChange={setWritten}
         data-testid="persona-skill-name"
       />
-      <datalist id={suggestions}>
-        {[...new Set(known)].map((name) => (
-          <option key={name} value={name} />
-        ))}
-      </datalist>
       <Button type="submit" isDisabled={busy || readOnly !== undefined || written.trim() === ""}>
         {busy ? "Adding…" : "Add"}
       </Button>

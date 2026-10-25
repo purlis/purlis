@@ -2189,8 +2189,8 @@ fn theme_parts_prints_every_family_part_state_and_property_as_json() {
     );
     assert_eq!(json["families"][0]["name"], "button");
     // The window's own families (#2913), the tooltip (#2908), the popover and the menu (#2909),
-    // the project rail (#2915), the list and the tree (#2911) and the title bar's pinned workspaces
-    // (#2916).
+    // the project rail (#2915), the list and the tree (#2911), the title bar's pinned workspaces
+    // (#2916), the select and the combobox (#2906).
     let names: Vec<&str> = json["families"]
         .as_array()
         .unwrap()
@@ -2210,6 +2210,8 @@ fn theme_parts_prints_every_family_part_state_and_property_as_json() {
         "activity",
         "list",
         "titlebar",
+        "select",
+        "combobox",
         "tree",
     ] {
         assert!(names.contains(&family), "{family}: {names:?}");

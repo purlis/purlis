@@ -11,7 +11,7 @@ import type { CreateProgress, ForgeOwners } from "./bindings";
 import { LIVES_HERE, LivesHere } from "./LivesHere";
 import { settingsPageIn } from "./PublishProject";
 import { ReadOnlySaid } from "./ReadOnlyLine";
-import { pickIn } from "./primitives/select.testkit";
+import { pickIn } from "./ui/select/select.testkit";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
