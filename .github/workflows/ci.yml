@@ -111,6 +111,10 @@ jobs:
           echo '@{HOMEDIRS}+=/tmp/' | sudo tee /etc/apparmor.d/tunables/home.d/purlis-ci >/dev/null
           sudo install -m 0644 crates/purlis-core/src/browsers/purlis-engine.apparmor /etc/apparmor.d/purlis-engine
           sudo apparmor_parser -r -T -W /etc/apparmor.d/purlis-engine
+      # The names the studio probe's network tests look up, from the hosts file, not outside DNS
+      # (#3261): see the action for which names and why.
+      - name: The studio probe's names
+        uses: ./.github/actions/studio-probe-names
       # Built in a step of its own, so the run's step timings say how much of this job is
       # compiling and linking the test binaries and how much is running them, with no log to read.
       - name: Build the tests
@@ -791,6 +795,10 @@ jobs:
       - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
+      # The names the studio probe's network tests look up, from the hosts file, not outside DNS
+      # (#3261): see the action for which names and why.
+      - name: The studio probe's names
+        uses: ./.github/actions/studio-probe-names
       - name: Build the tests
         run: cargo nextest run --locked -p purlis-core -p purlis-terminal -p purlis-app -p purlis-browser-engine -p studio-probe --no-run
       - name: Run the tests
@@ -856,7 +864,7 @@ jobs:
         id: scope
         run: |
           changed=$(git diff --name-only HEAD^1 HEAD)
-          if echo "$changed" | grep -qE '^(crates/studio-probe/|crates/purlis-core/src/(executor|extension)(\.rs|/)|crates/purlis-core/src/sandbox/(seatbelt|egress|reach|wrapper|hosts)(\.rs|/)|Cargo\.lock$|rust-toolchain\.toml$)'; then
+          if echo "$changed" | grep -qE '^(crates/studio-probe/|\.github/actions/studio-probe-names/|crates/purlis-core/src/(executor|extension)(\.rs|/)|crates/purlis-core/src/sandbox/(seatbelt|egress|reach|wrapper|hosts)(\.rs|/)|Cargo\.lock$|rust-toolchain\.toml$)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "::notice::the studio confinement has not changed; not run"
@@ -867,6 +875,11 @@ jobs:
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           save-if: false
+      # The names the studio probe's network tests look up, from the hosts file, not outside DNS
+      # (#3261): see the action for which names and why.
+      - name: The studio probe's names
+        if: steps.scope.outputs.run == 'true'
+        uses: ./.github/actions/studio-probe-names
       - name: The studio probe, confined by Seatbelt
         if: steps.scope.outputs.run == 'true'
         run: cargo test --locked -p studio-probe

@@ -118,7 +118,29 @@ impl Probe {
         self.asked(words)
             .unwrap_or_else(|why| panic!("purlis did not run the probe's try: {why}"))
     }
+
+    /// What the probe saw trying `words`, asked again while `settled` says the answer is not
+    /// yet one the network let through: the proxy looks each name up itself, and a runner's
+    /// resolver drops a lookup now and then (#3261). Only a positive answer is waited for, so
+    /// a broken confinement still fails every try.
+    fn tried_until(&self, words: &[&str], settled: impl Fn(&str) -> bool) -> String {
+        let mut said = self.tried(words);
+        for _ in 1..TRIES {
+            if settled(&said) {
+                break;
+            }
+            eprintln!("{words:?}: the probe said {said:?}, so it is asked again");
+            std::thread::sleep(BETWEEN_TRIES);
+            said = self.tried(words);
+        }
+        said
+    }
 }
+
+/// How many times a test through the network looks a name up, or asks the probe, before it
+/// says what it found, and how long apart: a runner's resolver drops a lookup now and then.
+const TRIES: u32 = 5;
+const BETWEEN_TRIES: std::time::Duration = std::time::Duration::from_secs(2);
 
 fn shown(path: &Path) -> String {
     path.display().to_string()
@@ -363,11 +385,13 @@ fn it_writes_its_state_folder_and_nothing_else() {
 
 fn it_reaches_its_declared_host_and_no_other() {
     let probe = Probe::approved();
-    // Declared: the proxy carries it, and finds no such host (`.invalid` never resolves).
-    let declared = probe.tried(&["proxy", "probe.invalid"]);
+    // Declared: the proxy carries it, and finds no such host (`.invalid` never resolves). A
+    // resolver that does not answer leaves the proxy's status line unsaid; any status line is
+    // the proxy's verdict, and only a 502 says it carried the host.
+    let declared = probe.tried_until(&["proxy", "probe.invalid"], |said| said.contains("HTTP/"));
     assert!(
         declared.contains("502"),
-        "its declared host is carried: {declared}"
+        "its declared host is carried: {declared} (asked up to {TRIES} times)"
     );
     let undeclared = probe.tried(&["proxy", "example.org"]);
     assert!(
@@ -405,24 +429,40 @@ fn may_skip(why: &str) {
     eprintln!("{why}, so it is not tried");
 }
 
-/// Whether this machine looks `name` up to `address`: what a test through the network needs
-/// before it can say anything of the proxy.
-fn resolves_to(name: &str, address: &str) -> bool {
+/// The addresses this machine looks `name` up to, looked up again while it finds none: what a
+/// test through the network needs before it can say anything of the proxy.
+fn looked_up(name: &str) -> Vec<std::net::IpAddr> {
     use std::net::ToSocketAddrs;
-    let wanted: std::net::IpAddr = address.parse().expect("an address");
-    (name, 443)
-        .to_socket_addrs()
-        .is_ok_and(|mut found| found.any(|at| at.ip() == wanted))
+    for tried in 1..=TRIES {
+        let found: Vec<std::net::IpAddr> = (name, 443)
+            .to_socket_addrs()
+            .map(|found| found.map(|at| at.ip()).collect())
+            .unwrap_or_default();
+        if !found.is_empty() || tried == TRIES {
+            return found;
+        }
+        std::thread::sleep(BETWEEN_TRIES);
+    }
+    Vec::new()
 }
+
+/// Where CI provides the names these tests look up, so none of them waits on outside DNS.
+const NAMES_FROM: &str = "the job's hosts file (.github/actions/studio-probe-names)";
 
 fn a_declared_name_that_resolves_to_a_private_network_is_not_reached() {
     let probe = Probe::approved();
+    // Names under `.test` (RFC 6761), which no outside resolver answers: CI writes them into
+    // its hosts file, and a machine without those lines passes over this test.
     for (name, address) in [
-        ("10.0.0.1.sslip.io", "10.0.0.1"),
-        ("100.64.0.1.sslip.io", "100.64.0.1"),
+        ("ten.studio-probe.test", "10.0.0.1"),
+        ("cgnat.studio-probe.test", "100.64.0.1"),
     ] {
-        if !resolves_to(name, address) {
-            may_skip(&format!("{name} does not resolve to {address} here"));
+        let wanted: std::net::IpAddr = address.parse().expect("an address");
+        if !looked_up(name).contains(&wanted) {
+            may_skip(&format!(
+                "{name} does not resolve to {address} here after {TRIES} lookups; on CI it \
+                 comes from {NAMES_FROM}"
+            ));
             continue;
         }
         let said = probe.tried(&["proxy", name]);
@@ -434,16 +474,23 @@ fn a_declared_name_that_resolves_to_a_private_network_is_not_reached() {
 }
 
 fn a_tunnel_is_carried_only_where_its_hello_names_its_host() {
-    use std::net::ToSocketAddrs;
     let probe = Probe::approved();
-    if ("example.com", 443).to_socket_addrs().is_err() {
-        may_skip("example.com does not resolve here");
+    // A real TLS server is needed, and the proxy reaches nothing on this machine or a private
+    // network, so this one goes out to example.com. CI pins its addresses in its hosts file
+    // when the job starts, so the lookups here and in the proxy are local.
+    if looked_up("example.com").is_empty() {
+        may_skip(&format!(
+            "example.com does not resolve here after {TRIES} lookups; on CI it comes from \
+             {NAMES_FROM}"
+        ));
         return;
     }
-    let named = probe.tried(&["hello", "example.com", "example.com"]);
+    let carried = |said: &str| said.contains(" 200 ") && !said.ends_with("; 0 bytes came back");
+    let named = probe.tried_until(&["hello", "example.com", "example.com"], carried);
     assert!(
-        named.contains(" 200 ") && !named.ends_with("; 0 bytes came back"),
-        "a hello naming the tunnel's own host was not carried: {named}"
+        carried(&named),
+        "a hello naming the tunnel's own host was not carried: {named} (asked up to {TRIES} \
+         times)"
     );
     for other in ["api.anthropic.com", "api.openai.com"] {
         let fronted = probe.tried(&["hello", "example.com", other]);
