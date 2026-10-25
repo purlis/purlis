@@ -440,6 +440,9 @@ pub struct SkillsMissing {
     pub broken: Vec<SkillBroken>,
     /// The project's skills the repo the chat works in leaves out, each with why (SK-53).
     pub by_a_repo: Vec<SkillBroken>,
+    /// The repo's own skills named like one of purlis's built-in skills, which the chat's
+    /// program loads beside purlis's (SK-37).
+    pub beside_a_built_in: Vec<String>,
 }
 
 /// A skill a chat would have loaded that could not be loaded (SK-8): the core's `Broken`, for
@@ -3282,6 +3285,7 @@ impl Chats {
                 no_built_in: not.no_built_in,
                 broken: not.broken.into_iter().map(SkillBroken::from).collect(),
                 by_a_repo: not.by_a_repo.into_iter().map(SkillBroken::from).collect(),
+                beside_a_built_in: not.beside_a_built_in,
             })
         };
         // A sandboxed Claude Code chat whose project's own settings it does not load says which

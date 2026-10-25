@@ -991,6 +991,10 @@ pub struct NotHere {
     /// there takes its name, or purlis could not read a skills folder of the clone whole
     /// ([`purlis_skills::SkillSet::left_out_by_a_repo`]).
     pub by_a_repo: Vec<Broken>,
+    /// A skill of the repo the chat works in named like one of purlis's built-in skills (SK-37,
+    /// #3027; [`purlis_skills::SkillSet::beside_a_built_in`]): the chat's harness loads it beside
+    /// purlis's, and the chat may use either. By name, once each.
+    pub beside_a_built_in: Vec<String>,
 }
 
 /// A skill a chat would have loaded that could not be loaded, and why.
@@ -1075,6 +1079,11 @@ pub fn not_here(
             why: BrokenWhy::LeftOut(left.reason.clone()),
         })
         .collect();
+    for clash in set.beside_a_built_in() {
+        if !not.beside_a_built_in.contains(&clash.name) {
+            not.beside_a_built_in.push(clash.name.clone());
+        }
+    }
     for left in set.left_out {
         match left.reason {
             Reason::NotOnThisMachine => not.missing.push(left.name),
@@ -1630,8 +1639,9 @@ struct Known {
 }
 
 impl Known {
-    /// What the plane at `plane` and this machine's bundle have.
-    fn of(plane: &Path) -> Self {
+    /// What the plane at `plane` and the built-in skills in `built_in`, the bundle's `skills/`,
+    /// have: the same built-in skills the set beside it is worked out with.
+    fn of(plane: &Path, built_in: Option<&Path>) -> Self {
         // Every level, each persona's among them (SK-32).
         Self {
             plane: verbs::Level::every(plane)
@@ -1640,7 +1650,7 @@ impl Known {
                 .flat_map(|dir| read(&dir))
                 .map(|skill| skill.name)
                 .collect(),
-            built_in: built_in_names_here().into_iter().collect(),
+            built_in: built_in_names(built_in).into_iter().collect(),
         }
     }
 }
@@ -1669,7 +1679,7 @@ pub fn lint_with(
         .ok()
         .map(|(path, _)| path);
     linted(
-        &Known::of(plane),
+        &Known::of(plane, built_in_here().as_deref()),
         path.as_deref().map(|path| (plane, path)),
         name,
         text,
@@ -1836,7 +1846,7 @@ pub fn studio_list(
     let names = persona
         .map(|persona| names_of(plane, persona))
         .unwrap_or_default();
-    let known = Known::of(plane);
+    let known = Known::of(plane, built_in);
     let harnesses = harnesses_in_the_studio(&set, plane, workspace, &names, env, &known);
     let mut rows = studio_rows(&set, plane, &names);
     with_harness_badges(&mut rows, &harnesses, &known);

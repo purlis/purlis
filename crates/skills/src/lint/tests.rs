@@ -236,3 +236,37 @@ fn a_skill_naming_itself_names_one_there_is_though_the_plane_has_no_skill_of_its
         ]
     );
 }
+
+#[test]
+fn a_repo_or_harness_skill_named_like_a_built_in_one_warns_and_a_skill_purlis_hands_does_not() {
+    // SK-37 (#3027): a program reads a clone's `secrets` beside purlis's own, and the chat may
+    // use either. purlis hands a plane skill of that name to no chat, which its own row says.
+    let text = "---\nname: secrets\ndescription: Reads the repo's secrets from its vault.\n---\n";
+    let plane = std::collections::HashSet::new();
+    let built_in = ["secrets".to_owned()].into();
+    let said = |origin| {
+        let findings = lints(&plane, &built_in).findings(&SkillFiles {
+            name: "secrets",
+            text,
+            others: &[],
+            origin,
+        });
+        findings
+            .iter()
+            .map(|one| (one.severity, one.to_string(), one.shown()))
+            .collect::<Vec<_>>()
+    };
+
+    for origin in [crate::Origin::Repo, crate::Origin::Harness] {
+        let line = "it has the name of one of purlis's built-in skills, so a chat gets purlis's \
+                    too, and may use either";
+        assert_eq!(
+            said(origin),
+            [(Severity::Warns, line.to_owned(), Some(line.to_owned()))],
+            "{origin:?}"
+        );
+    }
+    for origin in [crate::Origin::BuiltIn, crate::Origin::Project] {
+        assert_eq!(said(origin), [], "{origin:?}");
+    }
+}

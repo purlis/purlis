@@ -291,9 +291,6 @@ pub enum Reason {
     /// A harness or repo skill the project turned off for this harness's chats, which purlis
     /// asks the harness to leave out.
     OffForTheHarness,
-    /// A harness or repo skill named as one of purlis's built-in skills, which never loses to
-    /// any other copy (SK-6): the chat is handed purlis's.
-    HiddenByBuiltIn,
     /// A plane skill a repo copy could hide, where purlis could not list a skills folder of the
     /// chat's clone whole ([`Unread::Crowded`], SK-44): left out, since purlis cannot tell whether
     /// the repo has a skill of its name.
@@ -394,7 +391,6 @@ impl std::fmt::Display for Reason {
                 f.write_str("its persona names it, and purlis has no built-in skill of this name")
             }
             Self::OffForTheHarness => f.write_str("turned off for this project's chats"),
-            Self::HiddenByBuiltIn => f.write_str("hidden by purlis's built-in skill of this name"),
             Self::RepoUnread { repo } => write!(
                 f,
                 "purlis could not read the skills folder of {repo} whole, so a copy of this \
@@ -561,7 +557,7 @@ pub struct At {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Clash {
     pub name: String,
-    /// The plane's copy.
+    /// The copy purlis hands: a plane skill's, or a built-in one's (SK-37).
     pub plane: At,
     /// The other copy: [`Origin::Harness`] or [`Origin::Repo`].
     pub outside: Origin,
@@ -573,8 +569,8 @@ pub struct Clash {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Outcome {
     /// Both load: the harness reads its own whatever purlis says, and purlis hands its copy too
-    /// (Claude Code, whose plane skills come as their own namespaced plugin; or a harness skill,
-    /// which is wider than the plane's copy).
+    /// (Claude Code, whose plane skills come as their own namespaced plugin; a harness skill,
+    /// which is wider than the plane's copy; or any copy of a built-in skill's name, SK-37).
     BothLoad,
     /// The repo's copy is the narrower one and purlis left its own out, so the chat gets one
     /// copy of the name (decision 51): where purlis builds what the harness is handed.
@@ -607,6 +603,16 @@ impl SkillSet {
             .filter(|left| left.origin.of_the_plane() && left.reason.of_a_repo())
     }
 
+    /// **The skills from outside the plane named like one of purlis's built-in skills**
+    /// ([`Clash`]es whose plane copy is [`Origin::BuiltIn`], SK-37, #3027): the harness loads
+    /// each beside purlis's, and the chat may use either. What the chat's tab says it starts
+    /// with.
+    pub fn beside_a_built_in(&self) -> impl Iterator<Item = &Clash> {
+        self.clashes
+            .iter()
+            .filter(|clash| clash.plane.origin == Origin::BuiltIn)
+    }
+
     /// The effective skills that come from the plane, by name: what a route hands over beside
     /// the built-in directory (ADR 0063 as amended 2026-10-20). Each has one name in the set. A
     /// harness or repo skill is never among them: the harness reads those itself.
@@ -623,8 +629,10 @@ impl SkillSet {
     /// on a route where purlis builds what the harness is handed ([`Route::Config`],
     /// [`Route::Briefing`]) the plane's copy is left out, hidden by the repo's. Otherwise both
     /// load: a harness skill is the person's own and wider, and on [`Route::Plugin`] the plane's
-    /// copies come as their own namespaced plugin. Either way the pair is a [`Clash`]. Two
-    /// outside skills of one id are both listed: the harness has them both.
+    /// copies come as their own namespaced plugin. A built-in skill never loses, and both load
+    /// on every route: purlis never turns a built-in's name off, so the harness reads the other
+    /// copy too (SK-37). Either way the pair is a [`Clash`]. Two outside skills of one id are
+    /// both listed: the harness has them both.
     #[must_use]
     pub fn with_outside(
         mut self,
@@ -674,21 +682,13 @@ impl SkillSet {
                 .parent()
                 .map(Path::to_path_buf)
                 .unwrap_or_default();
-            // A built-in skill never loses to any other copy: purlis's is the one handed, and
-            // the other is listed as hidden by it, whatever the route.
-            if handed.is_some_and(|at| self.effective[at].origin == Origin::BuiltIn) {
-                self.left_out.push(LeftOut {
-                    name: one.id,
-                    origin: one.origin,
-                    local: false,
-                    folder,
-                    reason: Reason::HiddenByBuiltIn,
-                });
-                continue;
-            }
             if let Some(at) = handed {
                 let plane = &self.effective[at];
-                let outcome = if one.origin == Origin::Repo && route != Route::Plugin {
+                // A built-in skill never loses to any other copy, and purlis never turns off a
+                // built-in's name, so the harness reads its own copy beside purlis's (SK-37).
+                let outcome = if plane.origin == Origin::BuiltIn {
+                    Outcome::BothLoad
+                } else if one.origin == Origin::Repo && route != Route::Plugin {
                     Outcome::RepoWins
                 } else {
                     Outcome::BothLoad

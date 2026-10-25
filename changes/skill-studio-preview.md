@@ -114,3 +114,8 @@
   skills folder purlis can't read whole leaves out all of the project's skills. The chat's tab
   now names each skill it starts without because of its repo, and why. The Skill studio and
   `purlis skill list` list them under each program.
+- **A repo skill named like a built-in one is said, not hidden** (Skill studio preview, #3027).
+  A clone's own `secrets` skill is loaded by Codex and opencode beside purlis's built-in
+  `secrets`, and a chat may use the repo's. The Skill studio used to call the repo's copy
+  hidden. It now marks the built-in skill with the clash, the repo's row warns that its name
+  is a built-in one's, and a chat started in that repo says so on its tab.

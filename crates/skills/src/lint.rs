@@ -12,6 +12,8 @@
 //! - **Keys nothing reads**, and keys that would widen a chat ([`crate::compat`]).
 //! - **Broken skill references**: a `skills:<name>` or `purlis:<name>` in its text that names no
 //!   skill there is.
+//! - **A built-in skill's name** (SK-37, #3027): a harness or repo skill named like one of
+//!   purlis's, which its program loads beside purlis's, so a chat may use either.
 //! - **Tools this machine lacks** (decision 30): a program a `` !`command` `` in its text or one
 //!   of its scripts calls that this machine does not have. No requirement system: a warning.
 //!
@@ -55,6 +57,9 @@ pub enum Lint {
         name: String,
         project: bool,
     },
+    /// A harness or repo skill with the name of one of purlis's built-in skills (SK-37): its
+    /// program loads it beside purlis's, and purlis cannot stop it.
+    BuiltInName,
     /// A program it calls that this machine does not have, and where it calls it.
     Missing { tool: String, place: Place },
     /// What another lint said, a line of its own words, and whose lint it is: an extension that
@@ -138,6 +143,9 @@ impl Finding {
                     "purlis has"
                 }
             ),
+            Lint::BuiltInName => "it has the name of one of purlis's built-in skills, so a chat \
+                                  gets purlis's too, and may use either"
+                .to_owned(),
             Lint::Said { by, says } => format!("{by}: {says}"),
             Lint::Missing { tool, place } => format!(
                 "{} calls {tool}, which this machine does not have",
@@ -213,6 +221,7 @@ impl SkillLint for BuiltInLints<'_> {
             return out;
         }
         out.extend(short_description(skill.text));
+        out.extend(built_in_name(skill, self.built_in));
         out.extend(keys(skill));
         out.extend(references(skill, self));
         out.extend(tools_missing(skill, self.has));
@@ -237,6 +246,15 @@ fn short_description(text: &str) -> Option<Finding> {
         .filter(|value| !value.is_empty())?;
     let length = description.chars().count();
     (length < FEWEST_DESCRIPTION).then(|| warns(Lint::ShortDescription(length)))
+}
+
+/// A skill purlis does not hand, named like a built-in one: its program reads it beside
+/// purlis's, which no copy replaces and purlis never turns off ([`crate::SkillSet::with_outside`]).
+fn built_in_name(
+    skill: &SkillFiles<'_>,
+    built_in: &std::collections::HashSet<String>,
+) -> Option<Finding> {
+    (!skill.origin.handed() && built_in.contains(skill.name)).then(|| warns(Lint::BuiltInName))
 }
 
 /// What its frontmatter, read as YAML, says: refused where purlis cannot read it (which blocks a

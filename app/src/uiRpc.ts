@@ -930,6 +930,11 @@ export const commands = {
 	broken: SkillBroken[],
 	/**  The project's skills the repo the chat works in leaves out, each with why (SK-53). */
 	by_a_repo: SkillBroken[],
+	/**
+	 *  The repo's own skills named like one of purlis's built-in skills, which the chat's
+	 *  program loads beside purlis's (SK-37).
+	 */
+	beside_a_built_in: string[],
 } | null, string>(__TAURI_INVOKE("chat_skills_missing", { plane, session })),
 	putAwayChatSkillsMissing: __WINDOW_ONLY_RESULT,
 	/**
@@ -9532,6 +9537,11 @@ export type SkillsMissing = {
 	broken: SkillBroken[],
 	/**  The project's skills the repo the chat works in leaves out, each with why (SK-53). */
 	by_a_repo: SkillBroken[],
+	/**
+	 *  The repo's own skills named like one of purlis's built-in skills, which the chat's
+	 *  program loads beside purlis's (SK-37).
+	 */
+	beside_a_built_in: string[],
 };
 
 /**  What the window says about a slow launch: its line, and the relaunch that line suggests. */
