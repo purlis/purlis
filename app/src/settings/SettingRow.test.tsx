@@ -16,6 +16,7 @@ import { cleanup, render, screen, waitFor, within } from "@testing-library/react
 import { userEvent } from "@testing-library/user-event";
 import { drawnWith } from "../cascade.testkit";
 import { Choice, Field, SettingGroup, SettingRow, SettingsLayout } from "./components";
+import { selectNamed } from "../ui/select/select.testkit";
 
 afterEach(cleanup);
 
@@ -124,7 +125,7 @@ describe("the badge", () => {
       within(rowOf("Branch")).queryByText("This machine", { selector: ".ui-setting-badge" }),
     ).toBeNull();
     // Beside the name, never inside it: the control is still named by its label alone.
-    expect(screen.getByRole("combobox", { name: "Mode" })).toBeInTheDocument();
+    expect(selectNamed("Mode")).toBeInTheDocument();
   });
 
   it("shows the whole sentence in its tooltip when the keyboard reaches it, and Escape hides it", async () => {
@@ -239,7 +240,7 @@ describe("one line at one height", () => {
     const line = rowOf("Mode").querySelector(".ui-setting-line") as HTMLElement;
 
     expect(within(line).getByText("Mode")).toBeInTheDocument();
-    expect(within(line).getByRole("combobox", { name: "Mode" })).toBeInTheDocument();
+    expect(selectNamed("Mode", line)).toBeInTheDocument();
     expect(within(line).getByRole("button", { name: "Reset" })).toBeInTheDocument();
     expect(drawnWith(line, "display")).toBe("flex");
     expect(drawnWith(line, "align-items")).toBe("center");

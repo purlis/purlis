@@ -1065,8 +1065,8 @@ describe("a project that is not in front stays drawn, off the window", () => {
   it("puts away what a part of the view asked over the window, when a notification brings another project forward", async () => {
     // The review's case: a confirm opened deeper in a project's view is drawn over the whole
     // window. Kept with its project, "Delete persona steward?" asked in one project stood over
-    // another, named no project, and deleted in the first. Every overlay's portal asks whether
-    // its project is shown (`overlays/`), so it is put away with the project and is there
+    // another, named no project, and deleted in the first. Every overlay asks whether its
+    // project is shown (the families' surfaces), so it is put away with the project and is there
     // again when the person is back in the project it is about.
     const planes = ["/home/dev/p0", "/home/dev/p1"];
     const { asked, notified } = core({
