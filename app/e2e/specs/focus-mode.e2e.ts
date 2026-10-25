@@ -4,6 +4,7 @@
 import { browser, expect, $$ } from "@wdio/globals";
 import { READY } from "../harness.js";
 import { endChatsStartedHere, startAChat, type Started } from "../started.js";
+import { noDialogIsLeftUp } from "../opening.js";
 
 /**
  * **Focus mode on the real window** (#2921, spec #2897 N32): ⌘⇧↩ (Ctrl+Shift+Enter off a Mac)
@@ -76,6 +77,8 @@ async function workWidth(): Promise<number> {
 
 /** Focus mode's key, from the page, until the window is `want`. */
 async function focusModeTo(want: boolean): Promise<void> {
+  // A modal keeps the window's keys (the operator's ruling): none is left up for this.
+  await noDialogIsLeftUp();
   await browser.execute(() => {
     const on = document.activeElement;
     if (on instanceof HTMLElement) on.blur();
@@ -93,10 +96,23 @@ async function focusModeTo(want: boolean): Promise<void> {
       }),
     );
   }, MAC);
-  await browser.waitUntil(async () => (await inFocusMode()) === want, {
-    timeout: 10_000,
-    timeoutMsg: `${MAC ? "⌘⇧↩" : "Ctrl+Shift+Enter"} did not turn focus mode ${want ? "on" : "off"}`,
+  const landed = await browser
+    .waitUntil(async () => (await inFocusMode()) === want, { timeout: 5_000, interval: 150 })
+    .then(() => true)
+    .catch(() => false);
+  if (landed) return;
+  // What held the key back, said in the failure: the modal up, if one is.
+  const modal = await browser.execute(() => {
+    const up = document.querySelector<HTMLElement>(
+      '[data-scope="dialog"][data-part="root"], [role="alertdialog"]',
+    );
+    return up === null
+      ? "no modal"
+      : `a modal: ${up.getAttribute("aria-label") ?? up.dataset.testid ?? up.className}`;
   });
+  throw new Error(
+    `${MAC ? "⌘⇧↩" : "Ctrl+Shift+Enter"} did not turn focus mode ${want ? "on" : "off"} (${modal} up)`,
+  );
 }
 
 /** The first pane's terminal: marked, so the same element can be found again; and its text. */
