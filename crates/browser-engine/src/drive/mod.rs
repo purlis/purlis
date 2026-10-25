@@ -492,6 +492,13 @@ pub enum Refusal {
     NothingFocused,
     #[error("the page cannot tell which field has the focus")]
     FocusUnclear,
+    /// The page's tree, read to keep what the person types out of the agent's answers, was not
+    /// read within the key's limit (#3043): the key was not sent.
+    #[error(
+        "purlis could not read this page in time to keep what you type out of the agent's \
+         answers, so the key was held back: type it again in a moment"
+    )]
+    PageUnreadInTime,
     #[error(
         "the page has something focused that purlis cannot see, so the key was held back: click the field you mean to type into"
     )]
@@ -609,6 +616,12 @@ pub struct Limits {
     /// How long a drag waits after its last move for the engine to say its own drag started
     /// (#2136).
     pub drag_starts_within: Duration,
+    /// How long a key of the person's waits for its page's tree to be read before it is held
+    /// back, and the person told (#3043): less than the window waits for the key's answer.
+    pub key_reads_within: Duration,
+    /// How long a read of a page's whole tree for the person's keys may take, past the key it
+    /// was made for (#3043): a large page's read goes on, for the next key.
+    pub tree_reads_within: Duration,
 }
 
 impl Default for Limits {
@@ -622,6 +635,8 @@ impl Default for Limits {
             answers_kept: 256,
             login_within: LOGIN_WAIT,
             drag_starts_within: Duration::from_millis(150),
+            key_reads_within: Duration::from_secs(20),
+            tree_reads_within: Duration::from_secs(120),
         }
     }
 }

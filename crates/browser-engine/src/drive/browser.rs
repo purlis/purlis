@@ -1988,6 +1988,13 @@ impl Browser {
     /// Every frame's tree of `target`'s page, as the engine has it now: the one read of the
     /// page a snapshot is built from.
     fn trees_of(&self, target: &str) -> Result<Vec<FrameAx>, Refusal> {
+        let frames = self.to_read(target)?;
+        read_trees(self.devtools(), frames, CALL_TIMEOUT).map_err(refusal)
+    }
+
+    /// The frames of `target`'s page to read the trees of, the page's own first and each frame
+    /// after the frame around it.
+    fn to_read(&self, target: &str) -> Result<Vec<ToRead>, Refusal> {
         let session = self.page_session(target)?;
         let (frames, _excluded, _scrub) = {
             let state = lock(&self.inner.state);
@@ -2046,30 +2053,7 @@ impl Browser {
         } else {
             frames
         };
-        let mut trees = Vec::new();
-        for (index, read) in frames.into_iter().enumerate() {
-            let mut frame = read.frame;
-            frame.owner = read.parent_session.as_deref().and_then(|s| {
-                self.devtools()
-                    .call("DOM.getFrameOwner", json!({ "frameId": frame.id }), Some(s))
-                    .ok()
-                    .and_then(|o| o.get("backendNodeId").and_then(Value::as_i64))
-            });
-            let ax = self.devtools().call(
-                "Accessibility.getFullAXTree",
-                json!({ "frameId": frame.id }),
-                Some(&read.session),
-            );
-            frame.nodes = match ax {
-                Ok(ax) => ax.get("nodes").cloned().unwrap_or(Value::Array(Vec::new())),
-                // The page's own tree is the snapshot; a frame that cannot be read is shown
-                // empty rather than failing the page.
-                Err(why) if index == 0 => return Err(refusal(why)),
-                Err(_) => Value::Array(Vec::new()),
-            };
-            trees.push(frame);
-        }
-        Ok(trees)
+        Ok(frames)
     }
 
     /// Where `target` is, for acting on it.
@@ -3916,6 +3900,40 @@ fn refer_in<'s>(state: &'s mut State, target: &'s str) -> impl FnMut(&NodeKey) -
             .map_or(0, |f| f.generation);
         state.refs.deal(target, key, generation).0
     }
+}
+
+/// Every tree of `frames`, read through `devtools`, each frame's within `within`: the page's own
+/// (the first) failing the read, any other frame that cannot be read shown empty.
+fn read_trees(
+    devtools: &dyn DevTools,
+    frames: Vec<ToRead>,
+    within: Duration,
+) -> Result<Vec<FrameAx>, CallError> {
+    let mut trees = Vec::new();
+    for (index, read) in frames.into_iter().enumerate() {
+        let mut frame = read.frame;
+        frame.owner = read.parent_session.as_deref().and_then(|s| {
+            devtools
+                .call("DOM.getFrameOwner", json!({ "frameId": frame.id }), Some(s))
+                .ok()
+                .and_then(|o| o.get("backendNodeId").and_then(Value::as_i64))
+        });
+        let ax = devtools.call_within(
+            "Accessibility.getFullAXTree",
+            json!({ "frameId": frame.id }),
+            Some(&read.session),
+            within,
+        );
+        frame.nodes = match ax {
+            Ok(ax) => ax.get("nodes").cloned().unwrap_or(Value::Array(Vec::new())),
+            // The page's own tree is the snapshot; a frame that cannot be read is shown
+            // empty rather than failing the page.
+            Err(why) if index == 0 => return Err(why),
+            Err(_) => Value::Array(Vec::new()),
+        };
+        trees.push(frame);
+    }
+    Ok(trees)
 }
 
 fn stale(written: &Ref) -> Refusal {

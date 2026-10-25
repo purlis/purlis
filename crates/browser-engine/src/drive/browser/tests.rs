@@ -96,6 +96,10 @@ struct Model {
     drag_told_when_asked: bool,
     /// The word of the engine's own drag, held until the test asks for it.
     held_drag: Option<Event>,
+    /// How long a read of a frame's whole tree takes, where it takes long: as on a large page
+    /// (#3043). A call that waits less than that fails as the connection's does, and the read
+    /// it asked for runs on.
+    ax_takes: Option<Duration>,
 }
 
 /// A stand-in engine: answers the driver's calls and sends it events, as the real one would.
@@ -586,7 +590,7 @@ impl DevTools for Stand {
         method: &str,
         params: Value,
         session: Option<&str>,
-        _timeout: Duration,
+        timeout: Duration,
     ) -> Result<Value, CallError> {
         let sent = Sent {
             method: method.to_owned(),
@@ -594,6 +598,14 @@ impl DevTools for Stand {
             session: session.map(str::to_owned),
         };
         super::lock(&self.0.sent).push(sent.clone());
+        if method == "Accessibility.getFullAXTree"
+            && let Some(takes) = super::lock(&self.0.model).ax_takes
+        {
+            std::thread::sleep(takes.min(timeout));
+            if takes > timeout {
+                return Err(CallError::TimedOut);
+            }
+        }
         let hooked = super::lock(&self.0.hook)
             .as_mut()
             .and_then(|h| h(&sent, &self.0));
@@ -707,6 +719,7 @@ fn browser_over(limits: Limits, judge: Option<crate::drive::Judge>) -> (Browser,
             drag_data: json!({"items":[{"mimeType":"text/plain","data":"card"}],"dragOperationsMask":1}),
             drag_told_when_asked: false,
             held_drag: None,
+            ax_takes: None,
         }),
         hook: Mutex::new(None),
         dropped: Mutex::new(0),

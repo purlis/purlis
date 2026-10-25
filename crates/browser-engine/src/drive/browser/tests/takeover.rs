@@ -1425,3 +1425,117 @@ fn a_code_typed_across_several_boxes_stays_out_of_answers_about_another_page() {
 
     assert!(text.contains("\"Your code (blanked) is right\""), "{text}");
 }
+
+/// A browser over a large page (#3043): a read of its whole tree takes `takes`, a key waits
+/// `key_waits` for it, and a read may take `read_may_take`.
+fn a_large_page(
+    takes: Duration,
+    key_waits: Duration,
+    read_may_take: Duration,
+) -> (super::Browser, Arc<super::Engine>) {
+    let (browser, engine) = super::browser_with(crate::drive::Limits {
+        key_reads_within: key_waits,
+        tree_reads_within: read_may_take,
+        ..super::limits()
+    });
+    super::super::lock(&engine.model).ax_takes = Some(takes);
+    (browser, engine)
+}
+
+#[test]
+fn a_key_whose_page_reads_past_its_limit_is_held_and_said_so() {
+    // #3043: the page's tree takes longer to read than the key waits for it.
+    let (browser, engine) = a_large_page(
+        Duration::from_millis(600),
+        Duration::from_millis(100),
+        Duration::from_secs(30),
+    );
+    browser.take_over();
+    let aim = aim_now(&browser);
+
+    let started = Instant::now();
+    let held = browser.person_input(&key(&aim, "x", true));
+
+    assert_eq!(held, Err(Refusal::PageUnreadInTime));
+    assert!(
+        started.elapsed() < Duration::from_millis(500),
+        "the key waited {:?}",
+        started.elapsed()
+    );
+    assert!(
+        held.unwrap_err().to_string().contains("held back"),
+        "the key is said to be held"
+    );
+    assert!(engine.sent("Input.dispatchKeyEvent").is_empty());
+}
+
+#[test]
+fn the_read_a_held_key_left_running_is_what_the_next_key_is_blanked_from() {
+    // #3043: the read goes on past the key it was made for, and the next key takes it.
+    let (browser, engine) = a_large_page(
+        Duration::from_millis(300),
+        Duration::from_millis(100),
+        Duration::from_secs(30),
+    );
+    browser.take_over();
+    let aim = aim_now(&browser);
+    assert_eq!(
+        browser.person_input(&key(&aim, "x", true)),
+        Err(Refusal::PageUnreadInTime)
+    );
+    std::thread::sleep(Duration::from_millis(400));
+
+    browser.person_input(&key(&aim, "y", true)).unwrap();
+
+    assert_eq!(page_reads(&engine), 1, "the page was read again");
+    assert_eq!(engine.sent("Input.dispatchKeyEvent").len(), 1);
+    // The field keeps the focus: the next key reads nothing of the page.
+    let field = super::ax_backend_focused(&engine, "PAGE-1");
+    super::super::lock(&engine.model).focused_backend = Some(field);
+    super::super::lock(&engine.model).value = "held-then-typed".into();
+    browser.person_input(&key(&aim, "z", true)).unwrap();
+    browser.hand_back();
+    let text = snapshot(&browser, 1);
+    assert!(!text.contains("held-then-typed"), "{text}");
+}
+
+#[test]
+fn a_key_whose_page_read_outlived_the_reads_own_limit_is_held_never_unknown() {
+    // #3043: the read itself ran past what a read may take, so no key knows the page.
+    let (browser, engine) = a_large_page(
+        Duration::from_millis(400),
+        Duration::from_millis(100),
+        Duration::from_millis(150),
+    );
+    browser.take_over();
+    let aim = aim_now(&browser);
+    assert_eq!(
+        browser.person_input(&key(&aim, "x", true)),
+        Err(Refusal::PageUnreadInTime)
+    );
+    std::thread::sleep(Duration::from_millis(200));
+
+    let next = browser.person_input(&key(&aim, "y", true));
+
+    assert_eq!(next, Err(Refusal::PageUnreadInTime));
+    assert!(engine.sent("Input.dispatchKeyEvent").is_empty());
+}
+
+#[test]
+fn a_key_after_a_press_of_the_mouse_reads_the_page_anew() {
+    // #3043: a press may move the focus, so a read made before it is not the key's.
+    let (browser, engine) = a_large_page(
+        Duration::from_millis(300),
+        Duration::from_millis(100),
+        Duration::from_secs(30),
+    );
+    browser.take_over();
+    let aim = aim_now(&browser);
+    let _ = browser.person_input(&key(&aim, "x", true));
+    std::thread::sleep(Duration::from_millis(400));
+    browser.person_input(&press(&aim, 5.0, 5.0)).unwrap();
+
+    let _ = browser.person_input(&key(&aim, "y", true));
+
+    assert_eq!(page_reads(&engine), 2, "the page was not read anew");
+}

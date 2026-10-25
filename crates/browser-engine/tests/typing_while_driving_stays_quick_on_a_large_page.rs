@@ -22,10 +22,30 @@ use std::time::{Duration, Instant};
 
 use common::drive::{open, sees, snapshot};
 use common::site::started;
-use purlis_browser_engine::drive::PersonInput;
+use purlis_browser_engine::drive::{Aim, PersonInput, Refusal};
 
 /// The spec's bound from a keystroke to the screen (docs/spec.md, "Keystroke to screen").
 const MOST_PER_KEY: Duration = Duration::from_millis(50);
+
+/// How long the window waits for a key's answer (`LINK_WITHIN` in the app's browsers).
+const THE_WINDOW_WAITS: Duration = Duration::from_secs(30);
+
+/// One key of the person's, `letter` a character or a key's name.
+fn key(aim: &Aim, letter: &str, key_code: u32, down: bool) -> PersonInput {
+    let code = if letter.chars().count() == 1 {
+        format!("Key{}", letter.to_ascii_uppercase())
+    } else {
+        letter.to_owned()
+    };
+    PersonInput::Key {
+        aim: aim.clone(),
+        down,
+        key: letter.to_owned(),
+        code,
+        key_code,
+        modifiers: 0,
+    }
+}
 
 #[test]
 fn typing_into_a_field_of_a_large_page_stays_under_fifty_milliseconds_a_key() {
@@ -82,4 +102,53 @@ fn typing_into_a_field_of_a_large_page_stays_under_fifty_milliseconds_a_key() {
         !snapshot(&browser).contains(typed),
         "what was typed is kept out"
     );
+}
+
+#[test]
+fn a_key_into_a_second_field_of_a_large_page_is_held_in_words_until_the_page_is_read() {
+    // #3043: the second field's key reads the whole tree, which on this page may take longer
+    // than the key waits. It is held back and said so, never answered as unknown, and the read
+    // goes on for the key typed again.
+    let Some((browser, _data, _site)) = started() else {
+        return;
+    };
+    open(&browser, "typing-on-a-large-page.html");
+    browser.take_over();
+    let aim = browser.aim().expect("a page is shown");
+    browser.person_input(&key(&aim, "a", 65, true)).unwrap();
+    browser.person_input(&key(&aim, "a", 65, false)).unwrap();
+    browser.person_input(&key(&aim, "Tab", 9, true)).unwrap();
+    browser.person_input(&key(&aim, "Tab", 9, false)).unwrap();
+    let typed_at = Instant::now();
+    let mut held = 0;
+    loop {
+        let started = Instant::now();
+        let answered = browser.person_input(&key(&aim, "b", 66, true));
+        let took = started.elapsed();
+        assert!(
+            took < THE_WINDOW_WAITS,
+            "the key answered after {took:?}, past the window's wait"
+        );
+        let _ = browser.person_input(&key(&aim, "b", 66, false));
+        match answered {
+            Ok(()) => break,
+            Err(Refusal::PageUnreadInTime) => held += 1,
+            Err(other) => panic!("the key was answered {other:?}"),
+        }
+        assert!(
+            typed_at.elapsed() < Duration::from_secs(240),
+            "the page was never read"
+        );
+    }
+    {
+        let mut out = std::io::stdout().lock();
+        let _ = writeln!(
+            out,
+            "::notice title=a second field of a large page::its key reached the page after {} ms, held back {held} times",
+            typed_at.elapsed().as_millis()
+        );
+        let _ = out.flush();
+    }
+    browser.hand_back();
+    assert!(sees(&browser, "Typed: 1"), "{}", snapshot(&browser));
 }
