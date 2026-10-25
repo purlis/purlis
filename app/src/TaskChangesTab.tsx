@@ -220,7 +220,7 @@ export function TaskChangesTab({
       )}
       {read.elsewhere.length > 0 && (
         <>
-          <h3>Named outside any repo</h3>
+          <h2>Named outside any repo</h2>
           <p className="honest">
             Its tools named these, and git has nothing to compare them against, so they are not said
             to have changed:
@@ -231,7 +231,7 @@ export function TaskChangesTab({
       {/* The task's own words, as it reported them: its claim, never a fact purlis checked. */}
       {read.said !== null && (
         <>
-          <h3>What it says changed</h3>
+          <h2>What it says changed</h2>
           <pre>{read.said}</pre>
         </>
       )}
@@ -266,10 +266,10 @@ function Place({
   const where = placeOf(place);
   return (
     <section aria-label={`Changed in ${placeSaid(place)}`}>
-      <h3>
+      <h2>
         {placeSaid(place)}
         {place.base !== null && <span className="none"> · against {place.base}</span>}
-      </h3>
+      </h2>
       {place.unread !== null && <p className="trouble">{place.unread}</p>}
       {/* Rows that act (`ui/list`, #2911): a press or Enter shows what changed in the file. */}
       <List
