@@ -42,6 +42,7 @@ pub mod budget;
 pub mod change;
 pub mod compat;
 mod declared;
+pub mod grade;
 mod grant;
 pub mod handed;
 mod held;

@@ -469,6 +469,7 @@ fn started_by_said(started: Option<purlis_skills::runs::StartedBy>) -> &'static 
         Some(StartedBy::UseSkill) => "You, with Use skill…",
         Some(StartedBy::Curation) => "A curation action",
         Some(StartedBy::Trigger) => "A trigger",
+        Some(StartedBy::Grade) => "A grade",
         None => "From before runs were recorded",
         Some(_) => "Not known",
     }

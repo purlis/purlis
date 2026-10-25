@@ -551,6 +551,8 @@ pub enum RunStart {
     Curation,
     /// A trigger sent the prompt.
     Trigger,
+    /// A grade sent the prompt: a trigger test's chat.
+    Grade,
     /// A start a newer purlis wrote.
     Unknown,
 }
@@ -565,6 +567,7 @@ impl From<purlis_core::skills::runs::StartedBy> for RunStart {
             StartedBy::UseSkill => RunStart::UseSkill,
             StartedBy::Curation => RunStart::Curation,
             StartedBy::Trigger => RunStart::Trigger,
+            StartedBy::Grade => RunStart::Grade,
             _ => RunStart::Unknown,
         }
     }
