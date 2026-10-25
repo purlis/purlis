@@ -449,7 +449,7 @@ function AddForm({
     if (open)
       document
         .getElementById(form)
-        ?.querySelector<HTMLElement>('input, [role="combobox"], textarea')
+        ?.querySelector<HTMLElement>('input, [data-scope="select"][data-part="root"], textarea')
         ?.focus();
     else if (opened.current) (adding.current ?? whole.current)?.focus();
     opened.current = open;

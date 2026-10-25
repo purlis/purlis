@@ -1678,8 +1678,8 @@ the focus rings, #2867):
   (`docs/ui-primitives.md`, "The control classes"): a `<button>` or a Radix trigger without
   `asChild` (a row, segment or menu row; a button of the button family is `Button`, never a
   native `<button>`), an `<input>` or `<textarea>` (none: a box is the field family's
-  `TextField` or `TextArea`; a checkbox `ui-checkbox`, a radio `ui-radio`), a `<select>` or Radix Select's
-  trigger (`ui-select`), a `<table>` (`ui-table`), and a Radix menu's content and rows
+  `TextField` or `TextArea`; a checkbox `ui-checkbox`, a radio `ui-radio`), a `<select>` (none: a
+  select is the select family's `Select`), a `<table>` (`ui-table`), and a Radix menu's content and rows
   (`ui-menu`, `ui-menu-item`). **It holds two heights too** (#2449): a `height`, `min-height`,
   `block-size` or `min-block-size` set on a control is `--size-control`, and one set on a strip
   or a pane header is `--size-chrome`. A control is `--size-chrome` only as the small form: a

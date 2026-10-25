@@ -12,7 +12,7 @@ import { forgetThisLaunch } from "../regions";
 import { GLOBAL } from "../windowprefs";
 import type { SettingsChange, SettingsFile, SettingsWhich } from "../bindings";
 import { backspace, textOf, typeIn, typeable } from "../editor/typing.testkit";
-import { pickIn } from "../primitives/select.testkit";
+import { pickIn } from "../ui/select/select.testkit";
 
 /**
  * **Edit as TOML** (SE-19, #1169; the spec on #558, V89d): one link per file at the foot of the

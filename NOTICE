@@ -15,6 +15,10 @@ icon set converted from Lucide (ISC License; some icons derived from Feather,
 MIT License). Their copyright notices and licence texts are in
 crates/purlis-core/src/theme/built-in/purlis/LICENSE.
 
+The Unicode Character Database 16.0.0 files in tools/ucd/, and the tables
+derived from them in crates/unicode/src/tables.rs, are Copyright © Unicode,
+Inc., under the Unicode License V3, whose text is in tools/ucd/LICENSE.
+
 "Purlis" and the Purlis logo are trademarks of Purlis. The License does
 not grant permission to use these trademarks, except as required for
 reasonable and customary use in describing the origin of the Work.

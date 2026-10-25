@@ -55,7 +55,7 @@ import {
   type Referenced,
 } from "./references";
 import { placeName } from "./pieceViews";
-import { Select } from "./primitives/Select";
+import { Select } from "./ui/select/Select";
 import type { ViewRef } from "./tabs";
 import { Button, ToggleButton } from "./ui/button/Button";
 import { TextField } from "./ui/field/Field";

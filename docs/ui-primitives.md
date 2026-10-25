@@ -128,8 +128,8 @@ What keeps it from becoming the library this file forbids:
   The slot is how a row composes what the set does not draw, as `Browse…` beside a path is.
 - **Each piece is a thin layer over a primitive already in the window, and says which.**
   The level switcher is a Radix radio group; the nav is buttons under Radix roving focus
-  (`roving.ts`, as the explorer's rows); `Choice` is a Radix radio group, the one select (Radix
-  Select, `primitives/Select.tsx`), a Radix switch or a Radix checkbox; `Field` is a native `<input>`, `<textarea>` or `<input type="range">`.
+  (`roving.ts`, as the explorer's rows); `Choice` is a Radix radio group, the select family's
+  `Select` (`ui/select/Select.tsx`), a Radix switch or a Radix checkbox; `Field` is a native `<input>`, `<textarea>` or `<input type="range">`.
   The props are the primitive's own words — `value`, `onValueChange`, `checked`,
   `onCheckedChange` — so the call site still answers "which primitive is this?". The one word
   of the set's own is `Field`'s `onCommit` (SE-17): a typed value is written when the field is
@@ -150,12 +150,13 @@ What keeps it from becoming the library this file forbids:
   does not set holds a quiet "Reading…" in its control's place, and one the file sets is its
   switch at once (#1875): no row draws a select that turns into a switch. Where what is in force
   could not be read, the key stays a select.
-- **Every select is the one select** (#1860): `primitives/Select.tsx`, Radix Select under
-  `.ui-select`, its list in the one menu style. An option's empty value ("not set", "Every
-  workspace") is an option like any other; a value none of the options has shows the
-  placeholder. A pick that sends the keyboard on (a New… that opens its form) keeps it there;
-  otherwise the keyboard comes back to the select when its list closes. No view draws a native
-  `<select>` (`designSet.guard.test.ts`).
+- **Every select is the select family's** (#1860, #2906): `ui/select/Select.tsx`, React Aria's
+  select ([The select and combobox families](#the-select-and-combobox-families)). An option's
+  empty value ("not set", "Every workspace") is an option like any other; a value none of the
+  options has shows the placeholder. A pick that sends the keyboard on (a New… that opens its
+  form) keeps it there; otherwise the keyboard comes back to the select when its list closes. A
+  row's select is named by the row's label, which React Aria says after what it holds. No view
+  draws a native `<select>` (`purlis/select-family`, `designSet.guard.test.ts`).
 - **A list is a box of lines; a whole file is an editor** (DS-10, #1842). `Field kind="list"`,
   one entry per line, is drawn under its name at the row's width, and grows to show every line
   as it is typed (`grownTo`): it is never dragged and never scrolls inside. A whole file's text
@@ -514,8 +515,8 @@ and the form it is sent from is the family's `Form`. No screen draws an `<input>
 `<textarea>` of its own for one, and none wears the old `.ui-input`, `.ui-input-lead` or
 `.ui-list-field` classes: `eslint.config.js` refuses both (`purlis/field-family`, an error). A
 raw `<input>` left is another family's: a checkbox, a radio, a slider or a colour well
-(`purlis/choice-family`), or a combobox's (`purlis/select-family`), each a warning until its
-family moves.
+(`purlis/choice-family`, a warning until its family moves), or a combobox's
+(`purlis/select-family`, an error: [The select and combobox families](#the-select-and-combobox-families)).
 
 | Prop | Says |
 | --- | --- |
@@ -563,6 +564,53 @@ family moves.
   inline validation on blur, a refusal, the three sizes with their glass, an unavailable box, a
   textarea, a form sent by ⌘⏎, and a filter that keeps its caret while its list redraws, each
   walked by the keyboard and checked by axe in Chromium and WebKit.
+
+## The select and combobox families
+
+**Every one-of-many pick is `Select`, and every box with suggestions is `ComboBox`**
+(`app/src/ui/select/Select.tsx`, `app/src/ui/select/ComboBox.tsx`, #2906, ADR 0104), on React
+Aria's `Select`, `Button`, `SelectValue`, `ComboBox`, `Input`, `ListBox`, `ListBoxItem` and
+`Autocomplete`. No screen draws a `<select>` or a `<datalist>`, writes a `role="combobox"` or an
+`aria-haspopup="listbox"` itself, or wears the old `.ui-select` classes: `eslint.config.js`
+refuses all four (`purlis/select-family`, an error).
+
+| Member | Is |
+| --- | --- |
+| `Select` | a button that shows what is picked and opens the list to pick from; `value`, `options` (`value`, `label`, `isDisabled`, `tooltip`), `onValueChange`, `placeholder`, `isDisabled`, `tooltip`, `size` |
+| `ComboBox` | a box to type in with the suggestions that match in a list under it; what is typed is the value, and a suggestion picked writes its words (Add a skill) |
+| `ListComboBox` | the box over a list drawn in place under it, always shown, whose rows and aim are its owner's (the command palette): the field family's box with the combobox's ARIA, which only this family writes |
+
+- **Drawn by its parts** (ADR 0103): a select's button is `data-scope="select" data-part="root"`
+  (with `data-size`, and `data-open` while its list is up), drawn as the text input's box; in it
+  what is picked (`value`), what it shows while nothing is (`placeholder`, in the quiet tier) and
+  the drawn `chevron` at its end, in the quiet tier (R64). A combobox's box is
+  `data-scope="combobox" data-part="root"` with its `chevron`. **Their lists are no family of
+  their own**: each stands on the popover family's `menu` surface (`data-of="select"`, at least
+  as wide as its box), and each option is the menu family's row, its tick the row's `indicator`,
+  so a theme that sets a menu's row sets an option's too. `ui/select/select.css` draws the
+  family default; a state changes a colour or a ring, never a size.
+- **Sizes**: `sm` 24, `md` 28 (the default), `lg` 32, as the text input's; one size for a row of
+  controls (the browser bar's page size is `sm`).
+- **Keyboard first**: Tab reaches a select (`tabIndex` 0 for WebKit, #190); Enter, Space, ↑ or ↓
+  open it on what it holds; ↑ and ↓ move and stop at the ends, passing an option out of reach
+  with no reason; **an option out of reach that says why** (`isDisabled` with `tooltip`) is the
+  menu's row that cannot run: it stays in the arrows' way in the faint tier, with why on the line
+  under its words as its description, and a press or Enter on it picks nothing; Enter picks;
+  Escape closes the list and leaves the value as it was, and on a closed select goes on to what
+  it stands in (a form that closes). A letter typed goes to the first option it starts. **A long
+  list is filtered**: from `FILTERED_FROM` (10) options a select's list opens with the popover's
+  filter row holding the keyboard, and what is typed narrows it while ↑ and ↓ still move in it;
+  the filter never names an option the typing has filtered out (D-2906-14).
+- **Named by what it holds, then its own name**, as React Aria names it: a settings row's select
+  by its row's label (`aria-labelledby`), one with no row by its `aria-label`. An unavailable
+  select with a reason (`tooltip`) stays in reach of the keyboard so its reason is heard, and
+  opens nothing.
+- **The button carries what it holds as `data-value`**, which the e2e specs read
+  (`e2e/acting.ts`, `choose`), and a test picks through `ui/select/select.testkit.ts`
+  (`selectNamed`, `pickIn`, `offeredIn`).
+- **Stories hold it** (`Select.stories.tsx`): a select holding a value, its placeholder, its list
+  from the keyboard, a pick, a long list filtered, each size, an unavailable select, a settings
+  row, and a combobox's suggestions, in Chromium and WebKit, with axe.
 
 ## The window's own families: panels, sections, empty states and status items
 
@@ -725,8 +773,9 @@ item families (`purlis/tooltip-family`, an error). A frame's `title` is its name
 #2909, ADR 0104), on React Aria's `MenuTrigger`, `Menu`, `MenuItem`, `MenuSection`,
 `SubmenuTrigger`, `Popover`, `Dialog` and `DialogTrigger`. No screen says a menu's role or wears
 the old `.ui-menu*` and `.ui-popover` classes, and nothing imports Radix's menus or popover:
-`eslint.config.js` refuses all three (`purlis/menu-family`, an error). The select's list keeps
-the old classes until the select family moves (#2906).
+`eslint.config.js` refuses all three (`purlis/menu-family`, an error). A select's list stands on
+the same surface, its options the menu's rows ([The select and combobox
+families](#the-select-and-combobox-families)).
 
 | Member | What it is |
 | --- | --- |
@@ -849,9 +898,8 @@ old `.ui-list` class: `eslint.config.js` refuses both (`purlis/list-family`, an 
   drawn by it with `DialogAnswers`, in the footer, in their places, instead of the dialog's own.
 - **Over the window, and only its project's** (`projectShown.tsx`): a dialog is drawn only while
   the project it is under is in front, and React Aria makes the rest of the window unreachable
-  while it is up. A menu or a popover opened in a dialog is React Aria's too, and stands over it;
-  a select's list is drawn in the window's top layer (`overlays/topLayer.ts`), which React Aria
-  keeps reachable. Esc closes the layer the keyboard is in, one at a time.
+  while it is up. A menu, a popover or a select's list opened in a dialog is React Aria's too, and
+  stands over it. Esc closes the layer the keyboard is in, one at a time.
 - **Drawn by its parts** (ADR 0103): the scrim, the root (`data-variant` `dialog` or `alert`,
   `data-size`), the header, title, subtitle, description, body, separator, footer, summary and
   actions, each `data-scope="dialog"` with its `data-part`. `ui/dialog/dialog.css` draws the
@@ -931,16 +979,15 @@ class goes on the native element or on the element a Radix primitive renders, an
 the whole of the look. There is still no React component for it: the call site shows the
 primitive and its props, and the class beside them. The classes share the `ui-` namespace with
 the collections above and with the settings set. A box a person types in is not a class: it is
-[the field family](#the-field-family).
+[the field family](#the-field-family); nor is a select: it is [the select
+family](#the-select-and-combobox-families).
 
 | Control           | Class and parts                                                                                                         | Variants                                                                                | On                                                                                                              |
 | ----------------- | ----------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Select            | `.ui-select`; its list is a `.ui-menu` of `.ui-menu-item`s                                                                       |                                                                                         | Radix Select's `Trigger` (`@radix-ui/react-select`), through `primitives/Select.tsx`; no native `<select>` remains |
 | Checkbox          | `.ui-checkbox`, its `Indicator` inside                                                                                     |                                                                                         | Radix Checkbox's `Root`                                                                                         |
 | Radio             | `.ui-radio` with `.ui-radio-mark`                                                                                             |                                                                                         | Radix RadioGroup's `Item` and `Indicator`                                                                       |
 | Switch            | `.ui-switch` with `.ui-switch-thumb`                                                                                          |                                                                                         | Radix Switch's `Root` and `Thumb` (`@radix-ui/react-switch`)                                                    |
 | Segmented control | `.ui-segmented` of `.ui-segmented-item`s                                                                                      | `.ui-segmented-sm` at the chrome height                                                    | Radix RadioGroup's `Root` and `Item`s                                                                           |
-| A select's list   | `.ui-menu` of `.ui-menu-item`s, its tick `.ui-menu-mark`                                                                              |                                                                                         | Radix Select's `Content` and `Item`s, through `primitives/Select.tsx`, until the select family moves (#2906). Every menu is the menu family ([The menu and popover families](#the-menu-and-popover-families)) |
 
 **A button is the button family**, not a class: [The button family](#the-button-family). An
 answer that trusts text from outside is plain too (#2591): the repository-instructions tab's Add
@@ -949,22 +996,20 @@ now, with the same weight. It grants nothing, so it is not `variant="grants"`.
 
 What every class holds to:
 
-- **One height.** A select and a segmented control are `--size-control` tall (28px at
-  the default text size); a small segmented control is `--size-chrome` (21px), for strips and
-  pane headers. A button's, a field's and a menu's row's sizes are their families'.
+- **One height.** A segmented control is `--size-control` tall (28px at the default text size);
+  a small one is `--size-chrome` (21px), for strips and pane headers. A button's, a field's, a
+  select's and a menu's row's sizes are their families'.
   A checkbox's and a radio's mark, and a switch's track, are shares of the control height, so
   they scale with it.
 - **One focus ring.** A control's ring is `--focus-ring-width` in the theme's `focus.ring`,
   **outside** it at `--focus-ring-offset`. A segment's is **inside** it (`--focus-ring-inset`),
-  because its group clips what is outside. An option of a select's list draws none: the option
-  the keyboard is on is the highlighted one.
+  because its group clips what is outside.
 - **A toggle button is `ToggleButton`** (DS-12): pressed, it says `aria-pressed` and stands on
   `accent.surface` behind an `accent.base` edge, as a chosen segment does, and stays so under the
   pointer (*Changed only*, *Show ignored files*, Search's switches, a file's *Source*).
 - **The keyboard is Radix's.** Nothing in a class changes behaviour: Tab reaches each control,
   Enter and Space press a button, Space ticks a checkbox and turns a switch, the arrows move along
-  a radio group or a segmented control and Space picks, Enter or an arrow opens a select, the
-  arrows move in its list, an option that cannot be chosen is skipped, and Enter picks.
+  a radio group or a segmented control and Space picks.
 - **Every colour is one token per declaration**, so `contrast.test.ts` reads each pair a class
   draws. No colour hides behind an alias of the class's own.
 - **The classes are in the `components` layer, above `App.css`** (`styles.css`). A view rule
@@ -1071,8 +1116,8 @@ their rows are tabs and sentences with no part that gives way, so `.more-menu` h
 tooltip share one ground (`surface.overlay`), one border, one corner (`--radius-lg`) and one lift
 (`--elevation-overlay`), so they read as related; a dialog and a popover share one padding
 (`--space-6`). The classes are in `app/src/primitives/overlays.css`, after the control classes in
-the same `components` layer, and the popover and menu families' surface is this one (`.ui-menu`, a select's list, keeps only its inset
-and its rows).
+the same `components` layer, and the popover and menu families' surface is this one, a select's
+list's included.
 
 | Overlay | Class                                         | On                                                         |
 | ------- | --------------------------------------------- | ---------------------------------------------------------- |
@@ -1083,8 +1128,7 @@ and its rows).
 (`--elevation-overlay`), so they read as related. A dialog is [the dialog
 family's](#the-dialog-family), drawn on that surface by `app/src/ui/dialog/dialog.css`; the other
 classes are in `app/src/primitives/overlays.css`, after the control classes in the same
-`components` layer, and the menu's surface is this one (`.ui-menu` keeps only its inset and its
-rows).
+`components` layer, and the menu's surface is this one.
 
 | Overlay | Class                                         | On                                                         |
 | ------- | --------------------------------------------- | ---------------------------------------------------------- |
@@ -1214,8 +1258,10 @@ to add to it.
 ## What is already converted
 
 _History: the dialogs below moved from Radix's `Dialog` and `AlertDialog` onto [the dialog
-family](#the-dialog-family) in #2910. What follows records why each was drawn as it was; the
-rules it states hold, kept by the family._
+family](#the-dialog-family) in #2910, and the menus from Radix's `DropdownMenu` and
+`ContextMenu` onto [the menu family](#the-menu-and-popover-families) in #2909; those packages
+are no longer in the window (#2906). What follows records why each was drawn as it was; the
+rules it states hold, kept by the families._
 
 `StartChat`, `QuitWarning`, `ApprovePlane` and `Palette` — every modal surface the window has.
 The terminal panes are xterm.js and are not a candidate.
@@ -2034,15 +2080,12 @@ A part of a project's view is therefore mounted while nobody can see it. What th
   would stand over the project in front: a delete asked in one, answered over another. And it
   need not be open as the project leaves: a part still sets its own state while its project is
   behind, so the answer to something it asked the core can open its confirm then. So **every
-  overlay is written through `overlays/`**, never from the Radix package: the same parts, with
-  the portal, the content and the scrim drawn only while their project is in front
-  (`onlyWhileShown`). Nothing of a project behind is ever mounted over the window, so nothing a
+  overlay is a family's**, on React Aria (#2906): the surface a popover, a menu or a select's list
+  stands on, a dialog and a tooltip each ask `useProjectShown()` and draw nothing while their
+  project is behind. Nothing of a project behind is ever mounted over the window, so nothing a
   dialog does to the document as it mounts happens either, and what opened it is there when
-  the person is back. Each file hands on Radix's parts by their short names alone
-  (`Content`, never `DialogContent`, which is the same part with nothing asked of it).
-  `projectShown.guard.test.tsx` fails for an overlay imported from the package, for a kind with
-  no file in `overlays/`, for a part that draws handed on as it is under any name, and for a new
-  `createPortal`. Behind that
+  the person is back. `projectShown.guard.test.tsx` fails for a Radix package that draws over the
+  window and for a new `createPortal`. Behind that
   stands one backstop: a project that leaves the front with anything still over the window once
   the press is over (`drawnOverTheWindow`) is not kept.
 - **A prop that says the project is in front** is the last one the part was drawn with while

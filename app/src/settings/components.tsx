@@ -17,7 +17,7 @@ import * as RadioGroup from "@radix-ui/react-radio-group";
 import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
 import * as Switch from "@radix-ui/react-switch";
 import { Check, Info, ListFilter } from "lucide-react";
-import { Select } from "../primitives/Select";
+import { Select } from "../ui/select/Select";
 import { useTabStop } from "../roving";
 import { Button } from "../ui/button/Button";
 import { TextArea, TextField } from "../ui/field/Field";
@@ -477,10 +477,6 @@ type Tied = { ids: RowIds };
  *  long value does not push a table past its page. */
 const narrow = (ids: RowIds) => (ids.label === undefined ? [] : ["min-w-0", "max-w-full"]);
 
-/** A select's look and place: the one select's own `ui-select`, one control tall like the Reset
- *  beside it (DS-8, #1840). */
-const rowless = (ids: RowIds) => ["ui-field", ...narrow(ids)].join(" ");
-
 /** A box's place in its row (`ui-setting-box`): the field family draws it (`ui/field`, #2905). */
 const boxPlace = (ids: RowIds) => ["ui-setting-box", ...narrow(ids)].join(" ");
 
@@ -671,7 +667,7 @@ export type Option = {
 
 /**
  * **A value picked**: `radio` one of a few, each with a line on what it does (a Radix radio
- * group); `select` one of many (the one select, Radix's, `primitives/Select.tsx`); `switch` a
+ * group); `select` one of many (the select family, `ui/select/Select.tsx`); `switch` a
  * setting on or off, in force the moment it is turned (a Radix switch, #1860); `toggle` an option
  * of a form on or off, done only when its button is pressed (a Radix checkbox);
  * `checks` any of a few, each ticked on its own (a Radix checkbox per option, in a group the row
@@ -903,22 +899,28 @@ export function Choice(props: ChoiceProps) {
     );
   if (props.kind === "select")
     return (
-      <Tooltip tip={ids.title}>
-        <Select
-          id={ids.id}
-          className={rowless(ids)}
-          value={props.value ?? ""}
-          // An option out of reach is the prompt a pick starts on and cannot go back to.
-          options={[
-            ...(props.unset !== undefined ? [{ value: "", label: props.unset }] : []),
-            ...props.options,
-          ]}
-          disabled={props.disabled}
-          aria-label={ids.label}
-          aria-describedby={ids.describedBy}
-          onValueChange={props.onValueChange}
-        />
-      </Tooltip>
+      <Select
+        id={ids.id}
+        className={narrow(ids).join(" ") || undefined}
+        tooltip={ids.title}
+        value={props.value ?? ""}
+        // An option out of reach is the prompt a pick starts on and cannot go back to.
+        options={[
+          ...(props.unset !== undefined ? [{ value: "", label: props.unset }] : []),
+          ...props.options.map((one) => ({
+            value: one.value,
+            label: one.label,
+            isDisabled: one.disabled,
+            tooltip: one.title,
+          })),
+        ]}
+        isDisabled={props.disabled}
+        // Named by its row's label, which React Aria says after what it holds.
+        aria-label={ids.label}
+        aria-labelledby={ids.label === undefined ? ids.labelledBy : undefined}
+        aria-describedby={ids.describedBy}
+        onValueChange={props.onValueChange}
+      />
     );
   return (
     <RadioGroup.Root

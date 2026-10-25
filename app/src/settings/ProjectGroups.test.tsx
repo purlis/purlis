@@ -22,7 +22,7 @@ import type {
   SettingsFile,
   SettingsWhich,
 } from "../bindings";
-import { offeredIn, offeredValuesIn, pickIn } from "../primitives/select.testkit";
+import { allSelects, offeredIn, offeredValuesIn, pickIn } from "../ui/select/select.testkit";
 
 /**
  * **What the old Project settings page held, at the Project level** (SE-19, #1169): the page
@@ -318,8 +318,7 @@ describe("the files, at the Project level", () => {
     core();
     await at("Saving");
 
-    for (const control of screen.getAllByRole("combobox"))
-      expect(control).toHaveAttribute("tabindex", "0");
+    for (const control of allSelects()) expect(control).toHaveAttribute("tabindex", "0");
   });
 });
 
@@ -982,7 +981,7 @@ describe("the project's own save keys, in Saving (charter-app#300, ADR 0051)", (
     // Not set here, and what is in force not yet said: neither a select nor a switch.
     const reading = within(rowOf("Auto-save")).getByText("Reading…");
     expect(reading).toHaveAttribute("aria-busy", "true");
-    expect(within(rowOf("Auto-save")).queryByRole("combobox")).toBeNull();
+    expect(allSelects(rowOf("Auto-save"))).toEqual([]);
     expect(within(saving).queryByRole("switch", { name: "Auto-save" })).toBeNull();
     // Set here, so its switch shows what the file holds, and does not wait.
     expect(within(saving).getByRole("switch", { name: "Sign commits" })).toBeChecked();

@@ -14,7 +14,7 @@ import type {
   SetupTested,
   VaultContents,
 } from "./bindings";
-import { offeredIn, pickIn } from "./primitives/select.testkit";
+import { offeredIn, pickIn } from "./ui/select/select.testkit";
 
 afterEach(() => {
   cleanup();
