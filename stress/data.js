@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792967227936,
+  "lastUpdate": 1792967248226,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -14900,6 +14900,42 @@ window.BENCHMARK_DATA = {
             "value": 711.2,
             "unit": "MB",
             "extra": "median of 6 samples: 679.8, 703.1, 709, 713.5, 714.2, 807.1 MB; window 428.6 MB, session host 282.6 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "af21a62c3b2d982705c4ce64237aae9d4567d4fc",
+          "message": "The Unicode tables are pinned and checked in CI; emoji read by Extended_Pictographic (#3218, #3219) (#3247)\n\n* Pin the Unicode tables' inputs; read emoji by Extended_Pictographic (#3218, #3219)\n\nThe four UCD 16.0.0 files the generator reads are committed under tools/ucd/16.0.0/\n(byte for byte what unicode.org publishes) with the Unicode licence, and the header of\ntables.rs records each one's sha256. The lint job regenerates the tables under CPython\n3.14 and fails on any difference.\n\npictographic() is now the generated Extended_Pictographic table, a ZWJ may follow an\nEmoji_Modifier, and the keycap and RGI tag sequences of emoji-sequences.txt read as\ntext whole. Any other selector or tag is still marked.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Format the new unicode tests\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* NOTICE names the Unicode data; Extended_Pictographic's reserved codepoints\n\nThe root NOTICE names tools/ucd/ (UCD 16.0.0) and the tables derived from it under\nthe Unicode License V3 in tools/ucd/LICENSE. pictographic()'s doc says the property\nholds reserved codepoints, after which one selector or ZWJ reads as text.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-26T01:25:25+04:00",
+          "tree_id": "32a5846108a9096c2925249dd55ca7458a3ae9c4",
+          "url": "https://github.com/purlis/purlis/commit/af21a62c3b2d982705c4ce64237aae9d4567d4fc"
+        },
+        "date": 1792967244771,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1615.8,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1525.6, 1615.8, 1774.4 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 709.7,
+            "unit": "MB",
+            "extra": "median of 6 samples: 667.5, 683.5, 707.8, 711.6, 712.3, 786.1 MB; window 416.1 MB, session host 293.5 MB"
           }
         ]
       }
