@@ -28,7 +28,7 @@
    --------------------------------------------------------------------------------------------- */
 
 /* A pane with a chat, or with a task that is away, is the terminal's fill from edge to edge. A
-   view's pane keeps its own ground. */
+   view's pane keeps its own ground (`.pane.view`), the fill its chosen tab joins. */
 .pane-frame.pane-headed {
   /* Its size is the layout's, never its content's, so what it holds can be capped by it. */
   container-type: size;
@@ -282,21 +282,35 @@
 }
 
 /* **A chip is words, not a box** (no hairlines; a control never takes a border): quiet on the
-   pane's fill, the pointer's ground under it when it is pressable. */
-.pane-head
-  > .pane-chips
-  > :is(.chat-gauge, .pane-from, .pane-harness, .pane-work-item, .pane-crumbs) {
+   pane's fill. A chip that is pressed (the harness, the skills, Brief, a task's ways) is a button
+   of the family, which draws it (#3129). */
+.pane-head > .pane-chips > :is(.chat-gauge, .pane-from, .pane-work-item, .pane-crumbs) {
   border-color: transparent;
   background-color: transparent;
   opacity: 1;
 }
 
-.pane-head > .pane-chips > .pane-harness {
-  border-radius: var(--radius-md);
+/* **The harness's name keeps the header's tier** (#2914, the operator's ruling of 2026-10-22):
+   muted, primary on the pane of a split that has the keyboard, and under the pointer or the
+   keyboard. **Interim, until the quiet ghost variant (#3214)**: the family's ghost draws primary
+   words, so these rules out-rank its variant (0,3,0) by specificity, naming the button's own
+   attributes, never by where they are written. */
+.pane-head > .pane-chips > .pane-harness[data-scope="button"][data-variant="ghost"] {
+  color: var(--text-muted);
 }
 
-.pane-head > .pane-chips > .pane-harness:hover {
-  background-color: var(--surface-overlay);
+[data-scope="panel"][data-variant="content"]
+  [data-group]
+  .pane-frame[data-focused]
+  .pane-head
+  > .pane-chips
+  > .pane-harness[data-scope="button"][data-variant="ghost"],
+.pane-head
+  > .pane-chips
+  > .pane-harness[data-scope="button"][data-variant="ghost"]:is(
+    [data-hovered],
+    [data-focus-visible]
+  ) {
   color: var(--text-primary);
 }
 
@@ -330,6 +344,77 @@
 .pane-actions > .pane-doing button:hover:not(:disabled, [aria-disabled="true"]) {
   background-color: var(--surface-overlay);
   color: var(--text-primary);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   A view's pane.
+   --------------------------------------------------------------------------------------------- */
+
+/* **A view carries no title of its own** (#3147, the operator's ruling of 2026-10-24): its tab is
+   its name, and the view starts on the fill its chosen tab joins, with no band of its own. The
+   pane's actions are the same `PaneHead` and `PaneActions` a chat's pane draws, in the same
+   place: the header's row, over the view's first row rather than a row of its own, so the view
+   loses no height to a row with nothing else in it. */
+.pane-frame.pane-viewed {
+  /* What the actions take at the row's end, and the gap before them: three controls' width and
+     the header's own inline padding. A reserve, not a step of the scale. */
+  --pane-actions-room: calc(var(--size-control) * 3 + var(--space-5) * 2);
+}
+
+/* Where a chat's header is: under the empty band's step (`.pane-notice-row-empty + .pane-head`),
+   at the pane's top, end to end. It takes no pointer itself, so the view's first row under it
+   stays pressable; only its actions do. */
+.pane-frame.pane-viewed > .pane-head {
+  position: absolute;
+  inset-block-start: var(--space-2);
+  inset-inline: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.pane-frame.pane-viewed > .pane-head > .pane-actions {
+  pointer-events: auto;
+}
+
+/* **The view's first row is the header's row**: the same step from the top, the same height and
+   the same start, and it keeps the actions' room at its end, so nothing in it is ever under
+   them. */
+.pane-frame.pane-viewed .view-head {
+  /* A narrow pane's row goes onto a second line before anything in it reaches the actions. */
+  flex-wrap: wrap;
+  /* A strip tall, its padding outside that: past the actions' row, so the body, which scrolls,
+     starts below them. */
+  box-sizing: content-box;
+  min-block-size: var(--size-chrome);
+  margin-block-start: var(--space-2);
+  padding-block: var(--space-2);
+  padding-inline: var(--space-5) var(--pane-actions-room);
+}
+
+/* **A view that draws its own first row** (Settings' levels, its words beside them) keeps the
+   same room itself, and starts at the header's row. */
+.pane-frame.pane-viewed .view-body:has(> .ui-settings) {
+  padding-block-start: 0;
+}
+
+/* **Settings' levels stay at the top as its body scrolls** (#3147): on the view's own fill, so
+   no band shows, and nothing scrolls under the pane's actions. It holds its own step from the
+   top, so it does not move as the scroll begins. */
+.pane-frame.pane-viewed .ui-settings-top {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 1;
+  padding-block-start: var(--space-4);
+  padding-inline-end: var(--pane-actions-room);
+  background-color: var(--surface-raised);
+}
+
+/* **A file's or a comparison's toolbar is its view's first row** (#3147, R146): at the header's
+   row, keeping the actions' room. It is outside what scrolls (the code scrolls under it). */
+.pane-frame.pane-viewed .view-body > .piece-file > .piece-files-head:first-child {
+  box-sizing: content-box;
+  min-block-size: var(--size-chrome);
+  padding-inline-end: var(--pane-actions-room);
 }
 
 /* ---------------------------------------------------------------------------------------------

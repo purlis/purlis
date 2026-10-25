@@ -228,9 +228,9 @@ function Pane({
             >
               11 skills
             </Button>
-            <button type="button" className="pane-harness">
+            <Button size="sm" variant="ghost" className="pane-harness">
               Claude Code
-            </button>
+            </Button>
             <span className="chat-gauge" data-testid="chat-gauge">
               <span className="gauge-label">ctx</span> 5% <span className="gauge-label">cache</span>{" "}
               100%

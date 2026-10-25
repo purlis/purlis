@@ -438,6 +438,8 @@ pub struct SkillsMissing {
     pub no_built_in: Vec<String>,
     /// Skills the chat would have loaded that could not be loaded, each with why.
     pub broken: Vec<SkillBroken>,
+    /// The project's skills the repo the chat works in leaves out, each with why (SK-53).
+    pub by_a_repo: Vec<SkillBroken>,
 }
 
 /// A skill a chat would have loaded that could not be loaded (SK-8): the core's `Broken`, for
@@ -453,6 +455,18 @@ pub struct SkillBroken {
     pub label: String,
     /// Why, in one line: the core's sentence.
     pub why: String,
+}
+
+impl From<purlis_core::skills::Broken> for SkillBroken {
+    fn from(one: purlis_core::skills::Broken) -> Self {
+        SkillBroken {
+            label: purlis_core::skills::level_shown(one.origin, one.local),
+            name: one.name,
+            level: one.origin.into(),
+            local: one.local,
+            why: one.why.to_string(),
+        }
+    }
 }
 
 /// [`Running::started_with`].
@@ -3268,17 +3282,8 @@ impl Chats {
                 persona: runs_as.clone(),
                 missing: not.missing,
                 no_built_in: not.no_built_in,
-                broken: not
-                    .broken
-                    .into_iter()
-                    .map(|one| SkillBroken {
-                        name: one.name,
-                        level: one.origin.into(),
-                        local: one.local,
-                        label: purlis_core::skills::level_shown(one.origin, one.local),
-                        why: one.why.to_string(),
-                    })
-                    .collect(),
+                broken: not.broken.into_iter().map(SkillBroken::from).collect(),
+                by_a_repo: not.by_a_repo.into_iter().map(SkillBroken::from).collect(),
             })
         };
         // A sandboxed Claude Code chat whose project's own settings it does not load says which

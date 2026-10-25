@@ -4,8 +4,8 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { ScrollText } from "lucide-react";
 import { commands, type BriefOf, type PlaneId, type TaskBrief } from "./bindings";
+import { IconButton } from "./ui/button/Button";
 import { Dialog } from "./ui/dialog/Dialog";
-import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
  * **The brief a task was sent, read back** (#1494, V100-45).
@@ -70,8 +70,9 @@ export function briefTitle(name: string): string {
 }
 
 /**
- * **Brief, on the breadcrumb line** (`.pane-chips`, beside `PaneCrumbs`): one small icon
- * button, named `Brief of <task>`.
+ * **Brief, on the breadcrumb line** (`.pane-chips`, beside `PaneCrumbs`): one small ghost icon
+ * button of the family (#3129), named `Brief of <task>`, its tooltip a second line under the
+ * name.
  *
  * **It is an item of the line, after the breadcrumb, and never part of it.** The line's rule
  * is that the breadcrumb's state word is cut last (`App.css`, `.pane-crumbs`): every other
@@ -83,19 +84,16 @@ export function BriefButton({ of }: { of: BriefAsk }) {
   const open = useOpenBrief();
   if (open === undefined) return null;
   return (
-    <Tooltip tip="Brief: what this task was sent">
-      <button
-        type="button"
-        className="pane-brief"
-        // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
-        tabIndex={0}
-        aria-label={briefTitle(of.name)}
-        aria-haspopup="dialog"
-        onClick={() => open(of)}
-      >
-        <ScrollText aria-hidden="true" />
-      </button>
-    </Tooltip>
+    <IconButton
+      variant="ghost"
+      size="sm"
+      className="pane-brief"
+      icon={<ScrollText aria-hidden="true" />}
+      tooltip="What this task was sent"
+      aria-label={briefTitle(of.name)}
+      aria-haspopup="dialog"
+      onPress={() => open(of)}
+    />
   );
 }
 

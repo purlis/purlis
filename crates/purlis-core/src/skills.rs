@@ -1097,6 +1097,10 @@ pub struct NotHere {
     /// A plane skill the chat would have loaded that could not be: not a whole skill, or one
     /// of two folders at its level that name it.
     pub broken: Vec<Broken>,
+    /// A plane skill the repo the chat works in leaves out (SK-53, #3213): a narrower copy
+    /// there takes its name, or purlis could not read a skills folder of the clone whole
+    /// ([`purlis_skills::SkillSet::left_out_by_a_repo`]).
+    pub by_a_repo: Vec<Broken>,
 }
 
 /// A skill a chat would have loaded that could not be loaded, and why.
@@ -1129,10 +1133,12 @@ impl std::fmt::Display for BrokenWhy {
 }
 
 /// **The skills a chat as `persona` (or on none) starts without** (SK-5, #2768; SK-8), in the
-/// plane at `plane`, at its root or in `workspace`, on `harness` with the chat's environment
-/// `env` and the built-in skills in `built_in`. A broken plane skill is one only where the chat
-/// would have loaded it: a project skill whose grant does not reach the chat's workspace is no
-/// loss. `None` where it has every one, or purlis could not tell.
+/// plane at `plane`, at its root or in `workspace`, started in `cwd`, on `harness` with the
+/// chat's environment `env` and the built-in skills in `built_in`. A broken plane skill is one
+/// only where the chat would have loaded it: a project skill whose grant does not reach the
+/// chat's workspace is no loss. The repo skills of the clone `cwd` is in are read as its start
+/// reads them ([`repo_skills_of_chat`]), so a plane skill that repo leaves out is said too
+/// (SK-53). `None` where it has every one, or purlis could not tell.
 pub fn not_here(
     plane: &Path,
     workspace: Option<&str>,
@@ -1140,13 +1146,18 @@ pub fn not_here(
     built_in: Option<&Path>,
     harness: crate::harness::Harness,
     env: &crate::harness_plugin::Env<'_>,
+    cwd: Option<&Path>,
 ) -> Option<NotHere> {
     let here = on_machine(harness, env);
+    let repo = match (workspace, cwd) {
+        (Some(ws), Some(cwd)) => repo_skills_of_chat(harness, plane, ws, cwd),
+        _ => Vec::new(),
+    };
     let at = PlaneSkills {
         plane,
         workspace,
         linked: None,
-        repo: &[],
+        repo: &repo,
     };
     let set = ask(
         built_in,
@@ -1172,6 +1183,15 @@ pub fn not_here(
             });
         }
     }
+    not.by_a_repo = set
+        .left_out_by_a_repo()
+        .map(|left| Broken {
+            name: left.name.clone(),
+            origin: left.origin,
+            local: left.local,
+            why: BrokenWhy::LeftOut(left.reason.clone()),
+        })
+        .collect();
     for left in set.left_out {
         match left.reason {
             Reason::NotOnThisMachine => not.missing.push(left.name),
@@ -1552,17 +1572,22 @@ pub struct HarnessInTheStudio {
     /// Their studio rows (`outside_rows`): what the window and the command line list under
     /// the harness (SK-34).
     pub rows: Vec<StudioRow>,
+    /// The studio rows of the plane's skills a repo of the workspace leaves out of a chat on it
+    /// in that clone, each with why ([`purlis_skills::SkillSet::left_out_by_a_repo`], SK-53):
+    /// the plane's own rows are a chat's in no clone, so this is where the loss is said.
+    pub repo_left_out: Vec<StudioRow>,
 }
 
 /// **Every harness in the Skill studio** (SK-6, #2769), for a chat in the plane at `plane`, at
 /// its root or in `workspace` (whose clones' own skills are listed), whose plane skills are
-/// `set` ([`in_the_studio`]), and with `env` read for where each harness keeps its own: one per
-/// harness purlis knows, in the registry's order. Read from the harnesses' own files, never
-/// written.
+/// `set` ([`in_the_studio`]) for a persona whose `skills:` list says `names`, and with `env` read
+/// for where each harness keeps its own: one per harness purlis knows, in the registry's order.
+/// Read from the harnesses' own files, never written.
 fn harnesses_in_the_studio(
     set: &SkillSet,
     plane: &Path,
     workspace: Option<&str>,
+    names: &[Reference],
     pins: &[String],
     env: &crate::harness_plugin::Env<'_>,
     known: &Known,
@@ -1583,13 +1608,16 @@ fn harnesses_in_the_studio(
                 &choices,
                 &clones,
             ));
+            let set = set.clone().with_outside(harness.skills(), outside.clone());
+            let by_a_repo = SkillSet {
+                left_out: set.left_out_by_a_repo().cloned().collect(),
+                ..SkillSet::default()
+            };
             let mut one = HarnessInTheStudio {
                 harness,
+                repo_left_out: studio_rows(&by_a_repo, plane, names),
                 // Routed by this harness's own budget, with what it finds itself counted (SK-15).
-                set: set
-                    .clone()
-                    .with_outside(harness.skills(), outside.clone())
-                    .routed(harness.skill_budget(), pins),
+                set: set.routed(harness.skill_budget(), pins),
                 group,
                 outside,
                 rows: Vec::new(),
@@ -1974,7 +2002,7 @@ pub fn studio_list(
         .unwrap_or_default();
     let known = Known::of(plane);
     let pins = pins_of(plane, workspace, persona).unwrap_or_default();
-    let harnesses = harnesses_in_the_studio(&set, plane, workspace, &pins, env, &known);
+    let harnesses = harnesses_in_the_studio(&set, plane, workspace, &names, &pins, env, &known);
     let mut rows = studio_rows(&set, plane, &names);
     with_harness_badges(&mut rows, &harnesses, &known);
     with_routing(&mut rows, &harnesses);

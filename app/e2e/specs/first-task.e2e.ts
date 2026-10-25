@@ -222,7 +222,7 @@ async function pressInTheTab(words: string): Promise<void> {
 /** Picks the profile `name` for the run headed `run` in the First task tab. */
 async function pickInTheTab(run: string, name: string): Promise<void> {
   const radio = await $(
-    `//div[@class="first-task"]//section[h3[normalize-space()="${run}"]]//*[@role="radio"][normalize-space()="${name}" or @value="${name}"]`,
+    `//div[@class="first-task"]//section[h2[normalize-space()="${run}"]]//*[@role="radio"][normalize-space()="${name}" or @value="${name}"]`,
   );
   await radio.waitForExist({ timeout: 30_000, timeoutMsg: `the ${run} has no ${name} to pick` });
   await browser.execute((el: HTMLElement) => el.click(), radio as unknown as HTMLElement);
