@@ -7,11 +7,14 @@ import { readFileSync, readdirSync } from "node:fs";
 import { test } from "node:test";
 
 import {
+  CANARY,
   SHIPPING_WORKFLOWS,
   TAURI_PROJECT,
+  TEST_ONLY,
   annotations,
   builds,
   enablers,
+  listErrors,
   tauriConfigFeatures,
   NOT_SHIPPING,
   workflowErrors,
@@ -293,4 +296,60 @@ test("every workflow today that ships a build is listed", () => {
     .map((name) => ({ name, text: readFileSync(new URL(name, dir), "utf8") }));
   assert.ok(workflows.length > SHIPPING_WORKFLOWS.length);
   assert.deepEqual(workflowErrors(workflows), []);
+});
+
+// What `cargo metadata --no-deps` says of the workspace's packages, cut to what `listErrors`
+// reads: each package's name and its features.
+const workspace = [
+  { name: "purlis-session-protocol", features: { "any-stream": [], bench: ["tokio/rt-multi-thread"] } },
+  { name: "purlis-core", features: { fenced: [], "test-support": [] } },
+  { name: "purlis-host", features: { "test-support": [] } },
+  { name: "purlis-skills", features: { "test-support": [] } },
+  { name: "purlis-terminal", features: { "test-support": [] } },
+  { name: "purlis-app", features: { e2e: ["purlis-core/fenced"] } },
+  { name: "purlis-cli", features: {} },
+];
+
+test("every test-support feature in the workspace is listed as test-only, each with a canary", () => {
+  assert.deepEqual(listErrors(workspace), []);
+  for (const { crate, feature } of TEST_ONLY) {
+    assert.ok(CANARY[`${crate}/${feature}`], `${crate}/${feature} has no canary`);
+  }
+});
+
+test("a test-support feature the list leaves out is an error, not a feature the resolver alone keeps out", () => {
+  const withANewOne = [...workspace, { name: "purlis-browser-engine", features: { "test-support": [] } }];
+  assert.deepEqual(listErrors(withANewOne), [
+    "purlis-browser-engine/test-support is a test-only feature TEST_ONLY does not list: list it, with a CANARY",
+  ]);
+});
+
+test("a listed feature no package has any more, or one with no canary, is an error", () => {
+  const gone = workspace.filter((p) => p.name !== "purlis-skills");
+  assert.deepEqual(listErrors(gone), ["TEST_ONLY lists purlis-skills/test-support, and no package of the workspace has it"]);
+  const unwatched = [...TEST_ONLY, { crate: "purlis-cli", feature: "test-support" }];
+  const withIt = workspace.map((p) => (p.name === "purlis-cli" ? { ...p, features: { "test-support": [] } } : p));
+  assert.deepEqual(listErrors(withIt, unwatched), ["TEST_ONLY lists purlis-cli/test-support with no CANARY to show this check still sees it"]);
+});
+
+test("a release build that turns on any listed test-only feature is an error on the manifest that did", () => {
+  const manifests = new Map([["purlis-cli", "/w/crates/purlis-cli/Cargo.toml"]]);
+  for (const test of TEST_ONLY) {
+    // `purlis-cli`'s [dependencies] asking for the feature, as `cargo tree -i` prints it.
+    const tree = [
+      `0${test.crate} v0.4.2 (/w/crates/x)`,
+      `1${test.crate} feature "${test.feature}"`,
+      "2purlis-cli v0.4.2 (/w/crates/purlis-cli)",
+      '3purlis-cli feature "default" (command-line)',
+      `1${test.crate} feature "default"`,
+      "2purlis-cli v0.4.2 (/w/crates/purlis-cli) (*)",
+    ].join("\n");
+    const found = enablers(tree, test);
+    assert.deepEqual(found, [{ name: "purlis-cli", via: null, askedBy: [] }], test.feature);
+    assert.deepEqual(annotations({ found, test, build: "the build at release.yml:9 (purlis-cli)", manifests, root: "/w" }), [
+      "::error file=crates/purlis-cli/Cargo.toml,title=test-only feature in a release build::" +
+        `purlis-cli turns on ${test.crate}'s \`${test.feature}\` in its [dependencies], ` +
+        "so the build at release.yml:9 (purlis-cli) carries it. Ask for it from [dev-dependencies] only.",
+    ]);
+  }
 });
