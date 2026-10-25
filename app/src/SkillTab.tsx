@@ -218,9 +218,7 @@ export function SkillTab({
 
   return (
     <div className="skill-tab" data-testid="skill-tab">
-      <h2 className="skill-tab-name">
-        <code>{name}</code>
-      </h2>
+      {/* No heading with the skill's name: its tab says it (#3147). */}
       <SkillDetailsPanel plane={plane} name={name} changed={changed} />
       <SkillTotals plane={plane} name={name} changed={changed} />
       <section aria-labelledby="skill-runs-heading" data-testid="skill-runs">

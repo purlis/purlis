@@ -139,7 +139,7 @@ describe("the window's keyboard reach", () => {
       const controlsFirst =
         terminal > 0 &&
         terminal === inFrame.length - 1 &&
-        inFrame.slice(0, terminal).every((el) => el.closest(".pane-corner, .pane-top") !== null) &&
+        inFrame.slice(0, terminal).every((el) => el.closest(".pane-top, .pane-head") !== null) &&
         inFrame.some((el) => el.closest(".pane-doing") !== null);
       return { tabbed, laidOut, controlsFirst };
     });

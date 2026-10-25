@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * **A view tab and its view, as main draws them before #3147**: the
+ * **A view tab and its view, as one piece** (#3147, the operator's ruling of 2026-10-24): the
  * session tabs docked on the content panel, a view's tab chosen, and under it the view's pane
  * with no title of its own. The tab is the view's name; the view starts on the fill the chosen
  * tab joins, with no band of its own; the pane's actions (split side by side, split stacked,
@@ -18,8 +18,9 @@
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import type { ComponentType, ReactNode } from "react";
+import { expect, waitFor, within } from "storybook/test";
 import { Archive, Brain, KeyRound, Settings2, UserRound, X } from "lucide-react";
-import { PaneDoing } from "../../LayoutPanes";
+import { PaneActions, PaneHead } from "../../LayoutPanes";
 import { HeadingOffer } from "../../PanelSection";
 import type { Offer } from "../../actions";
 import { ChatMark } from "../../NeedsYou";
@@ -28,6 +29,7 @@ import { useTabIds, StripTablist } from "../../StripTablist";
 import { Button } from "../button/Button";
 import { panelRoot } from "../panel/Panel";
 import { TabCell, tabPart, tabsPart } from "./Tabs";
+import { expectFocusInSight } from "../../stories.testkit";
 
 /** The view a story shows. */
 type Shown = "settings" | "vault" | "persona" | "memory";
@@ -85,44 +87,34 @@ const TABS: Record<Shown, { title: string; mark: ComponentType<{ className?: str
   memory: { title: "Shared memory", mark: Brain },
 };
 
-/** The view's heading, as main's `ViewPane` and `VaultTab` draw it: its mark, its title, and
- *  what can be done to what it is about. */
+/** The view's first row, as `ViewPane` and `VaultTab` draw it: what can be done to what it is
+ *  about, and the quiet words beside it. Settings draws its own (its levels). */
 function FirstRow({ shown }: { shown: Shown }): ReactNode {
   const pressed = () => undefined;
-  const { title, mark: Mark } = TABS[shown];
-  const heading = (
-    <h2>
-      <Mark className="tab-mark" aria-hidden="true" />
-      {title}
-      {shown === "vault" && <span className="panel-from">{" · Keychain · 3 secrets"}</span>}
-    </h2>
-  );
   switch (shown) {
     case "settings":
-      return <header className="view-head">{heading}</header>;
+      return null;
     case "vault":
       return (
-        <header className="view-head">
-          {heading}
+        <div className="view-head">
+          <span className="view-head-says">Keychain · 3 secrets</span>
           <Button size="sm">Delete vault…</Button>
-        </header>
+        </div>
       );
     case "persona":
       return (
-        <header className="view-head">
-          {heading}
+        <div className="view-head">
           <Button size="sm">Edit persona.md</Button>
           <Button size="sm">Profile…</Button>
           <Button size="sm">Delete persona…</Button>
-        </header>
+        </div>
       );
     case "memory":
       return (
-        <header className="view-head">
-          {heading}
+        <div className="view-head">
           <HeadingOffer offer={NEW_MEMORY} onPress={pressed} />
           <HeadingOffer offer={OPEN_ARCHIVE} onPress={pressed} mark={Archive} />
-        </header>
+        </div>
       );
   }
 }
@@ -270,15 +262,17 @@ function ViewTab({ shown, width = 760 }: { shown: Shown; width?: number }) {
         role="tabpanel"
         aria-labelledby={idOf(chosen)}
       >
-        <div className="pane-frame" data-focused="" data-testid="view frame">
-          <div className="pane-corner at-end">
-            <PaneDoing
-              pane={0}
-              offerFor={(id) => PANE_OFFERS[id]}
-              closeOf={() => PANE_OFFERS["pane.close"]}
-              onPaneDoes={() => undefined}
-            />
-          </div>
+        <div className="pane-frame pane-viewed" data-focused="" data-testid="view frame">
+          <PaneHead
+            doing={
+              <PaneActions
+                pane={0}
+                offerFor={(id) => PANE_OFFERS[id]}
+                closeOf={() => PANE_OFFERS["pane.close"]}
+                onPaneDoes={() => undefined}
+              />
+            }
+          />
           <div className="pane view focused">
             <section className="view-pane" aria-label={title}>
               <FirstRow shown={shown} />
@@ -300,13 +294,160 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const Settings: Story = { args: { shown: "settings" } };
-export const Vault: Story = { args: { shown: "vault" } };
-export const Persona: Story = { args: { shown: "persona" } };
+const boxOf = (el: Element | null | undefined): DOMRect => (el as Element).getBoundingClientRect();
+
+/** Whether the tabs are docked on the panel in the cell's theme (Purlis), not on a strip of
+ *  their own (Purlis Classic): only then does the chosen tab join what is under it. */
+function docked(canvas: HTMLElement): boolean {
+  const layout = canvas.querySelector('[data-scope="tabs"][data-part="layout"]');
+  return (
+    layout !== null && getComputedStyle(layout).getPropertyValue("--tabs-joined").trim() === "1"
+  );
+}
+
+/** Whether `el` paints a fill of its own: a fill other than an element's with none. */
+function filled(el: Element): boolean {
+  const probe = document.createElement("div");
+  document.body.append(probe);
+  const none = getComputedStyle(probe).backgroundColor;
+  probe.remove();
+  return getComputedStyle(el).backgroundColor !== none;
+}
+
+/**
+ * **What every view tab is held to** (#3147):
+ *
+ * - the view says neither its tab's name nor anything as a heading of its own;
+ * - the content panel is the chosen tab's panel, named by it;
+ * - nothing between the view's top and its body has a fill of its own, and where the tabs are
+ *   docked the chosen tab joins the view on the view's fill, its bottom on the pane's top;
+ * - the pane's actions are the chat pane's cluster in the chat pane's place, the pane's top
+ *   right, and nothing in the view's first row is under them.
+ */
+async function oneWithItsTab(canvasElement: HTMLElement, title: string) {
+  const canvas = within(canvasElement);
+  const tab = canvas.getByRole("tab", { name: title });
+  const panel = canvas.getByRole("tabpanel");
+  expect(panel).toHaveAttribute("aria-labelledby", tab.id);
+  expect(panel).toHaveAccessibleName(title);
+
+  const frame = canvasElement.querySelector('[data-testid="view frame"]') as HTMLElement;
+  const view = frame.querySelector(".view-pane") as HTMLElement;
+  // No title: not as a heading, and not as words of its own anywhere in the view.
+  expect(within(view).queryByRole("heading", { level: 1 })).toBeNull();
+  expect(within(view).queryByRole("heading", { level: 2 })).toBeNull();
+  expect(within(view).queryByText(title, { exact: true })).toBeNull();
+
+  // No band: the view's first row, and everything between the pane's top and the body, draws
+  // on the fill under it.
+  const first = view.querySelector(".view-head");
+  if (first !== null) expect(filled(first)).toBe(false);
+  expect(filled(view)).toBe(false);
+  const ground = frame.querySelector(".pane.view") as HTMLElement;
+  if (docked(canvasElement)) {
+    const cell = tab.closest('[data-part="tab"]') as Element;
+    expect(boxOf(cell).bottom).toBeCloseTo(boxOf(frame).top, 0);
+    expect(getComputedStyle(cell).backgroundColor).toBe(getComputedStyle(ground).backgroundColor);
+  }
+
+  // The actions, drawn as the keyboard reaches them: the chat pane's cluster, at the pane's top
+  // right, and clear of everything the first row holds.
+  const split = canvas.getByRole("button", { name: "Split right" });
+  split.focus();
+  await waitFor(() => expect(split).toBeVisible());
+  const actions = frame.querySelector(".pane-head > .pane-actions") as HTMLElement;
+  expect(actions).not.toBeNull();
+  const at = boxOf(actions);
+  expect(boxOf(frame).right - at.right).toBeLessThanOrEqual(16);
+  expect(at.top - boxOf(frame).top).toBeLessThanOrEqual(16);
+  const row = first ?? view.querySelector(".ui-settings-top");
+  for (const one of row?.querySelectorAll("button, [role='radio'], .view-head-says") ?? []) {
+    const box = boxOf(one);
+    if (box.top < at.bottom && box.bottom > at.top) expect(box.right).toBeLessThanOrEqual(at.left);
+  }
+  expect(
+    within(actions)
+      .getAllByRole("button")
+      .map((one) => one.getAttribute("aria-label")),
+  ).toEqual(["Split right", "Split down", "Close this view"]);
+}
+
+/** Puts the keyboard down, so the picture shows the view at rest. */
+const atRest = () => (document.activeElement as HTMLElement | null)?.blur();
+
+/**
+ * **Settings**: its levels are its first row, at the pane's top, the pane's actions at the
+ * row's end; no "Settings" above them. The keyboard goes from the actions to the levels.
+ */
+export const Settings: Story = {
+  args: { shown: "settings" },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    await oneWithItsTab(canvasElement, "Settings");
+    const project = canvas.getByRole("radio", { name: "Project" });
+    // The levels share the actions' row.
+    const actions = boxOf(canvasElement.querySelector(".pane-actions"));
+    expect(boxOf(project).top).toBeLessThan(actions.bottom);
+    canvas.getByRole("button", { name: "Close this view" }).focus();
+    await userEvent.tab();
+    await waitFor(() => expect(project).toHaveFocus());
+    expectFocusInSight();
+    atRest();
+  },
+};
+
+/**
+ * **A vault**: what kind of vault it is and how much it holds stay as quiet words in its first
+ * row, beside Delete vault…; its name is its tab's alone.
+ */
+export const Vault: Story = {
+  args: { shown: "vault" },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    await oneWithItsTab(canvasElement, "forge");
+    canvas.getByRole("button", { name: "Close this view" }).focus();
+    await userEvent.tab();
+    await waitFor(() =>
+      expect(canvas.getByRole("button", { name: "Delete vault…" })).toHaveFocus(),
+    );
+    expectFocusInSight();
+    atRest();
+  },
+};
+
+/** **A persona**: its own rows on its first row, no name or mark above them. */
+export const Persona: Story = {
+  args: { shown: "persona" },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    await oneWithItsTab(canvasElement, "steward");
+    canvas.getByRole("button", { name: "Close this view" }).focus();
+    for (const name of ["Edit persona.md", "Profile…", "Delete persona…"]) {
+      await userEvent.tab();
+      await waitFor(() => expect(canvas.getByRole("button", { name })).toHaveFocus());
+      expectFocusInSight();
+    }
+    atRest();
+  },
+};
+
+/** **The shared memory**: its `+` and its archive on its first row, the list under them. */
 export const Memory: Story = {
   args: { shown: "memory" },
-  // Main's look, kept as the before picture: its `+` and archive stand 4px apart in the compact
-  // density, under the 24px target spacing (WCAG 2.5.8). #3147's first row spaces them.
-  parameters: { a11y: { options: { rules: { "target-size": { enabled: false } } } } },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    await oneWithItsTab(canvasElement, "Shared memory");
+    canvas.getByRole("button", { name: "Close this view" }).focus();
+    await userEvent.tab();
+    await waitFor(() =>
+      expect(canvas.getByRole("button", { name: "New shared memory" })).toHaveFocus(),
+    );
+    expectFocusInSight();
+    atRest();
+  },
 };
-export const Narrow: Story = { args: { shown: "persona", width: 400 } };
+
+/** **A narrow pane**: the persona's first row wraps under the actions' room, never under them. */
+export const Narrow: Story = {
+  args: { shown: "persona", width: 400 },
+  play: async ({ canvasElement }) => {
+    await oneWithItsTab(canvasElement, "steward");
+    atRest();
+  },
+};

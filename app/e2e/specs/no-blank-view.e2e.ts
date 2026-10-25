@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { browser, expect } from "@wdio/globals";
+import { $, browser, expect } from "@wdio/globals";
 import {
   closeTheViewTabsOpenedSince,
   focusWorkspace,
@@ -23,8 +23,15 @@ import {
  * visible words, and no empty state. A view is shown by its icon's own click from the page, and
  * a view tab by its palette row (`reach.ts`).
  *
+ * **A view tab and its view are one piece** (#3147, the operator's ruling of 2026-10-24): every
+ * view tab it opens, Settings, a vault, a persona and the shared memory among them, carries no
+ * title of its own (no heading, and nowhere its tab's name as words of its own), starts with no
+ * band of its own fill, draws its pane's actions where a chat's pane draws them, and is in the
+ * panel its chosen tab names.
+ *
  * **It leaves the window as it found it**: each bar is put back on the view it had open (or put
- * away, where it was), and each view tab it opened is closed.
+ * away, where it was), and each view tab it opened is closed. The vault it makes for its vault
+ * tab stays in the fixture's copy, as `vaults.e2e.ts`'s does: nothing deletes a vault.
  */
 
 type Body = {
@@ -124,7 +131,78 @@ async function panelOf(bar: string, view: string): Promise<Body | null> {
   );
 }
 
-/** What the view tab called `title` holds below its heading, read once. */
+/** How a view tab is drawn around what it holds (#3147), read once. */
+type Around = {
+  /** Headings of its own at the top levels, and elements at its top whose own words are its
+   *  tab's name. */
+  titles: string[];
+  /** The fill of its first row, where it has one. */
+  firstFill: string | null;
+  /** Whether the panel it is in is named by the chosen tab, and that tab is called `title`. */
+  namedByItsTab: boolean;
+  /** Where its pane's actions are: their box's distance from the pane's top and right edge. */
+  actions: { top: number; right: number } | null;
+};
+
+/** How the view tab called `title` is drawn around what it holds. */
+async function aroundOf(title: string): Promise<Around | null> {
+  return browser.execute((called: string) => {
+    const pane = [...document.querySelectorAll<HTMLElement>("section.view-pane")].find(
+      (one) => one.getAttribute("aria-label") === called && one.getBoundingClientRect().width > 0,
+    );
+    if (!pane) return null;
+    // Where a title would be: the view's top, down to the pane's actions' row and a little.
+    const top = pane.getBoundingClientRect().top;
+    const titles = [
+      ...[...pane.querySelectorAll("h1, h2")].map((one) => `heading: ${one.textContent ?? ""}`),
+      ...[...pane.querySelectorAll<HTMLElement>("*")]
+        .filter(
+          (one) =>
+            one.getBoundingClientRect().top - top < 48 &&
+            [...one.childNodes].some(
+              (node) => node.nodeType === Node.TEXT_NODE && (node.textContent ?? "").trim() !== "",
+            ) &&
+            (one.innerText ?? "").trim() === called,
+        )
+        .map((one) => `words: <${one.tagName.toLowerCase()} class="${one.className}">`),
+    ];
+    const first = pane.querySelector(":scope > .view-head");
+    const panel = pane.closest('[role="tabpanel"]');
+    const tab = document.getElementById(panel?.getAttribute("aria-labelledby") ?? "");
+    const frame = pane.closest(".pane-frame");
+    const actions = frame?.querySelector(":scope > .pane-head > .pane-actions");
+    const own = frame?.getBoundingClientRect();
+    const at = actions?.getBoundingClientRect();
+    return {
+      titles,
+      firstFill: first === null ? null : getComputedStyle(first).backgroundColor,
+      namedByItsTab:
+        tab !== null &&
+        tab.getAttribute("aria-selected") === "true" &&
+        (tab.querySelector(".tab-name")?.textContent ?? "").trim() === called,
+      actions:
+        own === undefined || at === undefined
+          ? null
+          : { top: at.top - own.top, right: own.right - at.right },
+    };
+  }, title);
+}
+
+/** A view tab is one piece with its tab: no title, no band, the pane's actions in their place,
+ *  in the panel its tab names. */
+async function onePiece(title: string): Promise<void> {
+  const around = await aroundOf(title);
+  if (around === null) throw new Error(`no view tab called ${title} on screen`);
+  expect(around.titles).toEqual([]);
+  if (around.firstFill !== null) expect(around.firstFill).toBe("rgba(0, 0, 0, 0)");
+  expect(around.namedByItsTab).toBe(true);
+  expect(around.actions).not.toBeNull();
+  // At the pane's top right, where a chat's pane draws them (`paneFrame.css`).
+  expect(around.actions?.top).toBeLessThanOrEqual(16);
+  expect(around.actions?.right).toBeLessThanOrEqual(16);
+}
+
+/** What the view tab called `title` holds below its first row, read once. */
 async function viewTab(title: string): Promise<Body | null> {
   return browser.execute((called: string) => {
     const pane = [...document.querySelectorAll<HTMLElement>("section.view-pane")].find(
@@ -186,7 +264,25 @@ const VIEW_TABS: { typed: string; id: string; title: string | null }[] = [
   { typed: "Open dispatches", id: "dispatches.show", title: "Dispatches" },
   { typed: "Open shared memory", id: "memory.shared", title: "Shared memory" },
   { typed: "Open Skill studio", id: "skills.studio", title: "Skill studio" },
+  { typed: "Settings", id: "settings.show", title: "Settings" },
+  { typed: "Show what steward is", id: "persona.show:steward", title: "steward" },
 ];
+
+/** The vault this file makes, for a vault's tab: the fixture has none. */
+const VAULT = "e2e-no-blank-view";
+
+/** Makes {@link VAULT} through the palette's New vault…, which opens its tab in front. */
+async function makeTheVault(): Promise<void> {
+  await runFromThePalette("New vault", "vault.create");
+  const asking = await $('[role="dialog"][aria-labelledby]');
+  await browser.waitUntil(async () => (await asking.getText()).includes("New vault"), {
+    timeout: 20_000,
+    timeoutMsg: "the New vault dialog never came up",
+  });
+  await asking.$("aria/Name").setValue(VAULT);
+  await asking.$("button=Create vault").click();
+  await $(`[data-testid="vault-tab-${VAULT}"]`).waitForExist({ timeout: 20_000 });
+}
 
 describe("no blank view", function () {
   this.timeout(300_000);
@@ -251,6 +347,35 @@ describe("no blank view", function () {
         { timeout: 20_000, interval: 100, timeoutMsg: `${typed} opened no tab` },
       );
       drawn(`the ${opened} tab`, await settled(opened, () => viewTab(opened)));
+      await onePiece(opened);
     }
+  });
+
+  it("draws a vault's tab as one piece with its tab, with what it holds", async () => {
+    await makeTheVault();
+    // A vault's region is named for a screen reader as `Vault <name>`; its tab is its name.
+    const named = `Vault ${VAULT}`;
+    drawn(`the ${VAULT} tab`, await settled(VAULT, () => viewTab(named)));
+    const around = await aroundOf(named);
+    expect(around).not.toBeNull();
+    // Its tab's name, the vault's, is nowhere in it as words of its own.
+    expect(
+      await browser.execute(
+        (vault: string, region: string) =>
+          [...document.querySelectorAll<HTMLElement>(`section[aria-label="${region}"] *`)].some(
+            (one) =>
+              [...one.childNodes].some(
+                (node) =>
+                  node.nodeType === Node.TEXT_NODE && (node.textContent ?? "").trim() === vault,
+              ),
+          ),
+        VAULT,
+        named,
+      ),
+    ).toBe(false);
+    expect(around?.titles.filter((one) => one.startsWith("heading"))).toEqual([]);
+    if (around?.firstFill !== null) expect(around?.firstFill).toBe("rgba(0, 0, 0, 0)");
+    expect(around?.actions?.top).toBeLessThanOrEqual(16);
+    expect(around?.actions?.right).toBeLessThanOrEqual(16);
   });
 });

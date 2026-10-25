@@ -327,14 +327,21 @@ export function ViewMark({ view }: { view: ViewRef }) {
 }
 
 /**
- * One view, in a pane: its heading, the views offered beside it, and its answer.
+ * One view, in a pane: its first row, the views offered beside it, and its answer.
  *
- * **The heading is charter's.** The view's title, whose it is (ADR 0041 item 5 — what is in force
- * is shown after approval, not only at it), and a button for every approved extension's view
- * about the same subject — the operator's Statistics button on a persona's tab, drawn only when
- * an extension offers one, and opening its own tab rather than a section of this one. That is
- * the whole of the consent story: **reading a persona asks no extension anything**; pressing
- * Statistics does, and it is the operator's press.
+ * **It carries no title of its own** (#3147, the operator's ruling of 2026-10-24): its tab is
+ * its name, and the tab and the view read as one piece, on the fill the chosen tab joins. The
+ * content panel is the chosen tab's panel, named by it (`tabPanelOf`); the view's own region is
+ * still named by its title for a screen reader, which no one sees.
+ *
+ * **The first row is charter's.** What can be done to the thing the view is about (the
+ * catalogue's rows), whose it is (ADR 0041 item 5 — what is in force is shown after approval, not
+ * only at it), and a button for every approved extension's view about the same subject — the
+ * operator's Statistics button on a persona's tab, drawn only when an extension offers one, and
+ * opening its own tab rather than a section of this one. That is the whole of the consent story:
+ * **reading a persona asks no extension anything**; pressing Statistics does, and it is the
+ * operator's press. The row keeps the room the pane's actions take at its end (`PaneActions`,
+ * `paneFrame.css`), so nothing in it is ever under them.
  */
 export function ViewPane({
   plane,
@@ -464,31 +471,33 @@ export function ViewPane({
       data-testid={`view-pane-${viewKey(view).replace(/\//g, "-")}`}
       aria-label={title}
     >
-      <header className="view-head">
-        <h2>
-          <ViewMark view={view} />
-          {title}
-          {view.from !== null && <span className="panel-from">{` · ${view.from}`}</span>}
-        </h2>
-        {own}
-        {beside.map((one) => {
-          // Opened about the same thing this view is about: statistics from steward's tab are
-          // steward's statistics, and from the whole plane's view, the whole plane's.
-          const key = view.key;
-          const called = key === "" ? one.title : `${one.title} · ${key}`;
-          return (
-            <Button
-              size="sm"
-              key={`${one.extension}/${one.id}`}
-              tooltip={`Asks ${one.extension}, in a tab of its own`}
-              onPress={() => onOpenView({ from: one.extension, view: one.id, key }, called)}
-              icon={<ChartColumn className="node-icon" aria-hidden="true" />}
-            >
-              {one.title}
-            </Button>
-          );
-        })}
-      </header>
+      {/* **The view's first row, with no title in it** (#3147): its tab says what it is. A
+          view that draws its own first row (Settings' levels) has none here, and that row keeps
+          the pane's actions' room itself. */}
+      {settingsLevel === undefined && (
+        <div className="view-head">
+          {/* Whose an extension's view is (ADR 0041 item 5): quiet words, never a title. */}
+          {view.from !== null && <span className="view-head-says">{`From ${view.from}`}</span>}
+          {own}
+          {beside.map((one) => {
+            // Opened about the same thing this view is about: statistics from steward's tab are
+            // steward's statistics, and from the whole plane's view, the whole plane's.
+            const key = view.key;
+            const called = key === "" ? one.title : `${one.title} · ${key}`;
+            return (
+              <Button
+                size="sm"
+                key={`${one.extension}/${one.id}`}
+                tooltip={`Asks ${one.extension}, in a tab of its own`}
+                onPress={() => onOpenView({ from: one.extension, view: one.id, key }, called)}
+                icon={<ChartColumn className="node-icon" aria-hidden="true" />}
+              >
+                {one.title}
+              </Button>
+            );
+          })}
+        </div>
+      )}
       {/* A persona's icon and colour, picked here and written to its definition (#1449). */}
       {view.from === null && view.view === "persona" && view.key !== "" && (
         <PersonaMarkPicker key={`${plane}\u0000${view.key}`} plane={plane} persona={view.key} />

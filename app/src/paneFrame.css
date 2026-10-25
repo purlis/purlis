@@ -28,7 +28,7 @@
    --------------------------------------------------------------------------------------------- */
 
 /* A pane with a chat, or with a task that is away, is the terminal's fill from edge to edge. A
-   view's pane keeps its own ground. */
+   view's pane keeps its own ground (`.pane.view`), the fill its chosen tab joins. */
 .pane-frame.pane-headed {
   /* Its size is the layout's, never its content's, so what it holds can be capped by it. */
   container-type: size;
@@ -330,6 +330,58 @@
 .pane-actions > .pane-doing button:hover:not(:disabled, [aria-disabled="true"]) {
   background-color: var(--surface-overlay);
   color: var(--text-primary);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   A view's pane.
+   --------------------------------------------------------------------------------------------- */
+
+/* **A view carries no title of its own** (#3147, the operator's ruling of 2026-10-24): its tab is
+   its name, and the view starts on the fill its chosen tab joins, with no band of its own. The
+   pane's actions are the same `PaneHead` and `PaneActions` a chat's pane draws, in the same
+   place: the header's row, over the view's first row rather than a row of its own, so the view
+   loses no height to a row with nothing else in it. */
+.pane-frame.pane-viewed {
+  /* What the actions take at the row's end, and the gap before them: three controls' width and
+     the header's own inline padding. A reserve, not a step of the scale. */
+  --pane-actions-room: calc(var(--size-control) * 3 + var(--space-5) * 2);
+}
+
+/* Where a chat's header is: under the empty band's step (`.pane-notice-row-empty + .pane-head`),
+   at the pane's top, end to end. It takes no pointer itself, so the view's first row under it
+   stays pressable; only its actions do. */
+.pane-frame.pane-viewed > .pane-head {
+  position: absolute;
+  inset-block-start: var(--space-2);
+  inset-inline: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.pane-frame.pane-viewed > .pane-head > .pane-actions {
+  pointer-events: auto;
+}
+
+/* **The view's first row is the header's row**: the same step from the top, the same height and
+   the same start, and it keeps the actions' room at its end, so nothing in it is ever under
+   them. */
+.pane-frame.pane-viewed .view-head {
+  /* A narrow pane's row goes onto a second line before anything in it reaches the actions. */
+  flex-wrap: wrap;
+  min-block-size: var(--size-chrome);
+  margin-block-start: var(--space-2);
+  padding-block: var(--space-2);
+  padding-inline: var(--space-5) var(--pane-actions-room);
+}
+
+/* **A view that draws its own first row** (Settings' levels, its words beside them) keeps the
+   same room itself, and starts at the header's row. */
+.pane-frame.pane-viewed .view-body:has(> .ui-settings) {
+  padding-block-start: var(--space-4);
+}
+
+.pane-frame.pane-viewed .ui-settings-top {
+  padding-inline-end: var(--pane-actions-room);
 }
 
 /* ---------------------------------------------------------------------------------------------
