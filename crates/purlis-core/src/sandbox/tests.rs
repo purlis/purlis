@@ -325,6 +325,9 @@ fn a_chat_never_writes_charters_integrity_state() {
             plane.path().join(".purlis/app"),
             // Every chat's theme drafts (#2332): only the app writes one, for the chat that asks.
             plane.path().join(".purlis/theme-drafts"),
+            // A skill delete's kept skills and running deletes' notes (SK-7, SK-35).
+            plane.path().join(".purlis/skills-deleted"),
+            plane.path().join(".purlis/skills-deleting"),
             plane.path().join(".purlis/harness-profiles-launched.json"),
             plane
                 .path()
@@ -332,6 +335,9 @@ fn a_chat_never_writes_charters_integrity_state() {
             plane.path().join(".purlis/mcp-approved.json"),
             plane.path().join(".charter/app"),
             plane.path().join(".charter/theme-drafts"),
+            // A skill delete's kept skills and running deletes' notes (SK-7, SK-35).
+            plane.path().join(".charter/skills-deleted"),
+            plane.path().join(".charter/skills-deleting"),
             plane.path().join(".charter/harness-profiles-launched.json"),
             plane
                 .path()
@@ -369,6 +375,15 @@ fn the_persona_mcp_approvals_are_held_where_purlis_home_puts_them() {
         "{:?}",
         denied.paths
     );
+    // And what skill deletes keep there (SK-7, SK-35).
+    for kept in ["skills-deleted", "skills-deleting"] {
+        assert!(
+            paths(&denied, Class::Integrity, Access::Write)
+                .contains(&std::path::Path::new("/srv/purlis-state").join(kept)),
+            "{kept}: {:?}",
+            denied.paths
+        );
+    }
 }
 
 #[test]

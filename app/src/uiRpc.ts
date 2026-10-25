@@ -943,6 +943,7 @@ export const commands = {
 	/**  **Who uses a skill**: what Delete shows first. */
 	skillUsers: (plane: PlaneId, level: SkillLevel, name: string) => typedError<SkillUsers, string>(__TAURI_INVOKE("skill_users", { plane, level, name })),
 	skillDelete: __WINDOW_ONLY_RESULT,
+	skillDeletesCutShort: __WINDOW_ONLY_RESULT,
 	/**  The deleted skills Restore can bring back, newest first. */
 	skillsDeleted: (plane: PlaneId) => typedError<DeletedSkill[], string>(__TAURI_INVOKE("skills_deleted", { plane })),
 	skillRestore: __WINDOW_ONLY_RESULT,
@@ -3484,6 +3485,14 @@ export type DeletedSkill = {
 	level: SkillLevel,
 	/**  Its level as a person reads it: `project`, `local workspace ops`. */
 	label: string,
+};
+
+/**  What became of the skill deletes a crash or a quit cut short, one line each (SK-35, #3013). */
+export type DeletesCutShort = {
+	/**  Finished, or put back. */
+	settled: string[],
+	/**  Neither finished nor put back: tried again the next time the studio opens. */
+	unsettled: string[],
 };
 
 /**  Why a grant the person accepted before waits for a yes again. */
