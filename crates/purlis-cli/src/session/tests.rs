@@ -44,3 +44,18 @@ fn a_written_record_under_a_pass_says_the_tab_closes_when_the_turn_ends() {
     };
     assert!(saved.tab.contains("when this turn ends"), "{}", saved.tab);
 }
+
+/// SK-50 (#3173): a record's title is its frontmatter, which any chat or hand edit writes, so a
+/// conceal, a bidi override or a zero-width character in it is shown as its mark.
+#[test]
+fn a_session_record_s_title_is_listed_escaped() {
+    assert_eq!(
+        record_line(
+            "2026-10-25 17:00",
+            "Fix \x1b[8mhid\u{202e}den\u{200b}",
+            "sessions/a\nb.md"
+        )
+        .as_str(),
+        "2026-10-25 17:00 · Fix ⟦U+001B⟧[8mhid⟦U+202E⟧den⟦U+200B⟧ — sessions/a⟦U+000A⟧b.md"
+    );
+}

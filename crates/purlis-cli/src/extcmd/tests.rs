@@ -17,3 +17,18 @@ fn an_unknown_word_says_where_else_purlis_looked() {
         "{outside}"
     );
 }
+
+/// SK-50 (#3173): an extension's command name and title are its manifest's, so a conceal, a
+/// bidi override or a zero-width character in them is shown as its mark, never obeyed.
+#[test]
+fn an_extension_command_s_name_and_title_are_shown_escaped() {
+    let command = purlis_core::extension::cli::CliCommand {
+        name: "sy\u{200b}nc".into(),
+        title: "Syncs \x1b[8mhidden\u{202e}".into(),
+        writes: true,
+    };
+    assert_eq!(
+        super::command_line(&command).as_str(),
+        "  sy⟦U+200B⟧nc — Syncs ⟦U+001B⟧[8mhidden⟦U+202E⟧ (writes)"
+    );
+}

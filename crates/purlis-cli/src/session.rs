@@ -16,6 +16,7 @@ use std::path::Path;
 use clap::Subcommand;
 use purlis_core::hookwire::{self, CHAT_ENV, Report, SOCKET_ENV, SessionSaved};
 use purlis_core::sessionrecord::{self, Facts, New, Refused, relay};
+use purlis_core::tui::Markup;
 
 use crate::Here;
 use crate::memory::Code;
@@ -76,7 +77,10 @@ pub fn run(here: &Here, command: SessionCommand) -> Result<Code, String> {
                 voice::info(&format!("No session records at {}.", place.said()));
             }
             for listed in records {
-                println!("{} · {} — {}", listed.when, listed.title, listed.shown);
+                println!(
+                    "{}",
+                    record_line(&listed.when, &listed.title, &listed.shown)
+                );
             }
             Ok(0)
         }
@@ -415,6 +419,17 @@ pub fn pass_on_at_stop(socket: &Path, report: &Report) {
         // Where a reporting hook's failures go: the harness's own log (`main::hook`).
         eprintln!("purlis: the app did not take this chat's saved session record ({why})");
     }
+}
+
+/// One record as `session list` lists it. Its title is the record's own frontmatter and its
+/// file name is whatever is in the folder, so each is escaped (SK-50).
+fn record_line(when: &str, title: &str, shown: &str) -> Markup {
+    Markup::new()
+        .text(when)
+        .own(" · ")
+        .text(title)
+        .own(" — ")
+        .text(shown)
 }
 
 /// Seconds since the Unix epoch, as a marker records when it was left.

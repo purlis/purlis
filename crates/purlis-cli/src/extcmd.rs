@@ -34,6 +34,7 @@ use std::ffi::OsString;
 use std::process::ExitCode;
 
 use purlis_core::extension;
+use purlis_core::tui::Markup;
 
 /// Run `argv` here when it names a core-owned alias or an installed extension, or `None` to hand
 /// it to clap. `answers` says whether clap answers a first word itself.
@@ -148,8 +149,7 @@ fn list_commands(dir: &std::path::Path, id: &str, code: ExitCode) -> ExitCode {
         Ok(manifest) if !manifest.cli.is_empty() => {
             eprintln!("usage: purlis {id} <command> …\n\n'{id}' adds these commands:");
             for command in &manifest.cli {
-                let writes = if command.writes { " (writes)" } else { "" };
-                eprintln!("  {} — {}{writes}", command.name, command.title);
+                eprintln!("{}", command_line(command));
             }
             code
         }
@@ -161,6 +161,21 @@ fn list_commands(dir: &std::path::Path, id: &str, code: ExitCode) -> ExitCode {
             eprintln!("purlis: purlis could not read '{id}': {why}");
             ExitCode::FAILURE
         }
+    }
+}
+
+/// One command an extension adds, as its usage lists it. Its name and title are the
+/// manifest's, so each is escaped (SK-50).
+fn command_line(command: &extension::cli::CliCommand) -> Markup {
+    let line = Markup::new()
+        .own("  ")
+        .text(&command.name)
+        .own(" — ")
+        .text(&command.title);
+    if command.writes {
+        line.own(" (writes)")
+    } else {
+        line
     }
 }
 
