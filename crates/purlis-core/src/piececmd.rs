@@ -196,13 +196,7 @@ pub fn declare(
     match pieces::declare(plane, ws, repo, piece, what, who, now) {
         Ok(declared) => {
             if let Some(over) = &declared.over {
-                say(Say::Warn(format!(
-                    "'{piece}' was already declared {} — recording {} over it (the earlier \
-                     one stays in the log).",
-                    // Read from the log, which any host's worker writes: one line, always.
-                    tui::sanitize(over),
-                    declared.event.word()
-                )));
+                say(Say::Warn(already_declared(piece, over, declared.event)));
             }
             let reason = match what {
                 Declaration::Abandoned { reason } => {
@@ -221,6 +215,22 @@ pub fn declare(
             1
         }
     }
+}
+
+/// The warning that `piece` was declared `over` before, and `event` is recorded over it.
+///
+/// `over` is read from the log, which any host's worker writes, so it is spliced escaped
+/// ([`tui::Markup`], SK-50): an SGR in it is shown as text and never obeyed.
+fn already_declared(piece: &str, over: &str, event: Event) -> String {
+    tui::Markup::new()
+        .own("'")
+        .text(piece)
+        .own("' was already declared ")
+        .text(over)
+        .own(" — recording ")
+        .own(event.word())
+        .own(" over it (the earlier one stays in the log).")
+        .to_string()
 }
 
 /// `charter worktree list [<repo>]`: every piece git has, joined to what the log says of it.

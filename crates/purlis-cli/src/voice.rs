@@ -12,32 +12,35 @@
 use std::io::IsTerminal;
 use std::path::Path;
 
-fn glyph(code: &str, mark: &str) -> String {
+use purlis_core::tui::{Markup, Sgr};
+
+fn glyph(colour: Sgr, mark: &'static str) -> Markup {
+    let mark = Markup::new().own(mark);
     if std::io::stderr().is_terminal() {
-        format!("\x1b[{code}m{mark}\x1b[0m")
+        Markup::new().styled(colour, mark)
     } else {
-        mark.to_string()
+        mark
     }
 }
 
 /// `util.info`: `• <msg>` on stderr.
 pub fn info(msg: &str) {
-    eprintln!("{} {msg}", glyph("36", "•"));
+    eprintln!("{} {msg}", glyph(Sgr::Cyan, "•"));
 }
 
 /// `util.ok`: `✓ <msg>` on stderr.
 pub fn ok(msg: &str) {
-    eprintln!("{} {msg}", glyph("32", "✓"));
+    eprintln!("{} {msg}", glyph(Sgr::Green, "✓"));
 }
 
 /// `util.warn`: `! <msg>` on stderr.
 pub fn warn(msg: &str) {
-    eprintln!("{} {msg}", glyph("33", "!"));
+    eprintln!("{} {msg}", glyph(Sgr::Yellow, "!"));
 }
 
 /// `util.err`: `✗ <msg>` on stderr.
 pub fn err(msg: &str) {
-    eprintln!("{} {msg}", glyph("31", "✗"));
+    eprintln!("{} {msg}", glyph(Sgr::Red, "✗"));
 }
 
 /// `str.rstrip()`, with Python's idea of whitespace.

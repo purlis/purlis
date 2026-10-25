@@ -25,6 +25,7 @@ use purlis_core::skills::{
 use serde_json::{Value, json};
 
 use purlis_core::counts::counted;
+use purlis_core::tui::Markup;
 
 use crate::memory::Code;
 use crate::voice;
@@ -621,7 +622,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 println!("No deleted skill can be restored here.");
             }
             for one in deleted {
-                println!("{}  {}", one.name, one.level);
+                println!("{}", restorable(&one.name, &one.level));
             }
             Ok(0)
         }
@@ -897,10 +898,8 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 return match verbs::text_of(root, &at.level(), &name) {
                     Ok((folder, _)) => {
                         let about = purlis_core::skills::about_of(&folder).unwrap_or_default();
-                        if about.owners.is_empty() {
-                            println!("{name} names no owners.");
-                        } else {
-                            println!("{}", about.owners.join("\n"));
+                        for line in owners_lines(&name, &about.owners) {
+                            println!("{line}");
                         }
                         Ok(0)
                     }
@@ -931,21 +930,8 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 );
                 return Ok(0);
             }
-            if node.uses.is_empty() {
-                println!("{name} names no other skill.");
-            }
-            for one in &node.uses {
-                if one.broken {
-                    println!("uses {}  (no skill has this name)", one.said);
-                } else {
-                    println!("uses {}", one.said);
-                }
-            }
-            if node.used_by.is_empty() {
-                println!("No skill of the project names {name}.");
-            }
-            for other in &node.used_by {
-                println!("used by {other}");
+            for line in uses_lines(&name, &node) {
+                println!("{line}");
             }
             if node.cut {
                 voice::info(&format!(
@@ -956,6 +942,52 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             Ok(0)
         }
     }
+}
+
+/// One deleted skill as `skill restore` lists it: its name and its level, each escaped.
+fn restorable(name: &str, level: &Level) -> Markup {
+    Markup::new().text(name).own("  ").text(level)
+}
+
+/// What `skill uses` says of `name`: each skill it names, as its text says it, then each skill
+/// that names it. Every name is read from a skill's text, so each is escaped.
+fn uses_lines(name: &str, node: &purlis_core::skills::graph::UsesOf) -> Vec<Markup> {
+    let mut lines = Vec::new();
+    if node.uses.is_empty() {
+        lines.push(Markup::new().text(name).own(" names no other skill."));
+    }
+    for one in &node.uses {
+        let line = Markup::new().own("uses ").text(&one.said);
+        lines.push(if one.broken {
+            line.own("  (no skill has this name)")
+        } else {
+            line
+        });
+    }
+    if node.used_by.is_empty() {
+        lines.push(
+            Markup::new()
+                .own("No skill of the project names ")
+                .text(name)
+                .own("."),
+        );
+    }
+    for other in &node.used_by {
+        lines.push(Markup::new().own("used by ").text(other));
+    }
+    lines
+}
+
+/// What `skill owners` prints of `name`: each owner its frontmatter names, one a line, or that
+/// it names none. The owners are the skill's own text, so each is escaped.
+fn owners_lines(name: &str, owners: &[String]) -> Vec<Markup> {
+    if owners.is_empty() {
+        return vec![Markup::new().text(name).own(" names no owners.")];
+    }
+    owners
+        .iter()
+        .map(|owner| Markup::new().text(owner))
+        .collect()
 }
 
 /// Sets a skill's lifecycle state, saying when it already was so.
@@ -982,22 +1014,29 @@ fn lifecycle_set(
 /// runs on changes not committed, where there were any.
 fn versions_table(name: &str, history: &history::History) -> String {
     if history.versions.is_empty() {
-        return format!(
-            "{name} has no history yet: git keeps a skill's versions once the project commits it.\n"
-        );
+        return Markup::new()
+            .text(name)
+            .own(" has no history yet: git keeps a skill's versions once the project commits it.\n")
+            .to_string();
     }
     let mut text = String::new();
     for version in &history.versions {
         let when = chrono::DateTime::from_timestamp(i64::try_from(version.at).unwrap_or(0), 0)
             .map(|at| at.format("%Y-%m-%d %H:%M").to_string())
             .unwrap_or_default();
-        text.push_str(&format!(
-            "{}  {when}  {}  {}  ({})\n",
-            history::short(&version.commit),
-            version.author,
-            version.subject,
-            runs_said(&version.runs)
-        ));
+        // The author and the subject are whatever the commit says.
+        let line = Markup::new()
+            .text(history::short(&version.commit))
+            .own("  ")
+            .text(&when)
+            .own("  ")
+            .text(&version.author)
+            .own("  ")
+            .text(&version.subject)
+            .own("  (")
+            .text(runs_said(&version.runs))
+            .own(")\n");
+        text.push_str(line.as_str());
     }
     if history.uncommitted.runs > 0 {
         text.push_str(&format!(
@@ -1592,3 +1631,6 @@ fn outside_table(rows: &[StudioRow]) -> String {
     }
     text
 }
+
+#[cfg(test)]
+mod tests;
