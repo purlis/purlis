@@ -143,12 +143,8 @@ export const LongRefusal: Story = {
     await userEvent.tab();
     await expect(next).toHaveFocus();
     await expect(whole).not.toBeVisible();
-    // Under the pointer it is whole again, and stays while the pointer is on it.
-    await userEvent.hover(line);
-    await expect(whole).toBeVisible();
-    await userEvent.hover(whole);
-    await expect(whole).toBeVisible();
-    await userEvent.unhover(whole);
+    // Under the pointer it is whole too: a synthetic hover never matches CSS `:hover`, so that
+    // is held by the unit test through the cascade (`Field.test.tsx`).
     // The baseline: the box with the keyboard, its refusal drawn whole.
     await userEvent.tab({ shift: true });
     await expect(box).toHaveFocus();
@@ -226,7 +222,7 @@ export const Textarea: Story = {
     await expect(box).toHaveValue("github.com\ngitlab.com");
     expectFocusInSight();
     await userEvent.tab();
-    await expect(canvas.queryByRole("alert")).toBeNull();
+    await expect(canvas.getByRole("alert")).toBeEmptyDOMElement();
   },
 };
 

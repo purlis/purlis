@@ -530,6 +530,11 @@ describe("a refusal too long for its line (#3033)", () => {
       const line = screen.getByRole("alert");
       const whole = line.querySelector("[data-whole]") as Element;
       expect(drawnWith(whole, "display")).toBe("none");
+      // Under the pointer, on the line: the cascade's hover mark on the line itself.
+      line.setAttribute("data-cascade-hover", "");
+      expect(drawnWith(whole, "display", { hover: true })).toBe("block");
+      line.removeAttribute("data-cascade-hover");
+      expect(drawnWith(whole, "display", { hover: true })).toBe("none");
       act(() => screen.getByRole("textbox", { name: "Profile" }).focus());
       expect(drawnWith(whole, "display")).toBe("block");
       expect(drawnWith(whole, "position")).toBe("absolute");
