@@ -135,7 +135,7 @@ export function SessionRecordTab({ plane, path }: { plane: PlaneId; path: string
         /* What this chat handed to other chats before it wrote the record (#1452): from this
            machine's dispatch records, so a record another machine wrote lists none. */
         <section className="session-dispatches" aria-label="Dispatches this chat made">
-          <h3>Dispatches</h3>
+          <h2>Dispatches</h2>
           <ul>
             {record.dispatches.map((made, at) => (
               // By position: the list arrives whole from one read, in the order they were made.
@@ -245,7 +245,7 @@ function FilesNamed({
   if (named.length === 0) return null;
   return (
     <section className="session-dispatches" aria-label="Files this record names">
-      <h3>Files named</h3>
+      <h2>Files named</h2>
       <ul>
         {named.map(({ code, ref }) => (
           <li key={code}>

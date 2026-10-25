@@ -856,20 +856,6 @@ button.show-more:focus-visible {
   min-height: 0;
 }
 
-/* **A view's corner**: the pane's own controls, over the view at its top right. A chat's pane
-   has none: its chips and its controls are in its header, a row of their own, since the corners
-   over the terminal covered the harness's own first lines (#3142). **Nothing in a corner
-   positions itself**: the corner does (charter-app#193), so a second thing arriving here
-   collides in review rather than at runtime. */
-.pane-corner {
-  position: absolute;
-  top: var(--space-1);
-  z-index: 2;
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-2);
-}
-
 /* The chat at a glance: its breadcrumb, its skills, the harness, where it came from, its work
    item and its gauge. One row, in the pane's header (`PaneHead`). */
 .pane-chips {
@@ -956,10 +942,6 @@ button.show-more:focus-visible {
 .pane-notice-row > .notice-more-pane {
   flex: none;
   align-self: flex-start;
-}
-
-.pane-corner.at-end {
-  right: var(--space-4);
 }
 
 /* **A runner's chat while its link is down** (#2496, `SessionPane.tsx`): its last screen dimmed
@@ -5351,18 +5333,33 @@ button.show-more:focus-visible {
   min-height: 0;
 }
 
-/* The heading stays and the body scrolls. Room is left at the end for the pane's own corner
-   (split, close), which sits over the heading's row as it sits over a terminal's first row: three
-   controls' width, a reserve and not a step of the scale. */
+/* **A view's first row** (#3147): what can be done to what the view is about, with no title
+   and no fill of its own, so the view starts on the fill its chosen tab joins. It stays and the
+   body scrolls; in a pane it is the header's row, and keeps the room the pane's actions take at
+   its end (`paneFrame.css`). */
 .view-head {
   display: flex;
   flex: none;
   align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-4) calc(var(--size-control) * 3) var(--space-3) var(--space-5);
-  background: var(--surface-sunken);
+  /* Two glyph buttons side by side (a memory list's + and archive) are 24px apart centre to
+     centre even where the compact density draws them under 24px (WCAG 2.5.8). */
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5) var(--space-3);
 }
 
+/* What the row says beside its controls (whose an extension's view is, what kind of vault this
+   is): quiet words, never a title. */
+.view-head-says {
+  flex: 0 1 auto;
+  min-width: 0;
+  color: var(--text-quiet);
+  font-size: var(--font-size-sm);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* The heading of Settings drawn where the opener is (`App.tsx`): no tab there to name it. */
 .view-head h2 {
   display: flex;
   flex: 1 1 auto;
@@ -5374,6 +5371,12 @@ button.show-more:focus-visible {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* **A view's own headings start at h2** (#3147): the tab names the view, so the first heading
+   in it is the one under the tab. Drawn at the size the old h3 had, unless a role says more. */
+.view-body h2:not([class*="ui-text"]) {
+  font-size: var(--font-size-base);
 }
 
 .view-body {
@@ -5479,6 +5482,11 @@ nav.piece-files-head {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The path alone, where the tab already names the file (#3147): quiet words, never a title. */
+.piece-files-head code[data-path-only] {
+  color: var(--text-quiet);
 }
 
 .piece-files-actions {
@@ -5614,7 +5622,7 @@ nav.piece-files-head {
   color: var(--text-muted);
 }
 
-.dispatch-read h3 {
+.dispatch-read h2 {
   margin: 0 0 var(--space-2);
   color: var(--text-muted);
   font-size: var(--font-size-xs);
@@ -5783,7 +5791,7 @@ nav.piece-files-head {
   font-size: var(--font-size-sm);
 }
 
-.session-dispatches h3 {
+.session-dispatches h2 {
   margin: 0 0 var(--space-2);
   color: var(--text-muted);
   font-size: var(--font-size-xs);
@@ -7059,7 +7067,7 @@ nav.piece-files-head {
   outline-offset: var(--focus-ring-offset);
 }
 
-.ui-setting-group h3 {
+.ui-setting-group :is(h2, h3) {
   margin: 0;
   font-size: var(--font-size-md);
 }
@@ -7264,7 +7272,7 @@ nav.piece-files-head {
   gap: var(--space-3);
 }
 
-.ui-collection-head h4 {
+.ui-collection-head h3 {
   margin: 0;
   font-size: var(--font-size-sm);
   color: var(--text-primary);

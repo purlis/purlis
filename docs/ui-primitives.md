@@ -288,7 +288,12 @@ operator's variant A): the band, on the terminal's own fill with an 8px runway a
 chosen tab joins the terminal; the header (`PaneHead`), the chat at a glance at its start and the
 pane's actions at its end (`PaneActions`, the one cluster of split side by side, split stacked and
 close, which a view's pane draws too, #3147); then the terminal, pinned to its bottom so a warning
-coming or going moves its top and never its last line. In the band each Notice is a washed card
+coming or going moves its top and never its last line. **A view's pane carries no title of its
+own** (#3147, the operator's ruling of 2026-10-24): its tab is its name and the content panel is
+that tab's panel, so the view starts on the fill its chosen tab joins, with no band; the same
+`PaneHead` and `PaneActions` sit at its top right, over its first row, which holds what can be
+done to what the view is about (or Settings' levels) and keeps the actions' room at its end. In
+the band each Notice is a washed card
 (`wash.warning`, `danger.wash` for trouble, no edge), its words above its ways out, a consent's
 Allow set apart from Keep blocked and the only answer with an edge. The band is a `region`, "Warnings
 for this pane"; a card never shrinks in it, so past its room the cards scroll inside it whole. Esc
