@@ -181,6 +181,7 @@ fn it_adds_a_template_a_lint_a_panel_and_a_source() {
         text: "---\nname: deploy\ndescription: Deploys the service when asked to.\n---\n",
         others: &others,
         origin: purlis_skills::Origin::Project,
+        plugin: None,
     });
     assert_eq!(findings.len(), 1, "{findings:?}");
     assert_eq!(findings[0].severity, purlis_skills::Severity::Warns);

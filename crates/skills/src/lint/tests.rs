@@ -37,6 +37,7 @@ fn found(text: &str, others: &[(String, String)], handed: bool) -> Vec<Finding> 
         text,
         others,
         origin,
+        plugin: None,
     })
 }
 
@@ -227,6 +228,7 @@ fn a_skill_naming_itself_names_one_there_is_though_the_plane_has_no_skill_of_its
         text,
         others: &[],
         origin: crate::Origin::Repo,
+        plugin: None,
     });
     assert_eq!(
         says(&findings),
@@ -244,12 +246,13 @@ fn a_repo_or_harness_skill_named_like_a_built_in_one_warns_and_a_skill_purlis_ha
     let text = "---\nname: secrets\ndescription: Reads the repo's secrets from its vault.\n---\n";
     let plane = std::collections::HashSet::new();
     let built_in = ["secrets".to_owned()].into();
-    let said = |origin| {
+    let said = |origin, plugin| {
         let findings = lints(&plane, &built_in).findings(&SkillFiles {
             name: "secrets",
             text,
             others: &[],
             origin,
+            plugin,
         });
         findings
             .iter()
@@ -261,12 +264,17 @@ fn a_repo_or_harness_skill_named_like_a_built_in_one_warns_and_a_skill_purlis_ha
         let line = "it has the name of one of purlis's built-in skills, so a chat gets purlis's \
                     too, and may use either";
         assert_eq!(
-            said(origin),
+            said(origin, None),
             [(Severity::Warns, line.to_owned(), Some(line.to_owned()))],
             "{origin:?}"
         );
     }
     for origin in [crate::Origin::BuiltIn, crate::Origin::Project] {
-        assert_eq!(said(origin), [], "{origin:?}");
+        assert_eq!(said(origin, None), [], "{origin:?}");
     }
+    assert_eq!(
+        said(crate::Origin::Harness, Some("figma")),
+        [],
+        "figma:secrets is known by its plugin's name, never as purlis's secrets"
+    );
 }

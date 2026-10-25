@@ -170,6 +170,9 @@ pub struct SkillFiles<'a> {
     /// Where it comes from: purlis hands a built-in or a plane skill over, and a harness reads
     /// a harness or repo skill where it lies ([`crate::Origin::handed`]).
     pub origin: crate::Origin,
+    /// The plugin a harness skill comes in, which the harness knows it by the name of
+    /// (`<plugin>:<name>`), or `None` for any other skill.
+    pub plugin: Option<&'a str>,
 }
 
 /// **A lint of a skill's files** (the SkillLint capability, ADR 0101): what the live lint asks, of
@@ -250,11 +253,13 @@ fn short_description(text: &str) -> Option<Finding> {
 
 /// A skill purlis does not hand, named like a built-in one: its program reads it beside
 /// purlis's, which no copy replaces and purlis never turns off ([`crate::SkillSet::with_outside`]).
+/// A plugin's skill is known by its plugin's name too, so it never takes a built-in's name.
 fn built_in_name(
     skill: &SkillFiles<'_>,
     built_in: &std::collections::HashSet<String>,
 ) -> Option<Finding> {
-    (!skill.origin.handed() && built_in.contains(skill.name)).then(|| warns(Lint::BuiltInName))
+    (!skill.origin.handed() && skill.plugin.is_none() && built_in.contains(skill.name))
+        .then(|| warns(Lint::BuiltInName))
 }
 
 /// What its frontmatter, read as YAML, says: refused where purlis cannot read it (which blocks a

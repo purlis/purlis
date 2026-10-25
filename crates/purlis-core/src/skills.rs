@@ -1684,6 +1684,7 @@ pub fn lint_with(
         name,
         text,
         level.origin(),
+        None,
         more,
     )
 }
@@ -1700,6 +1701,10 @@ fn outside_lint(known: &Known, skill: &OutsideSkill) -> Vec<String> {
                 &skill.skill.name,
                 &text,
                 skill.origin,
+                match &skill.owner {
+                    Owner::Plugin(plugin) => Some(plugin.as_str()),
+                    Owner::You | Owner::Repo(_) => None,
+                },
                 &[],
             ),
             Err(why) => vec![Finding {
@@ -1713,13 +1718,15 @@ fn outside_lint(known: &Known, skill: &OutsideSkill) -> Vec<String> {
 /// The built-in lints of the skill `name` from `origin`, whose `SKILL.md` says `text` and, where
 /// it is already there, lies at `skill_md`: checked against the `known` skills and this
 /// machine's programs, with its other files read, each of at most [`purlis_skills::MOST_BYTES`].
-/// `skill_md` is the root its folder is held from, and the path.
+/// `skill_md` is the root its folder is held from, and the path. `plugin` is the plugin a
+/// harness skill comes in ([`purlis_skills::SkillFiles::plugin`]).
 fn linted(
     known: &Known,
     skill_md: Option<(&Path, &Path)>,
     name: &str,
     text: &str,
     origin: Origin,
+    plugin: Option<&str>,
     more: &[&dyn purlis_skills::SkillLint],
 ) -> Vec<Finding> {
     use purlis_skills::SkillLint;
@@ -1745,6 +1752,7 @@ fn linted(
         text,
         others: &others,
         origin,
+        plugin,
     };
     let mut findings = purlis_skills::BuiltInLints {
         namespace: LINKED_PLUGIN,

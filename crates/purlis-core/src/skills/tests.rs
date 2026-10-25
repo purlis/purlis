@@ -1209,6 +1209,58 @@ fn a_chat_in_a_clone_with_a_skill_named_like_a_built_in_one_is_told_at_its_start
 }
 
 #[test]
+fn on_claude_code_a_repos_claude_skills_secrets_is_said_beside_purliss_own() {
+    // SK-37 (#3027): Claude Code reads the clone's `.claude/skills/secrets` itself, beside the
+    // `purlis:secrets` purlis hands it, so its chat's tab and studio say so as Codex's do.
+    let (tmp, plane, clone, built_in) = a_clone_with_a_secrets_skill_of_its_own();
+    let dir = clone.join(".claude/skills/secrets");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("SKILL.md"),
+        "---\nname: secrets\ndescription: Reads the repo's secrets for Claude Code.\n---\n",
+    )
+    .unwrap();
+    let env = crate::harness_plugin::Env {
+        chat: &[],
+        home: Some(tmp.path().join("home")),
+        process: false,
+    };
+
+    let not = not_here(
+        &plane,
+        Some("alpha"),
+        None,
+        Some(&built_in),
+        Harness::ClaudeCode,
+        &env,
+        Some(&clone),
+    )
+    .expect("said");
+    assert_eq!(not.beside_a_built_in, ["secrets"]);
+
+    let list = studio_list(Some(&built_in), &plane, Some("alpha"), None, &env);
+    let claude = list
+        .harnesses
+        .iter()
+        .find(|one| one.harness == Harness::ClaudeCode)
+        .expect("Claude Code listed");
+    let row = claude
+        .rows
+        .iter()
+        .find(|row| row.name == "secrets" && row.origin == Origin::Repo)
+        .unwrap_or_else(|| panic!("{:?}", claude.rows));
+    assert_eq!(row.left_out, None);
+    assert_eq!(
+        claude
+            .set
+            .beside_a_built_in()
+            .map(|clash| (clash.name.as_str(), clash.outside))
+            .collect::<Vec<_>>(),
+        [("secrets", Origin::Repo)]
+    );
+}
+
+#[test]
 fn the_studio_marks_a_repo_skill_named_like_a_built_in_one_on_codex_and_opencode() {
     // SK-37 (#3027): the repo's row is no longer said hidden, as the program loads it; its lint
     // says the name is a built-in one's, and the pair is a clash the built-in's row is marked by.
