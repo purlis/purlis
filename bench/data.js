@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792886170533,
+  "lastUpdate": 1792921274141,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -24276,6 +24276,48 @@ window.BENCHMARK_DATA = {
             "value": 100.963392,
             "unit": "ms",
             "extra": "median of 5 runs: 100.475, 100.809, 100.963, 101.243, 101.885 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e41eece95645e17fb6568ba5e95cee93338048b5",
+          "message": "Purlis Figma pass: the fifteen deviations and a filled primary (#3177, #3113) (#3197)\n\n* Purlis Figma pass: the fifteen deviations, and a filled primary (#3177)\n\nThe audit of the Purlis default against the Figma record (#2924) found\nfifteen places it departs; the operator ruled on 2026-10-24 that they land\nin one pass and that the default primary becomes a filled accent button.\n\n- No hairlines: a plain control's edge is its own token, border.control,\n  transparent in Purlis; the dialog and popover draw none by their parts.\n  Allow keeps its accent edge and its lock.\n- The primary draws accent.fill with accent.fill-text words (white in\n  Purlis, 5.6:1; accent.fill-hover 5.0:1), with no edge in Purlis.\n- md is 28 in every theme and its corner is one geometry token,\n  radius.control (8 in Purlis), across buttons, fields, selects, list rows,\n  title-bar chips and tabs (#3113).\n- Purlis's corners are on the record's 7/8/10/12/full scale; its controls'\n  and dialogs' words are 13, its headings 15 and 18; section labels are\n  tracked at .05em; a chosen activity button takes the .14 wash and the\n  lighter lavender, and the update pill's words are lavender.\n- Purlis Classic draws as it did: each new token takes the value of the one\n  that drew it before, a theme that leaves one out follows that token\n  (follow_kin, as follow_muted does), and its parts keep its rail's 9px\n  corners, its chips' 5px and its pill's words.\n\nCloses #3177\nCloses #3113\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Figma pass: the primary's edge is a token, not a part (#3177)\n\nA Purlis part on the button made the engine measure the button family's\nconsent floors at every hue a workspace's colour can take, at every launch,\nand CI's cold-start gate measured the change at 1.8 times main. The\nprimary's edge is now accent.fill-edge (Classic's accent, transparent in\nPurlis), followed from accent.base in themes written before it, tinted and\nheld apart from danger as the accent is. Purlis names no button part.\n\nAlso: the expectations the window's tests held to the old primary fill,\nmd corner and label tracking, and the view labels in App.css tracked at\n.05em as the section label role is.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* Theme skill: the control corner and Purlis's new geometry (#3177)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Theme docs: the eight keys the Figma pass adds, by the operator ruling of 2026-10-25 (#3177)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-25T13:39:27+04:00",
+          "tree_id": "d7a38878cb994df3e0ef885321bb678a479215f3",
+          "url": "https://github.com/purlis/purlis/commit/e41eece95645e17fb6568ba5e95cee93338048b5"
+        },
+        "date": 1792921272210,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.500999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.491, 0.496, 0.501, 0.508, 0.519 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.992676,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.902, 16.955, 16.993, 17.025, 17.185 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.14119050000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.887, 103.247, 104.141, 105.350, 106.437 ms"
           }
         ]
       }
