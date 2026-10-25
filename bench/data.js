@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792955186864,
+  "lastUpdate": 1792961093437,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -24780,6 +24780,48 @@ window.BENCHMARK_DATA = {
             "value": 101.591517,
             "unit": "ms",
             "extra": "median of 5 runs: 100.785, 101.169, 101.592, 101.733, 102.629 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c8c34eb44fee17f8a75dbcc8154ec7ba24f3a6c9",
+          "message": "Cargo.lock: crypto-bigint 0.7.6 -> 0.7.9, past the yanked releases (#3258)\n\ncrypto-bigint 0.7.6, 0.7.7 and 0.7.8 are yanked on crates.io, so cargo-deny's\nadvisories check fails every pull request on 'detected yanked crate'.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-26T00:43:26+04:00",
+          "tree_id": "f44e8d5361b0d933b27f141b04bc308f8461b99a",
+          "url": "https://github.com/purlis/purlis/commit/c8c34eb44fee17f8a75dbcc8154ec7ba24f3a6c9"
+        },
+        "date": 1792961090178,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.46164499999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.454, 0.456, 0.462, 0.465, 0.471 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.605331,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.191, 16.482, 16.605, 16.859, 16.972 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.164894,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.093, 101.121, 101.165, 101.969, 102.184 ms"
           }
         ]
       }
