@@ -268,6 +268,9 @@ fn a_pod_not_of_the_operators_template_for_the_pool_is_never_vouched_for() {
             pod.spec.as_mut().unwrap().containers[0].image = Some("elsewhere@sha256:44".into());
         }),
         Box::new(|pod| pod.spec.as_mut().unwrap().containers[0].security_context = None),
+        Box::new(|pod| pod.spec.as_mut().unwrap().host_pid = Some(true)),
+        Box::new(|pod| pod.spec.as_mut().unwrap().share_process_namespace = Some(true)),
+        Box::new(|pod| pod.spec.as_mut().unwrap().automount_service_account_token = None),
         Box::new(|pod| {
             pod.spec
                 .as_mut()

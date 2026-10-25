@@ -184,6 +184,18 @@ pub fn key_published(pod: &Pod, template: &PodSpec) -> Result<String, NotYet> {
             "its volumes are not the operator's template's".into(),
         ));
     }
+    let shares_the_nodes = [
+        spec.host_network,
+        spec.host_pid,
+        spec.host_ipc,
+        spec.share_process_namespace,
+    ]
+    .contains(&Some(true));
+    if shares_the_nodes || spec.automount_service_account_token != Some(false) {
+        return Err(NotYet::NotOurs(
+            "it shares what the operator's template does not".into(),
+        ));
+    }
     let ended = pod
         .status
         .as_ref()
