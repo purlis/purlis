@@ -1320,6 +1320,35 @@ impl ChatBrowsers {
         })
     }
 
+    /// **Who drives browser `program` now, where its agent does not** (#2300): the person,
+    /// who took it over, or purlis, while it performs a login.
+    pub fn driver_of(&self, program: &str) -> Option<BrowserDriver> {
+        if self
+            .person_drives
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .iter()
+            .any(|one| one == program)
+        {
+            return Some(BrowserDriver::Person);
+        }
+        self.logging_in
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .contains_key(program)
+            .then_some(BrowserDriver::Purlis)
+    }
+
+    /// The chat whose browser `program` is, and what that chat calls it (#2017).
+    pub fn named(&self, program: &str) -> Option<(u32, String)> {
+        self.lock().iter().find_map(|(session, chat)| {
+            chat.browsers
+                .iter()
+                .find(|(_, one)| one == program)
+                .map(|(name, _)| (*session, name.clone()))
+        })
+    }
+
     /// The chat whose browser `program` is, where a chat has it (#2293).
     pub fn chat_of(&self, program: &str) -> Option<u32> {
         self.lock()
@@ -2353,7 +2382,169 @@ pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk) -> Answer {
     if held.needs_you().settle(held.browsers(), now) > 0 {
         held.chats().asks_may_have_moved();
     }
+    if let Some(happened) = timeline_of(held.browsers(), browse, &answer, now_ms()) {
+        keep_in_timeline(held, browse.chat, happened);
+    }
     answer
+}
+
+/// What a timeline's moment is dated by: now, in milliseconds since 1970.
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| {
+            u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
+        })
+}
+
+/// **The moment of chat `browse.chat`'s timeline its call's `answer` makes** (#2017): an act of
+/// the agent's, with the screenshot it was answered unless the person or purlis drives that
+/// browser now, or the login purlis performed. None for a call no browser answered.
+pub fn timeline_of(
+    browsers: &ChatBrowsers,
+    browse: &BrowseAsk,
+    answer: &Answer,
+    at: u64,
+) -> Option<purlis_core::browsertimeline::Happened> {
+    use purlis_core::browsertimeline::{self as timeline, By};
+    let Answer::Browsed { browser, browsed } = answer else {
+        return None;
+    };
+    match &browse.asked {
+        Browsing::Act(act) => {
+            let driven_by = browsers
+                .which(browse.chat, Some(browser))
+                .and_then(|(_, program)| browsers.driver_of(&program))
+                .map(|driver| match driver {
+                    BrowserDriver::Person => By::Person,
+                    BrowserDriver::Purlis => By::Purlis,
+                });
+            timeline::acted(browser, act, browsed, at, driven_by)
+        }
+        Browsing::LogIn { login } => Some(timeline::signed_in(browser, login, browsed, at)),
+        Browsing::New | Browsing::Close | Browsing::NeedsYou { .. } => None,
+    }
+}
+
+/// Keeps `happened` in chat `session`'s browser timeline (#2017), by the chat's id, and tells
+/// the window. A chat with no id keeps none; a write that fails is warned of, and never holds
+/// up the chat's call.
+fn keep_in_timeline(
+    held: &crate::planes::Held,
+    session: u32,
+    happened: purlis_core::browsertimeline::Happened,
+) {
+    let Some(chat) = held.chats().chat_at(session).and_then(|chat| chat.id) else {
+        return;
+    };
+    match purlis_core::browsertimeline::record(held.root(), &chat, happened) {
+        Ok(()) => held.browser_timeline_moved(&chat),
+        Err(why) => tracing::warn!("purlis: a browser moment was not kept in its timeline: {why}"),
+    }
+}
+
+/// **Chat `chat` closed** (#2017): its browser timeline goes, with its screenshots.
+pub fn timeline_closed(held: &crate::planes::Held, chat: &str) {
+    match purlis_core::browsertimeline::remove(held.root(), chat) {
+        Ok(()) => held.browser_timeline_moved(chat),
+        Err(why) => tracing::warn!("purlis: a closed chat's browser timeline stays on disk: {why}"),
+    }
+}
+
+/// Told each chat whose browser timeline moved, by its project and its id (#2017).
+pub type TimelineTeller = Arc<dyn Fn(crate::planes::PlaneId, String) + Send + Sync + 'static>;
+
+/// The event a chat's browser timeline is said to have moved on (#2017).
+pub const TIMELINE_MOVED: &str = "browser-timeline-moved";
+
+/// **A chat whose browser timeline moved** (#2017): a tab of it reads it again.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct TimelineMoved {
+    pub plane: crate::planes::PlaneId,
+    /// The chat's id.
+    pub chat: String,
+}
+
+/// One moment of a chat's browser timeline, as the window draws it (#2017).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct TimelineMoment {
+    /// When, in milliseconds since 1970.
+    pub at: f64,
+    /// Which of the chat's browsers (`b1`).
+    pub browser: String,
+    /// Who drove it: `agent`, `person` or `purlis`.
+    pub by: String,
+    /// What was done, in words that hold nothing typed.
+    pub did: String,
+    /// The page it left: its scheme, host, port and path.
+    pub page: Option<String>,
+    /// Its screenshot's number, to read with [`chat_browser_timeline_shot`].
+    pub shot: Option<u32>,
+    /// Why a screenshot it had is not kept: `bound`, `too_large` or `driven`.
+    pub unkept: Option<String>,
+}
+
+impl From<purlis_core::browsertimeline::Moment> for TimelineMoment {
+    fn from(moment: purlis_core::browsertimeline::Moment) -> Self {
+        let word = |value: serde_json::Result<serde_json::Value>| {
+            value
+                .ok()
+                .and_then(|value| value.as_str().map(str::to_owned))
+                .unwrap_or_default()
+        };
+        TimelineMoment {
+            #[allow(clippy::cast_precision_loss)]
+            at: moment.at as f64,
+            browser: moment.browser,
+            by: word(serde_json::to_value(moment.by)),
+            did: moment.did,
+            page: moment.page,
+            shot: moment.shot.and_then(|shot| u32::try_from(shot).ok()),
+            unkept: moment.unkept.map(|why| word(serde_json::to_value(why))),
+        }
+    }
+}
+
+/// **Chat `chat`'s browser timeline** (#2017), by its id, oldest first: what its agent did in
+/// its browsers, and where the person or purlis drove. The window's alone (`ui::WINDOW_ONLY`):
+/// it holds screenshots of the chat's pages.
+#[tauri::command]
+#[specta::specta]
+pub async fn chat_browser_timeline(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    chat: String,
+) -> Result<Vec<TimelineMoment>, String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    tauri::async_runtime::spawn_blocking(move || {
+        purlis_core::browsertimeline::read(&root, &chat)
+            .into_iter()
+            .map(TimelineMoment::from)
+            .collect()
+    })
+    .await
+    .map_err(|why| why.to_string())
+}
+
+/// **Screenshot `shot` of chat `chat`'s browser timeline** (#2017), PNG in base64: only one a
+/// moment of the timeline lists. The window's alone (`ui::WINDOW_ONLY`).
+#[tauri::command]
+#[specta::specta]
+pub async fn chat_browser_timeline_shot(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    chat: String,
+    shot: u32,
+) -> Result<String, String> {
+    use base64::Engine as _;
+    let root = planes.held(&plane)?.root().to_path_buf();
+    tauri::async_runtime::spawn_blocking(move || {
+        purlis_core::browsertimeline::shot_of(&root, &chat, u64::from(shot))
+            .map(|png| base64::engine::general_purpose::STANDARD.encode(png))
+            .ok_or_else(|| "That screenshot is no longer kept.".to_owned())
+    })
+    .await
+    .map_err(|why| why.to_string())?
 }
 
 /// **Chat `session`'s browser login `name`** (#2016): read for the chat as the app records it,
@@ -3424,9 +3615,22 @@ pub fn person_drove(projects: &[Arc<crate::planes::Held>], program: &str, drivin
     let now = crate::sandboxing::now_secs();
     for held in projects {
         let listing = held.browsers().listing();
+        let was = held.browsers().driver_of(program) == Some(BrowserDriver::Person);
         held.browsers().driven(program, driving, now);
         // Its row and thumbnail say who drives it (#2300).
         held.browsers_listed_since(listing);
+        // Its chat's timeline says so where it changed hands, with no screenshot (#2017).
+        if was != driving
+            && let Some((session, name)) = held.browsers().named(program)
+        {
+            let at = now_ms();
+            let happened = if driving {
+                purlis_core::browsertimeline::took_over(&name, at)
+            } else {
+                purlis_core::browsertimeline::handed_back(&name, at)
+            };
+            keep_in_timeline(held, session, happened);
+        }
     }
 }
 

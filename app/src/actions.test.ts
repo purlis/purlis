@@ -159,6 +159,9 @@ function doing(): Doing & { calls: string[] } {
       calls.push(`stopBrowser:${program}`);
       return { ok: true as const };
     }),
+    openBrowserTimeline: vi.fn((session: number) => {
+      calls.push(`openBrowserTimeline:${session}`);
+    }),
     ignoreNeedsYou: vi.fn(async (session: number) => {
       calls.push(`ignoreNeedsYou:${session}`);
       return { ok: true as const };

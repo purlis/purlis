@@ -8,7 +8,7 @@ import { userEvent } from "@testing-library/user-event";
 import type { Channel } from "@tauri-apps/api/core";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
-import type { BrowserFrame, ChatBrowser, OpenChat } from "./bindings";
+import type { BrowserFrame, ChatBrowser, OpenChat, TimelineMoment } from "./bindings";
 import { setChatsListPrefs } from "./chatsListPrefs";
 import { forgetThisLaunch } from "./regions";
 import { stripNamed } from "./test-strips";
@@ -69,13 +69,19 @@ function chat(session: number): OpenChat {
 
 type Asked = { cmd: string; args: Record<string, unknown> };
 
+/** Chat 1's id, where a test gives it one (ADR 0066). */
+const CHAT_1 = "01JB0000000000000000000001";
+
+/** Chat 1's browser timeline, as the core keeps it (#2017). */
+let timeline: TimelineMoment[] = [];
+
 /** The core, with chats 1 and 2 open in alpha and `browsers` as their browsers. */
 function core(browsers: ChatBrowser[]) {
   const asked: Asked[] = [];
   const listeners = new Map<string, number>();
   const views = new Map<string, Channel<BrowserFrame>>();
   let view = 0;
-  const open = [chat(1), chat(2)];
+  const open = [{ ...chat(1), id: CHAT_1 }, chat(2)];
   mockIPC((cmd, args) => {
     const a = (args ?? {}) as Record<string, unknown>;
     asked.push({ cmd, args: a });
@@ -87,6 +93,8 @@ function core(browsers: ChatBrowser[]) {
     if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
     if (cmd === "opened_chats") return open;
     if (cmd === "chat_browsers") return browsers;
+    if (cmd === "chat_browser_timeline") return a.chat === CHAT_1 ? timeline : [];
+    if (cmd === "chat_browser_timeline_shot") return "iVBORw==";
     if (cmd === "watch_browser") {
       view += 1;
       views.set(`${String(a.program)} ${String(a.role)}`, a.frames as Channel<BrowserFrame>);
@@ -209,6 +217,7 @@ async function fromThePalette(row: string) {
 
 beforeEach(() => {
   atQuit = [];
+  timeline = [];
   globalThis.localStorage.clear();
   forgetThisLaunch();
   painted.length = 0;
@@ -704,5 +713,48 @@ describe("where a chat's browser's page is (#2300)", () => {
     );
     host.page("B7", "focused", null);
     await waitFor(() => expect(chip.textContent).toMatch(/^On this (Mac|computer)$/));
+  });
+});
+
+describe("a chat's browser timeline (#2017)", () => {
+  it("opens from the palette in a tab of its own, listing what the agent did with its screenshots", async () => {
+    timeline = [
+      {
+        at: Date.UTC(2026, 9, 26, 9, 0, 0),
+        browser: "b1",
+        by: "agent",
+        did: "Clicked e12",
+        page: "https://shop.example.test/cart",
+        shot: null,
+        unkept: null,
+      },
+      {
+        at: Date.UTC(2026, 9, 26, 9, 0, 5),
+        browser: "b1",
+        by: "agent",
+        did: "Took a screenshot",
+        page: "https://shop.example.test/cart",
+        shot: 0,
+        unkept: null,
+      },
+    ];
+    const host = core([B7]);
+    await opened();
+    await within(await chatsTree()).findByRole("group", { name: "Browsers of steward 1" });
+
+    await fromThePalette("Browser timeline of steward 1");
+
+    await waitFor(() => expect(tabNames()).toContain("Browser timeline of steward 1"));
+    const list = await screen.findByRole("list", { name: "Browser timeline" });
+    const moments = within(list).getAllByRole("listitem");
+    // The newest first.
+    expect(moments[0]).toHaveTextContent("Took a screenshot");
+    expect(moments[1]).toHaveTextContent("Clicked e12");
+    await waitFor(() =>
+      expect(host.asked("chat_browser_timeline_shot")).toEqual([
+        { plane: PLANE, chat: CHAT_1, shot: 0 },
+      ]),
+    );
+    await waitFor(() => expect(painted.length).toBe(1));
   });
 });

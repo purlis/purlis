@@ -309,6 +309,7 @@ import {
 } from "./browsers";
 import { sendToDriven } from "./browserDriving";
 import { programsOf, useChatBrowsers } from "./chatBrowsers";
+import { browserTimelineTitle, browserTimelineView } from "./browserTimelines";
 import type { BrowserShown } from "./ChatBrowsersShown";
 
 /** Which window action a trouble line is about (NO-4): the picker's options, a shell, Needs
@@ -4022,6 +4023,13 @@ export const PlaneView = memo(function PlaneView({
   useEffect(() => {
     nameOfNow.current = nameOf;
   }, [nameOf]);
+  /** Each open chat's id, by its number (ADR 0066): what its browser timeline is kept by
+   *  (#2017). */
+  const idOfNow = useRef<(session: number) => string | null>(() => null);
+  useEffect(() => {
+    idOfNow.current = (session) =>
+      reopened.find((chat) => chat.session === session)?.id ?? null;
+  }, [reopened]);
 
   /** Each chat's browsers as they are drawn (#2024), by the name the chat has here. */
   const chatBrowsersShown = useMemo(
@@ -6185,6 +6193,13 @@ export const PlaneView = memo(function PlaneView({
       stopBrowser: async (program: string): Promise<Ran> => {
         const said = await commands.closeBrowser(program);
         return said.status === "error" ? { ok: false, refused: said.error } : { ok: true };
+      },
+      // A chat's browser timeline, in a tab of its own (#2017), kept by the chat's id: a chat
+      // with none yet has no timeline to show.
+      openBrowserTimeline: (session: number) => {
+        const id = idOfNow.current(session);
+        if (id !== null)
+          showView(browserTimelineView(id), browserTimelineTitle(nameOfNow.current(session)));
       },
       removeWorktree,
       mergeWorktree,

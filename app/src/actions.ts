@@ -430,6 +430,9 @@ export type Does =
   | { verb: "handBrowser"; program: string; session: number }
   /** Stops a pinned browser whose chat has closed (#2022): it ends, and what it held. */
   | { verb: "stopBrowser"; program: string }
+  /** Opens chat `session`'s browser timeline in a tab of its own (#2017): what its agent did in
+   *  its browsers, with the screenshots it took. It changes nothing. */
+  | { verb: "openBrowserTimeline"; session: number }
   /** Drops one of the focused workspace's todos with nothing journalled. */
   | { verb: "forgetTodo"; workspace: string; slug: string }
   /** **Names the worktree it acts on**, and never "whichever one is in front".
@@ -997,6 +1000,8 @@ export type Doing = {
   pinBrowser: (program: string, session: number, pinned: boolean) => Promise<Ran>;
   handBrowser: (program: string, session: number) => Promise<Ran>;
   stopBrowser: (program: string) => Promise<Ran>;
+  /** Opens a chat's browser timeline's tab (#2017). */
+  openBrowserTimeline: (session: number) => void;
   /** Each takes the piece it acts on. The window no longer decides which worktree a removal
    *  meant by looking at what happens to be in front (charter-app#174). */
   removeWorktree: (cut: Cut, force: boolean) => Promise<Ran>;
@@ -1594,6 +1599,8 @@ export const browserHandId = (program: string, session: number): string =>
   `browser.hand:${program}:${session}`;
 /** The id of the row that stops browser `program` (#2022). */
 export const browserStopId = (program: string): string => `browser.stop:${program}`;
+/** The id of the row that opens chat `session`'s browser timeline (#2017). */
+export const browserTimelineId = (session: number): string => `browser.timeline:${session}`;
 
 /**
  * Every offer, in the order a palette lists them and a bar picks from them.
@@ -2519,6 +2526,21 @@ export function catalogue(now: Now): Offer[] {
   }
   // **The project's chats' browsers** (#2022): a chat's is pinned or unpinned; a pinned one
   // whose chat has closed is the workspace's, handed to an open chat or stopped.
+  // **A chat's browser timeline** (#2017): one row for each chat a browser is listed under.
+  const timelines = new Set<number>();
+  for (const one of now.browsers ?? []) {
+    if (one.kept || timelines.has(one.session)) continue;
+    timelines.add(one.session);
+    offers.push({
+      ...can(
+        browserTimelineId(one.session),
+        `Browser timeline of ${one.chat}`,
+        { verb: "openBrowserTimeline", session: one.session },
+        one.chat,
+      ),
+      note: "What its agent did in its browsers, with the screenshots it took. Kept on this device until the chat closes.",
+    });
+  }
   for (const one of now.browsers ?? []) {
     const of = `browser ${one.name} of ${one.chat}`;
     if (!one.kept) {
@@ -3272,6 +3294,9 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
       return doing.handBrowser(does.program, does.session);
     case "stopBrowser":
       return doing.stopBrowser(does.program);
+    case "openBrowserTimeline":
+      doing.openBrowserTimeline(does.session);
+      return DID;
     case "forgetTodo":
       return doing.forgetTodo(does.workspace, does.slug);
     case "removeWorktree":
@@ -4660,7 +4685,13 @@ export type MenuOn =
   | { on: "vault"; vault: string }
   /** One of the project's chats' browsers, by its program (#2022): a row under its chat, or
    *  under Pinned browsers once its chat has closed, with the chats it may be handed to. */
-  | { on: "browser"; program: string; handTo: readonly number[] }
+  | {
+      on: "browser";
+      program: string;
+      handTo: readonly number[];
+      /** The open chat it is of, whose browser timeline its menu opens (#2017). */
+      session?: number;
+    }
   /** One of the focused workspace's open todos, by slug — the Todos panel's rows (SI-3). The
    *  workspace is the focused one on the one surface that draws them. */
   | { on: "todo"; slug: string }
@@ -4841,6 +4872,7 @@ export function menuOn(what: MenuOn): { above: string[]; below: string[] } {
         above: [
           browserPinId(what.program),
           ...what.handTo.map((session) => browserHandId(what.program, session)),
+          ...(what.session === undefined ? [] : [browserTimelineId(what.session)]),
         ],
         below: [browserStopId(what.program)],
       };
