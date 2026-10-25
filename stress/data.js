@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792945140698,
+  "lastUpdate": 1792948269209,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -7288,6 +7288,42 @@ window.BENCHMARK_DATA = {
             "value": 292.1,
             "unit": "MB",
             "extra": "median of 6 samples: 367.1, 324.8, 289.5, 291.6, 292.7, 203.6 MB; window 171.2 MB, session host 121.2 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2589b796627fed530abf2e2257eacc39ac3f5d26",
+          "message": "Theme parts manifest: one version per release, additions since: NEXT (#3223)\n\n* Theme parts manifest: one version per release, additions since: NEXT\n\nOperator ruling 2026-10-25. parts::VERSION stays the last released\nmanifest version; a pull request adds with `since: NEXT` and never\ntouches VERSION or the digest table. The digest test pins only\nmanifest_as_of(VERSION), what a release shipped. The release step,\nnode tools/theme-parts-release.mjs, turns every NEXT into VERSION + 1,\nraises VERSION, pins the digest and writes the schema again; its\n--check refuses a stable tag while a NEXT is left. ADR 0103 amended.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Parts digest pins the manifest's contract, not its prose (D-manifest-6)\n\nA released version's digest now leaves out every description and the\nrest and no_size_in_a_state sentences, so a reworded description\nmerges freely while a contract change to a released item still fails.\nVersion 12 is pinned again over its contract.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Parts release tool: refuse a literal VERSION + 1, always run its cargo steps\n\nA literal since: <VERSION + 1> is an unreleased addition no NEXT carries\nto the release step: pending and --check now report it, and a node test\nover the repository fails on one, so a pull request learns in its own\nCI. Both cargo steps run on every run, so a run cut short is finished\nby the next. The scan is narrowed to the theme engine and the CLI's\ntheme tests; themes.md no longer hard-codes 12 and 13.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-25T20:14:10+04:00",
+          "tree_id": "0dda8f1d37dc16f73e8f110e9b2681454c647811",
+          "url": "https://github.com/purlis/purlis/commit/2589b796627fed530abf2e2257eacc39ac3f5d26"
+        },
+        "date": 1792948267269,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 1036,
+            "unit": "MB",
+            "extra": "median of 3 samples: 933, 1036, 1286 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 262.1,
+            "unit": "MB",
+            "extra": "median of 6 samples: 326.4, 294.2, 284.4, 239, 239.9, 187.8 MB; window 152 MB, session host 110.2 MB"
           }
         ]
       }
