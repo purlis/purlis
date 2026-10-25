@@ -393,10 +393,12 @@ function joined<T>(...refs: (Ref<T> | undefined)[]): RefCallback<T> {
  * `validate`, or an `error` prop, set or not) keeps one line under its box whether or not it says
  * anything, so a refusal that comes or goes moves nothing around it.
  *
- * - **Heard when it lands.** The line is an alert, as every refusal in the window is, and it is in
- *   the accessibility tree from the start, empty: a live region that is already there when its
- *   words arrive is announced by VoiceOver on WebKit, where one shown and filled at once may not
- *   be. While it says something it describes the box (`aria-describedby`), in full.
+ * - **Heard when it lands.** The line is an assertive live region from the start, empty and in the
+ *   accessibility tree: a live region that is already there when its words arrive is announced by
+ *   VoiceOver on WebKit, where one unhidden and filled at once may not be. While it says something
+ *   it is an alert, as every refusal in the window is, and it describes the box
+ *   (`aria-describedby`) in full; empty, it is no alert, so a screen reader's list of alerts and a
+ *   query for one find only what is said.
  * - **Read whole by sight.** A refusal too long for its line (the core's words in a settings
  *   row) is cut short at rest; while the field holds the keyboard, or the pointer is on the line,
  *   the whole of it is drawn over what follows, from where the line starts, so nothing moves. That
@@ -425,7 +427,9 @@ function ErrorLine({ id, said }: { id: string; said: string | undefined }) {
       data-scope="field"
       data-part="error"
       id={id}
-      role="alert"
+      role={said !== undefined ? "alert" : undefined}
+      aria-live="assertive"
+      aria-atomic="true"
       data-clipped={said !== undefined && clipped ? "" : undefined}
     >
       {said !== undefined && (

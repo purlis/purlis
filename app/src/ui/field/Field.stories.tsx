@@ -72,8 +72,8 @@ export const ValidatedOnBlur: Story = {
     const box = canvas.getByRole("textbox", { name: "Name" });
     await userEvent.tab();
     await userEvent.keyboard("my name");
-    // The line is there from the start, an empty alert, so VoiceOver hears the words land.
-    await expect(canvas.getByRole("alert")).toBeEmptyDOMElement();
+    // Nothing said yet, though the line is there, a live region, so VoiceOver hears words land.
+    await expect(canvas.queryByRole("alert")).toBeNull();
     await userEvent.tab();
     await waitFor(() =>
       expect(canvas.getByRole("alert")).toHaveTextContent("A name is letters, digits, ., _ and -."),
@@ -83,7 +83,7 @@ export const ValidatedOnBlur: Story = {
     await expect(box).toHaveFocus();
     expectFocusInSight();
     await userEvent.keyboard("{Backspace>5/}-name");
-    await waitFor(() => expect(canvas.getByRole("alert")).toBeEmptyDOMElement());
+    await waitFor(() => expect(canvas.queryByRole("alert")).toBeNull());
     await userEvent.keyboard("{Backspace>5/} x");
     await userEvent.tab();
     // The baseline: a refused value, its edge and its words.
@@ -222,7 +222,7 @@ export const Textarea: Story = {
     await expect(box).toHaveValue("github.com\ngitlab.com");
     expectFocusInSight();
     await userEvent.tab();
-    await expect(canvas.getByRole("alert")).toBeEmptyDOMElement();
+    await expect(canvas.queryByRole("alert")).toBeNull();
   },
 };
 

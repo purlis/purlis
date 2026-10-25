@@ -153,7 +153,7 @@ describe("inline validation (N26)", () => {
     render(<Held label="Name" validate={NAME_RULE} />);
     const box = screen.getByRole("textbox", { name: "Name" });
     await userEvent.type(box, "my name");
-    expect(screen.getByRole("alert")).toBeEmptyDOMElement();
+    expect(screen.queryByRole("alert")).toBeNull();
     expect(box).not.toHaveAttribute("aria-invalid");
     await userEvent.tab();
     expect(screen.getByRole("alert")).toHaveTextContent("A name is letters, digits, ., _ and -.");
@@ -178,13 +178,15 @@ describe("inline validation (N26)", () => {
     expect(document.querySelector('[data-part="error"]')).toBeEmptyDOMElement();
   });
 
-  it("keeps its error's line, an empty alert from the start, so a refusal moves nothing", async () => {
+  it("keeps its error's line, an empty live region from the start, so a refusal moves nothing", async () => {
     render(<Held label="Name" validate={NAME_RULE} />);
     const line = document.querySelector('[data-scope="field"][data-part="error"]') as Element;
     // In the accessibility tree before it says anything (#3033): a live region that is already
-    // there when its words land is announced by VoiceOver on WebKit.
-    expect(line).toHaveAttribute("role", "alert");
+    // there when its words land is announced by VoiceOver on WebKit. Empty, it is no alert.
+    expect(line).toHaveAttribute("aria-live", "assertive");
+    expect(line).toHaveAttribute("aria-atomic", "true");
     expect(line).not.toHaveAttribute("aria-hidden");
+    expect(line).not.toHaveAttribute("role");
     expect(line).toBeEmptyDOMElement();
     const box = screen.getByRole("textbox", { name: "Name" });
     expect(box).not.toHaveAccessibleDescription();
@@ -193,6 +195,8 @@ describe("inline validation (N26)", () => {
     // The same element, now saying why: no part comes or goes, so the field keeps its height.
     expect(document.querySelector('[data-part="error"]')).toBe(line);
     expect(line).toHaveTextContent("A name is letters");
+    expect(line).toHaveAttribute("role", "alert");
+    expect(line).toHaveAttribute("aria-live", "assertive");
     expect(drawnWith(line, "block-size")).toBe(
       "calc(var(--font-size-xs) * var(--line-height-body))",
     );
@@ -209,7 +213,7 @@ describe("inline validation (N26)", () => {
     await userEvent.click(box);
     await userEvent.clear(box);
     await userEvent.type(box, "my-name");
-    expect(screen.getByRole("alert")).toBeEmptyDOMElement();
+    expect(screen.queryByRole("alert")).toBeNull();
     expect(box).not.toHaveAttribute("aria-invalid");
   });
 
