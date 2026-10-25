@@ -320,7 +320,8 @@ export const OWN_MARKS: Record<string, React.ComponentType<{ className?: string 
 /** The glyph a view's tab carries: a person for a persona, a piece of a puzzle for a view an
  *  extension offers — which says *a plugin's* before any word is read. */
 export function ViewMark({ view }: { view: ViewRef }) {
-  // A persona's own view wears that persona's mark (#1449), on its tab and its heading.
+  // A persona's own view wears that persona's mark (#1449), on its tab: its view repeats it
+  // nowhere (#3147).
   if (view.from === null && view.view === "persona" && view.key !== "")
     return <PersonaMark persona={view.key} className="tab-mark" />;
   const Mark = view.from !== null ? Puzzle : (OWN_MARKS[view.view] ?? ChartColumn);
@@ -328,14 +329,21 @@ export function ViewMark({ view }: { view: ViewRef }) {
 }
 
 /**
- * One view, in a pane: its heading, the views offered beside it, and its answer.
+ * One view, in a pane: its first row, the views offered beside it, and its answer.
  *
- * **The heading is charter's.** The view's title, whose it is (ADR 0041 item 5 — what is in force
- * is shown after approval, not only at it), and a button for every approved extension's view
- * about the same subject — the operator's Statistics button on a persona's tab, drawn only when
- * an extension offers one, and opening its own tab rather than a section of this one. That is
- * the whole of the consent story: **reading a persona asks no extension anything**; pressing
- * Statistics does, and it is the operator's press.
+ * **It carries no title of its own** (#3147, the operator's ruling of 2026-10-24): its tab is
+ * its name, and the tab and the view read as one piece, on the fill the chosen tab joins. The
+ * content panel is the chosen tab's panel, named by it (`tabPanelOf`); the view's own region is
+ * still named by its title for a screen reader, which no one sees.
+ *
+ * **The first row is charter's.** What can be done to the thing the view is about (the
+ * catalogue's rows), whose it is (ADR 0041 item 5 — what is in force is shown after approval, not
+ * only at it), and a button for every approved extension's view about the same subject — the
+ * operator's Statistics button on a persona's tab, drawn only when an extension offers one, and
+ * opening its own tab rather than a section of this one. That is the whole of the consent story:
+ * **reading a persona asks no extension anything**; pressing Statistics does, and it is the
+ * operator's press. The row keeps the room the pane's actions take at its end (`PaneActions`,
+ * `paneFrame.css`), so nothing in it is ever under them.
  */
 export function ViewPane({
   plane,
@@ -359,7 +367,8 @@ export function ViewPane({
 }: {
   plane: PlaneId;
   view: ViewRef;
-  /** What the tab is called — the heading says the same. */
+  /** What the tab is called: the view's region is named by it, and the view shows it nowhere
+   *  (#3147). */
   title: string;
   /** The workspace whose strip the view is on, or `undefined` outside every workspace: its
    *  settings are a layer of what an extension's view is asked under (charter-app#280). */
@@ -373,7 +382,7 @@ export function ViewPane({
   onAsk: () => void;
   /** A vault's tab wrote to its vault. */
   onVaultChanged: () => void;
-  /** The catalogue, by row id: what the heading's own rows are looked up in (SI-3). */
+  /** The catalogue, by row id: what the first row's own rows are looked up in (SI-3). */
   offerFor?: (id: string) => Offer | undefined;
   onPress?: (offer: Offer) => void;
   /**
@@ -405,9 +414,9 @@ export function ViewPane({
   const onDisk = useViewChanged([plane], followed(view));
   /** The level this is the Settings tab at, when it is that tab (SE-16, SE-17). */
   const settingsLevel = settingsLevelOf(view);
-  // **What charter can do to the thing this tab is about, on its heading** (SI-3): a persona's
+  // **What charter can do to the thing this tab is about, on its first row** (SI-3): a persona's
   // `persona.md` handed to the operator's editor and the persona deleted, a vault deleted. The
-  // catalogue's rows, so the heading, the palette and a row's menu cannot disagree, and each
+  // catalogue's rows, so the first row, the palette and a row's menu cannot disagree, and each
   // destructive one asks in its own dialog before anything goes.
   //
   // A memory list's `+` (SI-9c, ADR 0065 Q9) is one of these rows too, drawn as the glyph the
@@ -459,37 +468,43 @@ export function ViewPane({
   const piece = pieceOf(view);
   const pieceDiff = pieceDiffOf(view);
   const taskChanges = taskChangesOf(view);
+  /** Whether the view draws its own first row, with nothing above it (#3147). */
+  const ownFirstRow =
+    !holding &&
+    (settingsLevel !== undefined || piece?.path !== undefined || pieceDiff !== undefined);
   return (
     <section
       className="view-pane"
       data-testid={`view-pane-${viewKey(view).replace(/\//g, "-")}`}
       aria-label={title}
     >
-      <header className="view-head">
-        <h2>
-          <ViewMark view={view} />
-          {title}
-          {view.from !== null && <span className="panel-from">{` · ${view.from}`}</span>}
-        </h2>
-        {own}
-        {beside.map((one) => {
-          // Opened about the same thing this view is about: statistics from steward's tab are
-          // steward's statistics, and from the whole plane's view, the whole plane's.
-          const key = view.key;
-          const called = key === "" ? one.title : `${one.title} · ${key}`;
-          return (
-            <Button
-              size="sm"
-              key={`${one.extension}/${one.id}`}
-              tooltip={`Asks ${one.extension}, in a tab of its own`}
-              onPress={() => onOpenView({ from: one.extension, view: one.id, key }, called)}
-              icon={<ChartColumn className="node-icon" aria-hidden="true" />}
-            >
-              {one.title}
-            </Button>
-          );
-        })}
-      </header>
+      {/* **The view's first row, with no title in it** (#3147): its tab says what it is. A
+          view that draws its own first row (Settings' levels, a file's or a comparison's
+          toolbar) has none here, and that row keeps the pane's actions' room itself. */}
+      {!ownFirstRow && (
+        <div className="view-head">
+          {/* Whose an extension's view is (ADR 0041 item 5): quiet words, never a title. */}
+          {view.from !== null && <span className="view-head-says">{`From ${view.from}`}</span>}
+          {own}
+          {beside.map((one) => {
+            // Opened about the same thing this view is about: statistics from steward's tab are
+            // steward's statistics, and from the whole plane's view, the whole plane's.
+            const key = view.key;
+            const called = key === "" ? one.title : `${one.title} · ${key}`;
+            return (
+              <Button
+                size="sm"
+                key={`${one.extension}/${one.id}`}
+                tooltip={`Asks ${one.extension}, in a tab of its own`}
+                onPress={() => onOpenView({ from: one.extension, view: one.id, key }, called)}
+                icon={<ChartColumn className="node-icon" aria-hidden="true" />}
+              >
+                {one.title}
+              </Button>
+            );
+          })}
+        </div>
+      )}
       {/* A persona's icon and colour, picked here and written to its definition (#1449). */}
       {view.from === null && view.view === "persona" && view.key !== "" && (
         <PersonaMarkPicker key={`${plane}\u0000${view.key}`} plane={plane} persona={view.key} />
@@ -760,7 +775,7 @@ function followed(view: ViewRef): About | undefined {
   return todo === undefined ? undefined : todosIn(todo.workspace);
 }
 
-/** The catalogue rows a charter view's heading offers, by view, for the thing it shows. */
+/** The catalogue rows a charter view's first row offers, by view, for the thing it shows. */
 const OWN_ROWS: Record<string, (key: string) => string[]> = {
   persona: (key) => [
     `persona.edit:${key}`,
@@ -786,7 +801,7 @@ const OWN_ROWS: Record<string, (key: string) => string[]> = {
     memoryRefOf(key)?.slug === DRAFT ? [] : [`memory.edit:${key}`, `memory.delete:${key}`],
 };
 
-/** One catalogue row as a heading's button, in its own words. A row the catalogue does not
+/** One catalogue row as a first row's button, in its own words. A row the catalogue does not
  *  offer draws nothing. */
 function OfferButton({ offer, onPress }: { offer?: Offer; onPress?: (offer: Offer) => void }) {
   if (!offer || !onPress) return null;
