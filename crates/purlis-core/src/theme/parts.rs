@@ -1178,6 +1178,10 @@ mod state_words_tests;
 #[path = "part_fills_tests.rs"]
 mod part_fills_tests;
 
+#[cfg(test)]
+#[path = "surface_grounds_tests.rs"]
+mod surface_grounds_tests;
+
 /// **A field's colours as `app/src/ui/field/field.css` draws them**: no ground and no edge of
 /// its own, its label in the primary tier. Its help's and its error's words are the family's
 /// `words`.
@@ -1372,10 +1376,10 @@ pub(super) const SEEN: f64 = 0.02;
 const NO_NEARER: f64 = 0.005;
 
 /// **How far apart two looks are drawn**, in OKLab, on what a person reads as the look: the
-/// fills as each shows on every ground the family is drawn on, the nearest ground counting; the
-/// edges only where they stand out at a glance ([`super::ALLOW_APART`]), since a hairline that
-/// differs less reads as the same edge; and, with `words`, the words.
-fn look_apart(theme: &ResolvedTheme, family: &Family, a: &Drawn, b: &Drawn, words: bool) -> f64 {
+/// fills as each shows on every ground `on` it is drawn on ([`grounds`]), the nearest ground
+/// counting; the edges only where they stand out at a glance ([`super::ALLOW_APART`]), since a
+/// hairline that differs less reads as the same edge; and, with `words`, the words.
+fn look_apart(theme: &ResolvedTheme, on: &[String], a: &Drawn, b: &Drawn, words: bool) -> f64 {
     let one = |x: &str, y: &str| match (hex(theme, x), hex(theme, y)) {
         (None, None) => 0.0,
         (Some(_), Some(_)) => apart(theme, x, y).unwrap_or(1.0),
@@ -1384,7 +1388,7 @@ fn look_apart(theme: &ResolvedTheme, family: &Family, a: &Drawn, b: &Drawn, word
     let shown = |fill: &str, ground: &str| {
         hex(theme, fill).map_or_else(|| ground.to_owned(), |fill| onto(fill, ground))
     };
-    let fills = grounds(theme, family)
+    let fills = on
         .iter()
         .filter_map(|ground| {
             let (x, y) = (shown(a.fill, ground), shown(b.fill, ground));
@@ -1463,7 +1467,7 @@ pub(super) fn allow_from_primary(theme: &ResolvedTheme) -> Vec<AllowLook> {
             }
             found.push(AllowLook {
                 state,
-                apart: look_apart(theme, family, &allow, &primary, false),
+                apart: look_apart(theme, &grounds(theme, family), &allow, &primary, false),
                 fills: [primary.fill, allow.fill],
             });
             seen.push((allow, primary));
@@ -2388,11 +2392,10 @@ fn grounds(theme: &ResolvedTheme, family: &Family) -> Vec<String> {
     drawn
 }
 
-/// The lowest contrast `front` has on `fill` over each of the family's grounds.
-fn lowest(theme: &ResolvedTheme, family: &Family, fill: &str, front: &str) -> Option<f64> {
+/// The lowest contrast `front` has on `fill` over each ground `on` ([`grounds`]).
+fn lowest(theme: &ResolvedTheme, on: &[String], fill: &str, front: &str) -> Option<f64> {
     let front = hex(theme, front)?;
-    grounds(theme, family)
-        .iter()
+    on.iter()
         .map(|ground| {
             let back = hex(theme, fill).map_or_else(|| ground.clone(), |f| onto(f, ground));
             contrast(&onto(front, &back), &back)
@@ -2476,6 +2479,7 @@ fn edge(rules: &[Rule], family: &Family, variant: &str, look: &Drawn) -> Option<
 /// with more contrast asked for, each raised as [`super::Least::floor`] raises it (#2925).
 fn unreadable(
     theme: &ResolvedTheme,
+    on: &[String],
     rules: &[Rule],
     family: &Family,
     variant: &str,
@@ -2484,7 +2488,7 @@ fn unreadable(
     for (at, part) in family.parts.iter().enumerate() {
         // With more contrast asked for, the reading floors are raised (#2925).
         let floor = theme.least.floor(floor_of(family, part));
-        if let Some(ratio) = lowest(theme, family, look.grounds[at], look.words[at])
+        if let Some(ratio) = lowest(theme, on, look.grounds[at], look.words[at])
             && ratio < floor
         {
             let what = if is_mark(family, part) {
@@ -2506,13 +2510,13 @@ fn unreadable(
         let fill = hex(theme, look.fill);
         let on_its_ground = fill.is_none_or(|fill| {
             !is_opaque(fill)
-                || grounds(theme, family)
+                || on
                     .iter()
                     .any(|ground| ground.eq_ignore_ascii_case(&solid(fill)))
         });
         let floor = theme.least.floor(3.0);
         if on_its_ground
-            && let Some(ratio) = lowest(theme, family, look.fill, border)
+            && let Some(ratio) = lowest(theme, on, look.fill, border)
             && ratio < floor
         {
             return Some((
@@ -2536,6 +2540,7 @@ enum Consented {
 
 fn consent_broken(
     theme: &ResolvedTheme,
+    on: &[String],
     rules: &[Rule],
     family: &Family,
     variant: &Variant,
@@ -2548,12 +2553,12 @@ fn consent_broken(
     // Parts never bring a consent variant nearer the primary than the family's defaults are, in
     // this same drawn theme: the farthest of its fill, its edge and (for danger) its words.
     let words = variant.consent == Some(Consent::Danger);
-    let nearer = look_apart(theme, family, &look, &primary, words)
-        < look_apart(theme, family, &default_look, &default_primary, words) - NO_NEARER;
+    let nearer = look_apart(theme, on, &look, &primary, words)
+        < look_apart(theme, on, &default_look, &default_primary, words) - NO_NEARER;
     match variant.consent? {
         Consent::Grants => {
             let own = edge(rules, family, variant.name, &look);
-            let ratio = own.and_then(|border| lowest(theme, family, look.fill, border));
+            let ratio = own.and_then(|border| lowest(theme, on, look.fill, border));
             if ratio.is_none_or(|ratio| ratio < 3.0) {
                 return Some(Consented::Own(
                     "an answer that grants keeps its accent edge, 3:1 on its fill".to_owned(),
@@ -2756,7 +2761,164 @@ fn held_from(
             }
         }
     }
+    // A surface's fill the theme sets is a ground of every family drawn on it (#3099, from
+    // #3083): held until no surface falls back, since each that does draws its own fill again.
+    while held_on_surfaces(theme, &mut drawn_in, &mut rules, &mut fell) {}
+    #[cfg(test)]
+    DRAWN_IN.with(|it| it.set(drawn_in.len()));
     (rules, fell)
+}
+
+/// A surface's look whose fill a theme sets: the surface, its variant, its default fill and the
+/// fill drawn in its place.
+type SurfaceSet = (&'static Family, &'static str, &'static str, &'static str);
+
+/// **The fills a theme's parts set on the surfaces other families are drawn on**: each surface's
+/// look whose root draws, at rest, another fill than its family default's, with that default and
+/// the fill drawn in its place. A family drawn on the default is drawn on the fill set.
+fn surfaces_set(rules: &[Rule]) -> Vec<SurfaceSet> {
+    let mut found = Vec::new();
+    for surface in MANIFEST {
+        if !surface.parts[0].properties.contains(&Prop::Fill)
+            || !rules.iter().any(|rule| std::ptr::eq(rule.family, surface))
+        {
+            continue;
+        }
+        for variant in surface.looks() {
+            let default = (surface.defaults)(variant, &[]).fill;
+            let set = drawn(rules, surface, variant, &[]).fill;
+            if default != TRANSPARENT && set != TRANSPARENT && set != default {
+                found.push((surface, variant, default, set));
+            }
+        }
+    }
+    found
+}
+
+/// **The surfaces each family with a consent variant is drawn on** (#3083): a button stands on
+/// a panel, in a popover and in a dialog, and a menu's row in the popover a menu is. A ground
+/// token a family names can be more than one surface's (the overlay is a popover's and a
+/// dialog's), so where a family stands is said here, not read from its grounds.
+const STANDS_ON: &[(&str, &[&str])] = &[
+    ("panel", &["button"]),
+    ("popover", &["button", "menu"]),
+    ("dialog", &["button"]),
+];
+
+/// The families drawn on `surface` whose grounds name its `default` fill but not `set`: what a
+/// surface whose fill a theme turns from `default` to `set` brings a new ground under.
+fn drawn_on(
+    surface: &'static Family,
+    default: &str,
+    set: &str,
+) -> impl Iterator<Item = &'static Family> {
+    let on: &[&str] = STANDS_ON
+        .iter()
+        .find(|(name, _)| *name == surface.name)
+        .map_or(&[], |(_, families)| *families);
+    MANIFEST.iter().filter(move |family| {
+        on.contains(&family.name)
+            && family.grounds.contains(&default)
+            && !family.grounds.contains(&set)
+    })
+}
+
+/// `set` as `theme` draws it under what stands on `surface`: laid over each ground the surface
+/// itself is drawn on, for a fill with alpha.
+fn surface_ground(theme: &ResolvedTheme, surface: &Family, set: &str) -> Vec<String> {
+    let Some(fill) = hex(theme, set) else {
+        return grounds(theme, surface);
+    };
+    if is_opaque(fill) {
+        return vec![solid(fill)];
+    }
+    grounds(theme, surface)
+        .iter()
+        .map(|under| onto(fill, under))
+        .collect()
+}
+
+/// **The floor a family breaks on a surface's fill a theme sets**, if any: each of its looks
+/// at rest and in each state but disabled, held to the reading floors as written, and its
+/// consent variants to the consent floors in every drawn theme, on that fill alone.
+fn broken_on(
+    theme: &ResolvedTheme,
+    drawn_in: &[ResolvedTheme],
+    rules: &[Rule],
+    family: &Family,
+    surface: &Family,
+    set: &str,
+) -> Option<(String, Option<f64>)> {
+    let singles: Vec<Vec<State>> = std::iter::once(Vec::new())
+        .chain(states_of(family).into_iter().map(|one| vec![one]))
+        .collect();
+    let on = surface_ground(theme, surface, set);
+    for states in &singles {
+        for variant in family.looks() {
+            let look = drawn(rules, family, variant, states);
+            if let Some(broken) = unreadable(theme, &on, rules, family, variant, &look) {
+                return Some(broken);
+            }
+        }
+    }
+    for one in drawn_in {
+        let on = surface_ground(one, surface, set);
+        for states in &singles {
+            for variant in family.variants.iter().filter(|one| one.consent.is_some()) {
+                match consent_broken(one, &on, rules, family, variant, states) {
+                    Some(Consented::Own(floor, ratio)) => return Some((floor, ratio)),
+                    Some(Consented::Both(floor, _)) => return Some((floor, None)),
+                    None => {}
+                }
+            }
+        }
+    }
+    None
+}
+
+/// **Each surface whose fill a theme sets, held under what is drawn on it** (#3099, from
+/// #3083): every family drawn on the surface's default ground is measured on the fill set in its
+/// place, and a surface under which one breaks a floor draws its family default there, said in
+/// a [`Fell`] that names the family. Whether one fell, so the hold is asked again.
+fn held_on_surfaces(
+    theme: &ResolvedTheme,
+    drawn_in: &mut Vec<ResolvedTheme>,
+    rules: &mut Vec<Rule>,
+    fell: &mut Vec<Fell>,
+) -> bool {
+    let before = fell.len();
+    for (surface, variant, default, set) in surfaces_set(rules) {
+        for family in drawn_on(surface, default, set) {
+            // The consent floors hold in every tint, a surface's fill under a consent variant
+            // included (ADR 0097 §6), as they do where a theme's parts reach the family itself.
+            let consent = family.variants.iter().any(|one| one.consent.is_some());
+            if consent && drawn_in.len() == 1 && !theme.tint.tabs().is_empty() {
+                drawn_in.extend(
+                    theme
+                        .tint
+                        .hues
+                        .iter()
+                        .map(|one| tint::tinted(theme, one.name)),
+                );
+                drawn_in.extend((0..360).map(|degree| tint::tinted_at(theme, f64::from(degree))));
+            }
+            if let Some((floor, ratio)) = broken_on(theme, drawn_in, rules, family, surface, set) {
+                Held {
+                    family: surface,
+                    rules: &mut *rules,
+                    fell: &mut *fell,
+                }
+                .fall(
+                    variant,
+                    &[],
+                    format!("what a {} draws on it: {floor}", family.name),
+                    ratio,
+                );
+                break;
+            }
+        }
+    }
+    fell.len() > before
 }
 
 /// The states `family` names but disabled, in the order the stylesheet writes them.
@@ -2823,7 +2985,9 @@ impl Held<'_> {
             if look == drawn(&[], self.family, variant, states) {
                 continue;
             }
-            if let Some((floor, ratio)) = unreadable(theme, self.rules, self.family, variant, &look)
+            let on = grounds(theme, self.family);
+            if let Some((floor, ratio)) =
+                unreadable(theme, &on, self.rules, self.family, variant, &look)
             {
                 self.fall(variant, states, floor, ratio);
             }
@@ -2839,7 +3003,8 @@ impl Held<'_> {
                 // fallback would change nothing, so what it is held apart from falls back.
                 let own_default = drawn(self.rules, family, variant.name, states)
                     == drawn(&[], family, variant.name, states);
-                match consent_broken(one, self.rules, family, variant, states) {
+                let on = grounds(one, family);
+                match consent_broken(one, &on, self.rules, family, variant, states) {
                     None => {}
                     Some(Consented::Own(floor, ratio)) => {
                         if !own_default {
@@ -2850,7 +3015,7 @@ impl Held<'_> {
                         if !own_default {
                             self.fall(variant.name, states, floor.clone(), None);
                         }
-                        if consent_broken(one, self.rules, family, variant, states).is_some() {
+                        if consent_broken(one, &on, self.rules, family, variant, states).is_some() {
                             self.fall(other, states, floor, None);
                         }
                     }
