@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { PersonaSkillAdd, changePersonaSkill } from "./personaSkills";
 
@@ -33,9 +34,10 @@ describe("a persona's skills in the Skill studio", () => {
     expect(asked).toEqual([{ plane: "p", persona: "ops", written: "deploy", change: "add" }]);
   });
 
-  it("offers each skill as the studio writes it", () => {
+  it("offers each skill as the studio writes it, once, in the combobox's list", async () => {
     mockIPC(() => true);
-    const { container } = render(
+    const user = userEvent.setup();
+    render(
       <PersonaSkillAdd
         plane="p"
         persona="ops"
@@ -43,10 +45,14 @@ describe("a persona's skills in the Skill studio", () => {
         onChanged={() => {}}
       />,
     );
-    const offered = [...container.querySelectorAll("datalist option")].map((one) =>
-      one.getAttribute("value"),
-    );
+    await user.click(screen.getByRole("button", { name: /suggestions/i }));
+    const list = await screen.findByRole("listbox");
+    const offered = within(list)
+      .getAllByRole("option")
+      .map((one) => one.textContent);
     expect(offered).toEqual(["purlis:handoff", "deploy"]);
+    await user.click(within(list).getByRole("option", { name: "deploy" }));
+    expect(screen.getByRole("combobox", { name: "Add a skill" })).toHaveValue("deploy");
   });
 
   it("says the core's refusal and keeps what was typed", async () => {

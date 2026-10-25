@@ -1040,6 +1040,8 @@ pub const MANIFEST: &[Family] = &[
     collection::LIST,
     // **The title bar's pinned workspaces** (#2916): a chip per pin of the project in front.
     shell::TITLEBAR,
+    select::SELECT,
+    select::COMBOBOX,
 ];
 
 /// The popover and menu families (#2909): the surface a popover and a menu stand on, and a
@@ -1059,6 +1061,9 @@ mod dialog;
 /// The collection families (#2911): a list's row.
 #[path = "parts_collections.rs"]
 mod collection;
+/// The select and combobox families (#2906).
+#[path = "parts_select.rs"]
+mod select;
 #[cfg(test)]
 pub(super) use dialog::DIALOG_TIERS;
 
@@ -2289,9 +2294,15 @@ fn lowest(theme: &ResolvedTheme, family: &Family, fill: &str, front: &str) -> Op
         .map(|ratio| (ratio * 100.0).floor() / 100.0)
 }
 
-/// The floor a part's words or marks are held to: 4.5:1 for words, 3:1 for an icon.
+/// The floor a part's words or marks are held to: 4.5:1 for words, 3:1 for a mark (an icon, a
+/// select's chevron).
 fn floor_of(part: &Part) -> f64 {
-    if part.name == "icon" { 3.0 } else { 4.5 }
+    if is_mark(part) { 3.0 } else { 4.5 }
+}
+
+/// Whether a part is a mark and not words: an icon, or the chevron of a select or a combobox.
+fn is_mark(part: &Part) -> bool {
+    matches!(part.name, "icon" | "chevron")
 }
 
 /// The value `rules` give `property` of `family`'s root in `variant` at rest, if any sets it:
@@ -2364,11 +2375,7 @@ fn unreadable(
         if let Some(ratio) = lowest(theme, family, look.grounds[at], look.words[at])
             && ratio < floor
         {
-            let what = if part.name == "icon" {
-                "marks"
-            } else {
-                "words"
-            };
+            let what = if is_mark(part) { "marks" } else { "words" };
             return Some((
                 format!(
                     "the {}'s {what} contrast {floor}:1 with its fill",
