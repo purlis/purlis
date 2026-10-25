@@ -43,9 +43,14 @@
 
 /* Why its value is refused: in the danger colour, under the control, beside the edge that says
    so too. Its words are the cue that is not colour. **Its line is kept whether it says anything
-   or not**, one line tall, so a refusal coming or going moves nothing (#2905). */
-[data-scope="field"][data-part="error"] {
+   or not**, one line tall, so a refusal coming or going moves nothing (#2905). It stands in its
+   room, which holds the whole copy of a refusal cut short beside it (#3033). */
+[data-error-room] {
   position: relative;
+}
+
+[data-scope="field"][data-part="error"] {
+  display: block;
   margin: 0;
   color: var(--danger-text);
   font-size: var(--font-size-xs);
@@ -62,30 +67,40 @@
 }
 
 /* **The whole of a refusal cut short** (#3033), while the field holds the keyboard or the pointer
-   is on the line: drawn over what follows, on the overlay surface a hint is drawn on, its first
-   word where the line's is, so nothing moves and nothing under it is pushed away. Its words keep
-   the line's colour, which the engine holds on the overlay surface. It never animates. */
-[data-scope="field"][data-part="error"] > [data-whole] {
+   is on its room: drawn over what follows, on the overlay surface and edge a hint is drawn with
+   (the edge is what forced colours keep), its first word where the line's is, so nothing moves
+   and nothing under it is pushed away. Its words keep the error's colour, which the engine holds
+   on the overlay surface. It never animates. */
+[data-scope="field"][data-part="error"][data-whole] {
   display: none;
-}
-
-[data-scope="field"][data-part="root"]:focus-within
-  [data-part="error"][data-clipped]
-  > [data-whole],
-[data-scope="field"][data-part="error"][data-clipped]:hover > [data-whole] {
-  display: block;
   position: absolute;
   z-index: 1;
-  inset-block-start: calc(-1 * var(--space-1));
-  inset-inline: calc(-1 * var(--space-2));
+  inset-block-start: calc(-1 * var(--space-1) - 1px);
+  inset-inline: calc(-1 * var(--space-2) - 1px);
+  block-size: auto;
   padding-block: var(--space-1);
   padding-inline: var(--space-2);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-control);
-  color: inherit;
   background-color: var(--surface-overlay);
   box-shadow: var(--elevation-overlay);
   white-space: normal;
   overflow-wrap: anywhere;
+}
+
+/* Shown for the keyboard alone, the pointer goes through it: a press on what it covers lands
+   there, not on the copy. */
+[data-scope="field"][data-part="root"]:focus-within
+  > [data-error-room][data-clipped]
+  > [data-whole] {
+  display: block;
+  pointer-events: none;
+}
+
+/* Under the pointer it takes the pointer, so it stays while the pointer is on it (hoverable). */
+[data-scope="field"][data-part="root"] > [data-error-room][data-clipped]:hover > [data-whole] {
+  display: block;
+  pointer-events: auto;
 }
 
 /* ---------------------------------------------------------------------------------------------

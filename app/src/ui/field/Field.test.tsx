@@ -500,15 +500,21 @@ describe("a refusal too long for its line (#3033)", () => {
     "The core would not take this value: a workspace's sandbox profile names a mount outside " +
     "the workspace, and a profile may only mount what its workspace holds.";
 
-  /** Every line in the window as too narrow for its words, as a settings row's is for the core's. */
-  function narrow() {
+  /** Every line in the window as `wide` for its words, `400` wide: a settings row is narrower
+   *  than the core's words. */
+  function sized(client: () => number) {
     const scroll = vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockReturnValue(400);
-    const client = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(200);
+    const width = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(client);
     return () => {
       scroll.mockRestore();
-      client.mockRestore();
+      width.mockRestore();
     };
   }
+  const narrow = () => sized(() => 200);
+
+  /** The room under a field: its live line and, beside it, the whole copy of a refusal cut short. */
+  const roomOf = (line: Element) => line.parentElement as HTMLElement;
+  const wholeOf = (line: Element) => roomOf(line).querySelector("[data-whole]");
 
   it("is described to the box in full, once, and the whole copy is for the eye alone", () => {
     const restore = narrow();
@@ -518,11 +524,55 @@ describe("a refusal too long for its line (#3033)", () => {
       expect(box).toHaveAttribute("aria-invalid", "true");
       expect(box).toHaveAccessibleDescription(LONG);
       const line = screen.getByRole("alert");
-      expect(line).toHaveAttribute("data-clipped");
-      const whole = line.querySelector("[data-whole]") as Element;
+      expect(roomOf(line)).toHaveAttribute("data-clipped");
+      const whole = wholeOf(line) as Element;
       expect(whole).toHaveTextContent(LONG);
       expect(whole).toHaveAttribute("aria-hidden", "true");
+      // Beside the live line, never in it.
+      expect(line.contains(whole)).toBe(false);
+      expect(line.querySelector("[aria-hidden]")).toBeNull();
     } finally {
+      restore();
+    }
+  });
+
+  it("changes nothing in the live line when a resize cuts its words short or lets them fit", () => {
+    let width = 600;
+    const restore = sized(() => width);
+    const watched: ResizeObserverCallback[] = [];
+    const Was = globalThis.ResizeObserver;
+    globalThis.ResizeObserver = class {
+      constructor(callback: ResizeObserverCallback) {
+        watched.push(callback);
+      }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    } as unknown as typeof ResizeObserver;
+    try {
+      render(<TextField aria-label="Profile" error={LONG} value="x" onChange={() => {}} />);
+      const line = screen.getByRole("alert");
+      expect(wholeOf(line)).toBeNull();
+      const changes: MutationRecord[] = [];
+      const watch = new MutationObserver((records) => changes.push(...records));
+      watch.observe(line, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        characterData: true,
+      });
+      const resized = () => act(() => watched.forEach((one) => one([], {} as ResizeObserver)));
+      width = 200;
+      resized();
+      expect(wholeOf(line)).not.toBeNull();
+      width = 600;
+      resized();
+      expect(wholeOf(line)).toBeNull();
+      changes.push(...watch.takeRecords());
+      watch.disconnect();
+      expect(changes).toEqual([]);
+    } finally {
+      globalThis.ResizeObserver = Was;
       restore();
     }
   });
@@ -532,18 +582,25 @@ describe("a refusal too long for its line (#3033)", () => {
     try {
       render(<TextField aria-label="Profile" error={LONG} value="x" onChange={() => {}} />);
       const line = screen.getByRole("alert");
-      const whole = line.querySelector("[data-whole]") as Element;
+      const room = roomOf(line);
+      const whole = wholeOf(line) as Element;
       expect(drawnWith(whole, "display")).toBe("none");
-      // Under the pointer, on the line: the cascade's hover mark on the line itself.
-      line.setAttribute("data-cascade-hover", "");
+      // Under the pointer, on its room: the cascade's hover mark on the room itself. It takes
+      // the pointer, so it stays while the pointer is on it.
+      room.setAttribute("data-cascade-hover", "");
       expect(drawnWith(whole, "display", { hover: true })).toBe("block");
-      line.removeAttribute("data-cascade-hover");
+      expect(drawnWith(whole, "pointer-events", { hover: true })).toBe("auto");
+      room.removeAttribute("data-cascade-hover");
       expect(drawnWith(whole, "display", { hover: true })).toBe("none");
       act(() => screen.getByRole("textbox", { name: "Profile" }).focus());
       expect(drawnWith(whole, "display")).toBe("block");
+      // For the keyboard alone, a press goes through it to what it covers.
+      expect(drawnWith(whole, "pointer-events")).toBe("none");
       expect(drawnWith(whole, "position")).toBe("absolute");
       expect(drawnWith(whole, "white-space")).toBe("normal");
       expect(drawnWith(whole, "background-color")).toBe("var(--surface-overlay)");
+      // The edge a hint has, which forced colours keep.
+      expect(drawnWith(whole, "border")).toBe("1px solid var(--border-subtle)");
       // The line keeps its one line: what is under the field never moves.
       expect(drawnWith(line, "block-size")).toBe(
         "calc(var(--font-size-xs) * var(--line-height-body))",
@@ -553,11 +610,28 @@ describe("a refusal too long for its line (#3033)", () => {
     }
   });
 
+  it("is brought into sight when the field takes the keyboard", () => {
+    const restore = narrow();
+    const into = vi.fn();
+    const had = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = into;
+    try {
+      render(<TextField aria-label="Profile" error={LONG} value="x" onChange={() => {}} />);
+      expect(into).not.toHaveBeenCalled();
+      act(() => screen.getByRole("textbox", { name: "Profile" }).focus());
+      expect(into).toHaveBeenCalledWith({ block: "nearest" });
+      expect(into.mock.contexts[0]).toBe(wholeOf(screen.getByRole("alert")));
+    } finally {
+      HTMLElement.prototype.scrollIntoView = had;
+      restore();
+    }
+  });
+
   it("is drawn on its line alone when it fits, with no copy", () => {
     render(<TextField aria-label="Colour" error="Not a colour." value="x" onChange={() => {}} />);
     const line = screen.getByRole("alert");
-    expect(line).not.toHaveAttribute("data-clipped");
-    expect(line.querySelector("[data-whole]")).toBeNull();
+    expect(roomOf(line)).not.toHaveAttribute("data-clipped");
+    expect(wholeOf(line)).toBeNull();
   });
 
   it("reads whole in a box that holds its own words, as in one React Aria draws", () => {
@@ -567,7 +641,7 @@ describe("a refusal too long for its line (#3033)", () => {
       const box = screen.getByLabelText("Token");
       expect(box).toHaveAttribute("aria-invalid", "true");
       expect(box).toHaveAccessibleDescription(LONG);
-      expect(screen.getByRole("alert")).toHaveAttribute("data-clipped");
+      expect(roomOf(screen.getByRole("alert"))).toHaveAttribute("data-clipped");
     } finally {
       restore();
     }

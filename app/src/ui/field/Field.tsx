@@ -401,12 +401,18 @@ function joined<T>(...refs: (Ref<T> | undefined)[]): RefCallback<T> {
  *   query for one find only what is said.
  * - **Read whole by sight.** A refusal too long for its line (the core's words in a settings
  *   row) is cut short at rest; while the field holds the keyboard, or the pointer is on the line,
- *   the whole of it is drawn over what follows, from where the line starts, so nothing moves. That
- *   copy is for the eye alone (`aria-hidden`): the line's own words are what is heard. An input
- *   error is the one kind of such content WCAG 1.4.13 does not ask to be dismissable.
+ *   the whole of it is drawn over what follows, from where the line starts, so nothing moves, and
+ *   brought into sight when its scroll container would cut it (a dialog's last field). That copy
+ *   is for the eye alone (`aria-hidden`), and it sits **beside the live line, never in it**: the
+ *   line changes only when its words do, so a resize that cuts them short, or lets them fit, makes
+ *   a screen reader say nothing again. It is the error part too, so a theme's words reach it. Shown
+ *   for the keyboard alone, the pointer goes through it to what it covers. An input error is the
+ *   one kind of such content WCAG 1.4.13 does not ask to be dismissable.
  */
 function ErrorLine({ id, said }: { id: string; said: string | undefined }) {
   const words = useRef<HTMLSpanElement>(null);
+  const room = useRef<HTMLDivElement>(null);
+  const whole = useRef<HTMLSpanElement>(null);
   const [clipped, setClipped] = useState(false);
   useLayoutEffect(() => {
     const line = words.current;
@@ -422,27 +428,35 @@ function ErrorLine({ id, said }: { id: string; said: string | undefined }) {
     watch.observe(line);
     return () => watch.disconnect();
   }, [said]);
+  // Shown for the keyboard, the whole copy is brought into sight: the field taking the keyboard,
+  // or a refusal cut short while it has it.
+  useLayoutEffect(() => {
+    const field = room.current?.parentElement;
+    if (!field || !clipped) return;
+    const inSight = () => whole.current?.scrollIntoView?.({ block: "nearest" });
+    if (field.matches(":focus-within")) inSight();
+    field.addEventListener("focusin", inSight);
+    return () => field.removeEventListener("focusin", inSight);
+  }, [clipped]);
+  const shown = said !== undefined && clipped;
   return (
-    <p
-      data-scope="field"
-      data-part="error"
-      id={id}
-      role={said !== undefined ? "alert" : undefined}
-      aria-live="assertive"
-      aria-atomic="true"
-      data-clipped={said !== undefined && clipped ? "" : undefined}
-    >
-      {said !== undefined && (
-        <>
-          <span ref={words}>{said}</span>
-          {clipped && (
-            <span data-whole="" aria-hidden="true">
-              {said}
-            </span>
-          )}
-        </>
+    <div data-error-room="" data-clipped={shown ? "" : undefined} ref={room}>
+      <p
+        data-scope="field"
+        data-part="error"
+        id={id}
+        role={said !== undefined ? "alert" : undefined}
+        aria-live="assertive"
+        aria-atomic="true"
+      >
+        {said !== undefined && <span ref={words}>{said}</span>}
+      </p>
+      {shown && (
+        <span data-scope="field" data-part="error" data-whole="" aria-hidden="true" ref={whole}>
+          {said}
+        </span>
       )}
-    </p>
+    </div>
   );
 }
 
