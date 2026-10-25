@@ -64,8 +64,8 @@ start, extend `purlis-classic` instead, and read its file the same way. Put each
 `palette` once and name it from the tokens. Most of a look is `surface.*`, `text.*`,
 `border.*`, `accent.base`, `accent.surface`, `focus.ring`, `layer.selected`, `list.selected`,
 `list.selected-edge`, the `terminal.*` colours and its shape (below). Over Purlis, its filled
-primary is `accent.fill` (`accent.fill-hover` under the pointer) with `accent.fill-text` words,
-held to 4.5:1; over Purlis Classic, a theme that leaves these out fills its primary with its
+primary is `accent.fill` (`accent.fill-hover` under the pointer, `accent.fill-edge` its edge)
+with `accent.fill-text` words, held to 4.5:1; over Purlis Classic, a theme that leaves these out fills its primary with its
 `accent.surface`, and `border.control` (a plain control's edge) follows its `border.strong`. A theme with a `dark` and
 a `light` appearance follows the system.
 

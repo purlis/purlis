@@ -941,6 +941,7 @@
    "accent.surface",
    "accent.fill",
    "accent.fill-hover",
+   "accent.fill-edge",
    "focus.ring",
    "tab.active",
    "list.selected",
@@ -953,6 +954,7 @@
    "accent.surface",
    "accent.fill",
    "accent.fill-hover",
+   "accent.fill-edge",
    "focus.ring",
    "tab.active",
    "list.selected",
@@ -1035,6 +1037,11 @@
    },
    {
     "token": "accent.fill-hover",
+    "from": "danger.base",
+    "distance": 0.1
+   },
+   {
+    "token": "accent.fill-edge",
     "from": "danger.base",
     "distance": 0.1
    }
@@ -2910,6 +2917,10 @@
   },
   {
    "token": "accent.fill-hover",
+   "held": true
+  },
+  {
+   "token": "accent.fill-edge",
    "held": true
   },
   {

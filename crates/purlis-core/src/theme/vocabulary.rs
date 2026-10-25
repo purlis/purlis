@@ -37,6 +37,7 @@ pub const TOKENS: &[&str] = &[
     "accent.text",
     "accent.fill",
     "accent.fill-hover",
+    "accent.fill-edge",
     "accent.fill-text",
     "focus.ring",
     "tab.active",
@@ -182,6 +183,7 @@ pub const TINTED: &[&str] = &[
     "accent.surface",
     "accent.fill",
     "accent.fill-hover",
+    "accent.fill-edge",
     "focus.ring",
     "tab.active",
     "list.selected",
@@ -231,6 +233,7 @@ pub const TINTABLE: &[&str] = &[
     "accent.text",
     "accent.fill",
     "accent.fill-hover",
+    "accent.fill-edge",
     "focus.ring",
     "tab.active",
     "list.selected",
@@ -367,13 +370,15 @@ pub fn follow_muted(
 /// **The tokens that came in after a theme could already say what they draw**, each beside the
 /// token that drew it before (#3177): a plain control's edge was the strong rule's, the accent's
 /// wash and the primary's fill were its surface, the accent's words were the accent, the
-/// primary's fill under the pointer was the active tab's, and its words were the primary words.
-pub const KIN: [(&str, &str); 6] = [
+/// primary's fill under the pointer was the active tab's, its edge was the accent, and its words
+/// were the primary words.
+pub const KIN: [(&str, &str); 7] = [
     ("border.control", "border.strong"),
     ("accent.wash", "accent.surface"),
     ("accent.text", "accent.base"),
     ("accent.fill", "accent.surface"),
     ("accent.fill-hover", "tab.active"),
+    ("accent.fill-edge", "accent.base"),
     ("accent.fill-text", "text.primary"),
 ];
 

@@ -483,7 +483,9 @@ fn allow_from_primary(theme: &ResolvedTheme) -> f64 {
 #[test]
 fn no_colour_of_the_person_s_draws_allow_as_the_primary() {
     let base = default_theme();
-    // Allow's fill as the primary's, the primary's as Allow's, and each under the pointer.
+    // Allow's fill as the primary's, the primary's as Allow's, and each under the pointer. Purlis's
+    // primary has no edge where Allow has the accent's (#3177), so each case gives the primary
+    // Allow's edge too.
     let cases = [
         ("control.base", "accent.fill"),
         ("accent.fill", "control.base"),
@@ -494,7 +496,7 @@ fn no_colour_of_the_person_s_draws_allow_as_the_primary() {
         for (token, like) in cases {
             let layer = layer_of(json!({
                 "contrast": contrast,
-                "colours": { token: base.value(like) }
+                "colours": { token: base.value(like), "accent.fill-edge": base.value("accent.base") }
             }));
             let drawn = resolved_under(&layer);
             let theme = drawn.theme.expect("drawn");

@@ -536,6 +536,7 @@ fn light_is_dark_reflected_by_its_one_rule() {
         "border.control",
         "accent.fill",
         "accent.fill-hover",
+        "accent.fill-edge",
         "accent.fill-text",
     ];
     // The washes: a hue laid thin over a ground, which reflected would read as grey (#2924).
@@ -835,7 +836,8 @@ fn every_built_in_draws_one_md_height_and_one_md_corner() {
 fn the_primary_is_filled_in_the_accent_with_white_words_in_every_appearance() {
     // The operator's ruling of 2026-10-24 (#3177): Purlis's primary is filled in the accent with
     // white words, in dark, light and high contrast, its words 4.5:1 on its fill at rest and
-    // under the pointer, and it draws no edge. Allow keeps its edge and its lock
+    // under the pointer, and it draws no edge (`accent.fill-edge`, a token and not a part: a
+    // button part is measured at every hue at every launch). Allow keeps its edge and its lock
     // (`allow_primary_tests`).
     for theme in &purlis().appearances {
         assert_eq!(theme.value("accent.fill-text"), "#ffffff", "{}", theme.id);
@@ -843,13 +845,6 @@ fn the_primary_is_filled_in_the_accent_with_white_words_in_every_appearance() {
             let ratio = light_rule::contrast("#ffffff", theme.value(fill));
             assert!(ratio >= 4.5, "{} {fill}: {ratio}", theme.id);
         }
-        let sheet = parts::stylesheet(theme);
-        assert!(
-            sheet.contains(
-                ":where([data-scope=\"button\"][data-part=\"root\"][data-variant=\"primary\"]) \
-                 { border-color: transparent; }"
-            ),
-            "{sheet}"
-        );
+        assert_eq!(theme.value("accent.fill-edge"), "#00000000", "{}", theme.id);
     }
 }

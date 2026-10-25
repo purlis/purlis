@@ -1164,11 +1164,11 @@ fn button_look_in(variant: &str, states: &[State]) -> Look {
 /// that file: at rest, under the pointer and pressed as a toggle (selected).
 fn button_look(variant: &str, state: Option<State>) -> Look {
     let mut look = match variant {
-        // The accent's fill and its words, behind the accent's edge (#3177).
+        // The accent's fill and its words, behind the fill's edge (#3177).
         "primary" => Look {
             fill: "accent.fill",
             text: "accent.fill-text",
-            border: "accent.base",
+            border: "accent.fill-edge",
         },
         "ghost" => Look {
             fill: TRANSPARENT,

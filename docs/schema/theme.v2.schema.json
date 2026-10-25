@@ -367,6 +367,7 @@
               "accent.text",
               "accent.fill",
               "accent.fill-hover",
+              "accent.fill-edge",
               "focus.ring",
               "tab.active",
               "list.selected",
@@ -380,7 +381,7 @@
               "layer.divider"
             ]
           },
-          "maxItems": 128
+          "maxItems": 129
         },
         "hues": {
           "description": "A workspace colour's hue in this theme: the hue of this colour. A workspace's own #rrggbb is always its own hue.",
@@ -6344,6 +6345,9 @@
         "accent.fill-hover": {
           "$ref": "#/$defs/colour"
         },
+        "accent.fill-edge": {
+          "$ref": "#/$defs/colour"
+        },
         "accent.fill-text": {
           "$ref": "#/$defs/colour"
         },
@@ -7438,6 +7442,7 @@
         "accent.text",
         "accent.fill",
         "accent.fill-hover",
+        "accent.fill-edge",
         "accent.fill-text",
         "focus.ring",
         "tab.active",
@@ -7572,6 +7577,7 @@
         "accent.text",
         "accent.fill",
         "accent.fill-hover",
+        "accent.fill-edge",
         "accent.fill-text",
         "focus.ring",
         "tab.active",
@@ -7705,6 +7711,7 @@
         "accent.text",
         "accent.fill",
         "accent.fill-hover",
+        "accent.fill-edge",
         "accent.fill-text",
         "focus.ring",
         "tab.active",

@@ -147,7 +147,12 @@ fn an_accent_in_purlis_s_danger_colour_is_drawn_as_purlis_s_accent() {
     let (drawn, held) = drawn_of(&mine);
     assert_eq!(drawn.value("danger.base"), red);
     assert_eq!(drawn.value("accent.base"), ours("accent.base"));
-    assert_eq!(held.expect("held").tokens, ["accent.base"]);
+    // The primary's edge follows the accent a theme over Classic names (#3177), so it is drawn as
+    // purlis's too.
+    assert_eq!(
+        held.expect("held").tokens,
+        ["accent.base", "accent.fill-edge"]
+    );
 }
 
 #[test]

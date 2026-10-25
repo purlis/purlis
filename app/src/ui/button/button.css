@@ -61,12 +61,12 @@
    --------------------------------------------------------------------------------------------- */
 
 /* **The answer purlis suggests** (#3177): its ground is the accent's fill and its words the
-   fill's, held to 4.5:1 at rest and under the pointer, behind the accent's edge. Purlis fills it
-   in the accent with white words and draws no edge (the operator's ruling of 2026-10-24; its
-   parts make the edge transparent, which takes it farther from Allow's); Purlis Classic's fill
-   is the accent's surface with the primary words, as it always drew. */
+   fill's, held to 4.5:1 at rest and under the pointer, behind the fill's edge. Purlis fills it in
+   the accent with white words and draws no edge (the operator's ruling of 2026-10-24); Purlis
+   Classic's fill is the accent's surface with the primary words behind the accent, as it always
+   drew. */
 [data-scope="button"][data-part="root"][data-variant="primary"] {
-  border-color: var(--accent-base);
+  border-color: var(--accent-fill-edge);
   color: var(--accent-fill-text);
   background-color: var(--accent-fill);
 }

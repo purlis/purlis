@@ -10,9 +10,9 @@
 
 ### Added
 
-- **Theme tokens for a plain control's edge and the filled primary.** `border.control` draws
-  the edge of a secondary button, a field and a select; `accent.fill`, `accent.fill-hover` and
-  `accent.fill-text` draw the primary; `accent.wash` and `accent.text` draw a chosen activity
-  button and words in the accent; `radius.control` is an md control's corner. A theme over
-  Purlis Classic that leaves them out keeps drawing as it did: each follows the token it was
-  drawn with before.
+- **Theme tokens for a plain control's edge and the filled primary.** `border.control` draws the
+  edge of a secondary button, a field and a select; `accent.fill`, `accent.fill-hover`,
+  `accent.fill-edge` and `accent.fill-text` draw the primary; `accent.wash` and `accent.text` draw a
+  chosen activity button and words in the accent; `radius.control` is an md control's corner. A
+  theme over Purlis Classic that leaves them out keeps drawing as it did: each follows the token it
+  was drawn with before.

@@ -159,6 +159,7 @@
   --color-accent-text: var(--accent-text);
   --color-accent-fill: var(--accent-fill);
   --color-accent-fill-hover: var(--accent-fill-hover);
+  --color-accent-fill-edge: var(--accent-fill-edge);
   --color-accent-fill-text: var(--accent-fill-text);
   --color-focus-ring: var(--focus-ring);
   --color-tab-active: var(--tab-active);

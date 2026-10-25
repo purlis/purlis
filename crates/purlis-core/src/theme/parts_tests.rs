@@ -96,14 +96,15 @@ fn a_theme_that_names_no_parts_draws_exactly_as_today() {
         assert!(parts::fallen(theme).is_empty());
     }
     // Purlis names its panels' fill (#2913), the one its docked tabs join by default (#2914),
-    // and the edges it draws none of (#3177): its tooltip's, dialog's and popover's, and its
-    // primary's, which is filled. Its tabs are the family default and cost nothing to measure.
+    // and the edges it draws none of (#3177): its tooltip's, dialog's and popover's. Its tabs and
+    // its buttons are the family defaults and cost nothing to measure: a button part would have
+    // its consent floors measured at every hue a workspace's colour can take, at every launch.
     let purlis = built_in("purlis").expect("Purlis");
     assert!(
         purlis
             .parts
             .keys()
-            .all(|key| ["panel", "tooltip", "dialog", "popover", "button"].contains(&key.family)),
+            .all(|key| ["panel", "tooltip", "dialog", "popover"].contains(&key.family)),
         "{:?}",
         purlis.parts.keys().collect::<Vec<_>>()
     );
@@ -1917,7 +1918,7 @@ fn a_set_of_states_that_falls_back_draws_a_default_its_floors_hold() {
     assert_eq!(written.len(), 2, "{sheet}");
     assert!(written[1].contains("var(--accent-fill)"), "{sheet}");
     assert!(
-        written[1].contains("border-color: var(--accent-base)"),
+        written[1].contains("border-color: var(--accent-fill-edge)"),
         "{sheet}"
     );
 }

@@ -75,7 +75,7 @@ describe("an empty state's way out", () => {
     );
     const way = screen.getByRole("button", { name: "Open the first chat" });
     expect(drawnWith(way, "block-size")).toBe("var(--size-control)");
-    expect(drawnWith(way, "background")).toBe("var(--accent-surface)");
+    expect(drawnWith(way, "background")).toBe("var(--accent-fill)");
     const box = way.closest('[data-scope="empty-state"][data-part="action"]');
     expect(box).not.toBeNull();
     if (box) expect(drawnWith(box, "gap")).toBe("var(--space-3)");

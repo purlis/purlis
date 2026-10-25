@@ -107,11 +107,13 @@ export const TOKENS = [
   // **The accent's kin** (#3177): `wash` is a chosen rail or activity button's ground, a step
   // stronger than `surface`; `text` is words and icons drawn in the accent on its surface or
   // wash (the update pill, a chosen rail button); `fill` is the filled primary's ground,
-  // `fill-hover` it under the pointer, and `fill-text` the words on both, held to 4.5:1.
+  // `fill-hover` it under the pointer, `fill-edge` its edge (the accent in Classic, none in
+  // Purlis), and `fill-text` the words on both, held to 4.5:1.
   "accent.wash",
   "accent.text",
   "accent.fill",
   "accent.fill-hover",
+  "accent.fill-edge",
   "accent.fill-text",
   "focus.ring",
   "tab.active",

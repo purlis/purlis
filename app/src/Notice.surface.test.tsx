@@ -49,7 +49,7 @@ function waysOf(name = "Every way") {
 function isASharedWrappingButton(button: HTMLElement) {
   const what = button.textContent ?? "";
   expect(button, what).toHaveAttribute("data-size", "sm");
-  expect(drawnWith(button, "border-radius"), what).toBe("var(--radius-md)");
+  expect(drawnWith(button, "border-radius"), what).toBe("var(--radius-control)");
   expect(drawnWith(button, "white-space"), what).toBe("normal");
   expect(drawnWith(button, "max-inline-size"), what).toBe("100%");
   expect(drawnWith(button, "block-size"), what).toBe("auto");

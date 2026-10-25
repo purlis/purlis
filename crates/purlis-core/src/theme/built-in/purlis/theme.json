@@ -59,8 +59,7 @@
     "tooltip.root.corner-radius": 8,
     "tooltip.root.border-width": 0,
     "dialog.root.border-width": 0,
-    "popover.root.border-width": 0,
-    "button.root.primary.border-colour": "transparent"
+    "popover.root.border-width": 0
   },
   "appearances": [
     {
@@ -91,6 +90,7 @@
         "accent.text": "lavender-text",
         "accent.fill": "lavender-fill",
         "accent.fill-hover": "lavender-fill-hover",
+        "accent.fill-edge": "#00000000",
         "accent.fill-text": "#ffffff",
         "focus.ring": "lavender",
         "tab.active": "code",
@@ -292,6 +292,7 @@
         "accent.text": "#403667",
         "accent.fill": "#6d58bb",
         "accent.fill-hover": "#745fc3",
+        "accent.fill-edge": "#00000000",
         "accent.fill-text": "#ffffff",
         "focus.ring": "#554691",
         "tab.active": "#e9e9f2",
@@ -494,6 +495,7 @@
         "accent.text": "lavender-text",
         "accent.fill": "lavender-fill",
         "accent.fill-hover": "lavender-fill-hover",
+        "accent.fill-edge": "#00000000",
         "accent.fill-text": "#ffffff",
         "focus.ring": "lavender-text",
         "tab.active": "code",

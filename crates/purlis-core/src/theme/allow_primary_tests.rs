@@ -277,15 +277,20 @@ fn purlis_s_filled_primary_stands_apart_from_allow_at_a_glance() {
 
 #[test]
 fn a_theme_whose_tokens_draw_allow_as_the_filled_primary_is_drawn_apart() {
-    // Allow's ground, the control's, given the filled primary's colour, at rest and under the
-    // pointer: the floor draws Purlis's own there, and Allow is apart again.
+    // Allow's ground given the filled primary's colour, and the primary given Allow's edge, at
+    // rest and under the pointer, or the primary drawn on Allow's ground behind Allow's edge: the
+    // floor draws Purlis's own there, and Allow is apart again.
     let ours = purlis().first().clone();
+    let edge = ours.value("accent.base");
     for (token, like) in [
         ("control.base", "accent.fill"),
         ("control.hover", "accent.fill-hover"),
         ("accent.fill", "control.base"),
     ] {
-        let theme = over_purlis(json!({ token: ours.value(like) }), json!({}));
+        let theme = over_purlis(
+            json!({ token: ours.value(like), "accent.fill-edge": edge }),
+            json!({}),
+        );
         let (drawn, floors) = drawn_of(&theme);
         assert!(
             floors.contains(&Floor::AllowNotPrimary),
@@ -293,6 +298,18 @@ fn a_theme_whose_tokens_draw_allow_as_the_filled_primary_is_drawn_apart() {
         );
         assert!(nearest(&drawn) >= ALLOW_FROM_PRIMARY, "{token}");
     }
+}
+
+#[test]
+fn allow_on_the_filled_primary_s_ground_is_still_told_by_its_edge() {
+    // Purlis's primary draws no edge: Allow on the primary's own fill is still told apart at a
+    // glance by its accent edge (and its lock), so the floor lets it be.
+    let ours = purlis().first().clone();
+    let theme = over_purlis(
+        json!({ "control.base": ours.value("accent.fill") }),
+        json!({}),
+    );
+    assert!(nearest(theme.first()) >= ALLOW_FROM_PRIMARY);
 }
 
 #[test]

@@ -6,6 +6,7 @@
       "values": {
         "accent.base": "#a99cf0",
         "accent.fill": "#6d58bb",
+        "accent.fill-edge": "#00000000",
         "accent.fill-hover": "#745fc3",
         "accent.fill-text": "#ffffff",
         "accent.surface": "#292735",
@@ -482,6 +483,7 @@
           "accent.surface",
           "accent.fill",
           "accent.fill-hover",
+          "accent.fill-edge",
           "focus.ring",
           "tab.active",
           "list.selected",
@@ -494,6 +496,7 @@
           "accent.surface",
           "accent.fill",
           "accent.fill-hover",
+          "accent.fill-edge",
           "focus.ring",
           "tab.active",
           "list.selected",
@@ -578,10 +581,15 @@
             "token": "accent.fill-hover",
             "from": "danger.base",
             "distance": 0.1
+          },
+          {
+            "token": "accent.fill-edge",
+            "from": "danger.base",
+            "distance": 0.1
           }
         ]
       },
-      "parts": "@layer parts {\n  :where([data-scope=\"dialog\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }\n  :where([data-scope=\"panel\"][data-part=\"root\"]) { background-color: var(--surface-raised); }\n  :where([data-scope=\"popover\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }\n  :where([data-scope=\"tooltip\"][data-part=\"root\"]) { border-radius: min(8px, 50%); }\n  :where([data-scope=\"tooltip\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }\n  :where([data-scope=\"button\"][data-part=\"root\"][data-variant=\"primary\"]) { border-color: transparent; }\n}\n"
+      "parts": "@layer parts {\n  :where([data-scope=\"dialog\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }\n  :where([data-scope=\"panel\"][data-part=\"root\"]) { background-color: var(--surface-raised); }\n  :where([data-scope=\"popover\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }\n  :where([data-scope=\"tooltip\"][data-part=\"root\"]) { border-radius: min(8px, 50%); }\n  :where([data-scope=\"tooltip\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }\n}\n"
     },
     "dark-high-contrast": {
       "name": "Purlis",
@@ -589,6 +597,7 @@
       "values": {
         "accent.base": "#c3baf5",
         "accent.fill": "#6d58bb",
+        "accent.fill-edge": "#00000000",
         "accent.fill-hover": "#745fc3",
         "accent.fill-text": "#ffffff",
         "accent.surface": "#292735",
@@ -1065,6 +1074,7 @@
           "accent.surface",
           "accent.fill",
           "accent.fill-hover",
+          "accent.fill-edge",
           "focus.ring",
           "tab.active",
           "list.selected",
@@ -1077,6 +1087,7 @@
           "accent.surface",
           "accent.fill",
           "accent.fill-hover",
+          "accent.fill-edge",
           "focus.ring",
           "tab.active",
           "list.selected",
@@ -1161,10 +1172,15 @@
             "token": "accent.fill-hover",
             "from": "danger.base",
             "distance": 0.1
+          },
+          {
+            "token": "accent.fill-edge",
+            "from": "danger.base",
+            "distance": 0.1
           }
         ]
       },
-      "parts": "@layer parts {\n  :where([data-scope=\"dialog\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }\n  :where([data-scope=\"panel\"][data-part=\"root\"]) { background-color: var(--surface-raised); }\n  :where([data-scope=\"popover\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }\n  :where([data-scope=\"tooltip\"][data-part=\"root\"]) { border-radius: min(8px, 50%); }\n  :where([data-scope=\"tooltip\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }\n  :where([data-scope=\"button\"][data-part=\"root\"][data-variant=\"primary\"]) { border-color: transparent; }\n}\n"
+      "parts": "@layer parts {\n  :where([data-scope=\"dialog\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }\n  :where([data-scope=\"panel\"][data-part=\"root\"]) { background-color: var(--surface-raised); }\n  :where([data-scope=\"popover\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }\n  :where([data-scope=\"tooltip\"][data-part=\"root\"]) { border-radius: min(8px, 50%); }\n  :where([data-scope=\"tooltip\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }\n}\n"
     },
     "light": {
       "name": "Purlis",
@@ -1172,6 +1188,7 @@
       "values": {
         "accent.base": "#554691",
         "accent.fill": "#6d58bb",
+        "accent.fill-edge": "#00000000",
         "accent.fill-hover": "#745fc3",
         "accent.fill-text": "#ffffff",
         "accent.surface": "#dedcef",
@@ -1648,6 +1665,7 @@
           "accent.surface",
           "accent.fill",
           "accent.fill-hover",
+          "accent.fill-edge",
           "focus.ring",
           "tab.active",
           "list.selected",
@@ -1660,6 +1678,7 @@
           "accent.surface",
           "accent.fill",
           "accent.fill-hover",
+          "accent.fill-edge",
           "focus.ring",
           "tab.active",
           "list.selected",
@@ -1744,10 +1763,15 @@
             "token": "accent.fill-hover",
             "from": "danger.base",
             "distance": 0.1
+          },
+          {
+            "token": "accent.fill-edge",
+            "from": "danger.base",
+            "distance": 0.1
           }
         ]
       },
-      "parts": "@layer parts {\n  :where([data-scope=\"dialog\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }\n  :where([data-scope=\"panel\"][data-part=\"root\"]) { background-color: var(--surface-raised); }\n  :where([data-scope=\"popover\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }\n  :where([data-scope=\"tooltip\"][data-part=\"root\"]) { border-radius: min(8px, 50%); }\n  :where([data-scope=\"tooltip\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }\n  :where([data-scope=\"button\"][data-part=\"root\"][data-variant=\"primary\"]) { border-color: transparent; }\n}\n"
+      "parts": "@layer parts {\n  :where([data-scope=\"dialog\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }\n  :where([data-scope=\"panel\"][data-part=\"root\"]) { background-color: var(--surface-raised); }\n  :where([data-scope=\"popover\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }\n  :where([data-scope=\"tooltip\"][data-part=\"root\"]) { border-radius: min(8px, 50%); }\n  :where([data-scope=\"tooltip\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }\n}\n"
     }
   },
   "purlis-classic": {
@@ -1757,6 +1781,7 @@
       "values": {
         "accent.base": "#52c4a6",
         "accent.fill": "#17302a",
+        "accent.fill-edge": "#52c4a6",
         "accent.fill-hover": "#1f3530",
         "accent.fill-text": "#dddcd6",
         "accent.surface": "#17302a",
@@ -2073,6 +2098,7 @@
           "accent.surface",
           "accent.fill",
           "accent.fill-hover",
+          "accent.fill-edge",
           "focus.ring",
           "tab.active",
           "list.selected",
@@ -2085,6 +2111,7 @@
           "accent.surface",
           "accent.fill",
           "accent.fill-hover",
+          "accent.fill-edge",
           "focus.ring",
           "tab.active",
           "list.selected",
@@ -2169,6 +2196,11 @@
             "token": "accent.fill-hover",
             "from": "danger.base",
             "distance": 0.1
+          },
+          {
+            "token": "accent.fill-edge",
+            "from": "danger.base",
+            "distance": 0.1
           }
         ]
       },
@@ -2180,6 +2212,7 @@
       "values": {
         "accent.base": "#086a56",
         "accent.fill": "#dcf1ea",
+        "accent.fill-edge": "#086a56",
         "accent.fill-hover": "#c9e8de",
         "accent.fill-text": "#1f1e1a",
         "accent.surface": "#dcf1ea",
@@ -2496,6 +2529,7 @@
           "accent.surface",
           "accent.fill",
           "accent.fill-hover",
+          "accent.fill-edge",
           "focus.ring",
           "tab.active",
           "list.selected",
@@ -2508,6 +2542,7 @@
           "accent.surface",
           "accent.fill",
           "accent.fill-hover",
+          "accent.fill-edge",
           "focus.ring",
           "tab.active",
           "list.selected",
@@ -2590,6 +2625,11 @@
           },
           {
             "token": "accent.fill-hover",
+            "from": "danger.base",
+            "distance": 0.1
+          },
+          {
+            "token": "accent.fill-edge",
             "from": "danger.base",
             "distance": 0.1
           }

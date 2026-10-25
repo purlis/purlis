@@ -127,11 +127,11 @@ fn purlis_classic_draws_exactly_today_s_values() {
     // (#3177), each the value of the token that drew it before, so nothing Classic draws moved.
     assert_eq!(
         digest(classic_dark()),
-        "6344b5b59f937a033f586db3e525bb8b784dd42caa19e077d81af3d410d8bacc"
+        "6361923b65d2626ed8df14b02b7c3ebd79b43ef146bdf6e5f8157cf630be3195"
     );
     assert_eq!(
         digest(classic_light()),
-        "7de011cbc7981322461de6183858717379173c0ae617f204d7c34850d0198507"
+        "a1f9ab259863e006756ffb2f0bde5817db2ada0575dfd32a0b9e0f27426fcedd"
     );
     for theme in [classic_dark(), classic_light()] {
         assert_eq!(theme.motion.durations["duration.quick"], 120);

@@ -73,6 +73,7 @@ fn purlis_classic_tints_what_it_tinted_before_a_theme_could_say() {
                 "accent.surface",
                 "accent.fill",
                 "accent.fill-hover",
+                "accent.fill-edge",
                 "focus.ring",
                 "tab.active",
                 "list.selected",
@@ -1056,133 +1057,133 @@ fn purlis_classic_s_tints_are_these() {
     // rounding on 2026-10-19. Since #3034 only the tokens a rule holds apart from danger are
     // given less colour: light red, orange and pink's link and first chart series, which no rule
     // measures, take the colour's full hue.
-    const CLASSIC: [(&str, &str, [&str; 13]); 16] = [
+    const CLASSIC: [(&str, &str, [&str; 14]); 16] = [
         (
             "purlis-dark",
             "red",
             [
-                "#f69890", "#3b2625", "#3b2625", "#3f2c2b", "#f69890", "#3f2c2b", "#36211f",
-                "#f69890", "#f69890", "#f69890", "#261413", "#2a1817", "#382523",
+                "#f69890", "#3b2625", "#3b2625", "#3f2c2b", "#f69890", "#f69890", "#3f2c2b",
+                "#36211f", "#f69890", "#f69890", "#f69890", "#261413", "#2a1817", "#382523",
             ],
         ),
         (
             "purlis-dark",
             "orange",
             [
-                "#eca06b", "#3a271c", "#3a271c", "#3e2d24", "#eca06b", "#3e2d24", "#352217",
-                "#eca06b", "#eca06b", "#eca06b", "#25150c", "#291910", "#37261c",
+                "#eca06b", "#3a271c", "#3a271c", "#3e2d24", "#eca06b", "#eca06b", "#3e2d24",
+                "#352217", "#eca06b", "#eca06b", "#eca06b", "#25150c", "#291910", "#37261c",
             ],
         ),
         (
             "purlis-dark",
             "yellow",
             [
-                "#c7b156", "#312b18", "#312b18", "#363020", "#c7b156", "#363020", "#2c2613",
-                "#c7b156", "#c7b156", "#c7b156", "#1e1808", "#221c0c", "#2f2919",
+                "#c7b156", "#312b18", "#312b18", "#363020", "#c7b156", "#c7b156", "#363020",
+                "#2c2613", "#c7b156", "#c7b156", "#c7b156", "#1e1808", "#221c0c", "#2f2919",
             ],
         ),
         (
             "purlis-dark",
             "green",
             [
-                "#7ec180", "#212f20", "#212f20", "#273427", "#7ec180", "#273427", "#1b2a1c",
-                "#7ec180", "#7ec180", "#7ec180", "#101b10", "#132013", "#202d1f",
+                "#7ec180", "#212f20", "#212f20", "#273427", "#7ec180", "#7ec180", "#273427",
+                "#1b2a1c", "#7ec180", "#7ec180", "#7ec180", "#101b10", "#132013", "#202d1f",
             ],
         ),
         (
             "purlis-dark",
             "teal",
             [
-                "#3ec4bc", "#14302e", "#14302e", "#1d3533", "#3ec4bc", "#1d3533", "#0f2a2a",
-                "#3ec4bc", "#3ec4bc", "#3ec4bc", "#051c1c", "#092020", "#172d2d",
+                "#3ec4bc", "#14302e", "#14302e", "#1d3533", "#3ec4bc", "#3ec4bc", "#1d3533",
+                "#0f2a2a", "#3ec4bc", "#3ec4bc", "#3ec4bc", "#051c1c", "#092020", "#172d2d",
             ],
         ),
         (
             "purlis-dark",
             "blue",
             [
-                "#7fb5f7", "#212c3c", "#212c3c", "#273140", "#7fb5f7", "#273140", "#1b2738",
-                "#7fb5f7", "#7fb5f7", "#7fb5f7", "#101927", "#141d2b", "#202a39",
+                "#7fb5f7", "#212c3c", "#212c3c", "#273140", "#7fb5f7", "#7fb5f7", "#273140",
+                "#1b2738", "#7fb5f7", "#7fb5f7", "#7fb5f7", "#101927", "#141d2b", "#202a39",
             ],
         ),
         (
             "purlis-dark",
             "purple",
             [
-                "#c6a2ef", "#30283a", "#30283a", "#352e3d", "#c6a2ef", "#352e3d", "#2b2335",
-                "#c6a2ef", "#c6a2ef", "#c6a2ef", "#1d1624", "#201a2a", "#2d2737",
+                "#c6a2ef", "#30283a", "#30283a", "#352e3d", "#c6a2ef", "#c6a2ef", "#352e3d",
+                "#2b2335", "#c6a2ef", "#c6a2ef", "#c6a2ef", "#1d1624", "#201a2a", "#2d2737",
             ],
         ),
         (
             "purlis-dark",
             "pink",
             [
-                "#ec98c0", "#39262f", "#39262f", "#3d2c34", "#ec98c0", "#3d2c34", "#342129",
-                "#ec98c0", "#ec98c0", "#ec98c0", "#24141c", "#281820", "#37242d",
+                "#ec98c0", "#39262f", "#39262f", "#3d2c34", "#ec98c0", "#ec98c0", "#3d2c34",
+                "#342129", "#ec98c0", "#ec98c0", "#ec98c0", "#24141c", "#281820", "#37242d",
             ],
         ),
         (
             "purlis-light",
             "red",
             [
-                "#7b5350", "#fde8e5", "#fde8e5", "#f9dbd6", "#7b5350", "#f9dbd6", "#fde1df",
-                "#7b5350", "#8b4b47", "#8b4b47", "#feeae7", "#fef4f2", "#ffffff",
+                "#7b5350", "#fde8e5", "#fde8e5", "#f9dbd6", "#7b5350", "#7b5350", "#f9dbd6",
+                "#fde1df", "#7b5350", "#8b4b47", "#8b4b47", "#feeae7", "#fef4f2", "#ffffff",
             ],
         ),
         (
             "purlis-light",
             "orange",
             [
-                "#7d5438", "#fbe9df", "#fbe9df", "#f5ddcc", "#7d5438", "#f5ddcc", "#f8e4d5",
-                "#7d5438", "#86502b", "#86502b", "#feebdd", "#fff4ee", "#ffffff",
+                "#7d5438", "#fbe9df", "#fbe9df", "#f5ddcc", "#7d5438", "#7d5438", "#f5ddcc",
+                "#f8e4d5", "#7d5438", "#86502b", "#86502b", "#feebdd", "#fff4ee", "#ffffff",
             ],
         ),
         (
             "purlis-light",
             "yellow",
             [
-                "#6d5c18", "#f1edda", "#f1edda", "#e8e2c7", "#6d5c18", "#e8e2c7", "#ede8d1",
-                "#6d5c18", "#6d5c18", "#6d5c18", "#f5eed8", "#fbf7df", "#ffffff",
+                "#6d5c18", "#f1edda", "#f1edda", "#e8e2c7", "#6d5c18", "#6d5c18", "#e8e2c7",
+                "#ede8d1", "#6d5c18", "#6d5c18", "#6d5c18", "#f5eed8", "#fbf7df", "#ffffff",
             ],
         ),
         (
             "purlis-light",
             "green",
             [
-                "#39673c", "#e3f0e1", "#e3f0e1", "#d2e7d2", "#39673c", "#d2e7d2", "#dbecda",
-                "#39673c", "#39673c", "#39673c", "#e1f3e1", "#e9fbe8", "#ffffff",
+                "#39673c", "#e3f0e1", "#e3f0e1", "#d2e7d2", "#39673c", "#39673c", "#d2e7d2",
+                "#dbecda", "#39673c", "#39673c", "#39673c", "#e1f3e1", "#e9fbe8", "#ffffff",
             ],
         ),
         (
             "purlis-light",
             "teal",
             [
-                "#016964", "#dbf1ee", "#dbf1ee", "#c7e8e4", "#016964", "#c7e8e4", "#d1edea",
-                "#016964", "#016964", "#016964", "#d7f4f2", "#dffcf9", "#ffffff",
+                "#016964", "#dbf1ee", "#dbf1ee", "#c7e8e4", "#016964", "#016964", "#c7e8e4",
+                "#d1edea", "#016964", "#016964", "#016964", "#d7f4f2", "#dffcf9", "#ffffff",
             ],
         ),
         (
             "purlis-light",
             "blue",
             [
-                "#395f8e", "#e1eefc", "#e1eefc", "#d2e3f8", "#395f8e", "#d2e3f8", "#dae9fb",
-                "#395f8e", "#395f8e", "#395f8e", "#e3f0fe", "#f0f7fe", "#ffffff",
+                "#395f8e", "#e1eefc", "#e1eefc", "#d2e3f8", "#395f8e", "#395f8e", "#d2e3f8",
+                "#dae9fb", "#395f8e", "#395f8e", "#395f8e", "#e3f0fe", "#f0f7fe", "#ffffff",
             ],
         ),
         (
             "purlis-light",
             "purple",
             [
-                "#6c5288", "#f0eafa", "#f0eafa", "#e8ddf5", "#6c5288", "#e8ddf5", "#ece4f8",
-                "#6c5288", "#6c5288", "#6c5288", "#f3ebfe", "#f8f5fe", "#ffffff",
+                "#6c5288", "#f0eafa", "#f0eafa", "#e8ddf5", "#6c5288", "#6c5288", "#e8ddf5",
+                "#ece4f8", "#6c5288", "#6c5288", "#6c5288", "#f3ebfe", "#f8f5fe", "#ffffff",
             ],
         ),
         (
             "purlis-light",
             "pink",
             [
-                "#804e67", "#fae8ef", "#fae8ef", "#f6dae6", "#804e67", "#f6dae6", "#f9e1ec",
-                "#804e67", "#854b68", "#854b68", "#fee9f1", "#fff3f8", "#ffffff",
+                "#804e67", "#fae8ef", "#fae8ef", "#f6dae6", "#804e67", "#804e67", "#f6dae6",
+                "#f9e1ec", "#804e67", "#854b68", "#854b68", "#fee9f1", "#fff3f8", "#ffffff",
             ],
         ),
     ];

@@ -270,33 +270,33 @@ window keeps no list of its own (#2393). Purlis Classic's recipe, the one a them
 - the hues `red` 25°, `orange` 55°, `yellow` 95°, `green` 145°, `teal` 190°, `blue` 255°,
   `purple` 305°, `pink` 350° (OKLCH).
 
-The strip shades (`layer.workspace`, `layer.chat`, `layer.selected`, `layer.divider`) are only
-ever tinted on a workspace's own tab and chat strip, never on the window. `app/src/theme/tint.ts`
-does the arithmetic in OKLCH, the same as the engine's (`purlis_core::theme::tint`, held to one
-another by `theme/tint-cases.json`), and then keeps each token's **relative luminance**: each
-channel is rounded to the byte that keeps the luminance nearest the original on its own side of
-WCAG's middle (where black and white contrast with a colour alike), so a dark shade is never
-rounded lighter and a light one never darker, and a tinted shade keeps every contrast floor the
-theme's own kept against a colour across the middle, at every hue (#2526). The contrast check
-runs every hue of the theme's recipe, and holds two pairs the tint adds — the mark
-(`accent.base`) and a tab's primary text on `layer.workspace`. **Every tint holds the consent
-floors that keep colours apart itself, at every hue, custom colours included** (`tint::APART`,
-OKLab 0.1 each): the accent and the accent-hued tokens drawn beside danger (`focus.ring`,
-`list.selected-edge`, `accent.surface`, `tab.active`, and the primary's `accent.fill` and
-`accent.fill-hover`, `tint::ACCENT_KIN`) stay apart from the danger colour, and Allow and Keep
-blocked stay apart (`accent.base` from `border.control`, as the tint draws it); every rule holds whichever side a theme tints. At a hue that would bring a pair
-nearer, the tint keeps the hue and gives less colour, in steps of 0.005 chroma, so a red
-workspace stays red, and a grey accent keeps as much of its small tint as holds it apart; a
-colour no amount holds apart is drawn untinted. Purlis Classic's light appearance gives less
-colour at `red`, `orange` and `pink`. The consent floors are also measured under every tint of
-the theme's own recipe, danger apart from the accent and its kin included, and a pair a tint can
-move from one hue to another (words on a wash, faded words, a colour written see-through, or a
-shade read against one on its own side of the middle) at every whole degree of a workspace's own colour. A theme that clears
-the floors as written and would fall under one only in a tinted workspace keeps its values, and
-the tokens of that pair are drawn
-untinted. A neutral grey is given a small fixed chroma,
-felt rather than noticed, as the strips are meant to be; white stays white. No colour is written
-for this anywhere but `app/src/theme/`: a component asks `tabTint` and sets what it answers.
+The strip shades (`layer.workspace`, `layer.chat`, `layer.selected`, `layer.divider`) are only ever
+tinted on a workspace's own tab and chat strip, never on the window. `app/src/theme/tint.ts` does
+the arithmetic in OKLCH, the same as the engine's (`purlis_core::theme::tint`, held to one another
+by `theme/tint-cases.json`), and then keeps each token's **relative luminance**: each channel is
+rounded to the byte that keeps the luminance nearest the original on its own side of WCAG's middle
+(where black and white contrast with a colour alike), so a dark shade is never rounded lighter and a
+light one never darker, and a tinted shade keeps every contrast floor the theme's own kept against a
+colour across the middle, at every hue (#2526). The contrast check runs every hue of the theme's
+recipe, and holds two pairs the tint adds — the mark (`accent.base`) and a tab's primary text on
+`layer.workspace`. **Every tint holds the consent floors that keep colours apart itself, at every
+hue, custom colours included** (`tint::APART`, OKLab 0.1 each): the accent and the accent-hued
+tokens drawn beside danger (`focus.ring`, `list.selected-edge`, `accent.surface`, `tab.active`, and
+the primary's `accent.fill` and `accent.fill-hover` and its edge `accent.fill-edge`,
+`tint::ACCENT_KIN`) stay apart from the danger colour, and Allow and Keep blocked stay apart
+(`accent.base` from `border.control`, as the tint draws it); every rule holds whichever side a theme
+tints. At a hue that would bring a pair nearer, the tint keeps the hue and gives less colour, in
+steps of 0.005 chroma, so a red workspace stays red, and a grey accent keeps as much of its small
+tint as holds it apart; a colour no amount holds apart is drawn untinted. Purlis Classic's light
+appearance gives less colour at `red`, `orange` and `pink`. The consent floors are also measured
+under every tint of the theme's own recipe, danger apart from the accent and its kin included, and a
+pair a tint can move from one hue to another (words on a wash, faded words, a colour written
+see-through, or a shade read against one on its own side of the middle) at every whole degree of a
+workspace's own colour. A theme that clears the floors as written and would fall under one only in a
+tinted workspace keeps its values, and the tokens of that pair are drawn untinted. A neutral grey is
+given a small fixed chroma, felt rather than noticed, as the strips are meant to be; white stays
+white. No colour is written for this anywhere but `app/src/theme/`: a component asks `tabTint` and
+sets what it answers.
 
 **A persona's mark is tinted the same way, on two tokens only** (#1449), at the hues of the
 theme in force, whether or not its recipe tints workspaces: a persona's colour says who it is. A persona is drawn
@@ -431,7 +431,8 @@ asked for), whatever the system's appearance. Where its values come from:
   transparent, and the dialog, the popover and the tooltip draw none (their parts); Allow keeps
   its accent edge and its lock. **The primary is filled**: `accent.fill` `#6d58bb` with white
   words (`accent.fill-text`), 5.6:1, and `#745fc3` under the pointer, 5.0:1, in dark, light and
-  high contrast alike, with no edge (its part); Allow, on the control's ground behind the
+  high contrast alike, with no edge (`accent.fill-edge`, transparent: a token, since a part on
+  the button would have its consent floors measured at every hue at every launch); Allow, on the control's ground behind the
   accent's edge, stands farther from it than before. **A chosen activity button** is the
   record's .14 wash (`accent.wash`) with its icon in the lighter lavender (`accent.text`,
   `#c3baf5`), and the update pill's words take `accent.text` too. Section labels are tracked at
