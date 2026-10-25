@@ -1108,6 +1108,7 @@ fn outside(id: &str, origin: Origin, owner: Owner, off: bool) -> OutsideSkill {
         owner,
         switch: Switch::Alone,
         off,
+        unread: None,
     }
 }
 
@@ -1611,4 +1612,50 @@ fn share_of_a_skill_whose_toml_is_a_link_moves_nothing() {
             .symlink_metadata()
             .is_err()
     );
+}
+
+#[test]
+fn a_repo_skills_folder_purlis_could_not_list_takes_no_name_and_leaves_out_every_plane_skill_a_repo_copy_could_hide()
+ {
+    // SK-44 (#3133): a clone's skills folder purlis did not list whole may hold a copy of any
+    // plane skill. Where a repo copy wins, every plane skill is left out, and the folder's row
+    // is never a skill the chat gets nor a name it takes.
+    let plane = Plane::new();
+    skill(&plane.workspace("smart-ide"), "review", &whole("review"));
+    skill(&plane.workspace("smart-ide"), "skills", &whole("skills"));
+    let crowded = || OutsideSkill {
+        unread: Some(Unread::Crowded),
+        ..outside("skills", Origin::Repo, repo("api"), false)
+    };
+
+    for route in [Route::Config, Route::Briefing] {
+        let set = plane
+            .set(Some("smart-ide"))
+            .with_outside(route, [crowded()]);
+
+        assert_eq!(
+            effective(&set),
+            Vec::<(&str, Origin, bool)>::new(),
+            "{route:?}"
+        );
+        let why = "purlis could not read the skills folder of api whole, so a copy of this \
+                   skill may be there, and a chat in that repo would get that one"
+            .to_owned();
+        assert_eq!(
+            left_out(&set),
+            [
+                ("review", Origin::Workspace, false, why.clone()),
+                ("skills", Origin::Workspace, false, why),
+            ],
+            "{route:?}"
+        );
+        assert_eq!(set.clashes, [], "{route:?}");
+    }
+
+    // On the plugin route both load, so nothing is left out, and the row is still no skill.
+    let set = plane
+        .set(Some("smart-ide"))
+        .with_outside(Route::Plugin, [crowded()]);
+    assert_eq!(set.from_the_plane().count(), 2);
+    assert!(set.effective.iter().all(|e| e.origin != Origin::Repo));
 }
