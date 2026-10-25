@@ -197,13 +197,28 @@ function offTheTerminal(seen: Awaited<ReturnType<typeof measured>>) {
 }
 
 /** Waits until the terminal of pane `pane` is fitted to the room it has: its rows changed from
- *  `was`, or a second went by with no change to wait for. */
+ *  `was`, or a second went by with no change to wait for, and then held still for three reads
+ *  in a row. A band that comes or goes can lay out in more than one frame (its last Notice
+ *  gone, then the row's own room), and a fit read between the two is not the room it ends with. */
 async function untilRefitted(pane: number, was: number): Promise<void> {
   await browser
     .waitUntil(async () => (await measured(pane)).rowCount !== was, {
       timeout: 2_000,
       interval: 100,
     })
+    .catch(() => undefined);
+  let last = (await measured(pane)).rowCount;
+  let still = 0;
+  await browser
+    .waitUntil(
+      async () => {
+        const now = (await measured(pane)).rowCount;
+        still = now === last ? still + 1 : 0;
+        last = now;
+        return still >= 3;
+      },
+      { timeout: 3_000, interval: 100 },
+    )
     .catch(() => undefined);
 }
 
