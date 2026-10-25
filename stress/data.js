@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792960086330,
+  "lastUpdate": 1792963806496,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -7360,6 +7360,42 @@ window.BENCHMARK_DATA = {
             "value": 269.5,
             "unit": "MB",
             "extra": "median of 6 samples: 281.9, 312.6, 310.2, 256.1, 257.1, 213.7 MB; window 160 MB, session host 104.4 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c8c34eb44fee17f8a75dbcc8154ec7ba24f3a6c9",
+          "message": "Cargo.lock: crypto-bigint 0.7.6 -> 0.7.9, past the yanked releases (#3258)\n\ncrypto-bigint 0.7.6, 0.7.7 and 0.7.8 are yanked on crates.io, so cargo-deny's\nadvisories check fails every pull request on 'detected yanked crate'.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-26T00:43:26+04:00",
+          "tree_id": "f44e8d5361b0d933b27f141b04bc308f8461b99a",
+          "url": "https://github.com/purlis/purlis/commit/c8c34eb44fee17f8a75dbcc8154ec7ba24f3a6c9"
+        },
+        "date": 1792963803543,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 1114,
+            "unit": "MB",
+            "extra": "median of 3 samples: 989, 1114, 1360 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 325,
+            "unit": "MB",
+            "extra": "median of 6 samples: 373.6, 350.9, 322.2, 324.5, 325.6, 274.2 MB; window 207.6 MB, session host 117.4 MB"
           }
         ]
       }
