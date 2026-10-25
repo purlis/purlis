@@ -179,7 +179,13 @@ pub(crate) fn shown(skills: Option<&purlis_core::skills::ChatSkills>) -> ChatSki
             most_skills: small(spent.budget.skills),
             most_chars: small(spent.budget.chars),
             warns: spent.warns().map(BudgetWarns::from),
-            hidden: small(skills.offered.iter().filter(|one| one.hidden.is_some()).count()),
+            hidden: small(
+                skills
+                    .offered
+                    .iter()
+                    .filter(|one| one.hidden.is_some())
+                    .count(),
+            ),
             pins_over: skills.pins_over,
         }),
     }

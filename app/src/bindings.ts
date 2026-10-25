@@ -5070,6 +5070,11 @@ export type ChatSkill = {
 	arguments: string[],
 	/**  What to pass it, in one line, where it says: the one box of a skill that names none. */
 	hint: string | null,
+	/**
+	 *  Why the router hid it from the chat's list, where it did (SK-15): Use skill… then asks
+	 *  the chat to load it.
+	 */
+	hidden: string | null,
 };
 
 /**
@@ -11057,6 +11062,10 @@ export type SkillBudget = {
 	most_chars: number,
 	/**  What the chat warns of, or null below four fifths of both. */
 	warns: BudgetWarns | null,
+	/**  Skills the router hid behind the index skill, its set being over the budget (SK-15). */
+	hidden: number,
+	/**  Whether the pins alone are over the budget, so all of them are listed (ADR 0102 §4). */
+	pins_over: boolean,
 };
 
 /**
@@ -11805,6 +11814,13 @@ export type StudioSkill = {
 	 *  chat, and what else is worth knowing. Empty for the plane's and the built-in skills.
 	 */
 	lint: string[],
+	/**
+	 *  Why the router hid it from the list of the chat the studio shows, where it did (SK-15):
+	 *  the chat still has it, through the index skill.
+	 */
+	hidden: string | null,
+	/**  Whether that chat's workspace or persona pins it, so no router hides it. */
+	pinned: boolean,
 };
 
 /**

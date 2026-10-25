@@ -64,12 +64,7 @@ fn three(tmp: &Path) -> (std::path::PathBuf, std::path::PathBuf) {
     let plane = tmp.join("plane");
     skill(&built_in, "handoff", "Hands off.", "");
     for name in ["deploy", "lint", "release"] {
-        skill(
-            &plane.join(PROJECT_DIR),
-            name,
-            &format!("Does {name}."),
-            "",
-        );
+        skill(&plane.join(PROJECT_DIR), name, &format!("Does {name}."), "");
     }
     (plane, built_in)
 }
@@ -102,7 +97,10 @@ fn above_the_budget_the_plane_skills_are_hidden_behind_the_index_and_stay_in_the
     assert_eq!(names(set.listed()), ["handoff"]);
     assert_eq!(names(set.from_the_plane()), Vec::<&str>::new());
     // Hidden, never left out: the chat still has each one, for `skill_find` and `skill_load`.
-    assert_eq!(names(&set.effective), ["deploy", "handoff", "lint", "release"]);
+    assert_eq!(
+        names(&set.effective),
+        ["deploy", "handoff", "lint", "release"]
+    );
     assert!(set.left_out.is_empty());
     let hidden = set.hidden_by_router("deploy").expect("hidden");
     assert_eq!(hidden.why, HiddenWhy::OverBudget);

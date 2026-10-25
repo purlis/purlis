@@ -76,9 +76,7 @@ pub struct Hidden {
 impl std::fmt::Display for Hidden {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let why = match self.why {
-            HiddenWhy::OverBudget => {
-                "over this chat's skill budget, so it is in the index skill"
-            }
+            HiddenWhy::OverBudget => "over this chat's skill budget, so it is in the index skill",
         };
         write!(f, "hidden by {}: {why}", self.router.shown())
     }

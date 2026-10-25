@@ -35,7 +35,9 @@ export function budgetSaid(budget: SkillBudget): string {
   const skills = `${counted(budget.skills, "skill", "skills")} of ${budget.most_skills}`;
   const manual = counted(budget.manual, "manual-only skill", "manual-only skills");
   const free = budget.manual === 0 ? "" : ` · ${manual} free`;
-  return `${skills} · ${chars}${free}`;
+  const hidden =
+    budget.hidden === 0 ? "" : ` · ${counted(budget.hidden, "skill", "skills")} in the index skill`;
+  return `${skills} · ${chars}${free}${hidden}`;
 }
 
 /** The budget in a few words, for a chat tab's menu row: `12 of 30 skills`, and that it is near
@@ -59,7 +61,11 @@ export function warnsSaid(budget: SkillBudget): string | undefined {
           ? "skills' descriptions are"
           : undefined;
   if (what === undefined) return undefined;
-  return `This chat's ${what} near or past purlis's skill budget, past which some are hidden from what it reads. Make some skills manual-only, or turn some off for this workspace.`;
+  if (budget.pins_over)
+    return `This chat's pinned skills alone are past purlis's skill budget, so all of them are listed. Unpin some, or make some manual-only.`;
+  if (budget.hidden > 0)
+    return `This chat's ${what} past purlis's skill budget, so ${counted(budget.hidden, "skill is", "skills are")} hidden behind the index skill, which the chat loads them from. Make some skills manual-only, or turn some off for this workspace.`;
+  return `This chat's ${what} near or past purlis's skill budget, past which some are hidden behind the index skill. Make some skills manual-only, or turn some off for this workspace.`;
 }
 
 /** What the filter over a chat's skills calls them. */
@@ -219,6 +225,9 @@ export function UseSkill({
                       <RowDescription>
                         <span className="use-skill-level">{skill.label}</span>
                         {skill.manual && <span className="use-skill-manual"> · manual only</span>}
+                        {skill.hidden !== null && (
+                          <span className="use-skill-hidden"> · in the index skill</span>
+                        )}
                       </RowDescription>
                       <RowBelow className="use-skill-description">{skill.description}</RowBelow>
                     </ListOption>

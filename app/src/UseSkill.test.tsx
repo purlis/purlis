@@ -32,6 +32,7 @@ function skill(name: string, more: Partial<ChatSkill> = {}): ChatSkill {
     manual: false,
     arguments: [],
     hint: null,
+    hidden: null,
     ...more,
     takes_arguments:
       (more.arguments !== undefined && more.arguments.length > 0) ||
@@ -45,6 +46,8 @@ const BUDGET: SkillBudget = {
   manual: 1,
   most_skills: 30,
   most_chars: 6000,
+  hidden: 0,
+  pins_over: false,
   warns: null,
 };
 
@@ -149,6 +152,23 @@ describe("Use skill…", () => {
     expect(budgetSaid({ ...BUDGET, manual: 0 })).toBe("3 skills of 30 · 1,234 of 6,000 characters");
     expect(budgetShort(BUDGET)).toBe("3 of 30 skills");
     expect(budgetShort({ ...BUDGET, warns: "chars" })).toBe("3 of 30 skills, near the budget");
+  });
+
+  it("says how many skills the router hid behind the index skill, and marks each (SK-15)", () => {
+    const over = { ...BUDGET, warns: "skills" as const, hidden: 2 };
+    expect(budgetSaid({ ...over, manual: 0 })).toBe(
+      "3 skills of 30 · 1,234 of 6,000 characters · 2 skills in the index skill",
+    );
+    expect(warnsSaid(over)).toMatch(/so 2 skills are hidden behind the index skill/);
+    expect(warnsSaid({ ...over, pins_over: true })).toMatch(
+      /pinned skills alone are past purlis's skill budget/,
+    );
+    opened(
+      skills([skill("deploy"), skill("review", { hidden: "hidden by the built-in router" })], over),
+    );
+    const rows = screen.getAllByTestId("use-skill-row");
+    expect(within(rows[1]).getByText("· in the index skill")).toBeTruthy();
+    expect(within(rows[0]).queryByText("· in the index skill")).toBeNull();
   });
 
   it("says why a chat has nothing to offer, and that it is still reading", () => {

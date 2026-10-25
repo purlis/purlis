@@ -1536,12 +1536,7 @@ pub fn switch(cx: &mut Ctx<'_>, workspace: &str, name: &str, on: bool) -> Result
 
 /// **Pins `name` (`on`) or unpins it** for a workspace's or a persona's chats (SK-15, ADR 0102
 /// §4), committed. `Ok(false)` where it already was so, and nothing is written.
-pub fn pin(
-    cx: &mut Ctx<'_>,
-    by: &super::PinnedBy,
-    name: &str,
-    on: bool,
-) -> Result<bool, String> {
+pub fn pin(cx: &mut Ctx<'_>, by: &super::PinnedBy, name: &str, on: bool) -> Result<bool, String> {
     let changed = super::pin(cx.plane, by, name, on)?;
     if changed {
         let (whose, file) = match by {

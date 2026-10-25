@@ -20,9 +20,7 @@ pub fn pinned_in(plane: &Path, workspace: &str) -> Vec<String> {
 /// and those its persona pins (`pinned-skills:`), each name once. A pin only keeps a skill of the
 /// chat's set listed: it adds none.
 pub fn pins_of(plane: &Path, workspace: Option<&str>, persona: Option<&str>) -> Vec<String> {
-    let mut pins = workspace
-        .map(|ws| pinned_in(plane, ws))
-        .unwrap_or_default();
+    let mut pins = workspace.map(|ws| pinned_in(plane, ws)).unwrap_or_default();
     for name in persona
         .map(|persona| crate::personaverbs::pinned_skills(plane, persona))
         .unwrap_or_default()

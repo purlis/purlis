@@ -637,6 +637,7 @@ const DIALOGS: Opened[] = [
                 takes_arguments: true,
                 arguments: ["pr"],
                 hint: null,
+                hidden: null,
               },
               {
                 name: "release",
@@ -647,6 +648,7 @@ const DIALOGS: Opened[] = [
                 takes_arguments: false,
                 arguments: [],
                 hint: null,
+                hidden: null,
               },
             ],
             budget: {
@@ -655,6 +657,8 @@ const DIALOGS: Opened[] = [
               manual: 1,
               most_skills: 30,
               most_chars: 6000,
+              hidden: 0,
+              pins_over: false,
               warns: "both",
             },
           }}

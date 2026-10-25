@@ -856,7 +856,10 @@ pub fn for_use_skill(chat: &Running<'_>) -> ChatSkills {
         None,
         Some(chat.harness.skill_budget()),
     );
-    let pins_over = set.routing.as_ref().is_some_and(|routing| routing.pins_over);
+    let pins_over = set
+        .routing
+        .as_ref()
+        .is_some_and(|routing| routing.pins_over);
     let hidden = |name: &str| set.hidden_by_router(name).cloned();
     let offered: Vec<Offered> = set
         .effective
@@ -1177,7 +1180,6 @@ pub fn turned_off(plane: &Path, workspace: &str) -> Vec<String> {
     names_in_settings(plane, workspace, crate::settings::workspace::SKILLS_OFF)
 }
 
-
 /// The list of names `settings.skills.<key>` of the workspace `workspace` holds, or none.
 pub(super) fn names_in_settings(plane: &Path, workspace: &str, key: &str) -> Vec<String> {
     use crate::settings::workspace::SKILLS;
@@ -1191,7 +1193,6 @@ pub(super) fn names_in_settings(plane: &Path, workspace: &str, key: &str) -> Vec
         })
         .unwrap_or_default()
 }
-
 
 /// The folder of the project skill named `name` in the plane at `plane`: in its `skills/`, else
 /// in its `skills.local/`, or `None` where neither holds one.
@@ -1278,7 +1279,12 @@ pub(crate) fn set_turned_off(
     workspace: &str,
     off: Vec<String>,
 ) -> Result<(), String> {
-    set_names_in_settings(plane, workspace, crate::settings::workspace::SKILLS_OFF, off)
+    set_names_in_settings(
+        plane,
+        workspace,
+        crate::settings::workspace::SKILLS_OFF,
+        off,
+    )
 }
 
 /// Writes `names` as `settings.skills.<key>` of the workspace `workspace`, through the Workspace
@@ -2005,9 +2011,7 @@ pub(crate) fn studio_rows(set: &SkillSet, plane: &Path, names: &[Reference]) -> 
                     .clone()
                     .map_or(Lifecycle::Active, Lifecycle::Deprecated),
                 owners: owners(e.origin, folder),
-                hidden: set
-                    .hidden_by_router(&e.skill.name)
-                    .map(ToString::to_string),
+                hidden: set.hidden_by_router(&e.skill.name).map(ToString::to_string),
                 pinned: set.is_pinned(&e.skill.name),
             }
         })

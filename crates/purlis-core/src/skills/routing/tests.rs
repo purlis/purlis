@@ -10,8 +10,7 @@ use std::path::{Path, PathBuf};
 use super::*;
 use crate::harness::Harness;
 use crate::skills::{
-    ChatSkills, DIR_IN_BUNDLE, INDEX, Running, for_use_skill, in_the_studio, of_a_chat,
-    studio_rows,
+    ChatSkills, DIR_IN_BUNDLE, INDEX, Running, for_use_skill, in_the_studio, of_a_chat, studio_rows,
 };
 
 /// The most skills a chat lists on every harness (ADR 0102 as amended 2026-10-21).
@@ -151,17 +150,14 @@ fn a_skill_the_router_hid_is_found_and_loaded_through_purlis_tools() {
     };
 
     let found =
-        crate::skilltools::call(&asking, "skill_find", &args("query", "thing 7"), &|_| {})
-            .unwrap();
+        crate::skilltools::call(&asking, "skill_find", &args("query", "thing 7"), &|_| {}).unwrap();
     assert!(found.contains("`skill-07`"), "{found}");
     let started = std::cell::RefCell::new(Vec::new());
-    let loaded = crate::skilltools::call(
-        &asking,
-        "skill_load",
-        &args("name", "skill-07"),
-        &|name| started.borrow_mut().push(name.to_owned()),
-    )
-    .unwrap();
+    let loaded =
+        crate::skilltools::call(&asking, "skill_load", &args("name", "skill-07"), &|name| {
+            started.borrow_mut().push(name.to_owned())
+        })
+        .unwrap();
     assert!(loaded.contains("Does thing 7."), "{loaded}");
     assert_eq!(*started.borrow(), ["skill-07"]);
 }
@@ -264,7 +260,11 @@ fn the_studio_says_why_the_router_hid_a_skill_and_which_are_pinned() {
     assert_eq!(row("skill-00").left_out, None, "hidden, never left out");
     assert!(row("skill-03").pinned);
     assert_eq!(row("skill-03").hidden, None);
-    assert_eq!(row("handoff").hidden, None, "a built-in skill is never hidden");
+    assert_eq!(
+        row("handoff").hidden,
+        None,
+        "a built-in skill is never hidden"
+    );
 }
 
 #[test]

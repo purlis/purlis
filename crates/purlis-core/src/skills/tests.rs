@@ -911,10 +911,7 @@ fn use_skill_types_a_skill_of_the_set_in_its_harnesss_syntax_and_holds_the_run_i
         assert_eq!(held.skill, known_as, "{harness:?}");
         assert_eq!(held.confirmed, confirmed, "{harness:?}");
         assert_eq!(held.workspace.as_deref(), Some("smart-ide"));
-        assert_eq!(
-            held.level.map(|level| level.origin),
-            Some(Origin::Project)
-        );
+        assert_eq!(held.level.map(|level| level.origin), Some(Origin::Project));
         // What a prompt holding the text is marked with.
         let sent = crate::skillspan::PromptMarks::of(&format!("{text} and more"));
         assert!(sent.holds(held.text), "{harness:?}");

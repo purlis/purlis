@@ -654,7 +654,14 @@ export function SkillStudioTab({
                     )}
                   </td>
                   <td>
-                    {skill.on ? (skill.unchecked ?? "On") : `Left out: ${skill.left_out ?? ""}`}
+                    {skill.on
+                      ? (skill.unchecked ??
+                        (skill.hidden !== null
+                          ? `On, ${skill.hidden}`
+                          : skill.pinned
+                            ? "On, pinned"
+                            : "On"))
+                      : `Left out: ${skill.left_out ?? ""}`}
                     {skill.on && skill.level === "built-in" && (
                       <span className="honest">
                         {" "}
