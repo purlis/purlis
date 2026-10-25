@@ -622,6 +622,9 @@ pub struct Limits {
     /// How long a read of a page's whole tree for the person's keys may take, past the key it
     /// was made for (#3043): a large page's read goes on, for the next key.
     pub tree_reads_within: Duration,
+    /// How long a read of a page's whole tree for the person's keys is used after it came
+    /// (#3043): an older one is read anew.
+    pub tree_read_kept_for: Duration,
 }
 
 impl Default for Limits {
@@ -637,6 +640,7 @@ impl Default for Limits {
             drag_starts_within: Duration::from_millis(150),
             key_reads_within: Duration::from_secs(20),
             tree_reads_within: Duration::from_secs(120),
+            tree_read_kept_for: Duration::from_secs(10),
         }
     }
 }

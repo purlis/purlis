@@ -58,18 +58,13 @@ fn typing_into_a_field_of_a_large_page_stays_under_fifty_milliseconds_a_key() {
     let typed = "squirrelnineteenxyz";
     let mut took = Vec::new();
     for letter in typed.chars() {
-        let key = |down| PersonInput::Key {
-            aim: aim.clone(),
-            down,
-            key: letter.to_string(),
-            code: format!("Key{}", letter.to_ascii_uppercase()),
-            key_code: u32::from(letter.to_ascii_uppercase()),
-            modifiers: 0,
-        };
+        let (name, code) = (letter.to_string(), u32::from(letter.to_ascii_uppercase()));
         let started = Instant::now();
-        browser.person_input(&key(true)).unwrap();
+        browser.person_input(&key(&aim, &name, code, true)).unwrap();
         took.push(started.elapsed());
-        browser.person_input(&key(false)).unwrap();
+        browser
+            .person_input(&key(&aim, &name, code, false))
+            .unwrap();
     }
     let first = took[0];
     let mut rest: Vec<Duration> = took[1..].to_vec();

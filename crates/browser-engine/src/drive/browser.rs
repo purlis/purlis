@@ -1988,13 +1988,13 @@ impl Browser {
     /// Every frame's tree of `target`'s page, as the engine has it now: the one read of the
     /// page a snapshot is built from.
     fn trees_of(&self, target: &str) -> Result<Vec<FrameAx>, Refusal> {
-        let frames = self.to_read(target)?;
+        let frames = self.frames_to_read(target)?;
         read_trees(self.devtools(), frames, CALL_TIMEOUT).map_err(refusal)
     }
 
     /// The frames of `target`'s page to read the trees of, the page's own first and each frame
     /// after the frame around it.
-    fn to_read(&self, target: &str) -> Result<Vec<ToRead>, Refusal> {
+    fn frames_to_read(&self, target: &str) -> Result<Vec<ToRead>, Refusal> {
         let session = self.page_session(target)?;
         let (frames, _excluded, _scrub) = {
             let state = lock(&self.inner.state);
