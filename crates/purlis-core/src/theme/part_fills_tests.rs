@@ -76,7 +76,7 @@ fn drawn_as(css: &str, selectors: &[&str], property: &str) -> Option<String> {
                     .map(|value| value.trim_end_matches(';'))
             })
         })
-        .last()?;
+        .next_back()?;
     let name = value.strip_prefix("var(--")?.strip_suffix(')')?;
     TOKENS
         .iter()
@@ -84,10 +84,19 @@ fn drawn_as(css: &str, selectors: &[&str], property: &str) -> Option<String> {
         .map(|token| (*token).to_owned())
 }
 
+/// A part, the stylesheet and rules that draw it, and the surface it stands on: see [`DRAWN`].
+type Drawn = (
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static [&'static str],
+    Option<&'static str>,
+);
+
 /// **Where each part's words and fill are drawn**: its family, its part, the stylesheet and the
 /// rules that draw it at rest, and the surface it stands on where its stylesheet gives it no
 /// ground and that is not its root's (a switcher's row, on the popover it is drawn in).
-const DRAWN: &[(&str, &str, &str, &[&str], Option<&str>)] = &[
+const DRAWN: &[Drawn] = &[
     (
         "tabs",
         "closer",
