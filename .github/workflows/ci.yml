@@ -292,8 +292,9 @@ jobs:
           tools/no-orphans.sh --reap --
           cargo nextest run --locked -p purlis-app --lib --profile ci --no-tests fail
           -E 'test(/::in_a_docker_pool$/) | test(/^runnerlinks::tests::a_(window_reaches|project_reaches)_/)'
+      # Run whatever the step above found, so each step's result is its own.
       - name: The pool's link and code over it, on Docker
-        if: steps.scope.outputs.run == 'true'
+        if: ${{ !cancelled() && steps.scope.outputs.run == 'true' }}
         run: >-
           tools/no-orphans.sh --reap --
           cargo nextest run --locked -p purlis-core --profile ci --no-tests fail

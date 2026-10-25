@@ -1156,6 +1156,68 @@ fn a_chat_named_alone_is_composed_by_the_host_as_its_profile_says(target: &Targe
     assert!(refused.contains("someone-elses"), "{refused}");
 }
 
+/// **A harness chat started by its names is viewed, typed into, answered and stopped** (#3072):
+/// the chat a person starts from the window, on a profile the machine it runs on has signed
+/// in, composed by the host it runs in. Its tab draws it, what its tab types reaches it, the
+/// ask its hook raises is held by the window and answered from there, and stopping every
+/// program ends it and keeps its tab. The window's own process composes no such start.
+fn a_harness_chat_started_by_its_names_is_viewed_typed_into_answered_and_stopped(target: &Target) {
+    if target.host.is_none() {
+        return;
+    }
+    let Hooked {
+        harness,
+        payload,
+        option,
+        prints,
+    } = &HOOKED_HARNESSES[0];
+    let bin = tempfile::tempdir().expect("a folder for the harness");
+    let program = stand_in::claude_code(
+        bin.path(),
+        "claude",
+        &format!(
+            "#!/bin/sh\nprintf 'READY.'\nread line\nprintf 'you said %s.' \"$line\"\n\
+             printf '%s' '{payload}' | PURLIS_HARNESS={harness} '{}' hook permissionrequest\n\
+             printf 'decided.'\nread line\n",
+            purlis()
+        ),
+    );
+    a_profile(target, "work", &program);
+    let ends = told_of_ends(target);
+
+    let id = target
+        .sessions
+        .open_named(
+            None,
+            &named("start here", false),
+            purlis_core::sandbox::plan::Hearing::default(),
+            &|id| {
+                target.hooks.board().opened(id, None, None);
+            },
+        )
+        .expect("it starts")
+        .number;
+    let pane = Pane::on(target, id);
+    pane.shows("READY.");
+
+    target.sessions.input(id, b"hello there\r").expect("typed");
+    pane.shows("you said hello there.");
+
+    answers_its_ask(target, id, harness, option);
+    pane.shows(prints);
+    pane.shows("decided.");
+
+    assert_eq!(target.sessions.stop_every_program(), 1);
+    until("the window is told it ended", || {
+        ends.lock()
+            .expect("ends")
+            .iter()
+            .any(|(ended, _)| *ended == id)
+    });
+    assert!(target.sessions.running().contains(&id), "its tab stays");
+    target.sessions.close(id).expect("it closes");
+}
+
 /// **A person's opt-out of a chat the host composes is written in its event log before it
 /// starts** (#2171, ADR 0067 §7), under the chat's own run.
 fn an_opt_out_of_a_chat_the_host_composes_is_in_its_event_log_before_it_starts(target: &Target) {
@@ -1662,6 +1724,29 @@ fn a_chat_whose_turn_ends_needs_you_on_every_harness(target: &Target) {
     }
 }
 
+/// Waits until the window holds an ask of chat `id`, on `harness`, and answers it `option`, as
+/// the person does from Needs you.
+fn answers_its_ask(target: &Target, id: u32, harness: &str, option: &str) {
+    let ask = {
+        let deadline = Instant::now() + PATIENCE;
+        loop {
+            let pending = target.hooks.asks().pending(Instant::now());
+            if let Some(ask) = pending.into_iter().find(|ask| ask.chat == id.to_string()) {
+                break ask;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "{harness}: the window never held the ask"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    };
+    target
+        .hooks
+        .answer(id, &ask.id.to_string(), option)
+        .expect("answered in the window");
+}
+
 fn a_permission_ask_is_answered_from_the_window_on_every_harness(target: &Target) {
     for Hooked {
         harness,
@@ -1679,24 +1764,7 @@ fn a_permission_ask_is_answered_from_the_window_on_every_harness(target: &Target
             )),
         );
         let pane = Pane::on(target, id);
-        let ask = {
-            let deadline = Instant::now() + PATIENCE;
-            loop {
-                let pending = target.hooks.asks().pending(Instant::now());
-                if let Some(ask) = pending.into_iter().find(|ask| ask.chat == id.to_string()) {
-                    break ask;
-                }
-                assert!(
-                    Instant::now() < deadline,
-                    "{harness}: the window never held the ask"
-                );
-                std::thread::sleep(Duration::from_millis(10));
-            }
-        };
-        target
-            .hooks
-            .answer(id, &ask.id.to_string(), option)
-            .expect("answered in the window");
+        answers_its_ask(target, id, harness, option);
 
         pane.shows(prints);
         pane.shows("decided.");
@@ -3017,6 +3085,7 @@ macro_rules! on_every_target {
 on_every_target!(
     a_chat_starts_and_its_tab_draws_what_it_wrote,
     a_chat_named_alone_is_composed_by_the_host_as_its_profile_says,
+    a_harness_chat_started_by_its_names_is_viewed_typed_into_answered_and_stopped,
     what_its_tab_types_reaches_it,
     a_resize_reaches_its_terminal,
     a_chat_is_told_its_own_number,
@@ -3026,8 +3095,7 @@ on_every_target!(
     a_program_reading_a_line_is_not_yet_ready_to_be_typed_at_key_by_key,
     a_chat_starts_with_the_path_and_variables_the_window_gives_it,
     a_chat_whose_turn_ends_needs_you_on_every_harness,
-    a_permission_ask_is_answered_from_the_window_on_every_harness,
-    the_event_log_has_one_writer_and_each_hook_line_is_written_once;
+    a_permission_ask_is_answered_from_the_window_on_every_harness;
     not yet through a link ("an opt-out is asked again on the device a chat moves to, ADR 0078 §4"):
     an_opt_out_of_a_chat_the_host_composes_is_in_its_event_log_before_it_starts;
     not yet through a link ("the window's re-arm and its shell while stopped cross a link in #2220"):
@@ -3036,6 +3104,8 @@ on_every_target!(
     not yet through a link ("saving a project on a runner comes with code over the link in #2046"):
     a_write_in_the_project_is_saved_after_its_quiet_period_and_the_window_is_told,
     exactly_one_saver_runs_for_the_project_and_none_once_it_is_stopped;
+    not yet in a Docker pool ("a pool runner chat's hook line is recorded in no event log, #3304"):
+    the_event_log_has_one_writer_and_each_hook_line_is_written_once;
     not yet in a Docker pool ("the behaviour reaches the chat's machine from this one: its proxy, a service or a rival hook listener, which on a pool's runner are in its container, #3288"):
     a_hook_refuses_a_listener_that_is_not_its_chats_ancestor,
     a_sandboxed_chats_proxy_carries_what_it_lists_and_refuses_the_rest,
