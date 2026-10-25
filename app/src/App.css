@@ -5379,8 +5379,7 @@ button.show-more:focus-visible {
 
 /* **The keyboard shortcuts** (#2921, `keys/ShortcutsView.tsx`): no heading of its own (the
    operator's ruling of 2026-10-24, #3147), so the view starts on the ground its tab joins. Its
-   filter is its first row, and keeps the pane's corner (split, close) room at its end, as a
-   heading does; the list under it scrolls. */
+   filter is its first row; the list under it scrolls. */
 .shortcuts-view {
   display: grid;
   flex: 1 1 auto;
@@ -5390,8 +5389,10 @@ button.show-more:focus-visible {
   padding: var(--space-4) var(--space-5) 0;
 }
 
-.shortcuts-view > .list-filter {
-  margin-inline-end: calc(var(--size-control) * 3 - var(--space-5));
+/* In a pane, the pane's actions stand over the view's first row (#3147, `paneFrame.css`): the
+   filter keeps their room at its end, as a view's first row does. */
+.pane-frame.pane-viewed .shortcuts-view > .list-filter {
+  margin-inline-end: calc(var(--pane-actions-room) - var(--space-5));
 }
 
 .shortcuts-list {
