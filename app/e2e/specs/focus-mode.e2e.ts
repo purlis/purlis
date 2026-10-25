@@ -62,6 +62,26 @@ async function boxes(): Promise<Boxes> {
   }, HIDDEN) as Promise<Boxes>;
 }
 
+/** Waits for each part to be at the size it had, and says which is not when one stays apart. */
+async function untilTheSame(before: Boxes, failure: string): Promise<void> {
+  let now = before;
+  const same = await browser
+    .waitUntil(
+      async () => {
+        now = await boxes();
+        return JSON.stringify(now) === JSON.stringify(before);
+      },
+      { timeout: 10_000, interval: 250 },
+    )
+    .then(() => true)
+    .catch(() => false);
+  if (same) return;
+  const apart = (Object.keys(HIDDEN) as (keyof typeof HIDDEN)[])
+    .filter((name) => JSON.stringify(now[name]) !== JSON.stringify(before[name]))
+    .map((name) => `${name} ${JSON.stringify(before[name])} → ${JSON.stringify(now[name])}`);
+  throw new Error(`${failure}: ${apart.join("; ")}`);
+}
+
 /** Whether the window is in focus mode. */
 async function inFocusMode(): Promise<boolean> {
   return browser.execute(
@@ -188,10 +208,7 @@ describe("focus mode", function () {
 
     await focusModeTo(false);
     // Each part is back at the size it had: nothing was written or resized.
-    await browser.waitUntil(async () => JSON.stringify(await boxes()) === JSON.stringify(before), {
-      timeout: 10_000,
-      timeoutMsg: "the window's parts did not come back at the sizes they had",
-    });
+    await untilTheSame(before, "the window's parts did not come back at the sizes they had");
     expect(Math.abs((await workWidth()) - widthBefore)).toBeLessThanOrEqual(1);
     await browser.waitUntil(async () => (await terminalNow()).text === terminal.text, {
       timeout: 10_000,
@@ -220,9 +237,6 @@ describe("focus mode", function () {
       timeout: 10_000,
       timeoutMsg: "the left sidebar's key did not leave focus mode",
     });
-    await browser.waitUntil(async () => JSON.stringify(await boxes()) === JSON.stringify(before), {
-      timeout: 10_000,
-      timeoutMsg: "a region changed while focus mode hid it",
-    });
+    await untilTheSame(before, "a region changed while focus mode hid it");
   });
 });

@@ -26,8 +26,13 @@ afterEach(() => {
 
 const PLANE = "/home/dev/plane";
 
+/** The commands the window sent, in order. */
+const sent: string[] = [];
+
 function core() {
+  sent.length = 0;
   mockIPC((cmd) => {
+    sent.push(cmd);
     if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
     if (cmd === "opened_chats") return [];
     if (cmd === "chats_that_would_not_start") return [];
@@ -48,6 +53,32 @@ function key(init: KeyboardEventInit) {
 }
 
 const MAC = navigator.platform.startsWith("Mac");
+
+describe("a region's key in focus mode (D-2921-19)", () => {
+  it("leaves focus mode and writes no layout; out of it the same key writes one", async () => {
+    core();
+    render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    );
+    await screen.findByTestId("title-about");
+    await waitFor(() => expect(document.querySelector(".region-frame")).not.toBeNull());
+    const window = () => document.querySelector("main.window");
+    const focus = { key: "Enter", code: "Enter", shiftKey: true, metaKey: MAC, ctrlKey: !MAC };
+    const sidebar = { key: "b", code: "KeyB", metaKey: MAC, ctrlKey: !MAC };
+    act(() => key(focus));
+    await waitFor(() => expect(window()).toHaveAttribute("data-focus-mode"));
+    const from = sent.length;
+    act(() => key(sidebar));
+    await waitFor(() => expect(window()).not.toHaveAttribute("data-focus-mode"));
+    await new Promise((settle) => setTimeout(settle, 300));
+    expect(sent.slice(from)).not.toContain("write_layout");
+    // Out of focus mode, the same key puts the sidebar away, which is kept.
+    act(() => key(sidebar));
+    await waitFor(() => expect(sent.slice(from)).toContain("write_layout"));
+  });
+});
 
 describe("focus mode and the cheat sheet, from the window", () => {
   it("toggles focus mode on its key, and opens the cheat sheet on its", async () => {
