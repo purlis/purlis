@@ -528,24 +528,30 @@ export function LayoutPanes({
   if (layout.kind === "pane") {
     const content = layout.content;
     if (content.kind === "view") {
-      // **A view in a pane, with the pane's own corner** — split and close are the same rows a
-      // chat's pane has, so a view can be split to start a chat beside it and closed from where
-      // it is. Clicking anywhere in it focuses it, which is what a terminal's click does.
+      // **A view in a pane, with the pane's own actions** (#3147): split and close are the same
+      // rows a chat's pane has, drawn by the same `PaneHead` and `PaneActions` in the same place,
+      // the pane's top right, so a view can be split to start a chat beside it and closed from
+      // where it is. The view carries no title of its own: its tab is its name, and the content
+      // panel is that tab's panel (`tabPanelOf`). Clicking anywhere in it focuses it, which is
+      // what a terminal's click does.
       return (
         <div
-          className="pane-frame"
+          className="pane-frame pane-viewed"
           data-focused={layout.pane === focused || undefined}
           onPointerDown={() => onFocus(layout.pane)}
         >
-          {/* Before the view, for `PaneFrame`'s reason: the tab order is the document's. */}
-          <div className="pane-corner at-end">
-            <PaneDoing
-              pane={layout.pane}
-              offerFor={offerFor}
-              closeOf={closeOf}
-              onPaneDoes={onPaneDoes}
-            />
-          </div>
+          {/* Before the view, for `PaneFrame`'s reason: the tab order is the document's. Over
+              the view's first row, which keeps the room it takes (`paneFrame.css`). */}
+          <PaneHead
+            doing={
+              <PaneActions
+                pane={layout.pane}
+                offerFor={offerFor}
+                closeOf={closeOf}
+                onPaneDoes={onPaneDoes}
+              />
+            }
+          />
           <div
             className={layout.pane === focused ? "pane view focused" : "pane view"}
             onFocus={() => onFocus(layout.pane)}

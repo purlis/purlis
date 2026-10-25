@@ -65,13 +65,15 @@ export const editorToolbar = {
 
 /**
  * **What the editor's toolbar names**: the file's name, strong, then its path, as the switcher
- * and tab-strip prototypes draw it (R146).
+ * and tab-strip prototypes draw it (R146). Where the toolbar's tab already says the file's name
+ * (a file's own tab, a comparison's), it says the path alone, in the quiet tier (`named`
+ * false, #3147): the tab is the name, and the view repeats it nowhere.
  */
-export function ToolbarFile({ path }: { path: string }) {
+export function ToolbarFile({ path, named = true }: { path: string; named?: boolean }) {
   return (
     <>
-      <b className="ui-text-strong">{path.slice(path.lastIndexOf("/") + 1)}</b>
-      <code>{path}</code>
+      {named && <b className="ui-text-strong">{path.slice(path.lastIndexOf("/") + 1)}</b>}
+      <code data-path-only={named ? undefined : ""}>{path}</code>
     </>
   );
 }

@@ -207,6 +207,7 @@ pub fn skills_not_here(
         built_in.as_deref(),
         harness,
         &crate::harness_plugin::Env::of(env),
+        cwd,
     )
 }
 

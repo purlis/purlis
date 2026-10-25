@@ -1,15 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import {
-  createContext,
-  Fragment,
-  useContext,
-  useEffect,
-  useId,
-  useLayoutEffect,
-  useRef,
-} from "react";
+import { createContext, useContext, useEffect, useId, useLayoutEffect, useRef } from "react";
 import type { Offer, TaskEndWay } from "./actions";
 import type { TaskEnding } from "./bindings";
 import { fitWaysOn } from "./wholeWays";
@@ -341,7 +333,6 @@ export function TaskEnds({
   focusBack?: () => void;
 }) {
   const hand = useContext(TaskEndContext);
-  const why = useId();
   // **Each way whole or not at all**, decided by measuring the line (`wholeWays.ts`).
   const group = useRef<HTMLSpanElement>(null);
   const asking =
@@ -378,32 +369,19 @@ export function TaskEnds({
     <span className="pane-task-ends" role="group" aria-label="End this task" ref={group}>
       {drawn.map(([offer, way]) =>
         offer === undefined ? null : (
-          <Fragment key={offer.id}>
-            <Tooltip
-              tip={offer.reason || (offer.note ? `${offer.title}. ${offer.note}` : offer.title)}
-            >
-              <button
-                type="button"
-                className="task-end"
-                // In the tab sequence, said out loud (`docs/ui-primitives.md`).
-                tabIndex={0}
-                aria-label={offer.title}
-                aria-disabled={!offer.available || undefined}
-                aria-describedby={offer.available ? undefined : `${why}-${way}`}
-                onClick={() => {
-                  if (offer.available) hand.onEnd(session, way);
-                }}
-              >
-                {WORDS[way]}
-              </button>
-            </Tooltip>
-            {/* Why it cannot run, for whoever cannot see a tooltip: the button's description. */}
-            {!offer.available && (
-              <span hidden id={`${why}-${way}`}>
-                {offer.reason}
-              </span>
-            )}
-          </Fragment>
+          // A small button of the family (#3129). One that cannot run keeps the focus and says
+          // why, as its tooltip and, for whoever cannot see one, as its description.
+          <Button
+            key={offer.id}
+            size="sm"
+            className="task-end"
+            isDisabled={!offer.available}
+            tooltip={offer.reason || (offer.note ? `${offer.title}. ${offer.note}` : offer.title)}
+            aria-label={offer.title}
+            onPress={() => hand.onEnd(session, way)}
+          >
+            {WORDS[way]}
+          </Button>
         ),
       )}
     </span>

@@ -230,9 +230,13 @@ export function SettingGroup({
   label,
   help,
   kept,
+  level = 2,
   children,
 }: {
   label: string;
+  /** Its heading's level: 2 in a view, the first heading under the tab that names it (#3147);
+   *  3 in a dialog, under the dialog's own title. */
+  level?: 2 | 3;
   help?: string;
   /** Where the group's values are kept, and who sees them: "Kept in purlis.toml, which your
    *  team sees." */
@@ -240,10 +244,11 @@ export function SettingGroup({
   children: ReactNode;
 }) {
   const heading = useId();
+  const Heading = level === 2 ? "h2" : "h3";
   const said = [help, kept].filter(Boolean).join(" ");
   return (
     <section className="ui-setting-group" aria-labelledby={heading}>
-      <h3 id={heading}>{label}</h3>
+      <Heading id={heading}>{label}</Heading>
       {said && <p className="ui-setting-help">{said}</p>}
       {children}
     </section>
