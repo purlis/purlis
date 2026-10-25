@@ -28,7 +28,6 @@ const OTHER_FAMILIES = {
     "vault-secret",
     // The tab strips and a pane's top line: a tab's marks and closer, the strip's offers.
     "closer",
-    "gear",
     "show-more",
     "ends-a-chat",
     "bare",
@@ -36,12 +35,6 @@ const OTHER_FAMILIES = {
     "tab-tasks-hand",
     "tab-tasks-counts",
     "tasks-menu-place",
-    "plane-updated",
-    "pane-brief",
-    "pane-harness",
-    "pane-skills",
-    "task-end",
-    "strip-offer",
     // The title bar's workspace chips, and a needs-you mark on a row.
     "needs-you-mark",
     "plane-root",
@@ -110,6 +103,13 @@ export default tseslint.config(
       "purlis/tabs-family": "error",
       "purlis/titlebar-family": "error",
     },
+  },
+  // **The old field wrapper's last wearers** (#3129): a settings row's select and its slider,
+  // which the select (#2906) and choice (#2907) families take off it. This block goes once both
+  // have moved; nothing else may wear `ui-field`.
+  {
+    files: ["src/settings/components.tsx"],
+    rules: { "purlis/field-family": "off" },
   },
   // **The tablists still drawn by hand**, each until the ticket that moves it onto the tabs
   // family (#3042): the workspace strip (#2916), the activity bars (#2917), the project rail's

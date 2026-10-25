@@ -13,7 +13,6 @@ import {
   PanelRight,
   Pin as PinMark,
   Plus,
-  Settings as SettingsMark,
   SquareSplitHorizontal,
   SquareSplitVertical,
   SquareArrowOutUpRight,
@@ -28,8 +27,8 @@ import { tabPart } from "./ui/tabs/Tabs";
 /**
  * **The strips' own controls** (#1035, split out of `PlaneView.tsx`): a catalogue row drawn as a
  * button (`Doer`), its icon (`MARKS`), the show-more menu of what a full strip is not drawing
- * (`ShowMore`), a tab's pin, its `×` (`Closer`) and the focused workspace's gear (`Gear`). The
- * project, workspace and chat strips all draw them, so they are one look in one module.
+ * (`ShowMore`), a tab's pin and its `×` (`Closer`). The project, workspace and chat strips all
+ * draw them, so they are one look in one module.
  */
 
 /**
@@ -382,38 +381,6 @@ export function Closer({ offer, onPress }: { offer?: Offer; onPress: (offer: Off
         onClick={() => onPress(offer)}
       >
         {minimise ? <Minus /> : <X />}
-      </button>
-    </Tooltip>
-  );
-}
-
-/**
- * **A tab's settings gear** (SE-23, #1173; V89i): the same catalogue row its right-click menu
- * and the palette run — `project.settings:<plane>` on the project in front's tab,
- * `workspace.settings:<name>` on the focused workspace's — drawn as a gear, so its accessible
- * name and its tooltip are the row's words and the glyph is only the glyph, as `Closer`'s `×` is.
- *
- * **Quiet**: drawn on one tab per strip, the one you are on, and invisible there until that tab
- * is under the pointer or the keyboard (`App.css`, `.gear`). No gear is always on, and the title
- * bar has no settings button of its own — the operator's "it must not be noisy".
- *
- * **A Tab stop, unlike `Closer`.** A `×` per tab in the sequence would be fifty stops; this is
- * one, right after the strip's one stop, because only the tab you are on carries one.
- */
-export function Gear({ offer, onPress }: { offer?: Offer; onPress: (offer: Offer) => void }) {
-  if (!offer) return null;
-  return (
-    <Tooltip tip={offer.reason || offer.title}>
-      <button
-        className="gear"
-        // WebKit leaves a `<button>` out of the tab sequence unless its `tabindex` is written down
-        // (`docs/ui-primitives.md`, charter-app#189).
-        tabIndex={0}
-        disabled={!offer.available}
-        aria-label={offer.title}
-        onClick={() => onPress(offer)}
-      >
-        <SettingsMark />
       </button>
     </Tooltip>
   );
