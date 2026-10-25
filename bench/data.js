@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792970222775,
+  "lastUpdate": 1792972032253,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -25032,6 +25032,48 @@ window.BENCHMARK_DATA = {
             "value": 102.1376875,
             "unit": "ms",
             "extra": "median of 5 runs: 101.067, 101.678, 102.138, 102.237, 102.480 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6afc8c7085fc11437f474ce82587c93fa437c55c",
+          "message": "Compact sm buttons hold the 24px target size (#3210) (#3248)\n\n* Compact sm buttons hold the 24px target (#3210)\n\nAn sm button's height was max(size.chrome, space.7), 18px in the compact\ndensity, under WCAG 2.5.8's 24px target. It now floors at 24 CSS px, tall\nand wide, as the status item does (R115), and still grows with the chrome\nand the scale over it. The wrapping row's floor and the engine's\nsized_apart height (the corner clamp) follow. A story stands two sm glyph\nbuttons at the row's own gap and holds each to 24px in every cell.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* sm buttons: the floor is height only, so a line still squeezes words (#3210)\n\nA 24px min-inline-size kept the pane line's harness chip from giving way,\nand pane-crumbs.e2e saw the breadcrumb's state pushed past its edge. An\nicon button is square, so it is 24 wide already.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-26T03:40:17+04:00",
+          "tree_id": "65181ac8ad168a5f2f75d822aa675bd3d0abbd12",
+          "url": "https://github.com/purlis/purlis/commit/6afc8c7085fc11437f474ce82587c93fa437c55c"
+        },
+        "date": 1792972029819,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.27839,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.266, 0.278, 0.278, 0.284, 0.298 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6232265,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.182, 16.525, 16.623, 16.692, 16.701 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.5655005,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.537, 100.975, 101.566, 101.783, 102.097 ms"
           }
         ]
       }
