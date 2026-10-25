@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792924233605,
+  "lastUpdate": 1792929077967,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -24360,6 +24360,48 @@ window.BENCHMARK_DATA = {
             "value": 101.7955575,
             "unit": "ms",
             "extra": "median of 5 runs: 101.339, 101.438, 101.796, 102.156, 102.493 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2d89a14d7a21dda4a28de816da58ea3ac32ac8e7",
+          "message": "SK-35: a skill delete cut short between removal and commit is finished or put back (#3204)\n\n* SK-35: a skill delete cut short between removal and commit is finished or put back\n\nA delete by git holds a note locked in the state folder's skills-deleting/\nwhile it runs. verbs::interrupted finds a note nothing holds, takes the\nskill's removal out of the index, commits it where its commit can land now\nor puts the files back as HEAD has them, and says which in one line. The\nSkill studio runs it as it opens (skill_deletes_cut_short) and purlis skill\nbefore any change.\n\nCloses #3013\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-35 review: keep an unsettled delete's note, test every branch, deny chats the delete state\n\n- A delete neither committed nor put back keeps its note for the next start,\n  and recovery that can do neither warns and keeps it too.\n- The studio shows such a line in the trouble tone (skill_deletes_cut_short\n  answers settled and unsettled lines).\n- Tests: the still-here branch, planted and broken notes, a dead writer's\n  dot-note, and both unsettled paths through the cut hook.\n- Windows writes a dot-name and renames it into place, opening the reparse\n  point itself.\n- A chat's sandbox denies writing skills-deleting/ and skills-deleted/.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-25T15:50:00+04:00",
+          "tree_id": "548875810eacc62aedf9c464ea1187a55294c580",
+          "url": "https://github.com/purlis/purlis/commit/2d89a14d7a21dda4a28de816da58ea3ac32ac8e7"
+        },
+        "date": 1792929075851,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.2872195,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.286, 0.287, 0.287, 0.304, 0.321 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.654730999999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.178, 16.584, 16.655, 16.693, 16.718 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.881466,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.226, 101.641, 101.881, 102.154, 102.214 ms"
           }
         ]
       }
