@@ -8,7 +8,8 @@ name: stories-baselines
 # runs every story in the pinned image `stories.yml` compares in, writing the pictures that are
 # new or differ; `commit` pushes them to the pull request's branch as one commit, with every
 # baseline whose story is gone deleted, so the pictures show in its diff, takes the label off and
-# starts `stories.yml` on that commit.
+# starts `stories.yml` on that commit. A baseline is obsolete once its story is gone, or once it
+# takes no picture (`screenshot: false`).
 #
 # **Up to date with its base, so every run tests one tree.** A pull request's `stories` run tests
 # the branch merged into its base; `draw`, and the run `commit` starts, test the branch. On a
@@ -67,6 +68,9 @@ jobs:
     concurrency:
       group: stories-baselines-${{ github.event.pull_request.number }}
       cancel-in-progress: false
+    outputs:
+      # How many baselines `draw` gathered: with none, it uploads no artifact.
+      gathered: ${{ steps.gathered.outputs.count }}
     container:
       # The same image as `stories.yml`'s, by the same tag and digest (`tools/story-image.mjs`).
       image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:7852dc5a7d72f5fe458a597d690f6c42fbc8e9e26ddfa95f8e6ef552558d9bbf
@@ -107,14 +111,22 @@ jobs:
         run: |
           node ../tools/story-failures.mjs \
             chromium "$RUNNER_TEMP/stories-chromium.json" webkit "$RUNNER_TEMP/stories-webkit.json"
-      # Only the baselines of the stories Storybook's index has: `commit` deletes every other one.
+      # Only the baselines of the stories Storybook's index has that take a picture (the run's
+      # reports say which take none): `commit` deletes every other one. When none is left there
+      # is no artifact, and `commit` takes nothing and deletes them all.
       - name: The baselines, gathered
+        id: gathered
         run: |
           npx storybook index --disable-telemetry --quiet -c .storybook \
             -o "$RUNNER_TEMP/stories-index.json"
           node ../tools/story-baselines.mjs gather "$RUNNER_TEMP/stories-index.json" \
-            "$RUNNER_TEMP/baselines"
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+            "$RUNNER_TEMP/baselines" \
+            "$RUNNER_TEMP/stories-chromium.json" "$RUNNER_TEMP/stories-webkit.json" \
+            > "$RUNNER_TEMP/gathered.txt"
+          cat "$RUNNER_TEMP/gathered.txt"
+          echo "count=$(grep -c . "$RUNNER_TEMP/gathered.txt" || true)" >> "$GITHUB_OUTPUT"
+      - if: steps.gathered.outputs.count != '0'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: story-baselines
           path: ${{ runner.temp }}/baselines/
@@ -166,12 +178,16 @@ jobs:
             echo "::error::the branch moved after the label was put on; put it on again"
             exit 1
           fi
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      - if: needs.draw.outputs.gathered != '0'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: story-baselines
           path: ${{ runner.temp }}/drawn
+      # With nothing drawn, every baseline is obsolete: an empty directory takes none.
       - name: The baselines, taken, and the obsolete ones deleted
-        run: node trusted/tools/story-baselines.mjs take "$RUNNER_TEMP/drawn" pr/app
+        run: |
+          mkdir -p "$RUNNER_TEMP/drawn"
+          node trusted/tools/story-baselines.mjs take "$RUNNER_TEMP/drawn" pr/app
       - name: The baselines, committed and pushed
         id: taken
         working-directory: pr
@@ -247,7 +263,7 @@ jobs:
                 echo
               fi
               if [ -n "$DELETED" ]; then
-                echo "These baselines were deleted, as no story that runs as a test draws them in a pictured cell:"
+                echo "These baselines were deleted, as no story that runs as a test draws them in a pictured cell, or it takes no picture:"
                 echo
                 if [ "$many" = 1 ]; then counted "$DELETED"; else listed "$DELETED"; fi
                 echo
