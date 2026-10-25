@@ -8,6 +8,22 @@
 
 import { waitFor } from "storybook/test";
 
+/** The global the screenshot gate puts its picture-taker on (`.storybook/screenshots.setup.ts`),
+ *  only where pictures are taken. */
+export const PICTURE_GLOBAL = "__PURLIS_STORY_PICTURE__";
+
+/**
+ * **The story's picture is taken now**, not after its `play` function: for a story whose `play`
+ * ends with what it pictures gone, such as a dialog it answers. Compared with the story's
+ * baseline as the screenshot gate compares it, once: the gate takes no picture after `play`.
+ * Where no picture is taken (a local run, a cell that is not pictured, `screenshot: false`), it
+ * does nothing.
+ */
+export async function pictureNow(): Promise<void> {
+  const take = (globalThis as Record<string, unknown>)[PICTURE_GLOBAL];
+  if (typeof take === "function") await (take as () => Promise<void>)();
+}
+
 /** How long the keyboard may take to land: an engine may move it a frame or more late. */
 const LANDS_WITHIN_MS = 3_000;
 
