@@ -295,3 +295,29 @@ fn a_row_escapes_its_last_unpadded_column_as_it_pads_the_others() {
     );
     assert_eq!(row(&[], "plain"), "plain");
 }
+
+/// SK-50 (#3173): text spliced into markup is escaped by the splice, so a conceal, a bidi
+/// override or a zero-width character in a name is shown as its mark and never obeyed.
+#[test]
+fn text_spliced_into_markup_is_shown_escaped() {
+    let line = Markup::new()
+        .text("name \x1b[8mhid\u{200b}den\u{202e}")
+        .own("  ")
+        .text("tab\there");
+    assert_eq!(
+        line.as_str(),
+        "name ⟦U+001B⟧[8mhid⟦U+200B⟧den⟦U+202E⟧  tab⟦U+0009⟧here"
+    );
+    assert_eq!(line.to_string(), line.as_str());
+}
+
+/// SK-50: purlis's own colour is markup, so a styled span keeps its SGR while the text inside
+/// it is escaped, and the span is closed so the style cannot bleed past it.
+#[test]
+fn purlis_s_own_colour_still_shows_around_escaped_text() {
+    let line = Markup::new()
+        .styled(Sgr::Green, Markup::new().text("ok\x1b[31m"))
+        .own(" done");
+    assert_eq!(line.as_str(), "\x1b[32mok⟦U+001B⟧[31m\x1b[0m done");
+    assert_eq!(strip_ansi(line.as_str()), "ok⟦U+001B⟧[31m done");
+}
