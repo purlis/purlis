@@ -153,9 +153,12 @@ enum Filter {
     All(Vec<Filter>),
     Any(Vec<Filter>),
     Not(Box<Filter>),
-    /// `remote ip "localhost:<port>"`, `"localhost:*"` or `"*:*"`.
+    /// `remote ip "localhost:<port>"`, `"localhost:*"` or `"*:*"`; or, held to one loopback
+    /// address, `"127.0.0.1:<port>"` or `"[::1]:<port>"` (a confined extension's proxy).
     Ip {
         local_only: bool,
+        /// The one loopback address it names, where it names one rather than `localhost`.
+        exact: Option<IpAddr>,
         port: Option<u16>,
     },
     /// `remote unix-socket`, with its `path-literal` where it names one.
@@ -308,6 +311,7 @@ impl Profile {
                         Filter::Ip {
                             local_only: true,
                             port: Some(port),
+                            ..
                         } => {
                             if !reach.ports.contains(port) {
                                 reach.ports.push(*port);
@@ -342,8 +346,19 @@ impl Filter {
             (Self::Literal(it), Op::File { path, .. }) => path == it,
             (Self::Regex(regex), Op::File { path, .. }) => regex.is_match(&path.to_string_lossy()),
             (Self::Vnode(kind), Op::File { kind: it, .. }) => kind == it,
-            (Self::Ip { local_only, port }, Op::Connect(Remote::Ip { ip, port: to })) => {
-                (!local_only || loopback(*ip)) && port.is_none_or(|port| port == *to)
+            (
+                Self::Ip {
+                    local_only,
+                    exact,
+                    port,
+                },
+                Op::Connect(Remote::Ip { ip, port: to }),
+            ) => {
+                let at = match exact {
+                    Some(exact) => same_address(*exact, *ip),
+                    None => !local_only || loopback(*ip),
+                };
+                at && port.is_none_or(|port| port == *to)
             }
             (Self::Unix(path), Op::Connect(Remote::Unix(to))) => match path {
                 None => true,
@@ -372,6 +387,15 @@ impl Filter {
             _ => PathBuf::from("/"),
         }
     }
+}
+
+/// Whether `ip` is `exact`, an IPv4 address also by its IPv4-mapped IPv6 form.
+fn same_address(exact: IpAddr, ip: IpAddr) -> bool {
+    let plain = |ip: IpAddr| match ip {
+        IpAddr::V6(v6) => v6.to_ipv4_mapped().map_or(ip, IpAddr::V4),
+        IpAddr::V4(_) => ip,
+    };
+    plain(exact) == plain(ip)
 }
 
 /// Whether `ip` is this machine's own loopback, as Seatbelt's `localhost` means it.
@@ -449,9 +473,11 @@ fn remote(rest: &[Expr]) -> Result<Filter, Unread> {
             let (host, port) = at
                 .rsplit_once(':')
                 .ok_or_else(|| Unread(format!("the address {at:?}")))?;
-            let local_only = match host {
-                "localhost" => true,
-                "*" => false,
+            let (local_only, exact) = match host {
+                "localhost" => (true, None),
+                "*" => (false, None),
+                "127.0.0.1" => (true, Some(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST))),
+                "[::1]" => (true, Some(IpAddr::V6(std::net::Ipv6Addr::LOCALHOST))),
                 _ => return Err(Unread(format!("the host {host:?}"))),
             };
             let port = match port {
@@ -461,7 +487,11 @@ fn remote(rest: &[Expr]) -> Result<Filter, Unread> {
                         .map_err(|_| Unread(format!("the port {port:?}")))?,
                 ),
             };
-            Ok(Filter::Ip { local_only, port })
+            Ok(Filter::Ip {
+                local_only,
+                exact,
+                port,
+            })
         }
         [Expr::Symbol(unix)] if unix == "unix-socket" => Ok(Filter::Unix(None)),
         [Expr::Symbol(unix), Expr::List(path)] if unix == "unix-socket" => match &path[..] {

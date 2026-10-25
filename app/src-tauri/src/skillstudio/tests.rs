@@ -421,3 +421,9 @@ fn the_window_spells_an_owner_and_a_switch_as_the_command_line_does() {
         );
     }
 }
+
+#[test]
+fn the_runs_panel_is_told_to_the_window_by_the_word_the_window_names_it_by() {
+    let told = serde_json::to_value(SkillPanelKey::Runs).unwrap();
+    assert_eq!(told["kind"], RUNS_PANEL);
+}

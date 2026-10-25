@@ -271,6 +271,17 @@ bound, as JSON: what the theme skill, the gallery and an editor read. The schema
 key. A theme that extends another starts from its parent's parts and layers its own over them,
 key by key. A property typed in its CSS spelling (`border-color`) is told the name it means.
 
+**The manifest's version is a release's.** Its `version` is the last version a release shipped,
+and it grows once per release that adds a family, a part, a variant, a state or a property, never
+once per change (ADR 0103, amended 2026-10-25). What has been added since the last release is
+listed with `since` one above `version`: a dev build can carry such additions, and a stable
+release gives them that version. The schema says the same: `manifest version <VERSION>, plus
+unreleased additions marked since <NEXT>`, where NEXT is VERSION + 1. The manifest never takes
+anything away, and what the last release shipped never changes: a test holds the manifest as of
+the last released version to that version's digest, taken over its contract (the families,
+parts, variants, states and properties, their bounds and `since`), so a reworded description is
+no change to it.
+
 **The key** is `<family>.<part>[.<variant>][.<state>].<property>`. The state at rest is implied: a
 key with no state is the part at rest, and in every state that does not set the property. A key
 with no variant reaches the part in every variant; one with a variant only that variant. The more
@@ -404,7 +415,7 @@ second line. A theme sets the surface's fill, words, edge colour and width, corn
 its size is its words', so none of its sizes is a theme's. Purlis draws it with corners of 8 and
 no edge: `"tooltip.root.corner-radius": 8`, `"tooltip.root.border-width": 0`.
 
-**The activity family** (manifest version 10, #2917; its words in 13, #3144): `activity`, a
+**The activity family** (manifest version 10, #2917; its words reworded in the next release's manifest version, #3144): `activity`, a
 view's icon on a side's bar: `bar` (an icon in a side's column, the left bar beside the project
 rail and the right one at the window's edge) and `tab` (tabs across a side panel's top, which no
 bar of the window draws since the left bar became a column); its `item`

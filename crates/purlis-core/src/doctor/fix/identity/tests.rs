@@ -96,12 +96,12 @@ fn a_joined_name_is_shown_as_typed_and_any_other_invisible_character_escaped() {
         "\u{0645}\u{06cc}\u{200c}\u{062e}\u{0648}\u{0627}\u{0647}\u{0645}",
         "\u{0915}\u{094d}\u{200d}\u{0937}",
     ] {
-        assert_eq!(shown_name(name), name);
+        assert_eq!(crate::shown::line(name), name);
     }
-    assert_eq!(shown_name("Ad\u{200d}a"), "Ad\\u200da");
-    assert_eq!(shown_name("a\u{202e}b"), "a\\u202eb");
+    assert_eq!(crate::shown::line("Ad\u{200d}a"), "Ad⟦U+200D⟧a");
+    assert_eq!(crate::shown::line("a\u{202e}b"), "a⟦U+202E⟧b");
     assert_eq!(
-        shown_name(&"\u{0915}".repeat(300)).chars().count(),
+        crate::shown::line(&"\u{0915}".repeat(300)).chars().count(),
         crate::shown::DISPLAY_LIMIT + 1
     );
 }

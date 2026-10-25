@@ -57,6 +57,10 @@ pub enum Lint {
     },
     /// A program it calls that this machine does not have, and where it calls it.
     Missing { tool: String, place: Place },
+    /// What another lint said, a line of its own words, and whose lint it is: an extension that
+    /// declares `skill-lint` (ADR 0101). Always a warning: a lint of a third party's never stops
+    /// a save.
+    Said { by: String, says: String },
 }
 
 /// Where a skill calls a program.
@@ -134,6 +138,7 @@ impl Finding {
                     "purlis has"
                 }
             ),
+            Lint::Said { by, says } => format!("{by}: {says}"),
             Lint::Missing { tool, place } => format!(
                 "{} calls {tool}, which this machine does not have",
                 match place {
@@ -159,9 +164,9 @@ pub struct SkillFiles<'a> {
     pub origin: crate::Origin,
 }
 
-/// **A lint of a skill's files**: what the live lint and the install review ask, of the
-/// built-in lints ([`BuiltInLints`]) and, once SK-14 lands, of each extension that declares
-/// `skill-lint`.
+/// **A lint of a skill's files** (the SkillLint capability, ADR 0101): what the live lint asks, of
+/// the built-in lints ([`BuiltInLints`]) and of each extension that declares `skill-lint`, which
+/// answers through this same interface.
 pub trait SkillLint {
     /// Everything it finds in `skill`, in the order a person reads it.
     fn findings(&self, skill: &SkillFiles<'_>) -> Vec<Finding>;
@@ -174,10 +179,11 @@ const FEWEST_DESCRIPTION: usize = 20;
 pub struct BuiltInLints<'a> {
     /// The namespace a skill names a plane skill by: `skills:<name>`.
     pub namespace: &'a str,
-    /// The names of the plane's skills a reference may name.
-    pub plane: &'a [String],
+    /// The names of the plane's skills a reference may name, beside the skill's own: a set, made
+    /// once for every skill a list lints.
+    pub plane: &'a std::collections::HashSet<String>,
     /// The names of the built-in skills.
-    pub built_in: &'a [String],
+    pub built_in: &'a std::collections::HashSet<String>,
     /// Whether this machine has the program named, on its `PATH` or at the path given.
     pub has: &'a (dyn Fn(&str) -> bool + 'a),
 }
@@ -208,7 +214,7 @@ impl SkillLint for BuiltInLints<'_> {
         }
         out.extend(short_description(skill.text));
         out.extend(keys(skill));
-        out.extend(references(skill.text, self));
+        out.extend(references(skill, self));
         out.extend(tools_missing(skill, self.has));
         out
     }
@@ -272,15 +278,16 @@ fn keys(skill: &SkillFiles<'_>) -> Vec<Finding> {
     out
 }
 
-/// Each `<namespace>:<name>` in `text` that names no skill there is, once each: the broken
-/// uses of the one reader of references ([`crate::uses::uses_in`]).
-fn references(text: &str, lints: &BuiltInLints<'_>) -> Vec<Finding> {
-    let plane: std::collections::HashSet<&str> = lints.plane.iter().map(String::as_str).collect();
-    let built_in: std::collections::HashSet<&str> =
-        lints.built_in.iter().map(String::as_str).collect();
-    crate::uses::uses_in(text, lints.namespace, &|one| plane.contains(one), &|one| {
-        built_in.contains(one)
-    })
+/// Each `<namespace>:<name>` in the skill's text that names no skill there is, once each: the
+/// broken uses of the one reader of references ([`crate::uses::uses_in`]). A skill naming itself
+/// names one there is, wherever it is from.
+fn references(skill: &SkillFiles<'_>, lints: &BuiltInLints<'_>) -> Vec<Finding> {
+    crate::uses::uses_in(
+        skill.text,
+        lints.namespace,
+        &|one| one == skill.name || lints.plane.contains(one),
+        &|one| lints.built_in.contains(one),
+    )
     .into_iter()
     .filter(|one| one.broken)
     .map(|one| {

@@ -19,7 +19,7 @@ fn declaring(json: &str) -> Result<Vec<Panel>, String> {
 fn rows(panel: &Panel) -> &[Row] {
     match &panel.blocks[0] {
         Block::List { rows, .. } => rows,
-        Block::Note { .. } | Block::Chart(_) | Block::Facts(_) => {
+        Block::Note { .. } | Block::Chart(_) | Block::Facts(_) | Block::Table(_) => {
             panic!("the panel's first block is not a list")
         }
     }

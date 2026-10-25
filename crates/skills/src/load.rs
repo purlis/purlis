@@ -207,6 +207,16 @@ impl SkillFolder {
         crate::handed::read_held(&self.0, crate::FILE.as_ref())
     }
 
+    /// Its `SKILL.md`, read as [`crate::read_skill_md_of`] reads one of a skill from `origin`.
+    pub fn skill_md_of(&self, origin: crate::Origin) -> Result<String, crate::Refusal> {
+        let hard_links = if origin == crate::Origin::Harness {
+            crate::held::HardLinks::Read
+        } else {
+            crate::held::HardLinks::Refused
+        };
+        crate::handed::read_held_as(&self.0, crate::FILE.as_ref(), hard_links)
+    }
+
     /// **Every folder and plain file under it but a `SKILL.md`**, by its path inside it, each
     /// folder before what it holds and in order of name: never through a link, which is not
     /// named either, to [`MOST_DEPTH`] and at most [`MOST_FILES`] files. Only the top `SKILL.md`

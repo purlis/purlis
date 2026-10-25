@@ -849,7 +849,7 @@ fn a_vault_s_name_on_a_notice_is_drawn_inertly() {
     assert_eq!(said("team"), "team");
     let turned = said("team\u{202e}dorp");
     assert!(!turned.contains('\u{202e}'), "{turned}");
-    assert!(turned.contains("\\u202e"), "{turned}");
+    assert!(turned.contains("⟦U+202E⟧"), "{turned}");
     assert!(!said("a\nb").contains('\n'));
 }
 

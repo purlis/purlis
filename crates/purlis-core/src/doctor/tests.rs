@@ -852,9 +852,12 @@ fn a_push_record_cannot_forge_a_row_of_the_table() {
     let r = one(&root, "plane root");
     assert_eq!(
         r.detail,
-        "a memory commit went to 'x\\x0a  ✓  forged landed', not main\\x0a  ✓  forged branch"
+        "a memory commit went to 'x⟦U+000A⟧  ✓  forged landed', not main⟦U+000A⟧  ✓  forged branch"
     );
-    assert!(r.hint.contains("Open it: u\\x0a  ✓  forged url "), "{r:?}");
+    assert!(
+        r.hint.contains("Open it: u⟦U+000A⟧  ✓  forged url "),
+        "{r:?}"
+    );
     let table = super::table(std::slice::from_ref(&r), false);
     assert!(!table.contains("\n  ✓  forged"), "{table}");
 
@@ -866,7 +869,7 @@ fn a_push_record_cannot_forge_a_row_of_the_table() {
     let r = one(&root, "plane root");
     assert!(!r.hint.contains('\n'), "{r:?}");
     assert!(
-        r.hint.contains("origin/main\\x0a  ✓  forged branch`"),
+        r.hint.contains("origin/main⟦U+000A⟧  ✓  forged branch`"),
         "{r:?}"
     );
 }
@@ -1246,7 +1249,7 @@ fn a_workspace_name_with_a_newline_in_it_cannot_forge_a_row() {
     assert!(!r.hint.contains('\n'), "{r:?}");
     assert!(
         r.hint
-            .starts_with("ws:x\\x0a  \u{2713}  forged (1 dangling"),
+            .starts_with("ws:x⟦U+000A⟧  \u{2713}  forged (1 dangling"),
         "{r:?}"
     );
 
@@ -1264,7 +1267,7 @@ fn a_workspace_name_with_a_newline_in_it_cannot_forge_a_row() {
         &["fetch", "-q"],
     );
     let r = one(&root, "workspace clones");
-    assert_eq!(r.detail, "x\\x0a  \u{2713}  forged/svc (1 behind)");
+    assert_eq!(r.detail, "x⟦U+000A⟧  \u{2713}  forged/svc (1 behind)");
 }
 
 #[cfg(unix)]
@@ -1616,7 +1619,7 @@ fn an_inventory_is_counted_when_built_and_its_absence_is_not_a_fault_on_a_plane_
 
 #[test]
 fn one_line_escapes_what_could_forge_a_line_and_keeps_every_glyph() {
-    assert_eq!(one_line("a\nb\u{200b}c é", 160), "a\\x0ab\\u200bc é");
+    assert_eq!(one_line("a\nb\u{200b}c é", 160), "a⟦U+000A⟧b⟦U+200B⟧c é");
     assert_eq!(one_line("abcdef", 3), "abc\u{2026}");
 }
 
@@ -2506,7 +2509,7 @@ fn a_plane_path_with_a_newline_in_it_is_quoted_on_every_row_that_names_it() {
     for name in ["session root", "session layer", "charter.toml"] {
         let r = row(&rows, name);
         assert!(!r.detail.contains("\n  \u{2713}  forged"), "{r:?}");
-        assert!(r.detail.contains("p\\x0a  \u{2713}  forged"), "{r:?}");
+        assert!(r.detail.contains("p⟦U+000A⟧  \u{2713}  forged"), "{r:?}");
     }
     let at_root = Doctor::at(&root, &root, false, true).run();
     let r = row(&at_root, "session root");
@@ -2520,14 +2523,14 @@ fn a_plane_whose_manifest_will_not_parse_names_it_on_one_line() {
     std::fs::write(root.join("charter.toml"), "schema = [\n").unwrap();
     let r = one(&root, "charter.toml");
     assert_eq!(r.status, Status::Fail);
-    assert!(r.detail.contains("p\\x0a  \u{2713}  forged"), "{r:?}");
+    assert!(r.detail.contains("p⟦U+000A⟧  \u{2713}  forged"), "{r:?}");
 }
 
 #[test]
 fn a_short_path_is_quoted_on_one_line() {
     assert_eq!(
         short_path(Path::new("/nowhere/a\nb\u{1b}[2K")),
-        "/nowhere/a\\x0ab\\x1b[2K"
+        "/nowhere/a⟦U+000A⟧b⟦U+001B⟧[2K"
     );
 }
 
@@ -2547,7 +2550,7 @@ fn a_git_identity_with_a_carriage_return_or_an_escape_is_quoted_on_one_line() {
     assert_eq!(r.status, Status::Ok, "{r:?}");
     assert_eq!(
         r.detail,
-        "Ann\\x0d  \u{2713}  forged\\x0asecond <a@example.invalid\\x1b[2K>"
+        "Ann⟦U+000D⟧  \u{2713}  forged⟦U+000A⟧second <a@example.invalid⟦U+001B⟧[2K>"
     );
 }
 

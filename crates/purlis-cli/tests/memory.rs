@@ -358,7 +358,7 @@ fn a_duplicate_todos_heading_is_quoted_back_escaped_and_never_raw() {
     assert_ne!(out.status.code(), Some(0), "{said}");
     assert!(said.contains("already on the list:"), "{said}");
     assert!(
-        said.contains("deliveries\\x1b[2K"),
+        said.contains("deliveries⟦U+001B⟧[2K"),
         "the heading was not escaped: {said:?}"
     );
     assert!(
