@@ -1,9 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import * as RadioGroup from "@radix-ui/react-radio-group";
-import { useArrowPick } from "./settings/components";
-import { Tooltip } from "./ui/tooltip/Tooltip";
+import { Segment, SegmentedControl } from "./ui/choice/Radio";
 
 /** One scope a {@link ScopeSwitch} offers. */
 export type ScopeOffer<S extends string> = {
@@ -21,9 +19,9 @@ export type ScopeOffer<S extends string> = {
  * The Chats view's This tab, Workspace and All, and the Inbox's projects, project and workspace
  * are this one piece, so the two read and move alike.
  *
- * A radio group drawn as one row of segments, as Settings' level switcher is (Radix's, with the
- * settings set's arrow repair, `useArrowPick`). A pick is drawn at once and kept, with no
- * button: it writes nothing a second pick does not undo. A segment's count is beside its words
+ * The segmented control (`ui/choice`, #2907) at the chrome's size, as Settings' level switcher
+ * is at the control's: the arrow keys move the pick along. A pick is drawn at once and kept, with
+ * no button: it writes nothing a second pick does not undo. A segment's count is beside its words
  * and in its name, never the only thing that tells two segments apart.
  */
 export function ScopeSwitch<S extends string>({
@@ -38,40 +36,28 @@ export function ScopeSwitch<S extends string>({
   scope: S;
   onPick: (to: S) => void;
 }) {
-  const { arrowing, listen } = useArrowPick();
   return (
-    <RadioGroup.Root
-      className="ui-levels ui-levels-small"
+    <SegmentedControl
+      size="sm"
+      className="scope-switch"
       aria-label={label}
-      orientation="horizontal"
       value={scope}
-      onValueChange={(to) => {
+      onChange={(to) => {
         const one = scopes.find((each) => each.scope === to);
         if (one !== undefined) onPick(one.scope);
       }}
-      {...listen}
     >
       {scopes.map((one) => (
-        <Tooltip key={one.scope} tip={one.name}>
-          <RadioGroup.Item
-            className="ui-level"
-            value={one.scope}
-            aria-label={one.name}
-            onFocus={() => {
-              if (arrowing.current && one.scope !== scope) onPick(one.scope);
-            }}
-          >
-            {one.count === undefined ? (
-              one.says
-            ) : (
-              <>
-                <span className="ui-level-says">{one.says}</span>
-                <span className="ui-level-count">{one.count}</span>
-              </>
-            )}
-          </RadioGroup.Item>
-        </Tooltip>
+        <Segment
+          key={one.scope}
+          value={one.scope}
+          aria-label={one.name}
+          tooltip={one.name}
+          count={one.count}
+        >
+          {one.says}
+        </Segment>
       ))}
-    </RadioGroup.Root>
+    </SegmentedControl>
   );
 }

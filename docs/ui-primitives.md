@@ -88,17 +88,19 @@ What keeps it from becoming the library this file forbids:
   `SettingRow` (label, control and reset on one line at the control height, help under them, and
   since SE-17 a refused write's reason and the last change's Undo; since SE-18 the value's
   origin, drawn quietly since DS-8: a badge only where the value is kept elsewhere than its
-  group's, a mark on a value set at this level, and "Move to…" at the end of the line), `Field` (`text`, `list` and `range`), `Choice` (`radio`,
+  group's, a mark on a value set at this level, and "Move to…" at the end of the line), `Field` (`text`, `list` and `range`), `Choice` (`radio`, since #2907 `cards`,
   `select`, `toggle`, since #1860 `switch`, since DS-3e `checks`: any of a few, each ticked on its own, and since #626
   `chips`: any of a few too, drawn small and side by side over the list they narrow, the Chats
   list's state chips) and `SettingActions` (a form's row of buttons, V89j). A seventh piece is
   an amendment to ADR 0037, not a commit.
-- **`chips` is one Tab stop.** The arrow keys move between the chips (Radix roving focus,
-  `roving.ts`) and Space ticks the one the keyboard is on: each chip is a native checkbox in its
-  chip's `<label>`, so a screen reader hears a checkbox named by the chip. A list's filter costs
-  the keyboard one stop however many chips it has. A chip says it is on by its edge and ground as
-  well as its tick, never by colour alone. The roving focus gives each chip its `tabIndex`, so
-  the WebKit fix the set's other boxes carry (#186) is not on a chip.
+- **`chips` is one Tab stop.** The arrow keys move between the chips (the checkbox family's
+  roving `CheckboxGroup`, #2907) and Space ticks the one the keyboard is on: each chip is a native
+  checkbox in its chip's `<label>`, so a screen reader hears a checkbox named by the chip. A list's
+  filter costs the keyboard one stop however many chips it has. A chip says it is on by its tick
+  and its ground, never by colour alone.
+- **`cards`** (#2907) is `radio` drawn as option cards: one of a few compared before picking,
+  each card as tall as the tallest, its mark and name on the first line and its line under them,
+  and no radio circle (Start a chat's harnesses, R24).
 - **A control with no row** (#626) is still the set's `Field` or `Choice`: a box in a table's
   cell, a pick inside a sentence, the chips over a list. Its caller hands it `RowIds` with no
   `labelledBy`, and with `label`, said as its `aria-label`, since no row's `<label>` names it;
@@ -127,9 +129,11 @@ What keeps it from becoming the library this file forbids:
   so that box is a native `<input type="password">` drawn with `ui-field`, in a `SettingRow`.
   The slot is how a row composes what the set does not draw, as `Browse…` beside a path is.
 - **Each piece is a thin layer over a primitive already in the window, and says which.**
-  The level switcher is a Radix radio group; the nav is buttons under Radix roving focus
-  (`roving.ts`, as the explorer's rows); `Choice` is a Radix radio group, the one select (Radix
-  Select, `primitives/Select.tsx`), a Radix switch or a Radix checkbox; `Field` is a native `<input>`, `<textarea>` or `<input type="range">`.
+  The level switcher is the segmented control; the nav is buttons under Radix roving focus
+  (`roving.ts`, as the explorer's rows); `Choice` is the radio group, the option cards, the one
+  select (Radix Select, `primitives/Select.tsx`), the switch, a checkbox, or a group of
+  checkboxes or chips, each from [the choice families](#the-choice-families); `Field` is the field
+  family's box, or the slider.
   The props are the primitive's own words — `value`, `onValueChange`, `checked`,
   `onCheckedChange` — so the call site still answers "which primitive is this?". The one word
   of the set's own is `Field`'s `onCommit` (SE-17): a typed value is written when the field is
@@ -513,9 +517,9 @@ own `min-width: max-content` beside the class.
 and the form it is sent from is the family's `Form`. No screen draws an `<input>` or a
 `<textarea>` of its own for one, and none wears the old `.ui-input`, `.ui-input-lead` or
 `.ui-list-field` classes: `eslint.config.js` refuses both (`purlis/field-family`, an error). A
-raw `<input>` left is another family's: a checkbox, a radio, a slider or a colour well
-(`purlis/choice-family`), or a combobox's (`purlis/select-family`), each a warning until its
-family moves.
+raw `<input>` left is another family's: a checkbox, a radio, a slider or a colour well is the
+[choice families'](#the-choice-families) (`purlis/choice-family`, an error), and a combobox's is
+the select family's (`purlis/select-family`, a warning until it moves).
 
 | Prop | Says |
 | --- | --- |
@@ -563,6 +567,55 @@ family moves.
   inline validation on blur, a refusal, the three sizes with their glass, an unavailable box, a
   textarea, a form sent by ⌘⏎, and a filter that keeps its caret while its list redraws, each
   walked by the keyboard and checked by axe in Chromium and WebKit.
+
+## The choice families
+
+**Every checkbox, radio, switch, segmented control, slider and option card is its family**
+(`app/src/ui/choice/`, #2907, ADR 0104), on React Aria's `Checkbox`, `RadioGroup` and `Radio`,
+`Switch` and `Slider`. No screen draws an `<input type="checkbox">`, `radio`, `range`, `color` or
+`file` of its own, writes `role="checkbox"`, `radio`, `radiogroup`, `switch` or `slider` by hand,
+imports Radix's checkbox, radio group, switch, slider or toggles, or wears the old `.ui-checkbox`,
+`.ui-radio`, `.ui-switch`, `.ui-segmented-*`, `.ui-levels` or `.ui-choice-*` classes:
+`eslint.config.js` refuses each (`purlis/choice-family`, an error).
+
+| Member | Is |
+| --- | --- |
+| `Checkbox` | a native box in its own label: a press of its words ticks it as a press of its box does, Space from the keyboard; `isIndeterminate` draws a bar. `variant="chip"` is one of a few small chips over the list they narrow, its tick in a slot it always keeps |
+| `CheckboxGroup` | a named group of boxes, each holding its own value (two may stand for one); `roving` makes the row one Tab stop with the arrows between its `RovingCheckbox`es (the Chats list's state chips, #1687) |
+| `RadioGroup`, `Radio` | one of a few, a column of options, each its mark, its words (and a `lead` before them: a persona's mark) and a `description` under them |
+| `SegmentedControl`, `Segment` | a few views of one thing side by side (a level of Settings, a side view's scope), `sm` (the chrome's height, never under 24) or `md` (the control's, as a button's); a segment's `count` is beside its words and in its name. The chosen segment stands on the window's ground with a 1 px edge under it, held to 3:1; its weight never changes |
+| `OptionCards`, `OptionCard` | one of a few compared before picking (Start a chat's harnesses, R24): cards of one height, each its `icon` and `title`, its `detail` under them, and **no radio circle**; the chosen card takes the accent's wash, its edge and its check. `variant="tile"` is a square tile that is only its icon, named by `aria-label` (a persona's mark and colour) |
+| `Switch` | a setting in force as it is turned (R63): a 34 × 20 pill at the person's text size whatever a theme's control height, its 14 px thumb 3 px in and sliding on the knob's token (`quick`, 150 ms in Purlis), on in the accent's fill with the thumb in the window's colour; never sliding under reduced motion |
+| `Slider` | a number along a range: the arrows, Page Up and Down, Home and End move it; its value is drawn beside it as `shown` says and heard as `spoken` says, once, as it moves; it is named by its row's words (`label`, React Aria's `Label`); its id is on its root and hands the focus to the thumb, so its row's name and Reset find it |
+| `ColorWell` | the platform's colour well and picker, handing back the colour it settles on once |
+
+- **All of one group is one Tab stop**, the arrow keys moving the pick along (the WAI-ARIA radio
+  pattern, React Aria's own): a radio group, a segmented control and option cards alike. Each
+  option is a native radio, named by its words; its description or detail describes it and is
+  not part of its name.
+- **A choice never moves anything** (#2800, R153). Ticked, picked, on, under the pointer, focused
+  or unavailable, a choice changes a colour, a ground, an edge's colour or a ring, never a size;
+  a tick, a dot and a card's check keep their room whether they show or not.
+- **Chosen is never colour alone** (WCAG 1.4.1): a tick, a dot, the thumb's place, a chip's
+  tick, a segment's edge under it, a card's edge and check.
+- **Drawn by its parts** (ADR 0103): each root carries `data-scope` (`checkbox`, `radio`,
+  `switch`, `segmented-control` and `segment`, `slider`, `option-card`) and `data-part="root"`,
+  with its marks and words as parts inside it (`box`, `mark`, `track`, `thumb`, `fill`, `label`,
+  `description`, `count`, `output`, `icon`, `title`, `detail`, `check`).
+  `app/src/ui/choice/choice.css` draws the family default from them and React Aria's state
+  attributes (`data-selected`, `data-hovered`, `data-focus-visible`, `data-disabled`). The ring
+  is 2px in `focus.ring` at 2px outside the mark, from the keyboard only (R162).
+- **Its hint is the shared tooltip** (`tooltip`, #2908): why an option is out of reach, or what
+  it does that its words do not say.
+- **The settings set draws from them**: `Choice` is the radio group (`radio`), the option cards
+  (`cards`), the switch (`switch`), a checkbox (`toggle`), a group of boxes (`checks`) or chips
+  (`chips`); `Field kind="range"` is the slider; the level switcher and a side view's
+  `ScopeSwitch` are the segmented control.
+- **Stories hold it** (`Choice.stories.tsx`, `docs/component-stories.md`): boxes ticked and not,
+  a bar, unavailable; chips over a list; a radio group with an unavailable option; switches on,
+  off and unavailable; the segmented control at both sizes; a slider; option cards and tiles,
+  each walked by the keyboard and checked by axe in Chromium and WebKit, with a tick, a turn and
+  a pick held to move nothing.
 
 ## The window's own families: panels, sections, empty states and status items
 
@@ -883,10 +936,6 @@ the collections above and with the settings set. A box a person types in is not 
 | Control           | Class and parts                                                                                                         | Variants                                                                                | On                                                                                                              |
 | ----------------- | ----------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | Select            | `.ui-select`; its list is a `.ui-menu` of `.ui-menu-item`s                                                                       |                                                                                         | Radix Select's `Trigger` (`@radix-ui/react-select`), through `primitives/Select.tsx`; no native `<select>` remains |
-| Checkbox          | `.ui-checkbox`, its `Indicator` inside                                                                                     |                                                                                         | Radix Checkbox's `Root`                                                                                         |
-| Radio             | `.ui-radio` with `.ui-radio-mark`                                                                                             |                                                                                         | Radix RadioGroup's `Item` and `Indicator`                                                                       |
-| Switch            | `.ui-switch` with `.ui-switch-thumb`                                                                                          |                                                                                         | Radix Switch's `Root` and `Thumb` (`@radix-ui/react-switch`)                                                    |
-| Segmented control | `.ui-segmented` of `.ui-segmented-item`s                                                                                      | `.ui-segmented-sm` at the chrome height                                                    | Radix RadioGroup's `Root` and `Item`s                                                                           |
 | A select's list   | `.ui-menu` of `.ui-menu-item`s, its tick `.ui-menu-mark`                                                                              |                                                                                         | Radix Select's `Content` and `Item`s, through `primitives/Select.tsx`, until the select family moves (#2906). Every menu is the menu family ([The menu and popover families](#the-menu-and-popover-families)) |
 
 **A button is the button family**, not a class: [The button family](#the-button-family). An
@@ -896,22 +945,17 @@ now, with the same weight. It grants nothing, so it is not `variant="grants"`.
 
 What every class holds to:
 
-- **One height.** A select and a segmented control are `--size-control` tall (28px at
-  the default text size); a small segmented control is `--size-chrome` (21px), for strips and
-  pane headers. A button's, a field's and a menu's row's sizes are their families'.
-  A checkbox's and a radio's mark, and a switch's track, are shares of the control height, so
-  they scale with it.
+- **One height.** A select is `--size-control` tall (28px at the default text size). A
+  button's, a field's, a choice's and a menu's row's sizes are their families'.
 - **One focus ring.** A control's ring is `--focus-ring-width` in the theme's `focus.ring`,
-  **outside** it at `--focus-ring-offset`. A segment's is **inside** it (`--focus-ring-inset`),
-  because its group clips what is outside. An option of a select's list draws none: the option
+  **outside** it at `--focus-ring-offset`. An option of a select's list draws none: the option
   the keyboard is on is the highlighted one.
 - **A toggle button is `ToggleButton`** (DS-12): pressed, it says `aria-pressed` and stands on
   `accent.surface` behind an `accent.base` edge, as a chosen segment does, and stays so under the
   pointer (*Changed only*, *Show ignored files*, Search's switches, a file's *Source*).
-- **The keyboard is Radix's.** Nothing in a class changes behaviour: Tab reaches each control,
-  Enter and Space press a button, Space ticks a checkbox and turns a switch, the arrows move along
-  a radio group or a segmented control and Space picks, Enter or an arrow opens a select, the
-  arrows move in its list, an option that cannot be chosen is skipped, and Enter picks.
+- **The keyboard is Radix's.** Nothing in a class changes behaviour: Tab reaches the select,
+  Enter or an arrow opens it, the arrows move in its list, an option that cannot be chosen is
+  skipped, and Enter picks.
 - **Every colour is one token per declaration**, so `contrast.test.ts` reads each pair a class
   draws. No colour hides behind an alias of the class's own.
 - **The classes are in the `components` layer, above `App.css`** (`styles.css`). A view rule

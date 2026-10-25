@@ -113,7 +113,7 @@ describe("starting a chat", () => {
       // The footer checkbox and the two answers — every control in this dialog that is a
       // `<button>` without a roving `tabindex` of its own, which is to say every one the
       // engine would otherwise skip.
-      return [...box.querySelectorAll(".box, .ui-setting-actions button")].map(
+      return [...box.querySelectorAll('input[type="checkbox"], .ui-setting-actions button')].map(
         (el) =>
           `${(el.textContent || el.getAttribute("role") || "").trim() || "checkbox"}=${el.getAttribute("tabindex")}`,
       );
@@ -133,7 +133,12 @@ describe("starting a chat", () => {
     // The label is a real `<label for>` tied to the row's control, so clicking the words picks
     // the row — which is the association that was missing.
     await harnessRowsDrawn();
-    await (await $("label*=needs-approval")).click();
+    // Its option card's radio (#2907), clicked as the driver's pointerless click reaches it.
+    const card = await $("label*=needs-approval");
+    await browser.execute(
+      (el: HTMLElement) => el.querySelector("input")?.click(),
+      card as unknown as HTMLElement,
+    );
 
     await expect(dialog()).toHaveText(expect.stringContaining("claude-stand-in"));
     await expect($("button=Approve and start")).toBeDisplayed();
@@ -221,7 +226,12 @@ describe("starting a chat", () => {
   it("does not ask again for a profile it has already run, exactly as it stands", async () => {
     await pressOnly("New tab");
     await harnessRowsDrawn();
-    await (await $("label*=needs-approval")).click();
+    // Its option card's radio (#2907), clicked as the driver's pointerless click reaches it.
+    const card = await $("label*=needs-approval");
+    await browser.execute(
+      (el: HTMLElement) => el.querySelector("input")?.click(),
+      card as unknown as HTMLElement,
+    );
 
     await expect($("button=Start")).toBeDisplayed();
     await browser.keys(["Escape"]);

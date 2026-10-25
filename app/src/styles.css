@@ -111,6 +111,7 @@
 @import "./primitives/controls.css" layer(components);
 @import "./ui/button/button.css" layer(components);
 @import "./ui/field/field.css" layer(components);
+@import "./ui/choice/choice.css" layer(components);
 @import "./ui/panel/panel.css" layer(components);
 @import "./ui/empty-state/empty-state.css" layer(components);
 @import "./ui/status/status.css" layer(components);
