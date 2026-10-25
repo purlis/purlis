@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792934920035,
+  "lastUpdate": 1792938355886,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -7180,6 +7180,42 @@ window.BENCHMARK_DATA = {
             "value": 289,
             "unit": "MB",
             "extra": "median of 6 samples: 361.7, 305.2, 304, 273.6, 274.1, 191.2 MB; window 171 MB, session host 117.6 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "27d2ebff228cc03edeb9d6ef1c97043090f5c4b5",
+          "message": "SK-44: one limit and one no-follow reader for the skill lint (#3206)\n\n* SK-44: one limit and one no-follow reader for the skill lint (#3133)\n\n- The lint reads a skill's other files at purlis_skills::MOST_BYTES; MOST_LINTED is gone.\n- A repo or person's skill's SKILL.md is read by read_skill_md: the same limit, no link, no\n  hard link.\n- harness_plugin::Folder::names reads at most MOST_NAMES; past it a folder is named, unread.\n- The plane's and built-in names are read once per studio list, not once per skill linted.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-44 review: an unread folder stays out of the chat's set; personal skills never vanish\n\n- OutsideSkill.unread (Link, Refused, Crowded): never linted or badged. A Crowded repo\n  folder takes no name and, where a repo copy wins, leaves out every plane skill\n  (Reason::RepoUnread).\n- The person's own SKILL.md: a hard link is read, MOST_BYTES and NOFOLLOW kept. One not read\n  is listed with why, in a clone and in the person's own folders.\n- Folder::names lists whole or not at all: an entry that fails to read is NotListed.\n- Known keeps HashSets; references() checks the skill's own name on its own.\n- Counts go through counts::counted.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-44 re-review: RepoUnread names its repo; personal hard links read for badges and lint\n\n- Reason::RepoUnread { repo } without a \"left out: \" prefix of its own.\n- purlis_skills::read_skill_md_of(root, path, origin): a harness skill's SKILL.md that is a\n  hard link is read, every other one's refused. The listing, badges and lint all use it, and\n  harness_plugin's read_at_most is gone.\n- Tests: a person's hard-linked skill is badged and not refused; the CLI lists a crowded repo\n  folder as one row.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-25T17:03:32+04:00",
+          "tree_id": "35ebefa0d764cb8201b7798f00e683a3df429064",
+          "url": "https://github.com/purlis/purlis/commit/27d2ebff228cc03edeb9d6ef1c97043090f5c4b5"
+        },
+        "date": 1792938353632,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 1429,
+            "unit": "MB",
+            "extra": "median of 3 samples: 984, 1429, 1429 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 333.5,
+            "unit": "MB",
+            "extra": "median of 6 samples: 301.4, 345.1, 347, 332.8, 334.2, 215.4 MB; window 208.6 MB, session host 126.3 MB"
           }
         ]
       }
