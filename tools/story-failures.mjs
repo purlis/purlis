@@ -103,21 +103,26 @@ export function whyOf(error) {
  * **Where a story failed**: the first source-mapped frame Vitest gave with its error that is in a
  * story file, as the `file` (relative to the repository at `root`) and `line` of an annotation,
  * so it shows on the pull request's diff at the failing step. `undefined` when no frame is in a
- * story file inside `root`, such as axe's or the screenshot gate's.
+ * story file inside `root`, such as axe's or the screenshot gate's. A frame in `own`, the failed
+ * story's file as its report names it (relative to the app), comes before any other story file.
  */
-export function placeOf(error, root) {
-  for (const frame of error.frames ?? []) {
+export function placeOf(error, root, own) {
+  const places = (error.frames ?? []).flatMap((frame) => {
     const path = String(frame.file ?? "")
       .replace(/^[a-z]+:\/\/[^/]*/i, "")
       .replace(/^\/@fs(?=\/)/, "")
       .replace(/[?#].*$/, "");
-    if (!/\.stories\.tsx$/.test(path) || !isAbsolute(path)) continue;
+    if (!/\.stories\.tsx$/.test(path) || !isAbsolute(path)) return [];
     const file = relative(root, path).split("\\").join("/");
     const line = Number(frame.line);
-    if (file.startsWith("../") || isAbsolute(file) || !(line >= 1)) continue;
-    return { file, line: Math.trunc(line) };
-  }
-  return undefined;
+    if (file.startsWith("../") || isAbsolute(file) || !(line >= 1)) return [];
+    return [{ file, line: Math.trunc(line) }];
+  });
+  // The failed story's own file first, when the report names it; then any story file.
+  const mine = own
+    ? places.find(({ file }) => `/${file}`.endsWith(`/${own}`))
+    : undefined;
+  return mine ?? places[0];
 }
 
 /** One annotation: where it is, if anywhere, its title and its text, each escaped. */
@@ -142,7 +147,7 @@ export function annotations(report, browser, root) {
     return error(
       `${story} in ${browser}${cell ? `, ${cell}` : ""}`,
       `${file}: ${gateOf(first)}: ${whyOf(first)}${broke}`,
-      root === undefined ? undefined : placeOf(first, root),
+      root === undefined ? undefined : placeOf(first, root, file),
     );
   });
   const outside = report.errors.map((one) =>

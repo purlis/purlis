@@ -487,3 +487,22 @@ test("the reporter keeps the frames Vitest mapped back to their sources", () => 
   const report = JSON.parse(readFileSync(to, "utf8"));
   assert.deepEqual(report.failures[0].errors[0].frames, [MAPPED[2]]);
 });
+
+test("the failed story's own file is placed before another story file's frame", () => {
+  const frames = [
+    { file: `${ROOT}/app/src/Other.stories.tsx`, line: 3, column: 1 },
+    { file: `${ROOT}/app/src/Probe.stories.tsx`, line: 47, column: 11 },
+  ];
+  assert.deepEqual(placeOf({ frames }, ROOT, "src/Probe.stories.tsx"), {
+    file: "app/src/Probe.stories.tsx",
+    line: 47,
+  });
+  assert.deepEqual(placeOf({ frames }, ROOT, "src/Gone.stories.tsx"), {
+    file: "app/src/Other.stories.tsx",
+    line: 3,
+  });
+  assert.deepEqual(placeOf({ frames }, ROOT), {
+    file: "app/src/Other.stories.tsx",
+    line: 3,
+  });
+});
