@@ -96,6 +96,22 @@ pub(crate) struct Typing {
     made: Option<(String, u64)>,
 }
 
+/// TEMPORARY (#2967 measurement): the steps of each key and their times.
+static TIMES: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+/// TEMPORARY (#2967 measurement).
+fn mark(step: &str, since: Instant) {
+    lock(&TIMES).push(format!("{step} {}", since.elapsed().as_micros()));
+}
+
+impl Browser {
+    /// TEMPORARY (#2967 measurement): the steps of the keys since last asked.
+    #[doc(hidden)]
+    pub fn key_times() -> Vec<String> {
+        std::mem::take(&mut *lock(&TIMES))
+    }
+}
+
 /// How long the engine has to make a page's tree ahead of the person's keys (#2967).
 const MADE_WITHIN: Duration = Duration::from_secs(30);
 
@@ -349,6 +365,7 @@ impl Browser {
         }
         // What the key reads of the page is read by then, or the key is held back (#3043).
         let by = Instant::now() + self.inner.limits.key_reads_within;
+        let t0 = Instant::now();
         let target = self.target(None)?;
         let (session, moved_on) = {
             let state = lock(&self.inner.state);
@@ -392,6 +409,7 @@ impl Browser {
                 if *down && !edits && !MODIFIERS.contains(&key.as_str()) {
                     lock(&self.typing).reading = None;
                 }
+                mark("start", t0);
                 let field = if edits {
                     // The field the last key went to, still focused, is blanked already: only
                     // the document is asked what has the focus (#2295).
@@ -439,8 +457,10 @@ impl Browser {
                     .filter(|_| text.is_none() && key != "Backspace" && key != "Delete")
                     .map(|(field, _)| self.field_holds(field))
                     .transpose()?;
+                mark("blanked", t0);
                 let event = key_event(*down, key, code, *key_code, *modifiers, text.as_deref());
                 self.person_sends("Input.dispatchKeyEvent", event, &session)?;
+                mark("sent", t0);
                 if *down {
                     lock(&self.typing).typed(&target, key, text.as_deref());
                 }
@@ -461,6 +481,7 @@ impl Browser {
                         .field_holds(&field)
                         .or_else(|_| self.field_holds(&field))
                         .map_err(|_| Refusal::FieldUnreadAfterKey)?;
+                    mark("read after", t0);
                     let mut held = Kept::default();
                     if let Some(before) = before {
                         // What the key put in is kept as it was put in, like a run, and so is
@@ -479,6 +500,7 @@ impl Browser {
                     held.field(&field.1, &[after]);
                     lock(&self.inner.state).keep_out_everywhere(&held);
                 }
+                mark("done", t0);
                 Ok(())
             }
             PersonInput::Mouse {
@@ -844,7 +866,9 @@ impl Browser {
             let frame = page.frames.get(target)?;
             (page.session.clone()?, frame.name.clone(), frame.url.clone())
         };
+        let t0 = Instant::now();
         let backend = self.focused_in(&session, target)?;
+        mark("  focused_in", t0);
         let around = self
             .devtools()
             .call_within(
@@ -854,6 +878,7 @@ impl Browser {
                 by.saturating_duration_since(Instant::now()),
             )
             .ok()?;
+        mark("  partial", t0);
         let nodes = around.get("nodes")?.clone();
         let own = nodes
             .as_array()?
@@ -869,6 +894,7 @@ impl Browser {
         if !focused || !self.is_a_field(&session, backend, role) {
             return None;
         }
+        mark("  is_a_field", t0);
         Some(vec![FrameAx {
             id: target.to_owned(),
             name,

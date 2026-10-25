@@ -174,8 +174,10 @@ fn measure_the_first_key_by_its_gap_after_the_take_over() {
         browser.take_over();
         std::thread::sleep(Duration::from_secs(gap));
         let aim = browser.aim().expect("a page is shown");
+        let _ = purlis_browser_engine::drive::Browser::key_times();
         let started = Instant::now();
         let first = browser.person_input(&key(&aim, "q", 81, true));
+        let steps = purlis_browser_engine::drive::Browser::key_times().join(", ");
         let one = started.elapsed();
         let _ = browser.person_input(&key(&aim, "q", 81, false));
         let started = Instant::now();
@@ -183,7 +185,7 @@ fn measure_the_first_key_by_its_gap_after_the_take_over() {
         let two = started.elapsed();
         let _ = browser.person_input(&key(&aim, "r", 82, false));
         said.push(format!(
-            "gap {gap} s: first {} ms ({first:?}), second {} ms ({second:?})",
+            "gap {gap} s: first {} ms ({first:?}) [{steps}], second {} ms ({second:?})",
             one.as_millis(),
             two.as_millis()
         ));
