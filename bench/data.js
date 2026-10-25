@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792933511371,
+  "lastUpdate": 1792935381703,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -24486,6 +24486,48 @@ window.BENCHMARK_DATA = {
             "value": 104.483098,
             "unit": "ms",
             "extra": "median of 5 runs: 103.423, 103.819, 104.483, 104.768, 105.794 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "10a27e1ef57a55c60265ff2128f6fc5eaae5bfa5",
+          "message": "SK-49: one rule for invisible characters, generated, with one mark (#3200)\n\n* Move the generated Unicode tables into crates/unicode (move only)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* purlis-unicode: one generated rule for invisible characters, with one mark\n\nThe INVISIBLE table now adds Default_Ignorable_Code_Point from the UCD of the\nversion CPython is of, and a BIDI_CONTROL table says what kind a character is.\nhidden/marked keep D-1301's joiners and an emoji's presentation selector as text.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Review: ask the one generated rule, drop the hand list\n\nInvisible::of only names the kind now; purlis_unicode decides whether a\ncharacter is hidden, with D-1301's joiners kept as text.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Core: one rule and one mark for invisible characters\n\nshown::invisible, the hook's drawn_otherwise and the repo instructions' list\ngive way to purlis_unicode. one_line, the tables, a brief's inert text and a\nskill version's diff all write ⟦U+XXXX⟧. D-1301's joiners read as text\neverywhere, so SK-47's pinned family-emoji marks are reversed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* App: a task's name and the asks' tests take the one mark\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Tests take the one mark; a filler beside a name is refused\n\nPins of Python's \\xNN/\\uXXXX in one_line's callers now read ⟦U+XXXX⟧. A name\nwith nothing visible says so before it says it hides a character. A brief\nmarks its own ⟦ so a chat cannot spell a mark.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Recorded: bless the two doctor rows that quote a hidden character\n\nTaken from CI's recorded-behaviour-blessed artifact (run 40187005844) for the\ntwo named rows only, checked with tools/recorded-bless-check.mjs.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Doctor tests: the second pins of a forged row take the one mark\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Review fixes: the last bidi lists, a truthful kind, honest copy\n\nmemstore::breaks_a_line and asknotify's direction marks ask the generated\nBidi_Control table, so U+200E, U+200F and U+061C count. The review names a filler\nor a wide space Blank and an Arabic number sign Format, from a generated\nDefault_Ignorable table. The repo-instructions caution no longer promises the\npreview draws every character, and the Brief panel says a brief's own ⟦ is marked.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-25T17:34:49+04:00",
+          "tree_id": "baa8a558305b11e9718b9cc56968f202f36c7522",
+          "url": "https://github.com/purlis/purlis/commit/10a27e1ef57a55c60265ff2128f6fc5eaae5bfa5"
+        },
+        "date": 1792935378091,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5100135,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.495, 0.497, 0.510, 0.522, 0.530 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6764005,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.081, 16.486, 16.676, 17.242, 17.777 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.349361,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.569, 102.843, 103.349, 104.465, 105.908 ms"
           }
         ]
       }
