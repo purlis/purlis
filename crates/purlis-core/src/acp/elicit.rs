@@ -475,21 +475,26 @@ fn format_word(format: &StringFormat) -> String {
 }
 
 /// `text` as plain text: without any character a window draws as nothing or draws elsewhere
-/// (a control, a format character, a bidirectional override), its line breaks kept only where
+/// (a control, a format character, a bidirectional override), by purlis's one rule
+/// ([`purlis_unicode::unhidden`], D-1301), which keeps a joiner doing its job, as the ZWNJ of a
+/// Persian word or the ZWJ of a family emoji; its line breaks kept only where
 /// `lines` (and otherwise read as spaces), trimmed, and cut to `most` bytes ending in `…`. The
 /// Unicode line and paragraph separators are line breaks too, so neither starts a line in a
 /// one-line label.
 pub fn plain(text: &str, most: usize, lines: bool) -> String {
-    let shown: String = text
+    let broken: String = text
         .chars()
-        .filter_map(|c| match c {
-            '\n' | '\u{2028}' | '\u{2029}' if lines => Some('\n'),
-            '\n' | '\t' | '\u{2028}' | '\u{2029}' => Some(' '),
-            c if purlis_unicode::invisible(c) => None,
-            c => Some(c),
+        .map(|c| match c {
+            '\n' | '\u{2028}' | '\u{2029}' if lines => '\n',
+            '\n' | '\t' | '\u{2028}' | '\u{2029}' => ' ',
+            c => c,
         })
         .collect();
-    super::cut(shown.trim().to_owned(), most)
+    let shown = purlis_unicode::unhidden(&broken, purlis_unicode::Breaks::Kept);
+    // A cut can end the text on a joiner whose neighbour it took away, as a ZWJ left before
+    // the `…`: read again, it is hidden there and dropped.
+    let cut = super::cut(shown.trim().to_owned(), most);
+    purlis_unicode::unhidden(&cut, purlis_unicode::Breaks::Kept)
 }
 
 #[cfg(test)]
