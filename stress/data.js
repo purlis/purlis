@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792917734663,
+  "lastUpdate": 1792917751293,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -14362,6 +14362,40 @@ window.BENCHMARK_DATA = {
             "value": 803.5,
             "unit": "MB",
             "extra": "median of 6 samples: 660, 789.4, 798.6, 808.3, 808.6, 1252.2 MB; window 430.6 MB, session host 372.8 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide",
+            "email": "aaron.yor@gmail.com"
+          },
+          "committer": {
+            "name": "GitHub",
+            "username": "web-flow",
+            "email": "noreply@github.com"
+          },
+          "id": "881e498655e48f5406477804c8ecd85ed05d8c48",
+          "message": "Pane warnings: a band inside the pane, a header row, the terminal pinned (#3142) (#3152)\n\n* Pane warnings: a band inside the pane, a header row, the terminal pinned (#3142)\n\nThe operator's variant A of 2026-10-24. A chat's pane is three rows: the band of\nits warnings (washed cards, words above their ways out, two at most and \"+N more\"\non a row of its own), a slim header with the chips at its start and the pane's\nactions at its end, then the terminal, pinned to its bottom. Nothing sits between\nthe chosen tab and its pane, and nothing is drawn over the terminal.\n\n- PaneHead and PaneActions (LayoutPanes.tsx): the header row, and the split /\n  stack / close cluster as one component a view's pane can reuse (#3147).\n- NoticePaneRow: Esc on a warning with a Dismiss puts it away and the keyboard\n  goes on to the next warning or the terminal; \"+N more\" says Show fewer open.\n- paneFrame.css places the band, the header and the terminal, keyed on today's\n  classes and the notice family's parts (#2912) alike.\n- Stories in every theme cell, unit tests, and a scenario spec for a pane with\n  a warning, a split pane and a narrow pane.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Pane warnings: the stories beside the tabs', guards' lists (#3142)\n\nThe stories draw the window's shell, so they live with the tab family's, where\nthe component layer draws native elements. The pane actions' buttons keep the\nwindow's own size, and the warning marks' rules are listed by the grounds guard.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Pane warnings: the review's fixes (#3142)\n\n- The press-settle guard reads where a Notice's line is drawn against its\n  own root, scrolling aside, not its offsetTop: a card positioned for its\n  mark had pinned offsetTop, so a move went unseen. A story measures it in a\n  real engine (ConsentMoved).\n- After a warning is put away, a consent next is landed on by its line, never\n  on its Allow.\n- A card never shrinks in the band; the stack scrolls whole cards.\n- \"+N more\" draws both its labels in one cell, so it keeps one width; the band\n  has room at its foot for a whole target; it is a region, \"Warnings for this\n  pane\".\n- Plain answers in the band lose their edge (a grant keeps its); a warning's\n  detail line is quiet.\n- --pane-controls is gone: the header's row gives the line its room.\n- Stories: the real PaneActions, an Actions story, Tabs' Split on the header.\n- e2e: measured against the terminal's own box once it is fitted, cards\n  against the stack's inner width.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Pane warnings: the Narrow story measures its ways out before it scrolls the band (#3142)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* Pane warnings: what a way out opened scrolls in its own box, a third of the pane at most (#3142)\n\nA warning never shrinks in the band, so a long brief under its line is capped by\nthe pane's own height (a size container) and scrolls there: the warning's line\nand ways out stay whole and the card never runs past the pane.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Pane warnings: the scenario reads what +N more says, its shown label (#3142)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Pane warnings: a card is never taller than its pane; what it opened gives way inside it (#3142)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Pane warnings: the press-settle guard holds any answer that grants (#3142)\n\nThe guard took the Notices it covers from a list of causes. Any way out drawn\nas the button family's grants variant (every answer with `allows`) now waits\nfor its Notice to settle as well, whatever the cause. The ConsentMoved story\nmoves a vault consent and a sandbox consent, and a unit test holds the rule.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* Pane warnings: the project-expects scenario reads before it allows (#3142)\n\nIts Allow is the grants variant, so it waits for the Notice to settle as every\nanswer that grants does now.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-24T23:55:01Z",
+          "url": "https://github.com/purlis/purlis/commit/881e498655e48f5406477804c8ecd85ed05d8c48"
+        },
+        "date": 1792917749387,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1680.8,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1510.9, 1680.8, 1747.5 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 813.8,
+            "unit": "MB",
+            "extra": "median of 6 samples: 675.5, 792.8, 803.8, 823.8, 824.9, 1287.3 MB; window 421.8 MB, session host 392 MB"
           }
         ]
       }
