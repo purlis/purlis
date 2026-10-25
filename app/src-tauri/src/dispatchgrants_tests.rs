@@ -218,7 +218,7 @@ fn the_notice_names_the_task_and_the_profile_its_chat_would_start_on() {
         world.root(),
         &raised.expect("raised"),
     );
-    assert_eq!(shown.task.as_deref(), Some("fix\\u202ethe\\ndeploy"));
+    assert_eq!(shown.task.as_deref(), Some("fix⟦U+202E⟧the⟦U+000A⟧deploy"));
     assert!(!shown.task_cut);
     assert_eq!(shown.profile.as_deref(), Some("claude-work"));
 

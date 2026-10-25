@@ -18,7 +18,7 @@
 
 use serde_json::Value;
 
-use super::super::hooked::{drawn_otherwise, stacks_marks};
+use super::super::hooked::stacks_marks;
 use super::super::model::{Action, Ask, Choice, ChoiceKind, ChoiceScope, Summary};
 
 /// The tool's name on Claude Code's hooks.
@@ -81,7 +81,7 @@ fn labels(question: &Value) -> Option<Vec<&str>> {
 fn whole(label: &str) -> bool {
     !label.is_empty()
         && Summary::of(label).as_str() == label
-        && !label.chars().any(drawn_otherwise)
+        && !purlis_unicode::hides(label, purlis_unicode::Breaks::Marked)
         && !stacks_marks(label)
 }
 

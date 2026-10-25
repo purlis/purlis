@@ -61,6 +61,9 @@ purlis-linux-sandbox.workspace = true
 # What a chat's skill set is, and why (SK-1, #2764): the one crate that works skills out. A
 # crate of this workspace, with no dependencies of its own.
 purlis-skills.workspace = true
+# purlis's one rule for a character a reader does not see, its one mark, and every generated
+# Unicode table the core asks (SK-49, #3172). A crate of this workspace, with no dependencies.
+purlis-unicode.workspace = true
 # What a chat's browser tools ask (#2013): the session protocol's browser acts, one vocabulary
 # from the tool server through the window to the session host. A crate of this workspace.
 purlis-session-protocol.workspace = true

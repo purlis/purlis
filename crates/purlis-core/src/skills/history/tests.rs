@@ -221,7 +221,7 @@ fn a_versions_diff_shows_what_it_changed_and_names_an_invisible_character() {
     assert!(diff.unseen.is_empty());
 
     let shown = shown_diff("+fine\n+hidden\u{202e}txt\n");
-    assert_eq!(shown.text, "+fine\n+hidden<U+202E>txt\n");
+    assert_eq!(shown.text, "+fine\n+hidden⟦U+202E⟧txt\n");
     assert_eq!(shown.unseen.len(), 1);
     assert!(
         shown.unseen[0].starts_with("line 2 holds"),

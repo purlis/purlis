@@ -240,12 +240,12 @@ pub fn opencode_permission_hooked(props: &Value, hook_timeout: std::time::Durati
 /// `git push origin main`). Joined and cut like a [`Summary`], credential shapes masked. With no
 /// readable patterns it says only "Always allow", claiming no scope it cannot name; so does a
 /// pattern holding a character a window draws as nothing or draws elsewhere
-/// ([`super::hooked::drawn_otherwise`]), which could make the label read narrower than it is.
+/// ([`purlis_unicode::hidden`]), which could make the label read narrower than it is.
 fn always_label(patterns: &Value) -> String {
     let readable = |pattern: &Value| {
         pattern
             .as_str()
-            .filter(|text| !text.chars().any(super::hooked::drawn_otherwise))
+            .filter(|text| !purlis_unicode::hides(text, purlis_unicode::Breaks::Marked))
             .map(str::to_owned)
     };
     match listed(patterns, readable) {

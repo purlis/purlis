@@ -231,6 +231,7 @@ pub struct ReviewLine {
 pub enum ReviewInvisible {
     Tag,
     ZeroWidth,
+    Blank,
     Bidi,
     Format,
 }
@@ -240,6 +241,7 @@ impl From<summary::Invisible> for ReviewInvisible {
         match kind {
             summary::Invisible::Tag => Self::Tag,
             summary::Invisible::ZeroWidth => Self::ZeroWidth,
+            summary::Invisible::Blank => Self::Blank,
             summary::Invisible::Bidi => Self::Bidi,
             summary::Invisible::Format => Self::Format,
         }

@@ -35,6 +35,8 @@ tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-opener = "2"
 tauri-plugin-notification = "2"
 purlis-core.workspace = true
+# The generated Bidi_Control table a name's direction marks are dropped by (SK-49).
+purlis-unicode.workspace = true
 # The session host the window starts with its own binary and is the first client of (#1997).
 purlis-host.workspace = true
 # purlis's own wrap of a chat on Linux (#1040): the app answers the hidden `_sandbox` itself, so

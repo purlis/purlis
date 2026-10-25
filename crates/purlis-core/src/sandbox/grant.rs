@@ -620,7 +620,7 @@ fn judged(typed: &str, place: &Place<'_>) -> Result<PathBuf, Refused> {
     // (a control, a format or a zero-width one, the house's one table of them), so a folder can
     // never be shown as another; and no backtick, which the sentences around it quote with.
     // Judged of what was typed and of the folder it resolves to, which is what is granted.
-    let unreadable = |name: &str| name.chars().any(crate::shown::invisible) || name.contains('`');
+    let unreadable = |name: &str| name.chars().any(purlis_unicode::invisible) || name.contains('`');
     let unshowable = || {
         Refused::Not(
             "purlis will not grant a folder with a backtick, or a character that draws as \

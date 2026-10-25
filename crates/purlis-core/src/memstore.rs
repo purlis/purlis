@@ -337,15 +337,12 @@ pub fn one_line(title: &str) -> std::borrow::Cow<'_, str> {
 /// Whether `c` breaks a line or hides how it reads, so a title holding it is not one line
 /// (#1408): a control character (a newline, a carriage return, U+0085 among them), the line
 /// and paragraph separators U+2028 and U+2029, which `char::is_control` does not cover and
-/// some Markdown readers break a line at, and the bidirectional embeddings, overrides and
-/// isolates (U+202A–U+202E, U+2066–U+2069), which turn the rest of a line around. The
-/// zero-width characters stay: a joiner is part of how an emoji is written.
+/// some Markdown readers break a line at, and every bidi control (purlis's generated
+/// Bidi_Control table, [`purlis_unicode::bidi_control`]: the embeddings, overrides, isolates and
+/// marks), which turn the rest of a line around. The zero-width characters stay: a joiner is
+/// part of how an emoji is written.
 pub fn breaks_a_line(c: char) -> bool {
-    c.is_control()
-        || matches!(
-            c,
-            '\u{2028}' | '\u{2029}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}'
-        )
+    c.is_control() || matches!(c, '\u{2028}' | '\u{2029}') || purlis_unicode::bidi_control(c)
 }
 
 /// Is `path` in the plane's state directory, `.charter/` or `.purlis/` — charter's own, and
@@ -2112,6 +2109,21 @@ fn invalid(why: &str) -> std::io::Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// SK-49: every bidi control turns a title's line around, the marks and the Arabic letter
+    /// mark too, as the generated Bidi_Control table names them; a joiner stays.
+    #[test]
+    fn every_bidi_control_breaks_a_title_s_line_and_a_joiner_does_not() {
+        for c in [
+            '\u{200E}', '\u{200F}', '\u{061C}', '\u{202A}', '\u{202E}', '\u{2066}', '\u{2069}',
+            '\u{2028}', '\u{2029}', '\n', '\u{85}',
+        ] {
+            assert!(breaks_a_line(c), "U+{:04X}", u32::from(c));
+        }
+        for c in ['\u{200D}', '\u{200C}', 'a', ' '] {
+            assert!(!breaks_a_line(c), "U+{:04X}", u32::from(c));
+        }
+    }
 
     // Every expectation here came from charter itself: `from charter.memstore import slug`.
 
