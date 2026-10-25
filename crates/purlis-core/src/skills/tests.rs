@@ -991,7 +991,8 @@ fn the_studio_lists_each_harnesss_own_skills_beside_the_projects_and_marks_a_cla
     };
 
     let set = in_the_studio(None, &plane, None, None);
-    let harnesses = harnesses_in_the_studio(&set, &plane, None, &[], &env, &Known::of(&plane, None));
+    let harnesses =
+        harnesses_in_the_studio(&set, &plane, None, &[], &env, &Known::of(&plane, None));
 
     let titles: Vec<&str> = harnesses.iter().map(|h| h.group.adapter.title()).collect();
     assert_eq!(titles, ["Claude Code", "opencode", "Codex"]);
@@ -1009,10 +1010,11 @@ fn the_studio_lists_each_harnesss_own_skills_beside_the_projects_and_marks_a_cla
             outcome: Outcome::BothLoad,
         }]
     );
-    let rows: Vec<(String, Option<String>)> = outside_rows(on_codex, &plane, &Known::of(&plane, None))
-        .into_iter()
-        .map(|row| (row.name, row.left_out))
-        .collect();
+    let rows: Vec<(String, Option<String>)> =
+        outside_rows(on_codex, &plane, &Known::of(&plane, None))
+            .into_iter()
+            .map(|row| (row.name, row.left_out))
+            .collect();
     assert_eq!(
         rows,
         [
@@ -1158,7 +1160,9 @@ fn a_clone_with_a_secrets_skill_of_its_own() -> (tempfile::TempDir, PathBuf, Pat
         std::fs::create_dir_all(dir.join("secrets")).unwrap();
         std::fs::write(
             dir.join("secrets/SKILL.md"),
-            format!("---\nname: secrets\ndescription: Reads the {says} secrets from a vault.\n---\n"),
+            format!(
+                "---\nname: secrets\ndescription: Reads the {says} secrets from a vault.\n---\n"
+            ),
         )
         .unwrap();
     }
@@ -1231,8 +1235,10 @@ fn the_studio_marks_a_repo_skill_named_like_a_built_in_one_on_codex_and_opencode
         assert_eq!(row.left_out, None, "{harness:?}");
         assert_eq!(
             row.lint,
-            ["it has the name of one of purlis's built-in skills, so a chat gets purlis's too, \
-              and may use either"],
+            [
+                "it has the name of one of purlis's built-in skills, so a chat gets purlis's too, \
+              and may use either"
+            ],
             "{harness:?}"
         );
         let clashes: Vec<(&str, Origin, Origin)> = one
