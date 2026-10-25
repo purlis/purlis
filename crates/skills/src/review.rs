@@ -126,37 +126,17 @@ pub enum Invisible {
 }
 
 impl Invisible {
-    /// The kind of `c`, or `None` for a character a reader sees (and a line end or tab).
-    pub fn of(c: char) -> Option<Invisible> {
-        match c {
-            '\u{E0000}'..='\u{E007F}' => Some(Self::Tag),
-            '\u{200B}'..='\u{200D}'
-            | '\u{2060}'
-            | '\u{FEFF}'
-            | '\u{180E}'
-            | '\u{034F}'
-            | '\u{FE00}'..='\u{FE0F}'
-            | '\u{E0100}'..='\u{E01EF}'
-            | '\u{115F}'
-            | '\u{1160}'
-            | '\u{3164}'
-            | '\u{FFA0}' => Some(Self::ZeroWidth),
-            '\u{202A}'..='\u{202E}'
-            | '\u{2066}'..='\u{2069}'
-            | '\u{200E}'
-            | '\u{200F}'
-            | '\u{061C}' => Some(Self::Bidi),
-            '\n' | '\t' => None,
-            '\u{0}'..='\u{1F}'
-            | '\u{7F}'..='\u{9F}'
-            | '\u{AD}'
-            | '\u{2028}'
-            | '\u{2029}'
-            | '\u{2061}'..='\u{2064}'
-            | '\u{206A}'..='\u{206F}'
-            | '\u{FFF9}'..='\u{FFFB}'
-            | '\u{1D173}'..='\u{1D17A}' => Some(Self::Format),
-            _ => None,
+    /// The kind of `c`, a character [`purlis_unicode::hidden`] named. Only the kind is decided
+    /// here: whether a character is invisible is the one generated rule's to say (SK-49).
+    fn of(c: char) -> Invisible {
+        if matches!(u32::from(c), 0xE0000..=0xE007F) {
+            Self::Tag
+        } else if purlis_unicode::bidi_control(c) {
+            Self::Bidi
+        } else if c.is_control() || matches!(c, '\u{2028}' | '\u{2029}') {
+            Self::Format
+        } else {
+            Self::ZeroWidth
         }
     }
 }
@@ -181,11 +161,11 @@ pub struct Unseen {
     pub kinds: Vec<Invisible>,
 }
 
-/// **`text` as a reviewer is shown it**: every character [`Invisible::of`] names written as
-/// `⟦U+XXXX⟧`, so nothing the model reads is hidden from the person, and no control character
-/// reaches a terminal.
+/// **`text` as a reviewer is shown it**: every character a reader does not see written as
+/// `⟦U+XXXX⟧` ([`purlis_unicode::marked`]), so nothing the model reads is hidden from the
+/// person, and no control character reaches a terminal. Line ends and tabs are the file's own.
 pub fn escaped(text: &str) -> String {
-    marked(text, |c| Invisible::of(c).is_some())
+    purlis_unicode::marked(text, purlis_unicode::Breaks::Kept)
 }
 
 /// **`text` as one line of a terminal shows it**: [`escaped`], and its line ends and tabs
@@ -194,22 +174,7 @@ pub fn escaped(text: &str) -> String {
 /// This is purlis's one rule for untrusted text in terminal output (SK-47): the shared padding,
 /// `purlis_core::tui::pad`, applies it to every cell, so no table has to remember to.
 pub fn escaped_line(text: &str) -> String {
-    marked(text, |c| {
-        matches!(c, '\n' | '\t') || Invisible::of(c).is_some()
-    })
-}
-
-/// `text` with each character `hidden` names written as `⟦U+XXXX⟧`.
-fn marked(text: &str, hidden: impl Fn(char) -> bool) -> String {
-    let mut out = String::with_capacity(text.len());
-    for c in text.chars() {
-        if hidden(c) {
-            out.push_str(&format!("⟦U+{:04X}⟧", u32::from(c)));
-        } else {
-            out.push(c);
-        }
-    }
-    out
+    purlis_unicode::marked(text, purlis_unicode::Breaks::Marked)
 }
 
 /// **The summary of one skill**: what it does beyond its instructions.
@@ -344,7 +309,10 @@ pub fn summarize(files: &[FileIn<'_>]) -> Summary {
             continue;
         };
         for (at, line) in text.lines().enumerate() {
-            let mut kinds: Vec<Invisible> = line.chars().filter_map(Invisible::of).collect();
+            let mut kinds: Vec<Invisible> =
+                purlis_unicode::hidden(line, purlis_unicode::Breaks::Kept)
+                    .map(Invisible::of)
+                    .collect();
             if !kinds.is_empty() {
                 kinds.sort();
                 kinds.dedup();
