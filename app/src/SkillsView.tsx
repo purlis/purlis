@@ -158,9 +158,11 @@ export function SkillsView({
       : JSON.stringify([narrowed.session, narrowed.workspace, narrowed.persona]);
   useEffect(() => {
     let live = true;
-    void readSkills(plane, workspace, narrowed).then((answer) => {
-      if (live) setRead(answer);
-    });
+    void readSkills(plane, workspace, narrowed)
+      .catch((err: unknown): Read => ({ refused: String(err) }))
+      .then((answer) => {
+        if (live) setRead(answer);
+      });
     return () => {
       live = false;
     };

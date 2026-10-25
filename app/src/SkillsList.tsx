@@ -68,7 +68,7 @@ export function SkillsList({
   const rows = groups.flatMap((group) => group.rows);
   return (
     <div className="skills-view" data-testid="skills-view">
-      <ButtonRow size="sm" className="skills-view-head">
+      <ButtonRow className="skills-view-head">
         <Button variant="ghost" icon={<Sparkles aria-hidden="true" />} onPress={onOpenStudio}>
           {OPEN_SKILL_STUDIO}
         </Button>
@@ -89,12 +89,7 @@ export function SkillsList({
         </MenuTrigger>
       </ButtonRow>
       {chat !== undefined && (
-        <ToggleButton
-          size="sm"
-          className="skills-view-only"
-          isSelected={chat.only}
-          onChange={chat.onOnly}
-        >
+        <ToggleButton className="skills-view-only" isSelected={chat.only} onChange={chat.onOnly}>
           {ONLY_THIS_CHATS}
         </ToggleButton>
       )}
