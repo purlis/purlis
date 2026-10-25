@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792961093437,
+  "lastUpdate": 1792963163936,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -24822,6 +24822,48 @@ window.BENCHMARK_DATA = {
             "value": 101.164894,
             "unit": "ms",
             "extra": "median of 5 runs: 101.093, 101.121, 101.165, 101.969, 102.184 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5bae52f3510ff5354452d622c0fa2903aa40dedc",
+          "message": "Select and combobox families (#2906) (#3107)\n\n* Select and combobox families (#2906)\n\nEvery select and every box with suggestions in the window is the select or the combobox family\n(app/src/ui/select), on React Aria: a drawn chevron and a quiet placeholder (R64), sizes sm 24,\nmd 28, lg 32, the list on the menu's surface with the menu's rows, the arrows stopping at their\nends, Escape leaving the value, and a long list filtered. Radix's select and the window's top\nlayer are gone. The families join the theme's parts at manifest version 8, and\npurlis/select-family is an error.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Select and combobox families: the review's round (#2906)\n\nThe Filtered story narrows to what it says and both plays close on Escape. A closed select hands\nEscape on, and an open one in a dialog closes only its list. An option out of reach that says\nwhy stays in the arrows' way with its reason heard. ComboBox has its own tests and an\nunavailable story. The lint reads braced literals. TextField's datalist prop, the overlays'\nhelpers and comments, two unused Radix packages and stale literals are gone.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Select family: a long select's filter never names an option filtered out (#2906)\n\nReact Aria's Autocomplete holds back moving its aria-activedescendant while a letter is heard,\nand meanwhile named the option the typing had filtered out. The family clears that aim until\nthe move lands, and a test opens, types, closes and reopens with every id resolving.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* Select family: the persona skills spec finds Move to by the family's button (#2906)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Select family: since NEXT, and the Figma pass's control edge and corner (#2906)\n\nThe families join the next release's manifest (since: NEXT, #3223), and a select's and a\ncombobox's box draws border.control and radius.control as the field family's does (#3197).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Select family: main's new tests find the select as the family draws it (#2906)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-26T01:17:50+04:00",
+          "tree_id": "ca58ddd2e968b00173457b8a1b8bd876a65f9f09",
+          "url": "https://github.com/purlis/purlis/commit/5bae52f3510ff5354452d622c0fa2903aa40dedc"
+        },
+        "date": 1792963160909,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.288486,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.278, 0.284, 0.288, 0.293, 0.312 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5864455,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.520, 16.585, 16.586, 16.604, 16.671 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.63621549999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.632, 101.529, 101.636, 101.886, 101.984 ms"
           }
         ]
       }
