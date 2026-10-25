@@ -12,6 +12,7 @@ import {
   type StudioSkill,
   type StudioSwitched,
 } from "./bindings";
+import { counted } from "./dispatches";
 import { Notice } from "./Notice";
 import { SkillCompatBadges } from "./SkillCompatBadges";
 import { Button } from "./ui/button/Button";
@@ -59,7 +60,8 @@ export function clashSaid(clash: StudioClash): string {
  * finds itself, in the person's own folders, its plugins, and the workspace's repos. purlis lists
  * them and never changes them. Each has a switch where the program can leave it out of one chat,
  * and says plainly where it cannot. A switch writes this machine's own file at the project's root
- * and the workspace's settings in a workspace, and reaches chats started after it.
+ * and the workspace's settings in a workspace, and reaches chats started after it. Under each, the
+ * project's skills a repo leaves out of its chats there, with why (SK-53): never a silent drop.
  */
 export function SkillStudioHarnesses({
   plane,
@@ -206,6 +208,39 @@ export function SkillStudioHarnesses({
                 ))}
               </tbody>
             </table>
+          )}
+          {harness.repo_left_out.length > 0 && (
+            <>
+              <p className="honest">
+                {`${harness.title} chats in a repo here start without ${counted(harness.repo_left_out.length, "skill", "skills")} of this project's:`}
+              </p>
+              <table
+                className="ui-table"
+                aria-label={`What a repo leaves out of ${harness.title} chats`}
+              >
+                <thead>
+                  <tr>
+                    <th scope="col">Skill</th>
+                    <th scope="col">Level</th>
+                    <th scope="col">Why</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {harness.repo_left_out.map((skill) => (
+                    <tr
+                      key={`${skill.level}\u0000${skill.folder}\u0000${skill.left_out ?? ""}`}
+                      data-testid={`repo-left-out-${harness.harness}-${skill.name}`}
+                    >
+                      <td>
+                        <code>{skill.name}</code>
+                      </td>
+                      <td>{skill.label}</td>
+                      <td>{`Left out: ${skill.left_out ?? ""}`}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
           )}
         </div>
       ))}

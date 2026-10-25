@@ -15,6 +15,7 @@ use std::io::{IsTerminal, Read};
 use clap::Subcommand;
 use purlis_core::curation::{self, Kind, New, RunsIn, Source, Subject};
 use purlis_core::personaverbs::lint::Level;
+use purlis_core::tui::Markup;
 
 use crate::memory::Code;
 use crate::voice;
@@ -143,6 +144,22 @@ pub fn persona(root: &std::path::Path, command: PersonaCuration) -> Result<Code,
     }
 }
 
+/// One action a persona declares, as `persona curation list` lists it. The persona's files
+/// write its id and label, so each is escaped (SK-50).
+fn declared_line(persona: &str, id: &str, label: &str) -> Markup {
+    Markup::new()
+        .text(persona)
+        .own("/")
+        .text(id)
+        .own("  ")
+        .text(label)
+}
+
+/// One action offered on a subject, as `curation show` heads it: its id and label, escaped.
+fn offered_line(id: &str, label: &str) -> Markup {
+    Markup::new().text(id).own("  ").text(label)
+}
+
 fn list(root: &std::path::Path, only: Option<&str>) -> Code {
     let personas = match only {
         Some(name) => {
@@ -166,14 +183,21 @@ fn list(root: &std::path::Path, only: Option<&str>) -> Code {
             match &parsed.action {
                 Some(action) => {
                     let on: Vec<&str> = action.on.iter().map(|k| k.as_str()).collect();
-                    println!("{persona}/{}  {}", action.id, action.label);
+                    println!("{}", declared_line(&persona, &action.id, &action.label));
                     println!(
                         "  on: {} · runs in: {}",
                         on.join(", "),
                         action.runs_in.map_or("default", RunsIn::as_str)
                     );
                 }
-                None => println!("{persona}/{}  (not offered)", parsed.id),
+                None => println!(
+                    "{}",
+                    Markup::new()
+                        .text(&persona)
+                        .own("/")
+                        .text(&parsed.id)
+                        .own("  (not offered)")
+                ),
             }
             for issue in &parsed.issues {
                 let line = format!(
@@ -221,14 +245,19 @@ pub fn run(root: &std::path::Path, command: CurationCommand) -> Result<Code, Str
                     Source::Charter => "charter".to_string(),
                     Source::Persona(p) => format!("persona {p}"),
                 };
-                println!("{}  {}", action.id, action.label);
+                println!("{}", offered_line(&action.id, &action.label));
                 println!(
-                    "  source: {source} · runs as: {} · in: {}",
-                    action.runner.as_deref().unwrap_or("no persona"),
-                    action.cwd.display()
+                    "{}",
+                    Markup::new()
+                        .own("  source: ")
+                        .text(source)
+                        .own(" · runs as: ")
+                        .text(action.runner.as_deref().unwrap_or("no persona"))
+                        .own(" · in: ")
+                        .text(action.cwd.display())
                 );
                 for line in action.prompt.lines() {
-                    println!("    {line}");
+                    println!("{}", Markup::new().own("    ").text(line));
                 }
             }
             if resolution.actions.is_empty() {
@@ -241,3 +270,6 @@ pub fn run(root: &std::path::Path, command: CurationCommand) -> Result<Code, Str
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

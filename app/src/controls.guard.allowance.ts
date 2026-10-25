@@ -17,14 +17,8 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
   "ActivityTab.tsx": [
     "<button className=\"vault-secret\">",
   ],
-  "Brief.tsx": [
-    "<button className=\"pane-brief\">",
-  ],
   "ChatsSection.tsx": [
     "<button className=\"needs-you-mark rolled-up\">",
-  ],
-  "HarnessCard.tsx": [
-    "<button className=\"pane-harness\">",
   ],
   "LayoutPanes.tsx": [
     "<button className={offer.id === \"pane.close\" && !closesOnly(offer.does) ? \"ends-a-chat\" : undefined}>",
@@ -32,22 +26,15 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
   "PaneCrumbs.tsx": [
     "<button className={at === 0 ? \"crumb own\" : \"crumb between\"}>",
   ],
-  "PlaneUpdated.tsx": [
-    "<button className=\"plane-updated fresh-mark\">",
-  ],
   "StripMarks.tsx": [
     "<button className={clsx( offer.id === \"pane.close\" && !closesOnly(offer.does) && \"ends-a-chat\", bare && \"bare\", )}>",
     "<button className={arrived ? \"show-more arrived\" : \"show-more\"}>",
     "<button className={clsx(\"closer\", closesOnly(offer.does) && \"keeps\", minimise && \"minimise\")}>",
-    "<button className=\"gear\">",
   ],
   "TabChip.tsx": [
     "<button className=\"tab-tasks-hand needs-you-mark\">",
     "<button className=\"tab-tasks-counts\">",
     "<button className=\"tasks-menu-place\">",
-  ],
-  "TaskEnd.tsx": [
-    "<button className=\"task-end\">",
   ],
   "Welcome.tsx": [
     "<button className=\"welcome-door\">",
