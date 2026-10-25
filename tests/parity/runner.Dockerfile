@@ -15,3 +15,11 @@ FROM ${RUNNER}
 # The absolute folder this job's test build keeps its binaries in (`target/debug`).
 ARG AT
 COPY --chmod=0755 fake-harness purlis ${AT}/
+
+# The runner's `claude`, as a profile of the runner's own runs it: the stand-in a behaviour
+# gives, written into the runner's home (`/home/purlis/.parity/claude`) as the behaviour starts,
+# since the image's own folders are read-only in a pool's container.
+USER 0
+RUN printf '%s\n' '#!/bin/sh' 'exec /home/purlis/.parity/claude "$@"' > /usr/local/bin/claude \
+ && chmod 0755 /usr/local/bin/claude
+USER 10001:10001

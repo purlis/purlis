@@ -410,6 +410,28 @@ struct RemovesThePool {
 
 impl Drop for RemovesThePool {
     fn drop(&mut self) {
+        // A behaviour that failed on the runner is read with what its host said.
+        if std::thread::panicking()
+            && let Ok(kept) = purlis_core::runners::runner_for(&self.config, &self.name)
+        {
+            let said = purlis_core::forklock::output(
+                std::process::Command::new(self.docker.program()).args([
+                    "logs",
+                    "--tail",
+                    "200",
+                    kept.made.container.as_str(),
+                ]),
+            );
+            if let Ok(said) = said {
+                use std::io::Write as _;
+                let _ = writeln!(
+                    std::io::stderr(),
+                    "the runner's host said:\n{}{}",
+                    String::from_utf8_lossy(&said.stdout),
+                    String::from_utf8_lossy(&said.stderr)
+                );
+            }
+        }
         let removed = purlis_core::pools::remove(&self.config, &self.docker, &self.name, None);
         if !removed
             .as_ref()
@@ -510,9 +532,10 @@ impl OnTheRunner {
             ),
             &store,
         );
+        // The parity image's `claude` runs what is here (`tests/parity/runner.Dockerfile`).
         self.runs(
-            true,
-            "cat > /usr/local/bin/claude && chmod 0755 /usr/local/bin/claude",
+            false,
+            "mkdir -p \"$HOME\"/.parity && cat > \"$HOME\"/.parity/claude && chmod 0755 \"$HOME\"/.parity/claude",
             &std::fs::read(program).expect("the program reads"),
         );
     }
@@ -2980,7 +3003,6 @@ on_every_target!(
     a_chat_starts_with_the_path_and_variables_the_window_gives_it,
     a_chat_whose_turn_ends_needs_you_on_every_harness,
     a_permission_ask_is_answered_from_the_window_on_every_harness,
-    a_hook_refuses_a_listener_that_is_not_its_chats_ancestor,
     the_event_log_has_one_writer_and_each_hook_line_is_written_once;
     not yet through a link ("an opt-out is asked again on the device a chat moves to, ADR 0078 §4"):
     an_opt_out_of_a_chat_the_host_composes_is_in_its_event_log_before_it_starts;
@@ -2990,7 +3012,8 @@ on_every_target!(
     not yet through a link ("saving a project on a runner comes with code over the link in #2046"):
     a_write_in_the_project_is_saved_after_its_quiet_period_and_the_window_is_told,
     exactly_one_saver_runs_for_the_project_and_none_once_it_is_stopped;
-    not yet in a Docker pool ("the behaviour dials the chat's proxy and its service on this machine; a pool runner's are in its container, #3288"):
+    not yet in a Docker pool ("the behaviour reaches the chat's machine from this one: its proxy, a service or a rival hook listener, which on a pool's runner are in its container, #3288"):
+    a_hook_refuses_a_listener_that_is_not_its_chats_ancestor,
     a_sandboxed_chats_proxy_carries_what_it_lists_and_refuses_the_rest,
     a_port_withdrawn_while_a_chat_runs_is_carried_no_longer,
     an_ask_raised_by_a_chats_proxy_is_answered_from_the_window;
