@@ -1363,28 +1363,57 @@ thread_local! {
     /// What a test does when a repo save reaches its secret check.
     static AT_THE_SECRET_CHECK: std::cell::RefCell<Option<Then>> =
         const { std::cell::RefCell::new(None) };
+    /// What a test does once a repo save has looked at what it would stage, before it stages.
+    static BEFORE_THE_ADD: std::cell::RefCell<Option<Then>> =
+        const { std::cell::RefCell::new(None) };
+    /// What a test does once a repo save has staged, before it asks what it staged.
+    static AFTER_THE_ADD: std::cell::RefCell<Option<Then>> =
+        const { std::cell::RefCell::new(None) };
 }
 
-/// Runs what the test set in [`AT_THE_SECRET_CHECK`], if it set anything.
-pub(super) fn at_the_secret_check(clone: &Path) {
-    AT_THE_SECRET_CHECK.with(|then| {
+type Point = std::thread::LocalKey<std::cell::RefCell<Option<Then>>>;
+
+/// Runs what the test set at `point`, if it set anything.
+fn reached(point: &'static Point, clone: &Path) {
+    point.with(|then| {
         if let Some(then) = then.borrow().as_ref() {
             then(clone);
         }
     });
 }
 
-/// `run`, with `then` done when the save reaches its secret check.
-fn at_the_check<T>(then: impl Fn(&Path) + 'static, run: impl FnOnce() -> T) -> T {
-    struct Clear;
+pub(super) fn at_the_secret_check(clone: &Path) {
+    reached(&AT_THE_SECRET_CHECK, clone);
+}
+
+pub(super) fn before_the_add(clone: &Path) {
+    reached(&BEFORE_THE_ADD, clone);
+}
+
+pub(super) fn after_the_add(clone: &Path) {
+    reached(&AFTER_THE_ADD, clone);
+}
+
+/// `run`, with `then` done at `point`.
+fn doing_at<T>(
+    point: &'static Point,
+    then: impl Fn(&Path) + 'static,
+    run: impl FnOnce() -> T,
+) -> T {
+    struct Clear(&'static Point);
     impl Drop for Clear {
         fn drop(&mut self) {
-            AT_THE_SECRET_CHECK.with(|then| then.borrow_mut().take());
+            self.0.with(|then| then.borrow_mut().take());
         }
     }
-    AT_THE_SECRET_CHECK.with(|held| *held.borrow_mut() = Some(Box::new(then)));
-    let _clear = Clear;
+    point.with(|held| *held.borrow_mut() = Some(Box::new(then)));
+    let _clear = Clear(point);
     run()
+}
+
+/// `run`, with `then` done when the save reaches its secret check.
+fn at_the_check<T>(then: impl Fn(&Path) + 'static, run: impl FnOnce() -> T) -> T {
+    doing_at(&AT_THE_SECRET_CHECK, then, run)
 }
 
 #[cfg(unix)]
@@ -1433,4 +1462,55 @@ fn a_held_back_row_is_out_of_the_clones_object_store_before_the_secret_check_rea
         "",
         "{said}"
     );
+}
+
+/// A file given a second name after the save looked and before it staged: its descriptor shows
+/// the second name, so its bytes are never hashed into the clone's object store.
+#[cfg(unix)]
+#[test]
+fn a_second_name_made_as_a_repo_save_stages_never_reaches_the_clones_object_store() {
+    let f = Fixture::new("[repos.widget]\nmode = \"commit\"\n");
+    let before = f.head();
+    let second = f.plane.parent().unwrap().join("second-name");
+    std::fs::write(
+        f.clone.join("notes.md"),
+        b"two names by now: canary-47d0e2\n",
+    )
+    .unwrap();
+
+    let stored_once_staged = std::rc::Rc::new(std::cell::Cell::new(None));
+    let (code, said) = doing_at(
+        &BEFORE_THE_ADD,
+        {
+            let second = second.clone();
+            move |clone: &Path| std::fs::hard_link(clone.join("notes.md"), &second).unwrap()
+        },
+        || {
+            doing_at(
+                &AFTER_THE_ADD,
+                {
+                    let stored = stored_once_staged.clone();
+                    let second = second.clone();
+                    move |clone: &Path| {
+                        stored.set(Some(crate::testgit::stores_file(clone, &second)));
+                    }
+                },
+                || f.save(),
+            )
+        },
+    );
+
+    assert_eq!(
+        stored_once_staged.get(),
+        Some(false),
+        "the file's bytes were hashed into the object store: {said}"
+    );
+    assert_eq!(code, 1, "{said}");
+    assert!(
+        said.contains("notes.md has a second name (a hard link), so purlis does not save it"),
+        "{said}"
+    );
+    assert!(!crate::testgit::stores_file(&f.clone, &second));
+    assert_eq!(f.head(), before);
+    assert_eq!(run(&f.clone, &["diff", "--cached", "--name-only"]), "");
 }

@@ -607,6 +607,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     "skill_rename",
     "skill_move",
     "skill_delete",
+    // A skill delete a crash or a quit cut short, finished in one commit or put back as the
+    // studio opens (SK-35, #3013): the person's window alone, as Delete is.
+    "skill_deletes_cut_short",
     "skill_restore",
     "skill_grant",
     "skill_turn",

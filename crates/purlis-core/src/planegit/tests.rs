@@ -5577,21 +5577,22 @@ fn a_file_staged_and_then_swapped_out_from_under_the_save_is_not_committed() {
 // --------------------------------------------------------------------------------------- //
 
 /// What a test does to a repository at one point inside a save or a Continue.
-type Then = Box<dyn Fn(&Path)>;
+pub(super) type Then = Box<dyn Fn(&Path)>;
 
 thread_local! {
     /// What a test does when the plane's save reaches its secret guard.
     static AT_THE_SECRET_GUARD: std::cell::RefCell<Option<Then>> =
         const { std::cell::RefCell::new(None) };
     /// What a test does once the plane's save has staged, before it asks what it staged.
-    static AFTER_THE_ADD: std::cell::RefCell<Option<Then>> =
+    pub(super) static AFTER_THE_ADD: std::cell::RefCell<Option<Then>> =
         const { std::cell::RefCell::new(None) };
-    /// What a test does once Continue has checked the settled files, before it stages them.
-    static BEFORE_THE_ADD: std::cell::RefCell<Option<Then>> =
+    /// What a test does once the plane's save, Continue or a checked add has looked at what it
+    /// stages, before it stages it.
+    pub(super) static BEFORE_THE_ADD: std::cell::RefCell<Option<Then>> =
         const { std::cell::RefCell::new(None) };
 }
 
-type Point = std::thread::LocalKey<std::cell::RefCell<Option<Then>>>;
+pub(super) type Point = std::thread::LocalKey<std::cell::RefCell<Option<Then>>>;
 
 /// Runs what the test set at `point`, if it set anything.
 fn reached(point: &'static Point, root: &Path) {
@@ -5615,7 +5616,7 @@ pub(super) fn before_the_add(root: &Path) {
 }
 
 /// `run`, with `then` done at `point`.
-fn doing_at<T>(
+pub(super) fn doing_at<T>(
     point: &'static Point,
     then: impl Fn(&Path) + 'static,
     run: impl FnOnce() -> T,
@@ -5673,6 +5674,58 @@ fn a_held_back_row_is_out_of_the_object_store_before_the_secret_guard_reads_a_bl
     );
     assert_eq!(fixture.head(), before);
     assert!(!fixture.staged().contains("notes.md"), "{said}");
+}
+
+/// A file given a second name after the save looked and before it staged, as a whole-tree save
+/// stages it: its descriptor shows the second name, so its bytes are never hashed.
+#[cfg(unix)]
+#[test]
+fn a_second_name_made_as_a_whole_tree_save_stages_never_reaches_the_object_store() {
+    let fixture = Fixture::plane();
+    fixture.with_settings("[plane]\nname = \"fixture\"\nmode = \"commit\"\n");
+    let before = fixture.head();
+    let second = fixture.root.parent().unwrap().join("second-name");
+    write(
+        &fixture.root,
+        "work.md",
+        b"two names by now: canary-8c2f40\n",
+    );
+
+    let stored_once_staged = std::rc::Rc::new(std::cell::Cell::new(None));
+    let (code, said) = doing_at(
+        &BEFORE_THE_ADD,
+        {
+            let second = second.clone();
+            move |root: &Path| std::fs::hard_link(root.join("work.md"), &second).unwrap()
+        },
+        || {
+            doing_at(
+                &AFTER_THE_ADD,
+                {
+                    let stored = stored_once_staged.clone();
+                    let second = second.clone();
+                    move |root: &Path| {
+                        stored.set(Some(crate::testgit::stores_file(root, &second)));
+                    }
+                },
+                || fixture.just_save(),
+            )
+        },
+    );
+
+    assert_eq!(
+        stored_once_staged.get(),
+        Some(false),
+        "the file's bytes were hashed into the object store: {said}"
+    );
+    assert_eq!(code, 1, "{said}");
+    assert!(
+        said.contains("work.md has a second name (a hard link)"),
+        "{said}"
+    );
+    assert!(!crate::testgit::stores_file(&fixture.root, &second));
+    assert_eq!(fixture.head(), before);
+    assert!(!fixture.staged().contains("work.md"), "{said}");
 }
 
 #[test]

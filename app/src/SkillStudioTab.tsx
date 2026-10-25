@@ -151,6 +151,34 @@ export function SkillStudioTab({
       live = false;
     };
   }, [plane, workspace, persona, changed, done, switched]);
+  // A delete a crash or a quit cut short is finished or undone as the studio opens (SK-35),
+  // said in one line each, and the lists read again.
+  useEffect(() => {
+    let live = true;
+    if (!on) return;
+    void commands
+      .skillDeletesCutShort(plane)
+      .then((answer) => {
+        if (!live || answer.status !== "ok") return;
+        const { settled, unsettled } = answer.data;
+        if (settled.length + unsettled.length === 0) return;
+        // One it could neither finish nor put back is trouble, and named first.
+        setSaid(
+          unsettled.length > 0
+            ? {
+                tone: "trouble",
+                label: "A skill delete could not be finished",
+                text: [...unsettled, ...settled].join(" "),
+              }
+            : { tone: "news", label: "Skill delete cut short", text: settled.join(" ") },
+        );
+        setDone((n) => n + 1);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [plane, on]);
   useEffect(() => {
     let live = true;
     if (!on) return;
