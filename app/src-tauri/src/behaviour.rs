@@ -92,6 +92,8 @@ pub(crate) struct Target {
     pub host: Option<Arc<Connection>>,
     /// What kills the host outright, on a host process's target (#2007).
     pub kill_the_host: Option<Arc<dyn Fn() + Send + Sync>>,
+    /// The runner's container, on a Docker pool's target: the machine its chats run on.
+    pub runner: Option<OnTheRunner>,
     /// What keeps the target running for as long as the test does.
     _keeps: Vec<Box<dyn std::any::Any>>,
 }
@@ -155,6 +157,7 @@ pub(crate) fn in_the_window() -> Target {
         log: data.path().to_path_buf(),
         host: None,
         kill_the_host: None,
+        runner: None,
         _keeps: vec![Box::new(project), Box::new(config), Box::new(data)],
     }
 }
@@ -278,6 +281,10 @@ pub(crate) fn in_a_docker_pool() -> Option<Target> {
         purlis_host::Relay::kept(Arc::new(move || to.keep()))
     });
     target.inherited = inherited;
+    target.runner = Some(OnTheRunner {
+        docker: docker.clone(),
+        container: made.container.as_str().to_owned(),
+    });
     a_repository(&target.root);
     target._keeps.push(Box::new(data));
     // Removed last, once the window and its link are gone.
@@ -328,9 +335,91 @@ impl Drop for RemovesThePool {
             .as_ref()
             .is_ok_and(|removed| removed.as_ref().is_none_or(|removed| removed.forgotten))
         {
-            // Said, not panicked: a panic while the test already panics aborts the run.
-            eprintln!("the pool {} was not removed whole: {removed:?}", self.name);
+            let said = format!("the pool {} was not removed whole: {removed:?}", self.name);
+            // Said, not panicked, while the test already fails: a second panic aborts the run.
+            if std::thread::panicking() {
+                tracing::warn!("{said}");
+            } else {
+                panic!("{said}");
+            }
         }
+    }
+}
+
+/// A Docker pool's runner, as a test reaches into its container.
+pub(crate) struct OnTheRunner {
+    docker: purlis_core::dockerpool::Docker,
+    container: String,
+}
+
+impl OnTheRunner {
+    /// Runs `script` in the runner's container, as its own user or as root, `given` on its
+    /// standard input.
+    fn runs(&self, as_root: bool, script: &str, given: &[u8]) {
+        use std::io::Write as _;
+        let mut command = std::process::Command::new(self.docker.program());
+        command.args(["exec", "--interactive"]);
+        if as_root {
+            command.args(["--user", "0"]);
+        }
+        command
+            .args([self.container.as_str(), "sh", "-c", script])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        let mut child = purlis_core::forklock::spawn(&mut command).expect("docker runs");
+        child
+            .stdin
+            .take()
+            .expect("piped")
+            .write_all(given)
+            .expect("given");
+        let out = child.wait_with_output().expect("it ends");
+        assert!(out.status.success(), "{script}: {out:?}");
+    }
+
+    /// The runner has a profile of its own named `name`, of Claude Code, signed in with no
+    /// key, its `claude` the program `program` is on this machine.
+    fn signs_in(&self, name: &str, program: &Path) {
+        use purlis_core::profilestore::{Folders, MachineProfile};
+        let config = tempfile::tempdir().expect("a config home to write it in");
+        purlis_core::profilestore::update(config.path(), |store| {
+            store.profiles.push(MachineProfile {
+                name: name.to_owned(),
+                harness: "claude".to_owned(),
+                title: name.to_owned(),
+                folders: Folders {
+                    config: PathBuf::from(format!("/home/purlis/.claude-{name}")),
+                    data: None,
+                },
+                adopted: None,
+                imported: None,
+                sign_in: None,
+                pinned: None,
+                sandbox_only: false,
+                rest: Default::default(),
+            });
+        })
+        .expect("the profile is kept");
+        let store =
+            std::fs::read(purlis_core::profilestore::path(config.path())).expect("the store reads");
+        let at = format!(
+            "\"$HOME\"/.config/{}",
+            purlis_core::machine::dir(Path::new("")).display()
+        );
+        self.runs(
+            false,
+            &format!(
+                "mkdir -p {at} \"$HOME\"/.claude-{name} && umask 077 && cat > {at}/{}",
+                purlis_core::profilestore::FILE
+            ),
+            &store,
+        );
+        self.runs(
+            true,
+            "cat > /usr/local/bin/claude && chmod 0755 /usr/local/bin/claude",
+            &std::fs::read(program).expect("the program reads"),
+        );
     }
 }
 
@@ -473,6 +562,7 @@ fn a_window_over(
         log,
         host: Some(connection),
         kill_the_host: None,
+        runner: None,
         _keeps: vec![Box::new(project), Box::new(config)],
     }
 }
@@ -878,7 +968,7 @@ fn a_chat_named_alone_is_composed_by_the_host_as_its_profile_says(target: &Targe
         "#!/bin/sh\nprintf 'COMPOSED as %s:' \"$PURLIS_PERSONA\"\nfor arg; do last=\"$arg\"; done\n\
          printf '\\n%s :END' \"$last\"\nread line\n",
     );
-    a_profile(&target.root, "work", &harness);
+    a_profile(target, "work", &harness);
     if target.host.is_none() {
         let refused = target
             .sessions
@@ -935,7 +1025,7 @@ fn an_opt_out_of_a_chat_the_host_composes_is_in_its_event_log_before_it_starts(t
         // The first message, alone on a line of its own (see the test above).
         "#!/bin/sh\nfor arg; do last=\"$arg\"; done\nprintf '\\n%s :END' \"$last\"\nread line\n",
     );
-    a_profile(&target.root, "work", &harness);
+    a_profile(target, "work", &harness);
 
     let id = target
         .sessions
@@ -973,9 +1063,13 @@ fn named(first_message: &str, without_sandbox: bool) -> crate::host::Named {
     }
 }
 
-/// The project at `root` has the persona `steward` and this machine the profile `name`, of
-/// Claude Code, running `program`, as the person approved it.
-fn a_profile(root: &Path, name: &str, program: &Path) {
+/// The target's project has the persona `steward` and the machine its chats run on the
+/// profile `name`, of Claude Code, running `program`, as the person approved it there: in the
+/// project's own local settings on this machine, and on a Docker pool's runner as a profile of
+/// the runner's own, which the window's project settings never reach (they are this machine's
+/// alone, #2046), its `claude` being `program`.
+fn a_profile(target: &Target, name: &str, program: &Path) {
+    let root = &target.root;
     let persona = root.join("personas").join("steward");
     std::fs::create_dir_all(&persona).expect("its persona");
     std::fs::write(persona.join("persona.md"), "# steward\n").expect("its persona");
@@ -994,6 +1088,9 @@ fn a_profile(root: &Path, name: &str, program: &Path) {
         &purlis_core::profiletrust::fingerprint(declared.get(name).expect("declared")),
     )
     .expect("approved");
+    if let Some(runner) = &target.runner {
+        runner.signs_in(name, program);
+    }
 }
 
 fn what_its_tab_types_reaches_it(target: &Target) {
