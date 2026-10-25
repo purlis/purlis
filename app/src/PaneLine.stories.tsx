@@ -41,9 +41,9 @@ function PaneLine() {
   const [said, setSaid] = useState("Nothing pressed");
   const pressed = (what: string) => () => setSaid(what);
   return (
-    <div style={{ display: "grid", gap: "var(--space-3)", inlineSize: 640 }}>
+    <div style={{ display: "grid", gap: "var(--space-3)", inlineSize: 760 }}>
       {/* A pane's size is its layout's (`container-type: size`), so the story gives it one. */}
-      <div className="pane-frame pane-headed" style={{ blockSize: 96 }}>
+      <div className="pane-frame pane-headed" style={{ blockSize: 160 }}>
         <div className="pane-top">
           <BriefOpener value={(of: BriefAsk) => setSaid(`Brief of ${of.name}`)}>
             <TaskEndContext.Provider
