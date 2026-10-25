@@ -241,24 +241,15 @@ pub(super) fn commit_paths(
         .copied()
         .filter(|p| root.join(p).symlink_metadata().is_ok())
         .collect();
-    let mut args = vec!["add", "--"];
-    args.extend(&there);
-    let add = || {
-        git(root, &args)
-            .map(drop)
-            .map_err(|why| format!("could not stage the change ({why})"))
-    };
     // A folder a fix moves carries files it did not write, so each file committed is the one
-    // name it has on disk, as a save's are (`planegit::ondisk`). With no path there, the add
-    // stages nothing, and a look before it would be of the whole tree.
-    if there.is_empty() {
-        add()?;
-    } else {
+    // name it has on disk, as a save's are (`planegit::ondisk`). With no path there, there is
+    // nothing to stage, and a staging of no pathspec would be of the whole tree.
+    if !there.is_empty() {
         crate::planegit::ondisk::add_checked(
             root,
             &there,
             "could not stage the change: a file in it is not the one file on disk",
-            add,
+            "could not stage the change",
         )?;
     }
     git(root, &["commit", "-q", "-m", body])

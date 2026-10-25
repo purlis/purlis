@@ -666,7 +666,7 @@ impl Hands for OnThisMachine {
             folder,
             &[],
             "Not created: a file in the new project is not the one file on disk",
-            || git_in(folder, &["add", "-A"], "add the project's files"),
+            "git could not add the project's files",
         )?;
         commit_as(
             folder,

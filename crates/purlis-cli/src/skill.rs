@@ -392,6 +392,10 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
         by: By::Command,
         say: &mut said,
     };
+    // A delete a crash or a quit cut short is finished or undone before any change (SK-35).
+    if writes {
+        verbs::interrupted(&mut cx);
+    }
     // The studio's own list (SK-34, #3008): the plane's skills, and each harness's, the same
     // call the window makes.
     let list_for = |workspace: Option<&str>, persona: Option<&str>| {
