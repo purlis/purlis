@@ -118,7 +118,7 @@ describe("installing a skill from a skill source", function () {
     await typeInto("Repository", url);
     await typeInto("Folder", "skills");
     // A folder on this machine is this machine's source alone.
-    await choose('[role="combobox"][aria-label="Who browses it"]', "local");
+    await choose('[data-scope="select"][data-part="root"][aria-label="Who browses it"]', "local");
     await (await $("button=Add it")).click();
 
     const browse = await $(`aria/Browse ${url}, skills`);

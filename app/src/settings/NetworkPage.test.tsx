@@ -10,7 +10,7 @@ import { ChatNetworkTab } from "../ChatNetworkTab";
 import { networkGroup } from "./GrantedList";
 import type { LiveSetting } from "./groups";
 import { ReadOnlySaid } from "../ReadOnlyLine";
-import { offeredIn, pickIn } from "../primitives/select.testkit";
+import { offeredIn, pickIn, selectNamed } from "../ui/select/select.testkit";
 import { tipOf } from "../ui/tooltip/tooltip.testkit";
 
 /**
@@ -492,7 +492,7 @@ describe("Settings › Sandbox adds a service on this Mac by its port (#1970)", 
     const asked = portCore();
     render(<Row id="port" />);
     const user = userEvent.setup();
-    const scope = screen.getByRole("combobox", { name: "Allowed for" });
+    const scope = selectNamed("Allowed for");
     await waitFor(async () =>
       expect(await offeredIn(scope, user)).toEqual([
         "every chat of this project on this machine",

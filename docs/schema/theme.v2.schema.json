@@ -405,7 +405,7 @@
       }
     },
     "parts": {
-      "description": "Component parts (manifest version 12): keys <family>.<part>[.<variant>][.<state>].<property>, the state at rest implied. A property not named is the family default. Inside a state only fill, text, border-colour and shadow may be set, and a tab's flare and hover inset: a state never changes a part's size. `purlis theme parts` lists every family, part, state and property with its bounds.",
+      "description": "Component parts (manifest version 12, plus unreleased additions marked since 13): keys <family>.<part>[.<variant>][.<state>].<property>, the state at rest implied. A property not named is the family default. Inside a state only fill, text, border-colour and shadow may be set, and a tab's flare and hover inset: a state never changes a part's size. `purlis theme parts` lists every family, part, state and property with its bounds.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -6215,6 +6215,207 @@
           "$ref": "#/$defs/part-fill"
         },
         "titlebar.row.unpinned.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "select.root.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "select.root.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "select.root.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "select.root.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "select.root.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "select.root.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "select.root.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "select.root.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "select.root.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "select.root.height": {
+          "$ref": "#/$defs/part-height"
+        },
+        "select.root.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "select.root.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "select.root.hover.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "select.root.hover.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "select.root.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "select.root.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "select.root.focused.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "select.root.focused.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "select.root.disabled.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "select.root.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "select.root.disabled.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "select.root.disabled.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "select.root.open.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "select.root.open.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "select.root.open.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "select.root.open.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "select.placeholder.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "select.placeholder.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "select.placeholder.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "select.placeholder.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "select.placeholder.open.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "select.chevron.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "select.chevron.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "select.chevron.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "select.chevron.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "select.chevron.open.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "combobox.root.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "combobox.root.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "combobox.root.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "combobox.root.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "combobox.root.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "combobox.root.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "combobox.root.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "combobox.root.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "combobox.root.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "combobox.root.height": {
+          "$ref": "#/$defs/part-height"
+        },
+        "combobox.root.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "combobox.root.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "combobox.root.hover.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "combobox.root.hover.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "combobox.root.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "combobox.root.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "combobox.root.focused.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "combobox.root.focused.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "combobox.root.disabled.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "combobox.root.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "combobox.root.disabled.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "combobox.root.disabled.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "combobox.root.open.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "combobox.root.open.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "combobox.root.open.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "combobox.root.open.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "combobox.chevron.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "combobox.chevron.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "combobox.chevron.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "combobox.chevron.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "combobox.chevron.open.text": {
           "$ref": "#/$defs/part-text"
         }
       }

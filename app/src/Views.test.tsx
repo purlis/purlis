@@ -24,6 +24,7 @@ import type {
 } from "./bindings";
 import type { ViewRef } from "./tabs";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
+import { selectNamed } from "./ui/select/select.testkit";
 
 /**
  * A view in a pane (`Views.tsx`): charter's persona view and an extension's statistics, drawn
@@ -372,9 +373,9 @@ describe("an extension's view", () => {
     expect(within(chart).getByRole("list", { name: "Memories per persona" })).toBeInTheDocument();
     expect(within(chart).getAllByRole("listitem")[0]).toHaveTextContent("steward3 · default · 75%");
     // Whose program answered, after approval and not only at it (ADR 0041 item 5).
-    expect(screen.getByRole("heading", { name: /Statistics/ })).toHaveTextContent(
-      "persona-statistics",
-    );
+    // As quiet words in its first row, never a title: its tab is its name (#3147).
+    expect(screen.getByText("From persona-statistics")).toHaveClass("view-head-says");
+    expect(screen.queryByRole("heading", { name: /Statistics/ })).not.toBeInTheDocument();
   });
 
   it("scales each bar to the largest, and hides the bar itself from a screen reader", async () => {
@@ -689,8 +690,12 @@ describe("a persona's tab heading (SI-3)", () => {
     const pressed: Offer[] = [];
     draw(STEWARD, { offerFor: (id) => offers.get(id), onPress: (offer) => pressed.push(offer) });
 
-    const head = screen.getByRole("heading", { name: /steward/ }).closest("header");
-    if (head === null) throw new Error("the view has no heading");
+    // Its first row, which carries no title (#3147): the view's region is named by its title.
+    const head = screen
+      .getByRole("region", { name: /steward/ })
+      .querySelector<HTMLElement>(".view-head");
+    if (head === null) throw new Error("the view has no first row");
+    expect(within(head).queryByText("steward")).toBeNull();
     await userEvent.click(within(head).getByRole("button", { name: "Edit steward's persona.md" }));
     // #1445: the profile its chats start on is set from the view that shows it.
     await userEvent.click(within(head).getByRole("button", { name: "Set steward's profile…" }));
@@ -723,8 +728,9 @@ describe("the + on a memory list's heading (SI-9c, ADR 0065 Q9)", () => {
     }),
   );
   const heading = (name: RegExp) => {
-    const head = screen.getByRole("heading", { name }).closest("header");
-    if (head === null) throw new Error("the view has no heading");
+    // The view's first row (#3147): no title in it, its region named by the view's title.
+    const head = screen.getByRole("region", { name }).querySelector<HTMLElement>(".view-head");
+    if (head === null) throw new Error("the view has no first row");
     return head;
   };
 
@@ -1334,7 +1340,7 @@ describe("a browser view's bar (#2014)", () => {
       "Click or type in the page to take it over.",
     );
     expect(screen.queryByRole("button", { name: "Done" })).toBeNull();
-    expect(screen.getByRole("combobox", { name: "Page size" })).toBeInTheDocument();
+    expect(selectNamed("Page size")).toBeInTheDocument();
   });
 
   it("says the agent is paused while the person drives, with Done beside it", async () => {
