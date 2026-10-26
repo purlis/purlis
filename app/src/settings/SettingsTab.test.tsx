@@ -49,12 +49,9 @@ describe("the Settings tab, at the You level", () => {
     expect(
       within(levels)
         .getAllByRole("radio")
-        .map((one) => one.textContent),
+        .map((one) => one.closest("label")?.textContent),
     ).toEqual(["You"]);
-    expect(within(levels).getByRole("radio", { name: "You" })).toHaveAttribute(
-      "aria-checked",
-      "true",
-    );
+    expect(within(levels).getByRole("radio", { name: "You" })).toBeChecked();
     expect(
       within(nav())
         .getAllByRole("button")
@@ -232,7 +229,7 @@ describe("your editor, in Settings", () => {
     const choices = within(screen.getByRole("radiogroup", { name: "Your editor" })).getAllByRole(
       "radio",
     );
-    expect(choices.map((one) => one.getAttribute("aria-checked"))).toEqual([
+    expect(choices.map((one) => String((one as HTMLInputElement).checked))).toEqual([
       "false",
       "false",
       "false",
@@ -248,10 +245,7 @@ describe("your editor, in Settings", () => {
     await userEvent.click(screen.getByRole("radio", { name: "A JetBrains IDE" }));
 
     expect(yourEditor()).toBe("idea");
-    expect(screen.getByRole("radio", { name: "A JetBrains IDE" })).toHaveAttribute(
-      "aria-checked",
-      "true",
-    );
+    expect(screen.getByRole("radio", { name: "A JetBrains IDE" })).toBeChecked();
   });
 });
 

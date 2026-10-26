@@ -15,6 +15,7 @@ import { forgetExtensionsOn } from "./extensionsOn";
 import { forgetProjectThemes } from "./projectTheme";
 import { forgetSwitches } from "./switchClock";
 import { forgetUnappliedRepos } from "./unappliedRepos";
+import { forgetPaneBands } from "./noticeSettle";
 
 // What each project has on is kept per plane for the window's life (`extensionsOn.ts`); every
 // test's window is a new one, and most of them share a plane path.
@@ -35,6 +36,8 @@ afterEach(() => {
   // A way into Settings stands, and retries on a timer, for up to two seconds (#1206): one a
   // test left standing never fires into the next test, or after its window is gone.
   forgetEntering();
+  // What each pane's band held is kept by the pane for the window's life (#3167).
+  forgetPaneBands();
 });
 
 // jsdom's window is 1024px wide, the narrowest purlis supports, where the project rail hides
