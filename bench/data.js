@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793040135175,
+  "lastUpdate": 1793041956364,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -25998,6 +25998,48 @@ window.BENCHMARK_DATA = {
             "value": 104.9869735,
             "unit": "ms",
             "extra": "median of 5 runs: 103.186, 104.304, 104.987, 105.271, 106.483 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "5bb848f7e27eb2e7f62a7b713c1f1359a6c3a9d0",
+          "message": "Browsers survive a crash of the app (#2025) (#3374)\n\n* Browsers survive a crash of the app (#2025)\n\nSession protocol 1.42: the window keeps a note of each program in its\nhost (a start's note, note_program), and programs_of answers a held\nproject's browsers with their note and driver lease. A window that comes\nback takes each browser back with its chat, pinned past it, or as the\nperson's own in a view tab; what nothing takes back is ended. Adds the\nwindow end-to-end test: a browser view tab draws a real engine's frames\nand takes a click.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* Keep stand-in browsers out of the project folder; rustfmt\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* A held program's driver and note in the reattach test's expectations\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* Taken-back browsers' tabs once the record's tabs are adopted; formatting; an origin frame is passed over\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* A drawn frame's type, named\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* Taken-back browsers: listen once, and let go of the listener quietly\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* Browser e2e: a pointer press on the page; Linux alone moves the run's home; 1.38-1.41 held\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* Browser e2e: Done found within the bar\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* Browsers survive a crash: review round 1\n\nRouting forwards the browsers left (B1); an Always answer is followed at\ntake-back (B2); the host records a login it performed (S1); a browser\nbeing ended is noted so at once (S2); a chat's browser goes back to the\nsame chat, with only the logins it may still use (S3); the first hold's\nbrowsers only, held ones left as they are (S4); note_program only for a\nheld project (S5); view tabs come back (#3381). Protocol 1.39, an owner\nenum, one ProgramNote newtype, one name builder, notes sent from one place.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* Browsers survive a crash: the host records each login it performed\n\nA login names its identity, and the host keeps the identity of every login\nit performed in a browser (or the kept login it opened from); a window that\ncomes back ends a browser whose note does not name each one. A chat with no\nidentity takes back by its number alone only a browser holding no login;\none holding a login goes to the person under Pinned browsers.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-26T18:35:27Z",
+          "tree_id": "fc82f0475fb7df6246f3601dc0450b2e14454f7e",
+          "url": "https://github.com/purlis/purlis/commit/5bb848f7e27eb2e7f62a7b713c1f1359a6c3a9d0"
+        },
+        "date": 1793041953805,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.2816195,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.274, 0.279, 0.282, 0.296, 0.311 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6008815,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.518, 16.552, 16.601, 16.640, 16.694 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.869687,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.277, 100.812, 100.870, 100.943, 100.965 ms"
           }
         ]
       }
