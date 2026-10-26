@@ -363,6 +363,8 @@ function NoticeCard({
         role={quiet === true ? undefined : "status"}
         aria-label={label}
       >
+        {/* A refusal is told by more than its mark and its colour (WCAG 1.3.1, #3344). */}
+        {tone === "trouble" && <span className="sr-only">Not done: </span>}
         <strong className="notice-card-title">{title}</strong>
         <span className="notice-says">{children}</span>
       </div>
