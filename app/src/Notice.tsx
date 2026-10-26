@@ -478,12 +478,19 @@ export function NoticeList({
  * **A Notice the keyboard is on is never hidden** (as the Inbox's list never moves one): one that
  * arrives above it stands as a third until the focus leaves it.
  */
-export function NoticePaneRow({ children }: { children: ReactNode }) {
+export function NoticePaneRow({
+  children,
+  band,
+}: {
+  children: ReactNode;
+  /** The pane this band is (`paneBand`): what stood in it is remembered when it is drawn anew. */
+  band?: string;
+}) {
   const stackAt = useRef<HTMLDivElement>(null);
   const moreAt = useRef<HTMLButtonElement>(null);
   // **A granting Notice's ways out wait for it to settle once it moved** (#1695, train 54's
   // review): a Notice above it answered or gone can move another's way out under the pointer.
-  const { at: rowAt, allows, said } = useNoticeSettle<HTMLDivElement>("stands");
+  const { at: rowAt, allows, said } = useNoticeSettle<HTMLDivElement>("stands", band);
   const [count, setCount] = useState(0);
   const [open, setOpen] = useState(false);
   const behind = Math.max(count - SHOWN, 0);

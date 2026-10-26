@@ -225,6 +225,34 @@ export const IconButtons: Story = {
   },
 };
 
+/**
+ * **Two small glyph buttons at the family's tightest gap** (#3210, WCAG 2.5.8): a row's own gap,
+ * a hairline in the compact density. Each is a 24px target by itself in every cell, so axe's
+ * `target-size` passes without any spacing to lean on.
+ */
+export const SmallGlyphsAtTheTightestGap: Story = {
+  render: () => (
+    <ButtonRow size="sm" aria-label="A view's first row" role="toolbar" wraps={false}>
+      <IconButton icon={<Plus />} aria-label="Add a memory" variant="ghost" />
+      <IconButton icon={<X />} aria-label="Archive the view" variant="ghost" />
+    </ButtonRow>
+  ),
+  play: async ({ canvas, userEvent }) => {
+    const [add, archive] = [
+      canvas.getByRole("button", { name: "Add a memory" }),
+      canvas.getByRole("button", { name: "Archive the view" }),
+    ];
+    for (const one of [add, archive]) {
+      const box = one.getBoundingClientRect();
+      await expect(box.height).toBeGreaterThanOrEqual(24);
+      await expect(box.width).toBeGreaterThanOrEqual(24);
+    }
+    await userEvent.tab();
+    await expect(add).toHaveFocus();
+    expectFocusInSight();
+  },
+};
+
 /** A toggle: says it is pressed, by its edge and ground as well as its state, and turns. */
 function Toggled() {
   const [on, setOn] = useState(false);

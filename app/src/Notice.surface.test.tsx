@@ -53,7 +53,9 @@ function isASharedWrappingButton(button: HTMLElement) {
   expect(drawnWith(button, "white-space"), what).toBe("normal");
   expect(drawnWith(button, "max-inline-size"), what).toBe("100%");
   expect(drawnWith(button, "block-size"), what).toBe("auto");
-  expect(drawnWith(button, "min-block-size"), what).toBe("max(var(--size-chrome), var(--space-7))");
+  expect(drawnWith(button, "min-block-size"), what).toBe(
+    "max(24px, var(--size-chrome), var(--space-7))",
+  );
 }
 
 describe("a Notice's ways out", () => {
@@ -121,7 +123,7 @@ describe("a Notice's ways out", () => {
     render(<NoticePaneRow>{[one("a:1"), one("b:1"), one("c:1")]}</NoticePaneRow>);
     const more = await screen.findByRole("button", { name: "+1 more" });
     expect(more).toHaveAttribute("data-size", "sm");
-    expect(drawnWith(more, "block-size")).toBe("max(var(--size-chrome), var(--space-7))");
+    expect(drawnWith(more, "block-size")).toBe("max(24px, var(--size-chrome), var(--space-7))");
   });
 });
 

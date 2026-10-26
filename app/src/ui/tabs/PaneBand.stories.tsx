@@ -18,7 +18,7 @@ import { Fragment, useState, type ReactNode } from "react";
 import { expect, waitFor, within } from "storybook/test";
 import { Sparkles, X } from "lucide-react";
 import { Notice, NoticePaneRow } from "../../Notice";
-import { NOTICE_MOVED_JUST_NOW } from "../../noticeSettle";
+import { NOTICE_MOVED_JUST_NOW, SETTLE_MS } from "../../noticeSettle";
 import { PaneActions, PaneHead } from "../../LayoutPanes";
 import type { Offer } from "../../actions";
 import { ChatMark } from "../../NeedsYou";
@@ -469,7 +469,7 @@ export const PutAway: Story = {
  * consents move up under the pointer, and a press on an Allow at once does nothing and says
  * why: the vault's, held because it grants, and the sandbox's. The keyboard is landed on the
  * consent's line, never on its Allow. Measured in the real engine, where the warning's box is
- * positioned for its mark: the guard reads where the line is drawn against the band, not its
+ * positioned for its mark: the guard reads where each Allow's own box is drawn (#3167), not an
  * `offsetTop`.
  */
 export const ConsentMoved: Story = {
@@ -493,6 +493,103 @@ export const ConsentMoved: Story = {
     const ask = canvas.getByRole("status", { name: "Sandbox block" });
     await userEvent.click(within(ask).getByRole("button", { name: "Allow registry.npmjs.org" }));
     expect(allowed).toEqual([]);
+    atRest();
+  },
+};
+
+/** Two frames: whatever the last change asked to read again has been read. */
+const twoFrames = () =>
+  new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done())));
+
+/**
+ * **A consent whose Allow its words moved holds it** (#3167): the window is narrowed, the
+ * vault's words wrap onto one more line and its ways out go down under them, while the line's
+ * own top stays where it was. A press on the Allow at once does nothing and says why; once it
+ * has stood still for the settle time, the same press allows.
+ */
+export const ConsentRewraps: Story = {
+  args: { warnings: ["vault-refused"] },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    allowed.length = 0;
+    const vault = await canvas.findByRole("status", { name: "Vault" });
+    const allow = within(vault).getByRole("button", { name: "Allow steward to use this vault" });
+    await twoFrames();
+    const was = { line: boxOf(vault).top, allow: boxOf(allow) };
+
+    const layout = canvasElement.querySelector(".editor") as HTMLElement;
+    layout.style.inlineSize = "420px";
+    await waitFor(() => {
+      const now = boxOf(allow);
+      expect(
+        Math.abs(now.top - was.allow.top) + Math.abs(now.left - was.allow.left),
+      ).toBeGreaterThan(4);
+    });
+    // The line stood still: only the Allow's own box says it moved.
+    expect(boxOf(vault).top).toBeCloseTo(was.line, 0);
+
+    await userEvent.click(allow);
+    expect(allowed).toEqual([]);
+    expect(await canvas.findByText(NOTICE_MOVED_JUST_NOW)).toBeVisible();
+
+    await new Promise((done) => setTimeout(done, SETTLE_MS + 100));
+    await userEvent.click(allow);
+    expect(allowed).toEqual(["forge"]);
+    atRest();
+  },
+};
+
+/**
+ * **A consent the band was made to scroll back holds its Allow** (#3167): the band is scrolled
+ * to its end, a long warning under the consent is put away, and the band, holding less, can no
+ * longer stay scrolled: the consent slides down on screen though its place in the band is the
+ * same, and the Allow as wide. A press on its Allow at once does nothing. Scrolling the band
+ * yourself is no move: the Allow pressed just after that scroll allows.
+ */
+export const ConsentClamped: Story = {
+  args: { warnings: ["vault-refused", "sandbox-long"], width: 400 },
+  play: async ({ canvas, userEvent }) => {
+    allowed.length = 0;
+    const vault = await canvas.findByRole("status", { name: "Vault" });
+    const allow = within(vault).getByRole("button", { name: "Allow steward to use this vault" });
+    const stack = vault.closest(".pane-notices") as HTMLElement;
+    // The clamp alone, and no re-wrap: the band keeps its scrollbar's room whether it overflows
+    // or not, so its words are as wide before the dismiss as after it.
+    stack.style.scrollbarGutter = "stable";
+    await waitFor(() => expect(stack.scrollHeight).toBeGreaterThan(stack.clientHeight + 24));
+    // Start from a consent that has stood still for the settle time, and is pressed as it is.
+    await new Promise((done) => setTimeout(done, SETTLE_MS + 100));
+    await userEvent.click(allow);
+    expect(allowed).toEqual(["forge"]);
+    allowed.length = 0;
+
+    // The person scrolls the band to its end: a scroll, and no move.
+    stack.scrollTop = stack.scrollHeight;
+    await waitFor(() => expect(stack.scrollTop).toBeGreaterThan(24));
+    await twoFrames();
+    await userEvent.click(allow);
+    expect(allowed).toEqual(["forge"]);
+    allowed.length = 0;
+
+    const inBand = () => ({
+      top: boxOf(allow).top - boxOf(stack).top + stack.scrollTop,
+      left: boxOf(allow).left - boxOf(stack).left,
+      width: boxOf(allow).width,
+    });
+    const was = { inBand: inBand(), onScreen: boxOf(allow).top };
+    const long = canvas.getByRole("status", { name: "Sandbox block" });
+    await userEvent.click(within(long).getByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(canvas.queryByRole("status", { name: "Sandbox block" })).toBeNull());
+    // Clamped: the Allow as wide and at the same place in the band, only lower on screen.
+    const now = inBand();
+    expect(now.top).toBeCloseTo(was.inBand.top, 0);
+    expect(now.left).toBeCloseTo(was.inBand.left, 0);
+    expect(now.width).toBeCloseTo(was.inBand.width, 0);
+    expect(boxOf(allow).top - was.onScreen).toBeGreaterThan(24);
+
+    await userEvent.click(allow);
+    expect(allowed).toEqual([]);
+    expect(await canvas.findByText(NOTICE_MOVED_JUST_NOW)).toBeVisible();
+    stack.style.scrollbarGutter = "";
     atRest();
   },
 };

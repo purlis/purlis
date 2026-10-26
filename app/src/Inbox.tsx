@@ -58,6 +58,7 @@ import { KIND_SAID } from "./inboxUpdates";
 import { useAllowedLately, type AllowedLately } from "./allowedLately";
 import { SETTLE_MS } from "./TaskBlocksNotice";
 import { NoticeWayGuard, useNoticeSettle } from "./noticeSettle";
+import { useWayPlaces } from "./wayPlaces";
 import { useProjectShown } from "./projectShown";
 import { capMarks } from "./combiningMarks";
 import { AskWrites } from "./AskWrites";
@@ -1242,30 +1243,29 @@ function UpdateList({ updates, stops }: { updates: Updates; stops: readonly stri
   );
 }
 
+/** A row's answers that grant: an ask's or an update's Allow, or a way out of its Notice's. */
+const granting = (row: Element) => row.querySelectorAll('[data-variant="grants"], .allows');
+const standsFirst = () => false;
+
 /**
  * **When a row was last drawn where it stands, or moved** (#1693, #1695): what an Allow on it
  * waits {@link SETTLE_MS} after, so what is under the pointer is what the person read.
  *
  * `here` is what the row stands under and offers: the stops above it and its own words and
  * answers. It is taken in the very render that draws it, so no press lands on a place whose time
- * is not known yet. **Where the row was last laid out, and since when**: something above it can
- * grow without a stop of its own changing (a sentence said under another row, the recent answers
- * of an empty list), and that render need not reach this row. So the place it is drawn at is
- * read after each of its own renders and again at the press: one that differs is a move.
+ * is not known yet. **Where each of its answers that grant was last drawn, and since when**
+ * (#3167, `useWayPlaces`): something above it can grow without a stop of its own changing (a
+ * sentence said under another row, the recent answers of an empty list), its own words can wrap
+ * again at a new width, and the list can be made to scroll back; none of these need reach this
+ * row's render. So each answer's own box is read after each render, on every change that can
+ * move it, and again at the press: one that differs is a move.
  */
 function useSettledPlace<T extends HTMLElement>(here: string) {
   const [placed, setPlaced] = useState(() => ({ here, at: placedAt() }));
   if (placed.here !== here) setPlaced({ here, at: placedAt() });
   const drawn = useRef<T>(null);
-  const laidOut = useRef<{ top: number; at: number }>(undefined);
-  const movedAt = () => {
-    const top = drawn.current?.offsetTop ?? 0;
-    if (laidOut.current?.top !== top) laidOut.current = { top, at: placedAt() };
-    return laidOut.current.at;
-  };
-  useLayoutEffect(() => {
-    movedAt();
-  });
+  // Its first drawing is `placed`'s: an answer read for the first time is no move of its own.
+  const { movedAt } = useWayPlaces(drawn, granting, standsFirst);
   const tooSoon = () => placedAt() - Math.max(placed.at, movedAt()) < SETTLE_MS;
   return { drawn, tooSoon };
 }

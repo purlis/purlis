@@ -72,7 +72,7 @@ fn a_theme_rounds_the_buttons_root_to_a_pill() {
         sheet,
         concat!(
             "@layer parts {\n",
-            "  :where([data-scope=\"button\"][data-part=\"root\"][data-size=\"sm\"]) { --purlis-part-height: max(var(--size-chrome), var(--space-7)); }\n",
+            "  :where([data-scope=\"button\"][data-part=\"root\"][data-size=\"sm\"]) { --purlis-part-height: max(24px, var(--size-chrome), var(--space-7)); }\n",
             "  :where([data-scope=\"button\"][data-part=\"root\"][data-size=\"lg\"]) { --purlis-part-height: calc(var(--size-control) + var(--space-2)); }\n",
             "  :where([data-scope=\"button\"][data-part=\"root\"]) { border-radius: 9999px; }\n}\n",
         )
@@ -345,7 +345,7 @@ fn a_corner_is_clamped_to_half_the_parts_height_as_it_is_drawn() {
         "{sheet}"
     );
     // The small and the large button are clamped to their own height.
-    assert!(sheet.contains(":where([data-scope=\"button\"][data-part=\"root\"][data-size=\"sm\"]) { --purlis-part-height: max(var(--size-chrome), var(--space-7)); }"));
+    assert!(sheet.contains(":where([data-scope=\"button\"][data-part=\"root\"][data-size=\"sm\"]) { --purlis-part-height: max(24px, var(--size-chrome), var(--space-7)); }"));
     assert!(sheet.contains(":where([data-scope=\"button\"][data-part=\"root\"][data-size=\"lg\"]) { --purlis-part-height: calc(var(--size-control) + var(--space-2)); }"));
     let four = sheet_of(json!({ "button.root.corner-radius": ["full", 0, "radius.md", 4] }));
     assert!(four.contains(&format!(
