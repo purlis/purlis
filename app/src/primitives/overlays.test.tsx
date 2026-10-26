@@ -258,10 +258,11 @@ const FAMILY = /^(AnchoredPopover|HeldPopover|PopoverDialog|Menu|InlineMenu)$/;
 const NATIVE: Record<string, string[]> = {
   button: ["ui-row", "ui-tree-row", "ui-segmented-item", "ui-menu-item"],
   // A box is the field family's (#2905), in a dialog's settings row too, so a native box left
-  // inside one is never right; a select in a settings row is the set's own (`.ui-field`).
+  // inside one is never right. A select is the select family's (#2906), in a settings row too
+  // (#3289), so a native one left inside an overlay wears only the old select class.
   input: [],
   textarea: [],
-  select: ["ui-select", "ui-field"],
+  select: ["ui-select"],
 };
 
 /** The button family's members (`ui/button/Button.tsx`), which draw their own look. */
