@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793014062083,
+  "lastUpdate": 1793015854098,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -25494,6 +25494,48 @@ window.BENCHMARK_DATA = {
             "value": 101.418105,
             "unit": "ms",
             "extra": "median of 5 runs: 100.617, 101.077, 101.418, 101.572, 102.701 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c38a5b23c2779c87796fe60e5340177f8fe1a30c",
+          "message": "Theme check: the manifest says which looks are drawn; danger words held where they are (#3375)\n\n* Parts manifest: say which variants are pressed or open\n\nThe manifest gave every variant of a family every state the family\nmarks, so it claimed looks the window never draws: a danger or a\nwarning-soft button pressed as a toggle, and a danger menu row with its\nsubmenu open. The state-words guard could only walk looks at rest and\nunder the pointer for that reason.\n\n- parts.rs: DRAWN_ONLY says which variants take a state only some do (a\n  toggle is a plain or a ghost button; only a plain menu row opens a\n  submenu), and Family::draws reads it. Keys stay valid for every\n  variant; only the guards that walk drawn looks leave the others out.\n- state_words_tests.rs: walks pressed and open looks too, at rest and\n  under the pointer, wherever the window draws them.\n- ToggleButton takes only the plain and ghost variants;\n  consentToggles.test.ts reads the list from parts.rs and fails a button\n  drawn in the pressed look in any other variant; a new guard fails a\n  Submenu whose row takes a variant.\n\nCloses #3255\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Theme check: hold danger words where the window draws them\n\n#3041 held a state's colour drawn as a part's words at 4.5:1. The\ndanger colour drawn as words is now walked the same way: a danger\nanswer's words, a danger menu row's and a field's error, in every look\nthe window draws (#3255).\n\nA field's error was claimed on every ground a field stands on, 17 of\nthem, though only a field that can refuse keeps its error's line, and\nthose stand on the window, a pane and a dialog, with the whole copy of\na refusal on the overlay surface. PART_GROUNDS now says so for the\nerror, and a new app guard lists every field that can refuse with the\nground it stands on and holds the manifest's list to them.\n\nThe two places Purlis Classic dark measured 4.18:1 and 3.87:1 (a danger\ntoggle on accent.surface, a danger row open on tab.active) are looks\nthe window never draws, which the manifest now says. Every place danger\nwords are drawn already had its text-floor pair, so no pair, floor or\nbuilt-in value changes.\n\nCloses #3254\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-26T15:39:54+04:00",
+          "tree_id": "de2b025d7fb29f7a2ea66239410293b0b787741f",
+          "url": "https://github.com/purlis/purlis/commit/c38a5b23c2779c87796fe60e5340177f8fe1a30c"
+        },
+        "date": 1793015851032,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5296215,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.487, 0.508, 0.530, 0.531, 0.540 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.029732,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.464, 16.770, 17.030, 17.126, 17.270 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.6706765,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.814, 103.481, 104.671, 104.850, 106.193 ms"
           }
         ]
       }
