@@ -20,8 +20,7 @@ import { declarations, SRC, sourceFiles } from "./guards.testkit";
  * A rule draws a button's edge when it sets a border that shows (not `0`, `none` or
  * `transparent`) on a selector whose subject is a `button` or a `[role="button"]`, or when it
  * also says the pointer presses it (`cursor: pointer`). The families' own sheets (`src/ui`) and
- * the window's base and control classes (`base.css`, `primitives/`), which the choice and
- * select families move, are theirs, not a view's.
+ * the window's base and primitives (`base.css`, `primitives/`) are theirs, not a view's.
  */
 
 /** The rules that still draw a button's edge, each with its reason; exact, so a rule that is
