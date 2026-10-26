@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793020833030,
+  "lastUpdate": 1793025698362,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -7682,6 +7682,42 @@ window.BENCHMARK_DATA = {
             "value": 326.2,
             "unit": "MB",
             "extra": "median of 6 samples: 368.3, 356.8, 330.3, 321.2, 322.1, 215.7 MB; window 204.8 MB, session host 121.4 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "4907e1a01d856cd4e0d00c0b4c2350ac6a086a20",
+          "message": "Resize separators: a quiet grip in Purlis, not an accent line (#3143) (#3153)\n\n* Resize separators: a quiet grip in Purlis, not an accent line (#3143)\n\nEvery resize handle (a side's edge, the line under the work, the bottom\npanel's halves, a pane split, the file tree's edge) is the panel separator\nfamily: `ui/panel/Separator`, a root keyed on the panel library's own\nstate marks and a grip, a short centred mark drawn over the panels either\nside, so no state changes the handle's box or moves anything.\n\nPurlis draws the family default: no grip at rest, the faint tier under\nthe pointer and the muted tier while dragged, never the accent. Purlis\nClassic keeps its accent line through its own parts. The keyboard's 2px\nring is drawn outside the handle.\n\nThe family's root and grip take `fill` in the hover and pressed states\n(manifest version 12, provisional). It is drawn in marks: what it draws in a state is\nheld at 3:1 on its grounds as a non-text mark, and falls back to its\ndefault otherwise. purlis/panel-separator-family is at error, and the\nlibrary's Separator is refused outside src/ui. Stories cover rest, hover,\ndrag and keyboard focus in every cell of the theme matrix.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Every resize handle has a box the keyboard can land on, and a grip says it has focus (#3143)\n\nA handle's box is never thinner than the keyboard's ring. It straddles\nthe room its boundary takes (`--separator-room`: the window's gutter, or\nnone between two panes) with a negative margin, so Tab always lands on\nsomething drawn and nothing moves. Purlis Classic's accent line now\nshows on its side edges and pane splits under the pointer, while\ndragged, and with the keyboard on it.\n\nWith the keyboard on it, a handle in Purlis shows its grip in the accent\ninstead of a ring the length of the handle. The family gains the\n`focused` state (manifest version 13, provisional), keyed on\n`:focus-visible`. A focused handle must draw a mark of its own, held at\n3:1, or it draws its default. Forced colours draw the grip in CanvasText\nand Highlight, and the window's ring comes back.\n\nThe grip's corner is `--radius-full`. The lint rule also refuses the\npanel library's handle taken through `import * as`. The stories check\nwhat each state draws, add a pane split's keyboard case, and let go of\nthe dragged story's press after its picture is taken.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Two panes in a split part by the gutter, and the keyboard's grip wins over the pointer's (#3143)\n\nPanes in a split part as two regions do. In Purlis the gap is the\nwindow's gutter, in the window's own colour. In Purlis Classic, where the\ngutter is 0, it is the 1px hairline between flush regions. The split's\nhandle takes that room (`max(window.gutter, panel.border-width)`) and\nstraddles it as every handle does. The Tabs split story draws the real\nhandle and checks that the panes part.\n\nWith the keyboard on a handle, the focus grip is drawn even under the\npointer, in panel.css and in forced colours. It takes `focus.ring`,\nwhich is now floored at 3:1 on surface.deep and surface.raised. The\nforced-colours scenario reads the window's focus rule by its\noutline-color and checks the grip's rules. The separator stories check\nthat the handles give back all the room their boxes take, and draw the\nside's slot as the window does.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* Regenerate the theme schema with the choice families\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-26T13:00:46Z",
+          "tree_id": "856cdc17ec8769a013d2ec90a5642ada237b82df",
+          "url": "https://github.com/purlis/purlis/commit/4907e1a01d856cd4e0d00c0b4c2350ac6a086a20"
+        },
+        "date": 1793025695524,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 1190,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1073, 1190, 1645 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 270.3,
+            "unit": "MB",
+            "extra": "median of 6 samples: 261.9, 293.1, 282.8, 269.7, 270.9, 200.8 MB; window 153.4 MB, session host 118.6 MB"
           }
         ]
       }
