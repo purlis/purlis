@@ -88,7 +88,7 @@ import { focusKeySaid, shortcutsKeySaid } from "./keys/ownKeys";
 import { askedByOf, chatsOfTab } from "./tabChats";
 import { neighbour } from "./tabTasks";
 import { taskKeyNote, taskKeySaid } from "./taskKeys";
-import { todoOpenId, todoView } from "./todos";
+import { todoDeleteId, todoOpenId, todoReopenId, todoView } from "./todos";
 import { onAMac } from "./tabKeys";
 import type { RegionId, Toggled } from "./regions";
 import {
@@ -444,6 +444,10 @@ export type Does =
   | { verb: "openBrowserTimeline"; chat: string; name: string }
   /** Drops one of the focused workspace's todos with nothing journalled. */
   | { verb: "forgetTodo"; workspace: string; slug: string }
+  /** Opens one of the focused workspace's done todos again, as it was (ADR 0106, R131). */
+  | { verb: "reopenTodo"; workspace: string; slug: string }
+  /** Deletes one of the focused workspace's done todos, with nothing journalled (ADR 0106). */
+  | { verb: "forgetDoneTodo"; workspace: string; slug: string }
   /** **Names the worktree it acts on**, and never "whichever one is in front".
    *
    *  It used to carry only `force`, which made `worktree.remove` a row about the chat in
@@ -739,6 +743,11 @@ export type Now = {
    */
   todos?: readonly { slug: string; title: string }[];
   /**
+   * The focused workspace's done todos (`Panels.done_todos`, ADR 0106), one Reopen and one
+   * Delete row each. They stay, struck through, until one or the other.
+   */
+  doneTodos?: readonly { slug: string; title: string }[];
+  /**
    * The project's chats' browsers (#2022): a Pin or Unpin row each, and for a pinned one whose
    * chat has closed, a row to hand it to each chat of `listed`, and Stop. `chat` is what its
    * chat is called, or was called when it closed.
@@ -1008,6 +1017,8 @@ export type Doing = {
    *  owed — which todo closed, and that the journal has it or does not. */
   closeTodo: (workspace: string, slug: string) => Promise<Ran>;
   forgetTodo: (workspace: string, slug: string) => Promise<Ran>;
+  reopenTodo: (workspace: string, slug: string) => Promise<Ran>;
+  forgetDoneTodo: (workspace: string, slug: string) => Promise<Ran>;
   /** Each answers a `Ran`: the core can refuse (#2022), a browser gone meanwhile, a chat
    *  already holding as many as a project may. */
   pinBrowser: (program: string, session: number, pinned: boolean) => Promise<Ran>;
@@ -2565,7 +2576,19 @@ export function catalogue(now: Now): Offer[] {
           { verb: "closeTodo", workspace: now.focused, slug: todo.slug },
           todo.title,
         ),
-        note: `Closes it in ${now.focused}; the workspace's journal records it.`,
+        note: `Marks it done in ${now.focused}; the workspace's journal records it, and it stays, struck through, to reopen.`,
+      });
+    }
+    // **A done todo stays** (ADR 0106, R131): unticking its box reopens it as it was.
+    for (const todo of now.doneTodos ?? []) {
+      offers.push({
+        ...can(
+          todoReopenId(todo.slug),
+          `Reopen todo: ${todo.title}`,
+          { verb: "reopenTodo", workspace: now.focused, slug: todo.slug },
+          todo.title,
+        ),
+        note: `Opens it again in ${now.focused}, as it was.`,
       });
     }
   }
@@ -3071,6 +3094,17 @@ export function catalogue(now: Now): Offer[] {
         note: `Drops it from ${todoIn} with nothing journalled. Mark it done to keep a trace.`,
       });
     }
+    for (const todo of now.doneTodos ?? []) {
+      offers.push({
+        ...can(
+          todoDeleteId(todo.slug),
+          `Delete done todo ${todo.title}`,
+          { verb: "forgetDoneTodo", workspace: todoIn, slug: todo.slug },
+          todo.title,
+        ),
+        note: `Deletes it from ${todoIn}'s done todos with nothing journalled. There is no undo.`,
+      });
+    }
   }
 
   // Destructive, and therefore here: letting go of a project ends every chat in it. Nothing
@@ -3118,6 +3152,8 @@ export const WRITES_THE_PROJECT: ReadonlySet<Does["verb"]> = new Set<Does["verb"
   "removeVault",
   "closeTodo",
   "forgetTodo",
+  "reopenTodo",
+  "forgetDoneTodo",
   "askDropMembership",
   "newMemory",
   "editMemory",
@@ -3334,6 +3370,10 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
       return DID;
     case "closeTodo":
       return doing.closeTodo(does.workspace, does.slug);
+    case "reopenTodo":
+      return doing.reopenTodo(does.workspace, does.slug);
+    case "forgetDoneTodo":
+      return doing.forgetDoneTodo(does.workspace, does.slug);
     case "pinBrowser":
       return doing.pinBrowser(does.program, does.session, does.pinned);
     case "handBrowser":
@@ -4744,6 +4784,9 @@ export type MenuOn =
   /** One of the focused workspace's open todos, by slug — the Todos panel's rows (SI-3). The
    *  workspace is the focused one on the one surface that draws them. */
   | { on: "todo"; slug: string }
+  /** One of the focused workspace's done todos, by slug (ADR 0106): the Todos view's struck
+   *  rows. */
+  | { on: "doneTodo"; slug: string }
   /** One session record, by its plane-relative path — the Sessions panel's rows (SI-8d). */
   | { on: "session"; path: string }
   /** One memory, by its tab's key (`memories.memoryKey`) — a persona's memory rows (SI-9b). */
@@ -4935,6 +4978,8 @@ export function menuOn(what: MenuOn): { above: string[]; below: string[] } {
         above: [todoOpenId(what.slug), `todo.done:${what.slug}`],
         below: [`todo.forget:${what.slug}`],
       };
+    case "doneTodo":
+      return { above: [todoReopenId(what.slug)], below: [todoDeleteId(what.slug)] };
     case "session":
       return { above: [`session.open:${what.path}`, `session.resume:${what.path}`], below: [] };
     case "memory":

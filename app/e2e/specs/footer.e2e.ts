@@ -84,7 +84,8 @@ async function startAChat(plane: string, showTheFooter: boolean): Promise<void> 
   // WebView's driver clicks without a pointer, which React Aria reads as an assistive
   // technology's (virtual) press, and that is the input's to take, not its label's. The start
   // waits until the tick lands.
-  const box = await $('input[type="checkbox"]');
+  // The dialog's own: the Todos view's rows have boxes too (R131, #3063).
+  const box = await dialog().$('input[type="checkbox"]');
   await box.waitForExist({ timeout: 20_000 });
   expect(await box.isSelected()).toBe(false);
   if (showTheFooter) {

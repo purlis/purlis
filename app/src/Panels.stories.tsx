@@ -5,10 +5,14 @@
  * **Memory, Todos and Sessions as `Panels` draws them** (#3340), on the sidebar view frame: a
  * side panel 276px wide whose view is its one scroll, the title and the field held at the top,
  * each day's name held under them with its count, 30px rows. A long list and a short one of each,
- * walked by the keyboard in the order the top stacks them.
+ * walked by the keyboard in the order the top stacks them. And the Todos view with done todos
+ * after the open ones, ticked and struck through (R131, ADR 0106).
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { catalogue, catalogued } from "./actions";
+import { noTabs } from "./tabs";
+import { DONE_ROW } from "./todos";
 import { expect, waitFor } from "storybook/test";
 import { ownPanelKey, Panels } from "./Panels";
 import { expectFocusInSight } from "./stories.testkit";
@@ -63,7 +67,22 @@ const KEYS: Record<"memory" | "todos" | "sessions", [string, string]> = {
   sessions: ["Sessions", "note"],
 };
 
-function panelOf(view: keyof typeof KEYS, count: number): PanelView {
+/** `count` done todos, as `panels.rs` keys them: `done/<slug>`. */
+function doneOf(count: number): PanelRow[] {
+  // `slice(-0)` is the whole list: none is none.
+  return (count === 0 ? [] : TITLES.slice(-count)).map((text, at) => ({
+    key: `${DONE_ROW}done-${at}`,
+    text,
+    note: daysAgo(20 + at),
+    mark: "todo",
+    tone: "plain",
+    detail: null,
+    runs: null,
+    actions: [],
+  }));
+}
+
+function panelOf(view: keyof typeof KEYS, count: number, done = 0): PanelView {
   const [title, mark] = KEYS[view];
   return {
     key: ownPanelKey(view) ?? view,
@@ -75,14 +94,14 @@ function panelOf(view: keyof typeof KEYS, count: number): PanelView {
     blocks: [
       {
         kind: "list",
-        rows: rowsOf(count, mark),
+        rows: [...rowsOf(count, mark), ...doneOf(done)],
         empty: { headline: `No ${title.toLowerCase()} yet`, body: null, offer: null },
       },
     ],
   };
 }
 
-function stateOf(view: keyof typeof KEYS, count: number): WorkspaceState {
+function stateOf(view: keyof typeof KEYS, count: number, done = 0): WorkspaceState {
   const panels: PanelsModel = {
     workspace: "alpha",
     repos: [],
@@ -91,10 +110,11 @@ function stateOf(view: keyof typeof KEYS, count: number): WorkspaceState {
     refused: [],
     todos: [],
     todos_refused: null,
+    done_todos: [],
     personas: [],
     persona: null,
     sessions: [],
-    contributed: [panelOf(view, count)],
+    contributed: [panelOf(view, count, done)],
   };
   return { panels, repos: undefined, pieces: {}, piecesRefused: {}, reading: false };
 }
@@ -105,8 +125,40 @@ function stateOf(view: keyof typeof KEYS, count: number): WorkspaceState {
  * line holds the view's one title and its actions (#3355), and the view under it is the one
  * scroll, its top held at the top of it.
  */
-function View({ view, count }: { view: keyof typeof KEYS; count: number }) {
+function View({
+  view,
+  count,
+  done = 0,
+}: {
+  view: keyof typeof KEYS;
+  count: number;
+  /** Done todos after the open ones, each with its box ticked (the Todos view only). */
+  done?: number;
+}) {
   const [shown, setShown] = useState<string>();
+  // The catalogue's Mark done and Reopen rows, which a todo's box runs: without them a row keeps
+  // its mark, as it does where the catalogue offers none.
+  const offers = useMemo(
+    () =>
+      view !== "todos" || done === 0
+        ? new Map()
+        : catalogued(
+            catalogue({
+              tabs: noTabs(),
+              workspaces: ["alpha"],
+              focused: "alpha",
+              plane: "/home/dev/plane",
+              todos: rowsOf(count, "todo").map((row) => ({ slug: row.key, title: row.text })),
+              doneTodos: doneOf(done).map((row) => ({
+                slug: row.key.slice(DONE_ROW.length),
+                title: row.text,
+              })),
+              needsYou: [],
+              nameOf: String,
+            }),
+          ),
+    [view, count, done],
+  );
   const [line, setLine] = useState<HTMLElement | null>(null);
   return (
     <Panel variant="bottom" aria-label={KEYS[view][0]} role="region">
@@ -128,8 +180,8 @@ function View({ view, count }: { view: keyof typeof KEYS; count: number }) {
             <Panels
               view={view as OwnViewId}
               workspace="alpha"
-              state={stateOf(view, count)}
-              offers={new Map()}
+              state={stateOf(view, count, done)}
+              offers={offers}
               onPress={() => {}}
               contributed={[]}
               shownRow={shown}
@@ -228,6 +280,18 @@ export const TodosShort: Story = {
       () => userEvent.tab(),
       canvas.getByRole("textbox", { name: "New todo in alpha" }),
       false,
+    );
+  },
+};
+
+export const TodosWithDone: Story = {
+  args: { view: "todos", count: 3, done: 2 },
+  play: async ({ canvas }) => {
+    // The open ones' boxes are clear, the done ones' ticked, and those are under Done, last.
+    await expect(canvas.getAllByRole("checkbox", { checked: false })).toHaveLength(3);
+    await expect(canvas.getAllByRole("checkbox", { checked: true })).toHaveLength(2);
+    await expect(canvas.getAllByRole("rowgroup").at(-1)).toBe(
+      canvas.getByRole("rowgroup", { name: "Done" }),
     );
   },
 };

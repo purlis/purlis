@@ -151,6 +151,7 @@ const PANELS: PanelsModel = {
     { slug: "20260302-091400-review", title: "Review the rollout plan", stamp: "2026-03-02" },
   ],
   todos_refused: null,
+  done_todos: [],
   personas: ["devops", "steward"],
   persona: "steward",
   sessions: [],
@@ -795,6 +796,92 @@ describe("a todo row's menu", () => {
     await userEvent.click(screen.getByRole("menuitem", { name: "Mark done" }));
     expect(pressed.map((offer) => offer.does)).toEqual([
       { verb: "closeTodo", workspace: "alpha", slug: "20260302-091400-review" },
+    ]);
+  });
+});
+
+describe("a todo's box and a done todo (R131, ADR 0106)", () => {
+  const DONE = row("done/20260301-090000-ship", "Ship the importer", {
+    mark: "todo",
+    note: "2026-03-01",
+    detail: { kind: "text", text: "Shipped." },
+  });
+  const withDone = (): WorkspaceState =>
+    state({
+      panels: {
+        ...PANELS,
+        done_todos: [{ slug: "20260301-090000-ship", title: "Ship the importer", stamp: "" }],
+        contributed: [todosPanel([TODO, DONE]), personasPanel(["devops", "steward"], "steward")],
+      },
+    });
+  const offers = () =>
+    catalogued(
+      catalogue({
+        tabs: noTabs(),
+        workspaces: ["alpha"],
+        focused: "alpha",
+        plane: PLANE,
+        personas: ["devops", "steward"],
+        vaults: ["ops"],
+        todos: PANELS.todos,
+        doneTodos: [{ slug: "20260301-090000-ship", title: "Ship the importer" }],
+        needsYou: [],
+        nameOf: String,
+      }),
+    );
+
+  it("ticks an open todo's box to mark it done", async () => {
+    const pressed: Offer[] = [];
+    draw({ state: withDone(), offers: offers(), onPress: (offer) => pressed.push(offer) });
+
+    const box = within(screen.getByTestId("panel-todos")).getByRole("checkbox", {
+      name: "Mark done: Review the rollout plan",
+    });
+    expect(box).not.toBeChecked();
+    await userEvent.click(box);
+
+    expect(pressed.map((offer) => offer.does)).toEqual([
+      { verb: "closeTodo", workspace: "alpha", slug: "20260302-091400-review" },
+    ]);
+  });
+
+  it("draws a done todo after the open ones, ticked and struck through, and unticks it to reopen", async () => {
+    const pressed: Offer[] = [];
+    draw({ state: withDone(), offers: offers(), onPress: (offer) => pressed.push(offer) });
+
+    const panel = within(screen.getByTestId("panel-todos"));
+    const done = panel.getByTestId("panel-row-done/20260301-090000-ship");
+    expect(done).toHaveClass("is-checked");
+    expect(panel.getByTestId("panel-row-20260302-091400-review")).not.toHaveClass("is-checked");
+    // Under a group of its own, after the days the open ones are under.
+    const groups = panel.getAllByRole("rowgroup");
+    expect(groups.at(-1)).toBe(panel.getByRole("rowgroup", { name: "Done" }));
+    expect(within(groups.at(-1) as HTMLElement).getByText("Ship the importer")).toBeInTheDocument();
+
+    const box = panel.getByRole("checkbox", { name: "Reopen todo: Ship the importer" });
+    expect(box).toBeChecked();
+    await userEvent.click(box);
+
+    expect(pressed.map((offer) => offer.does)).toEqual([
+      { verb: "reopenTodo", workspace: "alpha", slug: "20260301-090000-ship" },
+    ]);
+  });
+
+  it("offers Reopen above the line and Delete below it on a done todo's menu", async () => {
+    const pressed: Offer[] = [];
+    draw({ state: withDone(), offers: offers(), onPress: (offer) => pressed.push(offer) });
+
+    rightClickRow("panel-todos", "Ship the importer");
+    const menu = await screen.findByRole("menu");
+    expect(
+      within(menu)
+        .getAllByRole("menuitem")
+        .map((one) => one.getAttribute("aria-label")),
+    ).toEqual(["Reopen", "Delete"]);
+
+    await userEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
+    expect(pressed.map((offer) => offer.does)).toEqual([
+      { verb: "forgetDoneTodo", workspace: "alpha", slug: "20260301-090000-ship" },
     ]);
   });
 });

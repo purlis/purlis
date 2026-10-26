@@ -4974,6 +4974,13 @@ body {
   color: var(--danger-base);
 }
 
+/* **A done todo stays, struck through** (R131, ADR 0106): its box ticked, its words in the quiet
+   tier and crossed out. Nothing moves: the box takes the mark's place at the mark's size. */
+.panel-row.is-checked .row-text {
+  color: var(--text-quiet);
+  text-decoration: line-through;
+}
+
 /* **The search, once there is more than a page** — and it stays once it is there, because a
    box that vanished when a search narrowed the list would take away the control in use. */
 /* The box is the field family's (#2905), the list's width. */
