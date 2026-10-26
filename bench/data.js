@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793031954012,
+  "lastUpdate": 1793034146074,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -25830,6 +25830,48 @@ window.BENCHMARK_DATA = {
             "value": 101.0168625,
             "unit": "ms",
             "extra": "median of 5 runs: 100.505, 100.916, 101.017, 101.217, 101.603 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "fa3f01b8b4edf15d7c487b6fd297d47553a5cbae",
+          "message": "Views.test: await list rows instead of reading them a commit early (#3390) (#3412)\n\nA list's rows are React Aria's GridList collection, filled a commit after\nthe plain blocks around them. Four tests awaited one element and then read\nanother synchronously; under CI load the second was not drawn yet. Each now\nawaits what it reads (findBy*), no sleeps.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-26T16:29:10Z",
+          "tree_id": "92d28b6031aed09e9cffbca072475398c34bd55e",
+          "url": "https://github.com/purlis/purlis/commit/fa3f01b8b4edf15d7c487b6fd297d47553a5cbae"
+        },
+        "date": 1793034142008,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.604779,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.596, 0.603, 0.605, 0.611, 0.623 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.561735,
+            "unit": "ms",
+            "extra": "median of 5 runs: 15.950, 16.431, 16.562, 16.578, 16.717 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.4572545,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.721, 101.441, 101.457, 101.779, 102.089 ms"
           }
         ]
       }
