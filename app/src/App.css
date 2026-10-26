@@ -7706,7 +7706,7 @@ nav.piece-files-head {
 /* Said before the pictures, apart from the rest: they are public and permanent to the repo's
    readers (the person's ruling on D-2026-3). */
 .browser-proof-warning {
-  font-weight: 600;
+  font-weight: var(--font-weight-strong);
 }
 
 .browser-proof-choose {
