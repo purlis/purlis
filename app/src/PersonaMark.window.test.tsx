@@ -315,13 +315,16 @@ describe("a persona with an icon and a colour is drawn with them", () => {
     await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
 
     const dialog = await screen.findByRole("dialog", { name: "Start a chat" });
-    const personas = within(dialog).getByRole("radiogroup", { name: "Persona" });
+    const personas = within(dialog).getByRole("listbox", { name: "Persona" });
     expect(marksIn(personas, "devops")).toEqual([ROCKET_ON_TEAL]);
     expect(marksIn(personas, "qa")).toEqual([
       expect.objectContaining({ mark: "initials", initials: "QA" }),
     ]);
     // The mark is not part of the choice's name.
-    expect(within(personas).getByRole("radio", { name: "devops" })).toBeChecked();
+    expect(within(personas).getByRole("option", { name: "devops" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
   });
 });
 

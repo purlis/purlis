@@ -900,7 +900,7 @@ old `.ui-list` class: `eslint.config.js` refuses both (`purlis/list-family`, an 
 | Rule | How |
 | --- | --- |
 | **Header, body, footer** | Three rows: the title and the line under it, the body, which is the only part that scrolls, and the footer with the answers, always in view. A control the keyboard is on is never under the footer (WCAG 2.4.11): the two never overlap. |
-| **Width by size, never by content** | `size="standard"`, 560 px, or `size="wide"`, 780 px, only for a list beside its details; each at most the window's width less 16 px a side. |
+| **Width by size, never by content** | `size="standard"`, 600 px, or `size="wide"`, 800 px, only for a list beside its details; each at most the window's width less 16 px a side. |
 | **Height** | At most the window less 48 px; `height` gives a dialog one of its own, and it takes the lesser of the two whatever it holds. |
 | **A fixed top** | 24 px under the window's top edge, so a change in its content moves only its bottom edge. |
 | **Text that changes with a choice keeps its room** | `Reserved` (`ui/dialog/Reserved.tsx`) lays every text a place can show in one cell, and an answer's `reserve` lists every word it can say (`Create`, `Creating…`), so nothing moves or resizes when a choice or a state changes. |

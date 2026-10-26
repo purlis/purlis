@@ -1064,6 +1064,193 @@ body {
   white-space: normal;
 }
 
+/* **Start a chat** (`StartChat.tsx`, #2918; prototype B of #2798, R1–R36 of #2897's audit): a
+   wide dialog of the family at a fixed height, two panes in its body. The body never scrolls:
+   each pane does, on its own, so the header and the footer with Start stay in view whatever the
+   list holds (R4, R6). */
+.start-chat-panes {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: var(--space-6);
+  block-size: 100%;
+  min-block-size: 0;
+}
+
+/* The left pane: the filter over the persona list, the list taking the rest (R9, R10). */
+.start-chat-personas {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-block-size: 0;
+}
+
+.start-chat-persona-list {
+  flex: 1 1 auto;
+  min-block-size: 0;
+  overflow-y: auto;
+  padding: var(--space-2);
+  border-radius: var(--radius-control);
+  background-color: var(--surface-base);
+}
+
+/* A persona's mark in its row: a 22 px tile (R19), its initials (drawn at 70% of the mark's
+   text) at 600/10. */
+.start-chat-persona-list .persona-mark,
+.start-chat-persona-list .start-chat-no-mark {
+  inline-size: 22px;
+  block-size: 22px;
+  font-size: var(--font-size-base);
+}
+
+/* The project's default persona's chip: a wash pill in the accent's text (R20). Its words are
+   drawn from its attribute, never text of the row, whose name is the persona's. */
+.start-chat-chip::before {
+  content: attr(data-said);
+}
+
+.start-chat-chip {
+  padding-block: 0;
+  padding-inline: var(--space-3);
+  border-radius: var(--radius-full);
+  color: var(--accent-text);
+  background-color: var(--accent-surface);
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+}
+
+/* The line a filter that matches nothing draws (R15). */
+.start-chat-empty {
+  margin: 0;
+  padding: var(--space-5) var(--space-4);
+  color: var(--text-quiet);
+  text-align: center;
+}
+
+/* The mark of the row for no persona: a person's outline, in the quiet tier. */
+.start-chat-no-mark {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-quiet);
+}
+
+.start-chat-no-mark > svg {
+  inline-size: 70%;
+  block-size: 70%;
+}
+
+/* The right pane: what the chat starts with, one section under another, scrolling on its own. */
+.start-chat-details {
+  display: grid;
+  align-content: start;
+  gap: var(--space-6);
+  min-block-size: 0;
+  min-inline-size: 0;
+  overflow-y: auto;
+  /* What the keyboard reaches is scrolled clear of the pane's edges. */
+  scroll-padding-block: var(--space-6);
+}
+
+.start-chat-details > * {
+  margin-block: 0;
+}
+
+/* The persona picked: a 36 px mark, its name at 15/600 (the heading step, `font-size.lg`, 15 in
+   Purlis, R160) and its one line (R23). */
+.start-chat-who {
+  display: flex;
+  gap: var(--space-5);
+  align-items: center;
+  min-inline-size: 0;
+}
+
+.start-chat-who > .persona-mark,
+.start-chat-who > .start-chat-no-mark {
+  inline-size: 36px;
+  block-size: 36px;
+  font-size: var(--font-size-xl);
+}
+
+.start-chat-who h3 {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-strong);
+  overflow-wrap: anywhere;
+}
+
+.start-chat-who p {
+  margin: var(--space-1) 0 0;
+  color: var(--text-quiet);
+  font-size: var(--font-size-sm);
+}
+
+/* A section's label: uppercase 11/600 with a little tracking, over what it names (R161). */
+.start-chat-section {
+  display: grid;
+  gap: var(--space-3);
+  min-inline-size: 0;
+}
+
+.start-chat-label {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-strong);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* What stops a start, under the persona: drawn only when there is something to say. */
+.start-chat-told {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.start-chat-told:empty {
+  display: none;
+}
+
+.start-chat-told > * {
+  margin: 0;
+}
+
+/* A harness card's facts, two lines: the bill and the model, then the command and its source. */
+.start-chat-facts {
+  display: grid;
+  gap: var(--space-1);
+  min-inline-size: 0;
+}
+
+/* On a card the approval is said, not coloured: the chosen card's wash is no ground for the
+   danger tier, and the approval sentence above the cards is the one in it. */
+.start-chat-facts .profile-meta .needs-approval {
+  color: inherit;
+}
+
+.start-chat-help {
+  margin: 0;
+  color: var(--text-quiet);
+  font-size: var(--font-size-sm);
+}
+
+/* The footer's summary: the persona on the harness, its icon before the harness's name (R33). */
+.start-chat-summary .harness-icon {
+  margin-inline: var(--space-1);
+}
+
+/* A narrow window stacks the panes, and the list is held to 180 px (R36). */
+@media (max-width: 700px) {
+  .start-chat-panes {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .start-chat-persona-list {
+    max-block-size: 180px;
+  }
+}
+
 /* **The work item a chat works on** (V60, ADR 0088): `Work item: <key>`, in the same corner and
    in the same quiet box as where a handed-off chat came from, for the same reason. Its own class,
    so the two can part ways without one rule serving both. */

@@ -21,7 +21,7 @@ export async function pickAndStart(): Promise<void> {
   let pressing = "";
   await browser.waitUntil(
     async () => {
-      for (const words of ["Approve and start", "Start"])
+      for (const words of ["Approve and start", "Start chat"])
         if (await browser.execute(aDialogOffers, "dialog", PICKER, words, false)) {
           pressing = words;
           return true;
