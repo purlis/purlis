@@ -444,16 +444,19 @@ function AcrossTheWindow() {
           </RowLead>
           <RowLabel>Write the release notes</RowLabel>
         </ListRow>
+        {/* Words longer than the window is wide: they fill the row and are cut. */}
         <ListRow
           id="audit"
-          textValue="Read the whole prototype audit and file what is missing from the list family"
+          textValue="Read the whole prototype audit, file what is missing from the list, tree and table families, and say for each one which screens draw it, which themes reach its parts and which stories hold it"
           tip={TODO_TIP}
         >
           <RowLead>
             <CircleDashed aria-hidden="true" />
           </RowLead>
           <RowLabel>
-            Read the whole prototype audit and file what is missing from the list family
+            Read the whole prototype audit, file what is missing from the list, tree and table
+            families, and say for each one which screens draw it, which themes reach its parts and
+            which stories hold it
           </RowLabel>
         </ListRow>
       </List>
