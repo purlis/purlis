@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792972032253,
+  "lastUpdate": 1792995144451,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -25074,6 +25074,48 @@ window.BENCHMARK_DATA = {
             "value": 101.5655005,
             "unit": "ms",
             "extra": "median of 5 runs: 100.537, 100.975, 101.566, 101.783, 102.097 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "906e9bfb4ef6484aba3d5c944a5e2d890e426c90",
+          "message": "Choice families: checkbox, radio, switch, segmented control, slider, option cards (#2907) (#3109)\n\n* Choice families: checkbox, radio, switch, segmented control, slider, option cards (#2907)\n\nEvery checkbox, radio, switch, segmented control, slider and option card in the window is a\nmember of app/src/ui/choice, on React Aria, drawn from its parts. The settings set's Choice and\nrange Field, the level switcher, the side views' scope switch, the persona mark picker and the\nworkspace colour well draw from it; Start a chat's harnesses are equal-height option cards with\nno radio circle. The switch is R63's 34 x 20 pill and 14px knob 3px in at the person's text\nsize, sliding on the knob's motion token. A choice never changes a size or moves a neighbour,\nand a chosen one is told by a shape as well as a colour. purlis/choice-family is an error. The\nfamilies join the theme's parts manifest.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* After the merge: the empty control stylesheet, the select's name, the regenerated schema\n\nWith the select and the choices both families, primitives/controls.css\ndraws no control: its test now holds it empty. The contrast check's\nstate-over-base example is a row under the pointer, and the gallery reads\nthe select family's button by what it holds, then its name.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-26T10:11:06+04:00",
+          "tree_id": "cd79505c49fdc39bb5082cda090c16e02505c706",
+          "url": "https://github.com/purlis/purlis/commit/906e9bfb4ef6484aba3d5c944a5e2d890e426c90"
+        },
+        "date": 1792995141289,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.46052800000000005,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.451, 0.460, 0.461, 0.465, 0.465 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.235018,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.104, 16.226, 16.235, 16.249, 16.410 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.52569249999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.679, 101.517, 101.526, 101.944, 102.256 ms"
           }
         ]
       }
