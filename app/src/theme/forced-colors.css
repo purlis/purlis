@@ -24,6 +24,8 @@
      system's pair for what is marked, apart from every plain count.
    - **What ends or destroys** (a danger button, a danger row, a ground that says something is
      wrong) is outlined dashed, so it is told from its neighbours by a shape.
+   - **A refused box** (a text input, a textarea, a select, a combobox, #3335) draws its own edge
+     dashed, so it is told from a box whose value is taken by a shape.
    - **What is opened over the window** (a dialog, a menu, a list, a tip) is outlined, because
      the shadow that lifted it is gone.
 
@@ -180,6 +182,19 @@
   .ui-setting-error p {
     outline: 2px dashed CanvasText;
     outline-offset: -2px;
+  }
+
+  /* A refused box: its own edge dashed, in the words' colour (#3335). The edge it has already,
+     the same width, so nothing moves; and not an outline, which a text box's focus ring is. A
+     theme's colour is replaced here anyway, and a theme cannot take the edge's width away. */
+  :is(
+      [data-scope="text-input"],
+      [data-scope="textarea"],
+      [data-scope="select"],
+      [data-scope="combobox"]
+    )[data-part="root"][data-invalid] {
+    border-style: dashed;
+    border-color: CanvasText;
   }
 
   /* What is opened over the window, outlined in place of the shadow that lifted it. An outline
