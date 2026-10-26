@@ -238,3 +238,51 @@ fn an_agent_is_handed_on_only_for_a_fork_as_one_of_the_harnesss_own() {
         assert!(!out.contains("agent:"), "{out}");
     }
 }
+
+#[test]
+fn a_flag_in_a_yaml_file_is_read_only_where_the_file_says_it_plainly() {
+    // SK-39: the file a harness reads beside a `SKILL.md`, read by the one strict reader.
+    let keys = ["policy", "allow_implicit_invocation"];
+    let plain = "interface:\n  display_name: Deploy\npolicy:\n  allow_implicit_invocation: false\n";
+    assert_eq!(flag_at(plain, &keys), Some(false));
+    assert_eq!(
+        flag_at("policy: {allow_implicit_invocation: true}\n", &keys),
+        Some(true)
+    );
+    for (why, yaml) in [
+        ("missing", "policy:\n  products: []\n"),
+        ("no mapping on the way", "policy: off\n"),
+        ("quoted", "policy:\n  allow_implicit_invocation: 'false'\n"),
+        (
+            "not a boolean",
+            "policy:\n  allow_implicit_invocation: no\n",
+        ),
+        (
+            "an anchor and alias",
+            "base: &b false\npolicy:\n  allow_implicit_invocation: *b\n",
+        ),
+        (
+            "a tag",
+            "policy:\n  allow_implicit_invocation: !!bool false\n",
+        ),
+        (
+            "a key set twice on the way",
+            "policy:\n  allow_implicit_invocation: false\npolicy:\n  allow_implicit_invocation: true\n",
+        ),
+        (
+            "a key set twice anywhere",
+            "interface:\n  icon: a\n  icon: b\npolicy:\n  allow_implicit_invocation: false\n",
+        ),
+        (
+            "a key set twice, once quoted",
+            "policy:\n  allow_implicit_invocation: false\n\"policy\":\n  allow_implicit_invocation: true\n",
+        ),
+        ("not YAML", "policy: [\n"),
+        (
+            "two documents",
+            "a: 1\n---\npolicy:\n  allow_implicit_invocation: false\n",
+        ),
+    ] {
+        assert_eq!(flag_at(yaml, &keys), None, "{why}");
+    }
+}
