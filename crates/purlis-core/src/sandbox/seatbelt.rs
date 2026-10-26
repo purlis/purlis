@@ -342,11 +342,18 @@ pub fn widen(own: &mut Own, widened: &super::Widened) -> Result<(), &'static str
     for port in &widened.ports {
         own.after.push(super::localport::seatbelt_rule(*port));
     }
-    // Each port a person let this chat listen on (#2019): bound and accepted on the loopback
-    // alone, never another interface.
-    for port in &widened.listens {
-        own.after
-            .extend(super::localport::listen_rules(*port).into_iter().take(2));
+    Ok(())
+}
+
+/// Lets a wrapped chat serve on each of `ports` (#2019): on its own socket for each in `folder`,
+/// the folder purlis made for the chat, behind the door on that port
+/// ([`super::localport::serve_rules`]). The chat reaches the door as a service on this Mac,
+/// which [`widen`] allows.
+pub fn served(own: &mut Own, folder: &Path, ports: &[u16]) -> Result<(), &'static str> {
+    for port in ports {
+        own.after.extend(super::localport::serve_rules(
+            &super::localport::serve_socket(folder, *port),
+        )?);
     }
     Ok(())
 }

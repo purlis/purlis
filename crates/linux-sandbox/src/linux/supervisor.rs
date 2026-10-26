@@ -61,6 +61,9 @@ enum Answer {
     /// The call is gone: its process ended or the call was interrupted. Answered with
     /// `EINTR` in case it is not.
     Gone,
+    /// The call goes on in the kernel as the chat made it, under the chat's own Landlock
+    /// layer ([`notify::go_on`]).
+    GoOn,
 }
 
 impl From<Errno> for Answer {
@@ -168,6 +171,7 @@ impl Supervisor {
             // Answered all the same: a call that is gone refuses the answer, and one that is not
             // must never be left waiting.
             Answer::Gone => notify::respond(listener, id, 0, libc::EINTR),
+            Answer::GoOn => notify::go_on(listener, id),
         }
     }
 
@@ -257,6 +261,7 @@ impl Supervisor {
                 }
                 libc::SYS_connect => self.connect(&chat, id, int(0), a[1], a[2] as usize),
                 libc::SYS_listen => self.listen(&chat, id, int(0), int(1)),
+                libc::SYS_bind => self.bind(&chat, id, int(0), a[1], a[2] as usize),
                 #[cfg(target_arch = "x86_64")]
                 legacy => self.legacy(&chat, id, legacy, &a, tid),
                 #[cfg(not(target_arch = "x86_64"))]
@@ -920,6 +925,100 @@ impl Supervisor {
         }
         Ok(Answer::Connected {
             fd: socket_fd,
+            at,
+            cloexec: flags & libc::O_CLOEXEC != 0,
+        })
+    }
+
+    /// **A bind, judged and made by the supervisor** (#2019). A chat serves on a socket of its
+    /// own, in the folder purlis made for it, behind purlis's door on the chat's port:
+    ///
+    /// - **A unix socket at a path** is bound only where the profile names it
+    ///   (`local unix-socket`), by the supervisor, on a socket of its own put in place of the
+    ///   chat's descriptor; a socket a server left there is taken away first.
+    /// - **An internet address on a port the chat serves on** (any address: `127.0.0.1`,
+    ///   `0.0.0.0`, `::`) is bound instead to that port's socket, `<port>.sock`, the same way: a
+    ///   server started for a port, on whatever address, is served through the door. Any other
+    ///   internet bind is refused, as the chat's Landlock layer refuses every TCP bind, and told,
+    ///   so a server that asks for a port raises the Ask to serve on it; a port of zero is not
+    ///   told, since no person allows one.
+    /// - **Anything else goes on in the kernel** ([`Answer::GoOn`]): a netlink socket (what
+    ///   `getifaddrs` binds) and an abstract or unnamed unix socket, as before. Nothing the chat
+    ///   changes after the address was read carries such a call further: the call the kernel
+    ///   makes is judged by the chat's own Landlock layer, which binds no TCP port and makes no
+    ///   socket file.
+    fn bind(
+        &self,
+        chat: &Chat<'_>,
+        id: u64,
+        fd: i32,
+        addr: u64,
+        len: usize,
+    ) -> Result<Answer, Errno> {
+        if len < 2 || len > std::mem::size_of::<libc::sockaddr_storage>() {
+            return Err(Errno::EINVAL);
+        }
+        let bytes = read_bytes(chat.tid, addr, len)?;
+        let family = i32::from(u16::from_ne_bytes([bytes[0], bytes[1]]));
+        let socket = match family {
+            libc::AF_UNIX => {
+                let path = &bytes[2..];
+                // An abstract or unnamed socket names no file: the kernel's, as before.
+                if path.first().is_none_or(|first| *first == 0) {
+                    return Ok(Answer::GoOn);
+                }
+                let end = path.iter().position(|c| *c == 0).unwrap_or(path.len());
+                let named = Path::new(OsStr::from_bytes(&path[..end]));
+                if !self.profile.allows(&Op::BindUnix(named)) {
+                    return Err(REFUSED);
+                }
+                named.to_path_buf()
+            }
+            libc::AF_INET | libc::AF_INET6 => {
+                let local = ip_of(&bytes)?;
+                if local.port() == 0 {
+                    return Err(REFUSED);
+                }
+                let wanted = format!("{}.sock", local.port());
+                let Some(served) = self
+                    .profile
+                    .reach()
+                    .serves
+                    .into_iter()
+                    .find(|path| path.file_name() == Some(OsStr::new(&wanted)))
+                else {
+                    self.tell(chat, BIND, local.to_string());
+                    return Err(REFUSED);
+                };
+                served
+            }
+            _ => return Ok(Answer::GoOn),
+        };
+        let at = u32::try_from(fd).map_err(|_| Errno::EBADF)?;
+        let flags = descriptor_flags(chat.tid, fd)?;
+        if !self.alive(id) {
+            return Ok(Answer::Gone);
+        }
+        // A server that ended leaves its socket: taken away, never anything else at the path.
+        match std::fs::symlink_metadata(&socket) {
+            Ok(meta) if std::os::unix::fs::FileTypeExt::is_socket(&meta.file_type()) => {
+                std::fs::remove_file(&socket).map_err(|_| REFUSED)?;
+            }
+            Ok(_) => return Err(Errno::EADDRINUSE),
+            Err(_) => {}
+        }
+        let served = nix::sys::socket::socket(
+            AddressFamily::Unix,
+            SockType::Stream,
+            SockFlag::SOCK_CLOEXEC,
+            None,
+        )?;
+        nix::sys::socket::bind(served.as_raw_fd(), &UnixAddr::new(socket.as_path())?)?;
+        if flags & libc::O_NONBLOCK != 0 {
+            nix::fcntl::fcntl(&served, nix::fcntl::FcntlArg::F_SETFL(OFlag::O_NONBLOCK))?;
+        }
+        Ok(Answer::Connected {
+            fd: served,
             at,
             cloexec: flags & libc::O_CLOEXEC != 0,
         })

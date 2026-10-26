@@ -171,17 +171,28 @@ pub fn profile(
     proxy_ports: &[u16],
     hook_socket: Option<&Path>,
 ) -> Result<String, &'static str> {
+    profile_serving(wrap, cwd, tmp, proxy_ports, hook_socket, None)
+}
+
+/// [`profile`], serving on each port of `served` on its socket in that folder (#2019,
+/// [`seatbelt::served`]): the doors its confinement opened. At the floor a chat binds what it
+/// will already.
+pub fn profile_serving(
+    wrap: &Wrap,
+    cwd: &Path,
+    tmp: &Path,
+    proxy_ports: &[u16],
+    hook_socket: Option<&Path>,
+    served: Option<(&Path, &[u16])>,
+) -> Result<String, &'static str> {
     if wrap.level == super::Level::Floor {
         return floor_profile(wrap, proxy_ports, hook_socket);
     }
-    seatbelt::profile(
-        &wrap.denied,
-        &own(wrap)?,
-        cwd,
-        tmp,
-        proxy_ports,
-        hook_socket,
-    )
+    let mut own = own(wrap)?;
+    if let Some((folder, ports)) = served {
+        seatbelt::served(&mut own, folder, ports)?;
+    }
+    seatbelt::profile(&wrap.denied, &own, cwd, tmp, proxy_ports, hook_socket)
 }
 
 /// The floor's profile (#2071): every folder written and every host reached through the chat's

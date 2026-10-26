@@ -10,7 +10,9 @@
 //!
 //! What is read is what purlis writes, and nothing else: `allow` and `deny` rules on files and
 //! on outbound connections, with `subpath`, `literal`, `regex`, `vnode-type`, `require-all`,
-//! `require-any` and `require-not` filters, and `remote ip` and `remote unix-socket`. The last
+//! `require-any` and `require-not` filters, `remote ip` and `remote unix-socket`, and the one
+//! socket a chat may serve on, `network-bind` with `local unix-socket` (#2019; a listen's
+//! `network-inbound` has no counterpart here, where a socket is held at its bind). The last
 //! rule that matches an operation decides it, as in Seatbelt; none matching refuses it. A rule
 //! on something Linux has no counterpart of (a Mach service, an Apple event) is set aside. Any
 //! other construct refuses the whole profile, so a rule purlis starts writing is never ignored
@@ -50,6 +52,8 @@ pub enum Op<'a> {
     },
     /// An outbound connection to `remote`.
     Connect(Remote<'a>),
+    /// Binding a unix socket at `path`, to serve there (#2019).
+    BindUnix(&'a Path),
 }
 
 /// What is done to a file, by the name Seatbelt gives it.
@@ -131,6 +135,8 @@ pub struct Reach {
     pub written: Vec<PathBuf>,
     /// Every port of this machine a chat may connect to.
     pub ports: Vec<u16>,
+    /// Every unix socket a chat may serve on (#2019), as `local unix-socket` names it.
+    pub serves: Vec<PathBuf>,
     /// Whether a chat may reach other machines directly (the floor).
     pub any_host: bool,
 }
@@ -163,12 +169,14 @@ enum Filter {
     },
     /// `remote unix-socket`, with its `path-literal` where it names one.
     Unix(Option<PathBuf>),
+    /// `local unix-socket (path-literal …)` (#2019): the one socket a chat may bind.
+    LocalUnix(PathBuf),
 }
 
 /// Operations Linux has a counterpart of, and which this module judges. `file-link` is read
 /// and names no operation asked here: the supervisor judges a link as a write of the file it
 /// names and a create of the new name, so the write rules beside it already decide it.
-const JUDGED: [&str; 12] = [
+const JUDGED: [&str; 13] = [
     "default",
     "file*",
     "file-link",
@@ -181,6 +189,7 @@ const JUDGED: [&str; 12] = [
     "file-write-unlink",
     "file-write-mode",
     "network-outbound",
+    "network-bind",
 ];
 
 /// Operations purlis writes rules for that this module does not judge.
@@ -202,7 +211,7 @@ const SET_ASIDE: [&str; 18] = [
     "job-creation",
     "iokit-open",
     "file-write-setugid",
-    "network-bind",
+    "network-inbound",
 ];
 
 impl Profile {
@@ -264,6 +273,7 @@ impl Profile {
         let name = match op {
             Op::File { what, .. } => what.name(),
             Op::Connect(_) => "network-outbound",
+            Op::BindUnix(_) => "network-bind",
         };
         let mut allowed = false;
         for rule in &self.rules {
@@ -300,6 +310,15 @@ impl Profile {
                 }
                 for filter in &rule.filters {
                     add(filter.root(), &mut reach);
+                }
+            }
+            if rule.ops.iter().any(|op| op == "network-bind") {
+                for filter in &rule.filters {
+                    if let Filter::LocalUnix(path) = filter
+                        && !reach.serves.contains(path)
+                    {
+                        reach.serves.push(path.clone());
+                    }
                 }
             }
             if connects {
@@ -360,6 +379,7 @@ impl Filter {
                 };
                 at && port.is_none_or(|port| port == *to)
             }
+            (Self::LocalUnix(path), Op::BindUnix(to)) => path.as_path() == *to,
             (Self::Unix(path), Op::Connect(Remote::Unix(to))) => match path {
                 None => true,
                 Some(path) => *to == Some(path.as_path()),
@@ -463,8 +483,24 @@ fn filter(expr: &Expr) -> Result<Filter, Unread> {
             _ => return Err(Unread("`require-not` without one filter".to_owned())),
         },
         "remote" => remote(rest)?,
+        "local" => local(rest)?,
         other => return Err(Unread(format!("the filter `{other}`"))),
     })
+}
+
+/// `local unix-socket (path-literal …)`, the one local filter purlis writes (#2019).
+fn local(rest: &[Expr]) -> Result<Filter, Unread> {
+    match rest {
+        [Expr::Symbol(unix), Expr::List(path)] if unix == "unix-socket" => match &path[..] {
+            [Expr::Symbol(head), Expr::Str(path)]
+                if head == "path-literal" && path.starts_with('/') =>
+            {
+                Ok(Filter::LocalUnix(PathBuf::from(path)))
+            }
+            _ => Err(Unread(format!("the local socket filter {path:?}"))),
+        },
+        _ => Err(Unread(format!("the local filter {rest:?}"))),
+    }
 }
 
 fn remote(rest: &[Expr]) -> Result<Filter, Unread> {

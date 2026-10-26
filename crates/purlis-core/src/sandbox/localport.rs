@@ -309,24 +309,31 @@ pub fn refused_in(line: &str) -> Option<u16> {
     None
 }
 
-/// **The Seatbelt rules that let a wrapped chat listen on `port`** (#2019): bind it and accept
-/// connections on it on the loopback interface alone, and connect to it there, so the chat can
-/// reach the server it started. Never another interface: a server started on every interface
-/// (`0.0.0.0`, `::`) is still refused, and is told to start on `127.0.0.1`.
-pub fn listen_rules(port: u16) -> [String; 3] {
-    [
-        format!("(allow network-bind (local tcp \"localhost:{port}\"))"),
-        format!("(allow network-inbound (local tcp \"localhost:{port}\"))"),
-        seatbelt_rule(port),
-    ]
+/// **Where a chat's server on `port` listens** (#2019): the socket `<port>.sock` in `folder`,
+/// the folder purlis made for that chat alone (`0700`), behind the door purlis listens on at
+/// `port` ([`super::door`]).
+pub fn serve_socket(folder: &std::path::Path, port: u16) -> std::path::PathBuf {
+    folder.join(format!("{port}.sock"))
 }
 
-/// What allowing a chat to listen on a port means, in one honest line (#2019).
-pub const LISTEN_RISK: &str = "lets this chat start a server on that port on this Mac only \
-                               (127.0.0.1), and lets its commands and its browser reach whatever \
-                               listens there, as you. Nothing on another machine reaches it, but \
-                               any web page your own browser opens can, and opening it in your \
-                               own browser hands it your cookies for the sites on this Mac";
+/// **The Seatbelt rules that let a wrapped chat serve on `socket`** (#2019): make that one
+/// socket, bind it and accept on it, and take it away to start again. No TCP port: the door
+/// listens on the chat's port, and the chat reaches its own server through the door.
+pub fn serve_rules(socket: &std::path::Path) -> Result<[String; 3], &'static str> {
+    let at = super::seatbelt::string(&socket.display().to_string())?;
+    Ok([
+        format!("(allow network-bind (local unix-socket (path-literal {at})))"),
+        format!("(allow network-inbound (local unix-socket (path-literal {at})))"),
+        format!("(allow file-write-create file-write-unlink (literal {at}))"),
+    ])
+}
+
+/// What allowing a chat to serve on a port means, as the Ask says it (#2019).
+pub const LISTEN_RISK: &str = "lets this chat run a server that its browser, its commands and \
+                               your own browser reach at http://127.0.0.1:<port>, through purlis \
+                               on this Mac. purlis checks each request's address and keeps your \
+                               browser's cookies for other sites from it. Nothing on another \
+                               machine reaches it";
 
 /// **The port a server's own refusal to listen names** (#2019): Node's `listen EPERM:
 /// operation not permitted 127.0.0.1:3000` and Go's `listen tcp 127.0.0.1:3000: bind: operation

@@ -42,6 +42,8 @@ mod githook;
 mod guard;
 mod handoff;
 mod hooks;
+#[cfg(unix)]
+mod listen;
 mod mcp;
 mod memory;
 mod permission;
@@ -94,6 +96,16 @@ struct Cli {
 enum Command {
     /// Print the plane root the current directory sits in.
     Root,
+    /// Run a server for this chat on PORT: the port a sandboxed chat was allowed to serve on,
+    /// which purlis's door on this Mac answers on, while the server listens on the chat's own
+    /// socket behind it. For example: `purlis listen 5173 -- npm run dev`.
+    Listen {
+        /// The port the chat serves on.
+        port: u16,
+        /// The server's command, after `--`.
+        #[arg(last = true, allow_hyphen_values = true, required = true)]
+        command: Vec<std::ffi::OsString>,
+    },
     /// Run this user's session host on this device (`purlisd`) until it is ended: its socket
     /// under the runtime directory, a fresh credential for each of its clients' scopes, and the
     /// session protocol. The app starts its own; this is the same host for a machine with no
@@ -3243,6 +3255,7 @@ fn run(command: Command) -> Result<u8, String> {
         // Answered in `main`, before this: it is the one command whose exit code is not a
         // plain success or failure, and clap must never be allowed to exit 2 in front of it.
         Command::Hook { .. }
+        | Command::Listen { .. }
         | Command::Serve
         | Command::Bridge { .. }
         | Command::Init(_)
@@ -4283,6 +4296,11 @@ fn main() -> ExitCode {
     // Needs no plane either: it scans the repository it stands in.
     if let Command::Scan { explain } = &cli.command {
         return scan::run(*explain);
+    }
+    // Needs no project: it runs a chat's server, wherever the chat is (#2019).
+    #[cfg(unix)]
+    if let Command::Listen { port, command } = &cli.command {
+        return listen::run(*port, command);
     }
     // Needs no project: one host serves every project of this user on this device (ADR 0068).
     if let Command::Serve = &cli.command {

@@ -785,10 +785,10 @@ fn a_port_on_this_mac_allowed_for_a_chat_reaches_its_start_as_that_port_alone() 
     assert!(!other.reach.lists_exactly(loopback, 50795));
 }
 
-/// #2019: a port a chat was allowed to listen on reaches its start alone: its sandbox binds and
-/// accepts on that port of the loopback and connects to it, and the port becomes a named local
-/// port of its reach, which its browser's lane carries by its literal address; another port
-/// stays refused to the chat and its browser.
+/// #2019: a port a chat was allowed to serve on reaches its start alone: its sandbox makes and
+/// binds its own socket for it in its folder, never a TCP port, and connects to the door on that
+/// port, which becomes a named local port of its reach, carried for its browser by its literal
+/// address; another port stays refused to the chat and its browser.
 #[test]
 fn a_port_a_chat_may_listen_on_is_bound_reached_and_named_for_its_browser_alone() {
     use crate::sandbox::browser_reach::{Lane, Refusal, Verdict};
@@ -808,18 +808,22 @@ fn a_port_a_chat_may_listen_on_is_bound_reached_and_named_for_its_browser_alone(
 
     let mut own_rules = crate::sandbox::seatbelt::Own::default();
     crate::sandbox::seatbelt::widen(&mut own_rules, &granted.widened).expect("widens");
+    let folder = std::path::Path::new("/data/serve/chat-1");
+    crate::sandbox::seatbelt::served(&mut own_rules, folder, &granted.widened.listens)
+        .expect("served");
     for rule in [
-        "(allow network-bind (local tcp \"localhost:3000\"))",
-        "(allow network-inbound (local tcp \"localhost:3000\"))",
+        "(allow network-bind (local unix-socket (path-literal \"/data/serve/chat-1/3000.sock\")))",
+        "(allow network-inbound (local unix-socket (path-literal \"/data/serve/chat-1/3000.sock\")))",
         "(allow network-outbound (remote ip \"localhost:3000\"))",
     ] {
         assert!(own_rules.after.contains(&rule.to_owned()), "{rule}");
     }
+    // No TCP port is ever bound: the door listens on the chat's port.
     assert!(
         !own_rules
             .after
             .iter()
-            .any(|rule| rule.contains("network-bind") && !rule.contains("localhost:3000"))
+            .any(|rule| rule.contains("network-bind") && !rule.contains("unix-socket"))
     );
 
     let own: [std::net::IpAddr; 1] = ["192.0.2.10".parse().unwrap()];

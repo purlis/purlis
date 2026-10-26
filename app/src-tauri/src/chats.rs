@@ -3571,6 +3571,27 @@ impl Chats {
             })?),
             None => None,
         };
+        // The doors to the servers this chat may run (#2019), opened in this process wherever
+        // its proxy runs, before its line is compiled: a socket for each, in its own folder.
+        if let (Some(confinement), Some(confines), Some(id)) = (
+            confinement.as_mut(),
+            confines.as_ref(),
+            identity.id.as_deref(),
+        ) && !confines.widened.listens.is_empty()
+            && sandbox.is_some_and(|applied| {
+                applied.harness() != purlis_core::harness::Harness::ClaudeCode
+            })
+        {
+            match purlis_core::sandbox::door::folder_for(id) {
+                Some(folder) => match confinement.serve(&folder, &confines.widened.listens) {
+                    Ok(unserved) => {
+                        late.extend(purlis_core::sandbox::door::unserved_said(&unserved));
+                    }
+                    Err(err) => tracing::warn!("purlis: a chat's servers were not served ({err})"),
+                },
+                None => tracing::warn!("purlis: a chat's servers have no folder to listen in"),
+            }
+        }
         // A runner starts the chat without the services you allowed for this chat alone on this
         // machine, and the tab says so, and whether the chat is asked about them there (#2510).
         late.extend(
@@ -3641,6 +3662,14 @@ impl Chats {
                 }
                 Err(err) => tracing::warn!("purlis: a chat's kubeconfig was not written ({err})"),
             }
+        }
+        // Where its servers listen (#2019), for `purlis listen` to name each one's socket.
+        if let Some((folder, _)) = confinement.as_ref().and_then(|it| it.served()) {
+            env.retain(|(key, _)| key != purlis_core::sandbox::door::FOLDER_ENV);
+            env.push((
+                purlis_core::sandbox::door::FOLDER_ENV.to_owned(),
+                folder.display().to_string(),
+            ));
         }
         what_its_hooks_read(
             &mut env,

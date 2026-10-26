@@ -4144,6 +4144,18 @@ pub struct Confinement {
     /// A folder of the chat's own made for what it keeps ([`Self::keep_own`]) where it has
     /// neither of the two above: removed as this ends.
     kept: Option<tempfile::TempDir>,
+    /// Where the chat's servers listen and the doors to them (#2019), once
+    /// [`Self::serve`] opened them: held in the window's process wherever the proxy runs.
+    serving: Option<Serving>,
+}
+
+/// **Where a chat's servers listen, and the doors to them** (#2019, [`door`]).
+#[derive(Debug)]
+struct Serving {
+    /// The folder purlis made for this chat's sockets alone, `0700`.
+    folder: PathBuf,
+    /// A door for each port the chat serves on.
+    doors: Vec<door::Door>,
 }
 
 /// Where a chat's proxy runs.
@@ -4260,6 +4272,44 @@ pub trait HeldElsewhere: Send + Sync + std::fmt::Debug {
     fn board(&self) -> Option<std::sync::Arc<dyn Board>>;
 }
 
+/// `folder`, made `0700` by this process where it is not there, and refused where it is not a
+/// folder of this user's that only this user may enter (#2019): no other user reaches a socket
+/// in it.
+fn own_folder(folder: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
+    std::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(folder)?;
+    let meta = std::fs::symlink_metadata(folder)?;
+    let mine = meta.uid() == rustix::process::getuid().as_raw();
+    if !meta.is_dir() || !mine {
+        return Err(std::io::Error::other(format!(
+            "{} is not a folder of this user's",
+            folder.display()
+        )));
+    }
+    if meta.permissions().mode() & 0o077 != 0 {
+        std::fs::set_permissions(folder, std::fs::Permissions::from_mode(0o700))?;
+    }
+    Ok(())
+}
+
+/// Takes away `path` where it is a socket a server left behind; anything else there is left,
+/// and refused.
+fn gone_if_a_socket(path: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::FileTypeExt;
+    match std::fs::symlink_metadata(path) {
+        Ok(meta) if meta.file_type().is_socket() => std::fs::remove_file(path),
+        Ok(_) => Err(std::io::Error::other(format!(
+            "{} is there and is not a server's socket",
+            path.display()
+        ))),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(err),
+    }
+}
+
 /// **Where a confinement is**: its proxy's two ports, and the folders beside it. What the
 /// session host says of one it started (#1999).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -4330,6 +4380,7 @@ impl Confinement {
             ssh,
             routed: None,
             kept: None,
+            serving: None,
         })
     }
 
@@ -4345,6 +4396,7 @@ impl Confinement {
             ssh: None,
             routed: None,
             kept: None,
+            serving: None,
         })
     }
 
@@ -4402,6 +4454,7 @@ impl Confinement {
             ssh: placed.ssh.map(tunnel::SshRoute::at),
             routed: placed.routed.map(Folder::Theirs),
             kept: None,
+            serving: None,
         }
     }
 
@@ -4515,6 +4568,43 @@ impl Confinement {
     /// The chat's own temp directory, which a proxy-only one has none of.
     pub fn tmp(&self) -> Option<&Path> {
         self.tmp.as_ref().map(Folder::path)
+    }
+
+    /// **Opens a door for each of `ports` to the chat's servers in `folder`** (#2019): the
+    /// folder purlis keeps for this chat's sockets, made `0700` where it is not there, and a
+    /// socket of a server that ended taken away. A port something on this Mac listens on
+    /// already gets no door ([`door::in_use`]): answered back, so the chat is started without
+    /// serving there and told why. Once per confinement; a second call opens nothing more.
+    pub fn serve(&mut self, folder: &Path, ports: &[u16]) -> std::io::Result<Vec<u16>> {
+        if self.serving.is_some() || ports.is_empty() {
+            return Ok(Vec::new());
+        }
+        own_folder(folder)?;
+        let mut doors = Vec::new();
+        let mut unserved = Vec::new();
+        for port in ports {
+            let socket = localport::serve_socket(folder, *port);
+            gone_if_a_socket(&socket)?;
+            match door::Door::open(*port, &socket) {
+                Ok(door) => doors.push(door),
+                Err(err) if err.kind() == std::io::ErrorKind::AddrInUse => unserved.push(*port),
+                Err(err) => return Err(err),
+            }
+        }
+        self.serving = Some(Serving {
+            folder: folder.to_path_buf(),
+            doors,
+        });
+        Ok(unserved)
+    }
+
+    /// **Where this chat's servers listen, and the ports their doors are open on** (#2019):
+    /// what its profile lets it serve on. None before [`Self::serve`], or where it serves on
+    /// none.
+    pub fn served(&self) -> Option<(&Path, Vec<u16>)> {
+        let serving = self.serving.as_ref()?;
+        let ports: Vec<u16> = serving.doors.iter().map(door::Door::port).collect();
+        (!ports.is_empty()).then_some((serving.folder.as_path(), ports))
     }
 
     /// **`text` kept as `name` in this chat's own folder** (qw384b), for this chat alone and
@@ -6593,6 +6683,7 @@ pub mod caches;
 pub mod claude;
 pub mod codex;
 pub mod confined;
+pub mod door;
 pub mod egress;
 pub mod grant;
 pub mod held;

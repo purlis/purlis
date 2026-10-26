@@ -234,3 +234,30 @@ fn what_a_profile_writes_and_reaches_is_listed_for_the_kernel_s_own_rules() {
         ]
     );
 }
+
+/// #2019: a chat may bind the one socket its profile names to serve on, and no other; the
+/// socket is listed for the supervisor's own rules.
+#[test]
+fn a_chat_binds_the_one_socket_it_serves_on() {
+    let socket = "/data/serve/chat-1/5173.sock";
+    let profile = read(&format!(
+        "{FULL}(allow network-bind (local unix-socket (path-literal \"{socket}\")))\n\
+         (allow network-inbound (local unix-socket (path-literal \"{socket}\")))\n\
+         (allow file-write-create file-write-unlink (literal \"{socket}\"))\n"
+    ));
+    assert!(profile.allows(&Op::BindUnix(Path::new(socket))));
+    assert!(!profile.allows(&Op::BindUnix(Path::new("/data/serve/chat-1/5174.sock"))));
+    assert!(!profile.allows(&Op::BindUnix(Path::new("/tmp/other.sock"))));
+    assert_eq!(
+        profile.reach().serves,
+        vec![Path::new(socket).to_path_buf()]
+    );
+    assert!(!read(FULL).allows(&Op::BindUnix(Path::new(socket))));
+    for text in [
+        "(version 1)\n(allow network-bind (local unix-socket (subpath \"/data\")))\n",
+        "(version 1)\n(allow network-bind (local unix-socket (path-literal \"relative.sock\")))\n",
+        "(version 1)\n(allow network-bind (local tcp \"localhost:5173\"))\n",
+    ] {
+        assert!(Profile::parse(text).is_err(), "read: {text}");
+    }
+}

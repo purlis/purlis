@@ -261,17 +261,28 @@ fn a_refused_listen_names_the_port_the_server_asked_for() {
     }
 }
 
-/// #2019: listening on a port is allowed on this Mac's loopback alone, at that one port, and
-/// the chat may connect to its own server there.
+/// #2019: a chat allowed to serve on port N listens on a socket of its own in the folder purlis
+/// made for it, and on no TCP port: that socket alone is made, bound and accepted on.
 #[test]
-fn a_port_a_chat_may_listen_on_is_bound_accepted_and_reached_on_the_loopback_alone() {
+fn a_chats_server_listens_on_its_socket_in_its_folder_and_on_no_port() {
+    let folder = std::path::Path::new("/data/serve/chat-1");
     assert_eq!(
-        listen_rules(3000),
+        serve_socket(folder, 3000),
+        std::path::PathBuf::from("/data/serve/chat-1/3000.sock")
+    );
+    assert_eq!(
+        serve_rules(&serve_socket(folder, 3000)).expect("rules"),
         [
-            "(allow network-bind (local tcp \"localhost:3000\"))".to_owned(),
-            "(allow network-inbound (local tcp \"localhost:3000\"))".to_owned(),
-            "(allow network-outbound (remote ip \"localhost:3000\"))".to_owned(),
+            "(allow network-bind (local unix-socket (path-literal \"/data/serve/chat-1/3000.sock\")))",
+            "(allow network-inbound (local unix-socket (path-literal \"/data/serve/chat-1/3000.sock\")))",
+            "(allow file-write-create file-write-unlink (literal \"/data/serve/chat-1/3000.sock\"))",
         ]
+    );
+    assert!(
+        !serve_rules(&serve_socket(folder, 3000))
+            .expect("rules")
+            .iter()
+            .any(|rule| rule.contains("tcp") || rule.contains("ip "))
     );
 }
 

@@ -253,12 +253,17 @@ impl HarnessAdapter for Opencode {
             ));
         };
         crate::sandbox::opencode::prepare(wrap);
-        let profile = crate::sandbox::opencode::profile(
+        // The doors its confinement opened (#2019): a socket for each, in its own folder.
+        let served = confinement.served();
+        let profile = crate::sandbox::opencode::profile_serving(
             wrap,
             cwd,
             tmp,
             &confinement.proxy_ports(),
             at.hook_socket,
+            served
+                .as_ref()
+                .map(|(folder, ports)| (*folder, ports.as_slice())),
         )
         .map_err(|why| crate::sandbox::seatbelt::not_started(lead, why, !at.no_opt_out))?;
         let mut env = crate::sandbox::seatbelt::env(&confinement.proxy_url(), tmp);
