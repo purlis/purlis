@@ -176,6 +176,7 @@ describe("the rows narrowed to one chat's real set", () => {
     takes_arguments: false,
     arguments: [],
     hint: null,
+    hidden: null,
   });
   const rows = [
     row(skill("deploy")),

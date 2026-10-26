@@ -27,6 +27,8 @@ export function skill(name: string, over: Partial<StudioSkill> = {}): StudioSkil
     switch: null,
     compat: [],
     lint: [],
+    hidden: [],
+    pinned: false,
     ...over,
   };
 }

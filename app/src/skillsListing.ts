@@ -245,6 +245,8 @@ function rowOfChat(skill: ChatSkill): StudioSkill {
     switch: null,
     compat: [],
     lint: [],
+    hidden: [],
+    pinned: false,
   };
 }
 

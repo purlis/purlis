@@ -88,6 +88,7 @@ const given = (name: string, level: ChatSkill["level"] = "project"): ChatSkill =
   takes_arguments: false,
   arguments: [],
   hint: null,
+  hidden: null,
 });
 
 /** The project as `ops` and the project's root see it, with the reviewer's own skill. */
