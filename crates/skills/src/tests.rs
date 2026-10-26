@@ -1416,8 +1416,8 @@ fn on_the_config_route_a_built_in_skills_own_name_is_kept_for_it_from_every_leve
         ],
         "a `purlis-` name no built-in skill takes is the plane's to use"
     );
-    let kept = "purlis's built-in skill goes by this name in this program, and the name is kept \
-                for it: rename this skill";
+    let kept = "purlis's own skill goes by this name in this program, and the name is kept for \
+                it: rename this skill";
     assert_eq!(
         left_out(&got),
         [

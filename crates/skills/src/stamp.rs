@@ -66,6 +66,16 @@ impl Stamp {
                 }
             })
             .collect();
+        // The index a router hands in place of what it hid (SK-15): a change to what is hidden
+        // changes it.
+        if let Some(index) = set.index() {
+            rows.push(Stamped {
+                name: index.name,
+                path: PathBuf::new(),
+                description: index.text,
+                body: None,
+            });
+        }
         rows.sort();
         Stamp(rows)
     }

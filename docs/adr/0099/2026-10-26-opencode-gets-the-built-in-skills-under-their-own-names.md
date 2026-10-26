@@ -16,7 +16,14 @@
 
 ## The `purlis-` name of a built-in skill is kept for it on this route
 
-- A plane skill, a repo skill or a harness skill named `purlis-<built-in>` would be a second skill of that name in opencode. Each is left out with one reason, whatever its origin: `Reason::BuiltInsOwnName`, "purlis's built-in skill goes by this name in this program, and the name is kept for it: rename this skill". purlis can only list a repo's or the person's copy as left out. opencode still reads it, which is why the line asks for the rename.
+- A plane skill, a repo skill or a harness skill named `purlis-<built-in>` would be a second skill of that name in opencode. Each is left out with one reason, whatever its origin: `Reason::BuiltInsOwnName`, "purlis's own skill goes by this name in this program, and the name is kept for it: rename this skill". purlis can only list a repo's or the person's copy as left out. opencode still reads it, which is why the line asks for the rename.
 - Only the `purlis-` names of skills purlis ships are kept. The plane's own names stay as §3 has them: a bare built-in name is still left out on every route, opencode's included ("a built-in skill has this name, and a built-in skill is never replaced"), so a chat's set holds the same plane skills on every harness. A `purlis-` name that no built-in skill has is the plane's to use, and on Claude Code and Codex a plane skill named `purlis-secrets` loads as before.
 - A repo or harness skill of a built-in skill's bare name is a skill of its own on opencode, in the set beside purlis's by its own name, and is not left out.
 - A persona's `skills:` list still names a built-in skill as `purlis:<name>`, on every harness.
+
+## The index skill is named the same way
+
+- The index skill a router hands past a chat's skill budget (ADR 0102 §2, SK-15) is purlis's too, and on opencode's route it is `purlis-skill-index`: `SkillSet::index` names it by the route (`Index::name`), the set's folder holds it as `skills/purlis-skill-index/`, and its `SKILL.md` says that name. On Claude Code and Codex it is `skill-index`, as before.
+- So a clone's or the person's own `skill-index` is a separate skill on opencode, loading beside purlis's under a different name. The studio's line on such a copy, which said opencode could not leave it out by name, is gone. A copy named `purlis-skill-index` is left out with `Reason::BuiltInsOwnName`, as a `purlis-<built-in>` copy is. A plane skill named `skill-index` still never loads, on every route.
+- `skills_off_for` never hands opencode `purlis-skill-index` as turned off.
+
