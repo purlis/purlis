@@ -162,8 +162,8 @@ refused if it tries. A button stays at least 24px tall with its words fitting, i
 and a geometry token is held to the same bounds at the value the theme draws it at. Whatever the
 theme changes, Allow (`grants`) keeps its accent edge and Keep blocked's fill, and no part draws
 Allow or danger nearer the primary than the family does: a look that would is drawn as the
-family default. The button, the fields, the tooltip, the dialog and the selects have parts so
-far: `field`
+family default. The button, the fields, the tooltip, the dialog, the selects and the choices have
+parts so far: `field`
 (its label, help and error), `text-input` (the one-line box and its glass), `textarea` and
 `tooltip` (its `root`, the surface: colours, edge, corners and shadow, no sizes; and `detail`, an
 icon button's second line), which have no variants, so a key names the part alone
@@ -172,10 +172,12 @@ icon button's second line), which have no variants, so a key names the part alon
 and rows are never a theme's, whose corner is drawn at most `space.6`, and whose quieter lines
 are held to 4.5:1 in their own tiers; and `list` (`list.root.corner-radius`,
 `list.root.selected.fill`, `list.body.padding`, …), a list's row, which has no variants and whose
-dense and large sizes are never a theme's; and `select` and `combobox` (their `root`, drawn as
+dense and large sizes are never a theme's; `select` and `combobox` (their `root`, drawn as
 the text input's box, and their `chevron`; a select's `placeholder` too), whose lists are a
-menu's surface and rows. The note above still holds for the strip tabs and tree
-rows.
+menu's surface and rows; and the choices, `checkbox`, `radio`, `switch`, `segmented-control`,
+`segment`, `slider` and `option-card`, each chosen in `selected` (`switch.track.selected.fill`,
+`option-card.root.card.selected.border-colour`), none taking a height. The note above still
+holds for the strip tabs and tree rows.
 
 **The session tabs** are the `tabs` family. Purlis docks them on the content panel: the chosen
 tab takes the panel's fill and flares into it, an unchosen tab's hover is a pill inset from its

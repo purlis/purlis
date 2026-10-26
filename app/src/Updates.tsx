@@ -289,7 +289,7 @@ export function UpdateItem({
   useEffect(() => {
     // Once the group is enabled again, a render after the write landed.
     if (moved !== undefined)
-      content.current?.querySelector<HTMLElement>('[role="radio"][data-state="checked"]')?.focus();
+      content.current?.querySelector<HTMLElement>('input[type="radio"]:checked')?.focus();
   }, [moved]);
   // Live, so a chat that finishes its turn while the ask is up leaves it.
   const midTurn = chats.filter(mightBeMidTurn);

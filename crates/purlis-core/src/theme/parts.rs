@@ -524,6 +524,13 @@ impl Family {
             .map(|(_, token)| *token)
     }
 
+    /// The colour `part`'s words are drawn in by default, for the tests that hold it to a
+    /// family's stylesheet.
+    #[cfg(test)]
+    pub(super) fn own_words_of(&self, part: usize) -> Option<&'static str> {
+        self.own_words(part)
+    }
+
     /// The colour `part`'s words are drawn in by default, when it is not the root's.
     fn own_words(&self, part: usize) -> Option<&'static str> {
         let name = self.parts.get(part)?.name;
@@ -1102,6 +1109,13 @@ pub const MANIFEST: &[Family] = &[
     shell::TITLEBAR,
     select::SELECT,
     select::COMBOBOX,
+    choice::CHECKBOX,
+    choice::RADIO,
+    choice::SWITCH,
+    choice::SEGMENTED_CONTROL,
+    choice::SEGMENT,
+    choice::SLIDER,
+    choice::OPTION_CARD,
 ];
 
 /// The popover and menu families (#2909): the surface a popover and a menu stand on, and a
@@ -1124,6 +1138,11 @@ mod collection;
 /// The select and combobox families (#2906).
 #[path = "parts_select.rs"]
 mod select;
+
+/// The choice families (#2907): checkbox, radio, switch, segmented control and segment, slider
+/// and option card.
+#[path = "parts_choice.rs"]
+mod choice;
 #[cfg(test)]
 pub(super) use dialog::DIALOG_TIERS;
 
