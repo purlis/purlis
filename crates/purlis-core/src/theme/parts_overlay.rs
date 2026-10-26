@@ -97,6 +97,7 @@ pub(super) const POPOVER: Family = Family {
     corner_most: None,
     around: &[],
     fills: &[("key", "surface.raised")],
+    under: &[],
 };
 
 pub(super) const MENU: Family = Family {
@@ -176,6 +177,7 @@ pub(super) const MENU: Family = Family {
     corner_most: None,
     around: &[],
     fills: &[],
+    under: &[],
 };
 
 /// **The popover's colours as `app/src/ui/popover/popover.css` draws them**: one surface for a

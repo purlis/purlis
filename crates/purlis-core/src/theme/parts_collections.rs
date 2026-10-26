@@ -106,6 +106,7 @@ pub(super) const LIST: Family = Family {
     // The list that holds the rows, and a group's name over them, stand around a row.
     around: &["body", "header"],
     fills: &[],
+    under: &[],
 };
 
 /// **A row's colours as `app/src/ui/list/list.css` draws them**, which a test holds to that file:

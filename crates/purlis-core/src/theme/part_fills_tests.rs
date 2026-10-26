@@ -84,123 +84,115 @@ fn drawn_as(css: &str, selectors: &[&str], property: &str) -> Option<String> {
         .map(|token| (*token).to_owned())
 }
 
-/// A part, the stylesheet and rules that draw it, and the surface it stands on: see [`DRAWN`].
-type Drawn = (
-    &'static str,
-    &'static str,
-    &'static str,
-    &'static [&'static str],
-    Option<&'static str>,
-);
+/// **Where a part is drawn** (#3099): its family and part, the stylesheet, the rules that draw
+/// the part itself at rest, the rules of what it stands in (a tab's counts button around its
+/// count), and the surface it stands on where no rule of its stylesheet paints that (a
+/// switcher's row, on the popover it is drawn in).
+struct Drawn {
+    family: &'static str,
+    part: &'static str,
+    css: &'static str,
+    own: &'static [&'static str],
+    around: &'static [&'static str],
+    on: Option<&'static str>,
+}
 
-/// **Where each part's words and fill are drawn**: its family, its part, the stylesheet and the
-/// rules that draw it at rest, and the surface it stands on where its stylesheet gives it no
-/// ground and that is not its root's (a switcher's row, on the popover it is drawn in).
+/// Every part that takes a fill and words, in the manifest's order.
 const DRAWN: &[Drawn] = &[
-    (
-        "tabs",
-        "closer",
-        include_str!("../../../../app/src/ui/tabs/tabs.css"),
-        &["[data-scope=\"tabs\"][data-part=\"tab\"] [data-part=\"closer\"][data-scope=\"tabs\"]"],
-        None,
-    ),
-    (
-        "tabs",
-        "count",
-        include_str!("../../../../app/src/App.css"),
-        &[
+    Drawn {
+        family: "tabs",
+        part: "closer",
+        css: include_str!("../../../../app/src/ui/tabs/tabs.css"),
+        own: &[
+            "[data-scope=\"tabs\"][data-part=\"tab\"] [data-part=\"closer\"][data-scope=\"tabs\"]",
+        ],
+        around: &[],
+        on: None,
+    },
+    Drawn {
+        family: "tabs",
+        part: "count",
+        css: include_str!("../../../../app/src/App.css"),
+        own: &[".tab-tasks-counts .count"],
+        around: &[
             ".tabs .tab-tasks button",
             ".tabs .tab-tasks button.tab-tasks-counts",
         ],
-        None,
-    ),
-    (
-        "popover",
-        "footer",
-        include_str!("../../../../app/src/ui/popover/popover.css"),
-        &["[data-scope=\"popover\"][data-part=\"footer\"][data-of=\"keys\"]"],
-        None,
-    ),
-    (
-        "popover",
-        "key",
-        include_str!("../../../../app/src/ui/popover/popover.css"),
-        &["[data-scope=\"popover\"][data-part=\"key\"]"],
-        None,
-    ),
-    (
-        "rail",
-        "badge",
-        include_str!("../../../../app/src/ui/rail/rail.css"),
-        &["[data-part=\"badge\"][data-scope=\"rail\"]"],
-        None,
-    ),
-    (
-        "activity",
-        "count",
-        include_str!("../../../../app/src/ui/activity/activity.css"),
-        &["[data-scope=\"activity\"][data-part=\"count\"]"],
-        None,
-    ),
-    (
-        "titlebar",
-        "count",
-        include_str!("../../../../app/src/ui/titlebar/titlebar.css"),
-        &["[data-part=\"count\"][data-scope=\"titlebar\"]"],
-        None,
-    ),
-    (
-        "titlebar",
-        "crumb",
-        include_str!("../../../../app/src/ui/titlebar/titlebar.css"),
-        &["[data-part=\"crumb\"][data-scope=\"titlebar\"]"],
-        None,
-    ),
-    (
-        "titlebar",
-        "all",
-        include_str!("../../../../app/src/ui/titlebar/titlebar.css"),
-        &["[data-part=\"all\"][data-scope=\"titlebar\"]"],
-        None,
-    ),
-    (
-        "titlebar",
-        "pin",
-        include_str!("../../../../app/src/ui/titlebar/titlebar.css"),
-        &["[data-part=\"pin\"][data-scope=\"titlebar\"]"],
-        Some("surface.overlay"),
-    ),
-    (
-        "titlebar",
-        "row",
-        include_str!("../../../../app/src/ui/titlebar/titlebar.css"),
-        &["[data-part=\"row\"][data-scope=\"titlebar\"]"],
-        Some("surface.overlay"),
-    ),
+        on: None,
+    },
+    Drawn {
+        family: "popover",
+        part: "footer",
+        css: include_str!("../../../../app/src/ui/popover/popover.css"),
+        own: &["[data-scope=\"popover\"][data-part=\"footer\"][data-of=\"keys\"]"],
+        around: &[],
+        on: None,
+    },
+    Drawn {
+        family: "popover",
+        part: "key",
+        css: include_str!("../../../../app/src/ui/popover/popover.css"),
+        own: &["[data-scope=\"popover\"][data-part=\"key\"]"],
+        around: &[],
+        on: None,
+    },
+    Drawn {
+        family: "rail",
+        part: "badge",
+        css: include_str!("../../../../app/src/ui/rail/rail.css"),
+        own: &["[data-part=\"badge\"][data-scope=\"rail\"]"],
+        around: &[],
+        on: None,
+    },
+    Drawn {
+        family: "activity",
+        part: "count",
+        css: include_str!("../../../../app/src/ui/activity/activity.css"),
+        own: &["[data-scope=\"activity\"][data-part=\"count\"]"],
+        around: &[],
+        on: None,
+    },
+    Drawn {
+        family: "titlebar",
+        part: "count",
+        css: include_str!("../../../../app/src/ui/titlebar/titlebar.css"),
+        own: &["[data-part=\"count\"][data-scope=\"titlebar\"]"],
+        around: &[],
+        on: None,
+    },
+    Drawn {
+        family: "titlebar",
+        part: "crumb",
+        css: include_str!("../../../../app/src/ui/titlebar/titlebar.css"),
+        own: &["[data-part=\"crumb\"][data-scope=\"titlebar\"]"],
+        around: &[],
+        on: None,
+    },
+    Drawn {
+        family: "titlebar",
+        part: "all",
+        css: include_str!("../../../../app/src/ui/titlebar/titlebar.css"),
+        own: &["[data-part=\"all\"][data-scope=\"titlebar\"]"],
+        around: &[],
+        on: None,
+    },
+    Drawn {
+        family: "titlebar",
+        part: "pin",
+        css: include_str!("../../../../app/src/ui/titlebar/titlebar.css"),
+        own: &["[data-part=\"pin\"][data-scope=\"titlebar\"]"],
+        around: &[],
+        on: Some("surface.overlay"),
+    },
+    Drawn {
+        family: "titlebar",
+        part: "row",
+        css: include_str!("../../../../app/src/ui/titlebar/titlebar.css"),
+        own: &["[data-part=\"row\"][data-scope=\"titlebar\"]"],
+        around: &[],
+        on: Some("surface.overlay"),
+    },
 ];
-
-#[test]
-fn every_part_that_takes_a_fill_and_words_is_drawn_where_its_stylesheet_says() {
-    let listed: Vec<(&str, &str)> = DRAWN.iter().map(|one| (one.0, one.1)).collect();
-    assert_eq!(
-        listed,
-        filled_with_words(),
-        "every such part, in the manifest's order"
-    );
-    for (family, part, css, selectors, on) in DRAWN {
-        let css = uncommented(css);
-        let (words, fill) = declared_of(family, part);
-        let colour = drawn_as(&css, selectors, "color");
-        let ground = drawn_as(&css, selectors, "background-color")
-            .or_else(|| drawn_as(&css, selectors, "background"));
-        assert_eq!(words.map(str::to_owned), colour, "{family}.{part}'s words");
-        assert_eq!(
-            fill.map(str::to_owned),
-            ground.or(on.map(str::to_owned)),
-            "{family}.{part}'s fill"
-        );
-    }
-}
 
 /// A theme over Purlis Classic that sets `tokens` and `parts`, as read.
 fn shaped(tokens: serde_json::Value, parts: serde_json::Value) -> ResolvedTheme {
@@ -273,4 +265,83 @@ fn a_tab_s_closer_is_held_as_a_mark() {
     let theme = shaped(json!({}), json!({ "tabs.closer.text": "text.faint" }));
     let fell = fell_in(&theme);
     assert!(!fell.iter().any(|one| one.contains("closer")), "{fell:?}");
+}
+
+#[test]
+fn every_part_that_takes_a_fill_and_words_is_drawn_where_its_stylesheet_says() {
+    let listed: Vec<(&str, &str)> = DRAWN.iter().map(|one| (one.family, one.part)).collect();
+    assert_eq!(
+        listed,
+        filled_with_words(),
+        "every such part, in the manifest's order"
+    );
+    for one in DRAWN {
+        let css = uncommented(one.css);
+        let named = format!("{}.{}", one.family, one.part);
+        let family = family(one.family).expect("a family");
+        let at = family
+            .parts
+            .iter()
+            .position(|part| part.name == one.part)
+            .expect("a part");
+        let painted = |selectors: &[&str]| {
+            drawn_as(&css, selectors, "background-color")
+                .or_else(|| drawn_as(&css, selectors, "background"))
+        };
+        // Its words: its own colour, or the colour of what it stands in.
+        let colour =
+            drawn_as(&css, one.own, "color").or_else(|| drawn_as(&css, one.around, "color"));
+        assert_eq!(
+            family.own_words(at).map(str::to_owned),
+            colour,
+            "{named}'s words"
+        );
+        // A fill is what the part paints itself, and only that: a fallback paints it again.
+        assert_eq!(
+            family.own_fill(at).map(str::to_owned),
+            painted(one.own),
+            "{named}'s own fill"
+        );
+        // What it stands on otherwise is read, never painted.
+        let under = family
+            .under
+            .iter()
+            .find(|(part, _)| *part == one.part)
+            .map(|(_, token)| (*token).to_owned());
+        assert_eq!(
+            under,
+            painted(one.around).or(one.on.map(str::to_owned)),
+            "{named}'s ground"
+        );
+    }
+}
+
+#[test]
+fn a_fallback_paints_only_the_fills_a_part_paints_itself() {
+    // A tab whose words vanish on its fill falls back; the count inside it, which paints no
+    // ground of its own, is not given its counts button's sunken pill.
+    let theme = shaped(
+        json!({}),
+        json!({ "tabs.tab.fill": "surface.base", "tabs.tab.text": "surface.base" }),
+    );
+    assert!(!fell_in(&theme).is_empty(), "the tab falls back");
+    let sheet = super::stylesheet(&theme);
+    assert!(
+        !sheet.lines().any(
+            |line| line.contains("[data-scope=\"tabs\"][data-part=\"count\"]")
+                && line.contains("background-color")
+        ),
+        "{sheet}"
+    );
+    // The key's cap, which the key paints, is painted again by a popover's fallback.
+    let popover = shaped(
+        json!({}),
+        json!({ "popover.key.fill": "surface.raised", "popover.key.text": "surface.raised" }),
+    );
+    assert!(
+        super::stylesheet(&popover).lines().any(|line| line
+            .contains("[data-scope=\"popover\"][data-part=\"key\"]")
+            && line.contains("background-color: var(--surface-raised)")),
+        "the key's cap is painted again"
+    );
 }

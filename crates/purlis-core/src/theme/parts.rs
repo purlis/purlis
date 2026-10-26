@@ -493,6 +493,11 @@ pub struct Family {
     /// The fill of a part that is not the root's, by the part's name: an activity item's count on
     /// its own pill (#2917). Its words are held to this fill, and a fallback draws it again.
     fills: &'static [(&'static str, &'static str)],
+    /// The ground a part's words are read on where the part paints none of its own and it is
+    /// not the root's, by the part's name (#3099): a tab's count on the counts button its parent
+    /// paints, a switcher's row on the popover it is drawn in. Its words are held to this ground,
+    /// but a fallback never paints it, since the part does not.
+    under: &'static [(&'static str, &'static str)],
 }
 
 impl Family {
@@ -529,6 +534,18 @@ impl Family {
     #[cfg(test)]
     pub(super) fn own_words_of(&self, part: usize) -> Option<&'static str> {
         self.own_words(part)
+    }
+
+    /// What `part`'s words are read on by default, when it is not the root's fill: its own fill,
+    /// or the ground it stands on ([`Family::under`]).
+    fn own_ground(&self, part: usize) -> Option<&'static str> {
+        let name = self.parts.get(part)?.name;
+        self.own_fill(part).or_else(|| {
+            self.under
+                .iter()
+                .find(|(one, _)| *one == name)
+                .map(|(_, token)| *token)
+        })
     }
 
     /// The colour `part`'s words are drawn in by default, when it is not the root's.
@@ -701,6 +718,7 @@ pub const MANIFEST: &[Family] = &[
         corner_most: None,
         around: &[],
         fills: &[],
+        under: &[],
     },
     Family {
         name: "field",
@@ -768,6 +786,7 @@ pub const MANIFEST: &[Family] = &[
         corner_most: None,
         around: &[],
         fills: &[],
+        under: &[],
     },
     Family {
         name: "text-input",
@@ -843,6 +862,7 @@ pub const MANIFEST: &[Family] = &[
         corner_most: None,
         around: &[],
         fills: &[],
+        under: &[],
     },
     Family {
         name: "textarea",
@@ -899,6 +919,7 @@ pub const MANIFEST: &[Family] = &[
         corner_most: None,
         around: &[],
         fills: &[],
+        under: &[],
     },
     Family {
         name: "tabs",
@@ -1007,12 +1028,13 @@ pub const MANIFEST: &[Family] = &[
         defaults: tabs_look_in,
         states: &[State::Hover, State::Selected],
         focused: "[data-focus-visible]",
-        // Its ×, a faint mark on the tab, and its count, secondary words on the counts' sunken pill
-        // (`App.css`), each read on its own fill (#3099).
+        // Its ×, a faint mark on the tab, and its count, secondary words on the sunken pill the
+        // counts button paints (`App.css`), which the count itself does not (#3099).
         words: &[("closer", "text.faint"), ("count", "text.secondary")],
         around: &["strip", "layout"],
         corner_most: None,
-        fills: &[("count", "surface.sunken")],
+        fills: &[],
+        under: &[("count", "surface.sunken")],
     },
     Family {
         name: "editor",
@@ -1051,6 +1073,7 @@ pub const MANIFEST: &[Family] = &[
         around: &[],
         corner_most: None,
         fills: &[],
+        under: &[],
     },
     shell::PANEL,
     shell::PANEL_SECTION,
@@ -1093,6 +1116,7 @@ pub const MANIFEST: &[Family] = &[
         corner_most: None,
         around: &[],
         fills: &[],
+        under: &[],
     },
     overlay::POPOVER,
     overlay::MENU,
@@ -2293,7 +2317,7 @@ fn drawn(rules: &[Rule], family: &Family, variant: &str, states: &[State]) -> Dr
                     return fill;
                 }
                 part_fill(rules, family, part, variant, states)
-                    .or_else(|| family.own_fill(part))
+                    .or_else(|| family.own_ground(part))
                     .unwrap_or(fill)
             })
             .collect(),
