@@ -7,13 +7,19 @@
 //! with what it opens open, #3255), the check holds that colour on the part's fill at
 //! [`aa_text`] for the window's text size, 4.5:1, not at the 3:1 a mark takes. The pairs are
 //! [`PAIRS`], so the check names them and the consent floors fall back from them.
+//!
+//! **So is the danger colour drawn as words** (#3254): a danger answer's words, a danger row's
+//! and a field's error, on every ground the window draws them on. A part's words with no fill of
+//! their own are read on the grounds the part is drawn on ([`Family::grounds_of`]): a field's
+//! error only under a field that can refuse, not on every ground a field stands on.
 
 use super::super::check::{PAIRS, aa_text};
 use super::{Family, MANIFEST, State, TRANSPARENT};
 
-/// Whether `token` is a state's colour: what the consent floors hold as a state mark.
-fn is_state_colour(token: &str) -> bool {
-    token.starts_with("state.") || token.starts_with("needs-you.")
+/// Whether `token` is a state's colour, which the consent floors hold as a state mark, or the
+/// danger colour, which they hold as danger.
+fn is_held_as_words(token: &str) -> bool {
+    token.starts_with("state.") || token.starts_with("needs-you.") || token.starts_with("danger.")
 }
 
 /// Whether `token` is a wash, drawn see-through over what is under it.
@@ -71,7 +77,7 @@ fn state_words() -> Vec<Words> {
                             None => continue,
                         }
                     };
-                    if !is_state_colour(words) {
+                    if !is_held_as_words(words) {
                         continue;
                     }
                     let fill = family.own_fill(at).unwrap_or(look.fill);
@@ -92,7 +98,7 @@ fn state_words() -> Vec<Words> {
                     if fill == TRANSPARENT {
                         found.extend(
                             family
-                                .grounds
+                                .grounds_of(at)
                                 .iter()
                                 .map(|ground| (named.clone(), words, *ground, None)),
                         );
@@ -133,7 +139,7 @@ fn every_state_colour_a_part_draws_as_words_is_held_at_the_text_floor() {
         .collect();
     assert!(
         missing.is_empty(),
-        "state colours drawn as words but held below {text}:1:\n{}",
+        "state or danger colours drawn as words but held below {text}:1:\n{}",
         missing.join("\n")
     );
 }
@@ -194,4 +200,44 @@ fn the_looks_read_are_the_ones_the_window_draws() {
             .any(|one| one.contains(&State::Open))
     );
     assert!(read_in(menu, "danger").contains(&vec![State::Selected]));
+}
+
+#[test]
+fn the_danger_words_of_an_answer_a_row_and_a_field_s_error_are_among_them() {
+    let found = state_words();
+    let has = |part: &str, front: &str, back: &str| {
+        found.iter().any(|(named, on_front, on, _)| {
+            named.starts_with(part) && *on_front == front && *on == back
+        })
+    };
+    assert!(
+        has("button.root.danger", "danger.base", "control.base"),
+        "{found:?}"
+    );
+    assert!(
+        has("button.root.danger.hover", "danger.base", "danger.surface"),
+        "{found:?}"
+    );
+    assert!(
+        has("menu.root.danger", "danger.base", "surface.overlay"),
+        "{found:?}"
+    );
+    assert!(
+        has("field.error", "danger.text", "surface.raised"),
+        "{found:?}"
+    );
+    // A field's error is read only where a field that can refuse stands, never in its box.
+    assert!(
+        !has("field.error", "danger.text", "surface.sunken"),
+        "{found:?}"
+    );
+    // A danger button is never pressed, and a danger row never opens a submenu (#3255).
+    assert!(
+        !has("button.root.danger", "danger.base", "accent.surface"),
+        "{found:?}"
+    );
+    assert!(
+        !has("menu.root.danger", "danger.base", "tab.active"),
+        "{found:?}"
+    );
 }
