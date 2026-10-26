@@ -2634,6 +2634,7 @@ fn a_secret_exec_that_waited_for_the_board_reads_input_handed_on_while_it_is_hea
         Heard::SecretExec(purlis_core::secrets::brokered::Ask {
             chat: 3,
             secret_exec: Default::default(),
+            ..Default::default()
         }),
         reply,
     );
@@ -2910,6 +2911,7 @@ fn exec_through(
         Heard::SecretExec(purlis_core::secrets::brokered::Ask {
             chat,
             secret_exec: Default::default(),
+            ..Default::default()
         }),
         reply,
     );

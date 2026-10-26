@@ -4604,6 +4604,7 @@ fn run_brokered_waits_for_a_starting_chat_and_names_only_its_personas_server() {
                 }),
                 ..Wanted::default()
             },
+            ..Ask::default()
         };
         let said = Arc::clone(&said);
         crate::vaults::run_brokered(

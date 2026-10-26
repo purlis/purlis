@@ -114,6 +114,7 @@ macro_rules! app_commands {
                 chatbrowsers::allow_chat_browser,
                 chatbrowsers::keep_chat_browser_off,
                 chatbrowsers::answer_pool_login,
+                pooltools::answer_pool_tool,
                 chatbrowsers::allow_browser_sites,
                 chatbrowsers::allow_person_browser_sites,
                 chatbrowsers::keep_browser_sites_blocked,

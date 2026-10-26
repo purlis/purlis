@@ -458,6 +458,19 @@ pub fn compose_ready(
     {
         tracing::warn!("purlis: a composed chat was not counted ({why})");
     }
+    // What its sandbox armed here, for a `secret exec` its desktop sends the values of (#2047).
+    if let Some(applied) = sandbox {
+        crate::hostedchats::record(
+            root,
+            starting.number,
+            crate::hostedchats::Composed {
+                persona: persona.clone(),
+                folder: cwd.clone(),
+                harness: ready.harness,
+                confines: applied.confines().clone(),
+            },
+        );
+    }
     Ok(Launch {
         program,
         args,

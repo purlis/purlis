@@ -7736,6 +7736,7 @@ mod tests {
                 command: vec!["kubectl".to_owned(), "get".to_owned(), "pods".to_owned()],
                 ..Default::default()
             },
+            ..Default::default()
         };
         let line = line_with(Some(&ChatToken::from("t")), &ask).unwrap();
         let (read, token) = read_line(std::str::from_utf8(&line).unwrap()).expect("a line");

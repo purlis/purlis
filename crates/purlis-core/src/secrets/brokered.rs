@@ -88,12 +88,22 @@ use super::{Ctx, Env, registry};
 use crate::sandbox::{Confines, Denial};
 
 /// The line a chat writes: which chat (checked against its token), and what it wants run.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub struct Ask {
     /// The app's number for the chat, from [`crate::hookwire::CHAT_ENV`].
     pub chat: u32,
     /// What is to be run. The field's name is what tells this line from every other kind.
     pub secret_exec: Wanted,
+    /// **The declared tool the chat's own host runs it as** (#2047): set by a session host that
+    /// composed the chat in a sandbox and found the command to be one of the tools its start
+    /// armed there, so the window may send that host the values for that one run. Set by the
+    /// host alone: a hook line's own is cleared.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runs_as: Option<String>,
+    /// **It waited for the window** (#2047): the host held it while its desktop was away and
+    /// hands it on now, so the window asks the person about it afresh. Set by the host alone.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub waited: bool,
 }
 
 /// What a chat asks to have run: `secret exec`'s own arguments, where it runs, and the
@@ -526,6 +536,7 @@ fn exchange(
             stdin: feed.has_stdin(),
             mcp,
         },
+        ..Ask::default()
     };
     let Ok(line) = crate::hookwire::line_with(token, &ask) else {
         return Outcome::NotTaken;
@@ -1148,6 +1159,7 @@ pub fn serve_recording(
     serve_recorded(
         asker,
         wanted,
+        None,
         reader,
         writer,
         Wrap::here(),
@@ -1538,12 +1550,147 @@ pub(crate) fn serve_in(
     wrap: Wrap,
     told: Told,
 ) {
-    serve_recorded(asker, wanted, reader, writer, wrap, told, None);
+    serve_recorded(asker, wanted, None, reader, writer, wrap, told, None);
 }
 
+/// **A runner chat's declared tool, run by the runner's own host on the values its desktop
+/// sent** (#2047, ADR 0078 §7): exactly as [`serve`] runs one for a chat of this machine, held
+/// to what the chat's own sandbox was compiled to here and to the tools its start armed here,
+/// but with no vault read: each value comes from `handed`, which the desktop's window read and
+/// sent for this one run after its own gate. Nothing of `handed` is kept: a `--file` value is a
+/// file removed as the run ends, and the values go with this call.
+pub fn serve_handed(
+    asker: &Asker,
+    wanted: Wanted,
+    handed: Handed,
+    reader: Box<dyn BufRead + Send>,
+    writer: Box<dyn Write + Send>,
+    told: Told,
+) {
+    serve_recorded(
+        asker,
+        wanted,
+        Some(&handed),
+        reader,
+        writer,
+        Wrap::here(),
+        told,
+        None,
+    );
+}
+
+/// [`serve_handed`] in `wrap`, telling nothing of what its proxy refused.
+#[cfg(test)]
+pub(crate) fn serve_handed_wrapped(
+    asker: &Asker,
+    wanted: Wanted,
+    handed: Handed,
+    reader: Box<dyn BufRead + Send>,
+    writer: Box<dyn Write + Send>,
+    wrap: Wrap,
+) {
+    serve_recorded(
+        asker,
+        wanted,
+        Some(&handed),
+        reader,
+        writer,
+        wrap,
+        Arc::new(|_| {}),
+        None,
+    );
+}
+
+/// **Which of the tools chat `asker`'s start armed here `wanted` runs as** (#2047): by its name,
+/// where the command is exactly one of them, with that tool's vault and hand-over
+/// ([`crate::sandbox::tools::declared`]); refused in the words a run here would be refused in
+/// otherwise. What a runner's host says to its desktop before any value is sent for the run, so
+/// nothing is asked for a command its own sandbox would never run.
+pub fn armed_as(asker: &Asker, wanted: &Wanted) -> Result<String, String> {
+    let Some(confines) = &asker.confines else {
+        return Err("this chat was not started in its sandbox here, so no vault value is sent                     for its commands"
+            .to_owned());
+    };
+    let persona = asker.persona.as_deref().unwrap_or_default();
+    let program = wanted
+        .command
+        .iter()
+        .find(|word| *word != "--")
+        .cloned()
+        .unwrap_or_default();
+    let ready = crate::sandbox::tools::declared(
+        &confines.tools,
+        &declared_now(&asker.root, persona),
+        persona,
+        &crate::sandbox::tools::Asked {
+            vault: &wanted.vault,
+            env: &wanted.env,
+            file: &wanted.file,
+            dotenv: &wanted.dotenv,
+            program: &program,
+        },
+    )?;
+    if ready.tool.login.is_some() {
+        return Err(login_by_the_browser_tool(&ready.tool.name));
+    }
+    Ok(ready.tool.name.clone())
+}
+
+/// **The values a runner's desktop sent for one `secret exec`** (#2047): each key of the
+/// tool's vault the run hands over, with its value, read by the desktop's window after its gate
+/// and sent down the link for that one run. Its `Debug` names the keys alone, and it is never
+/// written anywhere: it lives as long as the run it was sent for.
+#[derive(Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+pub struct Handed {
+    values: Vec<(String, String)>,
+}
+
+impl std::fmt::Debug for Handed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Handed")
+            .field(
+                "keys",
+                &self.values.iter().map(|(key, _)| key).collect::<Vec<_>>(),
+            )
+            .finish_non_exhaustive()
+    }
+}
+
+impl Handed {
+    /// The values `values`, each a key and its value.
+    pub fn of(values: impl IntoIterator<Item = (String, String)>) -> Handed {
+        Handed {
+            values: values.into_iter().collect(),
+        }
+    }
+
+    /// The keys it carries a value for.
+    pub fn keys(&self) -> impl Iterator<Item = &str> {
+        self.values.iter().map(|(key, _)| key.as_str())
+    }
+
+    /// The value sent for `key`, remembered as read ([`super::seen`]) so no store of a chat's
+    /// words on this host keeps it; refused where the desktop sent none.
+    fn value(&self, key: &str) -> Result<String, super::VaultError> {
+        let (_, value) = self
+            .values
+            .iter()
+            .find(|(one, _)| one == key)
+            .ok_or_else(|| {
+                super::VaultError::new(format!(
+                    "the person's desktop sent no value for key {key}, so nothing ran"
+                ))
+            })?;
+        super::seen::remember(value);
+        Ok(value.clone())
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn serve_recorded(
     asker: &Asker,
     wanted: Wanted,
+    handed: Option<&Handed>,
     reader: Box<dyn BufRead + Send>,
     mut writer: Box<dyn Write + Send>,
     wrap: Wrap,
@@ -1594,7 +1741,11 @@ pub(crate) fn serve_recorded(
     // What this chat may write is the app's record of it, and no provider's program is run
     // from there (#1516).
     let ctx = ctx.chat(confines, asker.folder.as_deref());
-    if let Err(why) = authorise(&ctx, asker.persona.as_deref(), &wanted.vault) {
+    // Values its desktop sent were authorised there, where the vault is (#2047): a runner holds
+    // no vault to authorise against.
+    if handed.is_none()
+        && let Err(why) = authorise(&ctx, asker.persona.as_deref(), &wanted.vault)
+    {
         return refuse(&mut *writer, 1, why);
     }
     // A sandboxed chat runs only its persona's declared tools with a vault (D-PE-ruling-2, the
@@ -1666,9 +1817,12 @@ pub(crate) fn serve_recorded(
         #[cfg(test)]
         Wrap::Unwrapped | Wrap::Refusing(_) => Applying::Unwrapped,
     };
-    let v = match cmd::provider(&ctx, &wanted.vault) {
-        Ok(v) => v,
-        Err(e) => return refuse(&mut *writer, 1, e.message),
+    let v = match handed {
+        Some(_) => None,
+        None => match cmd::provider(&ctx, &wanted.vault) {
+            Ok(v) => Some(v),
+            Err(e) => return refuse(&mut *writer, 1, e.message),
+        },
     };
     // What runs beside the child for as long as it does: the egress proxy carrying the chat's
     // hosts, telling the chat's tab each host it refuses, and a temp directory of its own.
@@ -1786,7 +1940,16 @@ pub(crate) fn serve_recorded(
         command: command.clone(),
         argv0: None,
     };
-    let prepared = match exec::prepare(&ctx, &v, &req, base, Some(&within), &|| None) {
+    let prepared = match (&v, handed) {
+        (Some(v), _) => exec::prepare(&ctx, v, &req, base, Some(&within), &|| None),
+        (None, Some(handed)) => {
+            exec::prepare_from(&|key| handed.value(key), &req, base, Some(&within), &|| {
+                None
+            })
+        }
+        (None, None) => return refuse(&mut *writer, 1, "no vault to read".to_owned()),
+    };
+    let prepared = match prepared {
         Ok(prepared) => prepared,
         Err(Stopped::Said(code, why)) => return refuse(&mut *writer, code, why),
         Err(Stopped::Signal(code)) => return refuse(&mut *writer, code, "stopped".to_owned()),
@@ -1984,7 +2147,8 @@ pub(crate) fn serve_recorded(
         Err(e) => return refuse(&mut *writer, 1, format!("cannot run {}: {e}", command[0])),
     };
     let group = Live::hold(spawned.id());
-    if cmd_said_note(&ctx, &v, &mut *writer).is_err()
+    if v.as_ref()
+        .is_some_and(|v| cmd_said_note(&ctx, v, &mut *writer).is_err())
         || notes
             .iter()
             .any(|note| send(&mut *writer, &Frame::Note(note.clone())).is_err())

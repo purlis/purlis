@@ -315,6 +315,13 @@ export async function answerTaken(
         if (option === "keep")
           return commands.answerPoolLogin(plane, ask.session, false, reason?.trim() || null);
         break;
+      case "pool-tool":
+        // A runner chat's declared tool (#2047): Allow has this desktop send its persona's tool
+        // its vault values on the pool's runner while purlis runs and the pool stays as it is;
+        // Keep off refuses them there. The command that waits goes on, or is refused, at once.
+        if (option === "allow") return commands.answerPoolTool(plane, ask.session, path.tool, true);
+        if (option === "keep") return commands.answerPoolTool(plane, ask.session, path.tool, false);
+        break;
       case "take-over": {
         // A browser whose page needs the person (#2015): Take over takes the session host's
         // lease first, so their first click or key reaches the page, then opens its view. The

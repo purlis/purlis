@@ -112,6 +112,7 @@ struct World {
     /// The chats whose browser's sites wait on the person (#2018).
     browser_sites: Vec<crate::chatbrowsers::SitesWait>,
     pool_logins: Vec<crate::chatbrowsers::PoolLoginWaits>,
+    pool_tools: Vec<crate::pooltools::PoolToolWaits>,
     /// What the project's committed file declares it expects (ADR 0093).
     declared: purlis_core::sandbox::services::Declared,
 }
@@ -139,6 +140,7 @@ impl World {
             needs_you: Vec::new(),
             browser_sites: Vec::new(),
             pool_logins: Vec::new(),
+            pool_tools: Vec::new(),
             declared: purlis_core::sandbox::services::Declared::default(),
         }
     }
@@ -172,6 +174,7 @@ impl World {
             needs_you: self.needs_you.clone(),
             browser_sites: self.browser_sites.clone(),
             pool_logins: self.pool_logins.clone(),
+            pool_tools: self.pool_tools.clone(),
             permissions: self.permissions.clone(),
             queue: self.queue.clone(),
             at_its_prompt: &at_prompt,
@@ -1759,5 +1762,50 @@ fn a_runner_chats_browser_login_asks_whether_its_persona_may_log_in_on_the_pool(
         "Wants its browser logged in with shop-login on pool builds, which runs on this \
          machine's Docker. Allow on pool builds fills steward's shop-login there from your \
          vault; the runner keeps none"
+    );
+}
+
+#[test]
+fn a_runner_chats_tool_asks_whether_its_values_may_be_sent_to_the_pools_runner() {
+    let mut world = World::new();
+    world.pool_tools = vec![crate::pooltools::PoolToolWaits {
+        session: 6,
+        persona: "devops".into(),
+        bound: purlis_core::poollogins::Bound {
+            pool: "builds".into(),
+            definition: "d".repeat(64),
+            image: "a".repeat(64),
+            runner: "01JB0RUNNER0000000000000000".into(),
+            runner_key: "ab".repeat(32),
+            runner_image: "a".repeat(64),
+            engine: "this machine's Docker".into(),
+        },
+        tool: "kubectl".into(),
+        whole: "kubectl with kubeconfig from vault team as KUBECONFIG file".into(),
+        vault: "team".into(),
+        since: 1_700_000_000,
+        changed: false,
+    }];
+
+    let asks = world.asks();
+
+    let ask = asks
+        .iter()
+        .find(|one| one.source == AskSource::PoolTool)
+        .expect("its Ask is listed");
+    assert_eq!(ask.session, 6);
+    assert_eq!(
+        ask.answer,
+        AnswerPath::PoolTool {
+            tool: "kubectl".into()
+        }
+    );
+    assert_eq!(ids(ask), [super::POOL_TOOL_ALLOW, KEEP]);
+    assert_eq!(ask.options[0].label, "Allow on pool builds");
+    assert_eq!(
+        ask.says,
+        "Wants to run kubectl on pool builds, which runs on this machine's Docker, with \
+         devops's values from vault team. Allow on pool builds sends them from your vault for \
+         each run; the runner keeps none"
     );
 }

@@ -168,6 +168,11 @@ pub enum Replied {
     Wrote { text: String },
     /// A held permission ask will not be answered, or a `secret exec` has ended.
     Ended,
+    /// **The values of a `secret exec` its chat's own host runs** (#2047, ADR 0078 §7): sent by
+    /// the window, after its gate, for a runner chat's declared tool the runner's host said it
+    /// runs ([`brokered::Ask::runs_as`]). The host runs it itself on them, for that one run,
+    /// and keeps none. Its `Debug` names the keys alone.
+    Handed(brokered::Handed),
 }
 
 /// How long the host waits for the window to take a report, a tool call or a refused commit,
@@ -268,6 +273,14 @@ pub struct Relaying {
     told: Mutex<HashMap<u32, Vec<String>>>,
     /// The channel's own tokens, which say whether a chat is still there.
     tokens: Mutex<Option<Arc<ChatTokens>>>,
+    /// Where the project is on this machine, where this host composes its chats: what a `secret
+    /// exec` of a chat composed here is run against when the window sends its values (#2047).
+    root: Mutex<Option<std::path::PathBuf>>,
+    /// The `secret exec`s that wait for the window, by chat (#2047).
+    execs_waiting: Mutex<HashMap<u32, usize>>,
+    /// What runs a `secret exec` here on the values the window sent: the brokered run, or a
+    /// test's stand-in for it.
+    runs_handed: hosted::RunsHanded,
 }
 
 /// **How the host keeps what its hook channel hears** (#2003): it writes the event log, and
@@ -314,7 +327,17 @@ impl Relaying {
             logins_waiting: Mutex::default(),
             told: Mutex::default(),
             tokens: Mutex::default(),
+            root: Mutex::default(),
+            execs_waiting: Mutex::default(),
+            runs_handed: Arc::new(brokered::serve_handed),
         })
+    }
+
+    /// **Its project is at `root` on this machine** (#2047): a `secret exec` of a chat this host
+    /// composed there in a sandbox is run here when the window sends its values, and waits for
+    /// the window while nobody is there ([`crate::hostedchats`]).
+    pub fn of_project_at(&self, root: &std::path::Path) {
+        *lock(&self.root) = Some(root.to_path_buf());
     }
 
     /// The window replied `replied` to the line handed on as `id`. A reply to a line nothing
@@ -679,10 +702,19 @@ impl Relaying {
     /// writes the other, until the window says it has ended.
     fn secret_exec(
         self: &Arc<Self>,
-        ask: brokered::Ask,
+        mut ask: brokered::Ask,
         reader: Box<dyn BufRead + Send>,
         mut writer: Box<dyn Write + Send>,
     ) {
+        // Only this host says what it runs, and whether it waited (#2047).
+        ask.runs_as = None;
+        ask.waited = false;
+        let composed = lock(&self.root)
+            .as_deref()
+            .and_then(|root| crate::hostedchats::asker(root, ask.chat));
+        if let Some(asker) = composed {
+            return self.secret_exec_composed_here(asker, ask, reader, writer);
+        }
         let Some((id, replied)) = self.exchange(&Heard::SecretExec(ask)) else {
             brokered::not_answered(writer);
             return;
@@ -704,6 +736,8 @@ impl Relaying {
         }
         while let Ok(reply) = replied.recv() {
             match reply {
+                // Only for a chat this host composed (#2047): never run, never written on.
+                Replied::Handed(_) => break,
                 Replied::Wrote { text } => {
                     if writer
                         .write_all(text.as_bytes())
@@ -1297,9 +1331,12 @@ impl Heeding {
             heeding: self,
             id,
             exec,
-            reply,
+            reply: Arc::clone(&reply),
         };
+        // What the hearing may send its values through, for a run its chat's host runs (#2047).
+        EXEC_REPLY.with(|slot| *slot.borrow_mut() = Some(reply));
         (self.hearing.secret_exec)(ask, reader, writer);
+        EXEC_REPLY.with(|slot| *slot.borrow_mut() = None);
     }
 }
 
@@ -1398,6 +1435,26 @@ fn of_the_line(entry: &Entry, heard: &Heard) -> bool {
 }
 
 thread_local! {
+    /// What replies to the `secret exec` this thread's hearing runs, while it runs one the host
+    /// handed on (#2047): what [`hand_values`] sends the values through.
+    static EXEC_REPLY: RefCell<Option<Reply>> = const { RefCell::new(None) };
+}
+
+/// **Sends `handed`, the values of the `secret exec` this thread's hearing is running, to the
+/// host that handed it on** (#2047), which runs it itself on them: what the window does for a
+/// runner chat's declared tool once its gate has passed. `handed` is given back where this
+/// thread runs no exec a host handed on: nothing is sent.
+pub fn hand_values(handed: brokered::Handed) -> Result<(), brokered::Handed> {
+    EXEC_REPLY.with(|slot| match slot.borrow().as_ref() {
+        Some(reply) => {
+            reply(Replied::Handed(handed));
+            Ok(())
+        }
+        None => Err(handed),
+    })
+}
+
+thread_local! {
     /// What the line this thread's hearing hears has asked to be recorded, while the window
     /// hears one the host handed on ([`carrying`]): `None` when no such line is being heard.
     static CARRIED: RefCell<Option<Option<Entry>>> = const { RefCell::new(None) };
@@ -1430,6 +1487,8 @@ fn carrying<T>(hear: impl FnOnce() -> T) -> (T, Option<Entry>) {
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
+
+mod hosted;
 
 #[cfg(test)]
 mod tests;

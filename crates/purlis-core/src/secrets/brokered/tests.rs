@@ -2725,6 +2725,7 @@ fn served_recorded(asker: &Asker, wanted: Wanted) -> (Vec<Frame>, Vec<RunBlocked
     serve_recorded(
         &asker,
         wanted,
+        None,
         reader,
         Box::new(wire.clone()),
         Wrap::Unwrapped,
@@ -4391,4 +4392,84 @@ fn under_a_service_a_brokered_run_is_logged_by_its_program_and_never_its_vault()
         "the program is said: {logged}"
     );
     assert!(!logged.contains("team"), "the vault was logged: {logged}");
+}
+
+// ----------------------------------------------------------------------------------------
+// A runner's host: a declared tool run on the values its desktop handed (#2047)
+
+/// A runner's project: no vault and no registry, only the chat's folder `work`.
+fn a_runners_project() -> tempfile::TempDir {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::create_dir(tmp.path().join("work")).unwrap();
+    tmp
+}
+
+/// Every frame a runner's host wrote for `wanted`, run unwrapped on `handed`, the values its
+/// desktop sent for that one run, as the tool `asker`'s start armed.
+fn served_handed(asker: &Asker, wanted: Wanted, handed: Handed) -> Vec<Frame> {
+    let (asker, wanted) = as_tool(asker.clone(), wanted);
+    let (reader, _keep) = held_open();
+    let wire = Wire::default();
+    serve_handed_wrapped(
+        &asker,
+        wanted,
+        handed,
+        reader,
+        Box::new(wire.clone()),
+        Wrap::Unwrapped,
+    );
+    let bytes = wire.0.lock().unwrap().clone();
+    String::from_utf8(bytes)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("every line is a frame"))
+        .collect()
+}
+
+/// Every file under `dir`, read whole, that holds `value`.
+fn files_holding(dir: &Path, value: &str) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return found;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            found.extend(files_holding(&path, value));
+        } else if std::fs::read(&path)
+            .is_ok_and(|bytes| String::from_utf8_lossy(&bytes).contains(value))
+        {
+            found.push(path);
+        }
+    }
+    found
+}
+
+#[test]
+fn a_runners_host_runs_a_declared_tool_on_the_values_its_desktop_handed_and_keeps_none() {
+    let project = a_runners_project();
+    let mut want = wanted(
+        project.path(),
+        "team",
+        sh(r#"test -f "$KUBECONFIG" && echo "$KUBECONFIG"; cat "$KUBECONFIG""#),
+    );
+    want.file = vec!["KUBECONFIG=KUBECONFIG".into()];
+
+    let frames = served_handed(
+        &asker(project.path(), Some("devops")),
+        want,
+        Handed::of([("KUBECONFIG".to_owned(), KUBECONFIG.to_owned())]),
+    );
+
+    assert_eq!(frames.first(), Some(&Frame::Started), "{frames:?}");
+    assert_eq!(frames.last(), Some(&Frame::Exit(0)), "{frames:?}");
+    let out = stdout(&frames);
+    let path = PathBuf::from(out.lines().next().unwrap());
+    assert!(!out.contains("k8s-s3cret"), "the value is masked: {out}");
+    assert!(!path.exists(), "its file went with the run");
+    assert_eq!(
+        files_holding(project.path(), "k8s-s3cret"),
+        Vec::<PathBuf>::new(),
+        "no value is left on the runner"
+    );
 }

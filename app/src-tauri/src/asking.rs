@@ -153,6 +153,10 @@ pub enum AskSource {
     /// A runner chat's browser login, which waits on the person's opt-in for its persona on its
     /// pool (#2050): an Allow lets that persona's logins be filled on the pool's runner.
     PoolLogin,
+    /// A runner chat's declared tool, which waits on the person's Allow for its persona on its
+    /// pool (#2047): an Allow lets this desktop send that tool its vault values on the pool's
+    /// runner, for each run.
+    PoolTool,
 }
 
 /// **The existing, checked path an ask is answered by** (#1690): the command the window
@@ -208,6 +212,9 @@ pub enum AnswerPath {
     /// `answer_pool_login`, allowing for Allow and not for Keep off with the person's reason,
     /// for the chat that asked (#2050).
     PoolLogin,
+    /// `answer_pool_tool`, allowing for Allow and not for Keep off with the person's reason,
+    /// for the chat that asked and its tool `tool` (#2047).
+    PoolTool { tool: String },
     /// Nothing the window can send: the person answers in the chat.
     InItsPane,
 }
@@ -1098,6 +1105,60 @@ pub fn pool_login(waits: &crate::chatbrowsers::PoolLoginWaits) -> Shown {
     }
 }
 
+/// The key of chat `session`'s Ask about its tool `tool` on its pool (#2047): one per chat's
+/// tool.
+fn pool_tool_key(session: u32, tool: &str) -> String {
+    format!("pool-tool:{session}:{tool}")
+}
+
+/// **The pool tool adapter** (#2047, spec #2041 story 21): a runner chat ran one of its
+/// persona's declared tools, which needs its vault values on the pool's runner, and the command
+/// waits for the answer. It names the tool, the vault, the pool and the engine the pool runs
+/// on. Allow on pool X sends that tool of that persona its values there, for each run, while the
+/// app runs and the pool and its runner stay as they are now; Keep off refuses it there until
+/// they change. Every word is purlis's, and the line says the runner keeps none.
+pub fn pool_tool(waits: &crate::pooltools::PoolToolWaits) -> Shown {
+    let pool = &waits.bound.pool;
+    let (tool, persona, vault, engine) = (
+        &waits.tool,
+        &waits.persona,
+        &waits.vault,
+        &waits.bound.engine,
+    );
+    let says = if waits.changed {
+        format!(
+            "Pool {pool} changed since you answered. Wants to run {tool} there, on {engine},              with {persona}'s values from vault {vault}. Allow on pool {pool} sends them from              your vault for each run; the runner keeps none"
+        )
+    } else {
+        format!(
+            "Wants to run {tool} on pool {pool}, which runs on {engine}, with {persona}'s values              from vault {vault}. Allow on pool {pool} sends them from your vault for each run;              the runner keeps none"
+        )
+    };
+    Shown {
+        session: waits.session,
+        ask: pool_tool_key(waits.session, tool),
+        says: said_inertly(&says),
+        options: vec![
+            Offered {
+                id: POOL_TOOL_ALLOW.to_owned(),
+                label: format!("Allow on pool {pool}"),
+                allows: true,
+                preselected: None,
+            },
+            refuses(KEEP, "Keep off"),
+        ],
+        source: AskSource::PoolTool,
+        chain: Vec::new(),
+        answer: AnswerPath::PoolTool { tool: tool.clone() },
+        since: None,
+        held_until: None,
+        writes: None,
+    }
+}
+
+/// The id of Allow on a pool tool Ask (#2047).
+pub const POOL_TOOL_ALLOW: &str = "allow";
+
 /// The key of chat `session`'s browser sites Ask (#2018): one per chat, every site it waits on.
 fn browser_sites_key(session: u32) -> String {
     format!("browser-sites:{session}")
@@ -1529,6 +1590,8 @@ pub struct Waiting<'a> {
     pub browser_sites: Vec<crate::chatbrowsers::SitesWait>,
     /// The runner chats whose browser login waits on the person's opt-in for its pool (#2050).
     pub pool_logins: Vec<crate::chatbrowsers::PoolLoginWaits>,
+    /// The runner chats whose declared tool waits on the person's Allow for its pool (#2047).
+    pub pool_tools: Vec<crate::pooltools::PoolToolWaits>,
     /// The administrator's policy, which the levels an Allow is offered at answer to.
     pub locks: &'a purlis_core::sandbox::policy::Locks,
     /// Whether a browser site for everyone in the project reaches a browser here: only where the
@@ -1604,6 +1667,8 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
     );
     // A runner chat whose browser login waits on the person's opt-in for its pool (#2050).
     asks.extend(waiting.pool_logins.iter().map(pool_login));
+    // A runner chat whose declared tool waits on the person's Allow for its pool (#2047).
+    asks.extend(waiting.pool_tools.iter().map(pool_tool));
     let said: std::collections::HashSet<u32> = asks.iter().map(|ask| ask.session).collect();
     // About no chat: a profile that waits to be signed in (#2035).
     let signing = asks.len();
@@ -1792,12 +1857,17 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
     for one in &pool_logins {
         since.insert(pool_login_key(one.session), one.since);
     }
+    let pool_tools = held.pool_tools().waiting();
+    for one in &pool_tools {
+        since.insert(pool_tool_key(one.session, &one.tool), one.since);
+    }
     let declared = purlis_core::sandbox::services::declared(root);
     let waiting = Waiting {
         browsers,
         needs_you,
         browser_sites,
         pool_logins,
+        pool_tools,
         sandbox_only,
         sign_ins,
         removals,

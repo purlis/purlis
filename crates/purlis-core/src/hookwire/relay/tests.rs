@@ -307,6 +307,7 @@ fn a_secret_exec_runs_in_the_window_on_what_its_asker_types() {
                 brokered::Ask {
                     chat: 3,
                     secret_exec: Default::default(),
+                    ..Default::default()
                 },
                 Box::new(Cursor::new(b"one\ntwo\n".to_vec())),
                 Box::new(Shared(written)),
@@ -345,6 +346,7 @@ fn an_exec_heard_on(heeding: &Arc<Heeding>, link: u64, id: u64, chat: u32) -> Ve
         let exec = Heard::SecretExec(brokered::Ask {
             chat,
             secret_exec: Default::default(),
+            ..Default::default()
         });
         heeding.hear(link, id, exec, reply);
     });
@@ -370,6 +372,7 @@ fn an_exec(chat: u32) -> Heard {
     Heard::SecretExec(brokered::Ask {
         chat,
         secret_exec: Default::default(),
+        ..Default::default()
     })
 }
 
@@ -451,6 +454,7 @@ fn when_the_link_ends_no_secret_execs_input_is_kept() {
             let exec = Heard::SecretExec(brokered::Ask {
                 chat: ECHOES,
                 secret_exec: Default::default(),
+                ..Default::default()
             });
             heeding.hear(LINK, 6, exec, reply);
         }
@@ -546,6 +550,7 @@ fn an_exec_from_the_link_before_ending_late_does_not_end_one_under_its_number_no
             let exec = Heard::SecretExec(brokered::Ask {
                 chat: ECHOES,
                 secret_exec: Default::default(),
+                ..Default::default()
             });
             heeding.hear(AGAIN, 1, exec, reply);
         }
@@ -1645,4 +1650,292 @@ fn a_login_that_waited_is_handed_on_once_and_a_window_gone_mid_answer_is_told_no
             .any(|said| said.contains("went again before it answered")),
         "{told:?}"
     );
+}
+
+// ----------------------------------------------------------------------------------------
+// A `secret exec` of a chat its host composed, run there on the values its desktop sends (#2047)
+
+/// The chat its host composed, with the tool `kubectl` armed.
+const COMPOSED: u32 = 21;
+
+/// A project whose chat [`COMPOSED`] its host composed in a sandbox as `devops`, with tool
+/// `kubectl` handed `KUBECONFIG` from vault `team` as a file.
+fn a_composed_chat() -> tempfile::TempDir {
+    use crate::sandbox::tools::{Handed as As, Ready, Tool};
+    let tmp = tempfile::tempdir().unwrap();
+    let mut confines = crate::sandbox::Confines::default();
+    confines.tools.push(Ready {
+        tool: Tool::one("kubectl", "team", "KUBECONFIG", As::File, "kubeconfig"),
+        program: std::path::PathBuf::from("/opt/kube/kubectl"),
+    });
+    crate::hostedchats::record(
+        tmp.path(),
+        COMPOSED,
+        crate::hostedchats::Composed {
+            persona: Some("devops".into()),
+            folder: tmp.path().to_path_buf(),
+            harness: None,
+            confines,
+        },
+    );
+    tmp
+}
+
+/// What chat [`COMPOSED`] asks to run with kubectl's own vault and hand-over.
+fn kubectl_asked() -> brokered::Ask {
+    brokered::Ask {
+        chat: COMPOSED,
+        secret_exec: brokered::Wanted {
+            vault: "team".into(),
+            file: vec!["KUBECONFIG=kubeconfig".into()],
+            command: vec!["/opt/kube/kubectl".into(), "get".into(), "pods".into()],
+            ..Default::default()
+        },
+        // A line's own claims, which its host clears.
+        runs_as: Some("sh".into()),
+        waited: true,
+    }
+}
+
+/// What the desktop's window heard of each `secret exec`: the tool its host runs it as, and
+/// whether it waited.
+type ExecsHeard = Arc<Mutex<Vec<(Option<String>, bool)>>>;
+
+/// A desktop's window that, for each `secret exec` its chat's host runs, sends the value of each
+/// key it hands over: `v-<key>`. Only while `there`.
+fn a_desktop(
+    there: &Arc<std::sync::atomic::AtomicBool>,
+) -> (Hearing, ExecsHeard, Arc<Mutex<Vec<String>>>, Arc<Relaying>) {
+    let (window, holding) = a_window();
+    let heard: ExecsHeard = Arc::default();
+    let mut hearing = the_windows(&window, &holding);
+    hearing.secret_exec = {
+        let heard = Arc::clone(&heard);
+        Box::new(move |ask, _reader, mut writer| {
+            heard
+                .lock()
+                .unwrap()
+                .push((ask.runs_as.clone(), ask.waited));
+            if ask.runs_as.is_none() {
+                let _ = writeln!(writer, "ran in the window");
+                return;
+            }
+            let keys = ask
+                .secret_exec
+                .file
+                .iter()
+                .filter_map(|spec| spec.split_once('=').map(|(_, key)| key.to_owned()));
+            let handed = brokered::Handed::of(keys.map(|key| (key.clone(), format!("v-{key}"))));
+            assert!(hand_values(handed).is_ok(), "sent to the host");
+        })
+    };
+    let heeding = Arc::new(Heeding::new(hearing));
+    heeding.linked(LINK);
+    let host: Arc<Mutex<Option<Arc<Relaying>>>> = Arc::default();
+    let ran: Arc<Mutex<Vec<String>>> = Arc::default();
+    let relaying = Relaying::new({
+        let (host, there) = (Arc::clone(&host), Arc::clone(there));
+        Box::new(move |id, heard| {
+            if !there.load(std::sync::atomic::Ordering::SeqCst) {
+                return false;
+            }
+            let heard: Heard =
+                serde_json::from_str(&serde_json::to_string(heard).unwrap()).unwrap();
+            let host = Arc::clone(&host);
+            let reply: Reply = Arc::new(move |replied: Replied| {
+                let replied: Replied =
+                    serde_json::from_str(&serde_json::to_string(&replied).unwrap()).unwrap();
+                let relaying = host.lock().unwrap().clone().unwrap();
+                relaying.replied(id, replied);
+            });
+            let heeding = Arc::clone(&heeding);
+            if heeding.admit(LINK, id, &heard, &reply) {
+                std::thread::spawn(move || heeding.hear(LINK, id, heard, reply));
+            }
+            true
+        })
+    })
+    .running_handed_with({
+        let ran = Arc::clone(&ran);
+        Arc::new(move |asker, wanted, handed, reader, mut writer, _told| {
+            let keys: Vec<&str> = handed.keys().collect();
+            ran.lock().unwrap().push(format!(
+                "chat {} as {:?} ran {} with {keys:?}",
+                asker.chat,
+                asker.persona.as_deref().unwrap_or_default(),
+                wanted.command.join(" ")
+            ));
+            for line in reader.lines() {
+                writeln!(writer, "read {}", line.unwrap()).unwrap();
+            }
+        })
+    });
+    *host.lock().unwrap() = Some(Arc::clone(&relaying));
+    // The chat is there: its token is held.
+    let tokens = Arc::new(ChatTokens::default());
+    tokens.issue(COMPOSED).expect("issued");
+    (relaying.hearing(tokens), heard, ran, relaying)
+}
+
+/// Runs `ask` through `host`'s hearing on a thread, its asker typing `typed` and then hanging
+/// up once `hang_up` is sent; answers what the asker was written so far, and when the exec ends.
+fn an_exec_through(
+    host: Hearing,
+    ask: brokered::Ask,
+) -> (
+    Arc<Mutex<Vec<u8>>>,
+    std::os::unix::net::UnixStream,
+    mpsc::Receiver<()>,
+) {
+    let written = Arc::new(Mutex::new(Vec::new()));
+    let (theirs, ours) = std::os::unix::net::UnixStream::pair().unwrap();
+    let (ended, done) = mpsc::channel();
+    std::thread::spawn({
+        let written = Arc::clone(&written);
+        move || {
+            (host.secret_exec)(
+                ask,
+                Box::new(std::io::BufReader::new(theirs)),
+                Box::new(Shared(written)),
+            );
+            let _ = ended.send(());
+        }
+    });
+    (written, ours, done)
+}
+
+fn said(written: &Arc<Mutex<Vec<u8>>>) -> String {
+    String::from_utf8_lossy(&written.lock().unwrap()).into_owned()
+}
+
+#[test]
+fn a_composed_chats_tool_runs_on_its_host_on_the_values_its_desktop_sent() {
+    let project = a_composed_chat();
+    let there = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let (host, heard, ran, relaying) = a_desktop(&there);
+    relaying.of_project_at(project.path());
+
+    let (written, mut asker, done) = an_exec_through(host, kubectl_asked());
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while ran.lock().unwrap().is_empty() {
+        assert!(
+            Instant::now() < deadline,
+            "it never ran; {}",
+            said(&written)
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    writeln!(asker, "typed").unwrap();
+    asker.shutdown(std::net::Shutdown::Write).unwrap();
+
+    assert_eq!(done.recv_timeout(Duration::from_secs(10)), Ok(()));
+    assert_eq!(
+        *heard.lock().unwrap(),
+        [(Some("kubectl".to_owned()), false)],
+        "the window is told the tool its host runs it as, and nothing it claimed itself"
+    );
+    assert_eq!(
+        *ran.lock().unwrap(),
+        [r#"chat 21 as "devops" ran /opt/kube/kubectl get pods with ["kubeconfig"]"#],
+        "run here, as the chat's host recorded it, on the values sent"
+    );
+    assert_eq!(
+        said(&written),
+        "read typed\n",
+        "its input reached the run here"
+    );
+}
+
+#[test]
+fn with_the_desktop_away_a_composed_chats_exec_waits_says_so_and_runs_once_it_is_back() {
+    let project = a_composed_chat();
+    let there = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let (host, heard, ran, relaying) = a_desktop(&there);
+    relaying.of_project_at(project.path());
+
+    let (written, asker, done) = an_exec_through(host, kubectl_asked());
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !said(&written).contains("waits for them") {
+        assert!(Instant::now() < deadline, "never told it waits");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let note: brokered::Frame = serde_json::from_str(said(&written).trim()).unwrap();
+    assert_eq!(
+        note,
+        brokered::Frame::Note(hosted::exec_waits_said("kubectl")),
+        "said on its stderr, so the chat carries on"
+    );
+    assert!(ran.lock().unwrap().is_empty(), "nothing ran while away");
+    there.store(true, std::sync::atomic::Ordering::SeqCst);
+    while ran.lock().unwrap().is_empty() {
+        assert!(
+            Instant::now() < deadline,
+            "it never ran once the desktop was back"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    asker.shutdown(std::net::Shutdown::Write).unwrap();
+
+    assert_eq!(done.recv_timeout(Duration::from_secs(10)), Ok(()));
+    assert_eq!(
+        *heard.lock().unwrap(),
+        [(Some("kubectl".to_owned()), true)],
+        "handed on as one that waited, so the person is asked afresh"
+    );
+}
+
+#[test]
+fn a_composed_chats_exec_whose_asker_hung_up_while_away_is_never_handed_on() {
+    let project = a_composed_chat();
+    let there = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let (host, heard, ran, relaying) = a_desktop(&there);
+    relaying.of_project_at(project.path());
+
+    let (_written, asker, done) = an_exec_through(host, kubectl_asked());
+    drop(asker);
+    assert_eq!(done.recv_timeout(Duration::from_secs(10)), Ok(()));
+    there.store(true, std::sync::atomic::Ordering::SeqCst);
+
+    assert!(heard.lock().unwrap().is_empty(), "never handed on");
+    assert!(ran.lock().unwrap().is_empty(), "nothing ran");
+}
+
+#[test]
+fn a_command_its_host_armed_no_tool_for_is_refused_there_and_never_handed_on() {
+    let project = a_composed_chat();
+    let there = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let (host, heard, ran, relaying) = a_desktop(&there);
+    relaying.of_project_at(project.path());
+    let mut ask = kubectl_asked();
+    ask.secret_exec.command = vec!["/bin/sh".into(), "-c".into(), "env".into()];
+
+    let (written, _asker, done) = an_exec_through(host, ask);
+
+    assert_eq!(done.recv_timeout(Duration::from_secs(10)), Ok(()));
+    let frame: brokered::Frame = serde_json::from_str(said(&written).trim()).unwrap();
+    assert!(
+        matches!(&frame, brokered::Frame::Refused { why, .. } if why.contains("declared tools")),
+        "{frame:?}"
+    );
+    assert!(
+        heard.lock().unwrap().is_empty(),
+        "the window was asked nothing"
+    );
+    assert!(ran.lock().unwrap().is_empty());
+}
+
+#[test]
+fn a_chat_its_host_did_not_compose_runs_in_the_window_and_its_own_claims_are_cleared() {
+    let project = tempfile::tempdir().unwrap();
+    let there = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let (host, heard, ran, relaying) = a_desktop(&there);
+    relaying.of_project_at(project.path());
+
+    let (written, asker, done) = an_exec_through(host, kubectl_asked());
+    drop(asker);
+
+    assert_eq!(done.recv_timeout(Duration::from_secs(10)), Ok(()));
+    assert_eq!(*heard.lock().unwrap(), [(None, false)]);
+    assert!(ran.lock().unwrap().is_empty());
+    assert_eq!(said(&written), "ran in the window\n");
 }
