@@ -15,9 +15,11 @@ import { BrowserTimeline } from "./BrowserTimeline";
  */
 
 const painted = vi.hoisted(() => [] as { png: number[]; type?: string }[]);
+const undrawable = vi.hoisted(() => ({ now: false }));
 vi.mock("./browserFrames", async (actual) => ({
   ...(await actual<typeof import("./browserFrames")>()),
   paint: async (_canvas: HTMLCanvasElement, png: Uint8Array, _across?: number, type?: string) => {
+    if (undrawable.now) throw new Error("not an image");
     painted.push({ png: Array.from(png), type });
   },
 }));
@@ -78,6 +80,7 @@ afterEach(() => {
   cleanup();
   clearMocks();
   painted.length = 0;
+  undrawable.now = false;
 });
 
 describe("a chat's browser timeline", () => {
@@ -143,5 +146,14 @@ describe("a chat's browser timeline", () => {
 
     host.moved([moment({ did: "Scrolled" })]);
     expect(await screen.findByText("Scrolled")).toBeInTheDocument();
+  });
+
+  it("says where a screenshot could not be drawn", async () => {
+    undrawable.now = true;
+    core([moment({ did: "Took a screenshot", shot: 1 })]);
+
+    render(<BrowserTimeline plane={PLANE} chat={CHAT} />);
+
+    expect(await screen.findByText("This screenshot could not be drawn.")).toBeInTheDocument();
   });
 });

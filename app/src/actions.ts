@@ -430,9 +430,10 @@ export type Does =
   | { verb: "handBrowser"; program: string; session: number }
   /** Stops a pinned browser whose chat has closed (#2022): it ends, and what it held. */
   | { verb: "stopBrowser"; program: string }
-  /** Opens chat `session`'s browser timeline in a tab of its own (#2017): what its agent did in
-   *  its browsers, with the screenshots it took. It changes nothing. */
-  | { verb: "openBrowserTimeline"; session: number }
+  /** Opens the browser timeline of the chat whose id is `chat`, called `name`, in a tab of its
+   *  own (#2017): what its agent did in its browsers, with the screenshots it took. It changes
+   *  nothing. */
+  | { verb: "openBrowserTimeline"; chat: string; name: string }
   /** Drops one of the focused workspace's todos with nothing journalled. */
   | { verb: "forgetTodo"; workspace: string; slug: string }
   /** **Names the worktree it acts on**, and never "whichever one is in front".
@@ -1001,7 +1002,7 @@ export type Doing = {
   handBrowser: (program: string, session: number) => Promise<Ran>;
   stopBrowser: (program: string) => Promise<Ran>;
   /** Opens a chat's browser timeline's tab (#2017). */
-  openBrowserTimeline: (session: number) => void;
+  openBrowserTimeline: (chat: string, name: string) => void;
   /** Each takes the piece it acts on. The window no longer decides which worktree a removal
    *  meant by looking at what happens to be in front (charter-app#174). */
   removeWorktree: (cut: Cut, force: boolean) => Promise<Ran>;
@@ -1588,6 +1589,9 @@ export type BrowserOffered = {
   pinned: boolean;
   /** Pinned, and its chat has closed: the workspace's. */
   kept: boolean;
+  /** Its chat's id, which its browser timeline is kept by (#2017); `null` for a chat with none
+   *  yet, or one that has closed. */
+  chatId: string | null;
   /** The login purlis performed in it, where it holds one: said on its hand-over rows. */
   login: string | null;
 };
@@ -2529,13 +2533,14 @@ export function catalogue(now: Now): Offer[] {
   // **A chat's browser timeline** (#2017): one row for each chat a browser is listed under.
   const timelines = new Set<number>();
   for (const one of now.browsers ?? []) {
-    if (one.kept || timelines.has(one.session)) continue;
+    // None for a chat with no id, which keeps no timeline.
+    if (one.kept || one.chatId === null || timelines.has(one.session)) continue;
     timelines.add(one.session);
     offers.push({
       ...can(
         browserTimelineId(one.session),
         `Browser timeline of ${one.chat}`,
-        { verb: "openBrowserTimeline", session: one.session },
+        { verb: "openBrowserTimeline", chat: one.chatId, name: one.chat },
         one.chat,
       ),
       note: "What its agent did in its browsers, with the screenshots it took. Kept on this device until the chat closes.",
@@ -3295,7 +3300,7 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
     case "stopBrowser":
       return doing.stopBrowser(does.program);
     case "openBrowserTimeline":
-      doing.openBrowserTimeline(does.session);
+      doing.openBrowserTimeline(does.chat, does.name);
       return DID;
     case "forgetTodo":
       return doing.forgetTodo(does.workspace, does.slug);

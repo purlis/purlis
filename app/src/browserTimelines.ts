@@ -43,7 +43,7 @@ export function unkeptSaid(moment: TimelineMoment): string | null {
       return "Its screenshot was too large to keep.";
     case "driven":
       return "No screenshot kept: you or purlis were driving the browser then.";
-    default:
+    case null:
       return null;
   }
 }

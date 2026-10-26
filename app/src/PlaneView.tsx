@@ -4023,12 +4023,6 @@ export const PlaneView = memo(function PlaneView({
   useEffect(() => {
     nameOfNow.current = nameOf;
   }, [nameOf]);
-  /** Each open chat's id, by its number (ADR 0066): what its browser timeline is kept by
-   *  (#2017). */
-  const idOfNow = useRef<(session: number) => string | null>(() => null);
-  useEffect(() => {
-    idOfNow.current = (session) => reopened.find((chat) => chat.session === session)?.id ?? null;
-  }, [reopened]);
 
   /** Each chat's browsers as they are drawn (#2024), by the name the chat has here. */
   const chatBrowsersShown = useMemo(
@@ -4057,6 +4051,8 @@ export const PlaneView = memo(function PlaneView({
             name: browser.name,
             session: browser.session,
             chat,
+            // What its chat's browser timeline is kept by (#2017).
+            chatId: reopened.find((open) => open.session === browser.session)?.id ?? null,
             pinned: browser.pinned,
             kept: false,
             login: browser.login,
@@ -4067,12 +4063,13 @@ export const PlaneView = memo(function PlaneView({
         name: browser.name,
         session: browser.session,
         chat,
+        chatId: null,
         pinned: true,
         kept: true,
         login: browser.login,
       })),
     ],
-    [chatBrowsersShown, keptShown],
+    [chatBrowsersShown, keptShown, reopened],
   );
   /** The browsers of the chats tab `id` shows (#2024), drawn live beside it. */
   const browsersOfTab = useCallback(
@@ -6193,13 +6190,9 @@ export const PlaneView = memo(function PlaneView({
         const said = await commands.closeBrowser(program);
         return said.status === "error" ? { ok: false, refused: said.error } : { ok: true };
       },
-      // A chat's browser timeline, in a tab of its own (#2017), kept by the chat's id: a chat
-      // with none yet has no timeline to show.
-      openBrowserTimeline: (session: number) => {
-        const id = idOfNow.current(session);
-        if (id !== null)
-          showView(browserTimelineView(id), browserTimelineTitle(nameOfNow.current(session)));
-      },
+      // A chat's browser timeline, in a tab of its own (#2017), kept by the chat's id.
+      openBrowserTimeline: (chat: string, name: string) =>
+        showView(browserTimelineView(chat), browserTimelineTitle(name)),
       removeWorktree,
       mergeWorktree,
       declareWorktreeDone,

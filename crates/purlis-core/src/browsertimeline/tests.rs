@@ -42,7 +42,7 @@ fn click(target: &str) -> Act {
 }
 
 fn record_act(root: &Path, at: u64, act: &Act, browsed: &Browsed) {
-    let happened = acted("b1", act, browsed, at, None).expect("a moment");
+    let happened = acted("b1", act, browsed, at, Seen::default()).expect("a moment");
     record(root, CHAT, happened).expect("recorded");
 }
 
@@ -122,14 +122,14 @@ fn a_retry_and_a_read_of_the_page_are_no_moment() {
         repeated: true,
         ..on("https://shop.example.test/")
     };
-    assert!(acted("b1", &click("e1"), &repeated, 1, None).is_none());
+    assert!(acted("b1", &click("e1"), &repeated, 1, Seen::default()).is_none());
     let snapshot = Act::Snapshot {
         page: None,
         within: None,
         from: None,
         lines: None,
     };
-    assert!(acted("b1", &snapshot, &on("https://shop.example.test/"), 1, None).is_none());
+    assert!(acted("b1", &snapshot, &on("https://shop.example.test/"), 1, Seen::default()).is_none());
 }
 
 #[test]
@@ -142,7 +142,10 @@ fn no_screenshot_is_kept_for_a_moment_the_person_or_purlis_drove() {
             &screenshot(),
             &shot(b"\x89PNG typed"),
             at,
-            Some(driver),
+            Seen {
+                driven_by: Some(driver),
+                ..Seen::default()
+            },
         )
         .expect("a moment");
         record(dir.path(), CHAT, happened).expect("recorded");
@@ -173,12 +176,7 @@ fn the_person_and_purlis_driving_are_moments_without_a_screenshot() {
     record(
         dir.path(),
         CHAT,
-        signed_in(
-            "b1",
-            "shop",
-            &on("https://shop.example.test/account?x=1"),
-            3,
-        ),
+        signed_in("b1", "shop", 3),
     )
     .expect("recorded");
 
@@ -196,10 +194,7 @@ fn the_person_and_purlis_driving_are_moments_without_a_screenshot() {
         ]
     );
     assert!(moments.iter().all(|one| one.shot.is_none()));
-    assert_eq!(
-        moments[2].page.as_deref(),
-        Some("https://shop.example.test/account")
-    );
+    assert_eq!(moments[2].page, None, "no address of a signed-in browser");
 }
 
 #[test]
@@ -327,4 +322,158 @@ fn a_screenshot_the_timeline_does_not_list_is_not_read() {
     std::fs::write(folder(dir.path(), CHAT).join("7.png"), b"planted").expect("planted");
 
     assert_eq!(shot_of(dir.path(), CHAT, 7), None);
+}
+
+#[test]
+fn a_browser_purlis_signed_in_keeps_no_address() {
+    let dir = project();
+    let seen = Seen {
+        signed_in: true,
+        ..Seen::default()
+    };
+    let went = Act::Navigate {
+        page: None,
+        address: "https://shop.example.test/reset/0123456789".into(),
+    };
+    let left = on("https://shop.example.test/reset/0123456789");
+
+    let happened = acted("b1", &went, &left, 1, seen).expect("a moment");
+    record(dir.path(), CHAT, happened).expect("recorded");
+
+    let moments = read(dir.path(), CHAT);
+    assert_eq!(moments[0].did, "Went to a page");
+    assert_eq!(moments[0].page, None);
+    let file = std::fs::read_to_string(folder(dir.path(), CHAT).join(FILE)).expect("its file");
+    assert!(!file.contains("0123456789"), "{file}");
+}
+
+#[test]
+fn a_reference_the_agent_wrote_is_kept_short() {
+    let dir = project();
+
+    record_act(
+        dir.path(),
+        1,
+        &click(&"e".repeat(10_000)),
+        &on("https://shop.example.test/"),
+    );
+
+    let did = &read(dir.path(), CHAT)[0].did;
+    assert!(
+        did.chars().count() <= "Clicked ".len() + MOST_TARGET_CHARS + 1,
+        "{}",
+        did.len()
+    );
+}
+
+#[test]
+fn the_projects_screenshots_keep_within_one_budget_the_oldest_going_first() {
+    let dir = project();
+    let other = "01JB0000000000000000000009";
+    let big = vec![7u8; MOST_SHOT_BYTES];
+    let fits = MOST_PROJECT_SHOT_BYTES / MOST_SHOT_BYTES as u64;
+
+    for at in 0..fits {
+        record_act(dir.path(), at, &screenshot(), &shot(&big));
+    }
+    let happened =
+        acted("b1", &screenshot(), &shot(&big), fits, Seen::default()).expect("a moment");
+    record(dir.path(), other, happened).expect("recorded");
+
+    let first = read(dir.path(), CHAT);
+    assert_eq!(first[0].shot, None, "the project's oldest went");
+    assert_eq!(first[0].unkept, Some(Unkept::Bound));
+    assert!(first[1].shot.is_some());
+    assert!(read(dir.path(), other)[0].shot.is_some(), "the newest stays");
+    let on_disk: u64 = [CHAT, other]
+        .iter()
+        .flat_map(|chat| std::fs::read_dir(folder(dir.path(), chat)).expect("its folder"))
+        .filter_map(Result::ok)
+        .filter(|one| one.path().extension().is_some_and(|it| it == "png"))
+        .map(|one| one.metadata().expect("its size").len())
+        .sum();
+    assert!(on_disk <= MOST_PROJECT_SHOT_BYTES, "{on_disk}");
+}
+
+#[cfg(unix)]
+#[test]
+fn nothing_is_read_written_or_removed_through_a_link_on_the_way() {
+    let state = crate::names::state(Path::new("/p"));
+    let state = state.file_name().expect("the state folder's name").to_owned();
+    let state = Path::new(&state);
+    for linked in [
+        state.to_path_buf(),
+        state.join("app"),
+        state.join("app/browser-timelines"),
+    ] {
+        let dir = project();
+        let elsewhere = tempfile::tempdir().expect("elsewhere");
+        // Where the link leads: a timeline someone else wrote.
+        let planted = elsewhere.path().join("planted");
+        let below = state
+            .join(DIR)
+            .strip_prefix(&linked)
+            .expect("below the link")
+            .to_path_buf();
+        let theirs = planted.join(&below).join(CHAT);
+        std::fs::create_dir_all(&theirs).expect("their folder");
+        std::fs::write(
+            theirs.join(FILE),
+            r#"{"moments":[{"at":1,"browser":"b1","by":"agent","did":"Planted"}],"next":0}"#,
+        )
+        .expect("their list");
+        let at = dir.path().join(&linked);
+        std::fs::create_dir_all(at.parent().expect("its parent")).expect("the way");
+        std::os::unix::fs::symlink(&planted, &at).expect("a link");
+
+        let said = linked.display();
+        assert!(read(dir.path(), CHAT).is_empty(), "{said}: nothing read");
+        assert!(
+            record(dir.path(), CHAT, took_over("b1", 1)).is_err(),
+            "{said}: nothing written"
+        );
+        assert!(remove(dir.path(), CHAT).is_err(), "{said}: nothing removed");
+        assert!(theirs.join(FILE).exists(), "{said}: what it leads to stays");
+    }
+}
+
+#[test]
+fn a_list_that_does_not_read_goes_with_its_screenshots() {
+    let dir = project();
+    record_act(dir.path(), 1, &screenshot(), &shot(b"png"));
+    std::fs::write(folder(dir.path(), CHAT).join(FILE), b"{ not json").expect("spoiled");
+
+    assert!(read(dir.path(), CHAT).is_empty());
+    assert!(!folder(dir.path(), CHAT).exists(), "the folder went");
+    record_act(dir.path(), 2, &click("e1"), &on("https://shop.example.test/"));
+    assert_eq!(read(dir.path(), CHAT).len(), 1, "it starts again");
+}
+
+#[test]
+fn a_sweep_removes_the_timelines_of_chats_no_longer_open_and_screenshots_no_list_names() {
+    let dir = project();
+    let closed = "01JB0000000000000000000008";
+    record_act(dir.path(), 1, &screenshot(), &shot(b"png"));
+    record(dir.path(), closed, took_over("b1", 1)).expect("recorded");
+    std::fs::write(folder(dir.path(), CHAT).join("99.png"), b"left behind").expect("left");
+
+    sweep_sparing(dir.path(), &[CHAT], std::time::Duration::ZERO);
+
+    assert!(!folder(dir.path(), closed).exists(), "a closed chat's went");
+    assert!(
+        !folder(dir.path(), CHAT).join("99.png").exists(),
+        "one no list names went"
+    );
+    let n = read(dir.path(), CHAT)[0].shot.expect("its own stays");
+    assert!(shot_of(dir.path(), CHAT, n).is_some());
+}
+
+#[test]
+fn a_sweep_spares_a_timeline_just_written() {
+    let dir = project();
+    record(dir.path(), CHAT, took_over("b1", 1)).expect("recorded");
+
+    sweep(dir.path(), &[]);
+
+    assert_eq!(read(dir.path(), CHAT).len(), 1);
 }

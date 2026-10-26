@@ -172,6 +172,9 @@ impl Records {
             .filter_map(|one| one.identity.id.as_deref())
             .collect();
         crate::themedrafts::sweep(&self.root, &open);
+        // **And a closed chat's browser timeline** (#2017), with any screenshot its list no
+        // longer names: what a crash or a quit left.
+        purlis_core::browsertimeline::sweep(&self.root, &open);
         // **And a closed chat's Skill studio leftovers** (SK-9, #2772): the record of the levels
         // a sandboxed chat could have made, and a Try it's throwaway piece no chat stands in.
         crate::skilldrafts::sweep(&self.root, &record);

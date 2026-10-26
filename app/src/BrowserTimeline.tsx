@@ -109,6 +109,9 @@ export function BrowserTimeline({ plane, chat }: { plane: string; chat: string }
 }
 
 /** One screenshot of a timeline, read once and drawn on a canvas. */
+/** What a screenshot that could not be drawn says in its place. */
+const NOT_DRAWN = "This screenshot could not be drawn.";
+
 function Shot({
   plane,
   chat,
@@ -135,7 +138,10 @@ function Shot({
         if (canvas.current !== null)
           await paint(canvas.current, frameBytes(answer.data), undefined, "image/png");
       })
-      .catch(() => undefined);
+      // A picture that does not decode says so, where it would have been.
+      .catch(() => {
+        if (!left) setGone(NOT_DRAWN);
+      });
     return () => {
       left = true;
     };

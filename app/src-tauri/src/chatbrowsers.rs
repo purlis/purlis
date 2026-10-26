@@ -1339,6 +1339,16 @@ impl ChatBrowsers {
             .then_some(BrowserDriver::Purlis)
     }
 
+    /// Whether browser `program` holds a login purlis performed, or was opened from a kept one
+    /// (#2022): its moments keep no address (#2017).
+    pub fn holds_a_login(&self, program: &str) -> bool {
+        self.logins_held
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(program)
+            .is_some_and(|held| !held.is_empty())
+    }
+
     /// The chat whose browser `program` is, and what that chat calls it (#2017).
     pub fn named(&self, program: &str) -> Option<(u32, String)> {
         self.lock().iter().find_map(|(session, chat)| {
@@ -2382,19 +2392,10 @@ pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk) -> Answer {
     if held.needs_you().settle(held.browsers(), now) > 0 {
         held.chats().asks_may_have_moved();
     }
-    if let Some(happened) = timeline_of(held.browsers(), browse, &answer, now_ms()) {
+    if let Some(happened) = timeline_of(held.browsers(), browse, &answer, now) {
         keep_in_timeline(held, browse.chat, happened);
     }
     answer
-}
-
-/// What a timeline's moment is dated by: now, in milliseconds since 1970.
-fn now_ms() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |since| {
-            u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
-        })
 }
 
 /// **The moment of chat `browse.chat`'s timeline its call's `answer` makes** (#2017): an act of
@@ -2412,16 +2413,26 @@ pub fn timeline_of(
     };
     match &browse.asked {
         Browsing::Act(act) => {
-            let driven_by = browsers
+            let program = browsers
                 .which(browse.chat, Some(browser))
-                .and_then(|(_, program)| browsers.driver_of(&program))
-                .map(|driver| match driver {
-                    BrowserDriver::Person => By::Person,
-                    BrowserDriver::Purlis => By::Purlis,
-                });
-            timeline::acted(browser, act, browsed, at, driven_by)
+                .map(|(_, program)| program);
+            let seen = timeline::Seen {
+                driven_by: program
+                    .as_deref()
+                    .and_then(|program| browsers.driver_of(program))
+                    .map(|driver| match driver {
+                        BrowserDriver::Person => By::Person,
+                        BrowserDriver::Purlis => By::Purlis,
+                    }),
+                // A browser whose program the chat no longer names is taken as signed in: its
+                // address is not kept.
+                signed_in: program
+                    .as_deref()
+                    .is_none_or(|program| browsers.holds_a_login(program)),
+            };
+            timeline::acted(browser, act, browsed, at, seen)
         }
-        Browsing::LogIn { login } => Some(timeline::signed_in(browser, login, browsed, at)),
+        Browsing::LogIn { login } => Some(timeline::signed_in(browser, login, at)),
         Browsing::New | Browsing::Close | Browsing::NeedsYou { .. } => None,
     }
 }
@@ -2465,6 +2476,26 @@ pub struct TimelineMoved {
     pub chat: String,
 }
 
+/// Who drove a browser at a moment of its chat's timeline (#2017).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum TimelineBy {
+    Agent,
+    Person,
+    Purlis,
+}
+
+/// Why a moment of a chat's browser timeline keeps no screenshot it had (#2017): let go to keep
+/// within the timeline's bounds, too large to keep, or answered while the person or purlis
+/// drove the browser.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum TimelineUnkept {
+    Bound,
+    TooLarge,
+    Driven,
+}
+
 /// One moment of a chat's browser timeline, as the window draws it (#2017).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct TimelineMoment {
@@ -2472,34 +2503,35 @@ pub struct TimelineMoment {
     pub at: u32,
     /// Which of the chat's browsers (`b1`).
     pub browser: String,
-    /// Who drove it: `agent`, `person` or `purlis`.
-    pub by: String,
+    pub by: TimelineBy,
     /// What was done, in words that hold nothing typed.
     pub did: String,
     /// The page it left: its scheme, host, port and path.
     pub page: Option<String>,
     /// Its screenshot's number, to read with [`chat_browser_timeline_shot`].
     pub shot: Option<u32>,
-    /// Why a screenshot it had is not kept: `bound`, `too_large` or `driven`.
-    pub unkept: Option<String>,
+    pub unkept: Option<TimelineUnkept>,
 }
 
 impl From<purlis_core::browsertimeline::Moment> for TimelineMoment {
     fn from(moment: purlis_core::browsertimeline::Moment) -> Self {
-        let word = |value: serde_json::Result<serde_json::Value>| {
-            value
-                .ok()
-                .and_then(|value| value.as_str().map(str::to_owned))
-                .unwrap_or_default()
-        };
+        use purlis_core::browsertimeline::{By, Unkept};
         TimelineMoment {
-            at: u32::try_from(moment.at / 1000).unwrap_or(u32::MAX),
+            at: u32::try_from(moment.at).unwrap_or(u32::MAX),
             browser: moment.browser,
-            by: word(serde_json::to_value(moment.by)),
+            by: match moment.by {
+                By::Agent => TimelineBy::Agent,
+                By::Person => TimelineBy::Person,
+                By::Purlis => TimelineBy::Purlis,
+            },
             did: moment.did,
             page: moment.page,
             shot: moment.shot.and_then(|shot| u32::try_from(shot).ok()),
-            unkept: moment.unkept.map(|why| word(serde_json::to_value(why))),
+            unkept: moment.unkept.map(|why| match why {
+                Unkept::Bound => TimelineUnkept::Bound,
+                Unkept::TooLarge => TimelineUnkept::TooLarge,
+                Unkept::Driven => TimelineUnkept::Driven,
+            }),
         }
     }
 }
@@ -3613,7 +3645,7 @@ pub fn person_drove(projects: &[Arc<crate::planes::Held>], program: &str, drivin
         if was != driving
             && let Some((session, name)) = held.browsers().named(program)
         {
-            let at = now_ms();
+            let at = now;
             let happened = if driving {
                 purlis_core::browsertimeline::took_over(&name, at)
             } else {

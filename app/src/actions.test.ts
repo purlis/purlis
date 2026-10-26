@@ -159,8 +159,8 @@ function doing(): Doing & { calls: string[] } {
       calls.push(`stopBrowser:${program}`);
       return { ok: true as const };
     }),
-    openBrowserTimeline: vi.fn((session: number) => {
-      calls.push(`openBrowserTimeline:${session}`);
+    openBrowserTimeline: vi.fn((chat: string) => {
+      calls.push(`openBrowserTimeline:${chat}`);
     }),
     ignoreNeedsYou: vi.fn(async (session: number) => {
       calls.push(`ignoreNeedsYou:${session}`);
@@ -4346,3 +4346,31 @@ describe("Use skill… on a chat's tab (#2775)", () => {
     expect(hands.calls).toEqual([`useSkill:${chat}`]);
   });
 });
+
+describe("a chat's browser timeline (#2017)", () => {
+  const browser = (chatId: string | null) => ({
+    program: "B7",
+    name: "b1",
+    session: 3,
+    chat: "steward 3",
+    chatId,
+    pinned: false,
+    kept: false,
+    login: null,
+  });
+
+  it("is a row for a chat that has an id, which opens its tab by that id", async () => {
+    const offers = catalogue(now({ browsers: [browser("01JB0000000000000000000003")] }));
+    const hands = doing();
+
+    await run(offers, "browser.timeline:3", hands);
+
+    expect(by(offers, "browser.timeline:3")?.title).toBe("Browser timeline of steward 3");
+    expect(hands.calls).toContain("openBrowserTimeline:01JB0000000000000000000003");
+  });
+
+  it("is no row for a chat with no id, which keeps no timeline", () => {
+    expect(by(catalogue(now({ browsers: [browser(null)] })), "browser.timeline:3")).toBeUndefined();
+  });
+});
+
