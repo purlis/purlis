@@ -1141,8 +1141,8 @@ fn purlis_classic_s_tints_are_these() {
             "purlis-light",
             "red",
             [
-                "#615c5d", "#fde8e5", "#fde8e5", "#f9dbd6", "#615c5d", "#615c5d", "#f9dbd6",
-                "#fde1df", "#615c5d", "#8b4b47", "#8b4b47", "#feeae7", "#fef4f2", "#ffffff",
+                "#5e5d5e", "#fde8e5", "#fde8e5", "#f9dbd6", "#5e5d5e", "#5e5d5e", "#f9dbd6",
+                "#fde1df", "#5e5d5e", "#8b4b47", "#8b4b47", "#feeae7", "#fef4f2", "#ffffff",
             ],
         ),
         (
