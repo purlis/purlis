@@ -10122,6 +10122,11 @@ export type StudioClash = {
 	outside: Level,
 	owner: Owner,
 	outcome: ClashOutcome,
+	/**
+	 *  What the row of the plane's copy says of it, in the core's words
+	 *  (`purlis_core::skills::clash_said`, SK-46): the same line `purlis skill list` prints.
+	 */
+	said: string,
 };
 
 /**

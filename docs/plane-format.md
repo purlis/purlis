@@ -1399,7 +1399,10 @@ outside the project and removes it when the flow ends, so it adds none of them (
   exactly those files.
 - **Read by:** `purlis-skills`' `skill_set` (`crates/skills/src/lib.rs`), the one place a
   chat's skills are worked out, for every chat purlis starts and for `purlis skill list` and
-  `show` and the Skill studio. A project skill is in the set of a chat at the plane root; a chat
+  `show` and the Skill studio. Where a repo or a harness has a skill of a name purlis hands, the
+  studio and `purlis skill list` mark purlis's copy with the same line (SK-46), such as "the repo
+  api has a skill of this name too, and a chat there gets both", and `--json` lists each under the
+  row's `clashes`. A project skill is in the set of a chat at the plane root; a chat
   in a workspace gets it only through its grant, and is otherwise told "not granted to this
   workspace". A workspace that turns a granted skill off (`settings.skills.off` in its
   [`workspace.json`](#workspaceswsworkspacejson--the-committed-manifest)) is told "turned off in this workspace". A

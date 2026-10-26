@@ -6,7 +6,6 @@ import {
   commands,
   type HarnessKind,
   type Owner,
-  type StudioClash,
   type StudioHarness,
   type StudioPlugin,
   type StudioSkill,
@@ -36,25 +35,6 @@ export function pluginShown(plugin: StudioPlugin, title: string): string {
   if (plugin.state === "on") return "On";
   if (plugin.state === "off") return "Off";
   return `${title} decides`;
-}
-
-/**
- * **The project's skill that clashes with one a program or repo brings** (SK-6, #2769; ADR 0099
- * §3): both load, so the row says so and names the other copy.
- */
-export function clashSaid(clash: StudioClash): string {
-  const owner = clash.owner;
-  const whose =
-    owner.kind === "repo"
-      ? `the repo ${owner.name}`
-      : owner.kind === "you"
-        ? `your own ${clash.harness} skills`
-        : `${owner.name} in ${clash.harness}`;
-  if (clash.outcome === "repo-wins")
-    return `${whose} has a skill of this name too, and ${clash.harness} chats there get the repo's copy alone`;
-  if (clash.outcome === "either-one")
-    return `${whose} has a skill of this name too, and ${clash.harness} chats there get both under one name and may use either: rename that one`;
-  return `${whose} has a skill of this name too, and a chat there gets both`;
 }
 
 /**

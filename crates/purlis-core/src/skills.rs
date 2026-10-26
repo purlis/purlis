@@ -2131,6 +2131,59 @@ pub struct StudioList {
     pub harnesses: Vec<HarnessInTheStudio>,
 }
 
+impl StudioList {
+    /// **The clashes of a plane or built-in row** (SK-46, #3149; decision 51): each skill from
+    /// outside the plane with its name, harness by harness, as the studio marks the row of the
+    /// copy purlis hands. What `purlis skill list` and the window both say of it, each in
+    /// [`clash_said`]'s words. A row left out (a twin at the same level) is no copy purlis hands,
+    /// so it has none.
+    pub fn clashes_of<'a>(
+        &'a self,
+        row: &'a StudioRow,
+    ) -> impl Iterator<Item = (Harness, &'a Clash)> + 'a {
+        let handed = row.left_out.is_none();
+        self.harnesses
+            .iter()
+            .filter(move |_| handed)
+            .flat_map(move |one| {
+                one.set
+                    .clashes
+                    .iter()
+                    .filter(move |clash| {
+                        clash.name == row.name
+                            && clash.plane.origin == row.origin
+                            && clash.plane.local == row.local
+                    })
+                    .map(move |clash| (one.harness, clash))
+            })
+    }
+}
+
+/// **A clash as the studio and `purlis skill list` say it** (SK-46, #3149; ADR 0099 §3): whose
+/// the other copy is, and what a chat on `harness` there gets. One sentence, said on the row of
+/// purlis's copy, so the window and the command line never disagree.
+pub fn clash_said(harness: Harness, clash: &Clash) -> String {
+    let title = harness.title();
+    let whose = match &clash.owner {
+        Owner::Repo(repo) => format!("the repo {repo}"),
+        Owner::You => format!("your own {title} skills"),
+        Owner::Plugin(plugin) => format!("{plugin} in {title}"),
+    };
+    match clash.outcome {
+        Outcome::RepoWins => format!(
+            "{whose} has a skill of this name too, and {title} chats there get the repo's copy \
+             alone"
+        ),
+        Outcome::EitherOne => format!(
+            "{whose} has a skill of this name too, and {title} chats there get both under one \
+             name and may use either: rename that one"
+        ),
+        Outcome::BothLoad => {
+            format!("{whose} has a skill of this name too, and a chat there gets both")
+        }
+    }
+}
+
 /// **The studio's list for a chat in the plane at `plane`** (SK-34): at its root or in
 /// `workspace`, as `persona` or on none, with the built-in skills in `built_in` and `env` read
 /// for where each harness keeps its own. Read only.
