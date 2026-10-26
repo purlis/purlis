@@ -382,7 +382,7 @@ function middleOf(element: Element): number {
  */
 export const MarksOnTheTabsLine: Story = {
   args: { marks: true },
-  play: async ({ canvas, canvasElement }) => {
+  play: async ({ canvas, canvasElement, userEvent }) => {
     const tab = canvasElement.querySelector('[data-scope="tabs"][data-part="tab"]');
     if (tab === null) throw new Error("no tab drawn");
     const line = middleOf(tab);
@@ -399,7 +399,9 @@ export const MarksOnTheTabsLine: Story = {
         Math.abs(middleOf(one) - line),
         `${what} off the tabs' line`,
       ).toBeLessThanOrEqual(1);
-    // The keyboard: the strip's stop, then the `+`, whose name its tooltip shows at once.
+    // The keyboard's focus on the `+`, whose name its tooltip shows at once: a key first, so the
+    // focus is the keyboard's (React Aria opens a tooltip on a visible focus only).
+    await userEvent.keyboard("{Shift}");
     plus.focus();
     const strip = canvasElement.querySelector("header.bar") as HTMLElement;
     await waitFor(() =>
