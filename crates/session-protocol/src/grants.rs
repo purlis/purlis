@@ -32,16 +32,17 @@
 //! | a start's sandbox opt-out (`without_sandbox`) | yes | | | | | |
 //! | `confine`, `let_go_of_confinement`, `change_reach`, `reach_of`, and the pushed `sandbox` (1.4); a start's `confinement`, the composed confinement named to its link (1.16), and its `alone` (1.26) | yes | | | | | relayed |
 //! | a start's `launch` that names a harness, the window's composed chat | yes | | | | | |
-//! | `start_program` of kind `browser`, `attach_view` of kind `browser` (1.6) | yes | | | | | |
+//! | `start_program` of kind `browser`, `attach_view` of kind `browser` (1.6) | yes | | | | | relayed (1.38) |
 //! | `start_saving`, `stop_saving`, `fetch_project`, `mid_turn`, and the pushed `saving` and `who_is_mid_turn` (1.7) | yes | | | | | |
 //! | `record`, a write in the event log the host holds (1.8) | yes | | | | | |
 //! | `board_moved`, `board` (1.10) | yes | | | | | |
-//! | `browse`, an act of a chat's browser, and a browser's `reach` (1.11) | yes | | | | | |
+//! | `browse`, an act of a chat's browser, and a browser's `reach` (1.11) | yes | | | | | relayed (1.38) |
 //! | `programs_of` (1.13) | yes | | | | | |
 //! | `quit` (1.13) | yes | | | | | |
 //! | `take_back`, a relaying host naming the window a link is for, named again the confinements of the chats that window started (1.22) | | | | | | yes |
-//! | `take_over`, `hand_back`, `browser_input`, `size_browser`: the person driving a browser (1.14) | yes | | | | | |
-//! | `log_in`, a login purlis performs with a vault's values (1.18) | yes | | | | | |
+//! | `take_over`, `hand_back`, `browser_input`, `size_browser`: the person driving a browser (1.14) | yes | | | | | relayed (1.38) |
+//! | `log_in`, a login purlis performs with a vault's values (1.18) | yes | | | | | relayed (1.38) |
+//! | a kept login: a browser's start from one, and a `log_in` that keeps one (1.27) | yes | | | | | |
 //! | `unpair`, the desktop taken out of a runner's peers (1.25) | | | | | | yes |
 //! | `name_window`, the window naming itself on a link to its own host (1.31) | yes | | | | | |
 //! | `relay_to`, the window's link relayed by its host to a runner it keeps (1.33) | yes | | | | | |
@@ -124,15 +125,24 @@
 //!   the desktop's relay refuses one from any client.
 //! - **A browser is started and watched in the window alone** (1.6, #2012). A browser is a
 //!   program started as the person, and what it shows is theirs: the pages of sites they are
-//!   signed in to. Until runners run browsers (spec #2041), no other scope starts one or attaches
-//!   a view of one, `remote-link` included; a stop of one, like every stop, only removes power.
+//!   signed in to. No other scope starts one or attaches a view of one; a stop of one, like
+//!   every stop, only removes power. **On a runner it is the window's as its host relays it**
+//!   (1.38, #2050, spec #2041): a runner chat's browser runs in the runner's host, and the
+//!   desktop's relay sends its start and its views on for its own `local-ui` client alone.
 //! - **A chat's browser is driven through the window alone** (1.11, #2013). The window asks the
 //!   person what a chat's browser may reach, starts it with that reach, and hands on each of
-//!   the chat's acts with `browse`. No other scope sends an act, `remote-link` included: a
-//!   relayed hold does not carry a chat's browser.
+//!   the chat's acts with `browse`. No other scope sends an act; `remote-link` sends one only as
+//!   the desktop's host relaying its window (1.38).
 //! - **A browser is taken over, driven and handed back in the window alone** (1.14, #2014). What
 //!   the person types into a page is theirs, and only the window, where they see the page, sends
-//!   it. No other scope takes a browser over or hands it back, `remote-link` included.
+//!   it, to its own host or relayed by it to a runner (1.38).
+//! - **A login purlis performs is the window's alone** (1.18, #2016): it carries a vault's
+//!   values, which only the window reads. Relayed to a runner (1.38, #2050) only as the window
+//!   decided it (a runner chat's persona opted in for that pool, the desktop connected), and the
+//!   runner holds the values only while the browser fills them, never storing them. **A kept
+//!   login is this device's alone** (1.27, #2021): a browser opened from one, and a login that
+//!   keeps one, are refused from `remote-link`, so a kept login never leaves the device it was
+//!   made on.
 //! - **Saving a held project is the window's alone** (1.7): the project's commits and pushes
 //!   are the person's, and only the link that may save a project hears how saving it goes: what
 //!   each look did and the host's question of who is mid-turn go only to the window's links that
@@ -235,8 +245,12 @@ pub enum Power {
     /// `record` (1.8): a write in the event log the host holds.
     Record,
     /// `log_in` (1.18, #2016): a login purlis performs in a browser, carrying the values from a
-    /// vault. The window's alone: a relayed link never carries a vault's value to another host.
+    /// vault. The window's, relayed by its host to a runner's browser as the window decided it
+    /// (1.38, #2050).
     LogIn,
+    /// A kept login (1.27, #2021): a browser's start from one, and a `log_in` that keeps one.
+    /// This device's alone: never relayed, so a kept login stays where it was made.
+    KeptLogin,
     /// A start that opts its chat out of the sandbox (`without_sandbox`): the window's alone.
     OptOut,
     /// A start's `launch` that names a harness (#2217): a chat the window composed with the
@@ -292,6 +306,8 @@ impl Scope {
                     | P::Launch
                     | P::Heard
                     | P::Confine
+                    | P::Browser
+                    | P::LogIn
                     | P::TakeBack
                     | P::Unpair
                     | P::Code

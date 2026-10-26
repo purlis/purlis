@@ -392,6 +392,7 @@ export const commands = {
 	keepAskedWorkspace: __WINDOW_ONLY_RESULT,
 	allowChatBrowser: __WINDOW_ONLY_RESULT,
 	keepChatBrowserOff: __WINDOW_ONLY_RESULT,
+	answerPoolLogin: __WINDOW_ONLY_RESULT,
 	allowBrowserSites: __WINDOW_ONLY_RESULT,
 	allowPersonBrowserSites: __WINDOW_ONLY_RESULT,
 	keepBrowserSitesBlocked: __WINDOW_ONLY_RESULT,
@@ -2356,6 +2357,11 @@ export type AnswerPath =
  *  Keep blocked with the person's reason, each for `sites`, the sites the ask showed (#2018).
  */
 { via: "browser-sites"; sites: string[] } | 
+/**
+ *  `answer_pool_login`, allowing for Allow and not for Keep off with the person's reason,
+ *  for the chat that asked (#2050).
+ */
+{ via: "pool-login" } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -2510,7 +2516,12 @@ export type AskSource =
  *  Sites new to the project a chat's browser held back what it would open, send or type
  *  on (#2018): an Allow is a browser site grant, for the browser alone.
  */
-"browser-site";
+"browser-site" | 
+/**
+ *  A runner chat's browser login, which waits on the person's opt-in for its persona on its
+ *  pool (#2050): an Allow lets that persona's logins be filled on the pool's runner.
+ */
+"pool-login";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the
@@ -2904,6 +2915,11 @@ export type BrowserWatching = {
 	width: number,
 	height: number,
 	person_drives: boolean,
+	/**
+	 *  **The pool whose runner the browser runs on** (#2050), or `null` on this machine: what its
+	 *  chip names as its device, so `localhost` on a runner is never taken for this machine's.
+	 */
+	pool: string | null,
 };
 
 /**  **A chat whose browsers ended because the person narrowed its reach**, as its tab says so. */
@@ -3178,6 +3194,11 @@ export type ChatBrowser = {
 	 *  purlis, while it performs a login.
 	 */
 	driver: BrowserDriver | null,
+	/**
+	 *  The pool whose runner it runs on, beside its chat, or `null` on this machine (#2050):
+	 *  what its row and thumbnail name as its device.
+	 */
+	pool: string | null,
 };
 
 /**

@@ -647,6 +647,35 @@ fn relayed_for(state: &State, peer: &Peer) -> Option<String> {
     state.relayed_for.get(&link_of(peer)).cloned()
 }
 
+/// Who `peer` opens a program for: this host's window, or the window a link between hosts
+/// named (#2050).
+fn opened_by(state: &State, peer: &Peer) -> OpenedBy {
+    if peer.scope() == Scope::RemoteLink {
+        OpenedBy::Relayed(relayed_for(state, peer))
+    } else {
+        OpenedBy::ThisHost
+    }
+}
+
+/// The browser `command` acts on, drives, watches or logs in, where it is such a command.
+fn browser_acted_on(command: &Command) -> Option<&str> {
+    match command {
+        Command::Browse { program, .. }
+        | Command::LogIn { program, .. }
+        | Command::TakeOver { program }
+        | Command::HandBack { program }
+        | Command::BrowserInput { program, .. }
+        | Command::SizeBrowser { program, .. }
+        | Command::CancelEngineDownload { program } => Some(program),
+        Command::AttachView {
+            program,
+            kind: ViewKind::Browser,
+            ..
+        } => Some(program),
+        _ => None,
+    }
+}
+
 /// **Each link between hosts that named `window`** (#2511): a link a renewal replaces and the
 /// one that replaces it, while both last. None for no window.
 fn links_of_window(state: &State, window: Option<&str>) -> Vec<u64> {
@@ -792,6 +821,17 @@ struct Hosted {
     stopping: Arc<Mutex<Option<Stopped>>>,
     /// How its run is sandboxed, as this host applied it (#2636).
     sandbox: session::RunSandbox,
+    /// Who opened it, for a browser (#2050): this host's own window, or a link between hosts
+    /// for the window it named, which alone may act on it from such a link.
+    opened_by: OpenedBy,
+}
+
+/// **Who opened a hosted program** (#2050): a link of this host's own (its window), or a link
+/// between hosts, for the window it named (none where it named none).
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum OpenedBy {
+    ThisHost,
+    Relayed(Option<String>),
 }
 
 /// Says the host's act `by` is ending a program, keeping the highest where another is already.
@@ -1272,6 +1312,23 @@ impl Hosting {
             .and_then(|held| held.channel.clone())
     }
 
+    /// **Whether `peer` may act on browser `program`** (#2050): a link between hosts acts only
+    /// on a browser opened over such a link for the window it names, never on one this host's
+    /// own window opened. Any other link acts on any it may reach, as before.
+    fn opened_for(&self, program: &str, peer: &Peer) -> Result<(), Refusal> {
+        if peer.scope() != Scope::RemoteLink {
+            return Ok(());
+        }
+        let state = self.state();
+        let Some(hosted) = state.programs.get(program) else {
+            return Ok(());
+        };
+        if hosted.opened_by == OpenedBy::Relayed(relayed_for(&state, peer)) {
+            return Ok(());
+        }
+        Err(no_such_program(program))
+    }
+
     fn running(&self, program: &str) -> Result<Arc<dyn Running>, Refusal> {
         self.state()
             .programs
@@ -1735,6 +1792,7 @@ impl Hosting {
                 exit: None,
                 stopping: Arc::clone(&stopping),
                 sandbox: sandbox.clone(),
+                opened_by: OpenedBy::ThisHost,
             },
         );
         // Written down before the start is answered, so a host killed from here on leaves it
@@ -1910,6 +1968,7 @@ impl Hosting {
             Arc::new(Browser::new(screen, program.clone(), Arc::clone(&stopping)));
         let process = running.process();
         let mut state = self.state();
+        let opened_by = opened_by(&state, peer);
         // From here it counts as running: its place is given back in the same step.
         place.started(&mut state);
         state.programs.insert(
@@ -1930,6 +1989,7 @@ impl Hosting {
                 // An engine the host starts outside every chat's sandbox, its reach its own
                 // proxy's: no chat's run.
                 sandbox: session::RunSandbox::Off,
+                opened_by,
             },
         );
         drop(state);
@@ -2024,7 +2084,7 @@ impl Hosting {
                 .programs
                 .get(program)
                 .ok_or_else(|| no_such_program(program))?;
-            let reads = crate::browsers::Reads::of(peer.version());
+            let reads = crate::browsers::Reads::of(peer.version(), peer.scope());
             let source = hosted
                 .running
                 .view(kind, role, rate, reads)
@@ -2887,6 +2947,9 @@ impl Hosting {
 
 impl session::Host for Hosting {
     async fn call(&self, command: Command, peer: &Peer) -> Result<Answer, Refusal> {
+        if let Some(program) = browser_acted_on(&command) {
+            self.opened_for(program, peer)?;
+        }
         match command {
             Command::List => Ok(Answer::Chats(self.list(peer.version()))),
             Command::HoldProject {

@@ -113,6 +113,7 @@ macro_rules! app_commands {
                 removalasks::keep_asked_workspace,
                 chatbrowsers::allow_chat_browser,
                 chatbrowsers::keep_chat_browser_off,
+                chatbrowsers::answer_pool_login,
                 chatbrowsers::allow_browser_sites,
                 chatbrowsers::allow_person_browser_sites,
                 chatbrowsers::keep_browser_sites_blocked,
