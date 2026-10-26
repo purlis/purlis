@@ -73,6 +73,10 @@ end() {
     annotate "operator/e2e/kind.sh stopped with $status" "during: $stage"
     echo "--- what the cluster shows" >&2
     kubectl --context "$context" get pools,claims,sandboxclaims,sandboxes,pods -A -o wide >&2 || true
+    # What upstream set on each runner's pod that the template did not say.
+    kubectl --context "$context" get pods -A -l agents.x-k8s.io/sandbox-name-hash \
+      -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name} dnsPolicy={.spec.dnsPolicy} dnsConfig={.spec.dnsConfig} hostname={.spec.hostname} subdomain={.spec.subdomain}{"\n"}{end}' >&2 || true
+    kubectl --context "$context" get pods -A -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name} labels={.metadata.labels} dnsPolicy={.spec.dnsPolicy} dnsConfig={.spec.dnsConfig}{"\n"}{end}' >&2 || true
     # Each claim's conditions, its word on its runner's key included.
     kubectl --context "$context" get claims -A \
       -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{range .status.conditions[*]}{"\n  "}{.type}={.status} {.reason}: {.message}{end}{"\n"}{end}' >&2 || true
