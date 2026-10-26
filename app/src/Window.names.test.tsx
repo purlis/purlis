@@ -207,7 +207,7 @@ describe("every control the window draws has a name", () => {
     await theWindow();
 
     await run("Split right");
-    await userEvent.click(await screen.findByRole("button", { name: "Start" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Start chat" }));
     await waitFor(() => expect(dialogs()).toHaveLength(0));
 
     expect(screen.getByRole("separator", { name: "Resize the split" })).toBeInTheDocument();

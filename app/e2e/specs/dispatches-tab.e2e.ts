@@ -128,10 +128,10 @@ describe("the Dispatches tab's past tasks", function () {
     for (const made of MADE) writeFileSync(join(store, `${made.id}.json`), recordOf(made));
 
     // Opened from alpha's strip, by the Sessions view's heading button: on the line heading
-    // its half of the Panel (#1738), or on the panel's own heading where it is drawn elsewhere.
+    // its half of the Panel (#1738), or on a sidebar's head where it is moved to one (#3330).
     await focusWorkspace("alpha");
     await showView("Sessions");
-    await press(':is(.half-head, [data-testid="panel-sessions"])', "Open dispatches");
+    await press(":is(.half-head, .side-head)", "Open dispatches");
     await untilInFront(TAB);
     await $(BY_WORKSPACE).waitForExist({ timeout: 20_000 });
   });

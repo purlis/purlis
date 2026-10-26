@@ -50,6 +50,13 @@ spec:
       messageExpression: >-
         'You may not use the pool ' + object.spec.pool + '. A cluster admin can grant use on it.'
       reason: Forbidden
+    # Who asked for a claim is stamped on it, as the cluster signed them in, and never changes
+    # (crds.yaml): the operator vouches for it with the runner's link key (#2056).
+    - expression: >-
+        object.spec.requester == request.userInfo.username
+      messageExpression: >-
+        'A claim names who makes it: set spec.requester to ' + request.userInfo.username + '.'
+      reason: Forbidden
 ---
 # Source: purlis-cluster-operator/templates/policy.yaml
 apiVersion: admissionregistration.k8s.io/v1

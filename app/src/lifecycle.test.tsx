@@ -51,7 +51,7 @@ const START_OPTIONS = {
  */
 async function openAChat() {
   await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
-  await userEvent.click(await screen.findByRole("button", { name: "Start" }));
+  await userEvent.click(await screen.findByRole("button", { name: "Start chat" }));
 }
 
 /** What Tauri's own mocks put on the window: the registry `listen` hands its callback to,

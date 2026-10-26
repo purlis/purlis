@@ -62,6 +62,12 @@ fn every_kind() -> Vec<(About, &'static str)> {
             },
             "using a browser that reaches this project's sites, its dev servers and the open web",
         ),
+        (
+            About::PoolLogin {
+                pool: "builds".into(),
+            },
+            "purlis filling your browser logins on pool `builds`'s runner",
+        ),
     ]
 }
 

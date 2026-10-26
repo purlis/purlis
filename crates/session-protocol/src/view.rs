@@ -134,6 +134,8 @@ struct Shared {
     sent: AtomicU64,
     /// Bytes the client has acknowledged drawing.
     drawn: AtomicU64,
+    /// Told each acknowledgement, and each end of the view.
+    acked: Notify,
     most_queued: usize,
 }
 
@@ -148,7 +150,14 @@ impl Shared {
     fn close(&self, why: Closed) -> Closed {
         let why = *self.why.get_or_init(|| why);
         self.dropped.cancel();
+        self.acked.notify_waiters();
         why
+    }
+
+    /// Whether nothing is queued and the client has drawn every byte it was sent.
+    fn all_drawn(&self) -> bool {
+        self.queue().chunks.is_empty()
+            && self.sent.load(Ordering::Acquire) == self.drawn.load(Ordering::Acquire)
     }
 }
 
@@ -195,6 +204,20 @@ impl Feed {
         usize::try_from(sent.saturating_sub(drawn)).unwrap_or(usize::MAX)
     }
 
+    /// **Waits until the client has drawn everything pushed so far** (#2050): nothing is
+    /// queued, and every byte written is acknowledged. Returns at once once the view is closed.
+    pub async fn drawn(&self) {
+        loop {
+            let acked = self.shared.acked.notified();
+            tokio::pin!(acked);
+            acked.as_mut().enable();
+            if self.shared.why.get().is_some() || self.shared.all_drawn() {
+                return;
+            }
+            acked.await;
+        }
+    }
+
     /// Why the host closed the view, once it has.
     pub fn closed(&self) -> Option<Closed> {
         self.shared.why.get().copied()
@@ -235,6 +258,7 @@ fn start(
         why: OnceLock::new(),
         sent: AtomicU64::new(0),
         drawn: AtomicU64::new(0),
+        acked: Notify::new(),
         most_queued: limits.most_queued_bytes,
     });
     let pump = Arc::clone(&shared);
@@ -256,6 +280,7 @@ fn start(
         let _ = writer.out.shutdown().await;
         counting.abort();
         pump.finished.cancel();
+        pump.acked.notify_waiters();
     });
     (
         Feed {
@@ -275,6 +300,7 @@ async fn count_acks(mut acks: ReadHalf<Stream>, drawn: watch::Sender<u64>, share
                 total = more;
                 shared.drawn.store(total, Ordering::Release);
                 drawn.send_replace(total);
+                shared.acked.notify_waiters();
             }
             _ => {
                 shared.close(Closed::OverAcknowledged);
@@ -704,6 +730,15 @@ pub struct Attachment {
 /// attached again the same way, so a kind brings its snapshot and nothing else.
 pub trait Source: Send + Sync + 'static {
     fn attach(&self) -> Attachment;
+
+    /// **Whether its view keeps one frame in flight** (#2050, spec #2041): a source whose live
+    /// stream is its latest frame and each newer one, a browser's, is read for its next only
+    /// once the client has drawn everything sent before, so the client is sent the newest frame
+    /// and never a queue of older ones. A terminal's bytes are each needed, and are sent up to
+    /// the view's watermark.
+    fn one_frame_in_flight(&self) -> bool {
+        false
+    }
 }
 
 /// The views open on one link, of whatever kind: what a host's views are, written once.
@@ -836,7 +871,15 @@ async fn follow(
     ended: mpsc::UnboundedSender<(ViewId, ViewEnd)>,
 ) {
     let mut why = ViewEnd::ProgramEnded;
+    let one_at_a_time = source.one_frame_in_flight();
     loop {
+        if one_at_a_time {
+            tokio::select! {
+                biased;
+                () = closing.cancelled() => break,
+                () = feed.drawn() => {}
+            }
+        }
         let next = tokio::select! {
             biased;
             () = closing.cancelled() => break,

@@ -20,9 +20,12 @@ import { expectFocusInSight } from "../../stories.testkit";
 import { useTabIds } from "../../StripTablist";
 import { ChatMark } from "../../NeedsYou";
 import type { State } from "../../chatState";
-import { IconButton } from "../button/Button";
+import { Button, IconButton } from "../button/Button";
+import { TIPS_BELOW } from "../tooltip/Tooltip";
 import { editorToolbar, TabCell, tabPart, tabsPart, ToolbarFile, type TabVariant } from "./Tabs";
+import { Group, Panel } from "react-resizable-panels";
 import { panelRoot } from "../panel/Panel";
+import { Separator } from "../panel/Separator";
 import { StripTab, TabStripRow, useTabStrip } from "./TabStrip";
 
 /** One tab as a story draws it: its name, what it holds, and its chat's state, if any. */
@@ -45,12 +48,16 @@ function DockedStrip({
   chosen = 1,
   width = 640,
   split = false,
+  marks = false,
 }: {
   tabs?: Shown[];
   chosen?: number;
   width?: number;
   /** The chosen tab split in two, the second pane with the keyboard. */
   split?: boolean;
+  /** The strip's other marks, as the chat strip draws them: a task chip on the first tab and
+   *  `N more` at the row's end (#3361). */
+  marks?: boolean;
 }) {
   const [inFront, setInFront] = useState(chosen);
   const [open, setOpen] = useState(tabs);
@@ -59,7 +66,7 @@ function DockedStrip({
   const along = useTabStrip({ keys: open.map((one) => one.name), selected: front?.name });
   return (
     <div className="editor" {...tabsPart("layout")} style={{ inlineSize: width, blockSize: 220 }}>
-      <header className="bar" {...tabsPart("strip")}>
+      <header className="bar" {...tabsPart("strip")} {...TIPS_BELOW}>
         <TabStripRow
           strip={along}
           name="Chats"
@@ -77,6 +84,19 @@ function DockedStrip({
               selected={at === inFront}
               first={at === 0}
             >
+              {marks && at === 0 && (
+                // A tab's task chip, as `SkillRunChip` draws it.
+                <span className="tab-tasks">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="tab-tasks-counts"
+                    tooltip="Using the skill review: 3 tool calls so far. Open its runs."
+                  >
+                    <span className="count">3</span>
+                  </Button>
+                </span>
+              )}
               <StripTab
                 strip={along}
                 tabKey={one.name}
@@ -107,9 +127,16 @@ function DockedStrip({
             </TabCell>
           ))}
           <span className="strip-doing">
-            <IconButton variant="ghost" size="sm" icon={<Plus />} aria-label="New tab" />
+            <IconButton variant="quiet" size="sm" icon={<Plus />} aria-label="New tab" />
           </span>
         </TabStripRow>
+        {marks && (
+          <div className="more">
+            <Button variant="quiet" size="sm" className="show-more" tooltip="2 tabs past the edge">
+              2 more
+            </Button>
+          </div>
+        )}
       </header>
       <div
         className="panes"
@@ -118,32 +145,38 @@ function DockedStrip({
         aria-labelledby={idOf(inFront)}
       >
         {split ? (
-          <div data-group="" style={{ display: "flex", blockSize: "100%" }}>
+          /* The panes' split as the window draws it (`LayoutPanes.tsx`): the panel separator
+             family's handle between two of the library's panels. */
+          <Group orientation="horizontal">
             {["talk", "review"].map((name, at) => (
               <Fragment key={name}>
-                {at > 0 && <div data-separator="" aria-hidden="true" />}
-                <div
-                  className="pane-frame pane-headed"
-                  data-testid={`pane ${name}`}
-                  data-focused={at === 1 || undefined}
-                >
-                  {/* As `PaneFrame` draws a chat's pane: its header, then the terminal (#3142). */}
-                  <div className="pane-top">
-                    <div className="pane-head">
-                      <div className="pane-chips">
-                        <span className="pane-from">{name}</span>
+                {at > 0 && <Separator className="pane-split" aria-label="Resize the split" />}
+                <Panel id={name}>
+                  <div
+                    className="pane-frame pane-headed"
+                    data-testid={`pane ${name}`}
+                    data-focused={at === 1 || undefined}
+                  >
+                    {/* As `PaneFrame` draws a chat's pane: its header, then the terminal (#3142). */}
+                    <div className="pane-top">
+                      <div className="pane-head">
+                        <div className="pane-chips">
+                          <span className="pane-from">{name}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="pane-body">
+                      <div className={at === 1 ? "pane focused" : "pane"}>
+                        <p style={{ margin: 0, padding: "var(--space-7) var(--space-5)" }}>
+                          {name}
+                        </p>
                       </div>
                     </div>
                   </div>
-                  <div className="pane-body">
-                    <div className={at === 1 ? "pane focused" : "pane"}>
-                      <p style={{ margin: 0, padding: "var(--space-7) var(--space-5)" }}>{name}</p>
-                    </div>
-                  </div>
-                </div>
+                </Panel>
               </Fragment>
             ))}
-          </div>
+          </Group>
         ) : (
           /* The focused pane, as the window draws it (`.pane.focused`): what the chosen tab
             joins, with no line between them. */
@@ -312,8 +345,8 @@ export const Narrow: Story = {
 
 /**
  * **A split, the second pane with the keyboard**: no line around either pane in Purlis, so the
- * words in the corner of the pane with the keyboard are primary, and the split's separator parts
- * the two.
+ * words in the corner of the pane with the keyboard are primary, and the split parts the two: by
+ * the window's gutter in Purlis, by its hairline in Purlis Classic (#3143).
  */
 export const Split: Story = {
   args: { split: true },
@@ -326,12 +359,89 @@ export const Split: Story = {
         getComputedStyle(words("talk")).color,
       ),
     );
-    const separator = canvas.getByTestId("pane review").previousElementSibling as Element;
-    expect(separator.getBoundingClientRect().width).toBeGreaterThan(0);
-    // Drawn, in a colour of its own: not the panel's under it.
-    const panel = canvas.getByTestId("pane review").parentElement?.parentElement as Element;
-    expect(getComputedStyle(separator).backgroundColor).not.toBe(
-      getComputedStyle(panel).backgroundColor,
-    );
+    // The split parts the two panes (#3143): they sit its room apart, and what it draws in that
+    // room is not the panel's ground. Purlis floats them a gutter apart, in the window's colour;
+    // Purlis Classic parts them by its hairline.
+    const split = canvas.getByRole("separator", { name: "Resize the split" });
+    const talk = canvas.getByTestId("pane talk").getBoundingClientRect();
+    const review = canvas.getByTestId("pane review").getBoundingClientRect();
+    expect(review.left - talk.right).toBeGreaterThan(0);
+    const panel = getComputedStyle(canvas.getByRole("tabpanel")).backgroundColor;
+    const drawn = getComputedStyle(split);
+    const gutter = parseFloat(drawn.getPropertyValue("--window-gutter")) || 0;
+    if (gutter > 0) {
+      const probe = document.createElement("span");
+      probe.style.backgroundColor = "var(--surface-deep)";
+      document.body.append(probe);
+      const deep = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      expect(Math.round(review.left - talk.right)).toBe(gutter);
+      expect(drawn.backgroundImage).toContain(deep);
+      expect(deep).not.toBe(panel);
+    } else {
+      expect(drawn.backgroundColor).not.toBe(panel);
+    }
+  },
+};
+
+/** The vertical centre of `element`'s box, in px. */
+function middleOf(element: Element): number {
+  const box = element.getBoundingClientRect();
+  return box.top + box.height / 2;
+}
+
+/**
+ * **The strip's marks on the tabs' line, their tooltips clear of it** (#3361): the `+`, `N more`
+ * and a tab's task chip are each centred on a tab's line, within a pixel, in every cell; and the
+ * `+`'s tooltip, opened from the keyboard, stands below the strip, never on its row.
+ */
+export const MarksOnTheTabsLine: Story = {
+  args: { marks: true },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const tab = canvasElement.querySelector('[data-scope="tabs"][data-part="tab"]');
+    if (tab === null) throw new Error("no tab drawn");
+    const line = middleOf(tab);
+    const plus = canvas.getByRole("button", { name: "New tab" });
+    const more = canvas.getByRole("button", { name: "2 more" });
+    const chip = canvasElement.querySelector(".tab-tasks-counts");
+    if (chip === null) throw new Error("no task chip drawn");
+    for (const [what, one] of [
+      ["the +", plus],
+      ["N more", more],
+      ["the task chip", chip],
+    ] as const)
+      await expect(
+        Math.abs(middleOf(one) - line),
+        `${what} off the tabs' line`,
+      ).toBeLessThanOrEqual(1);
+    // Each mark's tooltip, opened by the keyboard's focus (at once), stands off the strip's row:
+    // Tab along the strip's stops (the chip, the strip's tab, the `+`, `N more`), and each mark's
+    // is measured where the focus reaches it, then taken down with Esc.
+    const strip = canvasElement.querySelector("header.bar") as HTMLElement;
+    const shown = () =>
+      document.querySelector<HTMLElement>('[role="tooltip"][data-scope="tooltip"]');
+    const marks = new Map<Element, [string, string]>([
+      [chip, ["the task chip", "Using the skill review"]],
+      [plus, ["the +", "New tab"]],
+      [more, ["N more", "2 tabs past the edge"]],
+    ]);
+    const measured: string[] = [];
+    for (let stops = 0; stops < 10 && measured.length < marks.size; stops += 1) {
+      await userEvent.tab();
+      const mark = document.activeElement === null ? undefined : marks.get(document.activeElement);
+      if (mark === undefined) continue;
+      const [what, says] = mark;
+      await waitFor(() => expect(shown()).toHaveTextContent(says), { timeout: 3000 });
+      const tip = (shown() as HTMLElement).getBoundingClientRect();
+      const row = strip.getBoundingClientRect();
+      await expect(
+        tip.top >= row.bottom || tip.bottom <= row.top,
+        `${what}'s tooltip sits on the strip's row`,
+      ).toBe(true);
+      await userEvent.keyboard("{Escape}");
+      await waitFor(() => expect(shown()).toBeNull(), { timeout: 3000 });
+      measured.push(what);
+    }
+    await expect(measured).toEqual(["the task chip", "the +", "N more"]);
   },
 };

@@ -318,6 +318,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // answer alone. No chat answers its own Ask.
     "allow_chat_browser",
     "keep_chat_browser_off",
+    // Whether a persona's browser logins may be filled on a pool's runner (#2050): the person's
+    // answer alone. No chat opts itself in.
+    "answer_pool_login",
     // A chat's browser sites (#2018): the person's answer alone. No chat allows its own
     // browser a site.
     "allow_browser_sites",
@@ -613,6 +616,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     "skill_restore",
     "skill_grant",
     "skill_turn",
+    // A skill pinned or unpinned for a workspace's or a persona's chats (SK-15d, #3232): one
+    // commit to the project, the person's own press in their window, as a turn-off is.
+    "skill_pin",
     // A skill's tab (#2782): reverting it to a version, deprecating, archiving or restoring it,
     // and naming its owners. Each is one commit to the project, the person's own press in their
     // window.

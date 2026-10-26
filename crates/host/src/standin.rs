@@ -617,6 +617,8 @@ pub struct Shown {
     pub hides: u32,
     /// The least time between frames the host last asked for.
     pub every: Option<std::time::Duration>,
+    /// The widest frame the host last asked for, or none for as wide as its pages (#2050).
+    pub most_width: Option<u16>,
     /// Frames it made: only while showing.
     pub made: u32,
     pub stopped: bool,
@@ -713,6 +715,10 @@ impl crate::browsers::Screen for StandInScreen {
 
     fn pace(&self, every: std::time::Duration) {
         self.shown().every = Some(every);
+    }
+
+    fn narrow(&self, most: Option<u16>) {
+        self.shown().most_width = most;
     }
 
     fn hide(&self) {

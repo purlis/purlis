@@ -39,6 +39,7 @@ fn a_sandbox_compiled_for_one_harness_arms_no_chat_of_any_other() {
     let plugin = testing::bundled_plugin();
     let kit = Kit {
         skills: None,
+        laid_out: None,
         binary: std::path::Path::new("/bin/charter"),
         plugin: Some(&plugin),
         persona: None,
@@ -316,6 +317,7 @@ fn a_session_id_longer_than_the_python_charter_takes_is_refused() {
 fn kit(binary: &str) -> Kit<'_> {
     Kit {
         skills: None,
+        laid_out: None,
         binary: std::path::Path::new(binary),
         plugin: Some(std::path::Path::new("/app/plugin")),
         persona: None,
@@ -784,6 +786,7 @@ fn a_claude_code_chat_runs_its_browser_tools_on_its_browser_ask_not_the_harness_
     );
     let no_plugin = Kit {
         skills: None,
+        laid_out: None,
         plugin: None,
         ..kit("/bin/charter")
     };
@@ -1314,6 +1317,7 @@ fn without_the_bundled_plugin_a_claude_code_chat_is_armed_with_nothing() {
     let hooks = Harness::ClaudeCode.state_hooks(
         Kit {
             skills: None,
+            laid_out: None,
             binary: std::path::Path::new("/bin/charter"),
             plugin: None,
             persona: None,
@@ -1747,6 +1751,7 @@ fn opencode_hooks(binary: &str) -> (tempfile::TempDir, StateHooks) {
     let hooks = Harness::Opencode.state_hooks(
         Kit {
             skills: None,
+            laid_out: None,
             binary: std::path::Path::new(binary),
             plugin: Some(plugin.path()),
             persona: None,
@@ -1809,6 +1814,7 @@ fn a_codex_chat_is_started_with_the_skills_its_briefing_lists() {
     let env = env_of(Harness::Codex.state_hooks(
         Kit {
             skills: None,
+            laid_out: None,
             binary: std::path::Path::new("/bin/charter"),
             plugin: Some(&plugin),
             persona: None,
@@ -1830,6 +1836,7 @@ fn only_a_harness_that_cannot_load_the_skills_is_briefed_on_them() {
     let plugin = testing::bundled_plugin();
     let kit = Kit {
         skills: None,
+        laid_out: None,
         binary: std::path::Path::new("/bin/charter"),
         plugin: Some(&plugin),
         persona: None,
@@ -1842,11 +1849,15 @@ fn only_a_harness_that_cannot_load_the_skills_is_briefed_on_them() {
 }
 
 #[test]
-fn an_opencode_chat_is_told_the_bundled_skills_through_the_shim() {
+fn an_opencode_chat_is_told_the_set_s_folder_of_the_bundled_skills_through_the_shim() {
+    // The folder the host laid the built-in skills out in as `purlis-<name>`; never the bundle's
+    // own `skills/`, whose names a clone's skill could share.
     let plugin = testing::bundled_plugin();
+    let folder = std::path::Path::new("/data/skill-sets/0123");
     let env = env_of(Harness::Opencode.state_hooks(
         Kit {
             skills: None,
+            laid_out: Some(folder),
             binary: std::path::Path::new("/bin/charter"),
             plugin: Some(&plugin),
             persona: None,
@@ -1859,7 +1870,7 @@ fn an_opencode_chat_is_told_the_bundled_skills_through_the_shim() {
         serde_json::from_str(&env["OPENCODE_CONFIG_CONTENT"]).expect("JSON");
     assert_eq!(
         config["plugin"][0][1]["skills"].as_str(),
-        Some(plugin.join("skills").display().to_string().as_str()),
+        Some(folder.join("skills").display().to_string().as_str()),
         "{config}"
     );
     assert!(
@@ -1874,6 +1885,7 @@ fn without_the_shim_an_opencode_chat_is_armed_with_nothing() {
     let hooks = Harness::Opencode.state_hooks(
         Kit {
             skills: None,
+            laid_out: None,
             binary: std::path::Path::new("/bin/charter"),
             plugin: Some(plugin.path()),
             persona: None,
@@ -1949,7 +1961,6 @@ fn a_clones_own_skill_index_is_left_out_where_the_harness_keeps_purliss_and_only
         skills: Some(crate::skills::PlaneSkills {
             plane: plane.path(),
             workspace: Some("alpha"),
-            linked: None,
             repo: &repo,
         }),
         ..kit("/bin/charter")
@@ -1975,14 +1986,14 @@ fn a_clones_own_skill_index_is_left_out_where_the_harness_keeps_purliss_and_only
     assert_eq!(
         crate::skills::skills_off_for(kit, Harness::Opencode, &none),
         Vec::<String>::new(),
-        "opencode would drop purlis's index with it"
+        "opencode knows purlis's index as `purlis-skill-index`, so the clone's \
+         `skill-index` is another skill and is left on"
     );
     // With no copy elsewhere, nothing is written, so the operator's own overrides stand.
     let alone = Kit {
         skills: Some(crate::skills::PlaneSkills {
             plane: plane.path(),
             workspace: Some("alpha"),
-            linked: None,
             repo: &[],
         }),
         ..kit

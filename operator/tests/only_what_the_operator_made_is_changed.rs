@@ -33,6 +33,7 @@ fn claim() -> Claim {
         },
         spec: ClaimSpec {
             pool: "team".into(),
+            requester: "ada@example.com".into(),
         },
         status: None,
     }
