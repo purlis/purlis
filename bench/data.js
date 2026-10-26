@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792997250114,
+  "lastUpdate": 1792998973077,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -25158,6 +25158,48 @@ window.BENCHMARK_DATA = {
             "value": 101.2956325,
             "unit": "ms",
             "extra": "median of 5 runs: 100.753, 101.069, 101.296, 101.387, 101.705 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d7738641bf535d0aab88bc1b7e887a846352e492",
+          "message": "SK-15: the built-in router, the index skill and pins (#3228)\n\n* SK-15: the built-in router hides what is over the budget behind the index skill\n\nA chat's set is routed where it is armed: below its budget every skill is\nlisted; above it the plane's skills that are not pinned are hidden, stay in\nthe set for skill_find, skill_load and Use skill..., and are named in one\nindex skill laid out in their place. Workspaces pin with\nsettings.skills.pinned, personas with pinned-skills:.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-15: pins, purlis skill pin, and what the studio and Use skill... say of a hidden skill\n\nStudio rows and purlis skill list say why the router hid a skill and which are\npinned. Use skill... asks a chat to load a hidden skill with skill_load and\nholds no run for it: the load opens it. A briefed chat is briefed on the index.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-15: the window says what the router hid, and regenerated bindings\n\nThe studio row says why the router hid a skill and which are pinned; Use\nskill... marks a hidden skill and its budget says how many are in the index\nskill, or that the pins alone are over it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-15: document pins and the index skill, ADR 0102 as built, and a CLI test\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Move the tests of codex.rs, personagrant.rs and personaverbs into tests.rs files (move only)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-15: address the reviews of #3228\n\n- The restart stamp counts the built-in skills, as arming does.\n- What is still over the budget is said apart: the pins, or what no pin\n  decides (StillOver), each worded on its own in Use skill...\n- The index lists only names the format's grammar allows, counts the others,\n  and marks every invisible, bidi or tag character of a description.\n- skill-index is purlis's on every route: a harness or repo skill of that\n  name is hidden by the index (Reason::HiddenByIndex).\n- The studio routes each harness's set by its own budget, and a row says on\n  which harnesses its skill is hidden.\n- Hidden crosses IPC and JSON typed ({router, why, said}); bindings\n  regenerated.\n- Pins are held to 64 and the skill-name grammar, failing closed; the pin\n  lookup is a set; pin, pinned_in, pins_of, Spent::over and PINS_KEY are\n  crate-private.\n- Use skill...'s run start is an explicit Start; Given::in_words has a test.\n- The CLI pin test has its own file; CONTEXT, plane-format and the ADR\n  amendment say what was built.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-15: drop an outside skill-index where the harness keeps purlis's, and say so where it cannot\n\n- Claude Code is handed skillOverrides {\"skill-index\": \"off\"} and Codex\n  skills.config [{name=\"skill-index\",enabled=false}] where a clone or the\n  person has a skill of that name; opencode, which discovers purlis's folder\n  as its own, keeps the copy and its studio row asks for a rename.\n- The pins message names the scope: -w <workspace> or -p <persona>.\n- The not-hideable warning says program, not tool.\n- One helper turns a refused pin list into no pins and a log line, for every\n  routed set and the studio.\n- A routing's hidden list is asserted sorted before it is searched.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-26T11:12:58+04:00",
+          "tree_id": "6fe8e538b48d80c8bd1eaeee264c204125a31841",
+          "url": "https://github.com/purlis/purlis/commit/d7738641bf535d0aab88bc1b7e887a846352e492"
+        },
+        "date": 1792998970959,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.43062900000000004,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.422, 0.428, 0.431, 0.440, 0.445 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.212336999999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.148, 16.189, 16.212, 16.802, 16.931 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.57342550000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.154, 101.364, 101.573, 101.578, 101.654 ms"
           }
         ]
       }
