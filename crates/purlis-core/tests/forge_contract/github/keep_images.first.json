@@ -1,0 +1,202 @@
+{
+  "source": "GitHub REST API version 2022-11-28, docs.github.com/en/rest, git: Create a blob, Get a reference, Get a commit object, Create a tree, Create a commit, Create a reference; a branch that is not there answers 404",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": "POST",
+            "path": "repos/acme/api/git/blobs"
+          }
+        },
+        "fields": [
+          {
+            "text": [
+              "content",
+              "iVBORw0KGgpvbmU="
+            ]
+          },
+          {
+            "text": [
+              "encoding",
+              "base64"
+            ]
+          }
+        ]
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"sha\": \"1111111111111111111111111111111111111111\", \"url\": \"https://api.github.com/repos/acme/api/git/blobs/1111111111111111111111111111111111111111\"}",
+        "err": ""
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": "POST",
+            "path": "repos/acme/api/git/blobs"
+          }
+        },
+        "fields": [
+          {
+            "text": [
+              "content",
+              "iVBORw0KGgp0d28="
+            ]
+          },
+          {
+            "text": [
+              "encoding",
+              "base64"
+            ]
+          }
+        ]
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"sha\": \"2222222222222222222222222222222222222222\", \"url\": \"https://api.github.com/repos/acme/api/git/blobs/2222222222222222222222222222222222222222\"}",
+        "err": ""
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "path": "repos/acme/api/git/ref/heads/purlis/browser-proof/pr-12"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 1,
+        "out": "{\"message\": \"Not Found\", \"status\": \"404\"}",
+        "err": "gh: Not Found (HTTP 404)",
+        "status": 404
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": "POST",
+            "path": "repos/acme/api/git/trees"
+          }
+        },
+        "fields": [
+          {
+            "text": [
+              "tree[][path]",
+              "browser-proof-1.png"
+            ]
+          },
+          {
+            "text": [
+              "tree[][mode]",
+              "100644"
+            ]
+          },
+          {
+            "text": [
+              "tree[][type]",
+              "blob"
+            ]
+          },
+          {
+            "text": [
+              "tree[][sha]",
+              "1111111111111111111111111111111111111111"
+            ]
+          },
+          {
+            "text": [
+              "tree[][path]",
+              "browser-proof-2.png"
+            ]
+          },
+          {
+            "text": [
+              "tree[][mode]",
+              "100644"
+            ]
+          },
+          {
+            "text": [
+              "tree[][type]",
+              "blob"
+            ]
+          },
+          {
+            "text": [
+              "tree[][sha]",
+              "2222222222222222222222222222222222222222"
+            ]
+          }
+        ]
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"sha\": \"5555555555555555555555555555555555555555\"}",
+        "err": ""
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": "POST",
+            "path": "repos/acme/api/git/commits"
+          }
+        },
+        "fields": [
+          {
+            "text": [
+              "message",
+              "Browser proof for pull request #12"
+            ]
+          },
+          {
+            "text": [
+              "tree",
+              "5555555555555555555555555555555555555555"
+            ]
+          }
+        ]
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"sha\": \"6666666666666666666666666666666666666666\"}",
+        "err": ""
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": "POST",
+            "path": "repos/acme/api/git/refs"
+          }
+        },
+        "fields": [
+          {
+            "text": [
+              "ref",
+              "refs/heads/purlis/browser-proof/pr-12"
+            ]
+          },
+          {
+            "text": [
+              "sha",
+              "6666666666666666666666666666666666666666"
+            ]
+          }
+        ]
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"ref\": \"refs/heads/purlis/browser-proof/pr-12\", \"object\": {\"type\": \"commit\", \"sha\": \"6666666666666666666666666666666666666666\"}}",
+        "err": ""
+      }
+    }
+  ]
+}

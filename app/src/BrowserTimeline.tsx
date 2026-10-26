@@ -7,6 +7,9 @@ import { commands, type TimelineMoment, type TimelineMoved } from "./bindings";
 import { frameBytes, paint } from "./browserFrames";
 import { TIMELINE_MOVED, atSaid, unkeptSaid } from "./browserTimelines";
 import { listen } from "./here";
+import { BrowserProof } from "./BrowserProof";
+import { Button, ButtonRow } from "./ui/button/Button";
+import { Checkbox } from "./ui/choice/Checkbox";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 
 /** What a timeline reads as: nothing yet, its moments, or why it could not be read. */
@@ -24,6 +27,10 @@ type Read =
  */
 export function BrowserTimeline({ plane, chat }: { plane: string; chat: string }) {
   const [read, setRead] = useState<Read>({ kind: "reading" });
+  // The screenshots the person picked for browser proof (#2026): none until they pick, and
+  // never more than the timeline still keeps.
+  const [picked, setPicked] = useState<ReadonlySet<number>>(new Set());
+  const [attaching, setAttaching] = useState(false);
   useEffect(() => {
     let gone = false;
     let stop: (() => void) | undefined;
@@ -80,31 +87,95 @@ export function BrowserTimeline({ plane, chat }: { plane: string; chat: string }
       />
     );
   const moments = read.kind === "read" ? [...read.moments].reverse() : [];
+  const kept = new Set(moments.flatMap((moment) => (moment.shot === null ? [] : [moment.shot])));
+  const chosen = moments.flatMap((moment) =>
+    moment.shot !== null && picked.has(moment.shot) ? [moment.shot] : [],
+  );
+  const pick = (shot: number, on: boolean) =>
+    setPicked((was) => {
+      const now = new Set([...was].filter((one) => kept.has(one)));
+      if (on) now.add(shot);
+      else now.delete(shot);
+      return now;
+    });
+  const didOf = (shot: number) => moments.find((moment) => moment.shot === shot)?.did ?? "";
   return (
-    <ol className="browser-timeline" aria-label="Browser timeline" data-testid="browser-timeline">
-      {moments.map((moment) => (
-        <li
-          key={`${moment.at}:${moment.browser}:${moment.did}:${moment.shot ?? ""}`}
-          className="browser-timeline-moment"
-          data-by={moment.by}
-        >
-          <p className="browser-timeline-said">
-            <span className="ui-text-meta">{atSaid(moment.at)}</span>{" "}
-            <span className="ui-text-secondary">Browser {moment.browser}</span>{" "}
-            <span>{moment.did}</span>
-          </p>
-          {moment.page !== null && (
-            <p className="browser-timeline-page ui-text-meta">{moment.page}</p>
-          )}
-          {moment.shot !== null && (
-            <Shot plane={plane} chat={chat} shot={moment.shot} did={moment.did} />
-          )}
-          {unkeptSaid(moment) !== null && (
-            <p className="browser-timeline-unkept ui-text-meta">{unkeptSaid(moment)}</p>
-          )}
-        </li>
-      ))}
-    </ol>
+    <div className="browser-timeline-pane">
+      {kept.size > 0 &&
+        (attaching ? (
+          <BrowserProof
+            plane={plane}
+            chat={chat}
+            picked={chosen}
+            drawn={(shot) => <Shot plane={plane} chat={chat} shot={shot} did={didOf(shot)} />}
+            onDone={() => {
+              setAttaching(false);
+              setPicked(new Set());
+            }}
+          />
+        ) : (
+          <div className="browser-proof-bar" data-testid="browser-proof-bar">
+            <p className="ui-text-meta">
+              {chosen.length === 0
+                ? "Pick screenshots to attach to a pull request as proof."
+                : chosen.length === 1
+                  ? "1 screenshot picked."
+                  : `${chosen.length} screenshots picked.`}
+            </p>
+            <ButtonRow size="sm">
+              <Button
+                aria-disabled={chosen.length === 0 ? true : undefined}
+                tooltip={
+                  chosen.length === 0
+                    ? "Pick the screenshots first: nothing is attached that you did not pick."
+                    : undefined
+                }
+                onPress={() => {
+                  if (chosen.length > 0) setAttaching(true);
+                }}
+              >
+                Attach browser proof
+              </Button>
+            </ButtonRow>
+          </div>
+        ))}
+      <ol className="browser-timeline" aria-label="Browser timeline" data-testid="browser-timeline">
+        {moments.map((moment) => (
+          <li
+            key={`${moment.at}:${moment.browser}:${moment.did}:${moment.shot ?? ""}`}
+            className="browser-timeline-moment"
+            data-by={moment.by}
+          >
+            <p className="browser-timeline-said">
+              <span className="ui-text-meta">{atSaid(moment.at)}</span>{" "}
+              <span className="ui-text-secondary">Browser {moment.browser}</span>{" "}
+              <span>{moment.did}</span>
+            </p>
+            {moment.page !== null && (
+              <p className="browser-timeline-page ui-text-meta">{moment.page}</p>
+            )}
+            {moment.shot !== null && (
+              <>
+                <Shot plane={plane} chat={chat} shot={moment.shot} did={moment.did} />
+                {!attaching && (
+                  <Checkbox
+                    isSelected={picked.has(moment.shot)}
+                    onChange={(on) => {
+                      if (moment.shot !== null) pick(moment.shot, on);
+                    }}
+                  >
+                    Pick for browser proof
+                  </Checkbox>
+                )}
+              </>
+            )}
+            {unkeptSaid(moment) !== null && (
+              <p className="browser-timeline-unkept ui-text-meta">{unkeptSaid(moment)}</p>
+            )}
+          </li>
+        ))}
+      </ol>
+    </div>
   );
 }
 

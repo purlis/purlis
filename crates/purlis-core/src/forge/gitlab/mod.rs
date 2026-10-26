@@ -15,8 +15,8 @@ use super::backend::{
 };
 use super::checks::{self, Annotation, Checks, FailedCheck};
 use super::pr::{
-    AutoMerge, GITLAB_ACTIVE, GITLAB_NOT_MERGEABLE, Gate, Gated, MergeAs, MergedAt, Opened, Pinned,
-    Pr, Ready, Request, State, check_gate, commit_named, held_to_the_forges_clock, is_ours,
+    AutoMerge, GITLAB_ACTIVE, GITLAB_NOT_MERGEABLE, Gate, Gated, Image, MergeAs, MergedAt, Opened,
+    Pinned, Pr, Ready, Request, State, check_gate, commit_named, held_to_the_forges_clock, is_ours,
     none_will_run, not_queued_when, not_this_saves, own_mr, pr_of, unknown_state,
 };
 use super::transport::{Call, Field, Method, Reply};
@@ -1075,6 +1075,69 @@ impl Requests for GitLab {
         );
         let status = first_field(self.0.best_effort(caller, &asked), "status")?;
         Ok(mapped(&CI, word_of(status.as_ref())))
+    }
+
+    fn keep_images(
+        &self,
+        caller: &Caller,
+        path: &str,
+        pr: &Pr,
+        images: &[Image],
+    ) -> Result<Vec<String>, ForgeError> {
+        let api = format!("projects/{}/uploads", quote(path));
+        let doing = format!(
+            "keeping merge request !{}'s browser proof in {path}",
+            pr.number
+        );
+        let mut kept = Vec::new();
+        for image in images {
+            let call = Call::write(
+                Method::Post,
+                &api,
+                vec![Field::file("file", &image.name, &image.png)],
+            );
+            let record = self.0.ask(caller, &call, &doing)?;
+            // The upload's address in the project, `/uploads/<secret>/<name>`, which a note in
+            // the project draws. Only that shape is taken: it goes into the comment as is.
+            let url = record["url"].as_str().unwrap_or_default();
+            let plain = url.strip_prefix("/uploads/").is_some_and(|rest| {
+                !rest.is_empty()
+                    && !rest.contains("..")
+                    && rest.bytes().all(|b| {
+                        b.is_ascii_alphanumeric() || matches!(b, b'/' | b'.' | b'_' | b'-')
+                    })
+            });
+            if !plain {
+                return Err(ForgeError::new(format!(
+                    "{doing}: the answer named no upload address"
+                )));
+            }
+            kept.push(url.to_string());
+        }
+        Ok(kept)
+    }
+
+    fn comment(
+        &self,
+        caller: &Caller,
+        path: &str,
+        pr: &Pr,
+        body: &str,
+    ) -> Result<String, ForgeError> {
+        let api = format!(
+            "projects/{}/merge_requests/{}/notes",
+            quote(path),
+            pr.number
+        );
+        let doing = format!("commenting on merge request !{} in {path}", pr.number);
+        let call = Call::write(Method::Post, api, vec![Field::text("body", body)]);
+        let record = self.0.ask(caller, &call, &doing)?;
+        // A note's answer names no page of its own: it is the request's, at the note's anchor.
+        match record["id"].as_u64() {
+            Some(id) if !pr.url.is_empty() => Ok(format!("{}#note_{id}", pr.url)),
+            Some(_) => Ok(pr.url.clone()),
+            None => Err(ForgeError::new(format!("{doing}: the answer named no id"))),
+        }
     }
 }
 

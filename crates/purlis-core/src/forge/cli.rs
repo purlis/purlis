@@ -173,6 +173,8 @@ pub fn argv(forge: &Forge, call: &Call) -> Vec<String> {
         let (flag, name, value) = match field {
             Field::Text(name, value) => ("-f", name, value),
             Field::Typed(name, value) => ("-F", name, value),
+            // Refused before `argv` is built ([`Transport::send`]); never sent as a path.
+            Field::File(..) => continue,
         };
         args.push(flag.to_string());
         args.push(format!("{name}={value}"));
@@ -182,6 +184,9 @@ pub fn argv(forge: &Forge, call: &Call) -> Vec<String> {
 
 impl Transport for Cli {
     fn send(&self, forge: &Forge, call: &Call) -> Result<Reply, NoAnswer> {
+        if call.fields.iter().any(|f| matches!(f, Field::File(..))) {
+            return Err(NoAnswer::Refused(FILE_REFUSED.to_string()));
+        }
         let method = match &call.endpoint {
             Endpoint::Graphql => "POST",
             Endpoint::Rest { method: None, .. } => "GET",
@@ -242,6 +247,11 @@ impl Transport for Cli {
 
 /// The token variables either CLI would sign in with in place of its stored login: `gh`'s
 /// ([`TOKEN_ENV`]) and `glab`'s.
+/// Why the CLI transport sends no call with a file (#2026): `gh api -F name=@path` and
+/// `glab api` read a file from disk, and the only file purlis sends goes with its own sign-in.
+pub const FILE_REFUSED: &str =
+    "purlis sends a file only with its own sign-in, never through gh or glab";
+
 const EVERY_TOKEN_ENV: [&str; 7] = [
     TOKEN_ENV[0],
     TOKEN_ENV[1],

@@ -398,6 +398,9 @@ export const commands = {
 	chatBrowsers: __WINDOW_ONLY_RESULT,
 	chatBrowserTimeline: __WINDOW_ONLY_RESULT,
 	chatBrowserTimelineShot: __WINDOW_ONLY_RESULT,
+	browserProofRequests: __WINDOW_ONLY_RESULT,
+	showBrowserProof: __WINDOW_ONLY_RESULT,
+	attachBrowserProof: __WINDOW_ONLY_RESULT,
 	pinChatBrowser: __WINDOW_ONLY_RESULT,
 	browsersAtQuit: __WINDOW_ONLY_RESULT,
 	putAwayBrowsersAtQuit: __WINDOW_ONLY_RESULT,
@@ -7654,6 +7657,29 @@ export type ProjectUpdate = {
 };
 
 /**
+ *  A pull or merge request the window offers to attach proof to: the open request of a save of
+ *  one of the chat's workspace's repos.
+ */
+export type ProofRequest = {
+	/**  Its page. */
+	url: string,
+	/**  The repo's name in the workspace. */
+	repo: string,
+	/**  What its forge calls it: `pull request` or `merge request`. */
+	request: string,
+};
+
+/**  One screenshot as the person was shown it, handed back to attach. */
+export type ProofShot = {
+	/**  Its number in the chat's timeline, to read with `chat_browser_timeline_shot`. */
+	shot: number,
+	/**  When it was taken, in seconds since 1970. */
+	at: number,
+	/**  SHA-256 of its bytes, lower-case hex. */
+	digest: string,
+};
+
+/**
  *  **A proposed change whole, as its own tab draws it** (PC-7): the file before and after, and
  *  whether Apply is offered there, or why it is not shown.
  */
@@ -9174,6 +9200,25 @@ export type Shown = {
 	 *  not shown and no Allow is offered. Absent for any other ask.
 	 */
 	writes?: WritesShown | null,
+};
+
+/**
+ *  **What attaching would send**, shown to the person before anything goes, and handed back
+ *  unchanged to [`attach_browser_proof`].
+ */
+export type ShownProof = {
+	/**  The request's page. */
+	request: string,
+	/**  `#12` or `!12`. */
+	number: string,
+	/**  The repo it is in, `owner/name`. */
+	path: string,
+	/**  Where the pictures are kept on the forge, and who can read them there. */
+	keptAt: string,
+	/**  The comment's words, before the pictures. */
+	words: string,
+	/**  The pictures, in the order they go. */
+	shots: ProofShot[],
 };
 
 /**

@@ -701,6 +701,11 @@ pub const WINDOW_ONLY: &[&str] = &[
     // is, since they hold pictures of the chat's pages.
     "chat_browser_timeline",
     "chat_browser_timeline_shot",
+    // Browser proof on a pull request (#2026): the person picks the screenshots, sees what goes,
+    // and attaches it with their own sign-in, so only their presses in the window make any.
+    "browser_proof_requests",
+    "show_browser_proof",
+    "attach_browser_proof",
     // The person's own theme choice, and the move of their old theme file into a theme folder
     // (#2323): each writes how their window looks on this machine, and the move moves their
     // file, so only their press in the window makes either.

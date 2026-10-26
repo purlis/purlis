@@ -70,7 +70,7 @@ use std::path::Path;
 use serde_json::Value;
 
 use super::checks::{Checks, Ci, FailedCheck};
-use super::{Forge, ForgeError};
+use super::{Forge, ForgeError, Kind};
 use crate::worktree::git;
 
 /// A repository on a forge: which forge, and its path there (`owner/name` on GitHub, the full
@@ -87,6 +87,44 @@ pub struct Repo {
 pub struct Pr {
     pub number: u64,
     pub url: String,
+}
+
+/// A picture to show on a request's page, as browser proof (#2026): its file name, which purlis
+/// makes (`browser-proof-<n>.png`, never anything an agent wrote), and its PNG bytes, which the
+/// person picked and saw.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Image {
+    pub name: String,
+    pub png: Vec<u8>,
+}
+
+/// The branch a GitHub repo keeps request `number`'s browser proof on (#2026): a branch of
+/// purlis's own whose commits hold only those pictures, none with a parent outside it, so no
+/// workflow file is on it and nothing runs when it moves. A save's branch ends in a commit's
+/// short hash, never `pr-<n>`, so the two never meet.
+pub fn proof_branch(number: u64) -> String {
+    format!(
+        "{}browser-proof/pr-{number}",
+        crate::names::BRANCH_PREFIX.write
+    )
+}
+
+/// Where a request's browser proof is kept on its forge, and who can see it there, in the
+/// words the person is shown before anything is sent (#2026).
+pub fn proof_kept_at(kind: Kind, path: &str, number: u64) -> String {
+    match kind {
+        Kind::GitHub => format!(
+            "on the branch {} of {path}, which whoever can read {path} can read",
+            proof_branch(number)
+        ),
+        Kind::GitLab => format!("as uploads of {path}, which whoever can read {path} can read"),
+    }
+}
+
+/// Whether `sha` is a whole git object name, as a forge answers one: forty or sixty-four
+/// lower-case hex digits.
+pub(super) fn is_object_name(sha: &str) -> bool {
+    matches!(sha.len(), 40 | 64) && sha.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 /// How `charter change land` has its own landing commit made: a merge commit or a squash, with

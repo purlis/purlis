@@ -30,7 +30,9 @@ use serde_json::Value;
 
 use super::checks::{Annotation, Checks, FailedCheck};
 use super::cli::Cli;
-use super::pr::{AutoMerge, Gate, MergeAs, MergedAt, Opened, Pinned, Pr, Ready, Request, State};
+use super::pr::{
+    AutoMerge, Gate, Image, MergeAs, MergedAt, Opened, Pinned, Pr, Ready, Request, State,
+};
 use super::transport::{Call, NoAnswer, Reply, Transport};
 use super::{Forge, ForgeError, Kind, Raised};
 
@@ -614,6 +616,28 @@ pub trait Requests {
 
     /// The branch's last CI result as one of `cistate::CI_STATES`. Permissive, as above.
     fn ci_word(&self, caller: &Caller, path: &str, branch: &str) -> Result<Option<String>, Raised>;
+
+    /// Keep `images` where `pr`'s page can show them, and answer the address of each, in
+    /// order (browser proof, #2026). GitHub has no API for a comment's attachments, so a
+    /// commit of only the pictures goes on [`super::pr::proof_branch`], whose first commit has
+    /// no parent; GitLab keeps each as one of the project's uploads. Where either is is
+    /// [`super::pr::proof_kept_at`], which the person is shown first.
+    fn keep_images(
+        &self,
+        caller: &Caller,
+        path: &str,
+        pr: &Pr,
+        images: &[Image],
+    ) -> Result<Vec<String>, ForgeError>;
+
+    /// Post `body` as a comment on `pr`, and answer the comment's page (#2026).
+    fn comment(
+        &self,
+        caller: &Caller,
+        path: &str,
+        pr: &Pr,
+        body: &str,
+    ) -> Result<String, ForgeError>;
 }
 
 /// What a forge can do, for one reach (ADR 0070 §2).

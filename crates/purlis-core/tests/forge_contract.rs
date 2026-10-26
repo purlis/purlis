@@ -53,7 +53,7 @@ mod scene;
 use scene::{MERGE, SAVE, SHA, Scene};
 
 /// Every case, by the seam method it covers. The parity test compares this with the traits.
-const CASES: [&str; 25] = [
+const CASES: [&str; 27] = [
     "owned",
     "about",
     "reachable",
@@ -79,12 +79,14 @@ const CASES: [&str; 25] = [
     "owners_to_create_under",
     "create_repo",
     "delete_created_repo",
+    "keep_images",
+    "comment",
 ];
 
 /// The cases the live run does not run, each with why and the ticket that will run it. Each one
 /// would merge or queue the fixture's one open request, which the read cases need open; running
 /// them needs a request opened afresh for each run.
-const NOT_LIVE: [(&str, &str); 10] = [
+const NOT_LIVE: [(&str, &str); 12] = [
     (
         "request_auto_merge",
         "auto-merge would land the fixture's open request; it needs a request opened per run (#712)",
@@ -126,6 +128,16 @@ const NOT_LIVE: [(&str, &str); 10] = [
     (
         "delete_created_repo",
         "it deletes the repo a run made, which needs that repo and a token that may delete (#712)",
+    ),
+    (
+        "keep_images",
+        "it writes a proof branch or uploads to the fixture each run; it needs a request opened \
+         per run and what it kept removed after (#3395)",
+    ),
+    (
+        "comment",
+        "it comments on the fixture's open request each run; it needs a request opened per run \
+         (#3395)",
     ),
 ];
 
@@ -413,6 +425,65 @@ mod cases {
                 .body(&over.caller, &scene.path("api"), &open(scene)),
             Ok(BODY.to_string())
         );
+        spent(&over);
+    }
+
+    pub fn keep_images(kind: &str, how: How) {
+        let Some(over) = over(kind, "keep_images", how) else {
+            return;
+        };
+        let scene = &over.scene;
+        let kept = over
+            .backend
+            .keep_images(
+                &over.caller,
+                &scene.path("api"),
+                &open(scene),
+                &proof_images(),
+            )
+            .unwrap();
+        let commit = "6".repeat(40);
+        let want = match kind {
+            "github" => vec![
+                format!(
+                    "https://{}/acme/api/raw/{commit}/browser-proof-1.png",
+                    over.host
+                ),
+                format!(
+                    "https://{}/acme/api/raw/{commit}/browser-proof-2.png",
+                    over.host
+                ),
+            ],
+            _ => vec![
+                "/uploads/66dbcd21ec5d24ed6ea225176098d52b/browser-proof-1.png".to_string(),
+                "/uploads/0a1b2c3d4e5f60718293a4b5c6d7e8f9/browser-proof-2.png".to_string(),
+            ],
+        };
+        assert_eq!(kept, want);
+        spent(&over);
+    }
+
+    pub fn comment(kind: &str, how: How) {
+        let Some(over) = over(kind, "comment", how) else {
+            return;
+        };
+        let scene = &over.scene;
+        let page = match kind {
+            "github" => "https://github.com/acme/api/pull/12",
+            _ => "https://gitlab.com/acme/api/-/merge_requests/12",
+        };
+        let pr = Pr {
+            number: scene.open,
+            url: page.to_string(),
+        };
+        let said = over
+            .backend
+            .comment(&over.caller, &scene.path("api"), &pr, "Browser proof");
+        let want = match kind {
+            "github" => "https://github.com/acme/api/pull/12#issuecomment-99",
+            _ => "https://gitlab.com/acme/api/-/merge_requests/12#note_99",
+        };
+        assert_eq!(said, Ok(want.to_string()));
         spent(&over);
     }
 
@@ -1141,8 +1212,57 @@ macro_rules! contract {
                 purlis_core::unsteered!();
                 super::cases::delete_created_repo(stringify!($forge), super::How::$how);
             }
+            #[test]
+            $(#[$attr])?
+            fn keep_images_keeps_each_picture_and_answers_where_the_request_shows_it() {
+                purlis_core::unsteered!();
+                super::cases::keep_images(stringify!($forge), super::How::$how);
+            }
+            #[test]
+            $(#[$attr])?
+            fn comment_posts_on_the_request_and_answers_the_comments_page() {
+                purlis_core::unsteered!();
+                super::cases::comment(stringify!($forge), super::How::$how);
+            }
         }
     };
+}
+
+/// The two pictures the browser proof cases keep, as the recordings carry them.
+fn proof_images() -> Vec<purlis_core::forge::pr::Image> {
+    vec![
+        purlis_core::forge::pr::Image {
+            name: "browser-proof-1.png".into(),
+            png: b"\x89PNG\r\n\x1a\none".to_vec(),
+        },
+        purlis_core::forge::pr::Image {
+            name: "browser-proof-2.png".into(),
+            png: b"\x89PNG\r\n\x1a\ntwo".to_vec(),
+        },
+    ]
+}
+
+/// GitHub's first proof on a request: the branch is not there, so its commit has no parent and
+/// the branch is made at it, never on top of anything of the repo's own (#2026).
+#[test]
+fn githubs_first_proof_on_a_request_starts_a_branch_with_no_parent() {
+    purlis_core::unsteered!();
+    let text = recording("github", "keep_images.first");
+    let recorded = Arc::new(Recorded::parse(&text).unwrap());
+    let backend = Forge::default_of(Kind::GitHub).backend_over(recorded.clone());
+    let pr = Pr {
+        number: 12,
+        url: String::new(),
+    };
+    let commit = "6".repeat(40);
+    assert_eq!(
+        backend.keep_images(&caller(), "acme/api", &pr, &proof_images()),
+        Ok(vec![
+            format!("https://github.com/acme/api/raw/{commit}/browser-proof-1.png"),
+            format!("https://github.com/acme/api/raw/{commit}/browser-proof-2.png"),
+        ])
+    );
+    spent(&recorded);
 }
 
 contract!(github, github, Recorded);
@@ -1247,7 +1367,8 @@ fn every_method_of_the_seam_has_a_case_on_both_forges() {
 
 /// The recordings of one forge's own scene beside a case's, each read by a test of its own:
 /// `<case>.<scene>.json`.
-const SCENES: [(&str, &str, &str); 21] = [
+const SCENES: [(&str, &str, &str); 22] = [
+    ("github", "keep_images", "first"),
     ("gitlab", "request_auto_merge", "train"),
     ("gitlab", "request_auto_merge", "train_pre19"),
     ("github", "merge_when_ready", "pending"),
