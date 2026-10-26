@@ -26,12 +26,7 @@ fn note_of(hosted: &Hosted, program: &str) -> Note {
 }
 
 /// What a window that comes back with chats `back` open does with `program`'s note.
-fn back_in(
-    browsers: &ChatBrowsers,
-    program: &str,
-    note: Option<&Note>,
-    back: &[u32],
-) -> TakenBack {
+fn back_in(browsers: &ChatBrowsers, program: &str, note: Option<&Note>, back: &[u32]) -> TakenBack {
     browsers.taken_back(program, note, &|chat| back.contains(&chat), false, 3000)
 }
 
@@ -126,7 +121,10 @@ fn a_browser_whose_chat_did_not_come_back_or_with_no_note_is_taken_back_by_nothi
         back_in(&again, "program-1", Some(&note), &[4]),
         TakenBack::NotTaken
     );
-    assert_eq!(back_in(&again, "program-2", None, &[3]), TakenBack::NotTaken);
+    assert_eq!(
+        back_in(&again, "program-2", None, &[3]),
+        TakenBack::NotTaken
+    );
     assert!(again.listed().is_empty());
 }
 
@@ -192,6 +190,9 @@ fn a_note_reads_back_as_it_was_kept_and_one_that_does_not_read_is_none() {
     let kept = serde_json::to_value(&note).unwrap();
 
     assert_eq!(Note::read(Some(&kept)), Some(note));
-    assert_eq!(Note::read(Some(&serde_json::json!({"chat": "three"}))), None);
+    assert_eq!(
+        Note::read(Some(&serde_json::json!({"chat": "three"}))),
+        None
+    );
     assert_eq!(Note::read(None), None);
 }

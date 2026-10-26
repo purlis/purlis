@@ -168,8 +168,16 @@ fn a_chats_browser_comes_back_with_its_chat_its_lease_and_its_view_after_the_win
         .unwrap();
 
     assert_eq!(clicked, InputOutcome::Taken);
-    assert_eq!(kept_screen.shown().inputs.len(), 1, "the click reached the page");
-    assert_eq!(host.browsers.started().len(), 2, "nothing was started again");
+    assert_eq!(
+        kept_screen.shown().inputs.len(),
+        1,
+        "the click reached the page"
+    );
+    assert_eq!(
+        host.browsers.started().len(),
+        2,
+        "nothing was started again"
+    );
 }
 
 #[test]

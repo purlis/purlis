@@ -115,7 +115,11 @@ impl ChatBrowsers {
             return;
         }
         drop(chats);
-        let kept = self.kept().iter().find(|one| one.program == program).cloned();
+        let kept = self
+            .kept()
+            .iter()
+            .find(|one| one.program == program)
+            .cloned();
         let note = match kept {
             Some(kept) => Note {
                 chat: Some(kept.session),

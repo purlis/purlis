@@ -151,8 +151,7 @@ async fn the_note_a_window_keeps_of_a_browser_is_the_last_it_sent() {
 async fn a_note_past_its_bound_is_refused_and_the_one_before_is_kept() {
     let hosted = hosted();
     let (client, _views) = window(&hosted.hosting, hosted.project.path()).await;
-    let (program, _screen) =
-        a_browser_noted(&client, &hosted.browsers, json!({"chat": 1})).await;
+    let (program, _screen) = a_browser_noted(&client, &hosted.browsers, json!({"chat": 1})).await;
 
     let refused = client
         .note_program(&program, json!({"padding": "x".repeat(session::NOTE_MOST)}))
@@ -186,7 +185,10 @@ async fn a_view_attached_again_after_the_window_came_back_draws_from_the_next_wh
         .attach_browser_view(&program, ViewRole::Focused, None)
         .await
         .unwrap();
-    let _stream = timeout(PATIENCE, first_views.accept()).await.unwrap().unwrap();
+    let _stream = timeout(PATIENCE, first_views.accept())
+        .await
+        .unwrap()
+        .unwrap();
     screen.makes(b"\xff\xd8 before the crash");
 
     drop(first);
@@ -201,7 +203,10 @@ async fn a_view_attached_again_after_the_window_came_back_draws_from_the_next_wh
 
     let mut frames = Frames::default();
     let mut images = Vec::new();
-    while !images.iter().any(|image: &Vec<u8>| image == b"\xff\xd8 after it") {
+    while !images
+        .iter()
+        .any(|image: &Vec<u8>| image == b"\xff\xd8 after it")
+    {
         let chunk = timeout(PATIENCE, reader.next())
             .await
             .expect("a frame comes")

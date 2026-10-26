@@ -1334,6 +1334,7 @@ struct Comeback {
     root: std::path::PathBuf,
     runtime: tokio::runtime::Runtime,
     _dir: tempfile::TempDir,
+    _store: tempfile::TempDir,
 }
 
 /// A window on [`Comeback`]'s host: its chats, its browsers, and what cuts each of its links.
@@ -1353,7 +1354,9 @@ impl Comeback {
         let runs = StandIns::default();
         let confines = purlis_host::standin::StandInConfines::default();
         let (dir, root) = a_project();
-        let browsers = purlis_host::standin::StandInBrowsers::in_folder(root.join(".browsers"));
+        let store = tempfile::tempdir().unwrap();
+        let browsers =
+            purlis_host::standin::StandInBrowsers::in_folder(store.path().join("browsers"));
         Comeback {
             hosting: Hosting::confining(
                 crate::sessionhost::Composes::as_the_tests_ship(),
@@ -1367,6 +1370,7 @@ impl Comeback {
             root,
             runtime,
             _dir: dir,
+            _store: store,
         }
     }
 

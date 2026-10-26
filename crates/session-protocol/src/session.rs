@@ -2111,7 +2111,9 @@ async fn refused<H: Host>(command: &Command, peer: &Peer, host: &H) -> Option<Re
     {
         return Some(Refusal {
             code: NOT_ALLOWED.into(),
-            why: format!("a program's note is kept for purlis's window only, and this link is `{scope}`"),
+            why: format!(
+                "a program's note is kept for purlis's window only, and this link is `{scope}`"
+            ),
         });
     }
     if a_browser && !scope.may(Power::Browser) {

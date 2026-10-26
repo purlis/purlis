@@ -3484,9 +3484,9 @@ fn no_such(name: &str) -> String {
 }
 
 mod takenback;
-pub use takenback::{Note, TakenBack, take_back};
 #[cfg(test)]
 pub(crate) use takenback::take_back_from;
+pub use takenback::{Note, TakenBack, take_back};
 
 #[cfg(test)]
 mod tests;
