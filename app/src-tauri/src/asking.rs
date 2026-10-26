@@ -698,13 +698,10 @@ pub fn sandbox_port(
             "The sandbox refused a service on this Mac at a port it did not name".to_owned()
         }
         (Some(port), true) => format!(
-            "The sandbox refused a server listening on port {port} of this Mac. Allowing it {}.",
-            purlis_core::sandbox::localport::LISTEN_RISK
+            "This chat wants to run a server on port {port}. Allowing it {}.",
+            purlis_core::sandbox::localport::listen_risk(port)
         ),
-        (None, true) => {
-            "The sandbox refused a server listening on a port of this Mac it did not name"
-                .to_owned()
-        }
+        (None, true) => "This chat wants to run a server on a port it did not name".to_owned(),
     };
     Some(Shown {
         session,

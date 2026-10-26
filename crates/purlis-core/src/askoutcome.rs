@@ -102,14 +102,12 @@ impl About {
                     code(port)
                 )
             }
-            // Where it listens and where its browser opens it, since only the loopback is
-            // allowed: a server started on every interface is still refused.
+            // How to start it, and where its browser opens it.
             Self::Listen { port } => format!(
-                "listening on port {} on this Mac only (start the server on {}; its browser \
-                 opens {})",
+                "running a server on port {} ({})",
                 code(port),
-                code(&format!("127.0.0.1:{port}")),
-                code(&format!("http://127.0.0.1:{port}"))
+                port.parse::<u16>()
+                    .map_or_else(|_| String::new(), crate::sandbox::localport::listen_said)
             ),
             Self::Vault { vault } => format!("using vault {}", code(vault)),
             Self::BrowserSite { site } => {

@@ -286,33 +286,47 @@ fn a_chats_server_listens_on_its_socket_in_its_folder_and_on_no_port() {
     );
 }
 
-/// **Under Seatbelt, for real** (#2019): what a chat allowed to listen on one port can bind,
-/// listen on and accept, tried by a small Perl program inside the chat's own compiled profile.
-/// It prints `yes` when every step worked, or the step that was refused.
+/// **Under Seatbelt, for real** (#2019): a chat allowed to serve on a port serves on its own
+/// socket and on no TCP port, and is reached through the door alone. Small Perl programs inside
+/// the chat's own compiled profile try each thing and print `yes`, or the step refused.
 #[cfg(target_os = "macos")]
 mod under_seatbelt {
-    use super::super::super::{Widened, backend, seatbelt};
+    use std::io::{Read, Write};
+    use std::os::unix::fs::DirBuilderExt;
 
-    /// The Perl program: a socket of family `4` or `6` and type `stream` or `dgram`, bound to
-    /// `address` on `port` (or not bound at all, for `listen-only`), then listened on, connected
-    /// to and accepted from.
-    const TRY: &str = r#"
+    use super::super::super::{Widened, backend, door, seatbelt};
+    use super::serve_socket;
+
+    /// A TCP socket of family `4` or `6` bound to `address` on `port`, then listened on.
+    const TCP: &str = r#"
 use Socket qw(:all);
-my ($family, $type, $address, $port, $mode) = @ARGV;
+my ($family, $address, $port) = @ARGV;
 my $af = $family eq "6" ? AF_INET6 : AF_INET;
-my $st = $type eq "dgram" ? SOCK_DGRAM : SOCK_STREAM;
-my $at = sub { $af == AF_INET6 ? pack_sockaddr_in6($_[0], inet_pton(AF_INET6, $address))
-                               : pack_sockaddr_in($_[0], inet_aton($address)) };
-socket(my $s, $af, $st, 0) or do { print "socket\n"; exit };
-setsockopt($s, SOL_SOCKET, SO_REUSEADDR, 1);
-if ($mode ne "listen-only") { bind($s, $at->($port)) or do { print "bind\n"; exit } }
-if ($st == SOCK_DGRAM) { print "yes\n"; exit }
+my $at = $af == AF_INET6 ? pack_sockaddr_in6($port, inet_pton(AF_INET6, $address))
+                         : pack_sockaddr_in($port, inet_aton($address));
+socket(my $s, $af, SOCK_STREAM, 0) or do { print "socket\n"; exit };
+bind($s, $at) or do { print "bind\n"; exit };
 listen($s, 4) or do { print "listen\n"; exit };
-if ($mode eq "listen-only") { print "yes\n"; exit }
-socket(my $c, $af, SOCK_STREAM, 0) or do { print "client\n"; exit };
-connect($c, $at->($port)) or do { print "connect\n"; exit };
-accept(my $in, $s) or do { print "accept\n"; exit };
 print "yes\n";
+"#;
+
+    /// A unix socket at a path, bound and listened on; with `serve`, answering each request
+    /// with `ok` until it is killed.
+    const UNIX: &str = r#"
+use Socket qw(:all);
+$| = 1;
+my ($path, $mode) = @ARGV;
+unlink $path;
+socket(my $s, AF_UNIX, SOCK_STREAM, 0) or do { print "socket\n"; exit };
+bind($s, pack_sockaddr_un($path)) or do { print "bind\n"; exit };
+listen($s, 4) or do { print "listen\n"; exit };
+print "yes\n";
+exit unless $mode eq "serve";
+while (accept(my $c, $s)) {
+  while (my $line = <$c>) { last if $line eq "\r\n"; }
+  print $c "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok";
+  close $c;
+}
 "#;
 
     fn can_apply() -> bool {
@@ -324,7 +338,6 @@ print "yes\n";
         .is_ok_and(|status| status.success())
     }
 
-    /// A port nothing listens on now.
     fn free_port() -> u16 {
         std::net::TcpListener::bind(("127.0.0.1", 0))
             .and_then(|listener| listener.local_addr())
@@ -332,13 +345,31 @@ print "yes\n";
             .port()
     }
 
+    fn ask(port: u16, host: &str) -> String {
+        let mut client = std::net::TcpStream::connect(("127.0.0.1", port)).expect("the door");
+        write!(client, "GET / HTTP/1.1\r\nHost: {host}\r\n\r\n").expect("sent");
+        let mut answer = String::new();
+        let _ = client.read_to_string(&mut answer);
+        answer
+    }
+
     #[test]
-    fn a_chat_listens_on_its_one_port_on_this_mac_only_and_nowhere_else() {
+    fn a_chats_server_serves_on_its_socket_alone_and_is_reached_through_its_door() {
         if !can_apply() {
-            eprintln!("skipped: this process is already sandboxed, so no second profile applies");
+            let _ = writeln!(
+                std::io::stderr(),
+                "skipped: this process is already sandboxed, so no second profile applies"
+            );
             return;
         }
         let port = free_port();
+        let base = tempfile::tempdir().expect("a folder");
+        let folder = base.path().canonicalize().expect("real").join("serve");
+        std::fs::DirBuilder::new()
+            .mode(0o700)
+            .create(&folder)
+            .expect("the chat's folder");
+        let socket = serve_socket(&folder, port);
         let cwd = tempfile::tempdir().expect("a folder");
         let tmp = tempfile::tempdir().expect("a temp folder");
         let mut own = seatbelt::Own::default();
@@ -351,43 +382,82 @@ print "yes\n";
             },
         )
         .expect("widens");
+        seatbelt::served(&mut own, &folder, &[port]).expect("served");
         let profile =
             seatbelt::profile(&[], &own, cwd.path(), tmp.path(), &[], None).expect("a profile");
-        let tried = |family: &str, kind: &str, address: &str, port: u16, mode: &str| -> String {
+        let tried = |script: &str, words: &[&str]| -> String {
             let out = crate::forklock::output(
                 std::process::Command::new(backend::SANDBOX_EXEC)
-                    .args([
-                        "-p",
-                        &profile,
-                        "/usr/bin/perl",
-                        "-e",
-                        TRY,
-                        family,
-                        kind,
-                        address,
-                    ])
-                    .arg(port.to_string())
-                    .arg(mode)
+                    .args(["-p", &profile, "/usr/bin/perl", "-e", script])
+                    .args(words)
                     .current_dir(cwd.path()),
             )
             .expect("it runs");
             String::from_utf8_lossy(&out.stdout).trim().to_owned()
         };
-        assert_eq!(tried("4", "stream", "127.0.0.1", port, "serve"), "yes");
-        assert_eq!(tried("6", "stream", "::1", port, "serve"), "yes");
+        let port_word = port.to_string();
+        // Its own socket, and nothing else: no TCP port at all.
+        assert_eq!(tried(UNIX, &[&socket.display().to_string(), "once"]), "yes");
         assert_eq!(
-            tried("6", "stream", "::ffff:0.0.0.0", port, "serve"),
+            tried(
+                UNIX,
+                &[&folder.join("other.sock").display().to_string(), "once"]
+            ),
             "bind"
         );
-        assert_eq!(
-            tried("4", "stream", "127.0.0.1", port.wrapping_add(1), "serve"),
-            "bind"
-        );
-        assert_eq!(tried("4", "dgram", "127.0.0.1", port, "serve"), "bind");
-        assert_eq!(
-            tried("4", "stream", "127.0.0.1", port, "listen-only"),
-            "listen"
-        );
-        assert_eq!(tried("6", "stream", "::1", port, "listen-only"), "listen");
+        for (family, address) in [
+            ("4", "127.0.0.1"),
+            ("6", "::1"),
+            ("4", "0.0.0.0"),
+            ("6", "::"),
+        ] {
+            assert_eq!(
+                tried(TCP, &[family, address, &port_word]),
+                "bind",
+                "{address}"
+            );
+        }
+        // Served through the door: the chat's server answers there, and a request that names
+        // another host is refused before it reaches it.
+        let mut server = crate::forklock::spawn(
+            std::process::Command::new(backend::SANDBOX_EXEC)
+                .args(["-p", &profile, "/usr/bin/perl", "-e", UNIX])
+                .arg(socket.display().to_string())
+                .arg("serve")
+                .current_dir(cwd.path())
+                .stdout(std::process::Stdio::piped()),
+        )
+        .expect("the server starts");
+        let mut ready = [0u8; 4];
+        let _ = server
+            .stdout
+            .take()
+            .expect("its output")
+            .read_exact(&mut ready);
+        let door = door::Door::open(port, &socket).expect("the door opens");
+        let carried = ask(port, &format!("127.0.0.1:{port}"));
+        let refused = ask(port, "evil.example");
+        drop(door);
+        let _ = server.kill();
+        let _ = server.wait();
+        assert!(carried.starts_with("HTTP/1.1 200 OK\r\n"), "{carried}");
+        assert!(carried.ends_with("ok"), "{carried}");
+        assert!(refused.starts_with("HTTP/1.1 421 "), "{refused}");
+        // No other user reaches the socket: its folder is this user's alone.
+        let other_user = crate::forklock::output(std::process::Command::new("/usr/bin/sudo").args([
+            "-n",
+            "-u",
+            "nobody",
+            "/usr/bin/perl",
+            "-MSocket",
+            "-e",
+            "socket(my $s, AF_UNIX, SOCK_STREAM, 0); print(connect($s, pack_sockaddr_un($ARGV[0])) ? qq(yes) : qq(no))",
+            &socket.display().to_string(),
+        ]));
+        if let Ok(out) = other_user
+            && out.status.success()
+        {
+            assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "no");
+        }
     }
 }

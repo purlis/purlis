@@ -2149,6 +2149,45 @@ impl Chats {
     /// Owes chat `session` a restart on its conversation that tells it `told` (#1342): a grant
     /// of any level reaches a running chat that way.
     /// A chat that is not open is owed nothing: what was allowed reaches it at its next start.
+    /// The ports open chat `session` serves on, behind their doors (#2019).
+    pub fn served_ports(&self, session: u32) -> Vec<u16> {
+        lock(&self.open)
+            .get(&session)
+            .and_then(|running| running.confinement.as_ref())
+            .and_then(purlis_core::sandbox::Confinement::served)
+            .map(|(_, ports)| ports)
+            .unwrap_or_default()
+    }
+
+    /// **Each open chat serving on `port` is owed a restart** (#2019): its server's grant was
+    /// taken back, and its door and its profile were fixed as it started, so until it restarts
+    /// it still serves there. `chat` names the one chat it was taken back from, by id; none,
+    /// every chat. The chats owed it, by number.
+    pub fn owe_restart_serving(&self, chat: Option<&str>, port: u16) -> Vec<u32> {
+        let serving: Vec<u32> = lock(&self.open)
+            .iter()
+            .filter(|(_, running)| {
+                chat.is_none_or(|one| running.chat.identity.id.as_deref() == Some(one))
+                    && running
+                        .confinement
+                        .as_ref()
+                        .and_then(purlis_core::sandbox::Confinement::served)
+                        .is_some_and(|(_, ports)| ports.contains(&port))
+            })
+            .map(|(number, _)| *number)
+            .collect();
+        for number in &serving {
+            self.owe_restart(
+                *number,
+                format!(
+                    "⬢ purlis: running a server on port `{port}` — taken back by the person; \
+                     this chat restarted without it."
+                ),
+            );
+        }
+        serving
+    }
+
     pub fn owe_restart(&self, session: u32, told: String) {
         if !lock(&self.open).contains_key(&session) {
             return;

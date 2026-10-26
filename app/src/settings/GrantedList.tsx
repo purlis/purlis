@@ -47,7 +47,7 @@ const ALLOWS: Record<SandboxGrant["what"], (one: SandboxGrant) => string> = {
   port: (one) =>
     `Connect to the service on this Mac at port ${one.target} (Codex and opencode chats; Claude Code chats not yet)`,
   listen: (one) =>
-    `Listen on port ${one.target} on this Mac only (127.0.0.1), its browser reaching it there (Codex and opencode chats)`,
+    `Run a server on port ${one.target}, reached through purlis on this Mac (Codex and opencode chats); removing it restarts the chats serving there once their turn ends, and they serve until then`,
   browser: (one) =>
     `Chats as ${one.persona ?? "a persona"} open a browser without asking, reaching ${one.target}`,
   "browser-site": (one) =>
@@ -77,7 +77,7 @@ function removed(one: SandboxGrant): string {
   if (one.what === "socket") return `connecting to ${one.target}`;
   if (one.what === "service") return `reaching ${one.target}`;
   if (one.what === "port") return `connecting to port ${one.target}`;
-  if (one.what === "listen") return `listening on port ${one.target}`;
+  if (one.what === "listen") return `a server on port ${one.target}`;
   if (one.what === "browser") return `Always for ${one.persona ?? "a persona"}'s browser`;
   if (one.what === "browser-site") return `browsers reaching ${one.target}`;
   return `writing ${one.target}`;

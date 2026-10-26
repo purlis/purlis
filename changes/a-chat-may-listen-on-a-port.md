@@ -1,11 +1,14 @@
 ### Added
 
-- **A sandboxed chat may listen on a port.** When a server a Codex or opencode chat starts is
-  refused its port (`npm run dev` on `127.0.0.1:5173`), the refusal is a Block whose Notice
-  offers **Allow only for this chat** or **Allow for me on this machine**: that one port on this
-  Mac only (127.0.0.1), never another interface, a range or one of purlis's own. The chat restarts on
-  its conversation, is told to start the server on `127.0.0.1:<port>`, and its browser opens
-  `http://127.0.0.1:<port>` with no second ask. A port nobody allowed stays refused to the chat
-  and its browser. The grant is listed in Settings' Network page with Remove. On Linux the wrap's
-  supervisor makes the bind itself. A Claude Code chat's sandbox cannot be given one port to
-  listen on, so its Notice says so and offers Start without the sandbox (#2019).
+- **A sandboxed chat may run a server.** When a server a Codex or opencode chat starts is
+  refused its port (`npm run dev` on 5173), its Notice offers **Allow only for this chat** or
+  **Allow for me on this machine**. The server then runs on a socket of the chat's own, never on
+  a TCP port of this Mac. purlis's front door answers on `http://127.0.0.1:<port>`, checks each
+  request's address, and keeps your browser's cookies for other sites on this Mac from it.
+  - The chat's browser opens the server with no second ask, and so can your own browser.
+  - `purlis listen <port> -- <command>` starts a server there, for example
+    `purlis listen 5173 -- npm run dev`, and Vite, Next.js and other Node servers run unchanged.
+  - A port below 1024, or one something on this Mac already listens on, is never offered.
+  - The grant is listed in Settings' Network page with Remove.
+  - A Claude Code chat's sandbox cannot be given one port to serve on, so its Notice says so and
+    offers Start without the sandbox (#2019).

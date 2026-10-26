@@ -910,8 +910,8 @@ function AllowNotice({
                 : "An Allow lets the chat connect to whatever listens on this Mac at the port you type here, as you."
               : what === "listen"
                 ? suggested !== undefined && typed.trim() === suggested
-                  ? `${PORT_FROM_OUTPUT} An Allow lets the chat start a server on that port on this Mac only (127.0.0.1), and its browser reach it there.`
-                  : "An Allow lets the chat start a server on the port you type here, on this Mac only (127.0.0.1), and its browser reach it there."
+                  ? `${PORT_FROM_OUTPUT} An Allow lets the chat run a server on that port, reached through purlis on this Mac.`
+                  : "An Allow lets the chat run a server on the port you type here, reached through purlis on this Mac."
                 : "An Allow lets the chat write in the folder you type here and everything in it."
         }
         control={(ids) => (
@@ -943,9 +943,9 @@ function AllowNotice({
             {block.route}
           </>
         ) : what === "listen" ? (
-          // #2019: one port, named whole, where the server listens and its browser opens it.
+          // #2019: one port, named whole, and what allowing a server there means.
           <>
-            Allow listening on port <Target of={block.target} /> of this Mac. {block.route}
+            Allow running a server on port <Target of={block.target} />. {block.route}
           </>
         ) : what === "socket" || what === "service" ? (
           // D-sock-6: named whole, with what allowing it means, in purlis's words.

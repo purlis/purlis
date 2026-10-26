@@ -328,12 +328,60 @@ pub fn serve_rules(socket: &std::path::Path) -> Result<[String; 3], &'static str
     ])
 }
 
-/// What allowing a chat to serve on a port means, as the Ask says it (#2019).
-pub const LISTEN_RISK: &str = "lets this chat run a server that its browser, its commands and \
-                               your own browser reach at http://127.0.0.1:<port>, through purlis \
-                               on this Mac. purlis checks each request's address and keeps your \
-                               browser's cookies for other sites from it. Nothing on another \
-                               machine reaches it";
+/// **What allowing a chat to serve on `port` means**, as the Ask says it (#2019).
+pub fn listen_risk(port: u16) -> String {
+    format!(
+        "lets this chat run a server that its browser, its commands and your own browser reach \
+         at http://127.0.0.1:{port}, through purlis on this Mac. purlis checks each request's \
+         address and keeps your browser's cookies for other sites from it. Nothing on another \
+         machine reaches it"
+    )
+}
+
+/// [`listen_risk`] where the port is not known yet: the person types it.
+pub fn listen_risk_unnamed() -> String {
+    "lets this chat run a server that its browser, its commands and your own browser reach at \
+     http://127.0.0.1 on the port you type, through purlis on this Mac. purlis checks each \
+     request's address and keeps your browser's cookies for other sites from it. Nothing on \
+     another machine reaches it"
+        .to_owned()
+}
+
+/// What a chat is told to start a server on `port` with, once it may (#2019).
+pub fn listen_said(port: u16) -> String {
+    format!(
+        "start it with `purlis listen {port} -- <command>`, or on the socket `PURLIS_SERVE_SOCKET` \
+         names; its browser opens `http://127.0.0.1:{port}`"
+    )
+}
+
+/// The lowest port a chat may serve on: a port below it is a system service's.
+pub const FIRST_SERVED: u16 = 1024;
+
+/// **`typed` as a port a chat may serve on** (#2019), or why not: a port as [`port`] takes
+/// one, from [`FIRST_SERVED`], and none that anything on this Mac listens on now
+/// ([`super::door::in_use`]): that is a service to connect to, asked about as one.
+pub fn serve_port(typed: &str) -> Result<u16, Refused> {
+    let number = port(typed)?;
+    if number < FIRST_SERVED {
+        return Err(Refused::Not(format!(
+            "purlis lets a chat serve on a port from {FIRST_SERVED} to 65535: a port below \
+             {FIRST_SERVED} is a system service's."
+        )));
+    }
+    if super::door::in_use(number) {
+        return Err(Refused::Not(in_use_said(number)));
+    }
+    Ok(number)
+}
+
+/// Why a chat is not let serve on `port`: something on this Mac listens there now.
+pub fn in_use_said(port: u16) -> String {
+    format!(
+        "Something on this Mac already listens on port {port}, so this chat cannot run a server \
+         there. Allow it as a service on this Mac to connect to, or serve on another port."
+    )
+}
 
 /// **The port a server's own refusal to listen names** (#2019): Node's `listen EPERM:
 /// operation not permitted 127.0.0.1:3000` and Go's `listen tcp 127.0.0.1:3000: bind: operation

@@ -1620,8 +1620,8 @@ pub(crate) fn judged(
     // A port to listen on (#2019): the same two scopes, for the same reason.
     if what == GrantWhat::Listen && !matches!(level, Level::Chat | Level::You) {
         return refused(
-            "purlis allows listening on a port of this Mac for this chat, or for every chat of \
-             this project on this machine."
+            "purlis allows a server on a port for this chat, or for every chat of this project \
+             on this machine."
                 .to_owned(),
         );
     }
@@ -1696,8 +1696,9 @@ pub(crate) fn judged(
         GrantWhat::Port => {
             What::Port(sandbox::localport::port(target).map_err(|why| why.to_string())?)
         }
+        // A port to serve on (#2019): from 1024, and none something on this Mac listens on.
         GrantWhat::Listen => {
-            What::Listen(sandbox::localport::port(target).map_err(|why| why.to_string())?)
+            What::Listen(sandbox::localport::serve_port(target).map_err(|why| why.to_string())?)
         }
     };
     // Policy (#1343): the strictest wins, for a host at the level it would be kept at, and for
@@ -2836,6 +2837,10 @@ fn revoke(
             {
                 not_withdrawn = chats.withdraw_port(Some(chat), *port).err();
             }
+            // Its server serves until the chat restarts, which it is owed now (#2019).
+            if let What::Listen(port) = &grant {
+                chats.owe_restart_serving(Some(chat), *port);
+            }
         }
         (What::Host(host), None) => {
             purlis_core::settings::hosts::revoke(root, hosts_file(level), host)?;
@@ -2877,9 +2882,11 @@ fn revoke(
         (What::Listen(port), None) => {
             sandbox::local::revoke_listen(root, *port)
                 .map_err(|why| format!("purlis could not remove port {port}: {why}"))?;
-            // Its browsers and proxies reach it no more (#2019), as for a port to connect to.
+            // Its browsers and proxies reach it no more (#2019), as for a port to connect to,
+            // and each chat serving on it restarts without it once its turn ends.
             if !held_for_the_project(root, *port) {
                 not_withdrawn = chats.withdraw_port(None, *port).err();
+                chats.owe_restart_serving(None, *port);
             }
         }
     }

@@ -57,8 +57,8 @@ export function askOfBlock(block: ChatBlocked, chain = [`chat ${block.session}`]
               : `The sandbox refused the service on this Mac at port ${target}. ${block.route ?? ""}`
             : offer === "listen"
               ? target === ""
-                ? "The sandbox refused a server listening on a port of this Mac it did not name"
-                : `The sandbox refused a server listening on port ${target} of this Mac. ${block.route ?? ""}`
+                ? "This chat wants to run a server on a port it did not name"
+                : `This chat wants to run a server on port ${target}. ${block.route ?? ""}`
               : local
                 ? `The sandbox refused the ${offer === "socket" ? "local socket" : "system service"} ${inertly(target)}. ${block.route ?? ""}`
                 : `The sandbox refused a write in ${inertly(target)}`,

@@ -3073,6 +3073,9 @@ impl Planes {
                         told,
                         strong.chats().runner_of(block.line.chat).as_deref(),
                     );
+                    // A server asking for a port the chat serves on already (#2019).
+                    told =
+                        hooks::on_its_serving(told, &strong.chats().served_ports(block.line.chat));
                     // Held while the person answers (#1666): the chat's own board says so,
                     // never anything the block's sender said.
                     told.held = strong.chats().asking(told.session, told.target.as_deref());

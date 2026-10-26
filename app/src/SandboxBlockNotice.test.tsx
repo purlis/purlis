@@ -676,7 +676,7 @@ describe("a service on this Mac's Notice (qw384)", () => {
   });
 });
 
-describe("a port to listen on's Notice (#2019)", () => {
+describe("a server's Notice (#2019)", () => {
   const SERVER: ChatBlocked = {
     ...UNNAMED,
     harness: "codex",
@@ -686,19 +686,18 @@ describe("a port to listen on's Notice (#2019)", () => {
     offer: "listen",
     target: "5173",
     route:
-      "Allowing it lets this chat start a server on that port on this Mac only (127.0.0.1), " +
-      "and lets its commands and its browser reach whatever listens there, as you. Nothing on " +
-      "another machine reaches it, but any web page your own browser opens can, and opening it " +
-      "in your own browser hands it your cookies for the sites on this Mac. A server started on every interface (0.0.0.0) is still refused: " +
-      "start it on 127.0.0.1.",
+      "Allowing it lets this chat run a server that its browser, its commands and your own " +
+      "browser reach at http://127.0.0.1:5173, through purlis on this Mac. purlis checks each " +
+      "request's address and keeps your browser's cookies for other sites from it. Nothing on " +
+      "another machine reaches it.",
     levels: ["chat", "you"],
   };
 
-  it("names the port, says it is this Mac only, and sends that one port", async () => {
+  it("names the port, says how it is reached, and sends that one port", async () => {
     const { sent } = drawn(SERVER);
 
     expect(screen.getByText("5173")).toBeTruthy();
-    expect(screen.getAllByText(/start it on 127\.0\.0\.1/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/through purlis on this Mac/).length).toBeGreaterThan(0);
     await userEvent.click(screen.getByRole("button", { name: "Allow only for this chat" }));
 
     await waitFor(() =>

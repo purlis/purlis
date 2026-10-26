@@ -874,10 +874,7 @@ fn a_listen_grant_is_told_and_audited_by_its_number() {
     assert_eq!(what.target(), "3000");
     assert!(what.machine_only());
     assert!(!what.machine_wide());
-    assert_eq!(
-        what.to_string(),
-        "listening on port 3000 on this Mac only (127.0.0.1)"
-    );
+    assert_eq!(what.to_string(), "running a server on port 3000");
 }
 
 #[test]

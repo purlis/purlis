@@ -1057,6 +1057,29 @@ pub(crate) fn on_its_runner(mut told: ChatBlocked, runner: Option<&str>) -> Chat
     told
 }
 
+/// **What the window says of a refused server on a port chat `told.session` serves on
+/// already** (#2019): its server asked for the port itself, not through its socket, so allowing
+/// it again would change nothing and restart the chat for nothing. Its Notice says how to start
+/// it, with no Allow; `serving` are the ports the chat serves on. Any other block is as it was
+/// told.
+pub(crate) fn on_its_serving(mut told: ChatBlocked, serving: &[u16]) -> ChatBlocked {
+    if told.offer == BlockOffer::Listen
+        && let Some(port) = told
+            .target
+            .as_deref()
+            .and_then(|port| port.parse::<u16>().ok())
+        && serving.contains(&port)
+    {
+        told.offer = BlockOffer::Brokered;
+        told.levels = Vec::new();
+        told.route = Some(format!(
+            "Port {port} is allowed for this chat's server: {}.",
+            purlis_core::sandbox::localport::listen_said(port)
+        ));
+    }
+    told
+}
+
 /// A vault's name as a Notice draws it (#1353): one line, every credential shape masked and
 /// every character that draws as nothing written out, as an ask's line is drawn.
 fn vault_said(name: &str) -> String {
@@ -1547,20 +1570,43 @@ fn offered_to(
                 }
             }
         }
-        // A server the chat started, on a port of this Mac (#2019): Allow listening there,
-        // naming its port where the refusal named one, or the port the person types; never
-        // purlis's own.
+        // A server the chat started on a port (#2019): Allow it to serve there, behind
+        // purlis's door, naming its port where the refusal named one, or the port the person
+        // types; never purlis's own, never below 1024, and never one something on this Mac
+        // listens on, which is asked about as a service to connect to, in its own words.
         (Operation::Listen, Kind::LocalService) => {
-            let said = format!(
-                "Allowing it {}. A server started on every interface (0.0.0.0) is still \
-                 refused: start it on 127.0.0.1.",
-                purlis_core::sandbox::localport::LISTEN_RISK
-            );
-            match target.map(purlis_core::sandbox::localport::port) {
-                None => (BlockOffer::Listen, None, Some(said)),
-                Some(Ok(port)) => (BlockOffer::Listen, Some(port.to_string()), Some(said)),
-                Some(Err(grant::Refused::Never(why))) => (BlockOffer::Brokered, None, Some(why)),
-                Some(Err(grant::Refused::Outside(why) | grant::Refused::Not(why))) => {
+            use purlis_core::sandbox::localport;
+            let Some(target) = target else {
+                return (
+                    BlockOffer::Listen,
+                    None,
+                    Some(format!("Allowing it {}.", localport::listen_risk_unnamed())),
+                );
+            };
+            match localport::port(target) {
+                Ok(port) if port < localport::FIRST_SERVED => (
+                    BlockOffer::Brokered,
+                    None,
+                    localport::serve_port(&port.to_string())
+                        .err()
+                        .map(|why| why.to_string()),
+                ),
+                Ok(port) if purlis_core::sandbox::door::in_use(port) => (
+                    BlockOffer::Port,
+                    Some(port.to_string()),
+                    Some(format!(
+                        "{} Allowing it as a service {}.",
+                        localport::in_use_said(port),
+                        localport::RISK
+                    )),
+                ),
+                Ok(port) => (
+                    BlockOffer::Listen,
+                    Some(port.to_string()),
+                    Some(format!("Allowing it {}.", localport::listen_risk(port))),
+                ),
+                Err(grant::Refused::Never(why)) => (BlockOffer::Brokered, None, Some(why)),
+                Err(grant::Refused::Outside(why) | grant::Refused::Not(why)) => {
                     (BlockOffer::Listen, None, Some(why))
                 }
             }

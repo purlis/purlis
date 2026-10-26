@@ -41,8 +41,9 @@ fn every_kind() -> Vec<(About, &'static str)> {
             About::Listen {
                 port: "3000".to_owned(),
             },
-            "listening on port `3000` on this Mac only (start the server on `127.0.0.1:3000`; \
-             its browser opens `http://127.0.0.1:3000`)",
+            "running a server on port `3000` (start it with `purlis listen 3000 -- <command>`, \
+             or on the socket `PURLIS_SERVE_SOCKET` names; its browser opens \
+             `http://127.0.0.1:3000`)",
         ),
         (
             About::Vault {

@@ -376,19 +376,29 @@ fn new_token() -> Option<String> {
     Some(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
-/// The folder of purlis's data home that chats' servers listen in, one folder a chat.
-pub const FOLDER: &str = "serve";
+/// The folder chats' servers listen in, one folder a chat inside it.
+pub const FOLDER: &str = "purlis-serve";
 
-/// **The folder chat `id`'s servers listen in** (#2019): `<data>/serve/<id>`, the same each time
-/// the chat starts, so a chat whose proxy outlived the window is served again where it was.
-/// None where there is no data home, or `id` is not one word of letters, digits, `-` and `_`.
+/// **The folder chat `id`'s servers listen in** (#2019): `purlis-serve/<16 hex of the id's
+/// SHA-256>` in this user's runtime folder (`XDG_RUNTIME_DIR`), or else the system's temp folder
+/// for this process (on macOS this user's own). The same each time the chat starts, so a chat
+/// whose proxy outlived the window is served again where it was; short, since a socket's path
+/// may be at most 104 bytes on macOS. None for an empty id.
 pub fn folder_for(id: &str) -> Option<PathBuf> {
-    let one_word = !id.is_empty()
-        && id.len() <= 128
-        && id
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_');
-    one_word.then(|| crate::datahome::root().map(|data| data.join(FOLDER).join(id)))?
+    use sha2::Digest as _;
+    if id.is_empty() {
+        return None;
+    }
+    let base = crate::envvar::var("XDG_RUNTIME_DIR")
+        .map(PathBuf::from)
+        .filter(|dir| dir.is_absolute())
+        .unwrap_or_else(std::env::temp_dir);
+    let digest = sha2::Sha256::digest(id.as_bytes());
+    let named: String = digest[..8]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    Some(base.join(FOLDER).join(named))
 }
 
 /// The variable a chat that serves is handed its servers' folder in, which `purlis listen`

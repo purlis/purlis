@@ -2525,7 +2525,7 @@ fn a_port_on_this_mac_is_offered_as_that_port_and_claude_code_is_carried_it_by_n
 #[test]
 fn a_port_to_listen_on_is_offered_as_that_port_and_claude_code_is_told_why_not() {
     use purlis_core::harness::Harness;
-    use purlis_core::sandbox::localport::LISTEN_RISK;
+    use purlis_core::sandbox::localport::listen_risk;
     use purlis_core::sandboxblock::{Block, Kind, Operation};
     let project = tempfile::tempdir().expect("a project");
     let root = project.path().canonicalize().expect("real");
@@ -2539,8 +2539,7 @@ fn a_port_to_listen_on_is_offered_as_that_port_and_claude_code_is_told_why_not()
     assert_eq!(named.1.as_deref(), Some("5173"));
     // Compared, never printed: it is drawn on the Notice, not logged.
     let said = named.2.clone().expect("what allowing it means");
-    assert!(said.contains(LISTEN_RISK));
-    assert!(said.contains("127.0.0.1"));
+    assert!(said.contains(&listen_risk(5173)));
     let locks = purlis_core::sandbox::policy::Locks::of(&root);
     let (offer, target, _, levels) = held(&locks, named.clone());
     assert_eq!(offer, BlockOffer::Listen);
@@ -2573,6 +2572,43 @@ fn a_port_to_listen_on_is_offered_as_that_port_and_claude_code_is_told_why_not()
     let refused_own = offered(&root, &refused, Some(&own_port.to_string()));
     assert_eq!(refused_own.0, BlockOffer::Brokered);
     purlis_core::sandbox::localport::release(own_port);
+}
+
+/// #2019: a port below 1024 is never one to serve on, and a port something on this Mac listens
+/// on is asked about as a service to connect to, in its own words; a server asking for a port
+/// its chat serves on already is told how to start it, with no Allow.
+#[test]
+fn a_port_to_serve_on_is_never_a_system_ones_or_one_in_use() {
+    use purlis_core::sandboxblock::{Block, Kind, Operation};
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path().canonicalize().expect("real");
+    let refused = Block {
+        operation: Operation::Listen,
+        kind: Kind::LocalService,
+        ours: false,
+    };
+    assert_eq!(offered(&root, &refused, Some("80")).0, BlockOffer::Brokered);
+    let taken = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("a port in use");
+    let port = taken.local_addr().expect("bound").port().to_string();
+    let (offer, target, said) = offered(&root, &refused, Some(&port));
+    assert_eq!(offer, BlockOffer::Port);
+    assert_eq!(target.as_deref(), Some(port.as_str()));
+    assert!(said.is_some_and(|said| said.contains("already listens")));
+    // Told how to start it where the chat serves on that port already.
+    let plane: PlaneId =
+        serde_json::from_value(serde_json::json!(root.display().to_string())).expect("an id");
+    let told = blocked_on(&plane, 7, &refused, None, Some("5173"), false);
+    assert_eq!(told.offer, BlockOffer::Listen);
+    let served = on_its_serving(told.clone(), &[5173]);
+    assert_eq!(served.offer, BlockOffer::Brokered);
+    assert!(served.levels.is_empty());
+    assert!(
+        served
+            .route
+            .as_deref()
+            .is_some_and(|route| route.contains("purlis listen 5173 --"))
+    );
+    assert_eq!(on_its_serving(told, &[3000]).offer, BlockOffer::Listen);
 }
 
 /// #2019: a port allowed to listen on for this project is said to be allowed already, and a

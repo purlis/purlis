@@ -4272,25 +4272,30 @@ pub trait HeldElsewhere: Send + Sync + std::fmt::Debug {
     fn board(&self) -> Option<std::sync::Arc<dyn Board>>;
 }
 
-/// `folder`, made `0700` by this process where it is not there, and refused where it is not a
-/// folder of this user's that only this user may enter (#2019): no other user reaches a socket
-/// in it.
+/// `folder` and the folder it is in, each made `0700` by this process where it is not there,
+/// and refused where either is not a folder of this user's that no one else may write (#2019):
+/// no other user reaches a socket in it, or puts one there.
 fn own_folder(folder: &Path) -> std::io::Result<()> {
     use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
-    std::fs::DirBuilder::new()
-        .recursive(true)
-        .mode(0o700)
-        .create(folder)?;
-    let meta = std::fs::symlink_metadata(folder)?;
-    let mine = meta.uid() == rustix::process::getuid().as_raw();
-    if !meta.is_dir() || !mine {
-        return Err(std::io::Error::other(format!(
-            "{} is not a folder of this user's",
-            folder.display()
-        )));
-    }
-    if meta.permissions().mode() & 0o077 != 0 {
-        std::fs::set_permissions(folder, std::fs::Permissions::from_mode(0o700))?;
+    let me = rustix::process::getuid().as_raw();
+    let parent = folder
+        .parent()
+        .ok_or_else(|| std::io::Error::other("a server's folder has no folder above it"))?;
+    for at in [parent, folder] {
+        match std::fs::DirBuilder::new().mode(0o700).create(at) {
+            Err(err) if err.kind() != std::io::ErrorKind::AlreadyExists => return Err(err),
+            _ => {}
+        }
+        let meta = std::fs::symlink_metadata(at)?;
+        if !meta.is_dir() || meta.uid() != me {
+            return Err(std::io::Error::other(format!(
+                "{} is not a folder of this user's",
+                at.display()
+            )));
+        }
+        if meta.permissions().mode() & 0o077 != 0 {
+            std::fs::set_permissions(at, std::fs::Permissions::from_mode(0o700))?;
+        }
     }
     Ok(())
 }

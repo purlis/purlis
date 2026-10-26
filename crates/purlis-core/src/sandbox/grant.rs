@@ -31,9 +31,10 @@
 //!
 //! - **A service on this Mac** ([`What::Port`], [`super::localport`]): one loopback port, never
 //!   a range, every port or one of purlis's own; this chat's or this project's on this machine.
-//! - **A port to listen on** ([`What::Listen`], #2019): one loopback port a server the chat
-//!   starts binds, never another interface, a range or one of purlis's own; this chat's or this
-//!   project's on this machine. Its browser reaches it as a named local port.
+//! - **A port to serve on** ([`What::Listen`], #2019): one port from 1024 that nothing on this
+//!   Mac listens on, never a range or one of purlis's own; this chat's or this project's on this
+//!   machine. The chat's server listens on a socket of its own behind purlis's door on the port
+//!   ([`super::door`]), which its browser reaches as a named local port.
 //!
 //! **No read is granted.** A chat's sandbox denies reads only for the classes above, so a read
 //! block is always one of those and is answered with the brokered route.
@@ -75,8 +76,8 @@ pub enum What {
     /// Connect to a service on this Mac: whatever listens on this one port of the loopback
     /// interface ([`super::localport::port`], qw384).
     Port(u16),
-    /// Listen on this one port of the loopback interface, and connect to it there (#2019): a
-    /// server the chat starts, which its browser then reaches as a named local port.
+    /// Run a server on this one port (#2019): on a socket of the chat's own, behind purlis's door
+    /// on the port, which the chat and its browser reach as a named local port.
     Listen(u16),
 }
 
@@ -126,9 +127,7 @@ impl fmt::Display for What {
             Self::Socket(path) => write!(f, "connecting to the local socket {}", path.display()),
             Self::Service(name) => write!(f, "reaching the system service {name}"),
             Self::Port(port) => write!(f, "connecting to the service on this Mac at port {port}"),
-            Self::Listen(port) => {
-                write!(f, "listening on port {port} on this Mac only (127.0.0.1)")
-            }
+            Self::Listen(port) => write!(f, "running a server on port {port}"),
         }
     }
 }
