@@ -333,16 +333,20 @@ jobs:
             | grep '/a_wrapped_chat_is_held_on_linux-' | tail -1)
           test -x "$bin"
           echo "test binary: $bin"
+          # `contained <seccomp option or "default"> <test>`: one test in a runner's container.
           contained() {
+            local seccomp=()
+            if [ "$1" != default ]; then seccomp=(--security-opt "$1"); fi
             docker run --rm --security-opt no-new-privileges --cap-drop ALL --user "$(id -u):$(id -g)" \
-              "$@" --volume "$PWD:$PWD" --workdir "$PWD" --entrypoint "$bin" purlis-runner:parity
+              "${seccomp[@]}" --volume "$PWD:$PWD" --workdir "$PWD" --entrypoint "$bin" \
+              purlis-runner:parity "$2" --exact --test-threads=1
           }
-          runner=(--security-opt "seccomp=$PWD/crates/purlis-core/src/dockerpool/seccomp.json")
-          contained "${runner[@]}" a_socket_never_bound_does_not_listen --exact --test-threads=1
-          contained "${runner[@]}" a_server_on_a_socket_the_chat_bound_listens --exact --test-threads=1
-          contained "${runner[@]}" a_thread_with_its_own_descriptors_is_judged_by_its_own_socket --exact --test-threads=1
-          contained a_socket_never_bound_does_not_listen --exact --test-threads=1
-          if contained a_server_on_a_socket_the_chat_bound_listens --exact --test-threads=1; then
+          runner="seccomp=$PWD/crates/purlis-core/src/dockerpool/seccomp.json"
+          contained "$runner" a_socket_never_bound_does_not_listen
+          contained "$runner" a_server_on_a_socket_the_chat_bound_listens
+          contained "$runner" a_thread_with_its_own_descriptors_is_judged_by_its_own_socket
+          contained default a_socket_never_bound_does_not_listen
+          if contained default a_server_on_a_socket_the_chat_bound_listens; then
             echo "::notice title=Listening in a container::Docker's own default profile lets the chat's socket be taken now"
           else
             echo "::notice title=Listening in a container::under Docker's own default profile nothing listens (fail closed)"
