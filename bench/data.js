@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793052208297,
+  "lastUpdate": 1793054442693,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -26124,6 +26124,48 @@ window.BENCHMARK_DATA = {
             "value": 101.205761,
             "unit": "ms",
             "extra": "median of 5 runs: 100.916, 101.149, 101.206, 101.720, 102.108 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "44d3707e419a7d9787dde8253a326b6e48f9b236",
+          "message": "Browsers: attach browser proof to a pull request (#2026) (#3398)\n\n* Browsers: attach browser proof to a pull request (#2026)\n\nThe person picks screenshots in a chat's browser timeline, chooses the\nrequest, sees exactly what goes, and attaches it with their own purlis\nsign-in. The forge seam gains keep_images and comment on both forges.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* Browser proof: name the backend maker's type (clippy)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* Browser proof: a refusal is said in a Notice\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* Browser proof: the network log test counts the new recorded calls\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* Browser proof: review round 1\n\nA proof branch purlis did not make is never built on; the person sees\nthat the pictures are public and permanent, and whether the repo is\npublic; GitLab says who can open an upload; a comment page off the\nforge's host is never opened; show answers the bytes the window draws;\na refusal while attaching is said in place; a person who cannot push is\ntold before anything is written; words and plurals per review.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* Browser proof: the warning's weight is a token\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* Browser proof: a private GitLab project whose uploads open by link says so; forges.md reads in order\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-26T21:32:43Z",
+          "tree_id": "c761be6b9e8188ee6c72d83bf2af1f0f3e33ce01",
+          "url": "https://github.com/purlis/purlis/commit/44d3707e419a7d9787dde8253a326b6e48f9b236"
+        },
+        "date": 1793054439818,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.524024,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.508, 0.510, 0.524, 0.531, 0.541 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.95994,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.849, 16.868, 16.960, 17.045, 17.102 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.3390745,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.934, 102.790, 103.339, 103.838, 105.142 ms"
           }
         ]
       }
