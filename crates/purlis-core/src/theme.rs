@@ -189,16 +189,9 @@ mod measured_tests;
 mod native_tests;
 #[cfg(test)]
 mod options_tests;
-#[cfg(test)]
-mod parts_activity_tests;
-#[cfg(test)]
-mod parts_choice_tests;
-#[cfg(test)]
-mod parts_refused_tests;
-#[cfg(test)]
-mod parts_shell_tests;
-#[cfg(test)]
-mod parts_tabs_tests;
+// Every family's own tests, `parts_<family>_tests.rs`, declared by `build.rs` (`families`), so a
+// family's pull request adds its file and no line here.
+include!(concat!(env!("OUT_DIR"), "/theme_parts_tests.rs"));
 #[cfg(test)]
 mod parts_tests;
 #[cfg(test)]

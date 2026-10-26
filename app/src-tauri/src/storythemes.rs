@@ -16,7 +16,8 @@
 //! and no story file spells one.
 //!
 //! When a built-in theme changes, the test fails and says how to write the files again, from the
-//! repository's root: [`WRITE_AGAIN`].
+//! repository's root: [`WRITE_AGAIN`]. Each appearance's parts stylesheet is kept a rule a line
+//! ([`lines`]), so two pull requests that change two families' parts change two lines of it.
 
 use std::collections::BTreeMap;
 
@@ -99,9 +100,32 @@ pub(crate) fn built_in_themes() -> BTreeMap<&'static str, BTreeMap<String, Windo
     ])
 }
 
-/// [`built_in_themes`] as the fixture holds it: JSON, two spaces in, a newline at the end.
+/// [`built_in_themes`] as the fixture holds it: JSON, two spaces in, a newline at the end, and
+/// each appearance's parts stylesheet as [`lines`].
 pub(crate) fn written() -> String {
-    pretty(&built_in_themes())
+    let mut themes =
+        serde_json::to_value(built_in_themes()).expect("a resolved theme is plain data");
+    for appearance in themes
+        .as_object_mut()
+        .into_iter()
+        .flat_map(|themes| themes.values_mut())
+        .filter_map(serde_json::Value::as_object_mut)
+        .flat_map(|appearances| appearances.values_mut())
+    {
+        if let Some(parts) = appearance.get_mut("parts") {
+            *parts = lines(parts.as_str().unwrap_or_default()).into();
+        }
+    }
+    pretty(&themes)
+}
+
+/// **A stylesheet as the fixture holds it: one rule a line** (operator ruling 2026-10-26). Two
+/// pull requests that change two families' parts in a built-in theme then change two lines of
+/// the fixture, where one string a theme put every rule on the same line. The stories join them
+/// again with a newline after each (`.storybook/builtInThemes.ts`), which gives back the
+/// stylesheet the engine wrote, since it ends each rule with one.
+fn lines(sheet: &str) -> Vec<&str> {
+    sheet.lines().collect()
 }
 
 /// `value` as a fixture holds it: JSON, two spaces in, a newline at the end.
@@ -152,6 +176,23 @@ mod tests {
             themes[at.default.theme][&at.default.appearance],
             WindowTheme::from(theme::default_theme())
         );
+    }
+
+    #[test]
+    fn a_stylesheet_kept_a_rule_a_line_is_given_back_whole() {
+        for theme in built_in_themes().values() {
+            for drawn in theme.values() {
+                let sheet = &drawn.parts;
+                assert!(sheet.is_empty() || sheet.ends_with('\n'), "{sheet:?}");
+                // What `.storybook/builtInThemes.ts` does to them.
+                let again: String = lines(sheet)
+                    .iter()
+                    .map(|line| format!("{line}\n"))
+                    .collect();
+                assert_eq!(&again, sheet);
+            }
+        }
+        assert!(lines("").is_empty());
     }
 
     #[test]

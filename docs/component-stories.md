@@ -51,7 +51,9 @@ stops Storybook and the stories from loading, rather than drawing the fallback.
 **The themes are the core's.** A story's page cannot ask the core for anything, so what the core
 hands a window for each built-in appearance is kept in `app/.storybook/built-in-themes.json`, and
 a test of the app's crate (`app/src-tauri/src/storythemes.rs`) fails when it is not what the core
-resolves now. Beside it, `app/.storybook/at-creation.json` names, by theme and appearance, what a
+resolves now. It keeps each appearance's parts stylesheet a rule a line, so two pull requests
+that change two families' parts change two lines of it (`app/.storybook/builtInThemes.ts` joins
+them again). Beside it, `app/.storybook/at-creation.json` names, by theme and appearance, what a
 window is handed as it is created: the default's appearance, Purlis's dark (#3034), and each
 built-in pick's. A unit test's window and a story's page are handed those, and the toolbar
 starts on the default's cell; the same test holds the file to the core, so no story file spells
@@ -108,9 +110,17 @@ A family's ticket (spec #2897) is done when it ships:
   request leaves `parts::VERSION` and the digest table alone, and the release step gives every
   addition of the release one version (`node tools/theme-parts-release.mjs`, ADR 0103 amended
   2026-10-25), so family pull requests never queue behind each other for the next number. A
-  literal next number (`since: 13`) fails the tools' tests: write it as NEXT. On a conflict in
-  the theme schema, take main's and write it again
-  (`PURLIS_THEME_SCHEMA_WRITE=1 cargo test -p purlis-core the_published_schema`);
+  literal next number (`since: 13`) fails the tools' tests: write it as NEXT. A family is its
+  own file and touches no list another family's pull request does (ADR 0103 amended
+  2026-10-26): its parts in `crates/purlis-core/src/theme/parts_<family>.rs`, its tests in
+  `parts_<family>_tests.rs` (`build.rs` finds both), its stylesheet in
+  `app/src/ui/<family>/<family>.css` (the build imports it), and what is written from the
+  manifest written again, never by hand: the schema
+  (`PURLIS_THEME_SCHEMA_WRITE=1 cargo test -p purlis-core --lib the_published_schema`), the
+  family table in `crates/purlis-core/docs/themes.md`
+  (`PURLIS_THEMES_DOC_WRITE=1 cargo test -p purlis-core --lib the_docs_family_table`) and, for a
+  change to a built-in theme, the stories' copy of it (below). On a conflict in one of them, take
+  main's and write it again;
 - every call site moved to it, with the lint rule for it at error;
 - the operator's before and after look at the screens it changes.
 
