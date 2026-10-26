@@ -2358,26 +2358,26 @@ fn a_chat_still_running_as_a_persona_that_is_gone_is_covered_by_no_grant_and_ask
     assert_eq!(sandbox::local::granted_dispatch_any(&root), ["steward"]);
 }
 
-#[path = "dispatchgrants_table_tests.rs"]
+#[path = "tests/table.rs"]
 mod table;
 
-#[path = "dispatchgrants_within_tests.rs"]
+#[path = "tests/within.rs"]
 mod within;
 
 // ---- what a persona wants, and several pairs in one answer (#1502) -------------------------------
 
-#[path = "dispatchgrants_wants_tests.rs"]
+#[path = "tests/wants.rs"]
 mod wants;
 
 // ---- where the several-pairs answer meets the workspace condition (#1502, #1505) ---------------
 
-#[path = "dispatchgrants_wants_within_tests.rs"]
+#[path = "tests/wants_within.rs"]
 mod wants_within;
 
-#[path = "dispatchgrants_arrival_tests.rs"]
+#[path = "tests/arrival.rs"]
 mod arrival;
 
 // ---- a standing grant made in Settings (#1465) ---------------------------------------------------
 
-#[path = "dispatchgrants_added_tests.rs"]
+#[path = "tests/added.rs"]
 mod added;

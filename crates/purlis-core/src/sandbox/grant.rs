@@ -810,5 +810,5 @@ pub fn told(what: &What, level: Level) -> String {
 }
 
 #[cfg(test)]
-#[path = "grant_tests.rs"]
+#[path = "grant/tests.rs"]
 mod tests;

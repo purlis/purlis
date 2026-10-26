@@ -310,5 +310,5 @@ pub fn refused_in(line: &str) -> Option<u16> {
 }
 
 #[cfg(test)]
-#[path = "localport_tests.rs"]
+#[path = "localport/tests.rs"]
 mod tests;

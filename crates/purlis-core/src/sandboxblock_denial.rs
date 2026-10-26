@@ -198,5 +198,5 @@ fn process_of(before: &str) -> Option<&str> {
 }
 
 #[cfg(test)]
-#[path = "sandboxblock_denial_tests.rs"]
+#[path = "sandboxblock_denial/tests.rs"]
 mod tests;

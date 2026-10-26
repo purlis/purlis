@@ -2332,7 +2332,7 @@ pub mod drivers;
 mod tests;
 
 #[cfg(test)]
-#[path = "sandboxblock_network_tests.rs"]
+#[path = "sandboxblock/tests/network.rs"]
 mod network_tests;
 
 #[cfg(test)]

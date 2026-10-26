@@ -149,7 +149,7 @@ pub(crate) mod gate {
 mod costs;
 
 #[cfg(test)]
-#[path = "lane_writes_guard_tests.rs"]
+#[path = "off_the_main_thread/tests/lane_writes.rs"]
 mod lane_writes;
 
 #[cfg(test)]

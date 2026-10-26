@@ -4453,5 +4453,5 @@ pub async fn dispatch_gone_told(
 }
 
 #[cfg(test)]
-#[path = "dispatchgrants_tests.rs"]
+#[path = "dispatchgrants/tests.rs"]
 mod tests;
