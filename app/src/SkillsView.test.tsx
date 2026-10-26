@@ -308,7 +308,9 @@ describe("a row's menu", () => {
 
     fireEvent.contextMenu(rowOf("deploy"));
     const menu = await screen.findByRole("menu", { name: "deploy" });
-    await userEvent.click(within(menu).getByRole("menuitem", { name: "Show in the Explorer view" }));
+    await userEvent.click(
+      within(menu).getByRole("menuitem", { name: "Show in the Explorer view" }),
+    );
     expect(hands.onShowInExplorer).toHaveBeenCalledWith("skills/deploy");
   });
 });

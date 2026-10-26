@@ -370,6 +370,11 @@ export function menuRowsOf(
           available: false,
           reason: turn.reason,
         },
-    { act: "explorer", title: "Show in the Explorer view", available: explorer === "", reason: explorer },
+    {
+      act: "explorer",
+      title: "Show in the Explorer view",
+      available: explorer === "",
+      reason: explorer,
+    },
   ];
 }
