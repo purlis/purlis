@@ -229,40 +229,32 @@ export const ChosenStates: Story = {
     };
     const boxes = [box(chosen), box(other)];
     const fill = (one: HTMLElement) => getComputedStyle(one).backgroundColor;
-    /** Its fill once a state's change of colour has run its course: the same on two reads. */
-    const settled = async (one: HTMLElement) => {
-      let last = "";
-      await waitFor(() => {
-        const now = fill(one);
-        const same = now === last;
-        last = now;
-        expect(same).toBe(true);
-      });
-      return last;
-    };
     const fills: Record<string, string> = { rest: fill(other), chosen: fill(chosen) };
     // The pointer may rest where a story before this one left it: it leaves the bar and comes
-    // back until the chip hears it arrive, so the chip is surely under it.
+    // back until the chip hears it arrive, so the chip is surely under it. What the chip draws
+    // is read at that moment: a tooltip that opens later may lie under the pointer and take
+    // the chip's hover away.
     const point = (one: HTMLElement) =>
       waitFor(async () => {
         await userEvent.hover(canvas.getByText("Nothing chosen"));
         await userEvent.hover(one);
         await expect(one).toHaveAttribute("data-hovered");
+        return { fill: fill(one), color: getComputedStyle(one).color, box: box(one) };
       });
-    await point(other);
-    // The primary words on the wash, as under the pointer, once a colour's change has run.
-    await waitFor(() => expect(getComputedStyle(chosen).color).toBe(getComputedStyle(other).color));
-    fills.hover = await settled(other);
-    await expect(box(other)).toBe(boxes[1]);
+    const hovered = await point(other);
+    fills.hover = hovered.fill;
+    await expect(hovered.box).toBe(boxes[1]);
+    // The primary words on the wash, as under the pointer.
+    await expect(getComputedStyle(chosen).color).toBe(hovered.color);
     // The pointer leaves, and the tooltip it opened goes, before it reaches the chosen chip.
     await userEvent.hover(canvas.getByText("Nothing chosen"));
     await waitFor(() => expect(other).not.toHaveAttribute("data-hovered"));
     await waitFor(() =>
       expect(document.querySelector('[role="tooltip"][data-scope="tooltip"]')).toBeNull(),
     );
-    await point(chosen);
-    fills["chosen + hover"] = await settled(chosen);
-    await expect(box(chosen)).toBe(boxes[0]);
+    const both = await point(chosen);
+    fills["chosen + hover"] = both.fill;
+    await expect(both.box).toBe(boxes[0]);
     // Every state its own fill: the chosen chip never looks hovered, nor at rest.
     // Compared as drawn: each fill laid over the ground the bar stands on, so a translucent wash
     // and an opaque fill are told apart by the colour they make, not by how they are written.
