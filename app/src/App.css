@@ -2101,6 +2101,17 @@ body {
   min-height: 0;
 }
 
+/* **The opener's page scrolls as one** (#3325). The welcome, a door's page (`DoorPage.tsx`) and
+   the guided steps are drawn in `.panes` here, and their own `overflow: auto` never had a height
+   to scroll in: they grew to their content, and what was below the window's edge (Create a
+   project's Open a repo…) was cut off with no scrollbar. `.panes` is the room under the bar, a
+   stretched item of `.body`'s row, so it is the one scroller, the window's width: the wheel
+   works beside the reading column too, and the window's lines above the page scroll with it.
+   `welcome.e2e.ts` measures it at a short window. */
+.body > .panes:has(> :is(.welcome, .onboarding)) {
+  overflow-y: auto;
+}
+
 /* **The regions** (ADR 0038). A column of two: a row of the left side, the panes and the
    right-hand side, and the **Panel** under the three, the row's whole width (#1737). Every
    boundary is a `[data-separator]`, which is the same handle the pane splits use. */
