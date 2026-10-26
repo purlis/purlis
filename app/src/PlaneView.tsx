@@ -281,6 +281,7 @@ import {
   layoutShown,
   moveToOwnTab,
   openBeside,
+  panesMovedInto,
   placeBeside,
   restoreShown,
   sendBack,
@@ -492,7 +493,7 @@ import {
   withNote,
 } from "./ChatNotices";
 import { LayoutPanes } from "./LayoutPanes";
-import { forgetPaneBand, forgetPaneBands, paneBand } from "./noticeSettle";
+import { carryPaneBand, forgetPaneBand, forgetPaneBands, paneBand } from "./noticeSettle";
 
 /** Any C0 or C1 control character, or DEL: what a line typed and left unrun must not hold. */
 // eslint-disable-next-line no-control-regex
@@ -1269,6 +1270,17 @@ export const PlaneView = memo(function PlaneView({
     [moveView],
   );
 
+  /** Every chat the core lists, by session, as of the last read: what {@link showChat} opens a
+   *  tab from for a chat that has none. A ref, so a read of the list does not make a new
+   *  `showChat` for every row and catalogue entry holding one. Kept up to date below, where
+   *  the list is read. */
+  const listedNow = useRef<ReadonlyMap<number, OpenChat>>(new Map());
+  /** Which chat a task is a task of, as the core lists it now: what says which tab a task is
+   *  shown in. Task links only (V100-69). */
+  const askedByNow = useCallback<AskedBy>((session) => {
+    const from = listedNow.current.get(session)?.from;
+    return from?.task ? from.chat : undefined;
+  }, []);
   // The arrangement as it is right now, so that what a button does is decided here and not
   // inside a state update. React may run an update again, and a session must not be opened or
   // ended twice because it did.
@@ -1287,6 +1299,12 @@ export const PlaneView = memo(function PlaneView({
         return chat === undefined || pretendedNow.current.has(chat) ? undefined : chat;
       };
       const was = frontOf(now.current);
+      // **A chat given a new pane keeps what its band remembered** (#3271): its Notices were
+      // drawn in the band of the pane it was at home in, and are drawn in the new pane's now.
+      // Carried before anything is drawn, so the new band's first read reads on from there.
+      for (const { from, to } of panesMovedInto(now.current, next, askedByNow)) {
+        carryPaneBand(paneBand(plane, from), paneBand(plane, to));
+      }
       now.current = next;
       setTabs(next);
       // The core records which chat was in front, so it is told whenever that changes — and
@@ -1309,7 +1327,7 @@ export const PlaneView = memo(function PlaneView({
       if (chat !== was) void commands.chatInFront(plane, chat ?? null).catch(() => undefined);
       return next;
     },
-    [plane],
+    [askedByNow, plane],
   );
 
   // What the core already has open in this project, which at a launch is the record put back
@@ -1876,17 +1894,6 @@ export const PlaneView = memo(function PlaneView({
       now.delete(session);
       return now;
     });
-  }, []);
-  /** Every chat the core lists, by session, as of the last read: what {@link showChat} opens a
-   *  tab from for a chat that has none. A ref, so a read of the list does not make a new
-   *  `showChat` for every row and catalogue entry holding one. Kept up to date below, where
-   *  the list is read. */
-  const listedNow = useRef<ReadonlyMap<number, OpenChat>>(new Map());
-  /** Which chat a task is a task of, as the core lists it now: what says which tab a task is
-   *  shown in. Task links only (V100-69). */
-  const askedByNow = useCallback<AskedBy>((session) => {
-    const from = listedNow.current.get(session)?.from;
-    return from?.task ? from.chat : undefined;
   }, []);
   /** {@link isBackground} as of the last render, for handlers the set it reads is made from,
    *  which so cannot take it as a dependency. */
