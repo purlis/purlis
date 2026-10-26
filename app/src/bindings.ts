@@ -2279,15 +2279,6 @@ export const commands = {
 	 *  `--use` writes a session lock that belongs to a terminal.
 	 */
 	workspaceCreate: (plane: PlaneId, name: string, vision: string | null, live: boolean) => typedError<string[], string>(__TAURI_INVOKE("workspace_create", { plane, name, vision, live })),
-	/**
-	 * **Record a workspace's vision**: what `purlis workspace vision "<the goal>"` writes, the
-	 * `## Vision` of its `workspace.md`, from the window's Add a vision (#3344). The core's own
-	 * brokered write decides everything, as it does for a chat's `workspace_vision`: an empty
-	 * vision, a line that would start a section of its own, a workspace that is not there, a file
-	 * over its budget. Its refusal is the core's sentence. It answers with the sentence the window
-	 * says.
-	 */
-	workspaceVision: (plane: PlaneId, workspace: string, vision: string) => typedError<string, string>(__TAURI_INVOKE("workspace_vision", { plane, workspace, vision })),
 	workspaceLivePreview: (plane: PlaneId, name: string) => typedError<LivePreview, string>(__TAURI_INVOKE("workspace_live_preview", { plane, name })),
 	/**
 	 *  Make the workspace `name` LIVE (`live`) or LOCAL, then save the plane. Answers every line
@@ -2332,6 +2323,15 @@ export const commands = {
 	 *  back.
 	 */
 	workspaceRename: (plane: PlaneId, workspace: string, name: string) => typedError<string[], string>(__TAURI_INVOKE("workspace_rename", { plane, workspace, name })),
+	/**
+	 *  **Record a workspace's vision**: what `purlis workspace vision "<the goal>"` writes, the
+	 *  `## Vision` of its `workspace.md`, from the window's Add a vision (#3344). The core's own
+	 *  brokered write decides everything, as it does for a chat's `workspace_vision`: an empty
+	 *  vision, a line that would start a section of its own, a workspace that is not there, a file
+	 *  over its budget. Its refusal is the core's sentence. It answers with the sentence the window
+	 *  says.
+	 */
+	workspaceVision: (plane: PlaneId, workspace: string, vision: string) => typedError<string, string>(__TAURI_INVOKE("workspace_vision", { plane, workspace, vision })),
 	/**
 	 *  The core's sentence naming the chats that will start a fresh conversation if `workspace` is
 	 *  renamed, or none — what the Rename dialog says before it is answered (charter#367, D10).
