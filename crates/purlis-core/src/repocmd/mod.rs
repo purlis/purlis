@@ -38,6 +38,8 @@
 
 use std::fmt;
 
+use crate::tui::Markup;
+
 pub mod clone;
 pub mod discover;
 pub mod docs;
@@ -49,22 +51,26 @@ pub mod unread;
 
 /// One line of what a command says, in charter's four voices.
 ///
+/// A voice line holds [`Markup`], so a skill's, a repo's or a piece's name, a reason or a
+/// path enters it escaped (SK-54, #3225). [`Say::Out`] is the command's answer, read by a
+/// script, and stays the text it is.
+///
 /// Serializable because a brokered command (#1335) runs in the app and its lines travel back
 /// over the hook socket, to be printed by the command that asked as its own run prints them.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Say {
     /// `• …` — information.
-    Info(String),
+    Info(Markup),
     /// `✓ …` — something was done.
-    Done(String),
+    Done(Markup),
     /// `! …` — something was skipped or is wrong, and nothing was lost.
-    Warn(String),
+    Warn(Markup),
     /// `✗ …` — something failed.
-    Fail(String),
+    Fail(Markup),
     /// A refusal with no mark: Python's `raise SystemExit(message)`, which prints the
     /// message as it is.
-    Plain(String),
+    Plain(Markup),
     /// A line of the command's ANSWER, on **stdout** and with no mark — Python's bare
     /// `print(…)`.
     ///
@@ -82,7 +88,8 @@ impl fmt::Display for Say {
             Say::Done(s) => write!(f, "✓ {s}"),
             Say::Warn(s) => write!(f, "! {s}"),
             Say::Fail(s) => write!(f, "✗ {s}"),
-            Say::Plain(s) | Say::Out(s) => write!(f, "{s}"),
+            Say::Plain(s) => write!(f, "{s}"),
+            Say::Out(s) => write!(f, "{s}"),
         }
     }
 }
@@ -95,7 +102,9 @@ pub type Sink<'a> = &'a mut dyn FnMut(Say);
 /// Always `--workspace`: the Rust binary takes the workspace only from `-w` (see its
 /// module docs), so that is the one rung that can have chosen it.
 pub fn banner(ws: &str, say: Sink) {
-    say(Say::Info(format!("workspace: {ws}  (via --workspace)")));
+    say(Say::Info(
+        format!("workspace: {ws}  (via --workspace)").into(),
+    ));
 }
 
 #[cfg(test)]

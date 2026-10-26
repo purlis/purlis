@@ -18,3 +18,19 @@ fn a_persona_action_s_label_is_shown_escaped() {
         format!("tidy  {shown}")
     );
 }
+
+/// SK-54 (#3225): a persona name that was typed, and a lint issue's persona, file and message,
+/// are spliced into their lines escaped.
+#[test]
+fn a_curation_error_line_shows_its_names_escaped() {
+    let hostile = "o\x1b[8mp\u{202e}s\u{200b}";
+    let shown = "o⟦U+001B⟧[8mp⟦U+202E⟧s⟦U+200B⟧";
+    assert_eq!(
+        no_persona(hostile).as_str(),
+        format!("no persona '{shown}'")
+    );
+    assert_eq!(
+        issue_line(hostile, hostile, hostile).as_str(),
+        format!("personas/{shown}/curation/{shown}.md: {shown}")
+    );
+}

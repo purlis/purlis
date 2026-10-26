@@ -179,7 +179,9 @@ fn reinit_carries_the_report_rule_into_a_workspaces_generated_settings() {
     );
     assert!(
         outcome.said.contains(&Say::Info(
-            "  Carried into the generated settings of workspace alpha.".to_owned()
+            "  Carried into the generated settings of workspace alpha."
+                .to_owned()
+                .into()
         )),
         "{:?}",
         outcome.said

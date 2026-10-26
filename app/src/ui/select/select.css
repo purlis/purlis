@@ -132,6 +132,14 @@
   color: var(--text-faint);
 }
 
+/* Refused (#3110): the danger colour on its edge, inside the box as the text input's
+   (`field.css`), beside the words that say why, which describe it. A colour only, so nothing
+   moves. */
+[data-scope="select"][data-part="root"][data-invalid],
+[data-scope="combobox"][data-part="root"][data-invalid] {
+  border-color: var(--danger-base);
+}
+
 /* The ring: 2px in the focus colour at 2px outside the box (R162). A select is a button, ringed
    from the keyboard; a combobox whenever it holds the caret, as a text box is. */
 [data-scope="select"][data-part="root"][data-focus-visible],

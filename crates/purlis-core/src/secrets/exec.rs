@@ -38,6 +38,7 @@ use serde_json::Value;
 use super::cmd::{self, Io, Say};
 use super::registry;
 use super::{Ctx, dotenv};
+use crate::tui::Markup;
 
 /// What `secret exec` was asked to do.
 #[derive(Debug, Clone, Default)]
@@ -386,7 +387,7 @@ pub fn exec(ctx: &Ctx, req: &Request, io: &mut dyn Io) -> i32 {
     let v = match cmd::provider(ctx, &req.vault) {
         Ok(v) => v,
         Err(e) => {
-            io.say(Say::Err(e.message));
+            io.say(Say::Err(e.said()));
             return 1;
         }
     };
@@ -411,25 +412,30 @@ pub fn exec(ctx: &Ctx, req: &Request, io: &mut dyn Io) -> i32 {
         .filter(|(_, on)| *on)
         .map(|(f, _)| *f)
         .collect();
-        io.say(Say::Err(format!(
-            "{} cannot be combined with --exec: exec replaces this process, so the temp file \
+        io.say(Say::Err(
+            format!(
+                "{} cannot be combined with --exec: exec replaces this process, so the temp file \
              would never be cleaned up. Use --stream instead — it forks, inherits stdio, and \
              deletes the file when the child exits.",
-            flags.join(" and ")
-        )));
+                flags.join(" and ")
+            )
+            .into(),
+        ));
         return 2;
     }
     // No app took it: a sandboxed chat still never reads the keyring here (#1638).
     if let Some(why) = super::brokered::refused_in_this_chat(ctx, &v, super::brokered::Reader::Exec)
     {
-        io.say(Say::Err(why));
+        // purlis's own refusal over two lines, naming a registered vault, whose name the
+        // registry holds to letters, digits, '.', '_' and '-'.
+        io.say(Say::Err(Markup::lines_of(&why)));
         return 1;
     }
 
     let env = match child_env(ctx, &req.vault) {
         Ok(env) => env,
         Err(e) => {
-            io.say(Say::Err(e.message));
+            io.say(Say::Err(e.said()));
             return 1;
         }
     };
@@ -438,7 +444,7 @@ pub fn exec(ctx: &Ctx, req: &Request, io: &mut dyn Io) -> i32 {
         Ok(prepared) => prepared,
         Err(Stopped::Signal(code)) => return code,
         Err(Stopped::Said(code, why)) => {
-            io.say(Say::Err(why));
+            io.say(Say::Err(why.into()));
             return code;
         }
     };
@@ -527,10 +533,10 @@ pub fn exec(ctx: &Ctx, req: &Request, io: &mut dyn Io) -> i32 {
 /// program, as Python's `FileNotFoundError` arm says; any other failure named, exit 1.
 pub(crate) fn not_started(program: &str, e: &std::io::Error, io: &mut dyn Io) -> i32 {
     if e.kind() == std::io::ErrorKind::NotFound {
-        io.say(Say::Err(format!("command not found: {program}")));
+        io.say(Say::Err(format!("command not found: {program}").into()));
         127
     } else {
-        io.say(Say::Err(format!("cannot run {program}: {e}")));
+        io.say(Say::Err(format!("cannot run {program}: {e}").into()));
         1
     }
 }
@@ -554,7 +560,7 @@ fn replace_process(mut child: Command, program: &str, io: &mut dyn Io) -> i32 {
     if let Ok(status) = crate::forklock::status(&mut child) {
         return super::run::exit_code(&status);
     }
-    io.say(Say::Err(format!("command not found: {program}")));
+    io.say(Say::Err(format!("command not found: {program}").into()));
     127
 }
 

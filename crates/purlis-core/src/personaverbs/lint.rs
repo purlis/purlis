@@ -735,7 +735,7 @@ fn read_skill(file: &Path) -> Option<(String, bool)> {
 pub fn lint_command(linter: &Linter, name: Option<&str>, only: Option<&str>, say: Sink) -> u8 {
     let name = name.filter(|n| !n.is_empty());
     if let Some(refused) = name.and_then(crate::personas::shape_refusal) {
-        say(Say::Fail(refused));
+        say(Say::Fail(refused.into()));
         return 1;
     }
     let names = match name {
@@ -761,24 +761,27 @@ pub fn lint_command(linter: &Linter, name: Option<&str>, only: Option<&str>, say
                 .collect();
         }
         if issues.is_empty() {
-            say(Say::Done(format!("{shown}: ok")));
+            say(Say::Done(format!("{shown}: ok").into()));
             continue;
         }
         for issue in issues {
             match issue.level {
                 Level::Error => {
                     errors += 1;
-                    say(Say::Fail(format!("{shown}: {}", issue.message)));
+                    say(Say::Fail(format!("{shown}: {}", issue.message).into()));
                 }
-                Level::Warn => say(Say::Warn(format!("{shown}: {}", issue.message))),
+                Level::Warn => say(Say::Warn(format!("{shown}: {}", issue.message).into())),
             }
         }
     }
     if errors > 0 {
-        say(Say::Fail(format!(
-            "{} — dangling reuse or unloadable persona.",
-            counted(errors, "error", "errors")
-        )));
+        say(Say::Fail(
+            format!(
+                "{} — dangling reuse or unloadable persona.",
+                counted(errors, "error", "errors")
+            )
+            .into(),
+        ));
         return 1;
     }
     0

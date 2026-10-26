@@ -249,6 +249,9 @@ pub const PAIRS: &[Pair] = &[
     p("danger.base", "surface.overlay", TEXT),
     p("danger.base", "surface.base", TEXT),
     p("danger.base", "surface.raised", TEXT),
+    // A refused box's edge (a field's, a select's, a combobox's, #3110) is the danger colour on
+    // the box's own sunken ground: a mark, so 3:1.
+    p("danger.base", "surface.sunken", 3.0),
     // Trouble said in `danger.text` words on the ground around it, not only on its own surface:
     // a dialog, a strip, the window and a pane.
     p("danger.text", "surface.overlay", TEXT),

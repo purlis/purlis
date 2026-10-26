@@ -300,7 +300,7 @@ fn parted(said: Vec<Say>) -> (Vec<String>, Vec<String>) {
     let mut refused = Vec::new();
     for line in said {
         match line {
-            Say::Fail(text) | Say::Plain(text) => refused.push(text),
+            Say::Fail(text) | Say::Plain(text) => refused.push(text.to_string()),
             other => fine.push(other.to_string()),
         }
     }

@@ -93,6 +93,15 @@
   commit reaches everyone in the project, and a teammate on an older purlis opens it read-only
   until they update.
 
+- **A large library stays reachable without flooding a chat** (Skill studio preview, #2778).
+  Once a chat's skills are past purlis's skill budget, it is handed the skills you pinned,
+  purlis's own and one index skill that names every other skill in a line, and it loads any of
+  them by name when a request needs it. Below the budget nothing changes. Pin a skill for a
+  workspace's chats or a persona's with `purlis skill pin <name> -w <workspace>` or
+  `-p <persona>`, and the router never hides it. The Skill studio and `purlis skill list` say
+  which skills are pinned and why any other is hidden, and _Use skill…_ marks the hidden ones,
+  says how many are in the index skill, and still starts them for you.
+
 ### Fixed
 
 - **A skill source of more than 50 000 files is always refused whole** (Skill studio preview).

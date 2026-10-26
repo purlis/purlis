@@ -11,7 +11,7 @@
 //! an answer in a corner. Its quieter lines are measured in the tier each is drawn in
 //! ([`DIALOG_TIERS`]).
 
-use super::{Family, Look, Part, Prop, STATES, State, Variant};
+use super::{Family, Look, NEVER_REFUSED, Part, Prop, State, Variant};
 
 /// **The largest corner a dialog takes**: the inset of what it holds (`dialog.css`'s rows are
 /// `space.6` in from its edge), so `full` is that and never a pill.
@@ -97,7 +97,7 @@ pub(super) const DIALOG: Family = Family {
     line_height: 1.2,
     border_width: 1.0,
     defaults: dialog_look,
-    states: &STATES,
+    states: &NEVER_REFUSED,
     focused: "[data-focus-visible]",
     words: DIALOG_TIERS,
     corner_most: Some(DIALOG_CORNER_MOST),
