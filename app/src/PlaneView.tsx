@@ -414,7 +414,7 @@ import type {
 import { AskFirst, runExtensionAction } from "./ExtensionAction";
 import { extensionsChanged, useExtensionsOn } from "./extensionsOn";
 import { useSkillStudioOn } from "./skillStudio";
-import { SkillRunsHere, skillOfRun, skillView, useSkillRuns, type RunsOf } from "./skillRuns";
+import { SkillRunsHere, skillView, useSkillRuns, type RunsOf } from "./skillRuns";
 import { projectThemeChanged, useProjectThemeKept } from "./projectTheme";
 import { inForce, isWorkspaceColour, onDrawn, tabTint } from "./theme/theme";
 import { handedFromNote } from "./handedFrom";
@@ -7624,12 +7624,10 @@ export const PlaneView = memo(function PlaneView({
       showView(activityView(session), activityTitle(nameOfNow.current(session)));
   });
   const activityFromChip = useCallback((session: number) => activityNow.current(session), []);
-  /** Opens a skill's tab on run `run`, from the chip of the run open in a tab's chat (SK-3). */
+  /** Opens the tab of skill `skill` on run `run`, from the chip of the run open in a tab's chat
+   *  (SK-3): the skill by its own name, as the core counts the run (#3385). */
   const openSkillRun = useCallback(
-    (used: string, run: string) => {
-      const skill = skillOfRun(used);
-      showView(skillView(skill, run), skill);
-    },
+    (skill: string, run: string) => showView(skillView(skill, run), skill),
     [showView],
   );
 
