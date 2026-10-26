@@ -90,3 +90,30 @@ fn a_skill_md_that_cannot_be_read_declares_nothing() {
         Declared::default()
     );
 }
+
+#[test]
+fn what_was_given_reads_in_plain_words() {
+    assert_eq!(Given::Nothing.in_words(), None);
+    assert_eq!(
+        Given::Raw("v1.2".to_owned()).in_words().as_deref(),
+        Some("v1.2")
+    );
+    let named = Given::Named(vec![
+        Argument {
+            name: "pr".to_owned(),
+            value: "42".to_owned(),
+        },
+        Argument {
+            name: "focus".to_owned(),
+            value: String::new(),
+        },
+        Argument {
+            name: "tone".to_owned(),
+            value: "short".to_owned(),
+        },
+    ]);
+    assert_eq!(
+        named.in_words().as_deref(),
+        Some("pr: 42; focus: none; tone: short")
+    );
+}

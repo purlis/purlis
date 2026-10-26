@@ -275,6 +275,45 @@ describe("the select", () => {
     expect(screen.queryByRole("listbox")).toBeNull();
   });
 
+  it("says it is refused, heard with why, and draws the danger edge without moving (#3110)", async () => {
+    const user = userEvent.setup();
+    render(
+      <>
+        <Select
+          aria-label="Harness"
+          aria-describedby="why"
+          value="a"
+          options={[
+            { value: "a", label: "A" },
+            { value: "b", label: "B" },
+          ]}
+          isInvalid
+          onValueChange={() => {}}
+        />
+        <p id="why">Pick the harness this persona runs.</p>
+      </>,
+    );
+    const select = selectNamed("Harness");
+    expect(select).toHaveAttribute("aria-invalid", "true");
+    expect(select).toHaveAttribute("data-invalid");
+    expect(select).toHaveAccessibleDescription("Pick the harness this persona runs.");
+    expect(drawnWith(select, "border-color")).toBe("var(--danger-base)");
+    // A colour only: the box keeps its size and its edge's width.
+    expect(drawnWith(select, "block-size")).toBe("var(--size-control)");
+    expect(drawnWith(select, "border")).toBe("1px solid var(--border-control)");
+    // Still a select: Enter opens it and the arrows pick.
+    await user.tab();
+    await user.keyboard("{Enter}");
+    expect(await screen.findByRole("listbox")).toBeInTheDocument();
+  });
+
+  it("is not refused unless it is told so", () => {
+    render(<Filter start="beta" />);
+    const select = selectNamed("Filter by workspace");
+    expect(select).not.toHaveAttribute("aria-invalid");
+    expect(select).not.toHaveAttribute("data-invalid");
+  });
+
   it("draws at the size it is given", () => {
     render(
       <Select

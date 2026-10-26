@@ -10,10 +10,11 @@
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
-import { expect, waitFor } from "storybook/test";
+import { expect, waitFor, within } from "storybook/test";
 import { ListFilter, Search } from "lucide-react";
 import { expectFocusInSight } from "../../stories.testkit";
 import { Button } from "../button/Button";
+import { Dialog } from "../dialog/Dialog";
 import { FIELD_SIZES, Form, TextArea, TextField, type PlainTextFieldProps } from "./Field";
 
 /** A field that holds its own value, so the keyboard can change it. */
@@ -72,6 +73,7 @@ export const ValidatedOnBlur: Story = {
     const box = canvas.getByRole("textbox", { name: "Name" });
     await userEvent.tab();
     await userEvent.keyboard("my name");
+    // Nothing said yet, though the line is there, a live region, so VoiceOver hears words land.
     await expect(canvas.queryByRole("alert")).toBeNull();
     await userEvent.tab();
     await waitFor(() =>
@@ -99,6 +101,112 @@ export const Refused: Story = {
     await userEvent.tab();
     await expect(box).toHaveFocus();
     expectFocusInSight();
+  },
+};
+
+const LONG_REFUSAL =
+  "The core would not take this profile: it mounts /Volumes/shared/builds, which is outside the " +
+  "workspace, and a workspace's profile may only mount what the workspace holds.";
+
+/**
+ * **A refusal too long for its line** (#3033): cut short at rest, and drawn whole over what
+ * follows while the field holds the keyboard or the pointer is on the line, so nothing under it
+ * moves. The box is described by the whole words, once.
+ */
+export const LongRefusal: Story = {
+  args: { label: "Profile", start: "build", error: LONG_REFUSAL },
+  render: (args) => (
+    <div style={{ display: "grid", gap: "var(--space-4)", inlineSize: "20rem" }}>
+      <Held {...args} />
+      <Held label="Next" />
+    </div>
+  ),
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const box = canvas.getByRole("textbox", { name: "Profile" });
+    const next = canvas.getByRole("textbox", { name: "Next" });
+    await expect(box).toHaveAccessibleDescription(LONG_REFUSAL);
+    const line = canvasElement.querySelector('[data-part="error"]') as HTMLElement;
+    // The whole copy stands beside the live line, in its room, never in it.
+    const room = line.parentElement as HTMLElement;
+    await waitFor(() => expect(room).toHaveAttribute("data-clipped"));
+    const whole = room.querySelector("[data-whole]") as HTMLElement;
+    await expect(line.contains(whole)).toBe(false);
+    await expect(whole).not.toBeVisible();
+    const before = next.getBoundingClientRect().top;
+    const height = line.getBoundingClientRect().height;
+    await userEvent.tab();
+    await expect(box).toHaveFocus();
+    expectFocusInSight();
+    // Whole, over what follows: the line keeps its height and the next field stays put.
+    await expect(whole).toBeVisible();
+    await expect(whole).toHaveTextContent(LONG_REFUSAL);
+    await expect(whole.scrollWidth).toBeLessThanOrEqual(whole.clientWidth);
+    await expect(line.getBoundingClientRect().height).toBe(height);
+    await expect(next.getBoundingClientRect().top).toBe(before);
+    // Leaving the field puts it back on its line.
+    await userEvent.tab();
+    await expect(next).toHaveFocus();
+    await expect(whole).not.toBeVisible();
+    // Under the pointer it is whole too: a synthetic hover never matches CSS `:hover`, so that
+    // is held by the unit test through the cascade (`Field.test.tsx`).
+    // The baseline: the box with the keyboard, its refusal drawn whole.
+    await userEvent.tab({ shift: true });
+    await expect(box).toHaveFocus();
+    await expect(whole).toBeVisible();
+    await expect(next.getBoundingClientRect().top).toBe(before);
+  },
+};
+
+/** A dialog whose last field is refused at length: the create dialogs, whose body scrolls. */
+function RefusedLast() {
+  return (
+    <Dialog
+      onClose={() => {}}
+      title="New workspace"
+      subtitle="in smart-ide"
+      main={{ children: "Create workspace", onPress: () => {} }}
+    >
+      <Held label="Name" start="docs" />
+      <Held label="Profile" start="build" error={LONG_REFUSAL} />
+    </Dialog>
+  );
+}
+
+/**
+ * **A long refusal on a dialog's last field** (#3033): the dialog's body scrolls, and would cut
+ * the whole words off at its end. With the keyboard in the field they are brought into sight, and
+ * the pointer goes through them to the answers they cover.
+ */
+export const LongRefusalLastInADialog: Story = {
+  args: { label: "Profile" },
+  parameters: { screenshot: "page" },
+  render: () => <RefusedLast />,
+  play: async ({ userEvent }) => {
+    // A dialog is drawn over the page, outside the story's page; each part is found again where
+    // it is asked about, as the dialog may draw its body anew as it opens.
+    const page = within(document.body);
+    const dialog = async () => page.findByRole("dialog", { name: "New workspace" });
+    const whole = async () =>
+      (await dialog()).querySelector(
+        "[data-error-room][data-clipped] > [data-whole]",
+      ) as HTMLElement;
+    const body = async () =>
+      (await dialog()).querySelector('[data-scope="dialog"][data-part="body"]') as HTMLElement;
+    await waitFor(() => expect(page.getByRole("textbox", { name: "Name" })).toHaveFocus());
+    await expect(page.getByRole("textbox", { name: "Profile" })).toHaveAccessibleDescription(
+      LONG_REFUSAL,
+    );
+    await userEvent.tab();
+    await expect(page.getByRole("textbox", { name: "Profile" })).toHaveFocus();
+    expectFocusInSight();
+    await waitFor(async () => expect(await whole()).toBeVisible());
+    // In sight: its last line is inside what the body shows.
+    await waitFor(async () =>
+      expect(Math.round((await whole()).getBoundingClientRect().bottom)).toBeLessThanOrEqual(
+        Math.round((await body()).getBoundingClientRect().bottom),
+      ),
+    );
+    await expect(getComputedStyle(await whole()).pointerEvents).toBe("none");
   },
 };
 

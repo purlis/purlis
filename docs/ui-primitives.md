@@ -126,7 +126,8 @@ What keeps it from becoming the library this file forbids:
   name box, not on the delete (D-1210-9).
 - **A box the set's `Field` cannot hold goes in the row's control slot as a native element.**
   A `Field` is controlled; a secret's value is never held in React state (a vault's value box),
-  so that box is a native `<input type="password">` drawn with `ui-field`, in a `SettingRow`.
+  so that box is the field family's `TextField` with `type="password"`, which holds its own words
+  and says only whether it is filled, in a `SettingRow`'s control slot.
   The slot is how a row composes what the set does not draw, as `Browse…` beside a path is.
 - **Each piece is a thin layer over a primitive already in the window, and says which.**
   The level switcher is the segmented control; the nav is buttons under Radix roving focus
@@ -580,7 +581,7 @@ refuses all four (`purlis/select-family`, an error).
 
 | Member | Is |
 | --- | --- |
-| `Select` | a button that shows what is picked and opens the list to pick from; `value`, `options` (`value`, `label`, `isDisabled`, `tooltip`), `onValueChange`, `placeholder`, `isDisabled`, `tooltip`, `size` |
+| `Select` | a button that shows what is picked and opens the list to pick from; `value`, `options` (`value`, `label`, `isDisabled`, `tooltip`), `onValueChange`, `placeholder`, `isDisabled`, `isInvalid`, `tooltip`, `size` |
 | `ComboBox` | a box to type in with the suggestions that match in a list under it; what is typed is the value, and a suggestion picked writes its words (Add a skill) |
 | `ListComboBox` | the box over a list drawn in place under it, always shown, whose rows and aim are its owner's (the command palette): the field family's box with the combobox's ARIA, which only this family writes |
 
@@ -609,12 +610,18 @@ refuses all four (`purlis/select-family`, an error).
   by its row's label (`aria-labelledby`), one with no row by its `aria-label`. An unavailable
   select with a reason (`tooltip`) stays in reach of the keyboard so its reason is heard, and
   opens nothing.
+- **Refused** (`isInvalid`, #3110): a select whose value the form will not take, or a combobox
+  whose typed value is not allowed, draws the danger colour on its edge, inside the box as the
+  text input's, and is marked `aria-invalid` and `data-invalid`; the words that say why are drawn
+  by its row or its form and named by `aria-describedby`, so they are heard with it. A colour
+  only, so nothing moves; a theme reaches it as the `invalid` state of either family's `root`.
 - **The button carries what it holds as `data-value`**, which the e2e specs read
   (`e2e/acting.ts`, `choose`), and a test picks through `ui/select/select.testkit.ts`
   (`selectNamed`, `pickIn`, `offeredIn`).
 - **Stories hold it** (`Select.stories.tsx`): a select holding a value, its placeholder, its list
-  from the keyboard, a pick, a long list filtered, each size, an unavailable select, a settings
-  row, and a combobox's suggestions, in Chromium and WebKit, with axe.
+  from the keyboard, a pick, a long list filtered, each size, an unavailable select, a refused
+  one, a settings row, and a combobox's suggestions, unavailable and refused, in Chromium and
+  WebKit, with axe.
 
 ## The choice families
 
