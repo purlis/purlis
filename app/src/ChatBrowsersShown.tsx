@@ -225,7 +225,15 @@ function BrowserRow({
   const driver = shown.browser.driver;
   return (
     <Menued
-      on={{ on: "browser", program: shown.browser.program, handTo }}
+      on={{
+        on: "browser",
+        program: shown.browser.program,
+        handTo,
+        // Its chat's browser timeline, while that chat is open (#2017).
+        ...(shown.browser.was === null && !shown.browser.unended
+          ? { session: shown.browser.session }
+          : {}),
+      }}
       offers={offers}
       onPress={onPress ?? (() => undefined)}
     >

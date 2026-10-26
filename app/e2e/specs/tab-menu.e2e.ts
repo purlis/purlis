@@ -15,7 +15,7 @@ import { theWindowHoldsTheRail, WINDOW_1280, windowAt } from "../rail.js";
  * its words, which wraps and is never cut. What is held here is the engine's and not jsdom's:
  * that a row is one row tall unless it has that line, and then as tall as the two say; that the menu is a handful of rows
  * which ends inside the window without scrolling; that its submenus end inside the window too;
- * and that each word is drawn at its role's size. `primitives/controls.test.tsx` and
+ * and that each word is drawn at its role's size. `ui/menu/Menu.test.tsx` and
  * `Menus.test.tsx` hold the rules these come from, the second with twelve personas, which this
  * run's project does not have.
  *
