@@ -212,6 +212,68 @@ describe("the welcome's doors and recents", function () {
     await backToTheDoor("Create a project");
   });
 
+  it("scrolls Create a project as one page down to its last control, at a short window (#3325)", async () => {
+    const size = await browser.getWindowSize();
+    try {
+      await drawTheWelcome();
+      await throughTheDoor("Create a project", "Create a project");
+      await untilSays(WELCOME, "Open a repo…");
+      for (const [width, height] of [
+        [1440, 900],
+        [1024, 700],
+        [1024, 480],
+      ] as const) {
+        await browser.setWindowSize(width, height);
+        await browser.pause(300);
+        const read = await browser.execute((css: string) => {
+          const page = document.querySelector<HTMLElement>(css);
+          if (page === null) return null;
+          // Every box from the page up that has something to scroll and lets it scroll.
+          const scrollers: HTMLElement[] = [];
+          for (let at: HTMLElement | null = page; at !== null; at = at.parentElement) {
+            const { overflowY } = getComputedStyle(at);
+            if (/auto|scroll/.test(overflowY) && at.scrollHeight > at.clientHeight + 1)
+              scrollers.push(at);
+          }
+          for (const one of scrollers) one.scrollTop = one.scrollHeight;
+          const buttons = page.querySelectorAll<HTMLElement>("button");
+          const last = buttons[buttons.length - 1]?.getBoundingClientRect();
+          return {
+            scrollers: scrollers.map((one) => one.className),
+            lastBottom: last?.bottom ?? Number.NaN,
+            lastTop: last?.top ?? Number.NaN,
+            room: window.innerHeight,
+          };
+        }, WELCOME);
+        if (read === null) throw new Error("the Create a project page went away");
+        const at = `at ${width}x${height}: ${JSON.stringify(read)}`;
+        // One scroll at most: never a page scrolling inside another.
+        expect({ at, many: read.scrollers.length <= 1 }).toEqual({ at, many: true });
+        // Scrolled to its end, the page's last control is inside the window.
+        expect({ at, shown: read.lastTop >= 0 && read.lastBottom <= read.room }).toEqual({
+          at,
+          shown: true,
+        });
+      }
+      // The shortest window cannot hold the page, so it is the one scroller that reached it.
+      const short = await browser.execute((css: string) => {
+        const page = document.querySelector<HTMLElement>(css);
+        let n = 0;
+        for (let at = page; at !== null; at = at.parentElement)
+          if (
+            at.scrollHeight > at.clientHeight + 1 &&
+            /auto|scroll/.test(getComputedStyle(at).overflowY)
+          )
+            n += 1;
+        return n;
+      }, WELCOME);
+      expect(short).toBe(1);
+    } finally {
+      await browser.setWindowSize(size.width, size.height);
+    }
+    await backToTheDoor("Create a project");
+  });
+
   it("goes to Get a project from your forge, which asks for the project's URL", async () => {
     await drawTheWelcome();
 
