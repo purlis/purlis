@@ -550,7 +550,7 @@ export function StartChat({
               ) : (
                 <ListOption key={key} id={key} textValue={key}>
                   <RowLead>
-                    <PersonaMark persona={key} />
+                    <PersonaMark persona={key} named />
                   </RowLead>
                   <RowLabel>{key}</RowLabel>
                   {key === options.persona && (
@@ -575,7 +575,7 @@ export function StartChat({
                 <UserRound />
               </span>
             ) : (
-              <PersonaMark persona={persona} />
+              <PersonaMark persona={persona} named />
             )}
             <div>
               <h3 id={whoId}>{who}</h3>
