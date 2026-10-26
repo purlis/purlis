@@ -172,13 +172,7 @@ fn reached(root: &Path, chat: &str) -> io::Result<PathBuf> {
 /// **The moment the agent's act `act` on browser `browser` makes**, answered `browsed`, at
 /// `at` (seconds since 1970), as the app `seen` the browser then: none for a retry, or for a
 /// call that only reads the page.
-pub fn acted(
-    browser: &str,
-    act: &Act,
-    browsed: &Browsed,
-    at: u64,
-    seen: Seen,
-) -> Option<Happened> {
+pub fn acted(browser: &str, act: &Act, browsed: &Browsed, at: u64, seen: Seen) -> Option<Happened> {
     if browsed.repeated {
         return None;
     }
@@ -566,9 +560,7 @@ fn sweep_sparing(root: &Path, open: &[&str], grace: std::time::Duration) {
         return;
     };
     for (chat, folder) in chats {
-        let young = written(&folder)
-            .elapsed()
-            .is_ok_and(|age| age < grace);
+        let young = written(&folder).elapsed().is_ok_and(|age| age < grace);
         if !open.contains(&chat.as_str()) && !young {
             if let Err(why) = std::fs::remove_dir_all(&folder) {
                 tracing::warn!("purlis: a closed chat's browser timeline stays on disk: {why}");

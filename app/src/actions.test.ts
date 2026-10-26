@@ -4373,4 +4373,3 @@ describe("a chat's browser timeline (#2017)", () => {
     expect(by(catalogue(now({ browsers: [browser(null)] })), "browser.timeline:3")).toBeUndefined();
   });
 });
-

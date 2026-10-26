@@ -12239,22 +12239,23 @@ export type ThisMachine = {
 	forgetful: string | null,
 };
 
+/**  Who drove a browser at a moment of its chat's timeline (#2017). */
+export type TimelineBy = "agent" | "person" | "purlis";
+
 /**  One moment of a chat's browser timeline, as the window draws it (#2017). */
 export type TimelineMoment = {
 	/**  When, in seconds since 1970. */
 	at: number,
 	/**  Which of the chat's browsers (`b1`). */
 	browser: string,
-	/**  Who drove it: `agent`, `person` or `purlis`. */
-	by: string,
+	by: TimelineBy,
 	/**  What was done, in words that hold nothing typed. */
 	did: string,
 	/**  The page it left: its scheme, host, port and path. */
 	page: string | null,
 	/**  Its screenshot's number, to read with [`chat_browser_timeline_shot`]. */
 	shot: number | null,
-	/**  Why a screenshot it had is not kept: `bound`, `too_large` or `driven`. */
-	unkept: string | null,
+	unkept: TimelineUnkept | null,
 };
 
 /**  **A chat whose browser timeline moved** (#2017): a tab of it reads it again. */
@@ -12263,6 +12264,13 @@ export type TimelineMoved = {
 	/**  The chat's id. */
 	chat: string,
 };
+
+/**
+ *  Why a moment of a chat's browser timeline keeps no screenshot it had (#2017): let go to keep
+ *  within the timeline's bounds, too large to keep, or answered while the person or purlis
+ *  drove the browser.
+ */
+export type TimelineUnkept = "bound" | "too_large" | "driven";
 
 /**  What the operating system has already spent of the window's own title bar. */
 export type TitleBarRoom = {

@@ -129,7 +129,16 @@ fn a_retry_and_a_read_of_the_page_are_no_moment() {
         from: None,
         lines: None,
     };
-    assert!(acted("b1", &snapshot, &on("https://shop.example.test/"), 1, Seen::default()).is_none());
+    assert!(
+        acted(
+            "b1",
+            &snapshot,
+            &on("https://shop.example.test/"),
+            1,
+            Seen::default()
+        )
+        .is_none()
+    );
 }
 
 #[test]
@@ -173,12 +182,7 @@ fn the_person_and_purlis_driving_are_moments_without_a_screenshot() {
 
     record(dir.path(), CHAT, took_over("b1", 1)).expect("recorded");
     record(dir.path(), CHAT, handed_back("b1", 2)).expect("recorded");
-    record(
-        dir.path(),
-        CHAT,
-        signed_in("b1", "shop", 3),
-    )
-    .expect("recorded");
+    record(dir.path(), CHAT, signed_in("b1", "shop", 3)).expect("recorded");
 
     let moments = read(dir.path(), CHAT);
     let said: Vec<(&str, By)> = moments
@@ -384,7 +388,10 @@ fn the_projects_screenshots_keep_within_one_budget_the_oldest_going_first() {
     assert_eq!(first[0].shot, None, "the project's oldest went");
     assert_eq!(first[0].unkept, Some(Unkept::Bound));
     assert!(first[1].shot.is_some());
-    assert!(read(dir.path(), other)[0].shot.is_some(), "the newest stays");
+    assert!(
+        read(dir.path(), other)[0].shot.is_some(),
+        "the newest stays"
+    );
     let on_disk: u64 = [CHAT, other]
         .iter()
         .flat_map(|chat| std::fs::read_dir(folder(dir.path(), chat)).expect("its folder"))
@@ -399,7 +406,10 @@ fn the_projects_screenshots_keep_within_one_budget_the_oldest_going_first() {
 #[test]
 fn nothing_is_read_written_or_removed_through_a_link_on_the_way() {
     let state = crate::names::state(Path::new("/p"));
-    let state = state.file_name().expect("the state folder's name").to_owned();
+    let state = state
+        .file_name()
+        .expect("the state folder's name")
+        .to_owned();
     let state = Path::new(&state);
     for linked in [
         state.to_path_buf(),
@@ -445,7 +455,12 @@ fn a_list_that_does_not_read_goes_with_its_screenshots() {
 
     assert!(read(dir.path(), CHAT).is_empty());
     assert!(!folder(dir.path(), CHAT).exists(), "the folder went");
-    record_act(dir.path(), 2, &click("e1"), &on("https://shop.example.test/"));
+    record_act(
+        dir.path(),
+        2,
+        &click("e1"),
+        &on("https://shop.example.test/"),
+    );
     assert_eq!(read(dir.path(), CHAT).len(), 1, "it starts again");
 }
 
