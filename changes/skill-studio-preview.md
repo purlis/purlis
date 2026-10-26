@@ -102,6 +102,11 @@
   `-p <persona>`, and the router never hides it. The Skill studio and `purlis skill list` say
   which skills are pinned and why any other is hidden, and _Use skill…_ marks the hidden ones,
   says how many are in the index skill, and still starts them for you.
+- **Pin and unpin a skill in the Skill studio** (Skill studio preview, #3232). Each skill's row
+  in the studio for a workspace's chats or a persona's has a _Pinned_ switch, one commit each
+  way. A skill's tab lists every workspace and persona that pins it, each with _Unpin_. Where a
+  chat's pinned skills alone are past the budget, its Skills chip and _Use skill…_ name the
+  studio to unpin them in, such as _Skill studio · ops_.
 
 ### Fixed
 

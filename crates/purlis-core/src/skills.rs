@@ -48,8 +48,8 @@ mod on_machine;
 pub mod persona;
 mod routing;
 
-pub use routing::PinnedBy;
-pub(crate) use routing::{pin, pins_or_none};
+pub use routing::{PinnedBy, PinsRefused, pinners_of, pins_file, pins_refused, pins_written};
+pub(crate) use routing::{pin, pinners_of_a_chat, pins_or_none};
 
 pub use on_machine::on_machine;
 pub(crate) use on_machine::{folders, skill_dirs};
@@ -873,6 +873,9 @@ pub struct ChatSkills {
     /// What is still over the budget once the router hid all it may (ADR 0102 §4): the pins, or
     /// what no pin decides. The budget then says which.
     pub still_over: Option<StillOver>,
+    /// Which of the chat's workspace and persona pin a skill (SK-15d): where unpinning is done
+    /// when the pins alone are past the budget.
+    pub pinned_by: Vec<PinnedBy>,
 }
 
 /// **The skills of chat `chat`, as Use skill… offers them** (SK-12): exactly its set, worked out
@@ -926,6 +929,11 @@ pub fn for_use_skill(chat: &Running<'_>) -> ChatSkills {
         offered,
         spent,
         still_over,
+        pinned_by: if chat.plane_skills {
+            pinners_of_a_chat(chat.plane, chat.workspace, chat.persona)
+        } else {
+            Vec::new()
+        },
     }
 }
 

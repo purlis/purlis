@@ -48,6 +48,7 @@ const BUDGET: SkillBudget = {
   most_chars: 6000,
   hidden: 0,
   still_over: null,
+  pinned_by: [],
   warns: null,
 };
 
@@ -160,9 +161,22 @@ describe("Use skill…", () => {
       "3 skills of 30 · 1,234 of 6,000 characters · 2 skills in the index skill",
     );
     expect(warnsSaid(over)).toMatch(/so 2 skills are hidden behind the index skill/);
-    expect(warnsSaid({ ...over, still_over: "pins" })).toMatch(
-      /pinned skills are past purlis's skill budget.*`purlis skill pin <name> -w <workspace> --off` \(or `-p <persona>`/,
+    expect(
+      warnsSaid({ ...over, still_over: "pins", pinned_by: [{ at: "workspace", name: "ops" }] }),
+    ).toBe(
+      "This chat's pinned skills are past purlis's skill budget, so all of them are listed. Unpin some in Skill studio · ops, or make some manual-only.",
     );
+    // Both pin: the way out names each (SK-15d).
+    expect(
+      warnsSaid({
+        ...over,
+        still_over: "pins",
+        pinned_by: [
+          { at: "workspace", name: "ops" },
+          { at: "persona", name: "reviewer" },
+        ],
+      }),
+    ).toMatch(/Unpin some in Skill studio · ops or Skill studio · reviewer, or make some/);
     expect(warnsSaid({ ...over, still_over: "not-hideable" })).toMatch(
       /purlis's own skills and the ones this chat's program and repos bring are past/,
     );
