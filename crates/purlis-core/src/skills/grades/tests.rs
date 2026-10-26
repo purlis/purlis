@@ -483,31 +483,3 @@ fn a_command_behind_characters_no_reader_sees_is_still_left_out() {
     }
     assert_eq!(left_out_why("\u{feff}ship it"), None, "a prompt stays one");
 }
-
-#[test]
-fn your_claude_code_settings_that_turn_prompts_off_or_do_not_read_keep_a_grade_from_running() {
-    let config = tempfile::tempdir().unwrap();
-    let dir = config.path().display().to_string();
-    let chat = [("CLAUDE_CONFIG_DIR".to_owned(), dir)];
-    let env = crate::harness_plugin::Env {
-        chat: &chat,
-        home: None,
-        process: false,
-    };
-    assert_eq!(bypassed_by_your_settings(&env), None, "no settings file");
-    let file = config.path().join("settings.json");
-    for (text, refused) in [
-        (
-            r#"{"permissions": {"defaultMode": "bypassPermissions"}}"#,
-            true,
-        ),
-        (r#"{"permissions": {"defaultMode": "acceptEdits"}}"#, false),
-        (r#"{"model": "opus"}"#, false),
-        (r#"{"permissions": {"defaultMode": 3}}"#, true),
-        ("{ not json", true),
-        ("[]", true),
-    ] {
-        std::fs::write(&file, text).unwrap();
-        assert_eq!(bypassed_by_your_settings(&env).is_some(), refused, "{text}");
-    }
-}

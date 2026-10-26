@@ -477,31 +477,27 @@ pub fn ready_to_grade(
 }
 
 /// **Why a grade's chat may not start as `ready` would start it**, or the sandbox level it would
-/// run at (the review of #3229, the operator's ruling of 2026-10-26): a grade's chats run on a
-/// Claude Code profile alone, as only there can purlis hold a chat to the grade's limits (its
-/// spend, #3272; its MCP servers); never on a profile whose command turns the harness's
-/// permission prompts off; and only at the full sandbox, never at the floor, with the sandbox
-/// lifted, or with no backend.
+/// run at (the review of #3229, the operator's ruling of 2026-10-26): a grade's chats run only on
+/// a harness whose adapter says it can hold a chat to the grade's limits (its spend, its MCP
+/// servers: [`crate::harness::HarnessAdapter::can_grade`], #3310); never where that adapter says
+/// the profile's command or the person's settings keep the chat from asking
+/// ([`crate::harness::HarnessAdapter::grade_refused`]); and only at the full sandbox, never at
+/// the floor, with the sandbox lifted, or with no backend.
 pub fn chat_refused(ready: &crate::start::Ready) -> Result<crate::sandbox::Level, String> {
-    if ready.harness != Some(crate::harness::Harness::ClaudeCode) {
-        return Err(
-            "A grade runs its chats on a Claude Code profile only, as only there can purlis \
-             hold a chat to the grade's limits: pick one."
-                .to_owned(),
-        );
-    }
-    if let Some(why) = bypassed_by_your_settings(&crate::harness_plugin::Env::of(&ready.env)) {
-        return Err(why);
-    }
+    let Some(adapter) = ready
+        .harness
+        .map(crate::harness::Harness::adapter)
+        .filter(|adapter| adapter.can_grade())
+    else {
+        return Err(not_on_this_harness());
+    };
     let command: Vec<String> = std::iter::once(ready.program.clone())
         .chain(ready.command.iter().cloned())
         .collect();
-    if let Some(flag) = crate::dispatchunattended::bypass_in(&command) {
-        return Err(format!(
-            "This profile's command turns the program's permission prompts off ({}), and a \
-             grade never runs on one: pick another profile.",
-            crate::shown::one_line(&flag, 60)
-        ));
+    if let Some(why) =
+        adapter.grade_refused(&command, &crate::harness_plugin::Env::of(&ready.env))
+    {
+        return Err(why);
     }
     if let Some(lifted) = &ready.unsandboxed {
         return Err(match &lifted.reason {
@@ -536,50 +532,24 @@ pub fn chat_refused(ready: &crate::start::Ready) -> Result<crate::sandbox::Level
     }
 }
 
-/// **Why the person's own Claude Code settings, as the chat's environment `env` finds them, keep
-/// a grade from running**, or `None`: settings that start every chat with its permission prompts
-/// off, or settings purlis cannot read, as what they say cannot be known (the review of #3229).
-/// No settings file is none of either.
-fn bypassed_by_your_settings(env: &crate::harness_plugin::Env<'_>) -> Option<String> {
-    let Some(dir) = env.dir("CLAUDE_CONFIG_DIR", ".claude") else {
-        return Some(
-            "purlis cannot find Claude Code's settings for this profile, so it cannot tell \
-             whether its chats keep their permission prompts, and a grade never runs on one \
-             that does not."
-                .to_owned(),
-        );
-    };
-    let file = dir.join("settings.json");
-    let unreadable = || {
-        Some(
-            "purlis could not read your Claude Code settings, so it cannot tell whether its \
-             chats keep their permission prompts, and a grade never runs on one that does not."
-                .to_owned(),
-        )
-    };
-    let text = match std::fs::metadata(&file) {
-        Err(why) if why.kind() == std::io::ErrorKind::NotFound => return None,
-        Err(_) => return unreadable(),
-        Ok(meta)
-            if !meta.is_file()
-                || meta.len() > crate::harness::claude::MOST_SETTINGS_BYTES as u64 =>
-        {
-            return unreadable();
-        }
-        Ok(_) => match std::fs::read_to_string(&file) {
-            Ok(text) => text,
-            Err(_) => return unreadable(),
-        },
-    };
-    match crate::harness::claude::bypass_by_default(&text) {
-        Some(false) => None,
-        Some(true) => Some(
-            "Your Claude Code settings start every chat with its permission prompts off, and a \
-             grade never runs on one: turn that off in Claude Code's settings first."
-                .to_owned(),
-        ),
-        None => unreadable(),
+/// **Why a grade's chat is refused on a profile whose harness cannot grade**: named by the
+/// harnesses that can ([`crate::harness::HarnessAdapter::can_grade`]), so the core names none.
+fn not_on_this_harness() -> String {
+    let can: Vec<&str> = crate::harness::Harness::ALL
+        .into_iter()
+        .filter(|harness| harness.adapter().can_grade())
+        .map(crate::harness::Harness::title)
+        .collect();
+    if can.is_empty() {
+        return "No program this purlis runs can hold a grade's chats to its limits yet, so no \
+                grade runs."
+            .to_owned();
     }
+    format!(
+        "A grade runs its chats on a {} profile only, as only there can purlis hold a chat to \
+         the grade's limits: pick one.",
+        can.join(" or ")
+    )
 }
 
 /// **The commit whose version of the copy of `name` at `level` is `content`**: what a grade is
