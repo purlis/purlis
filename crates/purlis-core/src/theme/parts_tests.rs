@@ -7,7 +7,7 @@
 
 use serde_json::{Value, json};
 
-use super::parts::{self, Prop, STATES};
+use super::parts::{self, Prop};
 use super::*;
 
 /// A theme over Purlis Classic that sets `parts`.
@@ -412,7 +412,7 @@ fn a_control_stays_a_target_and_its_words_fit_in_both_densities() {
 fn a_size_inside_a_state_is_refused_with_a_sentence_that_says_why() {
     let root = parts::family("button").unwrap().parts[0].properties;
     for property in root.iter().filter(|one| !one.in_state()) {
-        for state in STATES {
+        for state in parts::family("button").unwrap().states {
             let key = format!("button.root.{}.{}", state.name(), property.name());
             let value = match property {
                 Prop::Padding => json!(4),
@@ -1093,8 +1093,14 @@ fn the_tree_family_default_is_what_its_stylesheet_draws() {
 fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
     let manifest = parts::manifest_json();
     assert_eq!(manifest["version"], parts::VERSION);
+    // A refused box (#3110) is the one state added since the first version.
     for one in manifest["states"].as_array().unwrap() {
-        assert_eq!(one["since"], 1, "{one}");
+        let since = if one["name"] == "invalid" {
+            parts::NEXT
+        } else {
+            1
+        };
+        assert_eq!(one["since"], since, "{one}");
     }
     // The tab family's layout options came in version 8 (#2914).
     for one in manifest["properties"].as_array().unwrap() {
@@ -1125,7 +1131,7 @@ fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
     assert_eq!(
         states,
         [
-            "hover", "pressed", "selected", "focused", "disabled", "open"
+            "hover", "pressed", "selected", "focused", "disabled", "open", "invalid"
         ]
     );
     let properties: Vec<(&str, bool)> = manifest["properties"]
@@ -2123,8 +2129,9 @@ fn the_select_families_default_is_what_select_css_draws() {
 
 #[test]
 fn a_select_and_a_combobox_take_the_text_inputs_keys_and_hold_their_floors() {
+    // A width but 0: a box that can be refused keeps its edge (#3110).
     let loaded = load(&with_parts(json!({
-        "select.root.border-width": 0,
+        "select.root.border-width": 2,
         "select.root.fill": "surface.raised",
         "select.chevron.text": "text.muted",
         "select.placeholder.text": "text.secondary",
