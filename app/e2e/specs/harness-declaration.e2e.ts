@@ -192,12 +192,11 @@ describe("a harness the project declares", function () {
     // The row says the same line, and that it is new to this machine.
     const meta = await browser.execute(
       (dialog: string, name: string) => {
+        // The row is an option card (#2907): named by its title, its radio inside it.
         const label = [...document.querySelectorAll(`${dialog} label`)].find(
-          (one) => one.textContent?.trim() === name,
+          (one) => (one.querySelector('[data-part="title"]') ?? one).textContent?.trim() === name,
         );
-        const control = label?.getAttribute("for")
-          ? document.getElementById(label.getAttribute("for") ?? "")
-          : null;
+        const control = label?.querySelector("input") ?? null;
         const says = (control?.getAttribute("aria-describedby") ?? "")
           .split(" ")
           .map((id) => document.getElementById(id))

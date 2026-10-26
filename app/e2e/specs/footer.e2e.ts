@@ -79,14 +79,21 @@ async function startAChat(plane: string, showTheFooter: boolean): Promise<void> 
   await dialog().waitForDisplayed({ timeout: 20_000 });
   await harnessRowsDrawn();
 
-  // By role, not by tag: the box is a Radix checkbox, which is a `<button>` carrying the role
-  // rather than an `<input>` (`docs/ui-primitives.md`). `isSelected()` reads a DOM property
-  // only a real input has and would answer `false` for a ticked one, so the state is read from
-  // `aria-checked` — which is what the operator's screen reader is told either way.
-  const box = await $('[role="checkbox"]');
+  // The checkbox family's box (#2907): a native checkbox in its own label, hidden under the box
+  // it draws. It is read by `isSelected()`. It is ticked by a click on the input itself: the
+  // WebView's driver clicks without a pointer, which React Aria reads as an assistive
+  // technology's (virtual) press, and that is the input's to take, not its label's. The start
+  // waits until the tick lands.
+  const box = await $('input[type="checkbox"]');
   await box.waitForExist({ timeout: 20_000 });
-  expect(await box.getAttribute("aria-checked")).toBe("false");
-  if (showTheFooter) await box.click();
+  expect(await box.isSelected()).toBe(false);
+  if (showTheFooter) {
+    await browser.execute((el: HTMLElement) => el.click(), box as unknown as HTMLElement);
+    await browser.waitUntil(async () => box.isSelected(), {
+      timeout: 10_000,
+      timeoutMsg: "the footer's box was never ticked",
+    });
+  }
 
   // Whichever button is there: the approval is recorded per profile and these specs share
   // one app process, so this must not depend on running before or after the picker's.

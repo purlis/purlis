@@ -560,8 +560,8 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why: "Settings' read refusal, inside its tab (NO-7, #1232)",
   },
   "settings/components.tsx": {
-    count: 3,
-    why: "the settings set's filter count, a row's refusal and a range's value: inline, per field",
+    count: 2,
+    why: "the settings set's filter count and a row's refusal: inline, per field",
   },
   "settings/themeGallery.tsx": {
     count: 3,
