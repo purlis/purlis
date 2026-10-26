@@ -133,27 +133,50 @@ impl Target {
     }
 
     /// Whether chat `id`'s hook spool holds a line, on the machine it runs on: beside the
-    /// project as that machine holds it, which a runner does in `<data>/projects/<id>` (#2046).
+    /// project's hook socket as that machine holds the project, which a runner does in
+    /// `<data>/projects/<id>` (#2046). On a runner the socket is found in its container, so a
+    /// spool looked for in the wrong place fails the test instead of holding nothing.
     fn spool_holds_lines_of(&self, id: u32) -> bool {
-        let spool_beside = |root: &Path| {
-            purlis_core::hookwire::spool::dir_for(&crate::hooks::socket_for(Some(root)).socket)
-        };
         match &self.runner {
             Some(runner) => {
                 let project = purlis_core::scaffold::planefile::id_to_hold_by(&self.root)
                     .expect("the project's id");
-                let root = runner
-                    .path(&format!("\"$HOME\"/.local/share/*/projects/{project}"))
-                    .expect("the runner holds the project");
-                let spool = spool_beside(Path::new(&root));
+                let socket = runner
+                    .path(&format!(
+                        "{}/{}/{project}/.[a-z]*/app/hooks.sock",
+                        purlis_core::datahome::IN_A_RUNNER_CONTAINER,
+                        purlis_core::datahome::PROJECTS
+                    ))
+                    .expect("the runner's hook socket for the project");
+                let spool = purlis_core::hookwire::spool::dir_for(Path::new(&socket));
                 runner
                     .copied(&spool.to_string_lossy())
                     .is_some_and(|(_copy, spool)| {
                         purlis_core::hookwire::spool::holds_lines(&spool, id)
                     })
             }
-            None => purlis_core::hookwire::spool::holds_lines(&spool_beside(&self.root), id),
+            None => purlis_core::hookwire::spool::holds_lines(
+                &purlis_core::hookwire::spool::dir_for(
+                    &crate::hooks::socket_for(Some(&self.root)).socket,
+                ),
+                id,
+            ),
         }
+    }
+
+    /// What the host its chats run on said of a hook line it did not record, where its log can
+    /// be read: a runner's, in its container. A line its hook was not told was taken is
+    /// recorded later from the spool, so the event log alone does not tell the two apart.
+    fn hook_lines_its_host_did_not_record(&self) -> Vec<String> {
+        self.runner.as_ref().map_or_else(Vec::new, |runner| {
+            runner
+                .said()
+                .lines()
+                .filter(|line| line.contains("a line on the hook channel for chat"))
+                .filter(|line| line.contains("was not recorded"))
+                .map(str::to_owned)
+                .collect()
+        })
     }
 }
 
@@ -565,11 +588,29 @@ impl OnTheRunner {
             ]),
         )
         .expect("docker runs");
+        if !out.status.success() {
+            return None;
+        }
         let said = String::from_utf8_lossy(&out.stdout);
         let mut paths = said.lines().filter(|line| !line.is_empty());
         let path = paths.next()?.to_owned();
         assert!(paths.next().is_none(), "{pattern} names one path: {said}");
-        out.status.success().then_some(path)
+        Some(path)
+    }
+
+    /// What the runner's host has said in its log, the container's.
+    fn said(&self) -> String {
+        let out = purlis_core::forklock::output(
+            std::process::Command::new(self.docker.program())
+                .args(["logs", self.container.as_str()]),
+        )
+        .expect("docker runs");
+        assert!(out.status.success(), "the runner's log: {out:?}");
+        format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        )
     }
 
     /// A copy, on this machine, of what is at `path` in the runner's container: `None` where
@@ -590,7 +631,8 @@ impl OnTheRunner {
     /// Where the runner's host keeps its event log: its device's folder in its data home.
     fn log(&self) -> String {
         self.path(&format!(
-            "\"$HOME\"/.local/share/*/{}/*",
+            "{}/{}/*",
+            purlis_core::datahome::IN_A_RUNNER_CONTAINER,
             purlis_core::eventlog::EVENTS
         ))
         .expect("the runner's host keeps an event log")
@@ -3029,6 +3071,9 @@ fn the_event_log_has_one_writer_and_each_hook_line_is_written_once(target: &Targ
     );
 
     assert_eq!(stops(), 1, "one line, written once");
+    // Its host recorded it as it heard it, not later from the spool.
+    let not_recorded = target.hook_lines_its_host_did_not_record();
+    assert!(not_recorded.is_empty(), "{not_recorded:?}");
     assert!(
         target.its_log_has_its_writer(),
         "its one writer holds it, and no second is let in"

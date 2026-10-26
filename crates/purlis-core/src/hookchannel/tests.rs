@@ -438,3 +438,36 @@ fn only_a_hook_line_is_recorded_through_what_the_window_sends_back() {
             .is_empty()
     );
 }
+
+#[test]
+fn a_run_a_clear_begins_is_never_under_an_id_the_log_holds_or_no_id_at_all() {
+    // The window names the run a `/clear` begins, so its board and the log agree (ADR 0066).
+    // An id that is no id, or one the log already holds, is not taken: the run is begun under
+    // one the writer mints, and the line is still recorded.
+    for named in ["01K6W0RKRUN00000000000000B", "not-an-id"] {
+        let (data, project) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let log = a_log_in(data.path());
+        let run = "01K6W0RKRUN00000000000000B";
+        a_run_begun(&log, project.path(), 1, run);
+        let record = hook_lines_recorded(log, project.path());
+
+        record(Entry::Report {
+            plane: project.path().to_path_buf(),
+            report: a_report(1, crate::state::Event::SessionStart),
+            followed: crate::eventlog::Followed::Moved,
+            begun: Some(named.to_owned()),
+        })
+        .expect("it is recorded");
+
+        let started: Vec<String> = crate::eventlog::read(data.path())
+            .expect("the log reads")
+            .into_iter()
+            .filter(|event| event.kind == "run.started")
+            .filter_map(|event| event.run)
+            .collect();
+        assert_eq!(started.len(), 2, "{named}: {started:?}");
+        assert_ne!(started[1], run, "{named}");
+        assert_ne!(started[1], named, "{named}");
+        assert!(ulid::Ulid::from_string(&started[1]).is_ok(), "{started:?}");
+    }
+}
