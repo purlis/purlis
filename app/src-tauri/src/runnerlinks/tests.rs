@@ -497,7 +497,11 @@ fn a_project_reaches_a_pools_runner_through_the_window() {
             .unwrap();
         String::from_utf8_lossy(&out.stdout).trim().to_owned()
     };
-    let kept = format!("$(ls -d \"$HOME\"/.local/share/*/projects/{id})");
+    let kept = format!(
+        "$(ls -d {}/{}/{id})",
+        purlis_core::datahome::IN_A_RUNNER_CONTAINER,
+        purlis_core::datahome::PROJECTS
+    );
     assert_eq!(
         in_the_runner(&format!("cat {kept}/workspaces/app/memory.md")),
         "not saved yet",

@@ -98,7 +98,7 @@ async function startAChat(plane: string, showTheFooter: boolean): Promise<void> 
   // Whichever button is there: the approval is recorded per profile and these specs share
   // one app process, so this must not depend on running before or after the picker's.
   const approve = await $("button=Approve and start");
-  const start = (await approve.isExisting()) ? approve : await $("button=Start");
+  const start = (await approve.isExisting()) ? approve : await $("button=Start chat");
   await start.waitForClickable({ timeout: 20_000 });
   await start.click();
   await expect(dialog()).not.toBeDisplayed();

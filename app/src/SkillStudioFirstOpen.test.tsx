@@ -40,6 +40,7 @@ const secrets = {
   lint: [],
   hidden: [],
   pinned: false,
+  pinned_by: [],
   written: "purlis:secrets",
   named: false,
   unchecked: null,

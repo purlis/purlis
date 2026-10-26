@@ -8,6 +8,10 @@ import { useWayPlaces, type WayPlace } from "./wayPlaces";
  * How long after a question formed, or after the tasks it lists changed, a press on it does
  * nothing: a guard against a press aimed at what was there before. It only blunts a misclick;
  * what binds an answer to what was shown is the core's check of each task's block (D-1508-9).
+ *
+ * **Every hold is measured on `performance.now()`** (#3227), a clock that only goes forward: a
+ * step of the wall clock (a time sync, the person setting it) neither keeps a Notice held until
+ * the clock catches up nor lets a press through early.
  */
 export const SETTLE_MS = 1500;
 
@@ -76,6 +80,26 @@ export function forgetPaneBands(plane?: string) {
 const freshBand = (): BandMemory => ({ hadAny: false, emptiedAt: -Infinity, places: new Map() });
 
 /**
+ * **Carries pane `from`'s band memory to pane `to`** (#3271): a chat given a new pane (a tab of
+ * its own, a pane beside its session) has its Notices drawn there now, so what stood in the band
+ * they were drawn in still counts. Carried as a copy, since the pane it left goes on: whether that
+ * band held a Notice, when it went empty, and where each of its grants was. Into a band that has
+ * read already it only adds, so it can only hold more.
+ */
+export function carryPaneBand(from: string, to: string) {
+  const was = bands.get(from);
+  if (was === undefined) return;
+  const into = bands.get(to);
+  if (into === undefined) {
+    bands.set(to, { hadAny: was.hadAny, emptiedAt: was.emptiedAt, places: new Map(was.places) });
+    return;
+  }
+  into.hadAny ||= was.hadAny;
+  into.emptiedAt = Math.max(into.emptiedAt, was.emptiedAt);
+  for (const [name, place] of was.places) if (!into.places.has(name)) into.places.set(name, place);
+}
+
+/**
  * **The Notices' move-settle guard** (#1695, train 50's and train 54's reviews): a Notice that
  * grants something is drawn among others that come and go, so a press on one of its ways out
  * within {@link SETTLE_MS} of that way out moving does nothing, and says why.
@@ -97,10 +121,15 @@ const freshBand = (): BandMemory => ({ hadAny: false, emptiedAt: -Infinity, plac
  * read against that place, and any other grant arriving in a pane whose band held a Notice is a
  * move. A grant that arrives in any later read is new, however it is named. A band with no name
  * remembers only while it is drawn, and in the Inbox no grant is ever taken for one before it.
+ *
+ * `drawn` says whether the root is drawn now (#3302): a pane's band is not while it holds no
+ * Notice, and a read then would see every answer at no size. Nothing is read until it is, so
+ * the first read, and the redrawing's, see the boxes the person sees.
  */
 export function useNoticeSettle<T extends HTMLElement>(
   firstDrawn: "moves" | "stands",
   band?: string,
+  drawn?: (root: T) => boolean,
 ) {
   const at = useRef<T>(null);
   const [said, setSaid] = useState<string>();
@@ -134,7 +163,7 @@ export function useNoticeSettle<T extends HTMLElement>(
       firstRead.current = false;
       const kept = memory();
       const all = [...root.querySelectorAll("[data-cause]")];
-      const now = Date.now();
+      const now = performance.now();
       // **Drawn where another Notice stood** (#3167): the last read found one here, however
       // long it had stood, or the band went empty within the settle time, so a pointer may be
       // aimed at what this one now covers.
@@ -165,15 +194,23 @@ export function useNoticeSettle<T extends HTMLElement>(
   const remembered = useCallback(() => memory().places, [memory]);
   const recalls = useCallback(() => recalling.current, []);
   const nameOf = useCallback((way: Element) => names.current.get(way), []);
+  // A way out never read (a press before its band was first drawn, #3302) is held: its first
+  // drawing is a move until a read says otherwise.
   const firstMoves = useCallback(
-    (way: Element) => firstDrawn === "moves" || later.current.get(way) === true,
+    (way: Element) => firstDrawn === "moves" || later.current.get(way) !== false,
     [firstDrawn],
   );
-  const { movedAt } = useWayPlaces(at, ways, firstMoves, {
-    nameOf,
-    remembered,
-    recalls,
-  });
+  const { movedAt } = useWayPlaces(
+    at,
+    ways,
+    firstMoves,
+    {
+      nameOf,
+      remembered,
+      recalls,
+    },
+    drawn,
+  );
   const allows = (way: Element): boolean => {
     const notice = way.closest("[data-cause]");
     const cause = notice?.getAttribute("data-cause");
@@ -182,7 +219,7 @@ export function useNoticeSettle<T extends HTMLElement>(
     // grants variant (a way out with `allows`) is the one rule, and the causes above add the
     // answers that grant without it.
     if (!waits(way, cause)) return true;
-    if (Date.now() - movedAt(way) < SETTLE_MS) {
+    if (performance.now() - movedAt(way) < SETTLE_MS) {
       setSaid(NOTICE_MOVED_JUST_NOW);
       return false;
     }

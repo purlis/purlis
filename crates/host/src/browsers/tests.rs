@@ -34,6 +34,8 @@ impl Screen for Slow {
 
     fn pace(&self, _every: Duration) {}
 
+    fn narrow(&self, _most: Option<u16>) {}
+
     fn hide(&self) {
         let held = self.hold_hide.lock().unwrap().take();
         if let Some(barrier) = held {
@@ -103,6 +105,7 @@ fn a_view_attached_while_the_last_one_detaches_is_still_shown_frames() {
             super::Reads {
                 aims: true,
                 origins: true,
+                between_hosts: false,
             },
         )
         .expect("a browser view");

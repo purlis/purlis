@@ -139,10 +139,12 @@ pub fn skill_sets_in(data: &Path) -> PathBuf {
     data.join(crate::names::BUNDLE_ID.write).join(SKILL_SETS)
 }
 
-/// **The folder of links a chat in `root` is handed the plane's skills by**, laid out by the host
-/// before the chat is armed, where the Skill studio's flag is `on` and `kit` says where folders
-/// go ([`crate::skills::lay_out_for_chat`]), each skill as `harness` reads it. `None` otherwise,
-/// and for a set with no plane skill.
+/// **The folder of links a chat in `root` is handed its set's folder by**, laid out by the host
+/// before the chat is armed where `kit` says where folders go
+/// ([`crate::skills::lay_out_for_chat`]), each skill as `harness` reads it: the plane's skills
+/// where the Skill studio's flag is `on`, and on a route that names the built-in skills their own
+/// (opencode's, `purlis-<name>`) the built-in ones, flag or none. `None` otherwise, and for a set
+/// with none of them.
 pub fn plane_skills_laid_out(
     on: bool,
     root: &Path,
@@ -165,13 +167,22 @@ fn laid_out_on(
     harness: Harness,
     repo: &[crate::skills::OutsideSkill],
 ) -> Option<PathBuf> {
-    if !on {
+    let own_names = harness.skills().names_built_ins_its_own();
+    if !on && !own_names {
         return None;
     }
-    let sets = kit.skill_sets.as_deref()?;
+    let Some(sets) = kit.skill_sets.as_deref() else {
+        if own_names {
+            tracing::warn!(
+                "purlis: this chat's skills have no folder to be laid out in; {}",
+                crate::skills::without_the_folder(harness)
+            );
+        }
+        return None;
+    };
     let built_in = kit.plugin.as_deref().and_then(crate::skills::in_bundle);
     crate::skills::lay_out_for_chat(
-        root,
+        on.then_some(root),
         workspace,
         persona,
         built_in.as_deref(),
@@ -825,7 +836,6 @@ pub(crate) fn armed_as(studio: bool, arming: &Arming<'_>) -> Result<Armed, Strin
     let skills = on.then_some(crate::skills::PlaneSkills {
         plane: skills_root,
         workspace: workspace.as_deref(),
-        linked: linked.as_deref(),
         repo: &repo,
     });
     let armed = crate::harness::Kit {
@@ -833,6 +843,7 @@ pub(crate) fn armed_as(studio: bool, arming: &Arming<'_>) -> Result<Armed, Strin
         plugin: kit.plugin.as_deref(),
         persona: persona.map(|persona| crate::harness::As { root, persona }),
         skills,
+        laid_out: linked.as_deref(),
     };
     // Which folder the chat is handed, for its terminal to note while it runs (SK-24).
     let held = linked.as_ref().map(|folder| {

@@ -111,6 +111,7 @@ struct World {
     needs_you: Vec<crate::browserneedsyou::Waiting>,
     /// The chats whose browser's sites wait on the person (#2018).
     browser_sites: Vec<crate::chatbrowsers::SitesWait>,
+    pool_logins: Vec<crate::chatbrowsers::PoolLoginWaits>,
     /// What the project's committed file declares it expects (ADR 0093).
     declared: purlis_core::sandbox::services::Declared,
 }
@@ -137,6 +138,7 @@ impl World {
             browsers: Vec::new(),
             needs_you: Vec::new(),
             browser_sites: Vec::new(),
+            pool_logins: Vec::new(),
             declared: purlis_core::sandbox::services::Declared::default(),
         }
     }
@@ -169,6 +171,7 @@ impl World {
             browsers: self.browsers.clone(),
             needs_you: self.needs_you.clone(),
             browser_sites: self.browser_sites.clone(),
+            pool_logins: self.pool_logins.clone(),
             permissions: self.permissions.clone(),
             queue: self.queue.clone(),
             at_its_prompt: &at_prompt,
@@ -1714,4 +1717,47 @@ fn a_chats_browser_sites_ask_offers_everyone_only_where_the_projects_sandbox_is_
     };
     assert_eq!(ids(true), ["chat", "you", "project", KEEP]);
     assert_eq!(ids(false), ["chat", "you", KEEP]);
+}
+
+#[test]
+fn a_runner_chats_browser_login_asks_whether_its_persona_may_log_in_on_the_pool() {
+    let mut world = World::new();
+    world.pool_logins = vec![crate::chatbrowsers::PoolLoginWaits {
+        session: 6,
+        persona: "steward".into(),
+        bound: purlis_core::poollogins::Bound {
+            pool: "builds".into(),
+            definition: "d".repeat(64),
+            image: "a".repeat(64),
+            runner: "01JB0RUNNER0000000000000000".into(),
+            runner_key: "ab".repeat(32),
+            runner_image: "a".repeat(64),
+            engine: "this machine's Docker".into(),
+        },
+        login: "shop-login".into(),
+        identity: "id-shop-login".into(),
+        since: 1_700_000_000,
+        changed: false,
+    }];
+
+    let asks = world.asks();
+
+    let ask = asks
+        .iter()
+        .find(|one| one.source == AskSource::PoolLogin)
+        .expect("its Ask is listed");
+    assert_eq!(ask.session, 6);
+    assert_eq!(ask.answer, AnswerPath::PoolLogin);
+    assert_eq!(ids(ask), [super::POOL_LOGIN_ALLOW, KEEP]);
+    assert_eq!(
+        ask.options[0].label, "Allow on pool builds",
+        "the line names its answer"
+    );
+    assert!(ask.says.contains("shop-login"), "{}", ask.says);
+    assert_eq!(
+        ask.says,
+        "Wants its browser logged in with shop-login on pool builds, which runs on this \
+         machine's Docker. Allow on pool builds fills steward's shop-login there from your \
+         vault; the runner keeps none"
+    );
 }

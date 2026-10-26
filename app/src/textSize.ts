@@ -202,6 +202,9 @@ export function whoseSize(target: EventTarget | null): Which {
  */
 export function listenForSizeKeys(on: Window): () => void {
   const key = (e: KeyboardEvent) => {
+    // Declared in the key registry (#2921, `keys/registry.ts`: `text.*`), which holds them back
+    // for nothing, so this asks its own matcher: the registry imports this module, and this
+    // importing it back would run `regions.ts` before this module's listeners exist.
     const asked = sizeKey(e);
     if (asked === undefined) return;
     e.preventDefault();
