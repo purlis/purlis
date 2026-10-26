@@ -144,6 +144,33 @@ function whatHides(element: Element): string {
   return "";
 }
 
+/** A computed CSS colour as red, green, blue (0–255) and alpha (0–1). */
+function rgba(colour: string): [number, number, number, number] {
+  const [r = 0, g = 0, b = 0, a = 1] = (colour.match(/[\d.]+/g) ?? []).map(Number);
+  return [r, g, b, colour.startsWith("rgba") || colour.includes("/") ? a : 1];
+}
+
+/** The first opaque fill behind `element`: what a translucent fill on it is laid over. */
+function groundOf(element: Element): string {
+  for (let at = element.parentElement; at !== null; at = at.parentElement) {
+    const fill = getComputedStyle(at).backgroundColor;
+    if (rgba(fill)[3] === 1) return fill;
+  }
+  return getComputedStyle(document.body).backgroundColor;
+}
+
+/** `fill` laid over the opaque `ground`, as the screen draws it. */
+function composited(fill: string, ground: string): [number, number, number] {
+  const [r, g, b, a] = rgba(fill);
+  const [R, G, B] = rgba(ground);
+  return [r * a + R * (1 - a), g * a + G * (1 - a), b * a + B * (1 - a)];
+}
+
+/** How far apart two drawn colours are, the largest of their channels' differences. */
+function apart(one: number[], other: number[]): number {
+  return Math.max(...one.map((channel, at) => Math.abs(channel - other[at])));
+}
+
 const chipsOf = (bar: HTMLElement) =>
   [...bar.querySelectorAll<HTMLElement>('[data-part="workspace"]')].filter(
     (one) => one.dataset.scope === "titlebar",
@@ -226,7 +253,12 @@ export const ChosenStates: Story = {
     fills["chosen + hover"] = fill(chosen);
     await expect(box(chosen)).toBe(boxes[0]);
     // Every state its own fill: the chosen chip never looks hovered, nor at rest.
-    await expect(new Set(Object.values(fills)).size).toBe(Object.keys(fills).length);
+    // Compared as drawn: each fill laid over the ground the bar stands on, so a translucent wash
+    // and an opaque fill are told apart by the colour they make, not by how they are written.
+    const drawn = Object.values(fills).map((one) => composited(one, groundOf(chosen)));
+    for (const [at, one] of drawn.entries())
+      for (const other of drawn.slice(at + 1))
+        await expect(apart(one, other), `${one} and ${other}`).toBeGreaterThan(2);
     await userEvent.unhover(chosen);
     // The keyboard's ring on the chosen chip moves nothing either.
     chosen.focus();
