@@ -725,7 +725,9 @@ item families (`purlis/tooltip-family`, an error). A frame's `title` is its name
 - **One placement and one delay, which no call site changes**: beside its target at the target's
   end, 10 px from it, flipped to its start where the window has no room (R166); open after the
   pointer rests 500 ms, at once on the keyboard's focus, and at once for the next target while
-  one was just open.
+  one was just open. A row's tooltip stands by the pointer or the row's words, not the whole row,
+  and an anchored tooltip (a row's, a menu row's) keeps its width: it takes the side with room for
+  all of it, and stands under its anchor where neither side has (#3328, `ui/tooltip/side.ts`).
 - **WCAG 1.4.13**: Esc takes it down and leaves the focus where it was (dismissible). **The first
   Esc is the tooltip's alone**: heard first on the window's capture phase while it is up, it reaches no
   dialog, menu, palette or terminal, and the next Esc is theirs. The pointer can move onto a tooltip it
