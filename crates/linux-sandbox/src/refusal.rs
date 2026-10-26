@@ -38,9 +38,6 @@ pub const PER_WINDOW: usize = 10;
 /// The operation a connection is told as, in Seatbelt's word for it.
 pub const DIALLED: &str = "network-outbound";
 
-/// The operation a bind is told as, in Seatbelt's word for it (#2019).
-pub const BOUND: &str = "network-bind";
-
 /// The most refusals waiting to be told.
 pub const QUEUED: usize = PER_WINDOW;
 
