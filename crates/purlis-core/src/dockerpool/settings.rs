@@ -180,6 +180,32 @@ pub fn engine(window: Option<&str>, places: &Places<'_>) -> Result<Option<String
     Ok(Some(format!("unix://{}", socket.display())))
 }
 
+/// **Whether the engine a run is pointed at is on this machine** (#2050), and its socket if it
+/// is: a `unix://` `DOCKER_HOST` of the window's (`window`) whose socket is trusted, or, with
+/// none, the socket [`engine`] finds. Every other engine (`tcp://`, `ssh://`, any other
+/// scheme) is another machine's as far as purlis can tell, and is refused in words, as is no
+/// engine at all.
+pub fn engine_on_this_machine(
+    window: Option<&str>,
+    places: &Places<'_>,
+) -> Result<PathBuf, String> {
+    if let Some(host) = window.filter(|host| !host.is_empty()) {
+        return match host.strip_prefix("unix://") {
+            Some(socket) => trusted(Path::new(socket), places)
+                .map(|()| PathBuf::from(socket))
+                .map_err(|why| why.0),
+            None => Err(format!(
+                "this machine's DOCKER_HOST is {host}, an engine purlis cannot tell is on this \
+                 machine"
+            )),
+        };
+    }
+    match engine(None, places).map_err(|why| why.0)? {
+        Some(host) => Ok(PathBuf::from(host.trim_start_matches("unix://"))),
+        None => Err("purlis finds no Docker engine on this machine".to_owned()),
+    }
+}
+
 /// Whether `socket`, as it resolves, is where no chat can put another in its place: in a
 /// folder only root writes, or under one of [`HELD_IN_HOME`], [`HELD_IN_TMP`] or
 /// [`HELD_IN_RUNTIME`] as they are themselves. Refused otherwise, with a sentence that names its folder.

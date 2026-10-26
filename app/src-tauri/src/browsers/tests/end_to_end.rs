@@ -512,10 +512,11 @@ impl crate::chatbrowsers::Driver for Acting {
     fn start(
         &self,
         root: &Path,
+        pool: Option<&str>,
         reach: purlis_session_protocol::browsing::BrowserReach,
         kept: Option<purlis_session_protocol::browsing::KeptLogin>,
     ) -> Result<String, crate::chatbrowsers::NotStarted> {
-        self.browsers.start(root, reach, kept)
+        self.browsers.start(root, pool, reach, kept)
     }
 
     fn act(

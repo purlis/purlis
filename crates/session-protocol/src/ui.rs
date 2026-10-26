@@ -318,6 +318,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // answer alone. No chat answers its own Ask.
     "allow_chat_browser",
     "keep_chat_browser_off",
+    // Whether a persona's browser logins may be filled on a pool's runner (#2050): the person's
+    // answer alone. No chat opts itself in.
+    "answer_pool_login",
     // A chat's browser sites (#2018): the person's answer alone. No chat allows its own
     // browser a site.
     "allow_browser_sites",

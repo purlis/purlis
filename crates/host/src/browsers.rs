@@ -16,6 +16,15 @@
 //! second, [`THUMBNAIL_EVERY`]), and may ask for fewer still (`rate`); the engine is asked for
 //! frames no more often than the view that wants them most often ([`Screen::pace`]).
 //!
+//! **Over a link between hosts a view is held to the link's frames** (#2050, spec #2041): a view
+//! attached by `remote-link`, a runner's browser watched from its desktop, is sent at most
+//! [`LINK_MOST_FRAMES_A_SECOND`] and frames at most [`LINK_MOST_FRAME_WIDTH`] wide, so a remote
+//! browser stays smooth over a link that also carries what the person types. The engine is asked
+//! for frames as wide as the widest view wants them ([`Screen::narrow`]). **Every browser view
+//! keeps one frame in flight**: the next frame is sent once the client has drawn the last, and
+//! it is the newest, so the person's input never waits behind a queue of frames
+//! ([`purlis_session_protocol::view::Source::one_frame_in_flight`]).
+//!
 //! **A view's snapshot is the latest frame.** Each frame is framed whole on the view's stream
 //! (`purlis_session_protocol::view::frames`). A view that falls behind is dropped and attached
 //! again, as every view is, and its fresh snapshot is the latest frame: it starts on a whole
@@ -57,16 +66,22 @@ use crate::recording::Stopped;
 pub type FrameSink = Arc<dyn Fn(Aim, String, Bytes) + Send + Sync>;
 
 /// **How a view's link reads a browser's frames**: whether they name what they show (1.14),
-/// and whether it is sent the page's origin (1.35, #2300).
+/// whether it is sent the page's origin (1.35, #2300), and whether it is a link between hosts,
+/// held to the link's frames (#2050).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Reads {
     pub aims: bool,
     pub origins: bool,
+    pub between_hosts: bool,
 }
 
 impl Reads {
-    /// How a link that agreed on `version` reads them.
-    pub fn of(version: purlis_session_protocol::version::Version) -> Reads {
+    /// How a link of `scope` that agreed on `version` reads them: one between hosts is held to
+    /// the link's frames (#2050).
+    pub fn of(
+        version: purlis_session_protocol::version::Version,
+        scope: purlis_session_protocol::auth::Scope,
+    ) -> Reads {
         use purlis_session_protocol::version::Version;
         Reads {
             aims: version
@@ -79,9 +94,31 @@ impl Reads {
                     major: 1,
                     minor: 35,
                 },
+            between_hosts: scope == purlis_session_protocol::auth::Scope::RemoteLink,
+        }
+    }
+
+    /// The least time between frames a view of this link that asks for `every` is sent, and the
+    /// widest frame it is sent: over a link between hosts, the link's (#2050).
+    fn held_to(self, every: Duration) -> (Duration, Option<u16>) {
+        if self.between_hosts {
+            (
+                every.max(Duration::from_secs(1) / LINK_MOST_FRAMES_A_SECOND),
+                Some(LINK_MOST_FRAME_WIDTH),
+            )
+        } else {
+            (every, None)
         }
     }
 }
+
+/// **The most frames a second a view over a link between hosts is sent** (#2050, spec #2041's
+/// default): a runner's browser watched from its desktop.
+pub const LINK_MOST_FRAMES_A_SECOND: u32 = 15;
+
+/// **The widest frame a view over a link between hosts is sent, in pixels** (#2050, spec
+/// #2041's default): the engine scales a wider page down to it.
+pub const LINK_MOST_FRAME_WIDTH: u16 = 1280;
 
 /// The least time between two frames sent to a thumbnail: about one a second.
 pub const THUMBNAIL_EVERY: Duration = Duration::from_secs(1);
@@ -93,6 +130,9 @@ pub trait Screen: Send + Sync + 'static {
     fn show(&self, frames: FrameSink);
     /// Make frames no more often than `every` (zero: as often as the page changes).
     fn pace(&self, every: Duration);
+    /// Make frames no wider than `most` pixels, scaled down where its pages are wider, or as
+    /// wide as its pages with none (#2050).
+    fn narrow(&self, most: Option<u16>);
     /// Stop making frames.
     fn hide(&self);
     /// The size of its pages now, in CSS pixels: what a view's frames are drawn at.
@@ -361,27 +401,40 @@ impl Latest {
 struct Hub {
     screen: Arc<dyn Screen>,
     latest: watch::Sender<Latest>,
-    /// Each attached view's least time between frames, by its number here.
-    viewers: Mutex<Vec<(u64, Duration)>>,
+    /// Each attached view's least time between frames and widest frame, by its number here.
+    viewers: Mutex<Vec<Viewer>>,
     next: AtomicU64,
 }
 
+/// One attached view, as its browser makes frames for it.
+#[derive(Debug, Clone, Copy)]
+struct Viewer {
+    id: u64,
+    every: Duration,
+    most_width: Option<u16>,
+}
+
 impl Hub {
-    fn viewers(&self) -> MutexGuard<'_, Vec<(u64, Duration)>> {
+    fn viewers(&self) -> MutexGuard<'_, Vec<Viewer>> {
         self.viewers
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    /// A view that wants a frame no more often than `every` is attached.
+    /// A view that wants a frame no more often than `every`, and none wider than `most_width`,
+    /// is attached.
     ///
     /// The engine is asked to show, pace and hide under the viewers' lock (each returns at once,
     /// [`Screen`]), so a view attached while the last one detaches is never left with its
     /// browser hidden.
-    fn watched(self: &Arc<Self>, every: Duration) -> Watching {
+    fn watched(self: &Arc<Self>, every: Duration, most_width: Option<u16>) -> Watching {
         let id = self.next.fetch_add(1, Ordering::Relaxed);
         let mut viewers = self.viewers();
-        viewers.push((id, every));
+        viewers.push(Viewer {
+            id,
+            every,
+            most_width,
+        });
         Self::repace(&self.screen, &viewers);
         if viewers.len() == 1 {
             let latest = self.latest.clone();
@@ -405,10 +458,17 @@ impl Hub {
         }
     }
 
-    /// Ask the engine for frames as often as the view that wants them most often.
-    fn repace(screen: &Arc<dyn Screen>, viewers: &[(u64, Duration)]) {
-        if let Some(every) = viewers.iter().map(|(_, every)| *every).min() {
+    /// Ask the engine for frames as often as the view that wants them most often, and as wide
+    /// as the view that wants them widest: no narrower than its pages where one view wants
+    /// them so.
+    fn repace(screen: &Arc<dyn Screen>, viewers: &[Viewer]) {
+        if let Some(every) = viewers.iter().map(|viewer| viewer.every).min() {
             screen.pace(every);
+            let widest = viewers
+                .iter()
+                .map(|viewer| viewer.most_width)
+                .try_fold(0, |widest, most| most.map(|most| most.max(widest)));
+            screen.narrow(widest);
         }
     }
 
@@ -426,7 +486,7 @@ struct Watching {
 impl Drop for Watching {
     fn drop(&mut self) {
         let mut viewers = self.hub.viewers();
-        viewers.retain(|(id, _)| *id != self.id);
+        viewers.retain(|viewer| viewer.id != self.id);
         if viewers.is_empty() {
             self.hub.screen.hide();
         } else {
@@ -446,7 +506,8 @@ struct BrowserSource {
 
 impl Source for BrowserSource {
     fn attach(&self) -> Attachment {
-        let watching = self.hub.watched(self.every);
+        let (every, most_width) = self.reads.held_to(self.every);
+        let watching = self.hub.watched(every, most_width);
         let mut latest = self.hub.latest.subscribe();
         let reads = self.reads;
         // The snapshot says the page's origin whatever this view was sent before it: a view
@@ -456,7 +517,6 @@ impl Source for BrowserSource {
             .borrow_and_update()
             .framed(reads, &mut origin_sent)
             .unwrap_or_default();
-        let every = self.every;
         let live = futures::stream::unfold(
             (latest, watching, None::<tokio::time::Instant>, origin_sent),
             move |(mut latest, watching, sent, mut origin_sent)| async move {
@@ -482,6 +542,11 @@ impl Source for BrowserSource {
             snapshot,
             live: live.boxed(),
         }
+    }
+
+    /// The newest frame once the last is drawn: never a queue of older ones (#2050).
+    fn one_frame_in_flight(&self) -> bool {
+        true
     }
 }
 

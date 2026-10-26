@@ -40,6 +40,31 @@ pub(crate) fn in_memory<H: session::Host + Clone>(
     (connection, link)
 }
 
+/// [`in_memory`], whose links to a pool's runner reach `runner` (#2050): as a window whose host
+/// relays them, seen apart from the relay, which `purlis-host`'s tests hold to its rules.
+pub(crate) fn in_memory_with_a_runner<H: session::Host + Clone, R: session::Host + Clone>(
+    hosting: H,
+    runner: R,
+    runtime: &tokio::runtime::Runtime,
+) -> Arc<Connection> {
+    let link = Arc::new(
+        runtime
+            .block_on(a_link_to(hosting.clone(), || {}))
+            .expect("the window speaks to the host"),
+    );
+    let handle = runtime.handle().clone();
+    let dial: Dial = Arc::new({
+        let handle = handle.clone();
+        move |within, naming| open_within(&handle, within, a_named_link_to(hosting.clone(), naming))
+    });
+    let relayed: RelayedDial = Arc::new(move |within, naming, _pool: &str| {
+        open_within(&handle, within, a_named_link_to(runner.clone(), naming))
+    });
+    let connection = Arc::new(Connection::default());
+    connection.ready_relaying(link, dial, relayed);
+    connection
+}
+
 /// A `local-ui` link to `hosting` over an in-memory stream; `closed` is called once the host's
 /// end of it ends.
 async fn a_link_to<H: session::Host>(
@@ -2951,4 +2976,47 @@ fn a_hosts_origin_is_taken_only_as_an_origin_and_anything_else_is_none() {
     let long = format!("https://{}.test", "a".repeat(300));
     assert_eq!(one(&long), None, "an origin too long for any page");
     assert_eq!(an_origin(None), None);
+}
+
+/// A JPEG header saying `width` by `height`, and nothing more.
+fn a_jpeg_of(width: u16, height: u16) -> Vec<u8> {
+    let mut jpeg = vec![0xff, 0xd8, 0xff, 0xc0, 0x00, 0x11, 0x08];
+    jpeg.extend_from_slice(&height.to_be_bytes());
+    jpeg.extend_from_slice(&width.to_be_bytes());
+    jpeg
+}
+
+#[test]
+fn the_window_draws_a_runner_browsers_frames_only_within_the_links_caps() {
+    let mut held = HeldFrames::default();
+    let start = Instant::now();
+
+    assert!(
+        held.draws(&a_jpeg_of(1280, 800), start),
+        "a frame within the caps"
+    );
+    assert!(
+        !held.draws(&a_jpeg_of(1280, 800), start + Duration::from_millis(10)),
+        "one sooner than the link's rate"
+    );
+    let later = start + Duration::from_millis(200);
+    assert!(
+        !held.draws(&a_jpeg_of(1920, 1080), later),
+        "wider than the link's widest"
+    );
+    assert!(
+        !held.draws(&a_jpeg_of(1280, 60_000), later),
+        "higher than drawn at most"
+    );
+    assert!(
+        !held.draws(b"not a jpeg", later),
+        "no image the window can read the size of"
+    );
+    let mut huge = a_jpeg_of(1280, 800);
+    huge.resize(MOST_HELD_FRAME_BYTES + 1, 0);
+    assert!(!held.draws(&huge, later), "larger than drawn at most");
+    assert!(
+        held.draws(&a_jpeg_of(390, 844), later),
+        "and the next within them"
+    );
 }

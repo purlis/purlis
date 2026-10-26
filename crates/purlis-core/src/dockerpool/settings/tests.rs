@@ -156,6 +156,48 @@ fn the_engine_is_pinned_to_a_socket_no_chat_can_replace_and_never_a_context() {
     assert!(engine(Some(&window), &other_places).is_err());
 }
 
+/// **A pool's engine is this machine's only on a local socket** (#2050): a browser login is
+/// filled only on such a pool's runner, so a network engine (`tcp://`, `ssh://`) is refused in
+/// words, as is no engine.
+#[test]
+fn an_engine_is_on_this_machine_only_where_it_is_a_trusted_local_socket() {
+    let (home_dir, system_dir) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let home = home_dir.path().canonicalize().unwrap();
+    let system = system_dir.path().join("docker.sock");
+    let places = Places {
+        home: Some(&home),
+        tmp: None,
+        runtime: None,
+        system: &system,
+    };
+    assert!(
+        engine_on_this_machine(None, &places)
+            .unwrap_err()
+            .contains("no Docker engine")
+    );
+    for remote in [
+        "tcp://127.0.0.1:2375",
+        "tcp://build-box.example:2376",
+        "ssh://me@build-box.example",
+        "npipe:////./pipe/docker_engine",
+    ] {
+        let refused = engine_on_this_machine(Some(remote), &places).unwrap_err();
+        assert!(refused.contains(remote), "{refused}");
+        assert!(
+            refused.contains("cannot tell is on this machine"),
+            "{refused}"
+        );
+    }
+    let desktop = home.join(".docker/run/docker.sock");
+    socket_at(&desktop);
+    assert_eq!(engine_on_this_machine(None, &places), Ok(desktop.clone()));
+    let window = format!("unix://{}", desktop.display());
+    assert_eq!(engine_on_this_machine(Some(&window), &places), Ok(desktop));
+    socket_at(&home.join("projects/docker.sock"));
+    let writable = format!("unix://{}", home.join("projects/docker.sock").display());
+    assert!(engine_on_this_machine(Some(&writable), &places).is_err());
+}
+
 #[test]
 fn only_a_folder_root_alone_writes_is_root_s() {
     assert!(only_root_writes(Path::new("/")));
