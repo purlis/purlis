@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { commands, type BrowsersListed, type ChatBrowser } from "./bindings";
 import { listen } from "./here";
 
@@ -130,9 +130,15 @@ export function useBrowsersTakenBack(
   plane: string,
   open: ((program: string) => void) | undefined,
 ): void {
+  // The latest `open`, so a new one does not listen again.
+  const opening = useRef(open);
+  useEffect(() => {
+    opening.current = open;
+  }, [open]);
+  const ready = open !== undefined;
   useEffect(() => {
     // Nothing is taken until the window can open a tab that stays.
-    if (open === undefined) return;
+    if (!ready) return;
     let gone = false;
     let stop: (() => void) | undefined;
     const take = () => {
@@ -142,7 +148,7 @@ export function useBrowsersTakenBack(
         // over once, and one dropped would run with no tab (a StrictMode remount asks twice).
         .then((answer) => {
           if (answer.status === "error") return;
-          for (const program of answer.data) open(program);
+          for (const program of answer.data) opening.current?.(program);
         })
         // A window whose core cannot say opens none.
         .catch(() => undefined);
@@ -153,8 +159,10 @@ export function useBrowsersTakenBack(
         const unlisten = await listen<BrowsersListed>(LISTED, (event) => {
           if (!gone && event.payload.plane === plane) take();
         });
-        if (gone) unlisten();
-        else stop = unlisten;
+        // Let go of quietly: a window going away may no longer have its events to let go of.
+        const letGo = () => void Promise.resolve(unlisten()).catch(() => undefined);
+        if (gone) letGo();
+        else stop = letGo;
       } catch {
         // No window to listen in.
       }
@@ -163,5 +171,5 @@ export function useBrowsersTakenBack(
       gone = true;
       stop?.();
     };
-  }, [plane, open]);
+  }, [plane, ready]);
 }
