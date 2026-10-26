@@ -12,8 +12,8 @@
  * - **Three rows**: the header (the title, and a line under it), the body, which is the only part
  *   that scrolls, and the footer with the answers, always in view. A focused control in the body
  *   is never under the footer (WCAG 2.4.11): the two never overlap.
- * - **The width is the size's, never the content's**: `standard` (560 px) or `wide` (780 px,
- *   only for a list beside its details), each at most the window's width less its gutters.
+ * - **The width is the size's, never the content's**: `standard` (600 px) or `wide` (800 px,
+ *   only for a list beside its details; the operator's ruling on #2918), each at most the window's width less its gutters.
  * - **The height follows the content up to the window less 48 px**; a dialog given a `height`
  *   takes the lesser of the two and keeps it whatever its content.
  * - **Anchored at a fixed top**, so a change in its content moves only its bottom edge.
@@ -70,7 +70,7 @@ import { submits as chordSends } from "../field/submitKey";
 import { Reserved } from "./Reserved";
 import { entryOf, nextStop, stopsIn } from "./tabOrder";
 
-/** The family's sizes: 560 and 780 px wide (`dialog.css`). */
+/** The family's sizes: 600 and 800 px wide (`dialog.css`). */
 export const DIALOG_SIZES = ["standard", "wide"] as const;
 export type DialogSize = (typeof DIALOG_SIZES)[number];
 

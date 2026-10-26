@@ -65,10 +65,12 @@ impl Browsing2 {
         self.chats.answer(
             Some(&self.driver),
             root,
+            None,
             &BrowseAsk {
                 chat,
                 browser: None,
                 call_id: format!("c-{chat}"),
+                waited: false,
                 asked,
             },
             &BrowserReach::default,

@@ -83,6 +83,7 @@ import { searchKeySaid } from "./searchKey";
 import { SESSION_VIEW, sessionTitle, sessionTitleOf, sessionView } from "./sessions";
 import { shellKeySaid } from "./shellKey";
 import { switcherKeySaid } from "./switcherKey";
+import { focusKeySaid, shortcutsKeySaid } from "./keys/ownKeys";
 import { askedByOf, chatsOfTab } from "./tabChats";
 import { neighbour } from "./tabTasks";
 import { taskKeyNote, taskKeySaid } from "./taskKeys";
@@ -116,6 +117,8 @@ import {
   panesOf,
   placedOf,
   sessionOf,
+  SHORTCUTS_TITLE,
+  SHORTCUTS_VIEW,
   viewKey,
   type AskedBy,
   type Direction,
@@ -260,6 +263,10 @@ export const SEARCH_KEY_SAID = searchKeySaid(onAMac());
 /** The key that opens the project switcher, as this platform spells it — said on its row, for
  *  the same reason (`switcherKey.ts`, FR-27). */
 export const SWITCHER_KEY_SAID = switcherKeySaid(onAMac());
+/** Focus mode's key, as its row says it (`keys/ownKeys.ts`). */
+export const FOCUS_KEY_SAID = focusKeySaid(onAMac());
+/** The keyboard shortcuts' key, as its row says it. */
+export const SHORTCUTS_KEY_SAID = shortcutsKeySaid(onAMac());
 
 /** What a row does, as a value the window can carry out. */
 export type Does =
@@ -485,6 +492,8 @@ export type Does =
    *  It puts nothing in force by itself — an extension contributes only once it is approved,
    *  and the approval is the dialog's. */
   | { verb: "showExtensions" }
+  /** Focus mode on or off (#2921, N32): the window's, which hides its rail, bars and panels. */
+  | { verb: "toggleFocusMode" }
   /** Shows a view of a side and gives it the keyboard (#1673): what its key does. */
   | { verb: "showSideView"; view: ViewId }
   /** Puts a region away or brings it back, as its status-line toggle and ⌘B do. */
@@ -871,6 +880,8 @@ export type Now = {
   /** The regions put away (#1673), and the Panel while it is hidden (#1737): each side's region
    *  row, and the Panel's, says whether it brings it back or puts it away. */
   away?: readonly Toggled[];
+  /** Focus mode is on (#2921, N32): its row says it brings the rail, bars and panels back. */
+  focusMode?: boolean;
   /** The extensions' panels the right side shows as views (#1678), each a row by its name. */
   sidePanels?: readonly { view: PanelViewId; name: string }[];
   /**
@@ -1031,6 +1042,8 @@ export type Doing = {
    *  answered, and the open it ends in is the gated one. */
   createProject: () => void;
   showExtensions: () => void;
+  /** Focus mode on or off (#2921). Absent where nothing can hide. */
+  toggleFocusMode?: () => void;
   showSideView: (view: ViewId) => void;
   toggleRegion: (region: Toggled) => void;
   /** `SAID.toPanel` or `SAID.toSidebar` (#1740). Absent where no project is open, and so no
@@ -1404,6 +1417,10 @@ export const TOGGLE_NAVIGATION_ID = "view.toggle:navigation";
 export const TOGGLE_ATTENTION_ID = "view.toggle:aside";
 /** The palette's row that shows the Panel or hides it, ⌘J's (#1737, P-6). */
 export const TOGGLE_PANEL_ID = "view.toggle:panel";
+/** Focus mode's row (#2921). */
+export const FOCUS_MODE_ID = "focus.toggle";
+/** The keyboard shortcuts' row (#2921). */
+export const SHORTCUTS_ID = "shortcuts.show";
 /** The right sidebar's own views, as the region's palette row names them: "Inbox, Personas and
  *  Vaults" (#1738). */
 const RIGHT_VIEWS_SAID = ((names: string[]) =>
@@ -1754,6 +1771,26 @@ export function catalogue(now: Now): Offer[] {
       back: true,
     }),
     note: `The same regions, the other way round. ${SIDE_KEYS_SAID.previous}.`,
+  });
+  // **Focus mode** (#2921, N32): one row whose words say what pressing it does now, as each
+  // region's do; and **the keyboard shortcuts**, the key registry's cheat sheet in a tab of its
+  // own (N25). Their keys are drawn on the rows from the registry.
+  offers.push({
+    ...can(FOCUS_MODE_ID, now.focusMode === true ? "Leave focus mode" : "Focus mode", {
+      verb: "toggleFocusMode",
+    }),
+    note:
+      now.focusMode === true
+        ? `The rail, the bars and the panels back where they were. ${FOCUS_KEY_SAID}.`
+        : `The rail, the bars and the panels hidden: the work alone. ${FOCUS_KEY_SAID}.`,
+  });
+  offers.push({
+    ...can(SHORTCUTS_ID, "Keyboard shortcuts", {
+      verb: "openView",
+      view: SHORTCUTS_VIEW,
+      title: SHORTCUTS_TITLE,
+    }),
+    note: `Every key the window answers, where it applies. ${SHORTCUTS_KEY_SAID}.`,
   });
 
   // **Screen-reader mode** (DS-6, #629): one row whose words say what pressing it does now.
@@ -3343,6 +3380,9 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
       return DID;
     case "showExtensions":
       doing.showExtensions();
+      return DID;
+    case "toggleFocusMode":
+      doing.toggleFocusMode?.();
       return DID;
     case "showSideView":
       doing.showSideView(does.view);

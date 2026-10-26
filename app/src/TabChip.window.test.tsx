@@ -23,7 +23,7 @@ import { forgetKeyboard } from "./paneKeyboard";
 import { forgetThisLaunch } from "./regions";
 import { GRACE_MS, REST_MS } from "./tabTasks";
 import { stripNamed } from "./test-strips";
-import { hoverTipOf } from "./ui/tooltip/tooltip.testkit";
+import { hoverPlacementOf, hoverTipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
  * **A session's tab wears a chip of its tasks, which opens the menu to switch between them**
@@ -739,6 +739,17 @@ describe("what the menu says of the work (#1493, #1494, #1495)", () => {
     expect(line("sweep")).toHaveAccessibleDescription("");
     const ids = [...document.querySelectorAll(".chat-doing[id]")].map((one) => one.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  // #3361: a strip's tooltips stand below it, read from where the target stands, so a menu
+  // the strip opens (portalled out of it) keeps its targets' tooltips at their end (R166).
+  it("stands the strip's tooltips below it, and the menu it opens keeps them beside", async () => {
+    await drawn(withTasks());
+    const plus = screen.getByRole("button", { name: "New tab" });
+    expect(["bottom", "top"]).toContain(await hoverPlacementOf(plus));
+    press(theChip("steward 1"));
+    const brief = line("talk").querySelector<HTMLElement>('[data-says="Brief of talk"]');
+    expect(["right", "left"]).toContain(await hoverPlacementOf(brief));
   });
 
   it("opens a task's Brief from the end of its line, and the session's own has none", async () => {

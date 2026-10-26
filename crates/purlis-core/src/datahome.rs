@@ -26,6 +26,13 @@ pub const BROWSERS: &str = "browsers";
 /// out where the runner's chats work in it.
 pub const PROJECTS: &str = "projects";
 
+/// A runner image's `<data>`, as a shell in its container finds it: its user's default, under
+/// either of purlis's names, since the image names no data home of its own
+/// (`runner-image/Dockerfile`). For the tests that reach into a runner's container; nothing in
+/// the product reads it.
+#[doc(hidden)]
+pub const IN_A_RUNNER_CONTAINER: &str = "\"$HOME\"/.local/share/*";
+
 /// `<data>`, from this process's environment.
 ///
 /// A fenced build is held here (charter-app#129): a test run that pins no data home of its own

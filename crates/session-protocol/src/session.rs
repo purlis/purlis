@@ -238,17 +238,33 @@ use crate::view::{Limits, Views};
 /// keeping nothing of it. The window's alone ([`crate::grants::Power::Browser`]): a host pushes
 /// it only to a link of 1.37 or later that may start a browser.
 ///
+/// 1.38 added a runner's browsers (#2050, spec #2041): `remote-link` may start a browser, attach
+/// a view of one, send a chat's acts to it, drive it for the person and have purlis log it in,
+/// each as the desktop's host relaying its window ([`crate::grants`]), never from a kept login
+/// or keeping one, which stay on the device they were made on. A runner before 1.38 refuses each
+/// `not_allowed`, and its window's chats there have no browser.
+///
 /// 1.39 added a window taking its browsers back after a crash (#2025): `programs_of` answers a
 /// held project's browsers too, each with who drives it (`driver`) and the note the window keeps
 /// of it in the host (`note`), which a browser's start may carry and `note_program` replaces. A
 /// note is the window's own, which the host keeps for it and never reads, at most
 /// [`ProgramNote::MOST`] bytes. And each browser says the identity of every login the host
-/// performed in it, or that it opened from (`logins`): the host's own record, which no note
-/// can unsay; a login whose start named no identity is recorded as an empty one. The window's alone ([`crate::grants::Power::Reattach`]). A host before 1.39 answers
-/// no browser, and a window that comes back to it ends them as nothing takes them back.
+/// performed in it, or that it opened from (`logins`): the host's own record, which no note can
+/// unsay; a login named with no identity is recorded as an empty one. A login names its
+/// identity (`identity`). The window's alone ([`crate::grants::Power::Reattach`]). A host of an
+/// earlier minor answers no browser, and a window that comes back to it ends them as nothing
+/// takes them back.
 pub const VERSION: Version = Version {
     major: 1,
     minor: 39,
+};
+
+/// The version that first knows browsers relayed for a window (#2050): a runner before it refuses
+/// a browser from `remote-link`, so a relaying host sends one on, and a login's values, only to
+/// a runner of this version or later.
+pub const KNOWS_RELAYED_BROWSERS: Version = Version {
+    major: 1,
+    minor: 38,
 };
 
 /// The version that first answers a held project's browsers to `programs_of` and keeps a note
@@ -600,7 +616,9 @@ pub enum Command {
     /// waits for the password field to go, and hands the browser back, which then reaches that
     /// origin alone. Answered [`Answer::Browsed`] with the page it left, or refused
     /// [`BROWSER_REFUSED`] in words that carry no value. The values never show in this
-    /// command's `Debug`. The window's alone ([`crate::grants::Power::LogIn`]).
+    /// command's `Debug`. The window's alone ([`crate::grants::Power::LogIn`]), relayed by its
+    /// host to a runner's browser from 1.38 (#2050), and never one that keeps a kept login there
+    /// ([`crate::grants::Power::KeptLogin`]).
     LogIn {
         program: String,
         login: crate::browsing::LogIn,
@@ -923,7 +941,7 @@ pub struct StartProgram {
     pub alone: Vec<u16>,
     /// For a [`ProgramKind::Browser`], the kept login it opens from (1.27, #2021): it starts
     /// signed in from that login's store, held to the login's site from its first moment. The
-    /// window's alone ([`crate::grants::Power::LogIn`]).
+    /// window's alone, on its own device ([`crate::grants::Power::KeptLogin`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kept: Option<crate::browsing::KeptLogin>,
     /// What the window keeps of the program in its host (1.39, #2025): its own words, which the
@@ -1500,6 +1518,29 @@ impl Command {
             Command::Unpair => Power::Unpair,
             Command::RelayTo { .. } => Power::RelayTo,
             Command::TakeCode { .. } | Command::GiveCode { .. } => Power::Code,
+        }
+    }
+}
+
+impl Command {
+    /// **Whether it opens a browser from a kept login, or keeps one** (1.27, #2021): what only
+    /// the window on its own device sends ([`crate::grants::Power::KeptLogin`]).
+    pub fn uses_kept_login(&self) -> bool {
+        match self {
+            Command::StartProgram(start) => start.kept.is_some(),
+            Command::LogIn { login, .. } => login.keep.is_some(),
+            _ => false,
+        }
+    }
+
+    /// **Whether it is about a browser**: one's start or view, an act of it, its driving, its
+    /// login, or its engine's download (1.38, #2050): what a relaying host sends on only to a
+    /// host of [`KNOWS_RELAYED_BROWSERS`] or later.
+    pub fn is_about_a_browser(&self) -> bool {
+        match self {
+            Command::StartProgram(start) => start.kind == ProgramKind::Browser,
+            Command::AttachView { kind, .. } => *kind == ViewKind::Browser,
+            command => matches!(command.power(), Power::Browser | Power::LogIn),
         }
     }
 }
@@ -2114,16 +2155,13 @@ async fn refused<H: Host>(command: &Command, peer: &Peer, host: &H) -> Option<Re
         Command::AttachView { kind, .. } => *kind == ViewKind::Browser,
         _ => false,
     };
-    // A kept login is the window's alone, as a login is (1.27).
-    if let Command::StartProgram(start) = command
-        && start.kept.is_some()
-        && !scope.may(Power::LogIn)
-    {
+    // A kept login is the window's alone, on its own device (1.27, 1.38).
+    if command.uses_kept_login() && !scope.may(Power::KeptLogin) {
         return Some(Refusal {
             code: NOT_ALLOWED.into(),
             why: format!(
-                "a browser opens from kept logins from purlis's window only, and this link is \
-                 `{scope}`"
+                "a kept login is opened and kept from purlis's window on its own device only, \
+                 and this link is `{scope}`"
             ),
         });
     }

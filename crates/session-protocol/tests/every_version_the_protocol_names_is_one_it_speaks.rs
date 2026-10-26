@@ -13,8 +13,7 @@ use purlis_session_protocol::session::VERSION;
 const SOURCE: &str = include_str!("../src/session.rs");
 
 /// Minors no change added: their numbers were passed over.
-/// 1.38 is #3290's, which has not merged yet: it leaves this list as that lands.
-const PASSED_OVER: &[u16] = &[12, 19, 20, 38];
+const PASSED_OVER: &[u16] = &[12, 19, 20];
 
 /// Each `pub const KNOWS_…: Version` in the source, with its minor.
 fn knows() -> Vec<(String, u16)> {

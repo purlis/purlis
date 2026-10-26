@@ -82,14 +82,20 @@ describe("the engine's pair list", () => {
 const KEYWORDS = new Set(["inherit", "transparent", "none", "currentcolor", "unset", "initial"]);
 
 /**
- * The colours the stylesheet check below cannot read, each as `rule | declaration`. There are
- * none: every colour and background a rule sets is one token, so each is read below (the
- * explorer's change marks name their state's colour in each rule, #2318). Reading is not
- * pairing: a rule that sets a colour and no background draws no pair of its own, so the change
- * marks' colours are held on their backgrounds by hand, in the engine's `PAIRS`, and the test
- * below fails when one is not.
+ * The colours the stylesheet check below cannot read, each as `rule | declaration`. Every other
+ * colour and background a rule sets is one token, so each is read below (the explorer's change
+ * marks name their state's colour in each rule, #2318). Reading is not pairing: a rule that sets
+ * a colour and no background draws no pair of its own, so the change marks' colours are held on
+ * their backgrounds by hand, in the engine's `PAIRS`, and the test below fails when one is not.
+ *
+ * - The Chats view's sticky head (#3331) is filled with its panel's fill, `--panel-fill`: the
+ *   family default's `surface.base`, or the token a theme's `panel.root.fill` names. Its words
+ *   (primary, secondary, muted) are held on `surface.base` and `surface.raised`, the two fills
+ *   the built-in themes give a panel, in `PAIRS`.
  */
-const READ_BY_HAND: readonly string[] = [];
+const READ_BY_HAND: readonly string[] = [
+  ".chats-head | background: var(--panel-fill, var(--surface-base))",
+];
 
 /** The parts of a selector that say a state, not what is drawn: the pointer on it, the
  *  keyboard on it, pressed, or chosen. */

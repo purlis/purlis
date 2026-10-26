@@ -623,34 +623,6 @@ async fn a_dialed_link_that_ends_is_told_to_the_window_and_so_is_the_next_one_up
 }
 
 #[tokio::test]
-async fn host_a_sends_no_login_on_to_host_b_even_from_its_window() {
-    let runs = StandIns::default();
-    let dials = Arc::new(AtomicUsize::new(0));
-    let relay = Relay::new(counting(
-        &dials,
-        as_its_window(Hosting::running_with(Echo, runs.clone())),
-    ));
-    let (client, _views, _events) = Client::new(local_ui(relay).await);
-    let refused = client
-        .log_in(
-            "01J9ZQ8000000000000000000D",
-            purlis_session_protocol::browsing::LogIn {
-                address: "https://shop.example.test/login".into(),
-                user: None,
-                password: purlis_session_protocol::browsing::Secret::new("fixture-word".into()),
-                keep: None,
-                identity: None,
-            },
-        )
-        .await
-        .unwrap_err();
-    let refusal = refused.refusal().expect("host A's relay refuses it");
-    assert_eq!(refusal.code, session::NOT_ALLOWED);
-    assert!(!refusal.why.contains("fixture-word"), "{}", refusal.why);
-    assert_eq!(dials.load(Ordering::SeqCst), 0, "nothing was sent on");
-}
-
-#[tokio::test]
 async fn host_a_sends_no_start_from_kept_logins_on_to_host_b() {
     let runs = StandIns::default();
     let dials = Arc::new(AtomicUsize::new(0));

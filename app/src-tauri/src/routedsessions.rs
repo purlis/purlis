@@ -133,7 +133,7 @@ impl RoutedSessions {
                 purlis_core::runners::runner_for(&config, pool).map_err(|why| format!("{why}."))?;
                 Ok(
                     Box::new(crate::hostedsessions::HostedSessions::on_a_pools_runner(
-                        connection.relaying_to(pool),
+                        connection.to_a_pool(pool),
                         &plane,
                     )) as Box<dyn SessionHost>,
                 )

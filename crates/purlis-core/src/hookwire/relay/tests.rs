@@ -101,10 +101,25 @@ fn the_windows(window: &Arc<Window>, holding: &Arc<Holding>) -> Hearing {
         },
         answer: {
             let window = Arc::clone(window);
-            Box::new(move |connection, _ask| {
+            Box::new(move |connection, ask| {
                 window.said(format!("ask on {connection}"));
-                Answer::Ticket {
-                    ticket: format!("t{connection}"),
+                match ask {
+                    // A login is performed, and its page said (#2050).
+                    Ask::Browse(browse) => Answer::Browsed {
+                        browser: "b1".into(),
+                        browsed: Box::new(purlis_session_protocol::browsing::Browsed {
+                            settled: true,
+                            note: Some(if browse.waited {
+                                format!("asked afresh about {}", browse.call_id)
+                            } else {
+                                format!("did {}", browse.call_id)
+                            }),
+                            ..Default::default()
+                        }),
+                    },
+                    _ => Answer::Ticket {
+                        ticket: format!("t{connection}"),
+                    },
                 }
             })
         },
@@ -1309,4 +1324,325 @@ fn the_host_records_of_a_tool_line_or_a_refused_commit_only_that_line_s_own_reco
             "{entry:?}: not written, and its hook spools the line"
         );
     }
+}
+
+/// A host's hearing whose window is there only while `here` says so, as a runner's desktop comes
+/// and goes (#2050).
+fn now_and_then(
+    window: &Arc<Window>,
+    holding: &Arc<Holding>,
+    here: &Arc<std::sync::atomic::AtomicBool>,
+) -> Hearing {
+    now_and_then_with(window, holding, here).0
+}
+
+/// [`now_and_then`], with its relaying and the tokens of the chats that are there: 3, 4 and 100
+/// to 120.
+fn now_and_then_with(
+    window: &Arc<Window>,
+    holding: &Arc<Holding>,
+    here: &Arc<std::sync::atomic::AtomicBool>,
+) -> (Hearing, Arc<Relaying>, Arc<ChatTokens>) {
+    let heeding = Arc::new(Heeding::new(the_windows(window, holding)));
+    heeding.linked(LINK);
+    let host: Arc<Mutex<Option<Arc<Relaying>>>> = Arc::default();
+    let relaying = Relaying::new({
+        let host = Arc::clone(&host);
+        let here = Arc::clone(here);
+        Box::new(move |id, heard| {
+            if !here.load(std::sync::atomic::Ordering::SeqCst) {
+                return false;
+            }
+            let heard: Heard =
+                serde_json::from_str(&serde_json::to_string(heard).unwrap()).unwrap();
+            let host = Arc::clone(&host);
+            let reply: Reply = Arc::new(move |replied: Replied| {
+                let relaying = host.lock().unwrap().clone().unwrap();
+                relaying.replied(id, replied);
+            });
+            let heeding = Arc::clone(&heeding);
+            if heeding.admit(LINK, id, &heard, &reply) {
+                std::thread::spawn(move || heeding.hear(LINK, id, heard, reply));
+            }
+            true
+        })
+    });
+    *host.lock().unwrap() = Some(Arc::clone(&relaying));
+    let tokens = Arc::new(ChatTokens::default());
+    for chat in [3, 4].into_iter().chain(100..=120) {
+        tokens.issue(chat).unwrap();
+    }
+    (relaying.hearing(Arc::clone(&tokens)), relaying, tokens)
+}
+
+fn a_browse(chat: u32, call_id: &str, asked: Browsing) -> Ask {
+    Ask::Browse(Box::new(BrowseAsk {
+        chat,
+        browser: None,
+        call_id: call_id.into(),
+        waited: false,
+        asked,
+    }))
+}
+
+fn a_login(chat: u32, call_id: &str) -> Ask {
+    a_browse(
+        chat,
+        call_id,
+        Browsing::LogIn {
+            login: "shop-login".into(),
+        },
+    )
+}
+
+/// What `answer` says to its chat, whatever it is.
+fn said_of(answer: &Answer) -> String {
+    match answer {
+        Answer::No { why } => why.clone(),
+        Answer::Browsed { browsed, .. } => browsed.note.clone().unwrap_or_default(),
+        other => format!("{other:?}"),
+    }
+}
+
+#[test]
+fn a_login_with_the_desktop_away_waits_and_says_so_in_words_that_carry_on() {
+    let (window, holding) = a_window();
+    let here = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let host = now_and_then(&window, &holding, &here);
+
+    let answer = (host.answer)(42, a_login(3, "c-1"));
+
+    let said = said_of(&answer);
+    assert!(matches!(answer, Answer::No { .. }), "{answer:?}");
+    assert!(said.contains("shop-login"), "{said}");
+    assert!(
+        said.contains("within 15 minutes they are asked about it"),
+        "{said}"
+    );
+    assert!(
+        said.contains("nothing is filled unless they allow it"),
+        "{said}"
+    );
+    assert!(said.contains("Go on"), "{said}");
+    assert!(window.heard().is_empty(), "nobody heard it");
+}
+
+#[test]
+fn a_login_that_waited_is_handed_on_once_the_window_hears_again_and_its_chat_is_told() {
+    let (window, holding) = a_window();
+    let here = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let host = now_and_then(&window, &holding, &here);
+    let _ = (host.answer)(42, a_login(3, "c-1"));
+
+    here.store(true, std::sync::atomic::Ordering::SeqCst);
+    (host.each)(report(3)).expect("the window is back and takes the report");
+    let start = std::time::Instant::now();
+    while !window.heard().contains(&"ask on 42".to_owned()) {
+        assert!(
+            start.elapsed() < Duration::from_secs(5),
+            "{:?}",
+            window.heard()
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    // Its answer is in before the chat's next call is.
+    std::thread::sleep(Duration::from_millis(100));
+    let next = (host.answer)(43, a_browse(3, "c-2", Browsing::New));
+
+    let said = said_of(&next);
+    assert!(said.contains("while the person was away"), "{said}");
+    assert!(said.contains("shop-login"), "{said}");
+    assert!(
+        said.contains("asked afresh about c-1"),
+        "handed on as one that waited, and what it came to: {said}"
+    );
+    assert!(
+        said.ends_with("did c-2"),
+        "then the call's own answer: {said}"
+    );
+}
+
+#[test]
+fn a_chats_next_call_is_told_of_a_login_that_waited_once_and_another_chat_never() {
+    let (window, holding) = a_window();
+    let here = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let host = now_and_then(&window, &holding, &here);
+    let _ = (host.answer)(42, a_login(3, "c-1"));
+    here.store(true, std::sync::atomic::Ordering::SeqCst);
+    (host.each)(report(3)).unwrap();
+    let start = std::time::Instant::now();
+    while !window.heard().contains(&"ask on 42".to_owned()) {
+        assert!(start.elapsed() < Duration::from_secs(5));
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    std::thread::sleep(Duration::from_millis(100));
+
+    let other = said_of(&(host.answer)(44, a_browse(4, "c-3", Browsing::New)));
+    let first = said_of(&(host.answer)(43, a_browse(3, "c-2", Browsing::New)));
+    let again = said_of(&(host.answer)(45, a_browse(3, "c-4", Browsing::New)));
+
+    assert_eq!(other, "did c-3", "another chat is told nothing of it");
+    assert!(first.contains("shop-login"), "{first}");
+    assert_eq!(again, "did c-4", "told once");
+}
+
+#[test]
+fn one_chat_cannot_crowd_out_anothers_logins_that_wait() {
+    let here = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let (window, holding) = a_window();
+    let host = now_and_then(&window, &holding, &here);
+    let login =
+        |chat: u32, name: &str| a_browse(chat, "c-1", Browsing::LogIn { login: name.into() });
+
+    for n in 0..MOST_LOGINS_WAITING_FOR_A_CHAT {
+        let _ = (host.answer)(40, login(3, &format!("login-{n}")));
+    }
+    let past = said_of(&(host.answer)(40, login(3, "one-more")));
+    let another = said_of(&(host.answer)(41, login(4, "login-0")));
+
+    assert!(past.contains("too many"), "{past}");
+    assert!(another.contains("they are asked about it"), "{another}");
+}
+
+#[test]
+fn the_same_login_asked_again_while_away_waits_once_and_only_so_many_wait() {
+    let here = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let (window, holding) = a_window();
+    let host = now_and_then(&window, &holding, &here);
+
+    for n in 0..3 {
+        let _ = (host.answer)(40 + n, a_login(3, &format!("c-{n}")));
+    }
+    let mut last = Answer::No { why: String::new() };
+    for chat in 0..(MOST_LOGINS_WAITING as u32 + 1) {
+        last = (host.answer)(60, a_login(100 + chat, "c-x"));
+    }
+    here.store(true, std::sync::atomic::Ordering::SeqCst);
+    (host.each)(report(3)).unwrap();
+    std::thread::sleep(Duration::from_millis(300));
+
+    let asked = window
+        .heard()
+        .iter()
+        .filter(|heard| heard.starts_with("ask on 4"))
+        .count();
+    assert_eq!(
+        asked,
+        1,
+        "chat 3's login was handed on once: {:?}",
+        window.heard()
+    );
+    assert!(
+        said_of(&last).contains("too many"),
+        "one past the bound is refused: {}",
+        said_of(&last)
+    );
+}
+
+#[test]
+fn a_hook_lines_own_mark_that_it_waited_is_cleared() {
+    let (window, holding) = a_window();
+    let here = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let host = now_and_then(&window, &holding, &here);
+    let Ask::Browse(mut browse) = a_login(3, "c-9") else {
+        unreachable!()
+    };
+    browse.waited = true;
+
+    let said = said_of(&(host.answer)(42, Ask::Browse(browse)));
+
+    assert_eq!(said, "did c-9", "answered as any live call");
+}
+
+#[test]
+fn a_login_that_waited_too_long_is_let_go_of_and_its_chat_told() {
+    let (window, holding) = a_window();
+    let here = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let (host, relaying, _tokens) = now_and_then_with(&window, &holding, &here);
+    let Ask::Browse(browse) = a_login(3, "c-1") else {
+        unreachable!()
+    };
+    let long_ago = Instant::now() - A_LOGIN_WAITS_AT_MOST - Duration::from_secs(1);
+    assert!(relaying.waits(42, *browse, long_ago));
+
+    here.store(true, std::sync::atomic::Ordering::SeqCst);
+    (host.each)(report(3)).unwrap();
+    std::thread::sleep(Duration::from_millis(200));
+    let next = said_of(&(host.answer)(43, a_browse(3, "c-2", Browsing::New)));
+
+    assert!(
+        !window.heard().contains(&"ask on 42".to_owned()),
+        "never handed on: {:?}",
+        window.heard()
+    );
+    assert!(next.contains("not back within 15 minutes"), "{next}");
+}
+
+#[test]
+fn a_login_whose_chat_has_gone_is_let_go_of() {
+    let (window, holding) = a_window();
+    let here = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let (host, _relaying, tokens) = now_and_then_with(&window, &holding, &here);
+    let _ = (host.answer)(42, a_login(3, "c-1"));
+    tokens.forget(3);
+
+    here.store(true, std::sync::atomic::Ordering::SeqCst);
+    (host.each)(report(4)).unwrap();
+    std::thread::sleep(Duration::from_millis(200));
+
+    assert!(
+        !window.heard().contains(&"ask on 42".to_owned()),
+        "{:?}",
+        window.heard()
+    );
+}
+
+#[test]
+fn a_login_that_waited_is_handed_on_once_and_a_window_gone_mid_answer_is_told_not_retried() {
+    let here = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let handed = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let host_slot: Arc<Mutex<Option<Arc<Relaying>>>> = Arc::default();
+    // A window that takes each line and never answers; then goes.
+    let relaying = Relaying::new({
+        let (here, handed) = (Arc::clone(&here), Arc::clone(&handed));
+        Box::new(move |_, heard| {
+            if !here.load(std::sync::atomic::Ordering::SeqCst) {
+                return false;
+            }
+            if matches!(heard, Heard::Ask { .. }) {
+                handed.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            }
+            true
+        })
+    });
+    *host_slot.lock().unwrap() = Some(Arc::clone(&relaying));
+    let tokens = Arc::new(ChatTokens::default());
+    tokens.issue(3).unwrap();
+    let host = relaying.hearing(Arc::clone(&tokens));
+    let _ = (host.answer)(42, a_login(3, "c-1"));
+
+    here.store(true, std::sync::atomic::Ordering::SeqCst);
+    relaying.hand_on_the_logins_that_waited();
+    let start = Instant::now();
+    while handed.load(std::sync::atomic::Ordering::SeqCst) == 0 {
+        assert!(start.elapsed() < Duration::from_secs(5));
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    std::thread::sleep(Duration::from_millis(100));
+    relaying.let_go();
+    std::thread::sleep(Duration::from_millis(200));
+    relaying.hand_on_the_logins_that_waited();
+    std::thread::sleep(Duration::from_millis(200));
+
+    assert_eq!(
+        handed.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "handed on once"
+    );
+    let told = lock(&relaying.told).get(&3).cloned().unwrap_or_default();
+    assert!(
+        told.iter()
+            .any(|said| said.contains("went again before it answered")),
+        "{told:?}"
+    );
 }

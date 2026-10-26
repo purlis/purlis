@@ -70,7 +70,7 @@ impl Stamp {
         // changes it.
         if let Some(index) = set.index() {
             rows.push(Stamped {
-                name: crate::INDEX.to_owned(),
+                name: index.name,
                 path: PathBuf::new(),
                 description: index.text,
                 body: None,

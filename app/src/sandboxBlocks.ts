@@ -34,7 +34,7 @@ export const AT_MOST_HOSTS = 8;
 /**
  * A block as the window holds it: the core's, and for a block that names its host, every host
  * refused under its operation and kind while it was up, oldest first. Its `target` is the first
- * of them. `joined` is when a host last joined it (ms since the epoch), held with the block so
+ * of them. `joined` is when a host last joined it (`performance.now()`, a clock that only goes forward), held with the block so
  * the Notice's guard on a press just after a host joined survives the Notice being drawn again.
  */
 export type HeldBlock = ChatBlocked & {
@@ -127,7 +127,7 @@ function withoutHostsOf(block: HeldBlock, of: readonly string[]): HeldBlock | un
  * block of its operation and kind that is up, which then offers Allow only at the levels every
  * host it lists may be allowed at (#1343).
  */
-export function blocked(blocks: Blocks, told: ChatBlocked, now = Date.now()): Blocks {
+export function blocked(blocks: Blocks, told: ChatBlocked, now = performance.now()): Blocks {
   const held = blocks[told.session] ?? [];
   const was = held.find((one) => same(one, told));
   const mine = held.filter((one) => one !== was);
