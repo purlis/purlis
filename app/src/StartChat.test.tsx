@@ -1601,8 +1601,10 @@ describe("prototype B: the persona list beside the details (#2918)", () => {
   it("chips the project's default persona (R20)", () => {
     many();
 
-    expect(screen.getByRole("option", { name: "steward" })).toHaveTextContent("project default");
-    expect(screen.getByRole("option", { name: "devops" })).not.toHaveTextContent("project default");
+    const chip = (name: string) =>
+      screen.getByRole("option", { name }).querySelector('[data-said="project default"]');
+    expect(chip("steward")).not.toBeNull();
+    expect(chip("devops")).toBeNull();
   });
 
   it("keeps the harness, the name and the footer box across a change of persona (R32)", async () => {

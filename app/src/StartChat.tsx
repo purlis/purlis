@@ -555,11 +555,14 @@ export function StartChat({
                   <RowLabel>{key}</RowLabel>
                   {key === options.persona && (
                     <RowTrail>
-                      {/* A mark for the eye: the row's name is the persona's alone (WCAG 2.5.3),
-                        and the details say "Project default" for the persona picked. */}
-                      <span className="start-chat-chip" aria-hidden="true">
-                        project default
-                      </span>
+                      {/* A mark for the eye, drawn by the stylesheet from its attribute: the
+                        row's name is the persona's alone (WCAG 2.5.3), and the details say
+                        "Project default" for the persona picked. */}
+                      <span
+                        className="start-chat-chip"
+                        data-said="project default"
+                        aria-hidden="true"
+                      />
                     </RowTrail>
                   )}
                 </ListOption>
@@ -810,7 +813,8 @@ function CardFacts({ row }: { row: ProfileRow }) {
         <code className="where">{row.shown}</code>
         <span className="from">{row.source}</span>
         {row.is_default && <span className="what">default</span>}
-        {row.approval && <span className="what needs-approval">{row.approval}</span>}
+        {/* Said, not coloured: the approval sentence above is the one in the danger tier. */}
+        {row.approval && <span className="what">{row.approval}</span>}
       </span>
     </span>
   );

@@ -1098,7 +1098,12 @@ body {
   font-size: var(--font-size-base);
 }
 
-/* The project's default persona's chip: a wash pill in the accent's text (R20). */
+/* The project's default persona's chip: a wash pill in the accent's text (R20). Its words are
+   drawn from its attribute, never text of the row, whose name is the persona's. */
+.start-chat-chip::before {
+  content: attr(data-said);
+}
+
 .start-chat-chip {
   padding-block: 0;
   padding-inline: var(--space-3);
