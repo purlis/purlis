@@ -1113,6 +1113,25 @@ impl Docker {
         })
     }
 
+    /// **The socket of the Docker engine this machine's pools run on, where it is on this
+    /// machine** (#2050, [`settings::engine_on_this_machine`]): read as a run reads it, from
+    /// this process's `DOCKER_HOST`, else the system's or an installer's socket.
+    pub fn engine_on_this_machine() -> Result<std::path::PathBuf, String> {
+        let home = crate::envvar::var_os("HOME").map(std::path::PathBuf::from);
+        let docker_host = crate::envvar::var("DOCKER_HOST");
+        let tmp = crate::envvar::var_os("TMPDIR").map(std::path::PathBuf::from);
+        let runtime = crate::envvar::var_os("XDG_RUNTIME_DIR").map(std::path::PathBuf::from);
+        settings::engine_on_this_machine(
+            docker_host.as_deref(),
+            &settings::Places {
+                home: home.as_deref(),
+                tmp: tmp.as_deref(),
+                runtime: runtime.as_deref(),
+                system: std::path::Path::new(settings::SYSTEM_SOCKET),
+            },
+        )
+    }
+
     /// **The `docker` command on this machine** (#2679): the first of the places Docker's
     /// installers put it (`DOCKER_INSTALLED`, then under `home`), else the first on `path`, of
     /// its absolute folders alone. A window started from the Finder has a `PATH` that names

@@ -96,17 +96,20 @@ export function deviceOf(pool: string | null, onAMac: boolean): string {
  */
 export function addressChip(
   address: string | null,
-  device: string,
+  device: string | null,
 ): { said: string; whole: string | null } {
-  if (address === null || address === "") return { said: `On ${device}`, whole: null };
-  if (address === "about:blank") return { said: `A blank page on ${device}`, whole: null };
+  // A device not known yet is named not at all, never guessed (#2050).
+  const on = device === null ? "" : ` on ${device}`;
+  if (address === null || address === "")
+    return { said: device === null ? "" : `On ${device}`, whole: null };
+  if (address === "about:blank") return { said: `A blank page${on}`, whole: null };
   let host: string;
   try {
     host = new URL(address).host;
   } catch {
     host = "";
   }
-  return { said: `${host === "" ? address : host} on ${device}`, whole: address };
+  return { said: `${host === "" ? address : host}${on}`, whole: address };
 }
 
 /**

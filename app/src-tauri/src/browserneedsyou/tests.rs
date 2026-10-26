@@ -88,6 +88,7 @@ fn browse(chat: u32, browser: Option<&str>, asked: Browsing) -> BrowseAsk {
         chat,
         browser: browser.map(str::to_owned),
         call_id: "c-1".into(),
+        waited: false,
         asked,
     }
 }

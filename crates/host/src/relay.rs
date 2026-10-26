@@ -783,8 +783,22 @@ impl Upstream {
         })
     }
 
-    /// Send the client's `command` on this link, counted in flight until it is answered.
+    /// Send the client's `command` on this link, counted in flight until it is answered. A
+    /// browser's, a login's values among them, goes only to a host that knows browsers relayed
+    /// for a window (1.38, #2050): one before refuses it, and is sent nothing to refuse.
     async fn call(&self, command: Command) -> Result<Answer, Refusal> {
+        if command.is_about_a_browser() && self.client.version() < session::KNOWS_RELAYED_BROWSERS {
+            return Err(Refusal {
+                code: session::NOT_ALLOWED.into(),
+                why: format!(
+                    "the runner this host relays to speaks session protocol {}.{}, which runs no \
+                     browser for a window, so nothing was sent to it; update purlis on the \
+                     runner (removing the pool and adding it again makes it afresh)",
+                    self.client.version().major,
+                    self.client.version().minor
+                ),
+            });
+        }
         let _in_flight = Counted::start(&self.calls);
         self.client.call(command).await.map_err(|why| refused(&why))
     }
@@ -1206,12 +1220,7 @@ impl session::Host for Relay {
     async fn call(&self, command: Command, peer: &Peer) -> Result<Answer, Refusal> {
         // A kept login stays on the device it was made on (#2021, #2050): a browser on another
         // host is never opened from one, and keeps none.
-        let kept = match &command {
-            Command::StartProgram(start) => start.kept.is_some(),
-            Command::LogIn { login, .. } => login.keep.is_some(),
-            _ => false,
-        };
-        if kept {
+        if command.uses_kept_login() {
             return Err(Refusal {
                 code: session::NOT_ALLOWED.into(),
                 why: "a kept login stays on the device it was made on: a browser on another host \

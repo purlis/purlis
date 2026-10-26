@@ -131,3 +131,14 @@ describe("the device a browser's chip names (#2050)", () => {
     );
   });
 });
+
+describe("a browser's chip before its device is known (#2050)", () => {
+  it("names its page alone, never a device it may not be on", () => {
+    expect(addressChip("http://localhost:5173/", null)).toEqual({
+      said: "localhost:5173",
+      whole: "http://localhost:5173/",
+    });
+    expect(addressChip(null, null).said).toBe("");
+    expect(addressChip("about:blank", null).said).toBe("A blank page");
+  });
+});

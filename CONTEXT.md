@@ -525,6 +525,18 @@ agent may start a runner with the grants it has and never adds one; a runner not
 never gets one. A setting of **Workspace** (ADR 0089).
 _Avoid_: permission, secret (for the approval), capability (that is an extension's)
 
+**Pool login opt-in**:
+The person's answer, in an Ask, that one persona's browser login may be filled in its chats'
+browsers on one pool's runner: bound to that login as declared and allowed, to the pool as it is
+defined, its image, the runner that receives the values and the engine it runs on, and kept only
+while purlis runs. It is asked only where purlis can show the runner is the person's own: until a
+pool can be marked owned, a Docker pool on this machine's own engine. A runner not shown to be
+owned is never asked about and never receives a value. A login that waited while the desktop
+was away is asked about afresh. It adds to ownership, never stands in for it (ADR 0089, amended
+2026-10-26).
+_Avoid_: grant (that is an app runner's vault entry), owned (that is the device), Always (it lasts
+one run)
+
 **Editor protocol**:
 The part of the session host's public protocol an editor integration speaks: find which chat or
 workspace a file belongs to, ask the window to show one, type a selection into a chat's prompt

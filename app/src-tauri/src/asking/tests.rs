@@ -1729,8 +1729,13 @@ fn a_runner_chats_browser_login_asks_whether_its_persona_may_log_in_on_the_pool(
             pool: "builds".into(),
             definition: "d".repeat(64),
             image: "a".repeat(64),
+            runner: "01JB0RUNNER0000000000000000".into(),
+            runner_key: "ab".repeat(32),
+            runner_image: "a".repeat(64),
+            engine: "this machine's Docker".into(),
         },
         login: "shop-login".into(),
+        identity: "id-shop-login".into(),
         since: 1_700_000_000,
         changed: false,
     }];
@@ -1744,11 +1749,15 @@ fn a_runner_chats_browser_login_asks_whether_its_persona_may_log_in_on_the_pool(
     assert_eq!(ask.session, 6);
     assert_eq!(ask.answer, AnswerPath::PoolLogin);
     assert_eq!(ids(ask), [super::POOL_LOGIN_ALLOW, KEEP]);
+    assert_eq!(
+        ask.options[0].label, "Allow on pool builds",
+        "the line names its answer"
+    );
     assert!(ask.says.contains("shop-login"), "{}", ask.says);
     assert_eq!(
         ask.says,
-        "Wants its browser logged in with shop-login on pool builds. Allow fills steward's \
-         logins there from your vault; the runner keeps none, and you are asked again if the \
-         pool changes"
+        "Wants its browser logged in with shop-login on pool builds, which runs on this \
+         machine's Docker. Allow on pool builds fills steward's shop-login there from your \
+         vault; the runner keeps none"
     );
 }

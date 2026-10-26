@@ -248,9 +248,10 @@ pub const VERSION: Version = Version {
     minor: 38,
 };
 
-/// The version that first runs browsers for a relaying host (#2050): a runner before it refuses
-/// a browser from `remote-link`.
-pub const RUNS_BROWSERS_FOR_A_RELAY: Version = Version {
+/// The version that first knows browsers relayed for a window (#2050): a runner before it refuses
+/// a browser from `remote-link`, so a relaying host sends one on, and a login's values, only to
+/// a runner of this version or later.
+pub const KNOWS_RELAYED_BROWSERS: Version = Version {
     major: 1,
     minor: 38,
 };
@@ -1453,6 +1454,29 @@ impl Command {
     }
 }
 
+impl Command {
+    /// **Whether it opens a browser from a kept login, or keeps one** (1.27, #2021): what only
+    /// the window on its own device sends ([`crate::grants::Power::KeptLogin`]).
+    pub fn uses_kept_login(&self) -> bool {
+        match self {
+            Command::StartProgram(start) => start.kept.is_some(),
+            Command::LogIn { login, .. } => login.keep.is_some(),
+            _ => false,
+        }
+    }
+
+    /// **Whether it is about a browser**: one's start or view, an act of it, its driving, its
+    /// login, or its engine's download (1.38, #2050): what a relaying host sends on only to a
+    /// host of [`KNOWS_RELAYED_BROWSERS`] or later.
+    pub fn is_about_a_browser(&self) -> bool {
+        match self {
+            Command::StartProgram(start) => start.kind == ProgramKind::Browser,
+            Command::AttachView { kind, .. } => *kind == ViewKind::Browser,
+            command => matches!(command.power(), Power::Browser | Power::LogIn),
+        }
+    }
+}
+
 impl Pushed {
     /// **The power a link needs to be pushed this** ([`crate::grants`]), or none for what every
     /// subscriber is pushed: a held project's hook lines need [`Power::Heard`], how saving it
@@ -2062,27 +2086,12 @@ async fn refused<H: Host>(command: &Command, peer: &Peer, host: &H) -> Option<Re
         _ => false,
     };
     // A kept login is the window's alone, on its own device (1.27, 1.38).
-    if let Command::StartProgram(start) = command
-        && start.kept.is_some()
-        && !scope.may(Power::KeptLogin)
-    {
+    if command.uses_kept_login() && !scope.may(Power::KeptLogin) {
         return Some(Refusal {
             code: NOT_ALLOWED.into(),
             why: format!(
-                "a browser opens from kept logins from purlis's window on its own device only, \
+                "a kept login is opened and kept from purlis's window on its own device only, \
                  and this link is `{scope}`"
-            ),
-        });
-    }
-    if let Command::LogIn { login, .. } = command
-        && login.keep.is_some()
-        && !scope.may(Power::KeptLogin)
-    {
-        return Some(Refusal {
-            code: NOT_ALLOWED.into(),
-            why: format!(
-                "a login is kept on the device it was made on, from purlis's window only, and \
-                 this link is `{scope}`"
             ),
         });
     }

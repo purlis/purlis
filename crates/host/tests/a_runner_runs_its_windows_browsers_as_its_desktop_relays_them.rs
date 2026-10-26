@@ -439,3 +439,95 @@ async fn a_window_command_the_runner_refuses_is_still_sent_on_once() {
     assert_ne!(refusal.code, session::NOT_ALLOWED, "{}", refusal.why);
     assert_eq!(dials.load(Ordering::SeqCst), 1);
 }
+
+#[tokio::test]
+async fn a_link_between_hosts_cannot_act_on_a_browser_the_runners_own_window_opened() {
+    let runner = a_runner();
+    let (own, _views, _events) =
+        Client::new(as_scope(Scope::LocalUi, runner.hosting.clone()).await);
+    let project = tempfile::tempdir().unwrap();
+    own.hold_project(PROJECT, project.path().to_str().unwrap())
+        .await
+        .unwrap();
+    let program = own
+        .start_program(StartProgram::of(PROJECT, ProgramKind::Browser))
+        .await
+        .unwrap();
+    let screen = runner.browsers.started().last().unwrap().clone();
+    let (between, _views, _events) = Client::new(between_hosts(runner.hosting.clone()).await);
+
+    let acted = between.browse(&program, "c-1", Act::Pages).await;
+    let watched = between
+        .attach_browser_view(&program, ViewRole::Focused, None)
+        .await;
+    let logged_in = between.log_in(&program, a_login(None)).await;
+    let taken = between.take_over(&program).await;
+
+    for refused in [
+        acted.map(|_| ()).unwrap_err(),
+        watched.map(|_| ()).unwrap_err(),
+        logged_in.map(|_| ()).unwrap_err(),
+        taken.map(|_| ()).unwrap_err(),
+    ] {
+        let refusal = refused.refusal().expect("refused by the runner");
+        assert_eq!(refusal.code, session::NO_SUCH_CHAT, "{}", refusal.why);
+    }
+    let shown = screen.shown();
+    assert!(shown.acts.is_empty() && shown.logins.is_empty() && !shown.taken_over);
+    assert_eq!(shown.shows, 0, "no frame was asked for");
+}
+
+/// Dials host B over a link that agreed on session protocol 1.37, before relayed browsers.
+fn over_a_link_before_1_38(b: Hosting) -> Dial {
+    Arc::new(move || {
+        let b = b.clone();
+        Box::pin(async move {
+            let old = purlis_session_protocol::version::Speaks::new([
+                purlis_session_protocol::version::Version {
+                    major: 1,
+                    minor: 37,
+                },
+            ]);
+            let (a, b_end) = duplex(4 << 20);
+            let (client, served) = tokio::join!(
+                link::connect(a, old, Scope::LocalUi, HELD.of(Scope::LocalUi)),
+                link::serve_any(b_end, session::speaks(), &HELD)
+            );
+            tokio::spawn(session::serve(served.unwrap(), b, None));
+            Ok(client.unwrap())
+        })
+    })
+}
+
+#[tokio::test]
+async fn host_a_sends_no_browser_and_no_logins_values_to_a_runner_before_1_38() {
+    let runner = a_runner();
+    let relay = Relay::new(over_a_link_before_1_38(runner.hosting.clone()));
+    let (client, _views, _events) = Client::new(as_scope(Scope::LocalUi, relay).await);
+    let project = tempfile::tempdir().unwrap();
+    client
+        .hold_project(PROJECT, project.path().to_str().unwrap())
+        .await
+        .expect("a hold is no browser's");
+
+    let started = client
+        .start_program(StartProgram::of(PROJECT, ProgramKind::Browser))
+        .await;
+    let logged_in = client
+        .log_in("01J9ZQ8000000000000000000D", a_login(None))
+        .await;
+
+    for refused in [
+        started.map(|_| ()).unwrap_err(),
+        logged_in.map(|_| ()).unwrap_err(),
+    ] {
+        let refusal = refused.refusal().expect("refused by host A");
+        assert_eq!(refusal.code, session::NOT_ALLOWED);
+        assert!(refusal.why.contains("1.37"), "{}", refusal.why);
+        assert!(!refusal.why.contains("fixture-word"), "{}", refusal.why);
+    }
+    assert!(
+        runner.browsers.started().is_empty(),
+        "nothing was sent to it"
+    );
+}

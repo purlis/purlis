@@ -29,7 +29,7 @@ import {
 } from "./browserDriving";
 import { addressChip, deviceOf, originOfAddress, takeGoWhenShown } from "./browsers";
 import { useBrowserOrigin, useBrowserWatch, useWindowSeen } from "./browserWatch";
-import { programsOf, useChatBrowsers } from "./chatBrowsers";
+import { poolOf, programsOf, useChatBrowsers } from "./chatBrowsers";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { Notice, type NoticeAction, NoticePaneRow } from "./Notice";
 import { Select } from "./primitives/Select";
@@ -185,8 +185,13 @@ export function BrowserView({ plane, program }: { plane: string; program: string
   const origin = told === undefined ? wentTo : told;
   const [asking, setAsking] = useState<SitesAsked | null>(null);
   const [going, setGoing] = useState(false);
-  /** The pool whose runner it runs on, as its view said (#2050): its chip's device. */
-  const [pool, setPool] = useState<string | null>(null);
+  /** The pool whose runner it runs on, as its view said (#2050), until it says: unknown. */
+  const [pool, setPool] = useState<string | null | undefined>(undefined);
+  /** Its chip's device (#2050): the pool the chats' browsers list it on, else the one its view
+   *  said; a browser no chat has is the person's, on this machine. Unknown, none is named. */
+  const listedOn = poolOf(chatBrowsers, kept, program);
+  const onPool = listedOn !== undefined ? listedOn : chatBrowsersRead ? (pool ?? null) : pool;
+  const device = onPool === undefined ? null : deviceOf(onPool, mac);
 
   const drivingNow = useCallback((now: boolean) => {
     drives.current = now;
@@ -487,7 +492,7 @@ export function BrowserView({ plane, program }: { plane: string; program: string
       <div className="browser-bar" data-driving={driving ? "person" : "agent"}>
         {/* **Where the page is, and on which device** (#2024): drawn by purlis, outside the
             page, so a page cannot fake it. */}
-        <BrowserChip mac={mac} origin={origin} pool={pool} />
+        <BrowserChip origin={origin} device={device} />
         <p className="browser-bar-said" role="status">
           {/* The bar is the view's one status: what is said over the page is said here too. */}
           {reconnecting && `${RECONNECTING_SAID} `}
@@ -560,16 +565,8 @@ const KEEP_SAID = "Keep blocked";
 /** Where a browser's page is and on which device, as its view says them above its page
  *  (#2024, #2300): its origin alone, never its path or title. A browser on a pool's runner names
  *  its pool, so its `localhost` is never taken for this machine's (#2050). */
-function BrowserChip({
-  mac,
-  origin,
-  pool,
-}: {
-  mac: boolean;
-  origin: string | null;
-  pool: string | null;
-}) {
-  const chip = addressChip(origin, deviceOf(pool, mac));
+function BrowserChip({ origin, device }: { origin: string | null; device: string | null }) {
+  const chip = addressChip(origin, device);
   return (
     <Tooltip tip={chip.whole ?? undefined}>
       <span className="browser-chip" data-testid="browser-chip">

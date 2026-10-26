@@ -471,6 +471,7 @@ fn a_captcha_page_raises_an_ask_and_the_chat_is_told_only_that_the_person_finish
                 "c-{}",
                 calls.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
             ),
+            waited: false,
             asked,
         };
         if let Some(answer) = browserneedsyou::answered_first(&chats, &needs, &browse, 1000) {

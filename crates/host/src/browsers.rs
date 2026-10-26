@@ -76,8 +76,12 @@ pub struct Reads {
 }
 
 impl Reads {
-    /// How a link that agreed on `version` reads them.
-    pub fn of(version: purlis_session_protocol::version::Version) -> Reads {
+    /// How a link of `scope` that agreed on `version` reads them: one between hosts is held to
+    /// the link's frames (#2050).
+    pub fn of(
+        version: purlis_session_protocol::version::Version,
+        scope: purlis_session_protocol::auth::Scope,
+    ) -> Reads {
         use purlis_session_protocol::version::Version;
         Reads {
             aims: version
@@ -90,7 +94,7 @@ impl Reads {
                     major: 1,
                     minor: 35,
                 },
-            between_hosts: false,
+            between_hosts: scope == purlis_session_protocol::auth::Scope::RemoteLink,
         }
     }
 

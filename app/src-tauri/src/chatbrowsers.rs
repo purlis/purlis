@@ -343,8 +343,10 @@ pub struct PoolLoginWaits {
     pub persona: String,
     /// The pool as it is defined now: what an Allow is bound to.
     pub bound: purlis_core::poollogins::Bound,
-    /// The login the chat asked for, by its name.
+    /// The login the chat asked for, by its name, and its identity as declared and allowed:
+    /// what an Allow is bound to.
     pub login: String,
+    pub identity: String,
     /// When it began to wait, in seconds since 1970.
     pub since: u64,
     /// The person answered before, for the pool as it was: its definition or image changed.
@@ -1551,24 +1553,30 @@ impl ChatBrowsers {
     }
 
     /// **Whether chat `session`, running as `persona` on the pool `bound` says, may have its
-    /// browser login `login` filled there now** (#2050): where the person opted the persona in
-    /// for the pool as it is now. Otherwise the chat is refused in words that say what to do,
-    /// and, where the person has not answered for the pool as it is, its Ask is raised (once for
-    /// the chat): `Err((why, raised))`.
+    /// browser login `login` (of identity `identity`) filled there now** (#2050): where the person
+    /// opted that login of the persona in for the pool as it is now, unless the call `waited` for
+    /// the window, which is asked of the person afresh. Otherwise the chat is refused in words
+    /// that say what to do, and, where the person has not answered for the pool as it is (or the
+    /// call waited), its Ask is raised (once for the chat): `Err((why, raised))`.
+    #[allow(clippy::too_many_arguments)]
     pub fn pool_login(
         &self,
         session: u32,
         persona: &str,
         bound: &purlis_core::poollogins::Bound,
         login: &str,
+        identity: &str,
+        waited: bool,
         now: u64,
     ) -> Result<(), (String, bool)> {
         use purlis_core::poollogins::Standing;
         let pool = &bound.pool;
-        let changed = match self.pool_logins.standing(persona, bound) {
-            Standing::Allowed => return Ok(()),
-            Standing::KeptOff => return Err((pool_login_kept_off_said(persona, pool), false)),
-            Standing::Unasked => false,
+        let changed = match self.pool_logins.standing(persona, identity, bound) {
+            Standing::Allowed if !waited => return Ok(()),
+            Standing::KeptOff => {
+                return Err((pool_login_kept_off_said(persona, login, pool), false));
+            }
+            Standing::Allowed | Standing::Unasked => false,
             Standing::Changed => true,
         };
         let mut asks = self
@@ -1584,12 +1592,13 @@ impl ChatBrowsers {
                     persona: persona.to_owned(),
                     bound: bound.clone(),
                     login: login.to_owned(),
+                    identity: identity.to_owned(),
                     since: now,
                     changed,
                 },
             );
         }
-        Err((pool_login_asked_said(persona, pool, changed), raised))
+        Err((pool_login_asked_said(persona, login, pool, changed), raised))
     }
 
     /// **Every runner chat whose browser login waits on the person's opt-in** (#2050), longest
@@ -1606,10 +1615,11 @@ impl ChatBrowsers {
         waits
     }
 
-    /// **The person answers chat `session`'s pool login Ask** (#2050): `allow` opts its persona
-    /// in for the pool as the Ask showed it, Keep off keeps its logins off there, each until the
-    /// pool changes. Every chat of that persona whose login on that pool waits is answered with
-    /// it. Answers the chats answered, `session`'s first, or none where it waits no more.
+    /// **The person answers chat `session`'s pool login Ask** (#2050): `allow` opts the login it
+    /// showed in, for its persona on the pool as the Ask showed it, Keep off keeps that login
+    /// off there, each until the pool or its runner changes. Every chat of that persona whose
+    /// same login waits on the pool as it was shown is answered with it. Answers the chats
+    /// answered, `session`'s first, or none where it waits no more.
     pub fn answer_pool_login(&self, session: u32, allow: bool) -> Vec<PoolLoginWaits> {
         let mut asks = self
             .pool_asks
@@ -1619,14 +1629,19 @@ impl ChatBrowsers {
             return Vec::new();
         };
         if allow {
-            self.pool_logins.allow(&asked.persona, asked.bound.clone());
+            self.pool_logins
+                .allow(&asked.persona, &asked.identity, asked.bound.clone());
         } else {
             self.pool_logins
-                .keep_off(&asked.persona, asked.bound.clone());
+                .keep_off(&asked.persona, &asked.identity, asked.bound.clone());
         }
         let others: Vec<u32> = asks
             .values()
-            .filter(|one| one.persona == asked.persona && one.bound.pool == asked.bound.pool)
+            .filter(|one| {
+                one.persona == asked.persona
+                    && one.identity == asked.identity
+                    && one.bound == asked.bound
+            })
             .map(|one| one.session)
             .collect();
         let mut answered = vec![asked];
@@ -1895,6 +1910,11 @@ impl ChatBrowsers {
     /// Chat `session` has closed: its browsers end, and nothing of it is kept but a browser that
     /// could not be ended yet, which is tried again until it is.
     pub fn forget(&self, driver: Option<&Arc<dyn Driver>>, session: u32, was: &str) {
+        // Its pool login Ask goes with it (#2050): nobody answers for a chat that has gone.
+        self.pool_asks
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(&session);
         let (programs, kept) = {
             let mut chats = self.lock();
             let (kept, programs): (Vec<ChatBrowser>, Vec<ChatBrowser>) = chats
@@ -2336,32 +2356,32 @@ pub struct LoginRead {
     pub identity: String,
 }
 
-/// What a runner chat is told of its browser login while the person is asked whether
-/// `persona`'s logins may be filled on pool `pool` (#2050), again where it `changed`.
-fn pool_login_asked_said(persona: &str, pool: &str, changed: bool) -> String {
+/// What a runner chat is told of its browser login `login` while the person is asked whether
+/// `persona`'s may be filled on pool `pool` (#2050), again where it `changed`.
+fn pool_login_asked_said(persona: &str, login: &str, pool: &str, changed: bool) -> String {
     if changed {
         format!(
-            "pool {pool}'s runner changed since the person let {persona}'s browser logins be \
-             filled there (its image or how it is defined), so purlis asked them again and filled \
-             nothing: you are told once they answer; call browser_login again then, and go on \
-             with what needs no login meanwhile"
+            "pool {pool}'s runner changed since the person let {persona}'s login {login} be \
+             filled there (its image, how it is defined, or the runner itself), so purlis asked \
+             them again and filled nothing: you are told once they answer; call browser_login \
+             again then, and go on with what needs no login meanwhile"
         )
     } else {
         format!(
             "this browser runs on pool {pool}'s runner, so purlis asked the person whether \
-             {persona}'s browser logins may be filled there, and filled nothing: you are told \
-             once they answer; call browser_login again then, and go on with what needs no login \
+             {persona}'s login {login} may be filled there, and filled nothing: you are told once \
+             they answer; call browser_login again then, and go on with what needs no login \
              meanwhile"
         )
     }
 }
 
-/// What a runner chat is told of its browser login where the person keeps `persona`'s logins
-/// off on pool `pool` (#2050).
-fn pool_login_kept_off_said(persona: &str, pool: &str) -> String {
+/// What a runner chat is told of its browser login where the person keeps `persona`'s login
+/// `login` off on pool `pool` (#2050).
+fn pool_login_kept_off_said(persona: &str, login: &str, pool: &str) -> String {
     format!(
-        "the person keeps {persona}'s browser logins off on pool {pool}, whose runner this \
-         browser runs on, so nothing was filled: do not call browser_login there again; tell the \
+        "the person keeps {persona}'s login {login} off on pool {pool}, whose runner this browser \
+         runs on, so nothing was filled: do not call browser_login with it there again; tell the \
          person what needs the login, or go on without it"
     )
 }
@@ -2502,7 +2522,7 @@ pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk) -> Answer {
     // opt-in for that pool (#2050).
     let pool = held.chats().pool_of(browse.chat);
     let logins = |name: &str| match &pool {
-        Some(pool) => pool_login_of(held, browse.chat, name, pool, now),
+        Some(pool) => pool_login_of(held, browse, name, pool, now),
         None => login_of(held, browse.chat, name),
     };
     let listing = held.browsers().listing();
@@ -2584,19 +2604,29 @@ fn login_of(held: &crate::planes::Held, session: u32, name: &str) -> ReadLogin {
 /// once the person opted the chat's persona in for the pool as it is now, else its Ask is raised
 /// and the chat refused in words. Its values are read as the persona declares the login and
 /// this machine allowed it, at the call, as for a chat with no compiled sandbox here: the runner
-/// armed its tools, of which this window holds no record. Never a kept login: a runner keeps
+/// armed its tools, of which this window holds no record yet (#3339). Only on a runner shown to be
+/// the person's own (`purlis_core::poollogins::owned`), never for a runner chat with no sandbox,
+/// and the login checked before anyone is asked about it. Never a kept login: a runner keeps
 /// none, so nothing is kept, and nothing opens from one.
 fn pool_login_of(
     held: &crate::planes::Held,
-    session: u32,
+    browse: &BrowseAsk,
     name: &str,
     pool: &str,
     now: u64,
 ) -> ReadLogin {
-    let (mut asker, _) = held
+    let session = browse.chat;
+    let (mut asker, unconfined) = held
         .chats()
         .login_asker(held.root(), session)
         .ok_or_else(|| format!("chat {session} is not one this app has open"))?;
+    // A runner chat with no sandbox shares its runner with the browser engine unconfined.
+    if unconfined {
+        return Err(format!(
+            "this chat runs on pool {pool}'s runner without the sandbox, so purlis fills no \
+             browser login {name} there: start it in its sandbox to log its browser in"
+        ));
+    }
     let Some(persona) = asker.persona.clone().filter(|persona| !persona.is_empty()) else {
         return Err(format!(
             "this chat runs as no persona, so it has no browser login {name}, and nothing was \
@@ -2606,23 +2636,31 @@ fn pool_login_of(
     let config = held.chats().pools_in().ok_or_else(|| {
         format!("purlis keeps no pools on this machine, so no login {name} was filled on {pool}")
     })?;
+    // Only a runner shown to be yours is ever asked about (#2050).
     let bound = purlis_core::poollogins::Bound::read(&config, pool)
         .map_err(|why| format!("no login {name} was filled on pool {pool}: {why}"))?;
-    if let Err((why, raised)) = held
-        .browsers()
-        .pool_login(session, &persona, &bound, name, now)
-    {
+    // Its tools are the runner's, never this window's record of a sandbox here: the login is
+    // the persona's as declared and allowed here, checked before anyone is asked about it.
+    asker.confines = None;
+    let identity = purlis_core::secrets::brokered::login_allowed(&asker, name, true)?;
+    if let Err((why, raised)) = held.browsers().pool_login(
+        session,
+        &persona,
+        &bound,
+        name,
+        &identity,
+        browse.waited,
+        now,
+    ) {
         if raised {
             tracing::info!(
                 "purlis: chat {session}'s browser login on pool {pool} asks the person to opt \
-                 its persona in"
+                 it in"
             );
             held.chats().asks_may_have_moved();
         }
         return Err(why);
     }
-    // Its tools are the runner's, never this window's record of a sandbox here.
-    asker.confines = None;
     let (login, identity) =
         purlis_core::secrets::brokered::login_and_identity_for(&asker, name, true)?;
     Ok(LoginRead {

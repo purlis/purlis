@@ -417,7 +417,9 @@ mod hosted {
 
         fn driven(&self) -> Result<Vec<String>, String> {
             let mut driven = Vec::new();
-            for link in self.every_link()? {
+            let mut links = vec![self.link()?];
+            links.extend(self.pool_links());
+            for link in links {
                 match link.call(Command::List)? {
                     Answer::Chats(listed) => driven.extend(
                         listed
@@ -561,38 +563,33 @@ mod hosted {
         /// there, which the window's host relays to the runner.
         fn link_for(&self, program: &str) -> Result<Arc<HostLink>, String> {
             match self.at_of(program) {
-                Some(At {
-                    root,
-                    pool: Some(pool),
-                }) => self
-                    .connection
-                    .to_a_pool(&pool)
-                    .of_project(&root, LINK_WITHIN),
+                Some(at) if at.pool.is_some() => self.link_at(&at, LINK_WITHIN),
                 _ => self.link(),
             }
         }
 
-        /// The window's own link, and the link of each pool the window started a browser on.
-        fn every_link(&self) -> Result<Vec<Arc<HostLink>>, String> {
-            let mut links = vec![self.link()?];
+        /// The link the project at `at` is held on, waiting at most `within`: its root's own on
+        /// this machine's host, or the one its host relays to the pool's runner (#2050).
+        fn link_at(&self, at: &At, within: Duration) -> Result<Arc<HostLink>, String> {
+            match &at.pool {
+                Some(pool) => self.connection.to_a_pool(pool).of_project(&at.root, within),
+                None => self.connection.of_project(&at.root, within),
+            }
+        }
+
+        /// The link of each pool the window started a browser on that is open now: a runner
+        /// not reached now has nothing this window can list there.
+        fn pool_links(&self) -> Vec<Arc<HostLink>> {
             let pools: Vec<At> = self
                 .projects()
                 .iter()
                 .filter(|(at, held)| at.pool.is_some() && !held.browsers.is_empty())
                 .map(|(at, _)| at.clone())
                 .collect();
-            for at in pools {
-                let pool = at.pool.as_deref().unwrap_or_default();
-                // A runner not reached now has nothing this window can list there.
-                if let Ok(link) = self
-                    .connection
-                    .to_a_pool(pool)
-                    .of_project(&at.root, Duration::ZERO)
-                {
-                    links.push(link);
-                }
-            }
-            Ok(links)
+            pools
+                .iter()
+                .filter_map(|at| self.link_at(at, Duration::ZERO).ok())
+                .collect()
         }
 
         /// **Who drives `program`, as the host lists it**, kept where this window has not said
@@ -693,13 +690,7 @@ mod hosted {
         /// On a pool's runner it is the link the project's chats there are held on, and the
         /// runner holds it where it keeps its projects (#2050).
         fn held(&self, at: &At) -> Result<(Arc<HostLink>, String), String> {
-            let link = match &at.pool {
-                Some(pool) => self
-                    .connection
-                    .to_a_pool(pool)
-                    .of_project(&at.root, LINK_WITHIN)?,
-                None => self.connection.of_project(&at.root, LINK_WITHIN)?,
-            };
+            let link = self.link_at(at, LINK_WITHIN)?;
             let mut projects = self.projects();
             if let Some(held) = projects.get(at) {
                 return Ok((link, held.project.clone()));
@@ -872,7 +863,9 @@ mod hosted {
             };
             // Followed before it draws, so its first frame finds it.
             self.follow(&link, attached.view, link_said);
-            link.draw_frames(attached.view, frames, origins);
+            // A runner's browser is held to the link's frames by the window too (#2050).
+            let held = self.pool_of(program).is_some();
+            link.draw_frames(attached.view, frames, origins, held);
             // The lease is the host's: a view opened again says whether the person still drives.
             let person_drives = matches!(
                 link.call(Command::List),
@@ -1152,14 +1145,7 @@ mod hosted {
             };
             let mut ended = 0;
             for (at, held) in held {
-                let link = match &at.pool {
-                    Some(pool) => self
-                        .connection
-                        .to_a_pool(pool)
-                        .of_project(&at.root, Duration::ZERO),
-                    None => self.connection.of_project(&at.root, Duration::ZERO),
-                };
-                let Ok(link) = link else {
+                let Ok(link) = self.link_at(&at, Duration::ZERO) else {
                     continue;
                 };
                 ended += held
@@ -1192,7 +1178,7 @@ mod hosted {
             // This machine's host's, and every one the window started on a pool's runner it
             // reaches now (#2050).
             let mut links = vec![link];
-            links.extend(self.every_link().unwrap_or_default().into_iter().skip(1));
+            links.extend(self.pool_links());
             for link in links {
                 let Ok(Answer::Chats(programs)) = link.call(Command::List) else {
                     continue;

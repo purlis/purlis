@@ -1056,22 +1056,24 @@ pub const POOL_LOGIN_ALLOW: &str = "allow";
 
 /// **The pool login adapter** (#2050, spec #2041 stories 22 and 23): a runner chat asked purlis
 /// to fill one of its persona's browser logins in its browser, which runs on the pool's runner.
-/// Allow lets that persona's logins be filled there while the app runs and the pool stays as it
-/// is now; Keep off refuses them there until the pool changes. Every word is purlis's, and the
-/// line says the runner keeps none of the values. A changed pool's Ask says it changed.
+/// It names the login, the pool and the engine the pool runs on. Allow on pool X lets that login
+/// of that persona be filled there while the app runs and the pool and its runner stay as they
+/// are now; Keep off refuses it there until they change. Every word is purlis's, the line says
+/// the runner keeps none of the values, and a changed pool's Ask says it changed.
 pub fn pool_login(waits: &crate::chatbrowsers::PoolLoginWaits) -> Shown {
     let pool = &waits.bound.pool;
-    let (login, persona) = (&waits.login, &waits.persona);
+    let (login, persona, engine) = (&waits.login, &waits.persona, &waits.bound.engine);
     let says = if waits.changed {
         format!(
             "Pool {pool} changed since you answered. Wants its browser logged in with {login} \
-             there. Allow fills {persona}'s logins from your vault; the runner keeps none"
+             there, on {engine}. Allow on pool {pool} fills it from your vault; the runner keeps \
+             none"
         )
     } else {
         format!(
-            "Wants its browser logged in with {login} on pool {pool}. Allow fills {persona}'s \
-             logins there from your vault; the runner keeps none, and you are asked again if \
-             the pool changes"
+            "Wants its browser logged in with {login} on pool {pool}, which runs on {engine}. \
+             Allow on pool {pool} fills {persona}'s {login} there from your vault; the runner \
+             keeps none"
         )
     };
     Shown {

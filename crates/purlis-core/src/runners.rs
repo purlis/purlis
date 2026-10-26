@@ -127,10 +127,7 @@ impl Pool {
     pub fn definition_digest(&self) -> String {
         use sha2::Digest as _;
         let row = pool_to_row(self).to_string();
-        sha2::Sha256::digest(row.as_bytes())
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect()
+        crate::runnerlink::hex_of(&sha2::Sha256::digest(row.as_bytes()))
     }
 
     /// This pool, its runner image `image` from now on (#2749).

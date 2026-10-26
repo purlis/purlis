@@ -814,6 +814,11 @@ impl ChatTokens {
     }
 
     /// Forgets `chat`'s token: a line for it is dropped from now on.
+    /// **Whether chat `chat`'s token is held**: it has started and not been forgotten (#2050).
+    pub fn holds(&self, chat: u32) -> bool {
+        self.held().contains_key(&chat)
+    }
+
     pub fn forget(&self, chat: u32) {
         self.unrecorded_forgotten(chat);
         self.held().remove(&chat);
@@ -1414,6 +1419,11 @@ pub struct BrowseAsk {
     /// The act's own id: a retry with the same id answers again and acts on nothing.
     pub call_id: String,
     pub asked: Browsing,
+    /// **It waited for the window** (#2050): a runner's host kept it while its desktop was away
+    /// and hands it on now. A login that waited is asked of the person afresh, never performed
+    /// on an answer they gave before. Set by the host alone: a hook line's own is cleared.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub waited: bool,
 }
 
 /// What a chat asks of its browsers ([`BrowseAsk`]).
