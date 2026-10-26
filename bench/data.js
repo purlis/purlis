@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792998973077,
+  "lastUpdate": 1793000836455,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -25200,6 +25200,48 @@ window.BENCHMARK_DATA = {
             "value": 101.57342550000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.154, 101.364, 101.573, 101.578, 101.654 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ea66d6199e9b85cf13745483a1b9adcea7e0c9b6",
+          "message": "Runners: the parity suite against Docker (#2045) (#3276)\n\n* Parity: the behaviour suite on a Docker pool target, gated in CI (#2045)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* release-features: a push to the job's own loopback registry publishes nothing (#2045)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* Parity: a profile the behaviour suite gives is signed in on a pool's runner too (#2045, #3072)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* Parity: the Docker pool target is wired as the window wires a pool (#2045)\n\nThe window's own host relays the project's links to the pool's runner, as the app's\ndoes; a pid is looked for in the runner's container; the proxy behaviours wait on #3288.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* Parity: the runner's claude is the behaviour's stand-in; a failing runner says what its host said (#2045)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* Parity: a pool's chats are heard as the window routes them; the runner's profile is signed in (#2045, #3072)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* Parity: a harness chat by its names, viewed, typed into, answered and stopped (#3072); the event log waits on #3304\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* Parity review round 1: the app's router runs the pool target, no silent pass, wider scope (#2045)\n\nRoutedSessions::of_the_project is the one constructor the app and the suite use, and\nevery_start_on routes each start to the pool for the suite. The rust job leaves the Docker\ntests out by name, and the parity job fails them without an image. The scope takes the\nhost, sandbox, browser, hook and runner families; the registry is pinned by digest; the\nsaving behaviours wait on #3312.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-26T11:45:01+04:00",
+          "tree_id": "004a5f16dfbeb4d4b82a7cb0b6a6a7f502c411c8",
+          "url": "https://github.com/purlis/purlis/commit/ea66d6199e9b85cf13745483a1b9adcea7e0c9b6"
+        },
+        "date": 1793000833418,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.44257349999999995,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.438, 0.439, 0.443, 0.447, 0.447 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5112035,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.413, 16.502, 16.511, 16.534, 16.554 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.342573,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.176, 102.268, 102.343, 102.468, 102.547 ms"
           }
         ]
       }
