@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792970004254,
+  "lastUpdate": 1792973572671,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -7468,6 +7468,42 @@ window.BENCHMARK_DATA = {
             "value": 457.8,
             "unit": "MB",
             "extra": "median of 6 samples: 445.8, 451.7, 456.6, 458.9, 459.9, 616.1 MB; window 236.7 MB, session host 221.1 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a378863aa643a46578e9ab125959f17021681f1e",
+          "message": "Theme check: hold state colours drawn as part words to 4.5:1 (#3041) (#3256)\n\nA state colour a component part draws as its words (the warning-soft\nbutton, the rail's waiting badge, a title-bar chip's waiting count) was\nheld at the 3:1 a mark takes. Those pairs are now held at the window's\ntext size, so the check names a theme that draws them too faint and the\nconsent floors fall back to purlis's own waiting colour.\n\nA test walks the parts manifest and fails when a state colour drawn as\nwords at rest or under the pointer has no text-floor pair. The badge's\nand the count's own fills are now declared in the manifest. Purlis\nClassic light's waiting amber moves from #805500 to #7a5100 so its count\nreads 4.74:1 on the amber wash over the title bar (was 4.42).\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-26T02:58:17+04:00",
+          "tree_id": "a21378db1743322a74167b52bc9b2c1ad9c1b9ba",
+          "url": "https://github.com/purlis/purlis/commit/a378863aa643a46578e9ab125959f17021681f1e"
+        },
+        "date": 1792973569835,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 1101,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1048, 1101, 1291 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 330.8,
+            "unit": "MB",
+            "extra": "median of 6 samples: 334.3, 336.4, 336.8, 326.2, 327.3, 224.3 MB; window 207.7 MB, session host 121.9 MB"
           }
         ]
       }
