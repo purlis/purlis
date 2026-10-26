@@ -19,6 +19,9 @@
  * - **Sizes**: `sm` 24, `md` 28 (the default), `lg` 32, as the text input's.
  * - **Keyboard first**: ↓ opens the suggestions, ↑ and ↓ move and stop at the ends, Enter picks,
  *   Escape closes the list and then clears nothing.
+ * - **Refused** (`isInvalid`, #3110): a value typed that is not allowed draws the danger colour on
+ *   the box's edge, as a text field's, and the box is marked invalid (`aria-invalid`); the words
+ *   that say why are its description (`aria-describedby`).
  */
 import type { ReactNode } from "react";
 import {
@@ -41,6 +44,8 @@ export type ComboBoxProps = {
   /** Its visible name, over the box. Without one, `aria-label` names it. */
   label?: ReactNode;
   "aria-label"?: string;
+  /** What else describes the box: the words that say why it is refused. */
+  "aria-describedby"?: string;
   /** The words in the box, as typed or as a suggestion picked wrote them. */
   value: string;
   onChange: (value: string) => void;
@@ -48,6 +53,9 @@ export type ComboBoxProps = {
   suggestions: readonly string[];
   placeholder?: string;
   isDisabled?: boolean;
+  /** Refused: what is typed is not allowed. The words that say why are drawn by its row or its
+   *  form and named by `aria-describedby`. */
+  isInvalid?: boolean;
   /** Its hint, the shared tooltip (#2908), on the box. */
   tooltip?: string;
   size?: SelectSize;
@@ -67,6 +75,7 @@ export function ComboBox({
   suggestions,
   placeholder,
   isDisabled,
+  isInvalid,
   tooltip,
   size = "md",
   id,
@@ -88,6 +97,8 @@ export function ComboBox({
       inputValue={value}
       onInputChange={onChange}
       isDisabled={isDisabled}
+      isInvalid={isInvalid}
+      validationBehavior="aria"
       className={className}
       data-scope="field"
       data-part="root"

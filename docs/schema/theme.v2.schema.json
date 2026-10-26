@@ -6295,6 +6295,18 @@
         "select.root.open.shadow": {
           "$ref": "#/$defs/part-shadow"
         },
+        "select.root.invalid.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "select.root.invalid.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "select.root.invalid.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "select.root.invalid.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
         "select.placeholder.text": {
           "$ref": "#/$defs/part-text"
         },
@@ -6310,6 +6322,9 @@
         "select.placeholder.open.text": {
           "$ref": "#/$defs/part-text"
         },
+        "select.placeholder.invalid.text": {
+          "$ref": "#/$defs/part-text"
+        },
         "select.chevron.text": {
           "$ref": "#/$defs/part-text"
         },
@@ -6323,6 +6338,9 @@
           "$ref": "#/$defs/part-text"
         },
         "select.chevron.open.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "select.chevron.invalid.text": {
           "$ref": "#/$defs/part-text"
         },
         "combobox.root.fill": {
@@ -6403,6 +6421,18 @@
         "combobox.root.open.shadow": {
           "$ref": "#/$defs/part-shadow"
         },
+        "combobox.root.invalid.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "combobox.root.invalid.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "combobox.root.invalid.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "combobox.root.invalid.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
         "combobox.chevron.text": {
           "$ref": "#/$defs/part-text"
         },
@@ -6416,6 +6446,9 @@
           "$ref": "#/$defs/part-text"
         },
         "combobox.chevron.open.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "combobox.chevron.invalid.text": {
           "$ref": "#/$defs/part-text"
         },
         "checkbox.root.fill": {
