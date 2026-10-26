@@ -196,7 +196,7 @@ pub fn asked(held: &Held, ask: &ProposeAsk) -> Answer {
         Ok(()) => {
             held.chats().asks_may_have_moved();
             Answer::Said {
-                lines: vec![purlis_core::repocmd::Say::Done(HELD_SAID.to_owned())],
+                lines: vec![purlis_core::repocmd::Say::Done(HELD_SAID.into())],
                 code: 0,
             }
         }

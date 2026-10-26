@@ -49,9 +49,10 @@ pub fn set(
         && let Some(wider) = wider_copy(plane, level, name)
     {
         // An archived copy takes no name, so the next copy out loads where this one did.
-        (cx.say)(crate::repocmd::Say::Info(format!(
-            "The {wider} copy of {name} now loads in its place, wherever it reaches."
-        )));
+        (cx.say)(crate::repocmd::Say::Info(
+            format!("The {wider} copy of {name} now loads in its place, wherever it reaches.")
+                .into(),
+        ));
     }
     cx.done(match lifecycle {
         Lifecycle::Active => format!("{name} is in use again"),

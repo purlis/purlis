@@ -345,21 +345,23 @@
   margin-inline-start: auto;
 }
 
+/* No gap between the marks: each is a whole 24px target (WCAG 2.5.8) with its own hover fill,
+   so a gap would only take room a narrow pane's breadcrumb needs (#3214). */
 .pane-actions > .pane-doing {
-  gap: var(--space-1);
+  gap: 0;
   padding: 0;
   border: 0;
   background-color: transparent;
 }
 
-.pane-actions > .pane-doing button {
-  border-radius: var(--radius-md);
-  color: var(--text-quiet);
-}
-
-.pane-actions > .pane-doing button:hover:not(:disabled, [aria-disabled="true"]) {
-  background-color: var(--surface-overlay);
-  color: var(--text-primary);
+/* Each is the button family's quiet ghost (#3214). Ending a chat takes the danger colour under
+   the pointer, as a tab's `×` does, for the same reason: a confirmation is no licence for the
+   control to look lighter than what it does. It outranks the quiet ghost's hover by naming it,
+   in this layer after the family's. */
+.pane-doing
+  > .ends-a-chat[data-scope="button"][data-variant="quiet"][data-hovered]:not([data-disabled]) {
+  background-color: var(--danger-surface);
+  color: var(--danger-text);
 }
 
 /* ---------------------------------------------------------------------------------------------

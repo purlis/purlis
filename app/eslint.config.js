@@ -27,13 +27,9 @@ const OTHER_FAMILIES = {
     "vault-secret",
     // The tab strips and a pane's top line: a tab's marks and closer, the strip's offers.
     "closer",
-    "show-more",
-    "ends-a-chat",
-    "bare",
     "crumb",
     "tab-tasks-hand",
     "tab-tasks-counts",
-    "tasks-menu-place",
     // The title bar's workspace chips, and a needs-you mark on a row.
     "needs-you-mark",
     "plane-root",

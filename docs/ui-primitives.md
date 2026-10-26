@@ -483,7 +483,7 @@ own `min-width: max-content` beside the class.
 
 | Prop | Says |
 | --- | --- |
-| `variant` | `secondary` (the default, the plain button), `primary` (the answer purlis suggests), `ghost` (no box until the pointer reaches it), `danger` (what cannot be undone from purlis, D-1719-3), `grants` (an answer that grants, an Allow or an Accept), `soft-accent` (a suggestion that is not the answer), `warning-soft` (care, without ending anything), `link` (a button that reads as a link, as tall as its words so it can stand in a sentence) |
+| `variant` | `secondary` (the default, the plain button), `primary` (the answer purlis suggests), `ghost` (no box until the pointer reaches it), `danger` (what cannot be undone from purlis, D-1719-3), `grants` (an answer that grants, an Allow or an Accept), `soft-accent` (a suggestion that is not the answer), `warning-soft` (care, without ending anything), `link` (a button that reads as a link, as tall as its words so it can stand in a sentence), `quiet` (a ghost whose words are in the quiet tier until the pointer reaches it: a strip's end mark, a pane's split and close, a line's own marks, #3214) |
 | `size` | `sm` 24, `md` 28 (the default), `lg` 32, at the default text size and density; `lg` only beside a list's main filter field |
 | `icon` | the icon before the words, drawn as the `icon` part; `IconButton` takes only an icon and an `aria-label`, and is square |
 | `onPress`, `isDisabled`, `isSelected` | React Aria's own words; `onClick` still reaches a Radix trigger the button is the `asChild` of |

@@ -94,6 +94,16 @@ pub struct VaultError {
 }
 
 impl VaultError {
+    /// The refusal as a line of purlis's voice says it (SK-54).
+    ///
+    /// A vault's refusal is purlis's own prose, often laid out over lines (a sentence, then
+    /// what to run), so its line ends are kept ([`crate::tui::Markup::lines_of`]) and every
+    /// other hidden character in it is marked. What a provider's program printed never goes
+    /// into one: `op`'s and a resolver's output are withheld, because they can hold the secret.
+    pub fn said(&self) -> crate::tui::Markup {
+        crate::tui::Markup::lines_of(&self.message)
+    }
+
     pub fn new(message: impl Into<String>) -> Self {
         Self {
             kind: Kind::Other,

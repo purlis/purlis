@@ -293,7 +293,7 @@ an unknown token is.
 
 | Family | Parts | Variants |
 |---|---|---|
-| `button` | `root` (every property), `label` (`text`, `font-size`, `font-weight`), `icon` (`text`) | `secondary`, `primary`, `ghost`, `danger`, `grants` (an Allow or an Accept); since version 2 `soft-accent`, `warning-soft` and `link` |
+| `button` | `root` (every property), `label` (`text`, `font-size`, `font-weight`), `icon` (`text`) | `secondary`, `primary`, `ghost`, `danger`, `grants` (an Allow or an Accept); since version 2 `soft-accent`, `warning-soft` and `link`; since the next release's manifest version `quiet` (a ghost with quiet words) |
 | `field` (since version 3) | `root` (`gap`: the room between what it stacks), `label` (`text`, `font-size`, `font-weight`), `help` (`text`, `font-size`), `error` (`text`, `font-size`) | none |
 | `text-input` (since version 3) | `root` (every property but `font-weight`: the box for one line, and the words typed in it), `icon` (`text`: a filter's or a search's glass) | none |
 | `textarea` (since version 3) | `root` (every property but `gap`, `font-weight` and `height`: a textarea is as tall as its lines) | none |

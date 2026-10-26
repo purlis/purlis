@@ -725,6 +725,44 @@ fn a_border_that_is_a_parts_only_edge_contrasts_3_to_1() {
 }
 
 #[test]
+fn the_quiet_ghost_is_a_variant_of_the_next_manifest_held_to_its_words_floor() {
+    // #3214: additive, so a theme written against the released manifest still reads.
+    let quiet = parts::MANIFEST[0]
+        .variants
+        .iter()
+        .find(|one| one.name == "quiet")
+        .expect("the quiet ghost");
+    assert_eq!(quiet.since, parts::NEXT);
+    // Its default: no box, quiet words; under the pointer, the ghost's hover fill.
+    let held = parts::defaults_json("quiet");
+    assert_eq!(held["fill"], "transparent");
+    assert_eq!(held["text"], "text.quiet");
+    assert_eq!(held["border"], "transparent");
+    assert_eq!(held["hover"], "surface.hover");
+    // A theme's own quiet look is measured: words it changes that still clear the floor on
+    // every ground a button stands on raise nothing. (A rule equal to the default is not
+    // measured here; the built-in themes' quiet tier is held by `check::PAIRS`, which
+    // `every_built_in_still_clears_the_check` runs.)
+    let clean = load(&with_parts(
+        json!({ "button.root.quiet.text": "text.primary" }),
+    ));
+    assert!(
+        parts::fallen(clean.theme.first()).is_empty(),
+        "{:?}",
+        parts::fallen(clean.theme.first())
+    );
+    // And a theme that takes its words under the quiet tier's floor is told so.
+    let faded = load(&with_parts(
+        json!({ "button.root.quiet.text": "surface.hover" }),
+    ));
+    let fallen = parts::fallen(faded.theme.first());
+    assert!(
+        fallen.iter().any(|one| one.part == "button.root.quiet"),
+        "{fallen:?}"
+    );
+}
+
+#[test]
 fn a_disabled_control_is_not_held_to_the_floors() {
     let loaded = load(&with_parts(
         json!({ "button.root.disabled.text": "surface.base" }),
@@ -806,9 +844,11 @@ fn the_buttons_family_default_is_what_button_css_draws() {
             "text": token(first("color", &[own, base])),
             "border": token(declared(own, "border-color").unwrap_or(base_border)),
             "hover": token(first("background-color", &[own_hover, own, base_hover])),
+            // The words under the pointer: the quiet ghost's come up to the primary (#3214).
+            "hover_text": token(first("color", &[own_hover, own, base])),
         });
         let held = parts::defaults_json(variant);
-        for key in ["fill", "text", "border", "hover"] {
+        for key in ["fill", "text", "border", "hover", "hover_text"] {
             assert_eq!(held[key], drawn[key], "{variant}'s {key}");
         }
     }
