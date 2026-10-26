@@ -32,7 +32,8 @@ const SWITCH = '[role="radiogroup"][aria-label="Show the chats of"]';
 async function picked(): Promise<string> {
   return browser.execute(
     (group: string) =>
-      document.querySelector(`${group} [role="radio"][aria-checked="true"]`)?.textContent ?? "",
+      document.querySelector(`${group} input[type="radio"]:checked`)?.closest("label")
+        ?.textContent ?? "",
     SWITCH,
   );
 }
@@ -43,10 +44,10 @@ async function pick(says: string): Promise<void> {
     async () =>
       browser.execute(
         (group: string, words: string) => {
-          const radio = [...document.querySelectorAll<HTMLElement>(`${group} [role="radio"]`)].find(
-            (one) => one.textContent === words,
-          );
-          if (radio?.getAttribute("aria-checked") !== "true") radio?.click();
+          const radio = [
+            ...document.querySelectorAll<HTMLElement>(`${group} input[type="radio"]`),
+          ].find((one) => one.closest("label")?.textContent === words);
+          if ((radio as HTMLInputElement | undefined)?.checked !== true) radio?.click();
           return radio !== undefined;
         },
         SWITCH,
@@ -151,7 +152,9 @@ describe("the Chats view's scope", function () {
   it("draws the three scopes as one switch, narrowest first", async () => {
     const words = await browser.execute(
       (group: string) =>
-        [...document.querySelectorAll(`${group} [role="radio"]`)].map((one) => one.textContent),
+        [...document.querySelectorAll(`${group} input[type="radio"]`)].map(
+          (one) => one.closest("label")?.textContent,
+        ),
       SWITCH,
     );
     expect(words).toEqual(["This tab", "Workspace", "All"]);
@@ -160,8 +163,9 @@ describe("the Chats view's scope", function () {
       const section = document
         .querySelector('[data-testid="chats-section"]')
         ?.getBoundingClientRect();
-      return [...document.querySelectorAll(`${group} [role="radio"]`)].map((one) => {
-        const box = one.getBoundingClientRect();
+      return [...document.querySelectorAll(`${group} input[type="radio"]`)].map((one) => {
+        // A segment is drawn by its label; the radio in it is hidden.
+        const box = (one.closest("label") ?? one).getBoundingClientRect();
         return {
           top: box.top,
           width: box.width,

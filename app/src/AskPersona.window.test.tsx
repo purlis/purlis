@@ -22,7 +22,7 @@ import type { AskOffer, DispatchPending, VaultRefused } from "./bindings";
 import { forgetDismissals } from "./dismissals";
 import { stripNamed } from "./test-strips";
 import { forgetInboxOpen, inboxAwayAtLaunch } from "./test-inbox";
-import { pickIn } from "./primitives/select.testkit";
+import { pickIn } from "./ui/select/select.testkit";
 
 /**
  * **Ask {persona}…, from a chat's tab**, against the whole window: the row on the tab's menu,
@@ -300,7 +300,7 @@ describe("Ask a persona from a chat's tab", () => {
     expect(
       within(places)
         .getAllByRole("radio")
-        .map((radio) => radio.getAttribute("aria-checked")),
+        .map((radio) => String((radio as HTMLInputElement).checked)),
     ).toEqual(["true", "false", "false"]);
     expect(dialog).not.toHaveTextContent(/worktree/i);
 

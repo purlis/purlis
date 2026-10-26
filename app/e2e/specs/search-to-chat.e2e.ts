@@ -34,7 +34,7 @@ import { endChatsStartedHere, startAChat, type Started } from "../started.js";
  */
 
 const BOX = 'input[aria-label="Search the files"]';
-const SCOPE = '[role="combobox"][aria-label="Where to search"]';
+const SCOPE = '[data-scope="select"][data-part="root"][aria-label="Where to search"]';
 const HITS = '[role="listbox"][aria-label="Search results"]';
 // The chats to pick from are a list of the family (#2911).
 const PICKER = '.search-pick [role="listbox"]';

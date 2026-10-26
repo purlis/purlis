@@ -24,11 +24,18 @@
  *   `tel`, `number`, or a `type` decided at run time), is the family's `TextField` or `TextArea`
  *   (`ui/field/Field`); and no control wears the family's old classes (`ui-input`,
  *   `ui-input-lead`, `ui-list-field`, …).
- * - `purlis/select-family` (warning until the select and combobox families move): a raw
- *   `<select>`, or an `<input role="combobox">` (the palette's), which is the combobox's and not
- *   the field family's.
- * - `purlis/choice-family` (warning until the choice families move): a raw checkbox, radio,
- *   slider (`range`) or colour well (`color`) `<input>`.
+ * - `purlis/select-family` (error: the select and combobox families have moved, #2906): a raw
+ *   `<select>` or `<datalist>`, a `role="combobox"` or an `aria-haspopup="listbox"` written by
+ *   hand, and the old `ui-select` classes. A select is the family's `Select`
+ *   (`ui/select/Select`), a box with suggestions its `ComboBox`, and a box over a list drawn in
+ *   place (the palette) its `ListComboBox` (`ui/select/ComboBox`).
+ *   radio, slider (`range`), colour well (`color`) or file `<input>`; a `role` only a choice says
+ *   (`checkbox`, `radio`, `radiogroup`, `switch`, `slider`) written by hand, as words or as an
+ *   expression whose words are known, and an `aria-checked` written by hand; Radix's checkbox,
+ *   radio group, switch, slider and toggles; and the old choice classes (`ui-checkbox`,
+ *   `ui-radio`, `ui-switch`, `ui-segmented-*`, `ui-levels`, `ui-level`, `ui-choice-option`, …).
+ *   Each is a member of `ui/choice`: `Checkbox`, `CheckboxGroup`, `RadioGroup`,
+ *   `SegmentedControl`, `OptionCards`, `Switch`, `Slider` or `ColorWell`.
  * - `purlis/dialog-family` (error: the dialog family has moved, #2910): a `role="dialog"` or
  *   `role="alertdialog"` written by hand. Every dialog and alert dialog is the family's `Dialog`,
  *   `AlertDialog` or `DialogSurface` (`ui/dialog/Dialog`), which holds the dialog rules; a popover
@@ -320,24 +327,129 @@ function combobox(node) {
   return role?.type === "Literal" && role.value === "combobox";
 }
 
-const selectFamily = unmoved({
-  description: "A select or a combobox is drawn from its family in src/ui once it moves",
-  message:
-    "A raw `<select>` or combobox: draw it from its family in `src/ui` once that family has moved (spec #2897).",
-  test: (node) =>
-    node.name.name === "select" || (node.name.name === "input" && combobox(node)) ? [node] : [],
-});
+/** The string an attribute's value is, written as a literal, in braces or as a template with
+ *  nothing in it; `undefined` for one decided at run time. */
+function literalOf(value) {
+  if (!value) return undefined;
+  if (value.type === "Literal") return value.value;
+  if (value.type !== "JSXExpressionContainer") return undefined;
+  const inner = value.expression;
+  if (inner.type === "Literal") return inner.value;
+  if (inner.type === "TemplateLiteral" && inner.expressions.length === 0)
+    return inner.quasis[0]?.value.cooked;
+  return undefined;
+}
 
-const choiceFamily = unmoved({
-  description: "A checkbox, radio, slider or colour well is drawn from its family once it moves",
-  message:
-    "A raw choice `<input>`: draw it from its family in `src/ui` once that family has moved (spec #2897).",
-  test: (node) => {
-    if (node.name.name !== "input") return [];
-    const type = typeOf(node);
-    return type !== null && type !== "hidden" && CHOICES.has(type) ? [node] : [];
+/** The select family's old styling classes: `ui-select` and `ui-select-list`. */
+const SELECT_CLASS = /(?:^|\s)(ui-select(?:-list)?)(?=\s|$)/;
+
+const selectFamily = {
+  meta: {
+    type: "problem",
+    docs: { description: "A select or a combobox is the shared select or combobox family" },
+    messages: {
+      raw: "A raw `<{{tag}}>`: draw it as `<Select>` from `ui/select/Select`, or a box with suggestions as `<ComboBox>` from `ui/select/ComboBox` (docs/ui-primitives.md).",
+      role: "`{{attribute}}` by hand: a combobox is `<ComboBox>` or `<ListComboBox>` from `ui/select/ComboBox`, and a list a button opens is `<Select>` from `ui/select/Select`, which hold its keys and its ARIA (docs/ui-primitives.md).",
+      oldClass:
+        "`{{word}}` is the select family's old class: draw it as `<Select>` from `ui/select/Select` (docs/ui-primitives.md).",
+    },
+    schema: [],
   },
-});
+  create(context) {
+    return {
+      JSXAttribute(node) {
+        const name = node.name.name;
+        if (name === "className") {
+          for (const [at, text] of classStrings(node.value)) {
+            const found = SELECT_CLASS.exec(text);
+            if (found)
+              context.report({ node: at, messageId: "oldClass", data: { word: found[1] } });
+          }
+          return;
+        }
+        // `role="combobox"`, and `role={"combobox"}` or `` role={`combobox`} ``, alike.
+        const value = literalOf(node.value);
+        if (
+          (name === "role" && value === "combobox") ||
+          (name === "aria-haspopup" && value === "listbox")
+        )
+          context.report({
+            node,
+            messageId: "role",
+            data: { attribute: `${name}="${value}"` },
+          });
+      },
+      JSXOpeningElement(node) {
+        if (node.name.type !== "JSXIdentifier") return;
+        const tag = node.name.name;
+        if (tag === "select" || tag === "datalist")
+          context.report({ node, messageId: "raw", data: { tag } });
+      },
+    };
+  },
+};
+
+/** The roles a choice says, which only the choice families write. */
+const CHOICE_ROLES = new Set(["checkbox", "radio", "radiogroup", "switch", "slider"]);
+
+/** The old choice classes: the checkbox, radio, switch and segmented classes, the settings
+ *  set's levels and its choice rows. */
+const CHOICE_CLASS =
+  /(?:^|\s)(ui-(?:checkbox|radio(?:-mark)?|switch(?:-thumb)?|segmented(?:-[\w-]+)?|levels?(?:-[\w-]+)?|choice-(?:option|says)))(?=\s|$)/;
+
+/** Radix's choices. */
+const CHOICE_IMPORT =
+  /^@radix-ui\/react-(?:checkbox|radio-group|switch|slider|toggle|toggle-group)$/;
+
+const choiceFamily = {
+  meta: {
+    type: "problem",
+    docs: { description: "A checkbox, radio, switch, segmented control or slider is its family" },
+    messages: {
+      raw: "A raw choice `<input>`: draw it from its family in `ui/choice` — `Checkbox`, `RadioGroup`, `SegmentedControl`, `OptionCards`, `Switch`, `Slider` or `ColorWell` (docs/ui-primitives.md).",
+      role: '`role="{{role}}"` by hand: a choice is drawn from its family in `ui/choice`, which says its roles itself (docs/ui-primitives.md).',
+      checked:
+        "`aria-checked` by hand: a choice is drawn from its family in `ui/choice`, whose native input says whether it is checked.",
+      oldClass:
+        "`{{word}}` is an old choice class: the choice families draw themselves from their parts (`ui/choice`).",
+      oldImport: "`{{from}}`: a choice is drawn from its family in `ui/choice`.",
+    },
+    schema: [],
+  },
+  create(context) {
+    return {
+      ImportDeclaration(node) {
+        if (CHOICE_IMPORT.test(node.source.value))
+          context.report({ node, messageId: "oldImport", data: { from: node.source.value } });
+      },
+      JSXAttribute(node) {
+        if (node.name.name === "aria-checked") {
+          context.report({ node, messageId: "checked" });
+          return;
+        }
+        if (node.name.name === "role") {
+          // A role written as words, or as an expression whose words are known (`{"switch"}`,
+          // a branch of two): each is the role it says.
+          for (const [, role] of classStrings(node.value))
+            if (CHOICE_ROLES.has(role.trim()))
+              context.report({ node, messageId: "role", data: { role: role.trim() } });
+          return;
+        }
+        if (node.name.name !== "className") return;
+        for (const [at, text] of classStrings(node.value)) {
+          const found = CHOICE_CLASS.exec(text);
+          if (found) context.report({ node: at, messageId: "oldClass", data: { word: found[1] } });
+        }
+      },
+      JSXOpeningElement(node) {
+        if (node.name.type !== "JSXIdentifier" || node.name.name !== "input") return;
+        const type = typeOf(node);
+        if (type !== null && type !== "hidden" && CHOICES.has(type))
+          context.report({ node, messageId: "raw" });
+      },
+    };
+  },
+};
 
 /** The roles only the dialog family writes. */
 const DIALOG_ROLES = new Set(["dialog", "alertdialog"]);

@@ -13,7 +13,7 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { SkillStudioTab } from "./SkillStudioTab";
 import { AT_THE_ROOT, asPersona, inWorkspace } from "./skillStudio";
-import { pickIn } from "./primitives/select.testkit";
+import { pickIn } from "./ui/select/select.testkit";
 import { levelFrom, PROJECT } from "./skillChanges";
 
 afterEach(() => {

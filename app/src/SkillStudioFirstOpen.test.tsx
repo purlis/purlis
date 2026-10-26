@@ -16,6 +16,7 @@ import { SkillStudioTab } from "./SkillStudioTab";
 import { AT_THE_ROOT } from "./skillStudio";
 import { PROJECT } from "./skillChanges";
 import { SKILL_CHAT, type SkillChatAsk } from "./skillDraftAsks";
+import { selectNamed } from "./ui/select/select.testkit";
 
 afterEach(() => {
   cleanup();
@@ -125,7 +126,7 @@ describe("the empty Skill studio", () => {
 
     await user.click(within(starts).getByRole("button", { name: "New skill" }));
     expect(await screen.findByRole("form", { name: "New skill" })).toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "Starts from" })).toHaveTextContent("Blank");
+    expect(selectNamed("Starts from")).toHaveTextContent("Blank");
     expect(screen.queryByTestId("skill-studio-empty")).not.toBeInTheDocument();
   });
 

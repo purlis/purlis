@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * **The four corners** (#2917, spec #2897 R116–R128, N36): the left bar as tabs across the side
- * panel's top, the right bar's column, the right panel and the bottom halves, each opened by its
+ * **The four corners** (#2917, spec #2897 R116–R128; #3144): the left bar a column beside the
+ * project rail, the right bar's column, the right panel and the bottom halves, each opened by its
  * corner's icons, and only the part that just opened moving.
  */
 import { useState } from "react";
@@ -54,17 +54,47 @@ const slot = (side: string) => document.querySelector(`.slot-${side}`) as HTMLEl
 const half = (side: string) =>
   document.querySelector(`.panel-half[data-side="${side}"]`) as HTMLElement;
 
-describe("the left corner (N36, R116, R121–R123)", () => {
-  it("is tabs across the side panel's top: Chats, Explorer, Search, then Repos and Changes at the end", () => {
+const leftColumn = () =>
+  document.querySelector(".activity-column[data-side='left']") as HTMLElement | null;
+
+describe("the left corner (#3144, R121–R123)", () => {
+  it("is a column at the frame's start, beside the rail: Chats, Explorer, Search, then Repos and Changes at its foot", () => {
     render(<Window from={DEFAULT_ARRANGEMENT} />);
-    const row = slot("left").querySelector('[data-scope="activity-bar"][data-variant="tab"]');
-    expect(row).not.toBeNull();
-    const names = [...(row as HTMLElement).querySelectorAll('[role="tab"]')].map((one) =>
+    const column = leftColumn();
+    expect(column).not.toBeNull();
+    // The frame's first column (the rail is the window's, before the frame), before the regions.
+    expect(document.querySelector(".region-frame")?.firstElementChild).toBe(column);
+    expect(column).toHaveAttribute("data-variant", "bar");
+    const order = [...(column?.querySelector('[data-part="items"]')?.children ?? [])].map((one) =>
+      one.getAttribute("data-part") === "gap" ? "gap" : one.getAttribute("data-region"),
+    );
+    expect(order).toEqual(["navigation", "gap", "panel-left"]);
+    const names = [...(column as HTMLElement).querySelectorAll('[role="tab"]')].map((one) =>
       one.getAttribute("aria-label"),
     );
     expect(names).toEqual(["Chats", "Explorer", "Search", "Repos", "Changes"]);
-    for (const item of (row as HTMLElement).querySelectorAll('[data-part="item"]'))
-      expect(item).toHaveAttribute("data-variant", "tab");
+    for (const item of (column as HTMLElement).querySelectorAll('[data-part="item"]'))
+      expect(item).toHaveAttribute("data-variant", "bar");
+    // A column, walked by the up and down arrows.
+    expect(screen.getByRole("tablist", { name: "Navigation" })).toHaveAttribute(
+      "aria-orientation",
+      "vertical",
+    );
+  });
+
+  it("draws no tabs inside the side panel", () => {
+    render(<Window from={DEFAULT_ARRANGEMENT} />);
+    expect(slot("left").querySelector('[data-scope="activity-bar"]')).toBeNull();
+    expect(slot("left").querySelector('[data-variant="tab"]')).toBeNull();
+  });
+
+  it("marks the open view's icon, and the side panel shows that view", async () => {
+    render(<Window from={DEFAULT_ARRANGEMENT} />);
+    expect(tabIn("Navigation", "Chats")).toHaveAttribute("data-selected", "true");
+    await userEvent.click(tabIn("Navigation", "Search"));
+    expect(tabIn("Navigation", "Search")).toHaveAttribute("data-selected", "true");
+    expect(tabIn("Navigation", "Chats")).not.toHaveAttribute("data-selected");
+    expect(within(slot("left")).getByRole("tabpanel", { name: "Search" })).toBeInTheDocument();
   });
 
   it("switches the view, and a press of the open one does nothing", async () => {
@@ -237,20 +267,26 @@ describe("the keyboard and the side put away (S4, S7, D-2917-18)", () => {
     expect(slot("right")).not.toHaveClass("arrived");
   });
 
-  it("keeps the left bar as a column while the side panel is away, a press bringing it back", async () => {
+  it("keeps the same column while the side panel is away and when it comes back (D-3144-2)", async () => {
     render(<Window from={closed("navigation")} />);
-    const column = document.querySelector(".activity-column[data-side='left']") as HTMLElement;
+    const column = leftColumn() as HTMLElement;
     expect(column).not.toBeNull();
     expect(
       [...column.querySelectorAll('[role="tab"]')].map((one) => one.getAttribute("aria-label")),
     ).toEqual(["Chats", "Explorer", "Search", "Repos", "Changes"]);
+    // Away, no view of the side is open, so none of its icons is marked.
+    expect(
+      within(screen.getByRole("tablist", { name: "Navigation" })).queryAllByRole("tab", {
+        selected: true,
+      }),
+    ).toEqual([]);
 
     await userEvent.click(within(column).getByRole("tab", { name: "Explorer" }));
 
     expect(screen.getByRole("tabpanel", { name: "Explorer" })).toBeInTheDocument();
-    expect(document.querySelector(".activity-column[data-side='left']")).toBeNull();
-    expect(
-      slot("left").querySelector('[data-scope="activity-bar"][data-variant="tab"]'),
-    ).not.toBeNull();
+    // The very same column, still first: nothing beside it was drawn again or moved.
+    expect(leftColumn()).toBe(column);
+    expect(document.querySelector(".region-frame")?.firstElementChild).toBe(column);
+    expect(slot("left").querySelector('[data-scope="activity-bar"]')).toBeNull();
   });
 });
