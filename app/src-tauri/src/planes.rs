@@ -2770,6 +2770,20 @@ impl Planes {
         }
         let held = Arc::new(self.hold(id.clone(), root));
         let _ = held.me.set(Arc::downgrade(&held));
+        // What becomes of its chats' browsers, in its event log (#2842). A `Weak`, as the
+        // answer below holds one: the plane's browsers must not keep a closed plane alive.
+        held.browsers.saying({
+            let held = Arc::downgrade(&held);
+            Arc::new(move |number, said| {
+                let Some(held) = held.upgrade() else {
+                    return;
+                };
+                let kind = said.kind();
+                if let Err(why) = held.hooks().record_browser(held.root(), number, said) {
+                    tracing::warn!("purlis: {kind} was not written to the event log ({why})");
+                }
+            })
+        });
         // A handoff from one of this plane's chats is answered by this plane, which is the
         // only one holding the asking chat's record. A `Weak`, because the plane holds the
         // socket that holds this answer: a strong handle would keep a closed plane alive.
