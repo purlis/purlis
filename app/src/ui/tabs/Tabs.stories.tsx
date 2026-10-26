@@ -20,7 +20,8 @@ import { expectFocusInSight } from "../../stories.testkit";
 import { useTabIds } from "../../StripTablist";
 import { ChatMark } from "../../NeedsYou";
 import type { State } from "../../chatState";
-import { IconButton } from "../button/Button";
+import { Button, IconButton } from "../button/Button";
+import { TipsBelow } from "../tooltip/Tooltip";
 import { editorToolbar, TabCell, tabPart, tabsPart, ToolbarFile, type TabVariant } from "./Tabs";
 import { panelRoot } from "../panel/Panel";
 import { StripTab, TabStripRow, useTabStrip } from "./TabStrip";
@@ -45,12 +46,16 @@ function DockedStrip({
   chosen = 1,
   width = 640,
   split = false,
+  marks = false,
 }: {
   tabs?: Shown[];
   chosen?: number;
   width?: number;
   /** The chosen tab split in two, the second pane with the keyboard. */
   split?: boolean;
+  /** The strip's other marks, as the chat strip draws them: a task chip on the first tab and
+   *  `N more` at the row's end (#3361). */
+  marks?: boolean;
 }) {
   const [inFront, setInFront] = useState(chosen);
   const [open, setOpen] = useState(tabs);
@@ -60,56 +65,84 @@ function DockedStrip({
   return (
     <div className="editor" {...tabsPart("layout")} style={{ inlineSize: width, blockSize: 220 }}>
       <header className="bar" {...tabsPart("strip")}>
-        <TabStripRow
-          strip={along}
-          name="Chats"
-          ids={open.map((_, at) => idOf(at))}
-          className="tabs"
-          data-strip="Chats"
-          // The strip's floor, as the chat strip is handed it (`fits.ts`).
-          style={{ "--least": "88px" } as CSSProperties}
-        >
-          {open.map((one, at) => (
-            <TabCell
-              key={one.name}
-              className="tab"
-              variant={one.variant ?? "chat"}
-              selected={at === inFront}
-              first={at === 0}
-            >
-              <StripTab
-                strip={along}
-                tabKey={one.name}
+        {/* As the chat strip draws it: every tooltip on it stands below it (#3361). */}
+        <TipsBelow>
+          <TabStripRow
+            strip={along}
+            name="Chats"
+            ids={open.map((_, at) => idOf(at))}
+            className="tabs"
+            data-strip="Chats"
+            // The strip's floor, as the chat strip is handed it (`fits.ts`).
+            style={{ "--least": "88px" } as CSSProperties}
+          >
+            {open.map((one, at) => (
+              <TabCell
+                key={one.name}
+                className="tab"
+                variant={one.variant ?? "chat"}
                 selected={at === inFront}
-                tip={undefined}
-                type="button"
-                id={idOf(at)}
-                onClick={() => setInFront(at)}
+                first={at === 0}
               >
-                {one.state && <ChatMark state={one.state} />}
-                <span className="tab-name" {...tabPart("label")}>
-                  {one.name}
-                </span>
-              </StripTab>
-              <button
-                type="button"
-                className="closer"
-                {...tabPart("closer")}
-                tabIndex={-1}
-                aria-label={`Close ${one.name}`}
-                onClick={() => {
-                  setOpen(open.filter((_, there) => there !== at));
-                  setInFront(Math.max(0, Math.min(inFront, open.length - 2)));
-                }}
+                {marks && at === 0 && (
+                  // A tab's task chip, as `SkillRunChip` draws it.
+                  <span className="tab-tasks">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="tab-tasks-counts"
+                      tooltip="Using the skill review: 3 tool calls so far. Open its runs."
+                    >
+                      <span className="count">3</span>
+                    </Button>
+                  </span>
+                )}
+                <StripTab
+                  strip={along}
+                  tabKey={one.name}
+                  selected={at === inFront}
+                  tip={undefined}
+                  type="button"
+                  id={idOf(at)}
+                  onClick={() => setInFront(at)}
+                >
+                  {one.state && <ChatMark state={one.state} />}
+                  <span className="tab-name" {...tabPart("label")}>
+                    {one.name}
+                  </span>
+                </StripTab>
+                <button
+                  type="button"
+                  className="closer"
+                  {...tabPart("closer")}
+                  tabIndex={-1}
+                  aria-label={`Close ${one.name}`}
+                  onClick={() => {
+                    setOpen(open.filter((_, there) => there !== at));
+                    setInFront(Math.max(0, Math.min(inFront, open.length - 2)));
+                  }}
+                >
+                  <X aria-hidden="true" />
+                </button>
+              </TabCell>
+            ))}
+            <span className="strip-doing">
+              <IconButton variant="quiet" size="sm" icon={<Plus />} aria-label="New tab" />
+            </span>
+          </TabStripRow>
+          {marks && (
+            <div className="more">
+              <Button
+                variant="quiet"
+                size="sm"
+                className="show-more"
+                tooltip="2 tabs past the edge"
               >
-                <X aria-hidden="true" />
-              </button>
-            </TabCell>
-          ))}
-          <span className="strip-doing">
-            <IconButton variant="ghost" size="sm" icon={<Plus />} aria-label="New tab" />
-          </span>
-        </TabStripRow>
+                2 more
+              </Button>
+            </div>
+          )}
+        </TipsBelow>
       </header>
       <div
         className="panes"
@@ -333,5 +366,51 @@ export const Split: Story = {
     expect(getComputedStyle(separator).backgroundColor).not.toBe(
       getComputedStyle(panel).backgroundColor,
     );
+  },
+};
+
+/** The vertical centre of `element`'s box, in px. */
+function middleOf(element: Element): number {
+  const box = element.getBoundingClientRect();
+  return box.top + box.height / 2;
+}
+
+/**
+ * **The strip's marks on the tabs' line, their tooltips clear of it** (#3361): the `+`, `N more`
+ * and a tab's task chip are each centred on a tab's line, within a pixel, in every cell; and the
+ * `+`'s tooltip, opened from the keyboard, stands below the strip, never on its row.
+ */
+export const MarksOnTheTabsLine: Story = {
+  args: { marks: true },
+  play: async ({ canvas, canvasElement }) => {
+    const tab = canvasElement.querySelector('[data-scope="tabs"][data-part="tab"]');
+    if (tab === null) throw new Error("no tab drawn");
+    const line = middleOf(tab);
+    const plus = canvas.getByRole("button", { name: "New tab" });
+    const more = canvas.getByRole("button", { name: "2 more" });
+    const chip = canvasElement.querySelector(".tab-tasks-counts");
+    if (chip === null) throw new Error("no task chip drawn");
+    for (const [what, one] of [
+      ["the +", plus],
+      ["N more", more],
+      ["the task chip", chip],
+    ] as const)
+      await expect(
+        Math.abs(middleOf(one) - line),
+        `${what} off the tabs' line`,
+      ).toBeLessThanOrEqual(1);
+    // The keyboard: the strip's stop, then the `+`, whose name its tooltip shows at once.
+    plus.focus();
+    const strip = canvasElement.querySelector("header.bar") as HTMLElement;
+    await waitFor(() =>
+      expect(document.querySelector('[role="tooltip"][data-scope="tooltip"]')).toHaveTextContent(
+        "New tab",
+      ),
+    );
+    const tip = document.querySelector('[role="tooltip"][data-scope="tooltip"]') as HTMLElement;
+    const below = tip.getBoundingClientRect().top >= strip.getBoundingClientRect().bottom;
+    const above = tip.getBoundingClientRect().bottom <= strip.getBoundingClientRect().top;
+    await expect(below || above, "the tooltip sits on the strip's row").toBe(true);
+    plus.blur();
   },
 };
