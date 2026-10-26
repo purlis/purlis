@@ -3613,6 +3613,24 @@
         "list.header.font-weight": {
           "$ref": "#/$defs/part-font-weight"
         },
+        "list.shortcut.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.shortcut.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "list.shortcut.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.shortcut.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.shortcut.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.shortcut.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
         "menu.root.fill": {
           "$ref": "#/$defs/part-fill"
         },
@@ -7680,6 +7698,12 @@
         },
         "tooltip.detail.text": {
           "$ref": "#/$defs/part-text"
+        },
+        "tooltip.shortcut.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "tooltip.shortcut.font-size": {
+          "$ref": "#/$defs/part-font-size"
         }
       }
     }

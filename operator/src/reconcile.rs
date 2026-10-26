@@ -14,15 +14,17 @@
 use crate::admission::{Admission, POLICY, admission};
 use crate::resources::{Claim, ClaimStatus, Pool, READY, condition};
 use crate::upstream::{
-    self, Found, SandboxClaim, SandboxTemplate, SandboxWarmPool, made_for, made_for_pool,
+    self, Found, Sandbox, SandboxClaim, SandboxTemplate, SandboxWarmPool, made_for, made_for_pool,
     owners_with, sandbox_claim_for, template_for, warm_pool_for,
 };
+use crate::vouch::{self, SigningKey, Vouching};
 use futures::StreamExt;
 use k8s_openapi::api::admissionregistration::v1::ValidatingAdmissionPolicyBinding;
+use k8s_openapi::api::core::v1::Pod;
 use kube::api::{Api, ObjectMeta, PartialObjectMeta, Patch, PatchParams, PostParams};
 use kube::runtime::controller::{Action, Controller};
 use kube::runtime::reflector::{ObjectRef, Store};
-use kube::runtime::watcher;
+use kube::runtime::{WatchStreamExt, watcher};
 use kube::{Client, Resource, ResourceExt};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -60,6 +62,7 @@ pub fn status_of(upstream: Option<&SandboxClaim>) -> ClaimStatus {
         ),
     };
     ClaimStatus {
+        link_key: None,
         conditions: vec![ready],
     }
 }
@@ -67,6 +70,7 @@ pub fn status_of(upstream: Option<&SandboxClaim>) -> ClaimStatus {
 /// A Claim's status when the pool it names does not exist.
 pub fn status_of_a_missing_pool(claim: &Claim) -> ClaimStatus {
     ClaimStatus {
+        link_key: None,
         conditions: vec![condition(
             "False",
             "PoolNotFound",
@@ -98,6 +102,7 @@ pub fn status_of_a_deleted_pool(claim: &Claim, upstream: &SandboxClaim) -> Claim
         None => "False",
     };
     ClaimStatus {
+        link_key: None,
         conditions: vec![condition(status, "PoolDeleted", message)],
     }
 }
@@ -107,6 +112,7 @@ pub fn status_of_a_deleted_pool(claim: &Claim, upstream: &SandboxClaim) -> Claim
 /// waits until it is removed or renamed.
 pub fn status_of_an_object_in_the_way(kind: &str, name: &str) -> ClaimStatus {
     ClaimStatus {
+        link_key: None,
         conditions: vec![condition(
             "False",
             "UpstreamObjectInTheWay",
@@ -129,6 +135,7 @@ pub fn status_of_objects_held_by_refused_claims(
     holders: &[String],
 ) -> ClaimStatus {
     ClaimStatus {
+        link_key: None,
         conditions: vec![condition(
             "False",
             "HeldByClaimsMadeBeforePolicy",
@@ -164,6 +171,8 @@ pub fn settled(previous: Option<&ClaimStatus>, mut next: ClaimStatus) -> ClaimSt
 
 struct Context {
     client: Client,
+    /// What the operator signs each runner's link key with.
+    signing: Arc<SigningKey>,
     /// Every Claim, as the operator's own watch holds them: the Claims a pool's template or
     /// warm pool may be owned by.
     claims: Store<Claim>,
@@ -300,14 +309,77 @@ async fn reconcile_claim(claim: Arc<Claim>, context: Arc<Context>) -> Result<Act
                 write_status(client, &claim, &namespace, status).await?;
                 return Ok(Action::await_change());
             }
-            write_ours(&templates, template, template_found).await?;
+            let template_now = write_ours(&templates, template, template_found).await?;
             write_ours(&warm_pools, warm, warm_found).await?;
             let applied = write_ours(&upstream_claims, wanted, claim_found).await?;
-            status_of(Some(&applied))
+            let vouching = vouch_for(
+                client,
+                &context.signing,
+                &claim,
+                &pool,
+                &applied,
+                &template_now,
+            )
+            .await?;
+            if let Vouching::Refused(why) = &vouching {
+                tracing::warn!(claim = %name, %namespace, %why, "no link key vouched for");
+            }
+            let mut status = status_of(Some(&applied));
+            status.conditions.push(vouching.condition());
+            status.link_key = vouching.link_key();
+            write_status_saying(client, &claim, &namespace, status, LinkKeyIs::Said).await?;
+            // The pod is not watched: a claim waiting for its key is looked at again soon, and
+            // one vouched for or refused now and then, so a pod changed since is found.
+            return Ok(Action::requeue(vouching.again()));
         }
     };
     write_status(client, &claim, &namespace, status).await?;
     Ok(Action::await_change())
+}
+
+/// **The operator's word on `claim`'s runner's link key** (#2056): the sandbox its upstream
+/// claim names and the pod of that sandbox's name, read, then [`vouch::vouch`].
+async fn vouch_for(
+    client: &Client,
+    signing: &SigningKey,
+    claim: &Claim,
+    pool: &Pool,
+    upstream: &SandboxClaim,
+    template: &SandboxTemplate,
+) -> Result<Vouching, Error> {
+    let namespace = claim.namespace().unwrap_or_default();
+    let named = upstream
+        .status
+        .as_ref()
+        .and_then(|status| status.sandbox.as_ref())
+        .map(|sandbox| sandbox.name.clone());
+    let (sandbox, pod) = match &named {
+        Some(name) => (
+            Api::<Sandbox>::namespaced(client.clone(), &namespace)
+                .get_metadata_opt(name)
+                .await?
+                .map(|held| held.metadata),
+            Api::<Pod>::namespaced(client.clone(), &namespace)
+                .get_opt(name)
+                .await?,
+        ),
+        None => (None, None),
+    };
+    let wanted = upstream::template_for(pool, &namespace, Vec::new())
+        .spec
+        .pod_template;
+    Ok(vouch::vouch(
+        &vouch::Held {
+            claim,
+            upstream,
+            template: Some(&template.metadata),
+            template_spec: Some(&template.spec.pod_template),
+            sandbox: sandbox.as_ref(),
+            pod: pod.as_ref(),
+        },
+        &wanted,
+        signing,
+    ))
 }
 
 /// An object's metadata, which is all [`made_for`] and [`made_for_pool`] read of it.
@@ -387,19 +459,62 @@ pub fn claims_kept_as_owners(
 }
 
 /// `status` written on the Claim, unless it says what the Claim already says.
+/// Whether a status written for a Claim says what becomes of its link key.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LinkKeyIs {
+    /// Left as it was: the pass did not look at the runner's key.
+    Kept,
+    /// Exactly the status's: none means the statement written before goes.
+    Said,
+}
+
+/// The merge patch that brings a Claim's `previous` status to `next`, or none when it already
+/// says that ([`settled`]). With [`LinkKeyIs::Said`] a status that names no link key writes
+/// `linkKey: null`, so a statement that no longer holds is taken away (#2056).
+pub fn status_patch(
+    previous: Option<&ClaimStatus>,
+    next: ClaimStatus,
+    link_key: LinkKeyIs,
+) -> Option<serde_json::Value> {
+    let mut status = settled(previous, next);
+    if link_key == LinkKeyIs::Kept {
+        status.link_key = previous.and_then(|held| held.link_key.clone());
+    }
+    if previous == Some(&status) {
+        return None;
+    }
+    let mut value = serde_json::to_value(&status).unwrap_or_default();
+    if status.link_key.is_none()
+        && let Some(fields) = value.as_object_mut()
+    {
+        fields.insert("linkKey".into(), serde_json::Value::Null);
+    }
+    Some(serde_json::json!({ "status": value }))
+}
+
+/// `status` written on the Claim, unless it says what the Claim already says.
 async fn write_status(
     client: &Client,
     claim: &Claim,
     namespace: &str,
     status: ClaimStatus,
 ) -> Result<(), Error> {
-    let status = settled(claim.status.as_ref(), status);
-    if claim.status.as_ref() != Some(&status) {
+    write_status_saying(client, claim, namespace, status, LinkKeyIs::Kept).await
+}
+
+async fn write_status_saying(
+    client: &Client,
+    claim: &Claim,
+    namespace: &str,
+    status: ClaimStatus,
+    link_key: LinkKeyIs,
+) -> Result<(), Error> {
+    if let Some(patch) = status_patch(claim.status.as_ref(), status, link_key) {
         Api::<Claim>::namespaced(client.clone(), namespace)
             .patch_status(
                 &claim.name_any(),
                 &PatchParams::default(),
-                &Patch::Merge(serde_json::json!({ "status": status })),
+                &Patch::Merge(patch),
             )
             .await?;
     }
@@ -457,7 +572,57 @@ pub fn claims_woken_by(
 }
 
 /// Run the operator until the process is asked to stop (SIGTERM or Ctrl-C).
-pub async fn run(client: Client) {
+pub async fn run(client: Client, signing: SigningKey) {
+    let signing = Arc::new(signing);
+    tokio::select! {
+        () = run_claims(client.clone(), signing.clone()) => {}
+        () = publish_signing_key(client, signing) => {}
+    }
+    tracing::info!("stopped; upstream {} is pinned", upstream::VERSION);
+}
+
+/// **Every Pool's status names the operator's signing key** (#2056), for a desktop to pin when
+/// it adds the pool: written whenever a Pool says anything else.
+async fn publish_signing_key(client: Client, signing: Arc<SigningKey>) {
+    let pools = Api::<Pool>::all(client);
+    let public = signing.public();
+    let mut events = watcher(pools.clone(), watcher::Config::default())
+        .default_backoff()
+        .applied_objects()
+        .boxed();
+    while let Some(event) = events.next().await {
+        let pool = match event {
+            Ok(pool) => pool,
+            Err(error) => {
+                tracing::warn!(%error, "the pools could not be watched; trying again");
+                continue;
+            }
+        };
+        if pool_status_names(&pool, &public) {
+            continue;
+        }
+        let written = pools
+            .patch_status(
+                &pool.name_any(),
+                &PatchParams::default(),
+                &Patch::Merge(serde_json::json!({ "status": { "signingKey": public } })),
+            )
+            .await;
+        if let Err(error) = written {
+            tracing::warn!(pool = %pool.name_any(), %error, "the pool's signing key was not written");
+        }
+    }
+}
+
+/// Whether `pool`'s status already names the signing key `public`.
+pub fn pool_status_names(pool: &Pool, public: &str) -> bool {
+    pool.status
+        .as_ref()
+        .and_then(|status| status.signing_key.as_deref())
+        == Some(public)
+}
+
+async fn run_claims(client: Client, signing: Arc<SigningKey>) {
     let controller = Controller::new(
         Api::<Claim>::all(client.clone()),
         watcher::Config::default(),
@@ -526,6 +691,7 @@ pub async fn run(client: Client) {
             error_policy,
             Arc::new(Context {
                 client,
+                signing,
                 claims: known_claims,
                 conflicts: Mutex::new(HashMap::new()),
             }),
@@ -537,5 +703,4 @@ pub async fn run(client: Client) {
             }
         })
         .await;
-    tracing::info!("stopped; upstream {} is pinned", upstream::VERSION);
 }

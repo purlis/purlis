@@ -3,6 +3,7 @@
 
 import { browser, expect, $ } from "@wdio/globals";
 import { rmSync, writeFileSync } from "node:fs";
+import { pressGrant } from "../acting.js";
 import { endEveryChat, pressAndStart } from "../opening.js";
 import { ASKS_A_LONG_PERMISSION, INBOX_ALLOWED, LONG_ASKED_COMMAND } from "../harness.js";
 
@@ -156,8 +157,7 @@ describe("a long ask in the Inbox", () => {
 
     // Drawn whole, word for word, so the core offers Allow on it (`hooked::shown_in_full`).
     // It waits for its row to settle (`SETTLE_MS`, 1.5 s, #1695) before it allows anything.
-    await browser.pause(2_000);
-    await (await ask.$("button=Allow")).click();
+    await pressGrant(await ask.$("button=Allow"));
     await browser.waitUntil(
       async () => (await (await pane.$(".xterm-rows")).getText()).includes(INBOX_ALLOWED),
       { timeout: 30_000, interval: 250, timeoutMsg: "the chat never carried on after the Allow" },

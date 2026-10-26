@@ -392,3 +392,32 @@ fn a_harness_group_and_a_run_say_what_they_ran_on_as_a_person_calls_it() {
     );
     assert_eq!(Group::NotRecorded.harness_titled(), Group::NotRecorded);
 }
+
+#[test]
+fn a_run_of_a_built_in_skill_by_opencode_s_name_is_a_run_of_that_skill() {
+    let run = |skill: &str, origin| Run {
+        id: None,
+        skill: skill.to_owned(),
+        persona: None,
+        started_by: None,
+        started: String::new(),
+        device: String::new(),
+        copy: Some(RunCopy {
+            workspace: None,
+            level: Level {
+                origin,
+                local: false,
+            },
+        }),
+        harness: None,
+        workspace: None,
+        content: None,
+        end: None,
+    };
+    use crate::skills::Origin;
+    assert!(run("purlis-secrets", Origin::BuiltIn).is_of("secrets"));
+    assert!(run("purlis:secrets", Origin::BuiltIn).is_of("secrets"));
+    assert!(run("purlis-secrets", Origin::BuiltIn).is_of("purlis-secrets"));
+    // A project skill of a `purlis-` name is its own, wherever it runs.
+    assert!(!run("purlis-deploy", Origin::Project).is_of("deploy"));
+}

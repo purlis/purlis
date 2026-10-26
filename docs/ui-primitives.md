@@ -734,7 +734,7 @@ item families (`purlis/tooltip-family`, an error). A frame's `title` is its name
 
 | Where the hint is | How it is written |
 | --- | --- |
-| On words, a mark, a row, a tab, a field | `<Tooltip tip={…}>` around the one element, which hands its props and its ref to the DOM |
+| On words, a mark, a row, a tab, a field | `<Tooltip tip={…}>` around the one element, which hands its props and its ref to the DOM; `shortcut` draws the key that does the same after the words (the `shortcut` part, #2921) |
 | On a `Button`, a `ToggleButton`, a `StatusItem`, a `StatusCell` or a menu's `MenuItem` | its `tooltip` |
 | On an `IconButton` | its `aria-label`, which its tooltip always shows; its `tooltip` is a second line under it (the `detail` part) |
 | Beside a menu's row, opened by the row's rest | `AnchoredTooltip` (`ui/menu/MenuTip.tsx`) |
@@ -2154,6 +2154,34 @@ sequence above, so it is written down here for the same reason.
   to attack.
 
 ## Which keys belong to the chat, and which to the window
+
+**Every key is declared in one registry** (`app/src/keys/registry.ts`, #2921, spec #2897 N24).
+Each act has one entry: what it does, the group the cheat sheet lists it under, where it applies
+(the window, the palette, ⌘P's files, a dialog, a menu, a focused tab or row, a chat's terminal,
+an editor, a form), its chords on a Mac and everywhere else, and what it yields to:
+
+- a **modal** dialog that is up (the dialog family's root or an alert dialog; the operator's
+  ruling of 2026-10-24);
+- any **dialog** that has the keyboard, a popover's included;
+- the **palette** while it is up;
+- a chat's **terminal**: always, only for its Ctrl chords, or only off a Mac;
+- a **tab** that renames on `F2`, an **editor** (CodeMirror's `Mod-/`; and, for the palette,
+  only the chords its keymap binds: ⌘⇧K and a Mac's Ctrl+K, `editorKeeps`), or a **field** the
+  key would be typed into when its row cannot run.
+
+A handler asks `pressed(event, ids)` which of its acts a keystroke is; the registry applies the
+context rules, so one rule reads the same wherever its handler is. How a key is recognised stays
+with its reasons, in `sideKeys.ts`, `taskKeys.ts`, `workspaceSwitch.ts` and the rest. Off a Mac
+Ctrl takes ⌘'s place, except where a chat would lose the chord (Ctrl+Shift+P, Ctrl+Shift+F); a
+test holds that. **`registry.test.ts` fails on a conflict**: two acts on one chord in places that
+overlap, neither yielding to the other. That is checked on the declared chords and on each
+act's own matcher fed every other act's chords. A new key goes into the registry first, and the
+test says whether it is free.
+
+The palette's rows, every menu's rows (`MenuShortcuts`, provided in `main.tsx`) and the activity
+items' tooltips show their key from the registry, through the list, menu and tooltip families'
+`shortcut` parts. The cheat sheet (`keys/ShortcutsView.tsx`, ⌘/ or the *Keyboard shortcuts* row)
+is generated from it. Focus mode (⌘⇧↩, `keys/focusMode.ts`) is one of its keys.
 
 Every pane in this window is a terminal running somebody's shell, and a shell's line editor has
 bindings of its own. So "the window takes this key" is never free: it is taken out of the

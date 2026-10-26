@@ -370,6 +370,9 @@ pub enum ClashOutcome {
     BothLoad,
     /// The repo's narrower copy is the one the chat gets; the plane's is left out.
     RepoWins,
+    /// Both load under one name, and the chat may use either: a copy named as one of purlis's
+    /// own skills where the program reads every skill by its bare name.
+    EitherOne,
 }
 
 /// What the studio shows: whether it is on, whose chat it shows, and its skills by name.
@@ -583,6 +586,7 @@ fn harnesses(
                     outcome: match clash.outcome {
                         purlis_core::skills::Outcome::BothLoad => ClashOutcome::BothLoad,
                         purlis_core::skills::Outcome::RepoWins => ClashOutcome::RepoWins,
+                        purlis_core::skills::Outcome::EitherOne => ClashOutcome::EitherOne,
                     },
                 });
             }

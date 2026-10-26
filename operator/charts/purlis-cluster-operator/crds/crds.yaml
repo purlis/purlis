@@ -44,12 +44,26 @@ spec:
             required:
             - image
             type: object
+          status:
+            description: What the operator says about a Pool.
+            nullable: true
+            properties:
+              signingKey:
+                description: |-
+                  The public half of the key the operator signs each runner's link key with, `ed25519:`
+                  and 64 lower-case hex. A desktop pins it when it adds the pool, and refuses a runner
+                  whose link key it did not sign (#2056).
+                nullable: true
+                type: string
+            type: object
         required:
         - spec
         title: Pool
         type: object
     served: true
     storage: true
+    subresources:
+      status: {}
 ---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
@@ -93,8 +107,19 @@ spec:
                 x-kubernetes-validations:
                 - message: A claim's pool cannot change. Make a new claim for another pool.
                   rule: self == oldSelf
+              requester:
+                description: |-
+                  Who asked for the claim, as the cluster signed them in: admitted only when it is the
+                  person making the claim, and never changed after (deploy/policy.yaml). The operator
+                  vouches for it with the runner's link key.
+                minLength: 1
+                type: string
+                x-kubernetes-validations:
+                - message: A claim's requester cannot change.
+                  rule: self == oldSelf
             required:
             - pool
+            - requester
             type: object
           status:
             description: What the operator says about a Claim.
@@ -134,6 +159,23 @@ spec:
                   - type
                   type: object
                 type: array
+              linkKey:
+                description: |-
+                  The runner's link key, vouched for: the operator's statement of the claim, the pod, the
+                  public link key the pod made as it started and who asked for the claim, and its
+                  signature (#2056).
+                nullable: true
+                properties:
+                  signature:
+                    description: Its Ed25519 signature, 128 lower-case hex, by the key the Pool's status names.
+                    type: string
+                  statement:
+                    description: The statement, exactly as signed (crate::vouch).
+                    type: string
+                required:
+                - signature
+                - statement
+                type: object
             type: object
         required:
         - spec

@@ -54,7 +54,8 @@
   `.claude/skills` into its `skills/`, shared with every workspace as before. It rewrites the old
   `charter:<skill>` names to `purlis:<skill>`, but never inside quoted code or an image name. It
   all goes in one commit that `git revert` undoes. It checks first that every chat keeps its
-  skills, and changes nothing if one would lose one. From then on every chat in the project gets
+  skills, and changes nothing if one would lose one or if two skills or folders differ only in
+  case, which a disk that ignores case reads as one. From then on every chat in the project gets
   those skills, the Skill studio switched on or off, and Codex chats get them too. Clones stop
   getting a copy of `.claude/skills`. Your clones lose their copies at once and a teammate's the
   next time a chat starts there, while a copy someone edited is kept and named. It says what it

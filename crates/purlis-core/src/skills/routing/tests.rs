@@ -75,7 +75,7 @@ fn hidden(skills: &ChatSkills) -> Vec<&str> {
 /// The set's folder laid out for a chat in `smart-ide`, as `persona` or on none.
 fn the_folder(root: &Path, bundle: &Path, persona: Option<&str>) -> PathBuf {
     crate::skills::lay_out_for_chat(
-        root,
+        Some(root),
         Some("smart-ide"),
         persona,
         Some(bundle),
@@ -95,6 +95,41 @@ fn laid_out(root: &Path, bundle: &Path, persona: Option<&str>) -> Vec<String> {
         .collect();
     names.sort();
     names
+}
+
+#[test]
+fn above_the_budget_an_opencode_chat_is_handed_the_index_as_purlis_skill_index() {
+    // opencode reads every skill by its bare name, a clone's `skill-index` too, so purlis's index
+    // is `purlis-skill-index` there, beside the built-in skills under their own names.
+    let (tmp, bundle) = a_plane_of(MOST + 5);
+    let root = tmp.path();
+    let folder = crate::skills::lay_out_for_chat(
+        Some(root),
+        Some("smart-ide"),
+        None,
+        Some(&bundle),
+        &root.join("sets"),
+        Harness::Opencode,
+        &[],
+    )
+    .expect("a set's folder");
+    let mut names: Vec<String> = std::fs::read_dir(folder.join(DIR_IN_BUNDLE))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    assert_eq!(names, ["purlis-handoff", "purlis-skill-index"]);
+    let index = std::fs::read_to_string(
+        folder
+            .join(DIR_IN_BUNDLE)
+            .join("purlis-skill-index/SKILL.md"),
+    )
+    .unwrap();
+    assert!(
+        index.starts_with("---\nname: purlis-skill-index\n"),
+        "{index}"
+    );
+    assert!(index.contains("- `skill-00`: Does thing 0."), "{index}");
 }
 
 #[test]
@@ -335,7 +370,9 @@ fn use_skill_asks_a_chat_to_load_a_hidden_skill_and_holds_no_run_for_it() {
             crate::skills::Start::ByLoad,
             "the load opens the run"
         );
-        let built_in = chat.typed("handoff", &[]).unwrap();
+        let built_in = chat
+            .typed(&harness.skills().built_in_name("handoff"), &[])
+            .unwrap();
         assert!(
             matches!(built_in.start, crate::skills::Start::Held(_)),
             "a listed skill is typed as before"
@@ -382,7 +419,7 @@ fn a_briefed_chat_over_the_budget_is_briefed_on_the_index_and_not_on_what_it_hid
     let (tmp, bundle) = a_plane_of(MOST + 5);
     let root = tmp.path();
     let folder = crate::skills::lay_out_for_chat(
-        root,
+        Some(root),
         Some("smart-ide"),
         None,
         Some(&bundle),
