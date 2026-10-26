@@ -283,7 +283,9 @@ export function offTheList(
   allowed: Readonly<Record<string, readonly string[]>>,
   ceiling: Readonly<Record<string, number>> = CEILING,
 ): string[] {
-  return ratchet(found, allowed, ceiling, { added: "a control without its family or its ui- class" });
+  return ratchet(found, allowed, ceiling, {
+    added: "a control without its family or its ui- class",
+  });
 }
 
 describe("the control guard (#1837)", () => {
