@@ -188,9 +188,10 @@ export function BrowserView({ plane, program }: { plane: string; program: string
   /** The pool whose runner it runs on, as its view said (#2050), until it says: unknown. */
   const [pool, setPool] = useState<string | null | undefined>(undefined);
   /** Its chip's device (#2050): the pool the chats' browsers list it on, else the one its view
-   *  said; a browser no chat has is the person's, on this machine. Unknown, none is named. */
+   *  said. Until one of them says, none is named: a list read before it names this program
+   *  says nothing of where it runs. */
   const listedOn = poolOf(chatBrowsers, kept, program);
-  const onPool = listedOn !== undefined ? listedOn : chatBrowsersRead ? (pool ?? null) : pool;
+  const onPool = listedOn !== undefined ? listedOn : pool;
   const device = onPool === undefined ? null : deviceOf(onPool, mac);
 
   const drivingNow = useCallback((now: boolean) => {
