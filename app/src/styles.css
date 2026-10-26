@@ -63,7 +63,9 @@
  * alone, in the layer above `App.css`, so a view rule that reaches a control cannot redraw it
  * and the window's focus floor does not pull its ring inside. A view still places a control;
  * `docs/ui-primitives.md` lists the families. They replaced one stylesheet of control classes,
- * which is gone.
+ * which is gone. A family whose stylesheet needs a place of its own is imported by name below;
+ * every other one takes the `@families` line's place, by name, as the window is built
+ * (`ui/stylesheets.ts`), so a new family adds no line here.
  *
  * **What the window draws over itself is one surface** (#1845). `primitives/overlays.css`, after
  * the control families in the same layer, gives a dialog, a popover, a menu and a tooltip one
@@ -123,9 +125,9 @@
 @import "./ui/popover/popover.css" layer(components);
 @import "./ui/menu/menu.css" layer(components);
 @import "./ui/list/list.css" layer(components);
+/* @families: every other src/ui/<family>/<family>.css, by name */
 /* A chat's pane places the families inside it: the band, the header, the terminal (#3142). */
 @import "./paneFrame.css" layer(components);
-@import "./ui/table/table.css" layer(components);
 @import "./primitives/text.css" layer(components);
 @import "./theme/forced-colors.css" layer(forced);
 

@@ -24,7 +24,13 @@
     "rail.button.corner-radius": 9,
     "status-item.root.accent.text": "text.primary",
     "titlebar.workspace.corner-radius": 5,
-    "table.rule.fill": "border.subtle"
+    "table.rule.fill": "border.subtle",
+    "panel-separator.root.hover.fill": "accent.base",
+    "panel-separator.root.pressed.fill": "accent.base",
+    "panel-separator.grip.hover.fill": "transparent",
+    "panel-separator.grip.pressed.fill": "transparent",
+    "panel-separator.root.focused.fill": "accent.base",
+    "panel-separator.grip.focused.fill": "transparent"
   },
   "appearances": [
     {

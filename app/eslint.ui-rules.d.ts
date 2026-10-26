@@ -26,7 +26,8 @@ export const purlisUi: {
     | "rail-family"
     | "activity-family"
     | "tabs-family"
-    | "titlebar-family",
+    | "titlebar-family"
+    | "panel-separator-family",
     Rule.RuleModule
   >;
 };

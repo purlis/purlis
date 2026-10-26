@@ -101,6 +101,7 @@ export default tseslint.config(
       // A tablist is the tabs family's, on React Aria, since #3042.
       "purlis/tabs-family": "error",
       "purlis/titlebar-family": "error",
+      "purlis/panel-separator-family": "error",
     },
   },
   // **The tablists still drawn by hand**, each until the ticket that moves it onto the tabs

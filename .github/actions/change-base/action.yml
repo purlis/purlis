@@ -1,0 +1,35 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+# The commit this run's change is measured against, its tree fetched, for a job that scopes
+# itself by what changed or builds main beside the change:
+#
+# - a pull request: its merge commit's first parent, the base branch's tip (`fetch-depth: 2`);
+# - a merge group: the group's base, main or the queue entry ahead of it. The group's commit is
+#   that base with the pull request's commits on top, so its first parent is the base only when
+#   the pull request is one commit; the base is fetched by its SHA instead;
+# - a push or a nightly: the commit before it.
+#
+# The job's checkout must have `fetch-depth: 2`.
+name: Change base
+description: Names and fetches the commit a pull request, a merge group or a push is measured against.
+outputs:
+  sha:
+    description: The base commit's SHA.
+    value: ${{ steps.base.outputs.sha }}
+runs:
+  using: composite
+  steps:
+    - id: base
+      shell: bash
+      env:
+        GROUP_BASE: ${{ github.event.merge_group.base_sha }}
+      run: |
+        set -euo pipefail
+        if [ -n "$GROUP_BASE" ]; then
+          git fetch --no-tags --depth=1 origin "$GROUP_BASE"
+          sha="$GROUP_BASE"
+        else
+          sha="$(git rev-parse HEAD^1)"
+        fi
+        echo "sha=$sha" >> "$GITHUB_OUTPUT"

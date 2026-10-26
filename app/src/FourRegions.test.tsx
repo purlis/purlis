@@ -4,6 +4,7 @@
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render as renderBare,
@@ -652,7 +653,7 @@ describe("the four regions", () => {
     expect(await screen.findByRole("tabpanel", { name: "Inbox" })).toBeInTheDocument();
     expect(away("Attention")).toBe(false);
 
-    // A press of the side panel's open view leaves it out (R121): its key brings it back.
+    // The left side's key puts it away and brings it back too.
     sideKey("left");
     await waitFor(() => expect(away("Navigation")).toBe(true));
     sideKey("left");
@@ -706,7 +707,7 @@ describe("the left side's activity bar", () => {
     expect(tab("Explorer")).toHaveAttribute("aria-selected", "true");
   });
 
-  it("leaves the side out on a press of the open view (R121)", async () => {
+  it("puts the side away on a press of the open view, and brings it back on the next (R121, #3329)", async () => {
     core();
     render(<App />);
     await screen.findByRole("tabpanel", { name: "Chats" });
@@ -714,12 +715,43 @@ describe("the left side's activity bar", () => {
 
     await userEvent.click(tab("Chats"));
 
-    expect(screen.getByRole("tabpanel", { name: "Chats" })).toBeInTheDocument();
+    await waitFor(() => expect(away("Navigation")).toBe(true));
+    expect(screen.queryByRole("tabpanel", { name: "Chats" })).toBeNull();
+    // The icon says it is no longer the open one; the view is hidden, never unmounted.
+    expect(tab("Chats")).toHaveAttribute("aria-selected", "false");
+    expect(screen.getByTestId("chats-section")).toBe(chats);
+
+    await userEvent.click(tab("Chats"));
+
+    expect(await screen.findByRole("tabpanel", { name: "Chats" })).toBeInTheDocument();
     expect(away("Navigation")).toBe(false);
     expect(screen.getByTestId("chats-section")).toBe(chats);
   });
 
-  it("counts the chats that need you on the Chats tab, plainly, and its press leaves the side out", async () => {
+  it("closes and reopens the side from the keyboard, which stays on the icon (#3329)", async () => {
+    core();
+    render(<App />);
+    await screen.findByRole("tabpanel", { name: "Chats" });
+    act(() => tab("Chats").focus());
+
+    await userEvent.keyboard("{Enter}");
+
+    await waitFor(() => expect(away("Navigation")).toBe(true));
+    expect(tab("Chats")).toHaveAttribute("aria-selected", "false");
+    // Heard as collapsed: the tab of the view the side comes back on says it is not out.
+    expect(tab("Chats")).toHaveAttribute("aria-expanded", "false");
+    expect(tab("Explorer")).not.toHaveAttribute("aria-expanded");
+    expect(tab("Chats")).toHaveFocus();
+
+    await userEvent.keyboard(" ");
+
+    expect(await screen.findByRole("tabpanel", { name: "Chats" })).toBeInTheDocument();
+    expect(tab("Chats")).toHaveAttribute("aria-selected", "true");
+    expect(tab("Chats")).toHaveAttribute("aria-expanded", "true");
+    expect(tab("Chats")).toHaveFocus();
+  });
+
+  it("counts the chats that need you on the Chats tab, plainly, while the side is out or away", async () => {
     waitingAsks = [asking(7, "Run cargo test")];
     core([7]);
     render(<App />);
@@ -730,10 +762,10 @@ describe("the left side's activity bar", () => {
     expect(count).toHaveTextContent("1");
     expect(count).not.toHaveAttribute("data-tone");
 
-    // The side panel's own tabs never put it away (R121).
+    // A press puts the side away (R121, #3329); the count stays on the icon.
     await userEvent.click(tab("Chats"));
 
-    expect(screen.getByRole("tabpanel", { name: "Chats" })).toBeInTheDocument();
+    await waitFor(() => expect(away("Navigation")).toBe(true));
     expect(tab("Chats")).toHaveAccessibleDescription("1 chat needs you");
   });
 
@@ -1287,6 +1319,46 @@ describe("the Panel's right half", () => {
  * **The right side's activity bar, in the window** (#1678, ADR 0038 as amended 2026-10-10): the
  * "for you" side's views, one at a time, and what a person presses and sees.
  */
+/**
+ * **A view carries one title** (#3330, as a view tab does since #3147): the region's head names
+ * the view and holds its actions, and the view draws no heading of its own that says it again.
+ * A guard over every view the window opens in a sidebar or a half of the Panel.
+ */
+describe("one title per view (#3330)", () => {
+  const VIEWS = [
+    "Chats",
+    "Search",
+    "Inbox",
+    "Personas",
+    "Vaults",
+    "Memory",
+    "Todos",
+    "Sessions",
+    "Repos",
+    "Changes",
+  ];
+  const said = (element: Element) => (element.textContent ?? "").trim().toLowerCase();
+
+  it.each(VIEWS)("draws %s with one title, its region's", async (name) => {
+    core();
+    render(<App />);
+    await screen.findByRole("tabpanel", { name: "Chats" });
+    if (screen.queryByRole("tabpanel", { name }) === null)
+      await userEvent.click(screen.getByRole("tab", { name }));
+    const view = await screen.findByRole("tabpanel", { name });
+    const region = view.closest(".slot-body, .panel-half") as HTMLElement;
+    expect(region).not.toBeNull();
+
+    // No section head of its own: its title and actions are the region's.
+    expect(view.querySelector('[data-scope="panel-section"][data-part="head"]')).toBeNull();
+    // And no heading in the region says the view's name twice.
+    const named = within(region)
+      .queryAllByRole("heading")
+      .filter((heading) => said(heading) === name.toLowerCase());
+    expect(named.length).toBeLessThanOrEqual(1);
+  });
+});
+
 describe("the right side's activity bar", () => {
   const bar = () => screen.getByRole("tablist", { name: "Attention" });
   const tab = (name: string) => within(bar()).getByRole("tab", { name });

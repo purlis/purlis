@@ -519,6 +519,9 @@ pub struct Family {
 impl Family {
     /// The attribute `state` is keyed on, on this family's root.
     fn attribute(&self, state: State) -> &'static str {
+        if let Some((_, own)) = own_states(self).iter().find(|(one, _)| *one == state) {
+            return own;
+        }
         if state == State::Focused {
             self.focused
         } else {
@@ -671,501 +674,46 @@ const CONTROL_GROUNDS: &[&str] = &[
     "terminal.background",
 ];
 
-/// **The closed manifest**: every family a theme may name, at [`VERSION`].
-pub const MANIFEST: &[Family] = &[
-    Family {
-        name: "button",
-        description: "A button, an icon button or a link button.",
-        since: 1,
-        parts: &[
-            Part {
-                name: "root",
-                since: 1,
-                description: "The button itself: its fill, border, corners and size.",
-                properties: ALL,
-            },
-            Part {
-                name: "label",
-                since: 1,
-                description: "Its words.",
-                properties: &[Prop::Text, Prop::FontSize, Prop::FontWeight],
-            },
-            Part {
-                name: "icon",
-                since: 1,
-                description: "Its icon.",
-                properties: &[Prop::Text],
-            },
-        ],
-        variants: &[
-            Variant {
-                name: "secondary",
-                since: 1,
-                description: "The plain button.",
-                consent: None,
-            },
-            Variant {
-                name: "primary",
-                since: 1,
-                description: "The answer purlis suggests.",
-                consent: None,
-            },
-            Variant {
-                name: "ghost",
-                since: 1,
-                description: "A button with no box until the pointer reaches it.",
-                consent: None,
-            },
-            Variant {
-                name: "danger",
-                since: 1,
-                description: "What cannot be undone.",
-                consent: Some(Consent::Danger),
-            },
-            Variant {
-                name: "grants",
-                since: 1,
-                description: "An answer that grants: an Allow, an Accept.",
-                consent: Some(Consent::Grants),
-            },
-            Variant {
-                name: "soft-accent",
-                since: 2,
-                description: "A suggestion that is not the answer: the accent's ground, no edge.",
-                consent: None,
-            },
-            Variant {
-                name: "warning-soft",
-                since: 2,
-                description: "What asks for care without ending anything.",
-                consent: None,
-            },
-            Variant {
-                name: "link",
-                since: 2,
-                description: "A button that reads as a link: no box, as tall as its words.",
-                consent: None,
-            },
-            Variant {
-                name: "quiet",
-                since: NEXT,
-                description: "A ghost with quiet words: a strip's end mark, a crumb, a pane's corner.",
-                consent: None,
-            },
-        ],
-        grounds: CONTROL_GROUNDS,
-        keeps_size: &[
-            "[data-size=\"sm\"]",
-            "[data-size=\"lg\"]",
-            "[data-scope=\"button-row\"][data-wraps] > *",
-        ],
-        sized_apart: &[
-            (
-                "[data-scope=\"button\"][data-part=\"root\"][data-size=\"sm\"]",
-                "max(24px, var(--size-chrome), var(--space-7))",
-            ),
-            (
-                "[data-scope=\"button\"][data-part=\"root\"][data-size=\"lg\"]",
-                "calc(var(--size-control) + var(--space-2))",
-            ),
-        ],
-        height: Some(Length::Token("size.control")),
-        font_size: "font-size.base",
-        line_height: 1.0,
-        border_width: 1.0,
-        defaults: button_look_in,
-        states: &NEVER_REFUSED,
-        focused: "[data-focus-visible]",
-        words: &[],
-        corner_most: None,
-        around: &[],
-        fills: &[],
-    },
-    Family {
-        name: "field",
-        description: "A field: its label, its control, its help and its error, as one.",
-        since: 3,
-        parts: &[
-            Part {
-                name: "root",
-                since: 3,
-                description: "The field itself, which stacks its label, its control, its help and \
-                          its error: the room between them.",
-                properties: &[Prop::Gap],
-            },
-            Part {
-                name: "label",
-                since: 3,
-                description: "Its name, over its control.",
-                properties: &[Prop::Text, Prop::FontSize, Prop::FontWeight],
-            },
-            Part {
-                name: "help",
-                since: 3,
-                description: "Its line of help, under its control.",
-                properties: &[Prop::Text, Prop::FontSize],
-            },
-            Part {
-                name: "error",
-                since: 3,
-                description: "Why its value is refused, under its control.",
-                properties: &[Prop::Text, Prop::FontSize],
-            },
-        ],
-        variants: &[],
-        // A field stands where a button does, a filter on a list's layer.
-        grounds: CONTROL_GROUNDS,
-        keeps_size: &[],
-        sized_apart: &[],
-        height: Some(Length::Token("size.control")),
-        font_size: "font-size.base",
-        line_height: 1.0,
-        border_width: 0.0,
-        defaults: field_look,
-        states: &[State::Disabled],
-        focused: "[data-focus-within]",
-        words: &[("help", "text.quiet"), ("error", "danger.text")],
-        corner_most: None,
-        around: &[],
-        fills: &[],
-    },
-    Family {
-        name: "text-input",
-        description: "A box for one line of text: a name, a token, a filter.",
-        since: 3,
-        parts: &[
-            Part {
-                name: "root",
-                since: 3,
-                description: "The box itself: its fill, border, corners and size, and the words \
-                          typed in it.",
-                properties: &[
-                    Prop::Fill,
-                    Prop::Text,
-                    Prop::BorderColour,
-                    Prop::Shadow,
-                    Prop::BorderWidth,
-                    Prop::CornerRadius,
-                    Prop::Padding,
-                    Prop::Gap,
-                    Prop::FontSize,
-                    Prop::Height,
-                ],
-            },
-            Part {
-                name: "icon",
-                since: 3,
-                description: "The mark at its start: a filter's or a search's glass.",
-                properties: &[Prop::Text],
-            },
-        ],
-        variants: &[],
-        // A field stands where a button does, a filter on a list's layer.
-        grounds: CONTROL_GROUNDS,
-        keeps_size: &["[data-size=\"sm\"]", "[data-size=\"lg\"]"],
-        sized_apart: &[
-            (
-                "[data-scope=\"text-input\"][data-part=\"root\"][data-size=\"sm\"]",
-                "max(var(--size-chrome), var(--space-7))",
-            ),
-            (
-                "[data-scope=\"text-input\"][data-part=\"root\"][data-size=\"lg\"]",
-                "calc(var(--size-control) + var(--space-2))",
-            ),
-        ],
-        height: Some(Length::Token("size.control")),
-        font_size: "font-size.base",
-        line_height: 1.0,
-        border_width: 1.0,
-        defaults: box_look,
-        states: &[State::Hover, State::Focused, State::Disabled],
-        focused: "[data-focus-within]",
-        words: &[],
-        corner_most: None,
-        around: &[],
-        fills: &[],
-    },
-    Family {
-        name: "textarea",
-        description: "A box for lines of text: an answer, a list of entries.",
-        since: 3,
-        parts: &[Part {
-            name: "root",
-            since: 3,
-            description: "The box itself: its fill, border, corners and room, and the words typed \
-                      in it. As tall as its lines.",
-            properties: &[
-                Prop::Fill,
-                Prop::Text,
-                Prop::BorderColour,
-                Prop::Shadow,
-                Prop::BorderWidth,
-                Prop::CornerRadius,
-                Prop::Padding,
-                Prop::FontSize,
-            ],
-        }],
-        variants: &[],
-        // A field stands where a button does, a filter on a list's layer.
-        grounds: CONTROL_GROUNDS,
-        keeps_size: &[],
-        sized_apart: &[],
-        height: Some(Length::Token("size.control")),
-        font_size: "font-size.base",
-        line_height: 1.0,
-        border_width: 1.0,
-        defaults: box_look,
-        states: &[State::Hover, State::Focused, State::Disabled],
-        focused: "[data-focus-within]",
-        words: &[],
-        corner_most: None,
-        around: &[],
-        fills: &[],
-    },
-    Family {
-        name: "tabs",
-        description: "The session tabs: the strip, each tab, and the panel the chosen tab joins.",
-        since: 8,
-        parts: &[
-            Part {
-                name: "tab",
-                since: 8,
-                description: "One tab: its fill, words, corners and size; the chosen tab's flare and \
-                          the hover pill's inset.",
-                properties: &[
-                    Prop::Fill,
-                    Prop::Text,
-                    Prop::CornerRadius,
-                    Prop::Padding,
-                    Prop::Gap,
-                    Prop::FontSize,
-                    Prop::FontWeight,
-                    Prop::Height,
-                    Prop::MaxWidth,
-                    Prop::Flare,
-                    Prop::Inset,
-                ],
-            },
-            Part {
-                name: "label",
-                since: 8,
-                description: "The tab's name, cut short with an ellipsis rather than widening it.",
-                properties: &[Prop::Text, Prop::FontSize, Prop::FontWeight],
-            },
-            Part {
-                name: "closer",
-                since: 8,
-                description: "The tab's ×.",
-                properties: &[Prop::Fill, Prop::Text, Prop::CornerRadius],
-            },
-            Part {
-                name: "count",
-                since: 8,
-                description: "A count on a tab: how many of its tasks are working or waiting.",
-                properties: &[Prop::Fill, Prop::Text, Prop::CornerRadius],
-            },
-            Part {
-                name: "indicator",
-                since: 8,
-                description: "The mark on the chosen tab's edge: none until a theme gives it a height.",
-                properties: &[Prop::Fill, Prop::Height, Prop::CornerRadius, Prop::Position],
-            },
-            Part {
-                name: "strip",
-                since: 8,
-                description: "The row the tabs sit in: its ground and the line under it.",
-                properties: &[Prop::Fill, Prop::BorderColour, Prop::BorderWidth],
-            },
-            Part {
-                name: "layout",
-                since: 8,
-                description: "How the tabs are laid out: what they attach to, how they share the \
-                          strip, the lines between them and the room between them.",
-                properties: &[Prop::Attach, Prop::Sizing, Prop::Dividers, Prop::Gap],
-            },
-        ],
-        variants: &[
-            Variant {
-                name: "chat",
-                since: 8,
-                description: "A chat's tab.",
-                consent: None,
-            },
-            Variant {
-                name: "view",
-                since: 8,
-                description: "A view's tab: a persona, a memory, a vault, a setting.",
-                consent: None,
-            },
-            Variant {
-                name: "file",
-                since: 8,
-                description: "A file's tab, which joins the editor's toolbar under it.",
-                consent: None,
-            },
-            Variant {
-                name: "background",
-                since: 8,
-                description: "A chat wrapping up in the background, drawn as a chip at the strip's \
-                          start.",
-                consent: None,
-            },
-        ],
-        // What the strip is drawn on: the window behind a docked strip, Classic's own strip, and the
-        // panel the chosen tab takes the fill of.
-        grounds: &[
-            "surface.base",
-            "surface.deep",
-            "surface.raised",
-            "layer.chat",
-            "terminal.background",
-        ],
-        keeps_size: &[],
-        sized_apart: &[],
-        height: Some(Length::Token("size.control")),
-        font_size: "font-size.md",
-        line_height: 1.0,
-        border_width: 0.0,
-        defaults: tabs_look_in,
-        states: &[State::Hover, State::Selected],
-        focused: "[data-focus-visible]",
-        words: &[],
-        around: &["strip", "layout"],
-        corner_most: None,
-        fills: &[],
-    },
-    Family {
-        name: "editor",
-        description: "An editor view: the toolbar over a file, joined by its file tab.",
-        since: 8,
-        parts: &[Part {
-            name: "toolbar",
-            since: 8,
-            description: "The bar over a file that names it and holds its actions; its fill is the \
-                      chosen file tab's.",
-            properties: &[
-                Prop::Fill,
-                Prop::Text,
-                Prop::Padding,
-                Prop::Gap,
-                Prop::FontSize,
-            ],
-        }],
-        variants: &[Variant {
-            name: "default",
-            since: 8,
-            description: "The toolbar.",
-            consent: None,
-        }],
-        grounds: &["surface.raised", "terminal.background"],
-        keeps_size: &[],
-        sized_apart: &[],
-        height: None,
-        font_size: "font-size.md",
-        line_height: 1.0,
-        border_width: 0.0,
-        defaults: editor_look,
-        states: &[],
-        focused: "[data-focus-visible]",
-        words: &[],
-        around: &[],
-        corner_most: None,
-        fills: &[],
-    },
-    shell::PANEL,
-    shell::PANEL_SECTION,
-    shell::EMPTY_STATE,
-    shell::STATUS_ITEM,
-    // **The tooltip** (#2908): every hint in the window, `app/src/ui/tooltip`. One look, so a key
-    // names the part alone; no state a theme keys, since nothing on it is pressed or chosen.
-    Family {
-        name: "tooltip",
-        description: "A hint beside what it is about, under the pointer or the keyboard.",
-        since: 5,
-        parts: &[
-            Part {
-                name: "root",
-                since: 5,
-                description: "The tooltip's surface: its fill, words, edge, corners and shadow. \
-                          Its size is its words'.",
-                properties: SURFACE,
-            },
-            Part {
-                name: "detail",
-                since: 5,
-                description: "A second line under an icon button's name.",
-                properties: &[Prop::Text],
-            },
-        ],
-        variants: &[],
-        // Drawn over the window, wherever its target is: on the grounds an overlay stands on.
-        grounds: &["surface.base", "surface.raised", "surface.overlay"],
-        keeps_size: &[],
-        sized_apart: &[],
-        height: None,
-        font_size: "font-size.sm",
-        line_height: 1.4,
-        border_width: 1.0,
-        defaults: tooltip_look,
-        states: &[],
-        focused: "[data-focus-visible]",
-        words: &[("detail", "text.secondary")],
-        corner_most: None,
-        around: &[],
-        fills: &[],
-    },
-    overlay::POPOVER,
-    overlay::MENU,
-    dialog::DIALOG,
-    // **The project rail** (#2915): a button per project at the window's left.
-    shell::RAIL,
-    activity::ACTIVITY,
-    collection::LIST,
-    // **The title bar's pinned workspaces** (#2916): a chip per pin of the project in front.
-    shell::TITLEBAR,
-    select::SELECT,
-    select::COMBOBOX,
-    choice::CHECKBOX,
-    choice::RADIO,
-    choice::SWITCH,
-    choice::SEGMENTED_CONTROL,
-    choice::SEGMENT,
-    choice::SLIDER,
-    choice::OPTION_CARD,
-    collection::TABLE,
-];
+// **The families, each in its own file** (`parts_<family>.rs`): `build.rs` reads the directory,
+// declares a module for each file and assembles [`MANIFEST`] from every `pub(super) const
+// <NAME>: Family` they hold, so a pull request that adds a family adds its own file and touches
+// no list another family's pull request does. The order is the manifest's: what the first twelve
+// versions shipped, in the order they shipped it, then every later family by the version it came
+// in and its name, so a family added in one pull request never moves another's place, and what a
+// release shipped is never reordered (`build.rs`, `families`).
+include!(concat!(env!("OUT_DIR"), "/theme_parts_families.rs"));
 
-/// The popover and menu families (#2909): the surface a popover and a menu stand on, and a
-/// menu's row.
-#[path = "parts_overlay.rs"]
-mod overlay;
-
-/// The window's own families (#2913): the region panel, its sections, an empty state and a
-/// status item; the project rail (#2915) and the title bar's pinned workspaces (#2916).
-#[path = "parts_shell.rs"]
-mod shell;
-
-/// The dialog family (#2910).
-#[path = "parts_dialog.rs"]
-mod dialog;
-
-/// The collection families (#2911): a list's row and a table's.
-#[path = "parts_collections.rs"]
-mod collection;
-/// The select and combobox families (#2906).
-#[path = "parts_select.rs"]
-mod select;
-
-/// The choice families (#2907): checkbox, radio, switch, segmented control and segment, slider
-/// and option card.
-#[path = "parts_choice.rs"]
-mod choice;
 #[cfg(test)]
 pub(super) use dialog::DIALOG_TIERS;
 
-/// The activity item family (#2917): a view's icon on a side's bar.
-#[path = "parts_activity.rs"]
-mod activity;
+/// **The families drawn in marks, not words** (#3143), each with its parts' fills by default
+/// while a set of states holds: a resize separator's line and grip. What such a family draws in
+/// a state is held at 3:1 on its grounds, as a non-text mark (WCAG 1.4.11), and it has no words
+/// to hold; at rest its line is the window's hairline, which the token floors hold.
+const MARKED: &[(&str, MarkFills)] = &[("panel-separator", separator::separator_fill)];
+
+/// A family's parts' fills by default, by part and the states that hold.
+type MarkFills = fn(usize, &[State]) -> &'static str;
+
+/// **The attributes a family's root is keyed on in a state, where they are not React Aria's**
+/// (#3143): the panel library marks its handles itself.
+const OWN_STATES: &[(&str, &[(State, &str)])] = &[("panel-separator", separator::OWN_STATES)];
+
+/// The default fills of `family`'s parts by state, when it is drawn in marks.
+fn marked(family: &Family) -> Option<MarkFills> {
+    MARKED
+        .iter()
+        .find(|(name, _)| *name == family.name)
+        .map(|(_, fill)| *fill)
+}
+
+/// The attributes `family`'s root is keyed on in each state, where they are its own.
+fn own_states(family: &Family) -> &'static [(State, &'static str)] {
+    OWN_STATES
+        .iter()
+        .find(|(name, _)| *name == family.name)
+        .map_or(&[], |(_, states)| states)
+}
 
 #[cfg(test)]
 #[path = "state_words_tests.rs"]
@@ -1563,6 +1111,13 @@ pub(super) fn activity_selected_json() -> Value {
     let family = family("activity").expect("the activity family");
     let chosen = (family.defaults)("tab", &[State::Selected]);
     json!({ "fill": chosen.fill, "text": chosen.text })
+}
+
+/// The panel separator's default fill of `part` while `states` hold, for the test that holds it
+/// to `panel.css` (#3143).
+#[cfg(test)]
+pub(super) fn separator_fill_of(part: usize, states: &[State]) -> &'static str {
+    separator::separator_fill(part, states)
 }
 
 /// The family `name` names.
@@ -2349,6 +1904,8 @@ struct Drawn {
     words: Vec<&'static str>,
     /// What each part's words are read on: its own fill where it has one, else the root's.
     grounds: Vec<&'static str>,
+    /// Each part's fill, in a family drawn in marks ([`MARKED`]); empty in any other.
+    marks: Vec<&'static str>,
 }
 
 fn drawn(rules: &[Rule], family: &Family, variant: &str, states: &[State]) -> Drawn {
@@ -2372,6 +1929,17 @@ fn drawn(rules: &[Rule], family: &Family, variant: &str, states: &[State]) -> Dr
                     .unwrap_or(fill)
             })
             .collect(),
+        marks: marked(family).map_or_else(Vec::new, |by_default| {
+            (0..family.parts.len())
+                .map(|part| {
+                    if part == 0 {
+                        return fill;
+                    }
+                    part_fill(rules, family, part, variant, states)
+                        .unwrap_or_else(|| by_default(part, states))
+                })
+                .collect()
+        }),
     }
 }
 
@@ -2461,6 +2029,64 @@ fn floor_of(part: &Part) -> f64 {
 /// Whether a part is a mark and not words: an icon, or the chevron of a select or a combobox.
 fn is_mark(part: &Part) -> bool {
     matches!(part.name, "icon" | "chevron")
+}
+
+/// **What a look of a family drawn in marks breaks** (#3143), if anything: each part it draws,
+/// held at 3:1 as a non-text mark on what it is drawn on (the root's fill over each of the
+/// family's grounds, or the grounds themselves for the root), with more contrast asked for
+/// raised as [`super::Least::floor`] raises it. A part it does not draw (`transparent`) holds
+/// nothing. Its line at rest is a hairline the token floors hold, and so is that same line in a
+/// state that does not change it; the grip, wider than that line, is then read on the grounds.
+fn faint_mark(
+    theme: &ResolvedTheme,
+    rules: &[Rule],
+    family: &Family,
+    variant: &str,
+    states: &[State],
+    look: &Drawn,
+) -> Option<(String, Option<f64>)> {
+    if states.is_empty() {
+        return None;
+    }
+    let line = look.marks[0] == drawn(rules, family, variant, &[]).marks[0];
+    // With the keyboard on it, it draws a mark of its own: a focused handle that draws nothing
+    // has no focus indicator (WCAG 2.4.7).
+    if states.contains(&State::Focused)
+        && look
+            .marks
+            .iter()
+            .enumerate()
+            .all(|(at, mark)| *mark == TRANSPARENT || (at == 0 && line))
+    {
+        return Some((
+            "a handle with the keyboard on it draws its grip or its line in a state of its own"
+                .to_owned(),
+            None,
+        ));
+    }
+    let floor = theme.least.floor(3.0);
+    for (at, part) in family.parts.iter().enumerate() {
+        if at == 0 && line {
+            continue;
+        }
+        let on = if at == 0 || line {
+            TRANSPARENT
+        } else {
+            look.marks[0]
+        };
+        if let Some(ratio) = lowest(theme, family, on, look.marks[at])
+            && ratio < floor
+        {
+            return Some((
+                format!(
+                    "the {}'s mark contrasts {floor}:1 with what it is drawn on",
+                    part.name
+                ),
+                Some(ratio),
+            ));
+        }
+    }
+    None
 }
 
 /// The value `rules` give `property` of `family`'s root in `variant` at rest, if any sets it:
@@ -2816,6 +2442,17 @@ fn states_of(family: &Family) -> Vec<State> {
 /// Every set of two or more of the states `family` names that a part can be in at once, but
 /// disabled: the smaller first.
 fn combined(family: &Family) -> Vec<Vec<State>> {
+    // A family keyed on marks of its own (#3143) is dragged alone: the panel library's
+    // `data-separator` is `active` then and nothing else, and no keyboard mark is on it. Under
+    // the pointer and with the keyboard can hold at once.
+    if !own_states(family).is_empty() {
+        let both = vec![State::Hover, State::Focused];
+        return if both.iter().all(|one| family.states.contains(one)) {
+            vec![both]
+        } else {
+            Vec::new()
+        };
+    }
     let states = states_of(family);
     let mut sets: Vec<Vec<State>> = (0u32..1 << states.len())
         .filter(|bits| bits.count_ones() >= 2)
@@ -2877,9 +2514,12 @@ impl Held<'_> {
             if look == drawn(&[], self.family, variant, states) {
                 continue;
             }
-            if let Some((floor, ratio)) =
+            let broken = if marked(self.family).is_some() {
+                faint_mark(theme, self.rules, self.family, variant, states, &look)
+            } else {
                 unreadable(theme, self.rules, self.family, variant, states, &look)
-            {
+            };
+            if let Some((floor, ratio)) = broken {
                 self.fall(variant, states, floor, ratio);
             }
         }
@@ -2994,7 +2634,9 @@ fn fallback(family: &'static Family, variant: &'static str, state: Option<State>
         });
     }
     for part in 1..family.parts.len() {
-        if let Some(fill) = family.own_fill(part) {
+        // A part of a family drawn in marks draws its own fill back, for the state (#3143).
+        let by_state = marked(family).map(|by_default| by_default(part, state.as_slice()));
+        if let Some(fill) = family.own_fill(part).or(by_state) {
             rules.push(Rule {
                 family,
                 part,
@@ -3263,6 +2905,19 @@ fn declarations(rule: &Rule, property: Prop, value: PartValue) -> String {
             said.push_str(" --tabs-hover-corner: 0px;");
         }
         return said;
+    }
+    // **A panel's fill is said to what it holds too** (#3331): `--panel-fill`, so a part of a
+    // view that must be opaque over the view's own rows (a sticky head) takes the panel's
+    // colour, whichever the theme names, and not the window's.
+    if (
+        rule.family.name,
+        rule.family.parts[rule.part].name,
+        property,
+    ) == ("panel", "root", Prop::Fill)
+        && let PartValue::Colour(token) = value
+    {
+        let fill = colour_css(token);
+        return format!("background-color: {fill}; --panel-fill: {fill};");
     }
     // A strip's line is under it, never around it.
     if (rule.family.name, rule.family.parts[rule.part].name) == ("tabs", "strip") {
@@ -3570,7 +3225,7 @@ pub fn manifest_as_of(version: u32) -> Value {
         .iter()
         .filter(|family| family.since <= version)
         .map(|family| {
-            json!({
+            let mut said = json!({
                 "name": family.name,
                 "description": family.description,
                 "since": family.since,
@@ -3603,7 +3258,20 @@ pub fn manifest_as_of(version: u32) -> Value {
                     "since": variant.since,
                     "consent": variant.consent.is_some(),
                 })).collect::<Vec<_>>(),
-            })
+            });
+            // Only what a family has that the others do not (#3143): drawn in marks, and keyed on
+            // attributes of its own in a state.
+            if marked(family).is_some() {
+                said["marks"] = Value::Bool(true);
+            }
+            if !own_states(family).is_empty() {
+                said["attributes"] = own_states(family)
+                    .iter()
+                    .map(|(state, attribute)| (state.name().to_owned(), Value::from(*attribute)))
+                    .collect::<Map<String, Value>>()
+                    .into();
+            }
+            said
         })
         .collect();
     json!({
@@ -3647,7 +3315,13 @@ fn version_said() -> String {
 /// of its value, for an editor to complete and check.
 pub(super) fn schema() -> Value {
     let mut keys = Map::new();
-    for family in MANIFEST {
+    // By the families' names, not the manifest's order: the committed schema is written by every
+    // pull request that adds a family, and two that add two families then add their keys in two
+    // places (operator ruling 2026-10-26), where a family appended at the manifest's end would
+    // land beside every other.
+    let mut by_name: Vec<&Family> = MANIFEST.iter().collect();
+    by_name.sort_by_key(|family| family.name);
+    for family in by_name {
         for part in family.parts {
             let variants =
                 std::iter::once(None).chain(family.variants.iter().map(|one| Some(one.name)));
