@@ -935,7 +935,7 @@ _Avoid_: pane (a pane is a chat's terminal), column
 **Sidebar view**:
 One of the views an activity bar shows in its sidebar, one at a time (Chats, Explorer, Search,
 **Skills**, …). The window says "the Explorer view".
-_Avoid_: view (a hosted program's), panel
+_Avoid_: view alone (that is a hosted program's), panel (that is the bottom region)
 
 **Skills** (sidebar view):
 The **sidebar view** under Search on the left that lists the skills of the title bar's workspace
@@ -1625,8 +1625,9 @@ _Avoid_: loaded skills, available skills
 
 **Skill studio**:
 The one place where every skill a chat can get is listed, made, edited, installed, removed,
-observed and graded: a view tab, with each skill opening as its own. It is built behind the
-`skill-studio` flag until its **finish line** (spec #2762).
+observed and graded: a view tab, with each skill opening as its own. The **Skills** sidebar view
+lists the same skills and opens it. It is built behind the `skill-studio` flag until its
+**finish line** (spec #2762).
 _Avoid_: skill manager, skills page
 
 **Finish line** (of the Skill studio):

@@ -2,15 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { commands, type Studio, type StudioFirst, type StudioLevel } from "./bindings";
-import type { Offer } from "./actions";
-import type { GroupDrawn } from "./menuModel";
-import { Groups } from "./Menus";
+import { commands, type ChatSkill, type StudioFirst, type StudioLevel } from "./bindings";
 import { Notice } from "./Notice";
-import { useViewChanged } from "./planeChanged";
+import { skillsIn, useViewChanged } from "./planeChanged";
 import { skillView } from "./skillRuns";
-import { levelFrom, levelsFor } from "./skillChanges";
-import { askSkillChat } from "./skillDraftAsks";
+import { askDraft } from "./skillDraftAsks";
 import { SkillsNotRead, SkillsReading, type SkillStart } from "./SkillStarts";
 import {
   AT_THE_ROOT,
@@ -20,26 +16,23 @@ import {
   skillStudioView,
   type StudioScope,
 } from "./skillStudio";
-import { SkillsList } from "./SkillsList";
+import { SkillMenu, SkillsList } from "./SkillsList";
 import {
   groupsOf,
   listedOf,
-  menuRowsOf,
+  narrowedTo,
   personaRowsOf,
-  personasOf,
   turnOf,
   type ListedSkill,
   type SkillAct,
 } from "./skillsListing";
 import type { ViewRef } from "./tabs";
 import { useListFilter } from "./ui/list/ListFilter";
-import { Menu } from "./ui/menu/Menu";
 
-/** The chat in front, as the Skills view reads its set: its tab's name, where it works, and the
+/** The chat in front, as the Skills view reads its set: its session, where it works, and the
  *  persona it runs as. */
 export type FrontChat = {
   session: number;
-  name: string;
   /** Its workspace, or `undefined` for a chat at the project's root. */
   workspace: string | undefined;
   persona: string | null;
@@ -70,47 +63,30 @@ function useOnlyThisChat(): [boolean, (only: boolean) => void] {
 type Read =
   { rows: ListedSkill[]; first: StudioFirst; levels: StudioLevel[] } | { refused: string };
 
-/** One studio answer, or its refusal as a sentence. */
-async function studioOf(
-  plane: string,
-  workspace: string | undefined,
-  persona: string | null,
-): Promise<{ ok: Studio } | { refused: string }> {
-  const answer = await commands
-    .skillStudio(plane, workspace ?? null, persona)
-    .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
+/** A command's answer, or its refusal, thrown or said, as a sentence. */
+async function answered<T>(
+  ask: Promise<{ status: "ok"; data: T } | { status: "error"; error: string }>,
+): Promise<{ ok: T } | { refused: string }> {
+  const answer = await ask.catch((err: unknown) => ({
+    status: "error" as const,
+    error: String(err),
+  }));
   return answer.status === "ok" ? { ok: answer.data } : { refused: answer.error };
 }
 
 /**
  * **Reads what the view lists** from the Skill studio's own answer (the amendment's (f)): the
- * workspace's chats' skills, each program's own and each repo's, and each persona's own, which a
- * persona brings into every workspace; or, narrowed to a chat, that chat's set alone.
+ * workspace's chats' skills, each program's own and each repo's, then every persona's own, which
+ * a persona brings into every workspace, in one more read.
  */
-async function readSkills(
-  plane: string,
-  workspace: string | undefined,
-  chat: FrontChat | undefined,
-): Promise<Read> {
-  if (chat !== undefined) {
-    const one = await studioOf(plane, chat.workspace, chat.persona);
-    if ("refused" in one) return one;
-    return {
-      rows: listedOf(one.ok, chat.persona ?? undefined),
-      first: one.ok.first,
-      levels: one.ok.levels,
-    };
-  }
-  const base = await studioOf(plane, workspace, null);
+async function readSkills(plane: string, workspace: string | undefined): Promise<Read> {
+  const [base, personas] = await Promise.all([
+    answered(commands.skillStudio(plane, workspace ?? null, null)),
+    answered(commands.skillPersonaSkills(plane, workspace ?? null)),
+  ]);
   if ("refused" in base) return base;
-  const personas = await Promise.all(
-    personasOf(base.ok).map(async (persona) => {
-      const theirs = await studioOf(plane, workspace, persona);
-      return "ok" in theirs ? personaRowsOf(persona, theirs.ok) : [];
-    }),
-  );
   return {
-    rows: [...listedOf(base.ok), ...personas.flat()],
+    rows: [...listedOf(base.ok), ...("ok" in personas ? personaRowsOf(personas.ok) : [])],
     first: base.ok.first,
     levels: base.ok.levels,
   };
@@ -144,21 +120,20 @@ export function SkillsView({
   /** Opens Explorer on `folder`, one of the project's own files. */
   onShowInExplorer: (folder: string) => void;
 }) {
-  const changed = useViewChanged([plane], undefined);
-  const [done, setDone] = useState(0);
   const [only, setOnly] = useOnlyThisChat();
   const narrowed = only && chat !== undefined ? chat : undefined;
+  // Where the rows are read for, and where the switch and Explorer act: the chat's own place
+  // while narrowed to it, else the title bar's.
+  const place = narrowed === undefined ? workspace : narrowed.workspace;
+  const changed = useViewChanged([plane], skillsIn(place));
   const [read, setRead] = useState<Read>();
+  // The chat in front's real set, what Use skill… types from, while the list is narrowed to it.
+  const [chatSet, setChatSet] = useState<{ session: number; skills: ChatSkill[] }>();
   const [said, setSaid] = useState<{ label: string; text: string }>();
   const [busy, setBusy] = useState(false);
-  // What the chat's set is read by: its session's place and persona, not its tab's name.
-  const chatKey =
-    narrowed === undefined
-      ? ""
-      : JSON.stringify([narrowed.session, narrowed.workspace, narrowed.persona]);
   useEffect(() => {
     let live = true;
-    void readSkills(plane, workspace, narrowed)
+    void readSkills(plane, place)
       .catch((err: unknown): Read => ({ refused: String(err) }))
       .then((answer) => {
         if (live) setRead(answer);
@@ -166,20 +141,34 @@ export function SkillsView({
     return () => {
       live = false;
     };
-    // `chatKey` stands for the chat it reads.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [plane, workspace, chatKey, changed, done]);
+  }, [plane, place, changed]);
+  const session = narrowed?.session;
+  useEffect(() => {
+    let live = true;
+    if (session === undefined) return;
+    void answered(commands.chatSkills(plane, session)).then((answer) => {
+      if (live) setChatSet({ session, skills: "ok" in answer ? answer.ok.skills : [] });
+    });
+    return () => {
+      live = false;
+    };
+  }, [plane, session, changed]);
 
-  const rows = read !== undefined && "rows" in read ? read.rows : NO_ROWS;
+  const base = read !== undefined && "rows" in read ? read.rows : NO_ROWS;
+  const persona = narrowed?.persona ?? null;
+  const set = chatSet !== undefined && chatSet.session === session ? chatSet.skills : undefined;
+  const rows = useMemo(
+    () => (session === undefined || set === undefined ? base : narrowedTo(base, set, persona)),
+    [base, session, set, persona],
+  );
   const nameOf = useCallback((row: ListedSkill) => row.skill.name, []);
   const filter = useListFilter(rows, nameOf);
-  // Where the rows' switch and Explorer act: the chat's own place while narrowed to it.
-  const place = narrowed === undefined ? workspace : narrowed.workspace;
   const groups = useMemo(
     () => groupsOf(filter.shown, { root: place === undefined, chat: narrowed !== undefined }),
     [filter.shown, place, narrowed],
   );
 
+  // While the chat's set is read, the list stays as it was: it is narrowed once it is known.
   if (read === undefined) return <SkillsReading />;
   if ("refused" in read)
     return <SkillsNotRead refused={read.refused} testid="skills-view-refused" />;
@@ -189,11 +178,7 @@ export function SkillsView({
   /** One of the studio's three starts (SK-22): a chat's draft here, the others in the studio. */
   const startWith = (start: SkillStart) => {
     if (start === "draft") {
-      askSkillChat({
-        plane,
-        kind: "draft",
-        level: levelFrom(scope, levelsFor(read.levels, scope)),
-      });
+      askDraft(plane, scope, read.levels);
       return;
     }
     askStudioStart(scope, start === "blank" ? "new" : "sources");
@@ -215,13 +200,11 @@ export function SkillsView({
       .skillTurn(plane, place, row.skill.name, turn.on)
       .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
       .then((answer) => {
+        // Done, it is read again as the project's skills change on disk: one read, not two.
         if (answer.status === "error") setSaid({ label: turn.refused, text: answer.error });
         else setSaid(undefined);
       })
-      .finally(() => {
-        setBusy(false);
-        setDone((n) => n + 1);
-      });
+      .finally(() => setBusy(false));
   };
 
   return (
@@ -265,49 +248,3 @@ export function SkillsView({
 
 /** No rows yet. */
 const NO_ROWS: ListedSkill[] = [];
-
-/**
- * **A row's menu** (the amendment's (b)): Use in this chat, the switch and Show in Explorer,
- * drawn as every menu is (`Menus.Groups`), each that cannot run saying why.
- */
-function SkillMenu({
-  row,
-  at,
-  busy,
-  onAct,
-}: {
-  row: ListedSkill;
-  at: { workspace: string | undefined; chat: boolean };
-  busy: boolean;
-  onAct: (what: SkillAct) => void;
-}) {
-  const rows = menuRowsOf(row, at);
-  const group: GroupDrawn = {
-    entries: rows.map((one) => {
-      const available = one.available && !(busy && one.act === "turn");
-      return {
-        kind: "row",
-        offer: {
-          id: `skills.${one.act}`,
-          title: one.title,
-          available,
-          reason: available ? "" : one.reason || "A change is on its way.",
-          does: { verb: "nothing" },
-        } satisfies Offer,
-        said: one.title,
-        danger: false,
-      };
-    }),
-  };
-  return (
-    <Menu aria-label={row.skill.name} className="item-menu">
-      <Groups
-        groups={[group]}
-        onPress={(offer) => {
-          const one = rows.find((r) => `skills.${r.act}` === offer.id);
-          if (one !== undefined) onAct(one.act);
-        }}
-      />
-    </Menu>
-  );
-}

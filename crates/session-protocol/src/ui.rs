@@ -1034,6 +1034,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "skill_lint",
     "skill_move_needs_grant",
     "skill_panels",
+    // Every persona's own skills, for the Skills view (#3266): read only.
+    "skill_persona_skills",
     "skill_revert_widens",
     "skill_runs",
     "skill_stats",

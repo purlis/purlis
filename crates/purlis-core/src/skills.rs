@@ -1843,6 +1843,49 @@ pub fn studio_list(
     StudioList { rows, harnesses }
 }
 
+/// **Each persona's own skills, for a chat in `workspace` or at the root** (#3266, the Skills
+/// view): the rows of the plane's personas that have a folder of their own, in
+/// [`verbs::Level::every`]'s order, each with the rows of its own level only. One read for every
+/// persona, without the harnesses' listing [`studio_list`] adds, which the view does not draw
+/// for a persona.
+pub fn persona_rows(
+    built_in: Option<&Path>,
+    plane: &Path,
+    workspace: Option<&str>,
+) -> Vec<(String, Vec<StudioRow>)> {
+    let mut personas: Vec<String> = Vec::new();
+    for level in verbs::Level::every(plane) {
+        if let purlis_skills::Whose::Persona(name) = level.at {
+            if !personas.contains(&name) {
+                personas.push(name);
+            }
+        }
+    }
+    personas
+        .into_iter()
+        .map(|persona| {
+            let set = ask(
+                built_in,
+                Some(PlaneSkills {
+                    plane,
+                    workspace,
+                    linked: None,
+                    repo: &[],
+                }),
+                Some(&persona),
+                Route::Plugin,
+                None,
+            );
+            let names = names_of(plane, &persona);
+            let rows = studio_rows(&set, plane, &names)
+                .into_iter()
+                .filter(|row| row.origin == Origin::Persona)
+                .collect();
+            (persona, rows)
+        })
+        .collect()
+}
+
 /// What is said of a harness skill a persona names that purlis could not check this machine for
 /// ([`StudioRow::unchecked`]): its plugin is installed, and its skills cannot be listed.
 pub const UNCHECKED: &str =

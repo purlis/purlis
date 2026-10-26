@@ -118,6 +118,9 @@ export function skillStudioAs(persona: string): string {
   return `${SKILL_STUDIO_IN}${scopeKey(asPersona(persona))}`;
 }
 
+/** **What opens the studio, in words**: the palette's row and the Skills view's header (#3266). */
+export const OPEN_SKILL_STUDIO = "Open Skill studio";
+
 /** The catalogue row that opens the studio on a chat at the project's root (#2765). */
 export const SKILL_STUDIO_SHOW = "skills.studio";
 

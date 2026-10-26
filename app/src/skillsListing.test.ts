@@ -7,7 +7,7 @@
  * own answer.
  */
 import { describe, expect, it } from "vitest";
-import type { StudioSkill } from "./bindings";
+import type { ChatSkill, StudioSkill } from "./bindings";
 import { skill, studio } from "./skillsListing.testkit";
 import {
   BUILT_IN_STAYS,
@@ -15,8 +15,8 @@ import {
   listedOf,
   markOf,
   menuRowsOf,
+  narrowedTo,
   personaRowsOf,
-  personasOf,
   tipOf,
   turnOf,
   type ListedSkill,
@@ -30,15 +30,20 @@ const row = (one: StudioSkill, more: Partial<ListedSkill> = {}): ListedSkill => 
 
 describe("the one mark a row carries", () => {
   it("is what matters most: a folder to accept, then off, then left out, then lint", () => {
-    expect(markOf(skill("plain"))).toBeUndefined();
-    expect(markOf(skill("linted", { lint: ["It widens the chat."] }))).toBe("lint");
-    expect(markOf(skill("out", { on: false, left_out: "Its grant does not reach ops." }))).toBe(
-      "left-out",
-    );
-    expect(markOf(skill("off", { on: false, turned_off: true, lint: ["x"] }))).toBe("off");
+    expect(markOf(row(skill("plain")))).toBeUndefined();
+    expect(markOf(row(skill("linted", { lint: ["It widens the chat."] })))).toBe("lint");
     expect(
-      markOf(skill("drafted", { on: false, turned_off: true, accept: "workspaces/ops/skills" })),
+      markOf(row(skill("out", { on: false, left_out: "Its grant does not reach ops." }))),
+    ).toBe("left-out");
+    expect(markOf(row(skill("off", { on: false, turned_off: true, lint: ["x"] })))).toBe("off");
+    expect(
+      markOf(
+        row(skill("drafted", { on: false, turned_off: true, accept: "workspaces/ops/skills" })),
+      ),
     ).toBe("needs-review");
+    // The chat in front's set decides, where it was read.
+    expect(markOf(row(skill("plain"), { inChat: false }))).toBe("left-out");
+    expect(markOf(row(skill("persona-only", { on: false }), { inChat: true }))).toBeUndefined();
   });
 
   it("says on hover what the skill does, then why it has its mark", () => {
@@ -148,23 +153,73 @@ describe("the rows of a studio answer", () => {
     expect(new Set(listed.map((one) => one.key)).size).toBe(listed.length);
   });
 
-  it("name each persona the project lists, once, and mark a persona's own as its", () => {
-    const answer = studio([skill("deploy"), skill("review", { level: "persona" })], {
-      levels: [
-        { level: { at: "project", local: false }, label: "project" },
-        { level: { at: "persona", name: "reviewer", local: false }, label: "persona reviewer" },
-        {
-          level: { at: "persona", name: "reviewer", local: true },
-          label: "local persona reviewer",
-        },
-      ],
-    });
-    expect(personasOf(answer)).toEqual(["reviewer"]);
-    expect(personaRowsOf("reviewer", answer)).toEqual([
+  it("mark each persona's own as its, from one read of every persona", () => {
+    expect(
+      personaRowsOf([
+        { persona: "reviewer", skills: [skill("review", { level: "persona" })] },
+        { persona: "ops", skills: [skill("triage", { level: "persona" })] },
+      ]).map((one) => [one.persona, one.skill.name]),
+    ).toEqual([
+      ["reviewer", "review"],
+      ["ops", "triage"],
+    ]);
+  });
+});
+
+describe("the rows narrowed to one chat's real set", () => {
+  const given = (name: string, level: ChatSkill["level"] = "project"): ChatSkill => ({
+    name,
+    level,
+    label: level,
+    description: `What ${name} does.`,
+    manual: false,
+    takes_arguments: false,
+    arguments: [],
+    hint: null,
+  });
+  const rows = [
+    row(skill("deploy")),
+    row(skill("old", { on: true })),
+    row(skill("pdf", { level: "installed", folder: "" }), { program: "Claude Code" }),
+    row(skill("plan", { level: "installed", folder: "" }), { program: "Codex" }),
+    row(skill("review", { level: "persona" }), { persona: "reviewer" }),
+    row(skill("triage", { level: "persona" }), { persona: "ops" }),
+  ];
+
+  it("keeps what the chat has, marks what it does not, and lists only its program's own", () => {
+    const set = [given("deploy"), given("pdf", "installed"), given("review", "persona")];
+    const narrowed = narrowedTo(rows, set, "reviewer");
+    expect(narrowed.map((one) => [one.skill.name, one.inChat])).toEqual([
+      ["deploy", true],
+      ["old", false],
+      ["pdf", true],
+      ["review", true],
+    ]);
+    const groups = groupsOf(narrowed, { root: false, chat: true });
+    expect(groups.map((one) => [one.title, one.rows.map((r) => r.skill.name)])).toEqual([
+      ["Project", ["deploy"]],
+      ["Personas", ["review"]],
+      ["Claude Code", ["pdf"]],
+      ["Not in this chat", ["old"]],
+    ]);
+    expect(tipOf(narrowed[1])).toEqual(["What old does.", "The chat in front started without it."]);
+  });
+
+  it("lists a skill of the set the workspace's rows do not hold, as the set says it", () => {
+    const narrowed = narrowedTo([], [given("extra", "workspace")], null);
+    expect(narrowed).toEqual([
       expect.objectContaining({
-        persona: "reviewer",
-        skill: expect.objectContaining({ name: "review" }),
+        inChat: true,
+        skill: expect.objectContaining({ name: "extra", level: "workspace", on: true }),
       }),
+    ]);
+  });
+
+  it("keeps every group at the project's root, for a chat at the root", () => {
+    const set = [given("secrets", "built-in")];
+    const narrowed = narrowedTo([row(skill("secrets", { level: "built-in" }))], set, null);
+    expect(groupsOf(narrowed, { root: true, chat: true }).map((one) => one.title)).toEqual([
+      "Built-in",
     ]);
   });
 });
@@ -179,6 +234,19 @@ describe("a row's menu", () => {
     ]);
     const none = menuRowsOf(row(skill("deploy")), { workspace: "ops", chat: false });
     expect(none.map((one) => one.act)).toEqual(["turn", "explorer"]);
+  });
+
+  it("cannot use in the chat a skill it does not get, and says why", () => {
+    for (const one of [
+      row(skill("out", { on: false, left_out: "Its grant does not reach ops." })),
+      row(skill("deploy"), { inChat: false }),
+    ])
+      expect(menuRowsOf(one, { workspace: "ops", chat: true })[0]).toEqual({
+        act: "use",
+        title: "Use in this chat",
+        available: false,
+        reason: "The chat in front does not get it.",
+      });
   });
 
   it("turns a project skill on or off in the title bar's workspace, as the studio does", () => {

@@ -96,7 +96,7 @@ export function SkillStarts({
                 >
                   {label}
                 </Button>
-                <p className="honest">{about}</p>
+                <p>{about}</p>
               </li>
             ))}
           </ul>

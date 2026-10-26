@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import type { Studio, StudioSkill } from "./bindings";
+import type { ChatSkill, PersonaSkills, Studio, StudioSkill } from "./bindings";
 
 /**
  * **What the Skills view lists** (SK-55, #3266; decisions amendment 2026-10-26): this workspace's
@@ -19,6 +19,9 @@ export type ListedSkill = {
   persona?: string;
   /** The chat program it is the own skill of, as a person reads its name (`Claude Code`). */
   program?: string;
+  /** Whether the chat in front has it, where its set was read (Only this chat's): `false` for
+   *  one it does not, which is listed under Not in this chat. */
+  inChat?: boolean;
 };
 
 /** **A group of the list**, in its order: what needs the person, each level, each program's own. */
@@ -65,26 +68,33 @@ export const MARK_SAID: Record<SkillMark, string> = {
   lint: "Lint",
 };
 
+/** Why a skill the studio lists is not in the chat in front's set, where nothing else says. */
+const NOT_GIVEN = "The chat in front started without it.";
+
 /**
  * **The one mark a row carries, by what matters most**: a folder waiting for the person's accept
  * (SK-9), a project skill this workspace turned off, a skill the chat is not given, then what the
  * built-in lints say. A row with none of these is plain.
  */
-export function markOf(skill: StudioSkill): SkillMark | undefined {
+export function markOf(row: ListedSkill): SkillMark | undefined {
+  const { skill } = row;
   if (skill.accept !== null) return "needs-review";
   if (skill.turned_off) return "off";
-  if (!skill.on) return "left-out";
+  // What the chat in front's set says, where it was read, else what the studio says.
+  if (!(row.inChat ?? skill.on)) return "left-out";
   if (skill.lint.length > 0) return "lint";
   return undefined;
 }
 
 /** **Why a row has its mark**, in the core's own sentence where it has one. */
-export function reasonOf(skill: StudioSkill): string | undefined {
-  switch (markOf(skill)) {
+function reasonOf(row: ListedSkill): string | undefined {
+  const { skill } = row;
+  switch (markOf(row)) {
     case "needs-review":
     case "off":
-    case "left-out":
       return skill.left_out ?? undefined;
+    case "left-out":
+      return skill.left_out ?? NOT_GIVEN;
     case "lint":
       return skill.lint.join(" ");
     case undefined:
@@ -94,7 +104,7 @@ export function reasonOf(skill: StudioSkill): string | undefined {
 
 /** **What a row says on hover**: what the skill does, then why it has its mark. */
 export function tipOf(row: ListedSkill): string[] {
-  const reason = reasonOf(row.skill);
+  const reason = reasonOf(row);
   return [
     row.skill.description,
     ...(row.persona === undefined ? [] : [`${row.persona} brings it into every workspace.`]),
@@ -130,8 +140,8 @@ const AT_THE_ROOT: readonly GroupId[] = ["needs-you", "project", "personas", "lo
  * anything, then Built-in, Project, Workspace, Personas, Repo, Local and each program's own. At
  * the project's root only the project's and the personas' are listed.
  *
- * **For one chat** (`chat`, the amendment's (c)), the rows are that chat's set: what it does not
- * get is kept, under one group at the end, each with its mark.
+ * **For one chat** (`chat`, the amendment's (c)), the rows are that chat's set, wherever it
+ * works: what it does not get is kept, under one group at the end, each with its mark.
  */
 export function groupsOf(
   rows: readonly ListedSkill[],
@@ -140,7 +150,7 @@ export function groupsOf(
   const by = new Map<GroupId, ListedSkill[]>();
   const add = (id: GroupId, row: ListedSkill) => by.set(id, [...(by.get(id) ?? []), row]);
   for (const row of rows) {
-    const mark = markOf(row.skill);
+    const mark = markOf(row);
     if (mark === "needs-review") add("needs-you", row);
     else if (at.chat && (mark === "left-out" || mark === "off")) add("not-in-chat", row);
     else add(levelGroup(row), row);
@@ -158,7 +168,7 @@ export function groupsOf(
     "not-in-chat",
   ];
   return order
-    .filter((id) => !at.root || AT_THE_ROOT.includes(id))
+    .filter((id) => at.chat || !at.root || AT_THE_ROOT.includes(id))
     .flatMap((id): SkillGroup[] => {
       const listed = by.get(id);
       if (listed === undefined || listed.length === 0) return [];
@@ -174,25 +184,20 @@ export function groupsOf(
     });
 }
 
-/** A row's key: its level, whether it is local, its folder, its name, and whose it is. */
+/** A row's key: whose it is, its level, whether it is local, and its folder or its name. */
 function keyOf(skill: StudioSkill, persona?: string, program?: string): string {
-  return [skill.level, skill.local, skill.folder, skill.name, persona ?? "", program ?? ""].join(
-    "\u0000",
+  const whose = persona ?? program ?? "";
+  return [skill.level, skill.local ? "local" : "shared", whose, skill.folder || skill.name].join(
+    ":",
   );
 }
 
 /**
  * **The rows of one studio answer**: its plane's skills, then each program's own and each repo's,
- * a repo's skill once however many programs find it. Answered for a persona's chats, its own
- * skills are marked as that persona's.
+ * a repo's skill once however many programs find it.
  */
-export function listedOf(studio: Studio, persona?: string): ListedSkill[] {
-  const plane = studio.skills.map((skill): ListedSkill => {
-    const whose = skill.level === "persona" ? persona : undefined;
-    return whose === undefined
-      ? { key: keyOf(skill), skill }
-      : { key: keyOf(skill, whose), skill, persona: whose };
-  });
+export function listedOf(studio: Studio): ListedSkill[] {
+  const plane = studio.skills.map((skill): ListedSkill => ({ key: keyOf(skill), skill }));
   const seen = new Set<string>();
   const outside = studio.harnesses.flatMap((harness) =>
     harness.skills.flatMap((skill): ListedSkill[] => {
@@ -206,18 +211,67 @@ export function listedOf(studio: Studio, persona?: string): ListedSkill[] {
   return [...plane, ...outside];
 }
 
-/** **The personas whose skills the project lists** (the studio's levels, SK-32), each once. */
-export function personasOf(studio: Studio): string[] {
-  return [
-    ...new Set(
-      studio.levels.flatMap((one) => (one.level.at === "persona" ? [one.level.name] : [])),
-    ),
-  ];
+/** **Each persona's own skills** (`skill_persona_skills`, one read), each marked as its. */
+export function personaRowsOf(personas: readonly PersonaSkills[]): ListedSkill[] {
+  return personas.flatMap(({ persona, skills }) =>
+    skills.map((skill) => ({ key: keyOf(skill, persona), skill, persona })),
+  );
 }
 
-/** **A persona's own skills, from the studio answered for its chats**: each marked as its. */
-export function personaRowsOf(persona: string, studio: Studio): ListedSkill[] {
-  return listedOf(studio, persona).filter((row) => row.persona !== undefined);
+/** A skill of a chat's set the studio does not list, as a row: on, with what it does. */
+function rowOfChat(skill: ChatSkill): StudioSkill {
+  return {
+    name: skill.name,
+    level: skill.level,
+    label: skill.label,
+    local: false,
+    grant: null,
+    granted: null,
+    turned_off: false,
+    not_granted: null,
+    on: true,
+    left_out: null,
+    accept: null,
+    description: skill.description,
+    folder: "",
+    written: skill.name,
+    named: false,
+    unchecked: null,
+    owner: null,
+    switch: null,
+    compat: [],
+    lint: [],
+  };
+}
+
+/**
+ * **The rows narrowed to one chat's real set** (`chat_skills`, what Use skill… types from): each
+ * row marked by whether the chat has it. A program's own skills are its program's alone, so one
+ * the chat does not have is not listed, nor another persona's own; a skill of its set the
+ * workspace's rows do not hold is listed as the set says it.
+ */
+export function narrowedTo(
+  rows: readonly ListedSkill[],
+  set: readonly ChatSkill[],
+  persona: string | null,
+): ListedSkill[] {
+  const has = (skill: { name: string; level: string }) =>
+    set.some((one) => one.name === skill.name && one.level === skill.level);
+  const kept = rows.flatMap((row): ListedSkill[] => {
+    const inChat = has(row.skill);
+    if (!inChat && row.skill.level === "installed") return [];
+    if (!inChat && row.persona !== undefined && row.persona !== persona) return [];
+    return [{ ...row, inChat }];
+  });
+  const missing = set
+    .filter(
+      (one) => !kept.some((row) => row.skill.name === one.name && row.skill.level === one.level),
+    )
+    .map((one): ListedSkill => {
+      const skill = rowOfChat(one);
+      return { key: keyOf(skill, undefined, "chat"), skill, inChat: true };
+    });
+  return [...kept, ...missing];
 }
 
 /** Why a built-in skill has no switch: the studio's words and the Skills view's. */
@@ -250,15 +304,13 @@ export type SkillAct = "use" | "turn" | "explorer";
 /** One row of a skill's menu: what it says, and why it cannot run where it cannot. */
 export type SkillMenuRow = { act: SkillAct; title: string; available: boolean; reason: string };
 
-/** **Show in Explorer's words**, and why it cannot run in a workspace: Explorer shows the
- *  project's own files only at its root. */
-export const SHOW_IN_EXPLORER = "Show in Explorer";
 const EXPLORER_AT_THE_ROOT =
   "Explorer shows this workspace's repos. The skill's folder is in the project's own files, which Explorer shows at the project's root.";
 const NOT_IN_THE_PROJECT = "Its folder is not one of the project's files.";
+const NOT_THIS_CHATS = "The chat in front does not get it.";
 
 /** **Whether a skill's folder is one of the project's own files**, which Explorer can show. */
-export function inTheProject(skill: StudioSkill): boolean {
+function inTheProject(skill: StudioSkill): boolean {
   return (
     (skill.level === "project" || skill.level === "workspace" || skill.level === "persona") &&
     skill.folder !== "" &&
@@ -268,7 +320,8 @@ export function inTheProject(skill: StudioSkill): boolean {
 
 /**
  * **A row's menu, in its order**: Use in this chat while a chat is in front (`chat`), the
- * switch, and Show in Explorer. A row that cannot run says why.
+ * switch, and Show in Explorer. A row that cannot run says why: Use in this chat, on a skill
+ * the chat does not get.
  */
 export function menuRowsOf(
   row: ListedSkill,
@@ -281,9 +334,18 @@ export function menuRowsOf(
     : at.workspace !== undefined
       ? EXPLORER_AT_THE_ROOT
       : "";
+  const mark = markOf(row);
+  const usable = mark !== "left-out" && mark !== "off" && mark !== "needs-review";
   return [
     ...(at.chat
-      ? [{ act: "use" as const, title: "Use in this chat", available: true, reason: "" }]
+      ? [
+          {
+            act: "use" as const,
+            title: "Use in this chat",
+            available: usable,
+            reason: usable ? "" : NOT_THIS_CHATS,
+          },
+        ]
       : []),
     "label" in turn
       ? { act: "turn", title: turn.label, available: true, reason: "" }
@@ -293,6 +355,6 @@ export function menuRowsOf(
           available: false,
           reason: turn.reason,
         },
-    { act: "explorer", title: SHOW_IN_EXPLORER, available: explorer === "", reason: explorer },
+    { act: "explorer", title: "Show in Explorer", available: explorer === "", reason: explorer },
   ];
 }

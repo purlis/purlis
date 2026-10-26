@@ -7841,10 +7841,8 @@ nav.piece-files-head {
 .skill-starts p {
   margin: 0;
   font-size: var(--font-size-sm);
-  /* The empty state's own quiet tier, which holds AA on every theme: `.honest`'s fade does not
-     at this size (#3266's stories, axe color-contrast). */
+  /* Each start's line, in the empty state's quiet tier, which holds AA on every theme. */
   color: var(--text-muted);
-  opacity: 1;
 }
 
 /* The Skills view (#3266): a sidebar view, its header's two ways in, the switch to the chat in

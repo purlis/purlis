@@ -297,6 +297,85 @@ pub enum ClashOutcome {
     RepoWins,
 }
 
+/// **One of the plane's or the built-in skills' rows, for the window**, for a chat at the root or
+/// in `workspace`, which turned off the project skills `off`: its grant, and where the grant
+/// does not reach the workspace, why. The studio's rows and each persona's (#3266) alike.
+fn plane_shown(
+    root: &std::path::Path,
+    workspace: Option<&str>,
+    off: &[String],
+    row: purlis_core::skills::StudioRow,
+) -> StudioSkill {
+    let grant = (row.origin == purlis_core::skills::Origin::Project).then(|| {
+        purlis_core::skills::grant_of(&root.join(&row.folder))
+            .unwrap_or(purlis_core::skills::Grant::Root)
+    });
+    let not_granted = match (&grant, workspace) {
+        (Some(grant), Some(ws)) if !grant.reaches(ws) => {
+            Some(purlis_core::skills::not_granted(&row.name, ws, grant, true))
+        }
+        _ => None,
+    };
+    StudioSkill {
+        granted: grant.map(Into::into),
+        not_granted,
+        turned_off: row.origin == purlis_core::skills::Origin::Project && off.contains(&row.name),
+        name: row.name,
+        level: row.origin.into(),
+        label: purlis_core::skills::level_shown(row.origin, row.local),
+        local: row.local,
+        grant: row.grant,
+        on: row.left_out.is_none(),
+        accept: row.accept,
+        left_out: row.left_out,
+        description: row.description,
+        folder: row.folder,
+        written: row.written,
+        named: row.named,
+        unchecked: row
+            .unchecked
+            .then(|| purlis_core::skills::UNCHECKED.to_owned()),
+        owner: None,
+        switch: None,
+        compat: row.compat.iter().map(Into::into).collect(),
+        lint: row.lint,
+    }
+}
+
+/// **One persona's own skills** (#3266), as the Skills view lists them: the rows of its own
+/// level, for a chat as it in the workspace the view shows.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct PersonaSkills {
+    pub persona: String,
+    pub skills: Vec<StudioSkill>,
+}
+
+/// Every persona's own skills in the project at `root`, for a chat in `workspace` or at the
+/// root: nothing while the flag is off (`purlis_core::skills::persona_rows`).
+pub(crate) fn persona_skills(
+    root: &std::path::Path,
+    built_in: Option<&std::path::Path>,
+    on: bool,
+    workspace: Option<&str>,
+) -> Vec<PersonaSkills> {
+    if !on {
+        return Vec::new();
+    }
+    let off = workspace
+        .map(|ws| purlis_core::skills::turned_off(root, ws))
+        .unwrap_or_default();
+    purlis_core::skills::persona_rows(built_in, root, workspace)
+        .into_iter()
+        .map(|(persona, rows)| PersonaSkills {
+            persona,
+            skills: rows
+                .into_iter()
+                .map(|row| plane_shown(root, workspace, &off, row))
+                .collect(),
+        })
+        .collect()
+}
+
 /// What the studio shows: whether it is on, whose chat it shows, and its skills by name.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct Studio {
@@ -394,44 +473,7 @@ pub(crate) fn studio(
     let first = purlis_core::skills::first_open::first_open(root, &rows).into();
     let skills = rows
         .into_iter()
-        .map(|row| {
-            let grant = (row.origin == purlis_core::skills::Origin::Project).then(|| {
-                purlis_core::skills::grant_of(&root.join(&row.folder))
-                    .unwrap_or(purlis_core::skills::Grant::Root)
-            });
-            let not_granted = match (&grant, workspace.as_deref()) {
-                (Some(grant), Some(ws)) if !grant.reaches(ws) => {
-                    Some(purlis_core::skills::not_granted(&row.name, ws, grant, true))
-                }
-                _ => None,
-            };
-            (row, grant, not_granted)
-        })
-        .map(|(row, grant, not_granted)| StudioSkill {
-            granted: grant.map(Into::into),
-            not_granted,
-            turned_off: row.origin == purlis_core::skills::Origin::Project
-                && off.contains(&row.name),
-            name: row.name,
-            level: row.origin.into(),
-            label: purlis_core::skills::level_shown(row.origin, row.local),
-            local: row.local,
-            grant: row.grant,
-            on: row.left_out.is_none(),
-            accept: row.accept,
-            left_out: row.left_out,
-            description: row.description,
-            folder: row.folder,
-            written: row.written,
-            named: row.named,
-            unchecked: row
-                .unchecked
-                .then(|| purlis_core::skills::UNCHECKED.to_owned()),
-            owner: None,
-            switch: None,
-            compat: row.compat.iter().map(Into::into).collect(),
-            lint: row.lint,
-        })
+        .map(|row| plane_shown(root, workspace.as_deref(), &off, row))
         .collect();
     let (harnesses, clashes) = harnesses(&all);
     let workspaces = purlis_core::workspaces::Plane::open(root)
@@ -939,6 +981,30 @@ pub(crate) async fn skill_studio(
             workspace.as_deref(),
             persona.as_deref(),
             &purlis_core::harness_plugin::Env::of(&[]),
+        ))
+    })
+    .await
+}
+
+/// **Every persona's own skills** (#3266): what the Skills view lists under Personas, for a chat
+/// in `workspace` or at the root, in one read rather than one studio per persona. On a blocking
+/// thread, as it reads the project's skill folders.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_persona_skills(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    workspace: Option<String>,
+) -> Result<Vec<PersonaSkills>, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("reading the personas' skills", move || {
+        let built_in =
+            crate::bundled_plugin_here().and_then(|plugin| purlis_core::skills::in_bundle(&plugin));
+        Ok(persona_skills(
+            held.root(),
+            built_in.as_deref(),
+            purlis_core::skills::studio_on_here(),
+            workspace.as_deref(),
         ))
     })
     .await

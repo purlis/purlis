@@ -62,6 +62,9 @@ export const isPanelView = (view: string): view is PanelViewId =>
  */
 export const PREVIEWED_VIEWS: readonly OwnViewId[] = ["skills"];
 
+/** No view behind a preview is on: what a window draws while every preview is off. */
+export const NO_PREVIEWS: readonly OwnViewId[] = [];
+
 /** **Whether `view` is drawn only while it is present now**: an extension's panel while it is
  *  contributed, a view behind a preview while that preview is on. */
 export const drawnOnlyPresent = (view: string): boolean =>

@@ -213,7 +213,7 @@ import {
   type Toggled,
   type ViewId,
 } from "./regions";
-import { drawnOnlyPresent, PREVIEWED_VIEWS, type ViewPlace } from "./sideViews";
+import { drawnOnlyPresent, NO_PREVIEWS, PREVIEWED_VIEWS, type ViewPlace } from "./sideViews";
 import { SkillsView, type FrontChat } from "./SkillsView";
 import { SIDE_KEYS_SAID, sideKeyOf } from "./sideKeys";
 import { RegionFrame, stepRegions } from "./RegionFrame";
@@ -2327,6 +2327,15 @@ export const PlaneView = memo(function PlaneView({
     () => [...sidePanels.map((one) => one.view), ...previews],
     [sidePanels, previews],
   );
+  /** **Whether the Skills view has been shown** (#3266): it reads nothing until it is first
+   *  opened, as Search draws nothing until then, and is kept after. */
+  const [skillsDrawn, setSkillsDrawn] = useState(false);
+  if (
+    !skillsDrawn &&
+    studioOn &&
+    arrangement.some((one) => !one.collapsed && viewOpenIn(one, presentViews) === "skills")
+  )
+    setSkillsDrawn(true);
   /** Whether `view` can be shown now: one drawn only while present is only then. */
   const drawable = useCallback(
     (view: ViewId) => !drawnOnlyPresent(view) || presentViews.includes(view),
@@ -8523,7 +8532,6 @@ export const PlaneView = memo(function PlaneView({
       ? undefined
       : {
           session: frontSession,
-          name: nameOf(frontSession),
           workspace: frontWorkspace === OUTSIDE ? undefined : frontWorkspace,
           persona: personaOf(frontSession),
         };
@@ -8707,7 +8715,7 @@ export const PlaneView = memo(function PlaneView({
             ),
             // **Skills** (#3266): this workspace's skills by level, from the Skill studio's own
             // answer, drawn only while its preview is on; the side falls back to Chats meanwhile.
-            skills: studioOn && (
+            skills: studioOn && skillsDrawn && (
               <SkillsView
                 plane={plane}
                 workspace={ofWorkspace}
@@ -9962,9 +9970,6 @@ const CLOSE_HANDED_NOT_HERE =
 /** Why Smart close is not offered on a tab holding more than one chat. */
 const MORE_THAN_ONE_CHAT =
   "This tab holds more than one chat, and a session record is one chat's. Smart close each from its own pane.";
-
-/** No view behind a preview is on. */
-const NO_PREVIEWS: readonly ViewId[] = [];
 
 /** A view tab the core put back, as the view it names. */
 function refOf(view: ViewTab): ViewRef {

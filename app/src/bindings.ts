@@ -1734,6 +1734,12 @@ export const commands = {
 	 */
 	skillStudio: (plane: PlaneId, workspace: string | null, persona: string | null) => typedError<Studio, string>(__TAURI_INVOKE("skill_studio", { plane, workspace, persona })),
 	/**
+	 *  **Every persona's own skills** (#3266): what the Skills view lists under Personas, for a chat
+	 *  in `workspace` or at the root, in one read rather than one studio per persona. On a blocking
+	 *  thread, as it reads the project's skill folders.
+	 */
+	skillPersonaSkills: (plane: PlaneId, workspace: string | null) => typedError<PersonaSkills[], string>(__TAURI_INVOKE("skill_persona_skills", { plane, workspace })),
+	/**
 	 *  The runs of skill `skill` in the project, newest first, for its Runs panel: none while the
 	 *  flag is off. On a blocking thread, as it reads the project's skill log.
 	 */
@@ -8687,6 +8693,15 @@ export type PersonaProfile = {
 
 /**  What a change to a persona's skills does, as the studio asks it. */
 export type PersonaSkillChange = "add" | "remove";
+
+/**
+ *  **One persona's own skills** (#3266), as the Skills view lists them: the rows of its own
+ *  level, for a chat as it in the workspace the view shows.
+ */
+export type PersonaSkills = {
+	persona: string,
+	skills: StudioSkill[],
+};
 
 /**  Where a smart close stands. */
 export type Phase = 

@@ -45,7 +45,7 @@ import {
   type SlotId,
   type ViewId,
 } from "./regions";
-import { isPanelView, type ViewPlace } from "./sideViews";
+import { isPanelView, NO_PREVIEWS, type ViewPlace } from "./sideViews";
 import { useArrived } from "./lib/arrived";
 import { HalfActions } from "./halfHead";
 import { lastUsed, narrowed, narrowPicked, useNarrow } from "./narrowPanel";
@@ -58,9 +58,6 @@ import { forgetFrameScroll, useViewScroll } from "./viewScroll";
 import { IconButton } from "./ui/button/Button";
 import { PanelSectionTitle, panelRoot } from "./ui/panel/Panel";
 import { ActivityBarFrame } from "./ui/activity/ActivityItem";
-
-/** No view behind a preview is on. */
-const NO_PREVIEWS: readonly ViewId[] = [];
 
 /**
  * **The window, drawn from the arrangement** (ADR 0038, and `regions.ts` for why the

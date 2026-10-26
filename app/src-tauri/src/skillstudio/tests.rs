@@ -195,6 +195,54 @@ fn the_studio_as_a_persona_lists_its_own_skills_and_one_it_names_whatever_was_gr
 }
 
 #[test]
+fn every_personas_own_skills_are_read_at_once_each_under_its_persona() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("plane");
+    std::fs::create_dir_all(root.join("workspaces/alpha")).unwrap();
+    for persona in ["ops", "reviewer"] {
+        std::fs::create_dir_all(root.join("personas").join(persona)).unwrap();
+        std::fs::write(root.join("personas").join(persona).join("persona.md"), "---\n---\n")
+            .unwrap();
+    }
+    skill(
+        &root.join("skills"),
+        "deploy",
+        "---\nname: deploy\ndescription: Deploys.\n---\n",
+    );
+    skill(
+        &root.join("personas/ops/skills"),
+        "triage",
+        "---\nname: triage\ndescription: Triages.\n---\n",
+    );
+    skill(
+        &root.join("personas/reviewer/skills"),
+        "review",
+        "---\nname: review\ndescription: Reviews.\n---\n",
+    );
+
+    let personas = persona_skills(&root, None, true, Some("alpha"));
+
+    let read: Vec<(&str, Vec<(&str, Level)>)> = personas
+        .iter()
+        .map(|one| {
+            (
+                one.persona.as_str(),
+                one.skills.iter().map(|s| (s.name.as_str(), s.level)).collect(),
+            )
+        })
+        .collect();
+    // Each persona's own level alone: the project's skills are the studio's to list.
+    assert_eq!(
+        read,
+        [
+            ("ops", vec![("triage", Level::Persona)]),
+            ("reviewer", vec![("review", Level::Persona)]),
+        ]
+    );
+    assert!(persona_skills(&root, None, false, Some("alpha")).is_empty());
+}
+
+#[test]
 fn the_studio_lists_each_harnesss_own_skills_and_plugins_and_marks_a_clash_with_a_project_skill() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path().join("plane");

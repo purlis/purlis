@@ -4,18 +4,19 @@
 /**
  * **The Skills view** (SK-55, #3266), drawn as the left sidebar draws it: its header, the switch
  * to the chat in front, and this workspace's skills by level with Needs you on top, one mark at
- * most per row; then a project with no skill of its own, offered the studio's three starts. Each
- * is walked by the keyboard, held to axe and pictured in every pictured cell of the theme
- * matrix, light and dark among them (`docs/component-stories.md`).
+ * most per row, each with the view's own menu; then a project with no skill of its own, whose
+ * starts are New skill…'s. Each is walked by the keyboard from the header in, held to axe and
+ * pictured in every pictured cell of the theme matrix, light and dark among them
+ * (`docs/component-stories.md`).
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { expect, screen, waitFor, within } from "storybook/test";
 import { expectFocusInSight, untilFocused } from "./stories.testkit";
-import { Menu, MenuItem, MenuWords } from "./ui/menu/Menu";
+import { Button } from "./ui/button/Button";
 import { useListFilter } from "./ui/list/ListFilter";
-import { SkillsList } from "./SkillsList";
-import { groupsOf, menuRowsOf, type ListedSkill } from "./skillsListing";
+import { SkillMenu, SkillsList } from "./SkillsList";
+import { groupsOf, type ListedSkill } from "./skillsListing";
 import { skill } from "./skillsListing.testkit";
 
 /** A workspace's skills, as the studio answers them for `ops`. */
@@ -40,7 +41,7 @@ const OPS: ListedSkill[] = [
   program: one.level === "installed" ? "Claude Code" : undefined,
 }));
 
-/** The view with what was last done on it said under it. */
+/** The view with what was last done on it said under it, and a way out after it. */
 function Skills({ starts = false, rows = OPS }: { starts?: boolean; rows?: ListedSkill[] }) {
   const [said, setSaid] = useState("Nothing done");
   const [only, setOnly] = useState(false);
@@ -51,7 +52,7 @@ function Skills({ starts = false, rows = OPS }: { starts?: boolean; rows?: Liste
         inlineSize: "18rem",
         blockSize: "34rem",
         display: "grid",
-        gridTemplateRows: "minmax(0, 1fr) auto",
+        gridTemplateRows: "minmax(0, 1fr) auto auto",
       }}
     >
       <SkillsList
@@ -66,24 +67,20 @@ function Skills({ starts = false, rows = OPS }: { starts?: boolean; rows?: Liste
         onOpenStudio={() => setSaid("Opened Skill studio")}
         onOpen={(row) => setSaid(`Opened ${row.skill.name}`)}
         menuOf={(row) => () => (
-          <Menu aria-label={row.skill.name} onAction={(key) => setSaid(`Chose ${String(key)}`)}>
-            {menuRowsOf(row, { workspace: "ops", chat: true }).map((one) => (
-              <MenuItem
-                key={one.act}
-                id={one.act}
-                textValue={one.title}
-                aria-disabled={!one.available}
-              >
-                <MenuWords said={one.title} under={one.available ? undefined : one.reason} />
-              </MenuItem>
-            ))}
-          </Menu>
+          <SkillMenu
+            row={row}
+            at={{ workspace: "ops", chat: true }}
+            busy={false}
+            onAct={(what) => setSaid(`Chose ${what}`)}
+          />
         )}
         chat={{ only, onOnly: setOnly }}
       />
       <p role="status" style={{ margin: 0 }}>
         {said}
       </p>
+      {/* What the keyboard reaches after the view, as the editor follows the sidebar. */}
+      <Button>After the view</Button>
     </div>
   );
 }
@@ -96,19 +93,35 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 /**
- * **By level**: one Tab stop on the first row, the arrows walk past the groups' names, Enter
- * opens a skill's tab, the keyboard on a row shows what it does and why it has its mark, and
- * Shift+F10 opens its menu. The picture is a marked row under the keyboard.
+ * **By level**: Tab walks the header (Open Skill studio, New skill…, Only this chat's) onto the
+ * list's first row, the arrows walk past the groups' names, Enter opens a skill's tab, the
+ * keyboard on a row shows what it does and why it has its mark, Shift+F10 opens its menu, and
+ * Tab leaves the list. The picture is a marked row under the keyboard.
  */
 export const ByLevel: Story = {
   render: () => <Skills />,
   play: async ({ canvas, userEvent }) => {
     const list = canvas.getByRole("grid", { name: "Skills" });
-    const first = within(list).getByRole("row", { name: /drafted/ });
     for (const name of ["Needs you", "Built-in", "Project", "Workspace", "Claude Code"])
       expect(within(list).getByText(name)).toBeInTheDocument();
-    first.focus();
-    await untilFocused(() => first, "Skills: the first row has the keyboard");
+    await userEvent.tab();
+    await untilFocused(
+      () => canvas.getByRole("button", { name: "Open Skill studio" }),
+      "Skills: Tab lands on Open Skill studio",
+    );
+    await userEvent.tab();
+    await untilFocused(
+      () => canvas.getByRole("button", { name: "New skill…" }),
+      "Skills: Tab reaches New skill…",
+    );
+    await userEvent.tab();
+    await untilFocused(
+      () => canvas.getByRole("button", { name: "Only this chat's" }),
+      "Skills: Tab reaches Only this chat's",
+    );
+    await userEvent.tab();
+    const first = within(list).getByRole("row", { name: /drafted/ });
+    await untilFocused(() => first, "Skills: Tab lands on the list's first row");
     await userEvent.keyboard("{ArrowDown}{ArrowDown}");
     const deploy = within(list).getByRole("row", { name: /^deploy/ });
     await untilFocused(() => deploy, "Skills: Down passes the groups' names");
@@ -129,21 +142,28 @@ export const ByLevel: Story = {
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("menu")).toBeNull(), { timeout: 3_000 });
     await untilFocused(() => off, "Skills: Escape gives the keyboard back to the row");
+    await userEvent.tab();
+    await untilFocused(
+      () => canvas.getByRole("button", { name: "After the view" }),
+      "Skills: Tab leaves the list",
+    );
     expectFocusInSight();
   },
 };
 
 /**
  * **A project with no skill of its own**: the studio's claim over the skills its chats already
- * get, naming New skill…, whose menu holds the three starts: Enter opens it, Enter starts one.
+ * get, naming New skill…, whose menu holds the three starts. Tab reaches it past Open Skill
+ * studio, Enter opens it on its first start, Enter starts one.
  */
 export const NoSkillsOfItsOwn: Story = {
   render: () => <Skills starts rows={OPS.filter((row) => row.skill.level === "built-in")} />,
   play: async ({ canvas, userEvent }) => {
     expect(canvas.getByTestId("skills-view-empty")).toHaveTextContent("from New skill…");
+    await userEvent.tab();
+    await userEvent.tab();
     const button = canvas.getByRole("button", { name: "New skill…" });
-    button.focus();
-    await untilFocused(() => button, "Skills: New skill… has the keyboard");
+    await untilFocused(() => button, "Skills: Tab reaches New skill…");
     await userEvent.keyboard("{Enter}");
     const menu = await screen.findByRole("menu", { name: "Ways to start a skill" });
     await untilFocused(

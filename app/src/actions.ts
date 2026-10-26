@@ -51,6 +51,7 @@ import {
   SKILL_STUDIO_TITLE,
   SKILL_STUDIO_VIEW,
   asPersona,
+  OPEN_SKILL_STUDIO,
   skillStudioAs,
   inWorkspace,
   skillStudioTitle,
@@ -2439,7 +2440,7 @@ export function catalogue(now: Now): Offer[] {
     });
     if (now.skillStudio)
       offers.push({
-        ...can(SKILL_STUDIO_SHOW, "Open Skill studio", {
+        ...can(SKILL_STUDIO_SHOW, OPEN_SKILL_STUDIO, {
           verb: "openView",
           view: SKILL_STUDIO_VIEW,
           title: SKILL_STUDIO_TITLE,

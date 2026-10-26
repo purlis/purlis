@@ -12,7 +12,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import type { Studio, StudioSkill } from "./bindings";
+import type { ChatSkill, PersonaSkills, Studio, StudioSkill } from "./bindings";
 import { SkillsView, type FrontChat } from "./SkillsView";
 import { SkillStudioTab } from "./SkillStudioTab";
 import { skill, studio } from "./skillsListing.testkit";
@@ -49,14 +49,21 @@ const OPS: StudioSkill[] = [
 
 type Asked = { cmd: string; args: Record<string, unknown> };
 
-/** A core whose studio answers `of(workspace, persona)`, recording every ask. */
-function core(of: (workspace: string | null, persona: string | null) => Studio): Asked[] {
+/** A core whose studio answers `of(workspace, persona)`, with every persona's own skills
+ *  `personas` and the chat in front's set `chat`, recording every ask. */
+function core(
+  of: (workspace: string | null, persona: string | null) => Studio,
+  more: { personas?: PersonaSkills[]; chat?: ChatSkill[] } = {},
+): Asked[] {
   const asked: Asked[] = [];
   mockIPC((cmd, args) => {
     const given = (args ?? {}) as Record<string, unknown>;
     asked.push({ cmd, args: given });
     if (cmd === "skill_studio")
       return of(given.workspace as string | null, given.persona as string | null);
+    if (cmd === "skill_persona_skills") return more.personas ?? [];
+    if (cmd === "chat_skills")
+      return { on: true, known: true, skills: more.chat ?? [], budget: null };
     if (cmd === "skills_deleted" || cmd === "skill_drafts" || cmd === "skill_sources") return [];
     if (cmd === "skill_sources_offered") return [];
     if (cmd === "skill_updates") return { offers: [], unconfirmed: [], unasked: [] };
@@ -68,20 +75,29 @@ function core(of: (workspace: string | null, persona: string | null) => Studio):
   return asked;
 }
 
-/** The project as `ops` and the reviewer's chats see it. */
-function opsCore() {
-  return core((workspace, persona) =>
-    persona === "reviewer"
-      ? studio(
-          [
-            skill("deploy"),
-            skill("review", { level: "persona", folder: "personas/reviewer/skills/review" }),
-          ],
-          { levels: [REVIEWER] },
-        )
-      : studio(workspace === "ops" ? OPS : [skill("deploy")], {
-          levels: [{ level: { at: "project", local: false }, label: "project" }, REVIEWER],
-        }),
+/** The reviewer persona's own skill. */
+const REVIEW = skill("review", { level: "persona", folder: "personas/reviewer/skills/review" });
+
+/** A skill of a chat's set, as Use skill… reads it. */
+const given = (name: string, level: ChatSkill["level"] = "project"): ChatSkill => ({
+  name,
+  level,
+  label: level,
+  description: `What ${name} does.`,
+  manual: false,
+  takes_arguments: false,
+  arguments: [],
+  hint: null,
+});
+
+/** The project as `ops` and the project's root see it, with the reviewer's own skill. */
+function opsCore(chat: ChatSkill[] = []) {
+  return core(
+    (workspace) =>
+      studio(workspace === "ops" ? OPS : [skill("deploy")], {
+        levels: [{ level: { at: "project", local: false }, label: "project" }, REVIEWER],
+      }),
+    { personas: [{ persona: "reviewer", skills: [REVIEW] }], chat },
   );
 }
 
@@ -100,7 +116,14 @@ function view(
 }
 
 const list = () => screen.findByRole("grid", { name: "Skills" });
-const rowOf = (name: string) => screen.getByTestId(`skills-row-${name}`);
+/** The row of skill `name`, by the words it is drawn with. */
+const rowOf = (name: string): HTMLElement => {
+  const found = [...document.querySelectorAll<HTMLElement>('[data-testid^="skills-row-"]')].find(
+    (one) => one.querySelector('[data-part="label"]')?.textContent === name,
+  );
+  if (found === undefined) throw new Error(`no row of ${name}`);
+  return found;
+};
 /** The groups the list draws, by their names, in their order. */
 const groupNames = (grid: HTMLElement) =>
   [...grid.querySelectorAll('[data-part="header"]')].map((one) => one.textContent);
@@ -177,7 +200,7 @@ describe("what the Skills view lists", () => {
         onShowInExplorer={vi.fn()}
       />,
     );
-    await waitFor(() => expect(screen.getByTestId("skills-row-ops-runbook")).toBeInTheDocument());
+    await waitFor(() => expect(rowOf("ops-runbook")).toBeInTheDocument());
 
     rerender(
       <SkillsView
@@ -195,15 +218,19 @@ describe("what the Skills view lists", () => {
       cmd: "skill_studio",
       args: { plane: "p", workspace: null, persona: null },
     });
+    // Every persona's own skills in one read, never a studio per persona.
     expect(asked).toContainEqual({
-      cmd: "skill_studio",
-      args: { plane: "p", workspace: null, persona: "reviewer" },
+      cmd: "skill_persona_skills",
+      args: { plane: "p", workspace: null },
     });
+    expect(asked.filter((one) => one.cmd === "skill_studio" && one.args.persona !== null)).toEqual(
+      [],
+    );
   });
 });
 
 describe("a row's menu", () => {
-  const CHAT: FrontChat = { session: 7, name: "claude 7", workspace: "ops", persona: null };
+  const CHAT: FrontChat = { session: 7, workspace: "ops", persona: null };
 
   it("uses the skill in the chat in front, through Use skill…", async () => {
     opsCore();
@@ -236,7 +263,7 @@ describe("a row's menu", () => {
     expect(within(menu).queryByRole("menuitem", { name: "Use in this chat" })).toBeNull();
   });
 
-  it("turns a project skill off in the workspace with the studio's own switch, and reads again", async () => {
+  it("turns a project skill off in the workspace with the studio's own switch", async () => {
     const asked = opsCore();
     view();
     await list();
@@ -254,7 +281,8 @@ describe("a row's menu", () => {
         args: { plane: "p", workspace: "ops", name: "deploy", on: false },
       }),
     );
-    await waitFor(() => expect(reads()).toBeGreaterThan(before));
+    // It is read again as the disk says the project's skills changed, not a second time here.
+    expect(reads()).toBe(before);
   });
 
   it("cannot turn a built-in skill off, and says why", async () => {
@@ -336,7 +364,7 @@ describe("the view's header", () => {
 });
 
 describe("Only this chat's", () => {
-  const CHAT: FrontChat = { session: 7, name: "claude 7", workspace: "ops", persona: "reviewer" };
+  const CHAT: FrontChat = { session: 7, workspace: "ops", persona: "reviewer" };
 
   it("is there only while a chat tab is in front", async () => {
     opsCore();
@@ -346,19 +374,7 @@ describe("Only this chat's", () => {
   });
 
   it("narrows the list to the chat's own set, marks what it does not get, and is kept", async () => {
-    const asked = core((workspace, persona) =>
-      persona === "reviewer"
-        ? studio([
-            skill("deploy"),
-            skill("review", { level: "persona", folder: "personas/reviewer/skills/review" }),
-            skill("ops-only", {
-              level: "workspace",
-              on: false,
-              left_out: "The reviewer leaves it out.",
-            }),
-          ])
-        : studio(workspace === "ops" ? OPS : []),
-    );
+    const asked = opsCore([given("deploy"), given("review", "persona")]);
     view({ chat: CHAT });
     const grid = await list();
     await waitFor(() => expect(within(grid).getByText("ops-runbook")).toBeInTheDocument());
@@ -367,14 +383,19 @@ describe("Only this chat's", () => {
     expect(only).toHaveAttribute("aria-pressed", "false");
     await userEvent.click(only);
 
-    expect(asked).toContainEqual({
-      cmd: "skill_studio",
-      args: { plane: "p", workspace: "ops", persona: "reviewer" },
-    });
+    // The chat's real set, as Use skill… reads it.
+    expect(asked).toContainEqual({ cmd: "chat_skills", args: { plane: "p", session: 7 } });
     await waitFor(() =>
-      expect(groupNames(grid)).toEqual(["Project", "Personas", "Not in this chat"]),
+      expect(groupNames(grid)).toEqual(["Needs you", "Project", "Personas", "Not in this chat"]),
     );
-    expect(rowOf("ops-only")).toHaveTextContent("Left out");
+    expect(rowOf("ops-runbook")).toHaveTextContent("Left out");
+    // Use in this chat waits on a skill the chat does not get, and says why.
+    fireEvent.contextMenu(rowOf("ops-runbook"));
+    const menu = await screen.findByRole("menu", { name: "ops-runbook" });
+    const use = within(menu).getByRole("menuitem", { name: /Use in this chat/ });
+    expect(use).toHaveAttribute("aria-disabled", "true");
+    expect(use).toHaveTextContent("The chat in front does not get it.");
+    await userEvent.keyboard("{Escape}");
 
     // Kept for the window: drawn again, the switch is still on.
     cleanup();
@@ -383,6 +404,22 @@ describe("Only this chat's", () => {
       "aria-pressed",
       "true",
     );
+    await userEvent.click(screen.getByRole("button", { name: "Only this chat's" }));
+  });
+
+  it("keeps every group for a chat at the project's root", async () => {
+    opsCore([given("secrets", "built-in"), given("deploy")]);
+    view({ workspace: undefined, chat: { session: 9, workspace: undefined, persona: null } });
+    const grid = await list();
+    await waitFor(() => expect(groupNames(grid)).toEqual(["Project", "Personas"]));
+
+    await userEvent.click(screen.getByRole("button", { name: "Only this chat's" }));
+
+    // Built-in is what the root chat gets: not hidden by the root's own grouping.
+    await waitFor(() =>
+      expect(groupNames(grid)).toEqual(["Built-in", "Project"]),
+    );
+    expect(rowOf("secrets")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Only this chat's" }));
   });
 });

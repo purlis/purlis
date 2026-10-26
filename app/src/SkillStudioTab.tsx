@@ -32,7 +32,7 @@ import {
   SkillsReading,
   type SkillStart,
 } from "./SkillStarts";
-import { askSkillChat, useSkillDrafts } from "./skillDraftAsks";
+import { askDraft, useSkillDrafts } from "./skillDraftAsks";
 import { SkillSources } from "./SkillSources";
 import { Select } from "./ui/select/Select";
 import { Field, SettingRow } from "./settings/components";
@@ -331,12 +331,7 @@ export function SkillStudioTab({
   );
   /** One of the three starts (decision 42), from the empty studio's buttons. */
   const startWith = (start: SkillStart) => {
-    if (start === "draft")
-      askSkillChat({
-        plane,
-        kind: "draft",
-        level: levelFrom(scope, levelsFor(studio.levels, scope)),
-      });
+    if (start === "draft") askDraft(plane, scope, studio.levels);
     else if (start === "sources") showSources(sourcesHeading.current);
     else setDoing({ what: "new" });
   };
@@ -379,13 +374,7 @@ export function SkillStudioTab({
       </Button>
       <Button
         icon={<MessageSquarePlus aria-hidden="true" />}
-        onPress={() =>
-          askSkillChat({
-            plane,
-            kind: "draft",
-            level: levelFrom(scope, levelsFor(studio.levels, scope)),
-          })
-        }
+        onPress={() => askDraft(plane, scope, studio.levels)}
       >
         {DRAFT_WITH_A_CHAT}
       </Button>

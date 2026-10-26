@@ -9,16 +9,25 @@ import { ListFilter, noMatchSaid, type Noun } from "./ui/list/ListFilter";
 import { RowLabel, RowTrail } from "./ui/list/Row";
 import { Menu, MenuItem, MenuTrigger, MenuWords } from "./ui/menu/Menu";
 import { SKILL_STARTS, NEW_SKILL_MENU, SkillStarts, type SkillStart } from "./SkillStarts";
-import { MARK_SAID, markOf, tipOf, type ListedSkill, type SkillGroup } from "./skillsListing";
+import type { Offer } from "./actions";
+import type { GroupDrawn } from "./menuModel";
+import { Groups } from "./Menus";
+import { OPEN_SKILL_STUDIO } from "./skillStudio";
+import {
+  MARK_SAID,
+  markOf,
+  menuRowsOf,
+  tipOf,
+  type ListedSkill,
+  type SkillAct,
+  type SkillGroup,
+} from "./skillsListing";
 
 /** What the view's filter calls its rows. */
-export const SKILLS_NOUN: Noun = { one: "skill", many: "skills" };
-
-/** The words of the view's way to the Skill studio, as the palette's row says it. */
-export const OPEN_SKILL_STUDIO = "Open Skill studio";
+const SKILLS_NOUN: Noun = { one: "skill", many: "skills" };
 
 /** The words of the switch that narrows the list to the chat in front (the amendment's (c)). */
-export const ONLY_THIS_CHATS = "Only this chat's";
+const ONLY_THIS_CHATS = "Only this chat's";
 
 /**
  * **The Skills view, drawn** (SK-55, #3266): its header's way to the Skill studio and its New
@@ -131,7 +140,7 @@ export function SkillsList({
         {groups.map((group) => (
           <ListRowSection key={group.id} id={group.id} title={group.title} named={group.named}>
             {group.rows.map((row) => {
-              const mark = markOf(row.skill);
+              const mark = markOf(row);
               const tip = tipOf(row);
               return (
                 <ListRow
@@ -141,14 +150,14 @@ export function SkillsList({
                   tip={
                     tip.length === 0
                       ? undefined
-                      : tip.map((line) => (
-                          <span key={line} className="skills-view-tip">
+                      : tip.map((line, at) => (
+                          <span key={at} className="skills-view-tip">
                             {line}
                           </span>
                         ))
                   }
                   menu={menuOf(row)}
-                  data-testid={`skills-row-${row.skill.name}`}
+                  data-testid={`skills-row-${row.key}`}
                   data-mark={mark}
                 >
                   <RowLabel>{row.skill.name}</RowLabel>
@@ -162,5 +171,53 @@ export function SkillsList({
         ))}
       </List>
     </div>
+  );
+}
+
+/**
+ * **A row's menu** (the amendment's (b)): Use in this chat, the switch and Show in Explorer,
+ * drawn as every menu is (`Menus.Groups`), each that cannot run saying why. While a change is on
+ * its way the switch waits.
+ */
+export function SkillMenu({
+  row,
+  at,
+  busy,
+  onAct,
+}: {
+  row: ListedSkill;
+  at: { workspace: string | undefined; chat: boolean };
+  busy: boolean;
+  onAct: (what: SkillAct) => void;
+}) {
+  const rows = menuRowsOf(row, at);
+  const group: GroupDrawn = {
+    entries: rows.map((one) => {
+      const waits = busy && one.act === "turn";
+      const available = one.available && !waits;
+      return {
+        kind: "row",
+        offer: {
+          id: `skills.${one.act}`,
+          title: one.title,
+          available,
+          reason: available ? "" : waits ? "A change is on its way." : one.reason,
+          does: { verb: "nothing" },
+        } satisfies Offer,
+        said: one.title,
+        danger: false,
+      };
+    }),
+  };
+  return (
+    <Menu aria-label={row.skill.name} className="item-menu">
+      <Groups
+        groups={[group]}
+        onPress={(offer) => {
+          const one = rows.find((r) => `skills.${r.act}` === offer.id);
+          if (one !== undefined) onAct(one.act);
+        }}
+      />
+    </Menu>
   );
 }
