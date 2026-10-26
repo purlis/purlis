@@ -735,11 +735,11 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 Ok(true) => Ok(0),
                 Ok(false) => {
                     let state = if off { "not pinned" } else { "already pinned" };
-                    voice::ok(&format!("{name} was {state} there."));
+                    voice::ok(format!("{name} was {state} there."));
                     Ok(0)
                 }
                 Err(why) => {
-                    voice::err(&why);
+                    voice::err(why);
                     Ok(1)
                 }
             }
