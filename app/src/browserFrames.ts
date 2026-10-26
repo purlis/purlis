@@ -21,14 +21,15 @@ export function frameBytes(base64: string): Uint8Array {
 /**
  * Draws `jpeg` on `canvas`, at the frame's own size, or made `across` pixels wide (its height
  * kept in proportion) for a thumbnail, so its canvas holds no page-sized picture; the canvas
- * is scaled by its style.
+ * is scaled by its style. A screenshot of a browser timeline is a PNG (`type`, #2017).
  */
 export async function paint(
   canvas: HTMLCanvasElement,
   jpeg: Uint8Array,
   across?: number,
+  type = "image/jpeg",
 ): Promise<void> {
-  const blob = new Blob([jpeg as BlobPart], { type: "image/jpeg" });
+  const blob = new Blob([jpeg as BlobPart], { type });
   const bitmap = await (across === undefined
     ? createImageBitmap(blob)
     : createImageBitmap(blob, { resizeWidth: across, resizeQuality: "low" }));
