@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792995144451,
+  "lastUpdate": 1792997250114,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -25116,6 +25116,48 @@ window.BENCHMARK_DATA = {
             "value": 101.52569249999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.679, 101.517, 101.526, 101.944, 102.256 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f1fe76a1ca06a7606ce6528b7c0ee27b627061c7",
+          "message": "stories: a failed story's annotation is on its failing line (#2953) (#3257)\n\n* stories: a failed story's annotation is on its failing line (#2953)\n\nThe reporter keeps the source-mapped frames Vitest gives with each\nerror; the annotation takes the first frame in a story file as its\nfile= and line=, relative to the repository. A failure with no such\nframe keeps today's annotation.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: an annotation prefers the failed story's own file (#2953 review)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-26T10:41:00+04:00",
+          "tree_id": "2a79fe45af4eea03a9f14f4c084916ddc3bb647a",
+          "url": "https://github.com/purlis/purlis/commit/f1fe76a1ca06a7606ce6528b7c0ee27b627061c7"
+        },
+        "date": 1792997247119,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3073895,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.291, 0.298, 0.307, 0.319, 0.325 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.615371500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.521, 16.603, 16.615, 16.748, 16.786 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.2956325,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.753, 101.069, 101.296, 101.387, 101.705 ms"
           }
         ]
       }
