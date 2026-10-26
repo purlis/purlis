@@ -399,7 +399,7 @@ describe("every menu", () => {
         // The whole of it is the catalogue's note, which is the row's tooltip.
         expect(row.offer.note, `${which}: ${row.said}`).toBeTruthy();
       }
-    // That it is never cut is the stylesheet's, held in `primitives/controls.test.tsx`.
+    // That it is never cut is the menu family's stylesheet's (`ui/menu/menu.css`).
     // The catalogue's own sentence, where it is short enough.
     expect(WARNS.ends).toBe(ENDS_IT);
     // Only a keychain vault's secrets are destroyed (the catalogue's note): the warning says
