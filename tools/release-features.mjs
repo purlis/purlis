@@ -406,11 +406,15 @@ export function builds(workflow) {
   return found;
 }
 
-/** What publishes a release or pushes an image, in a workflow's text: checked on `NOT_SHIPPING`. */
+/**
+ * What publishes a release or pushes an image, in a workflow's text: checked on `NOT_SHIPPING`.
+ * A push to a registry on the job's own loopback (`localhost:<port>/…`, `127.0.0.1:<port>/…`)
+ * gives nobody anything: it is how a job names an image it built by digest (#2045).
+ */
 const PUBLISHES = [
   /\bgh\s+release\s+(create|upload|edit)\b/,
   /\buses:\s*["']?(softprops\/action-gh-release|ncipollo\/release-action|tauri-apps\/tauri-action|docker\/build-push-action)@/,
-  /\b(docker|podman|buildah)\s+(image\s+)?push\b/,
+  /\b(docker|podman|buildah)\s+(image\s+)?push\b(?!\s+(localhost|127\.0\.0\.1):\d+\/)/,
   /\bbuildx\s+build\b.*\s--push\b/,
   /^\s*packages:\s*write\b/m,
 ];
