@@ -22,7 +22,9 @@ description: Writes the names the studio probe's network tests look up into the 
 runs:
   using: composite
   steps:
-    - shell: bash
+    # A persistent runner would keep every run's lines, stale addresses among them.
+    - if: runner.environment == 'github-hosted'
+      shell: bash
       run: |
         set -euo pipefail
         pinned=""

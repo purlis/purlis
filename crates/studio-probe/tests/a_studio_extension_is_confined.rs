@@ -495,8 +495,8 @@ fn a_tunnel_is_carried_only_where_its_hello_names_its_host() {
     for other in ["api.anthropic.com", "api.openai.com"] {
         let fronted = probe.tried(&["hello", "example.com", other]);
         assert!(
-            fronted.ends_with("; 0 bytes came back") || !fronted.contains(" 200 "),
-            "a hello naming {other} through example.com's tunnel was carried: {fronted}"
+            fronted.contains(" 200 ") && fronted.ends_with("; 0 bytes came back"),
+            "a hello naming {other} through example.com's open tunnel was not cut off: {fronted}"
         );
     }
 }
