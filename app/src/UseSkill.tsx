@@ -20,7 +20,12 @@ import { RowBelow, RowDescription, RowLabel } from "./ui/list/Row";
 import { Button } from "./ui/button/Button";
 import { counted } from "./dispatches";
 import { codeSpans } from "./PanelList";
-import { useSkillStudioOn } from "./skillStudio";
+import {
+  scopeOfPinner,
+  SKILL_STUDIO_TITLE,
+  skillStudioTitle,
+  useSkillStudioOn,
+} from "./skillStudio";
 import {
   commands,
   type ChatSkill,
@@ -44,7 +49,7 @@ export function budgetSaid(budget: SkillBudget): string {
 /** The budget in a few words, for a chat tab's menu row: `12 of 30 skills`, and that it is near
  *  or past the budget where it warns. */
 export function budgetShort(budget: SkillBudget): string {
-  const short = `${budget.skills} of ${budget.most_skills} skills`;
+  const short = `${budget.skills} of ${counted(budget.most_skills, "skill", "skills")}`;
   return budget.warns === null ? short : `${short}, near the budget`;
 }
 
@@ -65,10 +70,17 @@ export function warnsSaid(budget: SkillBudget): string | undefined {
   if (budget.still_over === "not-hideable")
     return `purlis's own skills and the ones this chat's program and repos bring are past purlis's skill budget by themselves, so all of them are listed. Turn some of the program's or repos' skills off in the Skill studio.`;
   if (budget.still_over === "pins")
-    return `This chat's pinned skills are past purlis's skill budget, so all of them are listed. Unpin some with \`purlis skill pin <name> -w <workspace> --off\` (or \`-p <persona>\` for a persona's pin), or make some manual-only.`;
+    return `This chat's pinned skills are past purlis's skill budget, so all of them are listed. Unpin some in ${unpinIn(budget)}, or make some manual-only.`;
   if (budget.hidden > 0)
     return `This chat's ${what} past purlis's skill budget, so ${counted(budget.hidden, "skill is", "skills are")} hidden behind the index skill, which the chat loads them from. Make some skills manual-only, or turn some off for this workspace.`;
   return `This chat's ${what} near or past purlis's skill budget, past which some are hidden behind the index skill. Make some skills manual-only, or turn some off for this workspace.`;
+}
+
+/** Where a chat's pins are undone (SK-15d): the studio of each of its workspace and persona that
+ *  pins a skill, by its tab's title, or the studio itself where the window was not told. */
+function unpinIn(budget: SkillBudget): string {
+  const where = budget.pinned_by.map((by) => skillStudioTitle(scopeOfPinner(by)));
+  return where.length === 0 ? SKILL_STUDIO_TITLE : where.join(" or ");
 }
 
 /** What the filter over a chat's skills calls them. */

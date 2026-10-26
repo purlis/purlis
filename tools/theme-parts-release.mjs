@@ -9,9 +9,10 @@
 //
 //   node tools/theme-parts-release.mjs            release prep: every `NEXT` written in code
 //                                                 becomes VERSION + 1, VERSION is raised, then
-//                                                 the digest is pinned and the theme schema
-//                                                 written again (both through cargo, on every
-//                                                 run, so a run cut short is finished by the next)
+//                                                 the digest is pinned, and the theme schema and
+//                                                 docs/themes.md's family table written again
+//                                                 (all through cargo, on every run, so a run cut
+//                                                 short is finished by the next)
 //   node tools/theme-parts-release.mjs --check    exit 1 when a `NEXT` or a literal VERSION + 1 is
 //                                                 left: the release workflow refuses a stable tag
 //                                                 on it
@@ -318,7 +319,11 @@ function main() {
   // short after the rewrite is finished by the next.
   cargo(root, { PURLIS_THEME_PARTS_PIN: "1" }, "every_released_manifest_keeps_its_digest");
   cargo(root, { PURLIS_THEME_SCHEMA_WRITE: "1" }, "the_published_schema");
-  console.log(`Version ${version}'s digest is pinned and the theme schema written: commit them.`);
+  // The family table says "since the next release" until the number is written.
+  cargo(root, { PURLIS_THEMES_DOC_WRITE: "1" }, "the_docs_family_table");
+  console.log(
+    `Version ${version}'s digest is pinned, and the theme schema and the family table written: commit them.`,
+  );
 }
 
 if (realpathSync(process.argv[1] ?? "") === realpathSync(fileURLToPath(import.meta.url))) {

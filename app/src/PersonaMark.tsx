@@ -257,6 +257,7 @@ export function PersonaMark({
   mark,
   className,
   onImageTrouble,
+  named = false,
 }: {
   persona: string;
   /** Its mark, where the caller holds it. Left out, it is looked up in {@link PersonaMarks}. */
@@ -264,6 +265,9 @@ export function PersonaMark({
   className?: string;
   /** Told when a custom image could not be decoded here, so the persona's view can say so. */
   onImageTrouble?: () => void;
+  /** The persona's name is beside it, so no tooltip repeats it: a row of a list whose name is
+   *  the persona's, where a second "steward" would be read into the row (WCAG 2.5.3). */
+  named?: boolean;
 }) {
   const known = useContext(PersonaMarks).get(persona);
   const given = mark ?? known;
@@ -284,26 +288,25 @@ export function PersonaMark({
   const shows =
     image !== null ? (image === failed ? "initials" : "image") : Icon ? "icon" : "initials";
   const colour = given?.colour ?? colourOfName(persona);
-  return (
-    <Tooltip tip={persona}>
-      <span
-        className={className ? `persona-mark ${className}` : "persona-mark"}
-        data-persona={persona}
-        data-mark={shows}
-        data-icon={shows === "icon" ? (given?.icon ?? undefined) : undefined}
-        // Drawn by the stylesheet from this attribute and never as text of the page: a tab's
-        // words are its name, and two letters in front of them would be read as part of it.
-        data-initials={shows === "initials" ? initialsOf(persona) : undefined}
-        data-colour={colour}
-        style={tintVariables(theme, colour, MARK_TOKENS) as CSSProperties}
-        aria-hidden="true"
-      >
-        {shows === "image" && image !== null ? (
-          <Drawn image={image} onTrouble={failedNow} />
-        ) : Icon && shows === "icon" ? (
-          <Icon />
-        ) : null}
-      </span>
-    </Tooltip>
+  const drawn = (
+    <span
+      className={className ? `persona-mark ${className}` : "persona-mark"}
+      data-persona={persona}
+      data-mark={shows}
+      data-icon={shows === "icon" ? (given?.icon ?? undefined) : undefined}
+      // Drawn by the stylesheet from this attribute and never as text of the page: a tab's
+      // words are its name, and two letters in front of them would be read as part of it.
+      data-initials={shows === "initials" ? initialsOf(persona) : undefined}
+      data-colour={colour}
+      style={tintVariables(theme, colour, MARK_TOKENS) as CSSProperties}
+      aria-hidden="true"
+    >
+      {shows === "image" && image !== null ? (
+        <Drawn image={image} onTrouble={failedNow} />
+      ) : Icon && shows === "icon" ? (
+        <Icon />
+      ) : null}
+    </span>
   );
+  return named ? drawn : <Tooltip tip={persona}>{drawn}</Tooltip>;
 }

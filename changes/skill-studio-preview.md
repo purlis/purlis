@@ -45,10 +45,12 @@
   Claude Code, Codex and opencode, whether everything it asks for applies there, and what is left
   out, carried over or not applied. A skill of a program's own or a repo's that would widen a
   chat is marked. A manual-only skill now stays out of the chat's choice, and costs nothing in
-  its budget, on all three. The editor's live lint also warns of a description too short to say
-  when to use the skill, a skill it names that does not exist, and a program the skill runs that
-  this machine does not have. A chat that starts without a skill it would have loaded, because
-  the skill is broken, says which and why on its tab, with a way to the Skill studio.
+  its budget, on all three. Its badge says it runs only when asked for, and so does a Codex
+  skill, its own or a repo's, that Codex's own settings keep out of its choice (#3050). The
+  editor's live lint also warns of a description too short to say when to use the skill, a
+  skill it names that does not exist, and a program the skill runs that this machine does not
+  have. A chat that starts without a skill it would have loaded, because the skill is broken,
+  says which and why on its tab, with a way to the Skill studio.
 - **Move your project's skills into the Skill studio in one step** (Skill studio preview,
   #2784). `purlis doctor --fix project-skills` moves every skill in the project's
   `.claude/skills` into its `skills/`, shared with every workspace as before. It rewrites the old
@@ -102,6 +104,11 @@
   `-p <persona>`, and the router never hides it. The Skill studio and `purlis skill list` say
   which skills are pinned and why any other is hidden, and _Use skill…_ marks the hidden ones,
   says how many are in the index skill, and still starts them for you.
+- **Pin and unpin a skill in the Skill studio** (Skill studio preview, #3232). Each skill's row
+  in the studio for a workspace's chats or a persona's has a _Pinned_ switch, one commit each
+  way. A skill's tab lists every workspace and persona that pins it, each with _Unpin_. Where a
+  chat's pinned skills alone are past the budget, its Skills chip and _Use skill…_ name the
+  studio to unpin them in, such as _Skill studio · ops_.
 
 ### Fixed
 

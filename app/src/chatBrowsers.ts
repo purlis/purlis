@@ -47,6 +47,19 @@ export const NONE_KEPT: readonly ChatBrowser[] = [];
  * their chats, and each of `kept`, pinned past its chat, which ends when the person stops it.
  * One that could not be ended yet is no chat's, and closing a tab that shows it may end it.
  */
+/**
+ * **The pool whose runner `program` runs on, as the chats' browsers list it** (#2050): `null` for
+ * one on this machine, and `undefined` for one they do not list.
+ */
+export function poolOf(
+  browsers: ByChat,
+  kept: readonly ChatBrowser[],
+  program: string,
+): string | null | undefined {
+  const listed = [...[...browsers.values()].flat(), ...kept].find((one) => one.program === program);
+  return listed === undefined ? undefined : (listed.pool ?? null);
+}
+
 export function programsOf(
   browsers: ByChat,
   kept: readonly ChatBrowser[] = NONE_KEPT,

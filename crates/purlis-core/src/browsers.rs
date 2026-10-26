@@ -1265,6 +1265,10 @@ impl Screen for EngineScreen {
         self.with(|browser| browser.pace(every));
     }
 
+    fn narrow(&self, most: Option<u16>) {
+        self.with(|browser| browser.narrow(most));
+    }
+
     fn hide(&self) {
         self.with(|browser| browser.hide());
     }

@@ -745,6 +745,12 @@ item families (`purlis/tooltip-family`, an error). A frame's `title` is its name
   one was just open. A row's tooltip stands by the pointer or the row's words, not the whole row,
   and an anchored tooltip (a row's, a menu row's) keeps its width: it takes the side with room for
   all of it, and stands under its anchor where neither side has (#3328, `ui/tooltip/side.ts`).
+- **A strip's tooltips stand below it** (#3361): a strip is a row of targets, and a tooltip at a
+  target's end would sit on the row, over the next. A target inside an element marked
+  `TIPS_BELOW` (`data-tips="below"`; the chat strip's row) has its tooltip below it, or above
+  where the window has no room, at the same 10 px. The strip says so, never a call site, and it
+  is read from where the target stands in the DOM (`placementFor`), so a menu or a popover opened
+  from the strip, portalled out of it, keeps R166's placement.
 - **WCAG 1.4.13**: Esc takes it down and leaves the focus where it was (dismissible). **The first
   Esc is the tooltip's alone**: heard first on the window's capture phase while it is up, it reaches no
   dialog, menu, palette or terminal, and the next Esc is theirs. The pointer can move onto a tooltip it
@@ -894,7 +900,7 @@ old `.ui-list` class: `eslint.config.js` refuses both (`purlis/list-family`, an 
 | Rule | How |
 | --- | --- |
 | **Header, body, footer** | Three rows: the title and the line under it, the body, which is the only part that scrolls, and the footer with the answers, always in view. A control the keyboard is on is never under the footer (WCAG 2.4.11): the two never overlap. |
-| **Width by size, never by content** | `size="standard"`, 560 px, or `size="wide"`, 780 px, only for a list beside its details; each at most the window's width less 16 px a side. |
+| **Width by size, never by content** | `size="standard"`, 600 px, or `size="wide"`, 800 px, only for a list beside its details; each at most the window's width less 16 px a side. |
 | **Height** | At most the window less 48 px; `height` gives a dialog one of its own, and it takes the lesser of the two whatever it holds. |
 | **A fixed top** | 24 px under the window's top edge, so a change in its content moves only its bottom edge. |
 | **Text that changes with a choice keeps its room** | `Reserved` (`ui/dialog/Reserved.tsx`) lays every text a place can show in one cell, and an answer's `reserve` lists every word it can say (`Create`, `Creating…`), so nothing moves or resizes when a choice or a state changes. |

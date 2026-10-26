@@ -384,39 +384,9 @@ fn the_manifest_names_the_tabs_and_the_editor_toolbar() {
         .iter()
         .map(|one| one["name"].as_str().unwrap())
         .collect();
-    assert_eq!(
-        families,
-        [
-            "button",
-            "field",
-            "text-input",
-            "textarea",
-            "tabs",
-            "editor",
-            "panel",
-            "panel-section",
-            "empty-state",
-            "status-item",
-            "tooltip",
-            "popover",
-            "menu",
-            "dialog",
-            "rail",
-            "activity",
-            "list",
-            "titlebar",
-            "select",
-            "combobox",
-            "checkbox",
-            "radio",
-            "switch",
-            "segmented-control",
-            "segment",
-            "slider",
-            "option-card",
-            "panel-separator"
-        ]
-    );
+    // The tabs and the editor's toolbar shipped fifth and sixth (version 8), and keep their place:
+    // the manifest's order is `build.rs`'s (`families`), held by `parts_order_tests.rs`.
+    assert_eq!(families[4..6], ["tabs", "editor"]);
     let tabs = &manifest["families"][4];
     let parts: Vec<&str> = tabs["parts"]
         .as_array()

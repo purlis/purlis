@@ -13,7 +13,8 @@
  * - **One placement and one delay** ({@link TOOLTIP_PLACEMENT}, {@link TOOLTIP_OFFSET},
  *   {@link TOOLTIP_DELAY}, {@link TOOLTIP_CLOSE_DELAY}), which no call site can change: beside
  *   its target at the target's end, 10 px from it, flipped to its start where the window has no
- *   room (R166).
+ *   room (R166); on a strip ({@link TIPS_BELOW}), below its target, clear of the strip's row
+ *   (#3361).
  * - **WCAG 1.4.13** (content on hover or focus): it opens under the pointer after the delay and
  *   at once on the keyboard's focus; **Esc dismisses it** without moving the focus, and is the
  *   tooltip's alone: a dialog under it, or a terminal with the focus, hears nothing of that Esc,
@@ -68,6 +69,21 @@ import { sideWithRoom, type TooltipSide } from "./side";
 
 /** **Where a tooltip stands**: beside its target, at the target's end (R166). */
 export const TOOLTIP_PLACEMENT = "end" satisfies AriaTooltipProps["placement"];
+
+/**
+ * **Where the tooltips of a strip stand** (#3361): a strip is a row of targets, and a tooltip
+ * beside one at its end would sit on the row, over the next. A target inside an element marked
+ * {@link TIPS_BELOW} (the chat strip's row) has its tooltip below it instead (above, where the
+ * window has no room below), at the same distance. It is read from the DOM, where the target
+ * stands, and not from React: a menu or a popover opened from the strip is portalled out of it,
+ * and its tooltips stand beside their targets (R166).
+ */
+export const TIPS_BELOW = { "data-tips": "below" } as const;
+
+/** The placement of the tooltip `target` has: below it on a strip, else at its end. */
+export function placementFor(target: Element | null | undefined): AriaTooltipProps["placement"] {
+  return target?.closest('[data-tips="below"]') ? "bottom" : TOOLTIP_PLACEMENT;
+}
 
 /** How far from its target a tooltip stands, in px (R166). */
 export const TOOLTIP_OFFSET = 10;
@@ -168,9 +184,10 @@ export function TooltipSurface({ children }: { children: Tip }) {
     () => trigger?.current?.closest("[data-tauri-drag-region]") != null,
     [trigger],
   );
+  const placement = placementFor(trigger?.current);
   return (
     <AriaTooltip
-      placement={TOOLTIP_PLACEMENT}
+      placement={placement}
       offset={TOOLTIP_OFFSET}
       data-scope="tooltip"
       data-part="root"
