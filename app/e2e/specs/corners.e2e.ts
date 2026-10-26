@@ -107,15 +107,24 @@ describe("the four corners", function () {
     expect(inbox?.height).toBe(36);
   });
 
-  it("switches the side view, and a press of the open one leaves it out", async () => {
+  it("switches the side view, and a press of the open one puts the side away (#3329)", async () => {
+    const selected = async (view: string) =>
+      (await $(tab(NAVIGATION, view)).getAttribute("aria-selected")) === "true";
     await press(tab(NAVIGATION, "Explorer"));
-    await browser.waitUntil(
-      async () => (await $(tab(NAVIGATION, "Explorer")).getAttribute("aria-selected")) === "true",
-      { timeout: 10_000, timeoutMsg: "Explorer never opened" },
-    );
+    await browser.waitUntil(() => selected("Explorer"), {
+      timeout: 10_000,
+      timeoutMsg: "Explorer never opened",
+    });
     await press(tab(NAVIGATION, "Explorer"));
-    expect(await $(tab(NAVIGATION, "Explorer")).getAttribute("aria-selected")).toBe("true");
+    await browser.waitUntil(async () => !(await selected("Explorer")), {
+      timeout: 10_000,
+      timeoutMsg: "a second press of Explorer did not put the side away",
+    });
     await press(tab(NAVIGATION, "Chats"));
+    await browser.waitUntil(() => selected("Chats"), {
+      timeout: 10_000,
+      timeoutMsg: "the side did not come back on Chats",
+    });
   });
 
   it("brings the right panel in only when it opens, and takes it away with no motion", async () => {

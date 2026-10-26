@@ -725,6 +725,30 @@ fn every_harness_denies_a_chat_writing_what_its_harness_said_it_cost() {
     }
 }
 
+/// #2017: a chat's browser timeline holds the screenshots its agent was given, which are not
+/// for a chat running as another persona: no chat reads or writes any, under either name of
+/// the state folder, there or not.
+#[test]
+fn every_harness_denies_a_chat_every_chats_browser_timeline() {
+    for os in [Os::MacOs, Os::Linux] {
+        let (plane, denied) = denied_with(None, os);
+        let held = paths(&denied, Class::Integrity, Access::ReadWrite);
+        for state in [".charter", ".purlis"] {
+            let shot = plane
+                .path()
+                .join(state)
+                .join(crate::browsertimeline::DIR)
+                .join("01JB0000000000000000000000")
+                .join("0.png");
+            assert!(
+                held.iter().any(|folder| shot.starts_with(folder)),
+                "{os:?}: {}",
+                shot.display()
+            );
+        }
+    }
+}
+
 /// #1507: the record of what was refused while nobody was there is in the dispatch store, and
 /// is what a standing grant is offered from. **Its own path** is denied for reading and
 /// writing in what each harness is compiled, on both systems, under both names of the state
