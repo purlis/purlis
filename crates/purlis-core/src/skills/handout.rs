@@ -53,6 +53,17 @@ pub(super) fn of(effective: &Effective, honours: &Honours) -> Result<Handed, Ref
     })
 }
 
+/// **The index skill of a set, as a harness that reads `honours` is handed it** (SK-15, ADR 0102
+/// §2): a folder of its own holding the `SKILL.md` purlis wrote, and nothing else.
+pub(super) fn index(index: &purlis_skills::Index, honours: &Honours) -> Result<Handed, Refusal> {
+    Ok(Handed {
+        name: purlis_skills::INDEX.to_owned(),
+        folder: PathBuf::new(),
+        text: purlis_skills::handed_text(&index.text, honours)?,
+        entries: Vec::new(),
+    })
+}
+
 /// What a digest of a set's folder covers of one handed skill: its name, its folder, the text
 /// handed and every entry.
 pub(super) fn digested(one: &Handed, hash: &mut impl sha2::Digest) {

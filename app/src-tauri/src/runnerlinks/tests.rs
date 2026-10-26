@@ -461,7 +461,7 @@ fn a_project_reaches_a_pools_runner_through_the_window() {
         Arc::new(move |_within, naming, pool: &str| link_to(naming, Some(pool.to_owned())))
     };
     connection.ready_relaying(Arc::new(window), dial, relayed);
-    let routed = crate::hostedsessions::routed(
+    let routed = crate::routedsessions::RoutedSessions::of_the_project(
         Box::new(crate::hostedsessions::HostedSessions::new(
             Arc::clone(&connection),
             &root,

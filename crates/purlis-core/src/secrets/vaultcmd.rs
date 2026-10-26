@@ -15,6 +15,7 @@ use super::persons_own::{self, Verb};
 use super::registry::{self, Vault};
 use super::{Ctx, onepassword};
 use crate::counts::counted;
+use crate::tui::Markup;
 
 /// Cells between one column of `vault list` and the next.
 const GAP: usize = 2;
@@ -237,7 +238,7 @@ fn file_owner(ctx: &Ctx, file: &str, name: &str) -> Option<String> {
 /// purlis cannot tell: a chat is never the one supplying a vault's token.
 fn add_with_a_token(ctx: &Ctx, req: &AddRequest, io: &mut dyn Io) -> i32 {
     use super::setup;
-    let refuse = |io: &mut dyn Io, why: String| {
+    let refuse = |io: &mut dyn Io, why: Markup| {
         io.say(Say::Err(why));
         1
     };
@@ -255,16 +256,17 @@ fn add_with_a_token(ctx: &Ctx, req: &AddRequest, io: &mut dyn Io) -> i32 {
                 "--token-stdin keeps the token in {} and binds no variable, so it is not given \
                  with --token-env or --env. Leave those out.",
                 super::keyring::STORE_NAME
-            ),
+            )
+            .into(),
         );
     }
     match setup::in_a_chat(ctx) {
         setup::Where::Outside => {}
         setup::Where::Inside => return refuse(io, setup::NOT_FROM_A_CHAT.into()),
-        setup::Where::Unsure(why) => return refuse(io, setup::could_not_tell(&why)),
+        setup::Where::Unsure(why) => return refuse(io, setup::could_not_tell(&why).into()),
     }
     if !registry::name_ok(&req.name) {
-        return refuse(io, registry::name_refusal(&req.name));
+        return refuse(io, registry::name_refusal(&req.name).into());
     }
     let existing = if req.force {
         None
@@ -277,12 +279,15 @@ fn add_with_a_token(ctx: &Ctx, req: &AddRequest, io: &mut dyn Io) -> i32 {
     let Some(op_vault) = req.op_vault.as_deref().filter(|v| !v.is_empty()) else {
         return refuse(
             io,
-            format!(
+            Markup::lines([
                 "--op-vault is required for a 1password vault: which 1Password vault should \
-                 purlis create its items in?\n  purlis vault add {} --provider 1password \
-                 --op-vault Engineering --token-stdin",
-                req.name
-            ),
+                 purlis create its items in?"
+                    .into(),
+                Markup::new()
+                    .own("  purlis vault add ")
+                    .text(&req.name)
+                    .own(" --provider 1password --op-vault Engineering --token-stdin"),
+            ]),
         );
     };
     let place = setup::Place {
@@ -307,26 +312,32 @@ fn add_with_a_token(ctx: &Ctx, req: &AddRequest, io: &mut dyn Io) -> i32 {
     );
     let made = match made {
         Ok(made) => made,
-        Err(e) => return refuse(io, e.message),
+        Err(e) => return refuse(io, e.said()),
     };
     let where_ = if req.share {
         "shared — commit vaults.json"
     } else {
         "local only"
     };
-    io.say(Say::Ok(format!(
-        "Vault '{}' registered (provider: 1password) [{where_}]. Its token is in {}, and no \
+    io.say(Say::Ok(
+        format!(
+            "Vault '{}' registered (provider: 1password) [{where_}]. Its token is in {}, and no \
          variable is needed.",
-        req.name,
-        super::keyring::STORE_NAME
-    )));
+            req.name,
+            super::keyring::STORE_NAME
+        )
+        .into(),
+    ));
     if let Some(hint) = setup::remove_the_export(&made) {
-        io.say(Say::Info(format!("  {hint}")));
+        io.say(Say::Info(format!("  {hint}").into()));
     }
-    io.say(Say::Info(format!(
-        "  add secrets with: purlis secret set {} <key> --stdin",
-        req.name
-    )));
+    io.say(Say::Info(
+        format!(
+            "  add secrets with: purlis secret set {} <key> --stdin",
+            req.name
+        )
+        .into(),
+    ));
     0
 }
 
@@ -349,7 +360,7 @@ fn token_tested(
     let token = match setup::clean_token(&given) {
         Ok(token) => token,
         Err(e) => {
-            io.say(Say::Err(e.message));
+            io.say(Say::Err(e.said()));
             return None;
         }
     };
@@ -357,21 +368,24 @@ fn token_tested(
     let sign_in = setup::SignIn::Token(token);
     match setup::test(ctx, name, &sign_in, place) {
         Ok(tested) => {
-            io.say(Say::Ok(format!(
-                "Signed in to 1Password: {} in vault '{}'; item '{}' {}.",
-                counted(tested.items, "item", "items"),
-                crate::personas::one_line(&place.op_vault),
-                crate::personas::one_line(&tested.item),
-                if tested.item_there {
-                    "is there"
-                } else {
-                    "will be made with the first secret"
-                }
-            )));
+            io.say(Say::Ok(
+                format!(
+                    "Signed in to 1Password: {} in vault '{}'; item '{}' {}.",
+                    counted(tested.items, "item", "items"),
+                    crate::personas::one_line(&place.op_vault),
+                    crate::personas::one_line(&tested.item),
+                    if tested.item_there {
+                        "is there"
+                    } else {
+                        "will be made with the first secret"
+                    }
+                )
+                .into(),
+            ));
             Some(sign_in)
         }
         Err(failed) => {
-            io.say(Say::Err(failed.why));
+            io.say(Say::Err(failed.why.into()));
             io.say(Say::Info(
                 "  Nothing was registered and no token was stored.".into(),
             ));
@@ -396,7 +410,7 @@ fn token_for_a_registered_vault(
 ) -> i32 {
     use super::setup;
     let refuse = |io: &mut dyn Io, why: String| {
-        io.say(Say::Err(why));
+        io.say(Say::Err(why.into()));
         1
     };
     // A record for a vault only the committed half declares would pin settings a commit chose
@@ -429,7 +443,10 @@ fn token_for_a_registered_vault(
     }
     let (op_vault, op_item) = match (onepassword::op_vault(vault), onepassword::op_item(vault)) {
         (Ok(v), Ok(i)) => (v, i),
-        (Err(e), _) | (_, Err(e)) => return refuse(io, e.message),
+        (Err(e), _) | (_, Err(e)) => {
+            io.say(Say::Err(e.said()));
+            return 1;
+        }
     };
     let account = super::config_str(&vault.config, "account")
         .map(|a| a.trim().to_owned())
@@ -468,16 +485,22 @@ fn token_for_a_registered_vault(
     };
     let changed = match setup::change(ctx, &req.name, &sign_in, None, &[]) {
         Ok(changed) => changed,
-        Err(e) => return refuse(io, e.message),
+        Err(e) => {
+            io.say(Say::Err(e.said()));
+            return 1;
+        }
     };
-    io.say(Say::Ok(format!(
-        "Stored the token of vault '{}' in {}. Its other settings are as they were, and no \
+    io.say(Say::Ok(
+        format!(
+            "Stored the token of vault '{}' in {}. Its other settings are as they were, and no \
          variable is needed.",
-        req.name,
-        super::keyring::STORE_NAME
-    )));
+            req.name,
+            super::keyring::STORE_NAME
+        )
+        .into(),
+    ));
     if let Some(hint) = setup::remove_the_export(&changed) {
-        io.say(Say::Info(format!("  {hint}")));
+        io.say(Say::Info(format!("  {hint}").into()));
     }
     0
 }
@@ -492,13 +515,13 @@ pub fn add(ctx: &Ctx, req: &AddRequest, io: &mut dyn Io) -> i32 {
         return add_with_a_token(ctx, req, io);
     }
     if !registry::name_ok(&req.name) {
-        io.say(Say::Err(registry::name_refusal(&req.name)));
+        io.say(Say::Err(registry::name_refusal(&req.name).into()));
         return 1;
     }
     if let Some(p) = req.persona.as_deref().filter(|p| !p.is_empty())
         && let Some(refused) = crate::personas::name_refusal(&ctx.root, p)
     {
-        io.say(Say::Err(refused));
+        io.say(Say::Err(refused.into()));
         return 1;
     }
     let mut cfg = Map::new();
@@ -520,17 +543,20 @@ pub fn add(ctx: &Ctx, req: &AddRequest, io: &mut dyn Io) -> i32 {
             "'{file}' is already the file of vault '{owner}'. Two vaults over one file would read \
              one vault's secrets as the other's entries — choose another --file, or remove \
              '{owner}' first."
-        )));
+        ).into()));
         return 1;
     }
     if req.provider == "plain-file"
         && let Some(file) = cfg.get("file").and_then(Value::as_str)
         && let Some(unignored) = unignored_plaintext(ctx, file)
     {
-        io.say(Say::Err(format!(
-            "{unignored} — a plain-file vault \
+        io.say(Say::Err(
+            format!(
+                "{unignored} — a plain-file vault \
              stores plaintext, so the next `purlis save` would commit these credentials."
-        )));
+            )
+            .into(),
+        ));
         let vaults_dir = ctx
             .vaults_dir()
             .file_name()
@@ -539,7 +565,7 @@ pub fn add(ctx: &Ctx, req: &AddRequest, io: &mut dyn Io) -> i32 {
         io.say(Say::Info(format!(
             "  Keep it out of git (add it to .gitignore, or use the default under {vaults_dir}/), \
              or point --file outside the plane."
-        )));
+        ).into()));
         io.say(Say::Info(
             "  A `reference` vault stores op:// URIs rather than values and IS safe to commit: \
              --provider reference"
@@ -549,12 +575,16 @@ pub fn add(ctx: &Ctx, req: &AddRequest, io: &mut dyn Io) -> i32 {
     }
     if req.provider == "1password" {
         let Some(op_vault) = req.op_vault.as_deref().filter(|v| !v.is_empty()) else {
-            io.say(Say::Err(format!(
+            io.say(Say::Err(Markup::lines([
                 "--op-vault is required for a 1password vault: which 1Password vault should \
-                 purlis create its items in?\n  purlis vault add {} --provider 1password \
-                 --op-vault Engineering",
-                req.name
-            )));
+                 purlis create its items in?"
+                    .into(),
+                format!(
+                    "  purlis vault add {} --provider 1password --op-vault Engineering",
+                    req.name
+                )
+                .into(),
+            ])));
             return 1;
         };
         cfg.insert("op-vault".into(), Value::String(op_vault.into()));
@@ -569,7 +599,7 @@ pub fn add(ctx: &Ctx, req: &AddRequest, io: &mut dyn Io) -> i32 {
             }
             Ok(None) => {}
             Err(e) => {
-                io.say(Say::Err(e.message));
+                io.say(Say::Err(e.said()));
                 return 1;
             }
         }
@@ -577,7 +607,7 @@ pub fn add(ctx: &Ctx, req: &AddRequest, io: &mut dyn Io) -> i32 {
             if let Some(value) = cfg.get(key).and_then(Value::as_str)
                 && let Err(e) = onepassword::not_a_flag(key, &req.name, value)
             {
-                io.say(Say::Err(e.message));
+                io.say(Say::Err(e.said()));
                 return 1;
             }
         }
@@ -585,7 +615,7 @@ pub fn add(ctx: &Ctx, req: &AddRequest, io: &mut dyn Io) -> i32 {
     let env_map = match env_bindings(req) {
         Ok(m) => m,
         Err(message) => {
-            io.say(Say::Err(message));
+            io.say(Say::Err(message.into()));
             return 1;
         }
     };
@@ -609,7 +639,7 @@ pub fn add(ctx: &Ctx, req: &AddRequest, io: &mut dyn Io) -> i32 {
         req.force,
         req.share,
     ) {
-        io.say(Say::Err(e.message));
+        io.say(Say::Err(e.said()));
         return 1;
     }
     if let Some(replaced) = replaced {
@@ -629,7 +659,7 @@ pub fn add(ctx: &Ctx, req: &AddRequest, io: &mut dyn Io) -> i32 {
             old_where
                 .map(|w| format!(" They remain at {w}."))
                 .unwrap_or_default()
-        )));
+        ).into()));
     }
     let tag = persona
         .map(|p| format!(", persona: {p}"))
@@ -639,56 +669,71 @@ pub fn add(ctx: &Ctx, req: &AddRequest, io: &mut dyn Io) -> i32 {
     } else {
         "local only"
     };
-    io.say(Say::Ok(format!(
-        "Vault '{}' registered (provider: {}{tag}) [{where_}].",
-        req.name, req.provider
-    )));
+    io.say(Say::Ok(
+        format!(
+            "Vault '{}' registered (provider: {}{tag}) [{where_}].",
+            req.name, req.provider
+        )
+        .into(),
+    ));
     if !req.share {
         io.say(Say::Info(format!(
             "  Teammates won't see it. Publish the wiring (never the secrets) with: purlis vault \
              add {} --provider {} --share",
             req.name, req.provider
-        )));
+        ).into()));
     }
     let v = match registry::vault(ctx, &req.name) {
         Ok(v) => v,
         Err(e) => {
-            io.say(Say::Err(e.message));
+            io.say(Say::Err(e.said()));
             return 1;
         }
     };
     let (ok, detail) = cmd::health(ctx, &v);
     io.say(if ok {
-        Say::Info(format!("  {detail}"))
+        Say::Info(format!("  {detail}").into())
     } else {
-        Say::Warn(format!("  {detail}"))
+        Say::Warn(format!("  {detail}").into())
     });
     match req.provider.as_str() {
         "1password" => {
-            io.say(Say::Info(format!(
-                "  purlis keeps this vault in one 1Password item, '{}' in vault '{}', tagged \
+            io.say(Say::Info(
+                format!(
+                    "  purlis keeps this vault in one 1Password item, '{}' in vault '{}', tagged \
                  '{}:{}' — each secret a concealed field of it.",
-                onepassword::op_item(&v).unwrap_or_default(),
-                cfg.get("op-vault").map(super::py_str).unwrap_or_default(),
-                onepassword::TAG,
-                req.name
-            )));
-            io.say(Say::Info(format!(
-                "  add secrets with: purlis secret set {} <key> --stdin",
-                req.name
-            )));
+                    onepassword::op_item(&v).unwrap_or_default(),
+                    cfg.get("op-vault").map(super::py_str).unwrap_or_default(),
+                    onepassword::TAG,
+                    req.name
+                )
+                .into(),
+            ));
+            io.say(Say::Info(
+                format!(
+                    "  add secrets with: purlis secret set {} <key> --stdin",
+                    req.name
+                )
+                .into(),
+            ));
         }
         "keyring" => {
-            io.say(Say::Info(format!(
-                "  purlis keeps each secret as one item in {}, and the key names — never the \
+            io.say(Say::Info(
+                format!(
+                    "  purlis keeps each secret as one item in {}, and the key names — never the \
                  values — in {}.",
-                super::keyring::STORE_NAME,
-                super::short_path(&ctx.root, &super::keyring::index_path(ctx, &v))
-            )));
-            io.say(Say::Info(format!(
-                "  add secrets with: purlis secret set {} <key> --stdin",
-                req.name
-            )));
+                    super::keyring::STORE_NAME,
+                    super::short_path(&ctx.root, &super::keyring::index_path(ctx, &v))
+                )
+                .into(),
+            ));
+            io.say(Say::Info(
+                format!(
+                    "  add secrets with: purlis secret set {} <key> --stdin",
+                    req.name
+                )
+                .into(),
+            ));
         }
         "reference" => {
             io.say(Say::Info(
@@ -697,12 +742,15 @@ pub fn add(ctx: &Ctx, req: &AddRequest, io: &mut dyn Io) -> i32 {
             io.say(Say::Info(format!(
                 "  add one with: purlis secret set {} <key> --value 'op://<vault>/<item>/<field>'",
                 req.name
-            )));
+            ).into()));
         }
-        _ => io.say(Say::Info(format!(
-            "  add secrets with: purlis secret set {} <key> --stdin",
-            req.name
-        ))),
+        _ => io.say(Say::Info(
+            format!(
+                "  add secrets with: purlis secret set {} <key> --stdin",
+                req.name
+            )
+            .into(),
+        )),
     }
     0
 }
@@ -764,7 +812,7 @@ pub(crate) fn list_for_a_chat(listing: &super::brokered::Listing, io: &mut dyn I
         ),
         None => "This chat runs as no persona, so it may use no vault.".to_owned(),
     };
-    io.say(Say::Info(runs_as));
+    io.say(Say::Info(runs_as.into()));
     if vaults.iter().any(|v| !v.usable) {
         io.say(Say::Info(
             if listing.allow_locked {
@@ -816,7 +864,7 @@ pub fn list(ctx: &Ctx, io: &mut dyn Io) -> i32 {
                 0
             }
             Err(why) => {
-                io.say(Say::Err(why));
+                io.say(Say::Err(why.into()));
                 1
             }
         };
@@ -824,7 +872,7 @@ pub fn list(ctx: &Ctx, io: &mut dyn Io) -> i32 {
     let doc = match registry::load_registry(ctx) {
         Ok(d) => d,
         Err(e) => {
-            io.say(Say::Err(e.message));
+            io.say(Say::Err(e.said()));
             return 1;
         }
     };
@@ -912,7 +960,7 @@ pub fn verify(ctx: &Ctx, name: Option<&str>, io: &mut dyn Io) -> i32 {
         None => match registry::load_registry(ctx) {
             Ok(doc) => registry::vaults(&doc).keys().cloned().collect(),
             Err(e) => {
-                io.say(Say::Err(e.message));
+                io.say(Say::Err(e.said()));
                 return 1;
             }
         },
@@ -921,7 +969,7 @@ pub fn verify(ctx: &Ctx, name: Option<&str>, io: &mut dyn Io) -> i32 {
     for n in names {
         match registry::vault(ctx, &n) {
             Ok(v) => provs.push(v),
-            Err(e) => io.say(Say::Err(format!("{n}: {}", e.message))),
+            Err(e) => io.say(Say::Err(format!("{n}: {}", e.message).into())),
         }
     }
     if provs.is_empty() {
@@ -935,23 +983,31 @@ pub fn verify(ctx: &Ctx, name: Option<&str>, io: &mut dyn Io) -> i32 {
             rows.iter().filter(|(_, e)| e.is_some()).collect();
         failed += bad.len();
         if rows.is_empty() {
-            io.say(Say::Info(format!("{}: no references to verify", v.name)));
+            io.say(Say::Info(
+                format!("{}: no references to verify", v.name).into(),
+            ));
             continue;
         }
         if bad.is_empty() {
-            io.say(Say::Ok(format!(
-                "{}: {} resolved",
-                v.name,
-                counted(rows.len(), "reference", "references")
-            )));
+            io.say(Say::Ok(
+                format!(
+                    "{}: {} resolved",
+                    v.name,
+                    counted(rows.len(), "reference", "references")
+                )
+                .into(),
+            ));
             continue;
         }
-        io.say(Say::Err(format!(
-            "{}: {} of {} did NOT resolve",
-            v.name,
-            bad.len(),
-            counted(rows.len(), "reference", "references")
-        )));
+        io.say(Say::Err(
+            format!(
+                "{}: {} of {} did NOT resolve",
+                v.name,
+                bad.len(),
+                counted(rows.len(), "reference", "references")
+            )
+            .into(),
+        ));
         for (k, e) in bad {
             io.out(format!("    {k}: {}\n", e.as_deref().unwrap_or_default()).as_bytes());
         }
@@ -1089,19 +1145,22 @@ pub fn remove(ctx: &Ctx, name: &str, io: &mut dyn Io) -> i32 {
             io.say(Say::Ok(format!(
                 "Vault '{name}' removed from the registry. (Any underlying file is left on disk \
                  untouched.)"
-            )));
+            ).into()));
             if let Some(v) = keyring {
-                io.say(Say::Info(format!(
-                    "  Its secrets stay in {}, named in {}; registering '{name}' again as a \
+                io.say(Say::Info(
+                    format!(
+                        "  Its secrets stay in {}, named in {}; registering '{name}' again as a \
                      keyring vault finds them.",
-                    super::keyring::STORE_NAME,
-                    super::short_path(&ctx.root, &super::keyring::index_path(ctx, &v))
-                )));
+                        super::keyring::STORE_NAME,
+                        super::short_path(&ctx.root, &super::keyring::index_path(ctx, &v))
+                    )
+                    .into(),
+                ));
             }
             0
         }
         Err(e) => {
-            io.say(Say::Err(e.message));
+            io.say(Say::Err(e.said()));
             1
         }
     }
