@@ -423,7 +423,10 @@ fn an_approved_servers_run_starts_from_its_entrys_variables_and_no_other_of_the_
     );
 }
 
-/// #2047: a brokered tool's process keeps no core dump, which would hold its values.
+/// #2047: a brokered tool's process keeps no core dump, which would hold its values. This
+/// covers the run's own limit (`no_core_files`, from #3405). It can go red only where each test
+/// has a process of its own, as under nextest on CI: under plain `cargo test` another test's
+/// run in the same process may have lowered the limit already, which can only make it pass.
 #[cfg(unix)]
 #[test]
 fn a_tools_run_keeps_no_core_dump() {
