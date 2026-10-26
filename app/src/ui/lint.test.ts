@@ -118,7 +118,7 @@ tester.run("purlis/field-family", purlisUi.rules["field-family"], {
     { code: `<input type="range" min={1} max={9} />` },
     { code: `<input type="color" />` },
     { code: `<input type="hidden" name="at" value={at} />` },
-    // The palette's box is a combobox's, which the combobox family moves.
+    // A combobox's box is the select family's rule's to refuse.
     { code: `<input role="combobox" aria-expanded="true" />` },
   ],
   invalid: [
@@ -136,19 +136,75 @@ tester.run("purlis/field-family", purlisUi.rules["field-family"], {
 });
 
 tester.run("purlis/select-family", purlisUi.rules["select-family"], {
-  valid: [{ code: `<Select value={x} onValueChange={setX} />` }],
+  valid: [
+    { code: `<Select aria-label="Kind" value={x} options={kinds} onValueChange={setX} />` },
+    { code: `<ComboBox label="Add a skill" value={x} suggestions={known} onChange={setX} />` },
+    { code: `<ListComboBox controls={["rows"]} aimed={at} value={q} onChange={setQ} />` },
+    // A role held in a value is a selector, not a combobox drawn by hand.
+    { code: `<div data-role="combobox">x</div>` },
+    { code: `<button aria-haspopup="menu">More</button>` },
+    // A role decided at run time is no hand-written combobox.
+    { code: `<div role={kind} />` },
+  ],
   invalid: [
-    { code: `<select value={x} />`, errors: [{ messageId: "unmoved" }] },
-    { code: `<input role="combobox" />`, errors: [{ messageId: "unmoved" }] },
+    { code: `<select value={x} />`, errors: [{ messageId: "raw" }] },
+    { code: `<datalist id="known" />`, errors: [{ messageId: "raw" }] },
+    { code: `<input role="combobox" />`, errors: [{ messageId: "role" }] },
+    { code: `<TextField role="combobox" value={q} />`, errors: [{ messageId: "role" }] },
+    { code: `<div aria-haspopup="listbox">Pick</div>`, errors: [{ messageId: "role" }] },
+    { code: `<input role={"combobox"} />`, errors: [{ messageId: "role" }] },
+    { code: "<div role={`combobox`} />", errors: [{ messageId: "role" }] },
+    { code: `<div aria-haspopup={"listbox"}>Pick</div>`, errors: [{ messageId: "role" }] },
+    { code: `<button className="ui-select wide" />`, errors: [{ messageId: "oldClass" }] },
   ],
 });
 
 tester.run("purlis/choice-family", purlisUi.rules["choice-family"], {
-  valid: [{ code: `<input type="hidden" />` }, { code: `<TextField value="" onChange={go} />` }],
+  valid: [
+    { code: `<input type="hidden" />` },
+    { code: `<TextField value="" onChange={go} />` },
+    { code: `<Checkbox isSelected={on} onChange={setOn}>Sign commits</Checkbox>` },
+    { code: `<SegmentedControl aria-label="Level" value={x} onChange={setX} />` },
+    { code: `import { Switch } from "./ui/choice/Switch";` },
+    // A menu's row that is ticked is the menu family's, and a tab is the tabs'.
+    { code: `<div role="menuitemcheckbox">x</div>` },
+    { code: `<button role="tab" aria-selected>Chats</button>` },
+    // A role held in a value is a selector, not a choice drawn by hand.
+    { code: `<div data-role="radio">x</div>` },
+  ],
   invalid: [
-    { code: `<input type="checkbox" />`, errors: [{ messageId: "unmoved" }] },
-    { code: `<input type="range" />`, errors: [{ messageId: "unmoved" }] },
-    { code: `<input type="color" />`, errors: [{ messageId: "unmoved" }] },
+    { code: `<input type="checkbox" />`, errors: [{ messageId: "raw" }] },
+    { code: `<input type="radio" name="x" />`, errors: [{ messageId: "raw" }] },
+    { code: `<input type="range" />`, errors: [{ messageId: "raw" }] },
+    { code: `<input type="color" />`, errors: [{ messageId: "raw" }] },
+    { code: `<input type="file" />`, errors: [{ messageId: "raw" }] },
+    // An ad-hoc toggle: a role only a choice says, written by hand.
+    {
+      code: `<button role="switch" aria-checked={on}>x</button>`,
+      errors: [{ messageId: "role" }, { messageId: "checked" }],
+    },
+    { code: `<div role="radiogroup">x</div>`, errors: [{ messageId: "role" }] },
+    {
+      code: `<span role="checkbox" aria-checked>x</span>`,
+      errors: [{ messageId: "role" }, { messageId: "checked" }],
+    },
+    { code: `<button role={"switch"}>x</button>`, errors: [{ messageId: "role" }] },
+    { code: `<div role={on ? "radio" : "button"}>x</div>`, errors: [{ messageId: "role" }] },
+    { code: `<button aria-checked={on}>x</button>`, errors: [{ messageId: "checked" }] },
+    {
+      code: `import * as RadioGroup from "@radix-ui/react-radio-group";`,
+      errors: [{ messageId: "oldImport" }],
+    },
+    {
+      code: `import * as Switch from "@radix-ui/react-switch";`,
+      errors: [{ messageId: "oldImport" }],
+    },
+    {
+      code: `<div className="ui-levels ui-levels-small">x</div>`,
+      errors: [{ messageId: "oldClass" }],
+    },
+    { code: `<span className={on ? "ui-switch" : ""} />`, errors: [{ messageId: "oldClass" }] },
+    { code: `<div className="ui-choice-option">x</div>`, errors: [{ messageId: "oldClass" }] },
   ],
 });
 

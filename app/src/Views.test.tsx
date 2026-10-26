@@ -24,6 +24,7 @@ import type {
 } from "./bindings";
 import type { ViewRef } from "./tabs";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
+import { selectNamed } from "./ui/select/select.testkit";
 
 /**
  * A view in a pane (`Views.tsx`): charter's persona view and an extension's statistics, drawn
@@ -1339,7 +1340,7 @@ describe("a browser view's bar (#2014)", () => {
       "Click or type in the page to take it over.",
     );
     expect(screen.queryByRole("button", { name: "Done" })).toBeNull();
-    expect(screen.getByRole("combobox", { name: "Page size" })).toBeInTheDocument();
+    expect(selectNamed("Page size")).toBeInTheDocument();
   });
 
   it("says the agent is paused while the person drives, with Done beside it", async () => {

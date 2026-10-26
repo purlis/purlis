@@ -47,11 +47,11 @@ const THE_SET = "settings/components.tsx";
  * in is the field family's (`ui/field`, #2905) wherever it stands, a filter, a reply, a secret's
  * value, so none is named here; what is left is a control no family draws yet.
  */
-const STANDS: Record<string, { count: number; why: string }> = {
-  "settings/SettingsTab.tsx": {
-    count: 1,
-    why: "the colour well, which no Field kind draws, in the row's control slot",
-  },
+const STANDS: Record<string, { count: number; why: string }> = {};
+
+/** An entry a test plants, to show a stale one fails. */
+const PLANTED: typeof STANDS = {
+  "settings/SettingsTab.tsx": { count: 1, why: "a control no family drew" },
 };
 
 /** Every file under `dir` whose name `keep` takes. */
@@ -79,11 +79,11 @@ export function nativeControls(source: string): number {
 /** Each file whose native form controls differ from what {@link STANDS} names for it, either
  *  way, given what each view draws: a file over its entry, and an entry over its file, which is
  *  stale. */
-function offTheList(drawn: ReadonlyMap<string, number>): string[] {
-  const files = new Set([...drawn.keys(), ...Object.keys(STANDS)]);
+function offTheList(drawn: ReadonlyMap<string, number>, stands = STANDS): string[] {
+  const files = new Set([...drawn.keys(), ...Object.keys(stands)]);
   return [...files].flatMap((file) => {
     const count = drawn.get(file) ?? 0;
-    const named = STANDS[file]?.count ?? 0;
+    const named = stands[file]?.count ?? 0;
     return count !== named ? [`${file}: ${count} native form controls, ${named} named`] : [];
   });
 }
@@ -101,12 +101,12 @@ describe("the views take their form controls from the set (#626, D-626-5)", () =
 
   it("fails an entry its file no longer bears out, so none goes stale (#626)", () => {
     // A box moved onto the set, still named: the file draws none of what its entry says.
-    expect(offTheList(new Map([["settings/SettingsTab.tsx", 0]]))).toContain(
+    expect(offTheList(new Map([["settings/SettingsTab.tsx", 0]]), PLANTED)).toContain(
       "settings/SettingsTab.tsx: 0 native form controls, 1 named",
     );
     // A named file the views no longer have at all.
     expect(
-      offTheList(new Map()).some((line) => line.startsWith("settings/SettingsTab.tsx: 0")),
+      offTheList(new Map(), PLANTED).some((line) => line.startsWith("settings/SettingsTab.tsx: 0")),
     ).toBe(true);
     // And one drawn where nothing names it.
     expect(offTheList(new Map([["Fresh.tsx", 1]]))).toContain(
@@ -123,7 +123,11 @@ describe("the views take their form controls from the set (#626, D-626-5)", () =
   });
 
   it("finds the set drawing them, so a reader that found nothing would fail", () => {
-    expect(nativeControls(readFileSync(join(SRC, THE_SET), "utf8"))).toBeGreaterThan(0);
+    // The set draws none of its own now its choices are the families' (#2907); a family's
+    // wrapper draws one (`ui/choice/ColorWell.tsx`).
+    expect(
+      nativeControls(readFileSync(join(SRC, "ui", "choice", "ColorWell.tsx"), "utf8")),
+    ).toBeGreaterThan(0);
   });
 
   it("counts what a view draws and not what a comment names", () => {

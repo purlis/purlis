@@ -85,7 +85,8 @@ Story Format 3. `app/src/settings/Choice.stories.tsx` is the first, and the one 
 - The story is drawn in every cell of the theme matrix (below): never pin a theme on a story.
 - The picture is of the story's frame. A story that draws outside it (a dialog, a menu, a
   popover) sets `parameters: { screenshot: "page" }`; one with nothing stable to draw sets
-  `screenshot: false` and says why.
+  `screenshot: false` and says why. Its baselines are then obsolete: delete them in the same
+  change, or put the `update-baselines` label on.
 - A rule axe must not run on a story is turned off on that story alone, in
   `parameters.a11y.config.rules`, with the reason beside it. Never turn a rule off for every
   story.
@@ -135,7 +136,10 @@ text draws the same each time.
 titled `<story> in <browser>, <cell>`: its file, the gate it failed (`renders`, `keyboard`,
 `accessibility` or `screenshot`), the first line of why, and the axe rules it broke. It says the
 same in WebKit as in Chromium: `tools/story-failures.mjs` is the Vitest reporter that keeps each
-error's message, and the script that turns the reports into annotations. An error in a story
+error's message, and the script that turns the reports into annotations. The annotation is put
+on the story file's line the story failed at, the first frame of its error in a story file, so it
+shows on the pull request's diff; a failure with no such frame, axe's or the screenshot gate's,
+is on the check alone. An error in a story
 file or a suite outside any one story is an annotation of its own, and a run that fails without
 naming anything says so.
 
@@ -159,11 +163,12 @@ digest (`tools/story-image.mjs`).
 2. Bring the branch up to date with its base (`gh pr update-branch`), then put the
    `update-baselines` label on the pull request. `.github/workflows/stories-baselines.yml`
    refuses a branch behind its base, runs every story in the pinned image, writes each picture
-   that is new or differs, deletes every baseline whose story is gone, pushes both to the branch
-   as one commit, takes the label off and comments which baselines it drew and which it deleted.
-   What it commits is only whole PNG baselines within a size and a count limit, and the deletion
-   of other files in `__screenshots__` directories, checked by the base branch's own copy of
-   `tools/story-baselines.mjs`.
+   that is new or differs, deletes every baseline whose story is gone or takes no picture, pushes
+   both to the branch as one commit, takes the label off and comments which baselines it drew
+   and which it deleted. What it commits is only whole PNG baselines within a size and a count
+   limit, and the deletion of other files in `__screenshots__` directories, checked by the base
+   branch's own copy of `tools/story-baselines.mjs`. It gathers nothing only when every story the
+   index has takes no picture; an index with no story that runs as a test fails the job.
 3. Review the pictures in the pull request's diff, which shows each one beside the one it
    replaces.
 4. The job starts the `stories` check on the new commit itself. The other checks of a push made
@@ -176,11 +181,14 @@ branch that is up to date with its base, which the job requires, the two test th
 
 The `stories` check also refuses a baseline the pinned image did not draw (one named for another
 platform), and an obsolete one: a baseline whose story file is gone, whose story is no longer
-in its file with the `test` tag, the stories the Vitest addon runs, or whose cell is not one
-`pictured.json` names. Storybook's own index
-(`storybook index`) says which stories there are, and the check names the story of each obsolete
-baseline (`tools/story-baselines.mjs check`). When a story is renamed or deleted, delete its
-baselines in the same change, or put the `update-baselines` label on, which deletes them.
+in its file with the `test` tag, the stories the Vitest addon runs, whose cell is not one
+`pictured.json` names, or whose story takes no picture (`screenshot: false`). Storybook's own
+index (`storybook index`) says which stories there are; a story's parameters are in no index, so
+the run itself says which take no picture (`screenshots.setup.ts` marks each in its test's
+metadata, and `tools/story-failures.mjs`'s reporter writes them down). The check runs after the
+stories and names the story of each obsolete baseline (`tools/story-baselines.mjs check`). When
+a story is renamed or deleted, or stops taking a picture, delete its baselines in the same
+change, or put the `update-baselines` label on, which deletes them.
 
 Only a pull request from a branch of this repository can be labelled this way: the workflow's
 token cannot push to a fork.

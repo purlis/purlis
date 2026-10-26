@@ -82,8 +82,9 @@ describe("the Inbox", () => {
           return part ? Number.parseInt(getComputedStyle(part).fontWeight, 10) : 0;
         };
         return {
-          picked: group?.querySelector('[aria-checked="true"]')?.getAttribute("aria-label") ?? "",
-          scopes: group?.querySelectorAll('[role="radio"]').length ?? 0,
+          picked:
+            group?.querySelector('input[type="radio"]:checked')?.getAttribute("aria-label") ?? "",
+          scopes: group?.querySelectorAll('input[type="radio"]').length ?? 0,
           // How far the switch runs past the view's right edge (≤ 0 when inside).
           past:
             group && view
