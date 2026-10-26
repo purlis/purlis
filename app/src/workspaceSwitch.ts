@@ -44,8 +44,14 @@ export const SWIPE_FADED = 0.5;
  */
 export const SWIPE_RISE = 2;
 
-/** The least a new stroke is faster than the faded tail, in px (#3327). */
+/**
+ * The least a new stroke is faster than the faded tail, in px a frame, and the least a turn the
+ * other way travels to end a gesture, in px (#3327).
+ */
 export const SWIPE_RISE_PX = 4;
+
+/** One frame of a trackpad's wheel, in ms: what a speed is counted per (#3327). */
+export const SWIPE_FRAME = 16;
 
 /** A step: to the next pin, or to the previous one. */
 export type Step = 1 | -1;
@@ -98,9 +104,10 @@ export function sideways(wheel: Wheel): number | undefined {
  * **A trackpad's momentum keeps the wheel going for a second or more** after the fingers lift,
  * an event a frame, each a little slower than the last. Ending a gesture on a quiet alone folded
  * every stroke started in that tail into the gesture before, so a second swipe did nothing
- * (#3327). A gesture also ends when the wheel turns the other way, which momentum never does, or
- * when it speeds up again once its tail has faded to {@link SWIPE_FADED} of its fastest, which
- * momentum never does either: that is fingers moving again.
+ * (#3327). A gesture also ends when the wheel turns the other way by {@link SWIPE_RISE_PX} or
+ * more, which momentum never does, or when it speeds up again once its tail has faded to
+ * {@link SWIPE_FADED} of its fastest, which momentum never does either: that is fingers moving
+ * again. Speeds are px a frame, so an event WebKit merged from several frames is no faster.
  */
 export class Swipe {
   private travel = 0;
@@ -108,33 +115,46 @@ export class Swipe {
   private last = Number.NEGATIVE_INFINITY;
   /** Which way the gesture goes: 1, -1, or 0 before its first event. */
   private way = 0;
-  /** The gesture's fastest event, in px. */
+  /** The gesture's fastest event, in px a frame. */
   private fastest = 0;
-  /** The slowest event since {@link fastest}, in px: where its tail has got to. */
+  /** The slowest event since {@link fastest}, in px a frame: where its tail has got to. */
   private slowest = Number.POSITIVE_INFINITY;
+  /** The last event's speed the way the gesture goes, in px a frame. */
+  private previous = 0;
 
   /** A sideways event of `dx` px at `at` ms: the step it takes, if this is the one. */
   feed(dx: number, at: number): Step | undefined {
     const size = Math.abs(dx);
     const way = Math.sign(dx);
     const quiet = at - this.last > SWIPE_QUIET;
-    const turned = this.way !== 0 && way !== this.way;
+    // **Speed, not size** (#3327): WebKit merges the wheel events of a busy page into one, their
+    // travel summed, and a switch is when the page is busy. A merged tail event is no faster.
+    const speed = quiet ? size : size / Math.max(1, (at - this.last) / SWIPE_FRAME);
+    // A reversal ends the gesture only when it carries real travel, not a tail's one-pixel jitter.
+    const turned = this.way !== 0 && way !== this.way && size >= SWIPE_RISE_PX;
     const again =
       this.stepped &&
       this.slowest <= this.fastest * SWIPE_FADED &&
-      size >= this.slowest * SWIPE_RISE &&
-      size >= this.slowest + SWIPE_RISE_PX;
+      speed >= this.slowest * SWIPE_RISE &&
+      speed >= this.slowest + SWIPE_RISE_PX;
     if (quiet || turned || again) {
       this.travel = 0;
       this.stepped = false;
       this.fastest = 0;
+      this.previous = 0;
+      this.way = way;
     }
     this.last = at;
-    this.way = way;
-    if (size > this.fastest) {
-      this.fastest = size;
-      this.slowest = size;
-    } else this.slowest = Math.min(this.slowest, size);
+    // Jitter the other way is no part of the tail's speed: it would read as the tail fading. And
+    // the tail has faded to a speed only once two events in a row show it: one event read slow,
+    // late from a busy page and never merged, is not a fade the next event could rise from.
+    if (way === this.way) {
+      if (speed > this.fastest) {
+        this.fastest = speed;
+        this.slowest = speed;
+      } else this.slowest = Math.min(this.slowest, Math.max(speed, this.previous));
+      this.previous = speed;
+    }
     if (this.stepped) return undefined;
     this.travel += dx;
     if (Math.abs(this.travel) <= SWIPE_TRAVEL) return undefined;

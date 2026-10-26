@@ -359,22 +359,22 @@ describe("⌘1–⌘9 (R111)", () => {
   });
 });
 
+/**
+ * **A trace's wheel events over `on`, each stamped with its own time**, so a gesture's length
+ * is the trace's and never how long the test took between two of its events (#3195).
+ */
+function replay(on: Element, trace: readonly Traced[]) {
+  for (const { dx, at } of trace) {
+    const wheel = new WheelEvent("wheel", { deltaX: dx, deltaY: 0, bubbles: true });
+    Object.defineProperty(wheel, "timeStamp", { value: at });
+    fireEvent(on, wheel);
+  }
+}
+
 describe("a sideways swipe over the title bar (R112)", () => {
   /** One gesture: `count` wheel events of `dx` each, over `on`. */
   const swipe = (on: Element, dx: number, count = 6) => {
     for (let n = 0; n < count; n++) fireEvent.wheel(on, { deltaX: dx, deltaY: 0 });
-  };
-
-  /**
-   * **A trace's wheel events over `on`, each stamped with its own time**, so a gesture's length
-   * is the trace's and never how long the test took between two of its events (#3195).
-   */
-  const replay = (on: Element, trace: readonly Traced[]) => {
-    for (const { dx, at } of trace) {
-      const wheel = new WheelEvent("wheel", { deltaX: dx, deltaY: 0, bubbles: true });
-      Object.defineProperty(wheel, "timeStamp", { value: at });
-      fireEvent(on, wheel);
-    }
   };
 
   it("steps exactly one pin per gesture, momentum and all", async () => {
@@ -420,7 +420,7 @@ describe("a workspace switch slides the workspace in (R114)", () => {
     // The activity bars are outside what slides.
     expect(parts?.querySelector('[role="tablist"][aria-label="Attention"]') ?? null).toBeNull();
     // A swipe round the end of the pins slides on, the way it went, not back.
-    for (let n = 0; n < 6; n++) fireEvent.wheel(bar(), { deltaX: 40, deltaY: 0 });
+    replay(bar(), played([[...STROKE, ...MOMENTUM]], 1000));
     await waitFor(() => expect(chips()).toEqual(["alpha*", "gamma"]));
     await waitFor(() => expect(slid.calls).toHaveLength(2));
     expect(slid.calls[1].step).toBe(1);

@@ -9,7 +9,9 @@
  * nothing of which events are momentum, so a swipe is read from these numbers alone.
  *
  * They are modelled on that shape, not captured from a device; the tests that feed them hold
- * what the gesture does with each part of it.
+ * what the gesture does with each part of it. A real trace is also not always one event a frame:
+ * WebKit merges the wheel events of a busy page into one, their travel summed ({@link merged}),
+ * and a workspace switch is when the page is busy.
  */
 
 /** The fingers moving: from a touch to the swipe's fastest. Its travel passes 60px by the 6th. */
@@ -46,3 +48,13 @@ export function played(parts: readonly (readonly number[])[], from = 0, gap = FR
 
 /** The trace the other way: a swipe to the left. */
 export const leftward = (part: readonly number[]): number[] => part.map((dx) => -dx);
+
+/**
+ * **A trace with `count` events from `start` merged into one**, as WebKit delivers them while
+ * the page is busy: their travel summed, arriving when the last of them would have.
+ */
+export function merged(trace: readonly Traced[], start: number, count: number): Traced[] {
+  const into = trace.slice(start, start + count);
+  const one = { dx: into.reduce((sum, { dx }) => sum + dx, 0), at: into[into.length - 1].at };
+  return [...trace.slice(0, start), one, ...trace.slice(start + count)];
+}
