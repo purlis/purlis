@@ -115,7 +115,7 @@ fn a_theme_rounds_one_panel_variant_and_the_browser_keeps_its_corners() {
     }));
     assert!(
         sheet.contains(
-            ":where([data-scope=\"panel\"][data-part=\"root\"]) { background-color: var(--surface-raised); }"
+            ":where([data-scope=\"panel\"][data-part=\"root\"]) { background-color: var(--surface-raised); --panel-fill: var(--surface-raised); }"
         ),
         "{sheet}"
     );
@@ -468,7 +468,7 @@ fn purlis_draws_its_panels_one_step_up_and_classic_as_it_always_did() {
         let sheet = parts::stylesheet(theme);
         assert!(
             sheet.contains(
-                ":where([data-scope=\"panel\"][data-part=\"root\"]) { background-color: var(--surface-raised); }"
+                ":where([data-scope=\"panel\"][data-part=\"root\"]) { background-color: var(--surface-raised); --panel-fill: var(--surface-raised); }"
             ),
             "Purlis {}: {sheet}",
             theme.id

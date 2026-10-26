@@ -25,6 +25,8 @@
   border: 0 solid var(--border-subtle);
   border-radius: var(--panel-corner-radius);
   background-color: var(--surface-base);
+  /* Its fill, said to what it holds (#3331): a theme's `panel.root.fill` writes both. */
+  --panel-fill: var(--surface-base);
 }
 
 /* A library's resizable panel draws its root's attributes on its outer box and scrolls its inner

@@ -3396,6 +3396,19 @@ fn declarations(rule: &Rule, property: Prop, value: PartValue) -> String {
         }
         return said;
     }
+    // **A panel's fill is said to what it holds too** (#3331): `--panel-fill`, so a part of a
+    // view that must be opaque over the view's own rows (a sticky head) takes the panel's
+    // colour, whichever the theme names, and not the window's.
+    if (
+        rule.family.name,
+        rule.family.parts[rule.part].name,
+        property,
+    ) == ("panel", "root", Prop::Fill)
+        && let PartValue::Colour(token) = value
+    {
+        let fill = colour_css(token);
+        return format!("background-color: {fill}; --panel-fill: {fill};");
+    }
     // A strip's line is under it, never around it.
     if (rule.family.name, rule.family.parts[rule.part].name) == ("tabs", "strip") {
         match (property, value) {
