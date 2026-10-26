@@ -192,7 +192,7 @@ hex id, a harness or profile that is no plain name, a stamp that is no time) is 
 
 ## Amendments
 
-The amendments to this decision are files of their own in `0105/`, one per
+The amendments to this decision are files of their own in [`0105/`](0105/), one per
 amendment, named `<yyyy-mm-dd>-<slug>.md`. A new amendment is a new file there and never a
 section added to this record, so two pull requests that amend it do not touch the same lines
 (#1982).
