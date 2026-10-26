@@ -203,6 +203,10 @@ export const ChosenStates: Story = {
     const boxes = [box(chosen), box(other)];
     const fill = (one: HTMLElement) => getComputedStyle(one).backgroundColor;
     const fills: Record<string, string> = { rest: fill(other), chosen: fill(chosen) };
+    // The pointer may rest where a story before this one left it, over a chip: moved off the
+    // bar first, so reaching a chip is an entry the chip hears.
+    await userEvent.hover(canvas.getByText("Nothing chosen"));
+    await waitFor(() => expect(other).not.toHaveAttribute("data-hovered"));
     await userEvent.hover(other);
     await waitFor(() => expect(other).toHaveAttribute("data-hovered"));
     fills.hover = fill(other);
@@ -210,7 +214,7 @@ export const ChosenStates: Story = {
     // The primary words on the wash, as under the pointer.
     await expect(getComputedStyle(chosen).color).toBe(getComputedStyle(other).color);
     // The pointer leaves, and the tooltip it opened goes, before it reaches the chosen chip.
-    await userEvent.unhover(other);
+    await userEvent.hover(canvas.getByText("Nothing chosen"));
     await waitFor(() => expect(other).not.toHaveAttribute("data-hovered"));
     await waitFor(() =>
       expect(document.querySelector('[role="tooltip"][data-scope="tooltip"]')).toBeNull(),
