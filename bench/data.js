@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793034146074,
+  "lastUpdate": 1793036113266,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -25872,6 +25872,48 @@ window.BENCHMARK_DATA = {
             "value": 101.4572545,
             "unit": "ms",
             "extra": "median of 5 runs: 100.721, 101.441, 101.457, 101.779, 102.089 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "08ef23c1b2f2236124696ab09d1a5516ed3a0284",
+          "message": "Runners: browsers on runners (#2050) (#3290)\n\n* Runners: a runner runs its window's browsers, held to the link's frames (#2050)\n\nA chat's browser on a runner is started, watched, driven and logged in as\nthe desktop's host relays the window (session protocol 1.38): remote-link\nmay send each, and the relay sends them on for its local-ui client alone.\nA kept login never leaves its device.\n\nA browser view keeps one frame in flight: the next frame is the newest, sent\nonce the client has drawn the last. A view over a link between hosts is held\nto 15 frames a second and 1280 pixels wide; the engine scales its\nscreencast down to the widest view's width.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* Runners: a browser login asked while the desktop is away waits for it (#2050)\n\nOn a runner whose desktop is away, browser_login is answered at once in\nwords that say the login waits for the person as an Ask; the ask is kept in\nmemory and handed on as soon as a window hears the runner again, and what it\ncame to is told to the chat's next browser call. The opt-ins of a persona's\nlogins on a pool are bound to the pool's definition and image digests.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* Runners: a runner chat's browser runs on its runner, and logs in by opt-in (#2050)\n\nThe window starts a runner chat's browser on its pool's runner, over the\nlink its chats there share, and sends every act, view, take-over and login\nof it there. Its chip names the pool, so a runner's localhost is never read\nas this Mac's. A login in a runner's browser asks the person once whether\nthat persona's logins may be filled on that pool; the answer is bound to the\npool's definition and image digests and holds while purlis runs.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* Runners: logins only on a runner shown to be yours, asked per login (#2050)\n\nReview round 1. A pool login is filled only where the pool's Docker engine\nis a local socket on this machine; any other engine is refused in words\nuntil a pool can be marked owned. The opt-in is bound to the login, the pool,\nits image, the receiving runner and its engine, and the login is checked\nagainst the persona's declared and allowed logins before anyone is asked. A\nlogin that waited for the desktop is asked about afresh, at most once, within\n15 minutes, and is let go of with its chat. A runner chat without the sandbox\ngets no login. The window holds a runner browser's frames to the link's caps,\nthe desktop's relay sends no browser to a runner before 1.38, and a runner's\nhost lets a link between hosts act only on browsers opened for its window.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-26T16:29:57Z",
+          "tree_id": "30a4295654fb685a7abcf2851283b902d0cf7dc5",
+          "url": "https://github.com/purlis/purlis/commit/08ef23c1b2f2236124696ab09d1a5516ed3a0284"
+        },
+        "date": 1793036110056,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5311465000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.526, 0.530, 0.531, 0.538, 0.545 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.712092499999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.472, 16.668, 16.712, 17.060, 17.146 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.0908725,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.815, 102.827, 103.091, 103.617, 106.741 ms"
           }
         ]
       }
