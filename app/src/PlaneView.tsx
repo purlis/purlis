@@ -309,6 +309,7 @@ import {
 } from "./browsers";
 import { sendToDriven } from "./browserDriving";
 import { programsOf, useChatBrowsers } from "./chatBrowsers";
+import { browserTimelineTitle, browserTimelineView } from "./browserTimelines";
 import type { BrowserShown } from "./ChatBrowsersShown";
 
 /** Which window action a trouble line is about (NO-4): the picker's options, a shell, Needs
@@ -4066,6 +4067,8 @@ export const PlaneView = memo(function PlaneView({
             name: browser.name,
             session: browser.session,
             chat,
+            // What its chat's browser timeline is kept by (#2017).
+            chatId: reopened.find((open) => open.session === browser.session)?.id ?? null,
             pinned: browser.pinned,
             kept: false,
             login: browser.login,
@@ -4076,12 +4079,13 @@ export const PlaneView = memo(function PlaneView({
         name: browser.name,
         session: browser.session,
         chat,
+        chatId: null,
         pinned: true,
         kept: true,
         login: browser.login,
       })),
     ],
-    [chatBrowsersShown, keptShown],
+    [chatBrowsersShown, keptShown, reopened],
   );
   /** The browsers of the chats tab `id` shows (#2024), drawn live beside it. */
   const browsersOfTab = useCallback(
@@ -6202,6 +6206,9 @@ export const PlaneView = memo(function PlaneView({
         const said = await commands.closeBrowser(program);
         return said.status === "error" ? { ok: false, refused: said.error } : { ok: true };
       },
+      // A chat's browser timeline, in a tab of its own (#2017), kept by the chat's id.
+      openBrowserTimeline: (chat: string, name: string) =>
+        showView(browserTimelineView(chat), browserTimelineTitle(name)),
       removeWorktree,
       mergeWorktree,
       declareWorktreeDone,
