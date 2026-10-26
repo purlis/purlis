@@ -68,3 +68,6 @@ pub fn asker(root: &Path, number: u32) -> Option<Asker> {
         harness: composed.harness,
     })
 }
+
+#[cfg(test)]
+mod tests;

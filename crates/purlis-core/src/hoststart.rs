@@ -458,9 +458,11 @@ pub fn compose_ready(
     {
         tracing::warn!("purlis: a composed chat was not counted ({why})");
     }
-    // What its sandbox armed here, for a `secret exec` its desktop sends the values of (#2047).
-    if let Some(applied) = sandbox {
-        crate::hostedchats::record(
+    // What its sandbox armed here, for a `secret exec` its desktop sends the values of (#2047);
+    // a chat started without one leaves no record of an earlier chat under its number.
+    match sandbox {
+        None => crate::hostedchats::forget(root, starting.number),
+        Some(applied) => crate::hostedchats::record(
             root,
             starting.number,
             crate::hostedchats::Composed {
@@ -469,7 +471,7 @@ pub fn compose_ready(
                 harness: ready.harness,
                 confines: applied.confines().clone(),
             },
-        );
+        ),
     }
     Ok(Launch {
         program,

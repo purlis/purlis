@@ -7,30 +7,30 @@
 //! A runner holds no vault. When a chat it composed in a sandbox runs one of its persona's
 //! declared tools through `purlis secret exec`, the runner's host first finds which tool its own
 //! start armed the command as ([`brokered::armed_as`]), and refuses, as a run here would, what
-//! is none. It hands the line on to the window with that tool's name ([`brokered::Ask::runs_as`]),
-//! and the window, after its own gate, sends the values for that one run
-//! ([`Replied::Handed`]). This host then runs the tool itself, held to its own record of the
-//! chat's sandbox ([`brokered::serve_handed`]), and the values go with the run.
+//! is none. It hands the line on to the window with that tool's name ([`brokered::Ask::runs_as`])
+//! and a number of this run's own ([`brokered::Ask::run`]), and the window, after its own gate
+//! and the person's answer, sends the values for that one run ([`Replied::Handed`]). This host
+//! runs the tool only on values sent for exactly that chat, tool and run, held to its own record
+//! of the chat's sandbox ([`brokered::serve_handed`]); the values go with the run.
 //!
 //! **With the desktop away the command waits** for a window to hear this host again, as a
-//! browser login does ([`super::A_LOGIN_WAITS_AT_MOST`], within the same bounds of how many
-//! wait), told so on its stderr, and is handed on marked as one that waited, so the window asks
-//! the person afresh. The chat may carry on: the command holds only itself. It is let go of, with
-//! nothing run, once it has waited too long, once its asker hangs up, or once its chat is gone.
-//! Nothing is kept while it waits but the line itself, which holds no value.
+//! browser login does ([`super::A_HANDED_LINE_WAITS_AT_MOST`], admitted within the same bounds,
+//! [`Relaying::admit`]), told so on its stderr, and is handed on marked as one that waited. The
+//! chat may carry on: the command holds only itself. It is let go of, with nothing run, once it
+//! has waited too long, once its asker hangs up, or once its chat is gone.
 //!
-//! The asker writes nothing before its run has started, so its connection is read from the
-//! start: lines that come are kept for the run, and its end says the asker hung up.
+//! **An asker that hangs up is told to the window** while the window decides
+//! ([`Heard::InputEnded`] for the line, which for such a run carries no input), so the window lets
+//! go of the person's Ask and reads no vault for it. The asker writes nothing before its run has
+//! started, so its connection is read from the start: lines that come are kept for the run, and
+//! its end says the asker hung up.
 
 use std::io::{BufRead, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
 use std::time::{Duration, Instant};
 
-use super::{
-    A_LOGIN_WAITS_AT_MOST, Heard, Lines, MOST_LOGINS_WAITING, MOST_LOGINS_WAITING_FOR_A_CHAT,
-    Relaying, Replied, lock,
-};
+use super::{A_HANDED_LINE_WAITS_AT_MOST, Heard, Lines, Relaying, Replied, waits_at_most_said};
 use crate::secrets::brokered::{self, Asker};
 
 /// What runs a `secret exec` on the values the window sent ([`brokered::serve_handed`]).
@@ -47,12 +47,9 @@ pub type RunsHanded = Arc<
         + 'static,
 >;
 
-/// How long a `secret exec` waits for the window while its desktop is away (#2047): as long as a
-/// browser login waits.
-pub const AN_EXEC_WAITS_AT_MOST: Duration = A_LOGIN_WAITS_AT_MOST;
-
-/// How often a `secret exec` that waits for the window tries to hand itself on.
-const AN_EXEC_LOOKS_FOR_A_WINDOW_EVERY: Duration = Duration::from_millis(500);
+/// How often a `secret exec` that waits for the window tries to hand itself on, and how often
+/// one handed on looks at its asker.
+const LOOKED_AT_EVERY: Duration = Duration::from_millis(500);
 
 /// How many lines of the asker's input are kept before its run reads them.
 const LINES_KEPT: usize = 64;
@@ -61,24 +58,26 @@ const LINES_KEPT: usize = 64;
 pub fn exec_waits_said(tool: &str) -> String {
     format!(
         "the person's desktop is not connected, so purlis cannot send {tool} its vault value \
-         yet: this command waits for them, at most 15 minutes, and runs once they allow it. Run \
-         it in the background to carry on with what needs no vault meanwhile"
+         yet: this command waits for them, at most {within}, and runs once they allow it. Run \
+         it in the background to carry on with what needs no vault meanwhile",
+        within = waits_at_most_said()
     )
 }
 
 /// What the asker of `tool` is told where the desktop was not back in time.
 fn waited_too_long_said(tool: &str) -> String {
     format!(
-        "the person's desktop was not back within 15 minutes, so {tool} did not run and was \
-         sent no value: run it again once they are back"
+        "the person's desktop was not back within {within}, so {tool} did not run and was sent \
+         no value: run it again once they are back",
+        within = waits_at_most_said()
     )
 }
 
-/// What the asker of `tool` is told where too many commands wait already.
+/// What the asker of `tool` is told where too many lines wait already.
 fn too_many_wait_said(tool: &str) -> String {
     format!(
-        "the person's desktop is not connected, and too many commands wait for it already, so \
-         {tool} did not run: run it again once they are back"
+        "the person's desktop is not connected, and too many commands and logins wait for it \
+         already, so {tool} did not run: run it again once they are back"
     )
 }
 
@@ -87,6 +86,22 @@ fn window_went_said(tool: &str) -> String {
     format!(
         "the person's desktop went before it answered, so {tool} did not run and was sent no \
          value: run it again"
+    )
+}
+
+/// What the asker of `tool` is told where what came back was not the values for this run.
+fn not_for_this_run_said(tool: &str) -> String {
+    format!(
+        "what the person's desktop sent was not for this run of {tool}, so it did not run: run \
+         it again"
+    )
+}
+
+/// What the asker of `tool` is told where the values could not cross the link.
+fn not_taken_said(tool: &str, why: &str) -> String {
+    format!(
+        "the person's desktop sent {tool}'s values, and they could not cross the link to this \
+         runner ({why}), so it did not run: keep the tool's values smaller"
     )
 }
 
@@ -123,6 +138,18 @@ impl Input {
     }
 }
 
+/// One line of a chat's admitted to wait for the window ([`Relaying::admit`]), until dropped.
+struct Admitted<'a> {
+    relaying: &'a Relaying,
+    chat: u32,
+}
+
+impl Drop for Admitted<'_> {
+    fn drop(&mut self) {
+        self.relaying.release(self.chat);
+    }
+}
+
 impl Relaying {
     /// Runs each `secret exec` handed its values with `runs` in place of the brokered run: for
     /// a test of what reaches the run.
@@ -145,7 +172,14 @@ impl Relaying {
             Ok(tool) => tool,
             Err(why) => return brokered::refused(writer, why),
         };
+        let Some(run) = brokered::a_run_number() else {
+            return brokered::refused(
+                writer,
+                "purlis could not number this run, so it did not run".to_owned(),
+            );
+        };
         ask.runs_as = Some(tool.clone());
+        ask.run = Some(run.clone());
         let Some(input) = Input::read(reader) else {
             return brokered::not_answered(writer);
         };
@@ -158,11 +192,37 @@ impl Relaying {
             },
         };
         let (id, replied) = exchanged;
+        let mut told_gone = false;
         loop {
-            match replied.recv() {
-                Ok(Replied::Handed(handed)) => {
+            let reply = match replied.recv_timeout(LOOKED_AT_EVERY) {
+                Ok(reply) => reply,
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    // Its asker hung up while the window decides: told once, so the window lets
+                    // the person's Ask go and reads nothing for it.
+                    if input.gone() && !told_gone {
+                        told_gone = true;
+                        self.tell(&Heard::InputEnded { of: id });
+                    }
+                    continue;
+                }
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    brokered::refused(writer, window_went_said(&tool));
+                    break;
+                }
+            };
+            match reply {
+                Replied::Handed(handed) => {
                     self.done(id);
-                    // An asker that hung up while the person was asked is run nothing.
+                    // Only the values sent for this chat's run of this tool, and only while its
+                    // asker is there.
+                    if !handed.is_for(ask.chat, &tool, &run) {
+                        tracing::warn!(
+                            "purlisd: chat {}'s run of {tool} was sent values that were not for \
+                             it; nothing ran",
+                            ask.chat
+                        );
+                        return brokered::refused(writer, not_for_this_run_said(&tool));
+                    }
                     if input.gone() {
                         return;
                     }
@@ -185,7 +245,7 @@ impl Relaying {
                     );
                 }
                 // The window's own words: a refusal, said as it said it.
-                Ok(Replied::Wrote { text }) => {
+                Replied::Wrote { text } => {
                     if writer
                         .write_all(text.as_bytes())
                         .and_then(|()| writer.flush())
@@ -194,21 +254,22 @@ impl Relaying {
                         break;
                     }
                 }
-                Ok(Replied::Ended) => break,
-                Ok(_) => {}
-                Err(_) => {
-                    brokered::refused(writer, window_went_said(&tool));
+                // A reply the link could not carry, the values too large among them.
+                Replied::NotTaken { why } => {
+                    brokered::refused(writer, not_taken_said(&tool, &why));
                     break;
                 }
+                Replied::Ended => break,
+                _ => {}
             }
         }
         self.done(id);
     }
 
     /// **Holds `ask` until a window hears this host again** (#2047), at most
-    /// [`AN_EXEC_WAITS_AT_MOST`], telling its asker so on stderr; then hands it on marked as one
-    /// that waited. `Err` with what to tell the asker, or with nothing where it hung up or its
-    /// chat is gone.
+    /// [`A_HANDED_LINE_WAITS_AT_MOST`], telling its asker so on stderr; then hands it on marked
+    /// as one that waited. `Err` with what to tell the asker, or with nothing where it hung up
+    /// or its chat is gone.
     fn waits_for_a_window(
         &self,
         ask: &mut brokered::Ask,
@@ -217,10 +278,10 @@ impl Relaying {
         writer: &mut Box<dyn Write + Send>,
     ) -> Result<(u64, mpsc::Receiver<Replied>), Option<String>> {
         let chat = ask.chat;
-        if !self.an_exec_may_wait(chat) {
+        if !self.admit(chat) {
             return Err(Some(too_many_wait_said(tool)));
         }
-        let _waiting = ExecWaits {
+        let _admitted = Admitted {
             relaying: self,
             chat,
         };
@@ -239,11 +300,11 @@ impl Relaying {
         ask.waited = true;
         let since = Instant::now();
         loop {
-            std::thread::sleep(AN_EXEC_LOOKS_FOR_A_WINDOW_EVERY);
+            std::thread::sleep(LOOKED_AT_EVERY);
             if input.gone() || !self.still_there(chat) {
                 return Err(None);
             }
-            if since.elapsed() > AN_EXEC_WAITS_AT_MOST {
+            if since.elapsed() > A_HANDED_LINE_WAITS_AT_MOST {
                 return Err(Some(waited_too_long_said(tool)));
             }
             if let Some(exchanged) = self.exchange(&Heard::SecretExec(ask.clone())) {
@@ -251,42 +312,7 @@ impl Relaying {
             }
         }
     }
-
-    /// Whether one more of chat `chat`'s `secret exec`s may wait for the window: counted with
-    /// the browser logins that wait, within the same bounds.
-    fn an_exec_may_wait(&self, chat: u32) -> bool {
-        let (logins, logins_of_its) = {
-            let waiting = lock(&self.logins_waiting);
-            let its = waiting.iter().filter(|one| one.browse.chat == chat).count();
-            (waiting.len(), its)
-        };
-        let mut execs = lock(&self.execs_waiting);
-        let all: usize = execs.values().sum();
-        let its = execs.get(&chat).copied().unwrap_or_default();
-        if logins + all >= MOST_LOGINS_WAITING
-            || logins_of_its + its >= MOST_LOGINS_WAITING_FOR_A_CHAT
-        {
-            return false;
-        }
-        *execs.entry(chat).or_default() += 1;
-        true
-    }
 }
 
-/// One `secret exec` of `chat`'s counted as waiting, until this is dropped.
-struct ExecWaits<'a> {
-    relaying: &'a Relaying,
-    chat: u32,
-}
-
-impl Drop for ExecWaits<'_> {
-    fn drop(&mut self) {
-        let mut execs = lock(&self.relaying.execs_waiting);
-        if let Some(count) = execs.get_mut(&self.chat) {
-            *count = count.saturating_sub(1);
-            if *count == 0 {
-                execs.remove(&self.chat);
-            }
-        }
-    }
-}
+#[cfg(test)]
+mod tests;

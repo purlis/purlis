@@ -2364,10 +2364,10 @@ export type AnswerPath =
  */
 { via: "pool-login" } | 
 /**
- *  `answer_pool_tool`, allowing for Allow and not for Keep off with the person's reason,
- *  for the chat that asked and its tool `tool` (#2047).
+ *  `answer_pool_tool`, allowing for Allow this run and not for Keep off, for run `run` of
+ *  the chat that asked (#2047).
  */
-{ via: "pool-tool"; tool: string } | 
+{ via: "pool-tool"; run: number } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -2529,9 +2529,8 @@ export type AskSource =
  */
 "pool-login" | 
 /**
- *  A runner chat's declared tool, which waits on the person's Allow for its persona on its
- *  pool (#2047): an Allow lets this desktop send that tool its vault values on the pool's
- *  runner, for each run.
+ *  One run of a runner chat's declared tool, which waits on the person (#2047): an Allow
+ *  lets this desktop send that tool its vault values on the pool's runner for that run alone.
  */
 "pool-tool";
 

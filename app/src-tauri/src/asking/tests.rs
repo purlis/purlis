@@ -1766,10 +1766,11 @@ fn a_runner_chats_browser_login_asks_whether_its_persona_may_log_in_on_the_pool(
 }
 
 #[test]
-fn a_runner_chats_tool_asks_whether_its_values_may_be_sent_to_the_pools_runner() {
+fn each_run_of_a_runner_chats_tool_asks_whether_its_values_may_be_sent_for_that_run() {
     let mut world = World::new();
-    world.pool_tools = vec![crate::pooltools::PoolToolWaits {
+    let waits = |run: u32, waited: bool| crate::pooltools::PoolToolWaits {
         session: 6,
+        run,
         persona: "devops".into(),
         bound: purlis_core::poollogins::Bound {
             pool: "builds".into(),
@@ -1781,31 +1782,33 @@ fn a_runner_chats_tool_asks_whether_its_values_may_be_sent_to_the_pools_runner()
             engine: "this machine's Docker".into(),
         },
         tool: "kubectl".into(),
-        whole: "kubectl with kubeconfig from vault team as KUBECONFIG file".into(),
         vault: "team".into(),
         since: 1_700_000_000,
-        changed: false,
-    }];
+        waited,
+    };
+    world.pool_tools = vec![waits(1, false), waits(2, true)];
 
     let asks = world.asks();
 
-    let ask = asks
+    let tools: Vec<&Shown> = asks
         .iter()
-        .find(|one| one.source == AskSource::PoolTool)
-        .expect("its Ask is listed");
+        .filter(|one| one.source == AskSource::PoolTool)
+        .collect();
+    assert_eq!(tools.len(), 2, "one Ask per run");
+    let ask = tools[0];
     assert_eq!(ask.session, 6);
-    assert_eq!(
-        ask.answer,
-        AnswerPath::PoolTool {
-            tool: "kubectl".into()
-        }
-    );
+    assert_eq!(ask.answer, AnswerPath::PoolTool { run: 1 });
     assert_eq!(ids(ask), [super::POOL_TOOL_ALLOW, KEEP]);
-    assert_eq!(ask.options[0].label, "Allow on pool builds");
+    assert_eq!(ask.options[0].label, "Allow this run");
     assert_eq!(
         ask.says,
         "Wants to run kubectl on pool builds, which runs on this machine's Docker, with \
-         devops's values from vault team. Allow on pool builds sends them from your vault for \
-         each run; the runner keeps none"
+         devops's values from vault team. Allow this run sends them from your vault for this \
+         run alone; the runner keeps none"
+    );
+    assert!(
+        tools[1].says.starts_with("Asked while you were away. "),
+        "{}",
+        tools[1].says
     );
 }

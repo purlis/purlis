@@ -1,190 +1,155 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **A runner chat's declared tool, handed its vault values from this desktop** (#2047, spec
-//! #2041 stories 14 and 21, ADR 0078 §7).
+//! **A runner chat's declared tool, handed its vault values from this desktop, one run at a
+//! time** (#2047, spec #2041 stories 14 and 21, ADR 0078 §7; the person's ruling of 2026-10-26:
+//! every run of a tool on a runner asks the person).
 //!
 //! A runner holds no vault. When a chat on a pool's runner runs one of its persona's declared
 //! tools through `purlis secret exec`, the runner's host checks the command against the tools
-//! its own start armed, and hands it on with that tool's name. The window then decides, here,
-//! whether this desktop sends the tool's values for that one run, each checked before anyone is
-//! asked:
+//! its own start armed, and hands it on with that tool's name and a number of the run's own. The
+//! window then decides, here, whether this desktop sends the tool's values for that one run,
+//! each checked before anyone is asked ([`checked`]):
 //!
 //! - **the chat is one this window has open, started in its sandbox, as a persona**: a runner
-//!   chat started without the sandbox is sent nothing (D-2050-11's reason);
-//! - **the runner's host says which tool it runs**: a runner of a purlis older than this never
-//!   does, and is sent nothing;
+//!   chat started without the sandbox is sent nothing;
+//! - **the runner's host says which tool it runs, and numbered the run**: a runner of a purlis
+//!   older than this does neither, and is sent nothing;
 //! - **that tool is the persona's, declared and allowed on this machine, asked for with exactly
-//!   its vault and hand-over**, and the vault is one the persona may use here
-//!   (`purlis_core::secrets::brokered::authorise`), as for a chat of this machine;
-//! - **the runner is shown to be the person's own** (`purlis_core::poollogins::Bound::read`,
-//!   D-2050-4): until a pool can be marked owned (#2561), a Docker pool whose engine is a local
-//!   socket on this machine. A runner not shown to be owned is never sent a value;
-//! - **the person allowed that tool of that persona on that pool**, as the pool and its runner are
-//!   now ([`PoolTools`]), kept in memory while purlis runs, as a browser login's opt-in is. The
-//!   first run asks, as one Ask in the Inbox, **and waits for the answer** at most
-//!   [`AN_ANSWER_IS_WAITED_FOR`]: the command completes once the person allows it. A command that
-//!   waited for this desktop on its runner is asked about afresh.
+//!   its vault and hand-over**, and the vault is one the persona may use here, as for a chat of
+//!   this machine;
+//! - **the runner is shown to be the person's own** (`purlis_core::poollogins::Bound::read`, the
+//!   one check browser logins use, D-2050-4): until a pool can be marked owned (#2561), a Docker
+//!   pool whose engine is a local socket on this machine. A runner not shown to be owned is never
+//!   sent a value, and neither is a hosted one.
 //!
-//! Then the values of exactly the tool's keys are read here, from the vault, and sent to the
-//! runner's host for that one run (`purlis_core::hookwire::relay::hand_values`), which runs the
-//! tool and keeps none.
+//! Then **the person is asked about this run** ([`PoolTools`]), as one Ask in the Inbox, and the
+//! command waits for the answer at most [`purlis_core::hookwire::relay::A_HANDED_LINE_WAITS_AT_MOST`].
+//! There is no standing Allow: each run asks. An asker that hangs up meanwhile is told here by
+//! its runner, and its Ask goes with it; a chat that closes takes its Asks with it. On Allow the
+//! pool and its runner are read again and must be as the Ask showed them; then the values of
+//! exactly the tool's keys are read here, from the vault, and sent to the runner's host for that
+//! one run (`purlis_core::hookwire::relay::hand_values`), bound to the chat, the tool and the run,
+//! which runs the tool and keeps none.
 
 use std::collections::HashMap;
-use std::io::Write;
-use std::sync::{Mutex, MutexGuard, PoisonError, mpsc};
-use std::time::Duration;
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError, mpsc};
+use std::time::{Duration, Instant};
 
-use purlis_core::poollogins::{Bound, OptIns, Standing};
+use purlis_core::hookwire::relay::{A_HANDED_LINE_WAITS_AT_MOST, waits_at_most_said};
+use purlis_core::poollogins::Bound;
+use purlis_core::sandbox::tools::{self, Tool};
 use purlis_core::secrets::brokered::{self, Frame, Handed};
 use purlis_core::secrets::{Ctx, Env};
 
-/// How long a runner chat's command waits for the person to answer its Ask: as long as it waits
-/// for this desktop to come back.
-pub const AN_ANSWER_IS_WAITED_FOR: Duration = purlis_core::hookwire::relay::A_LOGIN_WAITS_AT_MOST;
+/// How often a command that waits on the person looks at its asker.
+const LOOKED_AT_EVERY: Duration = Duration::from_millis(200);
 
-/// **A runner chat's declared tool that waits on the person's Allow** for its persona on its
-/// pool: what its Ask says and its answer binds.
+/// **One run of a runner chat's declared tool that waits on the person**: what its Ask says.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PoolToolWaits {
     pub session: u32,
+    /// This window's number for the run: what its Ask is answered by.
+    pub run: u32,
     pub persona: String,
-    /// The pool as it is defined now: what an Allow is bound to.
+    /// The pool as it is defined now: what the Ask shows, and what must still hold on Allow.
     pub bound: Bound,
-    /// The tool's name, and the tool whole as its Allow on this machine reads it.
+    /// The tool's name.
     pub tool: String,
-    pub whole: String,
     /// The vault its values come from.
     pub vault: String,
     /// When it began to wait, in seconds since 1970.
     pub since: u64,
-    /// The person answered before, for the pool as it was: it or its runner changed since.
-    pub changed: bool,
+    /// It waited on its runner for this desktop to come back.
+    pub waited: bool,
 }
 
-/// One Ask and every command that waits on it, each by its own number.
-struct Waiting {
-    waits: PoolToolWaits,
-    answered: Vec<(u64, mpsc::Sender<bool>)>,
+/// What came of a run's Ask.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Answered {
+    Allowed,
+    KeptOff,
+    /// Its chat closed before the person answered.
+    ChatClosed,
 }
 
-/// **The person's Allows of a persona's tools on a pool, for this run of purlis, and the runner
-/// chats' commands that wait on one.**
+/// **Every run of a runner chat's tool that waits on the person**, each its own Ask (the
+/// person's ruling of 2026-10-26: no standing Allow).
+/// Each run that waits, by its chat and its number: what its Ask says, and what it is told.
+type Asks = HashMap<(u32, u32), (PoolToolWaits, mpsc::Sender<Answered>)>;
+
+/// The persona's tools as the project declares them, and as this machine allowed them.
+pub type ToolsOf<'a> = &'a dyn Fn(&Path, &str) -> (Vec<Tool>, Vec<Tool>);
+
+/// The value of each of a tool's keys, from its vault here.
+pub type Reads<'a> = &'a dyn Fn(&Tool) -> Result<Vec<(String, String)>, String>;
+
 #[derive(Default)]
 pub struct PoolTools {
-    allowed: OptIns,
-    asks: Mutex<HashMap<(u32, String), Waiting>>,
-    /// What numbers each command that waits.
-    next: std::sync::atomic::AtomicU64,
-}
-
-/// Where a runner chat's tool stands on its pool, as [`PoolTools::ask`] answers it.
-#[derive(Debug)]
-pub enum Asked {
-    /// Allowed for the pool as it is now: its values may be sent.
-    Allowed,
-    /// The person keeps it off there.
-    KeptOff,
-    /// The person is asked, and the answer comes on this, the command waiting numbered so.
-    Waits(mpsc::Receiver<bool>, u64),
+    asks: Mutex<Asks>,
+    next: AtomicU32,
 }
 
 impl PoolTools {
-    fn asks(&self) -> MutexGuard<'_, HashMap<(u32, String), Waiting>> {
+    fn asks(&self) -> MutexGuard<'_, Asks> {
         self.asks.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// **Where `waits`' tool stands for its persona on its pool as it is now**: allowed, kept
-    /// off, or asked of the person, the Ask raised once for the chat's tool; asked afresh,
-    /// whatever was answered before, where the command `waited` for this desktop.
-    pub fn ask(&self, mut waits: PoolToolWaits, waited: bool) -> Asked {
-        match self
-            .allowed
-            .standing(&waits.persona, &waits.whole, &waits.bound)
-        {
-            Standing::Allowed if !waited => return Asked::Allowed,
-            Standing::KeptOff => return Asked::KeptOff,
-            Standing::Changed => waits.changed = true,
-            Standing::Allowed | Standing::Unasked => {}
-        }
+    /// **Asks the person about the run `waits` says** (its `run` is numbered here): what comes
+    /// of it arrives on the answer, with the run's number.
+    pub fn ask(&self, mut waits: PoolToolWaits) -> (mpsc::Receiver<Answered>, u32) {
+        let run = self.next.fetch_add(1, Ordering::Relaxed).wrapping_add(1);
+        waits.run = run;
         let (answer, answered) = mpsc::channel();
-        let number = self.next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let key = (waits.session, waits.tool.clone());
-        self.asks()
-            .entry(key)
-            .or_insert_with(|| Waiting {
-                waits,
-                answered: Vec::new(),
-            })
-            .answered
-            .push((number, answer));
-        Asked::Waits(answered, number)
+        self.asks().insert((waits.session, run), (waits, answer));
+        (answered, run)
     }
 
-    /// **Every runner chat's tool that waits on the person**, longest waiting first.
+    /// **Every run that waits on the person**, longest waiting first.
     pub fn waiting(&self) -> Vec<PoolToolWaits> {
-        let mut waits: Vec<PoolToolWaits> =
-            self.asks().values().map(|one| one.waits.clone()).collect();
-        waits.sort_by(|a, b| (a.since, a.session, &a.tool).cmp(&(b.since, b.session, &b.tool)));
+        let mut waits: Vec<PoolToolWaits> = self
+            .asks()
+            .values()
+            .map(|(waits, _)| waits.clone())
+            .collect();
+        waits.sort_by_key(|one| (one.since, one.session, one.run));
         waits
     }
 
-    /// **The person answers chat `session`'s Ask about its tool `tool`**: `allow` lets that tool
-    /// of its persona be sent its values on the pool as the Ask showed it, Keep off keeps it off
-    /// there, each until the pool or its runner changes. Every chat of that persona whose same
-    /// tool waits on the pool as shown is answered with it. Answers the Asks answered, or none
-    /// where it waits no more.
-    pub fn answer(&self, session: u32, tool: &str, allow: bool) -> Vec<PoolToolWaits> {
-        let mut asks = self.asks();
-        let Some(asked) = asks.remove(&(session, tool.to_owned())) else {
-            return Vec::new();
-        };
-        let (persona, whole, bound) = (
-            asked.waits.persona.clone(),
-            asked.waits.whole.clone(),
-            asked.waits.bound.clone(),
-        );
-        if allow {
-            self.allowed.allow(&persona, &whole, bound.clone());
+    /// **The person answers run `run` of chat `session`'s tool**: Allow for that run alone, or
+    /// Keep off. The run it answered, or none where it waits no more.
+    pub fn answer(&self, session: u32, run: u32, allow: bool) -> Option<PoolToolWaits> {
+        let (waits, answer) = self.asks().remove(&(session, run))?;
+        let _ = answer.send(if allow {
+            Answered::Allowed
         } else {
-            self.allowed.keep_off(&persona, &whole, bound.clone());
-        }
-        let same: Vec<(u32, String)> = asks
-            .iter()
-            .filter(|(_, one)| {
-                one.waits.persona == persona && one.waits.whole == whole && one.waits.bound == bound
-            })
-            .map(|(key, _)| key.clone())
-            .collect();
-        let mut answered = vec![asked];
-        answered.extend(same.into_iter().filter_map(|key| asks.remove(&key)));
-        answered
-            .into_iter()
-            .map(|one| {
-                for (_, waiter) in one.answered {
-                    let _ = waiter.send(allow);
-                }
-                one.waits
-            })
-            .collect()
+            Answered::KeptOff
+        });
+        Some(waits)
     }
 
-    /// Chat `session` has closed: its Asks go, and what waits on them is answered no.
+    /// Chat `session` has closed: each of its runs that waits is told so, and its Ask goes.
     pub fn forget(&self, session: u32) {
-        self.asks().retain(|(chat, _), _| *chat != session);
-    }
-
-    /// The command numbered `number` of chat `session`'s tool `tool` stopped waiting: where
-    /// nothing else waits on its Ask, the Ask goes.
-    pub fn gave_up(&self, session: u32, tool: &str, number: u64) {
         let mut asks = self.asks();
-        let key = (session, tool.to_owned());
-        if let Some(one) = asks.get_mut(&key) {
-            one.answered.retain(|(waiting, _)| *waiting != number);
-            if one.answered.is_empty() {
-                asks.remove(&key);
+        let closed: Vec<(u32, u32)> = asks
+            .keys()
+            .filter(|(chat, _)| *chat == session)
+            .copied()
+            .collect();
+        for key in closed {
+            if let Some((_, answer)) = asks.remove(&key) {
+                let _ = answer.send(Answered::ChatClosed);
             }
         }
+    }
+
+    /// Run `run` of chat `session`'s waits no more: its asker went, or the time is up. Its Ask
+    /// goes.
+    pub fn gave_up(&self, session: u32, run: u32) {
+        self.asks().remove(&(session, run));
     }
 }
 
@@ -196,46 +161,303 @@ fn say(writer: &mut dyn Write, frame: &Frame) {
 }
 
 /// What the asker of `tool` on pool `pool` is told while the person is asked.
-fn asked_said(persona: &str, tool: &str, pool: &str, changed: bool) -> String {
-    let why = if changed {
-        format!("pool {pool}'s runner changed since the person allowed {persona}'s {tool} there")
-    } else {
-        format!("this chat runs on pool {pool}'s runner")
-    };
+fn asked_said(tool: &str, pool: &str) -> String {
     format!(
-        "{why}, so purlis asked the person whether {tool} may be sent its vault value there: this \
-         command waits for their answer, at most 15 minutes. Run it in the background to carry on \
-         meanwhile"
+        "this chat runs on pool {pool}'s runner, so purlis asked the person whether {tool} may be \
+         sent its vault value for this run: this command waits for their answer, at most \
+         {within}. Run it in the background to carry on meanwhile",
+        within = waits_at_most_said()
     )
 }
 
-/// What the asker is told where the person keeps `persona`'s `tool` off on `pool`.
-fn kept_off_said(persona: &str, tool: &str, pool: &str) -> String {
+/// What the asker is told where the person keeps this run of `tool` off.
+fn kept_off_said(tool: &str) -> String {
     format!(
-        "the person keeps {persona}'s {tool} off on pool {pool}, so it was sent no vault value \
-         and did not run: tell the person what needs it, or go on without it"
+        "the person kept this run of {tool} off, so it was sent no vault value and did not run: \
+         tell the person what needs it, or go on without it"
     )
 }
 
-/// What the asker is told where the person did not answer in time, or the chat went.
+/// What the asker is told where the person did not answer in time.
 fn unanswered_said(tool: &str) -> String {
     format!(
-        "the person did not answer within 15 minutes whether {tool} may be sent its vault value, \
-         so it did not run: run it again when they are back"
+        "the person did not answer within {within} whether {tool} may be sent its vault value, \
+         so it did not run: run it again when they are back",
+        within = waits_at_most_said()
     )
+}
+
+/// What the asker is told where its chat closed before the person answered.
+fn chat_closed_said(tool: &str) -> String {
+    format!("this chat was closed before the person answered, so {tool} did not run")
+}
+
+/// What the asker is told where the pool or its runner changed while the person was asked.
+fn changed_said(tool: &str, pool: &str) -> String {
+    format!(
+        "pool {pool} or its runner changed while the person was asked, so {tool} was sent no \
+         value and did not run: run it again, and they are asked about the pool as it is now"
+    )
+}
+
+/// **What [`checked`] reads**: the run's line, this window's record of its chat, and what this
+/// machine says, each a seam a test hands in.
+pub struct Gate<'a> {
+    pub pool: &'a str,
+    pub ask: &'a brokered::Ask,
+    /// The chat as this window has it open: its persona, and whether it runs with no sandbox.
+    /// `None` for a chat this window does not have open.
+    pub chat: Option<(Option<String>, bool)>,
+    /// The project.
+    pub root: &'a Path,
+    /// Where this machine keeps its pools, where it keeps any.
+    pub pools_in: Option<PathBuf>,
+    /// The persona's tools as the project declares them and as this machine allowed them
+    /// (`tools::declared_and_allowed_here`).
+    pub tools: ToolsOf<'a>,
+    /// Whether the persona may use the vault here (`brokered::authorise`).
+    pub authorised: &'a dyn Fn(&str, &str) -> Result<(), String>,
+    /// The pool as it is now, where its runner is shown to be the person's own
+    /// (`Bound::read`).
+    pub owned: &'a dyn Fn(&Path, &str) -> Result<Bound, String>,
+}
+
+/// **What passed the gate**: the persona, its tool, the pool as it is now, and the run's number
+/// its runner made.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Checked {
+    pub persona: String,
+    pub tool: Tool,
+    pub bound: Bound,
+    pub run: String,
+}
+
+/// **The window's gate for one run of a runner chat's tool** (module docs), before anyone is
+/// asked: what passed it, or what the asker is told.
+pub fn checked(gate: &Gate<'_>) -> Result<Checked, String> {
+    let (pool, ask) = (gate.pool, gate.ask);
+    let session = ask.chat;
+    let wanted = &ask.secret_exec;
+    let Some((persona, unconfined)) = &gate.chat else {
+        return Err(format!(
+            "chat {session} on pool {pool} is not one this app has open, so it is sent no vault \
+             value"
+        ));
+    };
+    if *unconfined {
+        return Err(format!(
+            "this chat runs on pool {pool}'s runner without the sandbox, so purlis sends it no \
+             vault value: start it in its sandbox to run its persona's tools"
+        ));
+    }
+    let Some(persona) = persona.clone().filter(|persona| !persona.is_empty()) else {
+        return Err(
+            "this chat runs as no persona, so it has no tools and is sent no vault value"
+                .to_owned(),
+        );
+    };
+    let (Some(name), Some(run)) = (ask.runs_as.clone(), ask.run.clone()) else {
+        return Err(format!(
+            "the purlis on pool {pool}'s runner does not say which tool and run this command is, \
+             so it is sent no vault value: update purlis on the runner (removing the pool and \
+             adding it again makes it afresh)"
+        ));
+    };
+    let tool = allowed_tool(gate, &persona, &name, wanted)?;
+    (gate.authorised)(&persona, &wanted.vault)?;
+    let config = gate.pools_in.as_deref().ok_or_else(|| {
+        format!(
+            "purlis keeps no pools on this machine, so {} was sent no value",
+            tool.name
+        )
+    })?;
+    // Only a runner shown to be yours is ever asked about (D-2050-4).
+    let bound = (gate.owned)(config, pool)
+        .map_err(|why| format!("{} was sent no value on pool {pool}: {why}", tool.name))?;
+    Ok(Checked {
+        persona,
+        tool,
+        bound,
+        run,
+    })
+}
+
+/// **Tool `name` of `persona`, as this machine allows it**, where `wanted` asks for exactly its
+/// vault and hand-over: the persona's tools as the project declares them and this machine
+/// allowed them, read now (the runner armed the chat's tools, of which this window holds no
+/// record). Refused in the words a chat of this machine is refused in otherwise.
+fn allowed_tool(
+    gate: &Gate<'_>,
+    persona: &str,
+    name: &str,
+    wanted: &brokered::Wanted,
+) -> Result<Tool, String> {
+    let (declared, allowed) = (gate.tools)(gate.root, persona);
+    let armed: Vec<tools::Ready> = allowed
+        .into_iter()
+        .filter(|tool| tool.login.is_none())
+        .map(|tool| tools::Ready {
+            tool,
+            program: PathBuf::new(),
+        })
+        .collect();
+    let ready = tools::declared(
+        &armed,
+        &declared,
+        persona,
+        &tools::Asked {
+            vault: &wanted.vault,
+            env: &wanted.env,
+            file: &wanted.file,
+            dotenv: &wanted.dotenv,
+            program: name,
+        },
+    )?;
+    Ok(ready.tool.clone())
+}
+
+/// **What a run that passed the gate waits on**: the person's answer, whether its asker went,
+/// and what reads the values.
+pub struct Waiting<'a> {
+    pub tools: &'a PoolTools,
+    /// Set once the run's asker has gone.
+    pub gone: &'a AtomicBool,
+    /// Told once the run's Ask is raised or goes.
+    pub moved: &'a dyn Fn(),
+    /// The value of each of the tool's keys, from its vault here.
+    pub read: Reads<'a>,
+    /// How long the person is waited for.
+    pub within: Duration,
+    /// Now, in seconds since 1970.
+    pub now: u64,
+}
+
+/// **Asks the person about one run that passed the gate, and waits for the answer** (module
+/// docs): its values on Allow, read once the pool, as `gate` reads it again, is still as the Ask
+/// showed it; or what the asker is told. The asker is told on `writer` while the person is asked.
+pub fn answered(
+    gate: &Gate<'_>,
+    checked: Checked,
+    waiting: &Waiting<'_>,
+    writer: &mut dyn Write,
+) -> Result<Handed, String> {
+    let ask = gate.ask;
+    let (answered, run) = waiting.tools.ask(PoolToolWaits {
+        session: ask.chat,
+        run: 0,
+        persona: checked.persona.clone(),
+        bound: checked.bound.clone(),
+        tool: checked.tool.name.clone(),
+        vault: checked.tool.vault.clone(),
+        since: waiting.now,
+        waited: ask.waited,
+    });
+    (waiting.moved)();
+    say(
+        writer,
+        &Frame::Note(asked_said(&checked.tool.name, gate.pool)),
+    );
+    let began = Instant::now();
+    let gave_up = |why: String| {
+        waiting.tools.gave_up(ask.chat, run);
+        (waiting.moved)();
+        Err(why)
+    };
+    let answer = loop {
+        match answered.recv_timeout(LOOKED_AT_EVERY) {
+            Ok(answer) => break answer,
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                // Its asker went: nobody waits for the values, and none is read.
+                if waiting.gone.load(Ordering::SeqCst) {
+                    return gave_up(format!("the command of {} went", checked.tool.name));
+                }
+                if began.elapsed() >= waiting.within {
+                    return gave_up(unanswered_said(&checked.tool.name));
+                }
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                return Err(chat_closed_said(&checked.tool.name));
+            }
+        }
+    };
+    match answer {
+        Answered::Allowed => {}
+        Answered::KeptOff => return Err(kept_off_said(&checked.tool.name)),
+        Answered::ChatClosed => return Err(chat_closed_said(&checked.tool.name)),
+    }
+    if waiting.gone.load(Ordering::SeqCst) {
+        return Err(format!("the command of {} went", checked.tool.name));
+    }
+    // The pool and its runner as the person was shown them, still.
+    let now = gate
+        .pools_in
+        .as_deref()
+        .map(|config| (gate.owned)(config, gate.pool));
+    if !matches!(&now, Some(Ok(bound)) if *bound == checked.bound) {
+        return Err(changed_said(&checked.tool.name, gate.pool));
+    }
+    let values = (waiting.read)(&checked.tool)?;
+    Ok(Handed::of(
+        ask.chat,
+        &checked.tool.name,
+        &checked.run,
+        values,
+    ))
 }
 
 /// **Runner chat `ask.chat`'s `secret exec`, heard over pool `pool`'s link, in project `held`**
 /// (module docs): its values sent to the runner's host for that one run, or the asker told why
-/// not. Returns once it is decided.
+/// not. `reader` is the run's input, which for a run its runner runs ends only as its asker goes.
+/// Returns once it is decided.
 pub fn run_on_its_runner(
     held: &crate::planes::Held,
     pool: &str,
     ask: brokered::Ask,
+    reader: Box<dyn std::io::BufRead + Send>,
     mut writer: Box<dyn Write + Send>,
 ) {
     let session = ask.chat;
-    match decided(held, pool, &ask, &mut *writer) {
+    let gone = Arc::new(AtomicBool::new(false));
+    watch_the_asker(reader, Arc::clone(&gone));
+    let root = held.root();
+    let ctx = Ctx::new(root, Env::from_process());
+    let authorised = |persona: &str, vault: &str| brokered::authorise(&ctx, Some(persona), vault);
+    let read = |tool: &Tool| read(&ctx, tool);
+    let moved = || held.chats().asks_may_have_moved();
+    let gate = Gate {
+        pool,
+        ask: &ask,
+        chat: held
+            .chats()
+            .login_asker(root, session)
+            .map(|(asker, unconfined)| (asker.persona, unconfined)),
+        root,
+        pools_in: held.chats().pools_in(),
+        tools: &tools::declared_and_allowed_here,
+        authorised: &authorised,
+        owned: &Bound::read,
+    };
+    let decided = checked(&gate).and_then(|checked| {
+        tracing::info!(
+            "purlis: chat {session}'s {} on pool {pool} asks the person whether its values may \
+             be sent for this run",
+            checked.tool.name
+        );
+        answered(
+            &gate,
+            checked,
+            &Waiting {
+                tools: held.pool_tools(),
+                gone: &gone,
+                moved: &moved,
+                read: &read,
+                within: A_HANDED_LINE_WAITS_AT_MOST,
+                now: crate::sandboxing::now_secs(),
+            },
+            &mut *writer,
+        )
+    });
+    match decided {
         Ok(handed) => match purlis_core::hookwire::relay::hand_values(handed) {
             Ok(()) => tracing::info!(
                 "purlis: chat {session} on pool {pool} ran {} with its values sent from this \
@@ -256,169 +478,53 @@ pub fn run_on_its_runner(
     }
 }
 
-/// The values runner chat `ask.chat` is sent for its tool, once every check and the person have
-/// let it; or what it is told instead. The asker is told on `writer` while the person is asked.
-fn decided(
-    held: &crate::planes::Held,
-    pool: &str,
-    ask: &brokered::Ask,
-    writer: &mut dyn Write,
-) -> Result<Handed, String> {
-    let session = ask.chat;
-    let wanted = &ask.secret_exec;
-    let (asker, unconfined) = held
-        .chats()
-        .login_asker(held.root(), session)
-        .ok_or_else(|| format!("chat {session} is not one this app has open"))?;
-    if unconfined {
-        return Err(format!(
-            "this chat runs on pool {pool}'s runner without the sandbox, so purlis sends it no \
-             vault value: start it in its sandbox to run its persona's tools"
-        ));
+/// Reads `reader` to its end on a thread of its own, and sets `gone` there: the run's asker went.
+fn watch_the_asker(mut reader: Box<dyn std::io::BufRead + Send>, gone: Arc<AtomicBool>) {
+    let spawned = std::thread::Builder::new()
+        .name("purlis-pool-tool-asker".into())
+        .spawn(move || {
+            let mut sink = [0u8; 1024];
+            while reader.read(&mut sink).is_ok_and(|read| read > 0) {}
+            gone.store(true, Ordering::SeqCst);
+        });
+    if let Err(why) = spawned {
+        tracing::warn!("purlis: a runner chat's command is not watched for its asker ({why})");
     }
-    let Some(persona) = asker.persona.clone().filter(|persona| !persona.is_empty()) else {
-        return Err(
-            "this chat runs as no persona, so it has no tools and is sent no vault value"
-                .to_owned(),
-        );
-    };
-    let Some(tool) = ask.runs_as.clone() else {
-        return Err(format!(
-            "the purlis on pool {pool}'s runner does not say which tool this command is, so it \
-             is sent no vault value: update purlis on the runner (removing the pool and adding it \
-             again makes it afresh)"
-        ));
-    };
-    let root = held.root();
-    let tool = allowed_tool(root, &persona, &tool, wanted)?;
-    let ctx = Ctx::new(root, Env::from_process());
-    brokered::authorise(&ctx, Some(&persona), &wanted.vault)?;
-    let config = held.chats().pools_in().ok_or_else(|| {
-        format!(
-            "purlis keeps no pools on this machine, so {} was sent no value",
-            tool.name
-        )
-    })?;
-    // Only a runner shown to be yours is ever asked about (D-2050-4).
-    let bound = Bound::read(&config, pool)
-        .map_err(|why| format!("{} was sent no value on pool {pool}: {why}", tool.name))?;
-    let waits = PoolToolWaits {
-        session,
-        persona: persona.clone(),
-        bound,
-        tool: tool.name.clone(),
-        whole: tool.whole(),
-        vault: tool.vault.clone(),
-        since: crate::sandboxing::now_secs(),
-        changed: false,
-    };
-    match held.pool_tools().ask(waits, ask.waited) {
-        Asked::Allowed => {}
-        Asked::KeptOff => return Err(kept_off_said(&persona, &tool.name, pool)),
-        Asked::Waits(answered, number) => {
-            let changed = held
-                .pool_tools()
-                .waiting()
-                .iter()
-                .any(|one| one.session == session && one.tool == tool.name && one.changed);
-            tracing::info!(
-                "purlis: chat {session}'s {} on pool {pool} asks the person whether its value \
-                 may be sent there",
-                tool.name
-            );
-            held.chats().asks_may_have_moved();
-            say(
-                writer,
-                &Frame::Note(asked_said(&persona, &tool.name, pool, changed)),
-            );
-            let answer = answered.recv_timeout(AN_ANSWER_IS_WAITED_FOR);
-            if answer.is_err() {
-                held.pool_tools().gave_up(session, &tool.name, number);
-                held.chats().asks_may_have_moved();
-            }
-            match answer {
-                Ok(true) => {}
-                Ok(false) => return Err(kept_off_said(&persona, &tool.name, pool)),
-                Err(_) => return Err(unanswered_said(&tool.name)),
-            }
-        }
-    }
-    read(&ctx, &tool)
-}
-
-/// **Tool `name` of `persona`, as this machine allows it**, where `wanted` asks for exactly its
-/// vault and hand-over: the persona's tools as the project declares them and this machine
-/// allowed them, read now (the runner armed the chat's tools, of which this window holds no
-/// record). Refused in the words a chat of this machine is refused in otherwise.
-fn allowed_tool(
-    root: &std::path::Path,
-    persona: &str,
-    name: &str,
-    wanted: &brokered::Wanted,
-) -> Result<purlis_core::sandbox::tools::Tool, String> {
-    use purlis_core::sandbox::tools;
-    let (declared, allowed) = tools::declared_and_allowed_here(root, persona);
-    let armed: Vec<tools::Ready> = allowed
-        .into_iter()
-        .filter(|tool| tool.login.is_none())
-        .map(|tool| tools::Ready {
-            tool,
-            program: std::path::PathBuf::new(),
-        })
-        .collect();
-    let ready = tools::declared(
-        &armed,
-        &declared,
-        persona,
-        &tools::Asked {
-            vault: &wanted.vault,
-            env: &wanted.env,
-            file: &wanted.file,
-            dotenv: &wanted.dotenv,
-            program: name,
-        },
-    )?;
-    Ok(ready.tool.clone())
 }
 
 /// The value of each of `tool`'s keys, read from its vault here.
-fn read(ctx: &Ctx, tool: &purlis_core::sandbox::tools::Tool) -> Result<Handed, String> {
+fn read(ctx: &Ctx, tool: &Tool) -> Result<Vec<(String, String)>, String> {
     let vault = purlis_core::secrets::cmd::provider(ctx, &tool.vault).map_err(|e| e.message)?;
-    let mut values = Vec::new();
+    let mut values: Vec<(String, String)> = Vec::new();
     for value in &tool.values {
-        if values
-            .iter()
-            .any(|(key, _): &(String, String)| *key == value.key)
-        {
+        if values.iter().any(|(key, _)| *key == value.key) {
             continue;
         }
         let read =
             purlis_core::secrets::cmd::get_value(ctx, &vault, &value.key).map_err(|e| e.message)?;
         values.push((value.key.clone(), read));
     }
-    Ok(Handed::of(values))
+    Ok(values)
 }
 
 /// What a pool tool Ask answered by nothing any more says.
-const WAITS_NO_MORE: &str = "Nothing is asking about that tool on a pool for that chat any more.";
+const WAITS_NO_MORE: &str = "Nothing is asking about that run of a tool on a pool any more.";
 
-/// **Allow or Keep off on chat `session`'s Ask about its tool `tool` on its pool** (#2047): with
-/// `allow`, this desktop sends that tool of the chat's persona its vault values on the pool's
-/// runner, for each run, while the app runs and the pool stays as the Ask showed it; Keep off
-/// refuses it there until the pool changes. Every chat of that persona whose same tool waits on
-/// that pool is answered with it, and each waiting command goes on or is refused at once.
+/// **Allow or Keep off on run `run` of chat `session`'s tool on its pool** (#2047): with
+/// `allow`, this desktop sends the tool its vault values on the pool's runner for that run
+/// alone; Keep off refuses that run. The command that waits goes on, or is refused, at once.
 #[tauri::command]
 #[specta::specta]
 pub async fn answer_pool_tool(
     planes: tauri::State<'_, crate::planes::Planes>,
     plane: crate::planes::PlaneId,
     session: u32,
-    tool: String,
+    run: u32,
     allow: bool,
 ) -> Result<(), String> {
     let held = planes.held(&plane)?;
-    crate::off_the_window("answering a pool's tool", move || {
-        pool_tool_answered(&held, session, &tool, allow)
+    crate::off_the_window("answering a run of a pool's tool", move || {
+        pool_tool_answered(&held, session, run, allow)
     })
     .await
 }
@@ -427,10 +533,10 @@ pub async fn answer_pool_tool(
 pub fn pool_tool_answered(
     held: &crate::planes::Held,
     session: u32,
-    tool: &str,
+    run: u32,
     allow: bool,
 ) -> Result<(), String> {
-    if held.pool_tools().answer(session, tool, allow).is_empty() {
+    if held.pool_tools().answer(session, run, allow).is_none() {
         return Err(WAITS_NO_MORE.to_owned());
     }
     held.chats().asks_may_have_moved();

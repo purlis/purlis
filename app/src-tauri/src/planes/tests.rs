@@ -7161,3 +7161,71 @@ fn a_claude_chat_that_was_cleared_is_recorded_under_its_new_conversation() {
     held.close_chat(session).expect("it closes");
     planes.close(&held.id).expect("it closes");
 }
+
+/// #2047: a `secret exec` heard over a pool's link is decided by the window's gate for a runner
+/// chat's tool, and never reaches the run on this desktop: here, for a chat this window does not
+/// have open, the runner's words, not this desktop's.
+#[cfg(unix)]
+#[test]
+fn a_secret_exec_heard_over_a_pools_link_never_reaches_the_run_on_this_desktop() {
+    use purlis_core::secrets::brokered::{Ask, Frame, Wanted};
+    let dir = tempfile::tempdir().expect("a directory");
+    let root = a_plane(&dir.path().join("plane"));
+    let (planes, _told) = planes_telling();
+    let id = planes.open(&root);
+    let held = planes.held(&id).expect("it is held");
+    let run = |pool: Option<&str>| -> Vec<Frame> {
+        let wire: Arc<Mutex<Vec<u8>>> = Arc::default();
+        struct Wire(Arc<Mutex<Vec<u8>>>);
+        impl std::io::Write for Wire {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(buf);
+                Ok(buf.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let ask = Ask {
+            chat: 9,
+            secret_exec: Wanted {
+                vault: "team".to_owned(),
+                command: vec!["kubectl".to_owned()],
+                ..Wanted::default()
+            },
+            runs_as: Some("kubectl".to_owned()),
+            run: Some("r1".to_owned()),
+            ..Ask::default()
+        };
+        crate::hooks::heard_from(pool.map(str::to_owned), || {
+            crate::vaults::run_brokered(
+                &held,
+                &id,
+                &|_| {},
+                &|_| {},
+                ask,
+                Box::new(std::io::Cursor::new(Vec::new())),
+                Box::new(Wire(Arc::clone(&wire))),
+                Arc::new(|_| {}),
+            );
+        });
+        let bytes = wire.lock().unwrap().clone();
+        String::from_utf8(bytes)
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str(line).expect("a frame"))
+            .collect()
+    };
+
+    let over_the_pool = run(Some("builds"));
+    let here = run(None);
+
+    assert!(
+        matches!(over_the_pool.as_slice(), [Frame::Refused { why, .. }] if why.contains("on pool builds")),
+        "{over_the_pool:?}"
+    );
+    assert!(
+        matches!(here.as_slice(), [Frame::Refused { why, .. }] if !why.contains("pool")),
+        "this desktop's own words for its own chats: {here:?}"
+    );
+}

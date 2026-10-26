@@ -4404,11 +4404,27 @@ fn a_runners_project() -> tempfile::TempDir {
     tmp
 }
 
+/// The values a runner's desktop sent for a run of `KUBECONFIG`.
+fn kubeconfig_handed() -> Handed {
+    Handed::of(
+        7,
+        "sh",
+        "a-run",
+        [("KUBECONFIG".to_owned(), KUBECONFIG.to_owned())],
+    )
+}
+
 /// Every frame a runner's host wrote for `wanted`, run unwrapped on `handed`, the values its
-/// desktop sent for that one run, as the tool `asker`'s start armed.
-fn served_handed(asker: &Asker, wanted: Wanted, handed: Handed) -> Vec<Frame> {
+/// desktop sent for that one run, as the tool `asker`'s start armed; the asker's connection held
+/// open until the run is done, or gone from the start where `gone`.
+fn served_handed_to(asker: &Asker, wanted: Wanted, handed: Handed, gone: bool) -> Vec<Frame> {
     let (asker, wanted) = as_tool(asker.clone(), wanted);
     let (reader, _keep) = held_open();
+    let reader = if gone {
+        Box::new(std::io::Cursor::new(Vec::new())) as Box<dyn BufRead + Send>
+    } else {
+        reader
+    };
     let wire = Wire::default();
     serve_handed_wrapped(
         &asker,
@@ -4424,6 +4440,10 @@ fn served_handed(asker: &Asker, wanted: Wanted, handed: Handed) -> Vec<Frame> {
         .lines()
         .map(|line| serde_json::from_str(line).expect("every line is a frame"))
         .collect()
+}
+
+fn served_handed(asker: &Asker, wanted: Wanted, handed: Handed) -> Vec<Frame> {
+    served_handed_to(asker, wanted, handed, false)
 }
 
 /// Every file under `dir`, read whole, that holds `value`.
@@ -4445,31 +4465,133 @@ fn files_holding(dir: &Path, value: &str) -> Vec<PathBuf> {
     found
 }
 
+/// Nothing of the value is left where the run was: in the project, in the run's temporary
+/// folder `tmp`, in its credential file, or in any frame.
+fn nothing_left(project: &Path, tmp: Option<&Path>, frames: &[Frame]) {
+    assert_eq!(
+        files_holding(project, "k8s-s3cret"),
+        Vec::<PathBuf>::new(),
+        "no value is left in the project"
+    );
+    if let Some(tmp) = tmp {
+        assert!(
+            !tmp.exists(),
+            "its temporary folder {} went with it",
+            tmp.display()
+        );
+    }
+    let wire = serde_json::to_string(frames).unwrap();
+    assert!(!wire.contains("k8s-s3cret"), "{wire}");
+    assert!(!wire.contains(&b64(KUBECONFIG.as_bytes())), "{wire}");
+}
+
 #[test]
 fn a_runners_host_runs_a_declared_tool_on_the_values_its_desktop_handed_and_keeps_none() {
     let project = a_runners_project();
     let mut want = wanted(
         project.path(),
         "team",
-        sh(r#"test -f "$KUBECONFIG" && echo "$KUBECONFIG"; cat "$KUBECONFIG""#),
+        sh(
+            r#"echo "$KUBECONFIG"; echo "$TMPDIR"; cat "$KUBECONFIG" > "$TMPDIR/copy"; cat "$KUBECONFIG"; cat "$KUBECONFIG" >&2"#,
+        ),
     );
     want.file = vec!["KUBECONFIG=KUBECONFIG".into()];
 
     let frames = served_handed(
         &asker(project.path(), Some("devops")),
         want,
-        Handed::of([("KUBECONFIG".to_owned(), KUBECONFIG.to_owned())]),
+        kubeconfig_handed(),
     );
 
     assert_eq!(frames.first(), Some(&Frame::Started), "{frames:?}");
     assert_eq!(frames.last(), Some(&Frame::Exit(0)), "{frames:?}");
     let out = stdout(&frames);
-    let path = PathBuf::from(out.lines().next().unwrap());
-    assert!(!out.contains("k8s-s3cret"), "the value is masked: {out}");
-    assert!(!path.exists(), "its file went with the run");
-    assert_eq!(
-        files_holding(project.path(), "k8s-s3cret"),
-        Vec::<PathBuf>::new(),
-        "no value is left on the runner"
+    let mut lines = out.lines();
+    let file = PathBuf::from(lines.next().unwrap());
+    let tmp = PathBuf::from(lines.next().unwrap());
+    assert!(out.contains("***"), "the value is masked on stdout: {out}");
+    assert!(stderr(&frames).contains("***"), "and on stderr");
+    assert!(!file.exists(), "its file went with the run");
+    nothing_left(project.path(), Some(&tmp), &frames);
+}
+
+#[test]
+fn a_runners_run_that_fails_keeps_none_of_its_values() {
+    let project = a_runners_project();
+    let mut want = wanted(
+        project.path(),
+        "team",
+        sh(r#"echo "$TMPDIR"; cat "$KUBECONFIG" > "$TMPDIR/copy"; exit 3"#),
     );
+    want.file = vec!["KUBECONFIG=KUBECONFIG".into()];
+
+    let frames = served_handed(
+        &asker(project.path(), Some("devops")),
+        want,
+        kubeconfig_handed(),
+    );
+
+    assert_eq!(frames.last(), Some(&Frame::Exit(3)), "{frames:?}");
+    let tmp = PathBuf::from(stdout(&frames).lines().next().unwrap().to_owned());
+    nothing_left(project.path(), Some(&tmp), &frames);
+}
+
+#[test]
+fn a_runners_run_stopped_as_its_asker_goes_keeps_none_of_its_values() {
+    let project = a_runners_project();
+    let mut want = wanted(
+        project.path(),
+        "team",
+        sh(r#"cat "$KUBECONFIG" > "$TMPDIR/copy"; sleep 30"#),
+    );
+    want.file = vec!["KUBECONFIG=KUBECONFIG".into()];
+    let began = std::time::Instant::now();
+
+    let frames = served_handed_to(
+        &asker(project.path(), Some("devops")),
+        want,
+        kubeconfig_handed(),
+        true,
+    );
+
+    assert!(began.elapsed() < Duration::from_secs(10), "it was stopped");
+    assert!(
+        matches!(frames.last(), Some(Frame::Exit(code)) if *code != 0),
+        "{frames:?}"
+    );
+    nothing_left(project.path(), None, &frames);
+}
+
+#[test]
+fn a_runners_run_logs_none_of_its_values() {
+    let project = a_runners_project();
+    let mut want = wanted(project.path(), "team", sh("true"));
+    want.file = vec!["KUBECONFIG=KUBECONFIG".into()];
+    let asker = asker(project.path(), Some("devops"));
+
+    let logged = logged_as_a_service(|| {
+        served_handed(&asker, want.clone(), kubeconfig_handed());
+    });
+
+    assert!(logged.contains("ran"), "the run is logged: {logged}");
+    assert!(!logged.contains("k8s-s3cret"), "{logged}");
+    assert!(!logged.contains("team"), "nor the vault: {logged}");
+}
+
+#[test]
+fn the_values_sent_for_a_run_say_their_keys_alone() {
+    let handed = kubeconfig_handed();
+    let said = format!("{handed:?}");
+    assert!(said.contains("KUBECONFIG"), "{said}");
+    assert!(!said.contains("k8s-s3cret"), "{said}");
+    let line = serde_json::to_string(&handed).unwrap();
+    let back: Handed = serde_json::from_str(&line).unwrap();
+    assert_eq!(back, handed, "crosses the link whole");
+    assert!(back.is_for(7, "sh", "a-run"));
+    assert!(
+        !back.is_for(7, "sh", "another-run"),
+        "never for another run"
+    );
+    assert!(!back.is_for(8, "sh", "a-run"), "nor another chat's");
+    assert!(!back.is_for(7, "kubectl", "a-run"), "nor another tool's");
 }

@@ -104,6 +104,11 @@ pub struct Ask {
     /// hands it on now, so the window asks the person about it afresh. Set by the host alone.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub waited: bool,
+    /// **This run's own number** (#2047, [`a_run_number`]): made by the host that composed the
+    /// chat, for each run it hands on, and echoed in the values the window sends for it
+    /// ([`Handed`]), which the host runs only on a match. Set by the host alone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run: Option<String>,
 }
 
 /// What a chat asks to have run: `secret exec`'s own arguments, where it runs, and the
@@ -1638,35 +1643,96 @@ pub fn armed_as(asker: &Asker, wanted: &Wanted) -> Result<String, String> {
 
 /// **The values a runner's desktop sent for one `secret exec`** (#2047): each key of the
 /// tool's vault the run hands over, with its value, read by the desktop's window after its gate
-/// and sent down the link for that one run. Its `Debug` names the keys alone, and it is never
-/// written anywhere: it lives as long as the run it was sent for.
-#[derive(Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+/// and sent down the link for that one run, **bound to that run**: the chat, the tool its host
+/// said it runs, and the run's own number its host made ([`Ask::run`]), which its host checks
+/// before it runs anything on them. Each value is wiped from memory as it is dropped
+/// ([`zeroize::Zeroizing`]); its `Debug` names the keys alone, and it is never written anywhere.
+#[derive(Clone, PartialEq, Eq, Default)]
 pub struct Handed {
-    values: Vec<(String, String)>,
+    pub chat: u32,
+    pub tool: String,
+    pub run: String,
+    values: Vec<(String, zeroize::Zeroizing<String>)>,
+}
+
+/// [`Handed`] as it crosses the link.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct HandedLine<V> {
+    chat: u32,
+    tool: String,
+    run: String,
+    values: Vec<(String, V)>,
+}
+
+impl serde::Serialize for Handed {
+    fn serialize<S: serde::Serializer>(&self, to: S) -> Result<S::Ok, S::Error> {
+        HandedLine {
+            chat: self.chat,
+            tool: self.tool.clone(),
+            run: self.run.clone(),
+            values: self
+                .values
+                .iter()
+                .map(|(key, value)| (key.clone(), value.as_str()))
+                .collect(),
+        }
+        .serialize(to)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Handed {
+    fn deserialize<D: serde::Deserializer<'de>>(from: D) -> Result<Self, D::Error> {
+        let line = HandedLine::<String>::deserialize(from)?;
+        Ok(Handed {
+            chat: line.chat,
+            tool: line.tool,
+            run: line.run,
+            values: line
+                .values
+                .into_iter()
+                .map(|(key, value)| (key, zeroize::Zeroizing::new(value)))
+                .collect(),
+        })
+    }
 }
 
 impl std::fmt::Debug for Handed {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Handed")
-            .field(
-                "keys",
-                &self.values.iter().map(|(key, _)| key).collect::<Vec<_>>(),
-            )
+            .field("chat", &self.chat)
+            .field("tool", &self.tool)
+            .field("keys", &self.keys().collect::<Vec<_>>())
             .finish_non_exhaustive()
     }
 }
 
 impl Handed {
-    /// The values `values`, each a key and its value.
-    pub fn of(values: impl IntoIterator<Item = (String, String)>) -> Handed {
+    /// The values `values`, each a key and its value, for run `run` of chat `chat`'s tool `tool`.
+    pub fn of(
+        chat: u32,
+        tool: &str,
+        run: &str,
+        values: impl IntoIterator<Item = (String, String)>,
+    ) -> Handed {
         Handed {
-            values: values.into_iter().collect(),
+            chat,
+            tool: tool.to_owned(),
+            run: run.to_owned(),
+            values: values
+                .into_iter()
+                .map(|(key, value)| (key, zeroize::Zeroizing::new(value)))
+                .collect(),
         }
     }
 
     /// The keys it carries a value for.
     pub fn keys(&self) -> impl Iterator<Item = &str> {
         self.values.iter().map(|(key, _)| key.as_str())
+    }
+
+    /// Whether these are the values for run `run` of chat `chat`'s tool `tool`, and no other.
+    pub fn is_for(&self, chat: u32, tool: &str, run: &str) -> bool {
+        !run.is_empty() && self.chat == chat && self.tool == tool && self.run == run
     }
 
     /// The value sent for `key`, remembered as read ([`super::seen`]) so no store of a chat's
@@ -1682,8 +1748,37 @@ impl Handed {
                 ))
             })?;
         super::seen::remember(value);
-        Ok(value.clone())
+        Ok(value.to_string())
     }
+}
+
+/// Variables of the chat's that make a program write out its memory as it crashes, or change
+/// how it does: a run starts without them, so its values are never written that way (#2047).
+const DUMPS_MEMORY: &[&str] = &["GOTRACEBACK", "GODEBUG"];
+
+/// **No process of this one, a run's child among them, writes a core file** (#2047): its soft
+/// limit set to nothing, the hard one kept. A core file of a run would hold the run's values.
+/// Inherited by every child from here on, and by this process itself, which holds values too.
+#[cfg(unix)]
+fn no_core_files() {
+    use nix::sys::resource::{Resource, getrlimit, setrlimit};
+    let hard = getrlimit(Resource::RLIMIT_CORE).map_or(0, |(_, hard)| hard);
+    if let Err(why) = setrlimit(Resource::RLIMIT_CORE, 0, hard) {
+        tracing::warn!("purlis: core files could not be turned off for a brokered run ({why})");
+    }
+}
+
+#[cfg(not(unix))]
+fn no_core_files() {}
+
+/// **A fresh number for one run of a chat's `secret exec`** (#2047): 128 random bits, in hex,
+/// made by the host that hands the line on and checked against what comes back for it, so values
+/// sent for one run never reach another, whatever numbers the lines took. `None` where no random
+/// bytes could be had: then no values are taken for the run.
+pub fn a_run_number() -> Option<String> {
+    let mut bytes = [0u8; 16];
+    getrandom::fill(&mut bytes).ok()?;
+    Some(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1877,7 +1972,9 @@ pub(crate) fn serve_recorded(
         .into_iter()
         .filter(|(k, _)| {
             let k = k.to_string_lossy();
-            !not_handed_on(&k) && !crate::sandbox::tools::loads_code(&k)
+            !not_handed_on(&k)
+                && !crate::sandbox::tools::loads_code(&k)
+                && !DUMPS_MEMORY.contains(&k.as_ref())
         })
         .collect();
     // What the tool runs by a bare name is never from a folder the chat may write
@@ -2142,6 +2239,8 @@ pub(crate) fn serve_recorded(
         );
     }
 
+    // No core file of the run, which would hold its values, in the chat's folder or anywhere.
+    no_core_files();
     let mut spawned = match crate::forklock::spawn(&mut child) {
         Ok(spawned) => spawned,
         Err(e) => return refuse(&mut *writer, 1, format!("cannot run {}: {e}", command[0])),
