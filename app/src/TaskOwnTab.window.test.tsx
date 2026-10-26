@@ -1126,9 +1126,10 @@ describe("what the core is told is on screen (M1, M4)", () => {
     const titles: (string | null)[] = [];
     for (const one of [...menu.querySelectorAll<HTMLElement>(".tasks-menu-place")].slice(0, 2))
       titles.push(await hoverTipOf(one));
+    // An icon button's tooltip is its name, with the line's key as a second line under it.
     expect(titles).toEqual([
-      "Move talk to its own tab (Ctrl+Enter on its line)",
-      "Open talk beside its session (Alt+Enter on its line)",
+      "Move talk to its own tabCtrl+Enter on its line",
+      "Open talk beside its sessionAlt+Enter on its line",
     ]);
   });
 });

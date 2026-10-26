@@ -125,13 +125,15 @@ pub fn save_as(request: &Request, trigger: Trigger, say: Sink) -> u8 {
     let busy = (request.mid_turn)();
     if !busy.is_empty() && trigger != Trigger::Quit {
         if matches!(trigger, Trigger::Manual | Trigger::Cli) {
-            say(Say::Fail(waiting_for(request.workspace, &busy)));
+            say(Say::Fail(waiting_for(request.workspace, &busy).into()));
             return 1;
         }
         return 0;
     }
     let Some(claim) = Claim::of(request.clone) else {
-        say(Say::Fail(already_saving(request.workspace, request.name)));
+        say(Say::Fail(
+            already_saving(request.workspace, request.name).into(),
+        ));
         return 1;
     };
     save_claimed(request, trigger, &claim, say)
@@ -152,19 +154,22 @@ pub fn save_claimed(request: &Request, trigger: Trigger, _claim: &Claim, say: Si
         if let Say::Fail(text) = &line
             && refused.is_none()
         {
-            refused = Some(text.clone());
+            refused = Some(text.clone().to_string());
         }
         say(line);
     };
     let say: Sink = &mut heard;
     let code = if mode == Mode::Off {
-        say(Say::Info(format!(
-            "[repos.{}] mode is off ({}), so purlis commits nothing in {}/{}.",
-            request.name,
-            repo.mode.source.file().unwrap_or("default"),
-            request.workspace,
-            request.name
-        )));
+        say(Say::Info(
+            format!(
+                "[repos.{}] mode is off ({}), so purlis commits nothing in {}/{}.",
+                request.name,
+                repo.mode.source.file().unwrap_or("default"),
+                request.workspace,
+                request.name
+            )
+            .into(),
+        ));
         attempt.outcome = "skipped";
         0
     } else {
@@ -257,7 +262,7 @@ fn commit_push(
     let state = match repos::state_of(clone) {
         Ok(state) => state,
         Err(unreadable) => {
-            say(Say::Fail(format!("Not saved: {unreadable}.")));
+            say(Say::Fail(format!("Not saved: {unreadable}.").into()));
             attempt.outcome = "blocked";
             return 1;
         }
@@ -266,7 +271,7 @@ fn commit_push(
     // before anything is staged: `git add -A` would stage the conflict markers (#433).
     if let Some(stopped) = gitstate::stopped(clone) {
         let why = format!("in {at}, {}", stopped.why());
-        say(Say::Fail(format!("Not saved: {why}.")));
+        say(Say::Fail(format!("Not saved: {why}.").into()));
         say(Say::Info(
             "  Nothing was staged or committed. Settle that, then save again.".into(),
         ));
@@ -283,9 +288,9 @@ fn commit_push(
             let why = format!(
                 "{at} is not on a branch (detached at {sha}), so a save has no branch to commit on"
             );
-            say(Say::Fail(format!(
-                "Not saved: {why}. Check out a branch, then save again."
-            )));
+            say(Say::Fail(
+                format!("Not saved: {why}. Check out a branch, then save again.").into(),
+            ));
             attempt.outcome = "blocked";
             attempt.detail = why;
             return 1;
@@ -300,7 +305,7 @@ fn commit_push(
         attempt.outcome = "skipped";
         attempt.detail = why.clone();
         if matches!(trigger, Trigger::Manual | Trigger::Cli) {
-            say(Say::Fail(why));
+            say(Say::Fail(why.into()));
             return 1;
         }
         return 0;
@@ -319,9 +324,10 @@ fn commit_push(
                 let held = match planegit::ondisk::stage_named(clone, &[], |_| false) {
                     Ok(held) => held,
                     Err(said) => {
-                        say(Say::Fail(format!(
-                            "Not saved: git could not stage the changes in {at} — {said}"
-                        )));
+                        say(Say::Fail(
+                            format!("Not saved: git could not stage the changes in {at} — {said}")
+                                .into(),
+                        ));
                         return 1;
                     }
                 };
@@ -332,13 +338,13 @@ fn commit_push(
             }
         };
     if let Some(refusal) = refusal {
-        say(Say::Fail(format!(
-            "Not saved: a file in {at} is not the one file on disk:"
-        )));
+        say(Say::Fail(
+            format!("Not saved: a file in {at} is not the one file on disk:").into(),
+        ));
         for line in refusal.named {
-            say(Say::Fail(format!("  {line}")));
+            say(Say::Fail(format!("  {line}").into()));
         }
-        say(Say::Info(format!("  {}", refusal.then)));
+        say(Say::Info(format!("  {}", refusal.then).into()));
         attempt.outcome = "blocked";
         attempt.detail = planegit::ondisk::NOT_AS_STAGED.into();
         attempt.commit = rev(clone, "HEAD");
@@ -402,7 +408,7 @@ fn commit_push(
                     "a secret-shaped file would be committed in {at}: {}",
                     named.join(", ")
                 );
-                say(Say::Fail(format!("Not saved: {why}.")));
+                say(Say::Fail(format!("Not saved: {why}.").into()));
                 say(Say::Info(
                     "  Take it out of the tree or add it to .gitignore, then save again. Secrets \
                      belong in a vault."
@@ -410,9 +416,9 @@ fn commit_push(
                 ));
                 if let Some(refusal) = refusal {
                     for line in refusal.named {
-                        say(Say::Fail(format!("  {line}")));
+                        say(Say::Fail(format!("  {line}").into()));
                     }
-                    say(Say::Info(format!("  {}", refusal.then)));
+                    say(Say::Info(format!("  {}", refusal.then).into()));
                 }
                 attempt.outcome = "blocked";
                 attempt.detail = why;
@@ -420,13 +426,13 @@ fn commit_push(
                 return 1;
             }
             if let Some(refusal) = refusal {
-                say(Say::Fail(format!(
-                    "Not saved: a staged file in {at} is not the one file on disk:"
-                )));
+                say(Say::Fail(
+                    format!("Not saved: a staged file in {at} is not the one file on disk:").into(),
+                ));
                 for line in refusal.named {
-                    say(Say::Fail(format!("  {line}")));
+                    say(Say::Fail(format!("  {line}").into()));
                 }
-                say(Say::Info(format!("  {}", refusal.then)));
+                say(Say::Info(format!("  {}", refusal.then).into()));
                 attempt.outcome = "blocked";
                 attempt.detail = planegit::ondisk::NOT_AS_STAGED.into();
                 attempt.commit = rev(clone, "HEAD");
@@ -451,27 +457,34 @@ fn commit_push(
                     (_, Ok(run)) => format!("git commit failed: {}", planegit::tail(&run)),
                     (_, Err(e)) => format!("git commit failed: {e}"),
                 };
-                say(Say::Fail(format!(
-                    "Not saved: {why} — {} in {at} {} staged but not committed.",
-                    counted(staged.len(), "file", "files"),
-                    plural(staged.len(), "is", "are")
-                )));
+                say(Say::Fail(
+                    format!(
+                        "Not saved: {why} — {} in {at} {} staged but not committed.",
+                        counted(staged.len(), "file", "files"),
+                        plural(staged.len(), "is", "are")
+                    )
+                    .into(),
+                ));
                 attempt.detail = why;
                 return 1;
             }
             let short = git::run(clone, &["rev-parse", "--short", "HEAD"], git::READ)
                 .map(|r| r.line().trim().to_string())
                 .unwrap_or_default();
-            say(Say::Done(format!(
-                "Committed {short} on {branch} in {at}: {msg}  ({})",
-                counted(staged.len(), "file", "files")
-            )));
+            say(Say::Done(
+                format!(
+                    "Committed {short} on {branch} in {at}: {msg}  ({})",
+                    counted(staged.len(), "file", "files")
+                )
+                .into(),
+            ));
             true
         }
         _ => {
-            say(Say::Fail(format!(
-                "Not saved: purlis could not tell whether {at} has anything staged."
-            )));
+            say(Say::Fail(
+                format!("Not saved: purlis could not tell whether {at} has anything staged.")
+                    .into(),
+            ));
             return 1;
         }
     };
@@ -480,20 +493,23 @@ fn commit_push(
 
     if mode == Mode::Commit {
         if !committed {
-            say(Say::Info(format!("Nothing to save in {at}.")));
+            say(Say::Info(format!("Nothing to save in {at}.").into()));
         } else if !request.no_push {
-            say(Say::Info(format!(
-                "Not pushed: [repos.{}] mode is commit ({}).",
-                request.name,
-                repo.mode.source.file().unwrap_or("default")
-            )));
+            say(Say::Info(
+                format!(
+                    "Not pushed: [repos.{}] mode is commit ({}).",
+                    request.name,
+                    repo.mode.source.file().unwrap_or("default")
+                )
+                .into(),
+            ));
         }
         return 0;
     }
     let Some(head_sha) = attempt.commit.clone() else {
-        say(Say::Info(format!(
-            "Nothing to save in {at}: {branch} has no commit yet."
-        )));
+        say(Say::Info(
+            format!("Nothing to save in {at}: {branch} has no commit yet.").into(),
+        ));
         return 0;
     };
     let Some(https) = planegit::origin_https_of(request.plane, clone) else {
@@ -501,7 +517,7 @@ fn commit_push(
             "{at}'s origin is not on a GitHub or GitLab host this plane knows, so there is \
              nowhere to push"
         );
-        say(Say::Warn(format!("{why}. Committed locally.")));
+        say(Say::Warn(format!("{why}. Committed locally.").into()));
         if mode.opens_a_pr() {
             attempt.outcome = "blocked";
             attempt.detail = why;
@@ -515,7 +531,7 @@ fn commit_push(
     let helper = match forge::gitcredential::helper_for_push(&forge, clone, &https) {
         Ok(helper) => helper,
         Err(why) => {
-            say(Say::Warn(format!("{at}: {why}. Committed locally.")));
+            say(Say::Warn(format!("{at}: {why}. Committed locally.").into()));
             attempt.outcome = "blocked";
             attempt.detail = why.to_string();
             return 1;
@@ -533,7 +549,7 @@ fn commit_push(
                  goes. Set [repos.{}] branch",
                 request.name, request.name
             );
-            say(Say::Fail(format!("Not pushed: {why}.")));
+            say(Say::Fail(format!("Not pushed: {why}.").into()));
             attempt.outcome = "blocked";
             attempt.detail = why;
             return 1;
@@ -543,7 +559,7 @@ fn commit_push(
             match save_branch(request, &branch, &head_sha) {
                 Ok(name) => name,
                 Err(why) => {
-                    say(Say::Fail(format!("Not pushed: {why}.")));
+                    say(Say::Fail(format!("Not pushed: {why}.").into()));
                     attempt.outcome = "blocked";
                     attempt.detail = why;
                     return 1;
@@ -565,9 +581,9 @@ fn commit_push(
     let run = match pushed {
         Ok(run) => run,
         Err(unavailable) => {
-            say(Say::Warn(format!(
-                "Committed, but the push failed: {unavailable}"
-            )));
+            say(Say::Warn(
+                format!("Committed, but the push failed: {unavailable}").into(),
+            ));
             attempt.detail = unavailable.to_string();
             attempt.outcome = "failed";
             return 1;
@@ -617,9 +633,11 @@ fn commit_push(
         if attempt.outcome != "failed" {
             attempt.outcome = "blocked";
         }
-        say(Say::Fail(format!("Committed, but not pushed: {why}")));
+        say(Say::Fail(
+            format!("Committed, but not pushed: {why}").into(),
+        ));
         for line in said.lines() {
-            say(Say::Info(format!("  {line}")));
+            say(Say::Info(format!("  {line}").into()));
         }
         attempt.detail = why;
         return 1;
@@ -635,10 +653,9 @@ fn commit_push(
         git::READ,
     );
     attempt.branch = Some(remote_branch.clone());
-    say(Say::Done(format!(
-        "Pushed {remote_branch} of {at} via {}.",
-        forge.kind.cli()
-    )));
+    say(Say::Done(
+        format!("Pushed {remote_branch} of {at} via {}.", forge.kind.cli()).into(),
+    ));
     let Some(base) = base else {
         attempt.outcome = "saved";
         return 0;
@@ -648,7 +665,7 @@ fn commit_push(
     let repo_on_forge = match pr::Repo::of_clone(request.plane, clone) {
         Ok(found) => found,
         Err(why) => {
-            say(Say::Fail(format!("Pushed, but no {noun}: {why}.")));
+            say(Say::Fail(format!("Pushed, but no {noun}: {why}.").into()));
             attempt.outcome = "blocked";
             attempt.detail = why;
             return 1;
@@ -676,9 +693,10 @@ fn commit_push(
     ) {
         Ok(opened) => opened,
         Err(why) => {
-            say(Say::Fail(format!(
-                "Pushed {remote_branch}, but the {noun} into {base} was not opened: {why}"
-            )));
+            say(Say::Fail(
+                format!("Pushed {remote_branch}, but the {noun} into {base} was not opened: {why}")
+                    .into(),
+            ));
             attempt.detail = why.to_string();
             return 1;
         }
@@ -694,17 +712,20 @@ fn commit_push(
             forge.kind.request_ref(opened.pr.number),
             opened.pr.url
         );
-        say(Say::Info(said.clone()));
+        say(Say::Info(said.clone().into()));
         attempt.detail = said;
         return 0;
     }
     let opened = opened.pr;
-    say(Say::Done(format!(
-        "{} {} from {remote_branch} into {base}: {}",
-        forge.kind.request_noun_capitalised(),
-        forge.kind.request_ref(opened.number),
-        opened.url
-    )));
+    say(Say::Done(
+        format!(
+            "{} {} from {remote_branch} into {base}: {}",
+            forge.kind.request_noun_capitalised(),
+            forge.kind.request_ref(opened.number),
+            opened.url
+        )
+        .into(),
+    ));
     attempt.number = Some(opened.number);
     if mode == Mode::PrMerge {
         // purlis merges it itself, and not now: this commit reached the forge a moment ago,
@@ -717,7 +738,7 @@ fn commit_push(
             forge.kind.request_ref(opened.number)
         );
         let said = waits.said(&request, &opened.url);
-        say(Say::Info(format!("{said}.")));
+        say(Say::Info(format!("{said}.").into()));
         attempt.detail = said;
         attempt.merge = Some(waits);
     }

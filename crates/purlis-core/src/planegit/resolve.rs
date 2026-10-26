@@ -128,7 +128,9 @@ pub fn start(root: &Path, say: Sink) -> Settled {
             plural(changed.len(), "is", "are")
         ));
     }
-    say(Say::Info(format!("Fetching `{branch}` from the remote …")));
+    say(Say::Info(
+        format!("Fetching `{branch}` from the remote …").into(),
+    ));
     if let Err(why) = fetch_branch(root, &branch) {
         return Settled::Refused(format!(
             "Nothing was started: the remote could not be fetched: {}.",

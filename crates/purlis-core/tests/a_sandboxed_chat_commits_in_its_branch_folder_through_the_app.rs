@@ -253,7 +253,7 @@ fn a_hook_in_the_clone_does_not_run_and_the_answer_says_so() {
     let said: Vec<String> = rest
         .iter()
         .map(|line| match line {
-            Say::Warn(text) => text.clone(),
+            Say::Warn(text) => text.to_string(),
             other => panic!("not a warning: {other:?}"),
         })
         .collect();
