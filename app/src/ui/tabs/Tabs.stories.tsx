@@ -416,8 +416,8 @@ export const MarksOnTheTabsLine: Story = {
     const below = tip.getBoundingClientRect().top >= strip.getBoundingClientRect().bottom;
     const above = tip.getBoundingClientRect().bottom <= strip.getBoundingClientRect().top;
     await expect(below || above, "the tooltip sits on the strip's row").toBe(true);
-    // And it goes with the keyboard, so the picture is the strip alone.
-    await userEvent.tab();
+    // And Esc takes it down, the focus staying on the `+`: the picture is the strip, its ring.
+    await userEvent.keyboard("{Escape}");
     await waitFor(
       () => expect(document.querySelector('[role="tooltip"][data-scope="tooltip"]')).toBeNull(),
       { timeout: 3000 },
