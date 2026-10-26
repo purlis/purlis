@@ -57,21 +57,18 @@
  * size Tailwind no longer has, a corner it keeps of its own (`rounded-2xl`), and a value of a
  * class's own (`p-[7px]`, `text-[13px]`).
  *
- * **Each kind of control is one class, in `components`** (#1834). `primitives/controls.css` draws the
- * button, field, select, checkbox, radio, switch, segmented control and menu from the tokens
- * alone, in the layer above `App.css`, so a view rule that reaches a classed control cannot
- * redraw it and the window's focus floor does not pull its ring inside. A view still places a
- * control; `docs/ui-primitives.md` lists the classes.
- *
- * **A component family draws itself from its wrapper's attributes** (#2904). `ui/<family>/` holds
- * each family's one wrapper over its React Aria primitive and its stylesheet, keyed on
- * `data-scope`, `data-part`, `data-variant` and React Aria's state attributes, in the same layer
- * as the control classes it replaces; `docs/ui-primitives.md` lists the families.
+ * **Every control is a component family, in `components`** (#1834, #2904, #3294). `ui/<family>/`
+ * holds each family's one wrapper over its React Aria primitive and its stylesheet, keyed on
+ * `data-scope`, `data-part`, `data-variant` and React Aria's state attributes, from the tokens
+ * alone, in the layer above `App.css`, so a view rule that reaches a control cannot redraw it
+ * and the window's focus floor does not pull its ring inside. A view still places a control;
+ * `docs/ui-primitives.md` lists the families. They replaced one stylesheet of control classes,
+ * which is gone.
  *
  * **What the window draws over itself is one surface** (#1845). `primitives/overlays.css`, after
- * the controls in the same layer, gives a dialog, a popover, a menu and a tooltip one ground,
- * border, corner and elevation, and the scrim behind a modal question; a view only places and
- * sizes its overlay.
+ * the control families in the same layer, gives a dialog, a popover, a menu and a tooltip one
+ * ground, border, corner and elevation, and the scrim behind a modal question; a view only places
+ * and sizes its overlay.
  *
  * **A theme's component parts are drawn over the controls** (#2903). The engine writes one
  * stylesheet for the parts a theme sets (`purlis_core::theme::parts`), which `theme.ts` puts in
@@ -108,7 +105,6 @@
 @import "tailwindcss/utilities.css" layer(utilities);
 @import "./App.css" layer(charter);
 @import "./primitives/collections.css" layer(components);
-@import "./primitives/controls.css" layer(components);
 @import "./ui/button/button.css" layer(components);
 @import "./ui/field/field.css" layer(components);
 @import "./ui/select/select.css" layer(components);

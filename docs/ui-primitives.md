@@ -48,8 +48,8 @@ file is the defect.
   [The settings set](#the-settings-set-is-the-one-house-set) below for why.
 - purlis's own look, always. Radix ships **no CSS at all** — every primitive is an unstyled
   element with `data-state` attributes to hang rules off. A control takes its look from **its
-  class in `app/src/primitives/controls.css`** ([The control classes](#the-control-classes) below), and
-  `App.css` draws the rest of the window — but **no colour is written in either**: every one is
+  family's stylesheet in `app/src/ui/`** ([Every control is a family's](#every-control-is-a-familys)
+  below), and `App.css` draws the rest of the window — but **no colour is written in either**: every one is
   `var(--<token>)` and the values live in `app/src/theme/`. See `design-system.md`.
 - Native HTML that already does the job is not hand-rolled markup and does not need replacing:
   `<details>/<summary>`, `<label for>`, `<button>`. Reach for a primitive when the browser has
@@ -1025,49 +1025,44 @@ are `item` (the root), `icon`, `count` and `indicator`; both corners draw the `b
   over `duration.swap`. A view switch inside an open panel replays nothing, and closing has no
   motion.
 
-## The control classes
+## Every control is a family's
 
-**Each kind of control is one CSS class, drawn only from the tokens** (ADR 0094 §4, #1834). The
-class goes on the native element or on the element a Radix primitive renders, and the class is
-the whole of the look. There is still no React component for it: the call site shows the
-primitive and its props, and the class beside them. The classes share the `ui-` namespace with
-the collections above and with the settings set. A box a person types in is not a class: it is
-[the field family](#the-field-family); nor is a select: it is [the select
-family](#the-select-and-combobox-families); nor a checkbox, a radio, a switch, a segmented
-control, a slider or an option card: they are [the choice families](#the-choice-families).
+**Each kind of control is a component family, drawn only from the tokens** (ADR 0104, #3294). A
+button is [the button family](#the-button-family), a box a person types in [the field
+family](#the-field-family), a select [the select family](#the-select-and-combobox-families), a
+checkbox, a radio, a switch, a segmented control, a slider or an option card [the choice
+families](#the-choice-families), and a menu and its rows [the menu and popover
+families](#the-menu-and-popover-families). The one stylesheet of control classes they replaced
+(ADR 0094 §4, #1834) drew nothing once the last of them moved, and is gone. What still wears a
+`ui-` class natively is a list's row, a tree's row and a table ([Tables, list rows and tree
+rows](#tables-list-rows-and-tree-rows-share-one-style-each-ds-3)).
 
-**A button is the button family**, not a class: [The button family](#the-button-family). An
-answer that trusts text from outside is plain too (#2591): the repository-instructions tab's Add
+An answer that trusts text from outside is plain (#2591): the repository-instructions tab's Add
 to memory saves a repository's own words into memory, so it is a secondary `Button` beside Not
 now, with the same weight. It grants nothing, so it is not `variant="grants"`.
 
-What every class holds to:
+What every control holds to:
 
-- **One height.** A button's, a field's, a select's, a choice's and a menu's row's sizes are
-  their families'.
+- **One height.** Each family's sizes are its own.
 - **One focus ring.** A control's ring is `--focus-ring-width` in the theme's `focus.ring`,
   **outside** it at `--focus-ring-offset`.
 - **A toggle button is `ToggleButton`** (DS-12): pressed, it says `aria-pressed` and stands on
   `accent.surface` behind an `accent.base` edge, as a chosen segment does, and stays so under the
   pointer (*Changed only*, *Show ignored files*, Search's switches, a file's *Source*).
-- **Every colour is one token per declaration**, so `contrast.test.ts` reads each pair a class
-  draws. No colour hides behind an alias of the class's own.
-- **The classes are in the `components` layer, above `App.css`** (`styles.css`). A view rule
-  that reaches a classed control cannot redraw it, and the window's zero-specificity focus floor
-  cannot pull its ring inside. A view still places a control (margin, width, flex, order), which
-  no class sets. The sizes a view may hand a class are a leading icon's (`--ui-input-lead-*`).
+- **Every colour is one token per declaration**, so `contrast.test.ts` reads each pair a family
+  draws. No colour hides behind an alias of the family's own.
+- **The families are in the `components` layer, above `App.css`** (`styles.css`). A view rule
+  that reaches a control cannot redraw it, and the window's zero-specificity focus floor cannot
+  pull its ring inside. A view still places a control (margin, width, flex, order), which no
+  family sets.
 
-`app/src/primitives/controls.test.tsx` holds `primitives/controls.css` in the `components` layer
-and holds it empty: every control it drew is a family's now, and no control's rule comes back
-into it.
-
-**Moving a surface onto a class** is its own ticket, one surface at a time: put the class on the
-control, delete the view's rule that drew it, and keep the view's placement. Until then a control
-with no class has the baseline (`base.css`), and a classed one keeps its view's rule.
-`controls.guard.test.ts` holds this: a button, field, select, table or menu without its class
-fails, unless its line is in `controls.guard.allowance.ts`, the list of the controls the window
-had before the classes. Moving a control onto its class deletes its line there; nothing adds one
-(`docs/design-system.md`, "The guards, and the lists that only shrink").
+`controls.guard.test.ts` holds this: a native button, field, select, table or menu that is not
+its family's and does not wear its class fails, unless its line is in
+`controls.guard.allowance.ts`, the list of the controls the window had before the classes. A
+native `<button>` may wear a list's row or a tree's row; no class makes a native field, select,
+checkbox, radio, table or menu right. Moving a control onto its family deletes
+its line there; nothing adds one (`docs/design-system.md`, "The guards, and the lists that only
+shrink").
 
 ## Menus
 
@@ -1121,7 +1116,7 @@ words are written once, in `app/src/menuWords.ts`; and every menu is drawn by th
 7. **Type and geometry are the tokens'.** A row's words are the body role, the line under them
    and a tooltip the secondary, a shortcut the meta, a group's name the label
    ([Text roles](#text-roles)); a row is `--size-control` tall; a menu's width is the one menu
-   style's ([the control classes](#the-control-classes)).
+   style's ([the menu and popover families](#the-menu-and-popover-families)).
 
 **A context menu's rows are still the catalogue's, and only drawn here.** `menuModel.ts` takes
 every row `actions.menuRows` lists and decides none of them in or out, so an action cannot be
@@ -1155,7 +1150,7 @@ their rows are tabs and sentences with no part that gives way, so `.more-menu` h
 **What the window draws over itself is one surface** (#1845). A dialog, a popover, a menu and a
 tooltip share one ground (`surface.overlay`), one border, one corner (`--radius-lg`) and one lift
 (`--elevation-overlay`), so they read as related; a dialog and a popover share one padding
-(`--space-6`). The classes are in `app/src/primitives/overlays.css`, after the control classes in
+(`--space-6`). The classes are in `app/src/primitives/overlays.css`, after the control families in
 the same `components` layer, and the popover and menu families' surface is this one, a select's
 list's included.
 
@@ -1167,7 +1162,7 @@ list's included.
 
 (`--elevation-overlay`), so they read as related. A dialog is [the dialog
 family's](#the-dialog-family), drawn on that surface by `app/src/ui/dialog/dialog.css`; the other
-classes are in `app/src/primitives/overlays.css`, after the control classes in the same
+classes are in `app/src/primitives/overlays.css`, after the control families in the same
 `components` layer, and the menu's surface is this one.
 
 | Overlay | Class                                         | On                                                         |
