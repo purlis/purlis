@@ -212,7 +212,7 @@ pub fn attach(
     root: &Path,
     chat: &str,
     shown: &Shown,
-    backend: &dyn Fn(&Forge) -> Result<Box<dyn ForgeBackend>, String>,
+    backend: &BackendFor<'_>,
     caller: &Caller,
 ) -> Result<Attached, String> {
     let request = request_of(root, &shown.request)?;
@@ -266,6 +266,9 @@ pub fn attach(
         .map_err(|why| why.said().to_string())?;
     Ok(Attached { comment })
 }
+
+/// Makes the backend a proof is attached through, for a request's forge.
+pub type BackendFor<'a> = dyn Fn(&Forge) -> Result<Box<dyn ForgeBackend>, String> + 'a;
 
 fn changed() -> String {
     "What you were shown changed since: show it again before attaching.".to_string()
