@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793028186007,
+  "lastUpdate": 1793031904272,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -15328,6 +15328,42 @@ window.BENCHMARK_DATA = {
             "value": 687.5,
             "unit": "MB",
             "extra": "median of 6 samples: 660.1, 677.2, 684, 691, 691.2, 767 MB; window 409.2 MB, session host 278.8 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "0facfcb852900f48498924f36de523f8347c586a",
+          "message": "Runners: a pool runner chat's hook lines are recorded in the runner's event log (#3373)\n\n* Record a pool runner chat's hook lines in the runner's event log (#3304)\n\nThe host's hook channel records each line it heard under the project it\nholds the channel for, at its own path, not the path the window's entry\nnames. A pool's runner holds the project at <data>/projects/<id>, so it\nrefused every line before. The behaviour suite's one-writer behaviour now\nruns on the Docker pool target, reading the runner's log and spool.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* Tell a line recorded as heard from one drained later; check a clear's run id (#3304)\n\nThe pool behaviour now fails where the runner's host said it did not\nrecord a hook line, which a later spool drain hides from the event log,\nand finds the spool beside the hook socket inside the runner's container.\nA run a /clear begins is minted by the writer where the id the window\nnamed is no id or one a chat's current run has. One shared glob names a\nrunner container's data home in the tests that reach into it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-26T13:35:36Z",
+          "tree_id": "da9185b2554387ae2ba6a2cb574efd3ff229d0a5",
+          "url": "https://github.com/purlis/purlis/commit/0facfcb852900f48498924f36de523f8347c586a"
+        },
+        "date": 1793031901120,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1724.5,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1564.9, 1724.5, 1810.6 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 672.3,
+            "unit": "MB",
+            "extra": "median of 6 samples: 643.4, 657.2, 664.7, 680, 680.7, 765.1 MB; window 410.5 MB, session host 262.6 MB"
           }
         ]
       }
