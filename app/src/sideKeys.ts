@@ -16,6 +16,7 @@ import { opensSearch, searchKeySaid } from "./searchKey";
  * | Show Chats | `⌘⇧C` | `Ctrl+Shift+C` |
  * | Show Search (#1676) | `⌘⇧F` | `Ctrl+Shift+F` |
  * | Show Changes (#1676) | `⌃⇧G` | `Ctrl+Shift+G` |
+ * | Show Skills (#3266) | `⌘⇧X` | `Ctrl+Shift+X` |
  * | Show the Inbox (#1692) | `⌘⇧I` | `Ctrl+Shift+I` |
  * | Show or hide the Panel (#1737, P-6) | `⌘J` | `Ctrl+J` |
  * | Focus the next region (#1741, P-13, `regionCycle.ts`) | `F6` | `F6` |
@@ -52,6 +53,12 @@ import { opensSearch, searchKeySaid } from "./searchKey";
  * the keyboard keeps it, as it keeps Ctrl+B. ⌘⇧J is the tab's chats menu (`taskKeys.ts`): Shift
  * held is never this key.
  *
+ * **⌘⇧X is Skills'** (#3266), VS Code's key for its Extensions view, the side's other list of
+ * what a chat can be given. Ctrl+Shift+X is no terminal byte (Ctrl with a letter is encoded only
+ * without Shift; Ctrl+X alone is readline's prefix), so it is the window's while a chat has the
+ * keyboard, as Ctrl+Shift+E is. It is read here whatever the Skill studio's preview says: the
+ * window claims it only while the Skills view is there (`PlaneView`), and leaves it alone else.
+ *
  * ⌘⇧C is Chats' because it is free: VS Code gives it to an external terminal, which this window
  * has no use for, and ⌘⇧H, ⌘⇧J and ⌘⇧T are taken (`taskKeys.ts`, `shellKey.ts`).
  */
@@ -81,6 +88,7 @@ export function sideKeyOf(e: KeyboardEvent, mac: boolean): SideKey | undefined {
     return mac ? { toggle: "navigation" } : { toggle: "navigation", chatKeeps: true };
   }
   if (letter === "e") return { show: "explorer" };
+  if (letter === "x") return { show: "skills" };
   if (letter === "c") return mac ? { show: "chats" } : { show: "chats", chatKeeps: true };
   if (letter === "i") return { show: "inbox" };
   return undefined;
@@ -99,6 +107,7 @@ export function sideKeysSaid(
         explorer: "⌘⇧E",
         search: searchKeySaid(mac),
         changes: "⌃⇧G",
+        skills: "⌘⇧X",
         inbox: "⌘⇧I",
         panel: "⌘J",
         // F6 is a function key, the same on every platform (`regionCycle.ts`, #1751).
@@ -112,6 +121,7 @@ export function sideKeysSaid(
         explorer: "Ctrl+Shift+E",
         search: searchKeySaid(mac),
         changes: "Ctrl+Shift+G",
+        skills: "Ctrl+Shift+X",
         inbox: "Ctrl+Shift+I",
         panel: "Ctrl+J",
         next: "F6",

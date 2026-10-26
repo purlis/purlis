@@ -2,14 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { lazy, Suspense, useEffect, useRef, useState, type DragEvent } from "react";
-import {
-  FilePlus,
-  FolderGit2,
-  LoaderCircle,
-  MessageSquarePlus,
-  Plus,
-  Sparkles,
-} from "lucide-react";
+import { MessageSquarePlus, Plus, Sparkles } from "lucide-react";
 import {
   commands,
   type DeletedSkill,
@@ -32,7 +25,15 @@ import { Notice } from "./Notice";
 import { SkillCompatBadges } from "./SkillCompatBadges";
 import { SkillRowActions } from "./SkillRowActions";
 import { SkillDrafts } from "./SkillDrafts";
-import { askSkillChat, useSkillDrafts } from "./skillDraftAsks";
+import {
+  DRAFT_WITH_A_CHAT,
+  NEW_SKILL,
+  SkillStarts,
+  SkillsNotRead,
+  SkillsReading,
+  type SkillStart,
+} from "./SkillStarts";
+import { askDraft, useSkillDrafts } from "./skillDraftAsks";
 import { SkillSources } from "./SkillSources";
 import { Select } from "./ui/select/Select";
 import { Field, SettingRow } from "./settings/components";
@@ -58,10 +59,12 @@ import {
   scopeOfKey,
   skillStudioTitle,
   skillStudioView,
+  useStudioStart,
   whoseChats,
   type StudioScope,
 } from "./skillStudio";
 import { skillView } from "./skillRuns";
+import { BUILT_IN_STAYS, turnOf } from "./skillsListing";
 import { PersonaSkillAdd, changePersonaSkill } from "./personaSkills";
 import type { ViewRef } from "./tabs";
 
@@ -88,12 +91,6 @@ type Doing =
   | { what: "rename"; skill: StudioSkill; level: SkillLevel }
   | { what: "move"; skill: StudioSkill; from: SkillLevel; to: SkillLevel }
   | { what: "delete"; skill: StudioSkill; level: SkillLevel; users: SkillUsers };
-
-/** New skill's words, on the toolbar and on the empty studio's start alike: one act, one label. */
-const NEW_SKILL = "New skill";
-
-/** The words of the act that opens a chat to draft a skill, wherever it is offered. */
-const DRAFT_WITH_A_CHAT = "Ask a chat to draft a skill";
 
 /** The levels a skill can be pinned at (SK-15d): the project's. A built-in skill is always
  *  listed, and a harness's or a repo's is never purlis's to route. */
@@ -159,6 +156,12 @@ export function SkillStudioTab({
   const { workspace, persona } = whoseChats(scope);
   const on = studio?.on === true;
   const drafts = useSkillDrafts(plane, changed + done);
+  // A start the Skills view asked this studio to open on (#3266), taken once it is drawn: the
+  // New skill form, or its skill sources.
+  useStudioStart(scope, on, (start) => {
+    if (start === "new") setDoing({ what: "new" });
+    else showSources(sourcesHeading.current);
+  });
   useEffect(() => {
     let live = true;
     void commands.skillStudio(plane, workspace, persona).then((answer) => {
@@ -215,20 +218,8 @@ export function SkillStudioTab({
   }, [plane, on, changed, done]);
 
   if (refused !== undefined)
-    return (
-      <EmptyState
-        headline="purlis could not read this project's skills"
-        body={refused}
-        testid="skill-studio-refused"
-      />
-    );
-  if (studio === undefined)
-    return (
-      <p className="pending" aria-busy="true">
-        <LoaderCircle className="node-icon spinning" />
-        Reading the project's skills…
-      </p>
-    );
+    return <SkillsNotRead refused={refused} testid="skill-studio-refused" />;
+  if (studio === undefined) return <SkillsReading />;
   if (!studio.on)
     return (
       <EmptyState
@@ -359,63 +350,15 @@ export function SkillStudioTab({
       </span>
     </Notice>
   );
+  /** One of the three starts (decision 42), from the empty studio's buttons. */
+  const startWith = (start: SkillStart) => {
+    if (start === "draft") askDraft(plane, scope, studio.levels);
+    else if (start === "sources") showSources(sourcesHeading.current);
+    else setDoing({ what: "new" });
+  };
   /** The three starts of a project with no skill of its own (decision 42). */
   const starts = studio.first.starts && doing === undefined && (
-    <EmptyState
-      headline="This project has no skills of its own yet"
-      body="Every chat still gets the skills listed here. Start one of the project's own:"
-      mark={Sparkles}
-      testid="skill-studio-empty"
-      action={
-        <ul className="skill-starts" aria-label="Ways to start a skill">
-          <li>
-            <Button
-              icon={<MessageSquarePlus aria-hidden="true" />}
-              isDisabled={busy}
-              onPress={() =>
-                askSkillChat({
-                  plane,
-                  kind: "draft",
-                  level: levelFrom(scope, levelsFor(studio.levels, scope)),
-                })
-              }
-            >
-              {DRAFT_WITH_A_CHAT}
-            </Button>
-            <p className="honest">
-              Say what you want in a chat. Its draft comes back here to try and accept.
-            </p>
-          </li>
-          <li>
-            <Button
-              icon={<FolderGit2 aria-hidden="true" />}
-              isDisabled={busy}
-              onPress={() => {
-                // After the press is done with focus: WebKit hands it back to a pressed button.
-                window.setTimeout(() => {
-                  const heading = sourcesHeading.current;
-                  heading?.scrollIntoView?.({ block: "start" });
-                  heading?.focus();
-                }, 0);
-              }}
-            >
-              Browse sources
-            </Button>
-            <p className="honest">Install a reviewed copy of a skill from a git repository.</p>
-          </li>
-          <li>
-            <Button
-              icon={<FilePlus aria-hidden="true" />}
-              isDisabled={busy}
-              onPress={() => setDoing({ what: "new" })}
-            >
-              {NEW_SKILL}
-            </Button>
-            <p className="honest">Write one yourself, from a blank template.</p>
-          </li>
-        </ul>
-      }
-    />
+    <SkillStarts busy={busy} onStart={startWith} />
   );
   const picker = (
     <div className="vault-tools">
@@ -452,13 +395,7 @@ export function SkillStudioTab({
       </Button>
       <Button
         icon={<MessageSquarePlus aria-hidden="true" />}
-        onPress={() =>
-          askSkillChat({
-            plane,
-            kind: "draft",
-            level: levelFrom(scope, levelsFor(studio.levels, scope)),
-          })
-        }
+        onPress={() => askDraft(plane, scope, studio.levels)}
       >
         {DRAFT_WITH_A_CHAT}
       </Button>
@@ -730,10 +667,7 @@ export function SkillStudioTab({
                       : `Left out: ${skill.left_out ?? ""}`}
                     {pinSwitch(skill)}
                     {skill.on && skill.level === "built-in" && (
-                      <span className="honest">
-                        {" "}
-                        It ships with purlis, and cannot be turned off.
-                      </span>
+                      <span className="honest"> {BUILT_IN_STAYS}</span>
                     )}
                     {studio.clashes
                       .filter(
@@ -784,27 +718,18 @@ export function SkillStudioTab({
                         {skill.not_granted}
                       </span>
                     )}
-                    {workspace !== null &&
-                      skill.level === "project" &&
-                      skill.not_granted === null && (
-                        <>
-                          {" "}
-                          <Button
-                            size="sm"
-                            isDisabled={busy}
-                            onPress={() =>
-                              change(
-                                skill.on
-                                  ? "The skill was not turned off"
-                                  : "The skill was not turned on",
-                                () => commands.skillTurn(plane, workspace, skill.name, !skill.on),
-                              )
-                            }
-                          >
-                            {skill.on ? `Turn off in ${workspace}` : `Turn on in ${workspace}`}
-                          </Button>
-                        </>
-                      )}
+                    {workspace !== null && (
+                      <TurnSwitch
+                        skill={skill}
+                        workspace={workspace}
+                        busy={busy}
+                        onTurn={(turn) =>
+                          change(turn.refused, () =>
+                            commands.skillTurn(plane, workspace, skill.name, turn.on),
+                          )
+                        }
+                      />
+                    )}
                   </td>
                   <td>{skill.description}</td>
                   <td>
@@ -1295,6 +1220,40 @@ function GrantPicker({
       }}
     />
   );
+}
+
+/** **A project skill's switch in one workspace** (#2770), where it has one (`turnOf`): the
+ *  Skills view's menu offers the same. */
+function TurnSwitch({
+  skill,
+  workspace,
+  busy,
+  onTurn,
+}: {
+  skill: StudioSkill;
+  workspace: string;
+  busy: boolean;
+  onTurn: (turn: { on: boolean; refused: string }) => void;
+}) {
+  const turn = turnOf(skill, workspace);
+  if (!("label" in turn)) return null;
+  return (
+    <>
+      {" "}
+      <Button size="sm" isDisabled={busy} onPress={() => onTurn(turn)}>
+        {turn.label}
+      </Button>
+    </>
+  );
+}
+
+/** **Browse sources**: the studio's skill sources brought into view with the keyboard on their
+ *  heading, after the press is done with focus (WebKit hands it back to a pressed button). */
+function showSources(heading: HTMLHeadingElement | null): void {
+  window.setTimeout(() => {
+    heading?.scrollIntoView?.({ block: "start" });
+    heading?.focus();
+  }, 0);
 }
 
 /** `text` with its first letter lower-cased, to go inside a sentence. */

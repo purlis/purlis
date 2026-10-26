@@ -139,6 +139,22 @@ export function personaIn(name: string): About {
 }
 
 /**
+ * **What the Skills view lists** (#3266), for a chat in `workspace` or at the root (`undefined`):
+ * the project's own files (its `skills/`, its settings), a workspace's, every persona's, which a
+ * persona brings into every workspace, and each chat program's configuration. Not a todo, a
+ * memory, a session record or a chat.
+ */
+export function skillsIn(workspace: string | undefined): About {
+  return (change) =>
+    change.kind === "project" ||
+    change.kind === "harness" ||
+    change.kind === "persona" ||
+    (change.kind === "workspace" &&
+      workspace !== undefined &&
+      (change.workspace === null || change.workspace === workspace));
+}
+
+/**
  * Whether what the core said moved concerns a view tab that shows `about`, or any of the
  * views' stores with no `about`.
  *
