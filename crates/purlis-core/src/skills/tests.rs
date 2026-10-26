@@ -905,7 +905,8 @@ fn use_skill_types_a_skill_of_the_set_in_its_harnesss_syntax_and_holds_the_run_i
             harness,
             ..running(root, &bundle, Some("smart-ide"))
         });
-        let typing = chat.typed("review", &values).unwrap();
+        let salt = crate::skillspan::PromptSalt::of_chat("01JB00000000000000000000C4").unwrap();
+        let typing = chat.typed("review", &values, &salt).unwrap();
         assert_eq!(typing.text, text, "{harness:?}");
         let Start::Held(held) = typing.start else {
             panic!("a listed skill's run is held")
@@ -915,9 +916,9 @@ fn use_skill_types_a_skill_of_the_set_in_its_harnesss_syntax_and_holds_the_run_i
         assert_eq!(held.workspace.as_deref(), Some("smart-ide"));
         assert_eq!(held.level.map(|level| level.origin), Some(Origin::Project));
         // What a prompt holding the text is marked with.
-        let sent = crate::skillspan::PromptMarks::of(&format!("{text} and more"));
+        let sent = crate::skillspan::PromptMarks::of(&format!("{text} and more"), &salt);
         assert!(sent.holds(held.text), "{harness:?}");
-        let refused = chat.typed("deploy", &[]).unwrap_err();
+        let refused = chat.typed("deploy", &[], &salt).unwrap_err();
         assert!(
             refused.contains("not one of this chat's skills"),
             "{refused}"

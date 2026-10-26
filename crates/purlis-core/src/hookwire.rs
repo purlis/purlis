@@ -237,14 +237,14 @@ impl Report {
                     .then(|| field("model"))
                     .flatten()
                     .and_then(|model| crate::state::Model::new(&model)),
-                // Which line starts the prompt holds, as digests and never its words: how a
-                // skill Use skill… typed is known to be in it (#2775).
-                prompt_marks: if event == Event::UserPromptSubmit {
-                    field("prompt")
-                        .map(|prompt| crate::skillspan::PromptMarks::of(&prompt))
-                        .unwrap_or_default()
-                } else {
-                    crate::skillspan::PromptMarks::default()
+                // What the prompt holds, as digests salted by the chat and never its words: how
+                // a skill Use skill… typed (#2775) or a curation action's prompt (#2783) is
+                // known to be in it, marked only as far as the chat's harness needs (#3029).
+                prompt_marks: match event {
+                    Event::UserPromptSubmit => field("prompt")
+                        .map(|prompt| prompt_marks(&prompt, env))
+                        .unwrap_or_default(),
+                    _ => crate::skillspan::PromptMarks::default(),
                 },
             },
         })
@@ -256,6 +256,28 @@ impl Report {
         let mut kept = self.clone();
         kept.detail.prompt_marks = crate::skillspan::PromptMarks::default();
         kept
+    }
+}
+
+/// **What a hook marks of the prompt the person sent** (SK-38, #3029), under the chat's salt
+/// ([`crate::skillspan::PromptSalt`]): every stretch of its lines where the chat's harness
+/// confirms a typed skill by the prompt (Codex, opencode), and only its lead where the harness
+/// names the skill a prompt started (Claude Code), as a curation action's prompt is known by its
+/// lead on every harness. Nothing outside a chat that has an id, or on a harness purlis does not
+/// know.
+fn prompt_marks(
+    prompt: &str,
+    env: &dyn Fn(&str) -> Option<String>,
+) -> crate::skillspan::PromptMarks {
+    use crate::skillspan::{Confirmed, PromptMarks, PromptSalt};
+    let harness = crate::harness::Harness::of_chat(chat_harness(env).as_deref());
+    match (
+        PromptSalt::read(env),
+        harness.map(crate::harness::Harness::typed_start),
+    ) {
+        (Some(salt), Some(Confirmed::ByPrompt)) => PromptMarks::of(prompt, &salt),
+        (Some(salt), Some(Confirmed::ByName)) => PromptMarks::lead_of(prompt, &salt),
+        _ => PromptMarks::default(),
     }
 }
 
@@ -9472,3 +9494,7 @@ mod tests {
 #[cfg(all(test, unix))]
 #[path = "hookwire/delivery_tests.rs"]
 mod delivery_tests;
+
+#[cfg(test)]
+#[path = "hookwire/prompt_marks_tests.rs"]
+mod prompt_marks_tests;

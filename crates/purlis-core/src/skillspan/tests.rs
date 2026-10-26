@@ -8,6 +8,11 @@ use crate::state::{Detail, Event};
 const RUN: &str = "01JB0000000000000000000001";
 const OTHER: &str = "01JB0000000000000000000002";
 
+/// The chat's own salt: what its hook and the window digest its prompts under.
+fn salt() -> PromptSalt {
+    PromptSalt::of_chat("01JB00000000000000000000C4").expect("a chat's id")
+}
+
 fn report(event: Event) -> Report {
     Report {
         chat: 4,
@@ -22,7 +27,7 @@ fn report(event: Event) -> Report {
 /// A prompt the person sent, whose text was `prompt`, as its hook marks it.
 fn prompt(prompt: &str) -> Report {
     let mut sent = report(Event::UserPromptSubmit);
-    sent.detail.prompt_marks = PromptMarks::of(prompt);
+    sent.detail.prompt_marks = PromptMarks::of(prompt, &salt());
     sent
 }
 
@@ -32,7 +37,7 @@ fn typed(skill: &str, run: &str, text: &str, confirmed: Confirmed) -> Typed {
         run: run.parse().unwrap(),
         workspace: Some("ops".to_owned()),
         level: None,
-        text: PromptMarks::digest(text),
+        text: PromptMarks::digest(text, &salt()),
         confirmed,
     }
 }
@@ -230,7 +235,7 @@ fn a_sub_agents_prompt_opens_nothing_typed_into_its_chat() {
 
 #[test]
 fn a_prompts_marks_hold_each_lines_stretches_and_nothing_else() {
-    let marks = PromptMarks::of("  /deploy  /review   42 \"the tests\"\nplease\n");
+    let marks = PromptMarks::of("  /deploy  /review   42 \"the tests\"\nplease\n", &salt());
     for held in [
         "/deploy",
         "/review 42 \"the tests\"",
@@ -238,15 +243,37 @@ fn a_prompts_marks_hold_each_lines_stretches_and_nothing_else() {
         "please",
         "42",
     ] {
-        assert!(marks.holds(PromptMarks::digest(held)), "{held}");
+        assert!(marks.holds(PromptMarks::digest(held, &salt())), "{held}");
     }
     assert!(
-        !marks.holds(PromptMarks::digest("/review please")),
+        !marks.holds(PromptMarks::digest("/review please", &salt())),
         "across lines"
     );
-    assert!(!marks.holds(PromptMarks::digest("/lint")));
-    assert!(PromptMarks::of("").is_empty());
+    assert!(!marks.holds(PromptMarks::digest("/lint", &salt())));
+    assert!(PromptMarks::of("", &salt()).is_empty());
     assert!(!marks.is_empty());
+}
+
+#[test]
+fn a_prompts_marks_are_salted_by_its_chat_so_another_chats_digest_of_the_same_words_misses() {
+    // SK-38 (#3029): the same words digest apart in two chats, so a filter of a short prompt is
+    // not matched against digests made anywhere but its own chat.
+    let other = PromptSalt::of_chat("01JB00000000000000000000C5").expect("a chat's id");
+    assert_ne!(
+        PromptMarks::digest("/deploy", &salt()),
+        PromptMarks::digest("/deploy", &other)
+    );
+    let marks = PromptMarks::of("/deploy", &salt());
+    assert!(marks.holds(PromptMarks::digest("/deploy", &salt())));
+    assert!(!marks.holds(PromptMarks::digest("/deploy", &other)));
+    assert_eq!(PromptSalt::of_chat("  "), None, "no id, no salt");
+}
+
+#[test]
+fn a_debug_dump_of_a_salt_or_of_a_prompts_marks_shows_neither() {
+    assert_eq!(format!("{:?}", salt()), "PromptSalt(..)");
+    let marks = PromptMarks::of("/deploy now", &salt());
+    assert_eq!(format!("{marks:?}"), "PromptMarks(..)");
 }
 
 #[test]
@@ -275,7 +302,7 @@ const CURATION: &str = "Use purlis's compact skill to compact and improve the pe
 #[test]
 fn a_skill_the_turn_of_a_curation_prompt_starts_is_started_by_the_curation_action() {
     let mut tracker = Tracker::default();
-    tracker.prompted("4", Prompted::of(StartedBy::Curation, CURATION));
+    tracker.prompted("4", Prompted::of(StartedBy::Curation, CURATION, &salt()));
     tracker.report("4", &prompt(CURATION), 0, || None);
     let opened = tracker
         .call(
@@ -309,7 +336,7 @@ fn a_skill_the_turn_of_a_curation_prompt_starts_is_started_by_the_curation_actio
 #[test]
 fn a_curation_prompt_the_person_replaced_before_sending_starts_nothing_of_its_own() {
     let mut tracker = Tracker::default();
-    tracker.prompted("4", Prompted::of(StartedBy::Curation, CURATION));
+    tracker.prompted("4", Prompted::of(StartedBy::Curation, CURATION, &salt()));
     tracker.report("4", &prompt("something else entirely"), 0, || None);
     let opened = tracker
         .call(
@@ -325,7 +352,7 @@ fn a_curation_prompt_the_person_replaced_before_sending_starts_nothing_of_its_ow
 #[test]
 fn a_curation_prompt_is_held_until_it_is_sent_and_goes_with_the_session() {
     let mut tracker = Tracker::default();
-    tracker.prompted("4", Prompted::of(StartedBy::Curation, CURATION));
+    tracker.prompted("4", Prompted::of(StartedBy::Curation, CURATION, &salt()));
     // Read for long before it is sent: still the curation action's.
     tracker.report("4", &prompt(CURATION), HELD_FOR_MS * 3, || None);
     let opened = tracker
@@ -338,7 +365,7 @@ fn a_curation_prompt_is_held_until_it_is_sent_and_goes_with_the_session() {
         .expect("a run opens");
     assert_eq!(opened.started_by, StartedBy::Curation);
 
-    tracker.prompted("4", Prompted::of(StartedBy::Curation, CURATION));
+    tracker.prompted("4", Prompted::of(StartedBy::Curation, CURATION, &salt()));
     tracker.report("4", &report(Event::SessionEnd), 2, || None);
     tracker.report("4", &prompt(CURATION), 3, || None);
     let after = tracker
@@ -350,7 +377,7 @@ fn a_curation_prompt_is_held_until_it_is_sent_and_goes_with_the_session() {
 #[test]
 fn only_a_curation_action_or_a_trigger_is_held_for_a_prompt() {
     let mut tracker = Tracker::default();
-    tracker.prompted("4", Prompted::of(StartedBy::Read, CURATION));
+    tracker.prompted("4", Prompted::of(StartedBy::Read, CURATION, &salt()));
     tracker.report("4", &prompt(CURATION), 0, || None);
     let opened = tracker
         .call(
@@ -386,7 +413,7 @@ fn every_start_has_a_word_of_its_own_read_back_as_itself() {
 
 #[test]
 fn a_debug_dump_of_a_prompt_held_says_what_put_it_there_and_nothing_of_the_prompt() {
-    let prompted = Prompted::of(StartedBy::Curation, CURATION);
+    let prompted = Prompted::of(StartedBy::Curation, CURATION, &salt());
     let dumped = format!("{prompted:?}");
     assert!(dumped.contains("Curation"), "{dumped}");
     assert!(!dumped.contains(&prompted.lead.to_string()), "{dumped}");

@@ -324,7 +324,8 @@ fn use_skill_asks_a_chat_to_load_a_hidden_skill_and_holds_no_run_for_it() {
             ..running(root, &bundle, None)
         });
 
-        let typing = chat.typed("skill-07", &[]).unwrap();
+        let salt = crate::skillspan::PromptSalt::of_chat("01JB00000000000000000000C4").unwrap();
+        let typing = chat.typed("skill-07", &[], &salt).unwrap();
 
         assert_eq!(
             typing.text, "Load the skill skill-07 with skill_load and follow it.",
@@ -335,7 +336,7 @@ fn use_skill_asks_a_chat_to_load_a_hidden_skill_and_holds_no_run_for_it() {
             crate::skills::Start::ByLoad,
             "the load opens the run"
         );
-        let built_in = chat.typed("handoff", &[]).unwrap();
+        let built_in = chat.typed("handoff", &[], &salt).unwrap();
         assert!(
             matches!(built_in.start, crate::skills::Start::Held(_)),
             "a listed skill is typed as before"
