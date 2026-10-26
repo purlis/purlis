@@ -123,18 +123,25 @@ export function useChatBrowsers(plane: string): {
 /**
  * **The person's own browsers a crash of the window left running** (#2025): the core takes them
  * back as the project's chats come back, and each is handed to `open` once, for a view tab of its
- * own, as the project opens and each time the core says browsers came or went. A chat's browsers
+ * own, once `open` is given and each time the core says browsers came or went. A chat's browsers
  * come back with their chats, under them in the Chats list ({@link useChatBrowsers}).
  */
-export function useBrowsersTakenBack(plane: string, open: (program: string) => void): void {
+export function useBrowsersTakenBack(
+  plane: string,
+  open: ((program: string) => void) | undefined,
+): void {
   useEffect(() => {
+    // Nothing is taken until the window can open a tab that stays.
+    if (open === undefined) return;
     let gone = false;
     let stop: (() => void) | undefined;
     const take = () => {
       void commands
         .browsersTakenBack(plane)
+        // Opened even where this effect has been cleaned up since it asked: the core hands each
+        // over once, and one dropped would run with no tab (a StrictMode remount asks twice).
         .then((answer) => {
-          if (gone || answer.status === "error") return;
+          if (answer.status === "error") return;
           for (const program of answer.data) open(program);
         })
         // A window whose core cannot say opens none.

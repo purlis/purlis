@@ -3671,7 +3671,8 @@ export const PlaneView = memo(function PlaneView({
     (program: string) => showView(browserView(program), BROWSER_TITLE),
     [showView],
   );
-  useBrowsersTakenBack(plane, showTakenBack);
+  // Once the record's tabs are adopted, which lays the strip out afresh.
+  useBrowsersTakenBack(plane, settled ? showTakenBack : undefined);
   /** Their programs: a tab showing one closes only its view, since it ends with its chat, and
    *  one pinned past its chat ends only when the person stops it (#2022). */
   const chatPrograms = useMemo(

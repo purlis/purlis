@@ -217,8 +217,10 @@ async fn a_view_attached_again_after_the_window_came_back_draws_from_the_next_wh
         };
         reader.ack(bytes.len()).await.unwrap();
         for frame in frames.push(&bytes).expect("each frame is whole") {
-            let (_, image) = frame.aimed().unwrap();
-            images.push(image.to_vec());
+            // An image; the page's origin rides the stream too (1.35).
+            if let Some((_, image)) = frame.aimed() {
+                images.push(image.to_vec());
+            }
         }
     }
     assert!(

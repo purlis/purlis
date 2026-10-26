@@ -72,7 +72,8 @@ type Asked = { cmd: string; args: Record<string, unknown> };
 /** The core, with chats 1 and 2 open in alpha and `browsers` as their browsers. */
 function core(browsers: ChatBrowser[]) {
   const asked: Asked[] = [];
-  const listeners = new Map<string, number>();
+  // Every listener of each event: more than one part of the window hears an event.
+  const listeners = new Map<string, number[]>();
   const views = new Map<string, Channel<BrowserFrame>>();
   let view = 0;
   const open = [chat(1), chat(2)];
@@ -81,7 +82,7 @@ function core(browsers: ChatBrowser[]) {
     asked.push({ cmd, args: a });
     if (cmd === "plugin:event|listen") {
       const { event, handler } = args as { event: string; handler: number };
-      listeners.set(event, handler);
+      listeners.set(event, [...(listeners.get(event) ?? []), handler]);
       return 1;
     }
     if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
@@ -143,14 +144,15 @@ function core(browsers: ChatBrowser[]) {
     /** The core says this project's chats' browsers came or went. */
     listed: (now: ChatBrowser[]) => {
       browsers.splice(0, browsers.length, ...now);
-      const handler = listeners.get("chat-browsers-listed");
-      if (handler === undefined) throw new Error("the window is not listening for browsers");
+      const handlers = listeners.get("chat-browsers-listed") ?? [];
+      if (handlers.length === 0) throw new Error("the window is not listening for browsers");
       act(() => {
-        window.__TAURI_INTERNALS__.runCallback(handler, {
-          event: "chat-browsers-listed",
-          id: 1,
-          payload: { plane: PLANE },
-        });
+        for (const handler of handlers)
+          window.__TAURI_INTERNALS__.runCallback(handler, {
+            event: "chat-browsers-listed",
+            id: 1,
+            payload: { plane: PLANE },
+          });
       });
     },
     /** The view of `program` attached as `role` is told its page's origin (#2300). */

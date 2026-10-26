@@ -26,12 +26,11 @@ const FIRST_BROWSER = 300_000;
 
 /** What the window says on its trouble line, where it says anything: why a browser did not start. */
 async function troubleSaid(): Promise<string> {
-  return browser.execute(
-    () =>
-      [...document.querySelectorAll('[role="alert"], [role="status"]')]
-        .map((one) => one.textContent ?? "")
-        .filter((said) => said.trim() !== "")
-        .join(" | "),
+  return browser.execute(() =>
+    [...document.querySelectorAll('[role="alert"], [role="status"]')]
+      .map((one) => one.textContent ?? "")
+      .filter((said) => said.trim() !== "")
+      .join(" | "),
   );
 }
 
