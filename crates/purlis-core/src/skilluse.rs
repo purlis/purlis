@@ -328,14 +328,27 @@ impl Run {
     }
 
     /// Whether this is a run of skill `name`: by its whole name, or by its name without the
-    /// plugin's namespace a harness started it by (`purlis:secrets` is a run of `secrets`).
+    /// plugin's namespace a harness started it by (`purlis:secrets` is a run of `secrets`), or,
+    /// for a run of a built-in skill, without the prefix opencode knows it by
+    /// (`purlis-secrets`).
     pub fn is_of(&self, name: &str) -> bool {
         self.skill == name || self.skill_name() == name
     }
 
-    /// Its skill by name, without the namespace a harness started it by.
+    /// Its skill by name, without the namespace a harness started it by, nor the prefix of a
+    /// built-in skill's own name on opencode ([`crate::skills::Route::built_in_name`]).
     pub fn skill_name(&self) -> &str {
-        skill_name(&self.skill)
+        let name = skill_name(&self.skill);
+        let built_in = self
+            .copy
+            .as_ref()
+            .is_some_and(|copy| copy.level.origin == crate::skills::Origin::BuiltIn);
+        if built_in {
+            name.strip_prefix(crate::skills::BUILT_IN_OWN_PREFIX)
+                .unwrap_or(name)
+        } else {
+            name
+        }
     }
 
     /// When it started, in seconds since 1970, where its row's stamp can be read.

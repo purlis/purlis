@@ -3625,6 +3625,12 @@
         "tooltip.detail.text": {
           "$ref": "#/$defs/part-text"
         },
+        "tooltip.shortcut.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "tooltip.shortcut.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
         "popover.root.fill": {
           "$ref": "#/$defs/part-fill"
         },
@@ -5767,6 +5773,24 @@
         "list.header.font-weight": {
           "$ref": "#/$defs/part-font-weight"
         },
+        "list.shortcut.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.shortcut.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "list.shortcut.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.shortcut.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.shortcut.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.shortcut.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
         "titlebar.workspace.fill": {
           "$ref": "#/$defs/part-fill"
         },
@@ -7656,6 +7680,30 @@
         },
         "option-card.check.tile.disabled.text": {
           "$ref": "#/$defs/part-text"
+        },
+        "panel-separator.root.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "panel-separator.root.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "panel-separator.root.pressed.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "panel-separator.root.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "panel-separator.grip.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "panel-separator.grip.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "panel-separator.grip.pressed.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "panel-separator.grip.focused.fill": {
+          "$ref": "#/$defs/part-fill"
         }
       }
     }

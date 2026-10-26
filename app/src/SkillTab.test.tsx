@@ -10,7 +10,14 @@ import type { SkillStats } from "./bindings";
 
 const NO_TOTALS: SkillStats = { by_harness: [], by_persona: [], by_workspace: [] };
 
-const EMPTY_PAGE = { copies: [], uses: [], used_by: [], uses_cut: false };
+const EMPTY_PAGE = {
+  copies: [],
+  uses: [],
+  used_by: [],
+  uses_cut: false,
+  pinned_by: [],
+  pins_refused: [],
+};
 
 afterEach(() => {
   cleanup();

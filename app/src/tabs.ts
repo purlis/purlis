@@ -80,6 +80,16 @@ export const SAVING_TITLE = "Saving";
 export const LICENCES_VIEW: ViewRef = { from: null, view: "licences", key: "" };
 
 /**
+ * **The keyboard shortcuts** (#2921, N25): the cheat sheet the key registry draws
+ * (`keys/ShortcutsView.tsx`), opened from the palette and by its key. One per project, about
+ * nothing in it.
+ */
+export const SHORTCUTS_VIEW: ViewRef = { from: null, view: "shortcuts", key: "" };
+
+/** What the shortcuts' tab is called. */
+export const SHORTCUTS_TITLE = "Keyboard shortcuts";
+
+/**
  * **Settings at a workspace's level** (SE-20, #1170; first a page of its own, charter-app#280):
  * the Settings tab keyed by the level and its target — the workspace — so there is one per
  * workspace, deduplicated by the same `viewKey` and filed on that workspace's strip. It keeps the
@@ -1543,6 +1553,28 @@ function withoutPaneOf(tabs: Tabs, session: number): Tabs {
   const focused = tab.focused === at.pane ? panes(left)[0].pane : tab.focused;
   const kept = showing({ ...tab, layout: left, focused }, tab.shows);
   return { ...tabs, byId: { ...tabs.byId, [tab.id]: kept } };
+}
+
+/**
+ * **The panes a chat moved into** (#3271): each pane of `after` that `before` did not have,
+ * with the pane its chat was at home in before ({@link homeOf}), where its Notices were drawn: a
+ * task given a tab of its own ({@link moveToOwnTab}) or a pane beside its session
+ * ({@link placeBeside}). A pane whose chat had no home before is new, and is not listed.
+ */
+export function panesMovedInto(
+  before: Tabs,
+  after: Tabs,
+  askedBy: AskedBy,
+): { from: number; to: number }[] {
+  if (before === after) return [];
+  const had = new Set(before.order.flatMap((id) => contentsOf(before, id).map((one) => one.pane)));
+  return after.order.flatMap((id) =>
+    panesOf(after, id).flatMap(({ pane, session }) => {
+      if (had.has(pane)) return [];
+      const home = homeOf(before, session, askedBy);
+      return home === undefined || home.pane === pane ? [] : [{ from: home.pane, to: pane }];
+    }),
+  );
 }
 
 /**

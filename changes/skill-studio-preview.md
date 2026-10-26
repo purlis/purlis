@@ -54,7 +54,8 @@
   `.claude/skills` into its `skills/`, shared with every workspace as before. It rewrites the old
   `charter:<skill>` names to `purlis:<skill>`, but never inside quoted code or an image name. It
   all goes in one commit that `git revert` undoes. It checks first that every chat keeps its
-  skills, and changes nothing if one would lose one. From then on every chat in the project gets
+  skills, and changes nothing if one would lose one or if two skills or folders differ only in
+  case, which a disk that ignores case reads as one. From then on every chat in the project gets
   those skills, the Skill studio switched on or off, and Codex chats get them too. Clones stop
   getting a copy of `.claude/skills`. Your clones lose their copies at once and a teammate's the
   next time a chat starts there, while a copy someone edited is kept and named. It says what it
@@ -119,6 +120,11 @@
   `-p <persona>`, and the router never hides it. The Skill studio and `purlis skill list` say
   which skills are pinned and why any other is hidden, and _Use skill…_ marks the hidden ones,
   says how many are in the index skill, and still starts them for you.
+- **Pin and unpin a skill in the Skill studio** (Skill studio preview, #3232). Each skill's row
+  in the studio for a workspace's chats or a persona's has a _Pinned_ switch, one commit each
+  way. A skill's tab lists every workspace and persona that pins it, each with _Unpin_. Where a
+  chat's pinned skills alone are past the budget, its Skills chip and _Use skill…_ name the
+  studio to unpin them in, such as _Skill studio · ops_.
 
 ### Fixed
 

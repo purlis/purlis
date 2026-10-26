@@ -962,6 +962,7 @@ export const commands = {
 	skillRestore: __WINDOW_ONLY_RESULT,
 	skillGrant: __WINDOW_ONLY_RESULT,
 	skillTurn: __WINDOW_ONLY_RESULT,
+	skillPin: __WINDOW_ONLY_RESULT,
 	/**
 	 *  **What a skill's tab shows beside its runs**: each copy's history, lifecycle state and
 	 *  owners, and the skills it names and that name it. Nothing while the flag is off.
@@ -3397,7 +3398,12 @@ export type ClashOutcome =
 /**  Both copies load. */
 "both-load" | 
 /**  The repo's narrower copy is the one the chat gets; the plane's is left out. */
-"repo-wins";
+"repo-wins" | 
+/**
+ *  Both load under one name, and the chat may use either: a copy named as one of purlis's
+ *  own skills where the program reads every skill by its bare name.
+ */
+"either-one";
 
 /**  What [`CLOSE_HANDED`] carries: the project and the chats a link's close would end. */
 export type CloseHanded = {
@@ -9287,6 +9293,11 @@ export type SkillBudget = {
 	 *  all of it is then listed (ADR 0102 §4).
 	 */
 	still_over: BudgetStillOver | null,
+	/**
+	 *  Which of the chat's workspace and persona pin a skill (SK-15d): where the pins are
+	 *  undone in the Skill studio when they alone are past the budget.
+	 */
+	pinned_by: SkillPinner[],
 };
 
 /**
@@ -9343,6 +9354,13 @@ export type SkillDetails = {
 	used_by: string[],
 	/**  Whether the project holds more skills than the graph reads. */
 	uses_cut: boolean,
+	/**
+	 *  Every workspace and persona that pins it (SK-15d), so no router hides it from their
+	 *  chats: the workspaces first, then the personas.
+	 */
+	pinned_by: SkillPinner[],
+	/**  Of those, each whose pins a chat reads none of, and why (SK-15d). */
+	pins_refused: SkillPinsRefused[],
 };
 
 /**  One version's diff. */
@@ -9542,6 +9560,29 @@ export type SkillPanel = {
  *  extension adds, by its id and the panel's.
  */
 export type SkillPanelKey = { kind: "grades" } | { kind: "runs" } | { kind: "extension"; extension: string; panel: string };
+
+/**
+ *  **Whose pins a pin is** (SK-15d, #3232): a workspace's or a persona's, by name. The core's
+ *  `PinnedBy`.
+ */
+export type SkillPinner = { at: "workspace"; name: string } | { at: "persona"; name: string };
+
+/**
+ *  **Why a chat reads none of a pinner's pins** (SK-15d): the core's `PinsRefused`, with whose
+ *  list it is.
+ */
+export type SkillPinsRefused = {
+	by: SkillPinner,
+	/**
+	 *  What is wrong, in a clause: `"Not A Name" is not a skill's name (…)`, `the list holds more
+	 *  than 64 pins`.
+	 */
+	why: string,
+	/**  The entry that is not a skill's name, which Unpin takes out; null for too many. */
+	bad: string | null,
+	/**  The file the list is written in, relative to the project. */
+	file: string,
+};
 
 /**  A skill router (SK-15, ADR 0102): the core's `Router`. */
 export type SkillRouter = 
@@ -9941,6 +9982,11 @@ export type Studio = {
 	clashes: StudioClash[],
 	/**  What it offers to start from (SK-22, #2785): the core's `skills::first_open`. */
 	first: StudioFirst,
+	/**
+	 *  Why a chat reads none of the pins of the workspace or the persona it is filtered to,
+	 *  where it reads none (SK-15d): its rows' Pin switches then say so.
+	 */
+	pins_refused: SkillPinsRefused | null,
 };
 
 /**
@@ -10138,6 +10184,11 @@ export type StudioSkill = {
 	hidden: SkillHiddenOn[],
 	/**  Whether that chat's workspace or persona pins it, so no router hides it. */
 	pinned: boolean,
+	/**
+	 *  Which of the studio's workspace and persona have it in their pins, as written (SK-15d):
+	 *  what the row's Pin switch shows. Empty for a skill from outside the plane.
+	 */
+	pinned_by: SkillPinner[],
 };
 
 /**

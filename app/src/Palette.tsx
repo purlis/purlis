@@ -3,13 +3,11 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AimedList, AimedOption } from "./ui/list/AimedList";
-import { RowLabel, RowLead, RowTrail } from "./ui/list/Row";
+import { RowLabel, RowLead, RowShortcut, RowTrail } from "./ui/list/Row";
 import { DialogSurface } from "./ui/dialog/Dialog";
 import {
   aim,
-  CHAT_KEYBOARD,
   inPalette,
-  RENAMES_ON_F2,
   narrow,
   PASS_THROUGH_ID,
   PASS_THROUGH_KEY,
@@ -20,7 +18,15 @@ import {
 } from "./actions";
 import { commands, type FileScope, type FoundFile, type PlaneId } from "./bindings";
 import { hitSaid, scopeSaid, useFileFind, type Part } from "./fileFind";
-import { opensTheSwitcher } from "./switcherKey";
+import { isKey, noteWithoutKey, pressed, rowAriaKeys, rowKey } from "./keys/registry";
+import {
+  fileKeyOf,
+  fileKeySaid,
+  opensIt,
+  theChatKeepsIt,
+  theTabRenamesOnIt,
+  type FileKey,
+} from "./keys/paletteKeys";
 import { onAMac } from "./tabKeys";
 import { landSettingsFocus } from "./settings/entering";
 import { theKeyboardIsBack, thePaletteIsUp } from "./keyboardBack";
@@ -294,7 +300,10 @@ export function Palette({
     const key = (e: KeyboardEvent) => {
       // The switcher's key (FR-27). A terminal sends nothing for it (`switcherKey.ts`), so it
       // is claimed wherever the keyboard is, and there is nothing to hand back.
-      if (switchesNow.current && opensTheSwitcher(e, onAMac())) {
+      // Its keys are the registry's (#2921, `keys/registry.ts`): a modal that is up keeps them,
+      // but while the palette is up the modal is its own.
+      const held = { ownModal: up.current };
+      if (switchesNow.current && pressed(e, ["finder.open"], held) !== undefined) {
         e.preventDefault();
         e.stopPropagation();
         if (e.repeat) return;
@@ -318,7 +327,7 @@ export function Palette({
       // chat while the chat has the keyboard. Falling through here is the whole of the fix —
       // nothing is prevented and nothing is stopped, so the keystroke carries on down to
       // xterm's textarea exactly as it would if the palette were not here at all.
-      if (opensIt(e) && !theChatKeepsIt(e) && !theTabRenamesOnIt(e)) {
+      if (pressed(e, ["palette.open"], { ...held, palette: false }) !== undefined) {
         e.preventDefault();
         e.stopPropagation();
         // Pressed again while it is already up. tmux answers this with `send-prefix` and so
@@ -336,7 +345,7 @@ export function Palette({
         if (e.repeat) return;
         if (up.current) {
           // Only from the palette: the switcher lists no chat to hand it to.
-          if (e.key === PASS_THROUGH_KEY && scopeNow.current === "actions") handBack();
+          if (isKey(e, "palette.handBack") && scopeNow.current === "actions") handBack();
           return;
         }
         setOpen((was) => {
@@ -349,7 +358,7 @@ export function Palette({
       }
       // Only while it is up: the picker and the quit warning listen for Escape too, and
       // swallowing theirs would leave them with no way out for the same reason.
-      if (e.key === "Escape" && up.current) {
+      if (up.current && pressed(e, ["palette.close"]) !== undefined) {
         e.preventDefault();
         e.stopPropagation();
         close();
@@ -543,7 +552,13 @@ export function Palette({
         }}
         onKeyDown={(e) => {
           // Escape is not here: it is on the window, so it leaves from anywhere.
-          const fileKey = aimedFile && fileKeyOf(e.nativeEvent, mac);
+          const fileKey =
+            aimedFile &&
+            (isKey(e.nativeEvent, "finder.copyPath", mac)
+              ? "copy"
+              : isKey(e.nativeEvent, "finder.reveal", mac)
+                ? "reveal"
+                : undefined);
           if (aimedFile && fileKey) {
             e.preventDefault();
             if (!e.repeat) onFile(aimedFile, fileKey);
@@ -553,7 +568,7 @@ export function Palette({
           } else if (e.key === "ArrowUp") {
             e.preventDefault();
             move(-1);
-          } else if (e.key === "Enter") {
+          } else if (isKey(e.nativeEvent, "palette.run", mac)) {
             e.preventDefault();
             runRow(aimed);
           } else if (e.key === "Tab" && finding) {
@@ -611,28 +626,40 @@ export function Palette({
           className="palette-rows"
           aria-label={switcher ? "Projects" : "Actions"}
         >
-          {rows.map((row, index) => (
-            <AimedOption
-              key={row.id}
-              id={`palette-row-${row.id}`}
-              aimed={index === aimed}
-              unavailable={!row.available}
-              onPress={() => runOffer(row)}
-            >
-              {/* A project's name alone in the switcher: every row there is a switch, and
+          {rows.map((row, index) => {
+            // The row's key, from the key registry (#2921, N25), drawn at its end; its note no
+            // longer says it in words.
+            // Only a key that works from anywhere: a tab's own ⌫ and F2 do nothing here.
+            const key = rowKey(row.id, mac, true);
+            const note =
+              key === undefined || row.note === undefined
+                ? row.note
+                : noteWithoutKey(row.note, key);
+            return (
+              <AimedOption
+                key={row.id}
+                id={`palette-row-${row.id}`}
+                aimed={index === aimed}
+                unavailable={!row.available}
+                keys={key === undefined ? undefined : rowAriaKeys(row.id, mac, true)}
+                onPress={() => runOffer(row)}
+              >
+                {/* A project's name alone in the switcher: every row there is a switch, and
                     `Switch to project` ten times over is ten times the same three words. */}
-              <RowLabel className="palette-title">
-                {switcher ? (row.name ?? row.title) : row.title}
-              </RowLabel>
-              {/* The reason, as words. Dimming is decoration; this is the meaning, and it
+                <RowLabel className="palette-title">
+                  {switcher ? (row.name ?? row.title) : row.title}
+                </RowLabel>
+                {/* The reason, as words. Dimming is decoration; this is the meaning, and it
                     is what a screen reader and a monochrome display both get. */}
-              {!row.available && <RowTrail className="palette-why">{row.reason}</RowTrail>}
-              {/* What a row that CAN run costs, where its title cannot fit it: ending a
+                {!row.available && <RowTrail className="palette-why">{row.reason}</RowTrail>}
+                {/* What a row that CAN run costs, where its title cannot fit it: ending a
                     chat ends the program it runs, and nothing said so (charter-app#130).
                     In the same slot as the reason, because a row has one or the other. */}
-              {row.available && row.note && <RowTrail className="palette-why">{row.note}</RowTrail>}
-            </AimedOption>
-          ))}
+                {row.available && note && <RowTrail className="palette-why">{note}</RowTrail>}
+                {key !== undefined && <RowShortcut keys={key} />}
+              </AimedOption>
+            );
+          })}
         </AimedList>
       )}
 
@@ -737,91 +764,5 @@ function Marked({ parts }: { parts: readonly Part[] }) {
   );
 }
 
-/** What the aimed file of ⌘P can have done to it from the keyboard (#1143). */
-export type FileKey = "copy" | "reveal";
-
-/**
- * Which of the aimed file's keys this keystroke is, if any (#1143): **⌥⌘C and ⌥⌘R on a Mac,
- * Shift+Alt+C and Shift+Alt+R everywhere else** — Copy Path and Reveal in Finder's keys in VS
- * Code's explorer, so the fingers that know an editor know these.
- *
- * They are read only in the palette's box, so no chat or tab ever loses them. ⌘C is the box's
- * own copy, which is why the Mac's has Option in it. Off a Mac, Ctrl is never part of it: Ctrl
- * with Alt is AltGr on Windows, which types a character. A letter is matched by what the key
- * types; on a Mac, Option makes C and R type `ç` and `®`, so a key that types no letter at all
- * is read by its place instead, and a key that types another letter is never this one.
- */
-export function fileKeyOf(e: KeyboardEvent, mac: boolean): FileKey | undefined {
-  if (!e.altKey || e.ctrlKey) return undefined;
-  if (mac ? !e.metaKey || e.shiftKey : !e.shiftKey || e.metaKey) return undefined;
-  const typed = e.key.length === 1 && /^[a-z]$/i.test(e.key) ? e.key.toLowerCase() : undefined;
-  const letter = typed ?? (e.code === "KeyC" ? "c" : e.code === "KeyR" ? "r" : undefined);
-  if (letter === "c") return "copy";
-  if (letter === "r") return "reveal";
-  return undefined;
-}
-
-/** How the palette spells that key, on this platform. */
-export function fileKeySaid(does: FileKey, mac: boolean): string {
-  const letter = does === "copy" ? "C" : "R";
-  return mac ? `⌥⌘${letter}` : `Shift+Alt+${letter}`;
-}
-
-/**
- * Whether this keystroke opens the palette.
- *
- * `F2` is the tmux frame's own key, carried over so an operator's fingers do not have to be
- * retrained, and it needs no modifier — which matters because a modifier's name differs by
- * platform and the scenario tests drive a real window. `⌘K` and `Ctrl-K` are what a desktop
- * app is expected to answer; both are accepted on both platforms rather than sniffing one,
- * because the wrong guess is an app with no palette at all.
- */
-export function opensIt(e: KeyboardEvent): boolean {
-  if (e.key === "F2") return !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey;
-  return (e.key === "k" || e.key === "K") && (e.metaKey || e.ctrlKey) && !e.altKey;
-}
-
-/**
- * Whether the chat keeps this keystroke, although the palette would otherwise open on it.
- *
- * **The question `opensIt` deliberately does not answer.** That one is about the KEY — is
- * this the palette's chord — and this one is about where it landed, because the same chord
- * belongs to two different programs depending on who has the keyboard. Two predicates and not
- * one condition, for the reason `actions` gives about `available` and `reason`: a surface that
- * says the wrong thing should be a defect in one of them rather than an ambiguity in both.
- *
- * **Only a `Ctrl` chord, and that is the whole of the rule** (charter-app#106). A terminal
- * encodes `Ctrl` with a letter as a C0 control byte — xterm.js 6.0.0 answers `Ctrl` plus a
- * key code in 65..90 with `String.fromCharCode(code - 64)`, so `Ctrl-K` is `\x0b`, which is
- * kill-to-end-of-line in readline and in every emacs-keys line editor. Swallowing it on the
- * window is taking an editing key out of the shell every chat starts in. `F2` is not here
- * because #47 already settled it the other way, with a way back; `⌘` is not here because
- * xterm.js sends nothing at all for a `⌘`-chord but `⌘A`, so there is nothing for the window
- * to be taking.
- *
- * **Where it landed, not where the focus is.** A capture listener on the window runs before
- * the focus has any say, and `e.target` is the element the keystroke was delivered to — which
- * inside a pane is xterm's own textarea, a descendant of the marked holder. An undispatched
- * event has no target and is therefore nobody's: that is the palette's, which is what makes
- * `opensIt` testable on a bare `KeyboardEvent`.
- */
-export function theChatKeepsIt(e: KeyboardEvent): boolean {
-  if (!e.ctrlKey || e.metaKey) return false;
-  const on = e.target;
-  return on instanceof Element && on.closest(`[${CHAT_KEYBOARD}]`) !== null;
-}
-
-/**
- * Whether an `F2` landed on a chat's tab, where it renames the tab rather than opening this
- * (charter-app#254, `actions.RENAMES_ON_F2`).
- *
- * The same question `theChatKeepsIt` asks — where did the keystroke land — about the one other
- * place `F2` means something of its own: the platform's rename key on a focused item. Nothing
- * is taken from the operator: `⌘K` opens the palette from the tab, and `F2` still does from
- * everywhere else, including the chat itself.
- */
-export function theTabRenamesOnIt(e: KeyboardEvent): boolean {
-  if (e.key !== "F2") return false;
-  const on = e.target;
-  return on instanceof Element && on.hasAttribute(RENAMES_ON_F2);
-}
+/** The palette's keys, read by the key registry too (#2921): `keys/paletteKeys.ts`. */
+export { fileKeyOf, fileKeySaid, opensIt, theChatKeepsIt, theTabRenamesOnIt, type FileKey };

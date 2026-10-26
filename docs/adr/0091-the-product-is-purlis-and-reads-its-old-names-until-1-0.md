@@ -69,6 +69,15 @@ its own.
   at all, so a migrated project is not a project to them: they find nothing there to open, and
   so cannot damage it either. `rename-plane` refuses to run inside a chat (D-RN7-12): migrating
   a project's committed files is the operator's act.
+- **D-RN7-13: `rename-plane` rewrites a skill reference only where it is one (#2784, recorded
+  by #3051).** The `project-skills` fix shares its rule ([ADR 0099's amendment of
+  2026-10-22](0099/2026-10-22-the-migration-from-claude-skills-as-built.md)): `charter:<skill>`
+  not preceded by a word character, a dot, a hyphen, a slash, an `@` or a `:`, and never on a
+  line of a fenced code block (```` ``` ```` or `~~~`). Before #2784 `rename-plane` also
+  rewrote a name after a slash, an `@` or a `:`, and inside fenced code, so an image such as
+  `ghcr.io/acme/charter:v1` became `ghcr.io/acme/purlis:v1` and a quoted command changed. Code
+  quoted in a persona is somebody's, as written. A project that ran the earlier fix keeps what
+  it committed, and a quoted name it changed is mended by hand.
 - **Hook and statusLine commands stay `charter …` until 1.0 (D-RN7-11).** A harness's settings
   name the command it runs, and teammates on older builds share those settings, so the hooks and
   the statusLine that purlis writes keep calling `charter`, which the alias runs. RN-14 renames

@@ -72,6 +72,7 @@ fn a_sandbox_compiled_for_another_harness_arms_no_claude_code_chat() {
     let hooks = adapter().arm(
         Kit {
             skills: None,
+            laid_out: None,
             binary: std::path::Path::new("/bin/charter"),
             plugin: Some(std::path::Path::new("/app/plugin")),
             persona: None,
@@ -95,6 +96,7 @@ fn the_claude_code_adapter_arms_a_chat_with_the_bundled_plugin_for_that_chat_alo
     let hooks = adapter().arm(
         Kit {
             skills: None,
+            laid_out: None,
             binary: std::path::Path::new("/bin/charter"),
             plugin: Some(std::path::Path::new("/app/plugin")),
             persona: None,
@@ -130,6 +132,7 @@ fn a_grades_chat_loads_purlis_s_server_alone_with_its_read_tools() {
         let StateHooks::ThisSessionOnly { args, .. } = adapter().arm(
             Kit {
                 skills: None,
+                laid_out: None,
                 binary: std::path::Path::new("/bin/charter"),
                 plugin: Some(std::path::Path::new("/app/plugin")),
                 persona: None,
@@ -178,6 +181,7 @@ fn a_grades_chat_is_denied_the_tools_that_start_a_sub_agent() {
         let StateHooks::ThisSessionOnly { args, .. } = adapter().arm(
             Kit {
                 skills: None,
+                laid_out: None,
                 binary: std::path::Path::new("/bin/charter"),
                 plugin: Some(std::path::Path::new("/app/plugin")),
                 persona: None,
@@ -219,6 +223,7 @@ fn a_claude_code_chat_is_handed_charter_s_mcp_server_for_that_chat_alone() {
     let StateHooks::ThisSessionOnly { args, .. } = adapter().arm(
         Kit {
             skills: None,
+            laid_out: None,
             binary: std::path::Path::new("/bin/charter"),
             plugin: Some(std::path::Path::new("/app/plugin")),
             persona: None,
@@ -253,6 +258,7 @@ fn armed_as(
     let StateHooks::ThisSessionOnly { args, .. } = adapter().arm(
         Kit {
             skills: None,
+            laid_out: None,
             binary: std::path::Path::new("/bin/charter"),
             plugin: Some(std::path::Path::new("/app/plugin")),
             persona: Some(crate::harness::As {
@@ -415,6 +421,7 @@ fn a_task_chat_runs_the_read_only_purlis_commands_its_brief_runs_without_asking(
     let StateHooks::ThisSessionOnly { args, .. } = adapter().arm(
         Kit {
             skills: None,
+            laid_out: None,
             binary: std::path::Path::new("/bin/charter"),
             plugin: Some(std::path::Path::new("/app/plugin")),
             persona: None,
@@ -502,6 +509,7 @@ fn started_in(manifest: &str, project: Option<&str>) -> (Vec<String>, serde_json
     let StateHooks::ThisSessionOnly { args, .. } = adapter().arm(
         Kit {
             skills: None,
+            laid_out: None,
             binary: std::path::Path::new("/bin/charter"),
             plugin: Some(std::path::Path::new("/app/plugin")),
             persona: None,

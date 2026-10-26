@@ -84,7 +84,7 @@ describe("approving a profile and starting on it", () => {
 
     await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
     // Pick a persona that is NOT the plane default.
-    await userEvent.click(await screen.findByRole("radio", { name: /release/ }));
+    await userEvent.click(await screen.findByRole("option", { name: "release" }));
     await userEvent.click(screen.getByRole("button", { name: "Approve and start" }));
 
     const started = await vi.waitFor(() => {
@@ -100,7 +100,7 @@ describe("approving a profile and starting on it", () => {
     render(<App />);
 
     await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
-    await userEvent.click(await screen.findByRole("radio", { name: "None" }));
+    await userEvent.click(await screen.findByRole("option", { name: "No persona" }));
     await userEvent.click(screen.getByRole("button", { name: "Approve and start" }));
 
     const started = await vi.waitFor(() => {

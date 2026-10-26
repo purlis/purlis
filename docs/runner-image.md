@@ -151,6 +151,19 @@ or `crun`. Docker Desktop's Enhanced Container Isolation runs every container on
 runtime instead, so while it is turned on a Docker pool refuses its runners, and the refusal
 says the container does not run on a standard container runtime.
 
+## On a cluster pool
+
+In a pool of purlis's [cluster operator](cluster-operator.md), the runner's pod runs the image
+twice: first as its `link-key` step, `purlis bridge --make-key`, with the image's own
+entrypoint, before anything else in the pod, which makes the runner's link key, and then as the
+runner. So the image's entrypoint is `purlis` itself, under its init, and takes the arguments
+the pod gives it, as `ENTRYPOINT [..., "/usr/local/bin/purlis"]` with `CMD ["serve"]` does. The
+key's private half is handed to the runner in `/run/purlis-link/`, a folder in memory the pod
+mounts there, so nothing of the image may be needed at that path; its public half is written
+to `/dev/termination-log`, for the operator to vouch for (#2056). That step is the one
+`purlis` command a cluster pod runs before `purlis serve`: it mints no device id and writes
+nothing in `HOME`.
+
 ## A team's own image
 
 Start from any Linux base, add what your team's chats need, and keep the contract. Take the

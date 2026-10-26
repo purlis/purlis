@@ -466,6 +466,7 @@ fn an_opencode_chat_is_armed_through_its_environment_and_nothing_on_its_line() {
     let plugin = plane.root().join("plugin");
     let kit = purlis_core::harness::Kit {
         skills: None,
+        laid_out: None,
         binary: &binary,
         plugin: Some(&plugin),
         persona: None,
@@ -649,6 +650,7 @@ fn armed_with(
     let plugin = root.join("plugin");
     let kit = purlis_core::harness::Kit {
         skills: None,
+        laid_out: None,
         binary: &binary,
         plugin: Some(&plugin),
         persona: None,

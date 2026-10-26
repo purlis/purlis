@@ -308,6 +308,12 @@ pub struct Kit<'a> {
     /// purlis's MCP server alone, and that server's read tools alone, where the harness can be
     /// told so. A grade runs on such a harness only (`skills::grades::chat_refused`).
     pub graded: bool,
+    /// The set's folder the host laid out before arming the chat
+    /// ([`crate::skills::lay_out_for_chat`]): the plane's skills of its set, and on a route that
+    /// names the built-in skills their own (`purlis-<name>`,
+    /// [`crate::skills::Route::names_built_ins_its_own`]) those too. `None` where it laid out
+    /// none: a harness that needs the folder is then handed none of what it holds.
+    pub laid_out: Option<&'a std::path::Path>,
 }
 
 /// The persona a chat runs as, and the project that defines it.

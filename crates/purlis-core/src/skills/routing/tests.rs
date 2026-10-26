@@ -75,7 +75,7 @@ fn hidden(skills: &ChatSkills) -> Vec<&str> {
 /// The set's folder laid out for a chat in `smart-ide`, as `persona` or on none.
 fn the_folder(root: &Path, bundle: &Path, persona: Option<&str>) -> PathBuf {
     crate::skills::lay_out_for_chat(
-        root,
+        Some(root),
         Some("smart-ide"),
         persona,
         Some(bundle),
@@ -95,6 +95,41 @@ fn laid_out(root: &Path, bundle: &Path, persona: Option<&str>) -> Vec<String> {
         .collect();
     names.sort();
     names
+}
+
+#[test]
+fn above_the_budget_an_opencode_chat_is_handed_the_index_as_purlis_skill_index() {
+    // opencode reads every skill by its bare name, a clone's `skill-index` too, so purlis's index
+    // is `purlis-skill-index` there, beside the built-in skills under their own names.
+    let (tmp, bundle) = a_plane_of(MOST + 5);
+    let root = tmp.path();
+    let folder = crate::skills::lay_out_for_chat(
+        Some(root),
+        Some("smart-ide"),
+        None,
+        Some(&bundle),
+        &root.join("sets"),
+        Harness::Opencode,
+        &[],
+    )
+    .expect("a set's folder");
+    let mut names: Vec<String> = std::fs::read_dir(folder.join(DIR_IN_BUNDLE))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    assert_eq!(names, ["purlis-handoff", "purlis-skill-index"]);
+    let index = std::fs::read_to_string(
+        folder
+            .join(DIR_IN_BUNDLE)
+            .join("purlis-skill-index/SKILL.md"),
+    )
+    .unwrap();
+    assert!(
+        index.starts_with("---\nname: purlis-skill-index\n"),
+        "{index}"
+    );
+    assert!(index.contains("- `skill-00`: Does thing 0."), "{index}");
 }
 
 #[test]
@@ -335,7 +370,9 @@ fn use_skill_asks_a_chat_to_load_a_hidden_skill_and_holds_no_run_for_it() {
             crate::skills::Start::ByLoad,
             "the load opens the run"
         );
-        let built_in = chat.typed("handoff", &[]).unwrap();
+        let built_in = chat
+            .typed(&harness.skills().built_in_name("handoff"), &[])
+            .unwrap();
         assert!(
             matches!(built_in.start, crate::skills::Start::Held(_)),
             "a listed skill is typed as before"
@@ -382,7 +419,7 @@ fn a_briefed_chat_over_the_budget_is_briefed_on_the_index_and_not_on_what_it_hid
     let (tmp, bundle) = a_plane_of(MOST + 5);
     let root = tmp.path();
     let folder = crate::skills::lay_out_for_chat(
-        root,
+        Some(root),
         Some("smart-ide"),
         None,
         Some(&bundle),
@@ -471,4 +508,141 @@ fn pins_past_their_limits_are_none_and_say_why() {
         pins_of(root, Some("smart-ide"), None).unwrap(),
         ["skill-00"]
     );
+}
+
+#[test]
+fn a_skill_says_every_workspace_and_persona_that_pins_it_sk15d() {
+    let (tmp, _bundle) = a_plane_of(3);
+    let root = tmp.path();
+    std::fs::create_dir_all(root.join("workspaces/ops")).unwrap();
+    let workspace = PinnedBy::Workspace("smart-ide".to_owned());
+    let persona = PinnedBy::Persona("reviewer".to_owned());
+    assert!(pinners_of(root, "skill-01").is_empty());
+
+    pin(root, &workspace, "skill-01", true).unwrap();
+    pin(root, &persona, "skill-01", true).unwrap();
+    pin(
+        root,
+        &PinnedBy::Workspace("ops".to_owned()),
+        "skill-02",
+        true,
+    )
+    .unwrap();
+
+    assert_eq!(
+        pinners_of(root, "skill-01"),
+        [workspace.clone(), persona.clone()]
+    );
+    assert_eq!(
+        pinners_of(root, "skill-02"),
+        [PinnedBy::Workspace("ops".to_owned())]
+    );
+    assert_eq!(pins_written(root, &workspace), ["skill-01"]);
+    assert_eq!(pins_written(root, &persona), ["skill-01"]);
+}
+
+#[test]
+fn a_chat_says_which_of_its_workspace_and_persona_pin_anything_sk15d() {
+    let (tmp, bundle) = a_plane_of(MOST + 5);
+    let root = tmp.path();
+    let chat = |persona| for_use_skill(&running(root, &bundle, persona));
+    assert!(chat(Some("reviewer")).pinned_by.is_empty());
+
+    pin(
+        root,
+        &PinnedBy::Persona("reviewer".to_owned()),
+        "skill-02",
+        true,
+    )
+    .unwrap();
+    assert_eq!(
+        chat(Some("reviewer")).pinned_by,
+        [PinnedBy::Persona("reviewer".to_owned())]
+    );
+    assert!(chat(None).pinned_by.is_empty());
+
+    pin(
+        root,
+        &PinnedBy::Workspace("smart-ide".to_owned()),
+        "skill-03",
+        true,
+    )
+    .unwrap();
+    assert_eq!(
+        chat(Some("reviewer")).pinned_by,
+        [
+            PinnedBy::Workspace("smart-ide".to_owned()),
+            PinnedBy::Persona("reviewer".to_owned())
+        ]
+    );
+}
+
+#[test]
+fn a_pin_past_the_most_a_chat_reads_is_refused_and_says_why_sk15d() {
+    let (tmp, _bundle) = a_plane_of(super::MOST_PINS + 1);
+    let root = tmp.path();
+    let workspace = PinnedBy::Workspace("smart-ide".to_owned());
+    for at in 0..super::MOST_PINS {
+        assert!(pin(root, &workspace, &format!("skill-{at:02}"), true).unwrap());
+    }
+
+    let past = format!("skill-{:02}", super::MOST_PINS);
+    let refused = pin(root, &workspace, &past, true).unwrap_err();
+
+    assert!(refused.contains("already pins 64 skills"), "{refused}");
+    assert!(!pins_written(root, &workspace).contains(&past));
+    assert_eq!(pins_refused(root, &workspace), None);
+    // Unpinning one is still taken.
+    assert!(pin(root, &workspace, "skill-00", false).unwrap());
+}
+
+#[test]
+fn a_pinners_list_that_a_chat_would_not_read_says_why_and_names_a_bad_entry_sk15d() {
+    let (tmp, _bundle) = a_plane_of(2);
+    let root = tmp.path();
+    let workspace = PinnedBy::Workspace("smart-ide".to_owned());
+    std::fs::write(
+        root.join("workspaces/smart-ide/workspace.json"),
+        r#"{"settings": {"skills": {"pinned": ["skill-00", "Not A Name"]}}}"#,
+    )
+    .unwrap();
+
+    let refused = pins_refused(root, &workspace).expect("refused");
+    assert_eq!(refused.bad.as_deref(), Some("Not A Name"));
+    assert!(
+        refused.why.contains("\"Not A Name\" is not a skill's name"),
+        "{}",
+        refused.why
+    );
+    assert_eq!(refused.file, "workspaces/smart-ide/workspace.json");
+    assert_eq!(
+        pins_refused(root, &PinnedBy::Persona("reviewer".to_owned())),
+        None
+    );
+
+    // The bad entry is unpinned like any other, and the list is read again.
+    assert!(pin(root, &workspace, "Not A Name", false).unwrap());
+    assert_eq!(pins_refused(root, &workspace), None);
+    assert_eq!(pins_written(root, &workspace), ["skill-00"]);
+}
+
+#[test]
+fn a_pinners_list_of_too_many_says_so_and_names_no_entry_sk15d() {
+    let (tmp, _bundle) = a_plane_of(1);
+    let root = tmp.path();
+    let names: Vec<String> = (0..=super::MOST_PINS)
+        .map(|at| format!("\"p-{at}\""))
+        .collect();
+    std::fs::write(
+        root.join("workspaces/smart-ide/workspace.json"),
+        format!(
+            r#"{{"settings": {{"skills": {{"pinned": [{}]}}}}}}"#,
+            names.join(",")
+        ),
+    )
+    .unwrap();
+
+    let refused = pins_refused(root, &PinnedBy::Workspace("smart-ide".to_owned())).unwrap();
+    assert_eq!(refused.bad, None);
+    assert!(refused.why.contains("more than 64 pins"), "{}", refused.why);
 }

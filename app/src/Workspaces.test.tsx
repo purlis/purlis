@@ -201,7 +201,7 @@ const panes = () => screen.queryAllByTestId("pane").map((pane) => pane.textConte
 /** Opens a chat where the operator is standing: New tab, a row, Start. */
 async function openAChat() {
   await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
-  await userEvent.click(await screen.findByRole("button", { name: "Start" }));
+  await userEvent.click(await screen.findByRole("button", { name: "Start chat" }));
 }
 
 /** Focuses a workspace from the title bar's ⌄ (#2916), which is the axis. */

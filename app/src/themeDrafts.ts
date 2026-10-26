@@ -62,14 +62,15 @@ export function useDraftHere(): DraftHere | null {
  */
 export function isRevertKey(
   event: Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "shiftKey" | "altKey">,
+  mac: boolean = onAMac(),
 ): boolean {
   if (event.key !== "Backspace" || !event.shiftKey || event.altKey) return false;
-  return onAMac() ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
+  return mac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
 }
 
 /** The revert key as a person reads it. */
-export function revertKeySaid(): string {
-  return onAMac() ? "⌘⇧⌫" : "Ctrl+Shift+Backspace";
+export function revertKeySaid(mac: boolean = onAMac()): string {
+  return mac ? "⌘⇧⌫" : "Ctrl+Shift+Backspace";
 }
 
 /** Where Keep puts `draft`, in the words the strip and the close question say it in. */

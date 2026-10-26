@@ -83,7 +83,7 @@ fn host_armed(harness: Harness, here: &Here) -> (Vec<String>, Vec<(String, Strin
         Some(WORKSPACE),
         Some(PERSONA),
         &host,
-        Harness::ClaudeCode,
+        harness,
     );
     let kit = Kit {
         binary: Path::new("/bin/purlis"),
@@ -95,10 +95,10 @@ fn host_armed(harness: Harness, here: &Here) -> (Vec<String>, Vec<(String, Strin
         skills: Some(PlaneSkills {
             plane: &here.plane,
             workspace: Some(WORKSPACE),
-            linked: linked.as_deref(),
             repo: &[],
         }),
         graded: false,
+        laid_out: linked.as_deref(),
     };
     let cwd = here.plane.join("workspaces").join(WORKSPACE);
     match harness.state_hooks(
@@ -181,13 +181,20 @@ fn an_opencode_chat_as_the_persona_is_handed_its_skills_folder() {
 
     let config: serde_json::Value =
         serde_json::from_str(var(&env, purlis_core::opencode::CONFIG_ENV).unwrap()).unwrap();
-    let skills = config["plugin"][0][1]["skills"]
-        .as_array()
-        .expect("a list of directories");
-    assert_eq!(skills.len(), 2, "{skills:?}");
-    let folder = PathBuf::from(skills[1].as_str().unwrap());
+    // One folder: the built-in skills under their own names beside the persona's.
+    let folder = PathBuf::from(
+        config["plugin"][0][1]["skills"]
+            .as_str()
+            .expect("one directory"),
+    );
     assert!(folder.starts_with(&here.sets), "{}", folder.display());
-    assert_eq!(linked(&folder), wanted(&here));
+    let mut wanted = wanted(&here);
+    wanted.push((
+        "purlis-secrets".to_owned(),
+        here.plugin.join("skills/secrets"),
+    ));
+    wanted.sort();
+    assert_eq!(linked(&folder), wanted);
 }
 
 #[test]

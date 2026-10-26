@@ -506,6 +506,12 @@ impl Frontmatter {
     /// harness to read), and, where `without_description`, a manual-only skill's description
     /// left out. Refused where a kept field has a value it cannot take.
     pub fn emit(&self, honours: &crate::Honours) -> Result<String, Refusal> {
+        self.emit_named(honours, None)
+    }
+
+    /// [`Self::emit`], its `name` written as `name` where one is given: the name the set holds
+    /// the skill by, where a route hands it under one of its own ([`crate::Route::built_in_name`]).
+    fn emit_named(&self, honours: &crate::Honours, name: Option<&str>) -> Result<String, Refusal> {
         let without_description = honours.manual == crate::ManualOnly::WithoutDescription;
         let drop_description = without_description && self.manual();
         let keep_agent = self.agent_kept(honours);
@@ -522,7 +528,10 @@ impl Frontmatter {
             {
                 continue;
             }
-            let value = written(node, &shape).ok_or(Refusal::BadValue(field))?;
+            let value = match name {
+                Some(name) if field == Field::Name => scalar(name, false),
+                _ => written(node, &shape).ok_or(Refusal::BadValue(field))?,
+            };
             out.push_str(&format!("{}: {value}\n", field.key()));
         }
         out.push_str("---\n");
@@ -545,8 +554,17 @@ impl Frontmatter {
 /// `text`**: the frontmatter purlis writes ([`Frontmatter::emit`]), then the skill's body as it
 /// is. Refused, handing nothing, where the frontmatter is refused ([`parse`]).
 pub(crate) fn handed(text: &str, honours: &crate::Honours) -> Result<String, Refusal> {
+    handed_as(text, honours, None)
+}
+
+/// [`handed`], its `name` written as `name` where one is given ([`Frontmatter::emit_named`]).
+pub(crate) fn handed_as(
+    text: &str,
+    honours: &crate::Honours,
+    name: Option<&str>,
+) -> Result<String, Refusal> {
     let read = parse(text)?;
-    let mut out = read.emit(honours)?;
+    let mut out = read.emit_named(honours, name)?;
     out.push_str(&text[read.body..]);
     Ok(out)
 }
