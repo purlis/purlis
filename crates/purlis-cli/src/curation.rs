@@ -76,7 +76,7 @@ pub fn persona(root: &std::path::Path, command: PersonaCuration) -> Result<Code,
                 match Kind::parse(word) {
                     Some(kind) => kinds.push(kind),
                     None => {
-                        voice::err(&format!(
+                        voice::err(format!(
                             "--on '{word}' is not a kind of subject — workspace, persona, plane"
                         ));
                         return Ok(2);
@@ -88,7 +88,7 @@ pub fn persona(root: &std::path::Path, command: PersonaCuration) -> Result<Code,
                 Some(word) => match RunsIn::parse(word) {
                     Some(r) => Some(r),
                     None => {
-                        voice::err(&format!("--runs-in '{word}' is neither subject nor plane"));
+                        voice::err(format!("--runs-in '{word}' is neither subject nor plane"));
                         return Ok(2);
                     }
                 },
@@ -118,26 +118,26 @@ pub fn persona(root: &std::path::Path, command: PersonaCuration) -> Result<Code,
                 },
             ) {
                 Ok(_) => {
-                    voice::ok(&format!(
+                    voice::ok(format!(
                         "Curation action {persona}/{id} → personas/{persona}/curation/{id}.md"
                     ));
                     Ok(0)
                 }
                 Err(refused) => {
-                    voice::err(&refused);
+                    voice::err(refused.to_string());
                     Ok(1)
                 }
             }
         }
         PersonaCuration::Remove { persona, id } => match curation::remove(root, &persona, &id) {
             Ok(_) => {
-                voice::ok(&format!(
+                voice::ok(format!(
                     "Removed curation action {persona}/{id} (personas/{persona}/curation/{id}.md)"
                 ));
                 Ok(0)
             }
             Err(refused) => {
-                voice::err(&refused);
+                voice::err(refused.to_string());
                 Ok(1)
             }
         },
@@ -160,6 +160,23 @@ fn offered_line(id: &str, label: &str) -> Markup {
     Markup::new().text(id).own("  ").text(label)
 }
 
+/// `no persona '<name>'`: the name is what was typed, so it is spliced escaped (SK-54, #3225).
+fn no_persona(name: &str) -> Markup {
+    Markup::new().own("no persona '").text(name).own("'")
+}
+
+/// A lint issue with a persona's curation file: the persona, the file's id and the message,
+/// which quotes the file, are each spliced escaped (SK-54).
+fn issue_line(persona: &str, id: &str, message: &str) -> Markup {
+    Markup::new()
+        .own("personas/")
+        .text(persona)
+        .own("/curation/")
+        .text(id)
+        .own(".md: ")
+        .text(message)
+}
+
 fn list(root: &std::path::Path, only: Option<&str>) -> Code {
     let personas = match only {
         Some(name) => {
@@ -169,7 +186,7 @@ fn list(root: &std::path::Path, only: Option<&str>) -> Code {
                 .iter()
                 .any(|p| p == name);
             if !known {
-                voice::err(&format!("no persona '{name}'"));
+                voice::err(no_persona(name));
                 return 1;
             }
             vec![name.to_string()]
@@ -200,13 +217,10 @@ fn list(root: &std::path::Path, only: Option<&str>) -> Code {
                 ),
             }
             for issue in &parsed.issues {
-                let line = format!(
-                    "personas/{persona}/curation/{}.md: {}",
-                    parsed.id, issue.message
-                );
+                let line = issue_line(&persona, &parsed.id, &issue.message);
                 match issue.level {
-                    Level::Error => voice::err(&line),
-                    Level::Warn => voice::warn(&line),
+                    Level::Error => voice::err(line),
+                    Level::Warn => voice::warn(line),
                 }
             }
         }
@@ -226,14 +240,14 @@ pub fn run(root: &std::path::Path, command: CurationCommand) -> Result<Code, Str
             let subject = match Subject::parse(&subject) {
                 Ok(subject) => subject,
                 Err(refused) => {
-                    voice::err(&refused);
+                    voice::err(refused.to_string());
                     return Ok(2);
                 }
             };
             let resolution = match curation::resolve(root, &subject) {
                 Ok(resolution) => resolution,
                 Err(refused) => {
-                    voice::err(&refused);
+                    voice::err(refused.to_string());
                     return Ok(1);
                 }
             };
@@ -264,7 +278,7 @@ pub fn run(root: &std::path::Path, command: CurationCommand) -> Result<Code, Str
                 voice::info("Nothing is offered on this subject.");
             }
             for warning in &resolution.warnings {
-                voice::warn(warning);
+                voice::warn(warning.to_string());
             }
             Ok(0)
         }

@@ -253,10 +253,13 @@ pub fn policy(root: &Path, apply_it: bool, say: Sink) -> u8 {
         // The REMEDY is `doctor`'s, not a second copy of it: one `ELOOP` and one sentence, so
         // the `git auth` row and this command cannot send a reader to different repairs for
         // one directory. The path is named as Python names it here — absolute, in full.
-        say(Say::Warn(format!(
-            "{named} cannot be checked — {}",
-            fsx::uncheckable_fix(missed.code, &missed.path.display().to_string())
-        )));
+        say(Say::Warn(
+            format!(
+                "{named} cannot be checked — {}",
+                fsx::uncheckable_fix(missed.code, &missed.path.display().to_string())
+            )
+            .into(),
+        ));
     }
     if targets.is_empty() {
         say(Say::Info(
@@ -280,57 +283,75 @@ pub fn policy(root: &Path, apply_it: bool, say: Sink) -> u8 {
             // Honest "can't tell" — never silently reported green, and never guessed at via
             // `apply` either.
             unmanaged += 1;
-            say(Say::Warn(format!("{name}: {UNMANAGED_FORGE}")));
+            say(Say::Warn(format!("{name}: {UNMANAGED_FORGE}").into()));
             continue;
         }
         drifted += 1;
         if apply_it {
             let changes = apply(repo, root);
             fixed += 1;
-            say(Say::Done(format!(
-                "{name}: applied {} — token-only",
-                counted(changes.len(), "setting", "settings")
-            )));
+            say(Say::Done(
+                format!(
+                    "{name}: applied {} — token-only",
+                    counted(changes.len(), "setting", "settings")
+                )
+                .into(),
+            ));
         } else {
-            say(Say::Warn(format!(
-                "{name}: {} not token-only",
-                counted(drift.len(), "setting", "settings")
-            )));
+            say(Say::Warn(
+                format!(
+                    "{name}: {} not token-only",
+                    counted(drift.len(), "setting", "settings")
+                )
+                .into(),
+            ));
             for line in drift.iter().take(4) {
-                say(Say::Info(format!("    {line}")));
+                say(Say::Info(format!("    {line}").into()));
             }
         }
     }
     if drifted == 0 && unmanaged == 0 {
-        say(Say::Done(format!(
-            "{} token-only (each forge's own HTTPS token, no SSH, no signing).",
-            if targets.len() == 1 {
-                "The one repo is".to_owned()
-            } else {
-                format!("All {} repos are", targets.len())
-            }
-        )));
+        say(Say::Done(
+            format!(
+                "{} token-only (each forge's own HTTPS token, no SSH, no signing).",
+                if targets.len() == 1 {
+                    "The one repo is".to_owned()
+                } else {
+                    format!("All {} repos are", targets.len())
+                }
+            )
+            .into(),
+        ));
         return 0;
     }
     if apply_it {
-        say(Say::Done(format!(
-            "Applied the single-credential policy to {fixed} of {}.",
-            counted(targets.len(), "repo", "repos")
-        )));
+        say(Say::Done(
+            format!(
+                "Applied the single-credential policy to {fixed} of {}.",
+                counted(targets.len(), "repo", "repos")
+            )
+            .into(),
+        ));
     } else if drifted > 0 {
-        say(Say::Info(format!(
-            "{drifted} of {} drifted — fix: purlis git-policy --apply",
-            counted(targets.len(), "repo", "repos")
-        )));
+        say(Say::Info(
+            format!(
+                "{drifted} of {} drifted — fix: purlis git-policy --apply",
+                counted(targets.len(), "repo", "repos")
+            )
+            .into(),
+        ));
     }
     if unmanaged > 0 {
-        say(Say::Warn(format!(
-            "{} {} an unrecognised forge — not covered by any policy. \
+        say(Say::Warn(
+            format!(
+                "{} {} an unrecognised forge — not covered by any policy. \
              Declare the host in charter.toml's [[forge]] to bring {} under management.",
-            counted(unmanaged, "repo", "repos"),
-            plural(unmanaged, "has", "have"),
-            plural(unmanaged, "it", "them")
-        )));
+                counted(unmanaged, "repo", "repos"),
+                plural(unmanaged, "has", "have"),
+                plural(unmanaged, "it", "them")
+            )
+            .into(),
+        ));
     }
     0
 }

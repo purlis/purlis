@@ -105,7 +105,7 @@ fn create_in(
     if code == 0
         && let Some(note) = purlis_core::skills::levels::vouch_if_made(root, &owner, was_there)
     {
-        said.push(Say::Info(note));
+        said.push(Say::Info(note.into()));
     }
     ran(code, said)
 }

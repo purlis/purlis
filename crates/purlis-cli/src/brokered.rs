@@ -196,7 +196,7 @@ pub fn not_taken(e: &std::io::Error) -> bool {
 /// command runs here, as it always did.
 pub fn said_by_the_app(write: Write) -> Option<u8> {
     if let Some(why) = too_long_to_hand_over(&write) {
-        crate::voice::err(&why);
+        crate::voice::err(why.to_string());
         return Some(1);
     }
     let answer = asked(
@@ -213,14 +213,14 @@ pub fn said_by_the_app(write: Write) -> Option<u8> {
         }
         Ok(Answer::No { why }) if why == hookwire::NOTHING_ANSWERS => None,
         Ok(Answer::No { why }) => {
-            crate::voice::err(&why);
+            crate::voice::err(why.to_string());
             Some(1)
         }
         // An app that answers this with anything else did not read it as this.
         Ok(_) => None,
         Err(e) if not_taken(&e) => None,
         Err(e) => {
-            crate::voice::err(&format!(
+            crate::voice::err(format!(
                 "the app took this and did not answer ({e}), so it may already be done. \
                  Nothing was done again here: list them to see."
             ));

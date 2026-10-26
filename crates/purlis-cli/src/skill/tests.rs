@@ -114,3 +114,21 @@ fn skill_owners_shows_each_owner_escaped_one_a_line() {
         .collect();
     assert_eq!(none, [format!("{SHOWN} names no owners.")]);
 }
+
+/// SK-54 (#3225): the lines that say a skill was already so splice its name, and the
+/// workspace's, escaped.
+#[test]
+fn a_skill_already_so_is_said_with_its_name_escaped() {
+    assert_eq!(
+        already_switched(HOSTILE, "on", "w\u{2066}s").as_str(),
+        format!("{SHOWN} was already on in w⟦U+2066⟧s.")
+    );
+    assert_eq!(
+        owners_unchanged(HOSTILE).as_str(),
+        format!("{SHOWN}'s owners were already those.")
+    );
+    assert_eq!(
+        already_in(HOSTILE, &Lifecycle::Active).as_str(),
+        format!("{SHOWN} was already {}.", Lifecycle::Active.word())
+    );
+}

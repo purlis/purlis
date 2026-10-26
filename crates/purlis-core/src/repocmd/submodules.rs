@@ -93,15 +93,18 @@ pub fn report(
     }
     let facts = bits.join("; ");
     say(Say::Warn(match lead {
-        None => format!("{label}: {facts}."),
-        Some(lead) => format!("{label}: {lead} — {facts}."),
+        None => format!("{label}: {facts}.").into(),
+        Some(lead) => format!("{label}: {lead} — {facts}.").into(),
     }));
     let at = d.strip_prefix(root).unwrap_or(d);
-    say(Say::Info(format!(
-        "  purlis does not fetch them: a submodule URL comes out of the cloned repo's own \
+    say(Say::Info(
+        format!(
+            "  purlis does not fetch them: a submodule URL comes out of the cloned repo's own \
          .gitmodules and can point anywhere, and purlis's token-only policy does not reach a \
          submodule fetch. Yours to run: git -C {} {REMEDY}",
-        at.display()
-    )));
+            at.display()
+        )
+        .into(),
+    ));
     true
 }
