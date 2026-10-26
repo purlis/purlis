@@ -578,6 +578,29 @@ const SURFACE: &[Prop] = &[
     Prop::CornerRadius,
 ];
 
+/// **Every surface a control is drawn on in the window**: a button's, and a field's, which stands
+/// where a button does. `app/src/theme/grounds.test.ts` finds them from the components, and fails
+/// until a new one is listed here.
+const CONTROL_GROUNDS: &[&str] = &[
+    "surface.base",
+    "surface.raised",
+    "surface.overlay",
+    "surface.sunken",
+    "surface.deep",
+    "surface.hover",
+    "border.subtle",
+    "tab.active",
+    "list.selected",
+    "control.aimed",
+    "danger.surface",
+    "danger.wash",
+    "layer.project",
+    "layer.workspace",
+    "layer.chat",
+    "layer.selected",
+    "terminal.background",
+];
+
 /// **The closed manifest**: every family a theme may name, at [`VERSION`].
 pub const MANIFEST: &[Family] = &[
     Family {
@@ -654,27 +677,7 @@ pub const MANIFEST: &[Family] = &[
                 consent: None,
             },
         ],
-        // Every surface a button is drawn on in the window, as `app/src/theme/grounds.test.ts` finds
-        // them from the components; that test fails until a new one is listed here.
-        grounds: &[
-            "surface.base",
-            "surface.raised",
-            "surface.overlay",
-            "surface.sunken",
-            "surface.deep",
-            "surface.hover",
-            "border.subtle",
-            "tab.active",
-            "list.selected",
-            "control.aimed",
-            "danger.surface",
-            "danger.wash",
-            "layer.project",
-            "layer.workspace",
-            "layer.chat",
-            "layer.selected",
-            "terminal.background",
-        ],
+        grounds: CONTROL_GROUNDS,
         keeps_size: &[
             "[data-size=\"sm\"]",
             "[data-size=\"lg\"]",
@@ -734,27 +737,8 @@ pub const MANIFEST: &[Family] = &[
             },
         ],
         variants: &[],
-        // Every surface a control is drawn on (the button's, which `grounds.test.ts` finds from
-        // the components): a field stands where a button does, a filter on a list's layer.
-        grounds: &[
-            "surface.base",
-            "surface.raised",
-            "surface.overlay",
-            "surface.sunken",
-            "surface.deep",
-            "surface.hover",
-            "border.subtle",
-            "tab.active",
-            "list.selected",
-            "control.aimed",
-            "danger.surface",
-            "danger.wash",
-            "layer.project",
-            "layer.workspace",
-            "layer.chat",
-            "layer.selected",
-            "terminal.background",
-        ],
+        // A field stands where a button does, a filter on a list's layer.
+        grounds: CONTROL_GROUNDS,
         keeps_size: &[],
         sized_apart: &[],
         height: Some(Length::Token("size.control")),
@@ -800,27 +784,8 @@ pub const MANIFEST: &[Family] = &[
             },
         ],
         variants: &[],
-        // Every surface a control is drawn on (the button's, which `grounds.test.ts` finds from
-        // the components): a field stands where a button does, a filter on a list's layer.
-        grounds: &[
-            "surface.base",
-            "surface.raised",
-            "surface.overlay",
-            "surface.sunken",
-            "surface.deep",
-            "surface.hover",
-            "border.subtle",
-            "tab.active",
-            "list.selected",
-            "control.aimed",
-            "danger.surface",
-            "danger.wash",
-            "layer.project",
-            "layer.workspace",
-            "layer.chat",
-            "layer.selected",
-            "terminal.background",
-        ],
+        // A field stands where a button does, a filter on a list's layer.
+        grounds: CONTROL_GROUNDS,
         keeps_size: &["[data-size=\"sm\"]", "[data-size=\"lg\"]"],
         sized_apart: &[
             (
@@ -865,27 +830,8 @@ pub const MANIFEST: &[Family] = &[
             ],
         }],
         variants: &[],
-        // Every surface a control is drawn on (the button's, which `grounds.test.ts` finds from
-        // the components): a field stands where a button does, a filter on a list's layer.
-        grounds: &[
-            "surface.base",
-            "surface.raised",
-            "surface.overlay",
-            "surface.sunken",
-            "surface.deep",
-            "surface.hover",
-            "border.subtle",
-            "tab.active",
-            "list.selected",
-            "control.aimed",
-            "danger.surface",
-            "danger.wash",
-            "layer.project",
-            "layer.workspace",
-            "layer.chat",
-            "layer.selected",
-            "terminal.background",
-        ],
+        // A field stands where a button does, a filter on a list's layer.
+        grounds: CONTROL_GROUNDS,
         keeps_size: &[],
         sized_apart: &[],
         height: Some(Length::Token("size.control")),

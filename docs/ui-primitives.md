@@ -126,7 +126,8 @@ What keeps it from becoming the library this file forbids:
   name box, not on the delete (D-1210-9).
 - **A box the set's `Field` cannot hold goes in the row's control slot as a native element.**
   A `Field` is controlled; a secret's value is never held in React state (a vault's value box),
-  so that box is a native `<input type="password">` drawn with `ui-field`, in a `SettingRow`.
+  so that box is the field family's `TextField` with `type="password"`, which holds its own words
+  and says only whether it is filled, in a `SettingRow`'s control slot.
   The slot is how a row composes what the set does not draw, as `Browse…` beside a path is.
 - **Each piece is a thin layer over a primitive already in the window, and says which.**
   The level switcher is the segmented control; the nav is buttons under Radix roving focus

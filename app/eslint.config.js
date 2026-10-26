@@ -107,14 +107,6 @@ export default tseslint.config(
       "purlis/tree-family": "error",
     },
   },
-  // **The old field wrapper's last wearers** (#3129): a settings row's select and its slider,
-  // which the select (#2906, PR #3107) and choice (#2907, PR #3109) families take off it.
-  // Whichever of #3107, #3109 and #3208 lands last deletes this block and the dead `.ui-field`
-  // rules in `App.css`; nothing else may wear `ui-field`.
-  {
-    files: ["src/settings/components.tsx"],
-    rules: { "purlis/field-family": "off" },
-  },
   // **The tablists still drawn by hand**, each until the ticket that moves it onto the tabs
   // family (#3042): the workspace strip (#2916), the activity bars (#2917), the project rail's
   // tablist (#2915's rail family, whose projects are tabs), and the strip's old hand-made tablist
