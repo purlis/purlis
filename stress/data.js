@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793002069863,
+  "lastUpdate": 1793004504894,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -7576,6 +7576,40 @@ window.BENCHMARK_DATA = {
             "value": 319.2,
             "unit": "MB",
             "extra": "median of 6 samples: 337.1, 303.6, 337.3, 318.6, 319.8, 230.2 MB; window 208.6 MB, session host 109.6 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide",
+            "email": "aaron.yor@gmail.com"
+          },
+          "committer": {
+            "name": "GitHub",
+            "username": "web-flow",
+            "email": "noreply@github.com"
+          },
+          "id": "da648763c6d30d27bc2f8729f2bc50a38f13b3ab",
+          "message": "Browsers: a key whose page reads past its limit is held in words (#3278)\n\n* Browsers: a key whose page reads past its limit is held in words (#3043)\n\nA key that reads a large page's whole tree waits for it within a limit under the\nwindow's, and is held back with words where the read outlives it, never answered\nunknown. The read goes on past the key, within a limit of its own, and the next\nkey into the page takes it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* Browsers: room for a busy machine in the held-key tests (#3043)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* Browsers: a kept read is checked against the focus now, and keys share one read (#3043)\n\nReview round 1. A read an earlier key began is used only within a limit after it\ncame, and only where its field still has the focus of its document, that\ndocument has the page's, and it holds no document of its own; else the key is\nheld and the page read anew. Keys that wait for the page wait on one shared\nread, each within its own limit from its arrival. Typing::forget_reads,\nkeys::is_modifier, frames_to_read, the large-page test's key helper.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* Browsers: a kept read's field must be the one its document names now (#3043)\n\nReview round 2. A kept read is used only where the field's own document names\nthat field as what has the focus now; another element named (a shadow host) or\nan element the engine cannot describe holds the key, and its own fresh read is\nwhat the next key is blanked from.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-26T07:55:00Z",
+          "url": "https://github.com/purlis/purlis/commit/da648763c6d30d27bc2f8729f2bc50a38f13b3ab"
+        },
+        "date": 1793004500815,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 665,
+            "unit": "MB",
+            "extra": "median of 3 samples: 625, 665, 768 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 422.1,
+            "unit": "MB",
+            "extra": "median of 6 samples: 414.4, 420, 420.8, 423.3, 424.3, 551.6 MB; window 235.6 MB, session host 186 MB"
           }
         ]
       }
