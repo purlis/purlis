@@ -855,21 +855,29 @@ pub struct Running<'a> {
 
 impl Running<'_> {
     /// Its set, routed as its start routed it ([`lay_out_for_chat`]): from the same plane,
-    /// workspace, persona, built-in skills and harness, and the repo skills of the same clone.
-    fn routed(&self) -> SkillSet {
+    /// workspace, persona, built-in skills and harness, and the repo skills of the same clone. A
+    /// Try it's scratch chat takes them from its try's folder, with no workspace and no persona,
+    /// as its arming does ([`verbs::drafts::scope_of`]).
+    fn set(&self) -> SkillSet {
+        let scope = verbs::drafts::scope_of(self.plane, self.cwd.filter(|_| self.plane_skills));
+        let (workspace, persona) = if scope.tried {
+            (None, None)
+        } else {
+            (self.workspace, self.persona)
+        };
         let repo = repo_skills_at_start(
             self.plane_skills,
             self.harness,
             self.plane,
-            self.workspace,
+            workspace,
             self.cwd,
         );
         let at = self.plane_skills.then_some(PlaneSkills {
-            plane: self.plane,
-            workspace: self.workspace,
+            plane: &scope.root,
+            workspace,
             repo: &repo,
         });
-        routed(self.built_in, at, self.persona, self.harness)
+        routed(self.built_in, at, persona, self.harness)
     }
 }
 
@@ -914,7 +922,7 @@ pub struct ChatSkills {
 /// its harness.
 pub fn for_use_skill(chat: &Running<'_>) -> ChatSkills {
     // Routed as its start routed it, so a skill its harness was not handed is marked.
-    let set = chat.routed();
+    let set = chat.set();
     let still_over = set.routing.as_ref().and_then(|routing| routing.still_over);
     let hidden = |name: &str| set.hidden_by_router(name).cloned();
     let offered: Vec<Offered> = set
@@ -1034,7 +1042,7 @@ fn load_text(name: &str, given: &Given) -> String {
     }
 }
 
-/// **The stamp of the plane skills chat `chat` has now** (#2770). The window takes one as a chat
+/// **The stamp of the plane skills a running chat has now** (#2770). The window takes one as a chat
 /// starts and again when the project's skills change; where they differ, the chat's harness does
 /// not take the change in by itself ([`Harness::skills_reload`]) and its tab offers a restart.
 /// An empty stamp where the project's skills do not reach its chats ([`reach_chats_here`]).
@@ -1051,7 +1059,7 @@ pub fn stamp_now(chat: &Running<'_>) -> Stamp {
 
 /// [`stamp_now`] whatever the flag says: for a caller that asked the flag once for many chats.
 pub fn stamp_of(chat: &Running<'_>) -> Stamp {
-    Stamp::of(&chat.routed(), chat.harness.skills_reload())
+    Stamp::of(&chat.set(), chat.harness.skills_reload())
 }
 
 /// **The set of a chat on `harness` as its listing is routed** (SK-15): one ask, from the

@@ -93,11 +93,10 @@ fn named_by_the_index(set: &SkillSet) -> String {
         .filter(|effective| set.hidden_by_router(&effective.skill.name).is_some())
         .map(|effective| match &effective.deprecated {
             None => effective.skill.name.clone(),
-            Some(deprecated) => format!(
-                "{}\tdeprecated\t{}",
-                effective.skill.name,
-                deprecated.replacement.as_deref().unwrap_or_default()
-            ),
+            Some(deprecated) => match &deprecated.replacement {
+                None => format!("{}\tdeprecated", effective.skill.name),
+                Some(instead) => format!("{}\tdeprecated\t{instead}", effective.skill.name),
+            },
         })
         .collect();
     named.sort();

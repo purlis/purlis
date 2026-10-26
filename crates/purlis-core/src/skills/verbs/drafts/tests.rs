@@ -650,3 +650,43 @@ fn a_grades_arms_hand_a_chat_the_skill_without_its_fixtures_or_no_skill_at_all()
     assert!(end_try_at(root, &without.piece).unwrap());
     assert!(!skills_from.exists() && !none_from.exists());
 }
+
+/// #3245: Use skill… and the restart's stamp route a Try it's scratch chat as its arming does:
+/// the draft alone from the plane, never the project's other skills.
+#[test]
+fn use_skill_offers_a_try_its_draft_alone_as_its_arming_hands_it() {
+    let tmp = plane();
+    let root = tmp.path();
+    let id = drafted(
+        root,
+        "skills/deploy/SKILL.md",
+        &whole(&skill_text("deploy", "Ships it twice.")),
+    );
+    skill_at(root, "skills/release", "release", "Cuts it.");
+    let tried_out = try_out(root, &id).unwrap();
+    fn chat<'a>(root: &'a Path, cwd: Option<&'a Path>) -> crate::skills::Running<'a> {
+        crate::skills::Running {
+            plane: root,
+            workspace: None,
+            persona: None,
+            harness: crate::harness::Harness::ClaudeCode,
+            built_in: None,
+            plane_skills: true,
+            cwd,
+        }
+    }
+    let offered = |cwd: Option<&Path>| -> Vec<String> {
+        crate::skills::for_use_skill(&chat(root, cwd))
+            .offered
+            .into_iter()
+            .map(|one| one.effective.skill.name)
+            .collect()
+    };
+
+    assert_eq!(offered(Some(&tried_out.piece)), ["deploy"]);
+    assert!(offered(None).contains(&"release".to_owned()));
+    assert_ne!(
+        crate::skills::stamp_of(&chat(root, Some(&tried_out.piece))),
+        crate::skills::stamp_of(&chat(root, None)),
+    );
+}
