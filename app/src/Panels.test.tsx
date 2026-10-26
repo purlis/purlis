@@ -800,6 +800,13 @@ describe("a todo row's menu", () => {
   });
 });
 
+/** Picks one of the Todos view's tabs (#3358). */
+async function showTodos(tab: "Open" | "Done" | "All") {
+  await userEvent.click(
+    within(screen.getByTestId("panel-todos")).getByRole("radio", { name: tab }),
+  );
+}
+
 describe("a todo's box and a done todo (R131, ADR 0106)", () => {
   const DONE = row("done/20260301-090000-ship", "Ship the importer", {
     mark: "todo",
@@ -848,6 +855,7 @@ describe("a todo's box and a done todo (R131, ADR 0106)", () => {
   it("draws a done todo after the open ones, ticked and struck through, and unticks it to reopen", async () => {
     const pressed: Offer[] = [];
     draw({ state: withDone(), offers: offers(), onPress: (offer) => pressed.push(offer) });
+    await showTodos("All");
 
     const panel = within(screen.getByTestId("panel-todos"));
     const done = panel.getByTestId("panel-row-done/20260301-090000-ship");
@@ -870,6 +878,7 @@ describe("a todo's box and a done todo (R131, ADR 0106)", () => {
   it("offers Reopen above the line and Delete below it on a done todo's menu", async () => {
     const pressed: Offer[] = [];
     draw({ state: withDone(), offers: offers(), onPress: (offer) => pressed.push(offer) });
+    await showTodos("Done");
 
     rightClickRow("panel-todos", "Ship the importer");
     const menu = await screen.findByRole("menu");
@@ -883,6 +892,55 @@ describe("a todo's box and a done todo (R131, ADR 0106)", () => {
     expect(pressed.map((offer) => offer.does)).toEqual([
       { verb: "forgetDoneTodo", workspace: "alpha", slug: "20260301-090000-ship" },
     ]);
+  });
+});
+
+describe("the Todos view's tabs (#3358)", () => {
+  const DONE = row("done/20260301-090000-ship", "Ship the importer", { mark: "todo" });
+  const both = (): WorkspaceState =>
+    state({
+      panels: {
+        ...PANELS,
+        contributed: [todosPanel([TODO, DONE]), personasPanel(["devops", "steward"], "steward")],
+      },
+    });
+  const titles = () =>
+    within(screen.getByTestId("panel-todos"))
+      .queryAllByRole("row")
+      .map((one) => one.textContent ?? "");
+
+  it("lists the open todos first, then the done ones, then both, as Open, Done and All", async () => {
+    draw({ state: both() });
+
+    const tabs = within(screen.getByTestId("panel-todos")).getByRole("radiogroup", {
+      name: "Show the todos that are",
+    });
+    expect(
+      within(tabs)
+        .getAllByRole("radio")
+        .map((one) => one.getAttribute("value")),
+    ).toEqual(["open", "done", "all"]);
+    expect(within(tabs).getByRole("radio", { name: "Open" })).toBeChecked();
+    expect(titles().join("|")).toContain("Review the rollout plan");
+    expect(titles().join("|")).not.toContain("Ship the importer");
+
+    await showTodos("Done");
+    expect(titles().join("|")).toContain("Ship the importer");
+    expect(titles().join("|")).not.toContain("Review the rollout plan");
+
+    await showTodos("All");
+    expect(titles().join("|")).toContain("Review the rollout plan");
+    expect(titles().join("|")).toContain("Ship the importer");
+  });
+
+  it("says nothing is done yet on Done when no todo is", async () => {
+    draw();
+
+    await showTodos("Done");
+
+    expect(
+      within(screen.getByTestId("panel-todos")).getByText("Nothing done yet"),
+    ).toBeInTheDocument();
   });
 });
 

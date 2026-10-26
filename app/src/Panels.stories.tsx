@@ -5,8 +5,8 @@
  * **Memory, Todos and Sessions as `Panels` draws them** (#3340), on the sidebar view frame: a
  * side panel 276px wide whose view is its one scroll, the title and the field held at the top,
  * each day's name held under them with its count, 30px rows. A long list and a short one of each,
- * walked by the keyboard in the order the top stacks them. And the Todos view with done todos
- * after the open ones, ticked and struck through (R131, ADR 0106).
+ * walked by the keyboard in the order the top stacks them. And the Todos view's tabs, Open, Done
+ * and All, on All: done todos after the open ones, ticked and struck through (R131, ADR 0106).
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useMemo, useState } from "react";
@@ -200,16 +200,23 @@ const meta = { component: View } satisfies Meta<typeof View>;
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** The keyboard reaches the field in the top, then the rows; the top stays put as they scroll. */
+/** The keyboard reaches the field in the top, then what else the top holds (the Todos view's
+ *  tabs), then the rows; the top stays put as they scroll. */
 async function walk(
   canvasElement: HTMLElement,
   tab: () => Promise<void>,
   field: HTMLElement,
   long: boolean,
+  then?: HTMLElement,
 ) {
   await tab();
   await expect(field).toHaveFocus();
   expectFocusInSight();
+  if (then !== undefined) {
+    await tab();
+    await expect(then).toHaveFocus();
+    expectFocusInSight();
+  }
   await tab();
   await expect(document.activeElement?.closest('[role="grid"]')).not.toBeNull();
   expectFocusInSight();
@@ -268,6 +275,7 @@ export const TodosLong: Story = {
       () => userEvent.tab(),
       canvas.getByRole("textbox", { name: "New todo in alpha" }),
       true,
+      canvas.getByRole("radio", { name: "Open" }),
     );
   },
 };
@@ -280,13 +288,18 @@ export const TodosShort: Story = {
       () => userEvent.tab(),
       canvas.getByRole("textbox", { name: "New todo in alpha" }),
       false,
+      canvas.getByRole("radio", { name: "Open" }),
     );
   },
 };
 
 export const TodosWithDone: Story = {
   args: { view: "todos", count: 3, done: 2 },
-  play: async ({ canvas }) => {
+  play: async ({ canvas, userEvent }) => {
+    // Open, Done and All in the top, under the box (#3358); Open is the one picked.
+    await expect(canvas.getByRole("radio", { name: "Open" })).toBeChecked();
+    await expect(canvas.getAllByRole("checkbox")).toHaveLength(3);
+    await userEvent.click(canvas.getByRole("radio", { name: "All" }));
     // The open ones' boxes are clear, the done ones' ticked, and those are under Done, last.
     await expect(canvas.getAllByRole("checkbox", { checked: false })).toHaveLength(3);
     await expect(canvas.getAllByRole("checkbox", { checked: true })).toHaveLength(2);
