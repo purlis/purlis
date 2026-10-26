@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793015854098,
+  "lastUpdate": 1793017690877,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -25536,6 +25536,48 @@ window.BENCHMARK_DATA = {
             "value": 104.6706765,
             "unit": "ms",
             "extra": "median of 5 runs: 101.814, 103.481, 104.671, 104.850, 106.193 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6fd5212df80c8a788293eec5a9ffdf403737092b",
+          "message": "ci: run the required checks for the merge queue; Vaults test waits for its rows (#3379)\n\n* ci: run the required checks for the merge queue\n\nci.yml and docs.yml also run on merge_group (checks_requested), so all\nnine required checks report for a queued group. No workflow filters by\npath, and every scoped job still finishes green when it has nothing to do.\n\nThe jobs that compare a change with main (bench, the cold start, the\nparity and macOS scoped jobs) treat a merge group like a pull request.\nA new local action, change-base, picks the base commit: the group's\nbase_sha, fetched by SHA, for a merge group; HEAD^1 otherwise. HEAD^1 is\nonly the base when the queued pull request is a single commit.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* test(vaults): wait for the rows, not only the grid\n\nReact Aria's GridList draws the grid before its rows, so reading rows\nright after findByRole(\"grid\") could find none. Each test now waits on\nthe row it needs with findByRole. No sleeps.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-26T16:17:38+04:00",
+          "tree_id": "b71d2ab73f2fe9e558c2a9e8ae113caa5c2a6a95",
+          "url": "https://github.com/purlis/purlis/commit/6fd5212df80c8a788293eec5a9ffdf403737092b"
+        },
+        "date": 1793017688387,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4586665,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.451, 0.452, 0.459, 0.461, 0.466 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3101725,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.240, 16.285, 16.310, 16.362, 16.841 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.7654405,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.831, 101.577, 101.765, 101.806, 102.882 ms"
           }
         ]
       }
