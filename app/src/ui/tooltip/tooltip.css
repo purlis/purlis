@@ -51,6 +51,17 @@
   color: var(--text-secondary);
 }
 
+/* **The key that does the same** (#2921), after the hint's words, in the meta role: smaller, and in
+   the quiet tier, since it is informational. */
+[data-scope="tooltip"][data-part="shortcut"] {
+  margin-inline-start: var(--space-3);
+  color: var(--text-quiet);
+  font-family: inherit;
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 /* **It appears and goes at once**, with no fade: React Aria holds a tooltip that is leaving until
    any animation on it has ended, and in WebKit a tooltip dismissed as its fade ran was held over
    the page. A hint is a small thing near the pointer, and its coming and going is the cue. */

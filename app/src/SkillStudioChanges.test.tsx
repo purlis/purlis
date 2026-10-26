@@ -38,6 +38,7 @@ const deploy = {
   lint: [],
   hidden: [],
   pinned: false,
+  pinned_by: [],
   written: "deploy",
   named: false,
   unchecked: null,
@@ -66,6 +67,7 @@ function core(
   skills: unknown[],
   workspace: string | null,
   answers: Record<string, (args: Record<string, unknown>) => unknown> = {},
+  studio: Record<string, unknown> = {},
 ) {
   const asked: { cmd: string; args: Record<string, unknown> }[] = [];
   mockIPC((cmd, args) => {
@@ -81,6 +83,8 @@ function core(
         harnesses: [],
         clashes: [],
         skills,
+        pins_refused: null,
+        ...studio,
       };
     asked.push({ cmd, args: given });
     const answer = answers[cmd];
@@ -260,6 +264,163 @@ describe("the Skill studio's changes", () => {
         name: "deploy",
         on: true,
       }),
+    );
+  });
+
+  it("pins a skill for a workspace's chats with the row's Pin switch, one change (SK-15d)", async () => {
+    const asked = core([deploy], "ops");
+    const user = userEvent.setup();
+    render(<SkillStudioTab plane="p" scope={inWorkspace("ops")} changed={0} />);
+
+    const pin = await screen.findByRole("switch", { name: "Pin deploy for workspace ops" });
+    expect(pin).not.toBeChecked();
+    await user.click(pin);
+
+    await waitFor(() =>
+      expect(asked.filter((one) => one.cmd === "skill_pin").map((one) => one.args)).toEqual([
+        { plane: "p", by: { at: "workspace", name: "ops" }, name: "deploy", on: true },
+      ]),
+    );
+  });
+
+  it("unpins a skill a persona pins, and offers no pin at the project's root (SK-15d)", async () => {
+    const pinned = { ...deploy, pinned: true, pinned_by: [{ at: "persona", name: "reviewer" }] };
+    const asked = core([pinned], null);
+    const user = userEvent.setup();
+    render(<SkillStudioTab plane="p" scope={asPersona("reviewer")} changed={0} />);
+
+    const pin = await screen.findByRole("switch", { name: "Pin deploy for persona reviewer" });
+    expect(pin).toBeChecked();
+    await user.click(pin);
+
+    await waitFor(() =>
+      expect(asked.find((one) => one.cmd === "skill_pin")?.args).toMatchObject({
+        by: { at: "persona", name: "reviewer" },
+        name: "deploy",
+        on: false,
+      }),
+    );
+    cleanup();
+    core([pinned], null);
+    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
+    await screen.findByTestId("skill-deploy");
+    expect(screen.queryByRole("switch", { name: /^Pin deploy/ })).toBeNull();
+  });
+
+  it("offers no pin on a built-in skill or on a hidden copy (SK-15d)", async () => {
+    core(
+      [
+        {
+          ...deploy,
+          level: "built-in",
+          label: "built-in",
+          granted: null,
+          folder: "x/handoff",
+          name: "handoff",
+        },
+        {
+          ...deploy,
+          level: "workspace",
+          label: "workspace",
+          granted: null,
+          folder: "workspaces/ops/skills/deploy",
+        },
+        { ...deploy, on: false, left_out: "hidden by the workspace's copy" },
+      ],
+      "ops",
+    );
+    render(<SkillStudioTab plane="p" scope={inWorkspace("ops")} changed={0} />);
+
+    await screen.findByTestId("skill-deploy");
+    expect(screen.queryByRole("switch", { name: "Pin handoff for workspace ops" })).toBeNull();
+    expect(screen.getAllByRole("switch", { name: "Pin deploy for workspace ops" })).toHaveLength(1);
+    expect(
+      within(screen.getByTestId("skill-deploy")).getByRole("switch", {
+        name: "Pin deploy for workspace ops",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("gives the Pin switch to the copy a chat gets, not the first row of the name (SK-15d)", async () => {
+    core(
+      [
+        { ...deploy, on: false, left_out: "turned off in this workspace" },
+        {
+          ...deploy,
+          level: "workspace",
+          label: "workspace",
+          granted: null,
+          folder: "workspaces/ops/skills/deploy",
+        },
+      ],
+      "ops",
+    );
+    render(<SkillStudioTab plane="p" scope={inWorkspace("ops")} changed={0} />);
+
+    const shown = await screen.findByTestId("skill-deploy-hidden-1");
+    expect(
+      within(shown).getByRole("switch", { name: "Pin deploy for workspace ops" }),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("skill-deploy")).queryByRole("switch", { name: /^Pin deploy/ }),
+    ).toBeNull();
+  });
+
+  it("says a workspace's pins aren't used and removes the entry that is no skill's name (SK-15d)", async () => {
+    const refused = {
+      by: { at: "workspace", name: "ops" },
+      why: '"Not A Name" is not a skill\'s name (it holds a capital)',
+      bad: "Not A Name",
+      file: "workspaces/ops/workspace.json",
+    };
+    const asked = core(
+      [{ ...deploy, pinned: false, pinned_by: [{ at: "workspace", name: "ops" }] }],
+      "ops",
+      {},
+      { pins_refused: refused },
+    );
+    const user = userEvent.setup();
+    render(<SkillStudioTab plane="p" scope={inWorkspace("ops")} changed={0} />);
+
+    expect(await screen.findByTestId("skill-pins-refused")).toHaveTextContent(
+      `workspace ops's pins aren't used: "Not A Name" is not a skill's name (it holds a capital).`,
+    );
+    const pin = screen.getByRole("switch", { name: "Pin deploy for workspace ops" });
+    expect(pin).toBeChecked();
+    expect(
+      within(screen.getByTestId("skill-deploy")).getByText("Pinned, not used"),
+    ).toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("button", { name: 'Remove it, the pin "Not A Name" of workspace ops' }),
+    );
+    await waitFor(() =>
+      expect(asked.find((one) => one.cmd === "skill_pin")?.args).toMatchObject({
+        by: { at: "workspace", name: "ops" },
+        name: "Not A Name",
+        on: false,
+      }),
+    );
+  });
+
+  it("points to the file where a persona's pins are too many to be used (SK-15d)", async () => {
+    core(
+      [deploy],
+      null,
+      {},
+      {
+        pins_refused: {
+          by: { at: "persona", name: "reviewer" },
+          why: "the list holds more than 64 pins",
+          bad: null,
+          file: "personas/reviewer/persona.md",
+        },
+      },
+    );
+    render(<SkillStudioTab plane="p" scope={asPersona("reviewer")} changed={0} />);
+
+    expect(await screen.findByTestId("skill-pins-refused")).toHaveTextContent(
+      "persona reviewer's pins aren't used: the list holds more than 64 pins. Unpin some, or edit personas/reviewer/persona.md.",
     );
   });
 

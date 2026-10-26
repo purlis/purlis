@@ -318,3 +318,75 @@ fn another_desktop_cannot_unpair_a_runner() {
     let (_, peer) = answering(folder.path()).unwrap().unwrap();
     assert_eq!(peer, ours);
 }
+
+/// A pod's hand-off folder, as the operator's template mounts it: a folder of its own.
+fn pod_made_a_key() -> (tempfile::TempDir, std::path::PathBuf, String) {
+    let pod = tempfile::tempdir().unwrap();
+    let handoff = pod.path().join("link-key");
+    let published = pod.path().join("termination-log");
+    std::fs::write(&published, "").unwrap();
+    make_at_start(&handoff, &published).unwrap();
+    let public = std::fs::read_to_string(&published).unwrap();
+    (pod, handoff, public)
+}
+
+#[test]
+fn a_cluster_runner_pairs_with_the_key_its_pod_made_and_published_as_it_started() {
+    let (_pod, handoff, public) = pod_made_a_key();
+    assert!(is_lower_hex(&public, 64), "{public:?}");
+    use std::os::unix::fs::PermissionsExt;
+    assert_eq!(
+        std::fs::metadata(&handoff).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+    let home = tempfile::tempdir().unwrap();
+    let desktop = desktop();
+    let runner = pair_with_key_made_at_start(home.path(), &desktop, &handoff).unwrap();
+    assert_eq!(
+        hex_of(runner.key.as_bytes()),
+        public,
+        "the key it published"
+    );
+    let (ours, peer) = answering(home.path()).unwrap().expect("paired");
+    assert_eq!(
+        (ours.key.public(), ours.device),
+        (runner.key, runner.device)
+    );
+    assert_eq!(peer, desktop);
+    assert!(!handoff.exists(), "the pod's copy of the key is taken away");
+}
+
+#[test]
+fn a_cluster_runner_is_paired_once_since_its_pairing_takes_the_key() {
+    let (_pod, handoff, _) = pod_made_a_key();
+    let home = tempfile::tempdir().unwrap();
+    pair_with_key_made_at_start(home.path(), &desktop(), &handoff).unwrap();
+    let refused = pair_with_key_made_at_start(home.path(), &desktop(), &handoff).unwrap_err();
+    assert!(refused.contains("paired once"), "{refused}");
+}
+
+#[test]
+fn a_key_made_at_start_is_made_only_where_none_is() {
+    let (_pod, handoff, public) = pod_made_a_key();
+    let published = handoff.with_file_name("termination-log");
+    let refused = make_at_start(&handoff, &published).unwrap_err();
+    assert!(refused.contains("could not be made"), "{refused}");
+    assert_eq!(std::fs::read_to_string(&published).unwrap(), public);
+    // Nor through a link someone put there.
+    let pod = tempfile::tempdir().unwrap();
+    let elsewhere = pod.path().join("elsewhere");
+    std::os::unix::fs::symlink(&elsewhere, pod.path().join("link-key")).unwrap();
+    assert!(make_at_start(&pod.path().join("link-key"), &published).is_err());
+    assert!(!elsewhere.exists());
+}
+
+#[test]
+fn a_key_made_at_start_that_others_may_read_is_not_paired_with() {
+    use std::os::unix::fs::PermissionsExt;
+    let (_pod, handoff, _) = pod_made_a_key();
+    std::fs::set_permissions(&handoff, std::fs::Permissions::from_mode(0o644)).unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let refused = pair_with_key_made_at_start(home.path(), &desktop(), &handoff).unwrap_err();
+    assert!(refused.contains("could not be read safely"), "{refused}");
+    assert!(answering(home.path()).unwrap().is_none());
+}

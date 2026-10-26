@@ -67,6 +67,33 @@ pub fn origin(origin: Option<&str>) -> Bytes {
     frame(ORIGIN, origin.unwrap_or_default().as_bytes())
 }
 
+/// **A JPEG's size, width then height, from its first start-of-frame header**, read without
+/// decoding it (#2050): what a window checks a frame from another host against before it draws
+/// one. `None` for bytes that are not a JPEG, or whose header is cut short.
+pub fn jpeg_size(jpeg: &[u8]) -> Option<(u16, u16)> {
+    if jpeg.get(..2)? != [0xff, 0xd8] {
+        return None;
+    }
+    let mut at = 2;
+    loop {
+        if *jpeg.get(at)? != 0xff {
+            return None;
+        }
+        let marker = *jpeg.get(at + 1)?;
+        let length = usize::from(u16::from_be_bytes([*jpeg.get(at + 2)?, *jpeg.get(at + 3)?]));
+        // A start of frame of any coding: its height, then its width, after a precision byte.
+        if matches!(marker, 0xc0..=0xcf) && !matches!(marker, 0xc4 | 0xc8 | 0xcc) {
+            let height = u16::from_be_bytes([*jpeg.get(at + 5)?, *jpeg.get(at + 6)?]);
+            let width = u16::from_be_bytes([*jpeg.get(at + 7)?, *jpeg.get(at + 8)?]);
+            return Some((width, height));
+        }
+        if length < 2 {
+            return None;
+        }
+        at += 2 + length;
+    }
+}
+
 /// One frame read back.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Frame {

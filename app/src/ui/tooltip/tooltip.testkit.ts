@@ -143,3 +143,24 @@ export async function hoverTipOf(target: Element | null | undefined): Promise<st
   await rest(TOOLTIP_CLOSE_DELAY + 50);
   return said;
 }
+
+/**
+ * **Where a target's tooltip stands, as the pointer opens it** (#3361): the tooltip's resolved
+ * side (`data-placement`: `bottom`, `top`, `right` or `left`), or `null` when none opened.
+ */
+export async function hoverPlacementOf(target: Element | null | undefined): Promise<string | null> {
+  if (!(target instanceof HTMLElement)) return null;
+  const rest = (ms: number) =>
+    act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, ms));
+    });
+  fireEvent.pointerMove(document.body, { pointerType: "mouse" });
+  fireEvent.pointerOver(target, { pointerType: "mouse" });
+  fireEvent.pointerEnter(target, { pointerType: "mouse" });
+  await rest(TOOLTIP_DELAY + 50);
+  const side = shownTip()?.getAttribute("data-placement") ?? null;
+  fireEvent.pointerLeave(target, { pointerType: "mouse" });
+  fireEvent.pointerOut(target, { pointerType: "mouse" });
+  await rest(TOOLTIP_CLOSE_DELAY + 50);
+  return side;
+}

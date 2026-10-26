@@ -105,10 +105,19 @@ fn only_a_desktop_on_its_link_to_a_runner_unpairs() {
 }
 
 #[test]
-fn only_the_window_starts_or_watches_a_browser() {
+fn only_the_window_or_its_hosts_relay_starts_watches_or_logs_in_a_browser() {
+    for scope in Scope::ALL {
+        let windows = matches!(scope, Scope::LocalUi | Scope::RemoteLink);
+        assert_eq!(scope.may(Power::Browser), windows, "{scope}");
+        assert_eq!(scope.may(Power::LogIn), windows, "{scope}");
+    }
+}
+
+#[test]
+fn only_the_window_opens_or_keeps_a_kept_login() {
     for scope in Scope::ALL {
         assert_eq!(
-            scope.may(Power::Browser),
+            scope.may(Power::KeptLogin),
             scope == Scope::LocalUi,
             "{scope}"
         );

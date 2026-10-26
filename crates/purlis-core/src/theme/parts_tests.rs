@@ -1296,9 +1296,12 @@ fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
             "label",
             "description",
             "trail",
-            "header"
+            "header",
+            "shortcut"
         ]
     );
+    // The key at a row's end (#2921), the next release's.
+    assert_eq!(list["parts"][7]["since"], parts::NEXT);
     // A textarea is as tall as its lines: no height to set.
     assert!(
         !family("textarea")["parts"][0]["properties"]
@@ -1316,7 +1319,8 @@ fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
         .iter()
         .map(|one| one["name"].as_str().unwrap())
         .collect();
-    assert_eq!(parts, ["root", "detail"]);
+    assert_eq!(parts, ["root", "detail", "shortcut"]);
+    assert_eq!(tooltip["parts"][2]["since"], parts::NEXT);
 }
 
 #[test]

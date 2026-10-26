@@ -19,10 +19,10 @@ export { SETTLE_MS };
  * The time a list is drawn at. Read in the render that draws a changed list, once per change
  * (the state it is kept in changes with it), so that render and every press on it know it.
  */
-const drawnAt = () => Date.now();
+const drawnAt = () => performance.now();
 
 /** The time a press lands at, read in the handler that answers it. */
-const pressedAt = () => Date.now();
+const pressedAt = () => performance.now();
 
 /** What the window sends back for each task: the block it showed for it, exactly. */
 function seenOf(members: readonly Member[]): SeenBlock[] {
@@ -93,7 +93,7 @@ export function TaskBlocksNotice({
    */
   const [drawn, setDrawn] = useState(() => ({
     listing,
-    at: Date.now(),
+    at: drawnAt(),
     sessions: new Set(group.members.map((one) => one.session)),
     joined: [] as string[],
   }));

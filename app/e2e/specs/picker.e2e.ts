@@ -233,7 +233,7 @@ describe("starting a chat", () => {
       card as unknown as HTMLElement,
     );
 
-    await expect($("button=Start")).toBeDisplayed();
+    await expect($("button=Start chat")).toBeDisplayed();
     await browser.keys(["Escape"]);
   });
 });

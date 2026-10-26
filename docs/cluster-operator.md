@@ -10,8 +10,9 @@ It is built on [kubernetes-sigs/agent-sandbox](https://github.com/kubernetes-sig
 pinned to one tested release whose definitions purlis vendors, and it never re-implements what
 that project does. Its source is [`operator/`](../operator/).
 
-This is its first slice (#2054): a Pool and a Claim make a running session host, and the
-Claim says whether it is ready.
+A Pool and a Claim make a running session host (#2054), the Claim says whether it is ready,
+and the operator vouches for the runner's link key, so a desktop links only to the runner it
+claimed (#2056, [below](#who-the-runner-is)).
 
 ## What it needs
 
@@ -115,7 +116,7 @@ you set the real one.
 
 ### With Helm
 
-Helm 4, the version the tests use. Three steps, in order:
+Helm 4, the version the tests use. Four steps, in order:
 
 ```bash
 # 1. Upstream agent-sandbox, the pinned release: its definitions and its controller, named by
@@ -127,7 +128,14 @@ kubectl apply --server-side -k operator/vendor/agent-sandbox/v1.0.6
 kubectl create namespace purlis-system
 kubectl label namespace purlis-system pod-security.kubernetes.io/enforce=restricted
 
-# 3. purlis's definitions, the policy on Claims, and the operator.
+# 3. The key the operator signs runners' link keys with, made once, here, and kept as a Secret
+#    the operator's pod mounts. Keep it: a new key makes every desktop ask again.
+#    Piped, so the key is never written to a file.
+openssl genpkey -algorithm ed25519 |
+  kubectl -n purlis-system create secret generic purlis-cluster-operator-signing-key \
+    --from-file=key.pem=/dev/stdin
+
+# 4. purlis's definitions, the policy on Claims, and the operator.
 helm install purlis-cluster-operator operator/charts/purlis-cluster-operator \
   --namespace purlis-system \
   --set image.digest=sha256:<digest> \
@@ -138,7 +146,9 @@ helm install purlis-cluster-operator operator/charts/purlis-cluster-operator \
 Claim) before anything else in it, and never upgrades or deletes them. A cluster admin who
 reviews and applies them apart from the controllers applies `operator/deploy/crds.yaml` with
 `kubectl apply --server-side` and installs the chart with `--skip-crds`. After an upgrade of
-the chart that changes them, apply `operator/deploy/crds.yaml` the same way.
+the chart that changes them, apply `operator/deploy/crds.yaml` the same way, before the chart:
+Helm never upgrades `crds/`. An upgrade to a chart whose policy asks for a Claim's `requester`
+without the definitions that hold it refuses every new Claim until they are applied.
 
 `helm uninstall` removes the operator and leaves the definitions, the Claims and Pools in
 them, and the policy on Claims, which Helm keeps (`helm.sh/resource-policy: keep`).
@@ -172,9 +182,17 @@ kubectl apply --server-side -k operator/vendor/agent-sandbox/v1.0.6
 kubectl apply --server-side -f operator/deploy/policy.yaml
 kubectl apply --server-side -f operator/deploy/crds.yaml
 
-# 3. The `purlis-system` namespace and the operator, with its image named by digest: the
-#    `install/operator.yaml` of a run's `operator-image` artifact, which already names it, or
-#    this one with the image set.
+# 3. The `purlis-system` namespace and the key the operator signs runners' link keys with,
+#    kept as a Secret its pod mounts. Keep it: a new key makes every desktop ask again.
+kubectl create namespace purlis-system
+kubectl label namespace purlis-system pod-security.kubernetes.io/enforce=restricted
+#    Piped, so the key is never written to a file.
+openssl genpkey -algorithm ed25519 |
+  kubectl -n purlis-system create secret generic purlis-cluster-operator-signing-key \
+    --from-file=key.pem=/dev/stdin
+
+# 4. The operator, with its image named by digest: the `install/operator.yaml` of a run's
+#    `operator-image` artifact, which already names it, or this one with the image set.
 kubectl apply --server-side -f operator/deploy/operator.yaml
 kubectl -n purlis-system set image deployment/purlis-cluster-operator \
   operator=ghcr.io/purlis/purlis-cluster-operator@sha256:<digest>
@@ -200,6 +218,7 @@ metadata:
   namespace: ada
 spec:
   pool: team
+  requester: ada@example.com
 ```
 
 - **A Pool** is cluster-wide, defined once for the team. Its `image` is a runner image named
@@ -213,6 +232,10 @@ spec:
   pool's objects there belong only to Claims made before the policy on Claims was in force
   (below), `Starting` until upstream reports, and upstream's own reason after that.
   `kubectl get claims` shows it.
+- **A Claim names who makes it**, `requester`, exactly as the cluster signs them in
+  (`kubectl auth whoami`): the policy refuses a Claim whose `requester` is anyone else, in words
+  that name the right one, and it never changes after. The operator vouches for it with the
+  runner's link key. purlis fills it in when it claims a runner.
 - **Deleting a Claim** deletes its runner.
 - **Deleting a Pool stops nothing that runs.** A Claim whose runner was asked for keeps it,
   running as the pool last defined it, until the Claim is deleted: its `Ready` is still what
@@ -244,6 +267,40 @@ rules:
 
 Who may create a Claim, and in which namespace, is RBAC on `claims` as usual.
 
+## Who the runner is
+
+A desktop links to a runner over ADR 0078's encrypted link, and links only to the runner it
+claimed. Two witnesses say which key that runner holds, and both must agree:
+
+1. **The runner makes its link key as its pod starts.** The pod's first step, `link-key`, runs
+   the pool's image (`purlis bridge --make-key`) before anything else in the pod: it makes the
+   key, hands its private half to the runner in a folder in memory the two containers alone
+   share (`/run/purlis-link/`), and writes its public half as its termination message, which
+   the cluster shows in the pod's status.
+2. **The operator signs what it saw.** It follows the claim to its pod by uid: its upstream
+   claim, the sandbox that claim controls, and the pod that sandbox controls. It holds the pod
+   to the template it made for the pool in full, every field but the few the cluster itself
+   sets or defaults, and refuses a pool's template that someone else changed. Then it signs a statement of the claim, the pod, the key and the requester with
+   its own Ed25519 key. The statement and its signature are the Claim's `status.linkKey`, and
+   its `KeyPublished` condition says `Vouched`, or why not yet. Every Pool's
+   `status.signingKey` names the operator's key, which a desktop pins when it adds the pool.
+3. **The desktop pairs over its own `kubectl exec`** into the pod the statement names, as a
+   Docker pool's desktop pairs over `docker exec`, and the runner answers with its device id
+   and key. A statement signed by another key, about another claim or requester, or a runner
+   answering another key than the one vouched for, is refused, and so is a statement that names
+   another pod or key before any later link. The pairing takes the private half out of the
+   shared folder, so it is left only in the session host's own. The operator looks at a
+   vouched claim again every minute, and takes its statement away once it no longer holds.
+
+**Vouching is only as strong as the namespace is the requester's own.** Anyone who may exec into
+pods, make pods, or change the pool's objects in a claim's namespace can reach its runner, read
+its key, or pair with it first, whatever the statement says. Until the operator makes a
+namespace per person (#2055), give each person a namespace of their own and no one else rights
+in it. Read access to Secrets in the operator's namespace is the power to vouch for any runner.
+
+A runner is paired once: a pod whose container restarts has lost its pairing, and the claim is
+made again.
+
 **The operator acts only on Claims admitted under its policy, however it was installed.** It
 reads the policy's binding before it acts on any Claim. While no binding puts the policy in
 force, it acts on no Claim, and each says `PolicyNotInForce`. The policy is taken to be in force
@@ -264,7 +321,7 @@ For a Claim in namespace `ns` on Pool `p`, the operator makes, and then applies 
 
 | Upstream object | Name | What it holds |
 |---|---|---|
-| `SandboxTemplate` | `purlis-pool-p` in `ns` | the runner's pod: one container running the pool's image with its own entrypoint (`purlis serve`), as a user who is not root, every capability dropped, no privilege escalation, the runtime's default seccomp profile, no Kubernetes credential mounted and no service addresses in its environment |
+| `SandboxTemplate` | `purlis-pool-p` in `ns` | the runner's pod: its first step, `link-key`, making the runner's link key (above), then one container running the pool's image with its own entrypoint (`purlis serve`), both as a user who is not root, every capability dropped, no privilege escalation, the runtime's default seccomp profile, no Kubernetes credential mounted and no service addresses in their environment |
 | `SandboxWarmPool` | `purlis-pool-p` in `ns` | no runner kept warm: every claim starts one |
 | `SandboxClaim` | the Claim's own name in `ns` | the claim on that warm pool |
 
@@ -294,11 +351,17 @@ it holds:
 | `runners.purlis.dev` | `pools` | get, list, watch |
 | `runners.purlis.dev` | `claims` | list, watch |
 | `runners.purlis.dev` | `claims/status` | patch |
+| `runners.purlis.dev` | `pools/status` | patch |
+| core | `pods` | get |
+| `agents.x-k8s.io` | `sandboxes` | get |
 | `admissionregistration.k8s.io` | `validatingadmissionpolicybindings`, only `purlis-claims-use-their-pool` | get, list, watch |
 | `extensions.agents.x-k8s.io` | `sandboxclaims`, `sandboxtemplates`, `sandboxwarmpools` | create, get, list, patch, watch |
 
-It holds no right to `exec`, `attach` or port-forward to a pod, reads no Secret, and touches no
-pod at all; its Kubernetes client is built without the websocket support `exec` would need.
+It holds no right to `exec`, `attach` or port-forward to a pod and none to read a Secret, and it
+reads a sandbox and a pod only by name: a Claim's, which upstream made, to follow the claim to
+its runner and read the key it vouches for. It never lists, makes, changes or deletes a pod. Its own signing key is the
+Secret you made at install, which the kubelet mounts in its pod. Its Kubernetes client is built
+without the websocket support `exec` would need.
 `operator/tests/the_install_manifests.rs` holds these rules, and the kind tests ask the cluster
 itself. It runs as a user who is not root, with a read-only root file system and every
 capability dropped.
@@ -328,10 +391,17 @@ and memory included. Give cluster-admin and node access accordingly.
   must find nothing missing; purlis's definitions, the policy and the operator installed by the
   chart in a namespace that enforces the restricted Pod Security Standard; `kubectl diff`
   showing the plain manifests would change nothing the chart made; then
-  `operator/tests/on_a_kind_cluster.rs`, which checks only what the cluster shows; then
-  `helm uninstall`, which leaves the definitions and the policy. It removes everything it
-  started. `.github/workflows/operator.yml` runs it, with a runner image built from the same
-  commit, on every pull request that changes `operator/` or `runner-image/`.
+  `operator/tests/on_a_kind_cluster.rs`, which checks only what the cluster shows; then the
+  desktop's side, `crates/purlis-core/tests/a_chat_runs_on_a_cluster_runner_through_kubectl_exec.rs`:
+  a Claim, the operator's statement checked against the Pool's key, a pairing over
+  `kubectl exec` that must agree with it (and one reaching another runner, refused), then a
+  chat on the runner through the link; then `helm uninstall`, which leaves the definitions and
+  the policy. It removes everything it started. `.github/workflows/operator.yml` runs it, with
+  a runner image built from the same commit, on every pull request that changes `operator/`,
+  `runner-image/` or the desktop's side of a cluster runner.
+- The statement both sides read is one worked example in
+  [`fixtures/runner-link-key/`](../fixtures/runner-link-key/), which the operator's tests sign
+  and the desktop's tests verify, byte for byte.
 
 ## Moving the upstream pin
 

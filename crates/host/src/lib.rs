@@ -74,8 +74,8 @@ pub use browsers::NotStarted as BrowserNotStarted;
 #[cfg(unix)]
 pub use browsers::{
     A_BROWSER_THE_PERSON_DRIVES, AN_ENDED_BROWSER, Browsers, Download, ENGINE_DOWNLOAD_CANCELLED,
-    FrameSink, INPUT_MISSED, LoginEnded, NOT_DRIVING, NoBrowsers, NotActed, NotTaken, Screen,
-    ScreenEnded, THUMBNAIL_EVERY,
+    FrameSink, INPUT_MISSED, LINK_MOST_FRAME_WIDTH, LINK_MOST_FRAMES_A_SECOND, LoginEnded,
+    NOT_DRIVING, NoBrowsers, NotActed, NotTaken, Screen, ScreenEnded, THUMBNAIL_EVERY,
 };
 #[cfg(unix)]
 pub use code::{Code, MovesNoCode, TRANSFER_WITHIN};

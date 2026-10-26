@@ -32,8 +32,22 @@ spec:
       {{- end }}
       securityContext:
         runAsNonRoot: true
+        # The image's own group, so the signing key below is readable by the operator alone.
+        fsGroup: 65532
         seccompProfile:
           type: RuntimeDefault
+      # The key the operator signs runners' link keys with (#2056), made once by whoever
+      # installs it (docs/cluster-operator.md) and mounted by the kubelet: the operator holds no
+      # right to read a Secret.
+      volumes:
+        - name: signing-key
+          secret:
+            secretName: purlis-cluster-operator-signing-key
+            # 0440, in decimal: YAML readers disagree on a leading zero.
+            defaultMode: 288
+            items:
+              - key: key.pem
+                path: key.pem
       containers:
         - name: operator
           image: {{ include "purlis-cluster-operator.image" . }}
@@ -49,3 +63,7 @@ spec:
               drop: [ALL]
             seccompProfile:
               type: RuntimeDefault
+          volumeMounts:
+            - name: signing-key
+              mountPath: /var/run/purlis-cluster-operator/signing-key
+              readOnly: true

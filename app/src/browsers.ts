@@ -79,6 +79,15 @@ export function thisDevice(onAMac: boolean): string {
 }
 
 /**
+ * **The device a browser runs on, as its chip names it** (#2050): the runner of `pool` where it
+ * runs on one, `pool builds`, so a runner's `localhost` is never taken for this machine's; else
+ * this machine.
+ */
+export function deviceOf(pool: string | null, onAMac: boolean): string {
+  return pool === null ? thisDevice(onAMac) : `pool ${pool}`;
+}
+
+/**
  * **What a browser's chip says** (#2024, spec #2008): the page's host and the device the browser
  * runs on, `localhost:5173 on this Mac`, drawn by purlis outside the page so a page cannot fake
  * it; `whole` is what it was given, for its tooltip. It is given the page's origin alone
@@ -87,17 +96,20 @@ export function thisDevice(onAMac: boolean): string {
  */
 export function addressChip(
   address: string | null,
-  device: string,
+  device: string | null,
 ): { said: string; whole: string | null } {
-  if (address === null || address === "") return { said: `On ${device}`, whole: null };
-  if (address === "about:blank") return { said: `A blank page on ${device}`, whole: null };
+  // A device not known yet is named not at all, never guessed (#2050).
+  const on = device === null ? "" : ` on ${device}`;
+  if (address === null || address === "")
+    return { said: device === null ? "" : `On ${device}`, whole: null };
+  if (address === "about:blank") return { said: `A blank page${on}`, whole: null };
   let host: string;
   try {
     host = new URL(address).host;
   } catch {
     host = "";
   }
-  return { said: `${host === "" ? address : host} on ${device}`, whole: address };
+  return { said: `${host === "" ? address : host}${on}`, whole: address };
 }
 
 /**

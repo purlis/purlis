@@ -33,6 +33,7 @@ fn claim() -> Claim {
         },
         spec: ClaimSpec {
             pool: "team".into(),
+            requester: "ada@example.com".into(),
         },
         status: None,
     }
@@ -212,6 +213,7 @@ fn a_claim_is_ready_when_its_upstream_claim_is_and_says_why_not_otherwise() {
     let mut given = upstream::sandbox_claim_for(&claim());
     given.status = Some(upstream::SandboxClaimStatus {
         conditions: vec![ready("True", "SandboxReady", "the sandbox is ready")],
+        sandbox: None,
     });
     let status = purlis_cluster_operator::status_of(Some(&given));
     let condition = &status.conditions[0];
@@ -222,6 +224,7 @@ fn a_claim_is_ready_when_its_upstream_claim_is_and_says_why_not_otherwise() {
 
     given.status = Some(upstream::SandboxClaimStatus {
         conditions: vec![ready("False", "SandboxNotReady", "pulling the image")],
+        sandbox: None,
     });
     let status = purlis_cluster_operator::status_of(Some(&given));
     let condition = &status.conditions[0];
@@ -261,6 +264,7 @@ fn a_claims_ready_keeps_the_time_it_last_changed_until_it_changes_again() {
     let mut given = upstream::sandbox_claim_for(&claim());
     given.status = Some(upstream::SandboxClaimStatus {
         conditions: vec![ready("True", "SandboxReady", "ready")],
+        sandbox: None,
     });
     let changed = purlis_cluster_operator::settled(
         Some(&before),

@@ -869,6 +869,7 @@ mod tests {
         let hooks = adapter().arm(
             Kit {
                 skills: None,
+                laid_out: None,
                 binary: std::path::Path::new("/bin/charter"),
                 plugin: Some(std::path::Path::new("/app/plugin")),
                 persona: None,
@@ -891,6 +892,7 @@ mod tests {
         let hooks = adapter().arm(
             Kit {
                 skills: None,
+                laid_out: None,
                 binary: std::path::Path::new("/bin/charter"),
                 plugin: Some(std::path::Path::new("/app/plugin")),
                 persona: None,
@@ -922,6 +924,7 @@ mod tests {
         let StateHooks::ThisSessionOnly { args, .. } = adapter().arm(
             Kit {
                 skills: None,
+                laid_out: None,
                 binary: std::path::Path::new("/bin/charter"),
                 plugin: Some(std::path::Path::new("/app/plugin")),
                 persona: None,
@@ -955,6 +958,7 @@ mod tests {
         let StateHooks::ThisSessionOnly { args, .. } = adapter().arm(
             Kit {
                 skills: None,
+                laid_out: None,
                 binary: std::path::Path::new("/bin/charter"),
                 plugin: Some(std::path::Path::new("/app/plugin")),
                 persona: Some(crate::harness::As {
@@ -1116,6 +1120,7 @@ mod tests {
         let StateHooks::ThisSessionOnly { args, .. } = adapter().arm(
             Kit {
                 skills: None,
+                laid_out: None,
                 binary: std::path::Path::new("/bin/charter"),
                 plugin: Some(std::path::Path::new("/app/plugin")),
                 persona: None,
@@ -1208,6 +1213,7 @@ mod tests {
         let StateHooks::ThisSessionOnly { args, .. } = adapter().arm(
             Kit {
                 skills: None,
+                laid_out: None,
                 binary: std::path::Path::new("/bin/charter"),
                 plugin: Some(std::path::Path::new("/app/plugin")),
                 persona: None,

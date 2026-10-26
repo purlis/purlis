@@ -30,6 +30,11 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 futures = "0.3"
 thiserror = "2"
 tracing = "0.1"
+# The operator signs each runner's link key with Ed25519 (#2056): `ring`'s, which kube's
+# `ring` TLS feature already links, and its PEM key read with `base64`, already in the lock.
+# Neither adds a crate.
+ring = "0.17"
+base64 = "0.22"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "ansi", "std"] }
 
 [dev-dependencies]

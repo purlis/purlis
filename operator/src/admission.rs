@@ -76,6 +76,7 @@ impl Admission {
             ),
         };
         Some(ClaimStatus {
+            link_key: None,
             conditions: vec![condition("False", reason, message)],
         })
     }
