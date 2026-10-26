@@ -813,8 +813,7 @@ function CardFacts({ row }: { row: ProfileRow }) {
         <code className="where">{row.shown}</code>
         <span className="from">{row.source}</span>
         {row.is_default && <span className="what">default</span>}
-        {/* Said, not coloured: the approval sentence above is the one in the danger tier. */}
-        {row.approval && <span className="what">{row.approval}</span>}
+        {row.approval && <span className="what needs-approval">{row.approval}</span>}
       </span>
     </span>
   );

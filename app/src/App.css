@@ -1218,6 +1218,12 @@ body {
   min-inline-size: 0;
 }
 
+/* On a card the approval is said, not coloured: the chosen card's wash is no ground for the
+   danger tier, and the approval sentence above the cards is the one in it. */
+.start-chat-facts .profile-meta .needs-approval {
+  color: inherit;
+}
+
 .start-chat-help {
   margin: 0;
   color: var(--text-quiet);
