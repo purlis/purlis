@@ -35,6 +35,7 @@ import {
   type AwayRefusal,
   type ByHand,
   type ChatSkills,
+  type HarnessKind,
   type ChatWorktree,
   type HarnessGlance,
   type HarnessSetupFound,
@@ -1815,6 +1816,21 @@ export const PlaneView = memo(function PlaneView({
         if (found) return found.persona ?? null;
       }
       return null;
+    },
+    [sidebar],
+  );
+  /** **The program chat `session` runs** (#3266), as the plane's chats say it: one the Skill
+   *  studio knows the own skills of, or `undefined` (a shell, or another program). */
+  const harnessOf = useCallback(
+    (session: number): HarnessKind | undefined => {
+      for (const chats of [
+        ...(sidebar?.workspaces.map((ws) => ws.chats) ?? []),
+        sidebar?.unfiled ?? [],
+      ]) {
+        const found = chats.find((chat) => chat.session === session);
+        if (found) return HARNESS_KINDS.find((kind) => kind === found.harness);
+      }
+      return undefined;
     },
     [sidebar],
   );
@@ -8534,6 +8550,7 @@ export const PlaneView = memo(function PlaneView({
           session: frontSession,
           workspace: frontWorkspace === OUTSIDE ? undefined : frontWorkspace,
           persona: personaOf(frontSession),
+          harness: harnessOf(frontSession),
         };
 
   const view = (
@@ -9970,6 +9987,9 @@ const CLOSE_HANDED_NOT_HERE =
 /** Why Smart close is not offered on a tab holding more than one chat. */
 const MORE_THAN_ONE_CHAT =
   "This tab holds more than one chat, and a session record is one chat's. Smart close each from its own pane.";
+
+/** The programs the Skill studio lists the own skills of, by the word the project calls each. */
+const HARNESS_KINDS: readonly HarnessKind[] = ["claude", "opencode", "codex"];
 
 /** A view tab the core put back, as the view it names. */
 function refOf(view: ViewTab): ViewRef {

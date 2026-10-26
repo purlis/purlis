@@ -180,33 +180,52 @@ describe("the rows narrowed to one chat's real set", () => {
   const rows = [
     row(skill("deploy")),
     row(skill("old", { on: true })),
-    row(skill("pdf", { level: "installed", folder: "" }), { program: "Claude Code" }),
-    row(skill("plan", { level: "installed", folder: "" }), { program: "Codex" }),
+    row(skill("pdf", { level: "installed", folder: "", lint: ["It asks to pre-approve Bash."] }), {
+      program: "Claude Code",
+      harness: "claude",
+    }),
+    row(skill("plan", { level: "installed", folder: "" }), { program: "Codex", harness: "codex" }),
+    row(skill("lint-rs", { level: "repo", folder: "" })),
     row(skill("review", { level: "persona" }), { persona: "reviewer" }),
     row(skill("triage", { level: "persona" }), { persona: "ops" }),
   ];
 
-  it("keeps what the chat has, marks what it does not, and lists only its program's own", () => {
-    const set = [given("deploy"), given("pdf", "installed"), given("review", "persona")];
-    const narrowed = narrowedTo(rows, set, "reviewer");
+  // What `chat_skills` really holds: the plane's and the built-in skills, never a program's own
+  // or a repo's (`skills::of_a_chat`).
+  const CLAUDE = { persona: "reviewer", harness: "claude" as const };
+
+  it("marks the plane's skills by the chat's set, and keeps its program's own and each repo's as the studio marks them", () => {
+    const set = [given("deploy"), given("review", "persona")];
+    const narrowed = narrowedTo(rows, set, CLAUDE);
     expect(narrowed.map((one) => [one.skill.name, one.inChat])).toEqual([
       ["deploy", true],
       ["old", false],
-      ["pdf", true],
+      ["pdf", undefined],
+      ["lint-rs", undefined],
       ["review", true],
     ]);
     const groups = groupsOf(narrowed, { root: false, chat: true });
     expect(groups.map((one) => [one.title, one.rows.map((r) => r.skill.name)])).toEqual([
       ["Project", ["deploy"]],
       ["Personas", ["review"]],
+      ["Repo", ["lint-rs"]],
       ["Claude Code", ["pdf"]],
       ["Not in this chat", ["old"]],
     ]);
+    // The program's own skill keeps the studio's own mark, and a repo's can be used.
+    expect(markOf(narrowed[2])).toBe("lint");
+    expect(menuRowsOf(narrowed[3], { workspace: "ops", chat: true })[0]).toMatchObject({
+      act: "use",
+      available: true,
+    });
     expect(tipOf(narrowed[1])).toEqual(["What old does.", "The chat in front started without it."]);
   });
 
   it("lists a skill of the set the workspace's rows do not hold, as the set says it", () => {
-    const narrowed = narrowedTo([], [given("extra", "workspace")], null);
+    const narrowed = narrowedTo([], [given("extra", "workspace")], {
+      persona: null,
+      harness: "claude",
+    });
     expect(narrowed).toEqual([
       expect.objectContaining({
         inChat: true,
@@ -217,7 +236,10 @@ describe("the rows narrowed to one chat's real set", () => {
 
   it("keeps every group at the project's root, for a chat at the root", () => {
     const set = [given("secrets", "built-in")];
-    const narrowed = narrowedTo([row(skill("secrets", { level: "built-in" }))], set, null);
+    const narrowed = narrowedTo([row(skill("secrets", { level: "built-in" }))], set, {
+      persona: null,
+      harness: undefined,
+    });
     expect(groupsOf(narrowed, { root: true, chat: true }).map((one) => one.title)).toEqual([
       "Built-in",
     ]);

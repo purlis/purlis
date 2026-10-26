@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { commands, type ChatSkill, type StudioFirst, type StudioLevel } from "./bindings";
+import {
+  commands,
+  type ChatSkill,
+  type HarnessKind,
+  type StudioFirst,
+  type StudioLevel,
+} from "./bindings";
 import { Notice } from "./Notice";
 import { skillsIn, useViewChanged } from "./planeChanged";
 import { skillView } from "./skillRuns";
@@ -36,6 +42,8 @@ export type FrontChat = {
   /** Its workspace, or `undefined` for a chat at the project's root. */
   workspace: string | undefined;
   persona: string | null;
+  /** The program it runs, by the word the project calls it: whose own skills it gets. */
+  harness: HarnessKind | undefined;
 };
 
 /** **Whether the list is narrowed to the chat in front** (the amendment's (c)): one switch for
@@ -156,10 +164,14 @@ export function SkillsView({
 
   const base = read !== undefined && "rows" in read ? read.rows : NO_ROWS;
   const persona = narrowed?.persona ?? null;
+  const harness = narrowed?.harness;
   const set = chatSet !== undefined && chatSet.session === session ? chatSet.skills : undefined;
   const rows = useMemo(
-    () => (session === undefined || set === undefined ? base : narrowedTo(base, set, persona)),
-    [base, session, set, persona],
+    () =>
+      session === undefined || set === undefined
+        ? base
+        : narrowedTo(base, set, { persona, harness }),
+    [base, session, set, persona, harness],
   );
   const nameOf = useCallback((row: ListedSkill) => row.skill.name, []);
   const filter = useListFilter(rows, nameOf);

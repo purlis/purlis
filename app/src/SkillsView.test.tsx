@@ -230,7 +230,7 @@ describe("what the Skills view lists", () => {
 });
 
 describe("a row's menu", () => {
-  const CHAT: FrontChat = { session: 7, workspace: "ops", persona: null };
+  const CHAT: FrontChat = { session: 7, workspace: "ops", persona: null, harness: "claude" };
 
   it("uses the skill in the chat in front, through Use skill…", async () => {
     opsCore();
@@ -364,7 +364,7 @@ describe("the view's header", () => {
 });
 
 describe("Only this chat's", () => {
-  const CHAT: FrontChat = { session: 7, workspace: "ops", persona: "reviewer" };
+  const CHAT: FrontChat = { session: 7, workspace: "ops", persona: "reviewer", harness: "claude" };
 
   it("is there only while a chat tab is in front", async () => {
     opsCore();
@@ -407,9 +407,61 @@ describe("Only this chat's", () => {
     await userEvent.click(screen.getByRole("button", { name: "Only this chat's" }));
   });
 
+  it("keeps the chat's own program's skills and each repo's, which its set does not hold", async () => {
+    const program = (harness: "claude" | "codex", title: string, skills: StudioSkill[]) => ({
+      harness,
+      title,
+      unsupported: null,
+      only_off: null,
+      trouble: null,
+      plugins: [],
+      skills,
+      repo_left_out: [],
+    });
+    const repo = skill("lint-rs", {
+      level: "repo",
+      folder: "",
+      owner: { kind: "repo", name: "svc" },
+    });
+    core(
+      () =>
+        studio([skill("deploy")], {
+          harnesses: [
+            program("claude", "Claude Code", [
+              skill("pdf", { level: "installed", folder: "" }),
+              repo,
+            ]),
+            program("codex", "Codex", [skill("plan", { level: "installed", folder: "" }), repo]),
+          ],
+        }),
+      // What the core's chat_skills holds: the plane's and the built-in skills alone.
+      { chat: [given("deploy")] },
+    );
+    view({ chat: { session: 7, workspace: "ops", persona: null, harness: "claude" } });
+    const grid = await list();
+    await waitFor(() => expect(within(grid).getByText("plan")).toBeInTheDocument());
+
+    await userEvent.click(screen.getByRole("button", { name: "Only this chat's" }));
+
+    await waitFor(() => expect(within(grid).queryByText("plan")).toBeNull());
+    expect(groupNames(grid)).toEqual(["Project", "Repo", "Claude Code"]);
+    expect(rowOf("pdf")).not.toHaveAttribute("data-mark");
+    fireEvent.contextMenu(rowOf("lint-rs"));
+    const menu = await screen.findByRole("menu", { name: "lint-rs" });
+    expect(within(menu).getByRole("menuitem", { name: "Use in this chat" })).not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    await userEvent.keyboard("{Escape}");
+    await userEvent.click(screen.getByRole("button", { name: "Only this chat's" }));
+  });
+
   it("keeps every group for a chat at the project's root", async () => {
     opsCore([given("secrets", "built-in"), given("deploy")]);
-    view({ workspace: undefined, chat: { session: 9, workspace: undefined, persona: null } });
+    view({
+      workspace: undefined,
+      chat: { session: 9, workspace: undefined, persona: null, harness: "claude" },
+    });
     const grid = await list();
     await waitFor(() => expect(groupNames(grid)).toEqual(["Project", "Personas"]));
 

@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import type { ChatSkill, PersonaSkills, Studio, StudioSkill } from "./bindings";
+import type { ChatSkill, HarnessKind, PersonaSkills, Studio, StudioSkill } from "./bindings";
 
 /**
  * **What the Skills view lists** (SK-55, #3266; decisions amendment 2026-10-26): this workspace's
@@ -19,6 +19,8 @@ export type ListedSkill = {
   persona?: string;
   /** The chat program it is the own skill of, as a person reads its name (`Claude Code`). */
   program?: string;
+  /** That program, by the word the project calls it, for a program's own skill. */
+  harness?: HarnessKind;
   /** Whether the chat in front has it, where its set was read (Only this chat's): `false` for
    *  one it does not, which is listed under Not in this chat. */
   inChat?: boolean;
@@ -205,7 +207,9 @@ export function listedOf(studio: Studio): ListedSkill[] {
       const key = keyOf(skill, undefined, program);
       if (seen.has(key)) return [];
       seen.add(key);
-      return [{ key, skill, program }];
+      return [
+        program === undefined ? { key, skill } : { key, skill, program, harness: harness.harness },
+      ];
     }),
   );
   return [...plane, ...outside];
@@ -244,28 +248,37 @@ function rowOfChat(skill: ChatSkill): StudioSkill {
   };
 }
 
+/** The levels of the plane's and the built-in skills: the ones a chat's set (`chat_skills`)
+ *  speaks for. A program's own and a repo's are the studio's to say. */
+const PLANE_LEVELS: readonly string[] = ["built-in", "project", "workspace", "persona"];
+
 /**
- * **The rows narrowed to one chat's real set** (`chat_skills`, what Use skill… types from): each
- * row marked by whether the chat has it. A program's own skills are its program's alone, so one
- * the chat does not have is not listed, nor another persona's own; a skill of its set the
- * workspace's rows do not hold is listed as the set says it.
+ * **The rows narrowed to one chat** (Only this chat's): the plane's and the built-in skills by
+ * the chat's real set (`chat_skills`, what Use skill… types from), each marked by whether the chat
+ * has it, and another persona's own left out; the chat's own program's skills (`harness`) and
+ * each repo's as the studio marks them, since the set holds neither; another program's not at
+ * all. A skill of the set the rows do not hold is listed as the set says it.
  */
 export function narrowedTo(
   rows: readonly ListedSkill[],
   set: readonly ChatSkill[],
-  persona: string | null,
+  chat: { persona: string | null; harness: HarnessKind | undefined },
 ): ListedSkill[] {
   const has = (skill: { name: string; level: string }) =>
     set.some((one) => one.name === skill.name && one.level === skill.level);
   const kept = rows.flatMap((row): ListedSkill[] => {
+    const { level } = row.skill;
+    if (level === "installed") return row.harness === chat.harness ? [row] : [];
+    if (!PLANE_LEVELS.includes(level)) return [row];
     const inChat = has(row.skill);
-    if (!inChat && row.skill.level === "installed") return [];
-    if (!inChat && row.persona !== undefined && row.persona !== persona) return [];
+    if (!inChat && row.persona !== undefined && row.persona !== chat.persona) return [];
     return [{ ...row, inChat }];
   });
   const missing = set
     .filter(
-      (one) => !kept.some((row) => row.skill.name === one.name && row.skill.level === one.level),
+      (one) =>
+        PLANE_LEVELS.includes(one.level) &&
+        !kept.some((row) => row.skill.name === one.name && row.skill.level === one.level),
     )
     .map((one): ListedSkill => {
       const skill = rowOfChat(one);

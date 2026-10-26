@@ -1855,10 +1855,10 @@ pub fn persona_rows(
 ) -> Vec<(String, Vec<StudioRow>)> {
     let mut personas: Vec<String> = Vec::new();
     for level in verbs::Level::every(plane) {
-        if let purlis_skills::Whose::Persona(name) = level.at {
-            if !personas.contains(&name) {
-                personas.push(name);
-            }
+        if let purlis_skills::Whose::Persona(name) = level.at
+            && !personas.contains(&name)
+        {
+            personas.push(name);
         }
     }
     personas
