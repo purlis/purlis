@@ -463,8 +463,9 @@ which creates the machine)
 **Bridge**:
 `purlis bridge`, the program a connector runs on a runner: a pipe from its standard input and
 output to that runner's session host, which ends the link's handshake itself. Its one other act
-is a runner's pairing, once, with `--pair`. It belongs to **Project**, with the connector it
-serves (ADR 0078 §2, as amended 2026-10-17).
+is a runner's pairing, once, with `--pair`; on a cluster runner, also making the runner's link
+key as its pod starts, with `--make-key`, which its pairing then takes. It belongs to
+**Project**, with the connector it serves (ADR 0078 §2, as amended 2026-10-17 and 2026-10-26).
 _Avoid_: agent, relay (that is the desktop host's relay, or later the hosted relay), proxy
 
 **Link**:
@@ -513,7 +514,9 @@ _Avoid_: claimed (of a piece: that is the piece log's word), lease, reservation,
 
 **Cluster operator**:
 purlis's controller inside a cluster: it turns claims into runners, counts them per person,
-starts and stops pools, and says which runner a claim was given. In a sentence the app shows,
+starts and stops pools, and says which runner a claim was given, vouching with its own signing
+key for the link key each runner made as it started (ADR 0078, amended 2026-10-26). In a
+sentence the app shows,
 "purlis in your cluster".
 _Avoid_: operator (unqualified, where the person could be meant), controller, manager, master
 

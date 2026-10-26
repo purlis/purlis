@@ -13,8 +13,10 @@
 # operator's digest (docs/cluster-operator.md).
 #
 # What it may do is the ClusterRole below and nothing else. It holds no right to exec or attach
-# to a pod, reads no Secret, and never touches a pod at all: upstream's controller makes the
-# runners' pods. operator/tests/the_install_manifests.rs holds every rule.
+# to a pod and none to read a Secret, and it only reads a runner's pod by name, for the link key
+# it vouches for: upstream's controller makes the runners' pods. Its own signing key is a
+# Secret the kubelet mounts in its pod, made before it is installed (docs/cluster-operator.md).
+# operator/tests/the_install_manifests.rs holds every rule.
 ---
 # The namespace the chart is installed in, which Helm leaves to the person: only pods that meet
 # the restricted Pod Security Standard are admitted in it.
@@ -59,6 +61,22 @@ rules:
   - apiGroups: [runners.purlis.dev]
     resources: [claims/status]
     verbs: [patch]
+  # Each pool's status names the key the operator signs runners' link keys with, for a desktop
+  # to pin as it adds the pool.
+  - apiGroups: [runners.purlis.dev]
+    resources: [pools/status]
+    verbs: [patch]
+  # The runner pod upstream made for a claim's sandbox, read by its name, for the link key its
+  # first step published in its status, which the operator vouches for. Never made, changed,
+  # deleted, listed, exec'd or attached to: upstream's controller makes it.
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get]
+  # The sandbox upstream made for a claim, read by its name, so a claim is followed to its pod
+  # by uid: the sandbox is the upstream claim's, and the pod the sandbox's.
+  - apiGroups: [agents.x-k8s.io]
+    resources: [sandboxes]
+    verbs: [get]
   # The policy's binding, by name only: the operator acts only on Claims admitted under it.
   - apiGroups: [admissionregistration.k8s.io]
     resources: [validatingadmissionpolicybindings]
@@ -118,8 +136,22 @@ spec:
       enableServiceLinks: false
       securityContext:
         runAsNonRoot: true
+        # The image's own group, so the signing key below is readable by the operator alone.
+        fsGroup: 65532
         seccompProfile:
           type: RuntimeDefault
+      # The key the operator signs runners' link keys with (#2056), made once by whoever
+      # installs it (docs/cluster-operator.md) and mounted by the kubelet: the operator holds no
+      # right to read a Secret.
+      volumes:
+        - name: signing-key
+          secret:
+            secretName: purlis-cluster-operator-signing-key
+            # 0440, in decimal: YAML readers disagree on a leading zero.
+            defaultMode: 288
+            items:
+              - key: key.pem
+                path: key.pem
       containers:
         - name: operator
           image: ghcr.io/purlis/purlis-cluster-operator@sha256:0000000000000000000000000000000000000000000000000000000000000000
@@ -137,3 +169,7 @@ spec:
               drop: [ALL]
             seccompProfile:
               type: RuntimeDefault
+          volumeMounts:
+            - name: signing-key
+              mountPath: /var/run/purlis-cluster-operator/signing-key
+              readOnly: true

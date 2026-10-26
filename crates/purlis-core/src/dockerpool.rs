@@ -1217,7 +1217,6 @@ impl Docker {
     /// `most` bytes: one that prints more is ended and refused. What it says on standard error
     /// is kept only to be shown, up to [`MOST_SAID`], and never read to decide anything.
     fn run(&self, args: &[String], input: Option<&str>, most: u64) -> Result<String, Refused> {
-        use std::io::{Read, Write};
         let mut command = std::process::Command::new(&self.program);
         // A checked copy of Docker's settings, the engine pinned, and its helpers found where it
         // is (#2752), whatever the window's environment and Docker's own settings say.
@@ -1226,59 +1225,32 @@ impl Docker {
         for name in settings::CLEARED {
             command.env_remove(name);
         }
-        command
-            .args(args)
-            .stdin(if input.is_some() {
-                std::process::Stdio::piped()
-            } else {
-                std::process::Stdio::null()
+        command.args(args);
+        let first = || args.first().map(String::as_str).unwrap_or_default();
+        let ran = crate::boundedrun::run(&mut command, input, most, MOST_SAID).map_err(|why| {
+            use crate::boundedrun::Unanswered;
+            refused(match why {
+                Unanswered::NotStarted(why) => {
+                    format!("{} could not be run: {why}", self.program.display())
+                }
+                Unanswered::PrintedTooMuch => format!(
+                    "docker {} printed more than the {most} bytes purlis reads of it, so it was ended",
+                    first()
+                ),
+                Unanswered::NotFinished(why) => {
+                    format!("{} did not finish: {why}", self.program.display())
+                }
             })
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped());
-        let mut child = crate::forklock::spawn(&mut command).map_err(|why| {
-            refused(format!(
-                "{} could not be run: {why}",
-                self.program.display()
-            ))
         })?;
-        if let (Some(input), Some(mut stdin)) = (input, child.stdin.take()) {
-            let _ = stdin.write_all(input.as_bytes());
-        }
-        let said = child.stderr.take().map(|stderr| {
-            std::thread::spawn(move || {
-                let mut kept = Vec::new();
-                let mut stderr = stderr;
-                let _ = (&mut stderr).take(MOST_SAID).read_to_end(&mut kept);
-                // What is past the limit is read and let go of, so the command never waits.
-                let _ = std::io::copy(&mut stderr, &mut std::io::sink());
-                kept
-            })
-        });
-        let mut out = Vec::new();
-        if let Some(stdout) = child.stdout.take() {
-            let _ = stdout.take(most + 1).read_to_end(&mut out);
-        }
-        if out.len() as u64 > most {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(refused(format!(
-                "docker {} printed more than the {most} bytes purlis reads of it, so it was ended",
-                args.first().map(String::as_str).unwrap_or_default()
-            )));
-        }
-        let status = child
-            .wait()
-            .map_err(|why| refused(format!("{} did not finish: {why}", self.program.display())))?;
-        let said = said.and_then(|said| said.join().ok()).unwrap_or_default();
-        if !status.success() {
+        if !ran.status.success() {
             // Docker's own words say why (ADR 0078 §2: a connector's stderr is shown in full).
             return Err(refused(format!(
                 "docker {} failed: {}",
-                args.first().map(String::as_str).unwrap_or_default(),
-                String::from_utf8_lossy(&said).trim()
+                first(),
+                String::from_utf8_lossy(&ran.said).trim()
             )));
         }
-        String::from_utf8(out)
+        String::from_utf8(ran.printed)
             .map_err(|_| refused("docker answered with something that is not text"))
     }
 
