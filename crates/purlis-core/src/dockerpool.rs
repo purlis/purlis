@@ -572,12 +572,15 @@ pub fn check_on(inspected: &serde_json::Value, made: &Made, engine: Engine) -> R
     if !options.iter().any(|option| is_no_new_privileges(option)) {
         return Err(not("may gain new privileges"));
     }
-    if !options.iter().any(|option| is_the_runners_seccomp(option)) {
+    if !options
+        .iter()
+        .any(|option| is_the_runners_seccomp(option, podman))
+    {
         return Err(not("does not have the runner's seccomp profile"));
     }
     if let Some(option) = options
         .iter()
-        .find(|option| !is_no_new_privileges(option) && !is_the_runners_seccomp(option))
+        .find(|option| !is_no_new_privileges(option) && !is_the_runners_seccomp(option, podman))
     {
         let named = option.split(['=', ':']).next().unwrap_or_default();
         return Err(not(&format!(
@@ -929,6 +932,9 @@ pub fn check_oci(
     if config != userdata.join("config.json") {
         return Err(not("has a runtime config that is not its own"));
     }
+    if !runs_the_runners_seccomp(oci.pointer("/linux/seccomp")) {
+        return Err(not("does not run with the runner's seccomp profile"));
+    }
     match oci.pointer("/linux/devices") {
         None | Some(serde_json::Value::Null) => {}
         Some(serde_json::Value::Array(devices)) if devices.is_empty() => {}
@@ -1028,13 +1034,40 @@ pub const SECCOMP_PROFILE: &str = include_str!("dockerpool/seccomp.json");
 /// The file name [`SECCOMP_PROFILE`] is kept under in a run's folder, for `docker` to read.
 pub const SECCOMP_FILE: &str = "runner-seccomp.json";
 
-/// Whether `option`, one of a container's security options as `docker inspect` writes it, is
-/// the runner's seccomp profile: Docker's client reads the file and sends it compacted, and
-/// the engine keeps it as it came.
-fn is_the_runners_seccomp(option: &str) -> bool {
-    option
-        .strip_prefix("seccomp=")
-        .is_some_and(|profile| profile == compacted(SECCOMP_PROFILE))
+/// Whether `option`, one of a container's security options as `inspect` writes it, is the
+/// runner's seccomp profile. Docker's client reads the file and sends it compacted, and the
+/// engine keeps it as it came: held to it whole. Podman reads the file as it makes the
+/// container and keeps only its path: held to the file's name, and, where its runtime's config
+/// can be read (rootless), to what it made of it ([`check_oci`]).
+fn is_the_runners_seccomp(option: &str, podman: bool) -> bool {
+    let Some(profile) = option.strip_prefix("seccomp=") else {
+        return false;
+    };
+    if podman {
+        let path = std::path::Path::new(profile);
+        path.is_absolute() && path.file_name() == Some(std::ffi::OsStr::new(SECCOMP_FILE))
+    } else {
+        profile == compacted(SECCOMP_PROFILE)
+    }
+}
+
+/// Whether `seccomp`, the profile Podman's runtime config holds for a container, is what it
+/// makes of the runner's: every call refused but those it allows, and `pidfd_getfd` allowed
+/// with no condition.
+fn runs_the_runners_seccomp(seccomp: Option<&serde_json::Value>) -> bool {
+    let Some(seccomp) = seccomp else {
+        return false;
+    };
+    seccomp["defaultAction"] == "SCMP_ACT_ERRNO"
+        && seccomp["syscalls"].as_array().is_some_and(|rules| {
+            rules.iter().any(|rule| {
+                rule["names"] == serde_json::json!(["pidfd_getfd"])
+                    && rule["action"] == "SCMP_ACT_ALLOW"
+                    && rule.get("args").is_none_or(|args| {
+                        args.is_null() || args.as_array().is_some_and(Vec::is_empty)
+                    })
+            })
+        })
 }
 
 /// `json` with the white space between its tokens taken out, as Go's `json.Compact`, which

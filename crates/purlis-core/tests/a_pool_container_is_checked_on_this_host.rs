@@ -67,7 +67,8 @@ fn made_and_inspected(
         .map_err(|why| format!("the runner's seccomp profile could not be kept: {why}"))?;
     let mut args = runner.create_args(&seccomp);
     // Each loosening as a flag and its value: in place of the pool's own value of a flag the
-    // pool gives once (`--network`, `--ipc`, `--cgroupns`), else after `run --detach`.
+    // pool gives once (`--network`, `--ipc`, `--cgroupns`) and of the pool's own seccomp
+    // profile (an engine takes one, and Podman the first), else after `run --detach`.
     for pair in loosened.chunks(2) {
         let (flag, value) = match pair {
             [flag] => (*flag, None),
@@ -75,6 +76,12 @@ fn made_and_inspected(
             _ => unreachable!(),
         };
         let once = matches!(flag, "--network" | "--ipc" | "--cgroupns");
+        if let Some(seccomp) = value.filter(|value| value.starts_with("seccomp="))
+            && let Some(at) = args.iter().position(|word| word.starts_with("seccomp="))
+        {
+            args[at] = seccomp.to_owned();
+            continue;
+        }
         match args.iter().position(|word| word == flag) {
             Some(at) if once => {
                 if let Some(value) = value {
