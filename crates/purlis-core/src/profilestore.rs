@@ -304,7 +304,10 @@ pub fn adopted_as<'a>(profiles: &'a [MachineProfile], name: &str) -> Option<&'a 
 /// them, if any. Facts of each harness, read from its own documentation and code: Claude Code's
 /// `~/.claude`, Codex's `~/.codex`, and opencode's `opencode` folder under the XDG folders
 /// (`~/.config`, `~/.local/share`), as its `xdg-basedir` answers on every platform.
-fn defaults(harness: &str, home: &Path) -> Option<(PathBuf, Option<PathBuf>, &'static str)> {
+pub(crate) fn defaults(
+    harness: &str,
+    home: &Path,
+) -> Option<(PathBuf, Option<PathBuf>, &'static str)> {
     match harness {
         "claude" => Some((home.join(".claude"), None, "")),
         "codex" => Some((home.join(".codex"), None, "")),

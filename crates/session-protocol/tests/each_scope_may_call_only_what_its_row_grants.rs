@@ -401,12 +401,29 @@ fn every_command() -> Vec<Command> {
                 oid: "0123456789abcdef0123456789abcdef01234567".into(),
             }],
             checkout: Some("refs/heads/fix-login".into()),
+            moving: false,
         },
         Command::GiveCode {
             project: "01J9PRJCT00000000000000000".into(),
             repo: "workspaces/app/web".into(),
             transfer: 2,
             have: Vec::new(),
+            with_work: false,
+        },
+        Command::TakeConversation {
+            project: "01J9PRJCT00000000000000000".into(),
+            transfer: 3,
+            workspace: "app".into(),
+            profile: "claude".into(),
+            conversation: "0d6f3c1e".into(),
+            file: "{config}/projects/{cwd_key}/0d6f3c1e.jsonl".into(),
+        },
+        Command::GiveConversation {
+            project: "01J9PRJCT00000000000000000".into(),
+            transfer: 4,
+            workspace: "app".into(),
+            profile: "claude".into(),
+            conversation: "0d6f3c1e".into(),
         },
     ]
 }
@@ -470,6 +487,8 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "relay_to",
             "take_code",
             "give_code",
+            "take_conversation",
+            "give_conversation",
         ],
         Scope::Terminal => &[
             "list",
@@ -535,9 +554,12 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "hand_back",
             "log_in",
             "take_back",
-            // Code moved for the desktop's window (1.34, #2046).
+            // Code moved for the desktop's window (1.34, #2046), and a chat's conversation as it
+            // moves (1.42, #2048).
             "take_code",
             "give_code",
+            "take_conversation",
+            "give_conversation",
         ],
         Scope::FleetMcp => &[
             "list",

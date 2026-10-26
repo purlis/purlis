@@ -44,7 +44,13 @@ type Taken = (PathBuf, String, Option<Vec<u8>>, Vec<CodeRef>);
 #[derive(Default, Clone)]
 struct Recorded {
     taken: Arc<Mutex<Vec<Taken>>>,
+    /// Each work tree taken over: the branch it went onto (1.42).
+    taken_over: Arc<Mutex<Vec<String>>>,
+    /// Each conversation kept: what it was carried as, and its bytes (1.42).
+    conversations: Arc<Mutex<Vec<(Carried, Vec<u8>)>>>,
 }
+
+const CONVERSATION: &[u8] = b"{\"said\":\"the runner's conversation\"}\n";
 
 const GIVEN: &[u8] = b"a bundle of the runner's branches";
 
@@ -86,6 +92,45 @@ impl Code for Recorded {
         }
         std::fs::write(into, GIVEN).unwrap();
         Ok((vec![fix()], true))
+    }
+
+    fn take_work(
+        &self,
+        _project: &Path,
+        _repo: &str,
+        _bundle: Option<&Path>,
+        refs: &[CodeRef],
+        checkout: &str,
+    ) -> Result<Vec<CodeRef>, Refusal> {
+        self.taken_over.lock().unwrap().push(checkout.to_owned());
+        Ok(refs.to_vec())
+    }
+
+    fn take_conversation(
+        &self,
+        _project: &Path,
+        carried: &Carried,
+        from: &Path,
+    ) -> Result<(), Refusal> {
+        let bytes = std::fs::read(from).unwrap();
+        self.conversations
+            .lock()
+            .unwrap()
+            .push((carried.clone(), bytes));
+        Ok(())
+    }
+
+    fn give_conversation(
+        &self,
+        _project: &Path,
+        carried: &Carried,
+        into: &Path,
+    ) -> Result<String, Refusal> {
+        std::fs::write(into, CONVERSATION).unwrap();
+        Ok(format!(
+            "{{config}}/projects/{{cwd_key}}/{}.jsonl",
+            carried.conversation
+        ))
     }
 }
 
@@ -406,4 +451,90 @@ async fn a_projects_folder_that_is_a_link_is_not_held_and_nothing_is_taken_throu
     assert!(refused.refusal().is_some(), "{refused:?}");
     assert!(runner.recorded.taken.lock().unwrap().is_empty());
     assert_eq!(std::fs::read_dir(elsewhere.path()).unwrap().count(), 0);
+}
+
+const ID: &str = "0d6f3c1e-8a4b-4c7d-9e21-5b3f2a1c0e99";
+
+#[tokio::test]
+async fn a_moving_chats_work_tree_is_taken_over_and_never_taken_as_a_plain_send() {
+    let runner = a_runner();
+    let (client, mut streams) = through_the_relay(Scope::LocalUi, &runner).await;
+    client.hold_project(PROJECT, "").await.unwrap();
+
+    let asked = client.take_work(PROJECT, REPO, 21, vec![fix()], fix().name);
+    let writing = async {
+        let mut stream = code_stream(&mut streams, 21).await;
+        let _ = stream.write_all(b"the work's bundle").await;
+        let _ = stream.shutdown().await;
+    };
+    let (answered, ()) = tokio::time::timeout(PATIENCE, async { tokio::join!(asked, writing) })
+        .await
+        .unwrap();
+    answered.unwrap();
+    assert_eq!(
+        *runner.recorded.taken_over.lock().unwrap(),
+        vec![fix().name]
+    );
+    assert!(runner.recorded.taken.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn a_conversation_crosses_the_relay_both_ways_with_the_names_it_is_kept_by() {
+    let runner = a_runner();
+    let (client, mut streams) = through_the_relay(Scope::LocalUi, &runner).await;
+    client.hold_project(PROJECT, "").await.unwrap();
+    let file = format!("{{config}}/projects/{{cwd_key}}/{ID}.jsonl");
+
+    let asked = client.take_conversation(PROJECT, 22, "app", "claude", ID, &file);
+    let writing = async {
+        let mut stream = code_stream(&mut streams, 22).await;
+        let _ = stream.write_all(b"the desktop's conversation").await;
+        let _ = stream.shutdown().await;
+    };
+    let (answered, ()) = tokio::time::timeout(PATIENCE, async { tokio::join!(asked, writing) })
+        .await
+        .unwrap();
+    answered.unwrap();
+    assert_eq!(
+        *runner.recorded.conversations.lock().unwrap(),
+        vec![(
+            Carried {
+                workspace: "app".into(),
+                profile: "claude".into(),
+                conversation: ID.into(),
+                file: file.clone(),
+            },
+            b"the desktop's conversation".to_vec()
+        )]
+    );
+
+    let asked = client.give_conversation(PROJECT, 23, "app", "claude", ID);
+    let reading = async {
+        let mut stream = code_stream(&mut streams, 23).await;
+        let mut bytes = Vec::new();
+        stream.read_to_end(&mut bytes).await.unwrap();
+        bytes
+    };
+    let (kept, bytes) = tokio::time::timeout(PATIENCE, async { tokio::join!(asked, reading) })
+        .await
+        .unwrap();
+    assert_eq!((kept.unwrap(), bytes), (file, CONVERSATION.to_vec()));
+}
+
+#[tokio::test]
+async fn only_the_window_carries_a_conversation_through_the_relay() {
+    let runner = a_runner();
+    for scope in [Scope::Terminal, Scope::FleetMcp] {
+        let (client, _streams) = through_the_relay(scope, &runner).await;
+        let refused = tokio::time::timeout(
+            PATIENCE,
+            client.give_conversation(PROJECT, 24, "app", "claude", ID),
+        )
+        .await
+        .unwrap()
+        .unwrap_err();
+        let refusal = refused.refusal().expect("refused");
+        assert_eq!(refusal.code, session::NOT_ALLOWED, "{scope:?}");
+    }
+    assert!(runner.recorded.conversations.lock().unwrap().is_empty());
 }
