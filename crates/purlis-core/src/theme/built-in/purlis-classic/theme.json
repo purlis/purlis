@@ -308,8 +308,8 @@
         "icon.pink": "#c2185b",
 
         "state.running": "#0966d4",
-        "state.waiting": "#805500",
-        "state.waiting-glow": "#80550045",
+        "state.waiting": "#7a5100",
+        "state.waiting-glow": "#7a510045",
         "state.failed": "#cf222e",
         "state.success": "#197a35",
         "state.unreadable": "#b34800",

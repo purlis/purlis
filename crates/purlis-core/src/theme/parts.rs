@@ -679,7 +679,7 @@ pub const MANIFEST: &[Family] = &[
         sized_apart: &[
             (
                 "[data-scope=\"button\"][data-part=\"root\"][data-size=\"sm\"]",
-                "max(var(--size-chrome), var(--space-7))",
+                "max(24px, var(--size-chrome), var(--space-7))",
             ),
             (
                 "[data-scope=\"button\"][data-part=\"root\"][data-size=\"lg\"]",
@@ -1162,6 +1162,10 @@ fn own_states(family: &Family) -> &'static [(State, &'static str)] {
         .find(|(name, _)| *name == family.name)
         .map_or(&[], |(_, states)| states)
 }
+
+#[cfg(test)]
+#[path = "state_words_tests.rs"]
+mod state_words_tests;
 
 /// **A field's colours as `app/src/ui/field/field.css` draws them**: no ground and no edge of
 /// its own, its label in the primary tier. Its help's and its error's words are the family's
