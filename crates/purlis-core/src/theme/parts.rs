@@ -561,7 +561,57 @@ impl Family {
             .find(|(one, _)| *one == name)
             .map(|(_, token)| *token)
     }
+
+    /// **The grounds `part`'s words are read on with no fill of their own**: the family's, or
+    /// fewer where the window draws the part on fewer ([`PART_GROUNDS`], #3254).
+    #[cfg(test)]
+    pub(super) fn grounds_of(&self, part: usize) -> &'static [&'static str] {
+        let name = self.parts.get(part).map(|one| one.name);
+        PART_GROUNDS
+            .iter()
+            .find(|(family, one, _)| *family == self.name && Some(*one) == name)
+            .map_or(self.grounds, |(_, _, grounds)| *grounds)
+    }
+
+    /// **Whether the window draws `variant` while `states` hold** (#3255): every look a key may
+    /// name, unless one of its states is one only some variants are drawn in ([`DRAWN_ONLY`]).
+    #[cfg(test)]
+    pub(super) fn draws(&self, variant: &str, states: &[State]) -> bool {
+        DRAWN_ONLY.iter().all(|(family, state, variants)| {
+            *family != self.name || !states.contains(state) || variants.contains(&variant)
+        })
+    }
 }
+
+/// **The states only some of a family's variants are drawn in** (#3255), by family: a key may
+/// still name the others (a theme's `button.root.danger.selected` is valid), but the window never
+/// draws them, so the guards that walk the looks the window draws (`state_words_tests.rs`) leave
+/// them out, and no pair holds a colour on a ground it is never drawn on.
+/// - **A toggle is a plain or a ghost button** (ADR 0097 §6, #2958): the suggested answer, the
+///   consent answers and the soft, warning and link looks are never pressed as one.
+///   `ToggleButton` takes only these, and `app/src/theme/consentToggles.test.ts` holds every
+///   other element that says it is pressed to them, reading this list.
+/// - **A row that opens a submenu is a plain row**: the ways to end something are inside the
+///   submenu, never the row that opens it (`docs/ui-primitives.md`, "Menus"), so a danger row is
+///   never open. `app/src/ui/menu/submenuRows.guard.test.ts` holds every `Submenu`'s row to it.
+#[cfg(test)]
+const DRAWN_ONLY: &[(&str, State, &[&str])] = &[
+    ("button", State::Selected, &["secondary", "ghost"]),
+    ("menu", State::Open, &["default"]),
+];
+
+/// **The grounds a part's words are read on, where they are fewer than its family's** (#3254), by
+/// family and part: what the window draws the part on, not every ground the family stands on.
+#[cfg(test)]
+const PART_GROUNDS: &[(&str, &str, &[&str])] = &[("field", "error", FIELD_ERROR_GROUNDS)];
+
+/// **What a field's error is drawn on** (#3254): only a field that can refuse its value keeps its
+/// error's line (`refusable` in `app/src/ui/field/Field.tsx`), and those stand on the window, a
+/// pane and a dialog; the whole copy of a refusal cut short is drawn on the overlay surface
+/// (#3033). `app/src/ui/field/refusingFields.guard.test.ts` lists every field that can refuse with
+/// the ground it stands on, and holds this list to them.
+#[cfg(test)]
+const FIELD_ERROR_GROUNDS: &[&str] = &["surface.base", "surface.raised", "surface.overlay"];
 
 /// A part of a family in a look, as a sentence names it: `button.root.primary`, or
 /// `text-input.root` for a family that has no variants.

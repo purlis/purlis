@@ -172,6 +172,9 @@ impl Records {
             .filter_map(|one| one.identity.id.as_deref())
             .collect();
         crate::themedrafts::sweep(&self.root, &open);
+        // **And a closed chat's browser timeline** (#2017), with any screenshot its list no
+        // longer names: what a crash or a quit left.
+        purlis_core::browsertimeline::sweep(&self.root, &open);
         // **And a closed chat's Skill studio leftovers** (SK-9, #2772): the record of the levels
         // a sandboxed chat could have made, and a Try it's throwaway piece no chat stands in.
         crate::skilldrafts::sweep(&self.root, &record);
@@ -292,6 +295,8 @@ pub struct Held {
     browser_driver: Option<Arc<dyn crate::chatbrowsers::Driver>>,
     /// Told each time a browser is added to its chats' or taken from them (#2024).
     browsers_listed: Arc<dyn Fn() + Send + Sync>,
+    /// Told each chat, by its id, whose browser timeline moved (#2017).
+    browser_timeline: Arc<dyn Fn(String) + Send + Sync>,
     /// The changes each chat proposed to purlis's own configuration, until the person answers
     /// (#1975).
     proposals: crate::proposals::Proposals,
@@ -575,6 +580,11 @@ impl Held {
         if self.browsers.listing() != before {
             (self.browsers_listed)();
         }
+    }
+
+    /// Tells the window chat `chat`'s browser timeline moved (#2017).
+    pub fn browser_timeline_moved(&self, chat: &str) {
+        (self.browser_timeline)(chat.to_owned());
     }
 
     /// The changes each chat proposed to purlis's own configuration, for the person to apply
@@ -1082,6 +1092,14 @@ impl Held {
         self.browsers
             .forget(self.browser_driver.as_ref(), session, &was);
         self.browsers_listed_since(listing);
+        // Its browser timeline goes with it (#2017).
+        if let Some(chat) = self
+            .chats
+            .recorded_chat(session)
+            .and_then(|chat| chat.identity.id)
+        {
+            crate::chatbrowsers::timeline_closed(self, &chat);
+        }
         self.proposals.forget(session);
         self.runner_writes.forget(session);
         self.mcp_failures.forget(session);
@@ -2039,6 +2057,8 @@ pub struct Planes {
     browsers_ended: crate::chatbrowsers::Teller,
     /// Told each project whose chats' browsers were added to or taken from (#2024).
     browsers_listed: crate::chatbrowsers::ListedTeller,
+    /// Told each chat whose browser timeline moved, with its project (#2017).
+    browser_timeline: crate::chatbrowsers::TimelineTeller,
     /// Where the chats' browsers run (#2013): the window's session host, once it is given.
     browser_driver: Option<Arc<dyn crate::chatbrowsers::Driver>>,
     /// Told each chat whose program ended with its session host (#2007).
@@ -2311,6 +2331,7 @@ impl Planes {
             mcp_failed: Arc::new(|_| {}),
             browsers_ended: Arc::new(|_| {}),
             browsers_listed: Arc::new(|_| {}),
+            browser_timeline: Arc::new(|_, _| {}),
             browser_driver: None,
             lost_with_the_host: Arc::new(|_| {}),
             reconnecting: Arc::new(|_| {}),
@@ -2591,6 +2612,13 @@ impl Planes {
     /// window draws them under their chats and on their tabs (#2024).
     pub fn telling_browsers_listed(mut self, listed: crate::chatbrowsers::ListedTeller) -> Self {
         self.browsers_listed = listed;
+        self
+    }
+
+    /// Tells `moved` each chat whose browser timeline moved, so a timeline tab of it reads it
+    /// again (#2017).
+    pub fn telling_browser_timelines(mut self, moved: crate::chatbrowsers::TimelineTeller) -> Self {
+        self.browser_timeline = moved;
         self
     }
 
@@ -4163,6 +4191,12 @@ impl Planes {
             let plane = id.clone();
             Arc::new(move || listed(plane.clone()))
         };
+        // And of each of its chats whose browser timeline moved (#2017).
+        let browser_timeline: Arc<dyn Fn(String) + Send + Sync> = {
+            let moved = Arc::clone(&self.browser_timeline);
+            let plane = id.clone();
+            Arc::new(move |chat| moved(plane.clone(), chat))
+        };
         Held {
             id,
             root,
@@ -4193,6 +4227,7 @@ impl Planes {
                 .limited_by(Arc::new(purlis_core::browserlimits::Limits::here)),
             browser_driver: self.browser_driver.clone(),
             browsers_listed,
+            browser_timeline,
             proposals: crate::proposals::Proposals::default(),
             runner_writes: crate::runnerwrites::RunnerWrites::default(),
             mcp_failures,
