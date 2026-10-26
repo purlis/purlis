@@ -139,9 +139,9 @@ describe("attach browser proof", () => {
     await userEvent.click(screen.getByRole("button", { name: "Show what goes" }));
     await userEvent.click(await screen.findByRole("button", { name: "Attach" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "What you were shown changed since: show it again before attaching.",
-    );
+    expect(
+      await screen.findByText("What you were shown changed since: show it again before attaching."),
+    ).toBeInTheDocument();
     expect(host.asked("attach_browser_proof")).toHaveLength(1);
   });
 });

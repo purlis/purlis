@@ -7461,13 +7461,8 @@ nav.piece-files-head {
 }
 
 .browser-proof-bar > p,
-.browser-proof-said,
-.browser-proof-refused {
+.browser-proof-said {
   margin: 0;
-}
-
-.browser-proof-refused {
-  color: var(--danger-text);
 }
 
 .browser-proof-choose {

@@ -4,6 +4,7 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { commands, type ProofRequest, type ShownProof } from "./bindings";
+import { Notice } from "./Notice";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { Radio, RadioGroup } from "./ui/choice/Radio";
 import { Form, TextField } from "./ui/field/Field";
@@ -74,6 +75,9 @@ export function BrowserProof({
       )
       .catch(() => undefined);
   };
+  /** Puts a refusal away, staying on the step it was said on. */
+  const unrefuse = () =>
+    setStep((was) => (was.kind === "attached" ? was : Object.assign({}, was, { refused: null })));
   const attach = (shown: ShownProof) => {
     setStep({ kind: "showing", shown, refused: null, attaching: true });
     void commands
@@ -122,9 +126,9 @@ export function BrowserProof({
           ))}
         </ol>
         {step.refused !== null && (
-          <p className="browser-proof-refused" role="alert">
+          <Notice at="pane" tone="trouble" cause="browser-proof-refused" onDismiss={unrefuse}>
             {step.refused}
-          </p>
+          </Notice>
         )}
         <ButtonRow>
           <Button
@@ -170,9 +174,9 @@ export function BrowserProof({
           />
         )}
         {step.refused !== null && (
-          <p className="browser-proof-refused" role="alert">
+          <Notice at="pane" tone="trouble" cause="browser-proof-refused" onDismiss={unrefuse}>
             {step.refused}
-          </p>
+          </Notice>
         )}
         <ButtonRow>
           <Button variant="primary" type="submit" aria-disabled={request === "" ? true : undefined}>
