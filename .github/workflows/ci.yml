@@ -344,7 +344,8 @@ jobs:
           runner="seccomp=$PWD/crates/purlis-core/src/dockerpool/seccomp.json"
           contained "$runner" a_socket_never_bound_does_not_listen
           contained "$runner" a_server_on_a_socket_the_chat_bound_listens
-          contained "$runner" a_thread_with_its_own_descriptors_is_judged_by_its_own_socket
+          # A thread's own descriptor table is tried on the host (`rust`): a container's
+          # default profile refuses `unshare`, so no thread makes one there.
           contained default a_socket_never_bound_does_not_listen
           if contained default a_server_on_a_socket_the_chat_bound_listens; then
             echo "::notice title=Listening in a container::Docker's own default profile lets the chat's socket be taken now"
