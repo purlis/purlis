@@ -38,6 +38,11 @@ fn a_runner_container_starts_with_every_capability_dropped_and_no_new_privileges
     assert!(has_pair(&args, "--cgroupns", "private"), "{args:?}");
 }
 
+/// The runner's seccomp profile as `docker inspect` writes it back (#3410).
+fn runners_seccomp() -> String {
+    format!("seccomp={}", compacted(SECCOMP_PROFILE))
+}
+
 /// Where a test names the runner's seccomp profile as kept for a run of `docker`.
 const SECCOMP_AT: &str = "/data/docker-settings/run-x/runner-seccomp.json";
 
@@ -275,7 +280,7 @@ pub(crate) fn inspected() -> serde_json::Value {
         "MountLabel": "",
         "HostConfig": {
             "Privileged": false,
-            "SecurityOpt": ["no-new-privileges"],
+            "SecurityOpt": ["no-new-privileges", runners_seccomp()],
             "CapAdd": null,
             "CapDrop": ["ALL"],
             "NetworkMode": "bridge",
@@ -344,6 +349,10 @@ fn a_container_that_is_not_confined_as_it_was_made_is_refused() {
             }),
         ),
         (
+            "Docker's own default seccomp profile, which takes no chat's socket",
+            Box::new(|c| c["HostConfig"]["SecurityOpt"] = serde_json::json!(["no-new-privileges"])),
+        ),
+        (
             "a seccomp profile of its own",
             Box::new(|c| {
                 c["HostConfig"]["SecurityOpt"] = serde_json::json!([
@@ -355,8 +364,11 @@ fn a_container_that_is_not_confined_as_it_was_made_is_refused() {
         (
             "apparmor off",
             Box::new(|c| {
-                c["HostConfig"]["SecurityOpt"] =
-                    serde_json::json!(["no-new-privileges", "apparmor=unconfined"])
+                c["HostConfig"]["SecurityOpt"] = serde_json::json!([
+                    "no-new-privileges",
+                    "apparmor=unconfined",
+                    runners_seccomp()
+                ])
             }),
         ),
         (
@@ -367,7 +379,7 @@ fn a_container_that_is_not_confined_as_it_was_made_is_refused() {
             "labels off",
             Box::new(|c| {
                 c["HostConfig"]["SecurityOpt"] =
-                    serde_json::json!(["no-new-privileges", "label=disable"])
+                    serde_json::json!(["no-new-privileges", "label=disable", runners_seccomp()])
             }),
         ),
         (
