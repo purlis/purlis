@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793038185014,
+  "lastUpdate": 1793040135175,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -25956,6 +25956,48 @@ window.BENCHMARK_DATA = {
             "value": 105.44522,
             "unit": "ms",
             "extra": "median of 5 runs: 103.433, 104.747, 105.445, 106.188, 106.291 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "e638c13f120071fe861f8d8c067d4ae43273f133",
+          "message": "Browsers: a browser's chip names no device until a source says where it runs (#2050) (#3411)\n\nThe chats' browsers list read before it names this program said nothing of\nwhere the browser runs, yet the chip named this machine. Now the chip names\nthe pool the list gives it, else the one its view said, and no device until\none of them says.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-26T18:10:11Z",
+          "tree_id": "b1ec20f81e928e02db81c468ec287e1b83baf7dc",
+          "url": "https://github.com/purlis/purlis/commit/e638c13f120071fe861f8d8c067d4ae43273f133"
+        },
+        "date": 1793040132585,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5572280000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.531, 0.535, 0.557, 0.563, 0.576 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.079665,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.473, 16.828, 17.080, 17.230, 17.574 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.9869735,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.186, 104.304, 104.987, 105.271, 106.483 ms"
           }
         ]
       }
