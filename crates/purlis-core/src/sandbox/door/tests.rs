@@ -404,6 +404,30 @@ mod sockets {
     }
 
     #[test]
+    fn a_door_carries_only_to_the_socket_bound_at_its_own_path() {
+        let dir = tempfile::tempdir().expect("a folder");
+        let elsewhere = tempfile::tempdir().expect("another folder");
+        let other = elsewhere.path().join("other.sock");
+        echo_on(&other);
+        let socket = dir.path().join("5173.sock");
+        std::os::unix::fs::symlink(&other, &socket).expect("a link in the socket's place");
+        let port = free_port();
+        let _door = Door::open(port, &socket).expect("the door opens");
+        let answer = ask(
+            port,
+            &["GET / HTTP/1.1", &format!("Host: localhost:{port}")],
+        );
+        assert!(answer.starts_with("HTTP/1.1 502 "), "{answer}");
+        std::fs::remove_file(&socket).expect("the link taken away");
+        std::fs::hard_link(&other, &socket).expect("a second name for the other socket");
+        let answer = ask(
+            port,
+            &["GET / HTTP/1.1", &format!("Host: localhost:{port}")],
+        );
+        assert!(answer.starts_with("HTTP/1.1 502 "), "{answer}");
+    }
+
+    #[test]
     fn a_door_says_so_where_the_chats_server_is_not_running() {
         let dir = tempfile::tempdir().expect("a folder");
         let port = free_port();

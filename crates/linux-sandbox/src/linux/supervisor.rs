@@ -942,11 +942,14 @@ impl Supervisor {
     ///   internet bind is refused, as the chat's Landlock layer refuses every TCP bind, and told,
     ///   so a server that asks for a port raises the Ask to serve on it; a port of zero is not
     ///   told, since no person allows one.
-    /// - **Anything else goes on in the kernel** ([`Answer::GoOn`]): a netlink socket (what
-    ///   `getifaddrs` binds) and an abstract or unnamed unix socket, as before. Nothing the chat
+    /// - **A netlink socket (what `getifaddrs` binds) and an abstract or unnamed unix socket go
+    ///   on in the kernel** ([`Answer::GoOn`]), as before; any other family is refused. Nothing the chat
     ///   changes after the address was read carries such a call further: the call the kernel
     ///   makes is judged by the chat's own Landlock layer, which binds no TCP port and makes no
     ///   socket file.
+    /// - **The socket put in the chat's place is always a unix one**, bound here at its path: no
+    ///   internet socket the supervisor hands the chat is ever bound without a port of its own,
+    ///   so a listen on it is never the kernel's to bind (see [`Self::listen`]).
     fn bind(
         &self,
         chat: &Chat<'_>,
@@ -992,7 +995,10 @@ impl Supervisor {
                 };
                 served
             }
-            _ => return Ok(Answer::GoOn),
+            // What `getifaddrs` binds goes on; any other family, `AF_UNSPEC` (which the kernel
+            // reads as an IPv4 bind on an IPv4 socket) included, is refused.
+            libc::AF_NETLINK => return Ok(Answer::GoOn),
+            _ => return Err(REFUSED),
         };
         let at = u32::try_from(fd).map_err(|_| Errno::EBADF)?;
         let flags = descriptor_flags(chat.tid, fd)?;

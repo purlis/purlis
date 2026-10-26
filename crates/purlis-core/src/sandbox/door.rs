@@ -31,6 +31,10 @@
 //!   answered `101`: then both ways, as they are.
 //! - **Streamed, never buffered**: a server's answer, an event stream included, goes on as it
 //!   comes.
+//! - **Carried to the chat's own socket alone**: the server it reaches bound the socket's own
+//!   name, in the chat's folder (`bound_at`). The chat may make a file at that path, so a link
+//!   or a second name there, to some other socket of this user's, is answered `502` and never
+//!   carried to.
 
 use std::io::{self, Read, Write};
 use std::net::{Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, TcpListener, TcpStream};
@@ -549,7 +553,10 @@ fn carry(mut client: TcpStream, port: u16, socket: &Path, jar: &Mutex<Jar>) {
             return;
         }
     };
-    let Ok(mut server) = UnixStream::connect(socket) else {
+    let Some(mut server) = UnixStream::connect(socket)
+        .ok()
+        .filter(|server| bound_at(server, socket))
+    else {
         let said = "The chat's server is not running.";
         let _ = write!(
             client,
@@ -618,6 +625,28 @@ fn carry(mut client: TcpStream, port: u16, socket: &Path, jar: &Mutex<Jar>) {
         let _ = io::copy(&mut server, &mut client);
         let _ = client.shutdown(Shutdown::Both);
     }
+}
+
+/// **Whether `server` is the socket bound at `socket` itself**: the name its server bound is
+/// `socket`'s, in the same folder. A connect follows a link, and the chat may make a file at its
+/// socket's path, so a link or a second name there, to another socket of this user's, is never
+/// carried to: that socket's server bound a name of its own elsewhere. A name bound relative to
+/// some folder is not told apart, and is refused with the rest.
+fn bound_at(server: &UnixStream, socket: &Path) -> bool {
+    let Ok(peer) = server.peer_addr() else {
+        return false;
+    };
+    let Some(named) = peer.as_pathname() else {
+        return false;
+    };
+    let folder = |path: &Path| {
+        path.parent()
+            .filter(|folder| folder.is_absolute())
+            .and_then(|folder| std::fs::canonicalize(folder).ok())
+    };
+    named.file_name().is_some()
+        && named.file_name() == socket.file_name()
+        && folder(named).is_some_and(|at| Some(at) == folder(socket))
 }
 
 /// A request's head and what came after it, read whole within [`HEAD_WITHIN`].
