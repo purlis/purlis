@@ -1979,3 +1979,55 @@ fn a_clones_worktree_folder_of_more_names_than_purlis_reads_is_named_and_not_rea
         )]
     );
 }
+
+#[test]
+fn a_chats_start_reads_the_harnesss_own_skill_index_where_its_environment_finds_its_skills() {
+    // #3320: the arming turns the harness's own `skill-index` off so the chat gets purlis's index
+    // alone, and what it knows of that copy is read here, at the start, with the chat's
+    // environment, never with this machine's.
+    let plane = tempfile::tempdir().unwrap();
+    std::fs::write(plane.path().join("charter.toml"), "schema = 1\n").unwrap();
+    let config = tempfile::tempdir().unwrap();
+    let index = config.path().join("skills/skill-index");
+    std::fs::create_dir_all(&index).unwrap();
+    std::fs::write(
+        index.join("SKILL.md"),
+        "---\nname: skill-index\ndescription: The person's own.\n---\n",
+    )
+    .unwrap();
+    let dir = config.path().display().to_string();
+    let none = Env {
+        chat: &[],
+        home: None,
+        process: false,
+    };
+    for (kind, variable) in [("claude", "CLAUDE_CONFIG_DIR"), ("codex", "CODEX_HOME")] {
+        let chat = [(variable.to_owned(), dir.clone())];
+        let env = Env {
+            chat: &chat,
+            home: None,
+            process: false,
+        };
+        assert!(
+            for_start_as(true, kind, plane.path(), None, &env).own_index,
+            "{kind}"
+        );
+        assert!(
+            !for_start_as(true, kind, plane.path(), None, &none).own_index,
+            "{kind}"
+        );
+        assert!(
+            !for_start_as(false, kind, plane.path(), None, &env).own_index,
+            "{kind}: behind the Skill studio's flag"
+        );
+    }
+    // opencode knows purlis's index as `purlis-skill-index`: its own `skill-index` is another
+    // skill, so it is not even looked for.
+    let chat = [("OPENCODE_CONFIG_DIR".to_owned(), dir)];
+    let env = Env {
+        chat: &chat,
+        home: None,
+        process: false,
+    };
+    assert!(!for_start_as(true, "opencode", plane.path(), None, &env).own_index);
+}

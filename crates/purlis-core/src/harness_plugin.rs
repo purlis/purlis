@@ -68,6 +68,11 @@ pub struct Chosen {
     /// The harness's own skills to leave out of the chat, by the name the harness knows each by
     /// (SK-6, #2769).
     pub skills_off: BTreeSet<String>,
+    /// Whether the harness has a skill of its own named [`crate::skills::INDEX`], outside any
+    /// plugin, where the chat's environment finds its skills ([`crate::skills::has_own_index`]):
+    /// read at the start with that environment, so the adapter that turns it off reads nothing
+    /// of this machine itself (#3320).
+    pub own_index: bool,
 }
 
 impl Chosen {
@@ -82,6 +87,7 @@ impl From<BTreeMap<String, bool>> for Chosen {
         Self {
             plugins,
             skills_off: BTreeSet::new(),
+            own_index: false,
         }
     }
 }
@@ -1703,6 +1709,8 @@ pub(crate) fn for_start_as(
     let mut chosen = chosen(adapter, &resolve(adapter, &installed, &choices));
     if studio {
         chosen.skills_off = choices.skills_off(adapter.harness());
+        chosen.own_index = crate::harness::Harness::of_kind(kind)
+            .is_some_and(|harness| crate::skills::has_own_index(harness, env));
     }
     chosen
 }

@@ -130,21 +130,37 @@ pub fn skills_off_for(
         .filter(|name| adapter.skill_named_alone(name).is_none())
         .cloned()
         .collect();
-    let index_elsewhere = || {
-        kit.skills
-            .is_some_and(|at| at.repo.iter().any(|one| one.id == INDEX && !one.off))
-            || on_machine(harness, &crate::harness_plugin::Env::of(&[]))
-                .iter()
-                .any(|one| matches!(one, OnMachine::Skill { plugin: None, name } if name == INDEX))
-    };
+    let index_elsewhere = chosen.own_index
+        || kit
+            .skills
+            .is_some_and(|at| at.repo.iter().any(|one| one.id == INDEX && !one.off));
     if kit.skills.is_some()
         && harness.skills().off_by_name_spares_handed()
         && !off.iter().any(|name| name == INDEX)
-        && index_elsewhere()
+        && index_elsewhere
     {
         off.push(INDEX.to_owned());
     }
     off
+}
+
+/// **Whether `harness` has a skill of its own named [`INDEX`]**, outside any plugin, where `env`
+/// finds its skills (SK-15; #3320): what [`skills_off_for`] turns off so the chat gets purlis's
+/// index alone. Read only on a route where turning that name off spares purlis's copy
+/// ([`Route::off_by_name_spares_handed`]); elsewhere it is never turned off.
+///
+/// A plugin's skill of that name is another skill, never turned off: Claude Code knows it as
+/// `<plugin>:skill-index`, and so does Codex. Measured on codex-cli 0.163.0 in a throwaway
+/// `CODEX_HOME` holding its own `skills/skill-index` and a plugin `zp` from a local marketplace
+/// with a `skill-index` of its own: `codex debug prompt-input` listed `skill-index` and
+/// `zp:skill-index`, and `-c 'skills.config=[{name="skill-index",enabled=false}]'` took out the
+/// first alone. purlis's index reaches a Codex chat in its briefing as `skill-index`, so the
+/// plugin's never shares its name.
+pub fn has_own_index(harness: Harness, env: &crate::harness_plugin::Env<'_>) -> bool {
+    harness.skills().off_by_name_spares_handed()
+        && on_machine(harness, env)
+            .iter()
+            .any(|one| matches!(one, OnMachine::Skill { plugin: None, name } if name == INDEX))
 }
 
 /// The names of the built-in skills of the bundle installed beside this binary

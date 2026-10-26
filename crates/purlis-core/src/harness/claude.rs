@@ -80,6 +80,7 @@ impl HarnessAdapter for ClaudeCode {
             skills_off: crate::skills::skills_off_for(kit, Harness::ClaudeCode, plugins)
                 .into_iter()
                 .collect(),
+            own_index: plugins.own_index,
         };
         let mut args = words(["--plugin-dir", &plugin.display().to_string()]);
         // The plane's skills, as a plugin of their own (ADR 0063 as amended 2026-10-20).
@@ -455,7 +456,15 @@ fn settings(
     // '{"skillOverrides":{"langfuse":"off"}}'` took `langfuse` out of the init event's skills.
     // It does not reach a plugin's skill (`<plugin>:<skill>`), which goes only with its plugin,
     // so none is written, and nor is a built-in skill's name ([`crate::skills::skills_off_for`]).
-    // Not written at all where none is off, so the operator's own overrides stand.
+    // Not written at all where none is off.
+    //
+    // **The operator's own overrides stand beside it** (#3320): Claude Code merges a session's
+    // `skillOverrides` with theirs name by name, so only purlis's names are written. Measured on
+    // 2.1.311 in a throwaway `CLAUDE_CONFIG_DIR` holding skills `alpha` and `beta` and a
+    // `settings.json` of `{"skillOverrides":{"alpha":"off"}}`: `--settings
+    // '{"skillOverrides":{"beta":"off"}}'` took both out of the init event's skills, and
+    // `{"alpha":"on"}` put `alpha` back. A session's name wins over theirs for that name alone,
+    // and purlis only ever writes `"off"`.
     let overrides: serde_json::Map<String, serde_json::Value> = plugins
         .skills_off
         .iter()
