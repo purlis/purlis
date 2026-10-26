@@ -2705,7 +2705,10 @@ pub(super) const HOLDS_NO_CONSENT: &[(&str, &str)] = &[
         "its toolbar holds ghost and plain buttons, never an Allow or a danger answer (#3268)",
     ),
     ("tooltip", "it holds words only"),
-    ("separator", "it is a line between two groups, and holds nothing"),
+    (
+        "separator",
+        "it is a line between two groups, and holds nothing",
+    ),
     ("select", "a control's box holds its value and its chevron"),
     (
         "combobox",
