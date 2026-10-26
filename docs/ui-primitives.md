@@ -330,7 +330,8 @@ Before #1835 the window drew **4 tables and 8 kinds of list row**, each with its
 alignment and selection. The Chats list alone put a name about 53px past its own filter, partly
 because every leaf drew an empty twist so that names would line up. ADR 0094 §4 gives each of
 these one class, built only from the core geometry and a theme's colours, and
-`app/src/primitives/collections.css` holds all three. That file is in the `components` layer,
+`app/src/primitives/collections.css` held all three (the list's row and the table are their
+families' since #2911). That file is in the `components` layer,
 above `App.css`. A view that takes a class gets its look, and migrating a view means adding the
 class and deleting the view's old rules (DS-9 settings, DS-11 chats). There is no React
 component: each view keeps its own markup and keys, as ADR 0037 asks, and the class draws it.
@@ -339,63 +340,20 @@ specificity and `:hover` are taken into account.
 
 **The sizes are component tokens**, each an alias of a core token and declared in the class it
 sizes: `--ui-row-height` is `--size-chrome`, `--ui-row-pad` is `--space-4`, `--ui-row-gap` is
-`--space-3`, `--ui-tree-step` is `--space-5`, and `--ui-cell-pad-inline` and `-block` are
-`--space-4` and `--space-2`. To change a part, change its alias. A theme never sees these.
+`--space-3` and `--ui-tree-step` is `--space-5`. To change a part, change its alias. A theme
+never sees these.
 
 ### Table
 
-```html
-<table class="ui-table ui-table-fixed">
-  <thead><tr>
-    <th scope="col">Level</th>
-    <th scope="col" title="How many tasks may run at once" aria-label="How many tasks may run at once">Tasks</th>
-    <th scope="col" class="ui-cell-actions" aria-label="Actions"></th>
-  </tr></thead>
-  <tbody>
-    <tr><th scope="row">Project</th><td class="ui-num">3</td><td class="ui-cell-actions">…</td></tr>
-  </tbody>
-</table>
-```
-
-- **`.ui-table`** lays out automatically: a column is as wide as its content needs.
-  **`.ui-table-fixed`** is for a view that sizes its own columns. It gives the columns their
-  widths (in `App.css`, on `<col>`s or the headings) and the table keeps them whatever the cells
-  hold. Pick fixed when the cells are controls whose width should not depend on the values in
-  them, as in the grants table.
-- **A heading is one line.** `thead th` never wraps. In a fixed table a heading that does not fit
-  is cut with an ellipsis. In an auto table its column grows to fit, so a long heading should be
-  shortened. **A heading that is shortened, or that can be cut, carries its full words in a
-  tooltip.** In Settings that is `ColumnHeading` (`settings/ColumnHeading.tsx`, DS-9 #1841): the
-  short words sit in a `.ui-table-tip` behind the shared tooltip (#2908), which makes them a Tab
-  stop and shows the whole words and what the column holds; the whole words are the heading's
-  `aria-label`, so a screen reader announces them with each cell. `.ui-table-tip` gets a dotted
-  underline, so the tooltip can be found. Headings are `--font-size-sm` in `text.secondary` above a
-  `border.strong` hairline. A `caption` sits above the table, at the start, in `text.secondary`.
-- **Cells are aligned.** Every cell and heading starts at `--ui-cell-pad-inline` and sits on the
-  middle of its row, so text lines up with the 28px control in the next cell, not with that
-  control's baseline. A row's own heading (`<th scope="row">`) is drawn as a cell.
-  **`.ui-num`** puts a number at the cell's end, in tabular figures. **`.ui-cell-actions`** makes
-  a column of buttons as narrow as they are, at the row's end.
-- Rows are separated by a `border.subtle` hairline. A row that is `aria-selected` or
-  `aria-current` is filled like a selected list row.
-- **A table of controls stacks into a form where its room is narrow** (#1859).
-  **`.ui-table-stacks`** on the table, drawn in a **`.ui-table-room`** (the holder whose width it
-  answers to, a size container): under 29rem the column headings are put away, each row's own
-  heading takes a line, and each cell sits under its column's whole words, which the cell
-  carries as `data-heading`, as many cells side by side as fit. The row's actions take a line of
-  their own, a cell across the columns (a question about the row above) takes the whole width,
-  and a cell with nothing in it is not drawn. Nothing is cut and nothing scrolls sideways. Each
-  control still names its column and row in full, so a screen reader hears the same either way.
-  The Dispatch limits table and the dispatch grants table (#1865) wear it. 29rem lies between
-  Settings' body at a 1280×800 window (the default one until 2026-10-24, when it grew to
-  1440×900), where the table stays a table, and at the narrowest
-  window with both sidebars open, where it stacks; CI's runs of `settings-tables.e2e.ts` and
-  `settings-limits.e2e.ts` hold both ends in the real WebView (#1865). It is the one length the
-  stylesheet writes, because a container query's condition cannot read a token.
-- **Short headings live in the window** (#1859, after D-1841-1). A column's short words are the
-  table's own (`SHORT` in `settings/dispatch.tsx`), and the core keeps one name per limit, its
-  `label`. The command line draws no table of limits, so a short form in the core would have one
-  reader. Stacked, a cell shows the whole label, never the short words.
+**A table is the table family's** since #2911: [The table family](#the-table-family) below
+draws it from the same geometry, keyed on its parts' attributes where `.ui-table`,
+`.ui-table-fixed`, `.ui-table-stacks`, `.ui-table-room`, `.ui-num`, `.ui-cell-actions` and
+`.ui-table-tip` were (`collections.css` keeps the list and tree rows only). A column's short
+words with their whole words in a tooltip, once `settings/ColumnHeading.tsx`, are the family's
+`ControlColumn` (`whole`, `about`). **Short headings live in the window** (#1859, after
+D-1841-1): a column's short words are the table's own (`SHORT` in `settings/dispatch.tsx`), and
+the core keeps one name per limit, its `label`. Stacked, a cell shows the whole label, never the
+short words.
 
 ### List row
 
@@ -459,8 +417,9 @@ empty line under its filter.
 **Every tree and list in the main views is on these classes** (DS-12, #1844): the explorer,
 a file tab's tree and the Changes view are `.ui-tree` with `.ui-tree-row`s (the `.tree` class is
 deleted); a finished task's name and its "Finished (n)" line are tree rows at their chat's level;
-the panel lists, the memory archive, a vault's secret names, Search's hits and the opener's
-recent projects are `.ui-row`s; the vault's, Dispatches' and Saving's tables are `.ui-table`.
+the panel lists, the memory archive, Search's hits and the opener's recent projects were
+`.ui-row`s and are the list family's now; the vault's, Dispatches' and Saving's tables are the
+table family's.
 A tree whose levels are nested groups gives each row its `aria-level`, and puts the children's
 level (`data-level`) on the element that holds what a row says under it (a folder's "Nothing
 here", a clone's "Asking git…"), so a sentence stands where the children's names start. A row
@@ -887,6 +846,83 @@ old `.ui-list` class: `eslint.config.js` refuses both (`purlis/list-family`, an 
   with a row's own button and its menu, a grid of cards, and an empty one, in
   Chromium and WebKit, with axe.
 
+## The table family
+
+**Every table is the table family** (`app/src/ui/table/`, #2911, ADR 0104). No screen draws a
+table's element (`<table>`, `<tr>`, `<td>`, …), says a table's or a grid's role, or wears the old
+`.ui-table` classes: `eslint.config.js` refuses all three (`purlis/table-family`, an error).
+Two members, by what a cell holds:
+
+| Member                                                                                                                                                      | What it is                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Table`, `TableHeader`, `TableColumn`, `TableBody`, `TableRow`, `TableCell` (`Table.tsx`)                                                                   | **A table of data** (React Aria's `Table`, the WAI-ARIA grid): rows of words, a cell holding at most a button, a link or a switch. The Dispatches tab, a workspace's repos in Saving, a skill's runs, totals and history, the Skill studio's harness plugins and skills, a vault's secrets                                                                                                                                  |
+| `TableBar` (`TableBar.tsx`)                                                                                                                                 | **The bar over a table that chooses** (the settings prototype's hosts table, R65): its filter (`ListFilter`, from eight rows, R164) at its start, and at its end what the table offers, or how many rows are chosen and what can be done to them all. The filter never moves when a row is chosen, and the count is said to a reader as it changes                                                                          |
+| `ControlTable`, `ControlHead`, `ControlColumn`, `ControlBody`, `ControlRow`, `ControlRowHeading`, `ControlGroupHeading`, `ControlCell` (`ControlTable.tsx`) | **A table of controls**: a plain table whose cells hold fields, selects and numbers, or whose rows are dragged: the Dispatch limits, the dispatch grants, the Skill studio's skills. The grid would take ← and → from a field's caret and ↑ ↓ from a select, so each control keeps its own keys and is its own Tab stop. `stacks` makes it a form where its frame is narrow (below); `fixed` keeps the columns a view sizes |
+| `cellsOf`, `tipInTable` (`table.testkit.ts`)                                                                                                                | A test's reading of a data table: a row's cells (its `rowheader` and `gridcell`s), and a cell's tooltip read as the keyboard reaches it along its row                                                                                                                                                                                                                                                                       |
+
+- **The keyboard of a table of data is the APG grid's**: one Tab stop, the row last focused; ↑
+  and ↓ move a row and stop at the ends, ← and → a cell and into the button a cell holds, Home and
+  End to the first and last row from a row and to a row's ends from a cell, Ctrl+Home and Ctrl+End to the table's, Page Up and Page Down a page; typing
+  finds a row by its `textValue`. A table that chooses (`selectionMode="multiple"`) draws a check
+  at each row's start and one over them for every row (React Aria's `selection` slot, "Select"
+  and "Select All" to a reader); Space chooses the row the keyboard is on. A column with
+  `allowsSorting` sorts by a press on its name (`sortDescriptor`, `onSortChange`, `aria-sort`),
+  its arrow keeping its room while another column sorts, so sorting moves no name. `onRowAction`
+  (or a row's `onAction`) runs a row on Enter or a press.
+- **A row's menu** (`menu` on `TableRow`, `rowMenus` on the table): the row's actions under one ⋯
+  in a column of its own at the row's end, named "More for" the row, aligned on every row (a row
+  with none keeps its cell); a right-click on the row, Shift+F10 or the menu key open the same
+  menu, and a row with a menu and no action of its own opens it when it is run (Enter, or a
+  press), on its first row, as from the keys; Escape hands the keyboard back to the row. A row's
+  `menu` needs `rowMenus` on its table: without the column the row takes no menu, and says so in
+  a development build. In a table that chooses, a press on a row runs it while no row is chosen
+  and chooses it once one is (React Aria's toggle with an action). This is the settings rows'
+  one action column (R65 and the aligned form's ⋯ row menu, #2919).
+- **Screen-reader names and headers**: a table is named by `aria-label`; the column with
+  `isRowHeader` names each row, which a reader hears with every cell; a column of buttons is
+  named for a reader alone (`hideName`, "Actions", "Reveal"). In a table of controls the row's
+  heading is `ControlRowHeading` (`scope="row"`), a group's name `ControlGroupHeading`
+  (`scope="rowgroup"`), and each control names its column and its row in full.
+- **Empty**: `empty` on `TableBody` is what a table with no rows says, across it in the quiet
+  tier; a view that has no rows at all draws its `EmptyState` instead of the table, and a filter
+  that leaves none says so in a line (`noMatchSaid`).
+- **Nothing moves when a state changes** (#2800). Under the pointer a row that opens or is chosen
+  takes `surface.hover`; chosen, or the row the view is about (`current`, `aria-current`), the
+  wash (`list.selected`), told by its check or its place as well as its colour; the keyboard's
+  ring is drawn inside the row or the cell (`--focus-ring-inset`, [ADR 0104's
+  amendment](adr/0104/2026-10-22-a-row-draws-its-focus-ring-inset.md)), so the frame that scrolls
+  never clips it. A table's words are data, in the primary tier; a column's name is the label
+  role (11/600, capitals, the muted tier, R74); a row that cannot be used is in the faint tier.
+  The bands are square: a table's row is drawn across its cells, so its ground stays the row's
+  part (`table.root.*.fill`) for a theme to reach.
+- **Purlis draws first** (the settings prototype's hosts table): the table stands in a rounded
+  card (`frame`, `surface.base`, `radius.lg`) that scrolls it sideways, a table of data no
+  narrower than 560px; cells 8 by 12 apart (`space.4`, `space.5`); **no rule between rows**
+  (#2804): the rows' room, the pointer's ground and the chosen wash carry the bands, and the
+  head is set apart by its capitals and a little more room under it, never by a line or a zebra.
+  The rule is its own part (`table.rule`, a line at each cell's top and under each column's
+  name), which the family draws as none and Purlis Classic fills with `border.subtle`. A
+  number's column is at the end in figures of one width (`align="end"`); a column of checks or
+  of menus is as narrow as what it holds; the check's target is 24 px with its 16 px box in it.
+- **A table of controls stacks into a form where its frame is narrow** (`stacks`, #1859): under
+  32rem the columns' names are put away, each row's heading takes a line, and each cell sits under
+  its column's whole words (`heading` on `ControlCell`, drawn from `data-heading`), as many side
+  by side as fit; the row's actions and a cell across the columns (a question about the row
+  above) take a line of their own, and a cell with nothing in it is not drawn. Nothing is cut and
+  nothing scrolls sideways. 32rem sits between Settings' body at a 1280px window, where the table
+  stays a table, and at the narrowest window with both sidebars open, where it stacks; CI's runs
+  of `settings-tables.e2e.ts` and `settings-limits.e2e.ts` hold both ends in the real WebView
+  (#1865). It is the one length the stylesheet writes, because a container query's condition
+  cannot read a token.
+- **Drawn by its parts** (ADR 0103): the `frame`, the table (`body`, `data-controls` on a table of
+  controls), a column's name (`head`), a row (the family's root, with React Aria's state
+  attributes), a `cell`, the check (`select`) and the `bar`; inside a cell the list's slots
+  (`RowLabel`, `RowDescription`, …) draw in the table's scope. `ui/table/table.css` draws the
+  family default and a theme's parts reach the same attributes (`table.*`, the next release's manifest version).
+- **Stories hold it** (`Table.stories.tsx`): a table of hosts that chooses, sorts and opens a
+  row's menu under its bar; a table of data with buttons in its cells; an empty one; and a table
+  of controls, wide and stacked; in Chromium and WebKit, in Purlis and Classic, with axe.
+
 ## The dialog family
 
 **Every dialog and alert dialog is `Dialog` or `AlertDialog`** (`app/src/ui/dialog/Dialog.tsx`,
@@ -1042,8 +1078,8 @@ What every control holds to:
 `controls.guard.test.ts` holds this: a native button, field, select, table or menu that is not
 its family's and does not wear its class fails, unless its line is in
 `controls.guard.allowance.ts`, the list of the controls the window had before the classes. A
-native `<button>` may wear a list's row or a tree's row and a `<table>` `ui-table`; no class makes
-a native field, select, checkbox, radio or menu right. Moving a control onto its family deletes
+native `<button>` may wear a list's row or a tree's row; no class makes a native field, select,
+checkbox, radio, table or menu right. Moving a control onto its family deletes
 its line there; nothing adds one (`docs/design-system.md`, "The guards, and the lists that only
 shrink").
 

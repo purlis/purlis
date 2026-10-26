@@ -1687,7 +1687,7 @@ the focus rings, #2867):
   button is the button family's `Button`, a segment the choice family's), an `<input>` or
   `<textarea>` (none: a box is the field family's `TextField` or `TextArea`, a checkbox or a
   radio the choice family's), a `<select>` (none: the select family's `Select`), a `<table>`
-  (`ui-table`), and a Radix menu's content and rows (none: the menu family's). **It holds two
+  (none: the table family's `Table` or `ControlTable`, #2911), and a Radix menu's content and rows (none: the menu family's). **It holds two
   heights too** (#2449): a `height`, `min-height`, `block-size` or `min-block-size` set on a
   control is `--size-control`, and one set on a strip or a pane header is `--size-chrome`. A
   control is `--size-chrome` only as the small form: a control whose selector puts it inside a

@@ -164,7 +164,7 @@ async function theLimitsStacked() {
       return { left, right, top, bottom };
     };
     const table = document.querySelector('table[aria-label="Dispatch limits"]');
-    const room = table?.closest(".ui-table-room");
+    const room = table?.closest('[data-part="frame"][data-stacks]');
     const head = table?.querySelector("thead");
     if (!table || !room || !head) return null;
     return {

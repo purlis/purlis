@@ -317,6 +317,7 @@ says what each family, part and variant is):
 | `slider` (since the next release) | `root` (`text`, `gap`), `track` (`fill`, `corner-radius`), `fill` (`fill`, `corner-radius`), `thumb` (`fill`, `border-colour`, `corner-radius`), `output` (`text`) | none | `disabled` |
 | `status-item` (since version 4) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`), `icon` (`text`), `label` (`text`, `font-size`, `font-weight`), `count` (`text`) | `bar`, `pill`, `waiting`, `accent` | `hover`, `pressed`, `focused`, `disabled` |
 | `switch` (since the next release) | `root` (`text`, `gap`), `track` (`fill`, `corner-radius`), `thumb` (`fill`, `corner-radius`), `label` (`text`, `font-size`, `font-weight`) | none | `hover`, `selected`, `focused`, `disabled` |
+| `table` (since the next release) | `root` (`fill`, `text`), `frame` (`fill`, `border-colour`, `border-width`, `corner-radius`, `shadow`), `head` (`text`, `font-size`, `font-weight`), `cell` (`padding`), `rule` (`fill`), `bar` (`gap`) | none | `hover`, `focused`, `selected`, `disabled` |
 | `tabs` (since version 8) | `tab` (`fill`, `text`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`, `max-width`, `flare`, `inset`), `label` (`text`, `font-size`, `font-weight`), `closer` (`fill`, `text`, `corner-radius`), `count` (`fill`, `text`, `corner-radius`), `indicator` (`fill`, `height`, `corner-radius`, `position`), `strip` (`fill`, `border-colour`, `border-width`), `layout` (`attach`, `sizing`, `dividers`, `gap`) | `chat`, `view`, `file`, `background` | `hover`, `selected` |
 | `text-input` (since version 3) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `height`), `icon` (`text`) | none | `hover`, `focused`, `disabled` |
 | `textarea` (since version 3) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `font-size`) | none | `hover`, `focused`, `disabled` |
@@ -477,6 +478,12 @@ faint grip under the pointer, a muted one while dragged and one in `focus.ring` 
 on it, in place of a ring the handle's length. Purlis Classic's own `parts` draw its accent line in all three and no grip
 (`panel-separator.root.hover.fill: accent.base`, `panel-separator.grip.hover.fill: transparent`,
 and the same for `pressed` and `focused`).
+
+**The table** (the next release's manifest version, #2911): `table`. Its `root` is a table's row,
+at rest and in each state (`fill`, `text`); `frame` is the card that holds the table; `head` a
+column's name; `cell` a cell's room; `rule` the rule between rows and under the columns' names,
+none by default (Purlis Classic fills it, `table.rule.fill: border.subtle`); and `bar` the bar
+over a table that chooses.
 
 The strip tabs, a tab's `×` closer, the gear on a strip and the list and tree rows are not
 families with parts today: they are drawn as the note under [Geometry](#geometry) says.

@@ -22,6 +22,7 @@ export const purlisUi: {
     | "empty-state-family"
     | "status-item-family"
     | "list-family"
+    | "table-family"
     | "rail-family"
     | "activity-family"
     | "tabs-family"

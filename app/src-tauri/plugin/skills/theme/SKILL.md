@@ -176,8 +176,10 @@ dense and large sizes are never a theme's; `select` and `combobox` (their `root`
 the text input's box, and their `chevron`; a select's `placeholder` too), whose lists are a
 menu's surface and rows; and the choices, `checkbox`, `radio`, `switch`, `segmented-control`,
 `segment`, `slider` and `option-card`, each chosen in `selected` (`switch.track.selected.fill`,
-`option-card.root.card.selected.border-colour`), none taking a height. The note above still
-holds for the strip tabs and tree rows.
+`option-card.root.card.selected.border-colour`), none taking a height; and `table` (`table.frame.corner-radius`, `table.root.selected.fill`,
+`table.head.text`, …), a table's card, its rows, its column names and its cells, which has no
+variants and whose rows are as tall as what they hold. The note above still holds for the strip
+tabs and tree rows.
 
 **The session tabs** are the `tabs` family. Purlis docks them on the content panel: the chosen
 tab takes the panel's fill and flares into it, an unchosen tab's hover is a pill inset from its

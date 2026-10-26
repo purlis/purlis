@@ -671,7 +671,6 @@ const CONTROL_GROUNDS: &[&str] = &[
     "layer.project",
     "layer.workspace",
     "layer.chat",
-    "layer.selected",
     "terminal.background",
 ];
 

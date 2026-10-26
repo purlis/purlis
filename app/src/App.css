@@ -5873,70 +5873,18 @@ nav.piece-files-head {
   margin: 0;
 }
 
-/* The secrets: the shared table (`.ui-table`, DS-12), its headings, cells and hairlines; names
-   on the left, the size band and when each was written muted beside them. The row under the
-   pointer or the keyboard takes `layer.selected`: "where you are", which is what it means on a
-   strip too. The Dispatches view draws its table the same way. */
+/* The secrets: the table family's (`ui/table`, #2911), as wide as a page of them reads. */
 .vault-secrets {
   max-width: 60rem;
-  font-size: var(--font-size-sm);
-}
-
-.vault-secrets td {
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.vault-secrets td:first-child {
-  width: 100%;
-}
-
-.vault-secrets tbody tr {
-  transition: background-color var(--motion-duration-quick) var(--motion-easing-standard);
-}
-
-.vault-secrets tbody tr:hover,
-.vault-secrets tbody tr:focus-within {
-  background: var(--layer-selected);
-}
-
-/* A secret's name is the row's one control (`.ui-row`): pressing it opens the row's menu. The
-   glyph says there is one, and is quiet until the row is under the pointer or the keyboard. */
-.vault-secret {
-  font: inherit;
 }
 
 .vault-secret-name {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
 
-.vault-secret .node-icon {
-  color: var(--text-muted);
-  opacity: 0;
-  transition: opacity var(--motion-duration-quick) var(--motion-easing-standard);
-}
-
-.vault-secrets tr:hover .vault-secret .node-icon,
-.vault-secret:focus-visible .node-icon,
-.vault-secret[data-state="open"] .node-icon {
-  opacity: 1;
-}
-
-/* The eye (charter-app#236), a small ghost button: quiet until its row is under the pointer or
-   the keyboard, and plain while it is pressed, so a value on the page always has its hide
-   button showing. No easing: a row's hover is not animated (`docs/design-system.md`, motion). */
-.vault-reveal {
-  opacity: 0;
-}
-
-.vault-secrets tr:hover .vault-reveal,
-.vault-secrets tr:focus-within .vault-reveal,
-.vault-reveal[aria-pressed="true"] {
-  opacity: 1;
+/* A line's name that shows its chat (the Activity tab): words, in the line's own type. */
+.vault-secret {
+  font: inherit;
 }
 
 /* A revealed value, under its name: the only place one is ever drawn, for 30 seconds. It wraps
@@ -6606,7 +6554,7 @@ nav.piece-files-head {
   font-size: inherit;
   color: var(--text-primary);
 }
-/* One row per workspace repo (charter-app#299): the shared table (`.ui-table`, DS-12), so
+/* One row per workspace repo (charter-app#299): the table family's (`ui/table`, #2911), so
    "which of these is unsaved" reads down a column. */
 .saving-repos td {
   white-space: nowrap;
@@ -7109,8 +7057,8 @@ nav.piece-files-head {
 }
 
 /* Settings › Project › Dispatch (#1439): the limits table, a row per level and a box per
-   limit; and the same table on a persona's view, under its own heading. The table is the shared
-   `.ui-table` (DS-9, #1841): its cells, headings and alignment are that class's. */
+   limit; and the same table on a persona's view, under its own heading. The table is the
+   table family's `ControlTable` (`ui/table`, #2911): its cells, headings and alignment are its. */
 /* The limits and their notes take the row's width and no more: a table wider than the column
    scrolls in its own box (`contain: inline-size` keeps its width out of the row's), and the
    notes wrap in the column (#1545). */
@@ -7145,7 +7093,7 @@ nav.piece-files-head {
 }
 
 /* Settings › Project › Dispatch (#1504): the one table of who may dispatch to whom, the shared
-   `.ui-table-fixed` (DS-9, #1841). A row group per persona; under it each target, with a row for
+   table family's fixed `ControlTable` (#2911). A row group per persona; under it each target, with a row for
    every grant that covers the pair. The columns are fixed shares of the width, so nothing a cell
    says moves another column; a question is a row of its own across the whole table, under the
    row it is about; and words break between words, a name only where it is longer than its
@@ -7155,23 +7103,24 @@ nav.piece-files-head {
 }
 
 .dispatch-table thead th:nth-child(1) {
-  width: 18%;
+  width: 22%;
 }
 
 .dispatch-table thead th:nth-child(2) {
-  width: 40%;
+  width: 32%;
 }
 
+/* "Workspace" in the label role's capitals and tracking fits whole on macOS's fonts too. */
 .dispatch-table thead th:nth-child(3) {
-  width: 17%;
+  width: 23%;
 }
 
 .dispatch-table thead th:nth-child(4) {
-  width: 25%;
+  width: 23%;
 }
 
 /* A persona's row group is named in bold above a hairline. The cell is the shared table's
-   (its padding and weight come from `.ui-table`, a layer above this one), so the name's own
+   (its padding and weight come from the table family, a layer above this one), so the name's own
    words carry the weight. */
 .dispatch-table .dispatch-grant-group {
   border-block-end: 1px solid var(--border-subtle);
@@ -7684,11 +7633,6 @@ nav.piece-files-head {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-/* A skill's tab (SK-3): the run its chip opened it on stands out in its Runs panel. */
-.skill-tab .ui-table tr[data-wanted] {
-  background: var(--surface-hover);
 }
 
 /* A skill's state, owners, history and uses (SK-19, #2782). */

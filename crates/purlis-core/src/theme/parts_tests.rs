@@ -83,20 +83,23 @@ fn a_theme_rounds_the_buttons_root_to_a_pill() {
 fn a_theme_that_names_no_parts_draws_exactly_as_today() {
     // Purlis Classic names only its tabs' strip look (#2914), its activity items' (#2917), and
     // what keeps it as it drew when the family defaults took Purlis's (#3177): its rail's 9px
-    // corners, its title bar's 5px chips and its update pill's primary words; and its resize
-    // handles' accent line (#3143). Nothing it draws
-    // falls back.
+    // corners, its title bar's 5px chips and its update pill's primary words; its resize
+    // handles' accent line (#3143); and its tables' rule between rows (#2911, #2804). Nothing it
+    // draws falls back.
     for theme in built_ins() {
         assert!(
-            theme.parts.keys().all(|key| [
-                "tabs",
-                "activity",
-                "rail",
-                "titlebar",
-                "status-item",
-                "panel-separator",
-            ]
-            .contains(&key.family)),
+            theme.parts.keys().all(|key| {
+                [
+                    "tabs",
+                    "activity",
+                    "rail",
+                    "titlebar",
+                    "status-item",
+                    "panel-separator",
+                ]
+                .contains(&key.family)
+                    || (key.family == "table" && key.part == "rule")
+            }),
             "{} names parts beyond what keeps it as it drew",
             theme.name
         );
@@ -1077,6 +1080,61 @@ fn the_list_family_default_is_what_its_stylesheet_draws() {
     );
 }
 
+#[test]
+fn the_table_family_default_is_what_its_stylesheet_draws() {
+    use parts::State::{Disabled, Focused, Hover, Selected};
+    let css = include_str!("../../../../app/src/ui/table/table.css");
+    let row = "[data-scope=\"table\"][data-part=\"root\"]";
+    let at_rest = rule(css, row);
+    assert_eq!(
+        declared(at_rest, "background-color"),
+        None,
+        "a row at rest has no ground"
+    );
+    assert_eq!(
+        parts::look_of("table", "", &[]),
+        [
+            "transparent",
+            token_of(declared(at_rest, "color").unwrap()).as_str(),
+            "transparent"
+        ]
+    );
+    // The pointer's ground is drawn on a row that is not chosen: a chosen row keeps its wash.
+    let hover = rule(
+        css,
+        &format!("{row}[data-hovered]:not([data-disabled]):not([data-selected])"),
+    );
+    assert_eq!(
+        parts::look_of("table", "", &[Hover])[0],
+        token_of(declared(hover, "background-color").unwrap())
+    );
+    // The keyboard's ring changes no colour of the row.
+    assert_eq!(
+        parts::look_of("table", "", &[Focused]),
+        parts::look_of("table", "", &[])
+    );
+    let chosen = rule(css, &format!("{row}:is([data-selected], [data-current])"));
+    for states in [&[Selected][..], &[Selected, Hover][..]] {
+        assert_eq!(
+            parts::look_of("table", "", states)[0],
+            token_of(declared(chosen, "background-color").unwrap()),
+            "{states:?}"
+        );
+    }
+    let off = rule(css, &format!("{row}[data-disabled]"));
+    assert_eq!(
+        parts::look_of("table", "", &[Disabled])[1],
+        token_of(declared(off, "color").unwrap())
+    );
+    // A column's name is in the muted tier the manifest says it is (R74).
+    let head = rule(css, "[data-scope=\"table\"][data-part=\"head\"]");
+    assert_eq!(token_of(declared(head, "color").unwrap()), "text.muted");
+    // The rule between rows is its own part, and the family draws none (#2804).
+    let line = rule(css, "[data-scope=\"table\"][data-part=\"rule\"]");
+    assert_eq!(declared(line, "background-color"), None);
+    assert_eq!(declared(line, "block-size"), Some("1px"));
+}
+
 // ---------------------------------------------------------------------------------------
 // The manifest and the schema
 // ---------------------------------------------------------------------------------------
@@ -1301,6 +1359,15 @@ fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
     );
     // The key at a row's end (#2921), the next release's.
     assert_eq!(list["parts"][7]["since"], parts::NEXT);
+    // The table family (#2911): a row, the card that holds the table, a column's name, a cell
+    // and the bar over a table that chooses.
+    let table = family("table");
+    assert_eq!(table["since"], parts::NEXT);
+    assert_eq!(table["variants"], json!([]));
+    assert_eq!(
+        names(&table, "parts"),
+        ["root", "frame", "head", "cell", "rule", "bar"]
+    );
     // A textarea is as tall as its lines: no height to set.
     assert!(
         !family("textarea")["parts"][0]["properties"]

@@ -58,6 +58,11 @@
  *   (`listbox`, `option`), its old class (`ui-list`) and its `data-scope`. A list to choose from
  *   is the family's `ListBox`, a list of rows that act its `List` (`ui/list/List`); a list of
  *   words (a sentence's bullets) is no collection and stays a `<ul>`.
+ * - `purlis/table-family` (error: the table family has moved, #2911): a raw table element
+ *   (`<table>`, `<tr>`, `<td>` and the rest), a table's or a grid's role written by hand, the old
+ *   table classes (`ui-table`, `ui-table-*`, `ui-cell-actions`, `ui-num`) and `data-scope="table"`.
+ *   A table of data is the family's `Table` (React Aria's grid) and a table of controls its
+ *   `ControlTable` (a plain table whose fields keep their keys).
  * - `purlis/tabs-family` (error: the session strip is on React Aria's tabs, #3042): a `tab`,
  *   `tablist` or `tabpanel` role written by hand, in JSX or in an object of props, the strip's
  *   old hand-made tablist (`StripTablist`), and `data-scope="tabs"` by hand. A tablist is the
@@ -747,6 +752,16 @@ const listFamily = moved({
     "a list: draw it as `<ListBox>` and `<ListOption>` (a list to choose from) or `<List>` and `<ListRow>` (rows that act), with the row's slots, from `ui/list/List` (#2911).",
 });
 
+const tableFamily = moved({
+  description: "A table is the shared table family",
+  scopes: ["table"],
+  classes: ["ui-table", "ui-table-*", "ui-cell-actions", "ui-num"],
+  roles: ["table", "grid", "row", "rowgroup", "cell", "gridcell", "columnheader", "rowheader"],
+  elements: ["table", "thead", "tbody", "tfoot", "tr", "th", "td", "caption", "colgroup", "col"],
+  message:
+    "a table: draw a table of data as `<Table>`, `<TableHeader>`, `<TableColumn>`, `<TableBody>`, `<TableRow>` and `<TableCell>` from `ui/table/Table` (with `<TableBar>` over one that chooses), and a table of controls as `<ControlTable>` and its parts from `ui/table/ControlTable` (#2911).",
+});
+
 const titlebarFamily = moved({
   description: "The title bar's workspaces are the shared title bar family",
   scopes: ["titlebar"],
@@ -818,6 +833,7 @@ export const purlisUi = {
     "rail-family": railFamily,
     "activity-family": activityFamily,
     "list-family": listFamily,
+    "table-family": tableFamily,
     "tabs-family": tabsFamily,
     "titlebar-family": titlebarFamily,
     "panel-separator-family": panelSeparatorFamily,

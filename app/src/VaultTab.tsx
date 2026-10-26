@@ -1,17 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-  type RefObject,
-} from "react";
-import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
-import { Ellipsis, Eye, EyeOff, KeyRound, LoaderCircle, Plus, Search } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Eye, EyeOff, KeyRound, LoaderCircle, Plus, Search } from "lucide-react";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import {
   commands,
@@ -22,7 +13,6 @@ import {
   type VaultSecret,
 } from "./bindings";
 import { SAID } from "./menuWords";
-import { useTabStop } from "./roving";
 import { Field, SettingRow } from "./settings/components";
 import { counted } from "./Vaults";
 import { saidOfTheOldExport, saidOfTheOthers, VaultSignIn } from "./VaultSignIn";
@@ -30,7 +20,8 @@ import { providerName } from "./vaultProviders";
 import { Button, ButtonRow, ToggleButton } from "./ui/button/Button";
 import { AlertDialog, Dialog } from "./ui/dialog/Dialog";
 import { TextField } from "./ui/field/Field";
-import { AnchoredMenu, Menu, MenuItem, MenuSeparator, MenuWords } from "./ui/menu/Menu";
+import { Menu, MenuItem, MenuSeparator, MenuWords } from "./ui/menu/Menu";
+import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "./ui/table/Table";
 
 /**
  * **One vault, in a tab of its own** (charter-app#235): its name, its provider and how many
@@ -344,11 +335,6 @@ export function VaultTab({
     const all = contents?.secrets ?? [];
     return wanted === "" ? all : all.filter((one) => one.key.toLowerCase().includes(wanted));
   }, [contents, query]);
-  const stop = useTabStop(
-    undefined,
-    secrets.map((one) => one.key),
-  );
-
   const add = () => setAsking({ doing: "add" });
 
   /** What the last press was answered with: a refusal, or what was done. Under the tools of a
@@ -516,32 +502,28 @@ export function VaultTab({
                 Nothing in {vault} matches “{query.trim()}”.
               </p>
             ) : (
-              <table className="ui-table vault-secrets" aria-label={`Secrets in ${vault}`}>
-                <thead>
-                  <tr>
-                    <th scope="col">Name</th>
-                    <th scope="col">Size</th>
-                    <th scope="col">Updated</th>
-                    <th scope="col" aria-label="Reveal" />
-                  </tr>
-                </thead>
-                {/* The rows are ONE Tab stop, and Up and Down move along them (charter-app#189,
-                    `roving.ts`); Enter or Space opens the row's menu. */}
-                <RovingFocusGroup.Root asChild orientation="vertical" {...stop}>
-                  <tbody>
-                    {secrets.map((one) => (
-                      <SecretRow
-                        key={one.key}
-                        secret={one}
-                        value={shown?.key === one.key ? shown.value : undefined}
-                        onAsk={setAsking}
-                        onReveal={() => void reveal(one.key)}
-                        onCopy={() => void copy(one.key)}
-                      />
-                    ))}
-                  </tbody>
-                </RovingFocusGroup.Root>
-              </table>
+              // A grid of the secrets: one Tab stop, the arrows along the rows and into a row's eye
+              // and its ⋯; the ⋯, a right-click or the menu key open the row's menu.
+              <Table aria-label={`Secrets in ${vault}`} className="vault-secrets" rowMenus>
+                <TableHeader>
+                  <TableColumn isRowHeader>Name</TableColumn>
+                  <TableColumn>Size</TableColumn>
+                  <TableColumn>Updated</TableColumn>
+                  <TableColumn hideName>Reveal</TableColumn>
+                </TableHeader>
+                <TableBody>
+                  {secrets.map((one) => (
+                    <SecretRow
+                      key={one.key}
+                      secret={one}
+                      value={shown?.key === one.key ? shown.value : undefined}
+                      onAsk={setAsking}
+                      onReveal={() => void reveal(one.key)}
+                      onCopy={() => void copy(one.key)}
+                    />
+                  ))}
+                </TableBody>
+              </Table>
             )}
           </>
         )}
@@ -873,11 +855,13 @@ function shownAt(updated: string): string {
 }
 
 /**
- * One secret's row: its name and menu, its size band and when it was written, and the eye.
+ * One secret's row: its name (and its value while it is revealed), its size band and when it was
+ * written, the eye, and the row's menu under its ⋯.
  *
- * **The eye is not a Tab stop of its own**: the rows are one (charter-app#189), and an eye in
- * each would make them one per row. Right from a row's name reaches its eye, and Left comes
- * back; the pointer reaches it as any button.
+ * **The rows are one Tab stop** (charter-app#189): the table is a grid, so the arrows go along
+ * the rows and → reaches a row's eye and its ⋯. The menus' rules (`docs/ui-primitives.md`,
+ * "Menus"): a short verb that does not say the secret's name again, an ellipsis on a row that
+ * asks first, and the row that cannot be undone last, under a line, in the danger colour.
  */
 function SecretRow({
   secret,
@@ -893,110 +877,16 @@ function SecretRow({
   onReveal: () => void;
   onCopy: () => void;
 }) {
-  const name = useRef<HTMLButtonElement>(null);
-  const eye = useRef<HTMLButtonElement>(null);
   const key = secret.key;
+  const ask = (doing: Asking["doing"]) => () => onAsk({ doing, secret: key } as Asking);
   return (
-    <tr>
-      <td>
-        <SecretMenu
-          secret={key}
-          trigger={name}
-          onAsk={onAsk}
-          onCopy={onCopy}
-          onRight={() => eye.current?.focus()}
-        />
-        {value !== undefined && <code className="vault-value">{value}</code>}
-      </td>
-      <td>{secret.size ?? "—"}</td>
-      <td>
-        {secret.updated === null ? (
-          "—"
-        ) : (
-          <time dateTime={secret.updated}>{shownAt(secret.updated)}</time>
-        )}
-      </td>
-      <td>
-        <ToggleButton
-          size="sm"
-          variant="ghost"
-          ref={eye}
-          excludeFromTabOrder
-          aria-label={`Reveal ${key}`}
-          isSelected={value !== undefined}
-          onPress={onReveal}
-          onKeyDown={(event) => {
-            if (event.key !== "ArrowLeft") return;
-            event.preventDefault();
-            name.current?.focus();
-          }}
-          className="vault-reveal"
-        >
-          {value === undefined ? (
-            <Eye className="node-icon" aria-hidden="true" />
-          ) : (
-            <EyeOff className="node-icon" aria-hidden="true" />
-          )}
-        </ToggleButton>
-      </td>
-    </tr>
-  );
-}
-
-/**
- * A secret's name in its row, and the row's menu.
- *
- * **The row keeps its own keys, and the menu is held by it** (`AnchoredMenu`): the roving item
- * sees a key first and, for Up and Down, moves the focus, so neither opens the menu. Enter and
- * Space press the row, which opens it on its first row; a click opens it with the keyboard on
- * the menu. Right is neither's, and goes to the row's eye.
- */
-function SecretMenu({
-  secret,
-  trigger,
-  onAsk,
-  onCopy,
-  onRight,
-}: {
-  secret: string;
-  trigger: RefObject<HTMLButtonElement | null>;
-  onAsk: (asking: Asking) => void;
-  onCopy: () => void;
-  onRight: () => void;
-}) {
-  const [open, setOpen] = useState<false | "first" | true>(false);
-  const ask = (doing: Asking["doing"]) => () => onAsk({ doing, secret } as Asking);
-  return (
-    <>
-      <RovingFocusGroup.Item asChild tabStopId={secret}>
-        <button
-          type="button"
-          ref={trigger}
-          className="ui-row vault-secret"
-          aria-haspopup="menu"
-          aria-expanded={open !== false}
-          // A press by Enter or Space (no pointer) lands on the menu's first row.
-          onClick={(event) => setOpen(event.detail === 0 ? "first" : true)}
-          onKeyDown={(event) => {
-            if (event.key !== "ArrowRight") return;
-            event.preventDefault();
-            onRight();
-          }}
-        >
-          <span className="vault-secret-name">{secret}</span>
-          <Ellipsis className="node-icon" aria-hidden="true" />
-        </button>
-      </RovingFocusGroup.Item>
-      <AnchoredMenu
-        triggerRef={trigger}
-        isOpen={open !== false}
-        autoFocus={open === false ? true : open}
-        onOpenChange={(next) => setOpen(next ? true : false)}
-      >
-        {/* The menus' rules (`docs/ui-primitives.md`, "Menus"): a short verb that does not say
-            the secret's name again, an ellipsis on a row that asks first, and the row that
-            cannot be undone last, under a line, in the danger colour. */}
-        <Menu aria-label={secret} className="more-menu" onAction={() => setOpen(false)}>
+    <TableRow
+      id={key}
+      textValue={key}
+      data-secret={key}
+      menuLabel={`More for ${key}`}
+      menu={() => (
+        <Menu aria-label={key} className="more-menu">
           <MenuItem id="edit" textValue={SAID.editValue} onAction={ask("edit")}>
             <MenuWords said={SAID.editValue} />
           </MenuItem>
@@ -1017,8 +907,37 @@ function SecretMenu({
             <MenuWords said={SAID.deleteAsks} />
           </MenuItem>
         </Menu>
-      </AnchoredMenu>
-    </>
+      )}
+    >
+      <TableCell>
+        <span className="vault-secret-name">{key}</span>
+        {value !== undefined && <code className="vault-value">{value}</code>}
+      </TableCell>
+      <TableCell>{secret.size ?? "—"}</TableCell>
+      <TableCell>
+        {secret.updated === null ? (
+          "—"
+        ) : (
+          <time dateTime={secret.updated}>{shownAt(secret.updated)}</time>
+        )}
+      </TableCell>
+      <TableCell>
+        <ToggleButton
+          size="sm"
+          variant="ghost"
+          aria-label={`Reveal ${key}`}
+          isSelected={value !== undefined}
+          onPress={onReveal}
+          className="vault-reveal"
+        >
+          {value === undefined ? (
+            <Eye className="node-icon" aria-hidden="true" />
+          ) : (
+            <EyeOff className="node-icon" aria-hidden="true" />
+          )}
+        </ToggleButton>
+      </TableCell>
+    </TableRow>
   );
 }
 
