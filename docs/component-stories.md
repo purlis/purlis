@@ -174,7 +174,10 @@ add or change one:
    - **Your own push** (the way that runs no extra checks): in a checkout of the pull request's
      head, run `node tools/story-baselines-pull.mjs <pull request>`. It takes the newest
      `stories` run's `story-baselines` into `app/`. Review the pictures, then commit and push
-     them with your next change. Your push starts every check as any push does.
+     them with your next change. Your push starts every check as any push does. The tool runs
+     the checked-out head's own code, so take another person's pull request's baselines only in
+     a checkout you would run anyway. It reads `purlis/purlis` unless `--repo` names another,
+     never `gh`'s default repository, which in a fork's clone is the fork.
    - **The `update-baselines` label**: `.github/workflows/stories-baselines.yml` waits for the
      head's `stories` run, takes its `story-baselines` with the base branch's own copy of
      `tools/story-baselines.mjs`, pushes them to the branch as one commit, takes the label off

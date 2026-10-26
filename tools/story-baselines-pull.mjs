@@ -5,7 +5,10 @@
 // the pictures the pinned image drew of the stories, written into this checkout so they go into
 // the next push like any other change.
 //
-//   node tools/story-baselines-pull.mjs <pull request>
+//   node tools/story-baselines-pull.mjs <pull request> [--repo <owner>/<repo>]
+//
+// The repository is purlis/purlis unless `--repo` names another: never gh's default, which in a
+// fork's clone is the fork.
 //
 // When a pull request's `stories` run fails on its pictures alone, the run draws them again,
 // writing the baselines as they are now, and keeps them as `story-baselines`
@@ -17,6 +20,9 @@
 // push of theirs starts every check as usual, where the label's commit, made with the
 // workflow's own token, leaves them waiting for a maintainer.
 //
+// **This runs the checked-out head's own code**, `tools/story-baselines.mjs` among it: take the
+// baselines of someone else's pull request only in a checkout of code you would run anyway.
+//
 // It needs `gh`, signed in, and `git`.
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
@@ -26,18 +32,28 @@ import { fileURLToPath } from "node:url";
 
 import { take } from "./story-baselines.mjs";
 
+/** The repository a pull request is in, unless `--repo` names another. */
+export const REPO = "purlis/purlis";
+
 /** The artifact a `stories` run keeps its drawn baselines in, and the file that says of what. */
 export const ARTIFACT = "story-baselines";
 export const DRAWN = "drawn.json";
 
 /**
  * The run whose baselines are taken, of `runs` (the `stories` workflow's runs of the head, as
- * the API lists them), or why there is none: the newest run, which must have finished and
- * failed (one that passed drew nothing; one that is still going has not drawn yet).
+ * the API lists them), or why there is none: the newest run the pull request started, of `head`
+ * in the repository `from` its branch is in, which must have finished and failed (one that
+ * passed drew nothing; one that is still going has not drawn yet). Only a `pull_request` run
+ * draws baselines.
  */
-export function runToTake(runs, head) {
+export function runToTake(runs, head, from) {
   const newest = [...runs]
-    .filter((run) => run.head_sha === head)
+    .filter(
+      (run) =>
+        run.head_sha === head &&
+        run.event === "pull_request" &&
+        run.head_repository?.full_name === from,
+    )
     .sort((a, b) => b.run_number - a.run_number || b.run_attempt - a.run_attempt)[0];
   if (!newest) return { why: `no stories run has tested ${head} yet` };
   if (newest.status !== "completed")
@@ -72,13 +88,26 @@ function run(command, args, options = {}) {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const [pr] = process.argv.slice(2);
-  if (!/^\d+$/.test(pr ?? "")) {
-    console.error("usage: story-baselines-pull.mjs <pull request number>");
+  const given = process.argv.slice(2);
+  const [pr] = given;
+  const at = given.indexOf("--repo");
+  const repo = at === -1 ? REPO : given[at + 1];
+  if (!/^\d+$/.test(pr ?? "") || !/^[\w.-]+\/[\w.-]+$/.test(repo ?? "")) {
+    console.error("usage: story-baselines-pull.mjs <pull request number> [--repo <owner>/<repo>]");
     process.exit(2);
   }
   const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-  const head = run("gh", ["pr", "view", pr, "--json", "headRefOid", "--jq", ".headRefOid"]);
+  const [head, from] = run("gh", [
+    "pr",
+    "view",
+    pr,
+    "--repo",
+    repo,
+    "--json",
+    "headRefOid,headRepository,headRepositoryOwner",
+    "--jq",
+    '.headRefOid + " " + .headRepositoryOwner.login + "/" + .headRepository.name',
+  ]).split(" ");
   const here = run("git", ["rev-parse", "HEAD"], { cwd: root });
   if (here !== head) {
     console.error(
@@ -91,7 +120,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       "api",
       "-X",
       "GET",
-      "repos/{owner}/{repo}/actions/workflows/stories.yml/runs",
+      `repos/${repo}/actions/workflows/stories.yml/runs`,
       "-f",
       `head_sha=${head}`,
       "-f",
@@ -100,7 +129,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       ".workflow_runs",
     ]),
   );
-  const chosen = runToTake(runs, head);
+  const chosen = runToTake(runs, head, from);
   if (!chosen.run) {
     console.error(chosen.why);
     process.exit(1);
@@ -109,7 +138,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   try {
     const got = spawnSync(
       "gh",
-      ["run", "download", String(chosen.run.id), "-n", ARTIFACT, "-D", into],
+      ["run", "download", String(chosen.run.id), "-R", repo, "-n", ARTIFACT, "-D", into],
       { encoding: "utf8" },
     );
     if (got.status !== 0 || !existsSync(join(into, DRAWN))) {
@@ -128,7 +157,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     // has every commit of it.
     const behind = run("gh", [
       "api",
-      `repos/{owner}/{repo}/compare/${drawn.base}...${head}`,
+      `repos/${repo}/compare/${drawn.base}...${head}`,
       "--jq",
       ".behind_by",
     ]);
