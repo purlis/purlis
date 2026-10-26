@@ -11,9 +11,24 @@
  * - **at once while the keyboard is on the row** (its focus ring is showing), until it leaves;
  * - **Esc takes it down** without moving the keyboard, and is the tooltip's alone (WCAG 1.4.13).
  *
- * It is anchored to the whole row by a part that draws nothing and takes no pointer.
+ * It is anchored by a part that draws nothing and takes no pointer, and stands **beside the
+ * pointer or the row's words, not the whole row** (#3328): a row across the window has no room
+ * at either side of it, where a tooltip came out a column of single words.
+ *
+ * - The pointer opened it: it stands by the pointer, where it rested as the delay ran out.
+ * - The keyboard opened it: it stands by the row's words, as far as they are drawn.
+ * - Neither can be measured (no layout): by the whole row.
  */
-import { useCallback, useContext, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { flushSync } from "react-dom";
 import { AnchoredTooltip, onTooltipEscape, TOOLTIP_DELAY, type Tip } from "../tooltip/Tooltip";
 import { RowScope } from "./Row";
@@ -23,6 +38,7 @@ export interface RowTipped {
   /** The pointer's handlers for the row: its own, so a row that runs nothing shows one too. */
   hover: {
     onPointerEnter?: (event: React.PointerEvent) => void;
+    onPointerMove?: (event: React.PointerEvent) => void;
     onPointerLeave?: (event: React.PointerEvent) => void;
   };
   /** What the row draws inside itself: the anchor, and the tooltip while it is up. */
@@ -31,49 +47,67 @@ export interface RowTipped {
 
 /** The handlers and the drawing of a row's tooltip; nothing at all for a row without one. */
 export function useRowTip(tip: Tip | undefined): RowTipped {
-  const scope = useContext(RowScope);
-  const anchor = useRef<HTMLSpanElement>(null);
-  const [pointed, setPointed] = useState(false);
+  // Where the pointer rested as the delay ran out (its x in the window), while it is shown.
+  const [pointed, setPointed] = useState<number | null>(null);
   const [dismissed, setDismissed] = useState(false);
   const soon = useRef(0);
+  const pointer = useRef(0);
   useEffect(() => () => window.clearTimeout(soon.current), []);
   const onPointerEnter = useCallback((event: React.PointerEvent) => {
     if (event.pointerType === "touch") return;
+    pointer.current = event.clientX;
     window.clearTimeout(soon.current);
-    soon.current = window.setTimeout(() => setPointed(true), TOOLTIP_DELAY);
+    soon.current = window.setTimeout(() => setPointed(pointer.current), TOOLTIP_DELAY);
+  }, []);
+  const onPointerMove = useCallback((event: React.PointerEvent) => {
+    pointer.current = event.clientX;
   }, []);
   const onPointerLeave = useCallback(() => {
     window.clearTimeout(soon.current);
-    setPointed(false);
+    setPointed(null);
     setDismissed(false);
   }, []);
   if (tip === undefined || tip === null || tip === "") return { hover: {}, drawn: () => null };
   return {
-    hover: { onPointerEnter, onPointerLeave },
-    drawn: (keyboardOn) => (
-      <>
-        <span ref={anchor} data-scope={scope} data-part="tip-anchor" aria-hidden="true" />
-        {(pointed || keyboardOn) && !dismissed && (
-          <Shown anchor={anchor} onEscape={() => setDismissed(true)}>
-            {tip}
-          </Shown>
-        )}
-      </>
-    ),
+    hover: { onPointerEnter, onPointerMove, onPointerLeave },
+    drawn: (keyboardOn) =>
+      (pointed !== null || keyboardOn) &&
+      !dismissed && (
+        <Shown pointer={pointed} onEscape={() => setDismissed(true)}>
+          {tip}
+        </Shown>
+      ),
   };
+}
+
+/** Where a row's tooltip is anchored: across the row from `left`, `width` wide, in px. */
+interface Place {
+  /** The pointer's x it was measured for; `null` for the row's words. */
+  by: number | null;
+  /** `null` where nothing could be measured: the whole row. */
+  at: { left: number; width: number } | null;
 }
 
 /** The tooltip while it is up, which the first Esc takes down. */
 function Shown({
-  anchor,
+  pointer,
   onEscape,
   children,
 }: {
-  anchor: React.RefObject<HTMLSpanElement | null>;
+  /** The pointer's x in the window, where the pointer opened it. */
+  pointer: number | null;
   onEscape: () => void;
   children: Tip;
 }) {
   const scope = useContext(RowScope);
+  const anchor = useRef<HTMLSpanElement>(null);
+  // The anchor is set by the pointer or the words before the tooltip is drawn, which measures it,
+  // and again when the pointer comes to a row the keyboard opened it on.
+  const [place, setPlace] = useState<Place | null>(null);
+  useLayoutEffect(() => {
+    setPlace(placeOf(anchor.current, pointer));
+  }, [pointer]);
+  const placed = place !== null && place.by === pointer;
   useEffect(() => onTooltipEscape(() => flushSync(onEscape)), [onEscape]);
   // **The tooltip is the row's description while it is shown**, as every tooltip is its
   // target's: the row is drawn by its collection, so it is said on the row's element here.
@@ -94,10 +128,51 @@ function Shown({
       if (now.length === 0) row.removeAttribute("aria-describedby");
       else row.setAttribute("aria-describedby", now.join(" "));
     };
-  }, [anchor, fallback, scope]);
+  }, [fallback, scope, placed]);
+  const at = placed ? place.at : null;
   return (
-    <AnchoredTooltip anchor={anchor} tooltipRef={tooltip}>
-      {children}
-    </AnchoredTooltip>
+    <>
+      <span
+        ref={anchor}
+        data-scope={scope}
+        data-part="tip-anchor"
+        aria-hidden="true"
+        style={at === null ? undefined : { left: at.left, right: "auto", width: at.width }}
+      />
+      {placed && (
+        <AnchoredTooltip key={pointer ?? "words"} anchor={anchor} tooltipRef={tooltip}>
+          {children}
+        </AnchoredTooltip>
+      )}
+    </>
   );
+}
+
+/**
+ * Where the anchor `span` (across its whole row, by its stylesheet) is set: on the pointer's x,
+ * a line with no width, or on the row's words, as far as they are drawn. Where neither can be
+ * measured it stays on the whole row.
+ */
+function placeOf(span: HTMLSpanElement | null, pointer: number | null): Place {
+  const row = span?.parentElement;
+  if (row === null || row === undefined) return { by: pointer, at: null };
+  const box = row.getBoundingClientRect();
+  if (pointer !== null) return { by: pointer, at: { left: pointer - box.left, width: 0 } };
+  const words = wordsOf(row);
+  if (words === null) return { by: pointer, at: null };
+  const [from, to] = words;
+  return { by: pointer, at: { left: from - box.left, width: Math.max(0, to - from) } };
+}
+
+/** Where a row's words are drawn, across the window: their label's text, cut where it is cut. */
+function wordsOf(row: Element): [number, number] | null {
+  const label = row.querySelector('[data-part="label"]');
+  if (label === null || typeof document.createRange !== "function") return null;
+  const range = document.createRange();
+  range.selectNodeContents(label);
+  if (typeof range.getBoundingClientRect !== "function") return null;
+  const text = range.getBoundingClientRect();
+  if (text.width === 0) return null;
+  const shown = label.getBoundingClientRect();
+  return [Math.max(text.left, shown.left), Math.min(text.right, shown.right)];
 }

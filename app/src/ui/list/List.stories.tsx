@@ -415,3 +415,92 @@ export const AimedByAField: Story = {
     expectFocusInSight();
   },
 };
+
+/** What a todo's tooltip says: the whole of its words and when it was written, a few lines. */
+const TODO_TIP =
+  "Write the release notes for the list family, with the rows that act, the cards and the filter, and say what changed for themes. Written 2026-10-24 09:12.";
+
+/**
+ * **A bottom panel across the window, the left panel closed** (#3328): its rows run from the
+ * rail to the window's right edge, so a row has no room at either side of it.
+ */
+function AcrossTheWindow() {
+  return (
+    <div
+      style={{
+        position: "fixed",
+        insetInline: "110px 0",
+        insetBlockEnd: 0,
+        padding: "var(--space-3)",
+        background: "var(--surface-raised)",
+      }}
+    >
+      <List aria-label="Todos" size="sm">
+        <ListRow id="notes" textValue="Write the release notes" tip={TODO_TIP}>
+          <RowLead>
+            <CircleDashed aria-hidden="true" />
+          </RowLead>
+          <RowLabel>Write the release notes</RowLabel>
+        </ListRow>
+        <ListRow
+          id="audit"
+          textValue="Read the whole prototype audit and file what is missing from the list family"
+          tip={TODO_TIP}
+        >
+          <RowLead>
+            <CircleDashed aria-hidden="true" />
+          </RowLead>
+          <RowLabel>
+            Read the whole prototype audit and file what is missing from the list family
+          </RowLabel>
+        </ListRow>
+      </List>
+    </div>
+  );
+}
+
+/** The tooltip shown now, which is drawn in the page and not in the story's frame. */
+const tipShown = () => document.querySelector<HTMLElement>('[role="tooltip"]');
+
+/** The tooltip keeps its width (its words fill its widest) and stays in the window. */
+async function expectReadable(where: string) {
+  const tip = await waitFor(() => {
+    const up = tipShown();
+    if (up === null) throw new Error(`${where}: the tooltip is not up`);
+    return up;
+  });
+  const box = tip.getBoundingClientRect();
+  await expect(box.width, `${where}: the tooltip keeps its width`).toBeGreaterThanOrEqual(300);
+  await expect(box.left, `${where}: inside the window`).toBeGreaterThanOrEqual(0);
+  await expect(box.right, `${where}: inside the window`).toBeLessThanOrEqual(window.innerWidth);
+}
+
+/**
+ * **A row across the window keeps its tooltip readable** (#3328, R166): the tooltip stands by
+ * the pointer or by the row's words, at their end, and under or over the row where neither side
+ * has room; never a column of words against the window's edge. The picture is the second row
+ * under the keyboard, its words cut, its tooltip over it.
+ */
+export const ARowAcrossTheWindow: Story = {
+  parameters: { screenshot: "page" },
+  render: () => <AcrossTheWindow />,
+  play: async ({ canvas, userEvent }) => {
+    const notes = canvas.getByRole("row", { name: "Write the release notes" });
+    const box = notes.getBoundingClientRect();
+    await userEvent.pointer({
+      target: notes,
+      coords: { clientX: box.left + box.width / 2, clientY: box.top + box.height / 2 },
+    });
+    await expectReadable("Across the window, under the pointer");
+    await userEvent.unhover(notes);
+    await waitFor(() => expect(tipShown()).toBeNull());
+    await userEvent.tab();
+    await untilFocused(() => notes, "Across the window: Tab lands on the first row");
+    await expectReadable("Across the window, by the row's words");
+    await userEvent.keyboard("{ArrowDown}");
+    const audit = canvas.getByRole("row", { name: /Read the whole prototype audit/ });
+    await untilFocused(() => audit, "Across the window: Down moves to the row whose words are cut");
+    await expectReadable("Across the window, a row whose words fill it");
+    expectFocusInSight();
+  },
+};
