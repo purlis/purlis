@@ -152,6 +152,7 @@ describe("Use skill…", () => {
     expect(budgetSaid({ ...BUDGET, manual: 0 })).toBe("3 skills of 30 · 1,234 of 6,000 characters");
     expect(budgetShort(BUDGET)).toBe("3 of 30 skills");
     expect(budgetShort({ ...BUDGET, warns: "chars" })).toBe("3 of 30 skills, near the budget");
+    expect(budgetShort({ ...BUDGET, skills: 1, most_skills: 1 })).toBe("1 of 1 skill");
   });
 
   it("says how many skills the router hid behind the index skill, and marks each (SK-15)", () => {

@@ -44,7 +44,7 @@ export function budgetSaid(budget: SkillBudget): string {
 /** The budget in a few words, for a chat tab's menu row: `12 of 30 skills`, and that it is near
  *  or past the budget where it warns. */
 export function budgetShort(budget: SkillBudget): string {
-  const short = `${budget.skills} of ${budget.most_skills} skills`;
+  const short = `${budget.skills} of ${counted(budget.most_skills, "skill", "skills")}`;
   return budget.warns === null ? short : `${short}, near the budget`;
 }
 
