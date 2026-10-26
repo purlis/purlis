@@ -384,7 +384,9 @@ async fn a_line_its_hooks_wrote_reaches_the_window_holding_it_and_the_reply_come
         Pushed::Heard {
             project: PROJECT.into(),
             heard: 12,
-            line
+            line,
+            // It records the line under the project as it holds it (1.40, #3400).
+            pathless: true,
         }
     );
     assert_eq!(
@@ -467,7 +469,9 @@ async fn each_clone_of_a_project_has_its_own_channel_and_its_lines_reach_only_it
         Pushed::Heard {
             project: PROJECT.into(),
             heard: 21,
-            line
+            line,
+            // It records the line under the project as it holds it (1.40, #3400).
+            pathless: true,
         }
     );
     let first_told = loop {
