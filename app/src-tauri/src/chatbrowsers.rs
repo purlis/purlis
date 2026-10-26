@@ -2407,9 +2407,14 @@ impl ChatBrowsers {
                 )
                 .map_err(|not| match not {
                     NotStarted::Full { most } => purlis_core::browserlimits::device_full_said(most),
+                    // The machine whose engine it is: this one, or the pool's runner the chat
+                    // runs on (#2990).
                     NotStarted::NoSandbox => {
-                        crate::enginesandbox::refused();
-                        crate::enginesandbox::NO_BROWSER_HERE.to_owned()
+                        crate::enginesandbox::refused_on(pool);
+                        match pool {
+                            None => crate::enginesandbox::NO_BROWSER_HERE.to_owned(),
+                            Some(pool) => crate::enginesandbox::no_browser_on(pool),
+                        }
                     }
                     NotStarted::Cancelled => {
                         crate::enginedownload::CANCELLED_FOR_THE_CHAT.to_owned()
@@ -2419,6 +2424,10 @@ impl ChatBrowsers {
                          go on with what needs no browser and tell the person what it said"
                     ),
                 })?;
+            // A runner whose engine refused before makes its sandbox now: its Notice goes.
+            if let Some(pool) = pool {
+                crate::enginesandbox::started_on(pool);
+            }
             // Opened from a kept store, it holds that login from its first moment (#2699).
             if let Some(kept) = kept_as {
                 self.signed_in_with(&program, kept);

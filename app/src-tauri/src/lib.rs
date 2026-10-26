@@ -3579,8 +3579,8 @@ pub fn run() {
             // A browser refused for the engine's sandbox raises its Notice (#2835).
             {
                 let window = app.handle().clone();
-                enginesandbox::telling(Box::new(move || {
-                    let _ = window.emit(enginesandbox::ENGINE_SANDBOX_NEEDED, ());
+                enginesandbox::telling(Box::new(move |machine| {
+                    let _ = window.emit(enginesandbox::ENGINE_SANDBOX_NEEDED, machine);
                 }));
             }
             // A finish leans on that lock, and is refused without it.

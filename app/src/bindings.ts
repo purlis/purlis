@@ -2651,18 +2651,11 @@ export const commands = {
 	 *  default. It applies at the next browser call; a browser running past a lowered limit runs on.
 	 */
 	setBrowserLimit: (limit: BrowserLimit, to: number | null) => typedError<null, string>(__TAURI_INVOKE("set_browser_limit", { limit, to })),
-	/**  **The Notice, while a start was refused for the engine's sandbox** since this launch. */
-	engineSandbox: () => typedError<{
-	/**  The sentence. */
-	says: string,
 	/**
-	 *  The command that adds the profile, which the person runs themselves: none for a data
-	 *  folder whose path holds a control character.
+	 *  **The Notices, while a start was refused for the engine's sandbox** since this launch: this
+	 *  machine's, and one for each pool's runner that refused one (#2990).
 	 */
-	command: string | null,
-	/**  This machine's own Chrome, where one is installed. */
-	chrome: string | null,
-} | null, string>(__TAURI_INVOKE("engine_sandbox")),
+	engineSandbox: () => typedError<EngineSandboxShown[], string>(__TAURI_INVOKE("engine_sandbox")),
 	/**  **The browser engine's downloads under way.** */
 	engineDownloads: () => typedError<EngineDownloadShown[], string>(__TAURI_INVOKE("engine_downloads")),
 	/**
@@ -6074,6 +6067,13 @@ export type EngineDownloadShown = {
 	says: string,
 };
 
+/**  **The machine whose engine a Notice is about** (#2990): this one, or a pool's runner. */
+export type EngineMachine = 
+/**  The machine the window runs on. */
+{ kind: "here" } | 
+/**  The runner of pool `pool`. */
+{ kind: "runner"; pool: string };
+
 /**  What the Notice says and offers. */
 export type EngineSandboxShown = {
 	/**  The sentence. */
@@ -6083,8 +6083,10 @@ export type EngineSandboxShown = {
 	 *  folder whose path holds a control character.
 	 */
 	command: string | null,
-	/**  This machine's own Chrome, where one is installed. */
+	/**  This machine's own Chrome, where one is installed: never for a runner's. */
 	chrome: string | null,
+	/**  The machine whose engine it is (#2990). */
+	machine: EngineMachine,
 };
 
 /**  One field of an entry the core refused, and why: the field is the entry's own key. */

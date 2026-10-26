@@ -901,7 +901,7 @@ mod hosted {
                 .map_err(|not| match not {
                     NotStarted::Full { most } => purlis_core::browserlimits::device_full_told(most),
                     NotStarted::NoSandbox => {
-                        crate::enginesandbox::refused();
+                        crate::enginesandbox::refused_on(None);
                         crate::enginesandbox::NOT_STARTED_FOR_THE_PERSON.to_owned()
                     }
                     NotStarted::Cancelled => {

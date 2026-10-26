@@ -3182,4 +3182,56 @@ fn pinning_and_unpinning_a_chats_browser_is_said_and_stop_all_leaves_its_close_t
     );
 }
 
+#[test]
+fn a_runners_refusal_for_its_engines_sandbox_names_that_runner_to_the_chat_and_on_the_notice() {
+    // #2990: the refusal the desktop relays from pool `relayed`'s runner is that runner's.
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    let driver: Arc<dyn Driver> = hosted.clone();
+    *hosted.refuses.lock().unwrap() = Some(NotStarted::NoSandbox);
+    let on_the_runner = |browse: &BrowseAsk| {
+        browsers.answer(
+            Some(&driver),
+            Path::new("/p"),
+            Some("relayed"),
+            browse,
+            &|| reach(),
+            false,
+            &AsPersona::default,
+            &logins,
+            1000,
+        )
+    };
+    on_the_runner(&ask(3, click()));
+    browsers.allow(3, false);
+
+    let (answer, _) = on_the_runner(&ask(3, click()));
+
+    let told = refusal(answer);
+    assert_eq!(told, crate::enginesandbox::no_browser_on("relayed"));
+    assert!(
+        told.contains("not available on the runner of pool relayed"),
+        "{told}"
+    );
+    let runners = |pool: &str| {
+        crate::enginesandbox::notice()
+            .expect("the Notices read")
+            .into_iter()
+            .filter(|one| {
+                one.machine == crate::enginesandbox::EngineMachine::Runner { pool: pool.into() }
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        runners("relayed"),
+        [crate::enginesandbox::shown_on_runner("relayed")]
+    );
+
+    // The runner's engine makes its sandbox again: its Notice no longer holds.
+    *hosted.refuses.lock().unwrap() = None;
+    let (answer, _) = on_the_runner(&ask(3, click()));
+    assert!(matches!(answer, Answer::Browsed { .. }), "{answer:?}");
+    assert!(runners("relayed").is_empty());
+}
+
 mod taken_back;
