@@ -204,6 +204,7 @@ export function RegionFrame({
       away={away}
       views={tabbed(one.id)}
       open={one.collapsed ? undefined : openView(one, present)}
+      current={openView(one, present)}
       keys={keys}
       badges={badges}
       {...ids}

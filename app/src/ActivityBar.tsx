@@ -67,6 +67,7 @@ export function ActivityBar({
   away,
   views,
   open,
+  current,
   keys,
   badges,
   panelOf,
@@ -91,6 +92,9 @@ export function ActivityBar({
   views: readonly Tabbed[];
   /** The open view, or nothing while the side is put away. */
   open: ViewId | undefined;
+  /** **The view its region shows when it is out**, open or not (#3329): its tab says whether
+   *  the region is out (`aria-expanded`), so a press that puts it away is heard as collapsed. */
+  current?: ViewId;
   /** How each view's key is spelled on this platform, for the tooltip. */
   keys?: Partial<Record<ViewId, string>>;
   /** A count or a mark beside a view's icon, drawn whether or not the side is out. */
@@ -138,6 +142,7 @@ export function ActivityBar({
                 role="tab"
                 id={tabOf(view)}
                 aria-selected={selected}
+                aria-expanded={view === current ? open !== undefined : undefined}
                 aria-controls={panelOf(view)}
                 aria-label={called}
                 aria-describedby={badge === undefined ? undefined : described}

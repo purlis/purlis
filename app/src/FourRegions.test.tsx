@@ -738,12 +738,16 @@ describe("the left side's activity bar", () => {
 
     await waitFor(() => expect(away("Navigation")).toBe(true));
     expect(tab("Chats")).toHaveAttribute("aria-selected", "false");
+    // Heard as collapsed: the tab of the view the side comes back on says it is not out.
+    expect(tab("Chats")).toHaveAttribute("aria-expanded", "false");
+    expect(tab("Explorer")).not.toHaveAttribute("aria-expanded");
     expect(tab("Chats")).toHaveFocus();
 
     await userEvent.keyboard(" ");
 
     expect(await screen.findByRole("tabpanel", { name: "Chats" })).toBeInTheDocument();
     expect(tab("Chats")).toHaveAttribute("aria-selected", "true");
+    expect(tab("Chats")).toHaveAttribute("aria-expanded", "true");
     expect(tab("Chats")).toHaveFocus();
   });
 
