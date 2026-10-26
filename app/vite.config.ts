@@ -6,10 +6,11 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwind from "@tailwindcss/vite";
 import process from "node:process";
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { Plugin } from "vite";
 import { generate, NOTICES_FILE, render } from "../tools/third-party-notices.mjs";
+import { withEveryFamily } from "./src/ui/stylesheets.ts";
 
 const host = process.env.TAURI_DEV_HOST;
 
@@ -75,9 +76,33 @@ function thirdPartyNotices(): Plugin {
   };
 }
 
+/**
+ * **Every family's stylesheet, in `styles.css`'s `@families` line** (`src/ui/stylesheets.ts`):
+ * each `src/ui/<family>/<family>.css` that `styles.css` does not import by name, by name, so a
+ * pull request that adds a family adds no line there. Before Tailwind, which reads the imports.
+ */
+function familyStylesheets(): Plugin {
+  const ui = fileURLToPath(new URL("src/ui", import.meta.url));
+  const styles = fileURLToPath(new URL("src/styles.css", import.meta.url));
+  return {
+    name: "purlis-family-stylesheets",
+    enforce: "pre",
+    transform(code, id) {
+      if (id.split("?")[0] !== styles) return undefined;
+      // A family added while the dev server runs is drawn too.
+      this.addWatchFile(ui);
+      const families = readdirSync(ui, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name)
+        .filter((name) => existsSync(`${ui}/${name}/${name}.css`));
+      return { code: withEveryFamily(code, families), map: null };
+    },
+  };
+}
+
 // https://v2.tauri.app/start/frontend/vite/
 export default defineConfig(async () => ({
-  plugins: [react(), tailwind(), ownLicence(), thirdPartyNotices()],
+  plugins: [react(), familyStylesheets(), tailwind(), ownLicence(), thirdPartyNotices()],
   // Keep Rust errors visible, and give Tauri the fixed port it expects.
   clearScreen: false,
   server: {
