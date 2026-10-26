@@ -2345,11 +2345,41 @@ fn a_field_is_measured_on_every_ground_a_control_stands_on() {
 // States that hold at once
 // ---------------------------------------------------------------------------------------
 
+/// [`with_parts`] with no workspace tint: what is held as written alone. In a yellow or an
+/// orange workspace Allow's accent edge gives way to the waiting amber (#3130), which brings it
+/// near a grey edge a theme sets, so a test of how states combine is measured untinted.
+fn untinted_parts(parts: Value) -> Value {
+    let mut theme = with_parts(parts);
+    theme["tint"] = json!({ "on": false });
+    theme
+}
+
+#[test]
+fn a_grey_primary_edge_falls_back_where_a_yellow_workspace_greys_allows_edge() {
+    // #3130: in a yellow or an orange workspace Allow's accent edge gives way to the waiting
+    // amber, near a grey. A primary a theme edges in grey under the pointer is then drawn as
+    // Allow is there, so it falls back; untinted, it is drawn as written.
+    let parts = json!({
+        "button.root.primary.hover.fill": "control.hover",
+        "button.root.primary.hover.border-colour": "text.secondary",
+    });
+    let tinted = fallen_parts(&with_parts(parts.clone()));
+    assert!(
+        tinted.contains(&"button.root.primary.hover".to_owned()),
+        "{tinted:?}"
+    );
+    let untinted = fallen_parts(&untinted_parts(parts));
+    assert!(
+        !untinted.contains(&"button.root.primary.hover".to_owned()),
+        "{untinted:?}"
+    );
+}
+
 #[test]
 fn the_primary_never_takes_allows_look_in_two_states_at_once() {
     // The look two states draw at once, as the stylesheet resolves it, is held like one state's.
     for later in ["pressed", "focused", "open"] {
-        let fallen = fallen_parts(&with_parts(json!({
+        let fallen = fallen_parts(&untinted_parts(json!({
             "button.root.primary.hover.fill": "control.hover",
             "button.root.primary.hover.border-colour": "text.secondary",
             format!("button.root.primary.{later}.border-colour"): "accent.base",
@@ -2381,7 +2411,7 @@ fn a_parts_words_are_held_in_every_set_of_states_that_hold_at_once() {
 
 #[test]
 fn a_set_of_states_that_falls_back_draws_a_default_its_floors_hold() {
-    let loaded = load(&with_parts(json!({
+    let loaded = load(&untinted_parts(json!({
         "button.root.primary.hover.fill": "control.hover",
         "button.root.primary.hover.border-colour": "text.secondary",
         "button.root.primary.focused.border-colour": "accent.base",

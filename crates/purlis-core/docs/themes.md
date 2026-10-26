@@ -697,7 +697,8 @@ wherever a field's text does. `tint` is the workspace colour it was found in, or
 theme as it is, for a line and for a style; a line and a style are found once for each
 combination, never for a tint. `held` has one entry for each combination in which the window
 holds a consent floor: its `appearance` and `options` as a warning's, the `floors` (`ask`,
-`allow-apart`, `danger`, `danger-apart`, `state-marks`) and the `tokens` drawn as purlis's own.
+`allow-apart`, `danger`, `danger-apart`, `state-marks`, `allow-not-primary`, `waiting-apart`)
+and the `tokens` drawn as purlis's own.
 `hard_floors` has one entry for each hard floor a combination breaks: its `appearance` and
 `options` as a warning's, the `floor` (`primary-text`, `focus-ring`, `terminal-text`), the
 `front` and `back` tokens (`under` for a wash, and `beneath` when that is a wash laid over
