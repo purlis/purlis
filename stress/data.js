@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792998523606,
+  "lastUpdate": 1793002069863,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -7540,6 +7540,42 @@ window.BENCHMARK_DATA = {
             "value": 290.5,
             "unit": "MB",
             "extra": "median of 6 samples: 320.5, 294.4, 292.4, 288.6, 288.5, 208.3 MB; window 172.1 MB, session host 118.9 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f1fe76a1ca06a7606ce6528b7c0ee27b627061c7",
+          "message": "stories: a failed story's annotation is on its failing line (#2953) (#3257)\n\n* stories: a failed story's annotation is on its failing line (#2953)\n\nThe reporter keeps the source-mapped frames Vitest gives with each\nerror; the annotation takes the first frame in a story file as its\nfile= and line=, relative to the repository. A failure with no such\nframe keeps today's annotation.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: an annotation prefers the failed story's own file (#2953 review)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-26T10:41:00+04:00",
+          "tree_id": "2a79fe45af4eea03a9f14f4c084916ddc3bb647a",
+          "url": "https://github.com/purlis/purlis/commit/f1fe76a1ca06a7606ce6528b7c0ee27b627061c7"
+        },
+        "date": 1793002067686,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 1286,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1090, 1286, 1398 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 319.2,
+            "unit": "MB",
+            "extra": "median of 6 samples: 337.1, 303.6, 337.3, 318.6, 319.8, 230.2 MB; window 208.6 MB, session host 109.6 MB"
           }
         ]
       }
