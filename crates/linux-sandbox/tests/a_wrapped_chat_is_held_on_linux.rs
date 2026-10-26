@@ -429,6 +429,71 @@ fn a_server_on_a_socket_the_chat_bound_listens() {
     assert_eq!(p.run(&["abstract-listen", "purlis-probe-listen"]), "ok");
 }
 
+/// `script` run by `python3` under the wrap in the chat's folder, with `args`: what it printed.
+fn python(p: &mut Project, script: &str, args: &[&str]) -> String {
+    let Ok(python) = which("python3") else {
+        panic!("python3 is needed for this test's raw system calls");
+    };
+    let port = p.proxy_port();
+    let mut words = vec!["-c".to_owned(), script.to_owned()];
+    words.extend(args.iter().map(|it| (*it).to_owned()));
+    let out = wrap(purlis_linux_sandbox::line(&p.profile(port), python, words))
+        .current_dir(&p.cwd)
+        .output()
+        .expect("the wrap ran");
+    String::from_utf8_lossy(&out.stdout).trim().to_owned()
+}
+
+/// A server a thread starts after the process's first thread has ended listens: the thread's
+/// own descriptor table is read, where its process's leader holds none any more.
+#[test]
+fn a_server_started_after_the_first_thread_ended_listens() {
+    let mut p = project();
+    let script = r#"
+import ctypes, errno, os, platform, socket, sys, threading, time
+SYS_EXIT = 60 if platform.machine() == "x86_64" else 93
+leader = os.getpid()
+def serve():
+    stat = "/proc/self/task/%d/stat" % leader
+    for _ in range(500):
+        try:
+            if open(stat).read().rsplit(")", 1)[1].split()[0] in ("Z", "X"):
+                break
+        except OSError:
+            break
+        time.sleep(0.01)
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    s.bind("\0" + sys.argv[1])
+    try:
+        s.listen(1)
+        print("ok", flush=True)
+    except OSError as e:
+        print(errno.errorcode.get(e.errno, str(e.errno)), flush=True)
+    os._exit(0)
+threading.Thread(target=serve).start()
+ctypes.CDLL(None).syscall(SYS_EXIT, 0)
+"#;
+    assert_eq!(python(&mut p, script, &["purlis-probe-leader-gone"]), "ok");
+}
+
+/// A connected socket is never disconnected (`connect` with `AF_UNSPEC`): the supervised
+/// `connect` refuses every family but unix and the internet's. A listen relies on it, since a
+/// disconnected socket would be unbound again where the supervisor judged it bound.
+#[test]
+fn a_connected_socket_is_never_disconnected() {
+    let mut p = project();
+    let port = p.proxy_port().to_string();
+    let script = r#"
+import ctypes, errno, os, socket, sys
+libc = ctypes.CDLL(None, use_errno=True)
+s = socket.create_connection(("127.0.0.1", int(sys.argv[1])))
+unspec = ctypes.create_string_buffer(16)
+r = libc.connect(s.fileno(), unspec, 16)
+print("ok" if r == 0 else errno.errorcode.get(ctypes.get_errno(), "?"), flush=True)
+"#;
+    assert_eq!(python(&mut p, script, &[&port]), "EACCES");
+}
+
 #[test]
 fn a_process_the_chat_starts_is_held_the_same_and_cannot_lift_it() {
     let mut p = project();
