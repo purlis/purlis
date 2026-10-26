@@ -31,4 +31,9 @@ describe("the results the window keeps (#3344)", () => {
     ];
     expect(resultsFor(kept, "/a").map((one) => one.said.words)).toEqual(["mine", "window"]);
   });
+
+  it("never keeps a line that only says the core has not answered yet", () => {
+    const late = { from: "answer.late.createProject", refused: true, words: "Not yet." };
+    expect(keep([], late, "/p", 0)).toEqual([]);
+  });
 });

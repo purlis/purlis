@@ -1034,7 +1034,8 @@ describe("the explorer", () => {
     });
     expect(dropped).toBe(true);
 
-    const said = await $('p[role="status"]');
+    // What the action answered: its closable notice at the top of the content (#3344).
+    const said = await $('.window-work > .action-result [role="status"]');
     await said.waitForExist({ timeout: 20_000 });
     await expect(said).toHaveText(expect.stringContaining("Nothing was sent."));
     await browser.waitUntil(

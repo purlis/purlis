@@ -21,6 +21,7 @@ import { LEAST, LEAST_CHIP, leastAt } from "./fits";
 import { dragWithTheKeyboard, laidOutInARow, stripNamed } from "./test-strips";
 import { DEFAULT_TEXT } from "./textSize";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
+import { findResult } from "./actionResult.testkit";
 
 /**
  * **Smart close, as the window draws it** (ADR 0064, SI-8c): the close dialog's three answers,
@@ -331,7 +332,7 @@ describe("a chat wrapping up", () => {
     await step(1, "no_record");
 
     expect(
-      await screen.findByText(
+      await findResult(
         "No session record arrived from steward 1 within five minutes, so it was left open.",
       ),
     ).toBeInTheDocument();
@@ -347,7 +348,7 @@ describe("a chat wrapping up", () => {
     await step(1, "ended");
 
     expect(
-      await screen.findByText("steward 1 ended before it wrote its session record."),
+      await findResult("steward 1 ended before it wrote its session record."),
     ).toBeInTheDocument();
   });
 
@@ -361,7 +362,7 @@ describe("a chat wrapping up", () => {
     await step(1, "no_record");
 
     expect(
-      await screen.findByText(
+      await findResult(
         "No session record arrived from steward 1 within five minutes, so it was left open.",
       ),
     ).toBeInTheDocument();
@@ -628,7 +629,7 @@ describe("a chat put into the background (SI-8f)", () => {
 
     await waitFor(() => expect(strip()).toEqual(["one", "two", "three"]));
     expect(
-      screen.getByText(
+      await findResult(
         "No session record arrived from two within five minutes, so it was left open.",
       ),
     ).toBeInTheDocument();
@@ -662,7 +663,7 @@ describe("a chat put into the background (SI-8f)", () => {
 
     await waitFor(() => expect(strip()).toEqual(["one", "two", "three"]));
     expect(
-      screen.getByText("Smart close could not send two its prompt, so it was left open."),
+      await findResult("Smart close could not send two its prompt, so it was left open."),
     ).toBeInTheDocument();
     expect(
       await stoppedUpdate(/^two: Smart close stopped — its prompt could not be sent/),
@@ -678,7 +679,7 @@ describe("a chat put into the background (SI-8f)", () => {
 
     await smartClose("two");
 
-    expect(await screen.findByText("That chat is not open any more.")).toBeInTheDocument();
+    expect(await findResult("That chat is not open any more.")).toBeInTheDocument();
     await waitFor(() => expect(strip()).toEqual(["one", "two", "three"]));
     expect(await stoppedUpdate(/^two: Smart close did not start/)).toBeInTheDocument();
   });

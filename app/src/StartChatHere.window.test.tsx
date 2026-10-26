@@ -9,6 +9,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import { forgetThisLaunch } from "./regions";
 import { showTheExplorer, showTheRepos } from "./test-strips";
+import { findResult } from "./actionResult.testkit";
 
 /**
  * **"Start a chat here" from a file's own tab, against the whole window** (#1151, lane KA's
@@ -159,7 +160,7 @@ describe("Start a chat here, from a file's preview (#1151)", () => {
     await startFromThePreview();
 
     expect(
-      await screen.findByText("purlis could not start a chat in svc: the branch's folder is gone"),
+      await findResult("purlis could not start a chat in svc: the branch's folder is gone"),
     ).toBeInTheDocument();
   });
 });

@@ -9,6 +9,7 @@ import { emit } from "@tauri-apps/api/event";
 import App from "./App";
 import { CLOSE_HANDED, type WindowDraft } from "./bindings";
 import { FROM_A_LINK_SAYS } from "./EndingChat";
+import { findResult } from "./actionResult.testkit";
 
 /**
  * **A close that keeps a chat's theme drafts, as the window asks it** (#2332, #2708, #2761): who
@@ -202,9 +203,7 @@ describe("a link's close of a chat with theme drafts", () => {
     expect(screen.getAllByRole("alertdialog")).toEqual([asking]);
     expect(asking.textContent).not.toContain(FROM_A_LINK_SAYS);
     expect(asked(log, "show_window_holding")).toHaveLength(raised);
-    expect(
-      await screen.findByText(/while a question was on screen, so it was not asked/),
-    ).toBeTruthy();
+    expect(await findResult(/while a question was on screen, so it was not asked/)).toBeTruthy();
   });
 
   it("never changes a question on screen in another project, nor brings its own forward", async () => {
@@ -284,7 +283,7 @@ describe("a link's close of a chat with theme drafts", () => {
     render(<App />);
     await openAChat();
     await act(() => emit(CLOSE_HANDED, { plane: PLANE, sessions: [1, 7] }));
-    expect(await screen.findByText(/no tab here holds just those chats/)).toBeTruthy();
+    expect(await findResult(/no tab here holds just those chats/)).toBeTruthy();
     expect(screen.queryByRole("alertdialog")).toBeNull();
   });
 

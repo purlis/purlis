@@ -3841,7 +3841,7 @@ body {
   background-color: var(--terminal-background);
   font-family: var(--font-mono);
   font-size: var(--font-size-xs);
-  line-height: 1.6;
+  line-height: var(--line-height-body);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
