@@ -399,10 +399,8 @@ export const MarksOnTheTabsLine: Story = {
         Math.abs(middleOf(one) - line),
         `${what} off the tabs' line`,
       ).toBeLessThanOrEqual(1);
-    // The keyboard's focus on the `+`, whose name its tooltip shows at once: a key first, so the
-    // focus is the keyboard's (React Aria opens a tooltip on a visible focus only).
-    await userEvent.keyboard("{Shift}");
-    plus.focus();
+    // The pointer on the `+`, whose name its tooltip shows after the delay.
+    await userEvent.hover(plus);
     const strip = canvasElement.querySelector("header.bar") as HTMLElement;
     await waitFor(() =>
       expect(document.querySelector('[role="tooltip"][data-scope="tooltip"]')).toHaveTextContent(
@@ -413,6 +411,6 @@ export const MarksOnTheTabsLine: Story = {
     const below = tip.getBoundingClientRect().top >= strip.getBoundingClientRect().bottom;
     const above = tip.getBoundingClientRect().bottom <= strip.getBoundingClientRect().top;
     await expect(below || above, "the tooltip sits on the strip's row").toBe(true);
-    plus.blur();
+    await userEvent.unhover(plus);
   },
 };
