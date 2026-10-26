@@ -416,9 +416,7 @@ describe("Only this chat's", () => {
     await userEvent.click(screen.getByRole("button", { name: "Only this chat's" }));
 
     // Built-in is what the root chat gets: not hidden by the root's own grouping.
-    await waitFor(() =>
-      expect(groupNames(grid)).toEqual(["Built-in", "Project"]),
-    );
+    await waitFor(() => expect(groupNames(grid)).toEqual(["Built-in", "Project"]));
     expect(rowOf("secrets")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Only this chat's" }));
   });

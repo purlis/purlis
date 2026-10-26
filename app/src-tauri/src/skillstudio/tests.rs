@@ -201,8 +201,11 @@ fn every_personas_own_skills_are_read_at_once_each_under_its_persona() {
     std::fs::create_dir_all(root.join("workspaces/alpha")).unwrap();
     for persona in ["ops", "reviewer"] {
         std::fs::create_dir_all(root.join("personas").join(persona)).unwrap();
-        std::fs::write(root.join("personas").join(persona).join("persona.md"), "---\n---\n")
-            .unwrap();
+        std::fs::write(
+            root.join("personas").join(persona).join("persona.md"),
+            "---\n---\n",
+        )
+        .unwrap();
     }
     skill(
         &root.join("skills"),
@@ -227,7 +230,10 @@ fn every_personas_own_skills_are_read_at_once_each_under_its_persona() {
         .map(|one| {
             (
                 one.persona.as_str(),
-                one.skills.iter().map(|s| (s.name.as_str(), s.level)).collect(),
+                one.skills
+                    .iter()
+                    .map(|s| (s.name.as_str(), s.level))
+                    .collect(),
             )
         })
         .collect();
