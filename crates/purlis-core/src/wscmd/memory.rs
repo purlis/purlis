@@ -36,25 +36,33 @@ pub fn next_save(root: &Path) -> Option<String> {
 /// [`next_save`], said.
 pub fn say_next_save(root: &Path, say: Sink) {
     if let Some(line) = next_save(root) {
-        say(Say::Info(line));
+        say(Say::Info(line.into()));
     }
 }
 
 /// What purlis says once a memory is written to workspace `name`'s journal at `path`: where it
 /// went, and whether it stays on this disk or is shared.
 pub fn said_remembered(plane: &Plane, name: &str, path: &Path, no_sync: bool, say: Sink) {
-    say(Say::Done(format!(
-        "Remembered in '{name}' → workspaces/{name}/memory/{}",
-        path.file_name().unwrap_or_default().to_string_lossy()
-    )));
+    say(Say::Done(
+        format!(
+            "Remembered in '{name}' → workspaces/{name}/memory/{}",
+            path.file_name().unwrap_or_default().to_string_lossy()
+        )
+        .into(),
+    ));
     if !plane.is_live(name) {
-        say(Say::Info(format!(
-            "  '{name}' is LOCAL (private) — memory stays on disk, not committed. Make it \
+        say(Say::Info(
+            format!(
+                "  '{name}' is LOCAL (private) — memory stays on disk, not committed. Make it \
              shareable: purlis workspace live {name}"
-        )));
+            )
+            .into(),
+        ));
     } else if no_sync {
         say(Say::Info(
-            "  (--no-sync) recorded locally; share it later with: purlis save".to_owned(),
+            "  (--no-sync) recorded locally; share it later with: purlis save"
+                .to_owned()
+                .into(),
         ));
     } else {
         say_next_save(plane.root(), say);
@@ -65,20 +73,26 @@ pub fn said_remembered(plane: &Plane, name: &str, path: &Path, no_sync: bool, sa
 /// says for the same refusals.
 fn refused(name: &str, slug: &str, e: &std::io::Error, say: Sink) -> (u8, bool) {
     match e.kind() {
-        std::io::ErrorKind::NotFound => say(Say::Fail(format!(
-            "no memory '{}' in workspace '{name}' (list them: purlis workspace recall).",
-            crate::shown::short(slug)
-        ))),
+        std::io::ErrorKind::NotFound => say(Say::Fail(
+            format!(
+                "no memory '{}' in workspace '{name}' (list them: purlis workspace recall).",
+                crate::shown::short(slug)
+            )
+            .into(),
+        )),
         std::io::ErrorKind::InvalidInput
             if !crate::contain::segment_ok(slug.strip_suffix(".md").unwrap_or(slug)) =>
         {
-            say(Say::Fail(format!(
-                "'{}' is not the slug of one memory — name a file in \
+            say(Say::Fail(
+                format!(
+                    "'{}' is not the slug of one memory — name a file in \
                  workspaces/{name}/memory/, not a path.",
-                crate::shown::short(slug)
-            )))
+                    crate::shown::short(slug)
+                )
+                .into(),
+            ))
         }
-        _ => say(Say::Fail(e.to_string())),
+        _ => say(Say::Fail(e.to_string().into())),
     }
     (1, false)
 }
@@ -89,16 +103,19 @@ pub fn forget(plane: &Plane, name: &str, slug: &str, say: Sink) -> Result<(u8, b
     Ok(
         match memstore::forget(plane.root(), &ws.dir().join("memory"), slug) {
             Ok(()) => {
-                say(Say::Done(format!(
-                    "Forgot '{slug}' from workspace '{name}'."
-                )));
+                say(Say::Done(
+                    format!("Forgot '{slug}' from workspace '{name}'.").into(),
+                ));
                 (0, true)
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                say(Say::Fail(format!(
-                    "no memory '{slug}' in workspace '{name}' (list them: purlis workspace \
+                say(Say::Fail(
+                    format!(
+                        "no memory '{slug}' in workspace '{name}' (list them: purlis workspace \
                      recall)."
-                )));
+                    )
+                    .into(),
+                ));
                 (1, false)
             }
             // A slug is one file in the store. `../<elsewhere>` is a path, and the store's own
@@ -133,15 +150,18 @@ pub fn edit(
     Ok(
         match ws.edit_memory(&exact, &title, &text, memstore::Base::Read(&opened.text)) {
             Ok(path) => {
-                say(Say::Done(format!(
-                    "Edited '{slug}' in workspace '{name}' → {}",
-                    crate::personaverbs::rel(plane.root(), &path)
-                )));
+                say(Say::Done(
+                    format!(
+                        "Edited '{slug}' in workspace '{name}' → {}",
+                        crate::personaverbs::rel(plane.root(), &path)
+                    )
+                    .into(),
+                ));
                 (0, true)
             }
             Err(memstore::EditRefused::Io(e)) => refused(name, slug, &e, say),
             Err(stale) => {
-                say(Say::Fail(stale.to_string()));
+                say(Say::Fail(stale.to_string().into()));
                 (1, false)
             }
         },
@@ -158,12 +178,15 @@ pub fn archive(plane: &Plane, name: &str, slug: &str, say: Sink) -> Result<(u8, 
     };
     Ok(match ws.archive_memory(&exact) {
         Ok(path) => {
-            say(Say::Done(format!(
-                "Archived '{slug}' from workspace '{name}' → {}. Undo: `purlis workspace \
+            say(Say::Done(
+                format!(
+                    "Archived '{slug}' from workspace '{name}' → {}. Undo: `purlis workspace \
                  unarchive {} -w {name}`",
-                crate::personaverbs::rel(plane.root(), &path),
-                memstore::undo_args(&exact, &path)
-            )));
+                    crate::personaverbs::rel(plane.root(), &path),
+                    memstore::undo_args(&exact, &path)
+                )
+                .into(),
+            ));
             (0, true)
         }
         Err(e) => refused(name, slug, &e, say),
@@ -186,10 +209,13 @@ pub fn unarchive(
     };
     Ok(match ws.unarchive_memory(&exact, restore_as) {
         Ok(path) => {
-            say(Say::Done(format!(
-                "Restored '{slug}' to workspace '{name}' → {}",
-                crate::personaverbs::rel(plane.root(), &path)
-            )));
+            say(Say::Done(
+                format!(
+                    "Restored '{slug}' to workspace '{name}' → {}",
+                    crate::personaverbs::rel(plane.root(), &path)
+                )
+                .into(),
+            ));
             (0, true)
         }
         Err(e) => refused(name, slug, &e, say),
@@ -246,22 +272,28 @@ pub fn move_memory(
     say: Sink,
 ) -> (u8, bool) {
     if !crate::contain::segment_ok(slug.strip_suffix(".md").unwrap_or(slug)) {
-        say(Say::Fail(format!(
-            "'{}' is not the slug of one memory — name a file in {}/, not a path.",
-            crate::shown::short(slug),
-            from.store()
-        )));
+        say(Say::Fail(
+            format!(
+                "'{}' is not the slug of one memory — name a file in {}/, not a path.",
+                crate::shown::short(slug),
+                from.store()
+            )
+            .into(),
+        ));
         return (1, false);
     }
     let refused = |e: &std::io::Error, say: Sink| {
         if e.kind() == std::io::ErrorKind::NotFound && e.to_string().starts_with("no such memory") {
-            say(Say::Fail(format!(
-                "no memory '{}' in {}.",
-                crate::shown::short(slug),
-                from.said()
-            )));
+            say(Say::Fail(
+                format!(
+                    "no memory '{}' in {}.",
+                    crate::shown::short(slug),
+                    from.said()
+                )
+                .into(),
+            ));
         } else {
-            say(Say::Fail(e.to_string()));
+            say(Say::Fail(e.to_string().into()));
         }
         (1, false)
     };
@@ -287,7 +319,7 @@ pub fn move_memory(
                 // stamp line the memory carries holds minutes.
                 said.push_str(&format!(". To move it back: `{back}`"));
             }
-            say(Say::Done(said));
+            say(Say::Done(said.into()));
             (0, true)
         }
         Err(e) => refused(&e, say),

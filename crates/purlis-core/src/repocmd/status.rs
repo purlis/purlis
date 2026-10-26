@@ -78,7 +78,7 @@ pub fn status(req: &Request, out: Out, say: Sink) -> u8 {
     let cfg = match forge::load_config(root) {
         Ok(cfg) => cfg,
         Err(why) => {
-            say(Say::Plain(why));
+            say(Say::Plain(why.into()));
             return 1;
         }
     };
@@ -87,7 +87,7 @@ pub fn status(req: &Request, out: Out, say: Sink) -> u8 {
     let doc = match inventory::load(root, &group) {
         Ok(doc) => doc,
         Err(why) => {
-            say(Say::Plain(why));
+            say(Say::Plain(why.into()));
             return 1;
         }
     };
@@ -114,15 +114,18 @@ pub fn status(req: &Request, out: Out, say: Sink) -> u8 {
         // out of `read_workspaces_aloud`, before its first line of stdout too; this says the
         // sentence instead of the traceback.
         Err(why) => {
-            say(Say::Fail(format!(
-                "workspaces/ cannot be listed ({why}) — purlis cannot say what this plane \
+            say(Say::Fail(
+                format!(
+                    "workspaces/ cannot be listed ({why}) — purlis cannot say what this plane \
                  holds, and an empty answer would not be the same thing. {}",
-                crate::memstore::uncheckable_fix(
-                    why.raw_os_error(),
-                    &root.join("workspaces").display().to_string(),
-                    "it",
+                    crate::memstore::uncheckable_fix(
+                        why.raw_os_error(),
+                        &root.join("workspaces").display().to_string(),
+                        "it",
+                    )
                 )
-            )));
+                .into(),
+            ));
             return 1;
         }
     };
@@ -130,7 +133,9 @@ pub fn status(req: &Request, out: Out, say: Sink) -> u8 {
     // header's `N workspace(s)` is a count of the workspaces charter could read, and a
     // reader who is about to be handed that number is owed the ones it could not.
     for (path, code) in &unread {
-        say(Say::Fail(crate::wscmd::cannot_check_workspace(path, *code)));
+        say(Say::Fail(
+            crate::wscmd::cannot_check_workspace(path, *code).into(),
+        ));
     }
 
     out(format!(
@@ -172,7 +177,7 @@ pub fn status(req: &Request, out: Out, say: Sink) -> u8 {
              into workspaces/{}/ or re-clone with a workspace.",
             legacy.join(", "),
             crate::active::plane_default_workspace(root)
-        )));
+        ).into()));
     }
     out(format!(
         "({} repos available to clone — see docs/topology.md)",
@@ -266,12 +271,14 @@ fn drawn(root: &Path, ws: &str, say: Sink) -> Vec<repos::Repo> {
     match repos::clones(root, ws) {
         Ok(found) => {
             for (name, why) in found.refused {
-                say(Say::Warn(format!("{ws}: {name} is not drawn — {why}")));
+                say(Say::Warn(
+                    format!("{ws}: {name} is not drawn — {why}").into(),
+                ));
             }
             found.repos
         }
         Err(why) => {
-            say(Say::Warn(why.to_string()));
+            say(Say::Warn(why.to_string().into()));
             Vec::new()
         }
     }

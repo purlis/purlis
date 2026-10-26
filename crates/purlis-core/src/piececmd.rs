@@ -72,9 +72,9 @@ fn shown(plane: &Path, path: &Path) -> String {
 }
 
 fn taken(piece: &str, held: &str, say: &mut dyn FnMut(Say)) -> u8 {
-    say(Say::Fail(format!(
-        "'{piece}' is already claimed — held by {held}."
-    )));
+    say(Say::Fail(
+        format!("'{piece}' is already claimed — held by {held}.").into(),
+    ));
     say(Say::Info(
         "Take the next unclaimed piece from the plan, or work in the existing worktree.".into(),
     ));
@@ -99,7 +99,7 @@ pub fn add(
     now: DateTime<Utc>,
     say: &mut dyn FnMut(Say),
 ) -> u8 {
-    say(Say::Info(format!("workspace: {ws}")));
+    say(Say::Info(format!("workspace: {ws}").into()));
     let branch_name = branch.unwrap_or(piece);
     if let Some(held) = holder(plane, ws, repo, piece, branch_name) {
         return taken(piece, &held, say);
@@ -128,39 +128,44 @@ pub fn add(
             if let Some(held) = holder(plane, ws, repo, piece, branch_name) {
                 return taken(piece, &held, say);
             }
-            say(Say::Fail(refusal.to_string()));
+            say(Say::Fail(refusal.to_string().into()));
             return 1;
         }
     };
     // The worktree is the claim; this records who took it. Best-effort: a claim git granted
     // is not undone by a log that could not be written — but it is said.
     if pieces::record(plane, ws, Event::Claimed, repo, piece, None, who, now).is_none() {
-        say(Say::Warn(format!(
-            "the piece log could not be written, so this claim is not recorded: {}",
-            shown(plane, &pieces::log_path(plane, ws, who.file()))
-        )));
+        say(Say::Warn(
+            format!(
+                "the piece log could not be written, so this claim is not recorded: {}",
+                shown(plane, &pieces::log_path(plane, ws, who.file()))
+            )
+            .into(),
+        ));
     }
     for warning in &added.warnings {
-        say(Say::Warn(warning.to_string()));
+        say(Say::Warn(warning.to_string().into()));
     }
-    say(Say::Done(format!(
-        "{repo} · {piece} → {}",
-        shown(plane, &added.path)
-    )));
+    say(Say::Done(
+        format!("{repo} · {piece} → {}", shown(plane, &added.path)).into(),
+    ));
     for note in &fresh.notes {
-        say(Say::Warn(note.clone()));
+        say(Say::Warn(note.clone().into()));
     }
     let shown_base = match (&added.base, &fresh.moved_to) {
         (worktree::Base::Branch(b), Some(up)) => format!("{b} (brought up to {up})"),
         (worktree::Base::Branch(b), None) => b.clone(),
         (worktree::Base::Detached(sha), _) => format!("{sha} (detached)"),
     };
-    say(Say::Info(format!("  base:   {shown_base}")));
-    say(Say::Info(format!("  branch: {}", added.branch)));
-    say(Say::Info(format!(
-        "  enter:  cd {} && claude    (or hand this path to EnterWorktree)",
-        shown(plane, &added.path)
-    )));
+    say(Say::Info(format!("  base:   {shown_base}").into()));
+    say(Say::Info(format!("  branch: {}", added.branch).into()));
+    say(Say::Info(
+        format!(
+            "  enter:  cd {} && claude    (or hand this path to EnterWorktree)",
+            shown(plane, &added.path)
+        )
+        .into(),
+    ));
     say(Say::Info(
         "  When the work is finished: purlis worktree done — or purlis worktree abandon \
          \"<why>\" if it cannot be."
@@ -198,20 +203,11 @@ pub fn declare(
             if let Some(over) = &declared.over {
                 say(Say::Warn(already_declared(piece, over, declared.event)));
             }
-            let reason = match what {
-                Declaration::Abandoned { reason } => {
-                    format!(": {}", tui::sanitize(reason.trim()))
-                }
-                Declaration::Done => String::new(),
-            };
-            say(Say::Done(format!(
-                "{repo} · {piece} — {}{reason}",
-                declared.event.word()
-            )));
+            say(Say::Done(declared_line(repo, piece, declared.event, what)));
             0
         }
         Err(why) => {
-            say(Say::Fail(why.to_string()));
+            say(Say::Fail(why.to_string().into()));
             1
         }
     }
@@ -221,7 +217,7 @@ pub fn declare(
 ///
 /// `over` is read from the log, which any host's worker writes, so it is spliced escaped
 /// ([`tui::Markup`], SK-50): an SGR in it is shown as text and never obeyed.
-fn already_declared(piece: &str, over: &str, event: Event) -> String {
+fn already_declared(piece: &str, over: &str, event: Event) -> tui::Markup {
     tui::Markup::new()
         .own("'")
         .text(piece)
@@ -230,7 +226,24 @@ fn already_declared(piece: &str, over: &str, event: Event) -> String {
         .own(" — recording ")
         .own(event.word())
         .own(" over it (the earlier one stays in the log).")
-        .to_string()
+}
+
+/// `<repo> · <piece> — done`, or `— abandoned: <reason>`.
+///
+/// The repo and the piece are names read off the directory, and the reason is what the worker
+/// typed, so each is spliced escaped (SK-54, #3225): a control, a bidi or a zero-width
+/// character in any of them is shown as its mark. The reason used to keep its SGR.
+fn declared_line(repo: &str, piece: &str, event: Event, what: Declaration<'_>) -> tui::Markup {
+    let line = tui::Markup::new()
+        .text(repo)
+        .own(" · ")
+        .text(piece)
+        .own(" — ")
+        .own(event.word());
+    match what {
+        Declaration::Abandoned { reason } => line.own(": ").text(reason.trim()),
+        Declaration::Done => line,
+    }
 }
 
 /// `charter worktree list [<repo>]`: every piece git has, joined to what the log says of it.
@@ -246,13 +259,13 @@ pub fn list(
     now: DateTime<Utc>,
     say: &mut dyn FnMut(Say),
 ) -> u8 {
-    say(Say::Info(format!("workspace: {ws}")));
+    say(Say::Info(format!("workspace: {ws}").into()));
     let repos: Vec<String> = match repo {
         Some(repo) => vec![repo.to_string()],
         None => match crate::repos::clones(plane, ws) {
             Ok(found) => found.repos.into_iter().map(|r| r.name).collect(),
             Err(why) => {
-                say(Say::Fail(why.to_string()));
+                say(Say::Fail(why.to_string().into()));
                 return 1;
             }
         },
@@ -264,7 +277,7 @@ pub fn list(
         let found = match worktree::list(plane, ws, &repo) {
             Ok(found) => found,
             Err(why) => {
-                say(Say::Fail(format!("{repo}: {why}")));
+                say(Say::Fail(format!("{repo}: {why}").into()));
                 code = 1;
                 continue;
             }
@@ -272,7 +285,7 @@ pub fn list(
         if found.is_empty() {
             continue;
         }
-        say(Say::Info(repo.clone()));
+        say(Say::Info(repo.clone().into()));
         let rows: Vec<[String; 5]> = found
             .iter()
             .map(|p| {
@@ -298,9 +311,9 @@ pub fn list(
         total += rows.len();
     }
     if total == 0 && code == 0 {
-        say(Say::Info(format!(
-            "No worktrees. Create one: purlis worktree add <repo> <piece> -w {ws}"
-        )));
+        say(Say::Info(
+            format!("No worktrees. Create one: purlis worktree add <repo> <piece> -w {ws}").into(),
+        ));
     }
     code
 }
@@ -314,11 +327,11 @@ pub fn history(
     piece: Option<&str>,
     say: &mut dyn FnMut(Say),
 ) -> u8 {
-    say(Say::Info(format!("workspace: {ws}")));
+    say(Say::Info(format!("workspace: {ws}").into()));
     // The log is read from `workspaces/<ws>/pieces`, so the name is checked — and the
     // workspace's directory asked for, a link there refused — before anything is joined.
     if let Err(why) = worktree::confine::workspace_dir(plane, ws) {
-        say(Say::Fail(why.to_string()));
+        say(Say::Fail(why.to_string().into()));
         return 1;
     }
     let field = |e: &Value, k: &str| {
@@ -354,9 +367,12 @@ pub fn history(
             (Some(r), None) => format!(" for {r}"),
             _ => String::new(),
         };
-        say(Say::Info(format!(
-            "No piece history recorded{scope}. Claims are recorded by `purlis worktree add`."
-        )));
+        say(Say::Info(
+            format!(
+                "No piece history recorded{scope}. Claims are recorded by `purlis worktree add`."
+            )
+            .into(),
+        ));
         return 0;
     }
     table(&rows, say);
@@ -377,7 +393,7 @@ pub fn remove(
     delete_branch: bool,
     say: &mut dyn FnMut(Say),
 ) -> u8 {
-    say(Say::Info(format!("workspace: {ws}")));
+    say(Say::Info(format!("workspace: {ws}").into()));
     let no_discard_there = || {
         let clone = plane.join("workspaces").join(ws).join(repo);
         worktree::git::isolated(&worktree::git::Isolated::operators(), || {
@@ -392,27 +408,33 @@ pub fn remove(
         delete_branch,
         no_discard_there,
     ) {
-        say(Say::Fail(refused));
+        say(Say::Fail(refused.into()));
         return 1;
     }
     match worktree::remove(plane, ws, repo, piece, force, delete_branch) {
         Ok(removed) => {
             if removed.was_stale {
-                say(Say::Done(format!(
-                    "Cleared stale registration for {repo} · {piece} (its worktree directory \
+                say(Say::Done(
+                    format!(
+                        "Cleared stale registration for {repo} · {piece} (its worktree directory \
                      was already gone)."
-                )));
+                    )
+                    .into(),
+                ));
             } else {
-                say(Say::Done(format!("Removed {repo} · {piece}")));
+                say(Say::Done(format!("Removed {repo} · {piece}").into()));
             }
             if delete_branch {
                 match &removed.branch {
                     Some(b) if removed.branch_deleted => {
-                        say(Say::Done(format!("Deleted branch {b}")));
+                        say(Say::Done(format!("Deleted branch {b}").into()));
                     }
-                    Some(b) => say(Say::Warn(format!(
-                        "Worktree removed, but branch {b} was kept: git would not delete it."
-                    ))),
+                    Some(b) => say(Say::Warn(
+                        format!(
+                            "Worktree removed, but branch {b} was kept: git would not delete it."
+                        )
+                        .into(),
+                    )),
                     None => say(Say::Warn(
                         "Worktree was on a detached HEAD — no branch to delete.".into(),
                     )),
@@ -421,11 +443,11 @@ pub fn remove(
             0
         }
         Err(refusal) => {
-            say(Say::Fail(refusal.to_string()));
+            say(Say::Fail(refusal.to_string().into()));
             if matches!(refusal, Refusal::NoSuchPiece { .. }) {
-                say(Say::Info(format!(
-                    "See what exists: purlis worktree list {repo} -w {ws}"
-                )));
+                say(Say::Info(
+                    format!("See what exists: purlis worktree list {repo} -w {ws}").into(),
+                ));
             }
             1
         }

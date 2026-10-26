@@ -116,7 +116,7 @@ fn a_draft_in_the_chat_s_folder_is_handed_over_as_the_manifest_s_new_content() {
         &tmp,
         Answer::Said {
             lines: vec![purlis_core::repocmd::Say::Done(
-                "shown to the person".to_owned(),
+                "shown to the person".into(),
             )],
             code: 0,
         },
