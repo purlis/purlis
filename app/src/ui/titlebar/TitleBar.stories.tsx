@@ -229,6 +229,17 @@ export const ChosenStates: Story = {
     };
     const boxes = [box(chosen), box(other)];
     const fill = (one: HTMLElement) => getComputedStyle(one).backgroundColor;
+    /** Its fill once a state's change of colour has run its course: the same on two reads. */
+    const settled = async (one: HTMLElement) => {
+      let last = "";
+      await waitFor(() => {
+        const now = fill(one);
+        const same = now === last;
+        last = now;
+        expect(same).toBe(true);
+      });
+      return last;
+    };
     const fills: Record<string, string> = { rest: fill(other), chosen: fill(chosen) };
     // The pointer may rest where a story before this one left it: it leaves the bar and comes
     // back until the chip hears it arrive, so the chip is surely under it.
@@ -239,10 +250,10 @@ export const ChosenStates: Story = {
         await expect(one).toHaveAttribute("data-hovered");
       });
     await point(other);
-    fills.hover = fill(other);
+    // The primary words on the wash, as under the pointer, once a colour's change has run.
+    await waitFor(() => expect(getComputedStyle(chosen).color).toBe(getComputedStyle(other).color));
+    fills.hover = await settled(other);
     await expect(box(other)).toBe(boxes[1]);
-    // The primary words on the wash, as under the pointer.
-    await expect(getComputedStyle(chosen).color).toBe(getComputedStyle(other).color);
     // The pointer leaves, and the tooltip it opened goes, before it reaches the chosen chip.
     await userEvent.hover(canvas.getByText("Nothing chosen"));
     await waitFor(() => expect(other).not.toHaveAttribute("data-hovered"));
@@ -250,7 +261,7 @@ export const ChosenStates: Story = {
       expect(document.querySelector('[role="tooltip"][data-scope="tooltip"]')).toBeNull(),
     );
     await point(chosen);
-    fills["chosen + hover"] = fill(chosen);
+    fills["chosen + hover"] = await settled(chosen);
     await expect(box(chosen)).toBe(boxes[0]);
     // Every state its own fill: the chosen chip never looks hovered, nor at rest.
     // Compared as drawn: each fill laid over the ground the bar stands on, so a translucent wash
