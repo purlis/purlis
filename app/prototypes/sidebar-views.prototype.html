@@ -1,0 +1,829 @@
+<title>Sidebar Views Prototype</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<!--
+  PROTOTYPE, throw away. Four questions from the operator's triage (points 1, 2, 6, 7, 9a),
+  each with 2-3 variants, switched by the floating bar at the bottom (or keys: 1-4 pick the
+  question, left/right cycle its variant). The URL hash keeps the picks: #q1=A&q2=B&...
+  Theme: Purlis dark appearance (crates/purlis-core/src/theme/built-in/purlis/theme.json, main).
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: the real app shell (title bar, rail, two activity bars, side panels as grey tiles on the window, main + bottom pane); the prototype bar floats over it. */
+:root {
+  /* Purlis palette (theme.json, dark appearance) */
+  --behind: #121215;
+  --window: #17171b;
+  --panel: #1d1d22;
+  --code: #202026;
+  --card: #24242a;
+  --chosen: #2a2a31;
+  --card-button: #2f2f37;
+  --ink: #e6e4ec;
+  --body: #c9c7d2;
+  --label: #a09eab;
+  --quiet: #91909d;
+  --faint: #74727f;
+  --gutter: #55535f;
+  --lavender: #a99cf0;
+  --lavender-text: #c3baf5;
+  --lavender-fill: #6d58bb;
+  --lavender-fill-hover: #745fc3;
+  --lavender-surface: #292735;
+  --lavender-selected: #2a2936;
+  --accent-wash: #a99cf024;
+  --accent-wash-strong: #a99cf03a;
+  --amber: #e5c08a;
+  --green: #8fc79a;
+  --blue: #9ec1f5;
+  --red: #f0aaa2;
+  --needs-you: #f0aaa5;
+  --icon-teal: #7cd1c6;
+  --icon-pink: #eea8b7;
+  --icon-orange: #efac98;
+  --icon-purple: #c6b3ee;
+  --icon-blue: #92c4f2;
+  --icon-green: #acca91;
+  --shadow: #00000099;
+
+  /* Semantic roles, as the theme maps them */
+  --surface-base: var(--window);
+  --surface-raised: var(--panel);   /* parts.panel.root.fill */
+  --surface-overlay: var(--card);
+  --surface-hover: var(--chosen);
+  --control-base: var(--card);
+  --control-hover: var(--chosen);
+  --control-count: var(--chosen);
+  --text-primary: var(--ink);
+  --text-secondary: var(--body);
+  --text-muted: var(--label);
+  --text-quiet: var(--quiet);
+  --text-faint: var(--faint);
+  --list-selected: var(--lavender-selected);
+  --accent: var(--lavender);
+  --accent-text: var(--lavender-text);
+  --accent-fill: var(--lavender-fill);
+
+  /* Geometry: radius.sm/md 7, control 8, lg 10, xl/panel 12, control 28, gutter 8 */
+  --r-sm: 7px;
+  --r-ctl: 8px;
+  --r-lg: 10px;
+  --r-xl: 12px;
+  --gap: 8px;
+  --ctl: 28px;
+
+  --font: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-md: 13px;
+
+  /* prototype-only chrome (deliberately not Purlis) */
+  --proto-bg: #e6e4ec;
+  --proto-fg: #17171b;
+  --proto-dim: #55535f;
+  --proto-on: #17171b;
+  --proto-on-fg: #e6e4ec;
+
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body { margin: 0; background: var(--surface-base); color: var(--text-secondary); font: 400 var(--fs-md)/1.45 var(--font); -webkit-font-smoothing: antialiased; overflow: hidden; }
+* { box-sizing: border-box; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+input { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+svg { flex: none; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* ---------- shell ---------- */
+.app { height: 100%; display: grid; grid-template-rows: 38px 1fr; background: var(--surface-base); position: relative; }
+.titlebar { display: flex; align-items: center; gap: 10px; padding-left: max(12px, env(safe-area-inset-left, 0px)); padding-right: max(12px, env(safe-area-inset-right, 0px)); min-width: 0; }
+.lights { display: flex; gap: 8px; margin-right: 8px; }
+.lights i { width: 12px; height: 12px; border-radius: 50%; background: var(--card-button); display: block; }
+.crumb { display: inline-flex; align-items: center; gap: 6px; color: var(--text-primary); font-weight: 500; height: var(--ctl); padding: 0 8px; border-radius: var(--r-ctl); line-height: normal; }
+.crumb:hover { background: var(--surface-overlay); }
+.crumb .pj { width: 18px; height: 18px; border-radius: 5px; background: var(--lavender-fill); color: #fff; font-size: 11px; font-weight: 600; display: grid; place-items: center; }
+.sep { color: var(--text-faint); }
+.strip { display: flex; align-items: center; gap: 2px; min-width: 0; overflow: hidden; }
+.tb-end { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.needs-pill { height: 22px; padding: 0 9px; border-radius: 11px; background: var(--needs-you); color: var(--window); font-size: var(--fs-xs); font-weight: 600; display: inline-flex; align-items: center; gap: 5px; }
+
+/* workspace chip, Q4 decides the chosen look; every state keeps the same box */
+.chip { position: relative; height: var(--ctl); padding: 0 10px; border-radius: var(--r-ctl); color: var(--text-muted); display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-md); line-height: normal; white-space: nowrap; transition: background-color .15s, color .15s; }
+.chip .nm { display: inline-flex; flex-direction: column; }
+.chip .nm::after { content: attr(data-n); font-weight: 600; height: 0; visibility: hidden; overflow: hidden; } /* reserves the bold width so nothing moves */
+.chip .wdot { width: 6px; height: 6px; border-radius: 50%; background: var(--blue); }
+.chip .wdot.amber { background: var(--amber); }
+.chip .wdot.none { background: transparent; }
+.chip:hover, .chip.f-hover { background: var(--surface-overlay); color: var(--text-primary); }
+.chip.f-focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.chip.new { animation: pop .5s ease-out; }
+@keyframes pop { from { background: var(--accent-wash-strong); } }
+/* A: accent wash */
+[data-q4="A"] .chip.on { background: var(--accent-wash); color: var(--text-primary); }
+[data-q4="A"] .chip.on:hover, [data-q4="A"] .chip.on.f-hover { background: var(--accent-wash-strong); }
+/* B: accent bar under the name */
+[data-q4="B"] .chip.on { color: var(--text-primary); }
+[data-q4="B"] .chip.on::before { content: ""; position: absolute; left: 10px; right: 10px; bottom: 1px; height: 2px; border-radius: 2px; background: var(--accent); }
+/* C: bold text, subtle fill */
+[data-q4="C"] .chip.on { color: var(--text-primary); background: var(--surface-raised); }
+[data-q4="C"] .chip.on .nm span { font-weight: 600; }
+[data-q4="C"] .chip.on:hover, [data-q4="C"] .chip.on.f-hover { background: var(--surface-hover); }
+
+.body { display: flex; min-height: 0; padding-bottom: var(--gap); padding-right: max(0px, env(safe-area-inset-right, 0px)); }
+.rail { width: 48px; display: flex; flex-direction: column; align-items: center; gap: 8px; padding-top: 4px; padding-left: max(0px, env(safe-area-inset-left, 0px)); }
+.proj { width: 30px; height: 30px; border-radius: var(--r-lg); display: grid; place-items: center; font-weight: 600; font-size: 12px; color: var(--text-muted); background: var(--surface-overlay); position: relative; }
+.proj.on { background: var(--lavender-fill); color: #fff; }
+.proj .bdg { position: absolute; right: -3px; top: -3px; width: 9px; height: 9px; border-radius: 50%; background: var(--needs-you); box-shadow: 0 0 0 2px var(--window); }
+.abar { width: 40px; display: flex; flex-direction: column; justify-content: space-between; align-items: center; padding-block: 4px 2px; }
+.abar .grp { display: flex; flex-direction: column; gap: 4px; }
+.ab { width: 32px; height: 32px; border-radius: var(--r-ctl); display: grid; place-items: center; color: var(--text-quiet); position: relative; }
+.ab:hover { background: var(--surface-overlay); color: var(--text-primary); }
+.ab.on { background: var(--accent-wash); color: var(--accent-text); }
+.ab .cnt { position: absolute; right: 1px; top: 1px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 8px; background: var(--needs-you); color: var(--window); font-size: 10px; font-weight: 600; line-height: 15px; text-align: center; }
+.ab .cnt.acc { background: var(--accent); }
+.tile { background: var(--surface-raised); border-radius: var(--r-xl); overflow: hidden; min-height: 0; min-width: 0; }
+.side { width: 276px; flex: none; display: flex; flex-direction: column; gap: var(--gap); background: none; border-radius: 0; overflow: visible; }
+.side > .tile { flex: 1 1 0; }
+.side > .tile.half { flex: 0 0 210px; }
+.center { flex: 1 1 0; display: flex; flex-direction: column; gap: var(--gap); min-width: 0; margin-inline: var(--gap); }
+.mainpane { flex: 1 1 0; display: flex; flex-direction: column; position: relative; }
+.bottompane { flex: 0 0 120px; display: flex; flex-direction: column; }
+.rside { width: 276px; flex: none; margin-right: 0; }
+@media (max-width: 1180px) { .rside { display: none; } }
+@media (max-width: 860px) { .side { width: 230px; } .rail { display: none; } }
+
+/* pane header (main / bottom) */
+.phead { height: 34px; display: flex; align-items: center; gap: 2px; padding: 0 6px 0 10px; flex: none; }
+.ptab { height: 26px; padding: 0 10px; border-radius: var(--r-sm); display: inline-flex; align-items: center; gap: 6px; color: var(--text-muted); font-size: var(--fs-sm); }
+.ptab.on { background: var(--code); color: var(--text-primary); }
+.ptab .n { color: var(--text-faint); }
+.pbody { flex: 1 1 0; min-height: 0; overflow: auto; background: var(--code); margin: 0 6px 6px; border-radius: var(--r-lg); padding: 14px 16px; position: relative; }
+.term { font: 12px/1.6 var(--mono); color: var(--text-secondary); white-space: pre; }
+.term .p { color: var(--accent-text); }
+.term .ok { color: var(--green); }
+.term .dim { color: var(--text-faint); }
+.msg { max-width: 68ch; display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; }
+.msg .who { font-size: var(--fs-xs); color: var(--text-faint); font-weight: 500; }
+.msg .txt { color: var(--text-secondary); }
+.msg.me .txt { color: var(--text-primary); }
+code, .mono { font-family: var(--mono); font-size: 12px; }
+
+/* ---------- sidebar view anatomy (Q1) ---------- */
+.view { height: 100%; display: flex; flex-direction: column; }
+.scroll { flex: 1 1 0; min-height: 0; overflow-y: auto; background: var(--surface-raised); scrollbar-width: thin; scrollbar-color: #e6e4ec33 transparent; }
+.vhead { position: sticky; top: 0; z-index: 3; background: var(--surface-raised); display: flex; flex-direction: column; gap: 8px; padding: 8px 10px 8px; }
+.trow { display: flex; align-items: center; gap: 6px; min-height: 28px; }
+.trow h2 { margin: 0; font-size: var(--fs-md); font-weight: 600; color: var(--text-primary); white-space: nowrap; line-height: normal; }
+.trow .count { height: 18px; min-width: 20px; padding: 0 6px; border-radius: 9px; background: var(--control-count); color: var(--text-muted); font-size: var(--fs-xs); display: inline-grid; place-items: center; font-variant-numeric: tabular-nums; }
+.acts { margin-left: auto; display: flex; gap: 2px; }
+.ib { width: 24px; height: 24px; border-radius: var(--r-sm); display: grid; place-items: center; color: var(--text-quiet); }
+.ib:hover { background: var(--surface-overlay); color: var(--text-primary); }
+.field { height: var(--ctl); border-radius: var(--r-ctl); background: var(--control-base); display: flex; align-items: center; gap: 6px; padding: 0 8px; color: var(--text-quiet); min-width: 0; }
+.field:focus-within { outline: 2px solid var(--accent); outline-offset: -1px; }
+.field input { flex: 1 1 0; min-width: 0; border: 0; outline: 0; background: none; color: var(--text-primary); font-size: var(--fs-sm); }
+.field input::placeholder { color: var(--text-quiet); }
+.field .kbd { font-size: 10px; color: var(--text-faint); font-family: var(--mono); }
+.tok { height: 18px; padding: 0 6px; border-radius: 5px; background: var(--accent-wash); color: var(--accent-text); font-size: var(--fs-xs); display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.seg { display: flex; gap: 2px; padding: 2px; border-radius: var(--r-ctl); background: var(--surface-base); }
+.seg button { flex: 1 1 0; height: 22px; border-radius: 6px; font-size: var(--fs-sm); color: var(--text-muted); white-space: nowrap; padding: 0 6px; }
+.seg button:hover { color: var(--text-primary); }
+.seg button.on { background: var(--surface-overlay); color: var(--text-primary); }
+.utabs { display: flex; gap: 14px; padding: 0 2px; }
+.utabs button { position: relative; height: 22px; font-size: var(--fs-sm); color: var(--text-muted); }
+.utabs button.on { color: var(--text-primary); }
+.utabs button.on::after { content: ""; position: absolute; left: 0; right: 0; bottom: -2px; height: 2px; border-radius: 2px; background: var(--accent); }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.fchip { height: 22px; padding: 0 8px; border-radius: var(--r-sm); background: var(--surface-overlay); color: var(--text-muted); font-size: var(--fs-xs); display: inline-flex; align-items: center; gap: 5px; }
+.fchip:hover { color: var(--text-primary); }
+.fchip.on { background: var(--accent-wash); color: var(--accent-text); }
+.fchip b { font-weight: 500; color: inherit; opacity: .75; font-variant-numeric: tabular-nums; }
+
+.grp { padding-bottom: 6px; }
+.ghead { display: flex; align-items: center; justify-content: space-between; height: 26px; padding: 0 12px; font-size: var(--fs-xs); letter-spacing: .06em; text-transform: uppercase; color: var(--text-faint); font-weight: 500; background: var(--surface-raised); position: sticky; top: var(--hh, 0px); z-index: 2; }
+.ghead .gc { font-variant-numeric: tabular-nums; letter-spacing: 0; }
+.row { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px; margin: 0 4px; border-radius: var(--r-sm); color: var(--text-secondary); cursor: default; min-width: 0; }
+.row:hover { background: var(--surface-hover); }
+.row.sel { background: var(--list-selected); color: var(--text-primary); }
+.row .rcol { display: flex; flex-direction: column; min-width: 0; flex: 1 1 0; }
+.row .rt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .rs { font-size: var(--fs-xs); color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .rm { font-size: var(--fs-xs); color: var(--text-faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--gutter); }
+.dot.run { background: var(--blue); }
+.dot.wait { background: var(--amber); }
+.dot.needs { background: var(--needs-you); }
+.dot.done { background: var(--green); }
+.av { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: 10px; font-weight: 600; color: var(--window); flex: none; }
+.cb { width: 15px; height: 15px; border-radius: 4px; background: var(--card-button); flex: none; display: grid; place-items: center; color: #fff; }
+.cb.done { background: var(--accent-fill); }
+.row.isdone .rt { color: var(--text-faint); text-decoration: line-through; }
+.vfoot { padding: 10px 12px 14px; font-size: var(--fs-xs); color: var(--text-faint); }
+
+/* A: stacked head, sticky groups, comfortable rows (defaults above) */
+[data-q1="A"] .row .rs, [data-q1="B"] .row .rs { display: none; }
+/* B: one-line head, groups scroll away, dense rows */
+[data-q1="B"] .vhead { gap: 6px; padding: 6px 8px 6px 10px; }
+[data-q1="B"] .vhead .trow .field { flex: 1 1 0; height: 24px; }
+[data-q1="B"] .trow .acts { margin-left: 0; }
+[data-q1="B"] .ghead { position: static; height: 22px; padding-top: 6px; text-transform: none; letter-spacing: 0; font-size: var(--fs-xs); color: var(--text-quiet); }
+[data-q1="B"] .row { height: 24px; font-size: var(--fs-sm); }
+[data-q1="B"] .row.tall { height: 24px; }
+[data-q1="B"] .seg button { height: 20px; font-size: var(--fs-xs); }
+[data-q1="B"] .fchip { height: 20px; }
+[data-q1="B"] .grp { padding-bottom: 2px; }
+/* C: counted head, banded sticky groups, two-line rows */
+[data-q1="C"] .ghead { margin: 2px 6px 4px; border-radius: var(--r-sm); background: var(--surface-overlay); height: 24px; padding: 0 8px; color: var(--text-muted); text-transform: none; letter-spacing: 0; font-size: var(--fs-sm); top: calc(var(--hh, 0px) + 2px); }
+[data-q1="C"] .row { height: 42px; align-items: center; }
+[data-q1="C"] .row .rt { color: var(--text-primary); }
+[data-q1="C"] .row.isdone .rt { color: var(--text-faint); }
+[data-q1="C"] .row .rm { align-self: flex-start; margin-top: 7px; }
+[data-q1="C"] .row .dot { align-self: flex-start; margin-top: 8px; }
+[data-q1="C"] .row .av, [data-q1="C"] .row .cb { align-self: flex-start; margin-top: 4px; }
+[data-q1="C"] .row .av { width: 24px; height: 24px; margin-top: 2px; }
+
+/* ---------- explorer (Q2) ---------- */
+.trow .branch { font-size: var(--fs-xs); color: var(--text-faint); font-family: var(--mono); }
+.picker { height: var(--ctl); border-radius: var(--r-ctl); background: var(--surface-base); display: flex; align-items: center; gap: 8px; padding: 0 8px; color: var(--text-primary); font-size: var(--fs-sm); width: 100%; text-align: left; }
+.picker:hover { background: var(--surface-overlay); }
+.picker.static { cursor: default; }
+.picker.static:hover { background: var(--surface-base); }
+.picker .br { color: var(--text-faint); font-family: var(--mono); font-size: var(--fs-xs); }
+.picker .chev { margin-left: auto; color: var(--text-quiet); }
+.menu { position: absolute; left: 10px; right: 10px; z-index: 6; background: var(--surface-overlay); border-radius: var(--r-lg); box-shadow: 0 10px 30px var(--shadow); padding: 4px; }
+.menu .mi { display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 8px; border-radius: var(--r-sm); width: 100%; text-align: left; font-size: var(--fs-sm); color: var(--text-secondary); }
+.menu .mi:hover { background: var(--surface-hover); color: var(--text-primary); }
+.menu .mi.on { color: var(--text-primary); }
+.menu .mi .ck { margin-left: auto; color: var(--accent-text); }
+.menu .msep { height: 4px; }
+.tree .row { height: 24px; gap: 4px; font-size: var(--fs-sm); padding-right: 8px; }
+.tree .tw { width: 14px; display: grid; place-items: center; color: var(--text-faint); flex: none; }
+.tree .fi { color: var(--text-muted); }
+.tree .fi.f { color: var(--text-faint); }
+.tree .git { margin-left: auto; font-size: 10px; font-family: var(--mono); color: var(--amber); }
+.tree .git.a { color: var(--green); }
+.tree .repo { height: 28px; font-weight: 500; color: var(--text-primary); }
+.tree .repo .br { margin-left: auto; font-size: var(--fs-xs); color: var(--text-faint); font-family: var(--mono); font-weight: 400; }
+.tree .repo .chg { font-size: 10px; color: var(--amber); font-family: var(--mono); }
+.hl { color: var(--accent-text); }
+.hint { font-size: var(--fs-xs); color: var(--text-faint); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; line-height: 1.4; }
+.hint .lnk { color: var(--accent-text); display: inline-flex; align-items: center; gap: 3px; }
+.hint .lnk:hover { text-decoration: underline; }
+.hint .sc { height: 18px; padding: 0 6px; border-radius: 5px; background: var(--surface-base); color: var(--text-muted); display: inline-flex; align-items: center; }
+.halfhead { height: 32px; display: flex; align-items: center; gap: 6px; padding: 0 8px 0 12px; position: sticky; top: 0; background: var(--surface-raised); z-index: 2; }
+.halfhead h3 { margin: 0; font-size: var(--fs-sm); font-weight: 600; color: var(--text-primary); }
+.scopechips { display: flex; flex-wrap: wrap; gap: 4px; }
+.hit { font: 12px/1.5 var(--mono); color: var(--text-muted); padding: 2px 12px 2px 30px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hit mark { background: var(--accent-wash-strong); color: var(--text-primary); border-radius: 3px; padding: 0 1px; }
+
+/* ---------- action results (Q3) ---------- */
+.notice { display: grid; grid-template-columns: auto 1fr auto; gap: 4px 10px; align-items: start; background: var(--surface-overlay); border-radius: var(--r-lg); padding: 10px 8px 10px 12px; margin-bottom: 16px; max-width: 640px; }
+.notice .ic { color: var(--green); margin-top: 1px; }
+.notice .nt { color: var(--text-primary); font-weight: 500; }
+.notice .ns { grid-column: 2; color: var(--text-muted); font-size: var(--fs-sm); }
+.notice .nacts { grid-column: 2; display: flex; gap: 6px; align-items: center; margin-top: 6px; flex-wrap: wrap; }
+.notice .x { grid-row: 1; grid-column: 3; }
+.btn { height: 26px; padding: 0 10px; border-radius: var(--r-ctl); background: var(--card-button); color: var(--text-primary); font-size: var(--fs-sm); display: inline-flex; align-items: center; gap: 6px; }
+.btn:hover { background: var(--surface-hover); }
+.btn.pri { background: var(--accent-fill); color: #fff; }
+.btn.pri:hover { background: var(--lavender-fill-hover); }
+.btn.ghost { background: none; color: var(--text-muted); padding: 0 6px; }
+.btn.ghost:hover { color: var(--text-primary); background: var(--surface-hover); }
+.details { grid-column: 2 / 4; margin-top: 6px; background: var(--code); border-radius: var(--r-sm); padding: 8px 10px; font: 11px/1.6 var(--mono); color: var(--text-muted); white-space: pre-wrap; word-break: break-word; }
+.toast { position: absolute; right: 56px; bottom: 18px; width: 340px; z-index: 20; background: var(--surface-overlay); border-radius: var(--r-lg); box-shadow: 0 12px 34px var(--shadow); padding: 10px 8px 12px 12px; display: grid; grid-template-columns: auto 1fr auto; gap: 4px 10px; overflow: hidden; animation: tin .22s cubic-bezier(.22,.8,.24,1); }
+@keyframes tin { from { transform: translateY(10px); opacity: 0; } }
+.toast .ic { color: var(--green); margin-top: 1px; }
+.toast .nt { color: var(--text-primary); font-weight: 500; }
+.toast .ns { grid-column: 2; font-size: var(--fs-sm); color: var(--text-muted); }
+.toast .nacts { grid-column: 2; display: flex; gap: 6px; margin-top: 6px; }
+.toast .bar { position: absolute; left: 0; bottom: 0; height: 2px; background: var(--accent); width: 100%; transform-origin: left; animation: drain linear forwards; }
+.toast:hover .bar { animation-play-state: paused; }
+@keyframes drain { to { transform: scaleX(0); } }
+.pop { position: absolute; right: 48px; top: 44px; width: 360px; max-height: calc(100% - 120px); overflow: auto; z-index: 25; background: var(--surface-overlay); border-radius: var(--r-xl); box-shadow: 0 16px 40px var(--shadow); }
+.pop .vhead { background: var(--surface-overlay); }
+.pop .ghead { background: var(--surface-overlay); position: static; }
+.pitem { margin: 0 6px 6px; padding: 10px 10px 10px 12px; border-radius: var(--r-lg); background: var(--surface-raised); display: grid; grid-template-columns: auto 1fr auto; gap: 3px 10px; }
+.pitem.unseen { background: var(--lavender-surface); }
+.pitem .ic { color: var(--green); margin-top: 1px; }
+.pitem .ic.q { color: var(--needs-you); }
+.pitem .nt { color: var(--text-primary); font-weight: 500; font-size: var(--fs-md); }
+.pitem .ns { grid-column: 2 / 4; font-size: var(--fs-sm); color: var(--text-muted); }
+.pitem .tm { font-size: var(--fs-xs); color: var(--text-faint); }
+.pitem .nacts { grid-column: 2 / 4; display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+.pitem .details { grid-column: 2 / 4; }
+
+/* ---------- state sheet (Q4) ---------- */
+.sheet { display: flex; flex-direction: column; gap: 18px; max-width: 760px; }
+.sheet h4 { margin: 0; font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .06em; color: var(--text-faint); font-weight: 500; }
+.srow { display: flex; flex-wrap: wrap; gap: 14px 18px; background: var(--surface-base); border-radius: var(--r-lg); padding: 12px 14px; }
+.scell { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.scell .lab { font-size: var(--fs-xs); color: var(--text-faint); }
+.scell .w { font-size: 10px; color: var(--text-faint); font-family: var(--mono); }
+.zoom { zoom: 2; }
+.okline { font-size: var(--fs-sm); color: var(--green); }
+.okline.bad { color: var(--red); }
+
+/* ---------- prototype bar (not part of the design) ---------- */
+.proto { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(14px + env(safe-area-inset-bottom, 0px)); z-index: 100; background: var(--proto-bg); color: var(--proto-fg); border-radius: 14px; box-shadow: 0 14px 40px #000000b0; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; font: 500 12px/1.3 var(--font); max-width: calc(100vw - 32px); }
+.proto .l1 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.proto .qs { display: flex; gap: 2px; background: #d2d0da; padding: 2px; border-radius: 9px; }
+.proto .qs button { height: 26px; padding: 0 9px; border-radius: 7px; color: var(--proto-dim); }
+.proto .qs button.on { background: var(--proto-on); color: var(--proto-on-fg); }
+.proto .qs button i { font-style: normal; opacity: .7; margin-left: 4px; }
+.proto .arrow { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; background: #d2d0da; }
+.proto .arrow:hover { background: #c3c1cc; }
+.proto .vl { min-width: 210px; text-align: center; font-weight: 600; }
+.proto .vl small { font-weight: 500; color: var(--proto-dim); }
+.proto .scen { display: flex; gap: 4px; align-items: center; padding-left: 6px; }
+.proto .scen button { height: 24px; padding: 0 8px; border-radius: 7px; background: #d2d0da; color: var(--proto-fg); }
+.proto .scen button.on { background: var(--proto-on); color: var(--proto-on-fg); }
+.proto .l2 { font: 400 11px/1.4 var(--mono); color: var(--proto-dim); text-align: center; max-width: 820px; }
+.proto .l2 b { color: var(--proto-fg); font-weight: 500; }
+</style>
+
+<div class="app" id="app" data-q1="A" data-q4="A">
+  <div class="titlebar" id="titlebar"></div>
+  <div class="body" id="body"></div>
+</div>
+<div class="proto" id="proto" aria-label="Prototype switcher"></div>
+
+<script>
+(() => {
+/* ---------- icons (lucide paths) ---------- */
+const P = {
+  chats: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+  explorer: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+  folder: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+  search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  file: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>',
+  files: '<path d="M20 7h-3a2 2 0 0 1-2-2V2"/><path d="M9 18a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h7l4 4v10a2 2 0 0 1-2 2Z"/><path d="M3 7.6v12.8A1.6 1.6 0 0 0 4.6 22h9.8"/>',
+  repos: '<line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>',
+  bell: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
+  personas: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  vaults: '<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+  memory: '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>',
+  todos: '<path d="m9 11 3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
+  sessions: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
+  plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+  x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  right: '<path d="m9 18 6-6-6-6"/>',
+  down: '<path d="m6 9 6 6 6-6"/>',
+  left: '<path d="m15 18-6-6 6-6"/>',
+  more: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
+  ok: '<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>',
+  q: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  out: '<path d="M7 7h10v10"/><path d="M7 17 17 7"/>',
+  collapse: '<path d="m7 20 5-5 5 5"/><path d="m7 4 5 5 5-5"/>',
+  filter: '<path d="M3 6h18"/><path d="M7 12h10"/><path d="M10 18h4"/>',
+  newfile: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M9 15h6"/><path d="M12 18v-6"/>',
+  term: '<polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/>',
+};
+const I = (n, s = 16, w = 1.75) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[n]}</svg>`;
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+/* ---------- variants ---------- */
+const Q = {
+  q1: { label: 'Q1 Sidebar view anatomy', v: { A: 'Stacked head', B: 'One-line head, dense', C: 'Counted head, banded groups' } },
+  q2: { label: 'Q2 Explorer', v: { A: 'Repos as folders', B: 'Repo picker above the tree', C: 'Repos half drives the tree' } },
+  q3: { label: 'Q3 Action results', v: { A: 'Closable notice at top', B: 'Toast, kept in Notices', C: 'Notices only, with a count' } },
+  q4: { label: 'Q4 Chosen workspace chip', v: { A: 'Accent wash', B: 'Accent bar', C: 'Bold, subtle fill' } },
+};
+
+/* ---------- data ---------- */
+const CHATS = [
+  ['Needs you', [['Allow network to crates.io?', 'needs', 'steward', '2m'], ['Pick a notice placement for #3108', 'needs', 'designer', '9m']]],
+  ['Running', [['Explorer on the tree family #3194', 'run', 'steward 2', 'now'], ['Swipe steps once, then stops (9b)', 'run', 'steward 3', '1m'], ['Release notes for 0.5.0-dev', 'run', 'release', '4m']]],
+  ['Today', [['Triage the operator\'s 10 UI points', 'done', 'steward', '10:42'], ['Sidebar views prototype', 'wait', 'designer', '10:15'], ['Title-bar chip clips the g', 'done', 'steward 4', '09:58'], ['Create a project page won\'t scroll', 'done', 'steward', '09:31'], ['Tooltip flips into a narrow column', 'wait', 'steward 5', '09:12'], ['Theme draft: lavender pass', 'done', 'designer', '08:40']]],
+  ['Yesterday', [['Skills sidebar view #3282', 'done', 'steward', '18:20'], ['Key registry #3189', 'done', 'steward 2', '17:02'], ['Quiet ghost #3265', 'done', 'designer', '15:47'], ['Main CI red after merge', 'done', 'steward', '14:10'], ['Vault reveal and copy', 'done', 'security', '11:05']]],
+  ['Earlier this week', [['Persona card as a tab', 'done', 'designer', 'Thu'], ['k8s operator parity', 'done', 'steward', 'Wed'], ['Browser flow login', 'done', 'steward', 'Wed'], ['Memory dedupe for smart-ide', 'done', 'steward', 'Tue'], ['Contrast floors for accent text', 'done', 'designer', 'Mon'], ['Left icons toggle (R121)', 'done', 'steward', 'Mon']]],
+];
+const MEMORY = [
+  ['smart-ide', [['Follow main CI after every merge', '10-14'], ['Merge only PRs tested on current main', '10-15'], ['gh pr ready starts more checks', '10-24'], ['Sandboxed agents cannot run terminal-bound tests', '10-11'], ['Throttle parallel agents by machine load', '10-09'], ['A copied node_modules hangs on macOS', '09-20'], ['Never run an unguarded cleanup script', '10-25'], ['Agent worktree targets fill the disk', '09-30'], ['Worktree git config writes the shared clone', '09-28']]],
+  ['steward', [['Grill and decide, escalate only major calls', '10-02'], ['Never idle the loop on pending asks', '10-07'], ['A stale PR is yours to land', '10-15'], ['Never lose ideas or findings', '10-01'], ['Separate PRs, not trains', '10-13'], ['Dev releases are fine, stable is his', '10-13']]],
+  ['Shared', [['Tabs hold views, not only chats', '09-23'], ['One place for questions', '10-10'], ['Sandbox defaults must not break standard tools', '10-13'], ['No language mixing in the shipped app', '09-18'], ['Check his screenshot before calling a UI ask done', '09-22']]],
+];
+const TODOS = [
+  ['Open', [['Fix .chats-head fill to the panel fill (2a)', 'steward'], ['Drop the 14rem cap on .panel-rows', 'steward'], ['Name line-height normal on the chip (8)', 'steward'], ['Rebase 6a on #3194', 'steward 2'], ['Short copy for workspace.create', 'designer'], ['Fake-clock test for the swipe gesture', 'steward 3'], ['Row tooltip: fall back to top/bottom', 'steward 5'], ['Ask about R121 amendment wording', 'steward']]],
+  ['Done', [['Triage the 10 points', 'steward'], ['Read #2897 audit table', 'steward'], ['Pull Purlis theme tokens', 'designer']]],
+];
+const PERSONAS = [
+  ['Working now', [['steward', 'Runs the program loop', 'run', '#c6b3ee'], ['designer', 'UI system and themes', 'wait', '#7cd1c6'], ['release', 'Dev channel and notes', 'run', '#92c4f2']]],
+  ['In this workspace', [['security', 'Sandbox and vault reviews', '', '#eea8b7'], ['reviewer', 'Two-axis code review', '', '#efac98'], ['docs', 'Guides and changelog', '', '#acca91']]],
+  ['On the plane', [['ops', 'Runners and CI health', '', '#cfbf80'], ['k8s', 'Operator and cluster parity', '', '#92c4f2'], ['research', 'Primary-source digging', '', '#c6b3ee'], ['triage', 'Issue sweep and labels', '', '#eea8b7']]],
+];
+const SESSIONS = [
+  ['This week', [['Triage of the 10 UI points', 'Mon 10:42'], ['Theme M64 drafts pass', 'Sun 16:10'], ['Notice family build review', 'Sat 12:30'], ['Skills studio sources', 'Fri 18:05']]],
+  ['Earlier', [['Purlis rename sweep', '10-05'], ['Vaults design M8.6', '09-24'], ['Security review follow-ups', '09-02']]],
+];
+const VAULTS = [
+  ['Keyring', [['forge', '3 secrets'], ['reddit', '2 secrets'], ['crates-io', '1 secret']]],
+  ['1Password', [['devops', '5 secrets'], ['release-signing', '2 secrets']]],
+];
+
+const T = (n, c) => ({ n, c }); // folder
+const F = (n, m) => ({ n, m }); // file
+const REPOS = [
+  { name: 'purlis', br: 'main', chg: 3, tree: [
+    T('app', [T('src', [T('theme', [F('geometry.css'), F('theme.ts'), F('tint.ts')]), T('ui', [T('list', [F('list.css'), F('RowTip.tsx', 'M')]), T('titlebar', [F('titlebar.css', 'M'), F('TitleBarWorkspaces.tsx'), F('TitleBarSwitch.tsx')]), T('notice', [F('Notice.tsx'), F('notice.css')])]), F('App.tsx'), F('App.css', 'M'), F('Explorer.tsx'), F('PanelList.tsx'), F('PanelSection.tsx'), F('Panels.tsx'), F('PlaneView.tsx'), F('RegionFrame.tsx'), F('regions.ts'), F('SearchTab.tsx'), F('Sidebar.prototype.html', 'A')]), F('package.json'), F('vite.config.ts')]),
+    T('crates', [T('purlis-core', [T('src', [T('theme', [F('mod.rs')]), T('wscmd', [F('create.rs')]), F('lib.rs')]), F('Cargo.toml')]), T('purlis-app', [F('Cargo.toml')])]),
+    T('docs', [F('rulings.md'), F('theme.md')]),
+    F('Cargo.toml'), F('README.md'), F('LICENSE'),
+  ] },
+  { name: 'purlis-plane', br: 'main', chg: 0, tree: [T('personas', [F('steward.md'), F('designer.md')]), T('workspaces', [T('smart-ide', [F('workspace.md'), F('memory.md')])]), F('plane.md')] },
+  { name: 'theme-lab', br: 'feat/lavender', chg: 1, tree: [T('themes', [T('purlis', [F('theme.json', 'M')]), T('classic', [F('theme.json')])]), F('README.md')] },
+];
+const SEARCH_SCOPES = [['branch', 'Branch', 'purlis · main'], ['workspace', 'Workspace', 'smart-ide'], ['project', 'This project', 'purlis'], ['open', 'All open projects', '3']];
+
+/* ---------- state ---------- */
+const S = {
+  q: 'q1', v: { q1: 'A', q2: 'A', q3: 'A', q4: 'A' },
+  left: 'chats', right: 'personas', half: null,
+  filter: {}, tab: { chats: 'Workspace', todos: 'Open', search: 'branch' }, chipOn: { chats: new Set(['Running']) }, sel: { chats: 'Explorer on the tree family #3194', personas: 'steward', memory: 'Follow main CI after every merge' },
+  repos: 3, open: new Set(['purlis', 'purlis/app', 'purlis/app/src', 'purlis/app/src/ui', 'purlis/app/src/ui/titlebar']), repoOpen: new Set(), pickRepo: 'purlis', pickerOpen: false, selRepo: 'purlis', exScope: 'branch',
+  ws: ['smart-ide', 'skills-studio', 'theme-engine', 'k8s-operator'], cur: 'smart-ide', fresh: null,
+  notices: { q: 1, results: [], unseen: 0 }, notice: null, noticeDetails: false, toast: null, pop: false, popDetails: false,
+  ran: false,
+};
+// load hash
+try {
+  const h = new URLSearchParams(location.hash.slice(1));
+  for (const k of ['q1', 'q2', 'q3', 'q4']) if (h.get(k) && Q[k].v[h.get(k)]) S.v[k] = h.get(k);
+  if (h.get('q') && Q[h.get('q')]) S.q = h.get('q');
+  if (h.get('repos') === '1') S.repos = 1;
+} catch (e) {}
+const saveHash = () => { try { history.replaceState(null, '', '#q=' + S.q + '&q1=' + S.v.q1 + '&q2=' + S.v.q2 + '&q3=' + S.v.q3 + '&q4=' + S.v.q4 + '&repos=' + S.repos); } catch (e) {} };
+
+/* ---------- title bar ---------- */
+function chipHTML(name, cls = '', dot = '') {
+  const on = name === S.cur ? ' on' : '';
+  return `<button class="chip${on}${cls}" data-ws="${esc(name)}"><span class="wdot ${dot}"></span><span class="nm" data-n="${esc(name)}"><span>${esc(name)}</span></span></button>`;
+}
+const DOTS = { 'smart-ide': '', 'skills-studio': 'amber', 'theme-engine': 'none', 'k8s-operator': 'none', 'git-ci-cd': 'none' };
+function renderTitle() {
+  document.getElementById('titlebar').innerHTML = `
+    <div class="lights"><i></i><i></i><i></i></div>
+    <button class="crumb"><span class="pj">P</span>purlis</button>
+    <span class="sep">${I('right', 14)}</span>
+    <div class="strip">${S.ws.map(w => chipHTML(w, w === S.fresh ? ' new' : '', DOTS[w] ?? 'none')).join('')}<button class="ib" title="New workspace">${I('plus', 14)}</button></div>
+    <div class="tb-end"><span class="needs-pill">2 need you</span></div>`;
+}
+
+/* ---------- sidebar views ---------- */
+const VIEWS = {
+  chats: { title: 'Chats', acts: [['plus', 'New chat'], ['more', 'More']], search: 'Filter chats', tabs: ['Workspace', 'Project', 'All'], chips: [['Needs you', 2], ['Running', 3], ['Mine', 0], ['Archived', 0]], data: CHATS },
+  memory: { title: 'Memory', acts: [['plus', 'Add memory'], ['more', 'Compact']], search: 'Search memory', data: MEMORY },
+  todos: { title: 'Todos', acts: [['more', 'More']], add: 'Add a todo', tabs: ['Open', 'Done', 'All'], data: TODOS },
+  personas: { title: 'Personas', acts: [['plus', 'New persona']], search: 'Filter personas', data: PERSONAS },
+  sessions: { title: 'Sessions', acts: [['more', 'More']], search: 'Search sessions', data: SESSIONS },
+  vaults: { title: 'Vaults', acts: [['plus', 'New vault']], search: 'Filter vaults', data: VAULTS },
+};
+const total = d => d.reduce((n, g) => n + g[1].length, 0);
+function fieldHTML(id, ph, icon = 'search', extra = '') {
+  return `<label class="field">${I(icon, 14)}${extra}<input id="f-${id}" data-filter="${id}" placeholder="${esc(ph)}" value="${esc(S.filter[id] || '')}" autocomplete="off"></label>`;
+}
+function actsHTML(acts) { return `<span class="acts">${acts.map(([i, t]) => `<button class="ib" title="${t}" aria-label="${t}">${I(i, 15)}</button>`).join('')}</span>`; }
+function tabsHTML(id, tabs, kind) {
+  const cur = S.tab[id] || tabs[0];
+  const cls = kind === 'u' ? 'utabs' : 'seg';
+  return `<div class="${cls}">${tabs.map(t => `<button class="${t === cur ? 'on' : ''}" data-tab="${id}" data-val="${esc(t)}">${t}</button>`).join('')}</div>`;
+}
+function chipsHTML(id, chips) {
+  const on = S.chipOn[id] || new Set();
+  return `<div class="chips">${chips.map(([c, n]) => `<button class="fchip${on.has(c) ? ' on' : ''}" data-chip="${id}" data-val="${esc(c)}">${c}${n ? ` <b>${n}</b>` : ''}</button>`).join('')}</div>`;
+}
+function viewHead(id) {
+  const v = VIEWS[id], q1 = S.v.q1;
+  const fld = v.add ? fieldHTML(id, v.add, 'plus', '') : fieldHTML(id, v.search);
+  const n = total(v.data);
+  if (q1 === 'A') {
+    return `<header class="vhead"><div class="trow"><h2>${v.title}</h2>${actsHTML(v.acts)}</div>${fld}${v.tabs ? tabsHTML(id, v.tabs, 's') : ''}${v.chips ? chipsHTML(id, v.chips) : ''}</header>`;
+  }
+  if (q1 === 'B') {
+    const small = v.add ? fieldHTML(id, v.add, 'plus') : fieldHTML(id, v.search);
+    const second = (v.tabs || v.chips) ? `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">${v.tabs ? tabsHTML(id, v.tabs, 's') : ''}${v.chips ? chipsHTML(id, v.chips) : ''}</div>` : '';
+    return `<header class="vhead"><div class="trow"><h2>${v.title}</h2>${small}${actsHTML(v.acts)}</div>${second}</header>`;
+  }
+  // C: counted title, underline tabs, chips become tokens in the field
+  const on = [...(S.chipOn[id] || [])];
+  const toks = on.map(c => `<span class="tok">${c}<span data-chip="${id}" data-val="${esc(c)}" style="cursor:pointer;display:inline-flex">${I('x', 10, 2.2)}</span></span>`).join('');
+  const fieldC = v.add ? fieldHTML(id, v.add, 'plus') : fieldHTML(id, v.search, 'search', toks);
+  const chipsLeft = v.chips ? `<div class="chips">${v.chips.filter(([c]) => !on.includes(c)).map(([c, k]) => `<button class="fchip" data-chip="${id}" data-val="${esc(c)}">+ ${c}${k ? ` <b>${k}</b>` : ''}</button>`).join('')}</div>` : '';
+  return `<header class="vhead"><div class="trow"><h2>${v.title}</h2><span class="count">${n}</span>${actsHTML(v.acts)}</div>${v.tabs ? tabsHTML(id, v.tabs, 'u') : ''}${fieldC}${chipsLeft}</header>`;
+}
+function rowHTML(id, r) {
+  const sel = S.sel[id] === r[0] ? ' sel' : '';
+  if (id === 'chats') return `<div class="row${sel}" data-sel="${id}" data-val="${esc(r[0])}"><span class="dot ${r[1]}"></span><span class="rcol"><span class="rt">${esc(r[0])}</span><span class="rs">${esc(r[2])} · smart-ide</span></span><span class="rm">${r[3]}</span></div>`;
+  if (id === 'memory') return `<div class="row${sel}" data-sel="${id}" data-val="${esc(r[0])}"><span class="rcol"><span class="rt">${esc(r[0])}</span><span class="rs">saved 2026-${r[1]}</span></span><span class="rm">${r[1]}</span></div>`;
+  if (id === 'todos') { const d = S.tab.todos === 'Done' || TODOS[1][1].includes(r); return `<div class="row${d ? ' isdone' : ''}${sel}" data-sel="${id}" data-val="${esc(r[0])}"><span class="cb${d ? ' done' : ''}">${d ? I('check', 11, 3) : ''}</span><span class="rcol"><span class="rt">${esc(r[0])}</span><span class="rs">${esc(r[1])}</span></span></div>`; }
+  if (id === 'personas') return `<div class="row${sel}" data-sel="${id}" data-val="${esc(r[0])}"><span class="av" style="background:${r[3]}">${r[0][0].toUpperCase()}</span><span class="rcol"><span class="rt">${esc(r[0])}</span><span class="rs">${esc(r[1])}</span></span>${r[2] ? `<span class="dot ${r[2]}"></span>` : ''}</div>`;
+  return `<div class="row${sel}" data-sel="${id}" data-val="${esc(r[0])}"><span class="rcol"><span class="rt">${esc(r[0])}</span><span class="rs">${esc(r[1])}</span></span><span class="rm">${esc(r[1])}</span></div>`;
+}
+function viewBody(id) {
+  const v = VIEWS[id]; const f = (S.filter[id] || '').toLowerCase();
+  let data = v.data;
+  if (id === 'todos') { const t = S.tab.todos || 'Open'; data = t === 'All' ? data : data.filter(g => g[0] === t); f && (data = data); }
+  const out = data.map(([g, rows]) => {
+    const rs = (id === 'todos' ? rows : rows.filter(r => !f || r[0].toLowerCase().includes(f)));
+    if (!rs.length) return '';
+    return `<div class="grp"><div class="ghead"><span>${g}</span><span class="gc">${rs.length}</span></div>${rs.map(r => rowHTML(id, r)).join('')}</div>`;
+  }).join('');
+  return out || `<div class="vfoot">Nothing matches “${esc(S.filter[id])}”.</div>`;
+}
+function viewHTML(id) {
+  return `<section class="view" data-view="${id}"><div class="scroll">${viewHead(id)}<div class="vbody" data-body="${id}">${viewBody(id)}</div><div class="vfoot">One scroll. The head stays put.</div></div></section>`;
+}
+
+/* ---------- explorer ---------- */
+const repos = () => S.repos === 1 ? [REPOS[0]] : REPOS;
+function treeRows(nodes, base, depth) {
+  let h = '';
+  for (const n of nodes) {
+    const p = base + '/' + n.n; const pad = 8 + depth * 14;
+    if (n.c) {
+      const o = S.open.has(p);
+      h += `<div class="row" data-dir="${esc(p)}" style="padding-left:${pad}px"><span class="tw">${I(o ? 'down' : 'right', 12, 2)}</span><span class="fi">${I('folder', 14)}</span><span class="rt">${esc(n.n)}</span></div>`;
+      if (o) h += treeRows(n.c, p, depth + 1);
+    } else {
+      h += `<div class="row" style="padding-left:${pad}px"><span class="tw"></span><span class="fi f">${I('file', 14)}</span><span class="rt">${esc(n.n)}</span>${n.m ? `<span class="git${n.m === 'A' ? ' a' : ''}">${n.m}</span>` : ''}</div>`;
+    }
+  }
+  return h;
+}
+function flatFiles(nodes, base, out) { for (const n of nodes) { const p = base ? base + '/' + n.n : n.n; if (n.c) flatFiles(n.c, p, out); else out.push(p); } return out; }
+function repoRow(r) {
+  const o = S.repoOpen.has(r.name);
+  return `<div class="row repo${S.selRepo === r.name ? ' sel' : ''}" data-repo="${r.name}"><span class="tw">${I(o ? 'down' : 'right', 12, 2)}</span><span class="fi" style="color:var(--text-muted)">${I('repos', 14)}</span><span class="rt">${r.name}</span>${r.chg ? `<span class="chg">${r.chg}M</span>` : ''}<span class="br">${r.br}</span></div>`;
+}
+function filterResults(list) {
+  const f = (S.filter.explorer || '').toLowerCase();
+  const groups = list.map(r => [r, flatFiles(r.tree, '', []).filter(p => p.split('/').pop().toLowerCase().includes(f))]).filter(g => g[1].length);
+  if (!groups.length) return `<div class="vfoot">No file names match “${esc(S.filter.explorer)}”. Search file contents instead.</div>`;
+  return groups.map(([r, ps]) => `<div class="grp">${list.length > 1 ? `<div class="ghead"><span>${r.name}</span><span class="gc">${ps.length}</span></div>` : ''}${ps.map(p => { const nm = p.split('/').pop(); const i = nm.toLowerCase().indexOf(f); const hn = esc(nm.slice(0, i)) + '<span class="hl">' + esc(nm.slice(i, i + f.length)) + '</span>' + esc(nm.slice(i + f.length)); return `<div class="row" style="padding-left:12px"><span class="fi f">${I('file', 14)}</span><span class="rcol"><span class="rt">${hn}</span><span class="rs" style="display:block">${esc(p.split('/').slice(0, -1).join('/') || r.name)}</span></span></div>`; }).join('')}</div>`).join('');
+}
+const scopeWord = s => s === 'branch' ? 'Branch' : 'Workspace';
+function exScopeControl(labels) {
+  if (repos().length === 1) return `<div class="hint"><span class="sc">${I('repos', 11)}&nbsp;purlis · main</span> One repo, so the filter covers all of it.</div>`;
+  return `<div class="seg">${[['branch', labels[0]], ['workspace', labels[1]]].map(([k, l]) => `<button class="${S.exScope === k ? 'on' : ''}" data-exscope="${k}">${l}</button>`).join('')}</div>`;
+}
+function searchLink() {
+  const sc = repos().length === 1 ? 'branch' : S.exScope;
+  return `<div class="hint">Names only. <button class="lnk" data-gosearch="${sc}">Search contents in ${sc === 'branch' ? 'Branch' : 'Workspace'} ${I('out', 11)}</button><span class="mono" style="color:var(--text-faint)">⌘⇧F</span></div>`;
+}
+function explorerHTML() {
+  const v = S.v.q2, list = repos(), many = list.length > 1;
+  const f = S.filter.explorer || '';
+  const acts = actsHTML([['newfile', 'New file'], ['collapse', 'Collapse all']]);
+  let head, body;
+  if (v === 'A') {
+    const sel = list.find(r => r.name === S.selRepo) || list[0];
+    head = `<header class="vhead"><div class="trow"><h2>smart-ide</h2>${!many ? `<span class="branch">purlis · main</span>` : ''}${acts}</div>${fieldHTML('explorer', many ? (S.exScope === 'branch' ? `Filter ${sel.name}` : 'Filter all repos') : 'Filter files')}${exScopeControl([`Selected: ${sel.name}`, 'All repos'])}${searchLink()}</header>`;
+    if (f) body = filterResults(many && S.exScope === 'branch' ? [sel] : list);
+    else if (!many) body = `<div class="tree">${treeRows(list[0].tree, 'purlis', 0)}</div>`;
+    else body = `<div class="tree">${list.map(r => repoRow(r) + (S.repoOpen.has(r.name) ? treeRows(r.tree, r.name, 1) : '')).join('')}</div>`;
+  } else if (v === 'B') {
+    const all = S.pickRepo === '*';
+    const pr = list.find(r => r.name === S.pickRepo) || list[0];
+    const picker = !many
+      ? `<div class="picker static">${I('repos', 14)}<span>purlis</span><span class="br">main</span></div>`
+      : `<button class="picker" data-picker="1">${I('repos', 14)}<span>${all ? 'All repos' : pr.name}</span>${all ? `<span class="br">${list.length}</span>` : `<span class="br">${pr.br}</span>`}<span class="chev">${I('down', 14)}</span></button>`;
+    const menu = many && S.pickerOpen ? `<div class="menu" style="top:76px">${list.map(r => `<button class="mi${!all && r.name === pr.name ? ' on' : ''}" data-pick="${r.name}">${I('repos', 14)}${r.name}<span class="mono" style="color:var(--text-faint);font-size:11px">${r.br}</span>${!all && r.name === pr.name ? `<span class="ck">${I('check', 14, 2)}</span>` : ''}</button>`).join('')}<div class="msep"></div><button class="mi${all ? ' on' : ''}" data-pick="*">${I('folder', 14)}All repos${all ? `<span class="ck">${I('check', 14, 2)}</span>` : ''}</button></div>` : '';
+    head = `<header class="vhead" style="position:sticky"><div class="trow"><h2>smart-ide</h2>${acts}</div>${picker}${menu}${fieldHTML('explorer', all ? 'Filter all repos' : `Filter ${pr.name}`)}<div class="hint">The filter follows the picker${many ? ` (${all ? 'Workspace' : 'Branch'} scope)` : ''}. <button class="lnk" data-gosearch="${all ? 'workspace' : 'branch'}">Search contents ${I('out', 11)}</button></div></header>`;
+    if (f) body = filterResults(all ? list : [pr]);
+    else if (all) body = `<div class="tree">${list.map(r => repoRow(r) + (S.repoOpen.has(r.name) ? treeRows(r.tree, r.name, 1) : '')).join('')}</div>`;
+    else body = `<div class="tree">${treeRows(pr.tree, pr.name, 0)}</div>`;
+  } else {
+    const sel = list.find(r => r.name === S.selRepo) || list[0];
+    head = `<header class="vhead"><div class="trow"><h2>${sel.name}</h2><span class="branch">${sel.br}</span>${acts}</div>${fieldHTML('explorer', S.exScope === 'branch' || !many ? `Filter ${sel.name}` : 'Filter all repos')}${exScopeControl(['This repo', 'All repos'])}${searchLink()}</header>`;
+    body = f ? filterResults(many && S.exScope === 'workspace' ? list : [sel]) : `<div class="tree">${treeRows(sel.tree, sel.name, 0)}</div>`;
+  }
+  return `<section class="view" data-view="explorer"><div class="scroll">${head}<div class="vbody" data-body="explorer">${body}</div><div class="vfoot">One scroll. No “Files” fold: the tree is the view.</div></div></section>`;
+}
+function reposHalfHTML() {
+  return `<section class="view"><div class="scroll"><div class="halfhead"><h3>Repos</h3><span class="count" style="height:18px;min-width:20px;padding:0 6px;border-radius:9px;background:var(--control-count);color:var(--text-muted);font-size:11px;display:inline-grid;place-items:center">${repos().length}</span><span class="acts"><button class="ib" title="Add repo">${I('plus', 15)}</button></span></div><div class="tree">${repos().map(r => `<div class="row repo${S.selRepo === r.name ? ' sel' : ''}" data-selrepo="${r.name}"><span class="fi" style="color:var(--text-muted);margin-left:4px">${I('repos', 14)}</span><span class="rt">${r.name}</span>${r.chg ? `<span class="chg">${r.chg}M</span>` : ''}<span class="br">${r.br}</span></div>`).join('')}</div><div class="vfoot">Pick a repo here; Explorer above shows its tree.</div></div></section>`;
+}
+function searchHTML() {
+  const cur = S.tab.search || 'branch';
+  return `<section class="view"><div class="scroll"><header class="vhead"><div class="trow"><h2>Search</h2>${actsHTML([['more', 'Options']])}</div>${fieldHTML('search', 'Search file contents')}<div class="scopechips">${SEARCH_SCOPES.map(([k, l, d]) => `<button class="fchip${cur === k ? ' on' : ''}" data-sscope="${k}">${l} <b>${d}</b></button>`).join('')}</div><div class="hint">Explorer's filter uses the first two of these words: <span class="sc">Branch</span> for one repo, <span class="sc">Workspace</span> for all its repos.</div></header><div class="vbody"><div class="grp"><div class="ghead"><span>app/src/ui/titlebar/titlebar.css</span><span class="gc">2</span></div><div class="hit">72  [data-part="workspace"] { <mark>line-height</mark>: 1;</div><div class="hit">96  [data-hovered], [data-selected] {</div></div><div class="grp"><div class="ghead"><span>app/src/App.css</span><span class="gc">1</span></div><div class="hit">3391  .chats-head { position: sticky; <mark>background</mark>: var(--surface-base); }</div></div>${cur !== 'branch' ? `<div class="grp"><div class="ghead"><span>theme-lab · themes/purlis/theme.json</span><span class="gc">1</span></div><div class="hit">"panel.root.fill": "surface.raised"</div></div>` : ''}</div></div></section>`;
+}
+function filesHalfHTML() {
+  return `<section class="view"><div class="scroll"><div class="halfhead"><h3>Open files</h3></div><div class="tree">${['titlebar.css', 'App.css', 'theme.json'].map(n => `<div class="row"><span class="fi f" style="margin-left:4px">${I('file', 14)}</span><span class="rt">${n}</span></div>`).join('')}</div></div></section>`;
+}
+
+/* ---------- main pane ---------- */
+function transcript() {
+  return `<div class="msg me"><span class="who">you</span><span class="txt">Make the sidebar views one piece: one scroll, the head stays put, one title each.</span></div>
+  <div class="msg"><span class="who">steward</span><span class="txt">The Chats head paints <code>--surface-base</code> over a list on the panel fill, and <code>.panel-rows</code> adds a second scroller capped at 14rem. Both go. The search and the add box move into the sticky head.</span></div>
+  <div class="msg"><span class="who">steward</span><span class="txt">Personas, Vaults and the extension panels draw a second title under the side header. The view keeps the only one, with its actions on the same row.</span></div>`;
+}
+function noticeA() {
+  if (!S.notice) return '';
+  return `<div class="notice" role="status"><span class="ic">${I('ok', 16)}</span><span class="nt">Workspace git-ci-cd is ready</span><button class="ib x" data-dismiss="1" title="Dismiss" aria-label="Dismiss">${I('x', 14)}</button><span class="ns">It has no vision yet. Add one so its chats know what it is for.</span><span class="nacts"><button class="btn pri" data-ws="git-ci-cd">Open git-ci-cd</button><button class="btn">Add a vision</button><button class="btn ghost" data-details="n">${I(S.noticeDetails ? 'down' : 'right', 12, 2)}Details</button></span>${S.noticeDetails ? `<div class="details">${esc(RAW)}</div>` : ''}</div>`;
+}
+const RAW = "Workspace 'git-ci-cd' ready (LIVE — charter + manifest + memory committed + shared + auto-saved) → workspaces/git-ci-cd/\n⬢ No vision yet — ask the developer what this workspace is for, then record it: purlis workspace vision …";
+function stateSheet() {
+  const states = [['Rest', ''], ['Hover', ' f-hover'], ['Chosen', ' on'], ['Chosen + hover', ' on f-hover'], ['Keyboard focus', ' f-focus'], ['Chosen + focus', ' on f-focus']];
+  const cells = z => states.map(([l, c]) => `<div class="scell"><span class="lab">${l}</span><span class="chip${c}" data-measure="${z}"><span class="wdot amber"></span><span class="nm" data-n="git-ci-cd"><span>git-ci-cd</span></span></span><span class="w" data-w></span></div>`).join('');
+  return `<div class="sheet"><h4>Every state of one chip · ${Q.q4.v[S.v.q4]}</h4><div class="srow">${cells('1')}</div><div class="okline" id="wcheck"></div><h4>At 2×</h4><div class="srow zoom">${cells('2')}</div><h4>In place</h4><div class="srow" style="padding:6px 8px">${['smart-ide', 'skills-studio', 'git-ci-cd', 'theme-engine'].map((w, i) => `<span class="chip${i === 0 ? ' on' : ''}${i === 1 ? ' f-hover' : ''}"><span class="wdot ${['', 'amber', 'none', 'none'][i]}"></span><span class="nm" data-n="${w}"><span>${w}</span></span></span>`).join('')}</div><div class="hint">Hover the chips in the title bar above. The descender of “g” is not clipped (line-height normal on the name).</div></div>`;
+}
+function mainHTML() {
+  let content;
+  if (S.q === 'q4') content = stateSheet();
+  else if (S.q === 'q3') content = (S.v.q3 === 'A' ? noticeA() : '') + transcript();
+  else content = transcript();
+  const tab = S.q === 'q4' ? 'Title bar states' : 'steward';
+  return `<div class="phead"><span class="ptab on">${S.q === 'q4' ? '' : '<span class="dot run"></span>'}${tab}${S.q === 'q4' ? '' : ' <span class="n">1</span>'}</span><span class="ptab">designer</span><span class="ptab">steward <span class="n">2</span></span><button class="ib">${I('plus', 14)}</button></div><div class="pbody">${content}</div>`;
+}
+function bottomHTML() {
+  return `<div class="phead"><span class="ptab on">${I('term', 13)}Terminal</span><span class="ptab">Changes <span class="n">3</span></span></div><div class="pbody term"><span class="p">smart-ide</span> <span class="dim">$</span> cargo test -p purlis-core theme::
+<span class="dim">   Compiling purlis-core v0.5.0-dev</span>
+test theme::built_in::purlis_loads ... <span class="ok">ok</span>
+test theme::parts::panel_root_fill ... <span class="ok">ok</span></div>`;
+}
+
+/* ---------- notices ---------- */
+function popHTML() {
+  if (!S.pop) return '';
+  const res = S.notices.results;
+  return `<div class="pop" id="pop" role="dialog" aria-label="Notices"><header class="vhead"><div class="trow"><h2>Notices</h2>${actsHTML([['check', 'Mark all read']])}</div></header>
+  <div class="grp"><div class="ghead"><span>Needs you</span><span class="gc">1</span></div><div class="pitem"><span class="ic q">${I('q', 16)}</span><span class="nt">steward asks to reach crates.io</span><span class="tm">2m</span><span class="ns">The chat “Allow network to crates.io?” is waiting on you.</span><span class="nacts"><button class="btn pri">Allow once</button><button class="btn">Allow for this chat</button><button class="btn ghost">Deny</button></span></div></div>
+  <div class="grp"><div class="ghead"><span>Results</span><span class="gc">${res.length + 1}</span></div>${res.map(r => `<div class="pitem${r.unseen ? ' unseen' : ''}"><span class="ic">${I('ok', 16)}</span><span class="nt">${r.t}</span><span class="tm">now</span><span class="ns">${r.s}</span><span class="nacts"><button class="btn pri" data-ws="git-ci-cd">Open git-ci-cd</button><button class="btn">Add a vision</button><button class="btn ghost" data-details="p">${I(S.popDetails ? 'down' : 'right', 12, 2)}Details</button></span>${S.popDetails ? `<div class="details">${esc(RAW)}</div>` : ''}</div>`).join('')}<div class="pitem"><span class="ic">${I('ok', 16)}</span><span class="nt">Theme draft lavender-pass saved</span><span class="tm">12m</span><span class="ns">theme-lab · 3 tokens changed</span></div></div></div>`;
+}
+function toastHTML() {
+  if (!S.toast) return '';
+  return `<div class="toast" role="status" id="toast"><span class="ic">${I('ok', 16)}</span><span class="nt">Workspace git-ci-cd is ready</span><button class="ib" data-closetoast="1" aria-label="Close">${I('x', 14)}</button><span class="ns">No vision yet. Kept in Notices.</span><span class="nacts"><button class="btn pri" data-ws="git-ci-cd">Open</button><button class="btn" data-openpop="1">Show in Notices</button></span><span class="bar" style="animation-duration:${S.toast.ms}ms"></span></div>`;
+}
+const badge = () => S.notices.q + S.notices.unseen;
+
+/* ---------- shell ---------- */
+function regionLayout() {
+  // which views each question shows
+  if (S.q === 'q2') { if (S.left !== 'explorer' && S.left !== 'search') S.left = 'explorer'; }
+  else if (S.left === 'explorer' && S.q !== 'q2') { /* keep user's choice */ }
+}
+function abBtn(id, icon, side, title, extra = '') {
+  const on = (side === 'l' ? (S.left === id || S.half === id) : (S.right === id || (id === 'bell' && S.pop))) ? ' on' : '';
+  return `<button class="ab${on}" data-ab="${side}:${id}" title="${title}" aria-label="${title}">${I(icon, 18)}${extra}</button>`;
+}
+function renderBody() {
+  regionLayout();
+  const q2C = S.q === 'q2' && S.v.q2 === 'C' && S.left === 'explorer' && S.repos > 1;
+  const half = q2C ? 'repos' : S.half;
+  const leftMain = S.left === 'explorer' ? explorerHTML() : S.left === 'search' ? searchHTML() : viewHTML('chats');
+  const halfHTML = half === 'repos' ? reposHalfHTML() : half === 'files' ? filesHalfHTML() : '';
+  const showRight = S.q !== 'q2' && S.right && VIEWS[S.right];
+  const b = badge();
+  document.getElementById('body').innerHTML = `
+  <nav class="rail" aria-label="Projects"><span class="proj on">P</span><span class="proj">VC<span class="bdg"></span></span><span class="proj">K</span><button class="ib" style="width:30px;height:30px">${I('plus', 15)}</button></nav>
+  <nav class="abar" aria-label="Left activity bar"><div class="grp">${abBtn('chats', 'chats', 'l', 'Chats')}${abBtn('explorer', 'explorer', 'l', 'Explorer')}${abBtn('search', 'search', 'l', 'Search')}</div><div class="grp">${abBtn('files', 'files', 'l', 'Files')}${abBtn('repos', 'repos', 'l', 'Repos')}</div></nav>
+  <div class="side"><div class="tile">${leftMain}</div>${halfHTML ? `<div class="tile half">${halfHTML}</div>` : ''}</div>
+  <div class="center"><div class="tile mainpane">${mainHTML()}</div><div class="tile bottompane">${bottomHTML()}</div></div>
+  ${showRight ? `<div class="tile rside">${viewHTML(S.right)}</div>` : ''}
+  <nav class="abar" aria-label="Right activity bar"><div class="grp">${abBtn('bell', 'bell', 'r', 'Notifications', b ? `<span class="cnt${S.notices.unseen && !S.notices.q ? ' acc' : ''}">${b}</span>` : '')}${abBtn('personas', 'personas', 'r', 'Personas')}${abBtn('vaults', 'vaults', 'r', 'Vaults')}</div><div class="grp">${abBtn('memory', 'memory', 'r', 'Memory')}${abBtn('todos', 'todos', 'r', 'Todos')}${abBtn('sessions', 'sessions', 'r', 'Sessions')}</div></nav>`;
+  // overlays
+  const app = document.getElementById('app');
+  app.querySelectorAll('.pop,.toast').forEach(n => n.remove());
+  app.insertAdjacentHTML('beforeend', popHTML() + (S.q === 'q3' ? toastHTML() : ''));
+  measure();
+}
+function measure() {
+  document.querySelectorAll('.scroll').forEach(sc => { const h = sc.querySelector(':scope > .vhead'); if (h) sc.style.setProperty('--hh', h.offsetHeight + 'px'); });
+  const cells = [...document.querySelectorAll('[data-measure="1"]')];
+  if (cells.length) {
+    const ws = cells.map(c => Math.round(c.getBoundingClientRect().width * 10) / 10);
+    const hs = cells.map(c => Math.round(c.getBoundingClientRect().height));
+    cells.forEach((c, i) => { c.parentElement.querySelector('[data-w]').textContent = ws[i] + ' × ' + hs[i] + 'px'; });
+    const same = ws.every(w => w === ws[0]) && hs.every(h => h === hs[0]);
+    const el = document.getElementById('wcheck');
+    el.textContent = same ? `Same box in every state: ${ws[0]} × ${hs[0]}px.` : 'Box size changes between states.';
+    el.className = 'okline' + (same ? '' : ' bad');
+  }
+}
+
+/* ---------- prototype bar ---------- */
+function stateLine() {
+  const v = S.v[S.q];
+  if (S.q === 'q1') return `left <b>Chats</b> · right <b>${VIEWS[S.right] ? VIEWS[S.right].title : 'closed'}</b> · head <b>sticky</b> · groups <b>${v === 'B' ? 'scroll away' : 'sticky'}</b> · rows <b>${v === 'B' ? '24px' : v === 'C' ? '42px two-line' : '30px'}</b> · title <b>${v === 'B' ? 'shares its row with search' : 'own row'}</b>`;
+  if (S.q === 'q2') { const many = S.repos > 1; const sc = v === 'B' ? (S.pickRepo === '*' ? 'Workspace' : 'Branch') : scopeWord(S.exScope); return `repos <b>${S.repos}</b> · ${v === 'A' ? `expanded <b>${[...S.repoOpen].join(', ') || 'none'}</b>` : v === 'B' ? `picker <b>${S.pickRepo === '*' ? 'All repos' : S.pickRepo}</b>` : `tree <b>${S.selRepo}</b>`} · filter <b>${esc(S.filter.explorer || '—')}</b> in <b>${many ? sc : 'Branch'}</b> · Search scope <b>${(SEARCH_SCOPES.find(s => s[0] === (S.tab.search || 'branch')) || [])[1]}</b>`; }
+  if (S.q === 'q3') return `ran <b>${S.ran ? 'New workspace git-ci-cd' : 'nothing yet'}</b> · notice <b>${S.notice ? 'shown' : '—'}</b> · toast <b>${S.toast ? 'showing ' + S.toast.ms / 1000 + 's (hover pauses)' : '—'}</b> · Notices badge <b>${badge()}</b> · popover <b>${S.pop ? 'open' : 'closed'}</b>`;
+  return `current <b>${S.cur}</b> · chosen <b>${Q.q4.v[v]}</b> · hover <b>card fill + primary text</b> · box <b>fixed (bold width reserved)</b>`;
+}
+function renderProto() {
+  const q = S.q, keys = Object.keys(Q[q].v), v = S.v[q];
+  const scen = q === 'q2' ? `<span class="scen">Repos <button class="${S.repos === 1 ? 'on' : ''}" data-repos="1">1</button><button class="${S.repos === 3 ? 'on' : ''}" data-repos="3">3</button></span>`
+    : q === 'q3' ? `<span class="scen"><button data-run="1">${S.ran ? 'Run again' : 'Run'}: New workspace</button></span>`
+    : q === 'q1' ? `<span class="scen">Right view ${['personas', 'memory', 'todos'].map(r => `<button class="${S.right === r ? 'on' : ''}" data-rv="${r}">${VIEWS[r].title}</button>`).join('')}</span>` : '';
+  document.getElementById('proto').innerHTML = `<div class="l1"><div class="qs">${Object.keys(Q).map(k => `<button class="${k === q ? 'on' : ''}" data-q="${k}">${k.toUpperCase()}<i>${S.v[k]}</i></button>`).join('')}</div>
+  <button class="arrow" data-step="-1" aria-label="Previous variant">${I('left', 14, 2.2)}</button><span class="vl">${v} <small>(${Q[q].v[v]})</small> <small>${keys.indexOf(v) + 1}/${keys.length}</small></span><button class="arrow" data-step="1" aria-label="Next variant">${I('right', 14, 2.2)}</button>${scen}</div>
+  <div class="l2"><b>${Q[q].label}</b> · ${stateLine()}</div>`;
+}
+function render() {
+  const app = document.getElementById('app');
+  app.dataset.q1 = S.v.q1; app.dataset.q4 = S.v.q4;
+  renderTitle(); renderBody(); renderProto(); saveHash();
+}
+
+/* ---------- actions ---------- */
+let toastTimer = null;
+function runCreate() {
+  S.ran = true;
+  if (!S.ws.includes('git-ci-cd')) S.ws.push('git-ci-cd');
+  S.fresh = 'git-ci-cd';
+  S.notices.results = [{ t: 'Workspace git-ci-cd is ready', s: 'No vision yet. Add one so its chats know what it is for.', unseen: true }];
+  S.notices.unseen = 1; S.notice = null; S.toast = null; S.noticeDetails = false; S.popDetails = false;
+  clearTimeout(toastTimer);
+  const v = S.v.q3;
+  if (v === 'A') { S.notice = true; S.pop = false; }
+  else if (v === 'B') { S.pop = false; S.toast = { ms: 8000 }; armToast(); }
+  else { S.pop = true; }
+  render();
+  setTimeout(() => { S.fresh = null; }, 600);
+}
+function armToast() {
+  clearTimeout(toastTimer);
+  const start = Date.now(); let left = S.toast.ms;
+  const tick = () => {
+    const t = document.getElementById('toast');
+    if (!S.toast) return;
+    if (t && t.matches(':hover')) { toastTimer = setTimeout(tick, 200); return; }
+    left -= 200;
+    if (left <= 0) { S.toast = null; render(); return; }
+    toastTimer = setTimeout(tick, 200);
+  };
+  toastTimer = setTimeout(tick, 200);
+}
+function stepVariant(d) {
+  const keys = Object.keys(Q[S.q].v); const i = keys.indexOf(S.v[S.q]);
+  S.v[S.q] = keys[(i + d + keys.length) % keys.length];
+  if (S.q === 'q3') runCreate(); else render();
+}
+function setQ(q) {
+  S.q = q; S.pop = false; S.toast = null;
+  if (q === 'q2') S.left = 'explorer';
+  if (q === 'q1' && S.left !== 'chats') S.left = 'chats';
+  if (q === 'q3') { S.left = 'chats'; runCreate(); return; }
+  render();
+}
+
+document.addEventListener('click', e => {
+  const t = e.target.closest('button,[data-sel],[data-dir],[data-repo],[data-selrepo],[data-chip]');
+  if (!t) { if (S.pop && !e.target.closest('.pop')) { S.pop = false; render(); } return; }
+  const d = t.dataset;
+  if (d.q) return setQ(d.q);
+  if (d.step) return stepVariant(+d.step);
+  if (d.repos) { S.repos = +d.repos; if (S.repos === 1) { S.selRepo = 'purlis'; S.pickRepo = 'purlis'; } return render(); }
+  if (d.run) return runCreate();
+  if (d.rv) { S.right = d.rv; return render(); }
+  if (d.ws) { S.cur = d.ws; return render(); }
+  if (d.ab) {
+    const [side, id] = d.ab.split(':');
+    if (side === 'l') {
+      if (id === 'files' || id === 'repos') S.half = S.half === id ? null : id;
+      else S.left = id;
+    } else if (id === 'bell') { S.pop = !S.pop; if (S.pop) S.notices.results.forEach(r => r.unseen = false), S.notices.unseen = 0; }
+    else S.right = S.right === id ? null : id;
+    return render();
+  }
+  if (d.openpop) { S.pop = true; S.toast = null; S.notices.unseen = 0; return render(); }
+  if (d.closetoast) { S.toast = null; return render(); }
+  if (d.dismiss) { S.notice = null; return render(); }
+  if (d.details) { if (d.details === 'n') S.noticeDetails = !S.noticeDetails; else S.popDetails = !S.popDetails; return render(); }
+  if (d.tab) { S.tab[d.tab] = d.val; return render(); }
+  if (d.chip) { const s = S.chipOn[d.chip] || (S.chipOn[d.chip] = new Set()); s.has(d.val) ? s.delete(d.val) : s.add(d.val); return render(); }
+  if (d.sel) { S.sel[d.sel] = d.val; return render(); }
+  if (d.dir) { S.open.has(d.dir) ? S.open.delete(d.dir) : S.open.add(d.dir); return render(); }
+  if (d.repo) { S.selRepo = d.repo; S.repoOpen.has(d.repo) ? S.repoOpen.delete(d.repo) : S.repoOpen.add(d.repo); return render(); }
+  if (d.selrepo) { S.selRepo = d.selrepo; return render(); }
+  if (d.exscope) { S.exScope = d.exscope; return render(); }
+  if (d.picker) { S.pickerOpen = !S.pickerOpen; return render(); }
+  if (d.pick) { S.pickRepo = d.pick; S.pickerOpen = false; return render(); }
+  if (d.gosearch) { S.tab.search = d.gosearch; S.left = 'search'; S.filter.search = S.filter.explorer || 'background'; return render(); }
+  if (d.sscope) { S.tab.search = d.sscope; return render(); }
+});
+document.addEventListener('input', e => {
+  const id = e.target.dataset && e.target.dataset.filter; if (!id) return;
+  S.filter[id] = e.target.value;
+  if (id === 'todos' || id === 'search') return;
+  const body = document.querySelector(`[data-body="${id}"]`);
+  if (body) body.innerHTML = id === 'explorer' ? (() => { const tmp = document.createElement('div'); tmp.innerHTML = explorerHTML(); return tmp.querySelector('[data-body]').innerHTML; })() : viewBody(id);
+  renderProto();
+});
+document.addEventListener('keydown', e => {
+  const el = document.activeElement;
+  if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) {
+    if (e.key === 'Enter' && el.dataset.filter === 'todos' && el.value.trim()) { TODOS[0][1].unshift([el.value.trim(), 'you']); S.filter.todos = ''; render(); document.getElementById('f-todos').focus(); }
+    if (e.key === 'Escape') el.blur();
+    return;
+  }
+  if (e.key === 'ArrowRight') stepVariant(1);
+  else if (e.key === 'ArrowLeft') stepVariant(-1);
+  else if (['1', '2', '3', '4'].includes(e.key)) setQ('q' + e.key);
+  else if (e.key === 'Escape' && S.pop) { S.pop = false; render(); }
+});
+window.addEventListener('resize', measure);
+
+if (S.q === 'q3') { S.left = 'chats'; runCreate(); } else { if (S.q === 'q2') S.left = 'explorer'; render(); }
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(measure);
+})();
+</script>
