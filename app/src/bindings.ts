@@ -8275,6 +8275,12 @@ export type OpenHosts = {
 export type OpenRun = {
 	/**  The skill, by the name its harness started it by. */
 	skill: string,
+	/**
+	 *  The skill it is a run of, by its own name, as the core counts it
+	 *  ([`purlis_core::skilluse::own_name`]): `secrets` for opencode's `purlis-secrets`. The
+	 *  skill whose tab its chip opens.
+	 */
+	name: string,
 	/**  The run's id, as the skill's Runs panel lists it. */
 	id: string,
 	/**  Tool calls made inside it so far, each once. */
