@@ -177,21 +177,27 @@ async function raise(
         Object.assign(under.dataset, { scope: "notice", part: "under" });
         if (also !== null) {
           // As `DispatchGrantNotice` draws it, above the brief: the house `Choice` of checks,
-          // then the access line and the line about secrets.
+          // each the checkbox family's box in its own label (#2907), then the access line and
+          // the line about secrets.
           const besides = el("div", "dispatch-also");
-          const checks = el("div", "ui-choice-checks");
+          const checks = el("div", "");
           checks.setAttribute("role", "group");
+          checks.dataset.scope = "checkbox-group";
           for (const [index, one] of also.boxes.entries()) {
-            const option = el("div", "ui-choice-option");
-            const check = el("button", "box");
-            check.setAttribute("type", "button");
-            check.setAttribute("role", "checkbox");
-            check.setAttribute("aria-checked", "false");
-            check.id = `pane-notices-e2e-also-${index}`;
-            check.tabIndex = 0;
-            const label = el("label", "", one.name);
-            label.setAttribute("for", check.id);
-            option.append(check, label, el("div", "ui-choice-says", one.says));
+            const option = el("label", "");
+            Object.assign(option.dataset, { scope: "checkbox", part: "root", variant: "box" });
+            const input = document.createElement("input");
+            input.type = "checkbox";
+            input.id = `pane-notices-e2e-also-${index}`;
+            const hidden = el("span", "sr-only");
+            hidden.append(input);
+            const mark = el("span", "");
+            Object.assign(mark.dataset, { scope: "checkbox", part: "box" });
+            const name = el("span", "", one.name);
+            Object.assign(name.dataset, { scope: "checkbox", part: "label" });
+            const says = el("span", "", one.says);
+            Object.assign(says.dataset, { scope: "checkbox", part: "description" });
+            option.append(hidden, mark, name, says);
             checks.append(option);
           }
           besides.append(
@@ -294,14 +300,14 @@ async function measured(pane: number) {
           }),
           under: box(raised.querySelector("[data-scope=notice][data-part=under]")),
           also: box(raised.querySelector(".dispatch-also")),
-          options: [...raised.querySelectorAll(".dispatch-also .ui-choice-option")].map(
-            (option) => ({
-              option: box(option),
-              box: box(option.querySelector(".box")),
-              label: box(option.querySelector("label")),
-              says: box(option.querySelector(".ui-choice-says")),
-            }),
-          ),
+          options: [
+            ...raised.querySelectorAll('.dispatch-also [data-scope="checkbox"][data-part="root"]'),
+          ].map((option) => ({
+            option: box(option),
+            box: box(option.querySelector('[data-part="box"]')),
+            label: box(option.querySelector('[data-part="label"]')),
+            says: box(option.querySelector('[data-part="description"]')),
+          })),
           access: box(raised.querySelector(".dispatch-works-with")),
           report: box(raised.querySelector(".block-report")),
           pre: box(pre),
@@ -759,12 +765,14 @@ describe("a Notice in a pane", () => {
       // reached, and nothing is scrolled sideways to show a host.
       inside(seen.stack, frame, "the stack of Notices");
       const reached = await browser.execute(() => {
-        const boxes = document.querySelectorAll<HTMLElement>(
-          '[data-raised="pane-notices.e2e"] .dispatch-also .box',
+        // Each box is the checkbox family's (#2907): its input takes the focus, its box is drawn.
+        const rows = document.querySelectorAll<HTMLElement>(
+          '[data-raised="pane-notices.e2e"] .dispatch-also [data-scope="checkbox"][data-part="root"]',
         );
-        const last = boxes[boxes.length - 1];
-        last?.focus();
-        last?.scrollIntoView({ block: "nearest", inline: "nearest" });
+        const row = rows[rows.length - 1];
+        row?.querySelector("input")?.focus();
+        row?.scrollIntoView({ block: "nearest", inline: "nearest" });
+        const last = row?.querySelector<HTMLElement>('[data-part="box"]') ?? row;
         const { left, right, top, bottom, width, height } = last.getBoundingClientRect();
         return { left, right, top, bottom, width, height };
       });

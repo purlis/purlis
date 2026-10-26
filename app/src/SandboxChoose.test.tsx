@@ -243,7 +243,7 @@ describe("a socket the sandbox did not name", () => {
     await userEvent.click(choose);
     expect(choose).toHaveAttribute("aria-expanded", "true");
     const list = await screen.findByRole("radiogroup", { name: "Socket to allow" });
-    expect(list).toHaveClass("ui-choice-radio");
+    expect(list).toHaveAttribute("data-scope", "radio-group");
     expect(screen.getByRole("button", { name: "Use this socket" })).toHaveAttribute(
       "data-variant",
       "grants",

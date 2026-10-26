@@ -221,7 +221,7 @@ function core(open: Filed[], first: ChatDoing[] = []) {
 const section = async () => {
   const tree = await screen.findByRole("tree", { name: "Chats of this project" });
   const every = screen.getByRole("radio", { name: "All" });
-  if (every.getAttribute("aria-checked") !== "true") fireEvent.click(every);
+  if (!(every as HTMLInputElement).checked) fireEvent.click(every);
   return tree;
 };
 const theTree = () => screen.getByRole("tree", { name: "Chats of this project" });

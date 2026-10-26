@@ -302,6 +302,13 @@ an unknown token is.
 | `list` (since version 11) | `root` (every property: a list's row), `body` (`padding`, `gap`: the list around the rows), `lead` and `trail` (`text`, `gap`: a row's marks and its end), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`), `header` (`text`, `font-size`, `font-weight`: a group's name) | none |
 | `select` (since the next release) | `root` (every property but `font-weight`: the button that shows what is picked, drawn as the text input's box), `placeholder` (`text`: what it shows while nothing is picked), `chevron` (`text`) | none |
 | `combobox` (since the next release) | `root` (every property but `font-weight`: the box typed in, with its suggestions under it), `chevron` (`text`) | none |
+| `checkbox` (since NEXT) | `root` (`fill`, `text`, `corner-radius`, `gap`: the row pressed, a chip's ground), `box` (`fill`, `border-colour`, `border-width`, `corner-radius`: the box ticked), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`) | `box`, `chip` |
+| `radio` (since NEXT) | `root` (`text`, `gap`), `mark` (`fill`, `border-colour`, `border-width`: the circle picked), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`) | none |
+| `switch` (since NEXT) | `root` (`text`, `gap`), `track` and `thumb` (`fill`, `corner-radius`), `label` (`text`, `font-size`, `font-weight`) | none |
+| `segmented-control` (since NEXT) | `root` (`fill`, `corner-radius`, `shadow`, `padding`, `gap`: the ground its segments stand on) | none |
+| `segment` (since NEXT) | `root` (`fill`, `text`, `shadow`, `corner-radius`), `label` and `count` (`text`) | none |
+| `slider` (since NEXT) | `root` (`text`, `gap`), `track` and `fill` (`fill`, `corner-radius`), `thumb` (`fill`, `border-colour`, `corner-radius`), `output` (`text`: its value) | none |
+| `option-card` (since NEXT) | `root` (`fill`, `text`, `border-colour`, `shadow`, `corner-radius`, `padding`, `gap`), `icon`, `title` (`text`, `font-size`, `font-weight`), `detail` (`text`, `font-size`), `check` (`text`) | `card`, `tile` |
 | `card` (since NEXT) | `root` (`fill`, `text`, `border-colour`, `border-width`, `corner-radius`, `shadow`, `padding`, `gap`), `title` (`text`, `font-size`, `font-weight`) | `raised`, `ask` (a card that asks the person something) |
 | `notice` (since NEXT) | `root` (`fill`, `text`, `border-colour`, `corner-radius`, `padding`, `gap`: a Notice's box, in a pane's row, the Inbox's list or on a page), `message` (`text`, `font-size`), `whose` (`text`, `font-weight`) | `news`, `trouble` |
 | `badge` (since NEXT) | `root` (`fill`, `text`, `border-colour`, `border-width`, `corner-radius`, `padding`, `font-size`, `font-weight`) | `neutral`, `accent`, `waiting`, `ok` |
@@ -323,6 +330,11 @@ their own: a select's list and a combobox's suggestions stand on the popover's `
 each option is a menu's row, so `menu.root.hover.fill` reaches an option too. A chevron is a mark,
 held at 3:1 as an icon is; the placeholder and the chevron fall back to the quiet tier.
 
+A choice is chosen in `selected`: a box ticked (`checkbox.box.selected.fill`), a radio, a segment or
+a card picked, a switch on (`switch.track.selected.fill`). A choice's size is its family's: no
+choice takes a height, and a mark's corner is clamped to half its own box, so a tick never moves
+anything.
+
 **A card and a Notice hold answers**, an ask's Allow and a Notice's fix, so they are consent
 surfaces (ADR 0097 §6): their `root.fill` names one of the grounds the button family is measured
 on (or `transparent`), and a theme that names another is refused, so an Allow on them is always
@@ -341,8 +353,9 @@ keyboard is on it; a field whenever it holds the caret), `disabled` and `open`. 
 only the states its wrapper marks: the button every one; a text input and a textarea `hover`,
 `focused` and `disabled`; a select and a combobox `hover`, `focused` (a select from the keyboard, a
 combobox whenever it holds the caret), `disabled` and `open`; a field's root `disabled` alone; a
-dialog every one, though none
-changes its size. A key naming another is said and left
+dialog every one, though none changes its size; a choice `hover`, `selected`, `focused` and
+`disabled`, and a slider's row `disabled` alone (its thumb, not its row, is under the pointer and
+the keyboard). A key naming another is said and left
 out.
 
 | Property | Value | Bounds |

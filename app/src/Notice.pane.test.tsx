@@ -432,12 +432,15 @@ describe("the pane Notice's rules", () => {
     const also = rule("\\.dispatch-also");
     expect(also).toMatch(/min-width:\s*0/);
     expect(also).toMatch(/overflow-wrap:\s*anywhere/);
-    // A box's name and what it works with shrink with the Notice, in the grid the set draws.
-    const parts = rule(
-      "\\.dispatch-also \\.ui-choice-option label,\\s*\\.dispatch-also \\.ui-choice-says",
+    // A box's name and what it works with shrink with the Notice, in the grid the checkbox
+    // family draws (#2907).
+    const family = readFileSync(join(process.cwd(), "src", "ui", "choice", "choice.css"), "utf8");
+    expect(family).toMatch(
+      /\[data-scope="checkbox"\]\[data-part="root"\] \{[^}]*grid-template-columns: auto minmax\(0, 1fr\)/,
     );
-    expect(parts).toMatch(/min-width:\s*0/);
-    expect(rule("\\.ui-choice-option")).toMatch(/grid-template-columns:\s*auto 1fr/);
+    expect(family).toMatch(
+      /\[data-scope="checkbox"\]\[data-part="label"\] \{[^}]*min-inline-size: 0/,
+    );
     // It is drawn under the line, so the rules for what a way out opened hold it too.
     expect(of(`${UNDER} > *`)).toMatch(/max-inline-size:\s*100%/);
   });
@@ -494,13 +497,10 @@ describe("Ask {persona}'s rules", () => {
     /\/\*[\s\S]*?\*\//g,
     "",
   );
-  const rule = (selector: string) =>
-    new RegExp(`(^|[},])\\s*${selector}\\s*\\{([^}]*)\\}`).exec(css)?.[2] ?? "";
 
   it("draws the box you write in as every list field: the row's width, growing with its lines", () => {
     // The shared list field (DS-10, `ListField.test.tsx`) is the whole of it: no rule of the
     // dialog's own sizes it.
-    expect(rule("\\.ask-persona \\.ui-setting-control > textarea\\.ui-field")).toBe("");
     expect(css).not.toMatch(/\.ask-persona[^{]*textarea/);
   });
 

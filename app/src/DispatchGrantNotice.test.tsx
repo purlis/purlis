@@ -480,7 +480,7 @@ describe("the dispatch grant Notice", () => {
       "block-report",
     ]);
     expect(under?.children[1]).toHaveAttribute("data-scope", "card");
-    expect(boxes).toHaveClass("ui-choice-checks");
+    expect(boxes).toHaveAttribute("data-scope", "checkbox-group");
     expect(boxes.parentElement).toHaveClass("dispatch-also");
     expect(access).toHaveClass("dispatch-works-with");
     expect(access.parentElement).toHaveClass("dispatch-also");
