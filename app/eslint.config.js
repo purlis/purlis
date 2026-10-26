@@ -104,6 +104,7 @@ export default tseslint.config(
       "purlis/notice-family": "error",
       "purlis/badge-family": "error",
       "purlis/separator-family": "error",
+      "purlis/panel-separator-family": "error",
     },
   },
   // **The tablists still drawn by hand**, each until the ticket that moves it onto the tabs

@@ -6,6 +6,7 @@ import { NamedNotRead } from "./ExplorerRefused";
 import { Notice } from "./Notice";
 import {
   useEffect,
+  useContext,
   useId,
   useMemo,
   useRef,
@@ -65,6 +66,7 @@ import { Button, ToggleButton } from "./ui/button/Button";
 import { TextField } from "./ui/field/Field";
 import { PanelSectionTitle } from "./ui/panel/Panel";
 import { Count } from "./ui/badge/Badge";
+import { HeadActions } from "./viewHead";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
@@ -1214,17 +1216,21 @@ function Section({
   closed: boolean;
   /** The project whose sections these are: a fold is kept for it (B-11). */
   project: string | undefined;
-  /** A view's own title rather than a fold (#1737): the Repos view's, in the Panel. */
+  /** A view's own title rather than a fold (#1737): the Repos view's, in the Panel. Its region's
+   *  head is that title where there is one (#3330), so it draws none of its own there. */
   bare?: boolean;
   children: ReactNode;
 }) {
   const body = useId();
+  const headed = useContext(HeadActions) !== undefined;
   if (bare) {
     return (
       <div className="explorer-section" data-section={id}>
-        <PanelSectionTitle className="explorer-section-head" mark={FolderGit2}>
-          {title}
-        </PanelSectionTitle>
+        {!headed && (
+          <PanelSectionTitle className="explorer-section-head" mark={FolderGit2}>
+            {title}
+          </PanelSectionTitle>
+        )}
         <div id={body} className="explorer-section-body">
           {children}
         </div>

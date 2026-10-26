@@ -29,7 +29,8 @@ export const purlisUi: {
     | "card-family"
     | "notice-family"
     | "badge-family"
-    | "separator-family",
+    | "separator-family"
+    | "panel-separator-family",
     Rule.RuleModule
   >;
 };

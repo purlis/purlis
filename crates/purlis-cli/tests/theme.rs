@@ -2188,37 +2188,19 @@ fn theme_parts_prints_every_family_part_state_and_property_as_json() {
         "<family>.<part>[.<variant>][.<state>].<property>"
     );
     assert_eq!(json["families"][0]["name"], "button");
-    // The window's own families (#2913), the tooltip (#2908), the popover and the menu (#2909),
-    // the project rail (#2915), the list (#2911), the title bar's pinned workspaces (#2916),
-    // the select and the combobox (#2906), and the choices (#2907).
+    // Every family the engine has, in its order: the CLI prints the manifest and adds or drops
+    // none. Derived from it, so a pull request that adds a family touches no line here.
     let names: Vec<&str> = json["families"]
         .as_array()
         .unwrap()
         .iter()
         .filter_map(|one| one["name"].as_str())
         .collect();
-    // And the activity items of the four corners (#2917).
-    for family in [
-        "panel",
-        "panel-section",
-        "empty-state",
-        "status-item",
-        "tooltip",
-        "popover",
-        "menu",
-        "rail",
-        "activity",
-        "list",
-        "titlebar",
-        "select",
-        "combobox",
-        "checkbox",
-        "switch",
-        "segment",
-        "option-card",
-    ] {
-        assert!(names.contains(&family), "{family}: {names:?}");
-    }
+    let manifest: Vec<&str> = purlis_core::theme::parts::MANIFEST
+        .iter()
+        .map(|one| one.name)
+        .collect();
+    assert_eq!(names, manifest);
     let corner = json["properties"]
         .as_array()
         .unwrap()

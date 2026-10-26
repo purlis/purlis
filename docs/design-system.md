@@ -182,6 +182,15 @@ The one exemption is `terminal.ansi.black`, held to 1.5:1 — ANSI black on a da
 in every theme there has ever been, because it is the colour a program picks when it means
 _recede_; it still has to be visible, and purlis-dark measures 2.13:1.
 
+**A state's colour or the danger colour drawn as a part's words is held as words**, at 4.5:1, not
+at a mark's 3:1 (#3041, #3254): a warning button's words, a badge's or a count's digits, a danger
+answer's words, a danger menu row's and a field's error. `parts/state_words_tests.rs` walks the
+parts manifest and fails on one with no pair, in every look the window draws: at rest, under the
+pointer, pressed as a toggle and open (#3255). A look the window never draws is left out, by the
+manifest's `DRAWN_ONLY` (a danger button is never a toggle, a danger row never opens a submenu),
+and a part drawn on fewer grounds than its family is read on those, by `PART_GROUNDS` (a field's
+error only under a field that can refuse). An app guard holds each list to the components.
+
 **The pairs are read from the stylesheets too** (DS-6, #629). A rule in `App.css` or
 `styles.css` that sets one token as its text and another as its background draws one on the
 other, and `contrast.test.ts` fails, naming the rule, until that pair is in the engine's list
