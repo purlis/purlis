@@ -318,6 +318,11 @@ impl Profile {
                         && !reach.serves.contains(path)
                     {
                         reach.serves.push(path.clone());
+                        // The supervisor makes the socket there, and takes away one a server
+                        // left: the folder's, whether or not the socket is there yet.
+                        if let Some(folder) = path.parent() {
+                            add(folder.to_path_buf(), &mut reach);
+                        }
                     }
                 }
             }

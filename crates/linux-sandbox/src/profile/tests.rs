@@ -252,6 +252,13 @@ fn a_chat_binds_the_one_socket_it_serves_on() {
         profile.reach().serves,
         vec![Path::new(socket).to_path_buf()]
     );
+    // Its folder is written by the supervisor's own rules, whether or not the socket is there.
+    assert!(
+        profile
+            .reach()
+            .written
+            .contains(&Path::new("/data/serve/chat-1").to_path_buf())
+    );
     assert!(!read(FULL).allows(&Op::BindUnix(Path::new(socket))));
     for text in [
         "(version 1)\n(allow network-bind (local unix-socket (subpath \"/data\")))\n",

@@ -125,7 +125,8 @@ try {
     if (answer.status !== 200) fail(`the socket answered ${answer.status}: ${answer.body}`);
     else if (!answer.body.includes(`${kind} ok`)) fail(`the page was not the fixture's: ${answer.body}`);
     if (await tcpListens()) fail(`something listens on TCP port ${port}`);
-    const said = seen.join("");
+    // What the server printed, without its colours.
+    const said = seen.join("").replace(/\x1b\[[0-9;]*m/g, "");
     if (kind === "plain" && !said.includes(`"port":${port}`)) fail(`address() did not say the port`);
     if (kind === "vite" && !said.includes(`localhost:${port}`)) fail(`Vite did not print the port`);
   }

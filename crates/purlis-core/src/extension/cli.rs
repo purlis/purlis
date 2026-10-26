@@ -53,6 +53,7 @@ pub const CORE_WORDS: [&str; 48] = [
     "help",
     "hook",
     "init",
+    "listen",
     "mcp",
     "migrate",
     "news",
