@@ -357,6 +357,7 @@ fn a_skills_folder_a_running_chat_uses_is_kept_and_removed_once_the_chat_has_end
             sandbox: None,
             persona: None,
             env: &[],
+            graded: false,
         },
     )
     .unwrap();
@@ -1180,6 +1181,7 @@ fn a_try_chat_turns_off_the_skills_of_its_profiles_own_config_folder() {
                 sandbox: None,
                 persona: None,
                 env: &env,
+                graded: false,
             },
         )
         .unwrap()
@@ -1190,6 +1192,61 @@ fn a_try_chat_turns_off_the_skills_of_its_profiles_own_config_folder() {
     assert!(in_the_piece.contains("skillOverrides"), "{in_the_piece}");
     assert!(in_the_piece.contains("profiles-own"), "{in_the_piece}");
     assert!(!armed_in(&plane).contains("profiles-own"));
+}
+
+/// SK-16 (the review of #3229): whether a chat is held to a grade's MCP limits is the start's
+/// word alone, and a start whose word and folder disagree is refused rather than started armed
+/// as an ordinary chat.
+#[test]
+fn a_grades_limits_follow_the_start_and_a_mismatch_with_its_folder_refuses() {
+    crate::unsteered!();
+    let tmp = tempfile::tempdir().unwrap();
+    let (plane, kit) = a_host_on(tmp.path());
+    std::fs::write(plane.join("charter.toml"), "schema = 1\n").unwrap();
+    let copy = verbs::drafts::Snapshot {
+        name: "deploy".to_owned(),
+        files: [(
+            "SKILL.md".to_owned(),
+            "---\nname: deploy\ndescription: Ships.\n---\n\nbody\n".to_owned(),
+        )]
+        .into_iter()
+        .collect(),
+    };
+    let arm = verbs::drafts::lay_out_arm(&plane, Some(&copy)).unwrap();
+    let armed = |cwd: &Path, graded: bool, harness: Harness| {
+        crate::hoststart::armed_as(
+            true,
+            &crate::hoststart::Arming {
+                root: &plane,
+                kit: &kit,
+                harness: Some(harness),
+                cwd: Some(cwd),
+                plugins: &crate::harness_plugin::Chosen::new(),
+                sandbox: None,
+                persona: None,
+                env: &[],
+                graded,
+            },
+        )
+        .map(|(args, _)| args.join(" "))
+    };
+    let graded = armed(&arm.piece, true, Harness::ClaudeCode).unwrap();
+    assert!(graded.contains("--strict-mcp-config"), "{graded}");
+    assert!(graded.contains(crate::chattools::GRADED_ARG), "{graded}");
+    assert!(
+        armed(&arm.piece, false, Harness::ClaudeCode).is_err(),
+        "an ordinary start in a grade's folder is refused"
+    );
+    assert!(
+        armed(&plane, true, Harness::ClaudeCode).is_err(),
+        "a grade's start outside a grade's folder is refused"
+    );
+    assert!(
+        armed(&arm.piece, true, Harness::Codex).is_err(),
+        "a grade's start on a program it cannot be held on is refused"
+    );
+    let ordinary = armed(&plane, false, Harness::ClaudeCode).unwrap();
+    assert!(!ordinary.contains("--strict-mcp-config"), "{ordinary}");
 }
 
 #[test]

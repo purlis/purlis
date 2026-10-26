@@ -1155,13 +1155,14 @@ fn grade_said(
             }
             text.push_str(&format!(
                 "A grade stops once its chats have spent {} ({}; [skill_grades] token_cap in {} \
-                 sets it).\n",
+                 sets it), or once they cost ${:.2}, where the harness says what they cost.\n",
                 counted(planned.cap.tokens, "token", "tokens"),
                 match planned.cap.from {
                     purlis_core::skills::grades::cap::From::Default => "the default",
                     purlis_core::skills::grades::cap::From::Yours => "this machine's cap",
                 },
                 local_file,
+                planned.cap.cost_usd(),
             ));
             text.push_str("Grade it from its tab in the Skill studio, which shows this first.\n");
         }

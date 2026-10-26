@@ -391,7 +391,7 @@ fn grades_blocks(grades: &[super::grades::Graded], skill: &str) -> Vec<Block> {
                 cells: vec![
                     said_at(&graded.ts),
                     match (&graded.commit, graded.content()) {
-                        (Some(commit), _) => commit.chars().take(7).collect(),
+                        (Some(commit), _) => super::history::short(commit).to_owned(),
                         (None, Some(crate::skilluse::Content::Uncommitted)) => {
                             "Changes not saved".to_owned()
                         }

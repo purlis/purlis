@@ -166,6 +166,50 @@ fn a_grades_chat_loads_purlis_s_server_alone_with_its_read_tools() {
     );
 }
 
+/// SK-16 (the review of #3229): a grade's chat starts no sub-agent, whose spend its chat would
+/// not report; any other chat may.
+#[test]
+fn a_grades_chat_is_denied_the_tools_that_start_a_sub_agent() {
+    let empty = tempfile::tempdir().expect("a directory");
+    let denied = |graded: bool| {
+        let StateHooks::ThisSessionOnly { args, .. } = adapter().arm(
+            Kit {
+                skills: None,
+                binary: std::path::Path::new("/bin/charter"),
+                plugin: Some(std::path::Path::new("/app/plugin")),
+                persona: None,
+                graded,
+            },
+            Some(empty.path()),
+            &crate::harness_plugin::Chosen::new(),
+            None,
+        ) else {
+            panic!("armed per session");
+        };
+        let at = args
+            .iter()
+            .position(|arg| arg == "--settings")
+            .expect("--settings");
+        let settings: serde_json::Value = serde_json::from_str(&args[at + 1]).expect("JSON");
+        settings["permissions"]["deny"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+    };
+    let graded = denied(true);
+    for tool in ["Task", "Agent"] {
+        assert!(
+            graded.contains(&serde_json::json!(tool)),
+            "{tool}: {graded:?}"
+        );
+    }
+    let ordinary = denied(false);
+    assert!(
+        !ordinary.contains(&serde_json::json!("Task")),
+        "{ordinary:?}"
+    );
+}
+
 #[test]
 fn a_claude_code_chat_is_handed_charter_s_mcp_server_for_that_chat_alone() {
     // HP-7: `--mcp-config` loads a server for this session and writes nothing.
@@ -447,17 +491,11 @@ fn started_in(manifest: &str, project: Option<&str>) -> (Vec<String>, serde_json
         home: None,
         os: crate::sandbox::Os::MacOs,
     };
-    let applied = match crate::sandbox::decide(
-        Harness::ClaudeCode,
-        &root,
-        &machine,
-        &|_| true,
-        None,
-        None,
-    ) {
-        Ok(Some(crate::sandbox::Decided::Sandboxed(applied))) if !off => Some(applied),
-        _ => None,
-    };
+    let applied =
+        match crate::sandbox::decide(Harness::ClaudeCode, &root, &machine, &|_| true, None, None) {
+            Ok(Some(crate::sandbox::Decided::Sandboxed(applied))) if !off => Some(applied),
+            _ => None,
+        };
     let StateHooks::ThisSessionOnly { args, .. } = adapter().arm(
         Kit {
             skills: None,

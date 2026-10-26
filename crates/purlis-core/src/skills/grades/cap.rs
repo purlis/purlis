@@ -1,12 +1,17 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **The token cap a grade is held to** (#2779; the operator's ruling of 2026-10-26 on #3229,
-//! ADR 0105 as amended that day): `[skill_grades] token_cap` in this machine's
-//! `charter.local.toml`, [`DEFAULT`] where it is not set. The person who pays for a grade's
-//! chats sets it, so it lives in the file that is theirs alone, never in the committed one. The
-//! plan says it before Grade is pressed, and a grade that reaches it stops its running chat,
-//! starts no more, and says what it spent.
+//! **The token cap a grade is held to** (#2779; ADR 0105 §4, confirmed 2026-10-26):
+//! `[skill_grades] token_cap` in this machine's local settings file, [`DEFAULT`] where it is not
+//! set. The person who pays for a grade's chats sets it, so it lives in the file that is theirs
+//! alone, never in the committed one. The plan says it before Grade is pressed, and a grade that
+//! reaches it stops its running chat, starts no more, and says what it spent.
+//!
+//! **A cost bound besides** ([`Cap::cost_usd`]): the cap's tokens at the dearest price any model
+//! a grade can run on charges for one ([`DEAREST_USD_PER_MILLION`]). Where the harness says what a
+//! chat cost, a grade stops at it too, so what a harness spends past the tokens it reports (a
+//! cache, a sub-agent) is still held. It never stops a grade before the token cap whose tokens
+//! were all reported.
 
 use std::path::Path;
 
@@ -35,11 +40,25 @@ pub enum From {
     Yours,
 }
 
+/// The dearest price, in dollars a million tokens, that any model a grade's chats can run on
+/// charges for a token of any kind: Claude Opus 4 and 4.1's output. The cost bound is the cap's
+/// tokens at this price, so it is never the tighter of the two for a chat that reported its
+/// tokens.
+pub const DEAREST_USD_PER_MILLION: f64 = 75.0;
+
 /// The cap a grade is held to, and where it comes from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub struct Cap {
     pub tokens: u64,
     pub from: From,
+}
+
+impl Cap {
+    /// **The cost a grade held to this cap may reach**, where its harness says what its chats
+    /// cost: the cap's tokens at [`DEAREST_USD_PER_MILLION`].
+    pub fn cost_usd(&self) -> f64 {
+        self.tokens as f64 * DEAREST_USD_PER_MILLION / 1_000_000.0
+    }
 }
 
 /// The cap `value` says, or the sentence saying why it is not one.
@@ -74,7 +93,7 @@ pub fn token_cap(root: &Path) -> Cap {
         .get(TABLE)
         .and_then(toml::Value::as_table)
         .and_then(|table| table.get(KEY))
-        .map(|value| of_value(value, Which::Local.file()))
+        .map(|value| of_value(value, Which::Local.file_at(root)))
     {
         Some(Ok(tokens)) => Cap {
             tokens,
@@ -84,22 +103,23 @@ pub fn token_cap(root: &Path) -> Cap {
     }
 }
 
-/// **What `text`, the settings file `file`, says wrong of [`TABLE`]**: a table that is not one, a
-/// key it does not know, a cap out of bounds, or the table in the committed file, where a
-/// teammate's push would set what this machine's chats may spend.
-pub fn keyed(text: &str, file: &str) -> Vec<Refusal> {
+/// **What `text`, the settings file `which` of the project at `root`, says wrong of [`TABLE`]**:
+/// a table that is not one, a key it does not know, a cap out of bounds, or the table in the
+/// committed file, where a teammate's push would set what this machine's chats may spend.
+pub fn keyed_at(root: &Path, text: &str, which: Which) -> Vec<Refusal> {
+    let file = which.file_at(root);
     let Ok(top) = text.parse::<toml::Table>() else {
         return Vec::new();
     };
     let Some(value) = top.get(TABLE) else {
         return Vec::new();
     };
-    if file != Which::Local.file() {
+    if which != Which::Local {
         return vec![Refusal::at(
             format!(
                 "[{TABLE}] in {file} is not read: a grade's cap is what this machine spends, so \
                  it is set in {} alone",
-                Which::Local.file()
+                Which::Local.file_at(root)
             ),
             &[TABLE],
         )];
@@ -136,15 +156,13 @@ pub fn set_token_cap(root: &Path, tokens: u64) -> Result<Cap, String> {
              changed."
         ));
     }
-    let path = root.join(Which::Local.file_at(root));
+    let file = Which::Local.file_at(root);
+    let path = root.join(file);
     let base = match std::fs::read_to_string(&path) {
         Ok(text) => Some(text),
         Err(why) if why.kind() == std::io::ErrorKind::NotFound => None,
         Err(why) => {
-            return Err(format!(
-                "{} could not be read ({why}).",
-                Which::Local.file()
-            ));
+            return Err(format!("{file} could not be read ({why})."));
         }
     };
     let mut doc: toml_edit::DocumentMut =
@@ -153,8 +171,7 @@ pub fn set_token_cap(root: &Path, tokens: u64) -> Result<Cap, String> {
             .parse()
             .map_err(|why: toml_edit::TomlError| {
                 format!(
-                    "{} is not valid TOML ({}), so nothing was changed.",
-                    Which::Local.file(),
+                    "{file} is not valid TOML ({}), so nothing was changed.",
                     crate::shown::short(why.message())
                 )
             })?;
@@ -163,8 +180,7 @@ pub fn set_token_cap(root: &Path, tokens: u64) -> Result<Cap, String> {
         .or_insert_with(|| toml_edit::Item::Table(toml_edit::Table::new()));
     let Some(table) = table.as_table_mut() else {
         return Err(format!(
-            "[{TABLE}] in {} is not a table, so nothing was changed.",
-            Which::Local.file()
+            "[{TABLE}] in {file} is not a table, so nothing was changed."
         ));
     };
     table[KEY] = toml_edit::value(i64::try_from(tokens).unwrap_or(i64::MAX));

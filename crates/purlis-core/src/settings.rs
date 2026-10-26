@@ -481,7 +481,7 @@ fn keyed_read_refusals(root: &Path, which: Which, text: &str) -> Vec<Refusal> {
     // lower, in Local. A depth above its ceiling is refused here.
     out.extend(crate::dispatchlimits::keyed(text, file));
     // And `[skill_grades]` (#2779), a grade's token cap: this machine's alone, in Local.
-    out.extend(crate::skills::grades::cap::keyed(text, file));
+    out.extend(crate::skills::grades::cap::keyed_at(root, text, which));
     // And so may `[plane]` and `[repos]` (charter-app#292), read by `planesave` in both.
     out.extend(crate::planesave::keyed(text, which == Which::Local, file));
     out

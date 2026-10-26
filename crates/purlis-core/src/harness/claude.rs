@@ -116,6 +116,7 @@ impl HarnessAdapter for ClaudeCode {
                         sandbox,
                         &denied_tools(kit),
                         screened.as_ref(),
+                        kit.graded,
                     ),
                 ]),
             ]
@@ -422,6 +423,7 @@ fn settings(
     sandbox: Option<&crate::sandbox::claude::Settings>,
     denied_tools: &[String],
     screened: Option<&project::Screened>,
+    graded: bool,
 ) -> String {
     let mut settings = serde_json::Map::new();
     // The project's own choice of Claude Code's plugins first (charter-app#274, ADR 0050): a
@@ -590,6 +592,11 @@ fn settings(
         rules.extend(twins.into_iter().map(serde_json::Value::String));
         permissions[bucket] = serde_json::Value::Array(rules);
     }
+    // **A grade's chat keeps its permission prompts** (SK-16): its mode is the default one
+    // whatever the person's own settings set, as a session's settings outrank theirs.
+    if graded {
+        permissions["defaultMode"] = serde_json::json!(DEFAULT_MODE);
+    }
     settings.insert("permissions".to_owned(), permissions);
     settings.insert("hooks".to_owned(), permission_hook(binary));
     serde_json::Value::Object(settings).to_string()
@@ -621,10 +628,53 @@ fn mcp_config(kit: Kit<'_>) -> String {
 
 /// The tools the chat's persona denies it ([`crate::personaverbs::chatstart::denied_tools`]).
 fn denied_tools(kit: Kit<'_>) -> Vec<String> {
-    kit.persona.map_or_else(Vec::new, |of| {
+    let mut denied = kit.persona.map_or_else(Vec::new, |of| {
         crate::personaverbs::chatstart::denied_tools(of.root, of.persona)
-    })
+    });
+    // A grade's chat starts no sub-agent (SK-16, the review of #3229): what a sub-agent spends
+    // is not in the tokens its chat reports, so a grade could pass its cap unseen.
+    if kit.graded {
+        denied.extend(SUB_AGENT_TOOLS.map(str::to_owned));
+    }
+    denied
 }
+
+/// Claude Code's permission mode that asks before each tool its rules do not allow.
+const DEFAULT_MODE: &str = "default";
+
+/// The permission mode that asks for nothing.
+const BYPASS_MODE: &str = "bypassPermissions";
+
+/// The most of a person's own Claude Code settings read.
+pub const MOST_SETTINGS_BYTES: usize = 1024 * 1024;
+
+/// **Whether a person's own Claude Code settings, `text`, start every chat with its permission
+/// prompts off** (`permissions.defaultMode: bypassPermissions`), read with a JSON parser. `Err`
+/// for a text that does not read as Claude Code's settings, which a caller refuses on: what it
+/// says cannot be known (the review of #3229).
+pub fn bypass_by_default(text: &str) -> Result<bool, ()> {
+    if text.len() > MOST_SETTINGS_BYTES {
+        return Err(());
+    }
+    if text.trim().is_empty() {
+        return Ok(false);
+    }
+    let doc: serde_json::Value = serde_json::from_str(text).map_err(drop)?;
+    let top = doc.as_object().ok_or(())?;
+    let Some(permissions) = top.get("permissions") else {
+        return Ok(false);
+    };
+    let permissions = permissions.as_object().ok_or(())?;
+    match permissions.get("defaultMode") {
+        None => Ok(false),
+        Some(serde_json::Value::String(mode)) => Ok(mode == BYPASS_MODE),
+        Some(_) => Err(()),
+    }
+}
+
+/// **Claude Code's tools that start a sub-agent**: `Task`, by the name it has had, and `Agent`,
+/// the name newer versions give it. A grade's chat is denied both.
+const SUB_AGENT_TOOLS: [&str; 2] = ["Task", "Agent"];
 
 /// The Claude Code settings files a chat at `cwd` reads from its project: `.claude/settings.json`
 /// and `.claude/settings.local.json` in `cwd` and in each folder above it, up to the nearer of

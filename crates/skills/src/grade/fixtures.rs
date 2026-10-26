@@ -441,7 +441,7 @@ fn prompt_of(
 
 /// **The trigger tests in `text`**, a `triggers.json`: skill-creator's array of
 /// `{query, should_trigger}`, at most [`MOST_TRIGGER_TESTS`], no query twice.
-pub fn triggers_of(text: &str) -> Result<Vec<TriggerTest>, Refused> {
+fn triggers_of(text: &str) -> Result<Vec<TriggerTest>, Refused> {
     const FILE: FixtureFile = FixtureFile::Triggers;
     let doc = json_of(text, FILE)?;
     let list = doc
@@ -486,7 +486,7 @@ pub fn triggers_of(text: &str) -> Result<Vec<TriggerTest>, Refused> {
 /// **The outcome evals in `text`**, an `evals.json` of the skill `name`: skill-creator's
 /// `{skill_name, evals}`, at most [`MOST_OUTCOME_EVALS`], each id once, `expectations` or
 /// `assertions` but not both.
-pub fn outcomes_of(text: &str, name: &str) -> Result<Vec<OutcomeEval>, Refused> {
+fn outcomes_of(text: &str, name: &str) -> Result<Vec<OutcomeEval>, Refused> {
     const FILE: FixtureFile = FixtureFile::Outcomes;
     let doc = json_of(text, FILE)?;
     let top = doc

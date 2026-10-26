@@ -27,8 +27,7 @@ mod fixtures;
 pub use fixtures::{
     EVALS_DIR, FixtureFile, Fixtures, MOST_EVAL_FILES, MOST_EXPECTATION_BYTES, MOST_EXPECTATIONS,
     MOST_FIXTURE_BYTES, MOST_OUTCOME_EVALS, MOST_PROMPT_BYTES, MOST_TRIGGER_TESTS, OUTCOME_FILE,
-    OutcomeEval, Read, Refused, TRIGGER_FILE, TriggerTest, Wrong, fixtures_of, outcomes_of,
-    triggers_of,
+    OutcomeEval, Read, Refused, TRIGGER_FILE, TriggerTest, Wrong, fixtures_of,
 };
 
 /// How many times each fixture runs in each arm: skill-creator's and `claude plugin eval`'s
@@ -60,15 +59,6 @@ pub enum Arm {
 }
 
 impl Arm {
-    /// The word a record and a message carry: `with`, `without` or `previous`.
-    pub fn word(self) -> &'static str {
-        match self {
-            Self::With => "with",
-            Self::Without => "without",
-            Self::Previous => "previous",
-        }
-    }
-
     /// Whether this arm has the skill in it, as it is or as it was.
     pub fn has_the_skill(self) -> bool {
         !matches!(self, Self::Without)
@@ -289,6 +279,20 @@ pub struct GradeReport {
     /// The cap it was held to, and the tokens its chats spent, where they said.
     pub cap: Option<u64>,
     pub spent_tokens: Option<u64>,
+    /// The cost it was held to besides, and what its chats cost in all, where their harness
+    /// said: a second bound, for what a harness spends past the tokens it reports.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cost_cap_usd: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spent_usd: Option<f64>,
+}
+
+/// **What a grade may spend**: a cap in tokens, and a cost in dollars besides where one is set.
+/// It reaches its end at whichever it reaches first ([`GradeEnd::OverCap`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Limits {
+    pub tokens: u64,
+    pub cost_usd: Option<f64>,
 }
 
 impl GradeReport {
@@ -315,11 +319,14 @@ impl GradeReport {
 
 /// **Grades `request` with purlis's built-in runner**, asking `chats` for every chat: each run in
 /// turn, every trigger test in it, every arm for each, so a grade the person stops has scored
-/// every arm alike so far. Held to `cap` tokens where one is given: each chat is told what is
-/// left, the grade stops at the cap, and a chat that does not say what it spent stops it too, as
-/// the cap could not be held after it. Outcome evals are shown and not run by this runner (#3235): [`Plan`] says how
+/// every arm alike so far. Held to `limits` where they are given: each chat is told the tokens
+/// left, the grade stops at the cap or at the cost bound, whichever comes first, and a chat that
+/// started and did not say what it spent stops it too, however it ended, as the cap could not be
+/// held after it. Outcome evals are shown and not run by this runner (#3235): [`Plan`] says how
 /// many wait.
-pub fn grade(request: &GradeRequest, chats: &mut dyn Chats, cap: Option<u64>) -> GradeReport {
+pub fn grade(request: &GradeRequest, chats: &mut dyn Chats, limits: Option<Limits>) -> GradeReport {
+    let cap = limits.map(|limits| limits.tokens);
+    let cost_cap = limits.and_then(|limits| limits.cost_usd);
     let skill = request.skill.as_str();
     // ran[test][arm] = each run's result, in run order.
     let mut ran: Vec<Vec<Vec<ChatRan>>> =
@@ -328,6 +335,7 @@ pub fn grade(request: &GradeRequest, chats: &mut dyn Chats, cap: Option<u64>) ->
     let mut not_started_in_a_row = 0u32;
     let mut not_started: Option<String> = None;
     let mut spent: Option<u64> = None;
+    let mut spent_usd: Option<f64> = None;
     'runs: for _run in 0..request.runs {
         for (t, test) in request.triggers.iter().enumerate() {
             for (a, arm) in request.arms.iter().enumerate() {
@@ -336,7 +344,8 @@ pub fn grade(request: &GradeRequest, chats: &mut dyn Chats, cap: Option<u64>) ->
                     break 'runs;
                 }
                 let left = cap.map(|cap| cap.saturating_sub(spent.unwrap_or(0)));
-                if left == Some(0) {
+                let cost_left = cost_cap.map(|cost_cap| cost_cap - spent_usd.unwrap_or(0.0));
+                if left == Some(0) || cost_left.is_some_and(|left| left <= 0.0) {
                     ended = GradeEnd::OverCap;
                     break 'runs;
                 }
@@ -350,32 +359,43 @@ pub fn grade(request: &GradeRequest, chats: &mut dyn Chats, cap: Option<u64>) ->
                 if let Some(tokens) = result.tokens {
                     spent = Some(spent.unwrap_or(0).saturating_add(tokens));
                 }
-                match &result.end {
+                if let Some(cost) = result
+                    .cost_usd
+                    .filter(|cost| cost.is_finite() && *cost >= 0.0)
+                {
+                    spent_usd = Some(spent_usd.unwrap_or(0.0) + cost);
+                }
+                // A chat that started and did not say what it spent stops a capped grade,
+                // however it ended: an ask, a Stop or the cap itself spends as a turn does, and
+                // the cap cannot be held after a chat whose spend is unknown.
+                let unreported = cap.is_some()
+                    && !matches!(result.end, ChatEnd::NotStarted { .. })
+                    && result.tokens.is_none();
+                let stop = match &result.end {
                     ChatEnd::NotStarted { why } => {
                         not_started_in_a_row += 1;
                         not_started = Some(why.clone());
+                        None
                     }
-                    ChatEnd::Cancelled => {
-                        ran[t][a].push(result);
-                        ended = GradeEnd::Cancelled;
-                        break 'runs;
-                    }
-                    ChatEnd::OverCap => {
-                        ran[t][a].push(result);
-                        ended = GradeEnd::OverCap;
-                        break 'runs;
-                    }
+                    ChatEnd::Cancelled => Some(GradeEnd::Cancelled),
+                    ChatEnd::OverCap => Some(GradeEnd::OverCap),
                     ChatEnd::Turn | ChatEnd::TimedOut | ChatEnd::Asked => {
                         not_started_in_a_row = 0;
+                        None
                     }
-                }
-                let unreported = cap.is_some() && result.ran() && result.tokens.is_none();
+                };
                 ran[t][a].push(result);
                 if unreported {
                     ended = GradeEnd::SpendNotReported;
                     break 'runs;
                 }
-                if cap.is_some_and(|cap| spent.unwrap_or(0) >= cap) {
+                if let Some(stop) = stop {
+                    ended = stop;
+                    break 'runs;
+                }
+                if cap.is_some_and(|cap| spent.unwrap_or(0) >= cap)
+                    || cost_cap.is_some_and(|cost_cap| spent_usd.unwrap_or(0.0) >= cost_cap)
+                {
                     ended = GradeEnd::OverCap;
                     break 'runs;
                 }
@@ -475,6 +495,8 @@ pub fn grade(request: &GradeRequest, chats: &mut dyn Chats, cap: Option<u64>) ->
             .flatten(),
         cap,
         spent_tokens: spent,
+        cost_cap_usd: cost_cap,
+        spent_usd,
     }
 }
 

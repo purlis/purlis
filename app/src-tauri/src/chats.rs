@@ -1359,6 +1359,9 @@ impl Chats {
     /// `persona` is the persona the chat runs as, which a harness that can is handed the MCP
     /// servers and the denied tools of (#1451, `purlis_core::personaverbs::chatstart`).
     ///
+    /// `graded` is whether it is a grade's chat (SK-16), as its record says: what holds it to
+    /// purlis's server and read tools alone (`purlis_core::hoststart::Arming::graded`).
+    ///
     /// **Fail closed.** A sandbox compiled for another harness, or one the harness is not armed
     /// to carry here (the app shipped without its plugin or its binary), refuses the chat rather
     /// than starting it without the sandbox.
@@ -1370,6 +1373,7 @@ impl Chats {
         sandbox: Option<&purlis_core::sandbox::Applied>,
         persona: Option<&str>,
         env: &[(String, String)],
+        graded: bool,
     ) -> Result<Armed, String> {
         purlis_core::hoststart::armed(&purlis_core::hoststart::Arming {
             root: &self.project,
@@ -1380,6 +1384,7 @@ impl Chats {
             sandbox,
             persona,
             env,
+            graded,
         })
     }
 
@@ -3145,6 +3150,15 @@ impl Chats {
             && self
                 .sessions
                 .composes_its_harness_chats_in(workspace.as_deref());
+        // A grade's chat is armed here, with its limits, or not at all (SK-16): a runner
+        // composes its own line, and would start it with none of them.
+        if on_the_runner && chat.graded {
+            return Err(
+                "A grade's chat runs on this machine alone, and this project's chats are started \
+                 by a runner, so nothing was started."
+                    .to_owned(),
+            );
+        }
         // The services of this machine the person allowed it alone, which the runner is told
         // of: it leaves out those its own sandbox does not give, and asks about each (#2590).
         let alone = sandbox
@@ -3380,6 +3394,8 @@ impl Chats {
                 sandbox,
                 runs_as.as_deref(),
                 &env,
+                // A grade's chat, as its record says (SK-16): the one word its limits take.
+                chat.graded,
             )?
         };
         let hooks = match &settings_watched {

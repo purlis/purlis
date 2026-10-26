@@ -61,6 +61,14 @@ impl Chats for Scripted {
     }
 }
 
+/// A cap of `tokens` alone.
+fn tokens(tokens: u64) -> Limits {
+    Limits {
+        tokens,
+        cost_usd: None,
+    }
+}
+
 fn request() -> GradeRequest {
     GradeRequest {
         skill: "pdf".into(),
@@ -260,7 +268,7 @@ fn the_four_messages_are_spelled_as_the_adr_says() {
 #[test]
 fn a_grade_stops_at_its_token_cap_and_says_what_it_spent() {
     let mut host = Scripted::of(a_good_skill);
-    let report = grade(&request(), &mut host, Some(3500));
+    let report = grade(&request(), &mut host, Some(tokens(3500)));
     assert_eq!(
         host.asked.len(),
         4,
@@ -293,7 +301,7 @@ fn a_chat_the_host_ended_at_the_cap_is_no_run_and_ends_the_grade() {
             false
         }
     }
-    let report = grade(&request(), &mut AtTheCap, Some(2000));
+    let report = grade(&request(), &mut AtTheCap, Some(tokens(2000)));
     assert_eq!(report.ended, GradeEnd::OverCap);
     assert_eq!(report.spent_tokens, Some(2001));
     let with = report.arm(Arm::With).unwrap();
@@ -304,7 +312,7 @@ fn a_chat_the_host_ended_at_the_cap_is_no_run_and_ends_the_grade() {
 fn a_chat_that_does_not_say_what_it_spent_stops_a_capped_grade() {
     let mut host = Scripted::of(a_good_skill);
     host.tokens = None;
-    let report = grade(&request(), &mut host, Some(200_000));
+    let report = grade(&request(), &mut host, Some(tokens(200_000)));
     assert_eq!(host.asked.len(), 1);
     assert_eq!(report.ended, GradeEnd::SpendNotReported);
 
@@ -347,4 +355,83 @@ fn a_chat_that_asked_the_person_is_no_run_and_the_grade_goes_on() {
         "an ask is never a test that did not trigger: {report:?}"
     );
     assert_eq!(report.arm(Arm::With).unwrap().not_run, 6);
+}
+
+/// A host whose every chat started, ended as `end`, and said nothing of what it spent.
+struct Silent(ChatEnd, usize);
+
+impl Chats for Silent {
+    fn run(&mut self, _: &RunChat, _: Option<u64>) -> ChatRan {
+        self.1 += 1;
+        ChatRan {
+            chat: Some("01".into()),
+            started: Vec::new(),
+            tokens: None,
+            cost_usd: None,
+            ms: 10,
+            end: self.0.clone(),
+        }
+    }
+    fn cancelled(&self) -> bool {
+        false
+    }
+}
+
+#[test]
+fn a_started_chat_that_says_nothing_of_its_spend_stops_a_capped_grade_however_it_ended() {
+    for end in [
+        ChatEnd::Turn,
+        ChatEnd::TimedOut,
+        ChatEnd::Asked,
+        ChatEnd::OverCap,
+        ChatEnd::Cancelled,
+    ] {
+        let mut host = Silent(end.clone(), 0);
+        let report = grade(&request(), &mut host, Some(tokens(200_000)));
+        assert_eq!(host.1, 1, "{end:?}: no chat after it");
+        assert_eq!(report.ended, GradeEnd::SpendNotReported, "{end:?}");
+    }
+    // One that never started spent nothing, and the grade goes on to the next.
+    let mut host = Silent(
+        ChatEnd::NotStarted {
+            why: "signed out".into(),
+        },
+        0,
+    );
+    let report = grade(&request(), &mut host, Some(tokens(200_000)));
+    assert_eq!(report.ended, GradeEnd::ChatsDidNotStart);
+}
+
+#[test]
+fn a_grade_stops_at_its_cost_bound_before_its_tokens() {
+    struct Dear(usize);
+    impl Chats for Dear {
+        fn run(&mut self, _: &RunChat, _: Option<u64>) -> ChatRan {
+            self.0 += 1;
+            ChatRan {
+                chat: Some("01".into()),
+                started: Vec::new(),
+                // Few tokens said, and a cost that says far more was spent.
+                tokens: Some(10),
+                cost_usd: Some(2.0),
+                ms: 10,
+                end: ChatEnd::Turn,
+            }
+        }
+        fn cancelled(&self) -> bool {
+            false
+        }
+    }
+    let mut host = Dear(0);
+    let limits = Limits {
+        tokens: 200_000,
+        cost_usd: Some(5.0),
+    };
+    let report = grade(&request(), &mut host, Some(limits));
+    assert_eq!(host.0, 3, "the third chat passes $5");
+    assert_eq!(report.ended, GradeEnd::OverCap);
+    assert_eq!(
+        (report.cost_cap_usd, report.spent_usd),
+        (Some(5.0), Some(6.0))
+    );
 }

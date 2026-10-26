@@ -299,6 +299,42 @@ pub struct Planned {
     /// What the person consents to by pressing Grade on this plan ([`consent_of`]): a grade
     /// started on another is refused.
     pub consent: Option<String>,
+    /// The copy the consent is a digest of, read once: what a grade started on this plan lays
+    /// out every arm from, and records its version as. Never shown, so never sent.
+    #[serde(skip)]
+    pub copy: Option<SkillCopy>,
+}
+
+/// **The copy of a skill a grade runs, read once** (the review of #3229): its files, what its
+/// folder held by content as they were read, and the commit that content is. The consent, every
+/// arm and the record's version are all taken from this one read, so what is graded, what was
+/// shown and what is recorded are the same files.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SkillCopy {
+    pub snapshot: Snapshot,
+    pub content: Content,
+    pub commit: Option<String>,
+}
+
+/// **The copy of `name` at `level`, read once** ([`SkillCopy`]). Its content is what git says the
+/// folder holds both before and after its files are read: a folder that changed while they were
+/// read is `uncommitted`, so a recorded tree is never one the files laid out are not.
+fn copy_of(root: &Path, level: &Level, name: &str) -> Result<SkillCopy, String> {
+    let folder = find(root, level, name)?;
+    let content_now = || crate::skilluse::content_at(root, &folder).unwrap_or(Content::Uncommitted);
+    let before = content_now();
+    let snapshot = super::verbs::drafts::snapshot(root, level, name)?;
+    let content = if content_now() == before {
+        before
+    } else {
+        Content::Uncommitted
+    };
+    let commit = commit_of(root, level, name, &content);
+    Ok(SkillCopy {
+        snapshot,
+        content,
+        commit,
+    })
 }
 
 /// **The plan of grading the copy of `name` at `level`** in the project at `root`.
@@ -359,14 +395,14 @@ pub fn planned(root: &Path, level: &Level, name: &str) -> Result<Planned, String
                 .collect()
         })
         .unwrap_or_default();
-    let consent = match &request {
-        Some(request) => {
-            let content =
-                crate::skilluse::content_at(root, &folder).unwrap_or(Content::Uncommitted);
-            Some(consent_of(request, &content, &snapshot(root, level, name)?))
-        }
+    let copy = match &request {
+        Some(_) => Some(copy_of(root, level, name)?),
         None => None,
     };
+    let consent = request
+        .as_ref()
+        .zip(copy.as_ref())
+        .map(|(request, copy)| consent_of(request, &copy.content, &copy.snapshot));
     Ok(Planned {
         skill: name.to_owned(),
         fixtures,
@@ -377,6 +413,7 @@ pub fn planned(root: &Path, level: &Level, name: &str) -> Result<Planned, String
         left_out,
         cap: cap::token_cap(root),
         consent,
+        copy,
     })
 }
 
@@ -384,7 +421,12 @@ pub fn planned(root: &Path, level: &Level, name: &str) -> Result<Planned, String
 /// whose first character a chat program reads as its own ([`COMMAND_STARTS`]), or one no first
 /// message can carry ([`crate::handoff::bad_message`]).
 pub fn left_out_why(query: &str) -> Option<String> {
-    if let Some(first) = query.trim_start().chars().next()
+    // The first character a chat program would act on: past white space and past every
+    // character no reader sees (a byte-order mark, a zero-width space), which a program may
+    // drop before it reads the line (the review of #3229).
+    if let Some(first) = query
+        .chars()
+        .find(|ch| !ch.is_whitespace() && !purlis_unicode::invisible(*ch))
         && COMMAND_STARTS.contains(&first)
     {
         return Some(format!(
@@ -417,13 +459,21 @@ pub fn consent_of(request: &GradeRequest, content: &Content, snapshot: &Snapshot
         .collect()
 }
 
-/// The copy's files a grade lays out, read once for the whole grade ([`snapshot`]).
-pub use super::verbs::drafts::Snapshot;
+use super::verbs::drafts::Snapshot;
 
-/// **The copy of `name` at `level`, read once for a grade**: every arm with the skill is laid
-/// out from this, so an edit while the grade runs grades nothing it did not show.
-pub fn snapshot(root: &Path, level: &Level, name: &str) -> Result<Snapshot, String> {
-    super::verbs::drafts::snapshot(root, level, name)
+/// **How a grade's chat would start as `start`** in the project at `root` (the operator's
+/// rulings of 2026-10-26 on #3229), or why it may not: decided keeping none of the person's own
+/// Allows ([`crate::sandbox::policy::holding_no_kept_grants`]), and refused unless it runs at the
+/// full sandbox on a profile that keeps its permission prompts ([`chat_refused`]). The one answer
+/// a grade's plan and its chats both take.
+pub fn ready_to_grade(
+    start: &crate::start::Start,
+    root: &Path,
+) -> Result<crate::start::Ready, String> {
+    let ready =
+        crate::sandbox::policy::holding_no_kept_grants(|| crate::start::ready(start, root))?;
+    chat_refused(&ready)?;
+    Ok(ready)
 }
 
 /// **Why a grade's chat may not start as `ready` would start it**, or the sandbox level it would
@@ -439,6 +489,9 @@ pub fn chat_refused(ready: &crate::start::Ready) -> Result<crate::sandbox::Level
              hold a chat to the grade's limits: pick one."
                 .to_owned(),
         );
+    }
+    if let Some(why) = bypassed_by_your_settings(&crate::harness_plugin::Env::of(&ready.env)) {
+        return Err(why);
     }
     let command: Vec<String> = std::iter::once(ready.program.clone())
         .chain(ready.command.iter().cloned())
@@ -483,15 +536,56 @@ pub fn chat_refused(ready: &crate::start::Ready) -> Result<crate::sandbox::Level
     }
 }
 
-/// **What the copy of `name` at `level` holds now, by content, and the commit that is**: the
-/// tree and commit a grade is recorded against. A copy with changes not committed is
-/// `uncommitted`, with no commit.
-pub fn version_of(root: &Path, level: &Level, name: &str) -> (Content, Option<String>) {
-    let content = find(root, level, name)
-        .ok()
-        .and_then(|folder| crate::skilluse::content_at(root, &folder))
-        .unwrap_or(Content::Uncommitted);
-    let commit = match &content {
+/// **Why the person's own Claude Code settings, as the chat's environment `env` finds them, keep
+/// a grade from running**, or `None`: settings that start every chat with its permission prompts
+/// off, or settings purlis cannot read, as what they say cannot be known (the review of #3229).
+/// No settings file is none of either.
+fn bypassed_by_your_settings(env: &crate::harness_plugin::Env<'_>) -> Option<String> {
+    let Some(dir) = env.dir("CLAUDE_CONFIG_DIR", ".claude") else {
+        return Some(
+            "purlis cannot find Claude Code's settings for this profile, so it cannot tell \
+             whether its chats keep their permission prompts, and a grade never runs on one \
+             that does not."
+                .to_owned(),
+        );
+    };
+    let file = dir.join("settings.json");
+    let unreadable = || {
+        Some(
+            "purlis could not read your Claude Code settings, so it cannot tell whether its \
+             chats keep their permission prompts, and a grade never runs on one that does not."
+                .to_owned(),
+        )
+    };
+    let text = match std::fs::metadata(&file) {
+        Err(why) if why.kind() == std::io::ErrorKind::NotFound => return None,
+        Err(_) => return unreadable(),
+        Ok(meta)
+            if !meta.is_file()
+                || meta.len() > crate::harness::claude::MOST_SETTINGS_BYTES as u64 =>
+        {
+            return unreadable();
+        }
+        Ok(_) => match std::fs::read_to_string(&file) {
+            Ok(text) => text,
+            Err(_) => return unreadable(),
+        },
+    };
+    match crate::harness::claude::bypass_by_default(&text) {
+        Ok(false) => None,
+        Ok(true) => Some(
+            "Your Claude Code settings start every chat with its permission prompts off, and a \
+             grade never runs on one: turn that off in Claude Code's settings first."
+                .to_owned(),
+        ),
+        Err(()) => unreadable(),
+    }
+}
+
+/// **The commit whose version of the copy of `name` at `level` is `content`**: what a grade is
+/// recorded against beside the tree. A copy with changes not committed has none.
+fn commit_of(root: &Path, level: &Level, name: &str, content: &Content) -> Option<String> {
+    match content {
         Content::Uncommitted => None,
         Content::Tree(tree) => {
             super::history::history(root, level, name)
@@ -504,8 +598,7 @@ pub fn version_of(root: &Path, level: &Level, name: &str) -> (Content, Option<St
                         .map(|version| version.commit)
                 })
         }
-    };
-    (content, commit)
+    }
 }
 
 pub mod cap;

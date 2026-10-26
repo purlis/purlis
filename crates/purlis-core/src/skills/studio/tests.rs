@@ -203,6 +203,8 @@ fn a_grade() -> super::super::grades::Graded {
             not_started: None,
             cap: None,
             spent_tokens: None,
+            cost_cap_usd: None,
+            spent_usd: None,
         },
         spent: super::super::grades::Spent {
             chats: 12,
@@ -224,7 +226,7 @@ fn the_grades_panel_is_a_scorecard_of_each_grade_against_no_skill() {
         table.rows[0].cells,
         [
             "2026-10-25 10:00 UTC",
-            "0123456",
+            "0123456789ab",
             "Claude Code",
             "1 of 1",
             "100%",

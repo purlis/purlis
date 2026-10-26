@@ -11239,6 +11239,11 @@ export type SkillGradePlan = {
 	/**  The tokens a grade may spend before it stops, and whether this machine set it. */
 	token_cap: number | null,
 	cap_set_here: boolean,
+	/**
+	 *  The cost a grade may reach besides, where its chats say what they cost: the cap's tokens
+	 *  at the dearest price (`grades::cap::Cap::cost_usd`).
+	 */
+	cost_cap_usd: number | null,
 	/**  The longest one of its chats runs, in minutes: the plan's "up to". */
 	chat_minutes: number,
 	/**

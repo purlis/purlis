@@ -23,7 +23,8 @@ const DEFAULT = "";
 
 /** A number of tokens as the window says it: `200,000 tokens`. */
 export function tokensSaid(tokens: number): string {
-  return `${Math.round(tokens).toLocaleString("en-US")} ${tokens === 1 ? "token" : "tokens"}`;
+  const whole = Math.round(tokens);
+  return counted(whole, "token", "tokens", whole.toLocaleString("en-US"));
 }
 
 /** How a grade that ended is said, in one line. */
@@ -53,8 +54,7 @@ export function costSaid(plan: SkillGradePlan): string {
   if (estimate === null || (estimate.tokens === null && estimate.cost_usd === null))
     return "This skill has not been graded here before, so purlis cannot say yet what a grade spends. Each chat is one turn, and ends once the skill starts.";
   const parts: string[] = [];
-  if (estimate.tokens !== null)
-    parts.push(`about ${Math.round(estimate.tokens).toLocaleString("en-US")} tokens`);
+  if (estimate.tokens !== null) parts.push(`about ${tokensSaid(estimate.tokens)}`);
   if (estimate.cost_usd !== null) parts.push(`about $${estimate.cost_usd.toFixed(2)}`);
   return `From its last grade, of ${counted(estimate.chats_then, "chat", "chats")}, this one should spend ${parts.join(", ")}.`;
 }
@@ -309,8 +309,9 @@ function GradePlan({
             {counted(plan.runs, "time", "times")} without it, up to{" "}
             {counted(plan.chats, "chat", "chats")} × {plan.chat_minutes} min. {costSaid(plan)} It
             stops once its chats have spent {tokensSaid(plan.token_cap ?? 0)}
-            {plan.cap_set_here ? ", the cap you set on this machine" : ", the default cap"}. The
-            chats run on the profile you pick
+            {plan.cap_set_here ? ", the cap you set on this machine" : ", the default cap"}, or cost
+            ${(plan.cost_cap_usd ?? 0).toFixed(2)} where they say what they cost. The chats run on
+            the profile you pick
             {plan.sandbox === null ? "" : `, in the project's ${plan.sandbox}`}, with none of your
             own Allows and no tools but purlis's that only read, and its account pays for them as
             for any chat.

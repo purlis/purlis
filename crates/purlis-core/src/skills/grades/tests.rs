@@ -87,12 +87,16 @@ fn report(passed_with: bool) -> GradeReport {
         not_started: None,
         cap: None,
         spent_tokens: None,
+        cost_cap_usd: None,
+        spent_usd: None,
     }
 }
 
 fn graded(root: &Path, id: &str, ts: &str, spent: Spent) -> Graded {
     let level = Level::project();
-    let (content, commit) = version_of(root, &level, "deploy");
+    let SkillCopy {
+        content, commit, ..
+    } = copy_of(root, &level, "deploy").unwrap();
     Graded {
         v: VERSION,
         grade: id.to_owned(),
@@ -128,7 +132,9 @@ fn the_plan_comes_before_anything_runs_and_says_what_waits() {
 fn a_grade_is_recorded_against_the_version_its_folder_holds() {
     let plane = plane();
     let root = plane.path();
-    let (content, commit) = version_of(root, &Level::project(), "deploy");
+    let SkillCopy {
+        content, commit, ..
+    } = copy_of(root, &Level::project(), "deploy").unwrap();
     assert!(matches!(content, Content::Tree(_)), "{content:?}");
     assert_eq!(commit.as_deref().map(str::len), Some(40));
 
@@ -154,7 +160,11 @@ fn a_grade_is_recorded_against_the_version_its_folder_holds() {
         format!("{SKILL}More.\n"),
     )
     .unwrap();
-    let (changed, none) = version_of(root, &Level::project(), "deploy");
+    let SkillCopy {
+        content: changed,
+        commit: none,
+        ..
+    } = copy_of(root, &Level::project(), "deploy").unwrap();
     assert_eq!((changed, none), (Content::Uncommitted, None));
 }
 
@@ -455,4 +465,49 @@ fn the_consent_a_plan_asks_for_changes_with_its_tests_and_with_the_skill() {
         edited,
         "so is one to its tests"
     );
+}
+
+#[test]
+fn a_command_behind_characters_no_reader_sees_is_still_left_out() {
+    for query in [
+        "\u{feff}/logout now",
+        "\u{200b}/clear it all",
+        "\u{2060} !rm -rf .",
+        "\u{200e}@notes.md ship it",
+        " \u{feff}\u{200d}-p say hi",
+    ] {
+        assert!(
+            left_out_why(query).is_some(),
+            "{query:?} reaches the chat program as a command"
+        );
+    }
+    assert_eq!(left_out_why("\u{feff}ship it"), None, "a prompt stays one");
+}
+
+#[test]
+fn your_claude_code_settings_that_turn_prompts_off_or_do_not_read_keep_a_grade_from_running() {
+    let config = tempfile::tempdir().unwrap();
+    let dir = config.path().display().to_string();
+    let chat = [("CLAUDE_CONFIG_DIR".to_owned(), dir)];
+    let env = crate::harness_plugin::Env {
+        chat: &chat,
+        home: None,
+        process: false,
+    };
+    assert_eq!(bypassed_by_your_settings(&env), None, "no settings file");
+    let file = config.path().join("settings.json");
+    for (text, refused) in [
+        (
+            r#"{"permissions": {"defaultMode": "bypassPermissions"}}"#,
+            true,
+        ),
+        (r#"{"permissions": {"defaultMode": "acceptEdits"}}"#, false),
+        (r#"{"model": "opus"}"#, false),
+        (r#"{"permissions": {"defaultMode": 3}}"#, true),
+        ("{ not json", true),
+        ("[]", true),
+    ] {
+        std::fs::write(&file, text).unwrap();
+        assert_eq!(bypassed_by_your_settings(&env).is_some(), refused, "{text}");
+    }
 }

@@ -97,6 +97,9 @@ pub struct SkillGradePlan {
     /// The tokens a grade may spend before it stops, and whether this machine set it.
     pub token_cap: f64,
     pub cap_set_here: bool,
+    /// The cost a grade may reach besides, where its chats say what they cost: the cap's tokens
+    /// at the dearest price (`grades::cap::Cap::cost_usd`).
+    pub cost_cap_usd: f64,
     /// The longest one of its chats runs, in minutes: the plan's "up to".
     pub chat_minutes: u32,
     /// The profile its chats run on, and the sandbox they run in there, by its name, or why no
@@ -130,7 +133,7 @@ fn chats_on(
         made: purlis_core::sandbox::Made::Window,
         ..Default::default()
     };
-    let checked = crate::curation::graded_ready(&start, root).map(|ready| {
+    let checked = grades::ready_to_grade(&start, root).map(|ready| {
         ready
             .sandbox
             .as_ref()
@@ -199,6 +202,7 @@ impl SkillGradePlan {
             }),
             running,
             token_cap: planned.cap.tokens as f64,
+            cost_cap_usd: planned.cap.cost_usd(),
             cap_set_here: planned.cap.from == grades::cap::From::Yours,
             chat_minutes: u32::try_from(grades::CHAT_TIME.as_secs() / 60).unwrap_or(u32::MAX),
             profile,
@@ -325,7 +329,10 @@ pub(crate) async fn skill_grade_start(
                  started: read the plan again."
             ));
         }
-        let snapshot = grades::snapshot(&root, &level, &skill)?;
+        // The one read of the copy the consent was taken from: laid out and recorded as is.
+        let copy = planned.copy.ok_or_else(|| {
+            format!("{skill} has no trigger tests to grade, so nothing was started.")
+        })?;
         let request = planned.request.ok_or_else(|| {
             format!("{skill} has no trigger tests to grade, so nothing was started.")
         })?;
@@ -355,6 +362,10 @@ pub(crate) async fn skill_grade_start(
         let of = grading::plan(&request).chats;
         // The cap the plan showed, read again as the grade starts: the one it is held to.
         let cap = planned.cap.tokens;
+        let limits = grading::Limits {
+            tokens: cap,
+            cost_usd: Some(planned.cap.cost_usd()),
+        };
         let grade = id.clone();
         std::thread::Builder::new()
             .name("purlis-grade".to_owned())
@@ -381,7 +392,8 @@ pub(crate) async fn skill_grade_start(
                 tell(0, None, None, None);
                 let mut chats = InChats {
                     held: &held,
-                    snapshot: &snapshot,
+                    snapshot: &copy.snapshot,
+                    cost_left: limits.cost_usd,
                     skill: &skill,
                     profile: &profile,
                     stop: &stop,
@@ -389,8 +401,7 @@ pub(crate) async fn skill_grade_start(
                     tell: &|ran, tokens| tell(ran, tokens, None, None),
                     harness: None,
                 };
-                let (version, commit) = grades::version_of(&root, &level, &skill);
-                let report = grading::grade(&request, &mut chats, Some(cap));
+                let report = grading::grade(&request, &mut chats, Some(limits));
                 let harness = chats.harness.take();
                 let spent = chats.spent;
                 let graded = Graded {
@@ -398,8 +409,8 @@ pub(crate) async fn skill_grade_start(
                     grade: grade.clone(),
                     skill: skill.clone(),
                     level: grades::recorded_level(&level),
-                    tree: version.word().to_owned(),
-                    commit,
+                    tree: copy.content.word().to_owned(),
+                    commit: copy.commit.clone(),
                     harness,
                     profile: Some(profile.clone()),
                     ts: purlis_core::dispatch::stamp(chrono::Utc::now()),
@@ -492,7 +503,9 @@ pub(crate) async fn skill_grade_stop(plane: PlaneId, grade: String) -> Result<()
 struct InChats<'a> {
     held: &'a Arc<Held>,
     /// The skill's copy, read once for the grade.
-    snapshot: &'a grades::Snapshot,
+    snapshot: &'a purlis_core::skills::verbs::drafts::Snapshot,
+    /// What the grade may still cost, where its chats say: a chat that passes it is ended.
+    cost_left: Option<f64>,
     skill: &'a str,
     profile: &'a str,
     stop: &'a AtomicBool,
@@ -516,6 +529,7 @@ impl Chats for InChats<'_> {
         }
         if let Some(cost) = ran.cost_usd {
             *self.spent.cost_usd.get_or_insert(0.0) += cost;
+            self.cost_left = self.cost_left.map(|left| left - cost);
         }
         if matches!(ran.end, ChatEnd::Turn | ChatEnd::TimedOut) {
             self.spent.chats += 1;
@@ -592,6 +606,12 @@ impl InChats<'_> {
                         .map(|(input, output)| input + output)
                 })
         };
+        // And what it has cost so far, where its harness says: the grade's second bound.
+        let cost_now = || {
+            id.as_deref()
+                .and_then(|id| purlis_core::usage::spent(&root, id))
+                .and_then(|spent| spent.cost_usd)
+        };
         let mut skills: Vec<String> = Vec::new();
         let end = match &told {
             None => ChatEnd::TimedOut,
@@ -603,6 +623,11 @@ impl InChats<'_> {
                     break ChatEnd::TimedOut;
                 }
                 if let (Some(left), Some(now)) = (tokens_left, spent_now())
+                    && now > left
+                {
+                    break ChatEnd::OverCap;
+                }
+                if let (Some(left), Some(now)) = (self.cost_left, cost_now())
                     && now > left
                 {
                     break ChatEnd::OverCap;

@@ -40,6 +40,7 @@ fn planned(query: &str) -> Planned {
             from: grades::cap::From::Yours,
         },
         consent: Some("abc".into()),
+        copy: None,
     }
 }
 
@@ -65,6 +66,11 @@ fn the_plan_shows_each_query_as_the_chat_reads_it_and_what_is_left_out() {
     );
     assert_eq!(plan.tests_refused, None);
     assert_eq!((plan.token_cap, plan.cap_set_here), (50_000.0, true));
+    assert!(
+        (plan.cost_cap_usd - 3.75).abs() < 1e-9,
+        "{}",
+        plan.cost_cap_usd
+    );
     assert_eq!(plan.chat_minutes, 5);
     assert_eq!(plan.sandbox.as_deref(), Some("full sandbox"));
     assert_eq!((plan.refused, plan.consent.as_deref()), (None, Some("abc")));

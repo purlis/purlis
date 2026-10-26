@@ -28,6 +28,7 @@ function plan(over: Partial<SkillGradePlan> = {}): SkillGradePlan {
     estimate: null,
     running: null,
     token_cap: 200000,
+    cost_cap_usd: 15,
     cap_set_here: false,
     chat_minutes: 5,
     profile: "work",
@@ -69,7 +70,7 @@ describe("Grade, cost first", () => {
     expect(cost.textContent).toContain("has not been graded here before");
     expect(cost.textContent).toContain("its account pays for them");
     expect(cost.textContent).toContain(
-      "It stops once its chats have spent 200,000 tokens, the default cap.",
+      "It stops once its chats have spent 200,000 tokens, the default cap, or cost $15.00 where they say what they cost.",
     );
     expect(screen.getAllByTestId("skill-grade-test")[1].textContent).toContain(
       "holds a character no reader would see",
@@ -149,7 +150,8 @@ describe("a grade's token cap", () => {
     mockIPC((cmd, args) => {
       asked.push({ cmd, args });
       if (cmd === "skill_grade_plan") return plan();
-      if (cmd === "skill_grade_set_cap") return plan({ token_cap: 50000, cap_set_here: true });
+      if (cmd === "skill_grade_set_cap")
+        return plan({ token_cap: 50000, cost_cap_usd: 3.75, cap_set_here: true });
       if (cmd === "start_options") return { profiles: [] };
       return null;
     });
@@ -160,7 +162,7 @@ describe("a grade's token cap", () => {
     fireEvent.click(screen.getByRole("button", { name: "Set the cap" }));
     await waitFor(() =>
       expect(screen.getByTestId("skill-grade-cost").textContent).toContain(
-        "have spent 50,000 tokens, the cap you set on this machine.",
+        "have spent 50,000 tokens, the cap you set on this machine, or cost $3.75 where",
       ),
     );
     expect(asked.find((one) => one.cmd === "skill_grade_set_cap")?.args).toMatchObject({

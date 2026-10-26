@@ -97,7 +97,8 @@
   first shows what a grade runs: how many chats, each test as the chat will read it (a character
   no reader would see marked), what the skill's last grade spent, and that the chats are paid for
   by the profile you pick, as any chat is. A grade stops once its chats have spent 200,000 tokens,
-  or the cap you set in the plan for this machine, and says what it spent. Nothing runs until you
+  or the cap you set in the plan for this machine, or once they cost that many tokens would at
+  the dearest price, where Claude Code says what they cost, and says what it spent. Nothing runs until you
   press _Grade_. Each test then
   runs in a chat of its own, three times with the skill and three times without it, in a
   throwaway folder, only in the project's full sandbox, with none of your own Allows, no tools
