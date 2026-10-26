@@ -212,10 +212,23 @@ async fn a_runners_link_key_is_vouched_for_with_the_key_its_pool_names() {
         .await
         .expect("the claim");
 
+    // What the claim says of its key, named in the failure if it is never vouched for.
+    let said = std::sync::Mutex::new(String::new());
     let link_key = eventually(
         "the operator vouches for the key",
         Duration::from_secs(300),
-        || async { claims.get("ada-1").await.ok()?.status?.link_key },
+        || async {
+            let status = claims.get("ada-1").await.ok()?.status?;
+            if let Some(word) = status.conditions.iter().find(|c| c.type_ == "KeyPublished") {
+                let word = format!("{}: {}", word.reason, word.message);
+                let mut kept = said.lock().unwrap();
+                if *kept != word {
+                    eprintln!("KeyPublished {word}");
+                    *kept = word;
+                }
+            }
+            status.link_key
+        },
     )
     .await;
     ring::signature::UnparsedPublicKey::new(&ring::signature::ED25519, &public)

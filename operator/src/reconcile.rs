@@ -321,6 +321,9 @@ async fn reconcile_claim(claim: Arc<Claim>, context: Arc<Context>) -> Result<Act
                 &template_now.metadata,
             )
             .await?;
+            if let Vouching::Refused(why) = &vouching {
+                tracing::warn!(claim = %name, %namespace, %why, "no link key vouched for");
+            }
             let mut status = status_of(Some(&applied));
             status.conditions.push(vouching.condition());
             status.link_key = vouching.link_key();
