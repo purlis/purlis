@@ -5,7 +5,7 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import { commands, type ProfileRow, type SkillDraft, type StudioLevel } from "./bindings";
 import { counted } from "./dispatches";
 import { Button, ButtonRow } from "./ui/button/Button";
-import { Select } from "./primitives/Select";
+import { Select } from "./ui/select/Select";
 import { askSkillChat } from "./skillDraftAsks";
 import { labelOf } from "./skillChanges";
 
@@ -102,6 +102,7 @@ export function SkillDrafts({
                   Changes
                 </Button>
                 <Select
+                  size="sm"
                   aria-label={`Try ${draft.name} on`}
                   value={profile}
                   options={options}

@@ -487,3 +487,27 @@ fn a_selection_over_the_wash_moves_with_a_tint_that_turns_only_the_dialog_under_
         .expect("the selection on the danger wash over the dialog is held");
     assert!(floors::moves_with_hue(theme, pair));
 }
+
+#[test]
+fn a_state_colour_drawn_as_a_button_s_words_is_held_as_words_and_falls_back() {
+    // The warning-soft button draws its words in the waiting colour on the control (#3041): a
+    // waiting amber that clears the 3:1 a mark takes there, at 3.83:1, is still too faint to read.
+    let mine = theme("Dim", json!({ "state.waiting": "#a07a20" }));
+    let found = check(mine.first()).findings;
+    for ground in ["control.base", "control.hover"] {
+        assert!(
+            found.iter().any(|one| matches!(
+                one,
+                Finding::Contrast { tint: None, pair, .. }
+                    if (pair.front, pair.back) == ("state.waiting", ground) && pair.floor == 4.5
+            )),
+            "{ground}: {found:?}"
+        );
+    }
+    let (drawn, held) = drawn_of(&mine);
+    assert_eq!(drawn.value("state.waiting"), ours("state.waiting"));
+    let held = held.expect("the floor was held");
+    assert_eq!(held.floors, [Floor::StateMarks]);
+    assert_eq!(held.tokens, ["state.waiting"]);
+    assert_eq!(consent_failures(&drawn), []);
+}

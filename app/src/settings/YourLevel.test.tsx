@@ -18,7 +18,7 @@ import type {
   SettingsFile,
   SettingsWhich,
 } from "../bindings";
-import { offeredIn, pickIn } from "../primitives/select.testkit";
+import { offeredIn, pickIn, selectNamed } from "../ui/select/select.testkit";
 
 /**
  * **Your own sandbox level** (#2071): Settings › Project › Sandbox › Your level, a choice for the
@@ -160,7 +160,7 @@ async function atYourLevel() {
   );
 }
 
-const picker = (label: string) => screen.getByRole("combobox", { name: label });
+const picker = (label: string) => selectNamed(label);
 
 describe("Settings › Sandbox › Your level", () => {
   it("offers the three levels for the project and for each persona, none set", async () => {

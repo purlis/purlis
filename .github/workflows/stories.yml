@@ -8,8 +8,8 @@ name: stories
 # appearance of Purlis Classic and Purlis, in each density), failing on a story that does not
 # render, on a `play` function that fails (its keyboard path), on any axe violation at WCAG 2.2
 # AA with `target-size` on, and on a picture that is not its baseline. A baseline whose story is
-# gone, or no longer runs as a test in a pictured cell, fails it too, naming the story:
-# `stories-baselines.yml` deletes it.
+# gone, no longer runs as a test in a pictured cell, or takes no picture, fails it too, naming
+# the story: `stories-baselines.yml` deletes it.
 #
 # **One pinned image draws and compares every picture.** A picture differs by its machine's
 # fonts and rasteriser, so it is taken nowhere but in Playwright's own image for the Playwright
@@ -64,17 +64,12 @@ jobs:
       - run: npm ci
       - name: The image is the Playwright the lockfile names, by its tag and its digest
         run: node ../tools/story-image.mjs
-      # Storybook's own index says which stories there are; a baseline of any other is obsolete.
-      - name: Every baseline was drawn in this image, of a story there is
-        run: |
-          npx storybook index --disable-telemetry --quiet -c .storybook \
-            -o "$RUNNER_TEMP/stories-index.json"
-          node ../tools/story-baselines.mjs check "$RUNNER_TEMP/stories-index.json"
       # Each browser on its own, so each failure can say which browser it failed in; every cell
       # of the matrix is a project of its own, `stories <cell> (<browser>)`. The
       # failures are kept by `tools/story-failures.mjs`'s reporter rather than Vitest's JSON
       # one, which keeps an error's stack alone: WebKit's does not repeat the message.
       - name: The stories, in Chromium and in WebKit
+        id: stories
         run: |
           failed=0
           for browser in chromium webkit; do
@@ -83,6 +78,16 @@ jobs:
               --reporter=default --reporter=../tools/story-failures.mjs || failed=1
           done
           exit "$failed"
+      # Storybook's own index says which stories there are, and the run's reports which of them
+      # take no picture (`screenshot: false`, which no index has); a baseline of any other is
+      # obsolete. After the stories, whether they passed or not (not when they never ran).
+      - name: Every baseline was drawn in this image, of a story there is that takes a picture
+        if: ${{ !cancelled() && steps.stories.conclusion != 'skipped' }}
+        run: |
+          npx storybook index --disable-telemetry --quiet -c .storybook \
+            -o "$RUNNER_TEMP/stories-index.json"
+          node ../tools/story-baselines.mjs check "$RUNNER_TEMP/stories-index.json" \
+            "$RUNNER_TEMP/stories-chromium.json" "$RUNNER_TEMP/stories-webkit.json"
       # One annotation per story that failed, the same in both browsers: its browser, its gate,
       # the first line of why and the axe rules it broke. The reporter's own annotations name a
       # line, and a failure axe raises after the story has none.

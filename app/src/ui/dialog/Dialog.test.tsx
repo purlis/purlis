@@ -16,7 +16,8 @@ import { Button } from "../button/Button";
 import { AlertDialog, Dialog, DialogSurface } from "./Dialog";
 import { Reserved } from "./Reserved";
 import { Menu, MenuItem, MenuTrigger, MenuWords } from "../menu/Menu";
-import { Select } from "../../primitives/Select";
+import { Select } from "../select/Select";
+import { selectNamed } from "../select/select.testkit";
 
 afterEach(cleanup);
 
@@ -261,7 +262,7 @@ describe("a dialog", () => {
         />
       </Dialog>,
     );
-    const kind = screen.getByRole("combobox", { name: "Kind" });
+    const kind = selectNamed("Kind");
     await waitFor(() => expect(kind).toHaveFocus());
     await userEvent.keyboard("{Enter}");
     await screen.findByRole("listbox");

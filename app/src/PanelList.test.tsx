@@ -661,6 +661,6 @@ describe("a panel list on the shared styles", () => {
       />,
     );
     const action = screen.getByRole("button", { name: "Do it" });
-    expect(drawnWith(action, "block-size")).toBe("max(var(--size-chrome), var(--space-7))");
+    expect(drawnWith(action, "block-size")).toBe("max(24px, var(--size-chrome), var(--space-7))");
   });
 });
