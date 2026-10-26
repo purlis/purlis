@@ -27,6 +27,7 @@ import { counted } from "./dispatches";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { clashSaid, SkillStudioHarnesses } from "./SkillStudioHarnesses";
 import { Button, ButtonRow } from "./ui/button/Button";
+import { SkillPinSwitch } from "./SkillPins";
 import { Notice } from "./Notice";
 import { SkillCompatBadges } from "./SkillCompatBadges";
 import { SkillRowActions } from "./SkillRowActions";
@@ -51,6 +52,7 @@ import {
 import {
   AT_THE_ROOT,
   inWorkspace,
+  pinnerOf,
   scopeChat,
   scopeKey,
   scopeOfKey,
@@ -92,6 +94,10 @@ const NEW_SKILL = "New skill";
 
 /** The words of the act that opens a chat to draft a skill, wherever it is offered. */
 const DRAFT_WITH_A_CHAT = "Ask a chat to draft a skill";
+
+/** The levels a skill can be pinned at (SK-15d): the project's. A built-in skill is always
+ *  listed, and a harness's or a repo's is never purlis's to route. */
+const PINNABLE: ReadonlySet<StudioSkill["level"]> = new Set(["project", "workspace", "persona"]);
 
 /** The type a dragged row carries, so a drop from elsewhere is not read as a skill. */
 const DRAGGED = "application/x-purlis-skill";
@@ -536,6 +542,39 @@ export function SkillStudioTab({
     seen.set(name, before + 1);
     return before === 0 ? `skill-${name}` : `skill-${name}-hidden-${before}`;
   };
+  // The Pin switch (SK-15d): for the workspace's or the persona's chats the studio shows, on the
+  // first row of a name a chat could have pinned (one of the project's levels), where the chat
+  // gets it or a pin of it is still written, so a pin can always be undone.
+  const pinner = pinnerOf(scope);
+  const pinRows = new Set<string>();
+  const pinOf = (skill: StudioSkill) => {
+    if (pinner === null || !PINNABLE.has(skill.level) || pinRows.has(skill.name)) return null;
+    pinRows.add(skill.name);
+    const pinned = skill.pinned_by.some(
+      (by) => by.at === pinner.at && by.name === pinner.name,
+    );
+    return skill.on || pinned ? pinned : null;
+  };
+  const pinSwitch = (skill: StudioSkill) => {
+    const pinned = pinOf(skill);
+    if (pinner === null || pinned === null) return null;
+    return (
+      <>
+        {" "}
+        <SkillPinSwitch
+          name={skill.name}
+          by={pinner}
+          pinned={pinned}
+          busy={busy}
+          onPin={(on) =>
+            change(on ? "The skill was not pinned" : "The skill was not unpinned", () =>
+              commands.skillPin(plane, pinner, skill.name, on),
+            )
+          }
+        />
+      </>
+    );
+  };
   const dropOn = (to: SkillLevel) => (event: DragEvent) => {
     const raw = event.dataTransfer.getData(DRAGGED);
     if (raw === "") return;
@@ -662,6 +701,7 @@ export function SkillStudioTab({
                             ? "On, pinned"
                             : "On"))
                       : `Left out: ${skill.left_out ?? ""}`}
+                    {pinSwitch(skill)}
                     {skill.on && skill.level === "built-in" && (
                       <span className="honest">
                         {" "}

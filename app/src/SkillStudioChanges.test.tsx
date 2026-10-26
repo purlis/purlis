@@ -38,6 +38,7 @@ const deploy = {
   lint: [],
   hidden: [],
   pinned: false,
+  pinned_by: [],
   written: "deploy",
   named: false,
   unchecked: null,
@@ -261,6 +262,65 @@ describe("the Skill studio's changes", () => {
         on: true,
       }),
     );
+  });
+
+  it("pins a skill for a workspace's chats with the row's Pin switch, one change (SK-15d)", async () => {
+    const asked = core([deploy], "ops");
+    const user = userEvent.setup();
+    render(<SkillStudioTab plane="p" scope={inWorkspace("ops")} changed={0} />);
+
+    const pin = await screen.findByRole("switch", { name: "Pin deploy for ops" });
+    expect(pin).not.toBeChecked();
+    await user.click(pin);
+
+    await waitFor(() =>
+      expect(asked.filter((one) => one.cmd === "skill_pin").map((one) => one.args)).toEqual([
+        { plane: "p", by: { at: "workspace", name: "ops" }, name: "deploy", on: true },
+      ]),
+    );
+  });
+
+  it("unpins a skill a persona pins, and offers no pin at the project's root (SK-15d)", async () => {
+    const pinned = { ...deploy, pinned: true, pinned_by: [{ at: "persona", name: "reviewer" }] };
+    const asked = core([pinned], null);
+    const user = userEvent.setup();
+    render(<SkillStudioTab plane="p" scope={asPersona("reviewer")} changed={0} />);
+
+    const pin = await screen.findByRole("switch", { name: "Pin deploy for reviewer" });
+    expect(pin).toBeChecked();
+    await user.click(pin);
+
+    await waitFor(() =>
+      expect(asked.find((one) => one.cmd === "skill_pin")?.args).toMatchObject({
+        by: { at: "persona", name: "reviewer" },
+        name: "deploy",
+        on: false,
+      }),
+    );
+    cleanup();
+    core([pinned], null);
+    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
+    await screen.findByTestId("skill-deploy");
+    expect(screen.queryByRole("switch", { name: /^Pin deploy/ })).toBeNull();
+  });
+
+  it("offers no pin on a built-in skill or on a hidden copy (SK-15d)", async () => {
+    core(
+      [
+        { ...deploy, level: "built-in", label: "built-in", granted: null, folder: "x/handoff", name: "handoff" },
+        { ...deploy, level: "workspace", label: "workspace", granted: null, folder: "workspaces/ops/skills/deploy" },
+        { ...deploy, on: false, left_out: "hidden by the workspace's copy" },
+      ],
+      "ops",
+    );
+    render(<SkillStudioTab plane="p" scope={inWorkspace("ops")} changed={0} />);
+
+    await screen.findByTestId("skill-deploy");
+    expect(screen.queryByRole("switch", { name: "Pin handoff for ops" })).toBeNull();
+    expect(screen.getAllByRole("switch", { name: "Pin deploy for ops" })).toHaveLength(1);
+    expect(
+      within(screen.getByTestId("skill-deploy")).getByRole("switch", { name: "Pin deploy for ops" }),
+    ).toBeInTheDocument();
   });
 
   it("says which grant would reach a skill the workspace was not granted, and offers no on", async () => {
