@@ -16,7 +16,7 @@ import { DONE_ROW } from "./todos";
 import { expect, waitFor } from "storybook/test";
 import { ownPanelKey, Panels } from "./Panels";
 import { expectFocusInSight } from "./stories.testkit";
-import type { PanelRow, PanelView, Panels as PanelsModel } from "./bindings";
+import type { PanelRow, PanelView, Panels as PanelsModel, VaultSummary } from "./bindings";
 import type { OwnViewId } from "./sideViews";
 import type { WorkspaceState } from "./workspaceState";
 import { Panel, PanelTitle } from "./ui/panel/Panel";
@@ -47,6 +47,18 @@ const TITLES = [
 
 /** `count` rows of `mark`, a few today, a few yesterday, the rest earlier. */
 function rowsOf(count: number, mark: string): PanelRow[] {
+  // A persona's row: its mark, its name, the default's star (#1449, #1674).
+  if (mark === "persona")
+    return PERSONAS.slice(0, count).map((name, at) => ({
+      key: name,
+      text: name,
+      note: "2 memories",
+      mark,
+      tone: at === 0 ? "default" : "plain",
+      detail: null,
+      runs: `persona.show:${name}`,
+      actions: [],
+    }));
   return TITLES.slice(0, count).map((text, at) => ({
     key: `row-${at}`,
     text,
@@ -61,10 +73,11 @@ function rowsOf(count: number, mark: string): PanelRow[] {
   }));
 }
 
-const KEYS: Record<"memory" | "todos" | "sessions", [string, string]> = {
+const KEYS: Record<"memory" | "todos" | "sessions" | "personas", [string, string]> = {
   memory: ["Memory", "note"],
   todos: ["Todos", "todo"],
   sessions: ["Sessions", "note"],
+  personas: ["Personas", "persona"],
 };
 
 /** `count` done todos, as `panels.rs` keys them: `done/<slug>`. */
@@ -81,6 +94,8 @@ function doneOf(count: number): PanelRow[] {
     actions: [],
   }));
 }
+
+const PERSONAS = ["steward", "designer", "release", "security", "reviewer", "docs", "ops"];
 
 function panelOf(view: keyof typeof KEYS, count: number, done = 0): PanelView {
   const [title, mark] = KEYS[view];
@@ -120,6 +135,17 @@ function stateOf(view: keyof typeof KEYS, count: number, done = 0): WorkspaceSta
 }
 
 /** The view in a side panel, its region the one scroll, as `RegionFrame` lays a view out. */
+/** The plane's vaults, as `vault_list` answers: names and counts, never a value. */
+const VAULTS: VaultSummary[] = ["forge", "reddit", "crates-io", "devops", "release-signing"].map(
+  (name, at) => ({
+    name,
+    provider: at < 3 ? "keyring" : "file",
+    count: at + 1,
+    health: { ok: true, detail: "" },
+    reads_on_open: false,
+  }),
+);
+
 /**
  * The view in a half of the Panel, as the window draws one (`RegionFrame`'s `Half`): the half's
  * line holds the view's one title and its actions (#3355), and the view under it is the one
@@ -130,11 +156,12 @@ function View({
   count,
   done = 0,
 }: {
-  view: keyof typeof KEYS;
+  view: keyof typeof KEYS | "vaults";
   count: number;
   /** Done todos after the open ones, each with its box ticked (the Todos view only). */
   done?: number;
 }) {
+  const title = view === "vaults" ? "Vaults" : KEYS[view][0];
   const [shown, setShown] = useState<string>();
   // The catalogue's Mark done and Reopen rows, which a todo's box runs: without them a row keeps
   // its mark, as it does where the catalogue offers none.
@@ -161,7 +188,7 @@ function View({
   );
   const [line, setLine] = useState<HTMLElement | null>(null);
   return (
-    <Panel variant="bottom" aria-label={KEYS[view][0]} role="region">
+    <Panel variant="bottom" aria-label={title} role="region">
       <div
         data-testid="region"
         style={{
@@ -172,7 +199,7 @@ function View({
         }}
       >
         <div className="half-head">
-          <PanelTitle className="side-title">{KEYS[view][0]}</PanelTitle>
+          <PanelTitle className="side-title">{title}</PanelTitle>
           <span className="view-actions" ref={setLine} />
         </div>
         <div style={{ display: "flex", flex: "1 1 0", minBlockSize: 0 }}>
@@ -180,13 +207,14 @@ function View({
             <Panels
               view={view as OwnViewId}
               workspace="alpha"
-              state={stateOf(view, count, done)}
+              state={stateOf(view === "vaults" ? "memory" : view, count, done)}
               offers={offers}
               onPress={() => {}}
               contributed={[]}
               shownRow={shown}
               onShowRow={setShown}
               onAddTodo={async () => undefined}
+              vaults={{ vaults: VAULTS.slice(0, count), reload: () => {} }}
             />
           </HeadActions.Provider>
         </div>
@@ -328,6 +356,33 @@ export const SessionsShort: Story = {
       canvasElement,
       () => userEvent.tab(),
       canvas.getByRole("searchbox", { name: "Search Sessions" }),
+      false,
+    );
+  },
+};
+
+/** Personas on the frame (#3341): one title, the filter held in the top, one scroll; each row
+ *  keeps its persona's mark and the default's star. */
+export const Personas: Story = {
+  args: { view: "personas", count: 7 },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    await walk(
+      canvasElement,
+      () => userEvent.tab(),
+      canvas.getByRole("searchbox", { name: "Search Personas" }),
+      false,
+    );
+  },
+};
+
+/** Vaults on the frame (#3341): its filter held in the top, one scroll. */
+export const Vaults: Story = {
+  args: { view: "vaults", count: 5 },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    await walk(
+      canvasElement,
+      () => userEvent.tab(),
+      canvas.getByRole("searchbox", { name: "Search Vaults" }),
       false,
     );
   },

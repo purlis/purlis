@@ -1236,7 +1236,7 @@ describe("a view on the sidebar view frame (#3340)", () => {
     return top;
   };
 
-  it("draws Memory, Todos and Sessions as views, and leaves the others as they were", () => {
+  it("draws every panel as a view: Memory, Todos, Sessions, Personas, Vaults and an extension's (#3341)", () => {
     const sessions: PanelView = { ...memoryPanel([]), key: "charter/sessions", title: "Sessions" };
     const memory = memoryPanel([MEMORY_ROW]);
     const personas = personasPanel(["devops", "steward"], "steward");
@@ -1244,15 +1244,54 @@ describe("a view on the sidebar view frame (#3340)", () => {
       state: state({
         panels: { ...PANELS, contributed: [todosPanel([TODO]), memory, personas, sessions] },
       }),
+      contributed: [contributedPanel()],
+      vaults: [
+        {
+          name: "ops",
+          provider: "keyring",
+          count: 1,
+          health: { ok: true, detail: "" },
+          reads_on_open: false,
+        },
+      ],
     });
 
-    for (const testid of ["panel-memory", "panel-todos", "panel-sessions"]) {
+    for (const testid of [
+      "panel-memory",
+      "panel-todos",
+      "panel-sessions",
+      "panel-personas",
+      "panel-vaults",
+      "panel-ext-acme-reviews",
+    ]) {
       expect(screen.getByTestId(testid)).toHaveAttribute("data-frame");
       expect(screen.getByTestId(testid).closest("aside")).toHaveClass("panels-view");
     }
-    // Personas, Vaults and the extensions' panels follow (#3341).
-    expect(screen.getByTestId("panel-personas")).toHaveAttribute("data-variant", "default");
-    expect(screen.getByTestId("panel-personas").closest("aside")).not.toHaveClass("panels-view");
+  });
+
+  it("holds the filter of Personas, Vaults and an extension's panel in the top, by its one title (#3341)", () => {
+    draw({
+      contributed: [contributedPanel()],
+      vaults: [
+        {
+          name: "ops",
+          provider: "keyring",
+          count: 1,
+          health: { ok: true, detail: "" },
+          reads_on_open: false,
+        },
+      ],
+    });
+
+    for (const [testid, label] of [
+      ["panel-personas", "Personas"],
+      ["panel-vaults", "Vaults"],
+      ["panel-ext-acme-reviews", "Reviews"],
+    ]) {
+      const top = topOf(testid);
+      expect(within(top).getAllByRole("heading")).toHaveLength(1);
+      expect(within(top).getByRole("searchbox", { name: `Search ${label}` })).toBeInTheDocument();
+    }
   });
 
   it("holds the heading, its actions and the search in the top, before the rows", () => {

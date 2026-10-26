@@ -48,6 +48,8 @@ export function Vaults({
       testid="panel-vaults"
       mark={KeyRound}
       title="Vaults"
+      // A view (#3341): one scroll, its heading and its filter held at the top.
+      view
       // **New vault… on the heading** (SI-3): the palette's row, one press from where the vaults
       // are listed. It needs a plane and not a vault, so it is there on an empty section too.
       actions={<HeadingOffer offer={offers.get("vault.create")} onPress={onPress} />}
@@ -71,6 +73,7 @@ export function Vaults({
           empty={NO_VAULTS}
           label="Vaults"
           testid="list-vaults"
+          search="always"
           // No row opens a card: pressing one opens the vault's tab, which says the rest.
           open={undefined}
           onOpen={() => undefined}
