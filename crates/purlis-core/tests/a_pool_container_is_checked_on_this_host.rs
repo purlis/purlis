@@ -149,7 +149,7 @@ fn checked_whole(
     out: &Path,
     name: &str,
 ) -> Result<(), dockerpool::Refused> {
-    dockerpool::check_on(inspected, made, engine)?;
+    let seccomp = dockerpool::check_on(inspected, made, engine)?;
     if engine.rootless {
         let oci = std::fs::read_to_string(out.join(format!("{name}-oci.json"))).unwrap_or_default();
         let oci = serde_json::from_str(&oci).unwrap_or(serde_json::Value::Null);
@@ -166,6 +166,7 @@ fn checked_whole(
             made,
             Path::new(config),
             &dockerpool::podman_store(&store)?,
+            seccomp,
         )?;
     }
     Ok(())
