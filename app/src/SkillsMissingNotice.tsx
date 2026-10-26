@@ -13,7 +13,8 @@ import { SKILL_STUDIO_SHOW, skillStudioAs } from "./skillStudio";
  * 41): never a silent drop. An installed skill this machine does not have for the chat's
  * harness, and a built-in skill purlis has none of, each named as the persona's skills write it;
  * a skill the chat would have loaded that could not be loaded, with why; and one the repo it
- * works in leaves out, with why (SK-53). It offers
+ * works in leaves out, with why (SK-53). And a skill of that repo named like a built-in one,
+ * which the chat's program loads beside purlis's (SK-37). It offers
  *
  * - **Open in Skill studio**: the studio on the chat's persona, or on a chat at the project's
  *   root, where the name is taken out, the skill is fixed in its editor, or it is seen for what
@@ -88,6 +89,10 @@ export function missingSays(chat: string, said: SkillsMissing): string {
       `${chat} started without ${counted(said.by_a_repo.length, "skill", "skills")} because of the repo it works in: ${said.by_a_repo
         .map((one) => `${one.name} (${one.label}), ${one.why}`)
         .join("; ")}.`,
+    );
+  if (said.beside_a_built_in.length > 0)
+    lines.push(
+      `${chat} works in a repo with its own copy of ${counted(said.beside_a_built_in.length, "built-in skill", "built-in skills")}, which it gets beside purlis's and may use instead: ${said.beside_a_built_in.join(", ")}.`,
     );
   return lines.join(" ");
 }

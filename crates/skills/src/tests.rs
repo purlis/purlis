@@ -1278,8 +1278,10 @@ fn a_skill_turned_off_clashes_with_nothing_and_a_plugins_namespaced_skill_never_
 }
 
 #[test]
-fn a_built_in_skill_never_loses_to_a_repo_or_harness_copy_of_its_name_on_any_route() {
-    // SK-6 (#2769): a clone could otherwise replace purlis's own `secrets` on Codex and opencode.
+fn a_built_in_skill_is_handed_beside_a_repo_or_harness_copy_of_its_name_and_both_are_a_clash() {
+    // SK-6 (#2769): a clone never replaces purlis's own `secrets`. SK-37 (#3027): nor does
+    // purlis hide the clone's, since every program reads a repo's and the person's skills itself
+    // and purlis never turns off a built-in's name, so both load and the pair is a clash.
     let plane = Plane::new();
     let built_in = plane.root.join("../plugin/skills");
     skill(&built_in, "secrets", &whole("secrets"));
@@ -1295,16 +1297,61 @@ fn a_built_in_skill_never_loses_to_a_repo_or_harness_copy_of_its_name_on_any_rou
         );
         assert_eq!(
             effective(&got),
-            [("secrets", Origin::BuiltIn, false)],
+            [
+                ("secrets", Origin::BuiltIn, false),
+                ("secrets", Origin::Repo, false),
+                ("secrets", Origin::Harness, false),
+            ],
             "{route:?}"
         );
-        let hidden: Vec<String> = got.left_out.iter().map(|l| l.reason.to_string()).collect();
+        assert_eq!(got.built_in_dir(), Some(built_in.as_path()), "{route:?}");
+        assert_eq!(left_out(&got), [], "{route:?}");
+        let built_in_copy = At {
+            origin: Origin::BuiltIn,
+            local: false,
+        };
         assert_eq!(
-            hidden, ["hidden by purlis's built-in skill of this name"; 2],
+            got.clashes,
+            [
+                Clash {
+                    name: "secrets".to_owned(),
+                    plane: built_in_copy,
+                    outside: Origin::Repo,
+                    owner: repo("api"),
+                    outcome: Outcome::BothLoad,
+                },
+                Clash {
+                    name: "secrets".to_owned(),
+                    plane: built_in_copy,
+                    outside: Origin::Harness,
+                    owner: Owner::You,
+                    outcome: Outcome::BothLoad,
+                },
+            ],
             "{route:?}"
         );
-        assert!(got.clashes.is_empty(), "{route:?}");
+        assert_eq!(
+            got.beside_a_built_in()
+                .map(|clash| (clash.name.as_str(), clash.outside))
+                .collect::<Vec<_>>(),
+            [("secrets", Origin::Repo), ("secrets", Origin::Harness)],
+            "{route:?}"
+        );
     }
+}
+
+#[test]
+fn a_clash_with_a_project_skill_is_not_one_beside_a_built_in() {
+    let plane = Plane::new();
+    skill(&plane.project(), "review", &whole("review"));
+
+    let set = plane.set(None).with_outside(
+        Route::Config,
+        [outside("review", Origin::Repo, repo("api"), false)],
+    );
+
+    assert_eq!(set.clashes.len(), 1, "{:?}", set.clashes);
+    assert_eq!(set.beside_a_built_in().count(), 0);
 }
 
 /// The set of a chat at `plane`'s root on `route`, with the built-in skills in `built_in`.
