@@ -143,11 +143,13 @@ async function focusModeTo(want: boolean): Promise<void> {
       if (root !== null)
         new MutationObserver((changes) => {
           for (const one of changes)
-            seen.push(`${one.attributeName}:${root.hasAttribute(one.attributeName ?? "")}`);
+            seen.push(`${one.attributeName} was ${one.oldValue === null ? "absent" : "set"}`);
         }).observe(root, {
           attributes: true,
+          attributeOldValue: true,
           attributeFilter: ["data-focus-mode", "data-focus-back"],
         });
+      const already = root?.hasAttribute("data-focus-mode") === true;
       const claimed = !document.body.dispatchEvent(
         new KeyboardEvent("keydown", {
           key: "Enter",
@@ -160,7 +162,7 @@ async function focusModeTo(want: boolean): Promise<void> {
         }),
       );
       const windows = document.querySelectorAll("main.window").length;
-      return `claimed ${claimed}, a modal ${modalUp ? "up" : "not up"} as it was pressed, the keyboard on ${at}, ${windows} window(s)`;
+      return `in focus mode ${already} before, claimed ${claimed}, a modal ${modalUp ? "up" : "not up"} as it was pressed, the keyboard on ${at}, ${windows} window(s)`;
     },
     MAC,
     MODAL,
