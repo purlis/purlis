@@ -95,3 +95,21 @@ fn a_workspaces_turn_off_or_a_narrower_copy_keeps_the_skill_and_a_built_in_name_
     assert!(lost(&left(Reason::NotGranted), folder, "deploy").is_some());
     assert!(lost(&SkillSet::default(), folder, "deploy").is_some());
 }
+
+#[test]
+fn two_folders_differing_only_in_case_are_one_folder_on_a_case_insensitive_disk() {
+    let names = |all: &[&str]| all.iter().map(|n| (*n).to_owned()).collect::<Vec<_>>();
+    assert_eq!(
+        same_but_for_case(&names(&["Deploy", "deploy", "review"])),
+        Some(("Deploy", "deploy"))
+    );
+    assert_eq!(same_but_for_case(&names(&["deploy", "review"])), None);
+}
+
+#[test]
+fn what_the_project_skills_hold_is_taken_in_any_case() {
+    let held = ["deploy".to_owned(), "Review.toml".to_owned()];
+    assert_eq!(taken_by(&held, "Deploy"), Some("deploy"));
+    assert_eq!(taken_by(&held, "review"), Some("Review.toml"));
+    assert_eq!(taken_by(&held, "notes"), None);
+}

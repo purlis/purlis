@@ -328,6 +328,69 @@ fn a_skill_a_chat_would_lose_is_refused_before_anything_moves() {
 }
 
 #[test]
+fn a_clash_in_case_alone_is_refused_before_anything_moves() {
+    purlis_core::unsteered!();
+    let write = |f: &support::Fixture, rel: &str, text: &str| {
+        let at = f.plane.join(rel);
+        std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+        std::fs::write(at, text).unwrap();
+    };
+
+    // A folder the project's skills already hold in another case: one folder where case is
+    // ignored, whatever this disk does.
+    let f = project();
+    write(
+        &f,
+        "skills/Review/SKILL.md",
+        "---\nname: critique\ndescription: Mine.\n---\n",
+    );
+    f.commit(&f.plane, "a project skill");
+    let head_was = head(&f.plane);
+    let why = refused(apply(&f.plane));
+    assert!(
+        why.contains("the project's skills already hold Review, so the skill folder review"),
+        "{why}"
+    );
+    assert_eq!(head(&f.plane), head_was);
+    assert_eq!(f.status(&f.plane), "");
+
+    // Two folders whose skills' names differ only in case name one skill.
+    let f = project();
+    write(
+        &f,
+        ".claude/skills/deploy-again/SKILL.md",
+        "---\nname: Deploy\ndescription: Mine.\n---\n",
+    );
+    f.commit(&f.plane, "a second deploy");
+    let why = refused(apply(&f.plane));
+    assert!(
+        why.contains("its skill Deploy: the skill folder deploy names the same skill"),
+        "{why}"
+    );
+    assert!(!f.plane.join("skills").exists());
+
+    // Two folders differing only in case, which only a disk that keeps case can hold.
+    let f = project();
+    write(
+        &f,
+        ".claude/skills/Review/SKILL.md",
+        "---\nname: critique\ndescription: Mine.\n---\n",
+    );
+    let folders = std::fs::read_dir(f.plane.join(".claude/skills"))
+        .unwrap()
+        .count();
+    if folders == 3 {
+        f.commit(&f.plane, "a second review");
+        let why = refused(apply(&f.plane));
+        assert!(
+            why.contains("the skill folders Review and review differ only in case"),
+            "{why}"
+        );
+        assert!(!f.plane.join("skills").exists());
+    }
+}
+
+#[test]
 fn what_a_move_cannot_carry_is_refused() {
     purlis_core::unsteered!();
     // An untracked file beside the committed ones.
