@@ -46,7 +46,7 @@ export type PanelTab = Tabbed & { view: PanelViewId };
  * else** (#1204): each tab's count is inside its own tab.
  *
  * **What a press does is the arrangement's** (`regions.picked`): a press of the open view puts
- * its region away, except the side panel's own tabs, which never do (R121); any other opens.
+ * its region away, on every bar (R121 as amended 2026-10-26, #3329); any other opens.
  * This draws and says; it decides nothing.
  *
  * **Icons, and the words are still there** (`docs/design-system.md` §Icons): each tab is its
@@ -67,6 +67,7 @@ export function ActivityBar({
   away,
   views,
   open,
+  current,
   keys,
   badges,
   panelOf,
@@ -85,13 +86,15 @@ export function ActivityBar({
   /** The region's name, which is the tab list's. */
   name: string;
   /** What the open view's tooltip says a press does, where "Put the <name> region away" does
-   *  not read: a half of the Panel's (#1737). `null`: a press of the open view does nothing,
-   *  and its tooltip names the view alone (the side panel's own tabs, R121). */
-  away?: string | null;
+   *  not read: a half of the Panel's (#1737). */
+  away?: string;
   /** The views, in the bar's order, each with its name and mark. */
   views: readonly Tabbed[];
   /** The open view, or nothing while the side is put away. */
   open: ViewId | undefined;
+  /** **The view its region shows when it is out**, open or not (#3329): its tab says whether
+   *  the region is out (`aria-expanded`), so a press that puts it away is heard as collapsed. */
+  current?: ViewId;
   /** How each view's key is spelled on this platform, for the tooltip. */
   keys?: Partial<Record<ViewId, string>>;
   /** A count or a mark beside a view's icon, drawn whether or not the side is out. */
@@ -127,12 +130,9 @@ export function ActivityBar({
           const key = keys?.[view];
           const badge = badges?.[view];
           const described = `${tabOf(view)}-badge`;
-          const said =
-            selected && away === null
-              ? called
-              : selected
-                ? (away ?? `Put the ${name} region away`)
-                : `Show the ${called} view`;
+          const said = selected
+            ? (away ?? `Put the ${name} region away`)
+            : `Show the ${called} view`;
           const tab = (
             <RovingFocusGroup.Item asChild tabStopId={view} active={selected}>
               <ActivityItem
@@ -143,6 +143,7 @@ export function ActivityBar({
                 role="tab"
                 id={tabOf(view)}
                 aria-selected={selected}
+                aria-expanded={view === current ? open !== undefined : undefined}
                 aria-controls={panelOf(view)}
                 aria-label={called}
                 aria-describedby={badge === undefined ? undefined : described}

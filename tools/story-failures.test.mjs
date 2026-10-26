@@ -13,6 +13,7 @@ import StoryFailures, {
   annotations,
   cellOf,
   gateOf,
+  picturesAlone,
   placeOf,
   REPORT,
   reportPath,
@@ -505,4 +506,83 @@ test("the failed story's own file is placed before another story file's frame", 
     file: "app/src/Other.stories.tsx",
     line: 3,
   });
+});
+
+// When the stories job draws baselines for its pull request to take (`stories.yml`): only when
+// a picture is all that failed, in every browser's report.
+const failedAt = (gate, browser = "chromium") => ({
+  message: FAILED[gate].message,
+  stack: FAILED[gate][browser],
+});
+
+test("a run whose stories failed on their pictures alone is drawn for its pull request", () => {
+  assert.equal(
+    picturesAlone([
+      reportOf("Probe A", failedAt("screenshot")),
+      { failed: true, ...reportOf("Probe B", failedAt("screenshot", "webkit")) },
+    ]),
+    true,
+  );
+  // One browser's run passed: the other's pictures alone still count.
+  assert.equal(
+    picturesAlone([
+      reportOf("Probe A", failedAt("screenshot")),
+      { failed: false, failures: [], errors: [] },
+    ]),
+    true,
+  );
+});
+
+test("a run with any failure but a picture's draws nothing", () => {
+  for (const gate of ["renders", "keyboard", "accessibility"]) {
+    assert.equal(
+      picturesAlone([reportOf("Probe A", failedAt("screenshot")), reportOf("Probe B", failedAt(gate))]),
+      false,
+      gate,
+    );
+    // A story that failed its picture and another gate is not a picture alone either.
+    assert.equal(
+      picturesAlone([
+        {
+          failures: [
+            {
+              file: "src/Probe.stories.tsx",
+              story: "Probe A",
+              errors: [failedAt("screenshot"), failedAt(gate)],
+            },
+          ],
+          errors: [],
+        },
+      ]),
+      false,
+      `${gate} beside a picture`,
+    );
+  }
+});
+
+test("an error outside a story, a run that failed naming nothing, or no failure draws nothing", () => {
+  assert.equal(
+    picturesAlone([
+      {
+        ...reportOf("Probe A", failedAt("screenshot")),
+        errors: [{ message: "the file would not load", stack: "" }],
+      },
+    ]),
+    false,
+  );
+  assert.equal(
+    picturesAlone([
+      reportOf("Probe A", failedAt("screenshot")),
+      { failed: true, failures: [], errors: [] },
+    ]),
+    false,
+  );
+  assert.equal(picturesAlone([{ failed: false, failures: [], errors: [] }]), false);
+  assert.equal(picturesAlone([]), false);
+  assert.equal(
+    picturesAlone([
+      { failures: [{ file: "src/Probe.stories.tsx", story: "Probe A", errors: [] }], errors: [] },
+    ]),
+    false,
+  );
 });

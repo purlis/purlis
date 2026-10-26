@@ -18,9 +18,16 @@ name: stories
 # this job compares with; the two must name the same digest (`tools/story-image.mjs`). A tag can
 # be pushed again, and a digest cannot, so a baseline is compared in the image it was drawn in.
 #
-# A baseline changes only through `stories-baselines.yml`, which a pull request's
-# `update-baselines` label starts. `workflow_dispatch` is how that job starts this one on the
-# commit it pushed: the `pull_request` run that push starts waits for a maintainer's approval.
+# **A pull request's run draws the baselines it would need, in the same run.** When a pull
+# request's stories fail on their pictures alone (a story failing any other gate draws nothing),
+# or only an obsolete baseline is wrong, the job runs the stories again with `--update` and
+# keeps every live baseline as the `story-baselines` artifact, with `drawn.json` naming the head
+# and the base it was merged with. The check stays red: a baseline is compared only once it is
+# committed. Two ways take the artifact into the branch, and only on request: the person's own
+# `node tools/story-baselines-pull.mjs <pull request>` and push, or the `update-baselines`
+# label (`stories-baselines.yml`), which commits it with the workflow's token. Neither draws
+# again. `workflow_dispatch` is how that job starts this one on the commit it pushed: the
+# `pull_request` run that push starts waits for a maintainer's approval.
 
 on:
   pull_request:
@@ -104,4 +111,54 @@ jobs:
           name: story-pictures
           path: app/.vitest/attachments/
           if-no-files-found: ignore
+          retention-days: 7
+      # The baselines this run would make, for the pull request to take on request (above). Drawn
+      # only when a picture is all that failed, so the other gates hold every baseline drawn; an
+      # obsolete baseline alone needs no drawing, and gathering leaves it out.
+      - name: The baselines, drawn in this run for the pull request to take
+        id: drawn
+        if: failure() && github.event_name == 'pull_request' && steps.stories.conclusion != 'skipped'
+        env:
+          STORIES: ${{ steps.stories.outcome }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          reports="$RUNNER_TEMP/stories-chromium.json $RUNNER_TEMP/stories-webkit.json"
+          if [ "$STORIES" = failure ]; then
+            # The story files whose pictures failed, drawn again; every other baseline stands.
+            # shellcheck disable=SC2086 # two paths, with no space in either
+            if ! files=$(node ../tools/story-failures.mjs pictures-alone $reports); then
+              echo "::notice::a story failed on more than its picture, so no baselines are drawn: fix it, and the next run draws them"
+              exit 0
+            fi
+            for browser in chromium webkit; do
+              # shellcheck disable=SC2086 # story files, with no space in any
+              # Its own report: gathering reads the whole run's, which names every story that
+              # takes no picture.
+              if ! PURLIS_STORY_REPORT="$RUNNER_TEMP/drawing-$browser.json" \
+                npx vitest run --project "stories * ($browser)" --update --reporter=default \
+                --reporter=../tools/story-failures.mjs $files; then
+                echo "::notice::a story failed while its baselines were drawn in $browser, so none are kept"
+                exit 0
+              fi
+            done
+          fi
+          if [ ! -f "$RUNNER_TEMP/stories-index.json" ]; then
+            npx storybook index --disable-telemetry --quiet -c .storybook \
+              -o "$RUNNER_TEMP/stories-index.json"
+          fi
+          mkdir -p "$RUNNER_TEMP/drawn/app"
+          # shellcheck disable=SC2086
+          node ../tools/story-baselines.mjs gather "$RUNNER_TEMP/stories-index.json" \
+            "$RUNNER_TEMP/drawn/app" $reports > "$RUNNER_TEMP/gathered.txt"
+          printf '{"head":"%s","base":"%s"}\n' "$HEAD_SHA" "$BASE_SHA" > "$RUNNER_TEMP/drawn/drawn.json"
+          echo "$(grep -c . "$RUNNER_TEMP/gathered.txt" || true) baselines drawn; take them with node tools/story-baselines-pull.mjs ${{ github.event.pull_request.number }}, or the update-baselines label"
+          echo "drawn=true" >> "$GITHUB_OUTPUT"
+      - name: The baselines drawn, kept for the pull request to take
+        if: failure() && steps.drawn.outputs.drawn == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: story-baselines
+          path: ${{ runner.temp }}/drawn/
+          if-no-files-found: error
           retention-days: 7
