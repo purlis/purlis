@@ -277,6 +277,27 @@ fn a_debug_dump_of_a_salt_or_of_a_prompts_marks_shows_neither() {
 }
 
 #[test]
+fn a_prompts_lead_alone_is_marked_and_a_short_first_line_is_its_own_lead() {
+    let long = "Use purlis's compact skill to compact and improve the persona ops.";
+    let marks = PromptMarks::lead_of(long, &salt());
+    assert!(marks.holds(Prompted::of(StartedBy::Curation, long, &salt()).lead));
+    assert!(!marks.holds(PromptMarks::digest("improve the persona ops.", &salt())));
+    // A custom action's short prompt is still known on a harness that names its skills.
+    let short = PromptMarks::lead_of("Tidy alpha.\nThen say so.", &salt());
+    assert!(short.holds(Prompted::of(StartedBy::Curation, "Tidy alpha.", &salt()).lead));
+    assert!(!short.holds(PromptMarks::digest("Then say so.", &salt())));
+    assert!(PromptMarks::lead_of("  \n", &salt()).is_empty());
+}
+
+#[test]
+fn a_debug_dump_of_a_typed_skill_names_it_and_not_the_digest_of_what_was_typed() {
+    let one = typed("deploy", RUN, "$deploy env: prod", Confirmed::ByPrompt);
+    let dumped = format!("{one:?}");
+    assert!(dumped.contains("deploy"), "{dumped}");
+    assert!(!dumped.contains(&one.text.to_string()), "{dumped}");
+}
+
+#[test]
 fn use_skill_is_a_start_word_of_its_own() {
     assert_eq!(StartedBy::UseSkill.word(), "use-skill");
     assert_eq!(StartedBy::parse("use-skill"), Some(StartedBy::UseSkill));

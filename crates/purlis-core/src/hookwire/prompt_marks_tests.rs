@@ -9,7 +9,7 @@ use super::*;
 use crate::skillspan::{PromptMarks, PromptSalt};
 
 const ID: &str = "01JB00000000000000000000C7";
-const PROMPT: &str = "Use purlis's compact skill on ops\n$deploy env: prod";
+const PROMPT: &str = "Use purlis's compact skill on the persona ops\n$deploy env: prod";
 
 fn env_of(harness: &str) -> impl Fn(&str) -> Option<String> + use<> {
     let pairs = [
@@ -64,6 +64,7 @@ fn a_claude_code_chat_marks_no_filter_of_its_prompt_only_the_lead_a_curation_pro
         "Claude Code names a typed skill; no line of its prompt is marked"
     );
     assert_eq!(marks, PromptMarks::lead_of(PROMPT, &salt()));
+    assert!(!marks.is_empty(), "a curation prompt's lead is marked");
 }
 
 #[test]

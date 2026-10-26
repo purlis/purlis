@@ -269,9 +269,20 @@ pub(crate) fn use_skill(
         return Err("The Skill studio is not turned on on this machine.".to_owned());
     }
     let (skills, salt) = of_the_chat(&held, session).ok_or_else(|| NO_TOOL.to_owned())?;
-    let salt = salt.ok_or_else(|| NOT_STARTED.to_owned())?;
-    let typing = skills.typed(&skill, &values, &salt)?;
+    let typing = typing_of(&skills, salt.as_ref(), &skill, &values)?;
     typed_and_held(&held, session, typing, &|text| clipboard.put_text(text))
+}
+
+/// What Use skill… types to start `skill` of `skills` with `values`, its text digested under
+/// the chat's `salt`; refused for a chat that has no id yet, whose prompts nothing could match.
+fn typing_of(
+    skills: &purlis_core::skills::ChatSkills,
+    salt: Option<&purlis_core::skillspan::PromptSalt>,
+    skill: &str,
+    values: &[String],
+) -> Result<purlis_core::skills::Typing, String> {
+    let salt = salt.ok_or_else(|| NOT_STARTED.to_owned())?;
+    skills.typed(skill, values, salt)
 }
 
 /// `typing` typed into chat `session` of `held` unsent, or copied with the reason, with `copy`

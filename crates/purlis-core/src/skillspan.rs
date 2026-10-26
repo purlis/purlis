@@ -99,7 +99,7 @@ impl Prompted {
 }
 
 /// A skill Use skill… typed into a chat, unsent: the run its prompt opens.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Typed {
     /// The skill, by the name the chat's harness knows it by.
     pub skill: String,
@@ -120,6 +120,20 @@ pub struct Typed {
     /// prompt that holds it holds. Never the text itself.
     pub text: u64,
     pub confirmed: Confirmed,
+}
+
+/// Which skill and run, and never the digest of the text typed: a debug dump of one says
+/// nothing of what was typed.
+impl std::fmt::Debug for Typed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Typed")
+            .field("skill", &self.skill)
+            .field("run", &self.run)
+            .field("workspace", &self.workspace)
+            .field("level", &self.level)
+            .field("confirmed", &self.confirmed)
+            .finish_non_exhaustive()
+    }
 }
 
 /// One typed skill held for a chat.
@@ -145,8 +159,10 @@ pub struct Reported {
 
 /// **The salt a chat's prompts are digested under** (SK-38, #3029): the chat's own id (ADR
 /// 0066), which its hooks read from [`crate::hookwire::CHAT_ID_ENV`] and the window from the chat
-/// it typed into. Each chat's digests of the same words differ, so a filter of a short prompt
-/// is never matched against a table made anywhere but its own chat. Its `Debug` shows nothing.
+/// it typed into. Each chat's digests of the same words differ, so a table of likely prompts
+/// made once matches no chat's filter. **It separates chats and hides nothing:** the id is no
+/// secret (it names the chat's records on disk), so whoever holds a filter and its chat's id can
+/// still test a guess against it (#3369). Its `Debug` shows nothing all the same.
 #[derive(Clone, PartialEq, Eq)]
 pub struct PromptSalt(String);
 
@@ -220,7 +236,9 @@ impl PromptMarks {
 
     /// The marks of `prompt`'s lead alone under `salt`: the one stretch a curation action's or a
     /// trigger's prompt is known by ([`Prompted`]), and no filter of the rest. What a chat whose
-    /// typed skills its harness names sends ([`Confirmed::ByName`]).
+    /// typed skills its harness names sends ([`Confirmed::ByName`]). **A first line of six words
+    /// or fewer is its own lead**, so such a line is digested whole: a custom curation action's
+    /// prompt may be that short ("Tidy alpha."), and is known by nothing else.
     pub fn lead_of(prompt: &str, salt: &PromptSalt) -> Self {
         let mut marks = Self::default();
         if prompt.split_whitespace().next().is_some() {

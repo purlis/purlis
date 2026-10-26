@@ -263,8 +263,9 @@ impl Report {
 /// ([`crate::skillspan::PromptSalt`]): every stretch of its lines where the chat's harness
 /// confirms a typed skill by the prompt (Codex, opencode), and only its lead where the harness
 /// names the skill a prompt started (Claude Code), as a curation action's prompt is known by its
-/// lead on every harness. Nothing outside a chat that has an id, or on a harness purlis does not
-/// know.
+/// lead on every harness; a first line of six words or fewer is its own lead, and so is
+/// digested whole ([`crate::skillspan::PromptMarks::lead_of`]). Nothing outside a chat that has an id, or on a
+/// harness purlis does not know. The salt separates chats and hides nothing (#3369).
 fn prompt_marks(
     prompt: &str,
     env: &dyn Fn(&str) -> Option<String>,

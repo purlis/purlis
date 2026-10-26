@@ -2456,10 +2456,9 @@ impl Hooks {
     }
 
     /// **A curation action put `prompt` in chat `number`**, unsent (SK-20), `by` saying so, its
-    /// lead digested under the chat's `salt` (SK-38): the
-    /// skill runs the turn it is sent in opens are the action's, in the event log and on the chat's tab alike.
-    /// Best effort, as [`Self::skill_typed`] is: a run is only ever a record of what the chat
-    /// did.
+    /// lead digested under the chat's `salt` (SK-38): the skill runs the turn it is sent in opens
+    /// are the action's, in the event log and on the chat's tab alike. Best effort, as
+    /// [`Self::skill_typed`] is: a run is only ever a record of what the chat did.
     pub fn skill_prompted(
         &self,
         root: &Path,

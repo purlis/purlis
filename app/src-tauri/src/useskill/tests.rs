@@ -78,3 +78,30 @@ fn a_chat_on_no_tool_purlis_knows_is_offered_nothing_and_has_no_budget() {
     assert!(shown.skills.is_empty());
     assert_eq!(shown.budget, None);
 }
+
+#[test]
+fn a_chat_with_no_id_yet_has_nothing_typed_and_says_so() {
+    // SK-38: its prompts are digested under its id, so with none no run could ever be matched.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("plane");
+    skill(
+        &root.join("skills"),
+        "review",
+        "---\nname: review\ndescription: Reviews.\n---\n",
+    );
+    let skills = for_use_skill(&Running {
+        plane: &root,
+        workspace: None,
+        persona: None,
+        harness: Harness::Codex,
+        built_in: None,
+        plane_skills: true,
+    });
+
+    let refused = typing_of(&skills, None, "review", &[]).unwrap_err();
+    assert_eq!(refused, NOT_STARTED);
+
+    let salt = purlis_core::skillspan::PromptSalt::of_chat("01JB00000000000000000000C4").unwrap();
+    let typing = typing_of(&skills, Some(&salt), "review", &[]).expect("typed with an id");
+    assert_eq!(typing.text, "$review");
+}
