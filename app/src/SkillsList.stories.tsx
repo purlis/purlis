@@ -12,7 +12,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { expect, screen, waitFor, within } from "storybook/test";
-import { expectFocusInSight, untilFocused } from "./stories.testkit";
+import { expectFocusInSight, pictureNow, untilFocused, untilSettled } from "./stories.testkit";
 import { Button } from "./ui/button/Button";
 import { useListFilter } from "./ui/list/ListFilter";
 import { SkillMenu, SkillsList } from "./SkillsList";
@@ -159,9 +159,13 @@ export const ByLevel: Story = {
 /**
  * **A project with no skill of its own**: the studio's claim over the skills its chats already
  * get, naming New skill…, whose menu holds the three starts. Tab reaches it past Open Skill
- * studio, Enter opens it on its first start, Enter starts one.
+ * studio, Enter opens it on its first start, Enter starts one and closes it.
+ *
+ * The picture is of the menu open on its first start (#3414): taken once the menu has arrived,
+ * its fade and its placement done, of the page, as the menu is drawn past the view's edge.
  */
 export const NoSkillsOfItsOwn: Story = {
+  parameters: { screenshot: "page" },
   render: () => <Skills starts rows={OPS.filter((row) => row.skill.level === "built-in")} />,
   play: async ({ canvas, userEvent }) => {
     expect(canvas.getByTestId("skills-view-empty")).toHaveTextContent("from New skill…");
@@ -175,8 +179,11 @@ export const NoSkillsOfItsOwn: Story = {
       () => within(menu).getByRole("menuitem", { name: /Ask a chat/ }),
       "Skills: the menu opens on its first start",
     );
+    expectFocusInSight();
+    await untilSettled(menu);
+    await pictureNow();
     await userEvent.keyboard("{Enter}");
     await waitFor(() => expect(canvas.getByRole("status")).toHaveTextContent("Started draft"));
-    expectFocusInSight();
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull(), { timeout: 3_000 });
   },
 };

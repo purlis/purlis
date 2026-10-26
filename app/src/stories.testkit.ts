@@ -56,6 +56,41 @@ export async function untilFocused(target: () => Element | null, step: string): 
   }
 }
 
+/** How long a surface may take to arrive: WebKit draws the next frame late in a busy run. */
+const SETTLES_WITHIN_MS = 3_000;
+
+/** The next frame drawn. */
+const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+/**
+ * **The surface `inside` is on has settled** (#3414): a popover or a menu done arriving (React
+ * Aria's `data-entering` gone, no animation of the page running) and placed, its box the same on
+ * two frames running. For a story that pictures a surface while it is open, as a picture taken
+ * while it fades in or moves to its place differs run to run.
+ */
+export async function untilSettled(inside: Element): Promise<void> {
+  const surface = inside.closest('[data-scope="popover"][data-part="root"]') ?? inside;
+  let was: DOMRect | undefined;
+  await waitFor(
+    async () => {
+      if (surface.hasAttribute("data-entering")) throw new Error("still arriving");
+      if (document.getAnimations().some((one) => one.playState === "running"))
+        throw new Error("still moving");
+      await nextFrame();
+      const box = surface.getBoundingClientRect();
+      const same =
+        was !== undefined &&
+        box.x === was.x &&
+        box.y === was.y &&
+        box.width === was.width &&
+        box.height === was.height;
+      was = box;
+      if (!same) throw new Error("still being placed");
+    },
+    { timeout: SETTLES_WITHIN_MS },
+  );
+}
+
 /** The families whose native input is hidden inside the part that draws it (#2907). */
 const CHOICE_SCOPES = ["checkbox", "radio", "switch", "segment", "option-card", "slider"]
   .map((scope) => `[data-scope="${scope}"]`)
