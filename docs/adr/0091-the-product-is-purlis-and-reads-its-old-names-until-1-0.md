@@ -156,3 +156,12 @@ line where two old names would read the same afterwards, which is left for a per
   when someone starts it by hand on `main`.
 - **D-RN11c-2: the site's npm package keeps the name `charter-site`** until RN-13 renames the
   packages.
+- **D-RN7-13: `rename-plane` rewrites a skill reference only where it is one (#2784, recorded
+  by #3051).** The `project-skills` fix shares its rule ([ADR 0099's amendment of
+  2026-10-22](0099/2026-10-22-the-migration-from-claude-skills-as-built.md)): `charter:<skill>`
+  not preceded by a word character, a dot, a slash, an `@` or a `:`, and never on a line of a
+  fenced code block (```` ``` ```` or `~~~`). Before #2784 `rename-plane` also rewrote a name
+  after a slash, an `@` or a `:`, and inside fenced code, so an image such as
+  `ghcr.io/acme/charter:v1` became `ghcr.io/acme/purlis:v1` and a quoted command changed. Code
+  quoted in a persona is somebody's, as written. A project that ran the earlier fix keeps what
+  it committed, and a quoted name it changed is mended by hand.
