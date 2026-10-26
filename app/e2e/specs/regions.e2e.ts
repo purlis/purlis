@@ -415,16 +415,12 @@ describe("the left side's activity bar", () => {
     await $('[data-testid="chats-section"]').waitForDisplayed({ timeout: 20_000 });
   });
 
-  it("leaves the side out on a press of the open view, and its key puts it away and back", async () => {
+  it("puts the side away on a press of the open view, and brings it back on the next", async () => {
     await untilTheStripIsRead();
     await $('[data-testid="chats-section"]').waitForDisplayed({ timeout: 20_000 });
     const slot = await $('[data-panel][id="region-left"]');
 
-    // R121 (#2917): the side panel's own tabs stay, so a press of the open one is nothing.
-    await (await tab("Chats")).click();
-    await browser.pause(400);
-    expect((await slot.getSize("width")) as number).toBeGreaterThan(0);
-
+    // R121 as amended 2026-10-26 (#3329): a second press of the open view closes the side.
     const view = await putSideAway("Navigation");
     await browser.waitUntil(async () => ((await slot.getSize("width")) as number) === 0, {
       timeout: 20_000,
