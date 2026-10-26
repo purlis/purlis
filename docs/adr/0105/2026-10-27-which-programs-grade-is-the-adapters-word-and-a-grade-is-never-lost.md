@@ -10,3 +10,9 @@ adapter says `can_grade`, with no default, and a grade's chat on one that says n
 sentence that names the programs that can. Claude Code says yes; Codex and opencode say no until
 #3272. What keeps one program's chat from ever asking (its settings and its flags) is that
 adapter's to read (`grade_refused`), so the core asks it and names no file and no flag.
+
+**A grade's chat starts in a mode that asks, or not at all** (§3, #3352). A grade's session settings
+pin Claude Code's `default` permission mode, but a `--permission-mode` in the profile's command
+outranks them, so a mode that asks nobody would keep a grade's "end at the first ask" from ever
+firing. A profile whose command names any mode but `default` or `plan`, in any spelling the bypass
+check reads, or names the flag with no mode after it, is refused with the bypass flags' sentence.

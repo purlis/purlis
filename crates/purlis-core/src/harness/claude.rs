@@ -322,7 +322,9 @@ impl HarnessAdapter for ClaudeCode {
     }
 
     /// The person's own settings that start every chat with its prompts off, or that purlis
-    /// cannot read, and a command that turns them off ([`crate::dispatchunattended::bypass_in`]).
+    /// cannot read; a command that turns them off ([`crate::dispatchunattended::bypass_in`]);
+    /// and a command that starts the chat in any mode but the two that ask (#3352), as the
+    /// command's `--permission-mode` outranks the one a grade's session settings pin.
     fn grade_refused(
         &self,
         command: &[String],
@@ -331,7 +333,9 @@ impl HarnessAdapter for ClaudeCode {
         if let Some(why) = settings_keep_a_grade_from_running(env) {
             return Some(why);
         }
-        crate::dispatchunattended::bypass_in(command).map(|flag| prompts_off_by(&flag))
+        crate::dispatchunattended::bypass_in(command)
+            .or_else(|| mode_that_does_not_ask(command))
+            .map(|flag| prompts_off_by(&flag))
     }
 
     /// The line as it is: Claude Code's sandbox rides in the `--settings` charter hands it (in
@@ -701,6 +705,44 @@ fn prompts_off_by(flag: &str) -> String {
         crate::shown::one_line(flag, 60)
     )
 }
+
+/// **Claude Code's permission modes a grade's chat may start in** (#3352): each asks before a
+/// tool its rules do not allow, so a grade's "end at the first ask" fires. Every other mode
+/// (`acceptEdits`, `auto`, `dontAsk`, `bypassPermissions`, and any a later version adds) is
+/// refused.
+const GRADED_MODES: [&str; 2] = [DEFAULT_MODE, PLAN_MODE];
+
+/// Claude Code's permission mode that plans and asks before it acts.
+const PLAN_MODE: &str = "plan";
+
+/// **The `--permission-mode` in `command` that names a mode a grade's chat may not start in**,
+/// as it is written, or `None`: read in each spelling [`crate::dispatchunattended::bypass_in`]
+/// reads (`--permission-mode <mode>`, `--permission-mode=<mode>`, the mode quoted or spaced),
+/// every one of them, and one with no mode after it, which takes the next word purlis adds.
+fn mode_that_does_not_ask(command: &[String]) -> Option<String> {
+    use crate::sandbox::codex::{is_flag, split};
+    command.iter().enumerate().find_map(|(at, word)| {
+        if !is_flag(word) {
+            return None;
+        }
+        let (flag, attached) = split(word);
+        if flag != PERMISSION_MODE_FLAG {
+            return None;
+        }
+        let value = attached.or_else(|| command.get(at + 1).map(String::as_str));
+        let plain = value.map(|value| value.replace(['"', '\'', ' '], ""));
+        if plain.is_some_and(|mode| GRADED_MODES.contains(&mode.as_str())) {
+            return None;
+        }
+        Some(match (attached, value) {
+            (None, Some(value)) => format!("{flag} {value}"),
+            _ => word.clone(),
+        })
+    })
+}
+
+/// The flag Claude Code starts a chat in a permission mode by.
+const PERMISSION_MODE_FLAG: &str = "--permission-mode";
 
 /// Why a grade cannot know whether a chat keeps its permission prompts: the person's Claude Code
 /// settings are not where purlis can read them.
