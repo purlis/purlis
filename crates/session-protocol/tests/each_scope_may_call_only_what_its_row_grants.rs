@@ -337,6 +337,7 @@ fn every_command() -> Vec<Command> {
                 user: None,
                 password: purlis_session_protocol::browsing::Secret::new("not-a-real-one".into()),
                 keep: None,
+                identity: None,
             },
         },
         // A browser opened from kept logins (1.27, #2021): the window's alone, as a login is.

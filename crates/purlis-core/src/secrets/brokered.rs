@@ -1264,6 +1264,7 @@ pub fn login_and_identity_for(
             user: user_key.map(read).transpose()?,
             password: read(pass_key)?,
             keep: None,
+            identity: Some(identity.clone()),
         },
         identity,
     ))

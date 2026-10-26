@@ -8,8 +8,8 @@
 //! (whose it is, what its chat calls it, the logins it holds) is in the window's memory, so the
 //! window keeps a copy in the host beside it: its **window note** ([`Note`], session protocol
 //! 1.39), sent from one place ([`ChatBrowsers::renote`]) as each of those changes, and never read
-//! by the host. The host keeps a record of its own beside it: whether a login was ever performed
-//! in the browser, which no note can unsay.
+//! by the host. The host keeps a record of its own beside it: the identity of every login it
+//! performed in the browser, which no note can unsay.
 //!
 //! **A window that comes back takes each back** once the project's put back has settled
 //! ([`take_back`]), from what `programs_of` answers:
@@ -24,7 +24,8 @@
 //!   tab ([`ChatBrowsers::take_theirs_back`]);
 //! - **anything else is ended**: one with no note, a note that does not read, one being ended
 //!   when the window went, one whose engine ended, a chat's whose chat did not come back, and one
-//!   the host says was logged in whose note names no login. Nothing runs with no row or tab.
+//!   holding a login the host performed that its note does not name. Nothing runs with no row or
+//!   tab.
 //!
 //! The driver lease is the host's: one the person took over stays theirs, and is marked so on
 //! its row from the first listing.
@@ -137,8 +138,9 @@ pub struct Back<'a> {
 pub struct Left<'a> {
     pub program: &'a str,
     pub note: Option<&'a Note>,
-    /// The host says a login was performed in it, or it opened from a kept login.
-    pub logged_in: bool,
+    /// The identity of each login the host performed in it, or that it opened from: an empty
+    /// one where the login named none.
+    pub logins: &'a [String],
     /// The host says the person drives it.
     pub person_drives: bool,
 }
@@ -317,7 +319,10 @@ impl ChatBrowsers {
             return TakenBack::NotTaken;
         };
         // A login the host performed that the note does not name: what it holds is not known.
-        if left.logged_in && note.logins.is_empty() {
+        let named = |identity: &String| {
+            !identity.is_empty() && note.logins.iter().any(|one| one.identity == *identity)
+        };
+        if !left.logins.iter().all(named) {
             return TakenBack::NotTaken;
         }
         let mut follows = None;
@@ -330,7 +335,12 @@ impl ChatBrowsers {
                 rests_on,
                 pinned,
             } => {
-                let same_chat = (back.open)(*chat).is_some_and(|now| now == *id);
+                let open_now = (back.open)(*chat);
+                // A chat with no identity is the same chat by its number alone only where its
+                // browser holds no login: one that does needs the identity to match.
+                let same_chat = open_now
+                    .as_ref()
+                    .is_some_and(|now| now == id && (note.logins.is_empty() || id.is_some()));
                 let may = note
                     .logins
                     .iter()
@@ -339,7 +349,7 @@ impl ChatBrowsers {
                     self.back_to_its_chat(*chat, program, name, *open_web, rests_on, *pinned, now);
                     follows = rests_on.as_ref().map(|_| *chat);
                     TakenBack::WithItsChat
-                } else if *pinned || !note.logins.is_empty() && same_chat {
+                } else if *pinned || !note.logins.is_empty() && open_now.is_some() {
                     self.keep_for_the_person(*chat, name, program, &format!("chat {chat}"));
                     TakenBack::Kept
                 } else {
@@ -543,7 +553,7 @@ pub(crate) fn take_back_from(
                 &Left {
                     program: &browser.program,
                     note: note.as_ref(),
-                    logged_in: browser.logged_in,
+                    logins: &browser.logins,
                     person_drives: browser.driver
                         == Some(purlis_session_protocol::browsing::Driver::Person),
                 },

@@ -18,9 +18,10 @@ D-2025-*n*.
    that ends ends its browsers too. Not the host record (#2007), which the host writes for
    itself.
 2. **`programs_of` answers a project's browsers too**, to a link of 1.39 or later, each with
-   who drives it (the lease the host holds), its window note, and `logged_in`: the host's own
-   record that a login was performed in it or it opened from a kept login, which no note can
-   unsay. A link before 1.39 is answered harnesses and shells alone, as before.
+   who drives it (the lease the host holds), its window note, and `logins`: the host's own
+   record of the identity of every login it performed in the browser or opened it from, which no
+   note can unsay. A login is performed with its identity named, and one named none is recorded
+   as an empty identity, which no note names. A link before 1.39 is answered harnesses and shells alone, as before.
 3. **A window that comes back takes each browser back once the project's put back has
    settled**, after #2006's item 8 closed the chats nothing reattached, from the browsers the
    host answered at the window's first hold alone, so a re-link never hands back one the window
@@ -28,15 +29,16 @@ D-2025-*n*.
 4. **What nothing takes back is ended** with the project's put back: a browser with no note,
    one whose note does not read, one being ended when the window went, one whose engine ended
    while no window was there, a chat's whose chat did not come back and that was not pinned,
-   and one the host says was logged in whose note names no login. Nothing runs with no row or
+   and one holding a login the host recorded that its note does not name. Nothing runs with no row or
    tab, and no browser's login record is lost.
 5. **Notes are sent from one place**: after each command of the window's, the note of every
    browser whose note changed, in order, on the project's own link, never waited on. A browser
-   let go of to be ended is noted so at once. The host's `logged_in` record, not the order of
-   notes and logins, is what keeps a login from being forgotten across a crash.
+   let go of to be ended is noted so at once. The host's record of the logins it performed, not
+   the order of notes and logins, is what keeps a login from being forgotten across a crash.
 6. **A chat's browser goes back only to the same chat, and only with what that chat may hold
    now.** The note names the chat by its number and its identity (ADR 0066); a chat open under
-   that number with another identity does not take it. One holding logins goes back only where
+   that number with another identity does not take it, and a chat with no identity takes back
+   by its number alone only a browser that holds no login. One holding logins goes back only where
    the chat may log in with each now, as a hand-over checks (#2699); else it is the person's,
    under Pinned browsers, its logins kept. A pinned one whose chat did not come back is the
    person's too.

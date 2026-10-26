@@ -288,30 +288,59 @@ async fn a_note_of_a_browser_in_a_project_the_link_does_not_hold_is_refused() {
     );
 }
 
+/// A login of `identity`, or of none named.
+fn a_login(identity: Option<&str>) -> purlis_session_protocol::browsing::LogIn {
+    purlis_session_protocol::browsing::LogIn {
+        address: "https://shop.example.test/login".into(),
+        user: None,
+        password: purlis_session_protocol::browsing::Secret::new("not-a-real-one".into()),
+        keep: None,
+        identity: identity.map(str::to_owned),
+    }
+}
+
 #[tokio::test]
-async fn a_browser_purlis_logged_in_is_answered_so_whatever_its_note_says() {
+async fn each_login_purlis_performed_in_a_browser_is_answered_whatever_its_note_says() {
     let hosted = hosted();
     let (first, _views) = window(&hosted.hosting, hosted.project.path()).await;
     let (program, _screen) = a_browser_noted(&first, &hosted.browsers, json!({"chat": 3})).await;
-    assert!(!browsers_of(&first).await[0].logged_in);
+    assert!(browsers_of(&first).await[0].logins.is_empty());
 
-    let _ = first
-        .log_in(
-            &program,
-            purlis_session_protocol::browsing::LogIn {
-                address: "https://shop.example.test/login".into(),
-                user: None,
-                password: purlis_session_protocol::browsing::Secret::new("not-a-real-one".into()),
-                keep: None,
-            },
-        )
-        .await;
+    let _ = first.log_in(&program, a_login(Some("login-one"))).await;
+    let _ = first.log_in(&program, a_login(Some("login-two"))).await;
+    let _ = first.log_in(&program, a_login(Some("login-one"))).await;
+    let _ = first.log_in(&program, a_login(None)).await;
     drop(first);
     let (second, _views) = window(&hosted.hosting, hosted.project.path()).await;
 
     let browsers = browsers_of(&second).await;
-    assert!(browsers[0].logged_in, "the host's own record");
+    assert_eq!(
+        browsers[0].logins,
+        ["login-one", "login-two", ""],
+        "the host's own record, each once, one with no identity as an empty one"
+    );
     assert_eq!(browsers[0].note, Some(ProgramNote(json!({"chat": 3}))));
+}
+
+#[tokio::test]
+async fn a_browser_opened_from_a_kept_login_is_answered_with_it() {
+    let hosted = hosted();
+    let (client, _views) = window(&hosted.hosting, hosted.project.path()).await;
+    client
+        .start_program(StartProgram {
+            kept: Some(purlis_session_protocol::browsing::KeptLogin {
+                profile: "claude".into(),
+                persona: "steward".into(),
+                login: "shop-login".into(),
+                identity: "kept-identity".into(),
+                address: "https://shop.example.test/login".into(),
+            }),
+            ..StartProgram::of(PROJECT, ProgramKind::Browser)
+        })
+        .await
+        .expect("a browser starts from its kept login");
+
+    assert_eq!(browsers_of(&client).await[0].logins, ["kept-identity"]);
 }
 
 #[tokio::test]

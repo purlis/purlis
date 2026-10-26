@@ -242,9 +242,9 @@ use crate::view::{Limits, Views};
 /// held project's browsers too, each with who drives it (`driver`) and the note the window keeps
 /// of it in the host (`note`), which a browser's start may carry and `note_program` replaces. A
 /// note is the window's own, which the host keeps for it and never reads, at most
-/// [`ProgramNote::MOST`] bytes. And each browser says whether a login was ever performed in it,
-/// or it opened from a kept login (`logged_in`): the host's own record, which no note can
-/// unsay. The window's alone ([`crate::grants::Power::Reattach`]). A host before 1.39 answers
+/// [`ProgramNote::MOST`] bytes. And each browser says the identity of every login the host
+/// performed in it, or that it opened from (`logins`): the host's own record, which no note
+/// can unsay; a login whose start named no identity is recorded as an empty one. The window's alone ([`crate::grants::Power::Reattach`]). A host before 1.39 answers
 /// no browser, and a window that comes back to it ends them as nothing takes them back.
 pub const VERSION: Version = Version {
     major: 1,
@@ -1160,11 +1160,12 @@ pub struct HeldProgram {
     /// The note the window last kept of it in the host (1.39, #2025), where it kept one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<ProgramNote>,
-    /// A browser purlis performed a login in, or one opened from a kept login (1.39, #2025):
-    /// the host's own record, so a window that comes back never takes it for one that holds
-    /// none.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub logged_in: bool,
+    /// The identity of each login purlis performed in a browser, or the kept login it opened
+    /// from, in order, each once (1.39, #2025): the host's own record, so a window that comes
+    /// back knows every login it holds whatever its note says. One performed with no identity
+    /// named is an empty one, which no note names.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub logins: Vec<String>,
 }
 
 /// The kill switch as the host holds it (1.5, ADR 0071).

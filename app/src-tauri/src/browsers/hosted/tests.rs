@@ -957,6 +957,7 @@ fn the_event_log_says_who_drives_a_browser_and_that_someone_typed_never_what() {
         user: Some(Secret::new("ada@shop.example.test".into())),
         password: Secret::new("correct horse battery staple".into()),
         keep: None,
+        identity: None,
     };
     Driver::log_in(&browsers, &program, login).unwrap();
 
@@ -1072,6 +1073,7 @@ fn a_window_started_again_says_nothing_of_a_login_the_host_refuses_as_the_person
         user: None,
         password: Secret::new("correct horse battery staple".into()),
         keep: None,
+        identity: None,
     };
     let refused = Driver::log_in(&again, &program, login);
 

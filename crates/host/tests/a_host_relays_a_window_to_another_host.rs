@@ -639,6 +639,7 @@ async fn host_a_sends_no_login_on_to_host_b_even_from_its_window() {
                 user: None,
                 password: purlis_session_protocol::browsing::Secret::new("fixture-word".into()),
                 keep: None,
+                identity: None,
             },
         )
         .await

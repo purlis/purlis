@@ -794,9 +794,9 @@ struct Hosted {
     sandbox: session::RunSandbox,
     /// The window's note of it (1.39, #2025): its own words, kept for it and never read here.
     note: Option<session::ProgramNote>,
-    /// A browser purlis performed a login in, or opened from a kept login (1.39, #2025): the
-    /// host's own record, which no note of the window's unsays.
-    logged_in: Arc<std::sync::atomic::AtomicBool>,
+    /// The identity of each login purlis performed in it, or of the kept login it opened from
+    /// (1.39, #2025): the host's own record, which no note of the window's unsays.
+    logins: Arc<Mutex<Vec<String>>>,
 }
 
 /// Says the host's act `by` is ending a program, keeping the highest where another is already.
@@ -1742,7 +1742,7 @@ impl Hosting {
                 stopping: Arc::clone(&stopping),
                 sandbox: sandbox.clone(),
                 note: start.note.clone(),
-                logged_in: Arc::default(),
+                logins: Arc::default(),
             },
         );
         // Written down before the start is answered, so a host killed from here on leaves it
@@ -1940,7 +1940,13 @@ impl Hosting {
                 // proxy's: no chat's run.
                 sandbox: session::RunSandbox::Off,
                 note: start.note.clone(),
-                logged_in: Arc::new(std::sync::atomic::AtomicBool::new(start.kept.is_some())),
+                logins: Arc::new(Mutex::new(
+                    start
+                        .kept
+                        .iter()
+                        .map(|kept| kept.identity.clone())
+                        .collect(),
+                )),
             },
         );
         drop(state);
@@ -2005,9 +2011,18 @@ impl Hosting {
         // Recorded before it is tried, whatever it comes to: a login that timed out may have
         // signed the browser in all the same (#2025).
         if let Some(hosted) = self.state().programs.get(program) {
-            hosted
-                .logged_in
-                .store(true, std::sync::atomic::Ordering::SeqCst);
+            let identity = login
+                .identity
+                .clone()
+                .or_else(|| login.keep.as_ref().map(|kept| kept.identity.clone()))
+                .unwrap_or_default();
+            let mut logins = hosted
+                .logins
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if !logins.contains(&identity) {
+                logins.push(identity);
+            }
         }
         tokio::task::spawn_blocking(move || running.log_in(login))
             .await
@@ -2141,8 +2156,15 @@ impl Hosting {
                 rows: hosted.size.rows,
                 driver: hosted.running.driver().filter(|_| knows_browsers),
                 note: hosted.note.clone().filter(|_| knows_browsers),
-                logged_in: knows_browsers
-                    && hosted.logged_in.load(std::sync::atomic::Ordering::SeqCst),
+                logins: if knows_browsers {
+                    hosted
+                        .logins
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .clone()
+                } else {
+                    Vec::new()
+                },
             })
             .collect();
         programs.sort_by(|a, b| (a.number, &a.program).cmp(&(b.number, &b.program)));

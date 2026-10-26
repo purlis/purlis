@@ -52,17 +52,18 @@ impl Again<'_> {
 }
 
 /// What a window that comes back with `again` does with `program`, its note `note`, the host
-/// saying whether it logged in and whether the person drives it.
+/// saying the identity of each login it performed and whether the person drives it.
 fn back_in(
     browsers: &ChatBrowsers,
     hosted: &Arc<Hosted>,
     program: &str,
     note: Option<&Note>,
     again: &Again<'_>,
-    logged_in: bool,
+    logins: &[&str],
     person_drives: bool,
 ) -> TakenBack {
     let driver: Arc<dyn Driver> = hosted.clone();
+    let logins: Vec<String> = logins.iter().map(|one| (*one).to_owned()).collect();
     let open = |session: u32| {
         again
             .open
@@ -83,7 +84,7 @@ fn back_in(
         &Left {
             program,
             note,
-            logged_in,
+            logins: &logins,
             person_drives,
         },
         &Back {
@@ -183,7 +184,7 @@ fn a_browser_noted_before_a_crash_goes_back_to_its_chat_under_the_name_it_knew()
         "program-1",
         Some(&note),
         &Again::chats(&[(3, CHAT_3)]),
-        false,
+        &[],
         false,
     );
 
@@ -217,7 +218,7 @@ fn a_browser_goes_to_no_other_chat_that_has_its_chats_number_now() {
         "program-1",
         Some(&note),
         &Again::chats(&[(3, "01JA0NTHRCHT00000000000000")]),
-        false,
+        &[],
         false,
     );
 
@@ -239,7 +240,7 @@ fn a_pinned_browser_whose_chat_did_not_come_back_is_kept_as_the_persons() {
         "program-1",
         Some(&note),
         &Again::chats(&[]),
-        false,
+        &[],
         false,
     );
 
@@ -266,13 +267,13 @@ fn a_browser_with_no_note_being_ended_or_whose_chat_did_not_come_back_is_taken_b
             "program-1",
             Some(&note),
             &not_back,
-            false,
+            &[],
             false
         ),
         TakenBack::NotTaken
     );
     assert_eq!(
-        back_in(&again, &hosted, "program-2", None, &open, false, false),
+        back_in(&again, &hosted, "program-2", None, &open, &[], false),
         TakenBack::NotTaken
     );
     let ending = Note::of(Owner::Ending);
@@ -283,7 +284,7 @@ fn a_browser_with_no_note_being_ended_or_whose_chat_did_not_come_back_is_taken_b
             "program-3",
             Some(&ending),
             &open,
-            false,
+            &[],
             false
         ),
         TakenBack::NotTaken
@@ -305,7 +306,7 @@ fn a_browser_the_host_logged_in_whose_note_names_no_login_is_taken_back_by_nothi
         "program-1",
         Some(&note),
         &Again::chats(&[(3, CHAT_3)]),
-        true,
+        &["an-unnamed-login"],
         false,
     );
 
@@ -323,7 +324,7 @@ fn the_persons_own_browser_is_taken_back_for_a_view_tab_once() {
         "program-9",
         Some(&Note::of(Owner::Theirs)),
         &Again::chats(&[]),
-        false,
+        &[],
         false,
     );
 
@@ -348,7 +349,7 @@ fn a_chats_browser_a_view_tab_of_its_own_showed_comes_back_in_one_too() {
         "program-1",
         Some(&note),
         &Again::chats(&[(3, CHAT_3)]),
-        false,
+        &[],
         false,
     );
 
@@ -377,7 +378,7 @@ fn a_browser_holding_a_login_goes_back_to_its_chat_only_where_it_may_log_in_with
         "program-1",
         Some(&note),
         &may_not,
-        true,
+        &[IDENTITY],
         false,
     );
 
@@ -394,7 +395,15 @@ fn a_browser_holding_a_login_goes_back_to_its_chat_only_where_it_may_log_in_with
     let may = Again::chats(&[(3, CHAT_3)]);
     let other = ChatBrowsers::default();
     assert_eq!(
-        back_in(&other, &hosted, "program-1", Some(&note), &may, true, false),
+        back_in(
+            &other,
+            &hosted,
+            "program-1",
+            Some(&note),
+            &may,
+            &[IDENTITY],
+            false
+        ),
         TakenBack::WithItsChat
     );
 }
@@ -422,7 +431,7 @@ fn an_answer_resting_on_always_follows_it_as_narrowed_while_no_window_was_there(
         "program-1",
         Some(&note),
         &narrowed,
-        false,
+        &[],
         false,
     );
 
@@ -455,7 +464,7 @@ fn a_browser_this_window_holds_already_is_left_as_it_is_with_its_logins_merged()
         "program-1",
         Some(&note),
         &Again::chats(&[(3, CHAT_3)]),
-        true,
+        &[IDENTITY],
         false,
     );
 
@@ -484,7 +493,7 @@ fn a_browser_the_person_took_over_is_taken_back_marked_as_theirs_to_drive() {
         "program-1",
         Some(&note),
         &Again::chats(&[(3, CHAT_3)]),
-        false,
+        &[],
         true,
     );
 
@@ -515,4 +524,72 @@ fn a_note_reads_back_as_it_was_kept_and_one_that_does_not_read_is_none() {
     );
     assert_eq!(Note::read(Some(&unreadable)), None);
     assert_eq!(Note::read(None), None);
+}
+
+#[test]
+fn a_browser_holding_a_login_its_note_never_named_is_taken_back_by_nothing() {
+    let (first, hosted) = noted();
+    let qa = as_persona("qa", None, None);
+    answered_as(&first, &hosted, &ask(3, click()), &qa);
+    first.allow(3, false);
+    answered_as(&first, &hosted, &ask(3, log_in("shop-login")), &qa);
+    // The note names the first login; a second was performed and its note lost in the crash.
+    let note = note_of(&first, &hosted, "program-1");
+    assert_eq!(note.logins.len(), 1);
+
+    let again = ChatBrowsers::default();
+    let back = back_in(
+        &again,
+        &hosted,
+        "program-1",
+        Some(&note),
+        &Again::chats(&[(3, CHAT_3)]),
+        &[IDENTITY, "fedcba9876543210fedcba9876543210"],
+        false,
+    );
+
+    assert_eq!(back, TakenBack::NotTaken);
+    assert!(again.listed().is_empty());
+}
+
+#[test]
+fn a_chat_with_no_identity_takes_back_no_browser_holding_a_login_it_goes_to_the_person() {
+    let hosted = Arc::new(Hosted::default());
+    let driver: Arc<dyn Driver> = hosted.clone();
+    // A window whose record gives chat 3 no identity.
+    let first = ChatBrowsers::default().noting(Some(driver), Path::new("/p"));
+    let qa = as_persona("qa", None, None);
+    answered_as(&first, &hosted, &ask(3, click()), &qa);
+    first.allow(3, false);
+    answered_as(&first, &hosted, &ask(3, log_in("shop-login")), &qa);
+    let note = note_of(&first, &hosted, "program-1");
+    assert!(matches!(note.owner, Owner::Chat { id: None, .. }));
+
+    let open: &[(u32, Option<String>)] = &[(3, None)];
+    let opened = |session: u32| {
+        open.iter()
+            .find(|(one, _)| *one == session)
+            .map(|(_, id)| id.clone())
+    };
+    let again = ChatBrowsers::default();
+    let driver: Arc<dyn Driver> = hosted.clone();
+    let logins = vec![IDENTITY.to_owned()];
+    let back = again.taken_back(
+        Some(&driver),
+        &Left {
+            program: "program-1",
+            note: Some(&note),
+            logins: &logins,
+            person_drives: false,
+        },
+        &Back {
+            open: &opened,
+            as_persona: &|_| AsPersona::default(),
+            may_log_in: &|_, _| Ok(()),
+        },
+        3000,
+    );
+
+    assert_eq!(back, TakenBack::Kept, "the person's, under Pinned browsers");
+    assert!(again.is_kept("program-1"));
 }

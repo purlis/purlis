@@ -322,7 +322,7 @@ fn the_browsers_left_on_this_machines_host_reach_the_put_back_through_the_routin
             rows: 800,
             driver: None,
             note: None,
-            logged_in: false,
+            logins: Vec::new(),
         });
 
     let left = world.sessions.browsers_left();

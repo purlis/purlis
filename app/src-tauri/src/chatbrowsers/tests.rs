@@ -297,6 +297,7 @@ fn logins(name: &str) -> super::ReadLogin {
             user: None,
             password: Secret::new(LOGIN_VALUE.into()),
             keep: Some(kept_as(name)),
+            identity: Some(IDENTITY.into()),
         },
         opens: name == "kept-login",
         identity: IDENTITY.into(),
