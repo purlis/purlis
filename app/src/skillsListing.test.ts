@@ -96,6 +96,17 @@ describe("the hidden-by-the-router mark", () => {
     expect(markOf(row(skill("plain", { lint: ["x"] })))).toBe("lint");
   });
 
+  it("says which programs each of the core's lines is for, where they differ", () => {
+    const other = { ...HIDDEN, said: "hidden by the built-in router: another reason" };
+    const hidden = [
+      ...hiddenOn("Claude Code"),
+      { harness: "codex" as const, title: "Codex", hidden: other },
+    ];
+    expect(tipOf(row(skill("big", { hidden })))[1]).toBe(
+      "Hidden by the built-in router: over this chat's skill budget, so it is in the index skill (on Claude Code). Hidden by the built-in router: another reason (on Codex).",
+    );
+  });
+
   it("says the core's line on hover, and the programs whose chats it is hidden from", () => {
     expect(tipOf(row(skill("big", { hidden: hiddenOn("Claude Code", "Codex") })))).toEqual([
       "What big does.",
@@ -410,6 +421,16 @@ describe("a row's menu", () => {
     expect(
       pin(skill("out", { on: false, pinned_by: [{ at: "workspace", name: "ops" }] })),
     ).toMatchObject({ title: "Unpin from this workspace", available: true });
+    // A persona's own skill is pinned for the persona, which the studio filtered to it does.
+    expect(
+      menuRowsOf(row(skill("review", { level: "persona" }), { persona: "reviewer" }), {
+        workspace: "ops",
+        chat: false,
+      }).find((r) => r.act === "pin"),
+    ).toMatchObject({
+      available: false,
+      reason: "reviewer's own skill is pinned for it, in its Skill studio.",
+    });
   });
 
   it("shows a skill's folder in Explorer at the project's root, and says why not elsewhere", () => {

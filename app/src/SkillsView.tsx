@@ -206,7 +206,7 @@ export function SkillsView({
       onShowInExplorer(row.skill.folder);
       return;
     }
-    const change = what === "pin" ? pinOf(row.skill, place) : turnOf(row.skill, place);
+    const change = what === "pin" ? pinOf(row, place) : turnOf(row.skill, place);
     if (!("label" in change) || place === undefined) return;
     setBusy(true);
     // The pin is the studio's own command (SK-15d), for this workspace's chats: one commit.

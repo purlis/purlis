@@ -64,7 +64,7 @@ import {
   type StudioScope,
 } from "./skillStudio";
 import { skillView } from "./skillRuns";
-import { BUILT_IN_STAYS, turnOf } from "./skillsListing";
+import { BUILT_IN_STAYS, PINNABLE, turnOf } from "./skillsListing";
 import { PersonaSkillAdd, changePersonaSkill } from "./personaSkills";
 import type { ViewRef } from "./tabs";
 
@@ -91,10 +91,6 @@ type Doing =
   | { what: "rename"; skill: StudioSkill; level: SkillLevel }
   | { what: "move"; skill: StudioSkill; from: SkillLevel; to: SkillLevel }
   | { what: "delete"; skill: StudioSkill; level: SkillLevel; users: SkillUsers };
-
-/** The levels a skill can be pinned at (SK-15d): the project's. A built-in skill is always
- *  listed, and a harness's or a repo's is never purlis's to route. */
-const PINNABLE: ReadonlySet<StudioSkill["level"]> = new Set(["project", "workspace", "persona"]);
 
 /**
  * **The row of each name that carries its Pin switch** (SK-15d): of its rows at one of the

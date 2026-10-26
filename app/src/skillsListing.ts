@@ -129,9 +129,11 @@ function hiddenSaid(row: ListedSkill): string {
   const sentence = (said: string) => `${said.charAt(0).toUpperCase()}${said.slice(1)}`;
   if (row.hiddenInChat !== undefined && row.hiddenInChat !== null)
     return `${sentence(row.hiddenInChat.said)}.`;
-  const { hidden } = row.skill;
-  const said = [...new Set(hidden.map((one) => one.hidden.said))].join("; ");
-  return `${sentence(said)} (on ${hidden.map((one) => one.title).join(", ")}).`;
+  // Each of the core's lines once, with the programs it is said for.
+  const on = new Map<string, string[]>();
+  for (const one of row.skill.hidden)
+    on.set(one.hidden.said, [...(on.get(one.hidden.said) ?? []), one.title]);
+  return [...on].map(([said, titles]) => `${sentence(said)} (on ${titles.join(", ")}).`).join(" ");
 }
 
 /** **What a row says on hover**: what the skill does, then why it has its mark. */
@@ -297,17 +299,16 @@ export function narrowedTo(
   set: readonly ChatSkill[],
   chat: { persona: string | null; harness: HarnessKind | undefined },
 ): ListedSkill[] {
-  const given = (skill: { name: string; level: string }) =>
+  const givenOf = (skill: { name: string; level: string }) =>
     set.find((one) => one.name === skill.name && one.level === skill.level);
-  const has = (skill: { name: string; level: string }) => given(skill) !== undefined;
-  const hiddenIn = (skill: { name: string; level: string }) => given(skill)?.hidden ?? null;
   const kept = rows.flatMap((row): ListedSkill[] => {
     const { level } = row.skill;
     if (level === "installed") return row.harness === chat.harness ? [row] : [];
     if (!PLANE_LEVELS.includes(level)) return [row];
-    const inChat = has(row.skill);
+    const given = givenOf(row.skill);
+    const inChat = given !== undefined;
     if (!inChat && row.persona !== undefined && row.persona !== chat.persona) return [];
-    return [{ ...row, inChat, hiddenInChat: hiddenIn(row.skill) }];
+    return [{ ...row, inChat, hiddenInChat: given?.hidden ?? null }];
   });
   const missing = set
     .filter(
@@ -334,9 +335,11 @@ export const BUILT_IN_STAYS = "It ships with purlis, and cannot be turned off.";
  * **A project skill's switch in one workspace** (#2770): what it says and what it asks for, or
  * why there is none. The studio's row and the Skills view's menu both draw this.
  */
-export type Turn = { label: string; on: boolean; refused: string } | { reason: string };
+/** **A change a row's menu asks for**: what it says, which way it goes and what its refusal is
+ *  called, or why there is none. */
+export type Change = { label: string; on: boolean; refused: string } | { reason: string };
 
-export function turnOf(skill: StudioSkill, workspace: string | undefined): Turn {
+export function turnOf(skill: StudioSkill, workspace: string | undefined): Change {
   if (skill.level === "built-in") return { reason: BUILT_IN_STAYS };
   if (skill.level !== "project")
     return { reason: "Only a project skill is turned on or off for one workspace." };
@@ -362,8 +365,16 @@ const EXPLORER_AT_THE_ROOT =
 const NOT_IN_THE_PROJECT = "Its folder is not one of the project's files.";
 const NOT_THIS_CHATS = "The chat in front does not get it.";
 
-/** The levels a skill can be pinned at (SK-15d), as the studio pins them: the project's. */
-const PINNABLE: readonly string[] = ["project", "workspace", "persona"];
+/** The levels a skill can be pinned at (SK-15d): the project's. A built-in skill is always
+ *  listed, and a program's or a repo's is never purlis's to route. The studio's Pin switch and
+ *  the view's menu both hold to it. */
+export const PINNABLE: ReadonlySet<StudioSkill["level"]> = new Set([
+  "project",
+  "workspace",
+  "persona",
+]);
+/** Why a built-in skill has no pin. */
+const BUILT_IN_LISTED = "It ships with purlis, and is always listed.";
 
 /**
  * **A skill's pin in one workspace** (SK-15d, #3232): what Pin to this workspace says and asks
@@ -371,12 +382,12 @@ const PINNABLE: readonly string[] = ["project", "workspace", "persona"];
  * (`skill_pin`), so the view and the studio share one copy of the pin. A pin still written on a
  * skill the workspace's chats no longer get can always be undone.
  */
-export type Pin = { label: string; on: boolean; refused: string } | { reason: string };
-
-export function pinOf(skill: StudioSkill, workspace: string | undefined): Pin {
-  if (skill.level === "built-in") return { reason: "It ships with purlis, and is always listed." };
-  if (!PINNABLE.includes(skill.level))
-    return { reason: "Its program lists it, not purlis's router." };
+export function pinOf(row: ListedSkill, workspace: string | undefined): Change {
+  const { skill } = row;
+  if (skill.level === "built-in") return { reason: BUILT_IN_LISTED };
+  if (row.persona !== undefined)
+    return { reason: `${row.persona}'s own skill is pinned for it, in its Skill studio.` };
+  if (!PINNABLE.has(skill.level)) return { reason: "Its program lists it, not purlis's router." };
   if (workspace === undefined)
     return { reason: "A skill is pinned for one workspace's chats. Pick one in the title bar." };
   const pinned = skill.pinned_by.some((by) => by.at === "workspace" && by.name === workspace);
@@ -397,6 +408,13 @@ function inTheProject(skill: StudioSkill): boolean {
   );
 }
 
+/** A change's row of the menu: what it says, or, where it cannot run, `title` and why. */
+function changeRow(act: SkillAct, change: Change, title: string): SkillMenuRow {
+  return "label" in change
+    ? { act, title: change.label, available: true, reason: "" }
+    : { act, title, available: false, reason: change.reason };
+}
+
 /**
  * **A row's menu, in its order**: Use in this chat while a chat is in front (`chat`), the
  * switch, Pin to this workspace (Unpin while it pins it), and Show in Explorer. A row that cannot run says why: Use in this chat, on a skill
@@ -408,7 +426,7 @@ export function menuRowsOf(
 ): SkillMenuRow[] {
   const { skill } = row;
   const turn = turnOf(skill, at.workspace);
-  const pin = pinOf(skill, at.workspace);
+  const pin = pinOf(row, at.workspace);
   const explorer = !inTheProject(skill)
     ? NOT_IN_THE_PROJECT
     : at.workspace !== undefined
@@ -427,17 +445,8 @@ export function menuRowsOf(
           },
         ]
       : []),
-    "label" in turn
-      ? { act: "turn", title: turn.label, available: true, reason: "" }
-      : {
-          act: "turn",
-          title: skill.on ? "Turn off" : "Turn on",
-          available: false,
-          reason: turn.reason,
-        },
-    "label" in pin
-      ? { act: "pin", title: pin.label, available: true, reason: "" }
-      : { act: "pin", title: PIN_HERE, available: false, reason: pin.reason },
+    changeRow("turn", turn, skill.on ? "Turn off" : "Turn on"),
+    changeRow("pin", pin, PIN_HERE),
     {
       act: "explorer",
       title: "Show in the Explorer view",
