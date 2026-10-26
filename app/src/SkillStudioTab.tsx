@@ -550,9 +550,7 @@ export function SkillStudioTab({
   const pinOf = (skill: StudioSkill) => {
     if (pinner === null || !PINNABLE.has(skill.level) || pinRows.has(skill.name)) return null;
     pinRows.add(skill.name);
-    const pinned = skill.pinned_by.some(
-      (by) => by.at === pinner.at && by.name === pinner.name,
-    );
+    const pinned = skill.pinned_by.some((by) => by.at === pinner.at && by.name === pinner.name);
     return skill.on || pinned ? pinned : null;
   };
   const pinSwitch = (skill: StudioSkill) => {

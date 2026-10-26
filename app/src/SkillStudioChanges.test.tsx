@@ -307,8 +307,21 @@ describe("the Skill studio's changes", () => {
   it("offers no pin on a built-in skill or on a hidden copy (SK-15d)", async () => {
     core(
       [
-        { ...deploy, level: "built-in", label: "built-in", granted: null, folder: "x/handoff", name: "handoff" },
-        { ...deploy, level: "workspace", label: "workspace", granted: null, folder: "workspaces/ops/skills/deploy" },
+        {
+          ...deploy,
+          level: "built-in",
+          label: "built-in",
+          granted: null,
+          folder: "x/handoff",
+          name: "handoff",
+        },
+        {
+          ...deploy,
+          level: "workspace",
+          label: "workspace",
+          granted: null,
+          folder: "workspaces/ops/skills/deploy",
+        },
         { ...deploy, on: false, left_out: "hidden by the workspace's copy" },
       ],
       "ops",
@@ -319,7 +332,9 @@ describe("the Skill studio's changes", () => {
     expect(screen.queryByRole("switch", { name: "Pin handoff for ops" })).toBeNull();
     expect(screen.getAllByRole("switch", { name: "Pin deploy for ops" })).toHaveLength(1);
     expect(
-      within(screen.getByTestId("skill-deploy")).getByRole("switch", { name: "Pin deploy for ops" }),
+      within(screen.getByTestId("skill-deploy")).getByRole("switch", {
+        name: "Pin deploy for ops",
+      }),
     ).toBeInTheDocument();
   });
 
