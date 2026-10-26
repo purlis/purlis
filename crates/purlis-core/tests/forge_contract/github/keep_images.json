@@ -1,0 +1,243 @@
+{
+  "source": "GitHub REST API version 2022-11-28, docs.github.com/en/rest, git: Create a blob, Get a reference, Get a commit object, Get a tree, Create a tree, Create a commit, Update a reference",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": "POST",
+            "path": "repos/acme/api/git/blobs"
+          }
+        },
+        "fields": [
+          {
+            "text": [
+              "content",
+              "iVBORw0KGgpvbmU="
+            ]
+          },
+          {
+            "text": [
+              "encoding",
+              "base64"
+            ]
+          }
+        ]
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"sha\": \"1111111111111111111111111111111111111111\", \"url\": \"https://api.github.com/repos/acme/api/git/blobs/1111111111111111111111111111111111111111\"}",
+        "err": ""
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": "POST",
+            "path": "repos/acme/api/git/blobs"
+          }
+        },
+        "fields": [
+          {
+            "text": [
+              "content",
+              "iVBORw0KGgp0d28="
+            ]
+          },
+          {
+            "text": [
+              "encoding",
+              "base64"
+            ]
+          }
+        ]
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"sha\": \"2222222222222222222222222222222222222222\", \"url\": \"https://api.github.com/repos/acme/api/git/blobs/2222222222222222222222222222222222222222\"}",
+        "err": ""
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "path": "repos/acme/api/git/ref/heads/purlis/browser-proof/pr-12"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"ref\": \"refs/heads/purlis/browser-proof/pr-12\", \"object\": {\"type\": \"commit\", \"sha\": \"3333333333333333333333333333333333333333\"}}",
+        "err": ""
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "path": "repos/acme/api/git/commits/3333333333333333333333333333333333333333"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"sha\": \"3333333333333333333333333333333333333333\", \"tree\": {\"sha\": \"4444444444444444444444444444444444444444\"}, \"parents\": []}",
+        "err": ""
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "path": "repos/acme/api/git/trees/4444444444444444444444444444444444444444"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"sha\": \"4444444444444444444444444444444444444444\", \"truncated\": false, \"tree\": [{\"path\": \"browser-proof-1.png\", \"mode\": \"100644\", \"type\": \"blob\", \"sha\": \"7777777777777777777777777777777777777777\"}]}",
+        "err": ""
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": "POST",
+            "path": "repos/acme/api/git/trees"
+          }
+        },
+        "fields": [
+          {
+            "text": [
+              "base_tree",
+              "4444444444444444444444444444444444444444"
+            ]
+          },
+          {
+            "text": [
+              "tree[][path]",
+              "browser-proof-1.png"
+            ]
+          },
+          {
+            "text": [
+              "tree[][mode]",
+              "100644"
+            ]
+          },
+          {
+            "text": [
+              "tree[][type]",
+              "blob"
+            ]
+          },
+          {
+            "text": [
+              "tree[][sha]",
+              "1111111111111111111111111111111111111111"
+            ]
+          },
+          {
+            "text": [
+              "tree[][path]",
+              "browser-proof-2.png"
+            ]
+          },
+          {
+            "text": [
+              "tree[][mode]",
+              "100644"
+            ]
+          },
+          {
+            "text": [
+              "tree[][type]",
+              "blob"
+            ]
+          },
+          {
+            "text": [
+              "tree[][sha]",
+              "2222222222222222222222222222222222222222"
+            ]
+          }
+        ]
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"sha\": \"5555555555555555555555555555555555555555\"}",
+        "err": ""
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": "POST",
+            "path": "repos/acme/api/git/commits"
+          }
+        },
+        "fields": [
+          {
+            "text": [
+              "message",
+              "Browser proof for pull request #12"
+            ]
+          },
+          {
+            "text": [
+              "tree",
+              "5555555555555555555555555555555555555555"
+            ]
+          },
+          {
+            "text": [
+              "parents[]",
+              "3333333333333333333333333333333333333333"
+            ]
+          }
+        ]
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"sha\": \"6666666666666666666666666666666666666666\"}",
+        "err": ""
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": "PATCH",
+            "path": "repos/acme/api/git/refs/heads/purlis/browser-proof/pr-12"
+          }
+        },
+        "fields": [
+          {
+            "text": [
+              "sha",
+              "6666666666666666666666666666666666666666"
+            ]
+          },
+          {
+            "typed": [
+              "force",
+              "false"
+            ]
+          }
+        ]
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"ref\": \"refs/heads/purlis/browser-proof/pr-12\", \"object\": {\"type\": \"commit\", \"sha\": \"6666666666666666666666666666666666666666\"}}",
+        "err": ""
+      }
+    }
+  ]
+}

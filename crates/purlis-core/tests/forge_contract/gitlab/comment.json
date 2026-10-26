@@ -1,0 +1,28 @@
+{
+  "source": "GitLab 19.4 REST API docs (gitlab-org/gitlab 19-4-stable-ee, doc/api), notes.md: Create new merge request note",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": "POST",
+            "path": "projects/acme%2Fapi/merge_requests/12/notes"
+          }
+        },
+        "fields": [
+          {
+            "text": [
+              "body",
+              "Browser proof"
+            ]
+          }
+        ]
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"id\": 99, \"body\": \"Browser proof\", \"noteable_iid\": 12, \"noteable_type\": \"MergeRequest\"}",
+        "err": ""
+      }
+    }
+  ]
+}

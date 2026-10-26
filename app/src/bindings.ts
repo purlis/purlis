@@ -747,6 +747,28 @@ export const commands = {
 	 */
 	chatBrowserTimelineShot: (plane: PlaneId, chat: string, shot: number) => typedError<string, string>(__TAURI_INVOKE("chat_browser_timeline_shot", { plane, chat, shot })),
 	/**
+	 *  **The requests the window offers for chat `chat`'s proof**: the open request of each save of
+	 *  a repo of the chat's workspace. Read from git and the save journal, never the network. None
+	 *  for a chat at the project's root. The person can name any other request by its address.
+	 */
+	browserProofRequests: (plane: PlaneId, chat: string) => typedError<ProofRequest[], string>(__TAURI_INVOKE("browser_proof_requests", { plane, chat })),
+	/**
+	 *  **What attaching screenshots `shots` of chat `chat` to the request at `request` would
+	 *  send**, for the person to see first, with each screenshot's bytes to draw. It reads the
+	 *  request and its repo with the person's sign-in, and writes nothing.
+	 * 
+	 *  On a blocking thread: it asks the forge twice.
+	 */
+	showBrowserProof: (plane: PlaneId, chat: string, request: string, shots: number[]) => typedError<ShowingProof, string>(__TAURI_INVOKE("show_browser_proof", { plane, chat, request, shots })),
+	/**
+	 *  **Attach what the person was shown**, with the person's own purlis sign-in to the request's
+	 *  forge and never through `gh` or `glab`: the press of Attach in the proof the window showed.
+	 *  Answers the comment's page.
+	 * 
+	 *  On a blocking thread: it asks the forge several times.
+	 */
+	attachBrowserProof: (plane: PlaneId, chat: string, shown: ShownProof) => typedError<string, string>(__TAURI_INVOKE("attach_browser_proof", { plane, chat, shown })),
+	/**
 	 *  **The browsers of project `plane` a crash of the window left running that come back in a
 	 *  view tab** (#2025): the person's own, and any a view tab of its own showed, taken back as the
 	 *  window came back; the window opens a view tab of each, once. Read again on [`LISTED`]. The
@@ -9624,6 +9646,29 @@ export type ProjectUpdate = {
 };
 
 /**
+ *  A pull or merge request the window offers to attach proof to: the open request of a save of
+ *  one of the chat's workspace's repos.
+ */
+export type ProofRequest = {
+	/**  Its page. */
+	url: string,
+	/**  The repo's name in the workspace. */
+	repo: string,
+	/**  What its forge calls it: `pull request` or `merge request`. */
+	request: string,
+};
+
+/**  One screenshot as the person was shown it, handed back to attach. */
+export type ProofShot = {
+	/**  Its number in the chat's timeline, to read with `chat_browser_timeline_shot`. */
+	shot: number,
+	/**  When it was taken, in seconds since 1970. */
+	at: number,
+	/**  SHA-256 of its bytes, lower-case hex. */
+	digest: string,
+};
+
+/**
  *  **A proposed change whole, as its own tab draws it** (PC-7): the file before and after, and
  *  whether Apply is offered there, or why it is not shown.
  */
@@ -11106,6 +11151,15 @@ export type SharedFolder = {
 	says: string,
 };
 
+/**
+ *  **What the person is shown before attaching**: the proof, which is handed back to attach, and
+ *  the bytes of each of its screenshots, PNG in base64, in its order, which the window draws.
+ */
+export type ShowingProof = {
+	proof: ShownProof,
+	pictures: string[],
+};
+
 /**  One ask, as the registry lists it and its row draws it. */
 export type Shown = {
 	/**  The chat that asked. */
@@ -11146,6 +11200,30 @@ export type Shown = {
 	 *  not shown and no Allow is offered. Absent for any other ask.
 	 */
 	writes?: WritesShown | null,
+};
+
+/**
+ *  **What attaching would send**, shown to the person before anything goes, and handed back
+ *  unchanged to [`attach_browser_proof`].
+ */
+export type ShownProof = {
+	/**  The request's page. */
+	request: string,
+	/**  `#12` or `!12`. */
+	number: string,
+	/**  The repo it is in, `owner/name`. */
+	path: string,
+	/**  Where the pictures are kept on the forge, and who can open them there. */
+	keptAt: string,
+	/**
+	 *  The line said before the pictures: public and permanent to the repo's readers, and
+	 *  whether the repo is public.
+	 */
+	warning: string,
+	/**  The comment's words, before the pictures. */
+	words: string,
+	/**  The pictures, in the order they go. */
+	shots: ProofShot[],
 };
 
 /**

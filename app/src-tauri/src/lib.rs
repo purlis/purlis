@@ -33,6 +33,7 @@ mod branchwatch;
 mod brokered;
 mod browserlimits;
 mod browserneedsyou;
+mod browserproof;
 mod browsers;
 mod changes;
 mod chatbrowsers;
