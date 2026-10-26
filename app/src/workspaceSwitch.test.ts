@@ -14,6 +14,7 @@ import {
   workspacesKeyCap,
   workspacesKeySaid,
 } from "./workspaceSwitch";
+import { FRAME, leftward, MOMENTUM, played, STROKE, type Traced } from "./swipeTraces.testkit";
 
 const PINS = ["smart-ide", "charter", "skills"];
 
@@ -74,6 +75,55 @@ describe("one swipe steps one pin (R112)", () => {
     const swipe = new Swipe();
     expect(swipe.feed(50, 0)).toBeUndefined();
     expect(swipe.feed(50, 500)).toBeUndefined();
+  });
+});
+
+describe("a trackpad's swipes, momentum and all (#3327, R112)", () => {
+  /** The steps a trace takes, with the index of the event that took each. */
+  const steps = (trace: readonly Traced[], swipe = new Swipe()) =>
+    trace.flatMap(({ dx, at }, n) => {
+      const step = swipe.feed(dx, at);
+      return step === undefined ? [] : [{ step, n }];
+    });
+
+  it("steps once for a stroke and its whole momentum", () => {
+    const trace = played([[...STROKE, ...MOMENTUM]]);
+    expect(steps(trace)).toEqual([{ step: 1, n: 5 }]);
+  });
+
+  it("steps again for a second stroke started in the first one's momentum tail", () => {
+    // The fingers touch down again as the tail fades: momentum stops and the next stroke ramps.
+    const trace = played([STROKE, MOMENTUM.slice(0, 30), STROKE], 0, FRAME * 2);
+    const first = STROKE.length + 30;
+    expect(steps(trace).map(({ step }) => step)).toEqual([1, 1]);
+    expect(steps(trace)[1].n).toBeGreaterThan(first);
+  });
+
+  it("steps again for a second stroke right after the momentum ends, without a quiet", () => {
+    const trace = played([[...STROKE, ...MOMENTUM], STROKE], 0, FRAME * 3);
+    expect(steps(trace).map(({ step }) => step)).toEqual([1, 1]);
+  });
+
+  it("steps back for a stroke the other way in the momentum", () => {
+    const trace = played([STROKE, MOMENTUM.slice(0, 12), leftward(STROKE)]);
+    expect(steps(trace).map(({ step }) => step)).toEqual([1, -1]);
+  });
+
+  it("takes three strokes in a row, each in the one before's tail, as three steps", () => {
+    const tail = MOMENTUM.slice(0, 34);
+    const trace = played([STROKE, tail, STROKE, tail, STROKE, MOMENTUM], 0, FRAME * 2);
+    expect(steps(trace).map(({ step }) => step)).toEqual([1, 1, 1]);
+  });
+
+  it("never steps twice for one stroke, however its tail wavers", () => {
+    // Rounding gives a tail repeats and one-pixel upticks; none is a new stroke.
+    const wavering = MOMENTUM.map((dx, n) => (n % 3 === 2 && dx > 1 ? dx + 1 : dx));
+    expect(steps(played([[...STROKE, ...wavering]])).length).toBe(1);
+  });
+
+  it("never steps twice for a stroke that ramps up slowly and unevenly", () => {
+    const slow = [1, 2, 2, 3, 4, 3, 5, 6, 5, 7, 8, 9, 8, 10, 12, 11, 13, 15, 14, 16, 18, 20];
+    expect(steps(played([[...slow, ...MOMENTUM]])).length).toBe(1);
   });
 });
 
