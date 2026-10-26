@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793056638670,
+  "lastUpdate": 1793059189401,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -26208,6 +26208,48 @@ window.BENCHMARK_DATA = {
             "value": 104.432216,
             "unit": "ms",
             "extra": "median of 5 runs: 102.484, 104.100, 104.432, 105.823, 106.257 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "d23834a42da71e5e0f776ded357fe042719d76d6",
+          "message": "Build a vault refusal's message as Markup (#3321) (#3434)\n\nVaultError.message is now Markup. purlis's own words go in as they\nare; a String handed to a constructor is one line, escaped whole, so a\nkey name or path spliced into it keeps its line ends marked. Refusals\npurlis lays out over lines build them with Markup::lines, and a refusal\nthat wraps another one composes it with then(), so the inner message's\nown layout is kept. said() returns the message as built.\n\nThe sandboxed-chat refusals in brokered.rs return Markup for the same\nreason. Callers whose sink is a String take message.to_string(), which\nis byte-identical to what they had for every name without a hidden\ncharacter.\n\ncurate.rs's `+` and `?` answer lines splice the item text with\nMarkup::text.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-26T23:24:39Z",
+          "tree_id": "8356178213927d0f4f6bca495c2b44b0f48dd3ac",
+          "url": "https://github.com/purlis/purlis/commit/d23834a42da71e5e0f776ded357fe042719d76d6"
+        },
+        "date": 1793059186621,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6067055,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.566, 0.595, 0.607, 0.610, 0.613 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 15.972361500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 15.928, 15.932, 15.972, 16.010, 16.074 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.160421,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.465, 100.809, 101.160, 102.413, 103.338 ms"
           }
         ]
       }
