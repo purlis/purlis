@@ -383,6 +383,8 @@ pub const PAIRS: &[Pair] = &[
     // - A title-bar chip's waiting count (#2916, R101): its digits in amber on the amber wash,
     //   over the title bar, which backs it on every chip, lit or chosen (D-3345-3).
     p("state.waiting", "wash.warning", TEXT).over("surface.deep"),
+    //   And on the bar's ground itself, which its stylesheet writes as its fill under the wash.
+    p("state.waiting", "surface.deep", TEXT),
     // - The rail's waiting badge (R79): its digits in amber on the overlay's pill.
     p("state.waiting", "surface.overlay", TEXT),
     // - The warning-soft button: amber words on the control, and under the pointer.

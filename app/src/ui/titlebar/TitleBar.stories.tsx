@@ -180,7 +180,7 @@ function luminance([r, g, b]: number[]): number {
  *  own opaque ground, as drawn, and that ground. */
 function countOn(count: HTMLElement): { ratio: number; ground: string } {
   const style = getComputedStyle(count);
-  const wash = /rgba?\([^)]*\)/.exec(style.backgroundImage)?.[0] ?? "rgba(0, 0, 0, 0)";
+  const wash = /rgba?\([^)]*\)/.exec(style.backgroundImage)?.[0] ?? style.backgroundColor;
   const drawn = composited(wash, style.backgroundColor);
   const words = composited(style.color, `rgb(${drawn.join(", ")})`);
   const [light, dark] = [luminance(words), luminance(drawn)].sort((a, b) => b - a);
