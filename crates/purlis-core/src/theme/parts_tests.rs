@@ -1232,10 +1232,11 @@ fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
             .iter()
             .map(|state| state.as_str().unwrap())
             .collect();
+        // A box a value is given to is refused too (#3323).
         let wanted_states: &[&str] = if name == "field" {
             &["disabled"]
         } else {
-            &["hover", "focused", "disabled"]
+            &["hover", "focused", "disabled", "invalid"]
         };
         assert_eq!(states, wanted_states, "{name}");
         let parts: Vec<&str> = one["parts"]
@@ -1988,10 +1989,14 @@ fn a_boxs_words_on_its_fill_are_held_to_their_floor() {
             .iter()
             .map(|one| one.part.as_str())
             .collect::<Vec<_>>(),
-        ["text-input.root"]
+        // The fill at rest reaches the refused box too, whose danger edge is then under 3:1 on
+        // it (#3323).
+        ["text-input.root", "text-input.root.invalid"]
     );
     // The prototype's look (R54): borderless on the window's fill. A border that is the box's
-    // only edge on its own ground must hold 3:1; with none, its words are what is measured.
+    // only edge on its own ground must hold 3:1; with none, its words are what is measured. A
+    // box that can be refused keeps its edge's width (#3333), so none is a transparent edge, and
+    // the refused state names its own, or the danger edge falls back there.
     let edged = load(&with_parts(
         json!({ "text-input.root.fill": "surface.base" }),
     ));
@@ -2002,8 +2007,10 @@ fn a_boxs_words_on_its_fill_are_held_to_their_floor() {
     );
     let clear = load(&with_parts(json!({
         "text-input.root.fill": "surface.base",
-        "text-input.root.border-width": 0,
-        "textarea.root.border-width": 0,
+        "text-input.root.border-colour": "transparent",
+        "textarea.root.border-colour": "transparent",
+        "text-input.root.invalid.border-colour": "danger.base",
+        "textarea.root.invalid.border-colour": "danger.base",
     })));
     let fell = parts::fallen(clear.theme.first());
     assert!(fell.is_empty(), "{fell:?}");

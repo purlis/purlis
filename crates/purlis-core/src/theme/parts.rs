@@ -108,8 +108,9 @@ pub enum State {
     Focused,
     Disabled,
     Open,
-    /// A box whose value is refused (#3110): the select's and the combobox's, whose wrappers mark
-    /// it. A colour, never a size, as every state.
+    /// A box whose value is refused (#3110, #3323): the text input's, the textarea's, the
+    /// select's and the combobox's, whose wrappers mark it. A colour, never a size, as every
+    /// state.
     Invalid,
 }
 
@@ -829,7 +830,13 @@ pub const MANIFEST: &[Family] = &[
         line_height: 1.0,
         border_width: 1.0,
         defaults: box_look,
-        states: &[State::Hover, State::Focused, State::Disabled],
+        // Under the pointer, holding the caret, unavailable, and refused (#3323).
+        states: &[
+            State::Hover,
+            State::Focused,
+            State::Disabled,
+            State::Invalid,
+        ],
         focused: "[data-focus-within]",
         words: &[],
         corner_most: None,
@@ -866,7 +873,13 @@ pub const MANIFEST: &[Family] = &[
         line_height: 1.0,
         border_width: 1.0,
         defaults: box_look,
-        states: &[State::Hover, State::Focused, State::Disabled],
+        // Under the pointer, holding the caret, unavailable, and refused (#3323).
+        states: &[
+            State::Hover,
+            State::Focused,
+            State::Disabled,
+            State::Invalid,
+        ],
         focused: "[data-focus-within]",
         words: &[],
         corner_most: None,
@@ -1132,11 +1145,11 @@ fn field_look(_variant: &str, _states: &[State]) -> Look {
     }
 }
 
-/// **A text input's and a textarea's colours as `app/src/ui/field/field.css` draws them**: the
-/// sunken ground behind the control's edge (`border.control`, none in Purlis), in every state; the keyboard's ring and a refused value's
-/// danger edge are drawn by the family, outside the parts. A select and a combobox draw the same
-/// box, and a refused one (`invalid`, #3110) is a state of their parts: the danger colour on the
-/// same edge, inside the box, as `app/src/ui/select/select.css` draws it.
+/// **A text input's, a textarea's, a select's and a combobox's colours** as
+/// `app/src/ui/field/field.css` and `app/src/ui/select/select.css` draw them: the sunken ground
+/// behind the control's edge (`border.control`, none in Purlis), in every state but refused; the
+/// keyboard's ring is drawn by the family, outside the parts. A refused box (`invalid`, #3110,
+/// #3323) draws the danger colour on the same edge, inside the box.
 fn box_look(_variant: &str, states: &[State]) -> Look {
     Look {
         fill: "surface.sunken",
@@ -1962,7 +1975,8 @@ fn edge_removed(key: &Key, value: &PartValue) -> Option<String> {
         .map(|_| {
             format!(
                 "parts.{key} is refused: a box that can be refused keeps its edge, which is how \
-                 it shows a value is refused"
+                 it shows a value is refused; a transparent border-colour draws none at rest, and \
+                 invalid.border-colour the refused one"
             )
         })
 }

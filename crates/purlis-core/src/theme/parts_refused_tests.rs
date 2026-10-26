@@ -1,10 +1,11 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! The select and combobox families' refused state at the engine's interface (#3110): `invalid`
-//! in the manifest since the next release, only on the two boxes, keyed on `[data-invalid]`, a
-//! colour and never a size, its danger edge what `app/src/ui/select/select.css` draws, and that
-//! edge held to 3:1 on the box's fill whatever a theme writes.
+//! The refused state of the boxes a person gives a value to, at the engine's interface (#3110,
+//! #3323, #3333): `invalid` in the manifest since the next release, only on the text input, the
+//! textarea, the select and the combobox, keyed on `[data-invalid]`, a colour and never a size,
+//! its danger edge what `app/src/ui/field/field.css` and `app/src/ui/select/select.css` draw, and
+//! that edge held to 3:1 on the box's fill whatever a theme writes.
 
 use serde_json::{Value, json};
 
@@ -74,10 +75,13 @@ fn invalid_is_a_state_since_next_keyed_on_data_invalid() {
     );
 }
 
+/// The families whose root a person gives a value to, and so can be refused.
+const BOXES: [&str; 4] = ["text-input", "textarea", "select", "combobox"];
+
 #[test]
-fn only_the_select_and_the_combobox_are_refused() {
+fn only_the_boxes_a_value_is_given_to_are_refused() {
     let manifest = parts::manifest_json();
-    for family in ["select", "combobox"] {
+    for family in BOXES {
         assert!(
             states_of(&manifest, family).contains(&"invalid".to_owned()),
             "{family}"
@@ -86,7 +90,7 @@ fn only_the_select_and_the_combobox_are_refused() {
     for family in parts::MANIFEST
         .iter()
         .map(|one| one.name)
-        .filter(|name| !matches!(*name, "select" | "combobox"))
+        .filter(|name| !BOXES.contains(name))
     {
         assert!(
             !states_of(&manifest, family).contains(&"invalid".to_owned()),
@@ -108,23 +112,33 @@ fn only_the_select_and_the_combobox_are_refused() {
 
 #[test]
 fn a_refused_box_is_reached_by_data_invalid_and_never_sized_there() {
-    let loaded = load(&with_parts(json!({
-        "select.root.invalid.border-colour": "danger.text",
-        "combobox.root.invalid.border-colour": "danger.text",
-    })));
+    let loaded = load(&with_parts(Value::Object(
+        BOXES
+            .iter()
+            .map(|family| {
+                (
+                    format!("{family}.root.invalid.border-colour"),
+                    json!("danger.text"),
+                )
+            })
+            .collect(),
+    )));
     assert!(!loaded.refused, "{:?}", said(&loaded));
     let sheet = parts::stylesheet(loaded.theme.first());
-    for family in ["select", "combobox"] {
+    for family in BOXES {
         let reached = format!(
             ":where([data-scope=\"{family}\"][data-part=\"root\"][data-invalid]) {{ border-color: var(--danger-text); }}"
         );
         assert!(sheet.contains(&reached), "{reached}\n{sheet}");
     }
     // Colour only: a refusal moves nothing around it.
-    let loaded = load(&with_parts(
-        json!({ "select.root.invalid.border-width": 2 }),
-    ));
-    assert!(loaded.refused, "a width inside invalid was drawn");
+    for family in BOXES {
+        let loaded = load(&with_parts(one(
+            format!("{family}.root.invalid.border-width"),
+            json!(2),
+        )));
+        assert!(loaded.refused, "{family}: a width inside invalid was drawn");
+    }
 }
 
 #[test]
@@ -139,7 +153,7 @@ fn the_refused_edge_is_what_select_css_draws() {
     assert!(body.contains("border-color: var(--danger-base);"), "{body}");
     // Colour only, in the stylesheet too.
     assert_eq!(body.matches(':').count(), 1, "{body}");
-    for family in ["select", "combobox"] {
+    for family in BOXES {
         let [fill, text, border] = parts::look_of(family, "", &[State::Invalid]);
         assert_eq!(
             [fill, text, border],
@@ -150,20 +164,38 @@ fn the_refused_edge_is_what_select_css_draws() {
 }
 
 #[test]
+fn the_refused_edge_is_what_field_css_draws() {
+    let css = include_str!("../../../../app/src/ui/field/field.css");
+    let selector = ":is([data-scope=\"text-input\"], [data-scope=\"textarea\"])[data-part=\"root\"][data-invalid] {";
+    let at = css
+        .find(selector)
+        .unwrap_or_else(|| panic!("field.css draws no refused box"));
+    let body = &css[at..];
+    let body = &body[..body.find('}').unwrap()];
+    assert!(body.contains("border-color: var(--danger-base);"), "{body}");
+    // Colour only, in the stylesheet too.
+    assert_eq!(body.matches(':').count(), 2, "{body}");
+}
+
+#[test]
 fn a_refused_edge_that_cannot_be_seen_on_its_box_falls_back() {
     // Its edge is all that says a box is refused at a glance: 3:1 on its fill, as any edge that
     // is a mark, even on a fill no ground of the box's is (where an edge at rest is not held).
-    let loaded = load(&with_parts(json!({
-        "select.root.invalid.fill": "control.base",
-        "select.root.invalid.border-colour": "control.base",
-    })));
-    assert!(!loaded.refused, "{:?}", said(&loaded));
-    let fallen = parts::fallen(loaded.theme.first());
-    assert!(
-        fallen.iter().any(|one| one.part.starts_with("select.root")
-            && one.floor == "the root's border contrasts 3:1 with its fill"),
-        "{fallen:?}"
-    );
+    for family in BOXES {
+        let loaded = load(&with_parts(json!({
+            format!("{family}.root.invalid.fill"): "control.base",
+            format!("{family}.root.invalid.border-colour"): "control.base",
+        })));
+        assert!(!loaded.refused, "{family}: {:?}", said(&loaded));
+        let fallen = parts::fallen(loaded.theme.first());
+        assert!(
+            fallen
+                .iter()
+                .any(|one| one.part.starts_with(&format!("{family}.root"))
+                    && one.floor == "the root's border contrasts 3:1 with its fill"),
+            "{family}: {fallen:?}"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------------------
@@ -171,7 +203,12 @@ fn a_refused_edge_that_cannot_be_seen_on_its_box_falls_back() {
 // ---------------------------------------------------------------------------------------
 
 /// Where each family's refused root falls back, said by its look's name.
-const REFUSED: &[(&str, &str)] = &[("select", "select.root"), ("combobox", "combobox.root")];
+const REFUSED: &[(&str, &str)] = &[
+    ("text-input", "text-input.root"),
+    ("textarea", "textarea.root"),
+    ("select", "select.root"),
+    ("combobox", "combobox.root"),
+];
 
 /// The floor a refused box breaks when its edge is gone or drawn as its unrefused edge.
 const HIDDEN: &str = "a refused box keeps its own edge, told apart from the edge it has when it \

@@ -6,7 +6,8 @@ form that needs one: a required choice in Settings, or a combobox whose typed va
 - **`invalid` is a state of the manifest**, keyed on `[data-invalid]`, in **the next release's
   manifest version** (`since: NEXT`). It is the seventh state, written after `open`, so a refused
   box's colours win over its hover's.
-- **Only a box a person gives a value to is in it**: `select` and `combobox` name it. The button,
+- **Only a box a person gives a value to is in it**: `select` and `combobox` name it (and the
+  text input and the textarea, below). The button,
   the dialog and every other family do not, so `button.root.invalid.fill` is no part and is said
   and left out, as any state a wrapper never marks is.
 - **A colour, never a size**, as every state: inside `invalid` a theme sets fill, words, border
@@ -28,5 +29,11 @@ form that needs one: a required choice in Settings, or a combobox whose typed va
 - **The words that say why are not a part**: they are the box's description, drawn by its row or
   its form and named by `aria-describedby`, so they are heard with it.
 
-The text input's and the textarea's refused value stay drawn by the field family, outside the
-parts, as before.
+**The text input and the textarea are refused the same way** (#3323, #3333, the same day): both
+name `invalid` (since NEXT), so `text-input.root.invalid.*` and `textarea.root.invalid.*` are keys;
+their default is what `app/src/ui/field/field.css` draws, held by a test; and every floor above
+holds for them. `border-width` 0 on their root was a value a theme could give before (a theme
+that wanted no edge); it is now refused there too, and the sentence that says so names the way
+that keeps the refusal visible: a transparent `border-colour` at rest, the edge's width kept for
+the refused state to draw on. The first release is internal, and no theme the window ships sets
+it.

@@ -324,6 +324,14 @@ their own: a select's list and a combobox's suggestions stand on the popover's `
 each option is a menu's row, so `menu.root.hover.fill` reaches an option too. A chevron is a mark,
 held at 3:1 as an icon is; the placeholder and the chevron fall back to the quiet tier.
 
+A box a person gives a value to (`text-input`, `textarea`, `select`, `combobox`) is refused in
+`invalid` (since NEXT): `text-input.root.invalid.border-colour` reaches every refused one-line box.
+Its edge is what says a value is refused, so such a box keeps its edge's width (`border-width` 0
+on its root refuses the theme; a transparent `border-colour` draws no edge at rest, with
+`invalid.border-colour` the refused one), and in any
+state it is refused in, an edge that is transparent, under 3:1 on its fill, or drawn as the same
+box's edge when it is not refused falls back to the danger colour.
+
 A choice is chosen in `selected`: a box ticked (`checkbox.box.selected.fill`), a radio, a segment or
 a card picked, a switch on (`switch.track.selected.fill`). A choice's size is its family's: no
 choice takes a height, and a mark's corner is clamped to half its own box, so a tick never moves
