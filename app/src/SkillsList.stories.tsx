@@ -135,9 +135,14 @@ export const ByLevel: Story = {
     );
     await userEvent.keyboard("{Shift>}{F10}{/Shift}");
     const menu = await screen.findByRole("menu", { name: "old-deploy" });
+    // A row turned off: Use in this chat waits, saying why, so the menu opens on its switch.
+    expect(within(menu).getByRole("menuitem", { name: /Use in this chat/ })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
     await untilFocused(
-      () => within(menu).getByRole("menuitem", { name: /Use in this chat/ }),
-      "Skills: Shift+F10 opens the row's menu on its first row",
+      () => within(menu).getByRole("menuitem", { name: /Turn on in ops/ }),
+      "Skills: Shift+F10 opens the row's menu on the first row it can run",
     );
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("menu")).toBeNull(), { timeout: 3_000 });
