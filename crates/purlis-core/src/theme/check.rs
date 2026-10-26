@@ -397,6 +397,13 @@ pub const PAIRS: &[Pair] = &[
     //   accent's wash laid on the frame, and on the stronger wash under the pointer.
     p("text.primary", "accent.wash", TEXT).over("surface.deep"),
     p("text.primary", "accent.wash-hover", TEXT).over("surface.deep"),
+    //   Its waiting count, the amber words on the warning's wash, laid on that chosen ground.
+    p("state.waiting", "wash.warning", TEXT)
+        .over("accent.wash")
+        .over("surface.deep"),
+    p("state.waiting", "wash.warning", TEXT)
+        .over("accent.wash-hover")
+        .over("surface.deep"),
     // - What a dialog is honest about (`.honest`): its words at the opacity it fades them to.
     p("text.primary", "surface.overlay", TEXT).faded(0.8),
     // - A task that is away draws its words on the terminal's own background.
