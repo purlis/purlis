@@ -108,10 +108,25 @@ pub enum State {
     Focused,
     Disabled,
     Open,
+    /// A box whose value is refused (#3110): the select's and the combobox's, whose wrappers mark
+    /// it. A colour, never a size, as every state.
+    Invalid,
 }
 
 /// Every state a key may name, in the order the stylesheet writes them.
-pub const STATES: [State; 6] = [
+pub const STATES: [State; 7] = [
+    State::Hover,
+    State::Pressed,
+    State::Selected,
+    State::Focused,
+    State::Disabled,
+    State::Open,
+    State::Invalid,
+];
+
+/// **The states a control that is never refused names**: all but [`State::Invalid`], which only a
+/// box a person gives a value to is in (the button's and the dialog's list).
+pub(super) const NEVER_REFUSED: [State; 6] = [
     State::Hover,
     State::Pressed,
     State::Selected,
@@ -130,6 +145,7 @@ impl State {
             Self::Focused => "focused",
             Self::Disabled => "disabled",
             Self::Open => "open",
+            Self::Invalid => "invalid",
         }
     }
 
@@ -143,12 +159,16 @@ impl State {
             Self::Focused => "[data-focus-visible]",
             Self::Disabled => "[data-disabled]",
             Self::Open => "[data-open]",
+            Self::Invalid => "[data-invalid]",
         }
     }
 
     /// The manifest version it came in.
     pub fn since(self) -> u32 {
-        1
+        match self {
+            Self::Invalid => NEXT,
+            _ => 1,
+        }
     }
 
     fn says(self) -> &'static str {
@@ -159,6 +179,7 @@ impl State {
             Self::Focused => "The keyboard is on it.",
             Self::Disabled => "It cannot be used now.",
             Self::Open => "What it opens is open.",
+            Self::Invalid => "Its value is refused, and the words that say why describe it.",
         }
     }
 
@@ -524,6 +545,13 @@ impl Family {
             .map(|(_, token)| *token)
     }
 
+    /// The colour `part`'s words are drawn in by default, for the tests that hold it to a
+    /// family's stylesheet.
+    #[cfg(test)]
+    pub(super) fn own_words_of(&self, part: usize) -> Option<&'static str> {
+        self.own_words(part)
+    }
+
     /// The colour `part`'s words are drawn in by default, when it is not the root's.
     fn own_words(&self, part: usize) -> Option<&'static str> {
         let name = self.parts.get(part)?.name;
@@ -569,6 +597,29 @@ const SURFACE: &[Prop] = &[
     Prop::Shadow,
     Prop::BorderWidth,
     Prop::CornerRadius,
+];
+
+/// **Every surface a control is drawn on in the window**: a button's, and a field's, which stands
+/// where a button does. `app/src/theme/grounds.test.ts` finds them from the components, and fails
+/// until a new one is listed here.
+const CONTROL_GROUNDS: &[&str] = &[
+    "surface.base",
+    "surface.raised",
+    "surface.overlay",
+    "surface.sunken",
+    "surface.deep",
+    "surface.hover",
+    "border.subtle",
+    "tab.active",
+    "list.selected",
+    "control.aimed",
+    "danger.surface",
+    "danger.wash",
+    "layer.project",
+    "layer.workspace",
+    "layer.chat",
+    "layer.selected",
+    "terminal.background",
 ];
 
 /// **The closed manifest**: every family a theme may name, at [`VERSION`].
@@ -646,28 +697,14 @@ pub const MANIFEST: &[Family] = &[
                 description: "A button that reads as a link: no box, as tall as its words.",
                 consent: None,
             },
+            Variant {
+                name: "quiet",
+                since: NEXT,
+                description: "A ghost with quiet words: a strip's end mark, a crumb, a pane's corner.",
+                consent: None,
+            },
         ],
-        // Every surface a button is drawn on in the window, as `app/src/theme/grounds.test.ts` finds
-        // them from the components; that test fails until a new one is listed here.
-        grounds: &[
-            "surface.base",
-            "surface.raised",
-            "surface.overlay",
-            "surface.sunken",
-            "surface.deep",
-            "surface.hover",
-            "border.subtle",
-            "tab.active",
-            "list.selected",
-            "control.aimed",
-            "danger.surface",
-            "danger.wash",
-            "layer.project",
-            "layer.workspace",
-            "layer.chat",
-            "layer.selected",
-            "terminal.background",
-        ],
+        grounds: CONTROL_GROUNDS,
         keeps_size: &[
             "[data-size=\"sm\"]",
             "[data-size=\"lg\"]",
@@ -676,7 +713,7 @@ pub const MANIFEST: &[Family] = &[
         sized_apart: &[
             (
                 "[data-scope=\"button\"][data-part=\"root\"][data-size=\"sm\"]",
-                "max(var(--size-chrome), var(--space-7))",
+                "max(24px, var(--size-chrome), var(--space-7))",
             ),
             (
                 "[data-scope=\"button\"][data-part=\"root\"][data-size=\"lg\"]",
@@ -688,7 +725,7 @@ pub const MANIFEST: &[Family] = &[
         line_height: 1.0,
         border_width: 1.0,
         defaults: button_look_in,
-        states: &STATES,
+        states: &NEVER_REFUSED,
         focused: "[data-focus-visible]",
         words: &[],
         corner_most: None,
@@ -727,27 +764,8 @@ pub const MANIFEST: &[Family] = &[
             },
         ],
         variants: &[],
-        // Every surface a control is drawn on (the button's, which `grounds.test.ts` finds from
-        // the components): a field stands where a button does, a filter on a list's layer.
-        grounds: &[
-            "surface.base",
-            "surface.raised",
-            "surface.overlay",
-            "surface.sunken",
-            "surface.deep",
-            "surface.hover",
-            "border.subtle",
-            "tab.active",
-            "list.selected",
-            "control.aimed",
-            "danger.surface",
-            "danger.wash",
-            "layer.project",
-            "layer.workspace",
-            "layer.chat",
-            "layer.selected",
-            "terminal.background",
-        ],
+        // A field stands where a button does, a filter on a list's layer.
+        grounds: CONTROL_GROUNDS,
         keeps_size: &[],
         sized_apart: &[],
         height: Some(Length::Token("size.control")),
@@ -793,27 +811,8 @@ pub const MANIFEST: &[Family] = &[
             },
         ],
         variants: &[],
-        // Every surface a control is drawn on (the button's, which `grounds.test.ts` finds from
-        // the components): a field stands where a button does, a filter on a list's layer.
-        grounds: &[
-            "surface.base",
-            "surface.raised",
-            "surface.overlay",
-            "surface.sunken",
-            "surface.deep",
-            "surface.hover",
-            "border.subtle",
-            "tab.active",
-            "list.selected",
-            "control.aimed",
-            "danger.surface",
-            "danger.wash",
-            "layer.project",
-            "layer.workspace",
-            "layer.chat",
-            "layer.selected",
-            "terminal.background",
-        ],
+        // A field stands where a button does, a filter on a list's layer.
+        grounds: CONTROL_GROUNDS,
         keeps_size: &["[data-size=\"sm\"]", "[data-size=\"lg\"]"],
         sized_apart: &[
             (
@@ -858,27 +857,8 @@ pub const MANIFEST: &[Family] = &[
             ],
         }],
         variants: &[],
-        // Every surface a control is drawn on (the button's, which `grounds.test.ts` finds from
-        // the components): a field stands where a button does, a filter on a list's layer.
-        grounds: &[
-            "surface.base",
-            "surface.raised",
-            "surface.overlay",
-            "surface.sunken",
-            "surface.deep",
-            "surface.hover",
-            "border.subtle",
-            "tab.active",
-            "list.selected",
-            "control.aimed",
-            "danger.surface",
-            "danger.wash",
-            "layer.project",
-            "layer.workspace",
-            "layer.chat",
-            "layer.selected",
-            "terminal.background",
-        ],
+        // A field stands where a button does, a filter on a list's layer.
+        grounds: CONTROL_GROUNDS,
         keeps_size: &[],
         sized_apart: &[],
         height: Some(Length::Token("size.control")),
@@ -1094,6 +1074,15 @@ pub const MANIFEST: &[Family] = &[
     collection::LIST,
     // **The title bar's pinned workspaces** (#2916): a chip per pin of the project in front.
     shell::TITLEBAR,
+    select::SELECT,
+    select::COMBOBOX,
+    choice::CHECKBOX,
+    choice::RADIO,
+    choice::SWITCH,
+    choice::SEGMENTED_CONTROL,
+    choice::SEGMENT,
+    choice::SLIDER,
+    choice::OPTION_CARD,
 ];
 
 /// The popover and menu families (#2909): the surface a popover and a menu stand on, and a
@@ -1113,12 +1102,24 @@ mod dialog;
 /// The collection families (#2911): a list's row.
 #[path = "parts_collections.rs"]
 mod collection;
+/// The select and combobox families (#2906).
+#[path = "parts_select.rs"]
+mod select;
+
+/// The choice families (#2907): checkbox, radio, switch, segmented control and segment, slider
+/// and option card.
+#[path = "parts_choice.rs"]
+mod choice;
 #[cfg(test)]
 pub(super) use dialog::DIALOG_TIERS;
 
 /// The activity item family (#2917): a view's icon on a side's bar.
 #[path = "parts_activity.rs"]
 mod activity;
+
+#[cfg(test)]
+#[path = "state_words_tests.rs"]
+mod state_words_tests;
 
 /// **A field's colours as `app/src/ui/field/field.css` draws them**: no ground and no edge of
 /// its own, its label in the primary tier. Its help's and its error's words are the family's
@@ -1133,12 +1134,18 @@ fn field_look(_variant: &str, _states: &[State]) -> Look {
 
 /// **A text input's and a textarea's colours as `app/src/ui/field/field.css` draws them**: the
 /// sunken ground behind the control's edge (`border.control`, none in Purlis), in every state; the keyboard's ring and a refused value's
-/// danger edge are drawn by the family, outside the parts.
-fn box_look(_variant: &str, _states: &[State]) -> Look {
+/// danger edge are drawn by the family, outside the parts. A select and a combobox draw the same
+/// box, and a refused one (`invalid`, #3110) is a state of their parts: the danger colour on the
+/// same edge, inside the box, as `app/src/ui/select/select.css` draws it.
+fn box_look(_variant: &str, states: &[State]) -> Look {
     Look {
         fill: "surface.sunken",
         text: "text.primary",
-        border: "border.control",
+        border: if states.contains(&State::Invalid) {
+            "danger.base"
+        } else {
+            "border.control"
+        },
     }
 }
 
@@ -1212,6 +1219,12 @@ fn button_look(variant: &str, state: Option<State>) -> Look {
             text: "markdown.link",
             border: TRANSPARENT,
         },
+        // The quiet ghost (#3214): no box, quiet words.
+        "quiet" => Look {
+            fill: TRANSPARENT,
+            text: "text.quiet",
+            border: TRANSPARENT,
+        },
         _ => Look {
             fill: "control.base",
             text: "text.primary",
@@ -1222,13 +1235,17 @@ fn button_look(variant: &str, state: Option<State>) -> Look {
         Some(State::Hover) => {
             look.fill = match variant {
                 "primary" => "accent.fill-hover",
-                "ghost" => "surface.hover",
+                "ghost" | "quiet" => "surface.hover",
                 "danger" => "danger.surface",
                 "soft-accent" => "list.selected",
                 // A link is underlined under the pointer; its ground stays none.
                 "link" => TRANSPARENT,
                 _ => "control.hover",
             };
+            // The quiet ghost's words come up to the primary on its hover fill (#3214).
+            if variant == "quiet" {
+                look.text = "text.primary";
+            }
         }
         Some(State::Selected) => {
             look.fill = "accent.surface";
@@ -1394,7 +1411,10 @@ pub(super) fn allow_from_primary(theme: &ResolvedTheme) -> Vec<AllowLook> {
         for state in std::iter::once(None).chain(
             STATES
                 .into_iter()
-                .filter(|state| !matches!(state, State::Selected | State::Disabled))
+                .filter(|state| {
+                    family.states.contains(state)
+                        && !matches!(state, State::Selected | State::Disabled)
+                })
                 .map(Some),
         ) {
             let states: Vec<State> = state.into_iter().collect();
@@ -1427,6 +1447,7 @@ pub(super) fn defaults_json(variant: &str) -> Value {
         "text": rest.text,
         "border": rest.border,
         "hover": hover.fill,
+        "hover_text": hover.text,
         "selected": { "fill": selected.fill, "border": selected.border },
         "selected_hover": { "fill": both.fill, "border": both.border },
     })
@@ -1921,19 +1942,57 @@ fn joined(parts: &mut Parts) {
 
 /// Why `key` would take a consent part's mark away, if it would: a border width of 0 on Allow.
 fn edge_removed(key: &Key, value: &PartValue) -> Option<String> {
+    if key.property != Prop::BorderWidth || *value != PartValue::Length(Length::Number(0.0)) {
+        return None;
+    }
     let consent = key
         .variant
         .and_then(|name| variant(key.family, name))
         .and_then(|one| one.consent);
-    (consent == Some(Consent::Grants)
-        && key.property == Prop::BorderWidth
-        && *value == PartValue::Length(Length::Number(0.0)))
-    .then(|| {
-        format!(
+    if consent == Some(Consent::Grants) {
+        return Some(format!(
             "parts.{key} is refused: an answer that grants keeps its accent edge and its lock, \
              so a theme can never disguise a consent decision"
-        )
-    })
+        ));
+    }
+    // A refused box says so by its edge (#3110), and a state never sets a width, so a box with
+    // no edge at rest could never show it.
+    family(key.family)
+        .filter(|one| one.states.contains(&State::Invalid) && key.part == one.parts[0].name)
+        .map(|_| {
+            format!(
+                "parts.{key} is refused: a box that can be refused keeps its edge, which is how \
+                 it shows a value is refused"
+            )
+        })
+}
+
+/// The floor a refused box breaks when its edge is gone, or drawn as the edge it has while it is
+/// not refused (#3110): then nothing on screen says the value is refused.
+const REFUSAL_HIDDEN: &str = "a refused box keeps its own edge, told apart from the edge it has \
+     when it is not refused";
+
+/// Whether `look`, drawn while `states` hold [`State::Invalid`], hides the refusal: no edge, or an
+/// edge not told at a glance from the one the same states draw without it.
+fn refusal_hidden(
+    theme: &ResolvedTheme,
+    rules: &[Rule],
+    family: &Family,
+    variant: &str,
+    states: &[State],
+    look: &Drawn,
+) -> bool {
+    let Some(own) = edge(rules, family, variant, look) else {
+        return true;
+    };
+    let valid: Vec<State> = states
+        .iter()
+        .copied()
+        .filter(|one| *one != State::Invalid)
+        .collect();
+    let unrefused = drawn(rules, family, variant, &valid);
+    let theirs = edge(rules, family, variant, &unrefused).unwrap_or(TRANSPARENT);
+    alike(theme, own, theirs, super::ALLOW_APART)
 }
 
 /// **The parts that are marks, not controls** (#2914): a tab's indicator is a line a few px tall,
@@ -2343,9 +2402,15 @@ fn lowest(theme: &ResolvedTheme, family: &Family, fill: &str, front: &str) -> Op
         .map(|ratio| (ratio * 100.0).floor() / 100.0)
 }
 
-/// The floor a part's words or marks are held to: 4.5:1 for words, 3:1 for an icon.
+/// The floor a part's words or marks are held to: 4.5:1 for words, 3:1 for a mark (an icon, a
+/// select's chevron).
 fn floor_of(part: &Part) -> f64 {
-    if part.name == "icon" { 3.0 } else { 4.5 }
+    if is_mark(part) { 3.0 } else { 4.5 }
+}
+
+/// Whether a part is a mark and not words: an icon, or the chevron of a select or a combobox.
+fn is_mark(part: &Part) -> bool {
+    matches!(part.name, "icon" | "chevron")
 }
 
 /// The value `rules` give `property` of `family`'s root in `variant` at rest, if any sets it:
@@ -2403,13 +2468,15 @@ fn edge(rules: &[Rule], family: &Family, variant: &str, look: &Drawn) -> Option<
 }
 
 /// What a look a theme changed breaks of the reading floors, if anything: each part's words at
-/// 4.5:1 and its icon at 3:1 on its fill, and a border that is the part's only edge at 3:1;
-/// with more contrast asked for, each raised as [`super::Least::floor`] raises it (#2925).
+/// 4.5:1 and its icon at 3:1 on its fill, and a border that is the part's only edge at 3:1, or,
+/// while `states` hold [`State::Invalid`], the edge that says a value is refused (#3110), on any
+/// fill; with more contrast asked for, each raised as [`super::Least::floor`] raises it (#2925).
 fn unreadable(
     theme: &ResolvedTheme,
     rules: &[Rule],
     family: &Family,
     variant: &str,
+    states: &[State],
     look: &Drawn,
 ) -> Option<(String, Option<f64>)> {
     for (at, part) in family.parts.iter().enumerate() {
@@ -2418,11 +2485,7 @@ fn unreadable(
         if let Some(ratio) = lowest(theme, family, look.grounds[at], look.words[at])
             && ratio < floor
         {
-            let what = if part.name == "icon" {
-                "marks"
-            } else {
-                "words"
-            };
+            let what = if is_mark(part) { "marks" } else { "words" };
             return Some((
                 format!(
                     "the {}'s {what} contrast {floor}:1 with its fill",
@@ -2432,15 +2495,17 @@ fn unreadable(
             ));
         }
     }
-    // A border is the part's edge where its fill is not told from what it is drawn on.
+    // A border is the part's edge where its fill is not told from what it is drawn on, and a
+    // refused box's edge is what says so at a glance, whatever its fill.
     if let Some(border) = edge(rules, family, variant, look) {
         let fill = hex(theme, look.fill);
-        let on_its_ground = fill.is_none_or(|fill| {
-            !is_opaque(fill)
-                || grounds(theme, family)
-                    .iter()
-                    .any(|ground| ground.eq_ignore_ascii_case(&solid(fill)))
-        });
+        let on_its_ground = states.contains(&State::Invalid)
+            || fill.is_none_or(|fill| {
+                !is_opaque(fill)
+                    || grounds(theme, family)
+                        .iter()
+                        .any(|ground| ground.eq_ignore_ascii_case(&solid(fill)))
+            });
         let floor = theme.least.floor(3.0);
         if on_its_ground
             && let Some(ratio) = lowest(theme, family, look.fill, border)
@@ -2751,10 +2816,19 @@ impl Held<'_> {
     fn readable(&mut self, theme: &ResolvedTheme, states: &[State]) {
         for variant in self.family.looks() {
             let look = drawn(self.rules, self.family, variant, states);
+            // A refused box's edge is held whether or not the theme names its refused state: a
+            // rule at rest or in another state reaches it too (#3110).
+            if states.contains(&State::Invalid)
+                && refusal_hidden(theme, self.rules, self.family, variant, states, &look)
+            {
+                self.fall(variant, states, REFUSAL_HIDDEN.to_owned(), None);
+                continue;
+            }
             if look == drawn(&[], self.family, variant, states) {
                 continue;
             }
-            if let Some((floor, ratio)) = unreadable(theme, self.rules, self.family, variant, &look)
+            if let Some((floor, ratio)) =
+                unreadable(theme, self.rules, self.family, variant, states, &look)
             {
                 self.fall(variant, states, floor, ratio);
             }
@@ -2801,16 +2875,22 @@ impl Held<'_> {
             return;
         }
         self.fell.push(Fell { part, floor, ratio });
-        let state = states
-            .iter()
-            .rev()
-            .find(|state| {
-                self.rules
-                    .iter()
-                    .any(|rule| std::ptr::eq(rule.family, family) && rule.state == Some(**state))
-            })
-            .or(states.last())
-            .copied();
+        // A refused box draws its refused default in any set it is refused in, written after
+        // the theme's rules, so its danger edge is back whatever else holds (#3110).
+        let state = if states.contains(&State::Invalid) {
+            Some(State::Invalid)
+        } else {
+            states
+                .iter()
+                .rev()
+                .find(|state| {
+                    self.rules.iter().any(|rule| {
+                        std::ptr::eq(rule.family, family) && rule.state == Some(**state)
+                    })
+                })
+                .or(states.last())
+                .copied()
+        };
         // A family with no variants has one look, which a rule for every variant reaches.
         let reached = (!variant.is_empty()).then_some(variant);
         let written = self.rules.iter().any(|rule| {

@@ -637,6 +637,7 @@ const DIALOGS: Opened[] = [
                 takes_arguments: true,
                 arguments: ["pr"],
                 hint: null,
+                hidden: null,
               },
               {
                 name: "release",
@@ -647,6 +648,7 @@ const DIALOGS: Opened[] = [
                 takes_arguments: false,
                 arguments: [],
                 hint: null,
+                hidden: null,
               },
             ],
             budget: {
@@ -655,6 +657,8 @@ const DIALOGS: Opened[] = [
               manual: 1,
               most_skills: 30,
               most_chars: 6000,
+              hidden: 0,
+              still_over: null,
               warns: "both",
             },
           }}
@@ -1408,15 +1412,8 @@ const openDialogs = () =>
  * held here.
  */
 const FILES_WITH_DIALOGS = Object.keys(
-  // Not `overlays/`, which draws none: it is Radix's packages under the window's own name. Nor
-  // the families' own files and stories, which draw what every dialog is drawn with.
-  import.meta.glob([
-    "../**/*.tsx",
-    "!../**/*.test.tsx",
-    "!../**/*.stories.tsx",
-    "!../overlays/**",
-    "!../ui/**",
-  ]),
+  // Not the families' own files and stories, which draw what every dialog is drawn with.
+  import.meta.glob(["../**/*.tsx", "!../**/*.test.tsx", "!../**/*.stories.tsx", "!../ui/**"]),
 )
   .map((path) => path.slice("../".length))
   .filter((path) =>

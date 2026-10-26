@@ -435,10 +435,6 @@ body {
   margin-inline-start: calc(var(--space-1) - var(--tabs-gap) - var(--space-2));
 }
 
-.bar .strip-doing button.bare {
-  border-radius: calc(var(--radius-md) + 1px);
-}
-
 /* The innermost of the three strips: the chats of the workspace above, **drawn as the editor's
    own tab bar** (DS-6, #1836; ADR 0036 as amended 2026-10-12). It sits at the top of the centre
    column, directly above the chat it shows, and begins at the centre's left edge with no inset
@@ -491,8 +487,8 @@ body {
    rather than as a permanent control — an operator who never overflows the strip never sees
    it, and one who does reads how many tabs are past the edge without opening anything.
 
-   Only what is true of it on every strip lives here; what it is DRAWN as is `button.show-more`
-   below, beside the `+` it is drawn as a sibling of. */
+   Only what is true of it on every strip lives here; it is drawn as the button family's quiet
+   ghost, as the `+` beside it is (#3214). */
 .show-more {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
@@ -669,90 +665,15 @@ body {
    any button it reached that did not say the whole of what it is, the fresh mark among them. A
    button of the family draws itself; each mark below says all of its own look. */
 
-/* **A `+` drawn as a tab rather than as a button** — the operator's *"it should looks like
-   new tab, without label — just icon"*. It is the same square at the end of every strip, so
-   an operator learns it once; its accessible name is the catalogue's own words, which is the
-   one condition `docs/design-system.md` puts on an icon with no text beside it.
-
-   **It says the whole of what it is.** It used to inherit `display`, `font` and `cursor` from a
-   rule that dressed every button on the bar, which was true of the only two strips that had
-   one — and then charter-app#193 put a `+` on the workspace strip, where there is no such rule,
-   and the same class drew an inline box at the browser's own font with its icon off centre. A
-   rule that works in two places because of where it is written is one that breaks at the
-   third. */
-button.bare {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  align-self: center;
-  gap: var(--space-2);
-  min-width: var(--size-control);
-  padding: var(--space-2);
-  border: 0;
-  border-radius: var(--radius-md);
-  background: none;
-  color: var(--text-muted);
-  font: inherit;
-  cursor: pointer;
-}
-
-button.bare:hover:not(:disabled, [aria-disabled="true"]) {
-  color: var(--text-primary);
-  background: var(--surface-hover);
-  border: 0;
-}
-
-button.bare:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: var(--focus-ring-inset);
-}
-
-/* **`N more` is one of the strip's own controls, and is drawn as one** — the operator's
-   *"lets make 'N more' button looks like that buttons, to have all buttons in same style"*
-   (charter-app#193). It was three different buttons: a bordered control box on the chat strip
-   (from a rule that dressed every button on the bar, gone since #3129), a borderless one on the project strip, which is gone (#2915), and a third
-   rule of its own on the workspace strip that drew a bordered box with a different padding
-   from the chat strip's. Three looks for one control, and the difference was never anything
-   about the control — it was which ancestor's rule happened to reach it.
-
-   So it takes `button.bare`'s look, which is what the `+` beside it already wears: no border,
-   no fill, muted until a pointer is on it. That is the right family rather than merely a
-   consistent one — the `+` and this are the two things at the end of a strip that are not
-   tabs, they are pressed for the same kind of reason, and a bordered box next to a bare glyph
-   read as two different kinds of thing.
-
-   **Not `.bare` itself**, because `.bare` means *an icon and no words* and this has words: it
-   keeps its own padding for them and takes no `min-width`, so it is as wide as `12 more` is
-   and no wider. `Doer`'s `iconOnly` is the other half of that distinction, in the JSX. */
-button.show-more {
-  display: inline-flex;
-  align-items: center;
-  align-self: center;
-  gap: var(--space-1);
-  padding: var(--space-1) var(--space-3);
-  border: 0;
-  border-radius: var(--radius-md);
-  background: none;
-  color: var(--text-muted);
-  font: inherit;
-  cursor: pointer;
-}
-
-button.show-more:hover:not(:disabled, [aria-disabled="true"]) {
-  color: var(--text-primary);
-  background: var(--surface-hover);
-  border: 0;
-}
-
-button.show-more:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: var(--focus-ring-inset);
-}
+/* **The marks at the end of a strip** (the `+`, the project strip's open and create, the
+   switcher, `N more`) are the button family's quiet ghost (#3214): no box, quiet words, the
+   hover fill under the pointer. `Doer`'s `iconOnly` draws a quiet icon button, which wears
+   `bare`; `N more` is a quiet button with words, which wears `show-more`. */
 
 /* **`End this pane's chat` is not on the bar any more** — it is in each pane's own corner, and
-   `.pane-doing .ends-a-chat` below is where its danger hover now lives. The rule that was here
-   is gone with the button rather than left behind matching nothing: dead CSS is how a rule
-   comes to be copied for a reason that stopped being true. */
+   `.pane-doing > .ends-a-chat` in `paneFrame.css` is where its danger hover now lives. The
+   rule that was here is gone with the button rather than left behind matching nothing: dead
+   CSS is how a rule comes to be copied for a reason that stopped being true. */
 
 .trouble {
   margin: 0;
@@ -1469,9 +1390,9 @@ button.show-more:focus-visible {
    gives anything, and is cut at its own edge. Only once every such item is down to that does
    the breadcrumb shrink, by its own order: the names, and the state word last.
 
-   **Clear of its neighbours** (WCAG 2.5.8): a small icon button is under 24px in the compact
-   density, and the line's gap is a hairline, so a step on either side keeps a 24px circle around
-   it clear of the breadcrumb's last name and of the ways beside it. */
+   **Clear of its neighbours**: the line's gap is a hairline, so a step on either side keeps it
+   apart from the breadcrumb's last name and from the ways beside it. A small button is never
+   under 24px, in either density (#3210). */
 .pane-brief {
   flex: 0 1 auto;
   margin-inline: var(--space-2);
@@ -1885,25 +1806,8 @@ button.show-more:focus-visible {
   display: inline-flex;
 }
 
-.tasks-menu-place {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--size-chrome);
-  height: var(--size-chrome);
-  padding: 0;
-  border: none;
-  border-radius: var(--radius-md);
-  background: none;
-  color: var(--text-secondary);
-  cursor: pointer;
-}
-
-.tasks-menu-place:hover {
-  background: var(--surface-overlay);
-  color: var(--text-primary);
-}
-
+/* A line's own marks are the button family's quiet ghost (#3214); the icon here is a step
+   under the line's words. */
 .tasks-menu-place svg {
   width: 0.85rem;
   height: 0.85rem;
@@ -2075,16 +1979,6 @@ button.show-more:focus-visible {
   overflow-wrap: anywhere;
 }
 
-.dispatch-also .ui-choice-option {
-  padding: var(--space-1) 0;
-}
-
-.dispatch-also .ui-choice-option label,
-.dispatch-also .ui-choice-says {
-  min-width: 0;
-  font-size: inherit;
-}
-
 /* A sandbox block's Allow (#1342), under its Notice: what it would allow, whole, and the two
    Always buttons. */
 .block-allow-target {
@@ -2149,43 +2043,6 @@ button.show-more:focus-visible {
   visibility: visible;
   opacity: 0;
   pointer-events: none;
-}
-
-.pane-doing button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 1.6rem;
-  padding: var(--space-1);
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: none;
-  color: var(--text-muted);
-  font: inherit;
-  cursor: pointer;
-}
-
-.pane-doing button:hover:not(:disabled, [aria-disabled="true"]) {
-  background: var(--surface-hover);
-  color: var(--text-primary);
-}
-
-.pane-doing button:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: var(--focus-ring-inset);
-}
-
-.pane-doing button:is(:disabled, [aria-disabled="true"]) {
-  opacity: 0.45;
-  cursor: default;
-}
-
-/* Ending a chat is the danger colour here as it is on a tab's `×`, and for the same reason:
-   it does the same thing. It asks first now, and a confirmation is not a licence for the
-   control to look lighter than what it does. */
-.pane-doing .ends-a-chat:hover:not(:disabled, [aria-disabled="true"]) {
-  background: var(--danger-surface);
-  color: var(--danger-text);
 }
 
 /* The trend: a bar per turn, filled in the tone its class names — the same three tokens the
@@ -2440,19 +2297,28 @@ button.show-more:focus-visible {
 }
 
 /* **The right bar** (#2917, R117): the activity family's column (`ui/activity`) at the window's
-   edge, the window's whole height; a hairline toward the regions where a theme draws one. The
-   left bar is tabs across the side panel's own top (N36, R116), drawn inside its slot. */
+   edge, the window's whole height; a hairline toward the regions where a theme draws one. */
 .activity-column[data-side="right"] {
   border-inline-start: var(--panel-border-width) solid var(--border-subtle);
 }
 
-/* **The left bar while its side panel is away** (D-2917-18): a column at the window's edge. */
+/* **The left bar** (#3144): the same column, the frame's first, beside the project rail, as the
+   switcher prototype's variant D draws it ("Bar: column"). It stands whether or not the side
+   panel is out, so nothing moves when the side comes or goes, and its hairline toward the
+   regions is drawn where a theme draws one.
+
+   **Half as far again from the rail as the regions are apart** (the operator, 2026-10-24: the
+   two columns of icons read as almost one, D-3144-13): the theme's gutter and half of it, 12px
+   in Purlis. Purlis Classic's gutter is 0, so it stays flush there, as everything in Classic
+   is; its icons are still 12px apart, inside their two columns. The side panel stays one
+   gutter from the column, as every region is from the next. */
 .activity-column[data-side="left"] {
+  margin-inline-start: calc(var(--window-gutter) + var(--window-gutter) / 2);
   border-inline-end: var(--panel-border-width) solid var(--border-subtle);
 }
 
-/* **A side panel's body**: what it draws above its views (its tabs and header on the left, its
-   title and × on the right), then the open view, which takes the rest and scrolls inside itself. */
+/* **A side panel's body**: what it draws above its views (its header on the left, its title and
+   × on the right), then the open view, which takes the rest and scrolls inside itself. */
 .slot-body {
   display: flex;
   flex-direction: column;
@@ -2583,29 +2449,9 @@ button.show-more:focus-visible {
   min-width: 0;
   margin-bottom: var(--space-4);
 }
-.inbox-scope > .ui-levels {
+.inbox-scope > .scope-switch {
   flex: 0 1 auto;
   min-width: 0;
-  max-width: 100%;
-}
-.inbox-scope .ui-level {
-  display: inline-flex;
-  align-items: baseline;
-  gap: var(--space-2);
-  min-width: 0;
-}
-.ui-level-says {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.ui-level-count {
-  flex: none;
-  color: var(--text-quiet);
-  font-variant-numeric: tabular-nums;
-}
-.ui-level[data-state="checked"] .ui-level-count {
-  color: var(--text-secondary);
 }
 /* A scope with nothing in it: the sentence, how many wait wider, and the one press to widen. */
 .inbox-scope-empty {
@@ -3424,7 +3270,7 @@ button.show-more:focus-visible {
    under the title and is never cut. */
 .chats-top {
   /* **The line's text is the notes', the secondary's** (#1920). The scope switch at its end
-     has a fixed size of its own (`.ui-levels-small`, `--font-size-2xs`, #2319), so this line's
+     has a fixed size of its own (the segmented control's `sm`, #2907), so this line's
      size no longer moves it. The title and the notes each wear their own role. */
   font-size: var(--font-size-sm);
   display: flex;
@@ -6002,33 +5848,6 @@ nav.piece-files-head {
   font-size: var(--font-size-xs);
   color: var(--text-muted);
 }
-.persona-mark-choices {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-.persona-mark-choice {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2rem;
-  height: 2rem;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: var(--radius-md);
-  background: none;
-  color: var(--text-muted);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-strong);
-}
-.persona-mark-choice:hover {
-  color: var(--text-primary);
-}
-.persona-mark-choice[data-state="checked"] {
-  border-color: var(--accent-base);
-  color: var(--text-primary);
-}
-
 /* The picker's text box for any other colour, as #rrggbb: the field family's (#2905), as wide
    as the seven characters it holds (its `columns`); a value it refuses is said under it. */
 .persona-mark-hex {
@@ -6896,54 +6715,6 @@ nav.piece-files-head {
   border-bottom: 1px solid var(--border-subtle);
 }
 
-/* **One segmented style** (#1696): a radio group drawn as one row of segments, the chosen one
-   marked with the accent's ground and the primary text and said as checked, never by colour
-   alone. Settings' level switcher draws it at the window's size; the Chats view's scope switch
-   is the same piece, smaller (`ui-levels-small`). */
-.ui-levels {
-  display: inline-flex;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-}
-
-.ui-level {
-  padding: var(--space-1) var(--space-5);
-  color: var(--text-secondary);
-  background: var(--control-base);
-  border: 0;
-  font: inherit;
-  cursor: pointer;
-}
-
-.ui-level + .ui-level {
-  border-inline-start: 1px solid var(--border-subtle);
-}
-
-.ui-levels-small {
-  flex: none;
-  font-size: var(--font-size-2xs);
-}
-
-.ui-levels-small .ui-level {
-  padding: var(--space-0) var(--space-3);
-  white-space: nowrap;
-}
-
-/* Inside the group, which clips what is outside it: the ring is drawn within the segment. */
-.ui-levels .ui-level:focus-visible {
-  outline-offset: var(--focus-ring-inset);
-}
-
-.ui-level:hover {
-  background: var(--control-hover);
-}
-
-.ui-level[data-state="checked"] {
-  color: var(--text-primary);
-  background: var(--accent-surface);
-}
-
 .ui-settings-about {
   margin: 0;
   font-size: var(--font-size-xs);
@@ -7047,13 +6818,9 @@ nav.piece-files-head {
   min-width: 0;
 }
 
-.ui-level:focus-visible,
 .ui-settings-nav button:focus-visible,
 .ui-settings-raw button:focus-visible,
-.ui-setting-reset:focus-visible,
-.ui-setting-control > .ui-field + button:focus-visible,
-.ui-field:focus-visible,
-.ui-field-range input:focus-visible {
+.ui-setting-reset:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: var(--focus-ring-offset);
 }
@@ -7457,88 +7224,29 @@ nav.piece-files-head {
   margin: 0;
 }
 
-.ui-field {
-  padding: var(--space-2) var(--space-3);
-  color: var(--text-primary);
-  background: var(--surface-sunken);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  font: inherit;
-}
-
-.ui-field:disabled {
-  color: var(--text-muted);
-  cursor: default;
-}
-
-/* A slider is not a text box: no box, and what it is at beside it in even-width digits. */
-.ui-field-range {
-  display: inline-flex;
+/* A setting's slider takes the row's room, up to a comfortable reach. */
+.ui-setting-slider {
   flex: 1;
-  align-items: center;
-  gap: var(--space-3);
   max-width: 20rem;
-  padding: 0;
-  background: none;
-  border: 0;
-}
-
-.ui-field-range input {
-  flex: 1;
-  accent-color: var(--accent-base);
-}
-
-.ui-field-range output {
-  min-width: 3em;
-  font-variant-numeric: tabular-nums;
-}
-
-/* A radio choice, or a few boxes each ticked on its own: the mark, the name it is labelled by,
-   and under the name what it does. The mark is the window's own `.ui-radio` or `.ui-checkbox`
-   (`primitives/controls.css`). */
-.ui-choice-radio,
-.ui-choice-checks {
-  display: grid;
-  gap: var(--space-1);
-  width: 100%;
-}
-
-.ui-choice-option {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: var(--space-1) var(--space-3);
-  align-items: baseline;
-  padding: var(--space-2) 0;
-}
-
-.ui-choice-option label {
-  font-weight: var(--font-weight-medium);
-  cursor: pointer;
-}
-
-.ui-choice-says {
-  grid-column: 2;
-  font-size: var(--font-size-xs);
-  color: var(--text-muted);
 }
 
 /* A line made of a few facts — a harness's kind, the command it runs, where it was declared —
    wraps fact by fact. The command is what is about to run, so it is not faded with the rest,
-   and a profile charter has never run says so in its own colour (Start chat, DS-3d). Three
-   deep to outrank `[data-scope="dialog"] .where`, which dims every path in a dialog. */
-.ui-choice-says .meta {
+   and a profile charter has never run says so in its own colour (Start chat, DS-3d). Its
+   command outranks `[data-scope="dialog"] .where`, which dims every path in a dialog. */
+.profile-meta {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-1) var(--space-3);
   align-items: baseline;
 }
 
-.ui-choice-says .meta .where {
+.profile-meta code.where {
   color: var(--text-secondary);
   opacity: 1;
 }
 
-.ui-choice-says .needs-approval {
+.profile-meta .needs-approval {
   color: var(--danger-base);
 }
 

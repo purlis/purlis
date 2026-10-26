@@ -34,7 +34,8 @@ is added under a new version and never taken away. A theme can name only what th
 
 A theme's `theme.json` gains a top-level `parts` object, additive to its format: a theme without
 it is unchanged. Its keys are `<family>.<part>[.<variant>][.<state>].<property>`, the state at
-rest implied. The states are hover, pressed, selected, focused, disabled and open. The
+rest implied. The states are hover, pressed, selected, focused, disabled and open (and invalid,
+[amended 2026-10-26](0103/2026-10-26-a-refused-box-is-the-invalid-state.md)). The
 properties are a closed list: fill, text, border colour, border width (0 allowed), corner radius
 (one value or per corner), shadow (an elevation step), padding (block and inline), gap, font
 size, font weight and height. There is no opacity and no raw CSS.
@@ -149,4 +150,6 @@ reaches it.
 
 The amendments to this decision are files of their own in [`0103/`](0103/), one per
 amendment, named `<yyyy-mm-dd>-<slug>.md`. The latest:
-[2026-10-25, one manifest version per release](0103/2026-10-25-one-manifest-version-per-release.md).
+[2026-10-24, the choice families join the manifest](0103/2026-10-24-the-choice-families-join-the-manifest.md);
+[2026-10-25, one manifest version per release](0103/2026-10-25-one-manifest-version-per-release.md);
+[2026-10-26, a refused box is the `invalid` state](0103/2026-10-26-a-refused-box-is-the-invalid-state.md).

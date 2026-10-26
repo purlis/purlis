@@ -9,7 +9,7 @@ import { MemoryTab } from "./MemoryTab";
 import { DRAFT, forgetDrafts, memoryKey, wantEdit, type MemoryRef } from "./memories";
 import type { MemoryEdited, MemoryView } from "./bindings";
 import { ReadOnlySaid } from "./ReadOnlyLine";
-import { offeredIn, pickIn } from "./primitives/select.testkit";
+import { findSelectNamed, offeredIn, pickIn } from "./ui/select/select.testkit";
 import { retype, textOf, typeIn, typeable } from "./editor/typing.testkit";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
@@ -382,7 +382,7 @@ describe("moving a memory (KN-3)", () => {
     core([memory()], { memory_scopes: SCOPES });
     draw();
 
-    const choice = await screen.findByRole("combobox", { name: "Move to" });
+    const choice = await findSelectNamed("Move to");
     expect(await offeredIn(choice)).toEqual([
       "Pick a store…",
       "alpha — workspace",
@@ -397,7 +397,7 @@ describe("moving a memory (KN-3)", () => {
     const user = userEvent.setup();
     const asked = core([memory()], { memory_scopes: SCOPES, memory_move: MOVED });
     const { onSaved } = draw();
-    const choice = await screen.findByRole("combobox", { name: "Move to" });
+    const choice = await findSelectNamed("Move to");
     const move = screen.getByRole("button", { name: "Move" });
     expect(move).toBeDisabled();
 
@@ -426,7 +426,7 @@ describe("moving a memory (KN-3)", () => {
       memory_move: new Error("personas/_shared/memory already holds a memory named 'x'"),
     });
     const { onSaved } = draw();
-    await pickIn(await screen.findByRole("combobox", { name: "Move to" }), "shared", user);
+    await pickIn(await findSelectNamed("Move to"), "shared", user);
 
     await user.click(screen.getByRole("button", { name: "Move" }));
 
@@ -468,7 +468,7 @@ describe("a memory's tab on a read-only project (#826)", () => {
     core([memory()], { memory_scopes: SCOPES });
     drawReadOnly();
 
-    const choice = await screen.findByRole("combobox", { name: "Move to" });
+    const choice = await findSelectNamed("Move to");
     expect(choice).toBeDisabled();
     expect(screen.getByRole("button", { name: "Move" })).toBeDisabled();
     // Why it is off: its group\'s description, which its legend\'s tooltip says too (#2908).

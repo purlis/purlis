@@ -32,7 +32,7 @@ import { useBrowserOrigin, useBrowserWatch, useWindowSeen } from "./browserWatch
 import { poolOf, programsOf, useChatBrowsers } from "./chatBrowsers";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { Notice, type NoticeAction, NoticePaneRow } from "./Notice";
-import { Select } from "./primitives/Select";
+import { Select } from "./ui/select/Select";
 import { useProjectShown } from "./projectShown";
 import { RECONNECTING_SAID } from "./reconnecting";
 import { sandboxCommandReturned } from "./sandboxAsked";
@@ -505,6 +505,7 @@ export function BrowserView({ plane, program }: { plane: string; program: string
         </p>
         <Select
           className="browser-bar-size"
+          size="sm"
           aria-label="Page size"
           value={size}
           options={SIZE_PRESETS.map((preset) => ({

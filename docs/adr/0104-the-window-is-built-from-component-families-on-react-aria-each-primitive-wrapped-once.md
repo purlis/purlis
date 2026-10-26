@@ -93,9 +93,15 @@ error from the ticket that moves its last call site:
 - `purlis/menu-family`, an error since #2909: no element outside `src/ui` says a menu's role or
   wears the old menu and popover classes, and nothing imports Radix's menus or popover;
 - `purlis/dialog-family`, an error since #2910: `role="dialog"` or `role="alertdialog"` written by
-  hand. The field family moved and its rule is an error, with the select and choice inputs split
+  hand;
+- `purlis/choice-family`, an error since #2907: a raw choice `<input>`, a choice's role written by
+  hand, Radix's choices and the old choice classes
+  ([amended 2026-10-24](0104/2026-10-24-the-choice-families.md)). The field family moved and its rule is an error, with the select and choice inputs split
   into rules of their own
   ([amended 2026-10-22](0104/2026-10-22-the-field-family.md)).
+- `purlis/select-family`, an error since #2906: a `<select>`, a `<datalist>`, a
+  `role="combobox"` or an `aria-haspopup="listbox"` written by hand, and the old `ui-select`
+  classes ([amended 2026-10-24](0104/2026-10-24-the-select-and-combobox-families.md)).
 
 A family's ticket takes its own role and classes out of the button rule's list as it moves.
 
@@ -115,6 +121,8 @@ amendment, named `<yyyy-mm-dd>-<slug>.md`:
 - [2026-10-22, a row draws its focus ring inset](0104/2026-10-22-a-row-draws-its-focus-ring-inset.md)
 - [2026-10-22, the dialog family and the window's top layer](0104/2026-10-22-the-dialog-family-and-the-top-layer.md)
 - [2026-10-24, a row of a collection carries its own menu and tooltip](0104/2026-10-24-a-row-carries-its-own-menu-and-tooltip.md)
+- [2026-10-24, the select and combobox families, and no top layer](0104/2026-10-24-the-select-and-combobox-families.md)
+- [2026-10-24, the choice families](0104/2026-10-24-the-choice-families.md)
 
 ## What was rejected
 

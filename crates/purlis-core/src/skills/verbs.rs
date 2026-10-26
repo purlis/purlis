@@ -238,7 +238,7 @@ impl Ctx<'_> {
             }
         }
         if let Some(why) = crate::planegit::paths_unsaved(self.plane, &unique) {
-            (self.say)(Say::Info(why));
+            (self.say)(Say::Info(why.into()));
             return;
         }
         let message = format!("{} {message}", crate::names::BINARY.writes_for(self.plane));
@@ -269,7 +269,7 @@ impl Ctx<'_> {
             (self.say)(Say::Warn(
                 "The change is made, and it could not be saved yet: the next save takes it, and \
                  Saving says why."
-                    .to_owned(),
+                    .into(),
             ));
         }
     }
@@ -291,12 +291,12 @@ impl Ctx<'_> {
 
     /// Says `line` as a warning.
     pub(in crate::skills) fn warn(&mut self, line: String) {
-        (self.say)(Say::Warn(line));
+        (self.say)(Say::Warn(line.into()));
     }
 
     /// Says `line` as done.
     pub(in crate::skills) fn done(&mut self, line: String) {
-        (self.say)(Say::Done(line));
+        (self.say)(Say::Done(line.into()));
     }
 }
 
@@ -506,9 +506,9 @@ pub fn edit(
     }
     let folder = find(plane, level, name)?;
     if was == now {
-        (cx.say)(Say::Info(format!(
-            "{name} is unchanged, so nothing was saved."
-        )));
+        (cx.say)(Say::Info(
+            format!("{name} is unchanged, so nothing was saved.").into(),
+        ));
         return Ok(folder);
     }
     let file = format!("{}/SKILL.md", rel(plane, &folder));
@@ -1180,12 +1180,12 @@ pub fn interrupted(cx: &mut Ctx<'_>) {
         let settled = match noted(&text) {
             Some((level, folder)) => match finished_or_undone(cx, &level, &folder) {
                 Some(Ended::Settled(line)) => {
-                    (cx.say)(Say::Info(line));
+                    (cx.say)(Say::Info(line.into()));
                     true
                 }
                 // Neither finished nor put back: said, and the note is left for the next start.
                 Some(Ended::Unsettled(line)) => {
-                    (cx.say)(Say::Warn(line));
+                    (cx.say)(Say::Warn(line.into()));
                     false
                 }
                 None => true,
@@ -1530,6 +1530,29 @@ pub fn switch(cx: &mut Ctx<'_>, workspace: &str, name: &str, on: bool) -> Result
             &[crate::settings::workspace::named(workspace)],
             &format!("skill {state} {name} in {workspace}"),
         );
+    }
+    Ok(changed)
+}
+
+/// **Pins `name` (`on`) or unpins it** for a workspace's or a persona's chats (SK-15, ADR 0102
+/// §4), committed. `Ok(false)` where it already was so, and nothing is written.
+pub fn pin(cx: &mut Ctx<'_>, by: &super::PinnedBy, name: &str, on: bool) -> Result<bool, String> {
+    let changed = super::pin(cx.plane, by, name, on)?;
+    if changed {
+        let (whose, file) = match by {
+            super::PinnedBy::Workspace(ws) => (
+                format!("{ws}'s chats"),
+                crate::settings::workspace::named(ws),
+            ),
+            super::PinnedBy::Persona(persona) => (
+                format!("chats as {persona}"),
+                rel(cx.plane, &crate::personas::def_path(cx.plane, persona)),
+            ),
+        };
+        let verb = if on { "pinned" } else { "unpinned" };
+        cx.done(format!("{name} is {verb} for {whose}"));
+        let word = if on { "pin" } else { "unpin" };
+        cx.commit(&[file], &format!("skill {word} {name} for {whose}"));
     }
     Ok(changed)
 }

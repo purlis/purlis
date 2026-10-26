@@ -281,6 +281,22 @@
   margin-inline-end: 0;
 }
 
+/* **An item of the line set aside** (`wholeWays.ts`, #3144): in the narrowest pane, once both
+   ways to end the task are, the gauge, the harness's name and Brief give up the room they were
+   cut to, the last first, so the state word stays whole. It keeps its place on the line at no
+   width, drawn as nothing and out of the tab sequence, and comes back with the room. Here, in
+   the components layer after the button family, because the harness's name and Brief are its
+   buttons, whose own padding and least width would otherwise keep their room. */
+.pane-chips:has(.pane-crumbs) > [data-away]:not(.pane-task-ends) {
+  flex: 0 0 0;
+  inline-size: 0;
+  min-inline-size: 0;
+  padding-inline: 0;
+  border-inline-width: 0;
+  overflow: hidden;
+  visibility: hidden;
+}
+
 /* **A chip is words, not a box** (no hairlines; a control never takes a border): quiet on the
    pane's fill. A chip that is pressed (the harness, the skills, Brief, a task's ways) is a button
    of the family, which draws it (#3129). */
@@ -329,21 +345,23 @@
   margin-inline-start: auto;
 }
 
+/* No gap between the marks: each is a whole 24px target (WCAG 2.5.8) with its own hover fill,
+   so a gap would only take room a narrow pane's breadcrumb needs (#3214). */
 .pane-actions > .pane-doing {
-  gap: var(--space-1);
+  gap: 0;
   padding: 0;
   border: 0;
   background-color: transparent;
 }
 
-.pane-actions > .pane-doing button {
-  border-radius: var(--radius-md);
-  color: var(--text-quiet);
-}
-
-.pane-actions > .pane-doing button:hover:not(:disabled, [aria-disabled="true"]) {
-  background-color: var(--surface-overlay);
-  color: var(--text-primary);
+/* Each is the button family's quiet ghost (#3214). Ending a chat takes the danger colour under
+   the pointer, as a tab's `×` does, for the same reason: a confirmation is no licence for the
+   control to look lighter than what it does. It outranks the quiet ghost's hover by naming it,
+   in this layer after the family's. */
+.pane-doing
+  > .ends-a-chat[data-scope="button"][data-variant="quiet"][data-hovered]:not([data-disabled]) {
+  background-color: var(--danger-surface);
+  color: var(--danger-text);
 }
 
 /* ---------------------------------------------------------------------------------------------

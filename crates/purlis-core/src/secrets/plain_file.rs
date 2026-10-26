@@ -148,7 +148,7 @@ pub fn write_private(p: &Path, payload: &Value) -> Result<(), VaultError> {
 /// when a folder on the way from the trust root is a link (#1321): not even its directory is
 /// created where the link points.
 pub fn write_vault(ctx: &Ctx, p: &Path, text: &str) -> Result<(), VaultError> {
-    write_private_from(gate(ctx, p), p, text)
+    write_private_from(gate(ctx, p), Some(&ctx.root), p, text)
 }
 
 /// [`write_private`] for text the caller has already encoded — the reference provider's,
@@ -160,12 +160,18 @@ pub fn write_vault(ctx: &Ctx, p: &Path, text: &str) -> Result<(), VaultError> {
 /// the old vault whole rather than truncated. A vault path that is a symlink is refused: it
 /// used to be written through, to wherever the link pointed.
 pub fn write_private_text(p: &Path, text: &str) -> Result<(), VaultError> {
-    write_private_from(beside(p), p, text)
+    write_private_from(beside(p), None, p, text)
 }
 
 /// [`write_private_text`], gated from `trust`: the file's own directory, or the trust root for
-/// a file in the state folder ([`gate`]).
-fn write_private_from(trust: &Path, p: &Path, text: &str) -> Result<(), VaultError> {
+/// a file in the state folder ([`gate`]). A vault with a second name is refused naming the other
+/// one, when a search of `project` finds it ([`crate::rewrite::named_in`]).
+fn write_private_from(
+    trust: &Path,
+    project: Option<&Path>,
+    p: &Path,
+    text: &str,
+) -> Result<(), VaultError> {
     let parent = beside(p);
     if trust != parent {
         crate::contain::no_link_on_the_way(trust, parent)
@@ -179,7 +185,12 @@ fn write_private_from(trust: &Path, p: &Path, text: &str) -> Result<(), VaultErr
     // Gated from `trust`: for a vault the operator placed, its own directory, the file alone.
     // The directories above it are the operator's choice of where the vault lives, and may be
     // links honestly.
-    crate::rewrite::replace(trust, p, text.as_bytes(), crate::rewrite::Mode::Secret).map_err(|e| {
+    let written = crate::rewrite::replace(trust, p, text.as_bytes(), crate::rewrite::Mode::Secret);
+    written.map_err(|e| {
+        let e = match project {
+            Some(project) => crate::rewrite::named_in(e, project),
+            None => e,
+        };
         match e
             .get_ref()
             .and_then(|e| e.downcast_ref::<crate::rewrite::NotPrivate>())

@@ -291,7 +291,7 @@ an unknown token is.
 
 | Family | Parts | Variants |
 |---|---|---|
-| `button` | `root` (every property), `label` (`text`, `font-size`, `font-weight`), `icon` (`text`) | `secondary`, `primary`, `ghost`, `danger`, `grants` (an Allow or an Accept); since version 2 `soft-accent`, `warning-soft` and `link` |
+| `button` | `root` (every property), `label` (`text`, `font-size`, `font-weight`), `icon` (`text`) | `secondary`, `primary`, `ghost`, `danger`, `grants` (an Allow or an Accept); since version 2 `soft-accent`, `warning-soft` and `link`; since the next release's manifest version `quiet` (a ghost with quiet words) |
 | `field` (since version 3) | `root` (`gap`: the room between what it stacks), `label` (`text`, `font-size`, `font-weight`), `help` (`text`, `font-size`), `error` (`text`, `font-size`) | none |
 | `text-input` (since version 3) | `root` (every property but `font-weight`: the box for one line, and the words typed in it), `icon` (`text`: a filter's or a search's glass) | none |
 | `textarea` (since version 3) | `root` (every property but `gap`, `font-weight` and `height`: a textarea is as tall as its lines) | none |
@@ -299,6 +299,15 @@ an unknown token is.
 | `menu` (since version 6) | `root` (every property: a menu's row), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`), `shortcut` (`text`, `font-size`), `indicator` (`text`: a toggle's tick, a submenu's arrow) | `default`, `danger` (what cannot be undone) |
 | `dialog` (since version 7) | `root` (`fill`, `border-colour`, `border-width`, `corner-radius`, `shadow`), `title` (`text`, `font-size`, `font-weight`), `subtitle`, `description` and `summary` (`text`), `separator` (`fill`, the rule over the footer) | `dialog`, `alert` |
 | `list` (since version 11) | `root` (every property: a list's row), `body` (`padding`, `gap`: the list around the rows), `lead` and `trail` (`text`, `gap`: a row's marks and its end), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`), `header` (`text`, `font-size`, `font-weight`: a group's name) | none |
+| `select` (since the next release) | `root` (every property but `font-weight`: the button that shows what is picked, drawn as the text input's box), `placeholder` (`text`: what it shows while nothing is picked), `chevron` (`text`) | none |
+| `combobox` (since the next release) | `root` (every property but `font-weight`: the box typed in, with its suggestions under it), `chevron` (`text`) | none |
+| `checkbox` (since NEXT) | `root` (`fill`, `text`, `corner-radius`, `gap`: the row pressed, a chip's ground), `box` (`fill`, `border-colour`, `border-width`, `corner-radius`: the box ticked), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`) | `box`, `chip` |
+| `radio` (since NEXT) | `root` (`text`, `gap`), `mark` (`fill`, `border-colour`, `border-width`: the circle picked), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`) | none |
+| `switch` (since NEXT) | `root` (`text`, `gap`), `track` and `thumb` (`fill`, `corner-radius`), `label` (`text`, `font-size`, `font-weight`) | none |
+| `segmented-control` (since NEXT) | `root` (`fill`, `corner-radius`, `shadow`, `padding`, `gap`: the ground its segments stand on) | none |
+| `segment` (since NEXT) | `root` (`fill`, `text`, `shadow`, `corner-radius`), `label` and `count` (`text`) | none |
+| `slider` (since NEXT) | `root` (`text`, `gap`), `track` and `fill` (`fill`, `corner-radius`), `thumb` (`fill`, `border-colour`, `corner-radius`), `output` (`text`: its value) | none |
+| `option-card` (since NEXT) | `root` (`fill`, `text`, `border-colour`, `shadow`, `corner-radius`, `padding`, `gap`), `icon`, `title` (`text`, `font-size`, `font-weight`), `detail` (`text`, `font-size`), `check` (`text`) | `card`, `tile` |
 
 A field is its label, its control (a `text-input` or a `textarea`), its help and its error, as
 one: `field.help.text` reaches a field's help line, `text-input.root.border-width` every one-line
@@ -309,11 +318,25 @@ help to the quiet tier and its error to the danger colour.
 A dialog's size, height, place and rows are the dialog rules', never a theme's: a dialog key for
 its height or its padding is said and left out.
 
+A select's and a combobox's box are drawn as the text input's, so `select.root.border-width` and
+`text-input.root.border-width` together reach every box of a form. Their lists are no part of
+their own: a select's list and a combobox's suggestions stand on the popover's `menu` surface and
+each option is a menu's row, so `menu.root.hover.fill` reaches an option too. A chevron is a mark,
+held at 3:1 as an icon is; the placeholder and the chevron fall back to the quiet tier.
+
+A choice is chosen in `selected`: a box ticked (`checkbox.box.selected.fill`), a radio, a segment or
+a card picked, a switch on (`switch.track.selected.fill`). A choice's size is its family's: no
+choice takes a height, and a mark's corner is clamped to half its own box, so a tick never moves
+anything.
+
 The states are `hover`, `pressed`, `selected` (chosen, or a toggle that is on), `focused` (the
 keyboard is on it; a field whenever it holds the caret), `disabled` and `open`. A family names
 only the states its wrapper marks: the button every one; a text input and a textarea `hover`,
-`focused` and `disabled`; a field's root `disabled` alone; a dialog every one, though none
-changes its size. A key naming another is said and left
+`focused` and `disabled`; a select and a combobox `hover`, `focused` (a select from the keyboard, a
+combobox whenever it holds the caret), `disabled` and `open`; a field's root `disabled` alone; a
+dialog every one, though none changes its size; a choice `hover`, `selected`, `focused` and
+`disabled`, and a slider's row `disabled` alone (its thumb, not its row, is under the pointer and
+the keyboard). A key naming another is said and left
 out.
 
 | Property | Value | Bounds |
@@ -415,8 +438,10 @@ second line. A theme sets the surface's fill, words, edge colour and width, corn
 its size is its words', so none of its sizes is a theme's. Purlis draws it with corners of 8 and
 no edge: `"tooltip.root.corner-radius": 8`, `"tooltip.root.border-width": 0`.
 
-**The activity family** (manifest version 10, #2917): `activity`, a view's icon on a side's bar:
-`tab` (the left bar's tabs across the side panel) and `bar` (the right bar's column); its `item`
+**The activity family** (manifest version 10, #2917; its words reworded in the next release's manifest version, #3144): `activity`, a
+view's icon on a side's bar: `bar` (an icon in a side's column, the left bar beside the project
+rail and the right one at the window's edge) and `tab` (tabs across a side panel's top, which no
+bar of the window draws since the left bar became a column); its `item`
 (the root: colours, edge and corners, never a size), its `icon`, its `count` and its
 `indicator`, the mark along a chosen item's edge. Purlis draws the family default; Purlis
 Classic's own `parts` give its square items and accent edge (`activity.indicator.selected.fill`).

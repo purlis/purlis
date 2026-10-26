@@ -31,12 +31,12 @@ describe("the close question's answer about the chats still at work", () => {
     expect(group).toBeTruthy();
     const keep = screen.getByRole("radio", { name: "Keep them running" });
     const stop = screen.getByRole("radio", { name: "Stop them" });
-    expect(keep.getAttribute("aria-checked")).toBe("true");
-    // A Radix item is a button the roving focus gives a written-down tabindex.
-    expect(keep.tagName).toBe("BUTTON");
+    expect(keep).toBeChecked();
+    // A native radio of the radio group (#2907), with a written-down tabindex for WebKit.
+    expect(keep.tagName).toBe("INPUT");
     expect(keep.getAttribute("tabindex")).not.toBeNull();
-    expect(screen.getByText(KEEP_SAYS).id).toBe(keep.getAttribute("aria-describedby"));
-    expect(screen.getByText(STOP_SAYS).id).toBe(stop.getAttribute("aria-describedby"));
+    expect(keep).toHaveAccessibleDescription(KEEP_SAYS);
+    expect(stop).toHaveAccessibleDescription(STOP_SAYS);
   });
 
   it("sends the answer picked with Close", async () => {

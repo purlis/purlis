@@ -184,11 +184,36 @@ describe("the family's look, from the tokens (button.css)", () => {
       heldToTheTokens(screen.getByRole("button", { name: `Save ${variant}` }));
     heldToTheTokens(
       screen.getByRole("button", { name: "Small" }),
-      "max(var(--size-chrome), var(--space-7))",
+      "max(24px, var(--size-chrome), var(--space-7))",
     );
     heldToTheTokens(
       screen.getByRole("button", { name: "Large" }),
       "calc(var(--size-control) + var(--space-2))",
+    );
+  });
+
+  // WCAG 2.5.8 (#3210): the compact density draws the chrome at 18px, so the floor is 24 CSS px,
+  // as a target is measured, under the chrome's height and the scale's. A row that wraps keeps
+  // the same floor.
+  it("never draws an sm button under the 24px target, in any density or text size", () => {
+    render(
+      <>
+        <Button size="sm">A</Button>
+        <ToggleButton size="sm">B</ToggleButton>
+        <IconButton size="sm" icon={<Plus />} aria-label="Add" />
+        <ButtonRow size="sm" aria-label="Wrapping">
+          <Button>Wrapped</Button>
+        </ButtonRow>
+      </>,
+    );
+    for (const name of ["A", "B", "Add"]) {
+      const button = screen.getByRole("button", { name });
+      expect(drawnWith(button, "block-size"), name).toBe(
+        "max(24px, var(--size-chrome), var(--space-7))",
+      );
+    }
+    expect(drawnWith(screen.getByRole("button", { name: "Wrapped" }), "min-block-size")).toBe(
+      "max(24px, var(--size-chrome), var(--space-7))",
     );
   });
 
@@ -217,6 +242,19 @@ describe("the family's look, from the tokens (button.css)", () => {
     expect(drawn("link", "color")).toBe("var(--markdown-link)");
     expect(drawn("link", "background")).toBe("transparent");
     expect(drawn("link", "text-decoration", true)).toBe("underline");
+  });
+
+  // #3214: a mark at the end of a strip, a crumb, a pane's split and close.
+  it("draws the quiet ghost's words in the quiet tier, primary on the hover fill", () => {
+    render(<Button variant="quiet">More</Button>);
+    const quiet = screen.getByRole("button", { name: "More" });
+    expect(quiet).toHaveAttribute("data-variant", "quiet");
+    expect(drawnWith(quiet, "background")).toBe("transparent");
+    expect(drawnWith(quiet, "border-color")).toBe("transparent");
+    expect(drawnWith(quiet, "color")).toBe("var(--text-quiet)");
+    expect(drawnWith(quiet, "background", { hover: true })).toBe("var(--surface-hover)");
+    expect(drawnWith(quiet, "color", { hover: true })).toBe("var(--text-primary)");
+    heldToTheTokens(quiet);
   });
 
   it("draws a grant as plain as the secondary, edged in the accent (ADR 0097 §6)", () => {

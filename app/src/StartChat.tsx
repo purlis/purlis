@@ -12,7 +12,8 @@ import { Choice, Field, SettingActions, SettingGroup, SettingRow } from "./setti
 import { profileCommand, profilePage } from "./settings/profileAddress";
 import { Button } from "./ui/button/Button";
 import { Dialog } from "./ui/dialog/Dialog";
-import { submitKeyShortcut } from "./ui/field/submitKey";
+import { HarnessIcon, ownIconsOf } from "./ui/harness-icon/HarnessIcon";
+import { startAnswer } from "./StartChatApproval";
 
 /**
  * The value that stands for "no persona at all".
@@ -220,6 +221,8 @@ export function StartChat({
   const [name, setName] = useState("");
   const label = name.trim() === "" ? null : name;
   const picked = options.profiles.find((p) => p.name === profile);
+  // Each profile's own SVG, within the list's budget, for its card's icon (#2922).
+  const owns = ownIconsOf(options.profiles, options.own_icons);
   // What the sandbox does for a chat on the picked profile, where the project turned it on.
   const sandbox = picked?.sandbox ?? null;
   // The opt-out box, for a chat the sandbox would hold. Off, and not remembered between chats.
@@ -260,7 +263,6 @@ export function StartChat({
     onStart(profile, persona, showFooter, label, newBranch, withoutSandbox);
   };
   const approves = Boolean(picked?.approval);
-  const chord = !approves && withoutSandbox === null;
 
   // **Its own rows, moved onto the dialog family as they are** (#2910; its own redesign is
   // #2918). Escape starts nothing, and it is the dialog's own Escape. A click outside answers
@@ -277,39 +279,16 @@ export function StartChat({
       // Cancel, and not the first thing in tab order: starting a chat runs a command with
       // nothing between the key and the exec, so it is never what a stray Return key finds.
       initialFocus="cancel"
-      main={{
-        // Approving a profile's command grants it its run: drawn as every grant is (ADR 0097
-        // §6), never the primary look.
-        children: starting
-          ? "Starting…"
-          : approves
-            ? `Approve and ${startWord.toLowerCase()}`
-            : startWord,
-        // Every word it can say, and the lock's room, whatever is chosen: choosing a profile
-        // that asks for approval moves and widens nothing (R163).
-        reserve: [
-          "Start",
-          "Start without the sandbox",
-          "Starting…",
-          "Approve and start",
-          "Approve and start without the sandbox",
-        ],
-        reserveGrant: true,
-        variant: approves ? "grants" : "primary",
-        isDisabled: approves
-          ? !picked || starting || blockedByPolicy
-          : !profile || starting || blockedByPolicy,
-        // Return in the Name box never starts a command: Start is pressed (D-1719-3). The
-        // command is said above before the press (V69), and the chat it starts can be closed.
-        byReturn: false,
-        // **⌘⏎ starts the chat** (N26, Ctrl+Enter off macOS), from anywhere in the dialog: a
-        // chord, never a stray Return. Never an approval, and never a start without the
-        // sandbox: each grants the chat more than the sandbox gives, and a grant is only ever a
-        // press of its own button (ADR 0097 §6).
-        byChord: chord,
-        "aria-keyshortcuts": chord ? submitKeyShortcut() : undefined,
+      // Its main answer, a start or the approval of the profile's command: the approval's own
+      // file (`StartChatApproval.ts`), so no profile icon is drawn beside a grant.
+      main={startAnswer({
+        approves,
+        withoutSandbox: withoutSandbox !== null,
+        starting,
+        startWord,
+        unavailable: (approves ? !picked : !profile) || blockedByPolicy,
         onPress: start,
-      }}
+      })}
     >
       {/* These two lines are drawn once the file's name is known (a read of a moment), so the
         alert is said once, and with the name. */}
@@ -348,10 +327,12 @@ export function StartChat({
         control={(ids) => (
           <Choice
             ids={ids}
-            kind="radio"
-            options={options.profiles.map((row) => ({
+            kind="cards"
+            options={options.profiles.map((row, at) => ({
               value: row.name,
               label: row.name,
+              // The profile's own icon (#2922): its glyph, its SVG or its harness's monogram.
+              mark: <HarnessIcon icon={row.icon} svg={owns[at]} kind={row.kind} />,
               says: <ProfileMeta row={row} />,
             }))}
             value={profile}

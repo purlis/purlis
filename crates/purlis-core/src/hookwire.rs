@@ -5428,7 +5428,7 @@ mod tests {
             Box::new(move |_, _| {
                 std::thread::sleep(slow);
                 Answer::Said {
-                    lines: vec![crate::repocmd::Say::Done("cloned".to_owned())],
+                    lines: vec![crate::repocmd::Say::Done("cloned".to_owned().into())],
                     code: 0,
                 }
             }),
@@ -5473,11 +5473,11 @@ mod tests {
         use crate::repocmd::Say;
         let said = Answer::Said {
             lines: vec![
-                Say::Info("workspace: alpha  (via --workspace)".to_owned()),
-                Say::Done("widget → workspaces/alpha/widget".to_owned()),
-                Say::Warn("w".to_owned()),
-                Say::Fail("f".to_owned()),
-                Say::Plain("p".to_owned()),
+                Say::Info("workspace: alpha  (via --workspace)".to_owned().into()),
+                Say::Done("widget → workspaces/alpha/widget".to_owned().into()),
+                Say::Warn("w".to_owned().into()),
+                Say::Fail("f".to_owned().into()),
+                Say::Plain("p".to_owned().into()),
                 Say::Out("o".to_owned()),
             ],
             code: 2,

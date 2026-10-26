@@ -102,7 +102,7 @@ fn approve_in(
     if let Some(one) = one
         && let Some(refused) = crate::personas::name_refusal(root, one)
     {
-        say(Say::Fail(refused));
+        say(Say::Fail(refused.into()));
         return 1;
     }
     if !(options.yes || options.dry_run || ask.is_some()) {
@@ -135,13 +135,12 @@ fn approve_in(
         for c in declared {
             let label = mcp::label(&[n, &c.server]);
             let Some(fp) = c.fingerprint else {
-                say(Say::Warn(format!(
-                    "  cannot approve {label} — {}",
-                    mcp::UNRENDERABLE
-                )));
+                say(Say::Warn(
+                    format!("  cannot approve {label} — {}", mcp::UNRENDERABLE).into(),
+                ));
                 continue;
             };
-            say(Say::Info(format!("  {label} → {}", c.line)));
+            say(Say::Info(format!("  {label} → {}", c.line).into()));
             if options.dry_run {
                 continue;
             }
@@ -152,16 +151,19 @@ fn approve_in(
                 };
                 match answer {
                     None => {
-                        say(Say::Fail(format!(
-                            "interrupted — nothing recorded for {}",
-                            mcp::label(&[n])
-                        )));
+                        say(Say::Fail(
+                            format!("interrupted — nothing recorded for {}", mcp::label(&[n]))
+                                .into(),
+                        ));
                         return 130;
                     }
                     Some(false) => {
-                        say(Say::Info(format!(
-                            "    skipped {label} — it stays withheld from this persona's chats"
-                        )));
+                        say(Say::Info(
+                            format!(
+                                "    skipped {label} — it stays withheld from this persona's chats"
+                            )
+                            .into(),
+                        ));
                         continue;
                     }
                     Some(true) => {}
@@ -172,13 +174,16 @@ fn approve_in(
         if !options.dry_run
             && let Err(err) = mcp::approve(root, &state, n, &keep)
         {
-            say(Say::Fail(not_recorded(
-                &mcp::label(&[n]),
-                &err,
-                crate::sandbox::writes_are_sandboxed_in(env, crate::sandbox::started()),
-                &state,
-                &recorded,
-            )));
+            say(Say::Fail(
+                not_recorded(
+                    &mcp::label(&[n]),
+                    &err,
+                    crate::sandbox::writes_are_sandboxed_in(env, crate::sandbox::started()),
+                    &state,
+                    &recorded,
+                )
+                .into(),
+            ));
             return 1;
         }
         if !options.dry_run {

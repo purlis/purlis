@@ -166,7 +166,7 @@ describe("forced colours", () => {
       '[role="tab"][aria-selected="true"]',
       '[role="option"][aria-selected="true"]',
       '[aria-current]:not([aria-current="false"])',
-      '.ui-segmented-item[data-state="checked"]',
+      '[data-scope="segment"][data-part="root"][data-selected]',
       ".ui-menu-item[data-highlighted]",
       '.ui-menu-item[data-state="open"]',
       '[data-scope="menu"][data-part="root"][data-focused]:not([data-disabled])',
@@ -181,7 +181,7 @@ describe("forced colours", () => {
     }
     for (const shaped of [
       '[role="tab"][aria-selected="true"]',
-      '.ui-segmented-item[data-state="checked"]',
+      '[data-scope="segment"][data-part="root"][data-selected]',
     ])
       expect(drawn(shaped).get("text-decoration-line"), shaped).toBe("underline");
     expect(
@@ -210,11 +210,17 @@ describe("forced colours", () => {
   });
 
   it("keep a switch's thumb and a radio's dot, and say what cannot be used", () => {
-    expect(drawn(".ui-switch-thumb").get("background-color")).toBe("CanvasText");
-    expect(drawn('.ui-switch[data-state="checked"] .ui-switch-thumb').get("background-color")).toBe(
-      "HighlightText",
+    expect(drawn('[data-scope="switch"][data-part="thumb"]').get("background-color")).toBe(
+      "CanvasText",
     );
-    expect(drawn(".ui-radio-mark").get("background-color")).toBe("CanvasText");
+    expect(
+      drawn(
+        '[data-scope="switch"][data-part="root"][data-selected] [data-scope="switch"][data-part="thumb"]',
+      ).get("background-color"),
+    ).toBe("HighlightText");
+    expect(drawn('[data-scope="radio"][data-part="mark"]::after').get("background-color")).toBe(
+      "CanvasText",
+    );
     expect(drawn('[aria-disabled="true"]').get("color")).toBe("GrayText");
   });
 
