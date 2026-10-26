@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793054442693,
+  "lastUpdate": 1793056638670,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -26166,6 +26166,48 @@ window.BENCHMARK_DATA = {
             "value": 103.3390745,
             "unit": "ms",
             "extra": "median of 5 runs: 101.934, 102.790, 103.339, 103.838, 105.142 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "95bb405b796b3b8d327381fde86b97c751126dad",
+          "message": "Browsers: held buttons let go, a detached frame stalls nothing, browser events in the log, a runner's sandbox Notice, two engine flakes (#3402)\n\n* Browsers: the never-written call test waits for the large call to be written (#3401)\n\nThe test slept half a second and assumed its large call had been made and\nhad filled the pipe by then. On a busy runner the large call came late, the\nsmall call was written first, and the engine read it. The test now reads\nthe large call's first bytes before it makes the small one: the writer is\nthen held in that write until the engine reads again.\n\nCloses #3401\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* Browsers: a press whose release is dropped leaves no button held in the engine (#2989)\n\nA press the person made that reached the page is remembered with its\nbutton, session and point until its release reaches the page. Where the\nrelease is dropped because the page moved on in between, the engine is\nsent a release of that button at the press's point, and the hand-back lets\ngo of every button still held, so the next press starts from nothing held.\n\nCloses #2989\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* Browsers: a call on a session that detaches ends as it detaches (#3081)\n\nThe flaky test raced the engine's frame sessions. Each time the advert\nframe loads, the engine detaches its session and attaches a new one, and\nthe driver sets each new session up from the thread that reads the\nengine's events. A set-up call on a session the engine detached meanwhile\nwas sometimes never answered, so that thread waited out the 30-second call\nlimit and read no other event: the world made to read the field after the\nkey was never told of, and the key failed with the field unread.\n\nThe connection now refuses every call still waiting on a session as soon\nas the engine says that session detached, as the engine refuses a call to\na session it does not have.\n\nCloses #3081\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* Browsers: the event log says when a browser opens, ends, is pinned, and each call (#2842)\n\nbrowser.opened, browser.closed (by chat, person, idle or kill_switch),\nbrowser.crashed (an end the window did not ask for), browser.pinned,\nbrowser.unpinned and browser.call (the call's word, its page's origin and\ndone or refused) join the closed set the window may say of a browser;\nbrowser.typed names the page's origin. An origin that is more than an\norigin is refused, and no argument, value or page content has a field.\n\nCloses #2842\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* Browsers: the engine-sandbox Notice names the machine whose engine it is (#2990)\n\nA runner chat's browser start that the desktop relays refused for its\nengine's sandbox now raises a Notice for that pool's runner. The Notice\nnames the runner and offers the command to run there, which installs the\nprofile the .deb installs. This machine's Chrome is not offered for it.\nThe chat is told a browser is not available on that runner, and this\nmachine's own Notice is as it was. engine_sandbox now answers one Notice\nfor each machine.\n\nCloses #2990\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-26T22:43:25Z",
+          "tree_id": "743b979b41af1c089f5733868450795229ebe0aa",
+          "url": "https://github.com/purlis/purlis/commit/95bb405b796b3b8d327381fde86b97c751126dad"
+        },
+        "date": 1793056635479,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5258465,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.507, 0.509, 0.526, 0.532, 0.548 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.1825655,
+            "unit": "ms",
+            "extra": "median of 5 runs: 17.162, 17.177, 17.183, 17.361, 17.477 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.432216,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.484, 104.100, 104.432, 105.823, 106.257 ms"
           }
         ]
       }
