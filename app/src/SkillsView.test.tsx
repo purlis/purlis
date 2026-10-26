@@ -143,6 +143,41 @@ describe("what the Skills view lists", () => {
     expect(rowOf("deploy")).not.toHaveAttribute("data-mark");
   });
 
+  it("marks a skill the router hid, with the core's line on hover", async () => {
+    core(() =>
+      studio([
+        skill("big", {
+          hidden: [
+            {
+              harness: "claude",
+              title: "Claude Code",
+              hidden: {
+                router: "built-in",
+                why: "over-budget",
+                said: "hidden by the built-in router: over this chat's skill budget, so it is in the index skill",
+              },
+            },
+          ],
+        }),
+        skill("small"),
+      ]),
+    );
+    view();
+    await list();
+    await waitFor(() => expect(rowOf("big")).toBeInTheDocument());
+
+    expect(rowOf("big")).toHaveAttribute("data-mark", "hidden");
+    expect(rowOf("big")).toHaveTextContent("Hidden by the router");
+    act(() => rowOf("small").focus());
+    await userEvent.keyboard("{ArrowUp}");
+
+    const tip = await screen.findByRole("tooltip");
+    expect(tip).toHaveTextContent("What big does.");
+    expect(tip).toHaveTextContent(
+      "Hidden by the built-in router: over this chat's skill budget, so it is in the index skill (on Claude Code).",
+    );
+  });
+
   it("says a row's description and reason from the keyboard, as its description", async () => {
     opsCore();
     view();
@@ -242,13 +277,14 @@ describe("a row's menu", () => {
     fireEvent.contextMenu(rowOf("deploy"));
     const menu = await screen.findByRole("menu", { name: "deploy" });
     const items = within(menu).getAllByRole("menuitem");
-    expect(items).toHaveLength(3);
+    expect(items).toHaveLength(4);
     expect(items[0]).toHaveTextContent(/^Use in this chat$/);
     expect(items[1]).toHaveTextContent(/^Turn off in ops$/);
+    expect(items[2]).toHaveTextContent(/^Pin to this workspace$/);
     // Explorer shows a workspace's repos, so the row says where its folder is shown.
-    expect(items[2]).toHaveTextContent(/^Show in the Explorer view/);
-    expect(items[2]).toHaveAttribute("aria-disabled", "true");
-    expect(items[2]).toHaveTextContent(/at the project's root/);
+    expect(items[3]).toHaveTextContent(/^Show in the Explorer view/);
+    expect(items[3]).toHaveAttribute("aria-disabled", "true");
+    expect(items[3]).toHaveTextContent(/at the project's root/);
     await userEvent.click(within(menu).getByRole("menuitem", { name: "Use in this chat" }));
     expect(hands.onUseSkill).toHaveBeenCalledWith(7, "deploy");
   });
@@ -284,6 +320,70 @@ describe("a row's menu", () => {
     );
     // It is read again as the disk says the project's skills changed, not a second time here.
     expect(reads()).toBe(before);
+  });
+
+  it("pins a skill to the workspace with the studio's own command, one change", async () => {
+    const asked = opsCore();
+    view();
+    await list();
+    await waitFor(() => expect(rowOf("deploy")).toBeInTheDocument());
+
+    fireEvent.contextMenu(rowOf("deploy"));
+    const menu = await screen.findByRole("menu", { name: "deploy" });
+    await userEvent.click(within(menu).getByRole("menuitem", { name: "Pin to this workspace" }));
+
+    await waitFor(() =>
+      expect(asked.filter((one) => one.cmd === "skill_pin")).toEqual([
+        {
+          cmd: "skill_pin",
+          args: { plane: "p", by: { at: "workspace", name: "ops" }, name: "deploy", on: true },
+        },
+      ]),
+    );
+  });
+
+  it("unpins a skill the workspace pins", async () => {
+    const asked = core(() =>
+      studio([skill("deploy", { pinned: true, pinned_by: [{ at: "workspace", name: "ops" }] })]),
+    );
+    view();
+    await list();
+    await waitFor(() => expect(rowOf("deploy")).toBeInTheDocument());
+
+    fireEvent.contextMenu(rowOf("deploy"));
+    const menu = await screen.findByRole("menu", { name: "deploy" });
+    expect(within(menu).queryByRole("menuitem", { name: "Pin to this workspace" })).toBeNull();
+    await userEvent.click(
+      within(menu).getByRole("menuitem", { name: "Unpin from this workspace" }),
+    );
+
+    await waitFor(() =>
+      expect(asked).toContainEqual({
+        cmd: "skill_pin",
+        args: { plane: "p", by: { at: "workspace", name: "ops" }, name: "deploy", on: false },
+      }),
+    );
+  });
+
+  it("says the core's refusal where a pin is refused", async () => {
+    const asked: Asked[] = [];
+    mockIPC((cmd, args) => {
+      asked.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
+      if (cmd === "skill_studio") return studio([skill("deploy")]);
+      if (cmd === "skill_persona_skills") return [];
+      if (cmd === "skill_pin") throw "The list holds more than 64 pins.";
+      return [];
+    });
+    view();
+    await list();
+    await waitFor(() => expect(rowOf("deploy")).toBeInTheDocument());
+
+    fireEvent.contextMenu(rowOf("deploy"));
+    const menu = await screen.findByRole("menu", { name: "deploy" });
+    await userEvent.click(within(menu).getByRole("menuitem", { name: "Pin to this workspace" }));
+
+    const said = await screen.findByText("The list holds more than 64 pins.");
+    expect(said.closest("[aria-label]")).toHaveAttribute("aria-label", "The skill was not pinned");
   });
 
   it("cannot turn a built-in skill off, and says why", async () => {

@@ -33,6 +33,20 @@ const OPS: ListedSkill[] = [
   }),
   skill("deploy", { description: "Deploys the service to staging, then production." }),
   skill("old-deploy", { on: false, turned_off: true, left_out: "ops turned it off." }),
+  skill("release-notes", {
+    pinned_by: [{ at: "workspace", name: "ops" }],
+    hidden: [
+      {
+        harness: "claude",
+        title: "Claude Code",
+        hidden: {
+          router: "built-in",
+          why: "over-budget",
+          said: "hidden by the built-in router: over this chat's skill budget, so it is in the index skill",
+        },
+      },
+    ],
+  }),
   skill("ops-runbook", { level: "workspace", folder: "workspaces/ops/skills/ops-runbook" }),
   skill("pdf", { level: "installed", folder: "", lint: ["It asks to pre-approve Bash."] }),
 ].map((one) => ({

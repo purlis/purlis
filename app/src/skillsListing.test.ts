@@ -28,6 +28,19 @@ const row = (one: StudioSkill, more: Partial<ListedSkill> = {}): ListedSkill => 
   ...more,
 });
 
+/** A skill of a chat's set, as Use skill… reads it. */
+const given = (name: string, level: ChatSkill["level"] = "project"): ChatSkill => ({
+  name,
+  level,
+  label: level,
+  description: `What ${name} does.`,
+  manual: false,
+  takes_arguments: false,
+  arguments: [],
+  hint: null,
+  hidden: null,
+});
+
 describe("the one mark a row carries", () => {
   it("is what matters most: a folder to accept, then off, then left out, then lint", () => {
     expect(markOf(row(skill("plain")))).toBeUndefined();
@@ -56,6 +69,51 @@ describe("the one mark a row carries", () => {
     expect(tipOf(row(skill("theirs", { level: "persona" }), { persona: "reviewer" }))).toEqual([
       "What theirs does.",
       "reviewer brings it into every workspace.",
+    ]);
+  });
+});
+
+describe("the hidden-by-the-router mark", () => {
+  const HIDDEN = {
+    router: "built-in",
+    why: "over-budget",
+    said: "hidden by the built-in router: over this chat's skill budget, so it is in the index skill",
+  } as const;
+  const hiddenOn = (...titles: string[]): StudioSkill["hidden"] =>
+    titles.map((title) => ({
+      harness: title === "Codex" ? "codex" : "claude",
+      title,
+      hidden: HIDDEN,
+    }));
+
+  it("comes after left out and before lint", () => {
+    const hidden = skill("big", { hidden: hiddenOn("Claude Code"), lint: ["x"] });
+    expect(markOf(row(hidden))).toBe("hidden");
+    expect(markOf(row({ ...hidden, on: false, left_out: "Its grant does not reach ops." }))).toBe(
+      "left-out",
+    );
+    expect(markOf(row({ ...hidden, on: false, turned_off: true }))).toBe("off");
+    expect(markOf(row(skill("plain", { lint: ["x"] })))).toBe("lint");
+  });
+
+  it("says the core's line on hover, and the programs whose chats it is hidden from", () => {
+    expect(tipOf(row(skill("big", { hidden: hiddenOn("Claude Code", "Codex") })))).toEqual([
+      "What big does.",
+      "Hidden by the built-in router: over this chat's skill budget, so it is in the index skill (on Claude Code, Codex).",
+    ]);
+  });
+
+  it("is what the chat in front's set says, while the list is narrowed to it", () => {
+    const rows = [row(skill("big", { hidden: hiddenOn("Codex") })), row(skill("small"))];
+    const [big, small] = narrowedTo(rows, [given("big"), { ...given("small"), hidden: HIDDEN }], {
+      persona: null,
+      harness: "claude",
+    });
+    expect(markOf(big)).toBeUndefined();
+    expect(markOf(small)).toBe("hidden");
+    expect(tipOf(small)).toEqual([
+      "What small does.",
+      "Hidden by the built-in router: over this chat's skill budget, so it is in the index skill.",
     ]);
   });
 });
@@ -167,17 +225,6 @@ describe("the rows of a studio answer", () => {
 });
 
 describe("the rows narrowed to one chat's real set", () => {
-  const given = (name: string, level: ChatSkill["level"] = "project"): ChatSkill => ({
-    name,
-    level,
-    label: level,
-    description: `What ${name} does.`,
-    manual: false,
-    takes_arguments: false,
-    arguments: [],
-    hint: null,
-    hidden: null,
-  });
   const rows = [
     row(skill("deploy")),
     row(skill("old", { on: true })),
@@ -253,10 +300,11 @@ describe("a row's menu", () => {
     expect(chat.map((one) => one.title)).toEqual([
       "Use in this chat",
       "Turn off in ops",
+      "Pin to this workspace",
       "Show in the Explorer view",
     ]);
     const none = menuRowsOf(row(skill("deploy")), { workspace: "ops", chat: false });
-    expect(none.map((one) => one.act)).toEqual(["turn", "explorer"]);
+    expect(none.map((one) => one.act)).toEqual(["turn", "pin", "explorer"]);
   });
 
   it("cannot use in the chat a skill it does not get, and says why", () => {
@@ -299,6 +347,69 @@ describe("a row's menu", () => {
       available: false,
       reason: "Only a project skill is turned on or off for one workspace.",
     });
+  });
+
+  it("pins a skill to the title bar's workspace, or unpins it while that workspace pins it", () => {
+    const pin = (one: StudioSkill, workspace: string | undefined = "ops") =>
+      menuRowsOf(row(one), { workspace, chat: true }).find((r) => r.act === "pin");
+    expect(
+      menuRowsOf(row(skill("deploy")), { workspace: "ops", chat: true }).map((r) => r.act),
+    ).toEqual(["use", "turn", "pin", "explorer"]);
+    expect(pin(skill("deploy"))).toEqual({
+      act: "pin",
+      title: "Pin to this workspace",
+      available: true,
+      reason: "",
+    });
+    // Another workspace's or the persona's pin is not this workspace's to undo here.
+    expect(
+      pin(
+        skill("deploy", {
+          pinned_by: [
+            { at: "persona", name: "reviewer" },
+            { at: "workspace", name: "web" },
+          ],
+        }),
+      ),
+    ).toMatchObject({ title: "Pin to this workspace", available: true });
+    expect(
+      pin(skill("deploy", { pinned: true, pinned_by: [{ at: "workspace", name: "ops" }] })),
+    ).toEqual({
+      act: "pin",
+      title: "Unpin from this workspace",
+      available: true,
+      reason: "",
+    });
+  });
+
+  it("says why it cannot pin one where it cannot", () => {
+    const pin = (one: StudioSkill, workspace: string | undefined = "ops") =>
+      menuRowsOf(row(one), { workspace, chat: false }).find((r) => r.act === "pin");
+    const atTheRoot = menuRowsOf(row(skill("deploy")), { workspace: undefined, chat: false });
+    expect(atTheRoot.find((r) => r.act === "pin")).toMatchObject({
+      title: "Pin to this workspace",
+      available: false,
+      reason: "A skill is pinned for one workspace's chats. Pick one in the title bar.",
+    });
+    expect(pin(skill("secrets", { level: "built-in" }))).toMatchObject({
+      available: false,
+      reason: "It ships with purlis, and is always listed.",
+    });
+    for (const level of ["installed", "repo"] as const)
+      expect(pin(skill("pdf", { level, folder: "" }))).toMatchObject({
+        available: false,
+        reason: "Its program lists it, not purlis's router.",
+      });
+    expect(
+      pin(skill("out", { on: false, left_out: "Its grant does not reach ops." })),
+    ).toMatchObject({
+      available: false,
+      reason: "This workspace's chats do not get it.",
+    });
+    // A pin still written on a skill the chats no longer get can still be undone.
+    expect(
+      pin(skill("out", { on: false, pinned_by: [{ at: "workspace", name: "ops" }] })),
+    ).toMatchObject({ title: "Unpin from this workspace", available: true });
   });
 
   it("shows a skill's folder in Explorer at the project's root, and says why not elsewhere", () => {
