@@ -18,7 +18,7 @@
 use crate::reconcile::FIELD_MANAGER;
 use crate::resources::{Claim, KEY_PUBLISHED, LinkKey, condition_of};
 use crate::upstream::{KEY_STEP, SandboxClaim, TERMINATION_LOG};
-use k8s_openapi::api::core::v1::{Pod, PodSpec};
+use k8s_openapi::api::core::v1::{Pod, PodSpec, PodTemplateSpec};
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::{Condition, ObjectMeta};
 use kube::ResourceExt;
 use ring::signature::{Ed25519KeyPair, KeyPair};
@@ -194,7 +194,7 @@ pub const SET_BY_THE_CLUSTER: &[&str] = &[
     "serviceAccountName and serviceAccount (default)",
     "securityContext (empty)",
     "a container's imagePullPolicy (any)",
-    "a container's resources (any)",
+    "a container's resources (CPU, memory, ephemeral storage and huge pages only; no extended resource and no claim)",
     "a container's terminationMessagePath (/dev/termination-log)",
     "a container's terminationMessagePolicy (File)",
 ];
@@ -251,13 +251,83 @@ pub fn normalised(spec: &PodSpec) -> serde_json::Value {
         if let Some(Value::Array(containers)) = pod.get_mut(list) {
             for container in containers.iter_mut().filter_map(Value::as_object_mut) {
                 container.remove("imagePullPolicy");
-                container.remove("resources");
+                if container.get("resources").is_some_and(plain_resources) {
+                    container.remove("resources");
+                }
                 drop_if(container, "terminationMessagePath", json!(TERMINATION_LOG));
                 drop_if(container, "terminationMessagePolicy", json!("File"));
             }
         }
     }
     value
+}
+
+/// Whether a container's `resources` ask only for what the node itself gives (CPU, memory,
+/// ephemeral storage, huge pages): an extended resource goes to a device plugin, which can add
+/// devices, mounts and variables to the container, and a claim to a resource driver.
+fn plain_resources(resources: &serde_json::Value) -> bool {
+    let Some(fields) = resources.as_object() else {
+        return false;
+    };
+    let plain = |name: &str| {
+        matches!(name, "cpu" | "memory" | "ephemeral-storage") || name.starts_with("hugepages-")
+    };
+    fields.iter().all(|(field, held)| match field.as_str() {
+        "requests" | "limits" => held
+            .as_object()
+            .is_some_and(|quantities| quantities.keys().all(|name| plain(name))),
+        _ => false,
+    })
+}
+
+/// The labels upstream puts on a runner's pod (agent-sandbox v1.0.6), measured on the kind run;
+/// the operator's template sets none. `CLAIM_UID_LABEL` must name the upstream claim.
+pub const UPSTREAM_LABELS: [&str; 3] = [
+    CLAIM_UID_LABEL,
+    "agents.x-k8s.io/sandbox-name-hash",
+    "agents.x-k8s.io/sandbox-template-ref-hash",
+];
+
+/// The label upstream names a pod's claim by, its uid.
+pub const CLAIM_UID_LABEL: &str = "agents.x-k8s.io/claim-uid";
+
+/// The prefix of the annotations upstream may put on a runner's pod; the operator's template
+/// sets none, and no other is allowed.
+pub const UPSTREAM_ANNOTATIONS: &str = "agents.x-k8s.io/";
+
+/// Why `pod`'s labels or annotations are not the operator's template's and upstream's, if they
+/// are not: labels decide which network policy holds the pod, and annotations reach its network
+/// and its runtime.
+pub fn labelled_as_ours(pod: &ObjectMeta, upstream_claim: &ObjectMeta) -> Result<(), String> {
+    for (label, value) in pod.labels.iter().flatten() {
+        if !UPSTREAM_LABELS.contains(&label.as_str()) {
+            return Err(format!("it carries a label of its own, {label}"));
+        }
+        if label == CLAIM_UID_LABEL && Some(value) != upstream_claim.uid.as_ref() {
+            return Err("its claim label names another claim".into());
+        }
+    }
+    for annotation in pod.annotations.iter().flatten().map(|(name, _)| name) {
+        if !annotation.starts_with(UPSTREAM_ANNOTATIONS) {
+            return Err(format!("it carries an annotation of its own, {annotation}"));
+        }
+    }
+    Ok(())
+}
+
+/// Whether `held`, the pod template of the pool's template as the cluster holds it after the
+/// operator's apply, is exactly the operator's `wanted` one: what any manager added, whatever
+/// name it gave itself, is a difference.
+pub fn template_is_ours(held: &PodTemplateSpec, wanted: &PodTemplateSpec) -> bool {
+    let as_held = |template: &PodTemplateSpec| {
+        let metadata = template
+            .metadata
+            .as_ref()
+            .map(|meta| serde_json::to_value(meta).unwrap_or_default())
+            .filter(|meta| meta.as_object().is_some_and(|fields| !fields.is_empty()));
+        (metadata, template.spec.as_ref().map(normalised))
+    };
+    as_held(held) == as_held(wanted)
 }
 
 /// The top-level fields in which `held` and `wanted`, each [`normalised`], differ: what a
@@ -415,8 +485,10 @@ pub struct Held<'a> {
     pub claim: &'a Claim,
     /// The claim's upstream claim, the operator's own.
     pub upstream: &'a SandboxClaim,
-    /// The pool's template in the claim's namespace, as the cluster holds it.
+    /// The pool's template in the claim's namespace, as the cluster holds it: its metadata, and
+    /// its pod template.
     pub template: Option<&'a ObjectMeta>,
+    pub template_spec: Option<&'a PodTemplateSpec>,
     /// The sandbox the upstream claim's status names.
     pub sandbox: Option<&'a ObjectMeta>,
     /// The pod of that sandbox's name.
@@ -427,7 +499,9 @@ pub struct Held<'a> {
 /// claim to its pod by uid (upstream claim, its sandbox, its pod, each controlling the next),
 /// the pool's template changed by no one else, the pod the operator's `template` in full, and
 /// the key its first step published; then the statement, signed with `signing`.
-pub fn vouch(held: &Held<'_>, template: &PodSpec, signing: &SigningKey) -> Vouching {
+pub fn vouch(held: &Held<'_>, wanted_template: &PodTemplateSpec, signing: &SigningKey) -> Vouching {
+    let template = wanted_template.spec.as_ref().cloned().unwrap_or_default();
+    let template = &template;
     let not_yet = |why: &str| Vouching::Starting(why.to_owned());
     let Some(named) = held
         .upstream
@@ -453,6 +527,12 @@ pub fn vouch(held: &Held<'_>, template: &PodSpec, signing: &SigningKey) -> Vouch
             "the sandbox its upstream claim names is not that claim's".into(),
         );
     }
+    if held
+        .template_spec
+        .is_some_and(|template| !template_is_ours(template, wanted_template))
+    {
+        return Vouching::Refused("its pool's template is not the operator's".into());
+    }
     if held.template.is_some_and(changed_by_another) {
         return Vouching::Refused(
             "its pool's template was changed by someone other than the operator".into(),
@@ -463,6 +543,9 @@ pub fn vouch(held: &Held<'_>, template: &PodSpec, signing: &SigningKey) -> Vouch
     };
     if !controlled_by(&pod.metadata, "agents.x-k8s.io", "Sandbox", sandbox) {
         return Vouching::Refused("its pod is not the one its sandbox made".into());
+    }
+    if let Err(why) = labelled_as_ours(&pod.metadata, &held.upstream.metadata) {
+        return Vouching::Refused(why);
     }
     let key = match key_published(pod, template) {
         Ok(key) => key,

@@ -9,8 +9,10 @@ use base64::Engine;
 use k8s_openapi::api::core::v1::{
     Container, ContainerState, ContainerStateTerminated, ContainerStatus, EnvVar, ExecAction,
     HostAlias, Lifecycle, LifecycleHandler, Pod, PodDNSConfig, PodResourceClaim,
-    PodSecurityContext, PodSpec, PodStatus, Probe, Toleration, Volume, VolumeMount,
+    PodSecurityContext, PodSpec, PodStatus, PodTemplateSpec, Probe, ResourceRequirements,
+    Toleration, Volume, VolumeMount,
 };
+use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::{
     FieldsV1, ManagedFieldsEntry, OwnerReference,
 };
@@ -195,6 +197,10 @@ fn the_pods_first_step_makes_the_key_before_anything_else_and_hands_it_to_the_ru
 
 fn first_step(pod: &mut Pod) -> &mut Container {
     &mut pod.spec.as_mut().unwrap().init_containers.as_mut().unwrap()[0]
+}
+
+fn pod_template() -> PodTemplateSpec {
+    template_for(&pool(), "ada", Vec::new()).spec.pod_template
 }
 
 fn template() -> PodSpec {
@@ -596,10 +602,11 @@ fn vouching(
             claim: &claim,
             upstream,
             template: held_template,
+            template_spec: None,
             sandbox,
             pod,
         },
-        &template(),
+        &pod_template(),
         &signing(),
     )
 }
@@ -818,4 +825,125 @@ fn a_pools_status_is_written_until_it_names_the_operators_signing_key() {
         signing_key: Some(public.clone()),
     });
     assert!(pool_status_names(&pool, &public));
+}
+
+fn labelled(labels: &[(&str, &str)], annotations: &[(&str, &str)]) -> Pod {
+    let mut pod = runner_pod(the_sandboxes());
+    let map = |pairs: &[(&str, &str)]| {
+        Some(
+            pairs
+                .iter()
+                .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+                .collect(),
+        )
+    };
+    pod.metadata.labels = map(labels);
+    pod.metadata.annotations = map(annotations);
+    pod
+}
+
+#[test]
+fn a_pod_is_held_to_the_labels_and_annotations_upstream_gives_it() {
+    let upstream = upstream_claim("ada-1");
+    let sandbox = sandbox(UPSTREAM_UID);
+    let upstreams = [
+        (vouch::CLAIM_UID_LABEL, UPSTREAM_UID),
+        ("agents.x-k8s.io/sandbox-name-hash", "900bf6e9"),
+        ("agents.x-k8s.io/sandbox-template-ref-hash", "85e22c3a"),
+    ];
+    let vouched = |pod: &Pod| vouching(&upstream, Some(&sandbox), Some(pod), None);
+    assert!(matches!(
+        vouched(&labelled(&upstreams, &[])),
+        Vouching::Vouched(_)
+    ));
+    assert!(matches!(
+        vouched(&labelled(&upstreams, &[("agents.x-k8s.io/note", "x")])),
+        Vouching::Vouched(_)
+    ));
+    let refused = [
+        labelled(&[("app", "anything")], &[]),
+        labelled(&[(vouch::CLAIM_UID_LABEL, SANDBOX_UID)], &[]),
+        labelled(&upstreams, &[("k8s.v1.cni.cncf.io/networks", "host")]),
+        labelled(&upstreams, &[("io.kubernetes.cri-o.Devices", "/dev/kvm")]),
+    ];
+    for pod in &refused {
+        assert!(
+            matches!(vouched(pod), Vouching::Refused(_)),
+            "{:?} {:?}",
+            pod.metadata.labels,
+            pod.metadata.annotations
+        );
+    }
+}
+
+#[test]
+fn a_pools_template_is_held_to_the_operators_own_whatever_manager_changed_it() {
+    let wanted = pod_template();
+    assert!(vouch::template_is_ours(&wanted, &wanted));
+    let mut empty_metadata = wanted.clone();
+    empty_metadata.metadata = Some(ObjectMeta::default());
+    assert!(vouch::template_is_ours(&empty_metadata, &wanted));
+    let mut labelled = wanted.clone();
+    labelled.metadata = Some(ObjectMeta {
+        labels: Some([("app".to_owned(), "open".to_owned())].into()),
+        ..ObjectMeta::default()
+    });
+    assert!(!vouch::template_is_ours(&labelled, &wanted));
+    let mut hooked = wanted.clone();
+    hooked.spec.as_mut().unwrap().containers[0].working_dir = Some("/tmp".into());
+    assert!(!vouch::template_is_ours(&hooked, &wanted));
+    // And a pass that reads the template so changed vouches for nothing.
+    let upstream = upstream_claim("ada-1");
+    let sandbox = sandbox(UPSTREAM_UID);
+    let pod = runner_pod(the_sandboxes());
+    let claim = claim();
+    let vouching = vouch::vouch(
+        &Held {
+            claim: &claim,
+            upstream: &upstream,
+            template: None,
+            template_spec: Some(&labelled),
+            sandbox: Some(&sandbox),
+            pod: Some(&pod),
+        },
+        &wanted,
+        &signing(),
+    );
+    assert!(matches!(vouching, Vouching::Refused(_)));
+}
+
+#[test]
+fn a_container_may_ask_only_for_what_the_node_itself_gives() {
+    let asking = |requests: &[&str]| {
+        let mut asked = pod(Some((0, KEY)));
+        runner(&mut asked).resources = Some(ResourceRequirements {
+            requests: Some(
+                requests
+                    .iter()
+                    .map(|name| ((*name).to_owned(), Quantity("1".into())))
+                    .collect(),
+            ),
+            ..ResourceRequirements::default()
+        });
+        vouch::key_published(&asked, &template())
+    };
+    assert_eq!(
+        asking(&["cpu", "memory", "ephemeral-storage", "hugepages-2Mi"]),
+        Ok(KEY.to_owned())
+    );
+    for extended in [&["nvidia.com/gpu"][..], &["cpu", "example.com/device"][..]] {
+        assert!(
+            matches!(asking(extended), Err(NotYet::Refused(_))),
+            "{extended:?}"
+        );
+    }
+    let mut claiming = pod(Some((0, KEY)));
+    runner(&mut claiming).resources = Some(ResourceRequirements {
+        claims: Some(vec![Default::default()]),
+        ..ResourceRequirements::default()
+    });
+    assert!(matches!(
+        vouch::key_published(&claiming, &template()),
+        Err(NotYet::Refused(_))
+    ));
 }

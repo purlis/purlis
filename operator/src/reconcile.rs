@@ -318,7 +318,7 @@ async fn reconcile_claim(claim: Arc<Claim>, context: Arc<Context>) -> Result<Act
                 &claim,
                 &pool,
                 &applied,
-                &template_now.metadata,
+                &template_now,
             )
             .await?;
             if let Vouching::Refused(why) = &vouching {
@@ -345,7 +345,7 @@ async fn vouch_for(
     claim: &Claim,
     pool: &Pool,
     upstream: &SandboxClaim,
-    template: &ObjectMeta,
+    template: &SandboxTemplate,
 ) -> Result<Vouching, Error> {
     let namespace = claim.namespace().unwrap_or_default();
     let named = upstream
@@ -367,14 +367,13 @@ async fn vouch_for(
     };
     let wanted = upstream::template_for(pool, &namespace, Vec::new())
         .spec
-        .pod_template
-        .spec
-        .unwrap_or_default();
+        .pod_template;
     Ok(vouch::vouch(
         &vouch::Held {
             claim,
             upstream,
-            template: Some(template),
+            template: Some(&template.metadata),
+            template_spec: Some(&template.spec.pod_template),
             sandbox: sandbox.as_ref(),
             pod: pod.as_ref(),
         },
