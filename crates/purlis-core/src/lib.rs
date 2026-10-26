@@ -70,6 +70,7 @@ pub mod browserlimits;
 pub mod browserlogins;
 pub mod browsers;
 pub mod browsersatquit;
+pub mod browsertimeline;
 pub mod envvar;
 pub mod eventlog;
 pub mod executor;

@@ -16,6 +16,12 @@
 //
 //   node tools/story-failures.mjs <browser> <report> [<browser> <report> ...]
 //
+//   Or, to ask whether a picture is all that failed in the reports (`picturesAlone`), which is
+//   when the stories job draws the baselines its pull request can take (`stories.yml`); it
+//   prints the story files whose pictures failed, one a line, the ones to draw again:
+//
+//   node tools/story-failures.mjs pictures-alone <report> [<report> ...]
+//
 // A story's annotation names the line of the story file it failed at, from the frames Vitest
 // maps back to their sources, so it shows on the pull request's diff (`placeOf`).
 //
@@ -79,6 +85,29 @@ export function gateOf(error) {
   if (RENDERING.test(stack) || PREPARING.test(stack)) return "renders";
   if (STORY_CODE.test(stack)) return "keyboard";
   return "renders";
+}
+
+/**
+ * **Whether a picture is all that failed** in these reports, one per browser: a story failed,
+ * every error of every story that failed is the screenshot gate's, no error is outside a story,
+ * and no run failed without naming a story. Only then are a run's baselines drawn for its pull
+ * request to take (`stories.yml`): a baseline is drawn only of a story that passes everything
+ * else.
+ */
+export function picturesAlone(reports) {
+  const failures = reports.flatMap((report) => report.failures ?? []);
+  return (
+    failures.length > 0 &&
+    reports.every(
+      (report) =>
+        (report.errors ?? []).length === 0 &&
+        (!report.failed || (report.failures ?? []).length > 0),
+    ) &&
+    failures.every(
+      ({ errors }) =>
+        errors.length > 0 && errors.every((one) => gateOf(one) === "screenshot"),
+    )
+  );
 }
 
 /** The first line of why: the message's first line, and the line after a matcher's own. */
@@ -245,7 +274,26 @@ export default class StoryFailures {
   }
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (
+  process.argv[1] === fileURLToPath(import.meta.url) &&
+  process.argv[2] === "pictures-alone"
+) {
+  // Exits 0 when a picture is all that failed; a report the run did not write is not that.
+  let reports;
+  try {
+    reports = process.argv
+      .slice(3)
+      .map((path) => JSON.parse(readFileSync(path, "utf8")));
+  } catch (error) {
+    console.error(`a stories report could not be read: ${error.message}`);
+    process.exit(1);
+  }
+  if (reports.length === 0 || !picturesAlone(reports)) process.exit(1);
+  const files = new Set(
+    reports.flatMap((report) => report.failures.map(({ file }) => file)),
+  );
+  for (const file of files) console.log(file);
+} else if (process.argv[1] === fileURLToPath(import.meta.url)) {
   // `<browser> <report>`, once for each browser that ran.
   const given = process.argv.slice(2);
   // The repository, which an annotation's file is relative to.

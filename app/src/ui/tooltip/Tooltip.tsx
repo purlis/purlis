@@ -42,7 +42,9 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -62,6 +64,7 @@ import {
 } from "react-aria";
 import { unavailable } from "../unavailable";
 import { useProjectShown } from "../../projectShown";
+import { sideWithRoom, type TooltipSide } from "./side";
 
 /** **Where a tooltip stands**: beside its target, at the target's end (R166). */
 export const TOOLTIP_PLACEMENT = "end" satisfies AriaTooltipProps["placement"];
@@ -441,6 +444,10 @@ const ALWAYS_OPEN = { isOpen: true, shouldSkipAnimation: false, open: () => {}, 
  * while the keyboard or the pointer has rested on its row (`ui/menu/MenuTip.tsx`). It stands
  * beside `anchor` as every tooltip does, at the end, or at the start where the end is taken (a
  * submenu opens there). Whoever opens it takes it down, Esc among the ways.
+ *
+ * **It keeps its own width** (#3328): the side is chosen for the whole tooltip (`side.ts`), and
+ * it stands under its anchor where neither side has room, never squeezed against the window's
+ * edge.
  */
 export function AnchoredTooltip({
   anchor,
@@ -460,16 +467,35 @@ export function AnchoredTooltip({
   children: Tip;
 }) {
   const shown = useProjectShown();
+  const own = useRef<HTMLDivElement>(null);
+  const [room, setRoom] = useState<{ side: TooltipSide; width: number } | null>(null);
+  // Measured as it opens, before it is painted: its width as its words have it, and the side
+  // with room for that width.
+  useLayoutEffect(() => {
+    const target = anchor.current;
+    const tip = own.current;
+    if (target === null || tip === null) return;
+    const was = tip.style.inlineSize;
+    tip.style.inlineSize = "max-content";
+    const width = Math.ceil(tip.getBoundingClientRect().width);
+    tip.style.inlineSize = was;
+    const rtl = getComputedStyle(target).direction === "rtl";
+    const box = target.getBoundingClientRect();
+    const view = document.documentElement.clientWidth;
+    setRoom({ side: sideWithRoom(side, box, width, TOOLTIP_OFFSET, view, rtl), width });
+  }, [anchor, side, shown]);
   if (!shown) return null;
+  const placed = room?.side ?? side;
   return (
     // Open for as long as it is drawn: whoever draws it takes it down.
     <TooltipTriggerStateContext.Provider value={ALWAYS_OPEN}>
       <AriaTooltip
-        ref={tooltipRef}
+        ref={mergeRefs(own, tooltipRef)}
         triggerRef={anchor}
         isOpen
-        placement={side === "end" ? TOOLTIP_PLACEMENT : "start"}
+        placement={placed === "end" ? TOOLTIP_PLACEMENT : placed}
         offset={TOOLTIP_OFFSET}
+        style={room === null || room.width === 0 ? undefined : { inlineSize: room.width }}
         data-scope="tooltip"
         data-part="root"
         data-pointer=""

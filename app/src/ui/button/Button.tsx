@@ -98,10 +98,18 @@ export interface ToggleButtonProps
   extends
     Omit<Drawn, "variant">,
     Omit<AriaToggleButtonProps, "className" | "style" | "children" | "render"> {
-  /** Not `grants`: an answer that grants is pressed once, never held pressed (ADR 0097 §6). */
-  variant?: Exclude<ButtonVariant, "grants">;
+  /**
+   * **A toggle is a plain or a ghost button** (ADR 0097 §6, #2958): an answer that grants is
+   * pressed once, never held pressed, and the suggested answer, a danger answer and the soft,
+   * warning and link looks are never pressed as one. The parts manifest draws only these two
+   * pressed (`DRAWN_ONLY`, #3255).
+   */
+  variant?: ToggleVariant;
   children?: ReactNode;
 }
+
+/** The variants a toggle is drawn in. */
+export type ToggleVariant = Extract<ButtonVariant, "secondary" | "ghost">;
 
 export type IconButtonProps = Omit<ButtonProps, "children" | "icon" | "variant"> & {
   /** The icon, which is all the button shows. */

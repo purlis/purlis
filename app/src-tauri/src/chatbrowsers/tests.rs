@@ -2960,3 +2960,60 @@ fn a_chat_that_closes_takes_its_pool_login_ask_with_it() {
         "and answering it grants nothing"
     );
 }
+
+/// #2017: a screenshot the agent was answered goes to its chat's timeline, unless the person
+/// drives that browser as the answer comes back; and a call no browser answered is no moment.
+#[test]
+fn a_chats_timeline_keeps_the_screenshot_its_agent_was_answered_unless_the_person_drives() {
+    use purlis_core::browsertimeline::Unkept;
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    allowed_and_acting(&browsers, &hosted, 3);
+    let screenshot = ask(3, Browsing::Act(Act::Screenshot { page: None }));
+    let answer = Answer::Browsed {
+        browser: "b1".into(),
+        browsed: Box::new(Browsed {
+            settled: true,
+            png: Some(b"\x89PNG".to_vec()),
+            ..Browsed::default()
+        }),
+    };
+
+    let kept = super::timeline_of(&browsers, &screenshot, &answer, 1).expect("a moment");
+    assert_eq!(kept.png.as_deref(), Some(&b"\x89PNG"[..]));
+    assert_eq!(kept.moment.did, "Took a screenshot");
+
+    browsers.driven("program-1", true, 2);
+    let driven = super::timeline_of(&browsers, &screenshot, &answer, 3).expect("a moment");
+    assert_eq!(driven.png, None, "nothing of a moment the person drove");
+    assert_eq!(driven.moment.unkept, Some(Unkept::Driven));
+
+    let refused = Answer::No {
+        why: "the person has taken this browser over".into(),
+    };
+    assert!(super::timeline_of(&browsers, &screenshot, &refused, 4).is_none());
+}
+
+/// #2017: and unless purlis drives it, signing it in.
+#[test]
+fn a_chats_timeline_keeps_no_screenshot_answered_while_purlis_drives_its_browser() {
+    use purlis_core::browsertimeline::Unkept;
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    allowed_and_acting(&browsers, &hosted, 3);
+    let screenshot = ask(3, Browsing::Act(Act::Screenshot { page: None }));
+    let answer = Answer::Browsed {
+        browser: "b1".into(),
+        browsed: Box::new(Browsed {
+            settled: true,
+            png: Some(b"\x89PNG".to_vec()),
+            ..Browsed::default()
+        }),
+    };
+
+    browsers.purlis_drives("program-1", true);
+    let driven = super::timeline_of(&browsers, &screenshot, &answer, 1).expect("a moment");
+
+    assert_eq!(driven.png, None, "nothing of a moment purlis drove");
+    assert_eq!(driven.moment.unkept, Some(Unkept::Driven));
+}
