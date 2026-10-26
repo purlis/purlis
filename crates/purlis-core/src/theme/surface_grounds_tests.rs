@@ -8,7 +8,7 @@
 use serde_json::{Value, json};
 
 use super::super::{ResolvedTheme, load};
-use super::{Consented, consent_broken, fallen, family, surface_ground};
+use super::{Consented, MANIFEST, consent_broken, fallen, family, surface_ground};
 
 /// A dark theme over Purlis Classic that sets `tokens` and `parts`, as read.
 fn shaped(tokens: Value, parts: Value) -> ResolvedTheme {
@@ -137,4 +137,47 @@ fn a_surface_under_a_consent_answer_is_measured_in_every_tint() {
     assert!(!untinted.refused, "{:?}", untinted.complaints);
     let _ = fallen(untinted.theme.first());
     assert_eq!(super::drawn_in(), 1);
+}
+
+#[test]
+fn every_filled_surface_under_a_consent_family_is_said_to_hold_it_or_not() {
+    use super::Prop;
+    let consent: Vec<&super::Family> = MANIFEST
+        .iter()
+        .filter(|one| one.variants.iter().any(|variant| variant.consent.is_some()))
+        .collect();
+    let mut unsaid = Vec::new();
+    for surface in MANIFEST {
+        if !surface.parts[0].properties.contains(&Prop::Fill) {
+            continue;
+        }
+        let fills: Vec<&str> = surface
+            .looks()
+            .into_iter()
+            .map(|variant| (surface.defaults)(variant, &[]).fill)
+            .collect();
+        let under = consent.iter().any(|family| {
+            !std::ptr::eq(*family, surface)
+                && fills.iter().any(|fill| family.grounds.contains(fill))
+        });
+        let said = super::STANDS_ON
+            .iter()
+            .any(|(name, _)| *name == surface.name)
+            || super::HOLDS_NO_CONSENT
+                .iter()
+                .any(|(name, _)| *name == surface.name);
+        if under && !said {
+            unsaid.push(surface.name);
+        }
+    }
+    assert!(unsaid.is_empty(), "{unsaid:?}");
+    // Each said once, of a family the manifest has.
+    for (name, why) in super::HOLDS_NO_CONSENT {
+        assert!(family(name).is_some(), "{name}");
+        assert!(!why.is_empty(), "{name} says why");
+        assert!(
+            !super::STANDS_ON.iter().any(|(one, _)| one == name),
+            "{name} is in both lists"
+        );
+    }
 }

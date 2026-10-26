@@ -2805,6 +2805,37 @@ const STANDS_ON: &[(&str, &[&str])] = &[
     ("dialog", &["button"]),
 ];
 
+/// **The fill-taking families no consent family stands on**, each with why (#3083 review): a
+/// family whose root takes a fill and whose default fill is a ground a family with a consent
+/// variant names is in [`STANDS_ON`] or here, and a test holds every one to one list or the
+/// other, so a new Allow or danger answer on a filled surface cannot go unmeasured unseen.
+/// Every family is measured on a filled surface once #3268 lands.
+#[cfg(test)]
+pub(super) const HOLDS_NO_CONSENT: &[(&str, &str)] = &[
+    (
+        "text-input",
+        "a field's box holds the words typed into it, never an answer",
+    ),
+    (
+        "textarea",
+        "a field's box holds the words typed into it, never an answer",
+    ),
+    (
+        "editor",
+        "its toolbar holds ghost and plain buttons, never an Allow or a danger answer (#3268)",
+    ),
+    ("tooltip", "it holds words only"),
+    ("select", "a control's box holds its value and its chevron"),
+    (
+        "combobox",
+        "a control's box holds its value and its chevron",
+    ),
+    (
+        "option-card",
+        "a choice holds its title, its detail and its check, never an answer",
+    ),
+];
+
 /// The families drawn on `surface` whose grounds name its `default` fill but not `set`: what a
 /// surface whose fill a theme turns from `default` to `set` brings a new ground under.
 fn drawn_on(
