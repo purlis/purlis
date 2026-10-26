@@ -21,7 +21,7 @@ import { useTabIds } from "../../StripTablist";
 import { ChatMark } from "../../NeedsYou";
 import type { State } from "../../chatState";
 import { Button, IconButton } from "../button/Button";
-import { TipsBelow } from "../tooltip/Tooltip";
+import { TIPS_BELOW } from "../tooltip/Tooltip";
 import { editorToolbar, TabCell, tabPart, tabsPart, ToolbarFile, type TabVariant } from "./Tabs";
 import { panelRoot } from "../panel/Panel";
 import { StripTab, TabStripRow, useTabStrip } from "./TabStrip";
@@ -64,85 +64,77 @@ function DockedStrip({
   const along = useTabStrip({ keys: open.map((one) => one.name), selected: front?.name });
   return (
     <div className="editor" {...tabsPart("layout")} style={{ inlineSize: width, blockSize: 220 }}>
-      <header className="bar" {...tabsPart("strip")}>
-        {/* As the chat strip draws it: every tooltip on it stands below it (#3361). */}
-        <TipsBelow>
-          <TabStripRow
-            strip={along}
-            name="Chats"
-            ids={open.map((_, at) => idOf(at))}
-            className="tabs"
-            data-strip="Chats"
-            // The strip's floor, as the chat strip is handed it (`fits.ts`).
-            style={{ "--least": "88px" } as CSSProperties}
-          >
-            {open.map((one, at) => (
-              <TabCell
-                key={one.name}
-                className="tab"
-                variant={one.variant ?? "chat"}
+      <header className="bar" {...tabsPart("strip")} {...TIPS_BELOW}>
+        <TabStripRow
+          strip={along}
+          name="Chats"
+          ids={open.map((_, at) => idOf(at))}
+          className="tabs"
+          data-strip="Chats"
+          // The strip's floor, as the chat strip is handed it (`fits.ts`).
+          style={{ "--least": "88px" } as CSSProperties}
+        >
+          {open.map((one, at) => (
+            <TabCell
+              key={one.name}
+              className="tab"
+              variant={one.variant ?? "chat"}
+              selected={at === inFront}
+              first={at === 0}
+            >
+              {marks && at === 0 && (
+                // A tab's task chip, as `SkillRunChip` draws it.
+                <span className="tab-tasks">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="tab-tasks-counts"
+                    tooltip="Using the skill review: 3 tool calls so far. Open its runs."
+                  >
+                    <span className="count">3</span>
+                  </Button>
+                </span>
+              )}
+              <StripTab
+                strip={along}
+                tabKey={one.name}
                 selected={at === inFront}
-                first={at === 0}
+                tip={undefined}
+                type="button"
+                id={idOf(at)}
+                onClick={() => setInFront(at)}
               >
-                {marks && at === 0 && (
-                  // A tab's task chip, as `SkillRunChip` draws it.
-                  <span className="tab-tasks">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="tab-tasks-counts"
-                      tooltip="Using the skill review: 3 tool calls so far. Open its runs."
-                    >
-                      <span className="count">3</span>
-                    </Button>
-                  </span>
-                )}
-                <StripTab
-                  strip={along}
-                  tabKey={one.name}
-                  selected={at === inFront}
-                  tip={undefined}
-                  type="button"
-                  id={idOf(at)}
-                  onClick={() => setInFront(at)}
-                >
-                  {one.state && <ChatMark state={one.state} />}
-                  <span className="tab-name" {...tabPart("label")}>
-                    {one.name}
-                  </span>
-                </StripTab>
-                <button
-                  type="button"
-                  className="closer"
-                  {...tabPart("closer")}
-                  tabIndex={-1}
-                  aria-label={`Close ${one.name}`}
-                  onClick={() => {
-                    setOpen(open.filter((_, there) => there !== at));
-                    setInFront(Math.max(0, Math.min(inFront, open.length - 2)));
-                  }}
-                >
-                  <X aria-hidden="true" />
-                </button>
-              </TabCell>
-            ))}
-            <span className="strip-doing">
-              <IconButton variant="quiet" size="sm" icon={<Plus />} aria-label="New tab" />
-            </span>
-          </TabStripRow>
-          {marks && (
-            <div className="more">
-              <Button
-                variant="quiet"
-                size="sm"
-                className="show-more"
-                tooltip="2 tabs past the edge"
+                {one.state && <ChatMark state={one.state} />}
+                <span className="tab-name" {...tabPart("label")}>
+                  {one.name}
+                </span>
+              </StripTab>
+              <button
+                type="button"
+                className="closer"
+                {...tabPart("closer")}
+                tabIndex={-1}
+                aria-label={`Close ${one.name}`}
+                onClick={() => {
+                  setOpen(open.filter((_, there) => there !== at));
+                  setInFront(Math.max(0, Math.min(inFront, open.length - 2)));
+                }}
               >
-                2 more
-              </Button>
-            </div>
-          )}
-        </TipsBelow>
+                <X aria-hidden="true" />
+              </button>
+            </TabCell>
+          ))}
+          <span className="strip-doing">
+            <IconButton variant="quiet" size="sm" icon={<Plus />} aria-label="New tab" />
+          </span>
+        </TabStripRow>
+        {marks && (
+          <div className="more">
+            <Button variant="quiet" size="sm" className="show-more" tooltip="2 tabs past the edge">
+              2 more
+            </Button>
+          </div>
+        )}
       </header>
       <div
         className="panes"
@@ -399,28 +391,34 @@ export const MarksOnTheTabsLine: Story = {
         Math.abs(middleOf(one) - line),
         `${what} off the tabs' line`,
       ).toBeLessThanOrEqual(1);
-    // The keyboard on the `+`, whose name its tooltip shows at once: Tab along the strip's stops
-    // (a tab's chip, the strip's tab) until it is there.
-    for (let stops = 0; stops < 8 && document.activeElement !== plus; stops += 1)
-      await userEvent.tab();
-    await expect(plus).toHaveFocus();
+    // Each mark's tooltip, opened by the keyboard's focus (at once), stands off the strip's row:
+    // Tab along the strip's stops (the chip, the strip's tab, the `+`, `N more`), and each mark's
+    // is measured where the focus reaches it, then taken down with Esc.
     const strip = canvasElement.querySelector("header.bar") as HTMLElement;
-    await waitFor(
-      () =>
-        expect(document.querySelector('[role="tooltip"][data-scope="tooltip"]')).toHaveTextContent(
-          "New tab",
-        ),
-      { timeout: 3000 },
-    );
-    const tip = document.querySelector('[role="tooltip"][data-scope="tooltip"]') as HTMLElement;
-    const below = tip.getBoundingClientRect().top >= strip.getBoundingClientRect().bottom;
-    const above = tip.getBoundingClientRect().bottom <= strip.getBoundingClientRect().top;
-    await expect(below || above, "the tooltip sits on the strip's row").toBe(true);
-    // And Esc takes it down, the focus staying on the `+`: the picture is the strip, its ring.
-    await userEvent.keyboard("{Escape}");
-    await waitFor(
-      () => expect(document.querySelector('[role="tooltip"][data-scope="tooltip"]')).toBeNull(),
-      { timeout: 3000 },
-    );
+    const shown = () =>
+      document.querySelector<HTMLElement>('[role="tooltip"][data-scope="tooltip"]');
+    const marks = new Map<Element, [string, string]>([
+      [chip, ["the task chip", "Using the skill review"]],
+      [plus, ["the +", "New tab"]],
+      [more, ["N more", "2 tabs past the edge"]],
+    ]);
+    const measured: string[] = [];
+    for (let stops = 0; stops < 10 && measured.length < marks.size; stops += 1) {
+      await userEvent.tab();
+      const mark = document.activeElement === null ? undefined : marks.get(document.activeElement);
+      if (mark === undefined) continue;
+      const [what, says] = mark;
+      await waitFor(() => expect(shown()).toHaveTextContent(says), { timeout: 3000 });
+      const tip = (shown() as HTMLElement).getBoundingClientRect();
+      const row = strip.getBoundingClientRect();
+      await expect(
+        tip.top >= row.bottom || tip.bottom <= row.top,
+        `${what}'s tooltip sits on the strip's row`,
+      ).toBe(true);
+      await userEvent.keyboard("{Escape}");
+      await waitFor(() => expect(shown()).toBeNull(), { timeout: 3000 });
+      measured.push(what);
+    }
+    await expect(measured).toEqual(["the task chip", "the +", "N more"]);
   },
 };

@@ -13,7 +13,7 @@
  * - **One placement and one delay** ({@link TOOLTIP_PLACEMENT}, {@link TOOLTIP_OFFSET},
  *   {@link TOOLTIP_DELAY}, {@link TOOLTIP_CLOSE_DELAY}), which no call site can change: beside
  *   its target at the target's end, 10 px from it, flipped to its start where the window has no
- *   room (R166); inside a strip ({@link TipsBelow}), below its target, clear of the strip's row
+ *   room (R166); on a strip ({@link TIPS_BELOW}), below its target, clear of the strip's row
  *   (#3361).
  * - **WCAG 1.4.13** (content on hover or focus): it opens under the pointer after the delay and
  *   at once on the keyboard's focus; **Esc dismisses it** without moving the focus, and is the
@@ -35,7 +35,6 @@
 import {
   Children,
   cloneElement,
-  createContext,
   isValidElement,
   type ReactElement,
   type ReactNode,
@@ -69,17 +68,18 @@ import { useProjectShown } from "../../projectShown";
 export const TOOLTIP_PLACEMENT = "end" satisfies AriaTooltipProps["placement"];
 
 /**
- * **Where the tooltips inside a strip stand** (#3361): a strip is a row of targets, and a
- * tooltip beside one at its end would sit on the row, over the next. Inside {@link TipsBelow}
- * a tooltip stands below its target instead (above, where the window has no room below), at
- * the same distance. Everywhere else it is beside it (R166).
+ * **Where the tooltips of a strip stand** (#3361): a strip is a row of targets, and a tooltip
+ * beside one at its end would sit on the row, over the next. A target inside an element marked
+ * {@link TIPS_BELOW} (the chat strip's row) has its tooltip below it instead (above, where the
+ * window has no room below), at the same distance. It is read from the DOM, where the target
+ * stands, and not from React: a menu or a popover opened from the strip is portalled out of it,
+ * and its tooltips stand beside their targets (R166).
  */
-const TipPlacement = createContext<AriaTooltipProps["placement"]>(TOOLTIP_PLACEMENT);
+export const TIPS_BELOW = { "data-tips": "below" } as const;
 
-/** The tooltips of a strip's targets (its tabs, its `+`, its `N more`, a tab's chip): below
- *  the strip, clear of its row (#3361). */
-export function TipsBelow({ children }: { children: ReactNode }) {
-  return <TipPlacement.Provider value="bottom">{children}</TipPlacement.Provider>;
+/** The placement of the tooltip `target` has: below it on a strip, else at its end. */
+export function placementFor(target: Element | null | undefined): AriaTooltipProps["placement"] {
+  return target?.closest('[data-tips="below"]') ? "bottom" : TOOLTIP_PLACEMENT;
 }
 
 /** How far from its target a tooltip stands, in px (R166). */
@@ -181,7 +181,7 @@ export function TooltipSurface({ children }: { children: Tip }) {
     () => trigger?.current?.closest("[data-tauri-drag-region]") != null,
     [trigger],
   );
-  const placement = useContext(TipPlacement);
+  const placement = placementFor(trigger?.current);
   return (
     <AriaTooltip
       placement={placement}
