@@ -40,7 +40,8 @@ describe("the repo picker", () => {
     expect(new Set(boxes.map((box) => box.id)).size).toBe(2);
     for (const box of boxes) {
       expect(document.querySelectorAll(`[id="${box.id}"]`)).toHaveLength(1);
-      expect(document.querySelector(`label[for="${box.id}"]`)).toHaveTextContent("api");
+      // Each box is in its own label, which holds its name.
+      expect(box.closest("label")).toHaveTextContent("api");
     }
     expect(boxes[0]).toHaveAccessibleDescription("a/api");
     expect(boxes[1]).toHaveAccessibleDescription("b/api");

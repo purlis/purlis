@@ -72,7 +72,7 @@ fn a_theme_rounds_the_buttons_root_to_a_pill() {
         sheet,
         concat!(
             "@layer parts {\n",
-            "  :where([data-scope=\"button\"][data-part=\"root\"][data-size=\"sm\"]) { --purlis-part-height: max(var(--size-chrome), var(--space-7)); }\n",
+            "  :where([data-scope=\"button\"][data-part=\"root\"][data-size=\"sm\"]) { --purlis-part-height: max(24px, var(--size-chrome), var(--space-7)); }\n",
             "  :where([data-scope=\"button\"][data-part=\"root\"][data-size=\"lg\"]) { --purlis-part-height: calc(var(--size-control) + var(--space-2)); }\n",
             "  :where([data-scope=\"button\"][data-part=\"root\"]) { border-radius: 9999px; }\n}\n",
         )
@@ -344,7 +344,7 @@ fn a_corner_is_clamped_to_half_the_parts_height_as_it_is_drawn() {
         "{sheet}"
     );
     // The small and the large button are clamped to their own height.
-    assert!(sheet.contains(":where([data-scope=\"button\"][data-part=\"root\"][data-size=\"sm\"]) { --purlis-part-height: max(var(--size-chrome), var(--space-7)); }"));
+    assert!(sheet.contains(":where([data-scope=\"button\"][data-part=\"root\"][data-size=\"sm\"]) { --purlis-part-height: max(24px, var(--size-chrome), var(--space-7)); }"));
     assert!(sheet.contains(":where([data-scope=\"button\"][data-part=\"root\"][data-size=\"lg\"]) { --purlis-part-height: calc(var(--size-control) + var(--space-2)); }"));
     let four = sheet_of(json!({ "button.root.corner-radius": ["full", 0, "radius.md", 4] }));
     assert!(four.contains(&format!(
@@ -2004,6 +2004,100 @@ fn the_field_families_default_is_what_field_css_draws() {
             "the field's {part}"
         );
     }
+}
+
+#[test]
+fn the_select_families_default_is_what_select_css_draws() {
+    let css = include_str!("../../../../app/src/ui/select/select.css");
+    let token = |var: &str| -> String {
+        var.strip_prefix("var(--")
+            .and_then(|it| it.strip_suffix(')'))
+            .map(|name| {
+                vocabulary::TOKENS
+                    .iter()
+                    .find(|token| token.replace('.', "-") == name)
+                    .unwrap_or_else(|| panic!("--{name} is not a token"))
+                    .to_string()
+            })
+            .unwrap_or_else(|| var.to_owned())
+    };
+    let boxes = rule(
+        css,
+        "[data-scope=\"select\"][data-part=\"root\"],\n[data-scope=\"combobox\"][data-part=\"root\"]",
+    );
+    for family in ["select", "combobox"] {
+        let held = parts::look_json(family, "");
+        assert_eq!(
+            held["fill"],
+            token(declared(boxes, "background-color").unwrap()),
+            "{family}"
+        );
+        assert_eq!(
+            held["text"],
+            token(declared(boxes, "color").unwrap()),
+            "{family}"
+        );
+        let border = declared(boxes, "border").and_then(|it| it.split_whitespace().last());
+        assert_eq!(held["border"], token(border.unwrap()), "{family}");
+        // The box a select draws is the text input's (`field.css`), so the two are one look.
+        assert_eq!(held, parts::look_json("text-input", ""), "{family}");
+    }
+    // R64: the chevron and the placeholder in the quiet tier, as the engine holds them.
+    let chevrons = rule(
+        css,
+        "[data-scope=\"select\"][data-part=\"chevron\"],\n[data-scope=\"combobox\"][data-part=\"chevron\"]",
+    );
+    assert_eq!(token(declared(chevrons, "color").unwrap()), "text.quiet");
+    let placeholder = rule(css, "[data-scope=\"select\"][data-part=\"placeholder\"]");
+    assert_eq!(token(declared(placeholder, "color").unwrap()), "text.quiet");
+    let manifest = parts::manifest_json();
+    let words = |name: &str| {
+        manifest["families"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|one| one["name"] == name)
+            .unwrap_or_else(|| panic!("no {name}"))
+            .clone()
+    };
+    let select = words("select");
+    assert_eq!(select["since"], parts::NEXT);
+    assert_eq!(select["focused"], "[data-focus-visible]");
+    assert_eq!(words("combobox")["focused"], "[data-focus-within]");
+}
+
+#[test]
+fn a_select_and_a_combobox_take_the_text_inputs_keys_and_hold_their_floors() {
+    let loaded = load(&with_parts(json!({
+        "select.root.border-width": 0,
+        "select.root.fill": "surface.raised",
+        "select.chevron.text": "text.muted",
+        "select.placeholder.text": "text.secondary",
+        "combobox.root.corner-radius": "full",
+        "select.root.open.border-colour": "accent.base",
+    })));
+    assert!(!loaded.refused, "{:?}", said(&loaded));
+    assert!(said(&loaded).is_empty(), "{:?}", said(&loaded));
+    let drawn = parts::stylesheet(loaded.theme.first());
+    assert!(
+        drawn.contains("[data-scope=\"select\"][data-part=\"root\"][data-open]"),
+        "{drawn}"
+    );
+    assert!(
+        drawn.contains("[data-scope=\"select\"][data-part=\"root\"] [data-scope=\"select\"][data-part=\"chevron\"]"),
+        "{drawn}"
+    );
+    // A state a select's button never takes is no part.
+    let pressed = load(&with_parts(
+        json!({ "select.root.pressed.fill": "accent.surface" }),
+    ));
+    assert!(
+        said(&pressed)
+            .iter()
+            .any(|one| one.contains("parts.select.root.pressed.fill is not a component part")),
+        "{:?}",
+        said(&pressed)
+    );
 }
 
 #[test]

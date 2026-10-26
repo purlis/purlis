@@ -22,6 +22,7 @@ import { onAMac } from "./tabKeys";
 import { goToWorkspace, showTheExplorer, stripNamed } from "./test-strips";
 import { drawnWith } from "./cascade.testkit";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
+import { selectNamed } from "./ui/select/select.testkit";
 
 /**
  * **The window is four regions** (ADR 0038), against the whole app, because three of
@@ -347,7 +348,7 @@ function sideKey(side: "left" | "right") {
 }
 /** Whether a side is put away: its activity bar stands and none of its views is the open one. */
 function away(region: "Navigation" | "Attention"): boolean {
-  // The side panel's tabs are across its own top (N36): away, they are gone with it.
+  // The left column stands while its side is away (#3144), none of its tabs chosen.
   const bar = screen.queryByRole("tablist", { name: region });
   return (
     bar === null ||
@@ -651,7 +652,7 @@ describe("the four regions", () => {
     expect(await screen.findByRole("tabpanel", { name: "Inbox" })).toBeInTheDocument();
     expect(away("Attention")).toBe(false);
 
-    // The side panel's tabs are its own top (N36): its key brings it back.
+    // A press of the side panel's open view leaves it out (R121): its key brings it back.
     sideKey("left");
     await waitFor(() => expect(away("Navigation")).toBe(true));
     sideKey("left");
@@ -862,9 +863,7 @@ describe("the Search and Changes views", () => {
     render(<App />);
     await screen.findByRole("tabpanel", { name: "Chats" });
     const scope = () =>
-      within(screen.getByRole("tabpanel", { name: "Search" })).getByRole("combobox", {
-        name: "Where to search",
-      });
+      selectNamed("Where to search", screen.getByRole("tabpanel", { name: "Search" }));
     await userEvent.click(tab("Search"));
     await waitFor(() => expect(scope()).toHaveTextContent("Workspace alpha"));
 

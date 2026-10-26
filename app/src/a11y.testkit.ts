@@ -20,6 +20,43 @@
 import { queryAllByRole, type ByRoleMatcher } from "@testing-library/react";
 import { expect } from "vitest";
 
+/** **An element's role as a screen reader hears it**: its own `role`, or a native input's by its
+ *  type (a checkbox, a radio, a slider), or its tag. */
+export function roleOf(element: Element): string {
+  const own = element.getAttribute("role");
+  if (own !== null) return own;
+  if (element.tagName === "INPUT") {
+    const type = (element as HTMLInputElement).type;
+    if (type === "checkbox" || type === "radio") return type;
+    if (type === "range") return "slider";
+  }
+  return element.tagName.toLowerCase();
+}
+
+/** **The words an element goes by**, as a reader of a list of stops reads them: its
+ *  `aria-label`, the words of each element its `aria-labelledby` names, its `<label for>`, the
+ *  label it is in, or its own words. */
+export function wordsOf(element: Element): string {
+  const label = element.getAttribute("aria-label");
+  if (label !== null) return label;
+  const by = element.getAttribute("aria-labelledby");
+  if (by) {
+    const words = by
+      .split(/\s+/)
+      .map((id) => {
+        const one = document.getElementById(id);
+        return one?.getAttribute("aria-label") ?? one?.textContent?.trim() ?? "";
+      })
+      .filter(Boolean)
+      .join(" ");
+    if (words !== "") return words;
+  }
+  const own = element.id ? document.querySelector(`label[for="${element.id}"]`) : null;
+  if (own?.textContent) return own.textContent;
+  if (element.tagName === "INPUT") return element.closest("label")?.textContent ?? "";
+  return element.textContent ?? "";
+}
+
 /** Every role a person operates, as the window draws them. A `separator` counts only when a
  *  keyboard can reach it (see {@link namelessControls}). */
 export const CONTROL_ROLES = [

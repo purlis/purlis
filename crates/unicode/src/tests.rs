@@ -220,3 +220,114 @@ fn a_bidi_control_is_known_from_the_generated_table() {
         assert!(!bidi_control(c), "U+{:04X}", u32::from(c));
     }
 }
+
+#[test]
+fn unhidden_drops_what_hidden_names_and_keeps_a_joiner_doing_its_job() {
+    let persian = "\u{645}\u{6CC}\u{200C}\u{62E}\u{648}\u{627}\u{647}\u{645}";
+    assert_eq!(unhidden(persian, Breaks::Marked), persian);
+    let family = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}";
+    assert_eq!(unhidden(family, Breaks::Marked), family);
+    assert_eq!(unhidden("a\u{200D}b\u{202E}c", Breaks::Marked), "abc");
+    assert_eq!(unhidden("a\n\tb", Breaks::Kept), "a\n\tb");
+    assert_eq!(unhidden("a\n\tb", Breaks::Marked), "ab");
+}
+
+/// #3219: a presentation selector after any Extended_Pictographic character is the emoji's
+/// own, not only after the pictographic blocks a hand-written range named.
+#[test]
+fn a_selector_after_an_emoji_outside_the_pictographic_blocks_reads_as_text() {
+    for emoji in [
+        '\u{00A9}', // ©
+        '\u{00AE}', // ®
+        '\u{203C}', // ‼
+        '\u{2049}', // ⁉
+        '\u{2122}', // ™
+        '\u{2139}', // ℹ
+        '\u{2194}', // ↔
+        '\u{21A9}', // ↩
+        '\u{24C2}', // Ⓜ
+        '\u{25B6}', // ▶
+        '\u{25C0}', // ◀
+        '\u{25FB}', // ◻
+        '\u{3030}', // 〰
+        '\u{303D}', // 〽
+        '\u{3297}', // ㊗
+        '\u{3299}', // ㊙
+    ] {
+        for selector in PRESENTATION {
+            let text = format!("{emoji}{selector}");
+            assert!(!hides(&text, Breaks::Marked), "U+{:04X}", u32::from(emoji));
+        }
+    }
+}
+
+/// A keycap and an RGI subdivision flag spell themselves with a selector or with tags.
+#[test]
+fn a_keycap_and_a_subdivision_flag_read_as_text() {
+    for text in [
+        "#\u{FE0F}\u{20E3}",
+        "*\u{FE0F}\u{20E3}",
+        "7\u{FE0F}\u{20E3}",
+        // England, Scotland and Wales: black flag, the tags `gbeng`, `gbsct`, `gbwls`, cancel.
+        "\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}",
+        "\u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F}",
+        "\u{1F3F4}\u{E0067}\u{E0062}\u{E0077}\u{E006C}\u{E0073}\u{E007F}",
+        // In a sentence, and twice in a row.
+        "go \u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F}\u{1F3F4}\u{E0067}\u{E0062}\u{E0077}\u{E006C}\u{E0073}\u{E007F} #\u{FE0F}\u{20E3}1",
+    ] {
+        assert_eq!(marked(text, Breaks::Marked), text);
+    }
+}
+
+/// What only looks like those sequences is how text is smuggled behind an emoji.
+#[test]
+fn a_selector_or_a_tag_outside_an_emoji_sequence_is_still_marked() {
+    // A selector after a letter, a digit with no keycap, and a second selector.
+    assert_eq!(marked("a\u{FE0F}", Breaks::Marked), "a⟦U+FE0F⟧");
+    assert_eq!(marked("7\u{FE0F}", Breaks::Marked), "7⟦U+FE0F⟧");
+    assert_eq!(
+        marked("\u{00A9}\u{FE0F}\u{FE0F}", Breaks::Marked),
+        "\u{00A9}\u{FE0F}⟦U+FE0F⟧"
+    );
+    // A stray tag, after a letter and after an emoji.
+    assert_eq!(marked("a\u{E0041}", Breaks::Marked), "a⟦U+E0041⟧");
+    assert_eq!(
+        marked("\u{1F600}\u{E0069}", Breaks::Marked),
+        "\u{1F600}⟦U+E0069⟧"
+    );
+    // A tag run after a black flag that is not an RGI flag (`ignore`, cancelled), and an RGI
+    // flag's tags with no cancel tag: drawn as the black flag alone, the tags behind it.
+    assert_eq!(
+        marked(
+            "\u{1F3F4}\u{E0069}\u{E0067}\u{E006E}\u{E006F}\u{E0072}\u{E0065}\u{E007F}",
+            Breaks::Marked
+        ),
+        "\u{1F3F4}⟦U+E0069⟧⟦U+E0067⟧⟦U+E006E⟧⟦U+E006F⟧⟦U+E0072⟧⟦U+E0065⟧⟦U+E007F⟧"
+    );
+    assert_eq!(
+        marked(
+            "\u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}",
+            Breaks::Marked
+        ),
+        "\u{1F3F4}⟦U+E0067⟧⟦U+E0062⟧⟦U+E0073⟧⟦U+E0063⟧⟦U+E0074⟧"
+    );
+    // A keycap's selector after a letter.
+    assert_eq!(
+        marked("a\u{FE0F}\u{20E3}", Breaks::Marked),
+        "a⟦U+FE0F⟧\u{20E3}"
+    );
+}
+
+/// The pictographic test is the generated table, not a block range: the blocks' non-emoji
+/// (U+2300 DIAMETER SIGN, U+2B00 NORTH EAST WHITE ARROW) take no selector.
+#[test]
+fn a_symbol_in_an_emoji_block_that_is_no_emoji_takes_no_selector() {
+    assert_eq!(
+        marked("\u{2300}\u{FE0F}", Breaks::Marked),
+        "\u{2300}⟦U+FE0F⟧"
+    );
+    assert_eq!(
+        marked("\u{2B00}\u{FE0F}", Breaks::Marked),
+        "\u{2B00}⟦U+FE0F⟧"
+    );
+}

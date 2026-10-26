@@ -856,7 +856,7 @@ describe("the repo's agent instructions", () => {
     expect(await within(pane).findByText("U+200B", { selector: "mark" })).toBeInTheDocument();
     expect(within(pane).getByText(/holds an invisible character/)).toBeInTheDocument();
     const box = within(pane).getByRole("checkbox", { name: "widget/CLAUDE.md" });
-    expect(box).toHaveAttribute("aria-checked", "false");
+    expect(box).not.toBeChecked();
     expect(within(pane).getByRole("button", { name: "Add to memory" })).toBeDisabled();
 
     await person.click(box);
