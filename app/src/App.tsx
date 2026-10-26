@@ -1490,6 +1490,7 @@ function App() {
       pinBrowser: async () => nowhere(),
       handBrowser: async () => nowhere(),
       stopBrowser: async () => nowhere(),
+      openBrowserTimeline: () => undefined,
       pinTab: async () => nowhere(),
       pinWorkspace: async () => nowhere(),
       pinProject: windowDoes.pinProject,

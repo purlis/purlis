@@ -85,6 +85,8 @@ import { SavingView } from "./SavingView";
 import { LicencesView } from "./LicencesView";
 import { ShortcutsView } from "./keys/ShortcutsView";
 import { BrowserView } from "./BrowserView";
+import { BrowserTimeline } from "./BrowserTimeline";
+import { isBrowserTimeline } from "./browserTimelines";
 import { BROWSER_VIEW, isBrowser } from "./browsers";
 import { SessionRecordTab } from "./SessionRecordTab";
 import { useSessionOffers } from "./sessionOffers";
@@ -553,6 +555,10 @@ export function ViewPane({
           /* A browser the session host runs, drawn live from its frames (#2012). Keyed by the
              browser, so a pane that comes to show another one opens its own view. */
           <BrowserView key={`${plane}\u0000${view.key}`} plane={plane} program={view.key} />
+        ) : isBrowserTimeline(view) ? (
+          /* A chat's browser timeline (#2017), keyed by the chat's id, which it keeps across a
+             launch. */
+          <BrowserTimeline key={`${plane}\u0000${view.key}`} plane={plane} chat={view.key} />
         ) : isRepoInstructions(view) ? (
           /* The agent instructions a workspace's repo carries, offered to its memory (FR-18a):
              a preview whose press is the only thing that writes. Keyed by both, as a

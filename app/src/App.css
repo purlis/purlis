@@ -7454,6 +7454,45 @@ nav.piece-files-head {
   object-fit: contain;
 }
 
+/* **A chat's browser timeline** (#2017): its moments, the newest first, each with the
+   screenshot the agent took where one is kept, drawn at the pane's width at most. */
+.browser-timeline {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-height: 0;
+  margin: 0;
+  padding: var(--space-3);
+  overflow: auto;
+  list-style: none;
+}
+
+.browser-timeline-moment {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-block-end: var(--space-3);
+  border-block-end: 1px solid var(--border-subtle);
+}
+
+.browser-timeline-said,
+.browser-timeline-page,
+.browser-timeline-unkept {
+  margin: 0;
+}
+
+.browser-timeline-page {
+  overflow-wrap: anywhere;
+}
+
+.browser-timeline-shot {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--border-subtle);
+}
+
 /* **Where the page is, and on which device** (#2024): purlis's own words, first in the bar
    above the page and outside the frame, so a page can never draw them. */
 .browser-chip {
