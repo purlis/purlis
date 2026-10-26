@@ -16,13 +16,16 @@ FROM ${RUNNER}
 ARG AT
 COPY --chmod=0755 fake-harness purlis ${AT}/
 
-# The runner's `claude`, as a profile of the runner's own runs it: signed in, as Claude Code's
-# own `auth status` answers it, and otherwise the stand-in a behaviour gives, written into the
-# runner's home (`/home/purlis/.parity/claude`) as the behaviour starts, since the image's own
-# folders are read-only in a pool's container.
+# The runner's `claude`, which a profile of the runner's own runs. Asked `auth status`, it exits
+# 0, which is how Claude Code's own says a profile is signed in, so the test's profile passes the
+# sign-in check without a sign-in. Anything else runs the stand-in a behaviour gives, written into
+# the runner's home (`/home/purlis/.parity/claude`) as the behaviour starts, since the image's own
+# folders are read-only in a pool's container; where no behaviour wrote one, it says so and fails.
 USER 0
 RUN printf '%s\n' '#!/bin/sh' \
       '[ "$1" = auth ] && [ "$2" = status ] && exit 0' \
-      'exec /home/purlis/.parity/claude "$@"' > /usr/local/bin/claude \
+      'stand_in=/home/purlis/.parity/claude' \
+      '[ -x "$stand_in" ] || { echo "parity: no stand-in claude at $stand_in: a behaviour writes one before it starts a chat on its profile" >&2; exit 127; }' \
+      'exec "$stand_in" "$@"' > /usr/local/bin/claude \
  && chmod 0755 /usr/local/bin/claude
 USER 10001:10001
