@@ -90,14 +90,16 @@ pub fn read(topic: &str) -> Option<&'static str> {
 pub fn listing(say: &mut dyn FnMut(crate::repocmd::Say)) -> u8 {
     use crate::repocmd::Say;
 
-    say(Say::Info(format!("purlis documentation ({}):", source())));
+    say(Say::Info(
+        format!("purlis documentation ({}):", source()).into(),
+    ));
     let names: Vec<String> = topics().iter().map(|name| format!("  {name}")).collect();
     // `print(… + "\n")`: the joined block, then the newline `print` adds, then a blank line
     // from the one the join was given. One `Out` per line and a final empty one.
     say(Say::Out(names.join("\n")));
     say(Say::Out(String::new()));
     say(Say::Info(
-        "Read one with: purlis docs show <topic>".to_string(),
+        "Read one with: purlis docs show <topic>".to_string().into(),
     ));
     0
 }
@@ -111,10 +113,10 @@ pub fn show(topic: &str, say: &mut dyn FnMut(crate::repocmd::Say)) -> u8 {
     use crate::repocmd::Say;
 
     let Some(body) = read(topic) else {
-        say(Say::Fail(format!(
-            "No purlis documentation topic named '{topic}'."
-        )));
-        say(Say::Info(format!("Topics: {}", topics().join(", "))));
+        say(Say::Fail(
+            format!("No purlis documentation topic named '{topic}'.").into(),
+        ));
+        say(Say::Info(format!("Topics: {}", topics().join(", ")).into()));
         return 1;
     };
     // `print(body, end="" if body.endswith("\n") else "\n")` — one trailing newline, never
@@ -234,7 +236,11 @@ mod tests {
         assert_eq!(code, 1);
         assert_eq!(
             said[0],
-            Say::Fail("No purlis documentation topic named 'persona'.".to_string())
+            Say::Fail(
+                "No purlis documentation topic named 'persona'."
+                    .to_string()
+                    .into()
+            )
         );
         let Say::Info(topics) = &said[1] else {
             panic!("the topics are the second line: {said:?}")

@@ -42,7 +42,7 @@ pub fn sync(root: &Path, scope: Scope, say: Sink) -> u8 {
         Scope::One(ws) => {
             banner(ws, say);
             if !crate::contain::workspace_name_ok(ws) {
-                say(Say::Fail(format!("no workspace '{ws}'")));
+                say(Say::Fail(format!("no workspace '{ws}'").into()));
                 return 1;
             }
             (vec![ws.to_string()], format!("workspace '{ws}'"))
@@ -59,12 +59,14 @@ pub fn sync(root: &Path, scope: Scope, say: Sink) -> u8 {
             continue;
         };
         for (name, why) in found.refused {
-            say(Say::Warn(format!("{ws}/{name}: skipping — {why}")));
+            say(Say::Warn(format!("{ws}/{name}: skipping — {why}").into()));
         }
         targets.extend(found.repos.into_iter().map(|r| (ws.clone(), r)));
     }
     if targets.is_empty() {
-        say(Say::Warn(format!("No cloned repos to sync in {label}.")));
+        say(Say::Warn(
+            format!("No cloned repos to sync in {label}.").into(),
+        ));
         return 0;
     }
     for (ws, repo) in &targets {
@@ -207,14 +209,17 @@ fn sync_one(root: &Path, ws: &str, repo: &repos::Repo, say: Sink) {
     let state = match repos::state_of(d) {
         Ok(state) => state,
         Err(unreadable) => {
-            say(Say::Warn(format!("{label}: skipping — {unreadable}.")));
+            say(Say::Warn(
+                format!("{label}: skipping — {unreadable}.").into(),
+            ));
             return;
         }
     };
     if !state.clean() {
-        say(Say::Warn(format!(
-            "{label}: uncommitted changes — skipping (your work is left untouched)."
-        )));
+        say(Say::Warn(
+            format!("{label}: uncommitted changes — skipping (your work is left untouched).")
+                .into(),
+        ));
         // A submodule left behind the commit the branch records IS an unstaged change to the
         // gitlink, so the explanation of this skip may be one `git submodule status` away.
         submodules::report(root, d, &label, None, None, say);
@@ -224,10 +229,13 @@ fn sync_one(root: &Path, ws: &str, repo: &repos::Repo, say: Sink) {
     // operation rather than unmerged files.
     if let Some(stopped) = gitstate::stopped(d) {
         let what = stopped.operation.map_or("merge", gitstate::Operation::word);
-        say(Say::Warn(format!(
-            "{label}: a {what} is in progress — skipping (finish or abort it first; nothing \
+        say(Say::Warn(
+            format!(
+                "{label}: a {what} is in progress — skipping (finish or abort it first; nothing \
              was fetched or moved)."
-        )));
+            )
+            .into(),
+        ));
         return;
     }
     let branch = match &state.head {
@@ -238,10 +246,13 @@ fn sync_one(root: &Path, ws: &str, repo: &repos::Repo, say: Sink) {
             } else {
                 format!(" at {at}")
             };
-            say(Say::Warn(format!(
-                "{label}: HEAD is detached{at} — not on a branch, so there is nothing to \
+            say(Say::Warn(
+                format!(
+                    "{label}: HEAD is detached{at} — not on a branch, so there is nothing to \
                  fast-forward; left as-is."
-            )));
+                )
+                .into(),
+            ));
             return;
         }
     };
@@ -252,10 +263,13 @@ fn sync_one(root: &Path, ws: &str, repo: &repos::Repo, say: Sink) {
         .unwrap_or_default();
     let managed = forge::resolve_host(&origin, root);
     if managed.is_none() && is_ssh(&origin) {
-        say(Say::Warn(format!(
-            "{label}: origin is an SSH remote on a host this plane does not manage — purlis \
+        say(Say::Warn(
+            format!(
+                "{label}: origin is an SSH remote on a host this plane does not manage — purlis \
              fetches over HTTPS with a forge CLI's token only (docs/git-policy.md); skipping."
-        )));
+            )
+            .into(),
+        ));
         return;
     }
     // The forge's own helper for a host the plane manages, and NO credential for one it does
@@ -268,7 +282,7 @@ fn sync_one(root: &Path, ws: &str, repo: &repos::Repo, say: Sink) {
     {
         Ok(helper) => helper,
         Err(why) => {
-            say(Say::Fail(format!("{label}: {why} — skipping.")));
+            say(Say::Fail(format!("{label}: {why} — skipping.").into()));
             return;
         }
     };
@@ -280,9 +294,9 @@ fn sync_one(root: &Path, ws: &str, repo: &repos::Repo, say: Sink) {
     let fetched = match fetched {
         Ok(run) if run.ok() => run,
         _ => {
-            say(Say::Fail(format!(
-                "{label}: fetch failed (access or network) — skipping."
-            )));
+            say(Say::Fail(
+                format!("{label}: fetch failed (access or network) — skipping.").into(),
+            ));
             return;
         }
     };
@@ -300,16 +314,22 @@ fn sync_one(root: &Path, ws: &str, repo: &repos::Repo, say: Sink) {
     match merged {
         Ok(run) if run.ok() => {}
         Ok(run) if run.err.contains("would be overwritten") => {
-            say(Say::Warn(format!(
-                "{label}: {branch} was not fast-forwarded — it would overwrite files in the \
+            say(Say::Warn(
+                format!(
+                    "{label}: {branch} was not fast-forwarded — it would overwrite files in the \
                  tree that git does not track or that are ignored; left as-is."
-            )));
+                )
+                .into(),
+            ));
             return;
         }
         _ => {
-            say(Say::Warn(format!(
-                "{label}: {branch} won't fast-forward (diverged/local commits) — left as-is."
-            )));
+            say(Say::Warn(
+                format!(
+                    "{label}: {branch} won't fast-forward (diverged/local commits) — left as-is."
+                )
+                .into(),
+            ));
             return;
         }
     }
@@ -325,7 +345,7 @@ fn sync_one(root: &Path, ws: &str, repo: &repos::Repo, say: Sink) {
     ) {
         return;
     }
-    say(Say::Done(format!("{label}: up to date on {branch}")));
+    say(Say::Done(format!("{label}: up to date on {branch}").into()));
 }
 
 #[cfg(test)]

@@ -71,6 +71,7 @@ use purlis_core::dispatchtalk::{self, Kind, Message};
 use purlis_core::handback::Outcome;
 use purlis_core::handoff;
 use purlis_core::hookwire::{Answer, Ask, DispatchAsk, ReportBack, TaskReport};
+use purlis_core::tui::Markup;
 
 use crate::handoff::Ticketed;
 use crate::voice;
@@ -196,7 +197,7 @@ pub fn dispatch(
     waits: Option<u32>,
 ) -> ExitCode {
     let Some(name) = name else {
-        voice::err(&format!(
+        voice::err(format!(
             "{SAYS} a task needs a name, which the new chat is called and listed under: add \
              --name \"<task>\". {NOTHING}"
         ));
@@ -205,17 +206,26 @@ pub fn dispatch(
     // The name and the persona are asked before the read: neither needs the brief, and a
     // refusal that waited for stdin would wait on a terminal.
     if let Err(why) = checked(here, to, name).and_then(|_| placed(options.place)) {
-        voice::err(&why);
+        voice::err(refusal(why));
         return ExitCode::FAILURE;
     }
     let brief = match read_brief() {
         Ok(brief) => brief,
         Err(why) => {
-            voice::err(&why);
+            voice::err(refusal(why));
             return ExitCode::FAILURE;
         }
     };
     said(send(here, to, name, &brief, options, waits))
+}
+
+/// A refusal as said: the sentence escaped as one line, and [`HEREDOC`], purlis's own lines,
+/// as written after it (SK-54).
+fn refusal(why: String) -> Markup {
+    match why.strip_suffix(HEREDOC) {
+        Some(head) => Markup::new().text(head).own(HEREDOC),
+        None => why.into(),
+    }
 }
 
 /// `--in` as the app will read it, or the refusal: one of its two words, said before a brief
@@ -235,7 +245,7 @@ fn said(answered: Result<String, String>) -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(why) => {
-            voice::err(&why);
+            voice::err(refusal(why));
             ExitCode::FAILURE
         }
     }
