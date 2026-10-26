@@ -60,7 +60,7 @@ fn removed_through_purlis(root: &Path, name: &str) -> Vec<String> {
     };
     let code = define::remove(root, name, false, &selection, &mut |line: Say| {
         if let Say::Info(text) | Say::Done(text) | Say::Warn(text) | Say::Fail(text) = line {
-            said.push(text);
+            said.push(text.to_string());
         }
     });
     assert_eq!(code, 0, "removed: {said:?}");
@@ -81,7 +81,7 @@ fn made_through_purlis(root: &Path, name: &str) -> (u8, Vec<String>) {
     let mut said = Vec::new();
     let code = define::create(root, &ask, None, &mut |line: Say| {
         if let Say::Info(text) | Say::Done(text) | Say::Warn(text) | Say::Fail(text) = line {
-            said.push(text);
+            said.push(text.to_string());
         }
     });
     (code, said)

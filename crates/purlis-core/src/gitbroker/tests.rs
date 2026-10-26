@@ -113,11 +113,14 @@ fn a_sandboxed_chat_reaches_only_its_egress_and_a_project_without_the_sandbox_no
 
 #[test]
 fn lines_that_fit_are_kept_whole_and_ones_that_do_not_are_cut_and_counted() {
-    let few = vec![Say::Info("a".to_owned()), Say::Done("b".to_owned())];
+    let few = vec![
+        Say::Info("a".to_owned().into()),
+        Say::Done("b".to_owned().into()),
+    ];
     assert_eq!(fitted(few.clone(), SAID_AT_MOST), few);
 
     let many: Vec<Say> = (0..200)
-        .map(|n| Say::Fail(format!("{n}:{}", "x".repeat(5000))))
+        .map(|n| Say::Fail(format!("{n}:{}", "x".repeat(5000)).into()))
         .collect();
     let kept = fitted(many, SAID_AT_MOST);
     let json = serde_json::to_vec(&kept).unwrap();

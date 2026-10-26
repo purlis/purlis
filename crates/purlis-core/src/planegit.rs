@@ -149,10 +149,13 @@ impl PushResult {
 /// ends with, so a reader of the save's output knows its standing may be stale.
 pub(crate) fn said_if_unrecorded(res: PushResult, say: Sink) -> PushResult {
     if let Some(why) = &res.unrecorded {
-        say(Say::Warn(format!(
-            "This save's outcome was not recorded ({why}), so purlis may show the plane's \
+        say(Say::Warn(
+            format!(
+                "This save's outcome was not recorded ({why}), so purlis may show the plane's \
              saving as it was before it until the next save."
-        )));
+            )
+            .into(),
+        ));
     }
     res
 }
@@ -1315,7 +1318,7 @@ pub fn pull(root: &Path, say: Sink) -> u8 {
     let incoming = match fetch(root, true) {
         Ok(incoming) => incoming,
         Err(why) => {
-            say(Say::Fail(format!("Could not pull the plane: {why}")));
+            say(Say::Fail(format!("Could not pull the plane: {why}").into()));
             return 1;
         }
     };
@@ -1327,7 +1330,9 @@ pub fn pull(root: &Path, say: Sink) -> u8 {
         .or_else(|| gitstate::stopped(root).map(Held::Stopped));
     match (&held, incoming.moved) {
         (_, true) => {
-            say(Say::Done(format!("Brought in {n} incoming {commits}.")));
+            say(Say::Done(
+                format!("Brought in {n} incoming {commits}.").into(),
+            ));
             0
         }
         (None, false) => {
@@ -1341,13 +1346,13 @@ pub fn pull(root: &Path, say: Sink) -> u8 {
                 format!("{n} incoming {commits} not brought in: {}.", held.why())
             };
             if matches!(held, Held::Stopped(_)) {
-                say(Say::Fail(line));
+                say(Say::Fail(line.into()));
                 say(Say::Info(
                     "  Nothing was saved. Settle that, then run `purlis save --pull` again.".into(),
                 ));
                 1
             } else {
-                say(Say::Warn(line));
+                say(Say::Warn(line.into()));
                 0
             }
         }
@@ -1518,9 +1523,9 @@ fn land_via_branch(
             .unwrap_or_default();
         say(Say::Fail(format!(
             "'{default_branch}' requires a {noun}, and pushing the branch '{fresh}' also failed:"
-        )));
+        ).into()));
         for line in said.lines() {
-            say(Say::Fail(format!("  {line}")));
+            say(Say::Fail(format!("  {line}").into()));
         }
         return PushResult {
             detail: said,
@@ -1529,18 +1534,21 @@ fn land_via_branch(
     }
     let branch = attempt.map(|(name, _)| name).unwrap_or(fresh);
     let url = compare_url(https, &branch, root);
-    say(Say::Done(format!(
-        "'{default_branch}' requires a {noun} — pushed {branch} instead."
-    )));
+    say(Say::Done(
+        format!("'{default_branch}' requires a {noun} — pushed {branch} instead.").into(),
+    ));
     if let Some(url) = &url {
-        say(Say::Info(format!("  open it: {url}")));
+        say(Say::Info(format!("  open it: {url}").into()));
     }
-    say(Say::Info(format!(
-        "  the commit is also on your local {default_branch}, one ahead of the remote. After \
+    say(Say::Info(
+        format!(
+            "  the commit is also on your local {default_branch}, one ahead of the remote. After \
          the {} merges: git -C {} pull --rebase",
-        kind.request_short(),
-        root.display()
-    )));
+            kind.request_short(),
+            root.display()
+        )
+        .into(),
+    ));
     PushResult {
         landed: Some(branch),
         url,
@@ -1694,8 +1702,10 @@ fn rebase_undone(
         Ok(()) => detail,
         Err(left) => format!("{detail}; {}", update::said_not_put_back(&left)),
     };
-    say(Say::Warn(format!("Committed locally, but {detail}.")));
-    say(Say::Info(format!("  {next}")));
+    say(Say::Warn(
+        format!("Committed locally, but {detail}.").into(),
+    ));
+    say(Say::Info(format!("  {next}").into()));
     record_push(
         root,
         PushResult {
@@ -1735,7 +1745,7 @@ fn refused_push(root: &Path, branch: &str, url: &str, head: &str, say: Sink) -> 
                 .collect(),
             Err(why) => {
                 let detail = format!("purlis could not scan what the push would send: {why}");
-                say(Say::Fail(format!("Not pushed — {detail}")));
+                say(Say::Fail(format!("Not pushed — {detail}").into()));
                 return Some(record_push(
                     root,
                     PushResult {
@@ -1753,13 +1763,18 @@ fn refused_push(root: &Path, branch: &str, url: &str, head: &str, say: Sink) -> 
         "Not pushed — a commit the push would send holds what looks like a secret:".into(),
     ));
     for finding in refused.iter().take(20) {
-        say(Say::Fail(format!(
-            "  {}",
-            shown::readable(&crate::diffscan::one_line(finding), shown::DISPLAY_LIMIT)
-        )));
+        say(Say::Fail(
+            format!(
+                "  {}",
+                shown::readable(&crate::diffscan::one_line(finding), shown::DISPLAY_LIMIT)
+            )
+            .into(),
+        ));
     }
     if refused.len() > 20 {
-        say(Say::Fail(format!("  … and {} more", refused.len() - 20)));
+        say(Say::Fail(
+            format!("  … and {} more", refused.len() - 20).into(),
+        ));
     }
     say(Say::Info(
         "It is committed on this machine only. Take it out of that commit's history (amend it, \
@@ -1857,7 +1872,9 @@ fn push_head_within(
     let helper = match forge::gitcredential::helper_for_push(&forge, root, &https) {
         Ok(helper) => helper,
         Err(why) => {
-            say(Say::Warn(format!("Committed, but not pushed: {why}.")));
+            say(Say::Warn(
+                format!("Committed, but not pushed: {why}.").into(),
+            ));
             return PushResult {
                 detail: why.to_string(),
                 ..PushResult::of(Outcome::Blocked, &branch)
@@ -1876,9 +1893,11 @@ fn push_head_within(
     let mut run = match push(root) {
         Ok(run) => run,
         Err(unavailable) => {
-            say(Say::Warn(format!("Committed, but the {cli} push failed:")));
-            say(Say::Warn(format!("  {unavailable}")));
-            say(Say::Info(format!("Check `{cli} auth status`.")));
+            say(Say::Warn(
+                format!("Committed, but the {cli} push failed:").into(),
+            ));
+            say(Say::Warn(format!("  {unavailable}").into()));
+            say(Say::Info(format!("Check `{cli} auth status`.").into()));
             return record_push(
                 root,
                 PushResult {
@@ -1984,7 +2003,9 @@ fn push_head_within(
                     // Nothing was started, so there is nothing to undo. Recorded as failed,
                     // not blocked: the window's own save runs under no sandbox and lands it.
                     let detail = said_sandbox_stops(&files);
-                    say(Say::Warn(format!("Committed locally, but {detail}.")));
+                    say(Say::Warn(
+                        format!("Committed locally, but {detail}.").into(),
+                    ));
                     say(Say::Info(
                         "  Nothing was rebased or pushed. The window's save brings the remote's \
                          commits in and pushes this one, or the person runs `purlis save` in \
@@ -2041,9 +2062,9 @@ fn push_head_within(
             ],
             git::READ,
         );
-        say(Say::Done(format!(
-            "Pushed {branch} via {cli} (HTTPS token — no SSH, no 1Password)."
-        )));
+        say(Say::Done(
+            format!("Pushed {branch} via {cli} (HTTPS token — no SSH, no 1Password).").into(),
+        ));
         return record_push(root, PushResult::of(Outcome::Pushed, &branch), &head);
     }
     if is_protected_rejection(&said(&run)) {
@@ -2057,11 +2078,13 @@ fn push_head_within(
         );
     }
     let detail = tail(&run);
-    say(Say::Warn(format!("Committed, but the {cli} push failed:")));
+    say(Say::Warn(
+        format!("Committed, but the {cli} push failed:").into(),
+    ));
     for line in detail.lines() {
-        say(Say::Warn(format!("  {line}")));
+        say(Say::Warn(format!("  {line}").into()));
     }
-    say(Say::Info(format!("Check `{cli} auth status`.")));
+    say(Say::Info(format!("Check `{cli} auth status`.").into()));
     record_push(
         root,
         PushResult {
@@ -2625,7 +2648,7 @@ pub fn save_paths(request: &Request, trigger: Trigger, paths: &[String], say: Si
     };
     let root = request.root;
     if let Some(why) = paths_unsaved(root, paths) {
-        say(Say::Fail(why));
+        say(Say::Fail(why.into()));
         return 1;
     }
     let named: Vec<String> = paths
@@ -2766,7 +2789,7 @@ fn save_staging(
         if let Say::Fail(text) = &line
             && refused.is_none()
         {
-            refused = Some(text.clone());
+            refused = Some(text.clone().to_string());
         }
         say(line);
     };
@@ -2775,15 +2798,18 @@ fn save_staging(
     // saved, whoever asks: the window, the auto-save a chat's end pokes, or the command
     // (FR-24, #826). Nothing is staged, committed or pushed.
     let code = if let Some(why) = crate::compat::read_only(request.root) {
-        say(Say::Fail(format!("nothing was written: {why}")));
+        say(Say::Fail(format!("nothing was written: {why}").into()));
         attempt.outcome = "blocked";
         1
     } else if plane.mode.value == Some(crate::planesave::Mode::Off) {
-        say(Say::Info(format!(
-            "[plane] mode is off ({}), so purlis commits nothing here — commit with git \
+        say(Say::Info(
+            format!(
+                "[plane] mode is off ({}), so purlis commits nothing here — commit with git \
              yourself, or set another mode.",
-            plane.mode.source.file().unwrap_or("default")
-        )));
+                plane.mode.source.file().unwrap_or("default")
+            )
+            .into(),
+        ));
         attempt.outcome = "skipped";
         0
     } else {
@@ -2903,32 +2929,41 @@ pub(crate) fn now() -> f64 {
 /// The word "clean" appears nowhere on this path: the whole defect was a sentence containing
 /// it.
 fn refuse_unreadable(root: &Path, git_dir: &Path, doing: &str, said: &str, say: Sink) -> u8 {
-    say(Say::Fail(format!(
-        "Refusing to save — purlis could not read the state of {}, so it cannot tell an \
+    say(Say::Fail(
+        format!(
+            "Refusing to save — purlis could not read the state of {}, so it cannot tell an \
          unchanged tree from an unreadable one.",
-        root.display()
-    )));
-    say(Say::Fail(format!(
-        "  {doing}{}",
-        if said.is_empty() {
-            " without saying why".to_string()
-        } else {
-            format!(" — {said}")
-        }
-    )));
+            root.display()
+        )
+        .into(),
+    ));
+    say(Say::Fail(
+        format!(
+            "  {doing}{}",
+            if said.is_empty() {
+                " without saying why".to_string()
+            } else {
+                format!(" — {said}")
+            }
+        )
+        .into(),
+    ));
     match gitstate::find(git_dir) {
         Some(lock) => {
-            say(Say::Info(format!("  {}", lock.describe())));
+            say(Say::Info(format!("  {}", lock.describe()).into()));
             for line in lock.remedy() {
-                say(Say::Info(format!("  {line}")));
+                say(Say::Info(format!("  {line}").into()));
             }
         }
         // No lock, so charter has nothing to name and says so rather than inventing a remedy.
-        None => say(Say::Info(format!(
-            "  Nothing purlis can name is holding this index. `git -C {} status` is where the \
+        None => say(Say::Info(
+            format!(
+                "  Nothing purlis can name is holding this index. `git -C {} status` is where the \
              reason will be.",
-            root.display()
-        ))),
+                root.display()
+            )
+            .into(),
+        )),
     }
     1
 }
@@ -2949,30 +2984,39 @@ fn show_what_is_staged(root: &Path, staged: &[String], say: Sink) {
         };
         *counts.entry(dir).or_default() += 1;
     }
-    say(Say::Warn(format!(
-        "purlis save commits everything pending in {} — {} across {}, \
+    say(Say::Warn(
+        format!(
+            "purlis save commits everything pending in {} — {} across {}, \
          not only what you meant:",
-        root.display(),
-        counted(staged.len(), "file", "files"),
-        counted(counts.len(), "directory", "directories")
-    )));
+            root.display(),
+            counted(staged.len(), "file", "files"),
+            counted(counts.len(), "directory", "directories")
+        )
+        .into(),
+    ));
     // Biggest first, ties by name, so the row that explains the count is the first one read.
     let mut rows: Vec<(&String, &usize)> = counts.iter().collect();
     rows.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
     for &(dir, count) in rows.iter().take(BREAKDOWN_ROWS) {
         // Contained: a path comes out of the operator's tree, and a control character in one
         // would otherwise redraw the line it is printed on.
-        say(Say::Info(format!(
-            "  {count:>5}  {}",
-            shown::readable(dir, shown::DISPLAY_LIMIT)
-        )));
+        say(Say::Info(
+            format!(
+                "  {count:>5}  {}",
+                shown::readable(dir, shown::DISPLAY_LIMIT)
+            )
+            .into(),
+        ));
     }
     if rows.len() > BREAKDOWN_ROWS {
-        say(Say::Info(format!(
-            "  … and {} more directories. The whole list: git -C {} diff --cached --name-only",
-            rows.len() - BREAKDOWN_ROWS,
-            root.display()
-        )));
+        say(Say::Info(
+            format!(
+                "  … and {} more directories. The whole list: git -C {} diff --cached --name-only",
+                rows.len() - BREAKDOWN_ROWS,
+                root.display()
+            )
+            .into(),
+        ));
     }
 }
 
@@ -3034,11 +3078,11 @@ fn group_of(path: &str) -> String {
 /// A save refused because a file is not the one file on disk ([`ondisk`]): `header`, then a
 /// line for each path, then what became of them.
 fn refuse_on_disk(header: &str, refusal: ondisk::Refusal, attempt: &mut Attempt, say: Sink) -> u8 {
-    say(Say::Fail(header.into()));
+    say(Say::Fail(header.to_owned().into()));
     for line in refusal.named {
-        say(Say::Fail(format!("  {line}")));
+        say(Say::Fail(format!("  {line}").into()));
     }
-    say(Say::Info(refusal.then));
+    say(Say::Info(refusal.then.into()));
     attempt.outcome = "blocked";
     attempt.detail = ondisk::NOT_AS_STAGED.into();
     1
@@ -3077,17 +3121,20 @@ fn commit_push(
                  it. Committing every change in a tree you are not in would take that tree's \
                  uncommitted work under your message, and leave your own work here unsaved.",
                 root.display()
-            )));
-            say(Say::Info(format!(
-                "  your own work:   git -C {tree} add -A && git -C {tree} commit"
-            )));
-            say(Say::Info(format!(
-                "  the plane's own: run `purlis save` from {}",
-                root.display()
-            )));
+            ).into()));
+            say(Say::Info(
+                format!("  your own work:   git -C {tree} add -A && git -C {tree} commit").into(),
+            ));
+            say(Say::Info(
+                format!(
+                    "  the plane's own: run `purlis save` from {}",
+                    root.display()
+                )
+                .into(),
+            ));
             say(Say::Info(format!(
                 "  you really do mean this tree: PURLIS_ROOT={tree} CHARTER_ROOT={tree} purlis save"
-            )));
+            ).into()));
             return 1;
         }
         // A SECOND ROUTE, not a widening of the first. A clone has a real `.git` directory, so
@@ -3103,18 +3150,25 @@ fn commit_push(
                  holding the vault, so committing every change there would take that tree's \
                  uncommitted work under your message, and leave your own work here unsaved.",
                 root.display()
-            )));
-            say(Say::Info(format!(
-                "  your own work:   git -C {nested} add -A && git -C {nested} commit"
-            )));
-            say(Say::Info(format!(
-                "  the plane's own: run `purlis save` from {}",
-                root.display()
-            )));
-            say(Say::Info(format!(
-                "  you really do mean this plane: PURLIS_ROOT={nested} CHARTER_ROOT={nested} \
+            ).into()));
+            say(Say::Info(
+                format!("  your own work:   git -C {nested} add -A && git -C {nested} commit")
+                    .into(),
+            ));
+            say(Say::Info(
+                format!(
+                    "  the plane's own: run `purlis save` from {}",
+                    root.display()
+                )
+                .into(),
+            ));
+            say(Say::Info(
+                format!(
+                    "  you really do mean this plane: PURLIS_ROOT={nested} CHARTER_ROOT={nested} \
                  purlis save"
-            )));
+                )
+                .into(),
+            ));
             return 1;
         }
     }
@@ -3126,10 +3180,13 @@ fn commit_push(
     // with no history at all.
     let found = git::run(root, &["rev-parse", "--git-dir"], git::READ);
     let Some(found) = found.ok().filter(git::Run::ok) else {
-        say(Say::Fail(format!(
-            "{} is not a git repository, so there is nothing to commit to.",
-            root.display()
-        )));
+        say(Say::Fail(
+            format!(
+                "{} is not a git repository, so there is nothing to commit to.",
+                root.display()
+            )
+            .into(),
+        ));
         say(Say::Info(
             "  purlis init does not create one. Run: git init && git remote add origin <url>  \
              — personas and memory are meant to be committed and shared."
@@ -3149,10 +3206,9 @@ fn commit_push(
     // auto-save — and the Saving view reads the same check as Blocked ([`standing`]).
     if let Some(stopped) = gitstate::stopped(root) {
         let why = stopped.why();
-        say(Say::Fail(format!(
-            "Not saved: in {}, {why}.",
-            root.display()
-        )));
+        say(Say::Fail(
+            format!("Not saved: in {}, {why}.", root.display()).into(),
+        ));
         say(Say::Info(
             "  Nothing was staged or committed. Settle that, then save again.".into(),
         ));
@@ -3233,11 +3289,13 @@ fn commit_push(
                         "Nothing new to commit — carrying on {} this machine has not \
                          saved yet.",
                         counted(n, "commit", "commits")
-                    ),
+                    )
+                    .into(),
                     None => format!(
                         "Nothing new to commit — asking after the open {}.",
                         forge::request_words_of(root, root).request_noun()
-                    ),
+                    )
+                    .into(),
                 }));
                 attempt.outcome = "committed";
                 attempt.commit = git::run(root, &["rev-parse", "HEAD"], git::READ)
@@ -3420,10 +3478,9 @@ fn commit_push(
             "Not scanned for secrets — git calls it binary, or it is over 10 MiB:".into(),
         ));
         for (path, why) in &skipped {
-            say(Say::Info(format!(
-                "  {} ({why})",
-                shown::readable(path, shown::DISPLAY_LIMIT)
-            )));
+            say(Say::Info(
+                format!("  {} ({why})", shown::readable(path, shown::DISPLAY_LIMIT)).into(),
+            ));
         }
     }
     if !flagged.is_empty() {
@@ -3432,10 +3489,13 @@ fn commit_push(
         ));
         for (path, line, kind) in &flagged {
             let at = line.map(|line| format!(":{line}")).unwrap_or_default();
-            say(Say::Fail(format!(
-                "  {}{at}  ({kind})",
-                shown::readable(path, shown::DISPLAY_LIMIT)
-            )));
+            say(Say::Fail(
+                format!(
+                    "  {}{at}  ({kind})",
+                    shown::readable(path, shown::DISPLAY_LIMIT)
+                )
+                .into(),
+            ));
         }
         say(Say::Info(
             "Secrets belong in the vault (`purlis persona secret set`). Remove it, then retry."
@@ -3443,9 +3503,9 @@ fn commit_push(
         ));
         if let Some(refusal) = refusal {
             for line in refusal.named {
-                say(Say::Fail(format!("  {line}")));
+                say(Say::Fail(format!("  {line}").into()));
             }
-            say(Say::Info(refusal.then));
+            say(Say::Info(refusal.then.into()));
         }
         attempt.outcome = "blocked";
         attempt.detail = SECRET_REFUSED.into();
@@ -3487,10 +3547,13 @@ fn commit_push(
         } else {
             format!("purlis could not sign the commit: {signer}")
         };
-        say(Say::Fail(format!(
-            "{why} — {} staged but not committed.",
-            files_are(staged.len())
-        )));
+        say(Say::Fail(
+            format!(
+                "{why} — {} staged but not committed.",
+                files_are(staged.len())
+            )
+            .into(),
+        ));
         say(Say::Info(
             "  Fix the signer, or set sign = false under [plane], then save again.".into(),
         ));
@@ -3501,14 +3564,20 @@ fn commit_push(
     // failed commit became `✓ Committed :` with an empty sha — the sha was empty precisely
     // BECAUSE there was no commit, and that was the only visible symptom.
     if still_staged(root) {
-        say(Say::Fail(format!(
-            "git commit failed — {} staged but not committed.",
-            files_are(staged.len())
-        )));
-        say(Say::Info(format!(
-            "  Run `git -C {} status` to see why; purlis has left them staged.",
-            root.display()
-        )));
+        say(Say::Fail(
+            format!(
+                "git commit failed — {} staged but not committed.",
+                files_are(staged.len())
+            )
+            .into(),
+        ));
+        say(Say::Info(
+            format!(
+                "  Run `git -C {} status` to see why; purlis has left them staged.",
+                root.display()
+            )
+            .into(),
+        ));
         return 1;
     }
     attempt.outcome = "committed";
@@ -3522,11 +3591,14 @@ fn commit_push(
     // Names the TREE. charter #806 lived for months because it did not: a commit landing in
     // the plane's clone while the operator stood in a worktree read exactly like a commit
     // landing where they meant.
-    say(Say::Done(format!(
-        "Committed {short} in {}: {msg}  ({})",
-        root.display(),
-        counted(staged.len(), "file", "files")
-    )));
+    say(Say::Done(
+        format!(
+            "Committed {short} in {}: {msg}  ({})",
+            root.display(),
+            counted(staged.len(), "file", "files")
+        )
+        .into(),
+    ));
 
     carry(request, plane, sign, caller, attempt, say)
 }
@@ -3597,7 +3669,9 @@ fn carry(
         "[plane] mode"
     };
     if plane.mode.value == Some(crate::planesave::Mode::Commit) {
-        say(Say::Info(format!("Not pushed: {key} is commit ({file}).")));
+        say(Say::Info(
+            format!("Not pushed: {key} is commit ({file}).").into(),
+        ));
         return 0;
     }
     let pr_mode = plane
@@ -3626,13 +3700,16 @@ fn carry(
             .unwrap_or_default();
         if here != target {
             let why = format!("this plane is on {here}, and [plane] branch is {target}");
-            say(Say::Warn(format!(
-                "Not pushed: {why} ({}).",
-                plane.branch.source.file().unwrap_or("default")
-            )));
-            say(Say::Info(format!(
-                "  Check out {target}, or change [plane] branch, then save again."
-            )));
+            say(Say::Warn(
+                format!(
+                    "Not pushed: {why} ({}).",
+                    plane.branch.source.file().unwrap_or("default")
+                )
+                .into(),
+            ));
+            say(Say::Info(
+                format!("  Check out {target}, or change [plane] branch, then save again.").into(),
+            ));
             attempt.outcome = "blocked";
             attempt.detail = why;
             return 0;
