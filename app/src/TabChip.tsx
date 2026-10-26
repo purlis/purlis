@@ -62,6 +62,7 @@ import { askOf, tokensOfLine, tokensSaid, type UsedAsk, type UsedReader } from "
 import { property } from "./theme/theme";
 import { fitCountsOn } from "./wholeWays";
 import { Tooltip } from "./ui/tooltip/Tooltip";
+import { IconButton } from "./ui/button/Button";
 import { tabPart } from "./ui/tabs/Tabs";
 
 /** Each count's mark: its shape as it is drawn (`StateShown` draws the same four for a row). */
@@ -1033,8 +1034,8 @@ function BriefPlace({ ask, onBrief }: { ask: BriefAsk; onBrief?: (ask: BriefAsk)
       // The keyboard's way to the same panel, since this button is the pointer's alone.
       also={
         "chat" in ask
-          ? "also in its row's menu in the Chats list"
-          : "also on its finished row in the Chats list"
+          ? "Also in its row's menu in the Chats list"
+          : "Also on its finished row in the Chats list"
       }
       onPress={() => onBrief(ask)}
     >
@@ -1050,7 +1051,7 @@ function AnswerPlace({ ask, onAnswer }: { ask: AnswerAsk; onAnswer?: (ask: Answe
   return (
     <PlaceButton
       says={answerTitle(ask.name)}
-      also="also in its row's menu in the Chats list"
+      also="Also in its row's menu in the Chats list"
       onPress={() => onAnswer(ask)}
     >
       <Reply />
@@ -1080,32 +1081,22 @@ function PlaceButton({
   children: ReactNode;
 }) {
   const own = (event: { stopPropagation: () => void }) => event.stopPropagation();
+  // The quiet ghost (#3214): a mark at the end of the line, quiet until the pointer is on it. Its
+  // tooltip is its name, and under it the line's own key, or where else the same thing is.
   return (
-    <Tooltip
-      tip={
-        keys !== undefined
-          ? `${says} (${keys} on its line)`
-          : also !== undefined
-            ? `${says} (${also})`
-            : says
-      }
-    >
-      <button
-        type="button"
-        className="tasks-menu-place"
-        tabIndex={-1}
-        data-says={says}
-        onPointerDown={own}
-        onPointerUp={own}
-        onClick={(event) => {
-          event.stopPropagation();
-          event.preventDefault();
-          onPress();
-        }}
-      >
-        {children}
-      </button>
-    </Tooltip>
+    <IconButton
+      variant="quiet"
+      size="sm"
+      className="tasks-menu-place"
+      icon={children}
+      aria-label={says}
+      tooltip={keys !== undefined ? `${keys} on its line` : also}
+      tabIndex={-1}
+      data-says={says}
+      onPointerDown={own}
+      onPointerUp={own}
+      onPress={onPress}
+    />
   );
 }
 
