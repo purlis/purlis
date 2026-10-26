@@ -144,10 +144,12 @@ pub fn rename(ctx: &Ctx, v: &Vault, from: &str, to: &str) -> Result<(), VaultErr
     };
     set_value(ctx, v, to, &stored)?;
     delete(ctx, v, from).map_err(|e| {
-        VaultError::new(format!(
-            "'{to}' now holds the secret, but '{from}' could not be removed and holds it too: {}",
-            e.message
-        ))
+        VaultError::new(
+            Markup::from(format!(
+                "'{to}' now holds the secret, but '{from}' could not be removed and holds it too: "
+            ))
+            .then(e.message),
+        )
     })
 }
 
@@ -522,17 +524,20 @@ pub fn set(ctx: &Ctx, vault: &str, key: &str, from: &SetFrom, io: &mut dyn Io) -
         plaintext_refusal(ctx, &v)?;
         let value = read_value(ctx, key, from, io)?;
         if value.is_empty() && !from.allow_empty {
-            let how = if io.stdin_is_terminal() {
-                ""
-            } else {
-                "\n  Nothing arrived on stdin. An agent's shell, a CI step and `< /dev/null` \
-                 all\n  look like a pipe with no data behind them."
-            };
-            return Err(VaultError::new(format!(
+            let mut lines = vec![Markup::from(format!(
                 "refusing to store an empty value for '{key}' — it would read as a present, \
-                 healthy secret everywhere purlis looks.{how}\n  If that is genuinely what you \
-                 want: --allow-empty"
-            )));
+                 healthy secret everywhere purlis looks."
+            ))];
+            if !io.stdin_is_terminal() {
+                lines.push(Markup::from(
+                    "  Nothing arrived on stdin. An agent's shell, a CI step and `< /dev/null` all",
+                ));
+                lines.push(Markup::from("  look like a pipe with no data behind them."));
+            }
+            lines.push(Markup::from(
+                "  If that is genuinely what you want: --allow-empty",
+            ));
+            return Err(VaultError::new(Markup::lines(lines)));
         }
         set_value(ctx, &v, key, &value)?;
         let unheld = v.provider == "keyring" && keyring::left_unheld(ctx, &v, key);
@@ -633,7 +638,7 @@ pub fn persona_vault(ctx: &Ctx, name: &str) -> Result<String, String> {
     };
     let registered = registry::load_registry(ctx)
         .map(|doc| registry::vaults(&doc).contains_key(&vault))
-        .map_err(|e| e.message)?;
+        .map_err(|e| e.message.to_string())?;
     if !registered {
         return Err(format!(
             "persona '{name}' vault '{vault}' isn't set up on this machine. Create it: purlis \
