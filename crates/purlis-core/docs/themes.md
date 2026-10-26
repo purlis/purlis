@@ -324,6 +324,7 @@ says what each family, part and variant is):
 | `textarea` (since version 3) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `font-size`) | none | `hover`, `focused`, `disabled` |
 | `titlebar` (since version 12) | `workspace` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`), `count` (`fill`, `text`), `crumb` (`fill`, `text`, `corner-radius`), `all` (`fill`, `text`, `corner-radius`), `pin` (`fill`, `text`, `corner-radius`), `row` (`fill`, `text`, `corner-radius`) | `pinned`, `unpinned` | `hover`, `selected`, `focused` |
 | `tooltip` (since version 5) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`), `detail` (`text`), `shortcut` (`text`, `font-size`) (since the next release) | none | none |
+| `tree` (since the next release) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `gap`, `font-size`, `font-weight`, `height`), `body` (`padding`, `gap`), `twist` (`text`), `lead` (`text`, `gap`), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`), `trail` (`text`, `gap`), `header` (`text`, `font-size`, `font-weight`) | none | `hover`, `focused`, `selected`, `disabled` |
 
 A field is its label, its control (a `text-input` or a `textarea`), its help and its error, as
 one: `field.help.text` reaches a field's help line, `text-input.root.border-width` every one-line
