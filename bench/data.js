@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793025927344,
+  "lastUpdate": 1793027868495,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -25704,6 +25704,48 @@ window.BENCHMARK_DATA = {
             "value": 101.1747865,
             "unit": "ms",
             "extra": "median of 5 runs: 100.633, 100.760, 101.175, 101.348, 101.754 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "0facfcb852900f48498924f36de523f8347c586a",
+          "message": "Runners: a pool runner chat's hook lines are recorded in the runner's event log (#3373)\n\n* Record a pool runner chat's hook lines in the runner's event log (#3304)\n\nThe host's hook channel records each line it heard under the project it\nholds the channel for, at its own path, not the path the window's entry\nnames. A pool's runner holds the project at <data>/projects/<id>, so it\nrefused every line before. The behaviour suite's one-writer behaviour now\nruns on the Docker pool target, reading the runner's log and spool.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* Tell a line recorded as heard from one drained later; check a clear's run id (#3304)\n\nThe pool behaviour now fails where the runner's host said it did not\nrecord a hook line, which a later spool drain hides from the event log,\nand finds the spool beside the hook socket inside the runner's container.\nA run a /clear begins is minted by the writer where the id the window\nnamed is no id or one a chat's current run has. One shared glob names a\nrunner container's data home in the tests that reach into it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-26T13:35:36Z",
+          "tree_id": "da9185b2554387ae2ba6a2cb574efd3ff229d0a5",
+          "url": "https://github.com/purlis/purlis/commit/0facfcb852900f48498924f36de523f8347c586a"
+        },
+        "date": 1793027865701,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.2784735,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.270, 0.275, 0.278, 0.283, 0.290 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.556138,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.459, 16.479, 16.556, 16.577, 16.641 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.22944000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.692, 100.770, 101.229, 101.636, 102.007 ms"
           }
         ]
       }
