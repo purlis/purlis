@@ -85,6 +85,20 @@
   background-color: var(--surface-hover);
 }
 
+/* **The quiet ghost** (#3214): a mark that is not the point of where it stands, at the end of a
+   strip, in a breadcrumb, in a pane's corner. No box and its words in the quiet tier at rest;
+   under the pointer, the ghost's hover fill with the primary words on it. */
+[data-scope="button"][data-part="root"][data-variant="quiet"] {
+  border-color: transparent;
+  color: var(--text-quiet);
+  background-color: transparent;
+}
+
+[data-scope="button"][data-part="root"][data-variant="quiet"][data-hovered]:not([data-disabled]) {
+  color: var(--text-primary);
+  background-color: var(--surface-hover);
+}
+
 /* What cannot be undone from purlis (D-1719-3) says so in the danger colour, on the control's
    own ground, and takes the danger ground under the pointer. */
 [data-scope="button"][data-part="root"][data-variant="danger"] {

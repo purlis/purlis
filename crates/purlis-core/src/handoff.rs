@@ -126,33 +126,50 @@ impl NoBrief {
     /// The sentence, with `{ws}` filled — `charter/handoff.py`'s four constants, with the
     /// command spelled **flag first, as `purlis`** (#1471): the line a chat the app started
     /// runs without its harness asking, which a line that starts with the workspace is not.
-    pub fn say(&self, ws: &str) -> String {
-        let heredoc = format!(
-            "Pass the brief as a quoted heredoc in the same call:\n  purlis handoff --name \
-             \"<task>\" {ws} <<'BRIEF'\n  <the brief>\n  BRIEF"
-        );
-        match self {
-            Self::Closed => format!(
-                "{HANDOFF_SAYS} this shell has no stdin at all — the command was run with \
-                 its input closed, so there is nothing to read a brief from and nothing was \
-                 opened. {heredoc}"
+    pub fn say(&self, ws: &str) -> crate::tui::Markup {
+        use crate::tui::Markup;
+        let (head, pass) = match self {
+            Self::Closed => (
+                format!(
+                    "{HANDOFF_SAYS} this shell has no stdin at all — the command was run with \
+                     its input closed, so there is nothing to read a brief from and nothing was \
+                     opened."
+                ),
+                "Pass the brief as",
             ),
-            Self::Terminal => format!(
-                "{HANDOFF_SAYS} reads its brief from stdin, and stdin here is a terminal — \
-                 nothing was opened. {heredoc}"
+            Self::Terminal => (
+                format!(
+                    "{HANDOFF_SAYS} reads its brief from stdin, and stdin here is a terminal — \
+                     nothing was opened."
+                ),
+                "Pass the brief as",
             ),
             Self::NotUtf8 => {
-                format!("{HANDOFF_SAYS} the brief on stdin is not UTF-8 text — nothing was opened.")
+                return format!(
+                    "{HANDOFF_SAYS} the brief on stdin is not UTF-8 text — nothing was opened."
+                )
+                .into();
             }
             // "Pass IT", where the two above say "Pass THE BRIEF". charter words this one
             // differently — the sentence in front of it has just named the brief — and the
             // differential caught the paraphrase, which is the whole reason it compares
             // stderr byte for byte.
-            Self::Empty => format!(
-                "{HANDOFF_SAYS} the brief on stdin is empty — nothing was opened. {}",
-                heredoc.replacen("Pass the brief as", "Pass it as", 1)
+            Self::Empty => (
+                format!("{HANDOFF_SAYS} the brief on stdin is empty — nothing was opened."),
+                "Pass it as",
             ),
-        }
+        };
+        // The heredoc is purlis's own lines; the workspace is spliced into one of them escaped,
+        // so a line end in it is marked (SK-54).
+        Markup::lines([
+            format!("{head} {pass} a quoted heredoc in the same call:").into(),
+            Markup::new()
+                .own("  purlis handoff --name \"<task>\" ")
+                .text(ws)
+                .own(" <<'BRIEF'"),
+            "  <the brief>".into(),
+            "  BRIEF".into(),
+        ])
     }
 }
 

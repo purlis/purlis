@@ -41,10 +41,13 @@ pub fn finish_promotes(plane: &Plane, ws: &Workspace, stamp: chrono::NaiveDateTi
     }
     if let Ok(closed) = promote::finish_closes(ws, &log::fold(plane.root()), stamp) {
         for (title, to) in closed {
-            say(Say::Done(format!(
-                "Closed '{title}' in '{}' — it was promoted to {to}.",
-                ws.name()
-            )));
+            say(Say::Done(
+                format!(
+                    "Closed '{title}' in '{}' — it was promoted to {to}.",
+                    ws.name()
+                )
+                .into(),
+            ));
         }
     }
 }
@@ -64,21 +67,21 @@ pub fn close(
     let see = format!("purlis ws todo --workspace {name}");
     let slug = crate::memstore::py_strip(slug);
     if !crate::contain::segment_ok(slug) {
-        say(Say::Fail(crate::repocmd::clone::not_a_segment(slug)));
-        say(Say::Info(format!("  List the real ones: {see}")));
+        say(Say::Fail(crate::repocmd::clone::not_a_segment(slug).into()));
+        say(Say::Info(format!("  List the real ones: {see}").into()));
         return 1;
     }
     let path = match crate::memstore::resolve(root, &dir, slug) {
         Ok(path) => path,
         Err(e) => {
             if e.kind() == std::io::ErrorKind::NotFound {
-                say(Say::Fail(format!(
-                    "no todo '{slug}' in workspace '{name}'."
-                )));
+                say(Say::Fail(
+                    format!("no todo '{slug}' in workspace '{name}'.").into(),
+                ));
             } else {
-                say(Say::Fail(e.to_string()));
+                say(Say::Fail(e.to_string().into()));
             }
-            say(Say::Info(format!("  List the real ones: {see}")));
+            say(Say::Info(format!("  List the real ones: {see}").into()));
             return 1;
         }
     };
@@ -98,19 +101,20 @@ pub fn close(
         match ws.remember_titled(&format!("Closed todo: {title}"), None, stamp) {
             Ok(journal) => super::memory::said_remembered(plane, name, &journal, false, say),
             Err(e) => {
-                say(Say::Fail(e.to_string()));
+                say(Say::Fail(e.to_string().into()));
                 return 1;
             }
         }
     }
     if let Err(e) = ws.forget_todo(slug) {
-        say(Say::Fail(e.to_string()));
+        say(Say::Fail(e.to_string().into()));
         return 1;
     }
     say(Say::Done(match how {
-        Close::Done => format!("Closed '{title}' in '{name}' — the journal has the trace."),
+        Close::Done => format!("Closed '{title}' in '{name}' — the journal has the trace.").into(),
         Close::Forget => {
             format!("Dropped '{title}' from '{name}' — abandoned, so nothing was journalled.")
+                .into()
         }
     }));
     0
