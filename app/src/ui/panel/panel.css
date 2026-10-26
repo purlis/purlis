@@ -25,6 +25,8 @@
   border: 0 solid var(--border-subtle);
   border-radius: var(--panel-corner-radius);
   background-color: var(--surface-base);
+  /* Its fill, said to what it holds (#3331): a theme's `panel.root.fill` writes both. */
+  --panel-fill: var(--surface-base);
 }
 
 /* A library's resizable panel draws its root's attributes on its outer box and scrolls its inner
@@ -73,4 +75,89 @@
 [data-scope="panel-section"][data-part="title"] .node-icon {
   flex: none;
   color: inherit;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   A panel separator: the handle between two panels that resizes them (#3143).
+   --------------------------------------------------------------------------------------------- */
+
+/* **The handle's box.** Where it sits, the room it takes between its panels, is the regions'
+   (`--separator-room` in `App.css`: the window's gutter, or none between two panes). Its box is
+   never thinner than the keyboard's ring (`--separator-least`), so the keyboard always lands on
+   something drawn, and a
+   negative margin gives the difference back, so it straddles its boundary and nothing moves. It
+   stands over the panels either side, so its grip is drawn over them and never under. */
+[data-scope="panel-separator"][data-part="root"] {
+  --separator-least: var(--focus-ring-width);
+  --separator-box: max(var(--separator-room, 0px), var(--separator-least));
+  position: relative;
+  z-index: 1;
+  box-sizing: border-box;
+}
+
+[data-scope="panel-separator"][data-part="root"][aria-orientation="vertical"] {
+  inline-size: var(--separator-box);
+  margin-inline: calc((var(--separator-room, 0px) - var(--separator-box)) / 2);
+}
+
+[data-scope="panel-separator"][data-part="root"][aria-orientation="horizontal"] {
+  block-size: var(--separator-box);
+  margin-block: calc((var(--separator-room, 0px) - var(--separator-box)) / 2);
+}
+
+/* **With the keyboard** the handle says so by its grip, in the window's focus colour (below),
+   rather than by a ring its whole length: a short mark at 3:1 that nothing draws over. Purlis
+   Classic draws its accent line instead, through its own parts. In forced colours the window's
+   ring comes back (`theme/forced-colors.css`), outside the handle, which is thinner than it. */
+[data-scope="panel-separator"][data-part="root"]:focus-visible {
+  outline-style: none;
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* **Its grip**: a short mark at the handle's middle, 4 by 32 and round, drawn over what is either
+   side and out of the pointer's way. It is drawn in every state and only its colour changes, so
+   no state moves anything or changes where the handle can be grabbed. Along the line the handle
+   is: upright between two columns, flat between two rows. */
+[data-scope="panel-separator"][data-part="grip"] {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  inline-size: 4px;
+  block-size: 32px;
+  border-radius: var(--radius-full);
+  background-color: transparent;
+  pointer-events: none;
+  translate: -50% -50%;
+}
+
+[data-scope="panel-separator"][data-part="root"][aria-orientation="horizontal"]
+  > [data-scope="panel-separator"][data-part="grip"] {
+  inline-size: 32px;
+  block-size: 4px;
+}
+
+/* **Purlis's quiet hover, clear drag and focus**: under the pointer the grip is the faint tier, a
+   mark held at 3:1; while it is dragged, the muted tier; with the keyboard on it, the window's
+   focus colour (`focus.ring`), over the pointer's grip.
+   Never a line the panels' whole length. The library marks the handle under the pointer, in a
+   hit area wider than the handle, except one a press has given the keyboard, which it marks
+   `focus`: that one is under the pointer when its own box is. */
+[data-scope="panel-separator"][data-part="root"][data-separator="hover"]
+  > [data-scope="panel-separator"][data-part="grip"] {
+  background-color: var(--text-faint);
+}
+
+[data-scope="panel-separator"][data-part="root"][data-separator="focus"]:hover:not(:focus-visible)
+  > [data-scope="panel-separator"][data-part="grip"] {
+  background-color: var(--text-faint);
+}
+
+[data-scope="panel-separator"][data-part="root"]:focus-visible
+  > [data-scope="panel-separator"][data-part="grip"] {
+  background-color: var(--focus-ring);
+}
+
+[data-scope="panel-separator"][data-part="root"][data-separator="active"]
+  > [data-scope="panel-separator"][data-part="grip"] {
+  background-color: var(--text-muted);
 }

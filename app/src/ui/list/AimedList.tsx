@@ -59,6 +59,7 @@ export function AimedOption({
   id,
   aimed,
   unavailable = false,
+  keys,
   onPress,
   className,
   children,
@@ -68,6 +69,8 @@ export function AimedOption({
   aimed: boolean;
   /** It cannot run now: said to a reader, drawn in the faint tier, its reason beside it. */
   unavailable?: boolean;
+  /** The key that does what it does, as `aria-keyshortcuts` names it (#2921). */
+  keys?: string;
   onPress: () => void;
   className?: string;
   children: ReactNode;
@@ -80,6 +83,7 @@ export function AimedOption({
       role="option"
       aria-selected={aimed}
       aria-disabled={unavailable || undefined}
+      aria-keyshortcuts={keys}
       className={className}
       data-scope="list"
       data-part="root"

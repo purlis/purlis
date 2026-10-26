@@ -1706,6 +1706,12 @@ impl Recorder {
         };
         let top = match followed {
             Followed::Moved if known => {
+                // The run the window named for the clear, where it is an id no chat's run here
+                // has; any other is minted here, and the line still recorded (#3304).
+                let cleared = cleared.filter(|run| {
+                    ulid::Ulid::from_string(run).is_ok()
+                        && !self.chats.values().any(|who| who.run == *run)
+                });
                 Some(self.new_run(plane, report.chat, Began::Clear, cleared, named)?)
             }
             Followed::Moved | Followed::No | Followed::FirstNamed => {

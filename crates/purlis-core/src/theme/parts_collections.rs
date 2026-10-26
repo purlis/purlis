@@ -66,6 +66,12 @@ pub(super) const LIST: Family = Family {
             description: "A group's name over its rows.",
             properties: WORDS,
         },
+        Part {
+            name: "shortcut",
+            since: super::NEXT,
+            description: "The key that does the same, at its end: a palette row's, a cheat sheet's.",
+            properties: &[Prop::Text, Prop::FontSize],
+        },
     ],
     variants: &[],
     // Drawn in a side view, a tab's page, Settings and a dialog.
@@ -101,7 +107,11 @@ pub(super) const LIST: Family = Family {
     ],
     focused: "[data-focus-visible]",
     // Its words not in the row's colour: the line about it, and a group's name.
-    words: &[("description", "text.quiet"), ("header", "text.quiet")],
+    words: &[
+        ("description", "text.quiet"),
+        ("header", "text.quiet"),
+        ("shortcut", "text.quiet"),
+    ],
     corner_most: None,
     // The list that holds the rows, and a group's name over them, stand around a row.
     around: &["body", "header"],

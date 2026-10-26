@@ -304,6 +304,12 @@ pub struct Kit<'a> {
     /// (ADR 0099): `None` while the `skill-studio` flag is off, and then a chat gets the built-in
     /// skills alone, as it always did.
     pub skills: Option<crate::skills::PlaneSkills<'a>>,
+    /// The set's folder the host laid out before arming the chat
+    /// ([`crate::skills::lay_out_for_chat`]): the plane's skills of its set, and on a route that
+    /// names the built-in skills their own (`purlis-<name>`,
+    /// [`crate::skills::Route::names_built_ins_its_own`]) those too. `None` where it laid out
+    /// none: a harness that needs the folder is then handed none of what it holds.
+    pub laid_out: Option<&'a std::path::Path>,
 }
 
 /// The persona a chat runs as, and the project that defines it.

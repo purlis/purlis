@@ -324,7 +324,7 @@ afterEach(() => {
 /** Opens a chat where the operator is standing: New tab, a row, Start. */
 async function openAChat() {
   await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
-  await userEvent.click(await screen.findByRole("button", { name: "Start" }));
+  await userEvent.click(await screen.findByRole("button", { name: "Start chat" }));
 }
 
 /** Focuses a workspace from the title bar's ⌄ (#2916), which is the axis (ADR 0036). */
@@ -435,7 +435,7 @@ describe("the four regions", () => {
 
     fireEvent.contextMenu(row);
     await userEvent.click(await screen.findByRole("menuitem", { name: "New tab" }));
-    await userEvent.click(await screen.findByRole("button", { name: "Start" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Start chat" }));
 
     expect(startedIn(asked)).toEqual([`${ALPHA}/svc`]);
   });
@@ -448,12 +448,12 @@ describe("the four regions", () => {
 
     fireEvent.contextMenu(await screen.findByTestId("repo-svc"));
     await userEvent.click(await screen.findByRole("menuitem", { name: "New tab" }));
-    await userEvent.click(await screen.findByRole("button", { name: "Start" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Start chat" }));
     await waitFor(() => expect(boxes()).toHaveLength(1));
     fireEvent.contextMenu(await screen.findByTestId("repo-svc"));
     await userEvent.click(await screen.findByRole("menuitem", { name: "New tab" }));
     await userEvent.click(await screen.findByRole("checkbox", { name: /new branch in svc/ }));
-    await userEvent.click(await screen.findByRole("button", { name: "Start" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Start chat" }));
     await waitFor(() => expect(boxes()).toHaveLength(2));
     await openAChat();
 
@@ -505,7 +505,7 @@ describe("the four regions", () => {
     render(<App />);
 
     await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
-    await userEvent.click(await screen.findByRole("button", { name: "Start" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Start chat" }));
     const starting = await screen.findByRole("button", { name: "Starting…" });
     expect(starting).toBeDisabled();
     fireEvent.click(starting);
@@ -524,7 +524,7 @@ describe("the four regions", () => {
     render(<App />);
     fireEvent.contextMenu(await screen.findByTestId("repo-svc"));
     await userEvent.click(await screen.findByRole("menuitem", { name: "New tab" }));
-    await userEvent.click(await screen.findByRole("button", { name: "Start" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Start chat" }));
     await waitFor(() => expect(startedIn(asked)).toHaveLength(1));
 
     await openAChat();
@@ -1319,6 +1319,46 @@ describe("the Panel's right half", () => {
  * **The right side's activity bar, in the window** (#1678, ADR 0038 as amended 2026-10-10): the
  * "for you" side's views, one at a time, and what a person presses and sees.
  */
+/**
+ * **A view carries one title** (#3330, as a view tab does since #3147): the region's head names
+ * the view and holds its actions, and the view draws no heading of its own that says it again.
+ * A guard over every view the window opens in a sidebar or a half of the Panel.
+ */
+describe("one title per view (#3330)", () => {
+  const VIEWS = [
+    "Chats",
+    "Search",
+    "Inbox",
+    "Personas",
+    "Vaults",
+    "Memory",
+    "Todos",
+    "Sessions",
+    "Repos",
+    "Changes",
+  ];
+  const said = (element: Element) => (element.textContent ?? "").trim().toLowerCase();
+
+  it.each(VIEWS)("draws %s with one title, its region's", async (name) => {
+    core();
+    render(<App />);
+    await screen.findByRole("tabpanel", { name: "Chats" });
+    if (screen.queryByRole("tabpanel", { name }) === null)
+      await userEvent.click(screen.getByRole("tab", { name }));
+    const view = await screen.findByRole("tabpanel", { name });
+    const region = view.closest(".slot-body, .panel-half") as HTMLElement;
+    expect(region).not.toBeNull();
+
+    // No section head of its own: its title and actions are the region's.
+    expect(view.querySelector('[data-scope="panel-section"][data-part="head"]')).toBeNull();
+    // And no heading in the region says the view's name twice.
+    const named = within(region)
+      .queryAllByRole("heading")
+      .filter((heading) => said(heading) === name.toLowerCase());
+    expect(named.length).toBeLessThanOrEqual(1);
+  });
+});
+
 describe("the right side's activity bar", () => {
   const bar = () => screen.getByRole("tablist", { name: "Attention" });
   const tab = (name: string) => within(bar()).getByRole("tab", { name });

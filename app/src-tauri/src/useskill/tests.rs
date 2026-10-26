@@ -65,6 +65,7 @@ fn the_window_is_shown_the_chats_skills_with_what_each_takes_and_its_budget() {
             warns: None,
             hidden: 0,
             still_over: None,
+            pinned_by: Vec::new(),
         })
     );
     assert!(shown.skills.iter().all(|one| one.hidden.is_none()));
@@ -77,4 +78,38 @@ fn a_chat_on_no_tool_purlis_knows_is_offered_nothing_and_has_no_budget() {
     assert!(!shown.known);
     assert!(shown.skills.is_empty());
     assert_eq!(shown.budget, None);
+}
+
+#[test]
+fn the_budget_names_the_workspace_and_the_persona_that_pin_a_skill_sk15d() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("plane");
+    std::fs::create_dir_all(root.join("workspaces/ops")).unwrap();
+    std::fs::write(
+        root.join("workspaces/ops/workspace.json"),
+        r#"{"settings": {"skills": {"pinned": ["review"]}}}"#,
+    )
+    .unwrap();
+    skill(
+        &root.join("skills"),
+        "review",
+        "---\nname: review\ndescription: Reviews.\n---\n",
+    );
+    let skills = for_use_skill(&Running {
+        plane: &root,
+        workspace: Some("ops"),
+        persona: None,
+        harness: Harness::ClaudeCode,
+        built_in: None,
+        plane_skills: true,
+    });
+
+    let budget = shown(Some(&skills)).budget.unwrap();
+
+    assert_eq!(
+        budget.pinned_by,
+        [crate::skillchange::SkillPinner::Workspace {
+            name: "ops".to_owned()
+        }]
+    );
 }

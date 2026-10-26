@@ -13,7 +13,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { Group, Panel, usePanelRef, type Layout } from "react-resizable-panels";
-import { Separator } from "./shownSeparator";
+import { Separator } from "./ui/panel/Separator";
 import { useProjectShown } from "./projectShown";
 import { X } from "lucide-react";
 import { ActivityBar, VIEW_MARKS, type PanelTab, type Tabbed } from "./ActivityBar";
@@ -47,10 +47,12 @@ import {
 } from "./regions";
 import { isPanelView, type ViewPlace } from "./sideViews";
 import { useArrived } from "./lib/arrived";
-import { HalfActions } from "./halfHead";
+import { HeadActions } from "./viewHead";
 import { lastUsed, narrowed, narrowPicked, useNarrow } from "./narrowPanel";
 import { useSidesOfTheFront } from "./railRoom";
-import { cycleOf, f6Of, stepped, STOPS, type Stop } from "./regionCycle";
+import { cycleOf, stepped, STOPS, type Stop } from "./regionCycle";
+import { pressed } from "./keys/registry";
+import { FOCUS_MODE, HIDDEN_IN_FOCUS } from "./keys/focusMode";
 import { moveAlong, sequenceIn } from "./tabSequence";
 import { inADialog } from "./paneKeyboard";
 import { CHAT_KEYBOARD } from "./actions";
@@ -247,19 +249,26 @@ export function RegionFrame({
   /**
    * **What a side panel draws above its views** (R123, R125): on the left, the open view's
    * header in the label's capitals (its icons are the left column's, #3144); on the right, the
-   * open view's title and the × that closes it. Nothing while the side is away.
+   * open view's title and the × that closes it. Nothing while the side is away. Either way the
+   * head is the view's one title, and its own actions are on it (#3330, {@link HeadActions}).
    */
   const sideTop = (side: Side): ReactNode => {
     const first = shownIn(slots[side]).find(withViews);
     if (first === undefined) return null;
     const open = openView(first, present);
-    const named = tabbed(first.id).find((one) => one.view === open)?.name;
+    const views = tabbed(first.id);
+    const named = views.find((one) => one.view === open)?.name;
+    /** Each view's place on the head for its actions, the open one's shown. */
+    const actionsOf = views.map(({ view }) => (
+      <span key={view} className="view-actions" hidden={view !== open} ref={actionRef(view)} />
+    ));
     if (side === "left") {
       const head = open === undefined ? undefined : heads?.[open];
       if (open === undefined || head === null) return null;
       return (
         <div className="side-head" data-side={side}>
           <PanelSectionTitle>{head ?? named}</PanelSectionTitle>
+          {actionsOf}
         </div>
       );
     }
@@ -267,6 +276,7 @@ export function RegionFrame({
     return (
       <div className="side-head" data-side={side}>
         <h2 className="side-title">{named}</h2>
+        {actionsOf}
         <IconButton
           size="sm"
           aria-label={`Close ${named}`}
@@ -394,15 +404,15 @@ export function RegionFrame({
     if (!holdsKeys) return;
     const cycle = order.split(" ") as Stop[];
     const key = (e: KeyboardEvent) => {
-      const which = f6Of(e);
-      if (which === undefined || inADialog()) return;
-      const on = e.target;
-      if (on instanceof Element && on.closest(`[${CHAT_KEYBOARD}]`) !== null) return;
+      // The keys and their rules are the key registry's (#2921): not under a dialog, not from a
+      // chat's terminal.
+      const which = pressed(e, ["region.next", "region.previous"]);
+      if (which === undefined) return;
       const root = frame.current;
       if (root === null) return;
       e.preventDefault();
       e.stopPropagation();
-      stepIn(root, cycle, which.back);
+      stepIn(root, cycle, which.id === "region.previous");
     };
     window.addEventListener("keydown", key, true);
     return () => window.removeEventListener("keydown", key, true);
@@ -516,7 +526,7 @@ export function RegionFrame({
           region={region}
           host={hostOf(view)}
           frame={base}
-          actions={CATALOGUE[region].half === true ? (actions[view] ?? null) : undefined}
+          actions={actions[view] ?? null}
         >
           {views?.[view]}
         </ViewHost>
@@ -629,10 +639,10 @@ function RegionViews({
 /**
  * **One view's content, drawn once by the frame into the view's own tab panel** (#1752,
  * D-1752-4), wherever the arrangement puts it: a move changes which region holds the element,
- * never where the content is in React's tree, so nothing in it is mounted again. In a half of
- * the Panel it is told where its actions go on the half's line ({@link HalfActions}); in a
- * sidebar it is told nothing, and draws them on its own heading. Where it scrolled is put back
- * after a move, since an element taken out of the document loses its scroll.
+ * never where the content is in React's tree, so nothing in it is mounted again. It is told
+ * where its actions go on its region's head, a half's line or a sidebar's head
+ * ({@link HeadActions}), so it draws no heading of its own. Where it scrolled is put back after
+ * a move, since an element taken out of the document loses its scroll.
  */
 function ViewHost({
   view,
@@ -646,8 +656,8 @@ function ViewHost({
   region: RegionId;
   host: HTMLDivElement;
   frame: string;
-  /** Where its actions go: a half's line, `null` before the line is mounted; `undefined` in a
-   *  sidebar. Always a provider, so a move never changes what its content is drawn under. */
+  /** Where its actions go: its region's head, `null` before the head is mounted. Always a
+   *  provider, so a move never changes what its content is drawn under. */
   actions: HTMLElement | null | undefined;
   children: ReactNode;
 }) {
@@ -655,7 +665,7 @@ function ViewHost({
   const element = useRef<HTMLElement | null>(host);
   useViewScroll(frame, view, region, element);
   return createPortal(
-    <HalfActions.Provider value={actions}>{children}</HalfActions.Provider>,
+    <HeadActions.Provider value={actions}>{children}</HeadActions.Provider>,
     host,
   );
 }
@@ -727,7 +737,7 @@ const halfOf = (side: Side): string => `panel-half-${side}`;
 
 /**
  * One half of the Panel: its line, then its views (P-11). The line is the open view's title,
- * that view's own actions (each view hands them over through {@link HalfActions}) and a chevron
+ * that view's own actions (each view hands them over through {@link HeadActions}) and a chevron
  * that puts the half away, as a press of its open Lower icon does. No tabs: the Lower icons are
  * the one switch.
  */
@@ -805,7 +815,7 @@ function Half({
               {views.map(({ view }) => (
                 <span
                   key={view}
-                  className="half-actions"
+                  className="view-actions"
                   hidden={view !== open}
                   ref={drawn.actionRef(view)}
                 />
@@ -905,7 +915,31 @@ const REGION_OF: Record<Stop, string> = {
 
 /** The keyboard to the region after the one holding it in `cycle`, or with `back` before. */
 function stepIn(root: HTMLElement, cycle: readonly Stop[], back: boolean) {
-  landIn(root, stepped(cycle, stopHolding(root, document.activeElement), back));
+  landIn(root, stepped(drawnCycle(root, cycle), stopHolding(root, document.activeElement), back));
+}
+
+/**
+ * **The regions of `cycle` drawn now** (#2921): F6 stops only where a person can see. A region
+ * the arrangement holds but the window does not draw is passed over: one focus mode hides
+ * (`keys/focusMode.ts`), one under `hidden` or `inert`, one whose own box or an ancestor's is
+ * `display: none`. The editor is always kept, as `cycleOf` keeps it.
+ */
+export function drawnCycle(root: HTMLElement, cycle: readonly Stop[]): Stop[] {
+  return cycle.filter((stop) => {
+    if (stop === "centre") return true;
+    const region = root.querySelector<HTMLElement>(REGION_OF[stop]);
+    return region !== null && isDrawn(region);
+  });
+}
+
+/** Whether `element` is drawn: not hidden, not inert, not out of the flow by focus mode or CSS. */
+function isDrawn(element: HTMLElement): boolean {
+  if (element.closest("[hidden], [inert]") !== null) return false;
+  if (element.closest(`[${FOCUS_MODE}]`) !== null && element.closest(HIDDEN_IN_FOCUS) !== null)
+    return false;
+  for (let at: Element | null = element; at !== null; at = at.parentElement)
+    if (getComputedStyle(at).display === "none") return false;
+  return true;
 }
 
 /**

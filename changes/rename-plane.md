@@ -4,7 +4,8 @@
   renames `charter.toml` to `purlis.toml` and `.charter-scan-allow.toml` to
   `.purlis-scan-allow.toml`, rewrites the managed blocks' markers, a committed `workspace.json`'s
   digest key, the harness variable in `.claude/settings.json`, and personas' `charter:` skill
-  references, and changes nothing else. Hook commands keep `charter`, which runs on every build. The project then requires the
+  references, but never inside quoted code or in an image name such as
+  `ghcr.io/acme/charter:v1`, and changes nothing else. Hook commands keep `charter`, which runs on every build. The project then requires the
   `purlis-names` feature, so a build without it opens the project read-only. It runs only when
   named, never from inside a chat, and refuses with uncommitted changes, outside git, or with a file under both names; a
   step that fails puts every file back (RN-7, #1265).

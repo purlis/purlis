@@ -46,6 +46,8 @@ export interface ActivityItemProps extends Omit<
   /** **What its tooltip says under its name** (`ui/tooltip`): what a press does. An icon-only
    *  button's tooltip is its name first. */
   tip?: string;
+  /** The key that does what a press does, after the tooltip's words (#2921). */
+  shortcut?: string;
   /** `data-*` attributes reach the element as they are. */
   [data: `data-${string}`]: string | number | boolean | undefined;
 }
@@ -61,6 +63,7 @@ export function ActivityItem({
   icon,
   count,
   tip,
+  shortcut,
   onPointerEnter,
   onPointerLeave,
   onPointerDown,
@@ -123,7 +126,13 @@ export function ActivityItem({
       <span data-scope="activity" data-part="indicator" aria-hidden="true" />
     </button>
   );
-  return tip === undefined ? item : <Tooltip tip={tip}>{item}</Tooltip>;
+  return tip === undefined ? (
+    item
+  ) : (
+    <Tooltip tip={tip} shortcut={shortcut}>
+      {item}
+    </Tooltip>
+  );
 }
 
 /** Whether the browser draws `element`'s focus as the keyboard's (`:focus-visible`). An engine

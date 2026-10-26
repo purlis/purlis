@@ -28,6 +28,7 @@ fn claim_made(time: Option<&str>) -> Claim {
         },
         spec: ClaimSpec {
             pool: "team".into(),
+            requester: "ada@example.com".into(),
         },
         status: None,
     }

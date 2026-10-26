@@ -56,6 +56,8 @@ export function closeOnDelete(
  * is the same key doing the same kind of thing to a list item.
  */
 export function deletes(event: KeyboardEvent<HTMLElement>): boolean {
+  // The key registry declares it (`keys/registry.ts`, `tab.close`) and holds it to this, which
+  // it reads: every module reads this one's `onAMac`, so it imports nothing of the registry's.
   if (event.target !== event.currentTarget) return false;
   if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return false;
   return event.key === "Delete" || (event.key === "Backspace" && onAMac());

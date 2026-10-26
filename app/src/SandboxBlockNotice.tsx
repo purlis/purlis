@@ -430,7 +430,7 @@ function PointKubectl({ block, onPointed }: { block: HeldBlock; onPointed: () =>
 }
 
 /** The time now: when a host joined, read once in the render that draws it, or when pressed. */
-const joinedAt = () => Date.now();
+const joinedAt = () => performance.now();
 
 /**
  * **Allow, Always allow or Keep blocked** for a block of the chat's own work (#1342). Nothing is
@@ -476,7 +476,7 @@ function AllowNotice({
   const [owedRetry, setOwedRetry] = useState(false);
   /** When Tell the chat to retry appeared, where the Allow just pressed was: a second press of
    *  that Allow lands on it, so for {@link SETTLE_MS} after, it does nothing and says why. */
-  const [owedSince, setOwedSince] = useState(0);
+  const [owedSince, setOwedSince] = useState(-Infinity);
   /** The hosts the chat's proxy refused past the ones it names (#1353): said, never offered. */
   const moreRefused = useRefusedMore(block.plane, block.session);
   const what: GrantWhat =
@@ -507,7 +507,7 @@ function AllowNotice({
    * the question for several tasks does. Never at its first drawing: nothing joined it yet.
    */
   const listing = asking.join(" ");
-  const [joined, setJoined] = useState({ listing, at: 0 });
+  const [joined, setJoined] = useState({ listing, at: -Infinity });
   if (joined.listing !== listing) {
     const grew = asking.some((host) => !joined.listing.split(" ").includes(host));
     setJoined({ listing, at: grew ? joinedAt() : joined.at });
@@ -517,7 +517,7 @@ function AllowNotice({
    * it join, or as the window's store held it, so a Notice drawn again keeps the guard.
    */
   const tooSoon = () => {
-    if (joinedAt() - Math.max(joined.at, block.joined ?? 0) < SETTLE_MS) {
+    if (joinedAt() - Math.max(joined.at, block.joined ?? -Infinity) < SETTLE_MS) {
       setSaid(
         "A host joined this Notice just now, so nothing was allowed. Read the hosts it lists and " +
           "answer again.",

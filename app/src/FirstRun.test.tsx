@@ -356,7 +356,7 @@ describe("the first run", () => {
     const asking = await screen.findByRole("dialog", { name: "Open this project?" });
     await person.click(within(asking).getByRole("button", { name: "Open project" }));
     const picker = await screen.findByRole("dialog", { name: "Start a chat" });
-    await person.click(within(picker).getByRole("button", { name: "Start" }));
+    await person.click(within(picker).getByRole("button", { name: "Start chat" }));
     await vi.waitFor(() => expect(calls("start_chat")).toHaveLength(1));
 
     // The budget, spent to the last prompt: one more on this way fails every scenario that
@@ -419,7 +419,7 @@ describe("the first run", () => {
     ]);
     // The first chat is asked for by itself: the harness picker, which ADR 0022 keeps.
     const picker = await screen.findByRole("dialog", { name: "Start a chat" });
-    await person.click(within(picker).getByRole("button", { name: "Start" }));
+    await person.click(within(picker).getByRole("button", { name: "Start chat" }));
 
     await vi.waitFor(() => expect(calls("start_chat")).toHaveLength(1));
     expect(calls("start_chat")[0].args).toMatchObject({ plane: LOCAL, cwd: CLONE });
@@ -450,7 +450,7 @@ describe("the first run", () => {
     await person.click(within(asking).getByRole("button", { name: "Open project" }));
 
     const picker = await screen.findByRole("dialog", { name: "Start a chat" });
-    await person.click(within(picker).getByRole("button", { name: "Start" }));
+    await person.click(within(picker).getByRole("button", { name: "Start chat" }));
     await vi.waitFor(() => expect(calls("start_chat")).toHaveLength(1));
     expect(calls("start_chat")[0].args).toMatchObject({ plane: LOCAL, cwd: CLONE });
   });
@@ -650,7 +650,7 @@ describe("the first run", () => {
 
     await person.click(await screen.findByRole("button", { name: "New tab" }));
     const picker = await screen.findByRole("dialog", { name: "Start a chat" });
-    await person.click(within(picker).getByRole("button", { name: "Start" }));
+    await person.click(within(picker).getByRole("button", { name: "Start chat" }));
     await vi.waitFor(() => expect(calls("start_chat")).toHaveLength(1));
 
     // Two of the three: the sign-in itself asks nothing (W10's "detected and offered").
@@ -1038,7 +1038,7 @@ describe("no harness found (FR-29)", () => {
     // The picker, as every chat's start (ADR 0022), on the harness just installed: its own
     // login is its first screen.
     const picker = await screen.findByRole("dialog", { name: "Start a chat" });
-    await person.click(within(picker).getByRole("button", { name: "Start" }));
+    await person.click(within(picker).getByRole("button", { name: "Start chat" }));
     await vi.waitFor(() => expect(calls("start_chat")).toHaveLength(1));
     expect(calls("start_chat")[0].args).toMatchObject({
       plane: LOCAL,

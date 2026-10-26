@@ -24,7 +24,7 @@ const START = Date.parse("2026-10-11T10:00:00Z");
 let user: ReturnType<typeof userEvent.setup>;
 
 beforeEach(() => {
-  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.useFakeTimers({ toFake: ["Date", "performance"] });
   vi.setSystemTime(START);
   user = userEvent.setup();
 });
@@ -36,7 +36,7 @@ afterEach(() => {
 });
 
 /** Time passes past the grant's guard, as a person reading the row lets it. */
-const read = () => act(() => vi.setSystemTime(Date.now() + SETTLE_MS + 1));
+const read = () => act(() => vi.advanceTimersByTime(SETTLE_MS + 1));
 
 const PLANE = "/home/dev/plane";
 const NOW = 1_800_000_000;
