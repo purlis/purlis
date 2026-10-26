@@ -64,7 +64,7 @@ const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() 
 
 /**
  * **The surface `inside` is on has settled** (#3414): a popover or a menu done arriving (React
- * Aria's `data-entering` gone, no animation of the page running) and placed, its box the same on
+ * Aria's `data-entering` gone, none of its animations running) and placed, its box the same on
  * two frames running. For a story that pictures a surface while it is open, as a picture taken
  * while it fades in or moves to its place differs run to run.
  */
@@ -74,7 +74,7 @@ export async function untilSettled(inside: Element): Promise<void> {
   await waitFor(
     async () => {
       if (surface.hasAttribute("data-entering")) throw new Error("still arriving");
-      if (document.getAnimations().some((one) => one.playState === "running"))
+      if (surface.getAnimations({ subtree: true }).some((one) => one.playState === "running"))
         throw new Error("still moving");
       await nextFrame();
       const box = surface.getBoundingClientRect();

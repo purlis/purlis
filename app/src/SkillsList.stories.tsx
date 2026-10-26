@@ -160,6 +160,7 @@ export const ByLevel: Story = {
     );
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("menu")).toBeNull(), { timeout: 3_000 });
+    expectFocusInSight();
     await untilFocused(() => off, "Skills: Escape gives the keyboard back to the row");
     await userEvent.tab();
     await untilFocused(
