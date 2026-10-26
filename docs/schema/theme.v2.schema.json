@@ -4636,6 +4636,42 @@
         "panel.root.bottom.shadow": {
           "$ref": "#/$defs/part-shadow"
         },
+        "panel.title.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "panel.title.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "panel.title.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "panel.title.side.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "panel.title.side.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "panel.title.side.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "panel.title.content.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "panel.title.content.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "panel.title.content.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "panel.title.bottom.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "panel.title.bottom.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "panel.title.bottom.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
         "panel-section.root.padding": {
           "$ref": "#/$defs/part-padding"
         },
@@ -4677,6 +4713,18 @@
         },
         "panel-section.title.default.font-weight": {
           "$ref": "#/$defs/part-font-weight"
+        },
+        "panel-section.top.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "panel-section.top.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "panel-section.top.default.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "panel-section.top.default.gap": {
+          "$ref": "#/$defs/part-gap"
         },
         "panel-separator.root.fill": {
           "$ref": "#/$defs/part-fill"

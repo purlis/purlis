@@ -58,7 +58,7 @@ import { inADialog } from "./paneKeyboard";
 import { CHAT_KEYBOARD } from "./actions";
 import { forgetFrameScroll, useViewScroll } from "./viewScroll";
 import { IconButton } from "./ui/button/Button";
-import { PanelSectionTitle, panelRoot } from "./ui/panel/Panel";
+import { PanelTitle, panelRoot } from "./ui/panel/Panel";
 import { ActivityBarFrame } from "./ui/activity/ActivityItem";
 
 /**
@@ -247,9 +247,9 @@ export function RegionFrame({
     );
   };
   /**
-   * **What a side panel draws above its views** (R123, R125): on the left, the open view's
-   * header in the label's capitals (its icons are the left column's, #3144); on the right, the
-   * open view's title and the × that closes it. Nothing while the side is away. Either way the
+   * **What a side panel draws above its views** (R123, R125, as the sidebar-views prototype's
+   * Q1 A draws them, #3340): the open view's title, 13px and strong in the primary tier, in its
+   * own case; on the left its icons are the left column's (#3144), on the right the × closes it. Nothing while the side is away. Either way the
    * head is the view's one title, and its own actions are on it (#3330, {@link HeadActions}).
    */
   const sideTop = (side: Side): ReactNode => {
@@ -267,7 +267,7 @@ export function RegionFrame({
       if (open === undefined || head === null) return null;
       return (
         <div className="side-head" data-side={side}>
-          <PanelSectionTitle>{head ?? named}</PanelSectionTitle>
+          <PanelTitle className="side-title">{head ?? named}</PanelTitle>
           {actionsOf}
         </div>
       );
@@ -275,7 +275,7 @@ export function RegionFrame({
     if (open === undefined || named === undefined) return null;
     return (
       <div className="side-head" data-side={side}>
-        <h2 className="side-title">{named}</h2>
+        <PanelTitle className="side-title">{named}</PanelTitle>
         {actionsOf}
         <IconButton
           size="sm"
@@ -811,7 +811,9 @@ function Half({
         {placed !== undefined && (
           <>
             <div className="half-head">
-              <PanelSectionTitle>{title}</PanelSectionTitle>
+              {/* The view's one title, as the sidebar-views prototype's Q1 A draws it (#3340):
+                  13px, strong, in the primary tier, in its own case. */}
+              <PanelTitle className="side-title">{title}</PanelTitle>
               {views.map(({ view }) => (
                 <span
                   key={view}

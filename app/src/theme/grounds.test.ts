@@ -656,9 +656,6 @@ const CLASSLESS: readonly string[] = [
   // The line between the bottom panel's halves, a handle the panel library draws, which holds
   // nothing.
   ".panel-halves > [data-separator]",
-  // A region panel's ground (`ui/panel`, #2913), set by the family's attributes on a library's
-  // panel: `surface.base`, the window's own, which the button family already lists.
-  '[data-scope="panel"][data-part="root"]',
   // The editor's toolbar (`ui/tabs`, #2914): its attributes are spread by `editorToolbar`, and its
   // ground is listed by class in ENGINE_GROUNDS.
   '[data-scope="editor"][data-part="toolbar"]',
