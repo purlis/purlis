@@ -572,13 +572,13 @@ fn bypassed_by_your_settings(env: &crate::harness_plugin::Env<'_>) -> Option<Str
         },
     };
     match crate::harness::claude::bypass_by_default(&text) {
-        Ok(false) => None,
-        Ok(true) => Some(
+        Some(false) => None,
+        Some(true) => Some(
             "Your Claude Code settings start every chat with its permission prompts off, and a \
              grade never runs on one: turn that off in Claude Code's settings first."
                 .to_owned(),
         ),
-        Err(()) => unreadable(),
+        None => unreadable(),
     }
 }
 

@@ -130,12 +130,8 @@ fn a_grades_chat_holds_none_of_the_socket_folder_and_port_an_ordinary_chat_is_gi
     // Not vacuous: an ordinary chat here is given all three.
     let ordinary = match start::ready(&project.start(), root) {
         Ok(ready) => ready,
-        // Off macOS a machine with no sandbox backend refuses every sandboxed start, and says
-        // so; CI's runners have one.
-        Err(refused) if !cfg!(target_os = "macos") => {
-            eprintln!("no sandboxed start on this machine: {refused}");
-            return;
-        }
+        // No skip where a machine has no sandbox backend: CI's runners have one, and a test
+        // that passes by not running proves nothing.
         Err(refused) => panic!("an ordinary chat starts: {refused}"),
     };
     assert_eq!(ordinary.harness, Some(Harness::ClaudeCode));

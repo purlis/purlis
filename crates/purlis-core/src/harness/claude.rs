@@ -415,6 +415,7 @@ pub(crate) fn reporting_on(
 /// bundled plugin's (`hooks/hooks.json`), so a chat has one place those are declared and none is
 /// armed twice. The permission hook ([`permission_hook`]) can allow, so it is never put in a
 /// file a chat can write; it rides on this argument instead.
+#[allow(clippy::too_many_arguments)]
 fn settings(
     binary: &std::path::Path,
     cwd: Option<&std::path::Path>,
@@ -649,26 +650,25 @@ const BYPASS_MODE: &str = "bypassPermissions";
 pub const MOST_SETTINGS_BYTES: usize = 1024 * 1024;
 
 /// **Whether a person's own Claude Code settings, `text`, start every chat with its permission
-/// prompts off** (`permissions.defaultMode: bypassPermissions`), read with a JSON parser. `Err`
+/// prompts off** (`permissions.defaultMode: bypassPermissions`), read with a JSON parser. `None`
 /// for a text that does not read as Claude Code's settings, which a caller refuses on: what it
 /// says cannot be known (the review of #3229).
-pub fn bypass_by_default(text: &str) -> Result<bool, ()> {
+pub fn bypass_by_default(text: &str) -> Option<bool> {
     if text.len() > MOST_SETTINGS_BYTES {
-        return Err(());
+        return None;
     }
     if text.trim().is_empty() {
-        return Ok(false);
+        return Some(false);
     }
-    let doc: serde_json::Value = serde_json::from_str(text).map_err(drop)?;
-    let top = doc.as_object().ok_or(())?;
+    let doc: serde_json::Value = serde_json::from_str(text).ok()?;
+    let top = doc.as_object()?;
     let Some(permissions) = top.get("permissions") else {
-        return Ok(false);
+        return Some(false);
     };
-    let permissions = permissions.as_object().ok_or(())?;
-    match permissions.get("defaultMode") {
-        None => Ok(false),
-        Some(serde_json::Value::String(mode)) => Ok(mode == BYPASS_MODE),
-        Some(_) => Err(()),
+    match permissions.as_object()?.get("defaultMode") {
+        None => Some(false),
+        Some(serde_json::Value::String(mode)) => Some(mode == BYPASS_MODE),
+        Some(_) => None,
     }
 }
 
