@@ -184,6 +184,8 @@ pub struct ChatForSkills {
     pub persona: Option<String>,
     /// Its harness, `None` for a shell or a program purlis has no adapter for.
     pub harness: Option<Harness>,
+    /// What its prompts are digested under (SK-38): its own id, which its hooks read too.
+    pub salt: Option<purlis_core::skillspan::PromptSalt>,
 }
 
 /// One chat open here, as its theme drafts are found and named ([`Chats::drafting`]).
@@ -4704,6 +4706,12 @@ impl Chats {
             workspace: running.workspace.clone(),
             persona: running.persona().started_as,
             harness: running.harness,
+            salt: running
+                .chat
+                .identity
+                .id
+                .as_deref()
+                .and_then(purlis_core::skillspan::PromptSalt::of_chat),
         })
     }
 

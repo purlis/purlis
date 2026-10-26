@@ -535,16 +535,24 @@ pub fn start_typed_where_it_can_be(
     };
     if let Some(until) = when {
         held.typed().hold_paste(number, paste, until);
-        // The skill runs the turn it is sent in opens are the action's (SK-20): held before the
-        // chat starts, as its paste is, so they are there however soon its first prompt comes.
-        if let Some(by) = chat.starts_runs {
-            held.hooks().skill_prompted(&root, number, by, &chat.prompt);
-        }
     }
     let session = held
         .chats()
         .start_ready(&record, &ready, size)
         .inspect_err(|_| held.typed().forget(number))?;
+    // The skill runs the turn it is sent in opens are the action's (SK-20): held as the chat
+    // starts, under the salt of the id its start gave it (SK-38), before the person can have sent
+    // the paste that is its first prompt.
+    if let (Some(by), true) = (chat.starts_runs, when.is_some()) {
+        match held.chats().skills_of(session).and_then(|chat| chat.salt) {
+            Some(salt) => held
+                .hooks()
+                .skill_prompted(&root, session, by, &chat.prompt, &salt),
+            None => tracing::debug!(
+                "purlis: chat {session} started with no id, so its curation prompt starts no run"
+            ),
+        }
+    }
     if when == Some(ReadyToType::WhenRawAndQuiet) {
         type_when_raw_and_quiet(held, session);
     }
@@ -1849,10 +1857,16 @@ mod tests {
         let curating = open(&held, "workspace:alpha", "ops/tidy", SIZE).expect("it opens");
         let socket = held.hooks().socket().expect("listening").to_path_buf();
         let token = held.hooks().token_for(curating.session);
+        // Its hook's salt: the id its start gave it. Claude Code marks the prompt's lead alone.
+        let salt = held
+            .chats()
+            .skills_of(curating.session)
+            .and_then(|chat| chat.salt)
+            .expect("a started chat has an id");
         let report = |event: Event, prompt: Option<&str>| {
             let mut detail = Detail::default();
             if let Some(prompt) = prompt {
-                detail.prompt_marks = purlis_core::skillspan::PromptMarks::of(prompt);
+                detail.prompt_marks = purlis_core::skillspan::PromptMarks::lead_of(prompt, &salt);
             }
             purlis_core::hookwire::send(
                 &socket,
