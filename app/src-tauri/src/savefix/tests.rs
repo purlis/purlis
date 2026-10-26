@@ -303,7 +303,7 @@ fn one_call_site_starts_a_chat_on_a_sent_message_for_one_reason_from_the_windows
         2,
         "fix_request and resolve_request"
     );
-    // The reasons, as the source spells them: one.
+    // The reasons, as the source spells them: two.
     let curation = &sources
         .iter()
         .find(|(file, _)| file == "app/src-tauri/src/curation.rs")
@@ -320,8 +320,17 @@ fn one_call_site_starts_a_chat_on_a_sent_message_for_one_reason_from_the_windows
         .filter(|line| !line.is_empty() && !line.starts_with("//"))
         .map(|line| line.trim_end_matches(','))
         .collect();
-    assert_eq!(variants, ["FixASave"]);
-    let SentFor::FixASave = SentFor::FixASave;
+    // Fix, and a grade's chat (ADR 0061, amended 2026-10-25): a third is a new amendment first.
+    assert_eq!(variants, ["FixASave", "Grade"]);
+    match SentFor::FixASave {
+        SentFor::FixASave | SentFor::Grade => {}
+    }
+    // A grade's chat is started from the grade's host alone, after the person's Grade.
+    assert_eq!(
+        call_sites(&sources, concat!("start_", "graded")),
+        ["app/src-tauri/src/skillgrade.rs"],
+        "every call that starts a grade's chat"
+    );
     // And the commands are the window's alone.
     for command in ["fix_save_request", "resolve_save_in_a_chat"] {
         assert!(

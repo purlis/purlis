@@ -36,8 +36,8 @@
 //! **A browser login asked while nobody is there waits for the window** (#2050, spec #2041
 //! story 14): on a runner whose desktop is away, `browser_login` is answered at once in words
 //! that say the person is asked once they are back and the chat should carry on, and the ask is
-//! kept, in memory, at most [`MOST_LOGINS_WAITING`], at most [`MOST_LOGINS_WAITING_FOR_A_CHAT`]
-//! of one chat's, each chat's login once, for at most [`A_LOGIN_WAITS_AT_MOST`]. As soon as a
+//! kept, in memory, at most [`MOST_WAITING`], at most [`MOST_WAITING_FOR_A_CHAT`]
+//! of one chat's, each chat's login once, for at most [`A_HANDED_LINE_WAITS_AT_MOST`]. As soon as a
 //! window hears this host's lines again, each is handed on to it once, marked as one that
 //! waited, so the window asks the person about it afresh whatever it was answered before; what
 //! it came to is said to that chat at the start of its next browser call. One whose chat has
@@ -168,6 +168,11 @@ pub enum Replied {
     Wrote { text: String },
     /// A held permission ask will not be answered, or a `secret exec` has ended.
     Ended,
+    /// **The values of a `secret exec` its chat's own host runs** (#2047, ADR 0078 §7): sent by
+    /// the window, after its gate, for a runner chat's declared tool the runner's host said it
+    /// runs ([`brokered::Ask::runs_as`]). The host runs it itself on them, for that one run,
+    /// and keeps none. Its `Debug` names the keys alone.
+    Handed(brokered::Handed),
 }
 
 /// How long the host waits for the window to take a report, a tool call or a refused commit,
@@ -181,15 +186,23 @@ const AN_ASKER_IS_LOOKED_AT_EVERY: Duration = Duration::from_millis(100);
 /// What a line nobody is there to hear is answered with.
 pub const NOBODY_HEARS: &str = "purlis's window is not there to take this";
 
-/// The most browser logins that wait for the window at once (#2050).
-pub const MOST_LOGINS_WAITING: usize = 16;
+/// The most lines that wait for the window at once, browser logins (#2050) and `secret exec`s
+/// (#2047) together.
+pub const MOST_WAITING: usize = 16;
 
 /// The most of them one chat's: no chat crowds out another's.
-pub const MOST_LOGINS_WAITING_FOR_A_CHAT: usize = 4;
+pub const MOST_WAITING_FOR_A_CHAT: usize = 4;
 
-/// **How long a login waits for the window** (#2050): one asked longer ago is let go of, and its
-/// chat told so, rather than raised when the person comes back hours later.
-pub const A_LOGIN_WAITS_AT_MOST: Duration = Duration::from_secs(15 * 60);
+/// **How long a line handed on waits for the person** (#2050, #2047): a browser login or a
+/// `secret exec` asked longer ago is let go of, and its chat told so, rather than raised when the
+/// person comes back hours later; and a runner chat's command waits no longer for their answer.
+pub const A_HANDED_LINE_WAITS_AT_MOST: Duration = Duration::from_secs(15 * 60);
+
+/// [`A_HANDED_LINE_WAITS_AT_MOST`] in words, for what a chat is told.
+pub fn waits_at_most_said() -> String {
+    let minutes = A_HANDED_LINE_WAITS_AT_MOST.as_secs() / 60;
+    format!("{minutes} minutes")
+}
 
 /// How long a login that waited, handed on, waits for the window to answer it: its Ask raised.
 pub const A_WAITED_LOGIN_IS_ANSWERED_WITHIN: Duration = Duration::from_secs(60);
@@ -202,8 +215,9 @@ const MOST_TOLD: usize = 8;
 pub fn login_waits_said(login: &str) -> String {
     format!(
         "the person's desktop is not connected, so purlis did not log in with {login}: if they \
-         are back within 15 minutes they are asked about it, and nothing is filled unless they \
-         allow it. Go on with what needs no login; a later browser call says how it went"
+         are back within {within} they are asked about it, and nothing is filled unless they \
+         allow it. Go on with what needs no login; a later browser call says how it went",
+        within = waits_at_most_said()
     )
 }
 
@@ -216,12 +230,13 @@ fn waited_said(login: &str, outcome: &str) -> String {
     )
 }
 
-/// What a chat is told of its login `login` that waited longer than [`A_LOGIN_WAITS_AT_MOST`].
+/// What a chat is told of its login `login` that waited longer than [`A_HANDED_LINE_WAITS_AT_MOST`].
 fn waited_too_long_said(login: &str) -> String {
     format!(
-        "the person was not back within 15 minutes of this chat asking purlis to log in with \
+        "the person was not back within {within} of this chat asking purlis to log in with \
          {login}, so the login was let go of and nothing was filled: call browser_login again \
-         if it is still needed"
+         if it is still needed",
+        within = waits_at_most_said()
     )
 }
 
@@ -268,6 +283,15 @@ pub struct Relaying {
     told: Mutex<HashMap<u32, Vec<String>>>,
     /// The channel's own tokens, which say whether a chat is still there.
     tokens: Mutex<Option<Arc<ChatTokens>>>,
+    /// Where the project is on this machine, where this host composes its chats: what a `secret
+    /// exec` of a chat composed here is run against when the window sends its values (#2047).
+    root: Mutex<Option<std::path::PathBuf>>,
+    /// How many lines of each chat's wait for the window, browser logins and `secret exec`s
+    /// together ([`Self::admit`]).
+    waiting_lines: Mutex<HashMap<u32, usize>>,
+    /// What runs a `secret exec` here on the values the window sent: the brokered run, or a
+    /// test's stand-in for it.
+    runs_handed: hosted::RunsHanded,
 }
 
 /// **How the host keeps what its hook channel hears** (#2003): it writes the event log, and
@@ -308,13 +332,29 @@ impl Relaying {
     fn built(hand_on: HandOn, keeping: Option<Keeping>) -> Arc<Relaying> {
         Arc::new(Relaying {
             hand_on,
-            next: AtomicU64::new(1),
+            next: AtomicU64::new(a_first_number()),
             waiting: Mutex::default(),
             keeping,
             logins_waiting: Mutex::default(),
             told: Mutex::default(),
             tokens: Mutex::default(),
+            root: Mutex::default(),
+            waiting_lines: Mutex::default(),
+            runs_handed: Arc::new(brokered::serve_handed),
         })
+    }
+
+    /// **Its project is at `root` on this machine** (#2047): a `secret exec` of a chat this host
+    /// composed there in a sandbox is run here when the window sends its values, and waits for
+    /// the window while nobody is there ([`crate::hostedchats`]).
+    pub fn of_project_at(&self, root: &std::path::Path) {
+        *lock(&self.root) = Some(root.to_path_buf());
+    }
+
+    /// The number the next line is handed on as.
+    #[cfg(test)]
+    pub(crate) fn next_number(&self) -> u64 {
+        self.next.load(Ordering::Relaxed)
     }
 
     /// The window replied `replied` to the line handed on as `id`. A reply to a line nothing
@@ -496,7 +536,7 @@ impl Relaying {
     }
 
     /// **Keeps `browse` waiting for the window, since `since`, where it is let**: once for each
-    /// chat's login, at most [`MOST_LOGINS_WAITING`] and [`MOST_LOGINS_WAITING_FOR_A_CHAT`] of
+    /// chat's login, at most [`MOST_WAITING`] and [`MOST_WAITING_FOR_A_CHAT`] of
     /// one chat's. Answers whether it waits.
     fn waits(&self, connection: u64, browse: BrowseAsk, since: Instant) -> bool {
         let mut waiting = lock(&self.logins_waiting);
@@ -505,11 +545,7 @@ impl Relaying {
         if waiting.iter().any(same) {
             return true;
         }
-        let its_own = waiting
-            .iter()
-            .filter(|one| one.browse.chat == browse.chat)
-            .count();
-        if waiting.len() >= MOST_LOGINS_WAITING || its_own >= MOST_LOGINS_WAITING_FOR_A_CHAT {
+        if !self.admit(browse.chat) {
             return false;
         }
         waiting.push(LoginWaits {
@@ -518,6 +554,32 @@ impl Relaying {
             since,
         });
         true
+    }
+
+    /// **Admits one more line of chat `chat`'s to wait for the window**, a browser login or a
+    /// `secret exec`, where the bounds let it: [`MOST_WAITING`] together, and
+    /// [`MOST_WAITING_FOR_A_CHAT`] of one chat's. Answers whether it was admitted; one admitted
+    /// is [`Self::release`]d once it waits no more.
+    fn admit(&self, chat: u32) -> bool {
+        let mut waiting = lock(&self.waiting_lines);
+        let all: usize = waiting.values().sum();
+        let its = waiting.get(&chat).copied().unwrap_or_default();
+        if all >= MOST_WAITING || its >= MOST_WAITING_FOR_A_CHAT {
+            return false;
+        }
+        *waiting.entry(chat).or_default() += 1;
+        true
+    }
+
+    /// One of chat `chat`'s lines admitted to wait ([`Self::admit`]) waits no more.
+    fn release(&self, chat: u32) {
+        let mut waiting = lock(&self.waiting_lines);
+        if let Some(count) = waiting.get_mut(&chat) {
+            *count = count.saturating_sub(1);
+            if *count == 0 {
+                waiting.remove(&chat);
+            }
+        }
     }
 
     /// Whether chat `chat` is still there: its token is held.
@@ -533,6 +595,9 @@ impl Relaying {
     /// and its chat told so; one whose chat has gone is let go of.
     fn hand_on_the_logins_that_waited(self: &Arc<Self>) {
         let waited = std::mem::take(&mut *lock(&self.logins_waiting));
+        for one in &waited {
+            self.release(one.browse.chat);
+        }
         for one in waited {
             if !self.still_there(one.browse.chat) {
                 continue;
@@ -540,7 +605,7 @@ impl Relaying {
             let Browsing::LogIn { login } = &one.browse.asked else {
                 continue;
             };
-            if one.since.elapsed() > A_LOGIN_WAITS_AT_MOST {
+            if one.since.elapsed() > A_HANDED_LINE_WAITS_AT_MOST {
                 self.tell_its_chat(one.browse.chat, waited_too_long_said(login));
                 continue;
             }
@@ -596,7 +661,7 @@ impl Relaying {
     /// Keeps `said` for chat `chat`'s next browser call, within the bounds.
     fn tell_its_chat(&self, chat: u32, said: String) {
         let mut told = lock(&self.told);
-        if !told.contains_key(&chat) && told.len() >= MOST_LOGINS_WAITING {
+        if !told.contains_key(&chat) && told.len() >= MOST_WAITING {
             return;
         }
         let its = told.entry(chat).or_default();
@@ -679,10 +744,20 @@ impl Relaying {
     /// writes the other, until the window says it has ended.
     fn secret_exec(
         self: &Arc<Self>,
-        ask: brokered::Ask,
+        mut ask: brokered::Ask,
         reader: Box<dyn BufRead + Send>,
         mut writer: Box<dyn Write + Send>,
     ) {
+        // Only this host says what it runs, whether it waited, and its run's number (#2047).
+        ask.runs_as = None;
+        ask.waited = false;
+        ask.run = None;
+        let composed = lock(&self.root)
+            .as_deref()
+            .and_then(|root| crate::hostedchats::asker(root, ask.chat));
+        if let Some(asker) = composed {
+            return self.secret_exec_composed_here(asker, ask, reader, writer);
+        }
         let Some((id, replied)) = self.exchange(&Heard::SecretExec(ask)) else {
             brokered::not_answered(writer);
             return;
@@ -704,6 +779,8 @@ impl Relaying {
         }
         while let Ok(reply) = replied.recv() {
             match reply {
+                // Only for a chat this host composed (#2047): never run, never written on.
+                Replied::Handed(_) => break,
                 Replied::Wrote { text } => {
                     if writer
                         .write_all(text.as_bytes())
@@ -776,6 +853,17 @@ impl Relaying {
                 Box::new(move |ask, reader, writer| relaying.secret_exec(ask, reader, writer))
             },
         }
+    }
+}
+
+/// **The number a host's first line is handed on as** (#2047): random, below 2^62, so a host
+/// started again does not number its lines as the one before did, and a reply the window sends
+/// late, for a line of the host before, finds no line of this one under its number.
+fn a_first_number() -> u64 {
+    let mut bytes = [0u8; 8];
+    match getrandom::fill(&mut bytes) {
+        Ok(()) => (u64::from_le_bytes(bytes) >> 2).max(1),
+        Err(_) => 1,
     }
 }
 
@@ -1297,9 +1385,11 @@ impl Heeding {
             heeding: self,
             id,
             exec,
-            reply,
+            reply: Arc::clone(&reply),
         };
-        (self.hearing.secret_exec)(ask, reader, writer);
+        // What the hearing may send its values through, once, for a run its chat's host runs
+        // (#2047).
+        handing(reply, || (self.hearing.secret_exec)(ask, reader, writer));
     }
 }
 
@@ -1398,6 +1488,42 @@ fn of_the_line(entry: &Entry, heard: &Heard) -> bool {
 }
 
 thread_local! {
+    /// What replies to the `secret exec` this thread's hearing runs, while it runs one the host
+    /// handed on (#2047): what [`hand_values`] sends the values through.
+    static EXEC_REPLY: RefCell<Option<Reply>> = const { RefCell::new(None) };
+}
+
+/// **Runs `hear` with `reply` as what [`hand_values`] sends through on this thread** (#2047),
+/// and with nothing once it returns, a panic too.
+fn handing<T>(reply: Reply, hear: impl FnOnce() -> T) -> T {
+    /// Clears what [`hand_values`] sends through as it is dropped.
+    struct Cleared;
+    impl Drop for Cleared {
+        fn drop(&mut self) {
+            EXEC_REPLY.with(|slot| *slot.borrow_mut() = None);
+        }
+    }
+    EXEC_REPLY.with(|slot| *slot.borrow_mut() = Some(reply));
+    let _cleared = Cleared;
+    hear()
+}
+
+/// **Sends `handed`, the values of the `secret exec` this thread's hearing is running, to the
+/// host that handed it on** (#2047), which runs it itself on them: what the window does for a
+/// runner chat's declared tool once its gate has passed. Once for the exec: `handed` is given
+/// back, and nothing sent, where this thread runs no exec a host handed on or sent its values
+/// already.
+pub fn hand_values(handed: brokered::Handed) -> Result<(), brokered::Handed> {
+    match EXEC_REPLY.with(|slot| slot.borrow_mut().take()) {
+        Some(reply) => {
+            reply(Replied::Handed(handed));
+            Ok(())
+        }
+        None => Err(handed),
+    }
+}
+
+thread_local! {
     /// What the line this thread's hearing hears has asked to be recorded, while the window
     /// hears one the host handed on ([`carrying`]): `None` when no such line is being heard.
     static CARRIED: RefCell<Option<Option<Entry>>> = const { RefCell::new(None) };
@@ -1430,6 +1556,10 @@ fn carrying<T>(hear: impl FnOnce() -> T) -> (T, Option<Entry>) {
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
+
+mod hosted;
+
+pub use hosted::exec_waits_said;
 
 #[cfg(test)]
 mod tests;

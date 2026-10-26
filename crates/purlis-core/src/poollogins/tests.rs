@@ -105,10 +105,7 @@ fn a_runner_is_shown_to_be_yours_only_on_this_machines_docker() {
         refused.contains("tcp://build-box.example:2376"),
         "{refused}"
     );
-    assert!(
-        refused.contains("fills no browser login there"),
-        "{refused}"
-    );
+    assert!(refused.contains("sends no vault value there"), "{refused}");
 }
 
 fn image(hex: char) -> Image {

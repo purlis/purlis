@@ -2,7 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useState } from "react";
-import { commands, type Asking, type SkillDraft, type SkillLevel } from "./bindings";
+import {
+  commands,
+  type Asking,
+  type SkillDraft,
+  type SkillLevel,
+  type StudioLevel,
+} from "./bindings";
+import { levelFrom, levelsFor } from "./skillChanges";
+import type { StudioScope } from "./skillStudio";
 import { counted } from "./dispatches";
 import { listen } from "./here";
 import { ASKS_CHANGED } from "./permissionAsks";
@@ -62,6 +70,15 @@ export type SkillChatAsk =
 /** Asks the window of the project `ask.plane` to open a draft or a Try it chat. */
 export function askSkillChat(ask: SkillChatAsk): void {
   window.dispatchEvent(new CustomEvent<SkillChatAsk>(SKILL_CHAT, { detail: ask }));
+}
+
+/**
+ * **Ask a chat to draft a skill** (decision 13), from where the person came: the studio's
+ * toolbar and its start, and the Skills view's New skill… (#3266). The draft lands at the level
+ * the scope's chats would get (decision 37), among the project's `levels`.
+ */
+export function askDraft(plane: string, scope: StudioScope, levels: readonly StudioLevel[]): void {
+  askSkillChat({ plane, kind: "draft", level: levelFrom(scope, levelsFor(levels, scope)) });
 }
 
 /** What a chat's tab says of the drafts it wrote (decision 38): only that they are ready. */

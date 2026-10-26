@@ -175,6 +175,14 @@ fn content_of(
         _ => return None,
     };
     let folder = purlis_skills::named_at(root, &at, level.local, name)?;
+    content_at(root, &folder)
+}
+
+/// **What the skill folder `folder` of the plane at `root` holds, by content**: the tree git
+/// holds of it, or that it holds changes git has not committed. `None` for a folder outside the
+/// plane, and for a plane git does not keep. The one reading a run's start and a grade (SK-16)
+/// both take.
+pub(crate) fn content_at(root: &Path, folder: &Path) -> Option<Content> {
     let rel = folder
         .strip_prefix(root)
         .ok()?

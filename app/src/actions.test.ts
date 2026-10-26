@@ -4093,6 +4093,20 @@ describe("a harness's card with no chat open (#1134)", () => {
   });
 });
 
+describe("the Skills view's row (#3266)", () => {
+  it("shows the Skills view, with its key, only while the Skill studio's preview is on", () => {
+    const off = catalogue(now()).find((offer) => offer.id === "view.show:skills");
+    expect(off).toBeUndefined();
+
+    const row = catalogue(now({ skillStudio: true })).find(
+      (offer) => offer.id === "view.show:skills",
+    );
+    expect(row?.title).toBe("Show the Skills view");
+    expect(row?.does).toEqual({ verb: "showSideView", view: "skills" });
+    expect(row?.note).toMatch(/⌘⇧X|Ctrl\+Shift\+X/);
+  });
+});
+
 describe("the right side's rows (#1678)", () => {
   it("shows each of its views, and says the side's key on the region's row", () => {
     const offers = catalogue(now());

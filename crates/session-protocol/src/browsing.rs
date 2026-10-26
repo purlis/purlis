@@ -290,6 +290,11 @@ pub struct LogIn {
     /// The kept login this browser keeps once it ends, where it is to keep one (1.27, #2021).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub keep: Option<KeptLogin>,
+    /// The login's identity (a digest of the persona, the project and the login's declaration
+    /// as allowed, #2699), which the host records of the browser it performs it in, so a window
+    /// that comes back after a crash knows every login it holds (1.39, #2025). Never a value.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity: Option<String>,
 }
 
 /// **A kept login** (1.27, #2021, the person's rulings of 2026-10-18): a profile, the persona

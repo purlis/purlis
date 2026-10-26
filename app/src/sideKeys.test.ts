@@ -66,6 +66,7 @@ describe("the keys of the left side (#1673, B-10)", () => {
       explorer: "⌘⇧E",
       search: "⌘⇧F",
       changes: "⌃⇧G",
+      skills: "⌘⇧X",
       inbox: "⌘⇧I",
       panel: "⌘J",
       // F6 is a function key, the same on every platform (#1751).
@@ -79,6 +80,7 @@ describe("the keys of the left side (#1673, B-10)", () => {
       explorer: "Ctrl+Shift+E",
       search: "Ctrl+Shift+F",
       changes: "Ctrl+Shift+G",
+      skills: "Ctrl+Shift+X",
       inbox: "Ctrl+Shift+I",
       panel: "Ctrl+J",
       next: "F6",
@@ -184,5 +186,26 @@ describe("the Panel's key (#1737, P-6)", () => {
   it("is spelled for the platform", () => {
     expect(sideKeysSaid(true).panel).toBe("⌘J");
     expect(sideKeysSaid(false).panel).toBe("Ctrl+J");
+  });
+});
+
+describe("the key of the Skills view (#3266)", () => {
+  it("is ⌘⇧X on a Mac and Ctrl+Shift+X everywhere else, matched by what it types", () => {
+    expect(sideKeyOf(press("X", { meta: true, shift: true }), true)).toEqual({ show: "skills" });
+    expect(sideKeyOf(press("x", { meta: true, shift: true }), true)).toEqual({ show: "skills" });
+    expect(sideKeyOf(press("X", { ctrl: true, shift: true }), false)).toEqual({ show: "skills" });
+  });
+
+  it("is the window's while a chat has the keyboard: Ctrl+Shift+X is no terminal byte", () => {
+    expect(sideKeyOf(press("X", { ctrl: true, shift: true }), false)?.chatKeeps).toBeUndefined();
+    expect(sideKeyOf(press("X", { meta: true, shift: true }), true)?.chatKeeps).toBeUndefined();
+  });
+
+  it("is not the key without Shift, with Option held, or on another layout's letter", () => {
+    expect(sideKeyOf(press("x", { meta: true }), true)).toBeUndefined();
+    expect(sideKeyOf(press("x", { ctrl: true }), false)).toBeUndefined();
+    expect(sideKeyOf(press("X", { meta: true, shift: true, alt: true }), true)).toBeUndefined();
+    // A layout whose key in X's place types another letter: that letter, not the place.
+    expect(sideKeyOf(press("Ч", { meta: true, shift: true }, "KeyX"), true)).toBeUndefined();
   });
 });
