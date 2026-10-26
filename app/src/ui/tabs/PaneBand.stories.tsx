@@ -18,7 +18,7 @@ import { Fragment, useState, type ReactNode } from "react";
 import { expect, waitFor, within } from "storybook/test";
 import { Sparkles, X } from "lucide-react";
 import { Notice, NoticePaneRow } from "../../Notice";
-import { NOTICE_MOVED_JUST_NOW, SETTLE_MS } from "../../noticeSettle";
+import { NOTICE_MOVED_JUST_NOW, SETTLE_MS, paneBand } from "../../noticeSettle";
 import { PaneActions, PaneHead } from "../../LayoutPanes";
 import type { Offer } from "../../actions";
 import { ChatMark } from "../../NeedsYou";
@@ -194,10 +194,13 @@ function Pane({
   name,
   warnings,
   focused,
+  band,
 }: {
   name: string;
   warnings: readonly Warning[];
   focused: boolean;
+  /** The pane the band is (`paneBand`), so it reads on from where it was when drawn anew. */
+  band?: string;
 }) {
   return (
     <div
@@ -206,7 +209,7 @@ function Pane({
       data-testid={`pane ${name}`}
     >
       <div className="pane-top">
-        <NoticePaneRow>
+        <NoticePaneRow band={band}>
           <Warnings shown={warnings} />
         </NoticePaneRow>
         <PaneHead
@@ -658,5 +661,78 @@ export const Narrow: Story = {
     }
     stack.scrollTop = 0;
     expect(boxOf(block.parentElement).right).toBeLessThanOrEqual(pane.right + 1);
+  },
+};
+
+/** The panes the stories below draw: each a pane never drawn before. */
+let drawnPanes = 0;
+
+/**
+ * **A pane whose band is drawn in steps** (#3302): "Next" brings the vault's consent into the
+ * empty band (`arrives`), or draws the pane anew in another frame with the same consent where it
+ * stood (`redrawn`), as a task's pane is once its task ended.
+ */
+function InSteps({ how }: { how: "arrives" | "redrawn" }) {
+  const [band] = useState(() => paneBand("stories", drawnPanes++));
+  const [step, setStep] = useState(0);
+  const warnings: Warning[] = how === "redrawn" || step > 0 ? ["vault-refused"] : [];
+  const pane = <Pane name="steward 2" warnings={warnings} focused band={band} />;
+  return (
+    <div className="editor" style={{ inlineSize: 760, blockSize: 460 }}>
+      <button type="button" onClick={() => setStep((was) => was + 1)}>
+        Next
+      </button>
+      {how === "redrawn" && step % 2 === 1 ? (
+        <section style={{ blockSize: "100%" }}>{pane}</section>
+      ) : (
+        <div style={{ blockSize: "100%" }}>{pane}</div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * **A pane's first Notice is pressed at once** (#3302, D-3167-5): drawn into an empty band,
+ * where nothing else was aimed at, the vault's Allow allows on the first press. Read in the real
+ * engine, where the empty band is not drawn until it holds a Notice.
+ */
+export const FirstConsentStands: Story = {
+  args: { warnings: [] },
+  parameters: { screenshot: false },
+  render: () => <InSteps how="arrives" />,
+  play: async ({ canvas, userEvent }) => {
+    allowed.length = 0;
+    await twoFrames();
+    await userEvent.click(canvas.getByRole("button", { name: "Next" }));
+    const allow = await canvas.findByRole("button", { name: "Allow steward to use this vault" });
+    await userEvent.click(allow);
+    expect(allowed).toEqual(["forge"]);
+    expect(canvas.queryByText(NOTICE_MOVED_JUST_NOW)).toBeNull();
+    atRest();
+  },
+};
+
+/**
+ * **A consent that stood still while its pane was drawn anew is pressed at once** (#3302,
+ * D-3167-10): the pane is drawn in another frame, its band with it, and the vault's Allow is
+ * where it was: the first press allows. Read in the real engine, where the band drawn anew is
+ * not drawn until it has counted what it holds.
+ */
+export const ConsentRedrawn: Story = {
+  args: { warnings: [] },
+  parameters: { screenshot: false },
+  render: () => <InSteps how="redrawn" />,
+  play: async ({ canvas, userEvent }) => {
+    allowed.length = 0;
+    await canvas.findByRole("button", { name: "Allow steward to use this vault" });
+    // It stands longer than the settle time, then its pane is drawn anew.
+    await new Promise((done) => setTimeout(done, SETTLE_MS + 100));
+    await userEvent.click(canvas.getByRole("button", { name: "Next" }));
+    await twoFrames();
+    const allow = canvas.getByRole("button", { name: "Allow steward to use this vault" });
+    await userEvent.click(allow);
+    expect(allowed).toEqual(["forge"]);
+    expect(canvas.queryByText(NOTICE_MOVED_JUST_NOW)).toBeNull();
+    atRest();
   },
 };

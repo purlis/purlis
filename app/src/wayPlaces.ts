@@ -60,6 +60,9 @@ type Watch = {
   /** Whether a newly drawn answer may be read against its remembered place now: only on the
    *  read that is the redrawing itself (D-3167-10). */
   recalls?: () => boolean;
+  /** Whether the root is drawn now: while it is not, its answers have no place to read, and
+   *  nothing is read (#3302). */
+  drawn?: (root: Element) => boolean;
   /** Where each box that scrolls one of its answers was scrolled to, at its last read. */
   scrolled: WeakMap<Element, Scrolled>;
   /** What changes under the root: read again in the next frame. */
@@ -174,7 +177,10 @@ function place(watch: Watch, way: Element, pass: Pass, at: number) {
 function look(watch: Watch) {
   const root = watch.root();
   watchRoot(watch, root);
-  if (root === null) return;
+  // **Read only once drawn** (#3302): a root not drawn yet (a band hidden while it holds no
+  // Notice) would read every answer at no size, and the read after it, once drawn, would take
+  // each for a move. Nothing is read, written or forgotten until it is drawn.
+  if (root === null || watch.drawn?.(root) === false) return;
   const pass: Pass = new Map();
   pass.named = new Set();
   const at = performance.now();
@@ -284,9 +290,10 @@ export function useWayPlaces<T extends Element>(
     remembered: () => Map<string, WayPlace>;
     recalls: () => boolean;
   },
+  drawn?: (root: T) => boolean,
 ) {
   // The callbacks of the last render, which the watch asks when it reads.
-  const said = useRef({ ways, firstMoves, past });
+  const said = useRef({ ways, firstMoves, past, drawn });
   const [watch] = useState<Watch>(() => ({
     root: () => at.current,
     ways: (root) => said.current.ways(root as T),
@@ -294,6 +301,7 @@ export function useWayPlaces<T extends Element>(
     nameOf: (way) => said.current.past?.nameOf(way),
     remembered: () => said.current.past?.remembered() ?? NOTHING_KEPT,
     recalls: () => said.current.past?.recalls() === true,
+    drawn: (root) => said.current.drawn?.(root as T) !== false,
     places: new WeakMap(),
     scrolled: new WeakMap(),
   }));
@@ -304,7 +312,7 @@ export function useWayPlaces<T extends Element>(
   // After every render, in the commit itself: what it drew is read where it is drawn before
   // anything else can move it, so a move right after its first drawing is a move.
   useLayoutEffect(() => {
-    said.current = { ways, firstMoves, past };
+    said.current = { ways, firstMoves, past, drawn };
     look(watch);
   });
   const movedAt = (way?: Element): number => {

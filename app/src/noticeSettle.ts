@@ -101,10 +101,15 @@ const freshBand = (): BandMemory => ({ hadAny: false, emptiedAt: -Infinity, plac
  * read against that place, and any other grant arriving in a pane whose band held a Notice is a
  * move. A grant that arrives in any later read is new, however it is named. A band with no name
  * remembers only while it is drawn, and in the Inbox no grant is ever taken for one before it.
+ *
+ * `drawn` says whether the root is drawn now (#3302): a pane's band is not while it holds no
+ * Notice, and a read then would see every answer at no size. Nothing is read until it is, so
+ * the first read, and the redrawing's, see the boxes the person sees.
  */
 export function useNoticeSettle<T extends HTMLElement>(
   firstDrawn: "moves" | "stands",
   band?: string,
+  drawn?: (root: T) => boolean,
 ) {
   const at = useRef<T>(null);
   const [said, setSaid] = useState<string>();
@@ -169,15 +174,23 @@ export function useNoticeSettle<T extends HTMLElement>(
   const remembered = useCallback(() => memory().places, [memory]);
   const recalls = useCallback(() => recalling.current, []);
   const nameOf = useCallback((way: Element) => names.current.get(way), []);
+  // A way out never read (a press before its band was first drawn, #3302) is held: its first
+  // drawing is a move until a read says otherwise.
   const firstMoves = useCallback(
-    (way: Element) => firstDrawn === "moves" || later.current.get(way) === true,
+    (way: Element) => firstDrawn === "moves" || later.current.get(way) !== false,
     [firstDrawn],
   );
-  const { movedAt } = useWayPlaces(at, ways, firstMoves, {
-    nameOf,
-    remembered,
-    recalls,
-  });
+  const { movedAt } = useWayPlaces(
+    at,
+    ways,
+    firstMoves,
+    {
+      nameOf,
+      remembered,
+      recalls,
+    },
+    drawn,
+  );
   const allows = (way: Element): boolean => {
     const notice = way.closest("[data-cause]");
     const cause = notice?.getAttribute("data-cause");

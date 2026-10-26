@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { useState } from "react";
+import { useContext, useLayoutEffect, useState } from "react";
 import { Notice, NoticePaneRow } from "./Notice";
 import {
   NOTICE_MOVED_JUST_NOW,
@@ -1367,5 +1367,225 @@ describe("a hold measured on a clock that only goes forward (#3227)", () => {
     } finally {
       restore();
     }
+  });
+});
+
+describe("a pane's band read only once its boxes are drawn (#3302)", () => {
+  // As a real engine lays the band out: the row is not drawn while it is empty
+  // (`.pane-notice-row-empty`, display: none), so every box in it is 0x0 then; once drawn,
+  // every answer stands in one place.
+  const clock = { now: 1_000_000 };
+  let spies: { mockRestore: () => void }[] = [];
+  const laidOut = () => {
+    clock.now = 1_000_000;
+    spies = [
+      vi.spyOn(performance, "now").mockImplementation(() => clock.now),
+      vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (
+        this: Element,
+      ) {
+        if (this.closest(".pane-notice-row-empty") !== null) return DOMRect.fromRect();
+        return DOMRect.fromRect({ x: 12, y: 24, width: 90, height: 24 });
+      }),
+    ];
+  };
+  afterEach(() => {
+    for (const spy of spies) spy.mockRestore();
+    spies = [];
+  });
+
+  function Block({ target, allowed }: { target: string; allowed: string[] }) {
+    return (
+      <Notice
+        cause="sandbox-blocked:7:write:path:chat"
+        at="pane"
+        tone="trouble"
+        label="Sandbox block"
+        fixes={[
+          { label: "Allow for this chat", onPress: () => allowed.push(target), allows: true },
+          { label: "Keep blocked", onPress: () => undefined },
+        ]}
+      >
+        The sandbox blocked writing {target}.
+      </Notice>
+    );
+  }
+  const Warning = () => (
+    <Notice cause="skills-missing:9" at="pane" label="Skills" onDismiss={() => undefined}>
+      A skill is missing.
+    </Notice>
+  );
+  function Pane({
+    shape,
+    band,
+    children,
+  }: {
+    shape: "frame" | "div";
+    band?: string;
+    children?: React.ReactNode;
+  }) {
+    const row = <NoticePaneRow band={band}>{children}</NoticePaneRow>;
+    return shape === "frame" ? (
+      <section className="pane-frame pane-headed">{row}</section>
+    ) : (
+      <div className="pane-frame pane-headed">{row}</div>
+    );
+  }
+  const allow = () => screen.getByRole("button", { name: "Allow for this chat" });
+  let named = 0;
+  const aPane = () => paneBand("drawn-boxes", named++);
+
+  it("lets the first Notice into an empty band be pressed at once", async () => {
+    laidOut();
+    const allowed: string[] = [];
+    const { rerender } = render(<Pane shape="frame" />);
+    clock.now += 10_000;
+    rerender(
+      <Pane shape="frame">
+        <Block target="~/a" allowed={allowed} />
+      </Pane>,
+    );
+    await userEvent.click(allow());
+    expect(allowed).toEqual(["~/a"]);
+  });
+
+  it("lets the first Notice of a pane never drawn before be pressed at once", async () => {
+    laidOut();
+    const allowed: string[] = [];
+    render(
+      <Pane shape="frame" band={aPane()}>
+        <Block target="~/a" allowed={allowed} />
+      </Pane>,
+    );
+    await userEvent.click(allow());
+    expect(allowed).toEqual(["~/a"]);
+  });
+
+  it("lets a grant that stood still through a redrawing be pressed at once", async () => {
+    laidOut();
+    const band = aPane();
+    const allowed: string[] = [];
+    const { rerender } = render(
+      <Pane shape="frame" band={band}>
+        <Block target="~/a" allowed={allowed} />
+      </Pane>,
+    );
+    clock.now += 10_000;
+    rerender(
+      <Pane shape="div" band={band}>
+        <Block target="~/a" allowed={allowed} />
+      </Pane>,
+    );
+    await userEvent.click(allow());
+    expect(allowed).toEqual(["~/a"]);
+  });
+
+  it("still holds a grant drawn where a warning stood as the band is drawn anew", async () => {
+    laidOut();
+    const band = aPane();
+    const allowed: string[] = [];
+    const { rerender } = render(
+      <Pane shape="frame" band={band}>
+        <Warning />
+      </Pane>,
+    );
+    clock.now += 10_000;
+    rerender(
+      <Pane shape="div" band={band}>
+        <Block target="~/a" allowed={allowed} />
+      </Pane>,
+    );
+    await userEvent.click(allow());
+    expect(allowed).toEqual([]);
+    expect(screen.getByText(NOTICE_MOVED_JUST_NOW)).toBeTruthy();
+    clock.now += 2000;
+    await userEvent.click(allow());
+    expect(allowed).toEqual(["~/a"]);
+  });
+
+  it("still holds a grant that arrives just after the band's last warning went", async () => {
+    laidOut();
+    const allowed: string[] = [];
+    const { rerender } = render(
+      <Pane shape="frame">
+        <Warning />
+      </Pane>,
+    );
+    clock.now += 10_000;
+    rerender(<Pane shape="frame" />);
+    await act(async () => {
+      await new Promise((done) => setTimeout(done, 30));
+    });
+    clock.now += 200;
+    rerender(
+      <Pane shape="frame">
+        <Block target="~/a" allowed={allowed} />
+      </Pane>,
+    );
+    await userEvent.click(allow());
+    expect(allowed).toEqual([]);
+  });
+
+  it("holds a press made before the band was ever read", async () => {
+    laidOut();
+    const allowed: string[] = [];
+    const seen: boolean[] = [];
+    function Peek() {
+      const allows = useContext(NoticeWayGuard);
+      useLayoutEffect(() => {
+        const way = document.querySelector('[data-variant="grants"]');
+        if (way !== null) seen.push(allows(way));
+      }, [allows]);
+      return null;
+    }
+    render(
+      <Pane shape="frame" band={aPane()}>
+        <Block target="~/a" allowed={allowed} />
+        <Peek />
+      </Pane>,
+    );
+    expect(seen[0]).toBe(false);
+  });
+
+  // Only the redrawing's own first read recalls a place (D-3167-10): a new grant that says the
+  // very same words, drawn in a later read where one stood, is new.
+  for (const naming of ["unnamed", "named"] as const) {
+    it(`holds a grant with the same words that replaces one in a later read (${naming} band)`, async () => {
+      laidOut();
+      const band = naming === "named" ? aPane() : undefined;
+      const allowed: string[] = [];
+      const { rerender } = render(
+        <Pane shape="frame" band={band}>
+          <Block key="one" target="~/a" allowed={allowed} />
+        </Pane>,
+      );
+      clock.now += 10_000;
+      rerender(
+        <Pane shape="frame" band={band}>
+          <Block key="two" target="~/a" allowed={allowed} />
+        </Pane>,
+      );
+      await userEvent.click(allow());
+      expect(allowed).toEqual([]);
+    });
+  }
+
+  it("holds a grant with the same words that replaces one in the Inbox's list", async () => {
+    laidOut();
+    const allowed: string[] = [];
+    function Listed({ which }: { which: string }) {
+      const { at, allows } = useNoticeSettle<HTMLDivElement>("moves");
+      return (
+        <NoticeWayGuard value={allows}>
+          <div ref={at}>
+            <Block key={which} target="~/a" allowed={allowed} />
+          </div>
+        </NoticeWayGuard>
+      );
+    }
+    const { rerender } = render(<Listed which="one" />);
+    clock.now += 10_000;
+    rerender(<Listed which="two" />);
+    await userEvent.click(allow());
+    expect(allowed).toEqual([]);
   });
 });
