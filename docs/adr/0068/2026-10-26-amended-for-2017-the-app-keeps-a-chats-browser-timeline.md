@@ -12,7 +12,9 @@ timeline only records what came back.
 2. **"Kept on this device" means the person's device.** Once a browser runs on a runner
    (spec 3), its session host is not on this device, but the app always is.
 3. **It belongs to a chat, by the chat's id** (ADR 0066), which only the app knows. It is
-   removed when the chat closes, and swept at the app's start for chats no longer open.
+   removed when the chat closes, and swept each time the app writes its record of open
+   chats: a chat not in it loses its timeline, though one written in the last two minutes is
+   spared, since a chat that has just started may not be in the record yet.
 4. **No session-protocol command reads it.** It is the app's own store
    (`app/browser-timelines/<chat>/`, `docs/plane-format.md`), which the window reads through
    window-only commands and no chat reads at all.

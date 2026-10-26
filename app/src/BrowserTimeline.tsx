@@ -108,10 +108,10 @@ export function BrowserTimeline({ plane, chat }: { plane: string; chat: string }
   );
 }
 
-/** One screenshot of a timeline, read once and drawn on a canvas. */
 /** What a screenshot that could not be drawn says in its place. */
 const NOT_DRAWN = "This screenshot could not be drawn.";
 
+/** One screenshot of a timeline, read once and drawn on a canvas. */
 function Shot({
   plane,
   chat,
