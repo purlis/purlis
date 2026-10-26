@@ -34,6 +34,14 @@ export function ActionResultNotice({
 }) {
   const { title, says, details } = resultOf(said);
   const [open, setOpen] = useState(false);
+  // A new result starts with its Details closed, whatever the last one's were (#3360's review):
+  // reset during the render, as React's "information from previous renders" pattern does, so
+  // the live region stays the one element and no frame draws the new result opened.
+  const [shown, setShown] = useState(said);
+  if (shown !== said) {
+    setShown(said);
+    setOpen(false);
+  }
   const detailsId = useId();
   const fixes: NoticeAction[] = (said.ways ?? []).map((way) => ({
     label: way.label,

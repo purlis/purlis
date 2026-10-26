@@ -15,24 +15,29 @@ import { Dialog } from "./ui/dialog/Dialog";
  */
 export function AddVision({
   workspace,
+  current,
   trouble,
   saving,
   onSave,
   onCancel,
 }: {
   workspace: string;
+  /** The vision recorded now, `""` for none: shown in the box, since a Save replaces it (a
+   *  result kept under Results still offers Add a vision after one was recorded). */
+  current: string;
   /** Why the last Save recorded nothing: the core's sentence, unchanged. */
   trouble?: string;
   saving: boolean;
   onSave: (vision: string) => void;
   onCancel: () => void;
 }) {
-  const [vision, setVision] = useState("");
-  const ready = vision.trim() !== "" && !saving;
+  const [vision, setVision] = useState(current);
+  const had = current.trim() !== "";
+  const ready = vision.trim() !== "" && vision.trim() !== current.trim() && !saving;
   return (
     <Dialog
       onClose={onCancel}
-      title={`Add a vision for ${workspace}`}
+      title={had ? `Change the vision of ${workspace}` : `Add a vision for ${workspace}`}
       titleId="add-vision"
       initialFocus={(dialog) => dialog.querySelector("textarea")}
       main={{
@@ -49,7 +54,7 @@ export function AddVision({
         help={
           <>
             Recorded in <code>workspace.md</code>, the living charter its chats read and a fork
-            inherits.
+            inherits.{had && " It replaces the vision recorded now."}
           </>
         }
         control={(ids) => (

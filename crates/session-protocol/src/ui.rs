@@ -1101,6 +1101,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "workspace_saving",
     "workspace_settings",
     "workspace_starts_fresh",
+    // The person's own edit of a workspace's vision (#3344), through the core's brokered
+    // write: served as `workspace_create`, which takes a vision too, is.
     "workspace_vision",
     "worktree_add",
     "worktree_done",

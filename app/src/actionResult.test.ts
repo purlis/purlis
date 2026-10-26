@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { forThePerson, resultOf, workspaceMade } from "./actionResult";
+import { forThePerson, resultOf, saidInPlainWords, workspaceMade } from "./actionResult";
 
 /** What `purlis workspace create` says, as `wscmd/create.rs` writes it. */
 const MADE_LIVE = [
@@ -105,5 +105,17 @@ describe("what any result says", () => {
     expect(
       forThePerson(["Done.", "⬢ No vision yet — ask the developer what it is for", "More."]),
     ).toEqual(["Done.", "More."]);
+  });
+});
+
+describe("a result on one line (the palette's)", () => {
+  it("says the title and the sentence, and never a line for an agent", () => {
+    const said = workspaceMade("git-ci-cd", MADE_LIVE, WAYS);
+    expect(saidInPlainWords(said)).toBe(
+      "Workspace git-ci-cd is ready. It has no vision yet. Add one so its chats know what it is for.",
+    );
+    expect(
+      saidInPlainWords({ from: "x", refused: false, words: "Done. ⬢ ask the developer why" }),
+    ).toBe("Done.");
   });
 });

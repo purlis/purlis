@@ -26,6 +26,7 @@ import { landSettingsFocus } from "./settings/entering";
 import { theKeyboardIsBack, thePaletteIsUp } from "./keyboardBack";
 import type { SettingsLink } from "./settings/links";
 import { SaidLink } from "./SaidLink";
+import { saidInPlainWords } from "./actionResult";
 import { FileIcon } from "./FileIcon";
 import { useFileIcons } from "./projectTheme";
 import { iconFor } from "./theme/icons";
@@ -577,11 +578,13 @@ export function Palette({
       {showing && (
         <p
           className={showing.refused ? "refusal said" : "said"}
-          role={showing.refused ? "alert" : "status"}
+          // A polite status, as the result's notice is (#3344): it answers what was just pressed,
+          // stands until the next, and is never time-critical.
+          role="status"
         >
-          <span>
-            {showing.title === undefined ? showing.words : `${showing.title}. ${showing.words}`}
-          </span>
+          {/* What the notice says too: a refusal is told by more than its colour (#3344). */}
+          {showing.refused && <span className="sr-only">Not done: </span>}
+          <span>{saidInPlainWords(showing)}</span>
           {showing.settings !== undefined && onSettings !== undefined && (
             <SaidLink
               way={showing.settings}

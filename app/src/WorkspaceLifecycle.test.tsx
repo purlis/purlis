@@ -198,6 +198,11 @@ function core(
       made.push(name);
       return [`✓ Renamed workspace '${String(got.workspace)}' to '${name}'.`];
     }
+    if (cmd === "workspace_vision") {
+      if (String(got.vision).startsWith("##"))
+        throw "a line of a vision starts with `## `, which would start a section of its own in workspace.md: nothing was written";
+      return `${String(got.workspace)} has a vision now.`;
+    }
     if (cmd === "workspace_create") {
       const name = String(got.name);
       if (name.includes("/"))
@@ -683,6 +688,56 @@ describe("picking a new workspace's repos (ADR 0055)", () => {
     await userEvent.click(within(notice).getByRole("button", { name: "Dismiss" }));
     expect(document.querySelector(".window-work > .action-result")).toBeNull();
     expect(within(results).getByText("Workspace gamma is ready")).toBeInTheDocument();
+  });
+
+  it("says a result in one live region, though Results lists it too (#3344)", async () => {
+    core();
+    render(<App />);
+    await settled();
+
+    await createWithRepos([]);
+    await findResult("Workspace gamma is ready");
+    await screen.findByRole("region", { name: "Results" });
+    const saying = [...document.querySelectorAll('[role="status"]')].filter((one) =>
+      one.textContent?.includes("Workspace gamma is ready"),
+    );
+    expect(saying).toHaveLength(1);
+    expect(saying[0].closest(".window-work > .action-result")).not.toBeNull();
+  });
+
+  it("adds a vision from the notice, through the core, and says it was recorded (#3344)", async () => {
+    const { calls } = core();
+    render(<App />);
+    await settled();
+
+    await createWithRepos([]);
+    await findResult("Workspace gamma is ready");
+    await userEvent.click(within(theResult()).getByRole("button", { name: "Add a vision" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add a vision for gamma" });
+    await userEvent.type(within(dialog).getByRole("textbox"), "Keep the CI green");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save vision" }));
+
+    expect(await findResult("gamma has a vision now.")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Add a vision for gamma" })).toBeNull();
+    expect(calls("workspace_vision").map((one) => one.args)).toEqual([
+      expect.objectContaining({ workspace: "gamma", vision: "Keep the CI green" }),
+    ]);
+  });
+
+  it("keeps a refused vision in the dialog, in the core's words (#3344)", async () => {
+    core();
+    render(<App />);
+    await settled();
+
+    await createWithRepos([]);
+    await findResult("Workspace gamma is ready");
+    await userEvent.click(within(theResult()).getByRole("button", { name: "Add a vision" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add a vision for gamma" });
+    await userEvent.type(within(dialog).getByRole("textbox"), "## Not a vision");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save vision" }));
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(/nothing was written/);
+    expect(within(dialog).getByRole("textbox")).toHaveValue("## Not a vision");
   });
 
   it("closes a result's notice with Esc while the keyboard is in it (#3344)", async () => {

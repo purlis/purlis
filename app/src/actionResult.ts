@@ -41,7 +41,7 @@ export function plainWords(words: string): string {
  * **What a result's notice draws, for any `Said`**: its own title where it has one, else its
  * words; and never a line the core wrote for an agent, whichever result it came with (#3344).
  */
-export function resultOf(said: Said): Result {
+export function resultOf(said: Omit<Said, "from"> & { from?: string }): Result {
   const words = plainWords(said.words);
   const kept = said.details === undefined ? [] : forThePerson(said.details.split("\n"));
   const details = kept.length === 0 ? undefined : kept.join("\n");
@@ -84,4 +84,11 @@ export function workspaceMade(
       ...(none ? [{ label: "Add a vision", onPress: onAddVision }] : []),
     ],
   };
+}
+
+/** **A result as one line says it** (the palette's, #3344): the notice's title and sentence,
+ *  and never a line the core wrote for an agent. */
+export function saidInPlainWords(said: Omit<Said, "from"> & { from?: string }): string {
+  const { title, says } = resultOf(said);
+  return says === undefined ? title : `${title.replace(/[.!?]$/, "")}. ${says}`;
 }

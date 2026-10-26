@@ -1150,6 +1150,7 @@ const DIALOGS: Opened[] = [
       render(
         <AddVision
           workspace="gamma"
+          current=""
           trouble="a vision has words: nothing was written"
           saving={false}
           onSave={nothing}

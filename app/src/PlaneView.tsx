@@ -9347,6 +9347,9 @@ export const PlaneView = memo(function PlaneView({
           {addingVision && (
             <AddVision
               workspace={addingVision.workspace}
+              current={
+                sidebar?.workspaces.find((ws) => ws.name === addingVision.workspace)?.vision ?? ""
+              }
               trouble={addingVision.trouble}
               saving={addingVision.busy}
               onSave={(vision) => void saveVision(addingVision.workspace, vision)}
