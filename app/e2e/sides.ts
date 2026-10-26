@@ -7,9 +7,9 @@ import { $, browser } from "@wdio/globals";
  * **Putting a side away and bringing it back, as a person does** since the status line's
  * toggles went (qw357). The right side: a press of the open view on its bar puts it away, and a
  * press of any view there brings it back on that view; the bar stands while the side is away.
- * The left side panel's tabs are across its own top (#2917, N36, R121): a press of its open tab
- * does nothing, so its key, ⌘B (Ctrl+B off a Mac), puts it away and brings it back, and its tabs
- * go and come with it.
+ * The left side's icons are a column beside the project rail (#3144): a press of its open view
+ * does nothing (R121), so its key, ⌘B (Ctrl+B off a Mac), puts it away and brings it back, and
+ * the column stays where it is.
  */
 
 /** A side's region, by the name its activity bar carries. */

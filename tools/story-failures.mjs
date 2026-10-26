@@ -16,10 +16,13 @@
 //
 //   node tools/story-failures.mjs <browser> <report> [<browser> <report> ...]
 //
+// A story's annotation names the line of the story file it failed at, from the frames Vitest
+// maps back to their sources, so it shows on the pull request's diff (`placeOf`).
+//
 // Every text an annotation carries is escaped as the runner reads a workflow command, so it
 // stays one annotation on one line.
 import { readFileSync, writeFileSync } from "node:fs";
-import { isAbsolute } from "node:path";
+import { isAbsolute, relative } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
@@ -96,15 +99,41 @@ export function whyOf(error) {
   return [...why].slice(0, LONGEST).join("");
 }
 
-/** One annotation: its title and its text, each escaped. */
-const error = (title, text) =>
-  `::error title=${property(title)}::${data(text)}`;
+/**
+ * **Where a story failed**: the first source-mapped frame Vitest gave with its error that is in a
+ * story file, as the `file` (relative to the repository at `root`) and `line` of an annotation,
+ * so it shows on the pull request's diff at the failing step. `undefined` when no frame is in a
+ * story file inside `root`, such as axe's or the screenshot gate's. A frame in `own`, the failed
+ * story's file as its report names it (relative to the app), comes before any other story file.
+ */
+export function placeOf(error, root, own) {
+  const places = (error.frames ?? []).flatMap((frame) => {
+    const path = String(frame.file ?? "")
+      .replace(/^[a-z]+:\/\/[^/]*/i, "")
+      .replace(/^\/@fs(?=\/)/, "")
+      .replace(/[?#].*$/, "");
+    if (!/\.stories\.tsx$/.test(path) || !isAbsolute(path)) return [];
+    const file = relative(root, path).split("\\").join("/");
+    const line = Number(frame.line);
+    if (file.startsWith("../") || isAbsolute(file) || !(line >= 1)) return [];
+    return [{ file, line: Math.trunc(line) }];
+  });
+  // The failed story's own file first, when the report names it; then any story file.
+  const mine = own
+    ? places.find(({ file }) => `/${file}`.endsWith(`/${own}`))
+    : undefined;
+  return mine ?? places[0];
+}
+
+/** One annotation: where it is, if anywhere, its title and its text, each escaped. */
+const error = (title, text, at) =>
+  `::error ${at ? `file=${property(at.file)},line=${at.line},` : ""}title=${property(title)}::${data(text)}`;
 
 /** One `::error` line per failed story in one browser's report: the story's name and that
  *  browser, its file, its gate, why, and the axe rules it broke; one for each error outside any
  *  story; and, for a run that failed naming nothing, one that says so. The report does not say
  *  which browser ran it, so the job runs each browser on its own and says which report is whose. */
-export function annotations(report, browser) {
+export function annotations(report, browser, root) {
   const failed = report.failures.map(({ file, story, cell, errors }) => {
     const [first = { message: "" }] = errors;
     const rules = [
@@ -118,6 +147,7 @@ export function annotations(report, browser) {
     return error(
       `${story} in ${browser}${cell ? `, ${cell}` : ""}`,
       `${file}: ${gateOf(first)}: ${whyOf(first)}${broke}`,
+      root === undefined ? undefined : placeOf(first, root, file),
     );
   });
   const outside = report.errors.map((one) =>
@@ -137,10 +167,16 @@ export function annotations(report, browser) {
   return named;
 }
 
-/** An error as the report keeps it: its message and its stack, apart. */
+/** An error as the report keeps it: its message and its stack, apart, and the frames Vitest
+ *  mapped back to their sources. */
 const kept = (one) => ({
   message: String(one.message ?? ""),
   stack: String(one.stack ?? ""),
+  frames: (one.stacks ?? []).map((frame) => ({
+    file: String(frame.file ?? ""),
+    line: Number(frame.line),
+    column: Number(frame.column),
+  })),
 });
 
 /** Where the reporter writes: the absolute path `PURLIS_STORY_REPORT` names, or nowhere. */
@@ -212,6 +248,8 @@ export default class StoryFailures {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   // `<browser> <report>`, once for each browser that ran.
   const given = process.argv.slice(2);
+  // The repository, which an annotation's file is relative to.
+  const root = process.env.GITHUB_WORKSPACE || process.cwd();
   for (let at = 0; at + 1 < given.length; at += 2) {
     let report;
     try {
@@ -225,6 +263,6 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       );
       continue;
     }
-    for (const line of annotations(report, given[at])) console.log(line);
+    for (const line of annotations(report, given[at], root)) console.log(line);
   }
 }

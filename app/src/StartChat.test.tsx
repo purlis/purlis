@@ -556,6 +556,29 @@ describe("the picker a chat starts from", () => {
     expect(onStart).not.toHaveBeenCalled();
   });
 
+  it("never starts without the sandbox on ⌘⏎ once the opt-out is ticked (ADR 0097 §6)", async () => {
+    const { onStart, user } = show({
+      profiles: [
+        {
+          ...ONE.profiles[0],
+          sandbox: { state: "sandboxed", said: "", install: null, locked: null },
+        },
+      ],
+    });
+    const optOut = screen.getByRole("checkbox", { name: "Start without the sandbox" });
+    await user.click(optOut);
+    expect(optOut).toBeChecked();
+    expect(screen.getByRole("button", { name: "Start without the sandbox" })).toBeInTheDocument();
+    fireEvent.keyDown(optOut, SEND);
+    fireEvent.keyDown(screen.getByRole("button", { name: "Cancel" }), SEND);
+    fireEvent.keyDown(screen.getByRole("textbox", { name: /^Name/ }), SEND);
+    expect(onStart).not.toHaveBeenCalled();
+    // Unticked, the chord starts the chat sandboxed again.
+    await user.click(optOut);
+    fireEvent.keyDown(screen.getByRole("textbox", { name: /^Name/ }), SEND);
+    expect(onStart).toHaveBeenCalledWith("claude", "steward", false, null, false, null);
+  });
+
   it("starts under the default name when the Name field is only spaces", async () => {
     const { onStart, user } = show();
 

@@ -42,6 +42,9 @@ pub struct ChatSkill {
     pub arguments: Vec<String>,
     /// What to pass it, in one line, where it says: the one box of a skill that names none.
     pub hint: Option<String>,
+    /// Why the router hid it from the chat's list, where it did (SK-15): Use skill… then asks
+    /// the chat to load it.
+    pub hidden: Option<crate::skillstudio::SkillHidden>,
 }
 
 /// Which part of a chat's skill budget its set warns of: at four fifths of it or past it.
@@ -63,6 +66,26 @@ impl From<purlis_core::skills::Over> for BudgetWarns {
     }
 }
 
+/// **What is still past a chat's budget** once its router hid all it may (SK-15): the core's
+/// `StillOver`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum BudgetStillOver {
+    /// purlis's own skills and the ones the chat's program and repos bring, which no router hides.
+    NotHideable,
+    /// Those fit, and the pinned skills on top of them do not.
+    Pins,
+}
+
+impl From<purlis_core::skills::StillOver> for BudgetStillOver {
+    fn from(over: purlis_core::skills::StillOver) -> BudgetStillOver {
+        match over {
+            purlis_core::skills::StillOver::NotHideable => BudgetStillOver::NotHideable,
+            purlis_core::skills::StillOver::Pins => BudgetStillOver::Pins,
+        }
+    }
+}
+
 /// A chat's skill budget on its harness, and what its set spends of it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct SkillBudget {
@@ -79,6 +102,11 @@ pub struct SkillBudget {
     pub most_chars: u32,
     /// What the chat warns of, or null below four fifths of both.
     pub warns: Option<BudgetWarns>,
+    /// Skills the router hid behind the index skill, its set being over the budget (SK-15).
+    pub hidden: u32,
+    /// What is still past the budget with all the router may hide hidden, where something is:
+    /// all of it is then listed (ADR 0102 §4).
+    pub still_over: Option<BudgetStillOver>,
 }
 
 /// What Use skill… offers a chat, and its budget.
@@ -162,6 +190,7 @@ pub(crate) fn shown(skills: Option<&purlis_core::skills::ChatSkills>) -> ChatSki
                 takes_arguments: one.takes_arguments,
                 arguments: one.declared.arguments.clone(),
                 hint: one.declared.hint.clone(),
+                hidden: one.hidden.as_ref().map(Into::into),
             })
             .collect(),
         budget: Some(SkillBudget {
@@ -171,6 +200,14 @@ pub(crate) fn shown(skills: Option<&purlis_core::skills::ChatSkills>) -> ChatSki
             most_skills: small(spent.budget.skills),
             most_chars: small(spent.budget.chars),
             warns: spent.warns().map(BudgetWarns::from),
+            hidden: small(
+                skills
+                    .offered
+                    .iter()
+                    .filter(|one| one.hidden.is_some())
+                    .count(),
+            ),
+            still_over: skills.still_over.map(Into::into),
         }),
     }
 }
@@ -231,8 +268,9 @@ pub(crate) fn typed_and_held(
     copy: &dyn Fn(&str) -> Result<(), String>,
 ) -> Result<Handed, String> {
     let handed = crate::references::typed_or_copied(held, session, typing.text, COPIED, copy)?;
-    if matches!(handed, Handed::Typed { .. }) {
-        held.hooks().skill_typed(held.root(), session, typing.held);
+    // A skill the router hid is loaded with `skill_load`, whose load opens its run.
+    if let (Handed::Typed { .. }, purlis_core::skills::Start::Held(run)) = (&handed, typing.start) {
+        held.hooks().skill_typed(held.root(), session, run);
     }
     Ok(handed)
 }

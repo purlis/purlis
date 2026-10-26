@@ -524,6 +524,13 @@ impl Family {
             .map(|(_, token)| *token)
     }
 
+    /// The colour `part`'s words are drawn in by default, for the tests that hold it to a
+    /// family's stylesheet.
+    #[cfg(test)]
+    pub(super) fn own_words_of(&self, part: usize) -> Option<&'static str> {
+        self.own_words(part)
+    }
+
     /// The colour `part`'s words are drawn in by default, when it is not the root's.
     fn own_words(&self, part: usize) -> Option<&'static str> {
         let name = self.parts.get(part)?.name;
@@ -569,6 +576,29 @@ const SURFACE: &[Prop] = &[
     Prop::Shadow,
     Prop::BorderWidth,
     Prop::CornerRadius,
+];
+
+/// **Every surface a control is drawn on in the window**: a button's, and a field's, which stands
+/// where a button does. `app/src/theme/grounds.test.ts` finds them from the components, and fails
+/// until a new one is listed here.
+const CONTROL_GROUNDS: &[&str] = &[
+    "surface.base",
+    "surface.raised",
+    "surface.overlay",
+    "surface.sunken",
+    "surface.deep",
+    "surface.hover",
+    "border.subtle",
+    "tab.active",
+    "list.selected",
+    "control.aimed",
+    "danger.surface",
+    "danger.wash",
+    "layer.project",
+    "layer.workspace",
+    "layer.chat",
+    "layer.selected",
+    "terminal.background",
 ];
 
 /// **The closed manifest**: every family a theme may name, at [`VERSION`].
@@ -647,27 +677,7 @@ pub const MANIFEST: &[Family] = &[
                 consent: None,
             },
         ],
-        // Every surface a button is drawn on in the window, as `app/src/theme/grounds.test.ts` finds
-        // them from the components; that test fails until a new one is listed here.
-        grounds: &[
-            "surface.base",
-            "surface.raised",
-            "surface.overlay",
-            "surface.sunken",
-            "surface.deep",
-            "surface.hover",
-            "border.subtle",
-            "tab.active",
-            "list.selected",
-            "control.aimed",
-            "danger.surface",
-            "danger.wash",
-            "layer.project",
-            "layer.workspace",
-            "layer.chat",
-            "layer.selected",
-            "terminal.background",
-        ],
+        grounds: CONTROL_GROUNDS,
         keeps_size: &[
             "[data-size=\"sm\"]",
             "[data-size=\"lg\"]",
@@ -676,7 +686,7 @@ pub const MANIFEST: &[Family] = &[
         sized_apart: &[
             (
                 "[data-scope=\"button\"][data-part=\"root\"][data-size=\"sm\"]",
-                "max(var(--size-chrome), var(--space-7))",
+                "max(24px, var(--size-chrome), var(--space-7))",
             ),
             (
                 "[data-scope=\"button\"][data-part=\"root\"][data-size=\"lg\"]",
@@ -727,27 +737,8 @@ pub const MANIFEST: &[Family] = &[
             },
         ],
         variants: &[],
-        // Every surface a control is drawn on (the button's, which `grounds.test.ts` finds from
-        // the components): a field stands where a button does, a filter on a list's layer.
-        grounds: &[
-            "surface.base",
-            "surface.raised",
-            "surface.overlay",
-            "surface.sunken",
-            "surface.deep",
-            "surface.hover",
-            "border.subtle",
-            "tab.active",
-            "list.selected",
-            "control.aimed",
-            "danger.surface",
-            "danger.wash",
-            "layer.project",
-            "layer.workspace",
-            "layer.chat",
-            "layer.selected",
-            "terminal.background",
-        ],
+        // A field stands where a button does, a filter on a list's layer.
+        grounds: CONTROL_GROUNDS,
         keeps_size: &[],
         sized_apart: &[],
         height: Some(Length::Token("size.control")),
@@ -793,27 +784,8 @@ pub const MANIFEST: &[Family] = &[
             },
         ],
         variants: &[],
-        // Every surface a control is drawn on (the button's, which `grounds.test.ts` finds from
-        // the components): a field stands where a button does, a filter on a list's layer.
-        grounds: &[
-            "surface.base",
-            "surface.raised",
-            "surface.overlay",
-            "surface.sunken",
-            "surface.deep",
-            "surface.hover",
-            "border.subtle",
-            "tab.active",
-            "list.selected",
-            "control.aimed",
-            "danger.surface",
-            "danger.wash",
-            "layer.project",
-            "layer.workspace",
-            "layer.chat",
-            "layer.selected",
-            "terminal.background",
-        ],
+        // A field stands where a button does, a filter on a list's layer.
+        grounds: CONTROL_GROUNDS,
         keeps_size: &["[data-size=\"sm\"]", "[data-size=\"lg\"]"],
         sized_apart: &[
             (
@@ -858,27 +830,8 @@ pub const MANIFEST: &[Family] = &[
             ],
         }],
         variants: &[],
-        // Every surface a control is drawn on (the button's, which `grounds.test.ts` finds from
-        // the components): a field stands where a button does, a filter on a list's layer.
-        grounds: &[
-            "surface.base",
-            "surface.raised",
-            "surface.overlay",
-            "surface.sunken",
-            "surface.deep",
-            "surface.hover",
-            "border.subtle",
-            "tab.active",
-            "list.selected",
-            "control.aimed",
-            "danger.surface",
-            "danger.wash",
-            "layer.project",
-            "layer.workspace",
-            "layer.chat",
-            "layer.selected",
-            "terminal.background",
-        ],
+        // A field stands where a button does, a filter on a list's layer.
+        grounds: CONTROL_GROUNDS,
         keeps_size: &[],
         sized_apart: &[],
         height: Some(Length::Token("size.control")),
@@ -1096,6 +1049,13 @@ pub const MANIFEST: &[Family] = &[
     shell::TITLEBAR,
     select::SELECT,
     select::COMBOBOX,
+    choice::CHECKBOX,
+    choice::RADIO,
+    choice::SWITCH,
+    choice::SEGMENTED_CONTROL,
+    choice::SEGMENT,
+    choice::SLIDER,
+    choice::OPTION_CARD,
 ];
 
 /// The popover and menu families (#2909): the surface a popover and a menu stand on, and a
@@ -1118,12 +1078,21 @@ mod collection;
 /// The select and combobox families (#2906).
 #[path = "parts_select.rs"]
 mod select;
+
+/// The choice families (#2907): checkbox, radio, switch, segmented control and segment, slider
+/// and option card.
+#[path = "parts_choice.rs"]
+mod choice;
 #[cfg(test)]
 pub(super) use dialog::DIALOG_TIERS;
 
 /// The activity item family (#2917): a view's icon on a side's bar.
 #[path = "parts_activity.rs"]
 mod activity;
+
+#[cfg(test)]
+#[path = "state_words_tests.rs"]
+mod state_words_tests;
 
 /// **A field's colours as `app/src/ui/field/field.css` draws them**: no ground and no edge of
 /// its own, its label in the primary tier. Its help's and its error's words are the family's

@@ -9,7 +9,6 @@ import {
   useSyncExternalStore,
   type CSSProperties,
 } from "react";
-import * as RadioGroup from "@radix-ui/react-radio-group";
 import { commands, type PersonaImage, type PlaneId } from "./bindings";
 import { Notice } from "./Notice";
 import { OffWhenReadOnly } from "./ReadOnlyLine";
@@ -25,15 +24,15 @@ import {
   initialsOf,
 } from "./PersonaMark";
 import { inForce, tintVariables } from "./theme/theme";
+import { OptionCard, OptionCards } from "./ui/choice/Radio";
 import { Form, TextField } from "./ui/field/Field";
-import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
  * **Pick a persona's icon and colour**, in its view. A pick is written to the persona's
  * definition at once (`icon:` and `color:`), so it is on every surface and every teammate's
  * machine after a save, and there is no second step to forget.
  *
- * Two radio groups (Radix, ADR 0037). The first choice of each takes the key out of the
+ * Two groups of tiles (the option cards' `tile`, `ui/choice`, #2907), each one choice of a few. The first choice of each takes the key out of the
  * definition: the persona goes back to its initials, or to the colour of its name. Where its
  * folder holds a custom image, that is what is drawn, and the icon picked here is what it
  * falls back to.
@@ -105,67 +104,71 @@ export function PersonaMarkPicker({ plane, persona }: { plane: PlaneId; persona:
           </Notice>
         ))}
       <OffWhenReadOnly>
-        <RadioGroup.Root
-          className="persona-mark-choices"
+        <OptionCards
+          variant="tile"
           aria-label="Icon"
+          orientation="horizontal"
           value={icon ?? ""}
-          onValueChange={(to) => pick(to === "" ? null : to, colour)}
+          onChange={(to) => pick(to === "" ? null : to, colour)}
         >
-          <Tooltip tip="Initials">
-            <RadioGroup.Item className="persona-mark-choice" value="" aria-label="Initials">
-              {initialsOf(persona)}
-            </RadioGroup.Item>
-          </Tooltip>
+          <OptionCard
+            variant="tile"
+            value=""
+            aria-label="Initials"
+            tooltip="Initials"
+            icon={initialsOf(persona)}
+          />
           {Object.entries(PERSONA_ICONS).map(([name, Icon]) => (
-            <Tooltip key={name} tip={name}>
-              <RadioGroup.Item className="persona-mark-choice" value={name} aria-label={name}>
-                <Icon aria-hidden="true" />
-              </RadioGroup.Item>
-            </Tooltip>
+            <OptionCard
+              key={name}
+              variant="tile"
+              value={name}
+              aria-label={name}
+              tooltip={name}
+              icon={<Icon aria-hidden="true" />}
+            />
           ))}
-        </RadioGroup.Root>
-        <RadioGroup.Root
-          className="persona-mark-choices"
+        </OptionCards>
+        <OptionCards
+          variant="tile"
           aria-label="Colour"
+          orientation="horizontal"
           value={custom ? "custom" : (colour ?? "")}
-          onValueChange={(to) => {
+          onChange={(to) => {
             if (to !== "custom") pick(icon, to === "" ? null : to);
           }}
         >
-          <Tooltip tip="From its name">
-            <RadioGroup.Item
-              className="persona-mark-choice persona-mark-swatch"
-              value=""
-              aria-label="From its name"
-            >
+          <OptionCard
+            variant="tile"
+            value=""
+            aria-label="From its name"
+            tooltip="From its name"
+            icon={
               <PersonaMark persona={persona} mark={{ icon: null, colour: null, image: null }} />
-            </RadioGroup.Item>
-          </Tooltip>
+            }
+          />
           {PERSONA_COLOURS.map((name) => (
-            <Tooltip key={name} tip={name}>
-              <RadioGroup.Item
-                className="persona-mark-choice persona-mark-swatch"
-                value={name}
-                aria-label={name}
-              >
-                <Swatch colour={name} />
-              </RadioGroup.Item>
-            </Tooltip>
+            <OptionCard
+              key={name}
+              variant="tile"
+              value={name}
+              aria-label={name}
+              tooltip={name}
+              icon={<Swatch colour={name} />}
+            />
           ))}
           {/* A `#rrggbb` written by hand in the definition: shown as what is picked, and kept
             until another is. The window offers the palette; the file takes any hue. */}
           {custom && colour !== null && (
-            <Tooltip tip={colour}>
-              <RadioGroup.Item
-                className="persona-mark-choice persona-mark-swatch"
-                value="custom"
-                aria-label={colour}
-              >
-                <Swatch colour={colour} />
-              </RadioGroup.Item>
-            </Tooltip>
+            <OptionCard
+              variant="tile"
+              value="custom"
+              aria-label={colour}
+              tooltip={colour}
+              icon={<Swatch colour={colour} />}
+            />
           )}
-        </RadioGroup.Root>
+        </OptionCards>
         <HexColour
           key={custom ? colour : ""}
           held={custom ? colour : ""}
