@@ -101,15 +101,15 @@ fn said(root: &Path, apply_it: bool) -> (Vec<Say>, u8) {
 }
 
 fn info(s: &str) -> Say {
-    Say::Info(s.to_string())
+    Say::Info(s.to_string().into())
 }
 
 fn warn(s: &str) -> Say {
-    Say::Warn(s.to_string())
+    Say::Warn(s.to_string().into())
 }
 
 fn done(s: &str) -> Say {
-    Say::Done(s.to_string())
+    Say::Done(s.to_string().into())
 }
 
 #[test]

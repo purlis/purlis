@@ -162,10 +162,13 @@ pub fn restore(request: &Request, say: Sink) -> u8 {
         .cloned()
         .unwrap_or_default();
     if repos.is_empty() {
-        say(Say::Fail(format!(
-            "no manifest for '{ws}' (workspaces/{ws}/workspace.json). Pull the plane's latest \
+        say(Say::Fail(
+            format!(
+                "no manifest for '{ws}' (workspaces/{ws}/workspace.json). Pull the plane's latest \
              first: git pull"
-        )));
+            )
+            .into(),
+        ));
         return 1;
     }
     // The local structure, before anything is cloned into it: `refs/`, the memory store, the
@@ -173,7 +176,7 @@ pub fn restore(request: &Request, say: Sink) -> u8 {
     // `purlis workspace reinit`'s to report; a folder it could not make is the end of this.
     let author = ensure::author();
     if let Err(why) = ensure::ensure(root, ws, now, &author) {
-        say(Say::Fail(why));
+        say(Say::Fail(why.into()));
         return 1;
     }
 
@@ -181,12 +184,15 @@ pub fn restore(request: &Request, say: Sink) -> u8 {
         None => "?".to_string(),
         Some(value) => py_str(value),
     };
-    say(Say::Info(format!(
-        "Restoring '{ws}' — {} from manifest (updated {} by {}).",
-        counted(repos.len(), "repo", "repos"),
-        said("updated_at"),
-        said("updated_by"),
-    )));
+    say(Say::Info(
+        format!(
+            "Restoring '{ws}' — {} from manifest (updated {} by {}).",
+            counted(repos.len(), "repo", "repos"),
+            said("updated_at"),
+            said("updated_by"),
+        )
+        .into(),
+    ));
     if on_demand {
         for record in &repos {
             let pin = pin_of(record);
@@ -195,21 +201,26 @@ pub fn restore(request: &Request, say: Sink) -> u8 {
             } else {
                 pin
             };
-            say(Say::Info(format!(
-                "  on-demand: {} @ {pin} (clone when you enter it)",
-                name_of(record),
-            )));
+            say(Say::Info(
+                format!(
+                    "  on-demand: {} @ {pin} (clone when you enter it)",
+                    name_of(record),
+                )
+                .into(),
+            ));
         }
-        say(Say::Info(format!(
-            "Enter the workspace and clone as you go: purlis clone <repo> -w {ws}"
-        )));
+        say(Say::Info(
+            format!("Enter the workspace and clone as you go: purlis clone <repo> -w {ws}").into(),
+        ));
         return 0;
     }
 
     let Some(ws_dir) = workspace.as_ref().map(|w| w.dir().to_path_buf()) else {
         // Unreachable in practice — a workspace whose name cannot be joined has no manifest
         // and returned above — and a refusal rather than a panic if it ever stops being.
-        say(Say::Fail(format!("No usable repos in '{ws}'s manifest.")));
+        say(Say::Fail(
+            format!("No usable repos in '{ws}'s manifest.").into(),
+        ));
         return 1;
     };
 
@@ -229,14 +240,19 @@ pub fn restore(request: &Request, say: Sink) -> u8 {
         // `str(r.get("name"))!r` — the string charter joined, repeated back as Python repeats
         // a value read from a committed file.
         let name = name_of(record);
-        say(Say::Fail(format!(
-            "  {}: refused — {}. Fix workspaces/{ws}/workspace.json.",
-            crate::pyrepr::repr_str(&name),
-            clone::not_a_segment(&name),
-        )));
+        say(Say::Fail(
+            format!(
+                "  {}: refused — {}. Fix workspaces/{ws}/workspace.json.",
+                crate::pyrepr::repr_str(&name),
+                clone::not_a_segment(&name),
+            )
+            .into(),
+        ));
     }
     if rows.is_empty() {
-        say(Say::Fail(format!("No usable repos in '{ws}'s manifest.")));
+        say(Say::Fail(
+            format!("No usable repos in '{ws}'s manifest.").into(),
+        ));
         return 1;
     }
 
@@ -266,9 +282,9 @@ pub fn restore(request: &Request, say: Sink) -> u8 {
     for row in &rows {
         let name = row.name();
         if !is_git_repo(&row.dir) {
-            say(Say::Warn(format!(
-                "  {name}: not cloned (no access?) — skipped."
-            )));
+            say(Say::Warn(
+                format!("  {name}: not cloned (no access?) — skipped.").into(),
+            ));
             continue;
         }
         // An UNPINNED row is restored by existing (charter#884). Every manifest charter
@@ -279,10 +295,13 @@ pub fn restore(request: &Request, say: Sink) -> u8 {
         // the remote calls default, which is what "unpinned" means.
         let branch = row.pin();
         if branch.is_empty() {
-            say(Say::Done(format!(
-                "  {name} @ default branch (no branch recorded — `purlis workspace snapshot \
+            say(Say::Done(
+                format!(
+                    "  {name} @ default branch (no branch recorded — `purlis workspace snapshot \
                  {ws}` pins one)"
-            )));
+                )
+                .into(),
+            ));
             done += 1;
             continue;
         }
@@ -290,18 +309,21 @@ pub fn restore(request: &Request, say: Sink) -> u8 {
         // forge, not declared in `charter.toml` — gets no guessed credential helper: skipped
         // rather than mis-authenticated.
         let Some(forge) = crate::gitpolicy::forge_for(&row.dir, root) else {
-            say(Say::Warn(format!(
-                "  {name}: origin host isn't a known/declared forge — skipped."
-            )));
+            say(Say::Warn(
+                format!("  {name}: origin host isn't a known/declared forge — skipped.").into(),
+            ));
             continue;
         };
         if branch.starts_with('-') {
-            say(Say::Fail(format!(
-                "  {name}: refused branch {} — a branch read from a committed manifest may not \
+            say(Say::Fail(
+                format!(
+                    "  {name}: refused branch {} — a branch read from a committed manifest may not \
                  begin with '-', which git would read as an option rather than a ref. Fix \
                  workspaces/{ws}/workspace.json.",
-                crate::pyrepr::repr_str(&branch),
-            )));
+                    crate::pyrepr::repr_str(&branch),
+                )
+                .into(),
+            ));
             continue;
         }
         if checkout(&row.dir, &branch) {
@@ -309,21 +331,25 @@ pub fn restore(request: &Request, say: Sink) -> u8 {
             // save's push does (#1851): a clone whose remote changed is not pulled.
             match crate::forge::gitcredential::helper_for_fetch(&forge, &row.dir) {
                 Ok(helper) => pull(&row.dir, &helper),
-                Err(why) => say(Say::Warn(format!("  {name}: {why}; not pulled."))),
+                Err(why) => say(Say::Warn(format!("  {name}: {why}; not pulled.").into())),
             }
-            say(Say::Done(format!("  {name} @ {}", row.branch_said())));
+            say(Say::Done(
+                format!("  {name} @ {}", row.branch_said()).into(),
+            ));
             done += 1;
         } else {
-            say(Say::Warn(format!(
-                "  {name}: couldn't checkout '{}'.",
-                row.branch_said()
-            )));
+            say(Say::Warn(
+                format!("  {name}: couldn't checkout '{}'.", row.branch_said()).into(),
+            ));
         }
     }
-    say(Say::Done(format!(
-        "Restored {done}/{} into '{ws}'.",
-        counted(rows.len(), "repo", "repos")
-    )));
+    say(Say::Done(
+        format!(
+            "Restored {done}/{} into '{ws}'.",
+            counted(rows.len(), "repo", "repos")
+        )
+        .into(),
+    ));
     0
 }
 

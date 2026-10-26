@@ -1502,7 +1502,7 @@ struct Kept {
 impl Io for Kept {
     fn say(&mut self, line: Say) {
         if let Say::Err(text) | Say::Info(text) = line {
-            self.lines.push(text);
+            self.lines.push(text.to_string());
         }
     }
     fn out(&mut self, _bytes: &[u8]) {}

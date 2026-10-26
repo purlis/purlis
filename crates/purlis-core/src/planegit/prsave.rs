@@ -410,7 +410,7 @@ pub(super) fn push(
 fn push_unsaid(root: &Path, plane: &Plane, sign: bool, caller: &Caller, say: Sink) -> PushResult {
     let mode = plane.mode.value.unwrap_or(Mode::Pr);
     let refused = |why: String, say: Sink| {
-        say(Say::Warn(format!("Not pushed: {why}.")));
+        say(Say::Warn(format!("Not pushed: {why}.").into()));
         // Unrecorded: a config error is re-derived by `standing` from the settings, and
         // recording it could only outlive the fix.
         PushResult {
@@ -461,10 +461,13 @@ fn push_unsaid(root: &Path, plane: &Plane, sign: bool, caller: &Caller, say: Sin
     let head = match settled {
         Settled::Blocked(res) => return res,
         Settled::Unknown(why) => {
-            say(Say::Warn(format!(
-                "Committed, but not pushed: {why}. Nothing is pushed until purlis knows \
+            say(Say::Warn(
+                format!(
+                    "Committed, but not pushed: {why}. Nothing is pushed until purlis knows \
                  whether the last {noun} merged; the next save asks again."
-            )));
+                )
+                .into(),
+            ));
             return record_push(
                 root,
                 PushResult {
@@ -475,7 +478,9 @@ fn push_unsaid(root: &Path, plane: &Plane, sign: bool, caller: &Caller, say: Sin
             );
         }
         Settled::Waiting(why) => {
-            say(Say::Info(format!("Committed, not pushed yet: {why}")));
+            say(Say::Info(
+                format!("Committed, not pushed yet: {why}").into(),
+            ));
             // Unrecorded, as nothing went wrong: the next look tries again.
             return PushResult {
                 detail: why,
@@ -494,9 +499,9 @@ fn push_unsaid(root: &Path, plane: &Plane, sign: bool, caller: &Caller, say: Sin
         save
     };
     if count(root, &format!("refs/remotes/origin/{target}..HEAD")) == Some(0) {
-        say(Say::Done(format!(
-            "Nothing left to push — {target} on the remote already has all of it."
-        )));
+        say(Say::Done(
+            format!("Nothing left to push — {target} on the remote already has all of it.").into(),
+        ));
         let _ = std::fs::remove_file(push_record_path(root));
         return PushResult::of(Outcome::Pushed, &target);
     }
@@ -512,12 +517,15 @@ fn push_unsaid(root: &Path, plane: &Plane, sign: bool, caller: &Caller, say: Sin
         && let Some(open) = kept.pr.as_ref().filter(|pr| pr.head == head)
         && kept.pushed.as_deref() == Some(head.as_str())
     {
-        say(Say::Done(format!(
-            "{} {} already carries all of it: {}",
-            kind.request_noun_capitalised(),
-            kind.request_ref(open.number),
-            open.url
-        )));
+        say(Say::Done(
+            format!(
+                "{} {} already carries all of it: {}",
+                kind.request_noun_capitalised(),
+                kind.request_ref(open.number),
+                open.url
+            )
+            .into(),
+        ));
         return record_push(
             root,
             PushResult {
@@ -534,9 +542,9 @@ fn push_unsaid(root: &Path, plane: &Plane, sign: bool, caller: &Caller, say: Sin
     }
     kept.pushed = Some(head.clone());
     kept.write(root);
-    say(Say::Done(format!(
-        "Pushed {save} via {cli} (HTTPS token — no SSH, no 1Password)."
-    )));
+    say(Say::Done(
+        format!("Pushed {save} via {cli} (HTTPS token — no SSH, no 1Password).").into(),
+    ));
 
     let (title, body) = describe(root, &target, &save, kind);
     let pr::Opened { pr: opened, ours } = match repo
@@ -545,9 +553,10 @@ fn push_unsaid(root: &Path, plane: &Plane, sign: bool, caller: &Caller, say: Sin
     {
         Ok(opened) => opened,
         Err(why) => {
-            say(Say::Warn(format!(
-                "Pushed {save}, but the {noun} into {target} could not be opened: {why}"
-            )));
+            say(Say::Warn(
+                format!("Pushed {save}, but the {noun} into {target} could not be opened: {why}")
+                    .into(),
+            ));
             return record_push(
                 root,
                 PushResult {
@@ -574,11 +583,14 @@ fn push_unsaid(root: &Path, plane: &Plane, sign: bool, caller: &Caller, say: Sin
         merge: waits.clone(),
     });
     kept.write(root);
-    say(Say::Done(format!(
-        "{} into {target}: {}",
-        kind.request_noun_capitalised(),
-        opened.url
-    )));
+    say(Say::Done(
+        format!(
+            "{} into {target}: {}",
+            kind.request_noun_capitalised(),
+            opened.url
+        )
+        .into(),
+    ));
     let mut detail = String::new();
     if !ours {
         // A save branch somebody set by hand can carry a PR a person opened: it was left exactly
@@ -586,10 +598,10 @@ fn push_unsaid(root: &Path, plane: &Plane, sign: bool, caller: &Caller, say: Sin
         detail = format!(
             "the open {noun} from the save branch is not purlis's, so it was left as it was"
         );
-        say(Say::Info(format!("  {detail}.")));
+        say(Say::Info(format!("  {detail}.").into()));
     } else if let Some(waits) = waits {
         detail = waits.said(&request, &opened.url);
-        say(Say::Info(format!("  {detail}.")));
+        say(Say::Info(format!("  {detail}.").into()));
     }
     record_push(
         root,
@@ -656,9 +668,11 @@ fn push_save_branch(
     say: Sink,
 ) -> Result<(), Box<PushResult>> {
     let failed = |detail: String, say: Sink| {
-        say(Say::Warn(format!("Committed, but pushing {save} failed:")));
+        say(Say::Warn(
+            format!("Committed, but pushing {save} failed:").into(),
+        ));
         for line in detail.lines() {
-            say(Say::Warn(format!("  {line}")));
+            say(Say::Warn(format!("  {line}").into()));
         }
         Box::new(PushResult {
             landed: Some(save.to_string()),
@@ -731,7 +745,7 @@ fn push_save_branch(
              save_branch of this clone's own under [plane] in charter.local.toml, or delete \
              {save} on the remote if nothing on it is wanted, and save again"
         );
-        say(Say::Fail(format!("Not pushed: {why}.")));
+        say(Say::Fail(format!("Not pushed: {why}.").into()));
         return Err(Box::new(PushResult {
             landed: Some(save.to_string()),
             detail: why,
@@ -881,7 +895,7 @@ pub(super) fn settle(
         url: known.url.clone(),
     };
     let blocked = |detail: String, forget: bool, say: Sink| {
-        say(Say::Fail(format!("Blocked: {detail}")));
+        say(Say::Fail(format!("Blocked: {detail}").into()));
         if forget {
             let mut kept = Kept::read(root);
             kept.pr = None;
@@ -945,7 +959,7 @@ pub(super) fn settle(
                 );
             }
             if matches!(merging.state, MergeState::Red | MergeState::CannotMerge) {
-                say(Say::Warn(merging.said(&request, &known.url)));
+                say(Say::Warn(merging.said(&request, &known.url).into()));
             }
         }
         kept = Kept::read(root);
@@ -953,9 +967,9 @@ pub(super) fn settle(
             return Settled::Open;
         }
         merged_here = true;
-        say(Say::Done(format!(
-            "purlis merged {request} once it was ready."
-        )));
+        say(Say::Done(
+            format!("purlis merged {request} once it was ready.").into(),
+        ));
         asked = repo.backend().state(caller, &repo.path, &opened);
     }
     // What purlis merged just now is not in the fetch its caller made before asking. That fetch
@@ -1128,19 +1142,22 @@ pub(super) fn settle(
     forget_old_branch(root, plane, &mut kept);
     kept.write(root);
     let _ = std::fs::remove_file(push_record_path(root));
-    say(Say::Done(format!(
-        "{} {} merged — {target} is now the remote's{}.",
-        kind.request_noun_capitalised(),
-        kind.request_ref(number),
-        if newer > 0 {
-            format!(
-                ", with {} on top",
-                counted(newer, "newer commit", "newer commits")
-            )
-        } else {
-            String::new()
-        }
-    )));
+    say(Say::Done(
+        format!(
+            "{} {} merged — {target} is now the remote's{}.",
+            kind.request_noun_capitalised(),
+            kind.request_ref(number),
+            if newer > 0 {
+                format!(
+                    ", with {} on top",
+                    counted(newer, "newer commit", "newer commits")
+                )
+            } else {
+                String::new()
+            }
+        )
+        .into(),
+    ));
     Settled::Moved
 }
 
@@ -1280,13 +1297,12 @@ pub(super) fn merge_as_it_stands(
     let merging = Merging::of(&looked);
     remember(root, &merging, matches!(looked, Ok(Ready::Queued(_))));
     if let Ok(Ready::Queued(why)) = &looked {
-        say(Say::Done(why.clone()));
+        say(Say::Done(why.clone().into()));
         return Ok(MergedAsItStands::Later(why.clone()));
     }
-    say(Say::Done(format!(
-        "Merged {request} as it stands, as you asked: {}",
-        known.url
-    )));
+    say(Say::Done(
+        format!("Merged {request} as it stands, as you asked: {}", known.url).into(),
+    ));
     let fetch = fetch_after_merge(root, &repo.forge).map_err(str::to_string)?;
     let fetch = fetch
         .as_ref()

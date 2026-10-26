@@ -213,7 +213,7 @@ pub(crate) fn heard<T>(
 ) -> Result<SkillChanged, String> {
     let mut notes = Vec::new();
     let mut say = |line: Say| match line {
-        Say::Info(text) | Say::Warn(text) | Say::Fail(text) => notes.push(text),
+        Say::Info(text) | Say::Warn(text) | Say::Fail(text) => notes.push(text.to_string()),
         Say::Done(_) | Say::Plain(_) | Say::Out(_) => {}
     };
     let built_in = built_in();
@@ -537,8 +537,8 @@ pub(crate) async fn skill_deletes_cut_short(
 pub(crate) fn cut_short(root: &std::path::Path) -> DeletesCutShort {
     let mut ended = DeletesCutShort::default();
     let mut say = |line: Say| match line {
-        Say::Warn(text) | Say::Fail(text) => ended.unsettled.push(text),
-        Say::Info(text) => ended.settled.push(text),
+        Say::Warn(text) | Say::Fail(text) => ended.unsettled.push(text.to_string()),
+        Say::Info(text) => ended.settled.push(text.to_string()),
         Say::Done(_) | Say::Plain(_) | Say::Out(_) => {}
     };
     let built_in = built_in();

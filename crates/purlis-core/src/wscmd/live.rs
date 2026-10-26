@@ -44,32 +44,43 @@ use crate::wscmd;
 /// `off` is the `--off` flag: `false` makes the workspace LIVE, `true` makes it LOCAL.
 pub fn live(root: &Path, name: &str, off: bool, say: Sink) -> u8 {
     if wscmd::workspace_dir(root, name).is_none() {
-        say(Say::Fail(format!(
-            "invalid workspace name '{}' (use letters, digits, '.', '_', '-'; must not start \
+        say(Say::Fail(
+            format!(
+                "invalid workspace name '{}' (use letters, digits, '.', '_', '-'; must not start \
              with a dot)",
-            crate::personas::one_line(name)
-        )));
+                crate::personas::one_line(name)
+            )
+            .into(),
+        ));
         return 1;
     }
     if !wscmd::workspace_dir_exists(root, name) {
-        say(Say::Fail(format!(
-            "no workspace '{name}' (create it: purlis workspace create {name})"
-        )));
+        say(Say::Fail(
+            format!("no workspace '{name}' (create it: purlis workspace create {name})").into(),
+        ));
         return 1;
     }
     if off {
         return local(root, name, say);
     }
     match wscmd::set_live(root, name, true) {
-        Ok(false) => say(Say::Info(format!("Workspace '{name}' is already LIVE."))),
-        Ok(true) => say(Say::Done(format!(
-            "Workspace '{name}' is now LIVE — manifest + memory are committed + shared + \
+        Ok(false) => say(Say::Info(
+            format!("Workspace '{name}' is already LIVE.").into(),
+        )),
+        Ok(true) => say(Say::Done(
+            format!(
+                "Workspace '{name}' is now LIVE — manifest + memory are committed + shared + \
              auto-saved."
-        ))),
+            )
+            .into(),
+        )),
         Err(why) => {
-            say(Say::Fail(format!(
-                "could not write the plane's .gitignore, so '{name}' is unchanged ({why})."
-            )));
+            say(Say::Fail(
+                format!(
+                    "could not write the plane's .gitignore, so '{name}' is unchanged ({why})."
+                )
+                .into(),
+            ));
             return 1;
         }
     }
@@ -85,15 +96,18 @@ pub fn live(root: &Path, name: &str, off: bool, say: Sink) -> u8 {
         .join(crate::memstore::INDEX)
         .exists()
     {
-        say(Say::Warn(format!(
-            "'{name}' has no memory/{} yet, and this purlis does not create one — it is \
+        say(Say::Warn(
+            format!(
+                "'{name}' has no memory/{} yet, and this purlis does not create one — it is \
              LIVE with nothing to share. `purlis workspace remember` scaffolds it.",
-            crate::memstore::INDEX
-        )));
+                crate::memstore::INDEX
+            )
+            .into(),
+        ));
     }
-    say(Say::Info(format!(
-        "Record its repos: purlis workspace snapshot {name}  ·  share: purlis save"
-    )));
+    say(Say::Info(
+        format!("Record its repos: purlis workspace snapshot {name}  ·  share: purlis save").into(),
+    ));
     0
 }
 
@@ -115,25 +129,34 @@ fn local(root: &Path, name: &str, say: Sink) -> u8 {
             // below, not this code.
             Ok(_) => {}
             Err(why) => {
-                say(Say::Fail(format!(
-                    "could not run git to untrack '{name}'s shared files, so nothing was \
+                say(Say::Fail(
+                    format!(
+                        "could not run git to untrack '{name}'s shared files, so nothing was \
                      changed and it is still LIVE ({why})."
-                )));
+                    )
+                    .into(),
+                ));
                 return 1;
             }
         }
     }
     if let Err(why) = wscmd::set_live(root, name, false) {
-        say(Say::Fail(format!(
-            "'{name}'s files were untracked, but the plane's .gitignore could not be written, \
+        say(Say::Fail(
+            format!(
+                "'{name}'s files were untracked, but the plane's .gitignore could not be written, \
              so it is still recorded LIVE ({why}). Re-run this command."
-        )));
+            )
+            .into(),
+        ));
         return 1;
     }
-    say(Say::Done(format!(
-        "Workspace '{name}' is now LOCAL (private). Its manifest + memory are no longer \
+    say(Say::Done(
+        format!(
+            "Workspace '{name}' is now LOCAL (private). Its manifest + memory are no longer \
          committed. Finalize the untracking: purlis save"
-    )));
+        )
+        .into(),
+    ));
     0
 }
 
