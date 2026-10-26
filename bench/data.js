@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793030124386,
+  "lastUpdate": 1793031954012,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -25788,6 +25788,48 @@ window.BENCHMARK_DATA = {
             "value": 102.2421215,
             "unit": "ms",
             "extra": "median of 5 runs: 101.354, 101.991, 102.242, 102.325, 102.445 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "4ea64da5c8dc24dd3a59d2f2de8c64c9b6ac6cda",
+          "message": "Start a chat: two panes at a fixed height, prototype B (#2918) (#3378)\n\n* Start a chat: two panes at a fixed height, prototype B (#2918)\n\nThe persona list, under its filter once it is long, sits beside the persona\npicked, the harness option cards, the name and the boxes, in a wide dialog\nmin(620 px, window - 48) tall. Each pane scrolls on its own; the header and\nthe footer with Start stay in view. The footer says who starts on what.\n\nDialogs are 600 or 800 px wide, the operator's ruling on #2918.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* Start a chat: the approval path test picks a persona from the list\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Start a chat: review round of #3378\n\nStart reserves only the words this dialog can reach, and reads \"Start chat\".\nA refusal, the sign-in way out and the approval sentence sit at the top of\nthe details. Return starts on keyup, never on a held key, never from a\ndouble-click, and only for a plain start, with a test per entry point. The\npersona name takes the 15 px heading step; card facts take two lines; the\nfilter names the row its arrows picked; Name is a real label.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Start a chat: the sandbox story waits for the dialog to fade in\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Start a chat: the default persona chip is a mark for the eye (WCAG 2.5.3)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Start a chat: a persona mark beside its name repeats it in no tooltip (WCAG 2.5.3)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Start a chat: the default chip drawn from its attribute; a card states approval plainly\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* Start a chat: the card keeps its approval mark for the scenarios, uncoloured\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-26T15:32:32Z",
+          "tree_id": "c00ff32926ea6a4608dfd6778abe5e508a451293",
+          "url": "https://github.com/purlis/purlis/commit/4ea64da5c8dc24dd3a59d2f2de8c64c9b6ac6cda"
+        },
+        "date": 1793031951152,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.2820235,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.266, 0.276, 0.282, 0.282, 0.287 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5876435,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.514, 16.581, 16.588, 16.616, 16.632 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.0168625,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.505, 100.916, 101.017, 101.217, 101.603 ms"
           }
         ]
       }
