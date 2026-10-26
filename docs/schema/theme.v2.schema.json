@@ -263,6 +263,12 @@
           "minimum": 0,
           "maximum": 2
         },
+        "separator.width": {
+          "description": "Pixels. Purlis Classic's is 1.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2
+        },
         "focus-ring.width": {
           "description": "Pixels. Purlis Classic's is 2.",
           "type": "integer",
@@ -786,6 +792,126 @@
         },
         "activity.indicator.bar.focused.fill": {
           "$ref": "#/$defs/part-fill"
+        },
+        "badge.root.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "badge.root.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "badge.root.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "badge.root.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "badge.root.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "badge.root.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "badge.root.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "badge.root.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "badge.root.neutral.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "badge.root.neutral.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "badge.root.neutral.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "badge.root.neutral.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "badge.root.neutral.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "badge.root.neutral.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "badge.root.neutral.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "badge.root.neutral.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "badge.root.accent.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "badge.root.accent.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "badge.root.accent.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "badge.root.accent.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "badge.root.accent.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "badge.root.accent.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "badge.root.accent.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "badge.root.accent.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "badge.root.waiting.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "badge.root.waiting.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "badge.root.waiting.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "badge.root.waiting.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "badge.root.waiting.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "badge.root.waiting.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "badge.root.waiting.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "badge.root.waiting.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "badge.root.ok.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "badge.root.ok.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "badge.root.ok.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "badge.root.ok.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "badge.root.ok.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "badge.root.ok.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "badge.root.ok.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "badge.root.ok.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
         },
         "button.root.fill": {
           "$ref": "#/$defs/part-fill"
@@ -2317,6 +2443,105 @@
         "button.icon.quiet.open.text": {
           "$ref": "#/$defs/part-text"
         },
+        "card.root.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "card.root.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card.root.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "card.root.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "card.root.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "card.root.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "card.root.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "card.root.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "card.root.raised.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "card.root.raised.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card.root.raised.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "card.root.raised.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "card.root.raised.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "card.root.raised.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "card.root.raised.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "card.root.raised.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "card.root.ask.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "card.root.ask.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card.root.ask.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "card.root.ask.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "card.root.ask.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "card.root.ask.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "card.root.ask.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "card.root.ask.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "card.title.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card.title.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "card.title.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "card.title.raised.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card.title.raised.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "card.title.raised.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "card.title.ask.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card.title.ask.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "card.title.ask.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
         "checkbox.root.fill": {
           "$ref": "#/$defs/part-fill"
         },
@@ -2757,6 +2982,141 @@
         },
         "combobox.chevron.invalid.text": {
           "$ref": "#/$defs/part-text"
+        },
+        "count.root.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "count.root.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "count.root.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "count.root.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "count.root.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "count.root.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "count.root.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "count.root.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "count.root.neutral.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "count.root.neutral.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "count.root.neutral.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "count.root.neutral.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "count.root.neutral.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "count.root.neutral.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "count.root.neutral.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "count.root.neutral.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "count.root.accent.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "count.root.accent.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "count.root.accent.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "count.root.accent.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "count.root.accent.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "count.root.accent.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "count.root.accent.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "count.root.accent.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "count.root.waiting.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "count.root.waiting.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "count.root.waiting.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "count.root.waiting.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "count.root.waiting.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "count.root.waiting.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "count.root.waiting.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "count.root.waiting.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "count.root.hot.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "count.root.hot.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "count.root.hot.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "count.root.hot.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "count.root.hot.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "count.root.hot.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "count.root.hot.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "count.root.hot.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "count.group.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "count.group.neutral.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "count.group.accent.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "count.group.waiting.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "count.group.hot.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
         },
         "dialog.root.fill": {
           "$ref": "#/$defs/part-fill"
@@ -4162,6 +4522,96 @@
         "menu.indicator.danger.open.text": {
           "$ref": "#/$defs/part-text"
         },
+        "notice.root.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "notice.root.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "notice.root.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "notice.root.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "notice.root.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "notice.root.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "notice.root.news.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "notice.root.news.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "notice.root.news.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "notice.root.news.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "notice.root.news.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "notice.root.news.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "notice.root.trouble.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "notice.root.trouble.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "notice.root.trouble.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "notice.root.trouble.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "notice.root.trouble.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "notice.root.trouble.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "notice.message.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "notice.message.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "notice.message.news.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "notice.message.news.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "notice.message.trouble.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "notice.message.trouble.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "notice.whose.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "notice.whose.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "notice.whose.news.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "notice.whose.news.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "notice.whose.trouble.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "notice.whose.trouble.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
         "option-card.root.fill": {
           "$ref": "#/$defs/part-fill"
         },
@@ -5532,6 +5982,9 @@
         },
         "select.chevron.invalid.text": {
           "$ref": "#/$defs/part-text"
+        },
+        "separator.root.fill": {
+          "$ref": "#/$defs/part-fill"
         },
         "slider.root.text": {
           "$ref": "#/$defs/part-text"
@@ -8493,6 +8946,12 @@
           "maximum": 24
         },
         "panel.border-width": {
+          "description": "Pixels. Purlis Classic's is 1.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2
+        },
+        "separator.width": {
           "description": "Pixels. Purlis Classic's is 1.",
           "type": "integer",
           "minimum": 0,
