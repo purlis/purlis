@@ -65,7 +65,31 @@ describe("a browser view tab", () => {
     );
     expect(await $(BAR).getAttribute("data-driving")).toBe("agent");
 
-    await $(SURFACE).click();
+    // A press and a release on the middle of the page, as the pointer makes them: the embedded
+    // WebDriver's element click is a `click` alone, and the view takes a browser over on the
+    // press, mapped onto the page the frame shows.
+    await browser.execute(
+      (surface: string, frame: string) => {
+        const target = document.querySelector<HTMLElement>(surface);
+        const box = document.querySelector<HTMLCanvasElement>(frame)?.getBoundingClientRect();
+        if (target === null || box === undefined) throw new Error("no page to click");
+        const at = {
+          bubbles: true,
+          cancelable: true,
+          clientX: box.left + box.width / 2,
+          clientY: box.top + box.height / 2,
+          button: 0,
+          buttons: 1,
+          pointerId: 1,
+          pointerType: "mouse",
+          isPrimary: true,
+        };
+        target.dispatchEvent(new PointerEvent("pointerdown", at));
+        target.dispatchEvent(new PointerEvent("pointerup", { ...at, buttons: 0 }));
+      },
+      SURFACE,
+      FRAME,
+    );
 
     await until(
       async () => (await $(BAR).getAttribute("data-driving")) === "person",

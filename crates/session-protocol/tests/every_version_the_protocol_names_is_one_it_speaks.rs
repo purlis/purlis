@@ -13,7 +13,9 @@ use purlis_session_protocol::session::VERSION;
 const SOURCE: &str = include_str!("../src/session.rs");
 
 /// Minors no change added: their numbers were passed over.
-const PASSED_OVER: &[u16] = &[12, 19, 20];
+/// 1.38 to 1.41 are held for changes in flight beside #2025's 1.42; the dispatcher numbers them
+/// again as they land.
+const PASSED_OVER: &[u16] = &[12, 19, 20, 38, 39, 40, 41];
 
 /// Each `pub const KNOWS_…: Version` in the source, with its minor.
 fn knows() -> Vec<(String, u16)> {

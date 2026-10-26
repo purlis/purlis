@@ -24,14 +24,18 @@ const plane = (process.env.PURLIS_BROWSER_PLANE ??= copyFixturePlane());
  * draws frames from a real engine and takes a click. Its own run, because its session host
  * downloads the pinned engine on its first browser, which no other spec should wait on.
  *
- * **The engine is where a person's would be.** Its data home is `~/.local/share/purlis` of a
- * `$HOME` one folder below the temporary folder: on Linux, the AppArmor profile the `.deb`
- * installs names the engine there, and CI tells AppArmor that folder holds homes, as the `rust`
- * job does for the window's end-to-end browser tests (#2835). Off CI it runs where an engine may
- * be downloaded and started.
+ * **On Linux the engine is where a person's would be.** Its data home is `~/.local/share/purlis`
+ * of a `$HOME` one folder below the temporary folder: the AppArmor profile the `.deb` installs
+ * names the engine there, and CI tells AppArmor that folder holds homes, as the `rust` job does
+ * for the window's end-to-end browser tests (#2835). On macOS the run's own homes serve.
  */
+const linux = process.platform === "linux";
 const home = THE_RUNS_TREE;
-writeFileSync(join(home, ".gitconfig"), THE_RUNS_GIT_CONFIG_TEXT);
+if (linux) writeFileSync(join(home, ".gitconfig"), THE_RUNS_GIT_CONFIG_TEXT);
+/** On Linux, the home and data home the engine's AppArmor profile names; elsewhere the run's. */
+const whereTheEngineIs: Record<string, string> = linux
+  ? { HOME: home, CHARTER_DATA_HOME: join(home, ".local", "share", "purlis") }
+  : {};
 
 export const config: WebdriverIO.Config = {
   ...base,
@@ -52,8 +56,7 @@ export const config: WebdriverIO.Config = {
         captureFrontendLogs: true,
         env: theRunsEnvironment(plane, {
           CHARTER_PANIC_LOG: PANIC_LOG,
-          HOME: home,
-          CHARTER_DATA_HOME: join(home, ".local", "share", "purlis"),
+          ...whereTheEngineIs,
           PURLIS_NO_BACKGROUND_CHECKS: "1",
         }),
       },
