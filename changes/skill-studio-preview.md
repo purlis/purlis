@@ -95,6 +95,24 @@
   offered *Move them*, the same one-commit move as `purlis doctor --fix project-skills`. The
   commit reaches everyone in the project, and a teammate on an older purlis opens it read-only
   until they update.
+- **Grade a skill's trigger tests** (Skill studio preview, #2779). A skill can carry trigger tests:
+  queries it should start on, and near misses it should leave alone. _Grade…_ on a skill's tab
+  first shows what a grade runs: how many chats, each test as the chat will read it (a character
+  no reader would see marked), what the skill's last grade spent, and that the chats are paid for
+  by the profile you pick, as any chat is. A grade stops once its chats have spent 200,000 tokens,
+  or the cap you set in the plan for this machine, or once they cost that many tokens would at
+  the dearest price, where Claude Code says what they cost, and says what it spent. Nothing runs until you
+  press _Grade_. Each test then
+  runs in a chat of its own, three times with the skill and three times without it, in a
+  throwaway folder, only in the project's full sandbox, with none of your own Allows, no tools
+  but purlis's that only read, and only on a Claude Code profile that keeps its permission
+  prompts; the plan says why when a grade cannot run. A chat that asks you something is ended
+  there and does not count. A grade of a skill kept on this machine stays on this machine. Those chats get no tab, and each ends as soon as
+  the skill starts. The tab says how far the grade has got and offers _Stop_. The skill's
+  _Grades_ panel shows each grade: the version it graded, what it ran on, the tests passed, each
+  side's pass rate and the difference the skill made. Each version in its history shows its
+  newest grade. Grades are kept in the project beside its skill runs, so the team sees them, and
+  a run a grade started says so. `purlis skill grade` prints the same plan and the grades.
 
 - **A large library stays reachable without flooding a chat** (Skill studio preview, #2778).
   Once a chat's skills are past purlis's skill budget, it is handed the skills you pinned,

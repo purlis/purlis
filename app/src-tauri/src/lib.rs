@@ -79,6 +79,7 @@ mod machineprofiles;
 mod personaskills;
 mod skillchange;
 mod skilldrafts;
+mod skillgrade;
 mod skillhistory;
 mod skillrun;
 mod skillsources;
@@ -1008,7 +1009,13 @@ fn sidebar_of(held: &planes::Held) -> Result<Sidebar, String> {
     let mut unfiled = Vec::new();
     // The dispatch records, read at most once for the whole list (#1484).
     let mut outcomes = dispatches::Outcomes::of(held);
-    let open_now = held.chats().open_now();
+    // A grade's chats are its own, and never drawn (SK-16).
+    let open_now: Vec<chats::Open> = held
+        .chats()
+        .open_now()
+        .into_iter()
+        .filter(|open| !held.chats().kept_from_the_window(open.session))
+        .collect();
     // The limits' files, read at most once for each place and persona that asked (#1491).
     let mut limits = dispatched::RunningLimits::of(held, &open_now);
     // What waits on memory, counted once for the whole list by the chat that asked (#1617).
@@ -2686,6 +2693,8 @@ fn chat_states(planes: tauri::State<'_, Planes>, plane: PlaneId) -> Result<Vec<M
         .chats()
         .open_now()
         .into_iter()
+        // A grade's chat is drawn nowhere, so its state is no row's (SK-16).
+        .filter(|open| !held.chats().kept_from_the_window(open.session))
         .map(|open| held.board().now(open.session))
         .collect())
 }
@@ -2913,6 +2922,9 @@ fn commands() -> Builder<tauri::Wry> {
         // the persona page's summary row and the window's catalogue.
         .constant("SKILL_STUDIO_IN", skillstudio::STUDIO_IN)
         .constant("SKILL_RUNS_PANEL", skillstudio::RUNS_PANEL)
+        // What `skill-grade` carries, and the event's name (SK-16, #2779).
+        .typ::<skillgrade::SkillGradeStep>()
+        .constant("SKILL_GRADE", skillgrade::EVENT)
         .constant("PERSONA_SCOPE_KEY", skillstudio::PERSONA_SCOPE_KEY)
 }
 

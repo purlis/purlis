@@ -251,10 +251,18 @@ impl Locks {
         let locks = TEST_LOCKS.with(|locks| locks.borrow().clone());
         #[cfg(not(any(test, feature = "test-support")))]
         let locks = Self::read(Path::new(MACHINE_FILE));
-        Self {
+        let held = Self {
             team_never: super::team::Team::of(root).policy == super::team::Policy::Never,
             ..locks
+        };
+        // A grade's chat keeps no Allow of any scope (SK-16, [`holding_no_kept_grants`]).
+        if HOLDING_NO_KEPT_GRANTS.get() {
+            return Self {
+                allow_scopes: Some(Vec::new()),
+                ..held
+            };
         }
+        held
     }
 
     /// The policy file at `path`: none where there is no file, its locks where it is one purlis
@@ -1099,6 +1107,27 @@ pub fn machine_folder() -> PathBuf {
     Path::new(MACHINE_FILE)
         .parent()
         .map_or_else(|| PathBuf::from(MACHINE_FILE), Path::to_path_buf)
+}
+
+thread_local! {
+    /// Whether this thread is deciding a grade's chat's sandbox ([`holding_no_kept_grants`]).
+    static HOLDING_NO_KEPT_GRANTS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// **Decides `decide` as for a grade's chat** (SK-16, the operator's ruling of 2026-10-26 on
+/// #3229): no Allow of any scope is kept, so none of the person's own folders, sockets, services
+/// or ports, kept for this project or for every project on this machine, reaches the chat, as an
+/// administrator's `allow-scopes` of none would hold it. The chat's own grants are none. Only
+/// the thread that asks is held, and only while `decide` runs.
+pub fn holding_no_kept_grants<T>(decide: impl FnOnce() -> T) -> T {
+    struct Held(bool);
+    impl Drop for Held {
+        fn drop(&mut self) {
+            HOLDING_NO_KEPT_GRANTS.set(self.0);
+        }
+    }
+    let _held = Held(HOLDING_NO_KEPT_GRANTS.replace(true));
+    decide()
 }
 
 #[cfg(test)]

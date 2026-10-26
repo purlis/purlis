@@ -741,6 +741,8 @@ pub enum RunStart {
     Curation,
     /// A trigger sent the prompt.
     Trigger,
+    /// A grade sent the prompt: a trigger test's chat.
+    Grade,
     /// A start a newer purlis wrote.
     Unknown,
 }
@@ -755,6 +757,7 @@ impl From<purlis_core::skills::runs::StartedBy> for RunStart {
             StartedBy::UseSkill => RunStart::UseSkill,
             StartedBy::Curation => RunStart::Curation,
             StartedBy::Trigger => RunStart::Trigger,
+            StartedBy::Grade => RunStart::Grade,
             _ => RunStart::Unknown,
         }
     }
@@ -983,6 +986,7 @@ pub(crate) async fn skill_runs(
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum SkillPanelKey {
+    Grades,
     Runs,
     Extension { extension: String, panel: String },
 }
@@ -994,6 +998,7 @@ impl From<purlis_core::skills::studio::PanelKey> for SkillPanelKey {
     fn from(key: purlis_core::skills::studio::PanelKey) -> SkillPanelKey {
         use purlis_core::skills::studio::PanelKey;
         match key {
+            PanelKey::Grades => SkillPanelKey::Grades,
             PanelKey::Runs => SkillPanelKey::Runs,
             PanelKey::Extension { extension, panel } => {
                 SkillPanelKey::Extension { extension, panel }
@@ -1002,8 +1007,8 @@ impl From<purlis_core::skills::studio::PanelKey> for SkillPanelKey {
     }
 }
 
-/// **One panel on a skill's tab** (ADR 0101 §6), as the window draws it: purlis's Runs panel,
-/// then each panel an extension that declares `studio-panel` adds, each answered in panel blocks
+/// **One panel on a skill's tab** (ADR 0101 §6), as the window draws it: purlis's Grades and Runs
+/// panels, then each panel an extension that declares `studio-panel` adds, each answered in panel blocks
 /// or refused with the core's sentence.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct SkillPanel {
@@ -1022,10 +1027,9 @@ pub(crate) fn panels(
     skill: &str,
     studio: Option<purlis_core::skills::studio::Studio<'_>>,
 ) -> Vec<SkillPanel> {
-    use purlis_core::skills::studio::{Answered, RunsPanel};
     let answered = match studio {
         Some(studio) => studio.panels(root, skill),
-        None => vec![Answered::of(&RunsPanel { plane: root }, skill)],
+        None => purlis_core::skills::studio::own_panels(root, skill),
     };
     answered
         .into_iter()

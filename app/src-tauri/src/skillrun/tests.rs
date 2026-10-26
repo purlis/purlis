@@ -147,3 +147,40 @@ fn a_skill_use_skill_typed_is_on_the_chats_tab_from_the_prompt_it_was_typed_into
     };
     assert_eq!(said, vec![open(0), open(1), None]);
 }
+
+/// SK-16 (#2779): a grade watching a chat is told each skill that starts in it once, and the end
+/// of its turn; a chat it does not watch tells it nothing.
+#[test]
+fn a_grade_watching_a_chat_is_told_each_skill_it_started_and_the_end_of_its_turn() {
+    let (runs, _told) = listening();
+    let watched = runs.watch(4);
+
+    runs.heard(&call(5, "toolu_0", Some("other")));
+    runs.heard(&call(4, "toolu_1", None));
+    runs.heard(&call(4, "toolu_2", Some("deploy")));
+    runs.heard(&call(4, "toolu_3", None));
+    runs.reported(&report(4, Event::Stop));
+    runs.unwatch(4);
+    runs.heard(&call(4, "toolu_4", Some("deploy")));
+
+    assert_eq!(
+        watched.try_iter().collect::<Vec<_>>(),
+        vec![Watched::Started("deploy".to_owned()), Watched::TurnEnded],
+    );
+}
+
+/// SK-16 (the review of #3229): a grade watching a chat is told when it asks the person, by a
+/// call put to them or by a notice that it waits.
+#[test]
+fn a_grade_watching_a_chat_is_told_when_it_asks_the_person() {
+    let (runs, _told) = listening();
+    let watched = runs.watch(4);
+    let mut asked = call(4, "toolu_1", None);
+    asked.decision = Decision::Ask;
+    runs.heard(&asked);
+    runs.reported(&report(4, Event::Notification));
+    assert_eq!(
+        watched.try_iter().collect::<Vec<_>>(),
+        vec![Watched::Asked, Watched::Asked],
+    );
+}

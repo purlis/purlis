@@ -77,6 +77,8 @@ describe("a skill's history, state and uses", () => {
     const asked: Array<{ cmd: string; args: unknown }> = [];
     mockIPC((cmd, args) => {
       asked.push({ cmd, args });
+      // Grade reads its plan on its own, for a grade running already (SK-16).
+      if (cmd === "skill_grade_plan") return { running: null };
       if (cmd === "skill_details") return page({ state: "active" }, null);
       if (cmd === "skill_diff")
         return {
@@ -117,6 +119,8 @@ describe("a skill's history, state and uses", () => {
 
   it("names the uses, marks a broken one, and lists what uses it", async () => {
     mockIPC((cmd) => {
+      // Grade reads its plan on its own, for a grade running already (SK-16).
+      if (cmd === "skill_grade_plan") return { running: null };
       if (cmd === "skill_details") return page({ state: "active" }, null);
       throw new Error(`unexpected ${cmd}`);
     });
@@ -141,6 +145,7 @@ describe("a skill's history, state and uses", () => {
           ],
         };
       if (cmd === "skill_pin") return { notes: [] };
+      if (cmd === "skill_grade_plan") return { running: null };
       throw new Error(`unexpected ${cmd}`);
     });
     render(<SkillDetailsPanel plane="p" name="deploy" changed={0} />);
@@ -177,6 +182,7 @@ describe("a skill's history, state and uses", () => {
           ],
         };
       if (cmd === "skill_pin") return { notes: [] };
+      if (cmd === "skill_grade_plan") return { running: null };
       throw new Error(`unexpected ${cmd}`);
     });
     render(<SkillDetailsPanel plane="p" name="deploy" changed={0} />);
@@ -200,6 +206,7 @@ describe("a skill's history, state and uses", () => {
   it("says no workspace or persona pins it", async () => {
     mockIPC((cmd) => {
       if (cmd === "skill_details") return page({ state: "active" }, null);
+      if (cmd === "skill_grade_plan") return { running: null };
       throw new Error(`unexpected ${cmd}`);
     });
     render(<SkillDetailsPanel plane="p" name="deploy" changed={0} />);
@@ -213,6 +220,8 @@ describe("a skill's history, state and uses", () => {
     const asked: Array<{ cmd: string; args: unknown }> = [];
     mockIPC((cmd, args) => {
       asked.push({ cmd, args });
+      // Grade reads its plan on its own, for a grade running already (SK-16).
+      if (cmd === "skill_grade_plan") return { running: null };
       if (cmd === "skill_details") return page({ state: "active" }, 61);
       if (cmd === "skill_lifecycle") return { notes: [] };
       throw new Error(`unexpected ${cmd}`);
@@ -231,6 +240,8 @@ describe("a skill's history, state and uses", () => {
 
   it("offers Restore for an archived skill and says it never loads", async () => {
     mockIPC((cmd) => {
+      // Grade reads its plan on its own, for a grade running already (SK-16).
+      if (cmd === "skill_grade_plan") return { running: null };
       if (cmd === "skill_details") return page({ state: "archived" }, 90);
       throw new Error(`unexpected ${cmd}`);
     });

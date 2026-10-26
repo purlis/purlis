@@ -45,8 +45,19 @@ impl Server {
 
     /// [`Server::start`], with `env` set too: what a chat the app started hands it.
     fn start_with(root: &Path, workspace: &str, env: &[(&str, &std::ffi::OsStr)]) -> Self {
+        Self::start_as(root, workspace, env, &[])
+    }
+
+    /// [`Server::start_with`], with `args` after `mcp`: a grade's chat's `--graded`.
+    fn start_as(
+        root: &Path,
+        workspace: &str,
+        env: &[(&str, &std::ffi::OsStr)],
+        args: &[&str],
+    ) -> Self {
         let mut child = support::purlis()
             .arg("mcp")
+            .args(args)
             .current_dir(root)
             .env_clear()
             .env("PATH", std::env::var_os("PATH").unwrap_or_default())
@@ -1109,5 +1120,43 @@ mod the_server_says_it {
         let ends = host.said();
         assert_eq!(ends.detail.notified, Notified::Answered);
         host.nothing_more(&mut server);
+    }
+}
+
+/// SK-16 (the operator's ruling of 2026-10-26 on #3229): a grade's chat is listed and answered
+/// the tools that only read, and none that writes, dispatches, asks the person or drives a
+/// browser.
+#[test]
+fn a_grades_chat_is_listed_and_answered_the_tools_that_only_read() {
+    let p = project();
+    let mut server = Server::start_as(p.path(), "alpha", &[], &["--graded"]);
+    server.initialize(false);
+    let listed = server.request("tools/list", json!({}));
+    let names: Vec<&str> = listed["result"]["tools"]
+        .as_array()
+        .expect("tools")
+        .iter()
+        .filter_map(|tool| tool["name"].as_str())
+        .collect();
+    assert!(!names.is_empty(), "{listed}");
+    for name in &names {
+        assert!(
+            purlis_core::chattools::PRE_ALLOWED.contains(name),
+            "{name} is listed to a grade's chat"
+        );
+    }
+    for writes in [
+        "todo_add",
+        "memory_add",
+        "dispatch",
+        "ask_operator",
+        "session_record",
+    ] {
+        assert!(!names.contains(&writes), "{writes}");
+        let called = server.request("tools/call", json!({ "name": writes, "arguments": {} }));
+        assert!(
+            called.get("error").is_some(),
+            "{writes} answered a grade's chat: {called}"
+        );
     }
 }

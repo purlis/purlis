@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use super::super::grant::{self, Grants, What};
 use super::super::hosts::Host;
 use super::super::{Compiled, Machine, Os, Plane, Policy, Preset};
-use super::{Locks, Seen, TEST_LOCKS, judge};
+use super::{Locks, Seen, TEST_LOCKS, holding_no_kept_grants, judge};
 
 const FILE: &str = "/etc/purlis/policy.json";
 
@@ -1549,4 +1549,32 @@ fn a_relayed_internal_that_is_not_a_list_refuses_the_file() {
 
     assert!(locks.refused_because().is_some());
     assert!(locks.relayed_internal().is_empty());
+}
+
+/// SK-16 (#2779, the operator's ruling of 2026-10-26): a grade's chat keeps no Allow at any
+/// scope while its sandbox is decided, and every other decision keeps what policy leaves open.
+#[test]
+fn a_grades_chat_keeps_no_allow_of_any_scope_and_only_while_it_is_decided() {
+    let plane = tempfile::tempdir().unwrap();
+    let levels = [
+        crate::sandbox::grant::Level::Chat,
+        crate::sandbox::grant::Level::You,
+        crate::sandbox::grant::Level::Machine,
+    ];
+    assert!(
+        levels
+            .iter()
+            .all(|level| Locks::of(plane.path()).keeps_scope(*level))
+    );
+    let held = holding_no_kept_grants(|| {
+        levels
+            .iter()
+            .any(|level| Locks::of(plane.path()).keeps_scope(*level))
+    });
+    assert!(!held, "no scope is kept for a grade's chat");
+    assert!(
+        levels
+            .iter()
+            .all(|level| Locks::of(plane.path()).keeps_scope(*level))
+    );
 }

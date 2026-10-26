@@ -42,6 +42,7 @@ pub mod budget;
 pub mod change;
 pub mod compat;
 mod declared;
+pub mod grade;
 mod grant;
 pub mod handed;
 mod held;
@@ -213,6 +214,12 @@ impl Origin {
     pub fn of_the_plane(self) -> bool {
         matches!(self, Self::Project | Self::Workspace | Self::Persona)
     }
+}
+
+/// **A skill's name without the namespace a harness started it by**: `purlis-project:deploy` is
+/// `deploy`, and a name with none is itself. The one strip of a `<plugin>:<skill>` name.
+pub fn leaf_name(name: &str) -> &str {
+    name.rsplit_once(':').map_or(name, |(_, leaf)| leaf)
 }
 
 /// The level a person is shown for a skill of `origin`, local or shared: `project`,

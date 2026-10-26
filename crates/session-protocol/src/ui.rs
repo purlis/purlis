@@ -637,6 +637,14 @@ pub const WINDOW_ONLY: &[&str] = &[
     "skill_draft_reject",
     "skill_draft_chat",
     "skill_draft_try",
+    // A grade of a skill started or stopped (SK-16, #2779): it runs chats on the person's
+    // profile, each started on a trigger test's query, and records the grade in the project.
+    // The person's own press in their window, after the plan showed what it costs.
+    "skill_grade_start",
+    "skill_grade_stop",
+    // A grade's token cap (#2779): what this machine's grades may spend, in its own settings
+    // file. The person's own press in their window.
+    "skill_grade_set_cap",
     // Accepting a workspace or persona folder a chat could have made (SK-9): its skills then
     // reach chats, so only the person's own press in their window does it.
     "skill_level_accept",
@@ -1048,6 +1056,7 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "show_window_holding",
     "skill_details",
     "skill_diff",
+    "skill_grade_plan",
     "skill_lint",
     "skill_move_needs_grant",
     "skill_panels",

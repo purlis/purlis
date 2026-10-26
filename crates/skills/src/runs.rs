@@ -47,6 +47,9 @@ pub enum StartedBy {
     Curation,
     /// A trigger sent the prompt that started it (AC-9), by the route the harness took.
     Trigger,
+    /// A grade sent the prompt that started it (SK-16): a trigger test's chat, by the route the
+    /// harness took. Its run is the grade's evidence, not a use of the skill.
+    Grade,
     /// A start a newer purlis wrote, which this one does not know. It never opens a run.
     #[serde(other)]
     Unknown,
@@ -54,7 +57,7 @@ pub enum StartedBy {
 
 impl StartedBy {
     /// The word a run records: `skill-tool`, `read`, `mcp-load`, `use-skill`, `curation`,
-    /// `trigger` or `unknown`.
+    /// `trigger`, `grade` or `unknown`.
     pub fn word(self) -> &'static str {
         match self {
             Self::SkillTool => "skill-tool",
@@ -63,6 +66,7 @@ impl StartedBy {
             Self::UseSkill => "use-skill",
             Self::Curation => "curation",
             Self::Trigger => "trigger",
+            Self::Grade => "grade",
             Self::Unknown => "unknown",
         }
     }
@@ -76,6 +80,7 @@ impl StartedBy {
             "use-skill" => Self::UseSkill,
             "curation" => Self::Curation,
             "trigger" => Self::Trigger,
+            "grade" => Self::Grade,
             _ => return None,
         })
     }

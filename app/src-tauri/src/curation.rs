@@ -573,6 +573,11 @@ pub enum SentFor {
     /// The window's **Fix** on a save that failed (the operator's ruling P2, 2026-10-13): the
     /// person's own press, and the chat starts at once.
     FixASave,
+    /// A **grade's chat** (SK-16, ADR 0061 amended 2026-10-25): the person pressed Grade after
+    /// seeing what it runs and costs, and each trigger test's query is the first message of a
+    /// chat of its own, in a throwaway piece, under the sandbox. The query is the fixture's, not
+    /// purlis's: a grade measures what the chat does with it, so it is sent as it is written.
+    Grade,
 }
 
 /// Opens `chat` **started on its prompt**: the prompt is the chat's first message, handed to
@@ -593,30 +598,55 @@ pub fn start_sent(
     size: Size,
     why: SentFor,
 ) -> Result<StartedTyped, String> {
+    sent(held, chat, size, why, |_| {})
+}
+
+/// **Opens a grade's chat started on its trigger test's query** ([`SentFor::Grade`]): as
+/// [`start_sent`] does, with `before` told the chat's number before it starts, so the grade
+/// watches it from its first hook and the window is kept from drawing it (`crate::skillgrade`).
+/// Its skill runs are the grade's ([`purlis_core::skills::runs::StartedBy::Grade`]).
+pub fn start_graded(
+    held: &Arc<Held>,
+    chat: ChatTyped,
+    size: Size,
+    before: impl FnOnce(u32),
+) -> Result<StartedTyped, String> {
+    sent(held, chat, size, SentFor::Grade, before)
+}
+
+/// [`start_sent`] and [`start_graded`]: `before` is told the number before the chat starts.
+fn sent(
+    held: &Arc<Held>,
+    chat: ChatTyped,
+    size: Size,
+    why: SentFor,
+    before: impl FnOnce(u32),
+) -> Result<StartedTyped, String> {
     if let Some(bad) = purlis_core::handoff::bad_message(&chat.prompt) {
         return Err(bad.say());
     }
     let root = held.root().to_path_buf();
     let number = held.chats().sessions().deal();
     let name = number.to_string();
-    let ready = purlis_core::start::ready(
-        &purlis_core::start::Start {
-            profile: Some(chat.profile.clone()),
-            persona: chat.persona.clone(),
-            name: name.clone(),
-            cwd: Some(chat.cwd.clone()),
-            resume: None,
-            show_footer: false,
-            resuming: None,
-            // An ordinary sandboxed chat, with nothing past its project's sandbox.
-            without_sandbox: None,
-            held: None,
-            grants: Default::default(),
-            // The person's curation action, from the window (#2071).
-            made: purlis_core::sandbox::Made::Window,
-        },
-        &root,
-    )
+    let start = purlis_core::start::Start {
+        profile: Some(chat.profile.clone()),
+        persona: chat.persona.clone(),
+        name: name.clone(),
+        cwd: Some(chat.cwd.clone()),
+        resume: None,
+        show_footer: false,
+        resuming: None,
+        // An ordinary sandboxed chat, with nothing past its project's sandbox.
+        without_sandbox: None,
+        held: None,
+        grants: Default::default(),
+        // The person's curation action, from the window (#2071).
+        made: purlis_core::sandbox::Made::Window,
+    };
+    let ready = match why {
+        SentFor::Grade => purlis_core::skills::grades::ready_to_grade(&start, &root),
+        SentFor::FixASave => purlis_core::start::ready(&start, &root),
+    }
     .and_then(|ready| crate::handoff::told_first(ready, &chat.profile, &chat.prompt))?;
     let record = Chat {
         program: ready.program.clone(),
@@ -635,9 +665,26 @@ pub fn start_sent(
         label: Some(chat.label),
         from: None,
         renamed_from: None,
+        // A grade's chat is drawn nowhere and never put back (SK-16).
+        graded: why == SentFor::Grade,
         ..Default::default()
     };
+    before(number);
     let session = held.chats().start_ready(&record, &ready, size)?;
+    // The skill runs its turn opens are the grade's, where it is one (SK-16): held under the
+    // salt of the id its start gave it (SK-38), as a curation action's are. The id is minted by
+    // the start, so this is the first moment it can be; the harness is still booting, well before
+    // its first prompt's hook.
+    if let Some(by) = chat.starts_runs {
+        match held.chats().skills_of(session).and_then(|chat| chat.salt) {
+            Some(salt) => held
+                .hooks()
+                .skill_prompted(&root, session, by, &chat.prompt, &salt),
+            None => tracing::debug!(
+                "purlis: chat {session} started with no id, so its message starts no run"
+            ),
+        }
+    }
     // Said in the app's own log, as every send purlis makes is: which chat, and for what.
     tracing::info!(
         "purlis: chat {number} was started on a message purlis wrote and sent ({why:?})"
