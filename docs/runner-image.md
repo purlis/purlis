@@ -144,7 +144,14 @@ needs:
   allows `pidfd_getfd` only with `CAP_SYS_PTRACE`, so a Docker pool makes each runner with its
   own profile, Docker's default and that one call besides
   (`crates/purlis-core/src/dockerpool/seccomp.json`). Where a runtime refuses it, no server a
-  chat starts listens, and everything else works.
+  chat starts listens, and the refusal is told to the person as a blocked bind. That reaches
+  further than servers: every program that listens on a socket of its own stops there too,
+  unix sockets included, such as a `tmux` server, an `ssh` ControlMaster, `gpg-agent` or a
+  language server. A runtime refuses it under Docker's or containerd's default profile,
+  Kubernetes' `RuntimeDefault` (#3413), Yama's `ptrace_scope` 3, and for a program that is not
+  dumpable. A Docker pool runner made by a purlis from before this profile still runs Docker's
+  default: it is still linked, and its chats' servers listen once it is removed and added
+  again.
 
 On a kernel without it, a sandboxed chat is refused and the refusal says which version is
 needed.

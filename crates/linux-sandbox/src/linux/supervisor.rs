@@ -17,7 +17,8 @@
 //! process that asked, to the wrap's [`Teller`], after the refusal is decided and whatever the
 //! teller does. Nothing told changes an answer. A call refused for anything but the profile (a
 //! process outside the sandbox, an abstract socket, a call no profile has a word for) names
-//! nothing a person could allow, and is not told.
+//! nothing a person could allow, and is not told; but for a refused listen, which is told as
+//! macOS's kernel tells a refused bind, so a server that does not start is never silent.
 
 use std::ffi::OsStr;
 use std::io::IoSliceMut;
@@ -30,8 +31,8 @@ use std::sync::{Arc, Mutex};
 use nix::errno::Errno;
 use nix::fcntl::{AT_FDCWD, AtFlags, OFlag, RenameFlags, openat, renameat2};
 use nix::sys::socket::{
-    AddressFamily, Backlog, SockFlag, SockType, SockaddrIn, SockaddrIn6, SockaddrLike,
-    SockaddrStorage, UnixAddr, connect, getsockname, listen, setsockopt, socket, sockopt,
+    AddressFamily, Backlog, Shutdown, SockFlag, SockType, SockaddrIn, SockaddrIn6, SockaddrLike,
+    SockaddrStorage, UnixAddr, connect, getsockname, listen, setsockopt, shutdown, socket, sockopt,
 };
 use nix::sys::stat::{
     FchmodatFlags, Mode, SFlag, UtimensatFlags, fchmodat, fstat, mkdirat, mknodat, stat, utimensat,
@@ -73,6 +74,19 @@ const REFUSED: Errno = Errno::EACCES;
 
 /// Seatbelt's word for a connection out, which a refused connect is told as.
 const CONNECT: &str = crate::refusal::DIALLED;
+
+/// Seatbelt's word for a bind, which a refused listen is told as: a listen with no bind of its
+/// own is the kernel's bind (#3410).
+const BIND: &str = "network-bind";
+
+/// What a listen on an internet socket the chat never bound is told as refused on: Seatbelt's
+/// name for a port the kernel picks, on every interface.
+const NEVER_BOUND: &str = "*:0";
+
+/// What a listen whose socket could not be taken is told as refused on: why. The container's
+/// runtime may refuse `pidfd_getfd` (a runner made before #3410, or a Kubernetes runner), and so
+/// may the system (Yama's `ptrace_scope` 3, a process that is not dumpable).
+const NOT_TAKEN: &str = "(the chat's socket could not be taken: pidfd_getfd was refused)";
 
 /// The longest path a call may name, as the kernel's own limit.
 const PATH_MAX: usize = 4096;
@@ -912,31 +926,43 @@ impl Supervisor {
     }
 
     /// **A listen, made by the supervisor on the socket it judged**: the calling thread's own
-    /// socket, taken from its process's descriptor table (`pidfd_getfd`) and checked to be the
-    /// one the thread's descriptor names, listens only where it was bound. An internet socket
-    /// the chat never bound is refused: the kernel would otherwise bind it first, to a port it
-    /// picks on every interface, since Landlock judges a bind the chat makes and not one the
-    /// kernel makes for it. Where an internet socket may be bound is the bind's to judge, and
+    /// socket, taken from its own descriptor table (`pidfd_open` with `PIDFD_THREAD`, then
+    /// `pidfd_getfd`) and checked to be the one its descriptor names, listens only where it was
+    /// bound. A thread's own table is the one read, whether it holds one apart from its
+    /// process's (`unshare(CLONE_FILES)`) or its process's first thread has ended.
+    ///
+    /// An internet socket the chat never bound is refused: the kernel would otherwise bind it
+    /// first, to a port it picks on every interface, since Landlock judges a bind the chat makes
+    /// and not one the kernel makes for it. An internet socket whose address cannot be read is
+    /// taken as bound to none. Where an internet socket may be bound is the bind's to judge, and
     /// the chat's Landlock layer binds none today. Any other socket listens as it would have.
-    /// The listen is made on the socket judged, never on whatever the descriptor holds by then.
-    /// Where the socket cannot be taken, nothing listens.
+    ///
+    /// The listen is made on the socket judged, never on whatever the descriptor holds by then,
+    /// and the port it listens on is read again after: one other than the port judged undoes the
+    /// listen and refuses it. Where the socket cannot be taken, nothing listens. A refusal is
+    /// told, as macOS's kernel tells a refused bind, with why in what it names.
+    ///
+    /// Two of the chat's calls a listen relies on are refused elsewhere: a `connect` of any
+    /// family but unix and the internet's (`AF_UNSPEC` would unbind a connected socket), and a
+    /// connected socket is only ever handed back once its connect is made.
     fn listen(&self, chat: &Chat<'_>, id: u64, fd: i32, backlog: i32) -> Result<Answer, Errno> {
-        let refused = |why: rustix::io::Errno| match why {
-            rustix::io::Errno::BADF => Errno::EBADF,
-            _ => REFUSED,
+        // The calling thread's own table (Linux 6.9; the sandbox needs 6.12).
+        let thread = rustix::process::Pid::from_raw(chat.tid).ok_or(REFUSED)?;
+        let flags = rustix::process::PidfdFlags::from_bits_retain(libc::PIDFD_THREAD);
+        let caller = match rustix::process::pidfd_open(thread, flags) {
+            Ok(caller) => caller,
+            // The thread ended, and its call with it.
+            Err(rustix::io::Errno::SRCH) if !self.alive(id) => return Ok(Answer::Gone),
+            Err(why) => return Err(self.not_taken(chat, why)),
         };
-        let pid = rustix::process::Pid::from_raw(chat.tgid).ok_or(REFUSED)?;
-        let process = rustix::process::pidfd_open(pid, rustix::process::PidfdFlags::empty())
-            .map_err(refused)?;
-        // The process the call came from, not another that took its number since.
+        // The thread the call came from, not another that took its number since.
         if !self.alive(id) {
             return Ok(Answer::Gone);
         }
         let socket =
-            rustix::process::pidfd_getfd(&process, fd, rustix::process::PidfdGetfdFlags::empty())
-                .map_err(refused)?;
-        // The calling thread's own descriptor, which a thread with a table of its own
-        // (`unshare(CLONE_FILES)`) may hold apart from the process's.
+            rustix::process::pidfd_getfd(&caller, fd, rustix::process::PidfdGetfdFlags::empty())
+                .map_err(|why| self.not_taken(chat, why))?;
+        // The same open socket the thread's descriptor names, read a second way.
         let theirs = stat(format!("/proc/{}/fd/{fd}", chat.tid).as_str()).map_err(|why| {
             if why == Errno::ENOENT {
                 Errno::EBADF
@@ -948,13 +974,9 @@ impl Supervisor {
         if (taken.st_dev, taken.st_ino) != (theirs.st_dev, theirs.st_ino) {
             return Err(REFUSED);
         }
-        let name = getsockname::<SockaddrStorage>(socket.as_raw_fd())?;
-        let unbound = match name.family() {
-            Some(AddressFamily::Inet) => name.as_sockaddr_in().is_some_and(|it| it.port() == 0),
-            Some(AddressFamily::Inet6) => name.as_sockaddr_in6().is_some_and(|it| it.port() == 0),
-            _ => false,
-        };
-        if unbound {
+        let judged = bound_port(socket.as_fd())?;
+        if judged == Some(0) {
+            self.tell(chat, BIND, NEVER_BOUND.to_owned());
             return Err(REFUSED);
         }
         if !self.alive(id) {
@@ -963,8 +985,36 @@ impl Supervisor {
         // Below zero, as above the system's own cap, the kernel's largest queue.
         let backlog = Backlog::new(backlog).unwrap_or(Backlog::MAXALLOWABLE);
         listen(&socket, backlog)?;
+        if bound_port(socket.as_fd()).ok() != Some(judged) {
+            // Unbound between the judging and the listen, and bound by the kernel now: a
+            // listening socket shut for reading is unconnected again, its port let go.
+            let _ = shutdown(socket.as_raw_fd(), Shutdown::Read);
+            self.tell(chat, BIND, NEVER_BOUND.to_owned());
+            return Err(REFUSED);
+        }
         Ok(Answer::Value(0))
     }
+
+    /// The error a listen whose socket could not be taken (`why`) answers: `EBADF` for a
+    /// descriptor that is not there, and otherwise a refusal, told.
+    fn not_taken(&self, chat: &Chat<'_>, why: rustix::io::Errno) -> Errno {
+        if why == rustix::io::Errno::BADF {
+            return Errno::EBADF;
+        }
+        self.tell(chat, BIND, NOT_TAKEN.to_owned());
+        REFUSED
+    }
+}
+
+/// The port an internet socket is bound to, port 0 where its address cannot be read; None for
+/// any other socket.
+fn bound_port(socket: BorrowedFd<'_>) -> Result<Option<u16>, Errno> {
+    let name = getsockname::<SockaddrStorage>(socket.as_raw_fd())?;
+    Ok(match name.family() {
+        Some(AddressFamily::Inet) => Some(name.as_sockaddr_in().map_or(0, SockaddrIn::port)),
+        Some(AddressFamily::Inet6) => Some(name.as_sockaddr_in6().map_or(0, SockaddrIn6::port)),
+        _ => None,
+    })
 }
 
 /// What purlis's own profile language has no word for on Linux, and every wrapped chat needs:
