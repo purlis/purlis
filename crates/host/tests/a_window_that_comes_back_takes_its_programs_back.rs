@@ -207,6 +207,9 @@ async fn every_program_a_held_project_has_is_answered_with_what_takes_it_back() 
                 sandbox: Some(RunSandbox::Off),
                 cols: 120,
                 rows: 40,
+                driver: None,
+                note: None,
+                logins: Vec::new(),
             },
             HeldProgram {
                 program: shell,
@@ -221,6 +224,9 @@ async fn every_program_a_held_project_has_is_answered_with_what_takes_it_back() 
                 sandbox: Some(RunSandbox::Off),
                 cols: 120,
                 rows: 40,
+                driver: None,
+                note: None,
+                logins: Vec::new(),
             },
         ],
         "running and ended, never closed"

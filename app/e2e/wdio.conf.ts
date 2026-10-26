@@ -117,6 +117,9 @@ export const config: WebdriverIO.Config = {
     "./specs/**/*.upgrade.e2e.ts",
     // The rail's show and keep hold over its own hide for the launch (`wdio.rail.conf.ts`).
     "./specs/**/*.rail.e2e.ts",
+    // A browser view's real engine is downloaded on its run's first browser
+    // (`wdio.browser.conf.ts`, #2025).
+    "./specs/**/*.browser.e2e.ts",
     ...(process.env.STRESS === "1" ? [] : ["./specs/stress.e2e.ts"]),
   ],
   maxInstances: 1,

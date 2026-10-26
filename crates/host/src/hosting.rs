@@ -821,6 +821,11 @@ struct Hosted {
     stopping: Arc<Mutex<Option<Stopped>>>,
     /// How its run is sandboxed, as this host applied it (#2636).
     sandbox: session::RunSandbox,
+    /// The window's note of it (1.39, #2025): its own words, kept for it and never read here.
+    note: Option<session::ProgramNote>,
+    /// The identity of each login purlis performed in it, or of the kept login it opened from
+    /// (1.39, #2025): the host's own record, which no note of the window's unsays.
+    logins: Arc<Mutex<Vec<String>>>,
     /// Who opened it, for a browser (#2050): this host's own window, or a link between hosts
     /// for the window it named, which alone may act on it from such a link.
     opened_by: OpenedBy,
@@ -1572,6 +1577,7 @@ impl Hosting {
         // A stop written elsewhere since the last look is heard before anything starts (#2190).
         self.heed_a_stop_written_elsewhere().await;
         self.let_through(&start, peer)?;
+        a_note_that_fits(start.note.as_ref())?;
         let start = ids_of(start, peer.scope());
         let size = Size {
             columns: start.cols.unwrap_or(80),
@@ -1792,6 +1798,8 @@ impl Hosting {
                 exit: None,
                 stopping: Arc::clone(&stopping),
                 sandbox: sandbox.clone(),
+                note: start.note.clone(),
+                logins: Arc::default(),
                 opened_by: OpenedBy::ThisHost,
             },
         );
@@ -1891,6 +1899,7 @@ impl Hosting {
         // Nothing starts while the kill switch is thrown (ADR 0071), a browser included.
         self.heed_a_stop_written_elsewhere().await;
         self.let_through(&start, peer)?;
+        a_note_that_fits(start.note.as_ref())?;
         // Read before the lock: it may read this machine's store.
         let budget = self.inner.browsers.budget();
         let (program, at, place, download) = {
@@ -1989,6 +1998,14 @@ impl Hosting {
                 // An engine the host starts outside every chat's sandbox, its reach its own
                 // proxy's: no chat's run.
                 sandbox: session::RunSandbox::Off,
+                note: start.note.clone(),
+                logins: Arc::new(Mutex::new(
+                    start
+                        .kept
+                        .iter()
+                        .map(|kept| kept.identity.clone())
+                        .collect(),
+                )),
                 opened_by,
             },
         );
@@ -2051,6 +2068,22 @@ impl Hosting {
         login: purlis_session_protocol::browsing::LogIn,
     ) -> Result<Answer, Refusal> {
         let running = self.running(program)?;
+        // Recorded before it is tried, whatever it comes to: a login that timed out may have
+        // signed the browser in all the same (#2025).
+        if let Some(hosted) = self.state().programs.get(program) {
+            let identity = login
+                .identity
+                .clone()
+                .or_else(|| login.keep.as_ref().map(|kept| kept.identity.clone()))
+                .unwrap_or_default();
+            let mut logins = hosted
+                .logins
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if !logins.contains(&identity) {
+                logins.push(identity);
+            }
+        }
         tokio::task::spawn_blocking(move || running.log_in(login))
             .await
             .map_err(|why| not_started(why.to_string()))?
@@ -2110,11 +2143,44 @@ impl Hosting {
         }))
     }
 
+    /// **`note` is the window's note of `program` from now on** (1.39, #2025): kept, never read,
+    /// and answered with the program to a window that comes back. One past its bound is refused
+    /// and the one before is kept.
+    fn note_program(
+        &self,
+        program: &str,
+        note: session::ProgramNote,
+        peer: &Peer,
+    ) -> Result<Answer, Refusal> {
+        a_note_that_fits(Some(&note))?;
+        let mut state = self.state();
+        // Only of a program in a project the link holds.
+        let at = state
+            .programs
+            .get(program)
+            .map(|hosted| hosted.at.clone())
+            .ok_or_else(|| no_such_program(program))?;
+        if !state
+            .projects
+            .get(&at)
+            .is_some_and(|held| held.links.contains_key(&link_of(peer)))
+        {
+            return Err(no_such_program(program));
+        }
+        if let Some(hosted) = state.programs.get_mut(program) {
+            hosted.note = Some(note);
+        }
+        Ok(Answer::Done)
+    }
+
     /// Every harness and shell `project` still has, running or ended, at the place the link
     /// `peer` came on holds it, which it must (#2006): what a window that comes back takes back,
     /// each with the place of the confinement it runs in. Each confinement it answers is named to
-    /// that link (#2444), which may act on it and hear it from then on.
+    /// that link (#2444), which may act on it and hear it from then on. Its browsers too, to a
+    /// link of 1.39 or later (#2025), each with who drives it; and each program with the note
+    /// the window keeps of it here.
     fn programs_of(&self, project: &str, peer: &Peer) -> Result<Answer, Refusal> {
+        let knows_browsers = peer.version() >= session::KNOWS_BROWSERS_TAKEN_BACK;
         let mut state = self.state();
         let at = held_by(&state, project, link_of(peer))
             .cloned()
@@ -2122,7 +2188,9 @@ impl Hosting {
         let mut programs: Vec<HeldProgram> = state
             .programs
             .iter()
-            .filter(|(_, hosted)| hosted.at == at && hosted.kind != ProgramKind::Browser)
+            .filter(|(_, hosted)| {
+                hosted.at == at && (knows_browsers || hosted.kind != ProgramKind::Browser)
+            })
             .map(|(id, hosted)| HeldProgram {
                 program: id.clone(),
                 kind: hosted.kind,
@@ -2146,9 +2214,20 @@ impl Hosting {
                 sandbox: Some(hosted.sandbox.clone()),
                 cols: hosted.size.columns,
                 rows: hosted.size.rows,
+                driver: hosted.running.driver().filter(|_| knows_browsers),
+                note: hosted.note.clone().filter(|_| knows_browsers),
+                logins: if knows_browsers {
+                    hosted
+                        .logins
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .clone()
+                } else {
+                    Vec::new()
+                },
             })
             .collect();
-        programs.sort_by_key(|program| program.number);
+        programs.sort_by(|a, b| (a.number, &a.program).cmp(&(b.number, &b.program)));
         // Each confinement answered is named to the window taking its chat back (#2444).
         for confined in programs
             .iter()
@@ -3119,6 +3198,8 @@ impl session::Host for Hosting {
             Command::LogIn { program, login } => self.log_in(&program, login).await,
             Command::ProgramsOf { project } => self.programs_of(&project, peer),
             // Only the window's link reaches this: the grants refuse every other.
+            Command::NoteProgram { program, note } => self.note_program(&program, note, peer),
+            // Only the window's link reaches this: the grants refuse every other.
             Command::Quit => Ok(self.quit().await),
             // The person's own (#2014): each may wait on the engine (a take-over on an act's
             // last input, a key on a read of the page), so off the runtime.
@@ -3281,6 +3362,22 @@ fn a_plain_name(id: &str) -> bool {
         && id
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+/// **A note the host keeps for the window, where one is, fits its bound** (1.39, #2025): one past
+/// [`session::ProgramNote::MOST`] bytes is refused [`session::TOO_LARGE`].
+fn a_note_that_fits(note: Option<&session::ProgramNote>) -> Result<(), Refusal> {
+    match note {
+        Some(note) if !note.fits() => Err(Refusal {
+            code: session::TOO_LARGE.into(),
+            why: format!(
+                "a program's note is at most {} bytes, and this one is {}",
+                session::ProgramNote::MOST,
+                note.bytes()
+            ),
+        }),
+        _ => Ok(()),
+    }
 }
 
 fn no_such_program(program: &str) -> Refusal {

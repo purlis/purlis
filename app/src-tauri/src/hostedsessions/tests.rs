@@ -16,6 +16,8 @@ use purlis_session_protocol::session::{self, Exit};
 
 use super::*;
 
+#[cfg(unix)]
+mod browsers_back;
 mod movingcode;
 mod upgrading;
 
@@ -1351,15 +1353,19 @@ fn a_link_that_opens_after_nobody_waits_for_it_is_closed() {
 struct Comeback {
     hosting: Hosting,
     runs: StandIns,
+    /// Its browsers (#2025).
+    browsers: purlis_host::standin::StandInBrowsers,
     confines: purlis_host::standin::StandInConfines,
     root: std::path::PathBuf,
     runtime: tokio::runtime::Runtime,
     _dir: tempfile::TempDir,
+    _store: tempfile::TempDir,
 }
 
-/// A window on [`Comeback`]'s host: its chats, and what cuts each of its links.
+/// A window on [`Comeback`]'s host: its chats, its browsers, and what cuts each of its links.
 struct AWindow {
     sessions: HostedSessions,
+    connection: Arc<Connection>,
     cuts: Arc<Mutex<Vec<tokio::task::AbortHandle>>>,
 }
 
@@ -1373,17 +1379,23 @@ impl Comeback {
         let runs = StandIns::default();
         let confines = purlis_host::standin::StandInConfines::default();
         let (dir, root) = a_project();
+        let store = tempfile::tempdir().unwrap();
+        let browsers =
+            purlis_host::standin::StandInBrowsers::in_folder(store.path().join("browsers"));
         Comeback {
             hosting: Hosting::confining(
                 crate::sessionhost::Composes::as_the_tests_ship(),
                 confines.clone(),
                 runs.clone(),
-            ),
+            )
+            .with_browsers(browsers.clone()),
             runs,
+            browsers,
             confines,
             root,
             runtime,
             _dir: dir,
+            _store: store,
         }
     }
 
@@ -1413,7 +1425,8 @@ impl Comeback {
         let connection = Arc::new(Connection::default());
         connection.ready(Arc::new(link), dial);
         AWindow {
-            sessions: HostedSessions::new(connection, &self.root),
+            sessions: HostedSessions::new(Arc::clone(&connection), &self.root),
+            connection,
             cuts,
         }
     }
