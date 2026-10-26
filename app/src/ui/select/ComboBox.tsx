@@ -89,7 +89,9 @@ export function ComboBox({
   const { contains } = useFilter({ sensitivity: "base" });
   const errorId = `${useId()}-error`;
   const refusable = "error" in rest;
-  const { error, ...given } = rest;
+  const { error: written, ...given } = rest;
+  // A reason with no words is no refusal: nothing would be heard or drawn.
+  const error = written === "" ? undefined : written;
   const data: Record<string, unknown> = {};
   const aria: Record<string, unknown> = {};
   for (const [key, one] of Object.entries(given))

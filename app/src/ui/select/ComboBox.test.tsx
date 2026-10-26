@@ -185,6 +185,15 @@ describe("the combobox", () => {
     expect(box()).not.toHaveAttribute("aria-invalid");
   });
 
+  it("takes a reason with no words as no refusal", () => {
+    render(
+      <ComboBox label="Add a skill" suggestions={SKILLS} value="" onChange={() => {}} error="" />,
+    );
+    expect(box()).not.toHaveAttribute("aria-invalid");
+    expect(box()).not.toHaveAccessibleDescription();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("is not refused unless it is told so", () => {
     render(<Box />);
     expect(box()).not.toHaveAttribute("aria-invalid");

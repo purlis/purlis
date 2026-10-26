@@ -26,6 +26,10 @@ form that needs one: a required choice in Settings, or a combobox whose typed va
   the edge the same states draw without `invalid`, falls back to the refused default, written
   after the theme's rules. So a rest or hover edge that reaches the refused box, or a refused
   edge set to `transparent`, never leaves a refused box looking valid.
+  Where the refused default is itself the edge the box draws when not refused (a theme's edge at
+  rest, under the pointer or with the keyboard in the danger colour, or alike it), that edge
+  draws its own default too, and a refused box's fallback is written after every other, so the
+  two are always told apart (#3382's review).
 - **The words that say why are not a part**: they are the box's description, drawn by its row or
   its form and named by `aria-describedby`, so they are heard with it.
 

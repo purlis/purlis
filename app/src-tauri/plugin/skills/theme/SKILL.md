@@ -168,7 +168,8 @@ parts so far: `field`
 `tooltip` (its `root`, the surface: colours, edge, corners and shadow, no sizes; and `detail`, an
 icon button's second line), which have no variants, so a key names the part alone
 (`"text-input.root.border-colour": "transparent"` draws every one-line box with no edge at rest;
-a box a value is given to keeps its edge's width, which its refused state, `invalid`, draws on:
+`border-width` 0 on the root of a text input, textarea, select or combobox refuses the theme,
+because the box's edge is how its refused state, `invalid`, shows:
 `"text-input.root.invalid.border-colour": "danger.base"`); and `dialog`
 (`dialog.root.corner-radius`, `dialog.title.font-size`, `dialog.separator.fill`, …), whose size
 and rows are never a theme's, whose corner is drawn at most `space.6`, and whose quieter lines

@@ -186,7 +186,9 @@
 
   /* A refused box: its own edge dashed, in the words' colour (#3335). The edge it has already,
      the same width, so nothing moves; and not an outline, which a text box's focus ring is. A
-     theme's colour is replaced here anyway, and a theme cannot take the edge's width away. */
+     theme's colour is replaced here anyway, and a theme cannot take the edge's width away. A
+     refused box that is also unavailable keeps this edge in CanvasText rather than GrayText: it
+     is still refused, and its words are GrayText by the rule above. */
   :is(
       [data-scope="text-input"],
       [data-scope="textarea"],

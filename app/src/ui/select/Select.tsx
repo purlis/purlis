@@ -25,7 +25,8 @@
  * - **Refused** (`error`, #3110, #3334): a value the form will not take draws the danger colour on
  *   the box's edge, as a text field's, and the button is marked invalid (`aria-invalid`). The
  *   words that say why are the field's error line under it: a select that takes `error` stands in
- *   a field of its own (the field family's root, its place `className`'s), its line's room kept
+ *   a field of its own (the field family's root, its place `className`'s): a column as wide as
+ *   its place, the button as wide as the field, so in a row it is given a width; its line's room kept
  *   whether or not it says anything, so a refusal is heard when it lands and moves nothing.
  *   `isInvalid` is for words drawn elsewhere (a settings row's), named by `aria-describedby`.
  * - **The button carries what it holds as `data-value`**, for the window's e2e specs to read the
@@ -134,7 +135,9 @@ export function Select({
   const errorId = `${useId()}-error`;
   // A select that can be refused in words stands in a field, which its line is under.
   const refusable = "error" in rest;
-  const { error, ...given } = rest;
+  const { error: written, ...given } = rest;
+  // A reason with no words is no refusal: nothing would be heard or drawn.
+  const error = written === "" ? undefined : written;
   const invalid = error !== undefined || isInvalid === true;
   const aria: Record<string, unknown> = {};
   const data: Record<string, unknown> = {};

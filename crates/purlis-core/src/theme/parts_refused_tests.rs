@@ -252,7 +252,9 @@ fn a_refused_box_keeps_its_edge_s_width() {
         let refused = refusal(one(format!("{root}.border-width"), json!(0)));
         assert!(
             refused.iter().any(|one| one.starts_with(&format!(
-                "parts.{family}.root.border-width is refused: a box that can be refused keeps its edge"
+                "parts.{family}.root.border-width is refused: a box that can be refused shows it by \
+                 its edge, so its edge keeps a width; for no edge at rest, set \
+                 {family}.root.border-colour to \"transparent\""
             ))),
             "{family}: {refused:?}"
         );
@@ -290,6 +292,19 @@ fn an_edge_at_rest_that_reaches_the_refused_box_falls_back() {
                 .any(|one| one.contains("hover") && one.contains("invalid")),
             "{family}: {fell:?}"
         );
+        // A focus edge too (#3382's review, N3).
+        let fell = refused_fell(
+            one(
+                format!("{family}.root.focused.border-colour"),
+                json!("border.strong"),
+            ),
+            family,
+        );
+        assert!(
+            fell.iter()
+                .any(|one| one.contains("focused") && one.contains("invalid")),
+            "{family}: {fell:?}"
+        );
     }
     // What falls back draws the danger edge in the refused state, after the theme's rules.
     let loaded = load(&with_parts(
@@ -325,4 +340,37 @@ fn a_refused_edge_drawn_apart_is_drawn_as_written() {
         !fell.iter().any(|one| one.part == "select.root.invalid"),
         "{fell:?}"
     );
+}
+
+#[test]
+fn an_edge_at_rest_in_the_danger_colour_still_leaves_the_refusal_told_apart() {
+    // The refused default is the danger edge: a theme that draws it at rest, or one alike it,
+    // would leave a refused box looking valid, so the edge at rest falls back too (#3382's
+    // review, B1).
+    for (family, _) in REFUSED {
+        for colour in ["danger.base", "danger.text"] {
+            for state in ["", "hover.", "focused."] {
+                let loaded = load(&with_parts(one(
+                    format!("{family}.root.{state}border-colour"),
+                    json!(colour),
+                )));
+                assert!(!loaded.refused, "{family}: {:?}", said(&loaded));
+                let theme = loaded.theme.first();
+                let held: Vec<State> = match state {
+                    "hover." => vec![State::Hover, State::Invalid],
+                    "focused." => vec![State::Focused, State::Invalid],
+                    _ => vec![State::Invalid],
+                };
+                assert!(
+                    parts::refusal_shown(theme, family, &held),
+                    "{family}.root.{state}border-colour {colour}: {:?}",
+                    parts::fallen(theme)
+                );
+                assert!(
+                    parts::held_again(theme).is_empty(),
+                    "{family} {state}{colour}"
+                );
+            }
+        }
+    }
 }

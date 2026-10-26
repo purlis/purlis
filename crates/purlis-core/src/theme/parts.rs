@@ -1973,10 +1973,11 @@ fn edge_removed(key: &Key, value: &PartValue) -> Option<String> {
     family(key.family)
         .filter(|one| one.states.contains(&State::Invalid) && key.part == one.parts[0].name)
         .map(|_| {
+            let root = format!("{}.{}", key.family, key.part);
             format!(
-                "parts.{key} is refused: a box that can be refused keeps its edge, which is how \
-                 it shows a value is refused; a transparent border-colour draws none at rest, and \
-                 invalid.border-colour the refused one"
+                "parts.{key} is refused: a box that can be refused shows it by its edge, so its \
+                 edge keeps a width; for no edge at rest, set {root}.border-colour to \
+                 \"transparent\", and the refused box draws {root}.invalid.border-colour"
             )
         })
 }
@@ -2213,12 +2214,15 @@ struct Rule {
 }
 
 impl Rule {
-    /// The order the stylesheet writes rules in: the later wins.
-    fn order(&self) -> (bool, bool, bool, usize) {
+    /// The order the stylesheet writes rules in: the later wins. A refused box's fallback comes
+    /// after every other fallback, so its danger edge wins over a hover's or a focus's default
+    /// written after it (#3382's review, B1).
+    fn order(&self) -> (bool, bool, bool, bool, usize) {
         (
             self.state.is_some(),
             self.variant.is_some(),
             self.fallback,
+            self.fallback && self.state == Some(State::Invalid),
             self.part,
         )
     }
@@ -2658,6 +2662,16 @@ pub(super) fn held_again(theme: &ResolvedTheme) -> Vec<Fell> {
     again[before..].to_vec()
 }
 
+/// Whether `family`'s root, as the theme's held rules draw it while `states` (with
+/// [`State::Invalid`] among them) hold, tells the refusal apart from the same box not refused.
+#[cfg(test)]
+pub(super) fn refusal_shown(theme: &ResolvedTheme, family_name: &str, states: &[State]) -> bool {
+    let family = family(family_name).expect("a family of the manifest");
+    let rules = &held_once(theme).0;
+    let look = drawn(rules, family, "", states);
+    !refusal_hidden(theme, rules, family, "", states, &look)
+}
+
 /// [`held`], from `rules` and what already `fell`.
 fn held_from(
     theme: &ResolvedTheme,
@@ -2836,6 +2850,18 @@ impl Held<'_> {
                 && refusal_hidden(theme, self.rules, self.family, variant, states, &look)
             {
                 self.fall(variant, states, REFUSAL_HIDDEN.to_owned(), None);
+                // The refused default is the edge the theme already draws when the box is not
+                // refused (a danger edge at rest): then that edge draws its default too, so the
+                // two are told apart again (#3382's review, B1).
+                let redrawn = drawn(self.rules, self.family, variant, states);
+                if refusal_hidden(theme, self.rules, self.family, variant, states, &redrawn) {
+                    let valid: Vec<State> = states
+                        .iter()
+                        .copied()
+                        .filter(|one| *one != State::Invalid)
+                        .collect();
+                    self.fall(variant, &valid, REFUSAL_HIDDEN.to_owned(), None);
+                }
                 continue;
             }
             if look == drawn(&[], self.family, variant, states) {

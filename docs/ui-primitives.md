@@ -615,7 +615,9 @@ refuses all four (`purlis/select-family`, an error).
   as the text input's, and is marked `aria-invalid` and `data-invalid`. `error` says why in the
   field's error line under the box (the `field.error` part), a live region kept from the start,
   so a refusal that lands while the person types is heard at once and nothing moves; a select
-  given `error` stands in a field of its own, placed by its `className`. `isInvalid` marks one
+  given `error` stands in a field of its own, placed by its `className`: a column as wide as its
+  place, its button as wide as the field (in a toolbar row, give it a width). `error=""` is no
+  refusal. `isInvalid` marks one
   refused whose words are drawn elsewhere (a settings row's), named by `aria-describedby`. A
   colour only; a theme reaches it as the `invalid` state of either family's `root`.
 - **The button carries what it holds as `data-value`**, which the e2e specs read
