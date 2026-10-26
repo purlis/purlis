@@ -473,6 +473,7 @@ impl Closing {
         session: u32,
         bytes: &[u8],
         at: std::time::Instant,
+        harness: Option<purlis_core::harness::Harness>,
         waiting: impl FnOnce() -> bool,
     ) -> Option<Option<usize>> {
         if !typed_by_the_operator(bytes) {
@@ -480,7 +481,7 @@ impl Closing {
         }
         let submitted = self.lines().entry(session).or_default().follow(bytes);
         let sent = submitted.as_ref().map(line::Line::len);
-        if submitted.is_some_and(|line| line.is_smart_close()) && waiting() {
+        if submitted.is_some_and(|line| line.is_smart_close(harness)) && waiting() {
             self.submitted().insert(session, at);
         }
         sent
@@ -1148,7 +1149,7 @@ mod tests {
         let closing = Closing::default();
         let now = std::time::Instant::now();
         for key in keys {
-            closing.person_typed(7, key, now, || true);
+            closing.person_typed(7, key, now, None, || true);
         }
         closing.took_submission(7, now)
     }
@@ -1199,7 +1200,7 @@ mod tests {
     fn a_smart_close_into_a_chat_not_waiting_for_the_person_is_none() {
         let closing = Closing::default();
         let now = std::time::Instant::now();
-        closing.person_typed(7, b"/smart-close\r", now, || false);
+        closing.person_typed(7, b"/smart-close\r", now, None, || false);
         assert!(!closing.took_submission(7, now));
     }
 
@@ -1209,7 +1210,7 @@ mod tests {
         let closing = Closing::default();
         let now = std::time::Instant::now();
         for key in keys {
-            closing.person_typed(7, key, now, || true);
+            closing.person_typed(7, key, now, None, || true);
         }
         let heard = closing.heard_prompt(7, smart_close, now);
         (heard, closing.took_unbacked(7))

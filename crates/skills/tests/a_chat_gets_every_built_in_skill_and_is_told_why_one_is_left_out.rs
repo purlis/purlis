@@ -60,11 +60,17 @@ fn every_built_in_skill_reaches_the_chat_by_its_harness_route() {
             .iter()
             .map(|e| (e.skill.name.as_str(), e.route, e.origin))
             .collect();
+        // The config route names each its own, `purlis-<name>` (opencode's route).
+        let (compact, secrets) = if route == Route::Config {
+            ("purlis-compact", "purlis-secrets")
+        } else {
+            ("compact", "secrets")
+        };
         assert_eq!(
             got,
             [
-                ("compact", route, Origin::BuiltIn),
-                ("secrets", route, Origin::BuiltIn),
+                (compact, route, Origin::BuiltIn),
+                (secrets, route, Origin::BuiltIn),
             ],
             "listed by name, each on the harness's route"
         );
