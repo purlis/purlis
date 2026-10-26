@@ -555,7 +555,11 @@ export function StartChat({
                   <RowLabel>{key}</RowLabel>
                   {key === options.persona && (
                     <RowTrail>
-                      <span className="start-chat-chip">project default</span>
+                      {/* A mark for the eye: the row's name is the persona's alone (WCAG 2.5.3),
+                        and the details say "Project default" for the persona picked. */}
+                      <span className="start-chat-chip" aria-hidden="true">
+                        project default
+                      </span>
                     </RowTrail>
                   )}
                 </ListOption>
