@@ -266,7 +266,7 @@ fn a_chats_command_gets_its_personas_secret_and_never_the_value_back() {
 
 /// D-PE-ruling-2: a chat cannot have a declared tool, or an approved server's exact line, run
 /// its own code beside the credential through a variable that makes a program load code: the
-/// run starts without each, and keeps the chat's other variables.
+/// run starts without each, and keeps the chat's language.
 #[test]
 fn a_run_starts_without_the_chats_variables_that_make_a_program_load_code() {
     let project = project();
@@ -274,7 +274,7 @@ fn a_run_starts_without_the_chats_variables_that_make_a_program_load_code() {
         project.path(),
         "team",
         sh(
-            r#"echo "[$NODE_OPTIONS][$DYLD_INSERT_LIBRARIES][$LD_PRELOAD][$PYTHONPATH][$GCONV_PATH][$LOCPATH][$GIO_EXTRA_MODULES][$GTK_MODULES][$KEPT]""#,
+            r#"echo "[$NODE_OPTIONS][$DYLD_INSERT_LIBRARIES][$LD_PRELOAD][$PYTHONPATH][$GCONV_PATH][$LOCPATH][$GIO_EXTRA_MODULES][$GTK_MODULES][$LANG]""#,
         ),
     );
     want.env = vec!["X=TOKEN".into()];
@@ -287,13 +287,94 @@ fn a_run_starts_without_the_chats_variables_that_make_a_program_load_code() {
         ("LOCPATH", "/work/locale"),
         ("GIO_EXTRA_MODULES", "/work/gio"),
         ("GTK_MODULES", "mine"),
-        ("KEPT", "kept"),
+        ("LANG", "kept"),
     ] {
         want.environment.push((name.into(), value.into()));
     }
     let frames = served(&asker(project.path(), Some("devops")), want);
     assert_eq!(frames.last(), Some(&Frame::Exit(0)), "{frames:?}");
     assert_eq!(stdout(&frames), "[][][][][][][][][kept]\n");
+}
+
+/// #2047: a brokered tool runs with an environment of its own. Of the chat's variables it keeps
+/// only the language, the terminal and the like: no home or settings folder, no file of
+/// settings and no program a chat names reaches the tool, and its `HOME` and `XDG_*` folders
+/// are in the run's own temp folder.
+#[test]
+fn a_tool_runs_with_an_environment_of_its_own() {
+    let project = project();
+    // The chat's home and settings folders, which the run sets again in its own temp folder.
+    let homes = [
+        ("HOME", "/work"),
+        ("XDG_CONFIG_HOME", "/work/.config"),
+        ("XDG_DATA_HOME", "/work/.data"),
+    ];
+    let chats = [
+        ("GIT_CONFIG_GLOBAL", "/work/gitconfig"),
+        ("GIT_CONFIG_COUNT", "1"),
+        ("GIT_SSH_COMMAND", "/work/ssh"),
+        ("AWS_CONFIG_FILE", "/work/aws"),
+        ("KUBECONFIG", "/work/kube"),
+        ("PAGER", "/work/pager"),
+        ("EDITOR", "/work/editor"),
+        ("GOTRACEBACK", "crash"),
+        ("ANYTHING_ELSE", "chats"),
+    ];
+    let script = chats
+        .iter()
+        .map(|(name, _)| format!("[${{{name}:-}}]"))
+        .collect::<String>();
+    let mut want = wanted(
+        project.path(),
+        "team",
+        sh(&format!(
+            r#"echo "{script}"; echo "[$LANG][$LC_ALL][$TERM][$TZ]"; case "$HOME" in "$TMPDIR") echo home ;; esac; case "$XDG_CONFIG_HOME" in "$TMPDIR"/*) echo config ;; esac; case "$XDG_DATA_HOME" in "$TMPDIR"/*) echo data ;; esac; test -n "$X" && echo handed"#
+        )),
+    );
+    want.env = vec!["X=TOKEN".into()];
+    for (name, value) in homes.into_iter().chain(chats) {
+        want.environment.push((name.into(), value.into()));
+    }
+    for (name, value) in [
+        ("LANG", "en_GB.UTF-8"),
+        ("LC_ALL", "C"),
+        ("TERM", "xterm"),
+        ("TZ", "UTC"),
+    ] {
+        want.environment.push((name.into(), value.into()));
+    }
+    let frames = served(&asker(project.path(), Some("devops")), want);
+    assert_eq!(frames.last(), Some(&Frame::Exit(0)), "{frames:?}");
+    assert_eq!(
+        stdout(&frames),
+        format!(
+            "{}\n[en_GB.UTF-8][C][xterm][UTC]\nhome\nconfig\ndata\nhanded\n",
+            "[]".repeat(chats.len())
+        )
+    );
+}
+
+/// #2047: a brokered tool's process keeps no core dump, which would hold its values.
+#[cfg(unix)]
+#[test]
+fn a_tools_run_keeps_no_core_dump() {
+    use rustix::process::{Resource, Rlimit, getrlimit, setrlimit};
+    // The app's own soft limit as high as it may go, so the run's is lowered, not inherited.
+    let given = getrlimit(Resource::Core);
+    let _ = setrlimit(
+        Resource::Core,
+        Rlimit {
+            current: given.maximum,
+            maximum: given.maximum,
+        },
+    );
+    let project = project();
+    let mut want = wanted(project.path(), "team", sh("ulimit -c"));
+    want.env = vec!["X=TOKEN".into()];
+    let frames = served(&asker(project.path(), Some("devops")), want);
+    let _ = setrlimit(Resource::Core, given);
+    assert_eq!(frames.last(), Some(&Frame::Exit(0)), "{frames:?}");
+    assert_eq!(stdout(&frames), "0\n");
 }
 
 /// #1667 with #1350: a run's ssh signs with the chat's own agent. The run hands the chat's
@@ -311,8 +392,8 @@ fn a_run_hands_the_chats_ssh_agent_on_as_it_is() {
     assert_eq!(stdout(&frames), "[/agents/chat-7.sock]\n");
 }
 
-/// #1407 review: a variable that is not UTF-8 (a path in another encoding) is handed on as its
-/// bytes, where it used to be dropped without a word.
+/// #1407 review: a variable that is not UTF-8 (a locale's name in another encoding) is handed
+/// on as its bytes, where it used to be dropped without a word.
 #[cfg(unix)]
 #[test]
 fn a_variable_that_is_not_utf8_reaches_the_child_as_its_bytes() {
@@ -321,11 +402,13 @@ fn a_variable_that_is_not_utf8_reaches_the_child_as_its_bytes() {
     let mut want = wanted(
         project.path(),
         "team",
-        sh(r#"printf '%s' "$RAW" | od -An -tx1 | tr -d ' \n'"#),
+        sh(r#"printf '%s' "$LC_CTYPE" | od -An -tx1 | tr -d ' \n'"#),
     );
     want.env = vec!["X=TOKEN".into()];
-    want.environment
-        .push(("RAW".into(), OsString::from_vec(vec![b'a', 0xff, b'b'])));
+    want.environment.push((
+        "LC_CTYPE".into(),
+        OsString::from_vec(vec![b'a', 0xff, b'b']),
+    ));
     let line = serde_json::to_string(&want).unwrap();
     let want: Wanted = serde_json::from_str(&line).unwrap();
     let frames = served(&asker(project.path(), Some("devops")), want);

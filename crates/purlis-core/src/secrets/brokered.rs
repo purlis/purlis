@@ -56,7 +56,10 @@
 //! exactly that tool's vault and hand-over ([`crate::sandbox::tools::declared`]). Anything else
 //! is refused with a sentence naming the tool to declare. The run is of the tool's program by
 //! its absolute path, from a `PATH` without the folders the chat may write, and without the
-//! chat's variables that make a program load code ([`crate::sandbox::tools::loads_code`]). On
+//! chat's variables that make a program load code ([`crate::sandbox::tools::loads_code`]): a
+//! tool starts from only the few of the chat's variables it needs, with a home of its own in
+//! the run's temp directory ([`crate::sandbox::tools::a_tool_starts_from`]), and keeps no core
+//! dump (#2047). On
 //! Linux, purlis's own wrap that holds it starts with none of these: the run's environment is
 //! carried past it to the tool alone ([`purlis_linux_sandbox::carried`]). A
 //! credentialed MCP server's line passes only as this machine approved it, wrapped by purlis
@@ -1854,6 +1857,7 @@ pub(crate) fn serve_recorded(
     let persona = asker.persona.as_deref().unwrap_or_default();
     let listed = declared_now(&asker.root, persona);
     let mut declared_as: Option<String> = None;
+    let mut a_tool = false;
     match crate::sandbox::tools::declared(
         &confines.tools,
         &listed,
@@ -1875,6 +1879,7 @@ pub(crate) fn serve_recorded(
         Ok(ready) => match crate::sandbox::tools::run_words(ready, &command[1..]) {
             Ok(words) => {
                 declared_as = ready.argv0().map(str::to_owned);
+                a_tool = true;
                 command = words;
             }
             Err(why) => return refuse(&mut *writer, 1, why),
@@ -1968,7 +1973,10 @@ pub(crate) fn serve_recorded(
     };
     // The asker's environment, less the hook channel and what makes a program load code
     // ([`crate::sandbox::tools::loads_code`]), then the wrap's own (its proxy and its
-    // temp directory), then every other vault's identity variables taken out.
+    // temp directory), then every other vault's identity variables taken out. A declared
+    // tool starts from only the few of the chat's variables it needs, with a home of its own
+    // in the run's temp directory (#2047): an approved server's line keeps the rest, which
+    // carries the settings its entry gives it.
     // A name is judged as it reads, with any byte that is not UTF-8 replaced, so one is never
     // let through for not spelling the name it is judged by.
     let mut base: Vec<(OsString, OsString)> = wanted
@@ -1979,6 +1987,7 @@ pub(crate) fn serve_recorded(
             !not_handed_on(&k)
                 && !crate::sandbox::tools::loads_code(&k)
                 && !DUMPS_MEMORY.contains(&k.as_ref())
+                && (!a_tool || crate::sandbox::tools::a_tool_starts_from(&k))
         })
         .collect();
     // What the tool runs by a bare name is never from a folder the chat may write
@@ -2001,6 +2010,11 @@ pub(crate) fn serve_recorded(
     let floor = confines.level == crate::sandbox::Level::Floor;
     for (k, v) in crate::sandbox::seatbelt::env(&beside.proxy_url(), beside.tmp()) {
         exec::set_var(&mut base, &k, v);
+    }
+    if a_tool {
+        for (k, v) in crate::sandbox::tools::home_of_its_own(beside.tmp()) {
+            exec::set_var(&mut base, &k, v);
+        }
     }
     // ssh, and git over ssh, through the run's own SOCKS port (#1667): the chat's route names
     // the chat's port, which the run's sandbox does not reach.
