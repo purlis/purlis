@@ -98,12 +98,30 @@ fn a_workspaces_turn_off_or_a_narrower_copy_keeps_the_skill_and_a_built_in_name_
 
 #[test]
 fn two_folders_differing_only_in_case_are_one_folder_on_a_case_insensitive_disk() {
-    let names = |all: &[&str]| all.iter().map(|n| (*n).to_owned()).collect::<Vec<_>>();
-    assert_eq!(
-        same_but_for_case(&names(&["Deploy", "deploy", "review"])),
-        Some(("Deploy", "deploy"))
+    let why = clash_among(&names(&["Deploy", "deploy", "review"])).unwrap_err();
+    assert!(
+        why.contains("the skill folders Deploy and deploy differ only in case"),
+        "{why}"
     );
-    assert_eq!(same_but_for_case(&names(&["deploy", "review"])), None);
+    assert_eq!(clash_among(&names(&["deploy", "review"])), Ok(()));
+}
+
+#[test]
+fn a_folder_named_as_another_moved_folders_grant_is_refused_in_any_case() {
+    for pair in [["X.toml", "x"], ["x", "X.toml"], ["x.toml", "x"]] {
+        let why = clash_among(&names(&pair)).unwrap_err();
+        assert!(why.contains("X.toml") || why.contains("x.toml"), "{why}");
+        assert!(why.contains("grant"), "{why}");
+    }
+}
+
+#[test]
+fn a_folder_whose_name_is_not_ascii_is_refused() {
+    let why = clash_among(&names(&["déploy"])).unwrap_err();
+    assert!(
+        why.contains("déploy") && why.contains("letters, digits and hyphens"),
+        "{why}"
+    );
 }
 
 #[test]
@@ -112,4 +130,8 @@ fn what_the_project_skills_hold_is_taken_in_any_case() {
     assert_eq!(taken_by(&held, "Deploy"), Some("deploy"));
     assert_eq!(taken_by(&held, "review"), Some("Review.toml"));
     assert_eq!(taken_by(&held, "notes"), None);
+}
+
+fn names(all: &[&str]) -> Vec<String> {
+    all.iter().map(|n| (*n).to_owned()).collect()
 }

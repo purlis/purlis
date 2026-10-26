@@ -369,6 +369,25 @@ fn a_clash_in_case_alone_is_refused_before_anything_moves() {
     );
     assert!(!f.plane.join("skills").exists());
 
+    // A folder named as another moved folder's grant file, in another case: refused before the
+    // move, never rolled back after it.
+    let f = project();
+    write(
+        &f,
+        ".claude/skills/Deploy.toml/SKILL.md",
+        "---\nname: deploy-settings\ndescription: Mine.\n---\n",
+    );
+    f.commit(&f.plane, "a folder named as a grant");
+    let why = refused(apply(&f.plane));
+    assert!(
+        why.contains(
+            "the skill folder Deploy.toml has the name of the skill folder deploy's grant"
+        ),
+        "{why}"
+    );
+    assert!(!f.plane.join("skills").exists());
+    assert_eq!(f.status(&f.plane), "");
+
     // Two folders differing only in case, which only a disk that keeps case can hold.
     let f = project();
     write(
@@ -391,8 +410,9 @@ fn a_clash_in_case_alone_is_refused_before_anything_moves() {
 }
 
 #[test]
-fn a_clone_is_refreshed_without_waiting_on_the_planes_claim() {
+fn a_clone_is_refreshed_without_waiting_on_the_planes_claim_or_lock() {
     purlis_core::unsteered!();
+    // A guard against an unbounded wait: a lock taken twice in one process never lets go.
     let f = project();
     // What the fix holds while it moves and commits: the plane's claim and its rewrite lock. A
     // second take of either from the same process waits (the lock for as long as it is held).
