@@ -18,9 +18,10 @@
    since. *D-3043-1, D-3043-7, decided in implementation, to be confirmed.*
 3. **A kept read is checked before a key uses it.** A read an earlier key began is used by a
    key only within `tree_read_kept_for` (10 s) after it came, and the field found in it only
-   where it still has the focus of its own document, that document has the page's focus, and
-   it holds no document of its own (or what has the focus holds it, as a shadow host does,
-   #2972). Otherwise the key is held back and the page read anew. *D-3043-5, D-3043-6, decided
+   where its own document names it now as what has the focus, that document has the page's
+   focus, and it holds no document of its own. Anything else holds the key back and has the
+   page read anew, a field inside a shadow root (whose host the document names, #2972) and an
+   element the engine cannot describe included; the key's own read, fresh, is not checked so. *D-3043-5, D-3043-6, decided
    in implementation, to be confirmed.*
 4. **Never unknown.** A key whose read fails in time, its own limit or the read's, is answered
    `PageUnreadInTime`: the key was not sent, so its effect is known. `Unknown` stays for a key

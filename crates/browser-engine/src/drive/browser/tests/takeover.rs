@@ -1708,3 +1708,73 @@ fn a_key_after_a_press_of_the_mouse_reads_the_page_anew() {
 
     assert_eq!(page_reads(&engine), 2, "the page was not read anew");
 }
+
+#[test]
+fn a_kept_read_is_not_used_once_the_focus_moved_inside_a_shadow_root() {
+    // #3043: the focus moved from one field to another inside one shadow host, so the document
+    // names the host before and after. The key waits, and a read of the page as it is now blanks
+    // the field that has the focus.
+    let (browser, engine) = a_large_page(
+        Duration::from_millis(300),
+        Duration::from_millis(100),
+        Duration::from_secs(30),
+    );
+    {
+        let mut model = super::super::lock(&engine.model);
+        model.shadow_of.insert(30, vec![20, 21]);
+        model.focused_on.insert("S-PAGE-1".into(), Some(30));
+    }
+    browser.take_over();
+    let aim = aim_now(&browser);
+    assert_eq!(
+        browser.person_input(&key(&aim, "x", true)),
+        Err(Refusal::PageUnreadInTime)
+    );
+    past_the_read();
+    // A script of the page moves the focus to the other field inside the host.
+    focus_on(&engine, &[("PAGE-1", "12")]);
+
+    let stale = browser.person_input(&key(&aim, "y", true));
+
+    assert_eq!(stale, Err(Refusal::PageUnreadInTime));
+    assert!(
+        engine.sent("Input.dispatchKeyEvent").is_empty(),
+        "a key went"
+    );
+    // The page reads quickly now: the key's own read is the page as it is.
+    super::super::lock(&engine.model).ax_takes = None;
+    browser.person_input(&key(&aim, "z", true)).unwrap();
+    assert_eq!(read_after_the_key(&engine), Some(21));
+}
+
+#[test]
+fn a_kept_read_whose_field_the_engine_cannot_describe_is_not_used() {
+    // #3043: where the engine cannot say what the field is now, the key waits.
+    let (browser, engine) = a_large_page(
+        Duration::from_millis(300),
+        Duration::from_millis(100),
+        Duration::from_secs(30),
+    );
+    browser.take_over();
+    let aim = aim_now(&browser);
+    typed_into_the_first_field(&browser, &engine, &aim);
+    the_focus_moves_to_the_secret_word(&engine);
+    assert_eq!(
+        browser.person_input(&key(&aim, "x", true)),
+        Err(Refusal::PageUnreadInTime)
+    );
+    past_the_read();
+    engine.on(|sent, _| {
+        (sent.method == "DOM.describeNode" && sent.params["backendNodeId"] == 21).then(|| {
+            Err(crate::cdp::CallError::Engine {
+                code: -32000,
+                message: "Could not describe the node".into(),
+            })
+        })
+    });
+
+    let unsure = browser.person_input(&key(&aim, "y", true));
+
+    assert_eq!(unsure, Err(Refusal::PageUnreadInTime));
+    assert_eq!(engine.sent("Input.dispatchKeyEvent").len(), 1, "a key went");
+}

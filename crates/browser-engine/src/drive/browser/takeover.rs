@@ -927,10 +927,12 @@ impl Browser {
     }
 
     /// Whether `field` has the focus of its own document now, that document having the focus
-    /// of the page, and is no element that holds a document (a frame's): or the element that
-    /// has it holds `field`, as a shadow host holds its field (#2972). A field a read of the
-    /// whole page found is checked so before its key goes (#3043): a script may have moved the
-    /// focus, to another frame or out of one, while the person waited for the read.
+    /// of the page, and is no element that holds a document (a frame's). A field a read of the
+    /// whole page an earlier key began found is checked so before its key goes (#3043): a
+    /// script may have moved the focus while the person waited for the read. Anything else is
+    /// not: where the document names another element (a shadow host, whose inside it does not
+    /// say), or the engine cannot say, the key waits, and its own read of the page, fresh, is
+    /// what the next key is blanked from.
     fn focus_is_on(&self, (target, key): &(String, NodeKey)) -> bool {
         let session = lock(&self.inner.state)
             .page(target)
@@ -941,8 +943,7 @@ impl Browser {
         };
         match self.focused_in(&session, &key.frame) {
             Some(now) if now == key.backend => !self.holds_a_document(&session, now),
-            Some(now) => self.holds(&session, now, key.backend),
-            None => false,
+            _ => false,
         }
     }
 
