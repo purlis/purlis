@@ -117,6 +117,8 @@ macro_rules! app_commands {
                 chatbrowsers::allow_person_browser_sites,
                 chatbrowsers::keep_browser_sites_blocked,
                 chatbrowsers::chat_browsers,
+                chatbrowsers::chat_browser_timeline,
+                chatbrowsers::chat_browser_timeline_shot,
                 chatbrowsers::browsers_taken_back,
                 chatbrowsers::pin_chat_browser,
                 chatbrowsers::browsers_at_quit,

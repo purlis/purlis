@@ -697,6 +697,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     "go_browser",
     // A chat's browsers, listed to be watched (#2024): the window's alone, as watching is.
     "chat_browsers",
+    // A chat's browser timeline and its screenshots (#2017): the window's alone, as watching
+    // is, since they hold pictures of the chat's pages.
+    "chat_browser_timeline",
+    "chat_browser_timeline_shot",
     // The person's own browsers a crash of the window left running, for their view tabs
     // (#2025): the window's alone, as watching is.
     "browsers_taken_back",

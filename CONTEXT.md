@@ -694,6 +694,13 @@ one asks the person what its browser may reach: this project's sites and its dev
 the open web, or off; for this chat, or **Always for this persona**.
 _Avoid_: browser automation, Playwright, DevTools (that is the **engine**'s)
 
+**Browser timeline**:
+A chat's record of what its agent did in its browsers, oldest to newest, with the screenshots its
+**browser tools** returned, and where the person or purlis drove instead, which has no screenshot.
+Kept on this device, bounded, and removed when the chat closes; it holds nothing the agent was
+not given. Proof of the work.
+_Avoid_: recording, history, log (that is the event log's), video
+
 **Declared browser** (of a persona):
 What a persona says its chats' browser usually reaches, in its sandbox section
 (`browser = "project"` or `"open-web"`). It only marks an answer of the browser's Ask, in its place;
