@@ -12,12 +12,13 @@
 //   node tools/story-baselines.mjs gather <index> <out> [<report> ...]
 //                                                   copy the baseline of every such story to
 //                                                   <out>, under its path in `app/` (the
-//                                                   labelled job, after drawing)
+//                                                   stories job, after drawing them again)
 //   node tools/story-baselines.mjs take <drawn> <app>
 //                                                   write what `gather` copied into <app> and
 //                                                   delete every other baseline there (the
 //                                                   labelled job's commit, run from a trusted
-//                                                   checkout against the pull request's)
+//                                                   checkout against the pull request's, and
+//                                                   `tools/story-baselines-pull.mjs`)
 //
 // <index> is Storybook's own index of the stories, which `storybook index` writes. A story is
 // live when the index has it with the `test` tag, the stories the Vitest addon runs, and a
@@ -235,7 +236,7 @@ export function problems(
     if (!BASELINE.test(path))
       return [
         `${path}: not a baseline the pinned image draws (<story id>_<theme>_<appearance>-<chromium|webkit>-linux.png); ` +
-          "baselines are drawn only by the update-baselines label (docs/component-stories.md)",
+          "baselines are drawn only by a pull request's stories run, and taken by the update-baselines label or tools/story-baselines-pull.mjs (docs/component-stories.md)",
       ];
     const { file, story } = storyOf(path);
     if (!existsSync(join(app, file)))
@@ -245,12 +246,12 @@ export function problems(
     if (!live.get(file)?.has(story))
       return [
         `${path}: no story ${story} in ${file} runs as a test in a pictured cell, so the baseline is obsolete; ` +
-          "the update-baselines label deletes it, or delete it with the story (docs/component-stories.md)",
+          "taking the stories run's baselines deletes it, or delete it with the story (docs/component-stories.md)",
       ];
     if (off.get(file)?.has(story))
       return [
         `${path}: story ${story} in ${file} takes no picture (screenshot: false), so the baseline is obsolete; ` +
-          "the update-baselines label deletes it, or delete it in the same change (docs/component-stories.md)",
+          "taking the stories run's baselines deletes it, or delete it in the same change (docs/component-stories.md)",
       ];
     return [];
   });
