@@ -1341,16 +1341,18 @@ pub fn loads_code(var: &str) -> bool {
             .any(|prefix| var.starts_with(prefix))
 }
 
-/// **The chat's variables a declared tool's run starts from** (#2047): where the program is
+/// **The chat's variables a brokered run starts from** (#2047), a declared tool's or an
+/// approved server's: where the program is
 /// found, the language, time zone and terminal it prints for, the chat's ssh agent (#1350), the
 /// certificate authorities it trusts, and the plain values a client reads for where it connects
 /// (a database's host, port and name, as a run's tunnel reads them, #1708, and a cloud's
 /// region), which an argument could say as well. Nothing else of the chat's environment reaches
-/// the tool: no `HOME` or `XDG_*` folder, no `GIT_CONFIG_*`, `AWS_CONFIG_FILE` or any other
+/// the run: no `HOME` or `XDG_*` folder, no `GIT_CONFIG_*`, `AWS_CONFIG_FILE` or any other
 /// variable that names a file of settings a chat could have written, and no program to run
 /// (`PAGER`, `EDITOR`, `GIT_SSH_COMMAND`). What the tool is handed comes from its declaration,
-/// and the run sets its own proxy, temp folder and home ([`home_of_its_own`]).
-const A_TOOL_STARTS_FROM: &[&str] = &[
+/// and the run sets its own proxy, temp folder and home ([`home_of_its_own`]). An approved
+/// server's run starts with the variables its approved entry sets too.
+const A_RUN_STARTS_FROM: &[&str] = &[
     "PATH",
     "LANG",
     "TZ",
@@ -1382,14 +1384,14 @@ const A_TOOL_STARTS_FROM: &[&str] = &[
     "AWS_DEFAULT_REGION",
 ];
 
-/// **Whether a declared tool's run starts with the chat's `var`** ([`A_TOOL_STARTS_FROM`], and
-/// each `LC_*`).
-pub fn a_tool_starts_from(var: &str) -> bool {
-    A_TOOL_STARTS_FROM.contains(&var) || var.starts_with("LC_")
+/// **Whether a brokered run starts with the chat's `var`** ([`A_RUN_STARTS_FROM`], and each
+/// `LC_*`).
+pub fn a_run_starts_from(var: &str) -> bool {
+    A_RUN_STARTS_FROM.contains(&var) || var.starts_with("LC_")
 }
 
-/// **A declared tool's home** (#2047): `HOME` and the `XDG_*` folders, each in the run's own
-/// temp folder `tmp`, so whatever a tool reads or writes as its settings is the run's alone.
+/// **A brokered run's home** (#2047): `HOME` and the `XDG_*` folders, each in the run's own
+/// temp folder `tmp`, so whatever a program reads or writes as its settings is the run's alone.
 pub fn home_of_its_own(tmp: &Path) -> Vec<(String, String)> {
     [
         ("HOME", ""),

@@ -354,13 +354,87 @@ fn a_tool_runs_with_an_environment_of_its_own() {
     );
 }
 
+/// #2047: an approved credentialed server's line starts from what every brokered run does and
+/// the variables its approved entry sets. A variable the chat sets that names a package
+/// manager's settings, the interpreter a launcher picks or git's global settings never reaches
+/// it, and its home is the run's own.
+#[test]
+fn an_approved_servers_run_starts_from_its_entrys_variables_and_no_other_of_the_chats() {
+    let project = project();
+    let root = project.path();
+    let persona = root.join("personas/devops");
+    std::fs::create_dir_all(&persona).unwrap();
+    std::fs::write(
+        persona.join("persona.md"),
+        "---\nname: devops\nvault: team\ndelegate-when: deploys\n---\n# devops\n",
+    )
+    .unwrap();
+    let risky = [
+        ("npm_config_userconfig", "/work/npmrc"),
+        ("NPM_CONFIG_USERCONFIG", "/work/npmrc"),
+        ("PIP_CONFIG_FILE", "/work/pip.conf"),
+        ("UV_PYTHON", "/work/python"),
+        ("UV_INDEX_URL", "https://index.example.com"),
+        ("GIT_CONFIG_GLOBAL", "/work/gitconfig"),
+    ];
+    let script = risky
+        .iter()
+        .map(|(name, _)| format!("[${{{name}:-}}]"))
+        .collect::<String>()
+        + r#"[$SERVER_URL]"; case "$HOME" in "$TMPDIR") echo home ;; esac"#;
+    let script = format!("echo \"{script}");
+    let entry = serde_json::json!({
+        "type": "stdio",
+        "command": "/bin/sh",
+        "args": ["-c", script],
+        "env": {"SERVER_URL": "https://server.example.com"},
+        "secrets": {"X": "TOKEN"},
+    });
+    std::fs::write(
+        persona.join("mcp.json"),
+        serde_json::json!({"mcpServers": {"server": entry}}).to_string(),
+    )
+    .unwrap();
+    let fingerprint =
+        crate::personaverbs::mcp::fingerprint(Some("team"), &entry).expect("it needs consent");
+    crate::personaverbs::mcp::approve(
+        root,
+        &crate::personaverbs::state_dir(root),
+        "devops",
+        &[fingerprint],
+    )
+    .unwrap();
+    let mut want = wanted(root, "team", sh(&script));
+    want.env = vec!["X=TOKEN".into()];
+    want.environment
+        .push(("SERVER_URL".into(), "https://server.example.com".into()));
+    want.environment.push(("HOME".into(), "/work".into()));
+    for (name, value) in risky {
+        want.environment.push((name.into(), value.into()));
+    }
+    let frames = served_as_asked(&asker(root, Some("devops")), want);
+    assert_eq!(frames.last(), Some(&Frame::Exit(0)), "{frames:?}");
+    assert_eq!(
+        stdout(&frames),
+        format!(
+            "{}[https://server.example.com]\nhome\n",
+            "[]".repeat(risky.len())
+        )
+    );
+}
+
 /// #2047: a brokered tool's process keeps no core dump, which would hold its values.
 #[cfg(unix)]
 #[test]
 fn a_tools_run_keeps_no_core_dump() {
     use rustix::process::{Resource, Rlimit, getrlimit, setrlimit};
     // The app's own soft limit as high as it may go, so the run's is lowered, not inherited.
+    // Where the hard limit is nothing already, no process here can write a core file, and there
+    // is nothing for this to show.
     let given = getrlimit(Resource::Core);
+    if given.maximum == Some(0) {
+        return;
+    }
     let _ = setrlimit(
         Resource::Core,
         Rlimit {

@@ -56,10 +56,10 @@
 //! exactly that tool's vault and hand-over ([`crate::sandbox::tools::declared`]). Anything else
 //! is refused with a sentence naming the tool to declare. The run is of the tool's program by
 //! its absolute path, from a `PATH` without the folders the chat may write, and without the
-//! chat's variables that make a program load code ([`crate::sandbox::tools::loads_code`]): a
-//! tool starts from only the few of the chat's variables it needs, with a home of its own in
-//! the run's temp directory ([`crate::sandbox::tools::a_tool_starts_from`]), and keeps no core
-//! dump (#2047). On
+//! chat's variables that make a program load code ([`crate::sandbox::tools::loads_code`]): it
+//! starts from only the few of the chat's variables a run needs, with a home of its own in the
+//! run's temp directory ([`crate::sandbox::tools::a_run_starts_from`]), and keeps no core dump
+//! (#2047). On
 //! Linux, purlis's own wrap that holds it starts with none of these: the run's environment is
 //! carried past it to the tool alone ([`purlis_linux_sandbox::carried`]). A
 //! credentialed MCP server's line passes only as this machine approved it, wrapped by purlis
@@ -1188,14 +1188,21 @@ pub(crate) fn serve_wrapped(
     serve_in(asker, wanted, reader, writer, wrap, Arc::new(|_| {}));
 }
 
-/// Whether `wanted` running `command` is exactly the `secret exec` line of a credentialed MCP
-/// server of `persona` this machine approved ([`crate::personaverbs::chatstart::approved_lines`]):
-/// its vault, its `--env` and `--file` hand-overs in order, no `--dotenv`, and its command.
-fn an_approved_server(root: &Path, persona: &str, wanted: &Wanted, command: &[String]) -> bool {
+/// Where `wanted` running `command` is exactly the `secret exec` line of a credentialed MCP
+/// server of `persona` this machine approved ([`crate::personaverbs::chatstart::approved_servers`]):
+/// its vault, its `--env` and `--file` hand-overs in order, no `--dotenv`, and its command. The
+/// names of the variables its approved entry sets (`env`), which its run starts with.
+fn an_approved_server(
+    root: &Path,
+    persona: &str,
+    wanted: &Wanted,
+    command: &[String],
+) -> Option<Vec<String>> {
     let state = crate::personaverbs::state_dir(root);
-    crate::personaverbs::chatstart::approved_lines(root, &state, persona)
-        .iter()
-        .any(|words| approved_line_is(words, wanted, command))
+    crate::personaverbs::chatstart::approved_servers(root, &state, persona)
+        .into_iter()
+        .find(|server| approved_line_is(&server.words, wanted, command))
+        .map(|server| server.env)
 }
 
 /// Whether `words`, an approved server's `secret exec` words, ask for what `wanted` running
@@ -1857,7 +1864,9 @@ pub(crate) fn serve_recorded(
     let persona = asker.persona.as_deref().unwrap_or_default();
     let listed = declared_now(&asker.root, persona);
     let mut declared_as: Option<String> = None;
-    let mut a_tool = false;
+    // The variables of the chat's an approved server's run starts with beside
+    // [`crate::sandbox::tools::a_run_starts_from`]'s: those its approved entry sets.
+    let mut its_entry_sets: Vec<String> = Vec::new();
     match crate::sandbox::tools::declared(
         &confines.tools,
         &listed,
@@ -1879,15 +1888,16 @@ pub(crate) fn serve_recorded(
         Ok(ready) => match crate::sandbox::tools::run_words(ready, &command[1..]) {
             Ok(words) => {
                 declared_as = ready.argv0().map(str::to_owned);
-                a_tool = true;
                 command = words;
             }
             Err(why) => return refuse(&mut *writer, 1, why),
         },
         // A persona's credentialed MCP server this machine approved, started by the chat's
         // harness, asks for its line as approved: the person's consent, as an Allow is.
-        Err(_) if an_approved_server(&asker.root, persona, &wanted, &command) => {}
-        Err(why) => return refuse(&mut *writer, 1, why),
+        Err(why) => match an_approved_server(&asker.root, persona, &wanted, &command) {
+            Some(sets) => its_entry_sets = sets,
+            None => return refuse(&mut *writer, 1, why),
+        },
     }
     // At most a few at once per chat: each holds a proxy, a temp directory and a process group.
     let Some(_slot) = Slot::take(&asker.root, asker.chat) else {
@@ -1973,10 +1983,9 @@ pub(crate) fn serve_recorded(
     };
     // The asker's environment, less the hook channel and what makes a program load code
     // ([`crate::sandbox::tools::loads_code`]), then the wrap's own (its proxy and its
-    // temp directory), then every other vault's identity variables taken out. A declared
-    // tool starts from only the few of the chat's variables it needs, with a home of its own
-    // in the run's temp directory (#2047): an approved server's line keeps the rest, which
-    // carries the settings its entry gives it.
+    // temp directory), then every other vault's identity variables taken out. A run starts
+    // from only the few of the chat's variables it needs, and an approved server's from those
+    // its approved entry sets too, with a home of its own in the run's temp directory (#2047).
     // A name is judged as it reads, with any byte that is not UTF-8 replaced, so one is never
     // let through for not spelling the name it is judged by.
     let mut base: Vec<(OsString, OsString)> = wanted
@@ -1987,7 +1996,8 @@ pub(crate) fn serve_recorded(
             !not_handed_on(&k)
                 && !crate::sandbox::tools::loads_code(&k)
                 && !DUMPS_MEMORY.contains(&k.as_ref())
-                && (!a_tool || crate::sandbox::tools::a_tool_starts_from(&k))
+                && (crate::sandbox::tools::a_run_starts_from(&k)
+                    || its_entry_sets.iter().any(|set| *set == k))
         })
         .collect();
     // What the tool runs by a bare name is never from a folder the chat may write
@@ -2011,10 +2021,8 @@ pub(crate) fn serve_recorded(
     for (k, v) in crate::sandbox::seatbelt::env(&beside.proxy_url(), beside.tmp()) {
         exec::set_var(&mut base, &k, v);
     }
-    if a_tool {
-        for (k, v) in crate::sandbox::tools::home_of_its_own(beside.tmp()) {
-            exec::set_var(&mut base, &k, v);
-        }
+    for (k, v) in crate::sandbox::tools::home_of_its_own(beside.tmp()) {
+        exec::set_var(&mut base, &k, v);
     }
     // ssh, and git over ssh, through the run's own SOCKS port (#1667): the chat's route names
     // the chat's port, which the run's sandbox does not reach.
