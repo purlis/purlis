@@ -1135,6 +1135,61 @@ fn the_table_family_default_is_what_its_stylesheet_draws() {
     assert_eq!(declared(line, "block-size"), Some("1px"));
 }
 
+#[test]
+fn the_tree_family_default_is_what_its_stylesheet_draws() {
+    use parts::State::{Disabled, Focused, Hover, Selected};
+    let css = include_str!("../../../../app/src/ui/tree/tree.css");
+    let row = "[data-scope=\"tree\"][data-part=\"root\"]";
+    let at_rest = rule(css, row);
+    assert_eq!(
+        declared(at_rest, "background-color"),
+        None,
+        "a row at rest has no ground"
+    );
+    assert_eq!(
+        parts::look_of("tree", "", &[]),
+        [
+            "transparent",
+            token_of(declared(at_rest, "color").unwrap()).as_str(),
+            "transparent"
+        ]
+    );
+    let hover = rule(
+        css,
+        &format!("{row}[data-hovered]:not([data-disabled]):not([data-selected])"),
+    );
+    assert_eq!(
+        parts::look_of("tree", "", &[Hover])[0],
+        token_of(declared(hover, "background-color").unwrap())
+    );
+    assert_eq!(
+        parts::look_of("tree", "", &[Focused]),
+        parts::look_of("tree", "", &[])
+    );
+    let chosen = rule(css, &format!("{row}[data-selected]"));
+    for states in [&[Selected][..], &[Selected, Hover][..]] {
+        let look = parts::look_of("tree", "", states);
+        assert_eq!(
+            look[0],
+            token_of(declared(chosen, "background-color").unwrap()),
+            "{states:?}"
+        );
+        assert_eq!(
+            look[1],
+            token_of(declared(chosen, "color").unwrap()),
+            "{states:?}"
+        );
+    }
+    let off = rule(css, &format!("{row}[data-disabled]"));
+    assert_eq!(
+        parts::look_of("tree", "", &[Disabled])[1],
+        token_of(declared(off, "color").unwrap())
+    );
+    // The twist is a mark in the quiet tier (R129).
+    let twist = rule(css, "[data-scope=\"tree\"][data-part=\"twist\"]");
+    assert_eq!(token_of(declared(twist, "color").unwrap()), "text.quiet");
+}
+
 // ---------------------------------------------------------------------------------------
 // The manifest and the schema
 // ---------------------------------------------------------------------------------------

@@ -72,6 +72,11 @@
  * - `purlis/titlebar-family` (error: the title bar's workspaces are a family, #2916): the
  *   workspace strip's old classes (`workspaces`, `workspaces-strip`, `workspace`, `plane-root`,
  *   `workspace-name`, `workspace-mark`) and `data-scope="titlebar"` by hand.
+ * - `purlis/tree-family` (error: a tree is the tree family's, #2911): a tree's role written by
+ *   hand (`tree`, `treeitem`, `treegrid`), the shared tree's old classes (`ui-tree`,
+ *   `ui-tree-row`, `ui-tree-twist`) and its `data-scope`. A tree is the family's `Tree` and
+ *   `TreeRow` (`ui/tree/Tree`). The trees still drawn by hand are turned off by file in
+ *   `eslint.config.js`, each until its lane moves it.
  * - `purlis/panel-separator-family` (error: every resize handle is the family's, #3143):
  *   `data-scope="panel-separator"` written by hand, and the panel library's own `Separator`,
  *   by name or through `import * as`.
@@ -777,6 +782,15 @@ const titlebarFamily = moved({
     "the title bar's workspaces: draw them as `<WorkspaceChip>` and `<PinnedStrip>` from `ui/titlebar/TitleBarWorkspaces`, and a switcher's parts from `ui/titlebar/Switcher` (#2916).",
 });
 
+const treeFamily = moved({
+  description: "A tree is the shared tree family",
+  scopes: ["tree"],
+  classes: ["ui-tree", "ui-tree-row", "ui-tree-twist"],
+  roles: ["tree", "treeitem", "treegrid"],
+  message:
+    "a tree: draw it as `<Tree>` and `<TreeRow>`, with the row's slots, from `ui/tree/Tree` (#2911).",
+});
+
 const separatorScope = moved({
   description: "A resize handle between two panels is the shared panel separator family",
   scopes: ["panel-separator"],
@@ -836,6 +850,7 @@ export const purlisUi = {
     "table-family": tableFamily,
     "tabs-family": tabsFamily,
     "titlebar-family": titlebarFamily,
+    "tree-family": treeFamily,
     "panel-separator-family": panelSeparatorFamily,
   },
 };

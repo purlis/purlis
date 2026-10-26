@@ -130,6 +130,7 @@ const COMPONENTS = [
   "ui/list/list.css",
   "paneFrame.css",
   "ui/table/table.css",
+  "ui/tree/tree.css",
   "primitives/text.css",
 ].reduce<Rule[]>((rules, file) => [...rules, ...rulesOf(sheet(file), 1, rules.length)], []);
 const RULES = [...rulesOf(sheet("App.css"), 0), ...COMPONENTS];

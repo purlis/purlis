@@ -94,8 +94,9 @@ describe("the Changes view", () => {
     await onAlpha();
 
     // The fixture leaves one untracked file in `tool` and nothing in `svc`.
-    await untilSays("repo-tool", "untracked");
-    await untilSays("repo-svc", "clean");
+    // What is uncommitted is the repo's Changes row, under its heading (the tree family's rows).
+    await untilSays("changes-tool", "untracked");
+    await untilSays("changes-svc", "clean");
   });
 
   it("counts the worktrees cut off each clone", async () => {
@@ -175,7 +176,7 @@ describe("the Changes view", () => {
         const one = Number.isFinite(line) ? line : Number.parseFloat(css.fontSize) * 1.5;
         return one * 1.5 + 4 + Number.parseFloat(css.paddingTop) * 2;
       };
-      const naming = [...bar.querySelectorAll('[role="treeitem"]')].filter(
+      const naming = [...bar.querySelectorAll('[role="row"]')].filter(
         (row) => row.querySelector(".none, .unreadable") === null,
       );
       const rows = naming.map((row) => ({

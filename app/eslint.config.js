@@ -101,6 +101,8 @@ export default tseslint.config(
       // A tablist is the tabs family's, on React Aria, since #3042.
       "purlis/tabs-family": "error",
       "purlis/titlebar-family": "error",
+      // Every tree is the tree family's, on React Aria, since #2911 (the trees below aside).
+      "purlis/tree-family": "error",
       "purlis/panel-separator-family": "error",
     },
   },
@@ -116,5 +118,18 @@ export default tseslint.config(
       "src/StripTablist.tsx",
     ],
     rules: { "purlis/tabs-family": "off" },
+  },
+  // **The trees still drawn by hand** (the shared tree's classes and roles), each until its lane
+  // moves it onto the tree family (#2911): a branch's files and the explorer's three trees, which
+  // share the file rows; and the Chats list with the browsers and finished tasks under a chat.
+  {
+    files: [
+      "src/editor/BranchTree.tsx",
+      "src/Explorer.tsx",
+      "src/ChatsSection.tsx",
+      "src/ChatBrowsersShown.tsx",
+      "src/FinishedTasks.tsx",
+    ],
+    rules: { "purlis/tree-family": "off" },
   },
 );

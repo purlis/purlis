@@ -3838,7 +3838,7 @@ body {
 /* **A row that names something is one line** (#1701, #1718), the explorer's rule: a branch and
    its upstream folded into three lines in a narrow side, and a tree whose rows are three lines
    tall is not a tree you can read down. The view scrolls sideways instead (`overflow: auto`).
-   The rest of a row is the shared tree row's (`.ui-row.ui-tree-row`, DS-12). */
+   The rest of a row is the tree family's (`ui/tree`, #2911). */
 .state-bar .tree-row {
   min-width: max-content;
   white-space: nowrap;

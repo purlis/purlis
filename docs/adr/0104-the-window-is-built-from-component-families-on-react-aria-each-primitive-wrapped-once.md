@@ -124,6 +124,7 @@ amendment, named `<yyyy-mm-dd>-<slug>.md`:
 - [2026-10-24, the select and combobox families, and no top layer](0104/2026-10-24-the-select-and-combobox-families.md)
 - [2026-10-24, the choice families](0104/2026-10-24-the-choice-families.md)
 - [2026-10-25, a table of data is a grid, and a table of controls is a table](0104/2026-10-25-a-table-of-data-is-a-grid-and-a-table-of-controls-is-a-table.md)
+- [2026-10-25, the tree family is React Aria's tree, walked as the WAI-ARIA tree](0104/2026-10-25-the-tree-family.md)
 
 ## What was rejected
 

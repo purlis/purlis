@@ -199,9 +199,11 @@ not a token: words with no size of their own (a list row's, a paragraph's) follo
 
 The project strip sits in the title bar, whose height no token reaches yet. **Still square,
 whatever `radius.*` says:** the project and workspace strip tabs, the settings gear on a strip,
-and every tree row. The session tabs and their `×` are rounded through their parts ([Session
-tabs](#session-tabs)), and a list's rows by `radius.control` (the list family, since manifest
-version 11; `radius.md` before #3177). **The focus ring tokens reach every focus ring**, the strip tabs', a tab's `×` closer's and
+and the tree rows still drawn by hand (the Explorer's and the Chats list's). The session tabs and
+their `×` are rounded through their parts ([Session tabs](#session-tabs)), a list's rows by
+`radius.control` (the list family, since manifest version 11; `radius.md` before #3177), and the
+tree family's rows by `radius.control` too (the Changes view's, since the next release's manifest
+version). **The focus ring tokens reach every focus ring**, the strip tabs', a tab's `×` closer's and
 the strip gear's among them; a ring that sits half as far out or in draws half the offset. Under
 forced colours the ring is drawn in the system's `Highlight` at the theme's width and offset:
 forced colours replace colour, not geometry.
@@ -323,6 +325,7 @@ says what each family, part and variant is):
 | `textarea` (since version 3) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `font-size`) | none | `hover`, `focused`, `disabled` |
 | `titlebar` (since version 12) | `workspace` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`), `count` (`fill`, `text`), `crumb` (`fill`, `text`, `corner-radius`), `all` (`fill`, `text`, `corner-radius`), `pin` (`fill`, `text`, `corner-radius`), `row` (`fill`, `text`, `corner-radius`) | `pinned`, `unpinned` | `hover`, `selected`, `focused` |
 | `tooltip` (since version 5) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`), `detail` (`text`), `shortcut` (`text`, `font-size`) (since the next release) | none | none |
+| `tree` (since the next release) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `gap`, `font-size`, `font-weight`, `height`), `body` (`padding`, `gap`), `twist` (`text`), `lead` (`text`, `gap`), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`), `trail` (`text`, `gap`), `header` (`text`, `font-size`, `font-weight`) | none | `hover`, `focused`, `selected`, `disabled` |
 
 A field is its label, its control (a `text-input` or a `textarea`), its help and its error, as
 one: `field.help.text` reaches a field's help line, `text-input.root.border-width` every one-line
@@ -485,8 +488,13 @@ column's name; `cell` a cell's room; `rule` the rule between rows and under the 
 none by default (Purlis Classic fills it, `table.rule.fill: border.subtle`); and `bar` the bar
 over a table that chooses.
 
-The strip tabs, a tab's `×` closer, the gear on a strip and the list and tree rows are not
-families with parts today: they are drawn as the note under [Geometry](#geometry) says.
+**The tree** (the next release's manifest version, #2911): `tree`, a tree's row. Its `root` takes
+every property but `padding`, which is its indentation (each level one step in) and stays the
+family's; `body` is the tree that holds the rows; `twist` the chevron that opens and closes a
+row's rows, a mark; `lead` and `trail` its marks and its end; and `header` a group's name.
+
+The strip tabs, a tab's `×` closer, the gear on a strip and the tree rows still drawn by hand are
+not families with parts today: they are drawn as the note under [Geometry](#geometry) says.
 
 ### Session tabs
 
