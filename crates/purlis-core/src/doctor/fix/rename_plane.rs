@@ -25,7 +25,9 @@
 //!   (D-RN7-11): the alias resolves on every build, and a hook whose program is not on `PATH`
 //!   fails open.
 //! - Personas' `charter:<skill>` references, in their definitions and in the agents generated
-//!   from them, become `purlis:<skill>`.
+//!   from them, become `purlis:<skill>`: a reference only, never prose, an image name or a line
+//!   of a fenced code block (`skill_refs`, the rule `project-skills` shares; ADR 0091's
+//!   D-RN7-13).
 //!
 //! Only files git tracks are touched: an ignored `workspace.json` is this machine's, and is
 //! renamed the next time charter writes it.

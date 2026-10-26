@@ -4,6 +4,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { $, browser } from "@wdio/globals";
+import type { ChainablePromiseElement } from "webdriverio";
 import { ask } from "./switching.js";
 import { goToWorkspaceAt, workspacesListed } from "./titleBarWorkspaces.js";
 
@@ -407,4 +408,18 @@ export async function untilSays(
     interval: 250,
     timeoutMsg: `${selector} ${shown ? "never said" : "still says"} ${JSON.stringify(words)}`,
   });
+}
+
+/**
+ * **Presses an answer that grants as the person does** (#1695, #3217): brought into view, then
+ * read for longer than the settle time (`SETTLE_MS`, 1.5 s), then pressed from the keyboard.
+ * Not the driver's click: WebDriver's Element Click scrolls its element into view by itself,
+ * in the same frame as the click, and a scroll that is not the person's holds the press.
+ */
+export async function pressGrant(button: ChainablePromiseElement): Promise<void> {
+  await button.scrollIntoView({ block: "nearest", inline: "nearest" });
+  await browser.pause(2_000);
+  const element = await button;
+  await browser.execute((el: HTMLElement) => el.focus({ preventScroll: true }), element);
+  await browser.keys(["Enter"]);
 }

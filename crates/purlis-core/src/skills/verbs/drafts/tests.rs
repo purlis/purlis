@@ -574,6 +574,7 @@ fn a_try_turns_off_every_harness_skill_and_plugin_on_every_harness() {
         plugin: None,
         persona: None,
         skills: None,
+        laid_out: None,
     };
     for (harness, own) in [
         (Harness::ClaudeCode, "mine"),

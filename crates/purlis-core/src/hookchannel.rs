@@ -518,22 +518,7 @@ impl purlis_host::Hear for HookChannels {
         let relaying = Relaying::keeping(
             board.handing_on(hand_on),
             Keeping {
-                record: {
-                    let (log, root) = (log.clone(), path.to_path_buf());
-                    // A line of this project's is recorded under this project.
-                    Box::new(move |entry| match &entry {
-                        Entry::Report { plane, .. }
-                        | Entry::Tool { plane, .. }
-                        | Entry::Refused { plane, .. }
-                            if *plane == root =>
-                        {
-                            log.write(entry)
-                        }
-                        _ => Err(std::io::Error::other(
-                            "what the window sent back to record is not of this project's line",
-                        )),
-                    })
-                },
+                record: hook_lines_recorded(log.clone(), path),
                 heard_from: Box::new(move |chat| spooled.heard_from(chat)),
                 unheard: {
                     let board = board.clone();
@@ -552,6 +537,42 @@ impl purlis_host::Hear for HookChannels {
             reading: Mutex::new(Some(reading)),
         })))
     }
+}
+
+/// What records, in `log`, what the window sends back of each hook line this channel heard: under
+/// the project this host holds the channel for, at `root` (#3304). The project's path the window
+/// names is not used: a pool's runner holds the project at `<data>/projects/<id>`, not where the
+/// window holds it, and the relay records only the record of the line this channel heard
+/// ([`crate::hookwire::relay`]), so the line is this project's whatever path the window names.
+/// Anything but a hook line is refused.
+fn hook_lines_recorded(
+    log: EventLog,
+    root: &Path,
+) -> Box<dyn Fn(Entry) -> std::io::Result<()> + Send + Sync + 'static> {
+    let root = root.to_path_buf();
+    Box::new(move |entry| {
+        let plane = root.clone();
+        log.write(match entry {
+            Entry::Report {
+                report,
+                followed,
+                begun,
+                ..
+            } => Entry::Report {
+                plane,
+                report,
+                followed,
+                begun,
+            },
+            Entry::Tool { call, .. } => Entry::Tool { plane, call },
+            Entry::Refused { chat, .. } => Entry::Refused { plane, chat },
+            _ => {
+                return Err(std::io::Error::other(
+                    "what the window sent back to record is not a hook line",
+                ));
+            }
+        })
+    })
 }
 
 /// One held project's hook channel in the host.

@@ -46,6 +46,7 @@ import type { StateClock } from "./stateClock";
 import type { UsedReader } from "./tasksUsed";
 import type { RefObject } from "react";
 import { Doer, ShowMore, Pin, Closer } from "./StripMarks";
+import { TIPS_BELOW } from "./ui/tooltip/Tooltip";
 import type { SandboxSaid } from "./SandboxMark";
 
 /** What a tab with no tasks hands its chip, the same lists every time. */
@@ -161,6 +162,8 @@ export function ChatStrip({
       // The strip the tabs sit in (`ui/tabs`): docked on the content panel under it, or a strip
       // of its own, as the theme says.
       {...tabsPart("strip")}
+      // Every tooltip on the strip stands below it, clear of its row (#3361).
+      {...TIPS_BELOW}
       {...{ [REGION_CHROME]: "" }}
       data-colour={colourOf(ofWorkspace) ?? undefined}
       style={tintOf(ofWorkspace)}

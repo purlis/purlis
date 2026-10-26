@@ -656,6 +656,7 @@ fn charters_hooks() -> Vec<String> {
     let crate::harness::StateHooks::ThisSessionOnly { args, .. } = Harness::Codex.state_hooks(
         crate::harness::Kit {
             skills: None,
+            laid_out: None,
             binary: Path::new("/Applications/charter.app/Contents/MacOS/charter"),
             plugin: None,
             persona: None,

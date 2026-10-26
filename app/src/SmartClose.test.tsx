@@ -117,7 +117,7 @@ function core(
 
 async function openAChat() {
   await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
-  await userEvent.click(await screen.findByRole("button", { name: "Start" }));
+  await userEvent.click(await screen.findByRole("button", { name: "Start chat" }));
 }
 
 /** The core telling the window a step of chat `session`'s smart close. */

@@ -129,7 +129,7 @@ function core(over: (cmd: string, args: unknown) => unknown = () => undefined) {
 
 async function openAChat() {
   await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
-  await userEvent.click(await screen.findByRole("button", { name: "Start" }));
+  await userEvent.click(await screen.findByRole("button", { name: "Start chat" }));
 }
 
 /** Opens the palette from wherever the keyboard is, types, and presses Enter. */
@@ -249,7 +249,7 @@ describe("the palette reaching what the window can do", () => {
     expect(rowTitles()).toEqual(["Split right"]);
 
     await userEvent.keyboard("{Enter}");
-    await userEvent.click(await screen.findByRole("button", { name: "Start" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Start chat" }));
 
     expect(screen.getAllByTestId("pane").map((pane) => pane.textContent)).toEqual([
       "session 1",
@@ -266,7 +266,7 @@ describe("the palette reaching what the window can do", () => {
 
     expect(await screen.findByRole("dialog", { name: /Start a chat/i })).toBeInTheDocument();
     expect(asked.map(({ cmd }) => cmd)).not.toContain("start_chat");
-    await userEvent.click(await screen.findByRole("button", { name: "Start" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Start chat" }));
     expect(tabNames()).toEqual(["steward 1"]);
   });
 
@@ -315,7 +315,7 @@ describe("the palette reaching what the window can do", () => {
     render(<App />);
     await openAChat();
     await userEvent.click(screen.getByRole("button", { name: "Split down" }));
-    await userEvent.click(await screen.findByRole("button", { name: "Start" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Start chat" }));
 
     await runFromPalette("end this pane");
     await answerTheAsk("End this pane's chat");
@@ -514,7 +514,7 @@ describe("one list, two surfaces", () => {
     render(<App />);
     await openAChat();
     await userEvent.click(screen.getByRole("button", { name: "Split right" }));
-    await userEvent.click(await screen.findByRole("button", { name: "Start" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Start chat" }));
     const byButton = arrangement();
     const askedByButton = commandsSent(fromTheButton.asked);
     // Not vacuous: filtering the plane reads out must leave the action itself behind, or
@@ -534,7 +534,7 @@ describe("one list, two surfaces", () => {
     render(<App />);
     await openAChat();
     await runFromPalette("split right");
-    await userEvent.click(await screen.findByRole("button", { name: "Start" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Start chat" }));
     const byPalette = arrangement();
 
     expect(byPalette).toEqual(byButton);

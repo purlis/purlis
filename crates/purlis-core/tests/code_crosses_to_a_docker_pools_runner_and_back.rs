@@ -253,7 +253,11 @@ fn a_branch_and_its_uncommitted_work_reach_a_pools_runner_and_its_commits_come_b
         );
 
         // The project is in the runner's own folder for it, checked out with the work.
-        let repo = format!("$(ls -d \"$HOME\"/.local/share/*/projects/{PROJECT})/{REPO}");
+        let repo = format!(
+            "$(ls -d {}/{}/{PROJECT})/{REPO}",
+            purlis_core::datahome::IN_A_RUNNER_CONTAINER,
+            purlis_core::datahome::PROJECTS
+        );
         assert_eq!(
             in_the_runner(&docker, &made, &format!("cat {repo}/login.rs")),
             "fn log_in() {}"

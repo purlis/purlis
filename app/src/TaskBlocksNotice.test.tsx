@@ -20,7 +20,7 @@ const PLANE = "/home/dev/plane";
 const clock = { now: 1_000_000 };
 beforeEach(() => {
   clock.now = 1_000_000;
-  vi.spyOn(Date, "now").mockImplementation(() => clock.now);
+  vi.spyOn(performance, "now").mockImplementation(() => clock.now);
 });
 afterEach(() => {
   cleanup();

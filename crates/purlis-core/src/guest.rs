@@ -961,6 +961,13 @@ fn exclude_state(
 /// A mirrored agent or skill the project no longer has is taken out of the checkout again, as
 /// `wslayer`'s withdraw does for a workspace folder — also where the project has nothing left
 /// to carry. Only what `retired_mirrors` proves is purlis's own copy goes.
+///
+/// # It never waits on the project (#3051)
+///
+/// It takes no [`crate::planegit::Claim`] and no [`crate::rewrite::Lock`] on `plane`: the only
+/// lock it takes is the one [`crate::rewrite::update`] takes on purlis's own state folder for
+/// the note of what was offered. So a caller holding the project's claim or lock, as a doctor
+/// fix does, can call it without waiting on itself. Keep it so.
 pub fn wire(plane: &Path, tree: &Path) -> Wired {
     // One listing per repository for the length of this wire, even when the caller did not
     // open a block: a wire asks the exclude's question twice over by construction.

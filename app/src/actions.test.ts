@@ -1793,6 +1793,7 @@ describe("carrying out a row", () => {
         `newMemory:${JSON.stringify({ kind: "persona", name: "steward" })}`,
         `newMemory:${JSON.stringify({ kind: "shared" })}`,
         "openView:charter/shared-memory/,Shared memory",
+        "openView:charter/shortcuts/,Keyboard shortcuts",
         // #1452: the project's dispatches, in a tab of their own.
         "openView:charter/dispatches/,Dispatches",
         // A chat's Activity, one row per chat tab (#1495).
@@ -2288,9 +2289,10 @@ describe("the palette at fifty chats", () => {
       // One more under both since #1487: `Previous chat in this tab`, a row about the tab in
       // front, before the branch's two in the catalogue. One more under `r` since #1137:
       // `Search in files` (`search` has an `r`). One more under `r` since #2176: `New browser`.
-      // One more under `r` since #2679: `Add a Docker pool…` (`Docker` has an `r`).
+      // One more under `r` since #2679: `Add a Docker pool…` (`Docker` has an `r`). One more
+      // under `r` since #2921: `Keyboard shortcuts` (`keyboard` has an `r`).
       expect(at("re", loaded())).toBe(8);
-      expect(at("r", loaded())).toBe(17);
+      expect(at("r", loaded())).toBe(18);
       expect(at("rem", loaded())).toBe(1);
     });
 
@@ -2430,8 +2432,9 @@ describe("the palette at fifty chats", () => {
     // settings: Browsers. 916 since #2176: New browser. 917 since #2679: Add a Docker pool….
     // Your settings: Pools is offered only once this machine keeps a pool. 918 since #2765:
     // Your settings: Previews (Open Skill studio is offered only while its flag is on). 920
-    // since #2925: Your settings: Motion and contrast, and Your colours.
-    expect(offers).toHaveLength(920);
+    // since #2925: Your settings: Motion and contrast, and Your colours. 922 since #2921: Focus
+    // mode and Keyboard shortcuts, one row each.
+    expect(offers).toHaveLength(922);
   });
 
   /**
@@ -4330,6 +4333,7 @@ describe("Use skill… on a chat's tab (#2775)", () => {
       most_chars: 6000,
       hidden: 0,
       still_over: null,
+      pinned_by: [],
       warns: "skills" as const,
     };
     const offers = catalogue(

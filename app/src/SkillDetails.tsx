@@ -18,6 +18,7 @@ import { Notice } from "./Notice";
 import { Button } from "./ui/button/Button";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { TextField } from "./ui/field/Field";
+import { SkillPinnedBy } from "./SkillPins";
 
 /** A copy's state, as its tab says it in one line. */
 export function lifecycleSaid(name: string, lifecycle: SkillLifecycle): string {
@@ -192,6 +193,18 @@ export function SkillDetailsPanel({
         />
       )}
       <Uses name={name} details={page} />
+      <SkillPinnedBy
+        name={name}
+        pinners={page.pinned_by}
+        refused={page.pins_refused}
+        busy={busy}
+        onUnpin={(by) =>
+          change("The skill was not unpinned", () => commands.skillPin(plane, by, name, false))
+        }
+        onRemove={(by, bad) =>
+          change("The pin was not removed", () => commands.skillPin(plane, by, bad, false))
+        }
+      />
     </div>
   );
 }

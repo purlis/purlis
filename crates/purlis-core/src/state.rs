@@ -256,15 +256,23 @@ impl serde::Serialize for Model {
 
 /// Whether a prompt a harness hands its `UserPromptSubmit` hook is the person typing purlis's
 /// smart-close skill as a slash command: `/smart-close`, or with the plugin's prefix
-/// (`/purlis:smart-close`, or the old name's), alone or with words after it. Anything else, a
+/// (`/purlis:smart-close`, or the old name's), or, in a chat on `harness` whose route names the
+/// built-in skills their own, by that name (`/purlis-smart-close` on opencode,
+/// [`crate::skills::Route::built_in_name`]), alone or with words after it. Anything else, a
 /// sentence that only mentions it included, is not (#1332).
-pub fn smart_close_typed(prompt: &str) -> bool {
+pub fn smart_close_typed(prompt: &str, harness: Option<crate::harness::Harness>) -> bool {
     let Some(command) = prompt.split_whitespace().next() else {
         return false;
     };
     let Some(command) = command.strip_prefix('/') else {
         return false;
     };
+    if harness.is_some_and(|harness| {
+        let route = harness.skills();
+        route.names_built_ins_its_own() && command == route.built_in_name(SMART_CLOSE_SKILL)
+    }) {
+        return true;
+    }
     let skill = std::iter::once(crate::names::SKILL_NAMESPACE.write)
         .chain(crate::names::SKILL_NAMESPACE.reads.iter().copied())
         .find_map(|prefix| command.strip_prefix(prefix))
