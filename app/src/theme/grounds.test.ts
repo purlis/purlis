@@ -653,10 +653,9 @@ const CLASSLESS: readonly string[] = [
   '.ui-table tbody tr:is([aria-selected="true"], [aria-current]:not([aria-current="false"])) > *',
   // Selected words, not a box anything stands on.
   ':root[data-theme-draws~="selection.background"] :not(.cm-editor, .cm-editor *)::selection',
-  // The handle between two panes, which the panel library draws, and which holds nothing.
-  "[data-separator]",
-  "[data-separator]:hover",
-  "[data-separator][data-dragging]",
+  // The line between the bottom panel's halves, a handle the panel library draws, which holds
+  // nothing.
+  ".panel-halves > [data-separator]",
   // A region panel's ground (`ui/panel`, #2913), set by the family's attributes on a library's
   // panel: `surface.base`, the window's own, which the button family already lists.
   '[data-scope="panel"][data-part="root"]',

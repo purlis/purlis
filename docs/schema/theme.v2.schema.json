@@ -4660,6 +4660,30 @@
         "panel-section.title.default.font-weight": {
           "$ref": "#/$defs/part-font-weight"
         },
+        "panel-separator.root.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "panel-separator.root.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "panel-separator.root.pressed.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "panel-separator.root.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "panel-separator.grip.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "panel-separator.grip.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "panel-separator.grip.pressed.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "panel-separator.grip.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
         "popover.root.fill": {
           "$ref": "#/$defs/part-fill"
         },

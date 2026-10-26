@@ -39,11 +39,14 @@ amending the same record do not conflict (`tools/adr-amendments.mjs` holds it).
   `CHARTER_RECORDED_BLESS=1 cargo test -p purlis-cli --test recorded_behaviour -- <name>`, read
   the fixture's diff, and say in the PR which contract moved and why. Never re-record to make a
   red run green without that sentence (ADR 0046).
-- **A story's baseline changes only through the `update-baselines` label** (#2901). A component's
+- **A story's baseline is drawn only by its pull request's `stories` run** (#2901). A component's
   stories (`app/src/**/*.stories.tsx`) run in Chromium and WebKit with `npm run test:stories`,
   failing on its keyboard test, on axe at WCAG 2.2 AA and, in CI, on its screenshot. Never write
-  or edit a PNG under `__screenshots__/` by hand or from a local run: label the pull request and
-  review the pictures the job pushes (`docs/component-stories.md`).
+  or edit a PNG under `__screenshots__/` by hand or from a local run. When only pictures fail,
+  the run keeps the baselines it drew: take them with
+  `node tools/story-baselines-pull.mjs <pull request>` in your checkout of the head, review them,
+  and push them with your next change (or put the `update-baselines` label on, whose commit
+  leaves the other checks waiting for approval) (`docs/component-stories.md`).
 - **No `unsafe`, with four audited exceptions** (`unsafe_code = "deny"` workspace-wide), each
   by the operator's ruling:
   1. `purlis_core::executor::inherit_nothing_else`: the `pre_exec` hook that closes every

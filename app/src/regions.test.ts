@@ -854,15 +854,15 @@ describe("the open view of a side (#1673)", () => {
     }
   });
 
-  it("leaves the side panel out on a pick of its view already open (R121)", () => {
+  it("puts the side panel away on a pick of its view already open, and brings it back on the next (R121, #3329)", () => {
     const { result } = renderHook(() => useArrangement("/one"));
-    const before = result.current.arrangement;
 
     act(() => result.current.pick("chats"));
+    expect(navigation(result.current.arrangement).collapsed).toBe(true);
 
+    act(() => result.current.pick("chats"));
     expect(navigation(result.current.arrangement)).toMatchObject({ collapsed: false });
     expect(openView(navigation(result.current.arrangement))).toBe("chats");
-    expect(result.current.arrangement).toBe(before);
   });
 
   it("puts the right panel away on a pick of the view already open, and brings it back on the next", () => {

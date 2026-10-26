@@ -303,7 +303,10 @@ fn what_a_chosen_tab_joins_it_takes_the_fill_of() {
     let chosen = format!(":where({TAB}[data-selected])");
     let file = format!(":where({TAB}[data-variant=\"file\"][data-selected])");
     for one in [
-        format!("  {PANEL} {{ background-color: var(--surface-overlay); }}"),
+        format!(
+            "  {PANEL} {{ background-color: var(--surface-overlay); --panel-fill: \
+             var(--surface-overlay); }}"
+        ),
         "  :where([data-scope=\"editor\"][data-part=\"toolbar\"]) { background-color: \
          var(--surface-hover); }"
             .to_owned(),
