@@ -5,7 +5,7 @@ import { memo, useRef } from "react";
 import { Globe } from "lucide-react";
 import type { Catalogued, Offer } from "./actions";
 import type { BrowserDriver, ChatBrowser } from "./bindings";
-import { addressChip, chatBrowserTitle, thisDevice } from "./browsers";
+import { addressChip, chatBrowserTitle, deviceOf } from "./browsers";
 import { Menued } from "./Menus";
 import { THUMBNAIL_ACROSS, useBrowserOrigin, useBrowserWatch, useWindowSeen } from "./browserWatch";
 import { useProjectShown } from "./projectShown";
@@ -51,7 +51,7 @@ export function browserSaid(
   const driver = shown.browser.driver;
   return [
     chatBrowserTitle(shown.chat, shown.browser.name),
-    addressChip(origin ?? null, thisDevice(mac)).said,
+    addressChip(origin ?? null, deviceOf(shown.browser.pool ?? null, mac)).said,
     ...(driver !== null ? [DRIVEN[driver].said] : []),
   ];
 }

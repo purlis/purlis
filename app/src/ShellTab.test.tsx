@@ -361,7 +361,7 @@ describe("a harness started by hand in a shell tab", () => {
     await act(() => emit("harness-by-hand", byHand()));
 
     await userEvent.click(await screen.findByRole("button", { name: "Open as chat" }));
-    await userEvent.click(await screen.findByRole("button", { name: "Start" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Start chat" }));
 
     await waitFor(() =>
       expect(starts()).toEqual([

@@ -107,6 +107,8 @@ export type WindowDoing = {
   /** Shows what has contributed what to this window. The window's and not a project's: an
    *  extension is machine state (ADR 0041), so it is the same list behind every tab. */
   showExtensions: () => void;
+  /** Focus mode on or off (#2921, N32): the window's, whose rail, bars and panels it hides. */
+  toggleFocusMode: () => void;
   /** Puts the app's `charter` on a terminal's PATH. The window's: it is about the machine. */
   installCli: () => Promise<Ran>;
   selectProject: (plane: string) => void;

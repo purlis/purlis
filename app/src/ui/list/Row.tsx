@@ -5,8 +5,9 @@
  * **A row's anatomy** (#2911, spec #2897, ADR 0103): what a list's, a tree's and a table's row
  * holds, in the same places in all three. A row is the family's root; inside it its `lead` (a
  * mark, an icon, a persona's tile), its `label` (the words, which take the room and give way to
- * an ellipsis), the one `description` that may stand beside or under them, and its `trail` (a
- * count, a state, the row's actions) at its end.
+ * an ellipsis), the one `description` that may stand beside or under them, its `trail` (a
+ * count, a state, the row's actions) at its end, and its `shortcut`, the key that does the same
+ * (#2921), last.
  *
  * Each slot carries the `data-scope` of the family whose row it is in (`RowScope`), so a theme's
  * `list.label.text` reaches a list's words and never a tree's.
@@ -82,3 +83,42 @@ export const RowTrail = slot("trail");
  * was refused. The row is as tall as its two lines; it is still one row to the keyboard.
  */
 export const RowBelow = slot("below");
+
+/**
+ * **The key that does the same**, at the row's end and read last (#2921, N25): a palette row's,
+ * from the key registry (`keys/registry.ts`). Drawn, and hidden from a reader, who hears the key
+ * by its name from the row's `aria-keyshortcuts` instead of as symbols run onto its words. Where
+ * the key is what the row is about (the cheat sheet's), it is `heard`: its symbols are drawn and
+ * its `spoken` words ("Command Shift Return") are what a reader hears.
+ */
+export function RowShortcut({
+  keys,
+  heard = false,
+  spoken,
+  className,
+}: {
+  keys: string;
+  heard?: boolean;
+  /** The key in words, heard in place of the symbols drawn. */
+  spoken?: string;
+  className?: string;
+}) {
+  const scope = useContext(RowScope);
+  return (
+    <kbd
+      className={className}
+      data-scope={scope}
+      data-part="shortcut"
+      aria-hidden={heard ? undefined : "true"}
+    >
+      {heard && spoken !== undefined ? (
+        <>
+          <span aria-hidden="true">{keys}</span>
+          <span data-heard-as="">{spoken}</span>
+        </>
+      ) : (
+        keys
+      )}
+    </kbd>
+  );
+}

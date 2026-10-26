@@ -12,14 +12,32 @@
 import type { DialogAction } from "./ui/dialog/Dialog";
 import { submitKeyShortcut } from "./ui/field/submitKey";
 
-/** Every word the main answer can say: its room is kept for the longest (R163). */
-const SAID = [
-  "Start",
-  "Start without the sandbox",
-  "Starting…",
-  "Approve and start",
-  "Approve and start without the sandbox",
-];
+/** What a start says, by itself and without the sandbox (#2918, R33). */
+export const START_WORD = "Start chat";
+export const START_WITHOUT_SANDBOX = "Start without the sandbox";
+
+/**
+ * **The words this dialog's main answer can reach**, and only those: their room is kept for the
+ * longest, so a choice moves and widens nothing (R163), and a dialog that can say none of the long
+ * ones is not drawn as wide as them (#2918). The options are fixed while the dialog is open.
+ */
+export function reachableWords({
+  canApprove,
+  canOptOut,
+}: {
+  /** Some profile listed asks for its command to be approved. */
+  canApprove: boolean;
+  /** Some profile listed can start without the sandbox: it is on, and policy allows the opt-out. */
+  canOptOut: boolean;
+}): string[] {
+  return [
+    START_WORD,
+    "Starting…",
+    ...(canOptOut ? [START_WITHOUT_SANDBOX] : []),
+    ...(canApprove ? ["Approve and start"] : []),
+    ...(canApprove && canOptOut ? ["Approve and start without the sandbox"] : []),
+  ];
+}
 
 /** What the main answer needs to know of the dialog. */
 export type StartAnswer = {
@@ -28,10 +46,10 @@ export type StartAnswer = {
   /** The chat starts without the sandbox. */
   withoutSandbox: boolean;
   starting: boolean;
-  /** What a start says: Start, or Start without the sandbox. */
-  startWord: string;
   /** It cannot be pressed now: nothing picked, or the project's policy refuses it. */
   unavailable: boolean;
+  /** The words it can reach in this dialog ({@link reachableWords}), and whether one is a grant. */
+  reach: { words: readonly string[]; grant: boolean };
   onPress: () => void;
 };
 
@@ -45,21 +63,24 @@ export function startAnswer({
   approves,
   withoutSandbox,
   starting,
-  startWord,
   unavailable,
+  reach,
   onPress,
 }: StartAnswer): DialogAction {
   const chord = !approves && !withoutSandbox;
+  const said = withoutSandbox ? START_WITHOUT_SANDBOX : START_WORD;
   return {
     children: starting
       ? "Starting…"
       : approves
-        ? `Approve and ${startWord.toLowerCase()}`
-        : startWord,
-    // Every word it can say, and the lock's room, whatever is chosen: choosing a profile that
-    // asks for approval moves and widens nothing (R163).
-    reserve: SAID,
-    reserveGrant: true,
+        ? withoutSandbox
+          ? "Approve and start without the sandbox"
+          : "Approve and start"
+        : said,
+    // Every word it can reach here, and the lock's room where it can be a grant, whatever is
+    // chosen: choosing a profile that asks for approval moves and widens nothing (R163).
+    reserve: reach.words,
+    reserveGrant: reach.grant,
     variant: approves ? "grants" : "primary",
     isDisabled: unavailable || starting,
     // Return in the Name box never starts a command: Start is pressed (D-1719-3). The command is

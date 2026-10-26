@@ -199,8 +199,9 @@ describe("the persona view", () => {
     draw(STEWARD);
 
     expect(await screen.findByText("It remembers 2 things.")).toBeInTheDocument();
-    const memories = screen.getByRole("grid", { name: "steward" });
-    expect(within(memories).getAllByRole("row")).toHaveLength(2);
+    // The list's rows are React Aria's collection, filled a commit after the note above it.
+    const memories = await screen.findByRole("grid", { name: "steward" });
+    expect(await within(memories).findAllByRole("row")).toHaveLength(2);
     // A memory's row opens its whole body, as every row of the list primitive does.
     await userEvent.click(within(memories).getByRole("row", { name: /Charter defects/ }));
     expect(await screen.findByText("File the issue.")).toBeInTheDocument();
@@ -462,7 +463,7 @@ describe("an extension's view", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "While 'persona-statistics' was answering",
     );
-    expect(screen.getByTestId("chart")).toBeInTheDocument();
+    expect(await screen.findByTestId("chart")).toBeInTheDocument();
   });
 });
 
@@ -578,7 +579,8 @@ describe("an action on an extension's row (charter-app#341)", () => {
     draw(PROBE, { title: "Probe" });
     expect(await screen.findByRole("alert")).toHaveTextContent("old.md");
 
-    await userEvent.click(screen.getByRole("button", { name: "Jot a note" }));
+    // The row's action is in the list's collection, drawn after the alert above it (#3390).
+    await userEvent.click(await screen.findByRole("button", { name: "Jot a note" }));
 
     await screen.findByText("1 notes");
     expect(screen.queryByRole("alert")).toBeNull();
@@ -643,7 +645,9 @@ describe("a workspace's changes", () => {
     draw(CHANGES, { title: "Changes · alpha", workspace: "alpha" });
 
     expect(await screen.findByText("2026-09-26 10:00:00 UTC")).toBeInTheDocument();
-    expect(screen.getByText("· #7 open · head 9f3a1c2 · checks NOT RUN")).toBeInTheDocument();
+    expect(
+      await screen.findByText("· #7 open · head 9f3a1c2 · checks NOT RUN"),
+    ).toBeInTheDocument();
   });
 
   it("is asked once, and not again when its tab is drawn again after a workspace switch", async () => {

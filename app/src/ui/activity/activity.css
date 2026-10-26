@@ -25,6 +25,12 @@
 }
 
 /* The `tab` variant: one row across a side panel's top, the side panel's own ground under it. */
+/* **Focus mode** (#2921, `keys/focusMode.ts`): a side's column goes with the rail and the panels,
+   the work alone. Here, in the family's own layer, since the family's rule above draws it. */
+.window[data-focus-mode] .region-frame > [data-scope="activity-bar"][data-part="root"] {
+  display: none;
+}
+
 [data-scope="activity-bar"][data-part="root"][data-variant="tab"] {
   --activity-ground: var(--surface-raised);
   flex-direction: column;

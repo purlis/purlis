@@ -181,7 +181,7 @@ async function relaunch(answer: "Reopen all sessions" | "Start fresh") {
 }
 
 /** Starts a chat from a new tab, through the picker: the way to a turn after starting fresh. */
-async function startAChat(person: ReturnType<typeof userEvent.setup>, start = "Start") {
+async function startAChat(person: ReturnType<typeof userEvent.setup>, start = "Start chat") {
   await person.click(await screen.findByRole("button", { name: "New tab" }));
   const picker = await screen.findByRole("dialog", { name: "Start a chat" });
   await person.click(within(picker).getByRole("button", { name: start }));

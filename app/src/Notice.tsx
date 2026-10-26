@@ -453,6 +453,10 @@ export function NoticeList({
   );
 }
 
+/** **Whether a pane's row of Notices is drawn**: not while it holds none (`.pane-notice-row-empty`
+ *  is `display: none`), which is how it starts, until it has counted what it holds (#3302). */
+const rowDrawn = (row: HTMLElement) => !row.classList.contains("pane-notice-row-empty");
+
 /**
  * **A pane's Notices: a row of their own at the top of the pane, above its terminal** (#1647).
  *
@@ -490,7 +494,7 @@ export function NoticePaneRow({
   const moreAt = useRef<HTMLButtonElement>(null);
   // **A granting Notice's ways out wait for it to settle once it moved** (#1695, train 54's
   // review): a Notice above it answered or gone can move another's way out under the pointer.
-  const { at: rowAt, allows, said } = useNoticeSettle<HTMLDivElement>("stands", band);
+  const { at: rowAt, allows, said } = useNoticeSettle<HTMLDivElement>("stands", band, rowDrawn);
   const [count, setCount] = useState(0);
   const [open, setOpen] = useState(false);
   const behind = Math.max(count - SHOWN, 0);

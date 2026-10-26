@@ -61,6 +61,7 @@ describe("the Skill studio", () => {
           lint: [],
           hidden: [],
           pinned: false,
+          pinned_by: [],
         },
         {
           name: "secrets",
@@ -82,6 +83,7 @@ describe("the Skill studio", () => {
           lint: [],
           hidden: [],
           pinned: false,
+          pinned_by: [],
         },
         {
           name: "review",
@@ -103,6 +105,7 @@ describe("the Skill studio", () => {
           lint: [],
           hidden: [],
           pinned: false,
+          pinned_by: [],
         },
       ],
     });
@@ -141,6 +144,7 @@ describe("the Skill studio", () => {
       lint: [],
       hidden: [],
       pinned: false,
+      pinned_by: [],
       ...more,
     });
     answering({
@@ -215,6 +219,7 @@ describe("the Skill studio", () => {
             lint: [],
             hidden: [],
             pinned: false,
+            pinned_by: [],
           },
           {
             name: "lint",
@@ -236,6 +241,7 @@ describe("the Skill studio", () => {
             lint: [],
             hidden: [],
             pinned: false,
+            pinned_by: [],
           },
         ],
       };
@@ -299,6 +305,7 @@ describe("the Skill studio", () => {
             lint: [],
             hidden: [],
             pinned: false,
+            pinned_by: [],
           },
         ],
       };
@@ -425,6 +432,7 @@ describe("the Skill studio", () => {
             lint: [],
             hidden: [],
             pinned: false,
+            pinned_by: [],
             written: "triage",
             named: false,
             unchecked: null,
@@ -446,6 +454,7 @@ describe("the Skill studio", () => {
             lint: [],
             hidden: [],
             pinned: false,
+            pinned_by: [],
             written: "deploy",
             named: true,
             unchecked: null,
@@ -467,6 +476,7 @@ describe("the Skill studio", () => {
             lint: [],
             hidden: [],
             pinned: false,
+            pinned_by: [],
             written: "superpowers:tdd",
             named: true,
             unchecked: "purlis can't check whether this machine has it",
@@ -570,6 +580,7 @@ function withClaudeCode(offLangfuse: boolean) {
         lint: [],
         hidden: [],
         pinned: false,
+        pinned_by: [],
       },
       {
         ...ROW,
@@ -582,6 +593,7 @@ function withClaudeCode(offLangfuse: boolean) {
         lint: [],
         hidden: [],
         pinned: false,
+        pinned_by: [],
       },
     ],
     clashes: [
@@ -635,6 +647,7 @@ function withClaudeCode(offLangfuse: boolean) {
             lint: [],
             hidden: [],
             pinned: false,
+            pinned_by: [],
             owner: { kind: "you" },
             switch: { kind: "alone" },
           },
@@ -649,6 +662,7 @@ function withClaudeCode(offLangfuse: boolean) {
             lint: [],
             hidden: [],
             pinned: false,
+            pinned_by: [],
             owner: { kind: "plugin", name: "figma" },
             switch: {
               kind: "not",
@@ -666,6 +680,7 @@ function withClaudeCode(offLangfuse: boolean) {
             lint: [],
             hidden: [],
             pinned: false,
+            pinned_by: [],
             owner: { kind: "repo", name: "api" },
             switch: { kind: "alone" },
           },

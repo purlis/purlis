@@ -6,7 +6,8 @@ import { Palette } from "lucide-react";
 
 import { commands, type PlaneId, type SettingsChange } from "./bindings";
 import { compareWithKept, drawWhatIsInForce } from "./Extensions";
-import { isRevertKey, keepSays, revertKeySaid, useDraftHere } from "./themeDrafts";
+import { keepSays, revertKeySaid, useDraftHere } from "./themeDrafts";
+import { pressed } from "./keys/registry";
 import { Button } from "./ui/button/Button";
 import { AlertDialog } from "./ui/dialog/Dialog";
 
@@ -52,7 +53,8 @@ export function ThemeDraftStrip({
   useEffect(() => {
     if (draft === null) return;
     const heard = (event: KeyboardEvent) => {
-      if (!isRevertKey(event)) return;
+      // The key registry's (#2921): reserved, held back by nothing.
+      if (pressed(event, ["theme.revert"]) === undefined) return;
       event.preventDefault();
       event.stopPropagation();
       void commands.themeDraftsRevertHere(plane, workspace).then((done) => {

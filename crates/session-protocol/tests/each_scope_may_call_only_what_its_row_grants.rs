@@ -334,6 +334,23 @@ fn every_command() -> Vec<Command> {
                 keep: None,
             },
         },
+        // A login that keeps its login on this device once the browser ends (1.27, #2021): the
+        // window's alone, never relayed to a runner (1.38, #2050).
+        Command::LogIn {
+            program: CHAT.into(),
+            login: purlis_session_protocol::browsing::LogIn {
+                address: "https://shop.example.test/login".into(),
+                user: None,
+                password: purlis_session_protocol::browsing::Secret::new("not-a-real-one".into()),
+                keep: Some(purlis_session_protocol::browsing::KeptLogin {
+                    profile: "claude".into(),
+                    persona: "steward".into(),
+                    login: "shop-login".into(),
+                    identity: "0123456789abcdef0123456789abcdef".into(),
+                    address: "https://shop.example.test/login".into(),
+                }),
+            },
+        },
         // A browser opened from kept logins (1.27, #2021): the window's alone, as a login is.
         Command::StartProgram(Box::new(session::StartProgram {
             kept: Some(purlis_session_protocol::browsing::KeptLogin {
@@ -432,6 +449,7 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "size_browser",
             "hand_back",
             "log_in",
+            "log_in",        // a login kept on this device
             "start_program", // a browser opened from kept logins
             "name_window",
             "relay_to",
@@ -488,8 +506,19 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "start_program", // the start whose composed confinement is named to its link
             "stop_all",
             "kill_switch",
+            // A chat's browser on the runner, for the desktop's window (1.38, #2050): started,
+            // watched, driven for its chat and by the person, and logged in by purlis; never a
+            // kept login, which stays on the device it was made on.
+            "start_program",
+            "attach_view",
+            "browse",
             // The desktop removing the runner (1.25, #2525).
             "unpair",
+            "take_over",
+            "browser_input",
+            "size_browser",
+            "hand_back",
+            "log_in",
             "take_back",
             // Code moved for the desktop's window (1.34, #2046).
             "take_code",

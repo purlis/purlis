@@ -107,6 +107,9 @@ pub struct Routing {
 /// **The index skill of a chat** (ADR 0102 §2): the `SKILL.md` its route hands it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Index {
+    /// Its name: [`INDEX`], or on a route that names purlis's own skills theirs `purlis-skill-index`
+    /// ([`Route::built_in_name`]), so a clone's own `skill-index` is another skill beside it.
+    pub name: String,
     pub text: String,
 }
 
@@ -224,8 +227,14 @@ impl SkillSet {
                 .cmp(&b.deprecated.is_some())
                 .then(a.skill.name.cmp(&b.skill.name))
         });
+        // The route purlis hands this set's skills by: every skill it hands has the chat's.
+        let name = self
+            .effective
+            .iter()
+            .find(|e| e.route != Route::Own)
+            .map_or_else(|| INDEX.to_owned(), |e| e.route.built_in_name(INDEX));
         let mut text = format!(
-            "---\nname: {INDEX}\ndescription: {INDEX_DESCRIPTION}\n---\n\n# This chat's other \
+            "---\nname: {name}\ndescription: {INDEX_DESCRIPTION}\n---\n\n# This chat's other \
              skills\n\nThis chat has more skills than its list holds, so these are not in it. \
              When a request matches one, load it with purlis's `skill_load` tool by its name, \
              then follow what it says. `skill_find` finds one by what it does.\n\n"
@@ -261,7 +270,7 @@ impl SkillSet {
                  listed here: `skill_find` finds them.\n"
             )),
         }
-        Some(Index { text })
+        Some(Index { name, text })
     }
 }
 

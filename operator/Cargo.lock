@@ -1205,11 +1205,13 @@ dependencies = [
 name = "purlis-cluster-operator"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "futures",
  "http",
  "http-body-util",
  "k8s-openapi",
  "kube",
+ "ring",
  "schemars",
  "serde",
  "serde_json",

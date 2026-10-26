@@ -73,11 +73,21 @@ impl Scratch {
     }
 }
 
+/// Who the tests' own kubeconfig signs in as: kind's cluster admin.
+const ADMIN: &str = "kubernetes-admin";
+
+/// A claim on `pool`, made by the cluster admin the tests sign in as.
 fn claim(name: &str, pool: &str) -> Claim {
+    claim_by(name, pool, ADMIN)
+}
+
+/// A claim on `pool`, naming `requester` as who makes it.
+fn claim_by(name: &str, pool: &str, requester: &str) -> Claim {
     Claim::new(
         name,
         ClaimSpec {
             pool: pool.to_owned(),
+            requester: requester.to_owned(),
         },
     )
 }
@@ -155,6 +165,114 @@ async fn a_pool_and_a_claim_yield_a_running_session_host_that_goes_with_the_clai
     .await;
 
     let _ = pools.delete("e2e-runs", &DeleteParams::default()).await;
+    scratch.end().await;
+}
+
+/// The bytes of 64 or 128 lower-case hex digits.
+fn unhex(hex: &str) -> Vec<u8> {
+    (0..hex.len() / 2)
+        .map(|at| u8::from_str_radix(&hex[at * 2..at * 2 + 2], 16).expect("hex"))
+        .collect()
+}
+
+#[tokio::test]
+#[ignore = "needs a kind cluster: operator/e2e/kind.sh"]
+async fn a_runners_link_key_is_vouched_for_with_the_key_its_pool_names() {
+    let client = Client::try_default().await.expect("the cluster");
+    let scratch = Scratch::new(&client, "e2e-vouch").await;
+    let pools = Api::<Pool>::all(client.clone());
+    let pool = Pool::new(
+        "e2e-vouch",
+        PoolSpec {
+            image: runner_image(),
+        },
+    );
+    pools
+        .patch(
+            "e2e-vouch",
+            &PatchParams::apply("e2e").force(),
+            &Patch::Apply(&pool),
+        )
+        .await
+        .expect("the pool");
+    let signing_key = eventually(
+        "the pool names the operator's key",
+        Duration::from_secs(60),
+        || async { pools.get("e2e-vouch").await.ok()?.status?.signing_key },
+    )
+    .await;
+    let public = unhex(
+        signing_key
+            .strip_prefix("ed25519:")
+            .expect("an Ed25519 key"),
+    );
+    let claims = claims_in(&client, &scratch.name);
+    let made = claims
+        .create(&PostParams::default(), &claim("ada-1", "e2e-vouch"))
+        .await
+        .expect("the claim");
+
+    // What the claim says of its key, named in the failure if it is never vouched for.
+    let said = std::sync::Mutex::new(String::new());
+    let link_key = eventually(
+        "the operator vouches for the key",
+        Duration::from_secs(300),
+        || async {
+            let status = claims.get("ada-1").await.ok()?.status?;
+            if let Some(word) = status.conditions.iter().find(|c| c.type_ == "KeyPublished") {
+                let word = format!("{}: {}", word.reason, word.message);
+                let mut kept = said.lock().unwrap();
+                if *kept != word {
+                    eprintln!("KeyPublished {word}");
+                    *kept = word;
+                }
+            }
+            status.link_key
+        },
+    )
+    .await;
+    ring::signature::UnparsedPublicKey::new(&ring::signature::ED25519, &public)
+        .verify(link_key.statement.as_bytes(), &unhex(&link_key.signature))
+        .expect("signed with the key the pool names");
+
+    let pods = Api::<Pod>::namespaced(client.clone(), &scratch.name);
+    let list = pods.list(&ListParams::default()).await.expect("pods");
+    assert_eq!(list.items.len(), 1);
+    let pod = &list.items[0];
+    let published = pod
+        .status
+        .as_ref()
+        .and_then(|status| status.init_container_statuses.as_ref())
+        .and_then(|statuses| statuses.iter().find(|s| s.name == "link-key"))
+        .and_then(|status| status.state.as_ref()?.terminated.as_ref()?.message.clone())
+        .expect("the pod's first step published its key");
+    let expected =
+        purlis_cluster_operator::vouch::statement(&purlis_cluster_operator::vouch::About {
+            namespace: &scratch.name,
+            claim: "ada-1",
+            claim_uid: &made.uid().expect("its uid"),
+            pod: &pod.name_any(),
+            pod_uid: &pod.uid().expect("its uid"),
+            key: &published,
+            requester: ADMIN,
+        })
+        .expect("a statement");
+    assert_eq!(link_key.statement, expected);
+    let claim = claims.get("ada-1").await.expect("the claim");
+    let vouched = claim
+        .status
+        .expect("a status")
+        .conditions
+        .into_iter()
+        .find(|c| c.type_ == "KeyPublished")
+        .expect("KeyPublished");
+    assert_eq!(
+        (vouched.status.as_str(), vouched.reason.as_str()),
+        ("True", "Vouched")
+    );
+
+    let _ = claims.delete("ada-1", &DeleteParams::foreground()).await;
+    let _ = pools.delete("e2e-vouch", &DeleteParams::default()).await;
     scratch.end().await;
 }
 
@@ -571,6 +689,10 @@ async fn the_cluster_refuses_the_operator_exec_attach_and_secrets() {
     );
 }
 
+fn claims_in(client: &Client, namespace: &str) -> Api<Claim> {
+    Api::<Claim>::namespaced(client.clone(), namespace)
+}
+
 /// A client acting as `user`, through the admin's right to impersonate.
 async fn acting_as(user: &str) -> Client {
     let mut config = kube::Config::infer().await.expect("the cluster");
@@ -679,7 +801,10 @@ async fn a_claim_is_refused_to_someone_the_cluster_does_not_let_use_its_pool() {
 
     let as_ada = Api::<Claim>::namespaced(acting_as("e2e-ada").await, &scratch.name);
     let refused = as_ada
-        .create(&PostParams::default(), &claim("ada-1", "e2e-use"))
+        .create(
+            &PostParams::default(),
+            &claim_by("ada-1", "e2e-use", "e2e-ada"),
+        )
         .await;
     match &refused {
         Err(kube::Error::Api(status)) => {
@@ -694,10 +819,43 @@ async fn a_claim_is_refused_to_someone_the_cluster_does_not_let_use_its_pool() {
     }
 
     let as_bea = Api::<Claim>::namespaced(acting_as("e2e-bea").await, &scratch.name);
+    // Who asks is stamped as the cluster signs them in (#2056): bea cannot claim as ada.
+    match as_bea
+        .create(
+            &PostParams::default(),
+            &claim_by("bea-0", "e2e-use", "e2e-ada"),
+        )
+        .await
+    {
+        Err(kube::Error::Api(status)) => {
+            assert_eq!(status.code, 403, "{status:?}");
+            assert!(
+                status.message.contains("set spec.requester to e2e-bea"),
+                "{status:?}"
+            );
+        }
+        other => panic!("bea's claim as ada was not refused: {other:?}"),
+    }
     as_bea
-        .create(&PostParams::default(), &claim("bea-1", "e2e-use"))
+        .create(
+            &PostParams::default(),
+            &claim_by("bea-1", "e2e-use", "e2e-bea"),
+        )
         .await
         .expect("bea may use the pool");
+    // And the stamp never changes.
+    let changed = claims_in(&client, &scratch.name)
+        .patch(
+            "bea-1",
+            &PatchParams::default(),
+            &Patch::Merge(serde_json::json!({ "spec": { "requester": "e2e-ada" } })),
+        )
+        .await;
+    assert!(
+        matches!(&changed, Err(kube::Error::Api(status)) if status.code == 422
+            && status.message.contains("requester cannot change")),
+        "{changed:?}"
+    );
 
     let delete = DeleteParams::default();
     let roles = kube::api::ApiResource {

@@ -15,21 +15,29 @@
 //!
 //! It acts only on Claims admitted under its policy, however it was installed ([`admission`]).
 //!
+//! **It vouches for each runner's link key** ([`vouch`], #2056): the key a runner's pod made as
+//! it started, signed with the operator's own key into a statement on the Claim's status, which
+//! the desktop checks against its own pairing over `kubectl exec`.
+//!
 //! **What it may do** is `deploy/operator.yaml`'s ClusterRole and nothing else: read Pools and
-//! Claims, write a Claim's status, read the policy's binding, and read, create and patch the
-//! three upstream objects. It holds no right to `exec` or `attach` to a pod and reads no Secret;
-//! this crate's Kubernetes client is built without the websocket feature those would need.
+//! Claims, write a Pool's and a Claim's status, read the policy's binding, read, create and
+//! patch the three upstream objects, and read a runner's pod by name. It holds no right to
+//! `exec` or `attach` to a pod and none to read a Secret: its signing key is mounted in its pod
+//! by the kubelet. This crate's Kubernetes client is built without the websocket feature `exec`
+//! and `attach` would need.
 
 mod admission;
 pub mod doctor;
 mod reconcile;
 mod resources;
 pub mod upstream;
+pub mod vouch;
 
 pub use admission::{Admission, POLICY, SETTLE, admission};
 pub use reconcile::{
-    FIELD_MANAGER, claims_kept_as_owners, claims_that_vouch, claims_woken_by, retry_after_conflict,
-    run, settled, status_of, status_of_a_deleted_pool, status_of_a_missing_pool,
-    status_of_an_object_in_the_way, status_of_objects_held_by_refused_claims,
+    FIELD_MANAGER, LinkKeyIs, claims_kept_as_owners, claims_that_vouch, claims_woken_by,
+    pool_status_names, retry_after_conflict, run, settled, status_of, status_of_a_deleted_pool,
+    status_of_a_missing_pool, status_of_an_object_in_the_way,
+    status_of_objects_held_by_refused_claims, status_patch,
 };
-pub use resources::{Claim, ClaimSpec, ClaimStatus, Pool, PoolSpec};
+pub use resources::{Claim, ClaimSpec, ClaimStatus, LinkKey, Pool, PoolSpec, PoolStatus};

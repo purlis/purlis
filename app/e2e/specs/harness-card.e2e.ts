@@ -406,7 +406,7 @@ describe("a harness's capability card", function () {
                   (button) => !button.disabled && button.getAttribute("aria-disabled") !== "true",
                 )
                 .find((button) =>
-                  ["Approve and start", "Start"].includes(button.textContent ?? ""),
+                  ["Approve and start", "Start chat"].includes(button.textContent ?? ""),
                 );
               start?.click();
               return start !== undefined;
