@@ -1724,7 +1724,9 @@ _Avoid_: context budget (for this), skill limit
 Picking one of a chat's skills, from the palette, the chat's tab menu or the Skills chip on its
 pane, and having it typed into the chat in its harness's syntax, with the arguments the skill
 declares, for the person to send. It lists exactly that chat's skill set, manual-only skills
-included, and its run starts when that prompt is sent (#2775).
+included, and its run starts when that prompt is sent (#2775). A skill the skill router hid
+behind the index skill is typed as a request to load it with `skill_load`, and its run starts
+with that load (#2778).
 _Avoid_: skill picker (for the act), run skill, invoke
 
 **Index skill**:

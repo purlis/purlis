@@ -59,6 +59,8 @@ describe("the Skill studio", () => {
           folder: "skills/deploy",
           compat: [],
           lint: [],
+          hidden: [],
+          pinned: false,
         },
         {
           name: "secrets",
@@ -78,6 +80,8 @@ describe("the Skill studio", () => {
           folder: "/app/plugin/skills/secrets",
           compat: [],
           lint: [],
+          hidden: [],
+          pinned: false,
         },
         {
           name: "review",
@@ -97,6 +101,8 @@ describe("the Skill studio", () => {
           folder: "skills/review",
           compat: [],
           lint: [],
+          hidden: [],
+          pinned: false,
         },
       ],
     });
@@ -112,6 +118,66 @@ describe("the Skill studio", () => {
         "Left out: a built-in skill has this name, and a built-in skill is never replaced",
       ),
     ).toBeInTheDocument();
+  });
+
+  it("says why the router hid a skill, and which are pinned (SK-15)", async () => {
+    const row = (name: string, more: object) => ({
+      name,
+      level: "project",
+      label: "project",
+      local: false,
+      grant: "root",
+      granted: { to: "root" },
+      turned_off: false,
+      on: true,
+      left_out: null,
+      description: `Does ${name}.`,
+      not_granted: null,
+      written: name,
+      named: false,
+      unchecked: null,
+      folder: `skills/${name}`,
+      compat: [],
+      lint: [],
+      hidden: [],
+      pinned: false,
+      ...more,
+    });
+    answering({
+      on: true,
+      workspace: null,
+      first: { starts: false, unmoved: null },
+      workspaces: [],
+      levels: [],
+      harnesses: [],
+      clashes: [],
+      skills: [
+        row("deploy", {
+          hidden: [
+            {
+              harness: "codex",
+              title: "Codex",
+              hidden: {
+                router: "built-in",
+                why: "over-budget",
+                said: "hidden by the built-in router: over this chat's skill budget, so it is in the index skill",
+              },
+            },
+          ],
+        }),
+        row("review", { pinned: true }),
+      ],
+    });
+
+    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
+
+    const deploy = await screen.findByTestId("skill-deploy");
+    expect(
+      within(deploy).getByText(
+        "On, hidden by the built-in router: over this chat's skill budget, so it is in the index skill (on Codex)",
+      ),
+    ).toBeInTheDocument();
+    expect(within(screen.getByTestId("skill-review")).getByText("On, pinned")).toBeInTheDocument();
   });
 
   it("shows a workspace's chats, its own copy over the project's, and both copies", async () => {
@@ -147,6 +213,8 @@ describe("the Skill studio", () => {
             folder: "workspaces/alpha/skills/lint",
             compat: [],
             lint: [],
+            hidden: [],
+            pinned: false,
           },
           {
             name: "lint",
@@ -166,6 +234,8 @@ describe("the Skill studio", () => {
             folder: "skills/lint",
             compat: [],
             lint: [],
+            hidden: [],
+            pinned: false,
           },
         ],
       };
@@ -227,6 +297,8 @@ describe("the Skill studio", () => {
             folder: shared ? "skills/scratch" : "skills.local/scratch",
             compat: [],
             lint: [],
+            hidden: [],
+            pinned: false,
           },
         ],
       };
@@ -344,6 +416,8 @@ describe("the Skill studio", () => {
             folder: "personas/ops/skills/triage",
             compat: [],
             lint: [],
+            hidden: [],
+            pinned: false,
             written: "triage",
             named: false,
             unchecked: null,
@@ -363,6 +437,8 @@ describe("the Skill studio", () => {
             folder: "skills/deploy",
             compat: [],
             lint: [],
+            hidden: [],
+            pinned: false,
             written: "deploy",
             named: true,
             unchecked: null,
@@ -382,6 +458,8 @@ describe("the Skill studio", () => {
             folder: "",
             compat: [],
             lint: [],
+            hidden: [],
+            pinned: false,
             written: "superpowers:tdd",
             named: true,
             unchecked: "purlis can't check whether this machine has it",
@@ -483,6 +561,8 @@ function withClaudeCode(offLangfuse: boolean) {
         folder: "skills/review",
         compat: [],
         lint: [],
+        hidden: [],
+        pinned: false,
       },
       {
         ...ROW,
@@ -493,6 +573,8 @@ function withClaudeCode(offLangfuse: boolean) {
         folder: "/app/plugin/skills/secrets",
         compat: [],
         lint: [],
+        hidden: [],
+        pinned: false,
       },
     ],
     clashes: [
@@ -544,6 +626,8 @@ function withClaudeCode(offLangfuse: boolean) {
             folder: "/home/.claude/skills/langfuse",
             compat: [],
             lint: [],
+            hidden: [],
+            pinned: false,
             owner: { kind: "you" },
             switch: { kind: "alone" },
           },
@@ -556,6 +640,8 @@ function withClaudeCode(offLangfuse: boolean) {
             folder: "/cache/figma/skills/frame",
             compat: [],
             lint: [],
+            hidden: [],
+            pinned: false,
             owner: { kind: "plugin", name: "figma" },
             switch: {
               kind: "not",
@@ -571,6 +657,8 @@ function withClaudeCode(offLangfuse: boolean) {
             folder: "workspaces/alpha/api/.claude/skills/review",
             compat: [],
             lint: [],
+            hidden: [],
+            pinned: false,
             owner: { kind: "repo", name: "api" },
             switch: { kind: "alone" },
           },

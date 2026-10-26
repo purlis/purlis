@@ -6953,9 +6953,7 @@ nav.piece-files-head {
 
 .ui-settings-nav button:focus-visible,
 .ui-settings-raw button:focus-visible,
-.ui-setting-reset:focus-visible,
-.ui-setting-control > .ui-field + button:focus-visible,
-.ui-field:focus-visible {
+.ui-setting-reset:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: var(--focus-ring-offset);
 }
@@ -7357,20 +7355,6 @@ nav.piece-files-head {
 /* A row whose control is its answers (the forge question): the row already spaces them. */
 .ui-setting-control > .ui-setting-actions {
   margin: 0;
-}
-
-.ui-field {
-  padding: var(--space-2) var(--space-3);
-  color: var(--text-primary);
-  background: var(--surface-sunken);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  font: inherit;
-}
-
-.ui-field:disabled {
-  color: var(--text-muted);
-  cursor: default;
 }
 
 /* A setting's slider takes the row's room, up to a comfortable reach. */

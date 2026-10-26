@@ -2918,6 +2918,16 @@ export type BrowsersListed = {
 	plane: PlaneId,
 };
 
+/**
+ *  **What is still past a chat's budget** once its router hid all it may (SK-15): the core's
+ *  `StillOver`.
+ */
+export type BudgetStillOver = 
+/**  purlis's own skills and the ones the chat's program and repos bring, which no router hides. */
+"not-hideable" | 
+/**  Those fit, and the pinned skills on top of them do not. */
+"pins";
+
 /**  Which part of a chat's skill budget its set warns of: at four fifths of it or past it. */
 export type BudgetWarns = "skills" | "chars" | "both";
 
@@ -3245,6 +3255,11 @@ export type ChatSkill = {
 	arguments: string[],
 	/**  What to pass it, in one line, where it says: the one box of a skill that names none. */
 	hint: string | null,
+	/**
+	 *  Why the router hid it from the chat's list, where it did (SK-15): Use skill… then asks
+	 *  the chat to load it.
+	 */
+	hidden: SkillHidden | null,
 };
 
 /**
@@ -9232,6 +9247,13 @@ export type SkillBudget = {
 	most_chars: number,
 	/**  What the chat warns of, or null below four fifths of both. */
 	warns: BudgetWarns | null,
+	/**  Skills the router hid behind the index skill, its set being over the budget (SK-15). */
+	hidden: number,
+	/**
+	 *  What is still past the budget with all the router may hide hidden, where something is:
+	 *  all of it is then listed (ADR 0102 §4).
+	 */
+	still_over: BudgetStillOver | null,
 };
 
 /**
@@ -9354,6 +9376,27 @@ export type SkillGrant =
 /**  The workspaces named. */
 { to: "only"; workspaces: string[] };
 
+/**  **A skill a router hid** from a chat's list (SK-15): which router, why, and the core's line. */
+export type SkillHidden = {
+	router: SkillRouter,
+	why: SkillHiddenWhy,
+	/**  The line a person is shown. */
+	said: string,
+};
+
+/**  A skill a router hid on one harness's chats (SK-15). */
+export type SkillHiddenOn = {
+	harness: HarnessKind,
+	/**  The harness, as a person reads its name. */
+	title: string,
+	hidden: SkillHidden,
+};
+
+/**  Why a router hid a skill: the core's `HiddenWhy`. */
+export type SkillHiddenWhy = 
+/**  The chat's skills are past its budget, and this one is not pinned. */
+"over-budget";
+
 /**
  *  A level of the project's, as the studio names one: the project's root, a workspace's or a
  *  persona's (SK-32, #3003), shared or kept on this machine (`local`).
@@ -9403,6 +9446,11 @@ export type SkillPanel = {
  *  extension adds, by its id and the panel's.
  */
 export type SkillPanelKey = { kind: "runs" } | { kind: "extension"; extension: string; panel: string };
+
+/**  A skill router (SK-15, ADR 0102): the core's `Router`. */
+export type SkillRouter = 
+/**  purlis's own. */
+"built-in";
 
 /**  A skill source as the studio shows and adds one. */
 export type SkillSource = {
@@ -9987,6 +10035,13 @@ export type StudioSkill = {
 	 *  chat, and what else is worth knowing. Empty for the plane's and the built-in skills.
 	 */
 	lint: string[],
+	/**
+	 *  Each harness whose chats a router hid it from the list of, and why (SK-15), each by its
+	 *  own budget: the chat still has it, through the index skill. Empty where every one lists it.
+	 */
+	hidden: SkillHiddenOn[],
+	/**  Whether that chat's workspace or persona pins it, so no router hides it. */
+	pinned: boolean,
 };
 
 /**
