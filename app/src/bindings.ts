@@ -12775,6 +12775,8 @@ export type WindowApart = {
 	token: string,
 	from: string,
 	distance: number | null,
+	/**  Whether the rule is held alone: only its own sides give way to it (#3130). */
+	alone: boolean,
 };
 
 /**  One theme draft, as the strip and the close of its chat name it. */

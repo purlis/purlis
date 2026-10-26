@@ -401,7 +401,22 @@ describe("the consent floors under every tint (#2526)", () => {
         token,
         from: "danger.base",
         distance: 0.1,
+        alone: false,
       });
+  });
+
+  it("is handed a rule keeping the accent and its edges apart from waiting, held alone", () => {
+    // #3130: only the accent and the edges drawn in it give way to the waiting amber.
+    for (const token of ["accent.base", "focus.ring", "list.selected-edge", "accent.fill-edge"])
+      expect(CLASSIC_THEME.tint.apart).toContainEqual({
+        token,
+        from: "state.waiting",
+        distance: 0.1,
+        alone: true,
+      });
+    const apart = CLASSIC_THEME.tint.apart;
+    expect(chromaFor("accent.base", 0.05, apart, 0.01)).toBe(0.01);
+    expect(chromaFor("accent.surface", 0.05, apart, 0.01)).toBe(0.05);
   });
 
   it.each(ACCENT_KIN)("keeps %s apart from danger at every whole degree", (token) => {
