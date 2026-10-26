@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793045827225,
+  "lastUpdate": 1793053758177,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -7898,6 +7898,42 @@ window.BENCHMARK_DATA = {
             "value": 299.4,
             "unit": "MB",
             "extra": "median of 6 samples: 284.2, 299.8, 299, 302, 303, 217.4 MB; window 177.7 MB, session host 121.1 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "69881a6c6679314fc8540fe4e84574dddd50279a",
+          "message": "SK-55: Skills, a sidebar view in the left activity bar (#3282)\n\n* SK-55: Skills, a sidebar view under Search behind the Skill studio's preview\n\nA sidebar view of the title bar's workspace's skills by level, from the\nstudio's own answer: Needs you on top, one mark a row, its reason on hover,\na row's menu (Use in this chat, the studio's switch, Show in Explorer), the\nheader's Open Skill studio and New skill (the studio's three starts), and\nOnly this chat's. Cmd+Shift+X shows it. While the preview is off it is drawn\nnowhere and the side opens on Chats, keeping the pick.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-55: a read the core refuses is said, and the view's controls meet AA\n\nA studio answer that throws is the view's refusal rather than an unhandled\nrejection. The header and the switch take the family's default size (24 px\ntargets in compact), and the starts' lines take the empty state's quiet tier,\nwhich holds 4.5:1 on every theme.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-55: the theme engine knows the Skills view, and no button is named twice\n\n- skills joins the engine's rail views, in the rails' order, and Purlis's\n  icon set draws it with Lucide's sparkles (vendored as the others are; the\n  stories' copy of the built-in themes carries it).\n- The Skills view's New skill is New skill…, a menu of the three starts, and\n  its empty state names it rather than drawing the studio's start buttons a\n  second time: a window never holds two buttons of one name, which also let\n  the studio's scenario specs press the wrong, hidden one.\n- Only the list gives way in a short sidebar, so no control is squeezed below\n  a 24 px target.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-55: the reviews of ff5e6ae9\n\nSpec: Only this chat's keeps every group at the root and narrows to the chat's\nreal set (chat_skills, what Use skill... types from), listing only its own\nprogram's skills; Use in this chat waits, with why, on a skill the chat does\nnot get. Every persona's own skills come from one new read\n(skill_persona_skills, purlis_core::skills::persona_rows), not a studio per\npersona. The view is drawn once first shown, reads again only for a change to\nthe project's, a workspace's, a persona's or a program's files, and a switch\nis read once, from the disk's change.\n\nStandards: one Open Skill studio label, the story on the shipped SkillMenu\nand walked by Tab, CONTEXT.md's Skill studio pointing at the Skills view, the\nchanges entry in its own fragment, the starts' lines styled without .honest,\none askDraft, one NO_PREVIEWS, private helpers, readable row keys.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-55: format the persona skills test and the view's test\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-55: narrow to the chat by its set where its set speaks\n\nchat_skills holds the plane's and the built-in skills alone, never a\nprogram's own or a repo's. Narrowed, those levels are marked by it; the chat's\nown program's skills (its harness, now carried with the chat in front) and\neach repo's keep the studio's marks, and another program's are left out.\nAlso collapses persona_rows' if for clippy.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-55: the story's menu opens on the first row it can run\n\nOn a row turned off, Use in this chat waits with its reason, so Shift+F10\nlands on the switch.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-55: the menu item reads Show in the Explorer view, in sentence case\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-55: the view's rows carry the router's hidden and pinned fields main added\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-55: format\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-26T20:32:33Z",
+          "tree_id": "ef81d5a9e8e15b3ae21b159a0785dcf02b1b6eb0",
+          "url": "https://github.com/purlis/purlis/commit/69881a6c6679314fc8540fe4e84574dddd50279a"
+        },
+        "date": 1793053756034,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 1332,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1034, 1332, 1573 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 270.9,
+            "unit": "MB",
+            "extra": "median of 6 samples: 278.5, 298.2, 276.7, 265, 262, 216.7 MB; window 169.3 MB, session host 100.4 MB"
           }
         ]
       }
