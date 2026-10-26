@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793007820740,
+  "lastUpdate": 1793011577856,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -25410,6 +25410,48 @@ window.BENCHMARK_DATA = {
             "value": 101.78759550000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.207, 101.268, 101.788, 102.084, 102.432 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "181016b943aefb204142ac211ca1734659aa761a",
+          "message": "Retire the empty control stylesheet now every control is a family (#3366)\n\n* Retire the empty control stylesheet now every control is a family\n\nprimitives/controls.css drew no control after the choice families\n(#2907) landed, and its test only held it empty. Delete both, drop the\nimport from styles.css and the sheet from the cascade testkit, and bring\nthe guards and docs in line with the families:\n\n- controls.guard.test.ts: WEARS keeps only the classes a stylesheet\n  still draws (ui-row, ui-tree-row, ui-table); a native checkbox, radio,\n  select or menu is its family's, so no class makes one right. The dead\n  CONTROL_PRIMITIVES and SMALL_CONTROLS lists are gone, and the planted\n  tests use live or neutral class names.\n- overlays.test.tsx: the native-control lists match, and the layer\n  order is read against the button family.\n- docs/ui-primitives.md: \"The control classes\" becomes \"Every control\n  is a family's\"; design-system.md's guard paragraph follows.\n\nCloses #3294\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Format the control guard\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-26T14:44:58+04:00",
+          "tree_id": "afd5c1a3da402d8c44ba2e38e854a7cdebfdf9c5",
+          "url": "https://github.com/purlis/purlis/commit/181016b943aefb204142ac211ca1734659aa761a"
+        },
+        "date": 1793011575232,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.347541,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.338, 0.344, 0.348, 0.350, 0.361 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.445056,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.378, 16.444, 16.445, 16.448, 16.512 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.10051949999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.287, 100.936, 101.101, 101.417, 102.516 ms"
           }
         ]
       }
