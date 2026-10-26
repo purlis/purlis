@@ -310,9 +310,11 @@ pub fn scope_of(ctx: &Ctx, name: &str) -> String {
 /// [`crate::rewrite::replace`], gated from `trust` — the plane, or an out-of-plane
 /// `$CHARTER_HOME` ([`Ctx::trust`]) — so a link at the registry, or a `.charter/` that is
 /// itself a link (#440), is refused, and a crash leaves the previous registry whole rather
-/// than truncated.
+/// than truncated. A local registry with a second name is refused naming the other one, when a
+/// search of `project` finds it ([`crate::rewrite::named_in`]).
 fn write(
     trust: &Path,
+    project: &Path,
     path: &Path,
     doc: &Map<String, Value>,
     mode: Mode,
@@ -323,19 +325,32 @@ fn write(
     crate::contain::no_link_on_the_way(trust, parent).map_err(fail)?;
     super::make_private_dir(parent).map_err(fail)?;
     let text = crate::pyjson::dumps_indent2_unicode(&Value::Object(doc.clone()));
-    crate::rewrite::replace(trust, path, text.as_bytes(), mode).map_err(fail)
+    crate::rewrite::replace(trust, path, text.as_bytes(), mode)
+        .map_err(|e| fail(crate::rewrite::named_in(e, project)))
 }
 
 /// `save_registry`: the LOCAL half — which names every vault's file and account on this
 /// machine — 0600 before a byte of it lands, or nothing written (`Mode::Secret`).
 pub fn save_local(ctx: &Ctx, doc: &Map<String, Value>) -> Result<(), VaultError> {
-    write(ctx.trust(), &ctx.local_registry(), doc, Mode::Secret)
+    write(
+        ctx.trust(),
+        &ctx.root,
+        &ctx.local_registry(),
+        doc,
+        Mode::Secret,
+    )
 }
 
 /// `save_shared`: the SHARED half — committed, and carrying no value by construction, so a
 /// committed file's mode: the one it has, or the umask's for a new one (`Mode::Kept`).
 pub fn save_shared(ctx: &Ctx, doc: &Map<String, Value>) -> Result<(), VaultError> {
-    write(&ctx.root, &ctx.shared_registry(), doc, Mode::Kept)
+    write(
+        &ctx.root,
+        &ctx.root,
+        &ctx.shared_registry(),
+        doc,
+        Mode::Kept,
+    )
 }
 
 fn half_vaults(half: &mut Map<String, Value>) -> &mut Map<String, Value> {
