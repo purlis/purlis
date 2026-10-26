@@ -94,8 +94,15 @@ pub(super) const SELECT: Family = Family {
     line_height: 1.0,
     border_width: 1.0,
     defaults: box_look,
-    // A button: under the pointer, the keyboard on it, its list open, and unavailable.
-    states: &[State::Hover, State::Focused, State::Disabled, State::Open],
+    // A button: under the pointer, the keyboard on it, its list open, unavailable, and refused
+    // (#3110).
+    states: &[
+        State::Hover,
+        State::Focused,
+        State::Disabled,
+        State::Open,
+        State::Invalid,
+    ],
     focused: "[data-focus-visible]",
     words: QUIET,
     corner_most: None,
@@ -141,8 +148,15 @@ pub(super) const COMBOBOX: Family = Family {
     line_height: 1.0,
     border_width: 1.0,
     defaults: box_look,
-    // A box typed in: under the pointer, holding the caret, its list open, and unavailable.
-    states: &[State::Hover, State::Focused, State::Disabled, State::Open],
+    // A box typed in: under the pointer, holding the caret, its list open, unavailable, and
+    // refused (#3110).
+    states: &[
+        State::Hover,
+        State::Focused,
+        State::Disabled,
+        State::Open,
+        State::Invalid,
+    ],
     focused: "[data-focus-within]",
     words: &[("chevron", "text.quiet")],
     corner_most: None,

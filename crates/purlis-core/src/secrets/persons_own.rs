@@ -67,7 +67,7 @@ pub enum Verb<'a> {
 pub fn refused(ctx: &Ctx, verb: Verb<'_>, io: &mut dyn Io) -> bool {
     match refused_in_a_sandboxed_chat(ctx, verb) {
         Some(why) => {
-            io.say(Say::Err(why));
+            io.say(Say::Err(why.into()));
             true
         }
         None => false,

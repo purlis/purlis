@@ -5,12 +5,13 @@
  * **The dialog family** (#2910): a form, a question, a dialog whose body is longer than the
  * window, a list beside its details, and text that changes with a choice. Each is drawn, held to
  * axe, walked by the keyboard, and compared with its baseline in Chromium and WebKit
- * (`docs/component-stories.md`). Every picture is of the page: a dialog is drawn over it.
+ * (`docs/component-stories.md`). Every picture is of the page, a dialog being drawn over it, and of
+ * the dialog open: a story that answers it takes its picture first (`pictureNow`).
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState, type ReactNode } from "react";
 import { expect, waitFor, within } from "storybook/test";
-import { expectFocusInSight } from "../../stories.testkit";
+import { expectFocusInSight, pictureNow } from "../../stories.testkit";
 import { Menu, MenuItem, MenuTrigger, MenuWords } from "../menu/Menu";
 import { Button } from "../button/Button";
 import { TextField } from "../field/Field";
@@ -107,6 +108,7 @@ export const AForm: Story = {
     const name = page.getByRole("textbox", { name: "Name" });
     await waitFor(() => expect(name).toHaveFocus());
     expectFocusInSight();
+    await pictureNow();
     await userEvent.tab();
     await expect(page.getByRole("button", { name: "Cancel" })).toHaveFocus();
     expectFocusInSight();
@@ -131,6 +133,7 @@ export const EscapeCloses: Story = {
     const page = within(document.body);
     await page.findByRole("dialog", { name: "New workspace" });
     await waitFor(() => expect(page.getByRole("textbox", { name: "Name" })).toHaveFocus());
+    await pictureNow();
     await userEvent.keyboard("{Escape}");
     await waitFor(() =>
       expect(page.getByRole("status", { hidden: true })).toHaveTextContent("Cancelled"),
@@ -170,6 +173,7 @@ export const EscapeClosesOneLayer: Story = {
     await page.findByRole("dialog", { name: "Workspace" });
     const more = page.getByRole("button", { name: "More" });
     await waitFor(() => expect(more).toHaveFocus());
+    await pictureNow();
     await userEvent.keyboard("{Enter}");
     const menu = await page.findByRole("menu");
     // React Aria puts the keyboard on the menu's first row on the next frame, which WebKit may
@@ -219,6 +223,7 @@ export const AQuestion: Story = {
     await answersInPlace(alert, ["Cancel", "Delete persona"]);
     await waitFor(() => expect(page.getByRole("button", { name: "Cancel" })).toHaveFocus());
     expectFocusInSight();
+    await pictureNow();
     await userEvent.keyboard("{Enter}");
     await waitFor(() =>
       expect(page.getByRole("status", { hidden: true })).toHaveTextContent("Kept"),

@@ -22,6 +22,9 @@
  * - **An empty value is an option like any other** ("Every workspace", "not set"): React Aria
  *   keeps no key for nothing, so an option's `""` travels as a word of its own and comes back as
  *   `""`. A value none of the options has shows `placeholder`, as nothing picked.
+ * - **Refused** (`isInvalid`, #3110): a value the form will not take draws the danger colour on
+ *   the box's edge, as a text field's, and the button is marked invalid (`aria-invalid`); the
+ *   words that say why are its description (`aria-describedby`), so they are heard with it.
  * - **The button carries what it holds as `data-value`**, for the window's e2e specs to read the
  *   way they read a field's value.
  * - **Drawn only while its project is in front**: its list is the popover family's surface.
@@ -82,6 +85,9 @@ export type SelectProps = {
   /** What it shows while it holds a value none of the options has. */
   placeholder?: string;
   isDisabled?: boolean;
+  /** Refused: the form will not take what it holds. The words that say why are drawn by its row
+   *  or its form and named by `aria-describedby`. */
+  isInvalid?: boolean;
   /** Its hint, the shared tooltip (#2908). */
   tooltip?: string;
   size?: SelectSize;
@@ -110,6 +116,7 @@ export function Select({
   onValueChange,
   placeholder,
   isDisabled,
+  isInvalid,
   tooltip,
   size = "md",
   filtered,
@@ -134,6 +141,8 @@ export function Select({
         if (!options.some((one) => one.value === to && saysWhy(one))) onValueChange(to);
       }}
       isDisabled={isDisabled}
+      isInvalid={isInvalid}
+      validationBehavior="aria"
       placeholder={placeholder ?? ""}
       data-scope="select"
       data-part="field"
@@ -149,6 +158,7 @@ export function Select({
             data-size={size}
             data-open={isOpen ? "" : undefined}
             data-value={held ? value : ""}
+            data-invalid={isInvalid ? "" : undefined}
             // #190: WebKit leaves a button out of the Tab order without `tabIndex`. Its hint is
             // the shared tooltip's, which keeps an unavailable select's reason heard (#2908).
             render={(dom) => {
@@ -156,6 +166,7 @@ export function Select({
               const button = (
                 <button
                   {...own}
+                  aria-invalid={isInvalid || undefined}
                   tabIndex={own.tabIndex ?? 0}
                   // Escape on a select whose list is closed is for what it stands in (a form
                   // that closes, a dialog): React Aria would keep it.

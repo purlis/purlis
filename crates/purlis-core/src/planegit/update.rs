@@ -365,7 +365,9 @@ pub fn update(root: &Path, say: Sink) -> Updated {
     if let Some(left) = held(root, &here, &branch) {
         return Updated::Left(left);
     }
-    say(Say::Info(format!("Fetching `{branch}` from the remote …")));
+    say(Say::Info(
+        format!("Fetching `{branch}` from the remote …").into(),
+    ));
     if let Err(why) = fetch_branch(root, &branch) {
         return Updated::Left(Left::NotFetched(why.trim_end_matches('.').to_string()));
     }
@@ -504,10 +506,13 @@ fn move_onto(
     }
 
     if mine == 0 {
-        say(Say::Info(format!(
-            "Bringing in {behind} incoming {} …",
-            plural(behind as usize, "commit", "commits")
-        )));
+        say(Say::Info(
+            format!(
+                "Bringing in {behind} incoming {} …",
+                plural(behind as usize, "commit", "commits")
+            )
+            .into(),
+        ));
         // Untimed: a merge checks out a tree, and a killed one leaves it half-written.
         return match git::run_untimed(
             root,
@@ -518,10 +523,13 @@ fn move_onto(
             Err(unavailable) => left(Left::Failed(unavailable.to_string())),
         };
     }
-    say(Say::Info(format!(
-        "Replaying {mine} {} of this project's own onto {behind} incoming …",
-        plural(mine as usize, "commit", "commits")
-    )));
+    say(Say::Info(
+        format!(
+            "Replaying {mine} {} of this project's own onto {behind} incoming …",
+            plural(mine as usize, "commit", "commits")
+        )
+        .into(),
+    ));
     match rebase_onto(root, &theirs, plane.sign.value, deadline) {
         Rebased::Replayed => moved(mine, false),
         Rebased::Conflict(files) => left(Left::Conflict(files)),
