@@ -96,6 +96,57 @@ export const WarningSoft: Story = {
   args: { variant: "warning-soft", label: "Restart later" },
   play: pressedByTheKeyboard,
 };
+/** The quiet ghost (#3214): a strip's end mark, a pane's corner, its words in the quiet tier. */
+export const Quiet: Story = {
+  args: { variant: "quiet", label: "3 more" },
+  play: pressedByTheKeyboard,
+};
+/**
+ * **The quiet ghost as the window draws it** (#3214): small icon marks in a pane's corner, split
+ * and close, where the close that ends a chat takes the danger colour under the pointer
+ * (`paneFrame.css`), and the split keeps the quiet hover.
+ */
+export const QuietPaneMarks: Story = {
+  render: () => (
+    // The pane's group shows itself on the pane's hover or focus; here it is always shown.
+    <div className="pane-doing" style={{ visibility: "visible" }}>
+      <IconButton icon={<Plus />} aria-label="Split right" variant="quiet" size="sm" />
+      <IconButton
+        icon={<X />}
+        aria-label="End this pane's chat"
+        variant="quiet"
+        size="sm"
+        className="ends-a-chat"
+      />
+      <span data-testid="danger" style={{ background: "var(--danger-surface)" }} />
+    </div>
+  ),
+  play: async ({ canvas, userEvent }) => {
+    const split = canvas.getByRole("button", { name: "Split right" });
+    const close = canvas.getByRole("button", { name: "End this pane's chat" });
+    for (const one of [split, close]) {
+      const box = one.getBoundingClientRect();
+      await expect(box.height).toBeGreaterThanOrEqual(24);
+      await expect(Math.round(box.width)).toBe(Math.round(box.height));
+    }
+    // What each draws under the pointer, in this cell's theme: the state attribute React Aria
+    // writes for a hover, put on each for the reading and taken off after, so the colour is
+    // read as drawn and not raced against the pointer.
+    const danger = getComputedStyle(canvas.getByTestId("danger")).backgroundColor;
+    const hovered = (one: HTMLElement) => {
+      one.setAttribute("data-hovered", "true");
+      const ground = getComputedStyle(one).backgroundColor;
+      one.removeAttribute("data-hovered");
+      return ground;
+    };
+    await expect(hovered(close)).toBe(danger);
+    await expect(hovered(split)).not.toBe(danger);
+    await expect(getComputedStyle(close).backgroundColor).not.toBe(danger);
+    await userEvent.tab();
+    await expect(split).toHaveFocus();
+    expectFocusInSight();
+  },
+};
 export const Link: Story = {
   args: { variant: "link", label: "Open its settings" },
   play: pressedByTheKeyboard,
