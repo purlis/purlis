@@ -1101,6 +1101,7 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "workspace_saving",
     "workspace_settings",
     "workspace_starts_fresh",
+    "workspace_vision",
     "worktree_add",
     "worktree_done",
     "worktree_list",
