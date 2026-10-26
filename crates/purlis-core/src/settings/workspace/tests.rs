@@ -928,8 +928,19 @@ fn a_workspaces_skill_turn_off_list_is_read_and_any_other_shape_is_refused() {
         refusals(r#"{"settings": {"skills": true}}"#, "alpha"),
         [
             "settings.skills in workspaces/alpha/workspace.json is not an object — a workspace's \
-          skills are {\"off\": [\"<skill>\", …]}"
+          skills are {\"off\": [\"<skill>\", …], \"pinned\": [\"<skill>\", …]}"
         ]
+    );
+    // SK-15: `settings.skills.pinned`, a list of names, beside it.
+    let pinned = r#"{"settings": {"skills": {"off": ["deploy"], "pinned": ["lint"]}}}"#;
+    assert!(refusals(pinned, "alpha").is_empty());
+    let said = refusals(r#"{"settings": {"skills": {"pinned": "lint"}}}"#, "alpha");
+    assert!(
+        said.iter().any(|why| why.starts_with(
+            "settings.skills.pinned in workspaces/alpha/workspace.json is not a list of skill \
+             names, so it pins nothing"
+        )),
+        "{said:?}"
     );
 }
 
