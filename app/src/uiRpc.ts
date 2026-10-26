@@ -5158,6 +5158,15 @@ export type GradeEstimate = {
 	chats_then: number,
 };
 
+/**
+ *  **A trigger test a grade leaves out** (`grades::LeftOut`): its place in the file, from 0, and
+ *  why, as a sentence.
+ */
+export type GradeLeftOut = {
+	at: number,
+	why: string,
+};
+
 /**  One trigger test, as the plan shows it before anything runs. */
 export type GradeQuery = {
 	/**  The query as the chat will read it, each character no reader would see marked. */
@@ -9544,7 +9553,7 @@ export type SkillGradePlan = {
 	/**  Why the trigger tests could not be read, where they were not. */
 	tests_refused: string | null,
 	/**  The trigger tests left out, each with why: a query no chat can be started on. */
-	left_out: string[],
+	left_out: GradeLeftOut[],
 	/**  The outcome evals the skill has, shown and not run (#3235 grades them). */
 	outcome_evals: number,
 	outcomes_refused: string | null,

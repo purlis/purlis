@@ -1225,8 +1225,8 @@ fn grade_said(
                     }
                 ));
             }
-            for (at, why) in &planned.left_out {
-                text.push_str(&format!("Test {} is left out: {why}\n", at + 1));
+            for left in &planned.left_out {
+                text.push_str(&format!("Test {} is left out: {}\n", left.at + 1, left.why));
             }
             text.push_str(&format!(
                 "A grade stops once its chats have spent {} ({}; [skill_grades] token_cap in {} \

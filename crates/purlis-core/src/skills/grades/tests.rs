@@ -319,7 +319,7 @@ fn a_query_no_chat_can_be_started_on_is_left_out_with_why() {
     .unwrap();
     let planned = planned(root, &Level::project(), "deploy").unwrap();
     assert_eq!(planned.left_out.len(), 1);
-    assert_eq!(planned.left_out[0].0, 0);
+    assert_eq!(planned.left_out[0].at, 0);
     let request = planned.request.unwrap();
     assert_eq!(request.triggers.len(), 1);
     assert_eq!(request.triggers[0].query, "ship it");
@@ -377,10 +377,10 @@ fn a_query_a_chat_program_reads_as_its_own_command_is_left_out_and_named() {
     )
     .unwrap();
     let planned = planned(root, &Level::project(), "deploy").unwrap();
-    let left: Vec<usize> = planned.left_out.iter().map(|(at, _)| *at).collect();
+    let left: Vec<usize> = planned.left_out.iter().map(|one| one.at).collect();
     assert_eq!(left, vec![0, 1, 2, 3]);
     assert!(
-        planned.left_out[0].1.contains("'/'"),
+        planned.left_out[0].why.contains("'/'"),
         "{:?}",
         planned.left_out
     );

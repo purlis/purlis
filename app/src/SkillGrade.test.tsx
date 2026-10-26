@@ -190,6 +190,22 @@ describe("a grade's token cap", () => {
   });
 });
 
+describe("a trigger test a grade leaves out", () => {
+  it("is named by its number in the file, with why (#3275)", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "skill_grade_plan")
+        return plan({ left_out: [{ at: 1, why: "it starts with a dash" }] });
+      if (cmd === "start_options") return { profiles: [] };
+      return null;
+    });
+    render(<SkillGrade plane="p" name="deploy" level={LEVEL} onGraded={() => undefined} />);
+    fireEvent.click(screen.getByRole("button", { name: "Grade…" }));
+    expect((await screen.findByTestId("skill-grade-left-out")).textContent).toBe(
+      "Left out: Test 2: it starts with a dash",
+    );
+  });
+});
+
 describe("a grade a fault ended", () => {
   it("says it ended before it was scored, and is told as ended (#3353)", () => {
     expect(

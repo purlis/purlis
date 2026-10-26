@@ -25,9 +25,8 @@
 mod fixtures;
 
 pub use fixtures::{
-    EVALS_DIR, FixtureFile, Fixtures, MOST_EVAL_FILES, MOST_EXPECTATION_BYTES, MOST_EXPECTATIONS,
-    MOST_FIXTURE_BYTES, MOST_OUTCOME_EVALS, MOST_PROMPT_BYTES, MOST_TRIGGER_TESTS, OUTCOME_FILE,
-    OutcomeEval, Read, Refused, TRIGGER_FILE, TriggerTest, Wrong, fixtures_of,
+    EVALS_DIR, FixtureFile, Fixtures, MOST_PROMPT_BYTES, MOST_TRIGGER_TESTS, OutcomeEval, Read,
+    Refused, TriggerTest, Wrong, fixtures_of,
 };
 
 /// How many times each fixture runs in each arm: skill-creator's and `claude plugin eval`'s

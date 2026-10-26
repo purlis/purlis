@@ -60,7 +60,7 @@ pub const MOST_FILES: usize = 600;
 pub const COMMAND_STARTS: [char; 5] = ['-', '/', '!', '#', '@'];
 
 /// `personas/_grades/<YYYY-MM>.<device>.jsonl`, `<device>` named as the skill log's is.
-pub fn path_for(root: &Path, when: chrono::DateTime<chrono::Utc>, device: &str) -> PathBuf {
+fn path_for(root: &Path, when: chrono::DateTime<chrono::Utc>, device: &str) -> PathBuf {
     root.join("personas")
         .join(DIR_NAME)
         .join(format!("{}.{device}.jsonl", when.format("%Y-%m")))
@@ -372,9 +372,9 @@ pub struct Planned {
     pub plan: Option<Plan>,
     pub estimate: Option<Estimate>,
     pub unseen: Vec<usize>,
-    /// The trigger tests left out, by their place in the file, each with why: a query a chat
-    /// cannot be started on ([`crate::handoff::bad_message`]).
-    pub left_out: Vec<(usize, String)>,
+    /// The trigger tests left out, each with why: a query a chat cannot be started on
+    /// ([`left_out_why`]).
+    pub left_out: Vec<LeftOut>,
     /// The token cap the grade is held to ([`cap::token_cap`]).
     pub cap: cap::Cap,
     /// What the person consents to by pressing Grade on this plan ([`consent_of`]): a grade
@@ -384,6 +384,14 @@ pub struct Planned {
     /// out every arm from, and records its version as. Never shown, so never sent.
     #[serde(skip)]
     pub copy: Option<SkillCopy>,
+}
+
+/// **A trigger test a grade leaves out**: its place in the file, from 0, and why
+/// ([`left_out_why`]).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct LeftOut {
+    pub at: usize,
+    pub why: String,
 }
 
 /// **The copy of a skill a grade runs, read once** (the review of #3229): its files, what its
@@ -422,7 +430,7 @@ fn copy_of(root: &Path, level: &Level, name: &str) -> Result<SkillCopy, String> 
 pub fn planned(root: &Path, level: &Level, name: &str) -> Result<Planned, String> {
     let folder = find(root, level, name)?;
     let fixtures = grade::fixtures_of(root, Path::new(&rel(root, &folder)), name);
-    let mut left_out: Vec<(usize, String)> = Vec::new();
+    let mut left_out: Vec<LeftOut> = Vec::new();
     let sendable: Vec<grade::TriggerTest> = fixtures
         .triggers
         .read()
@@ -432,7 +440,7 @@ pub fn planned(root: &Path, level: &Level, name: &str) -> Result<Planned, String
                 .enumerate()
                 .filter(|(at, test)| match left_out_why(&test.query) {
                     Some(why) => {
-                        left_out.push((*at, why));
+                        left_out.push(LeftOut { at: *at, why });
                         false
                     }
                     None => true,

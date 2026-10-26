@@ -331,7 +331,7 @@ function GradePlan({
           </ol>
           {plan.left_out.length > 0 && (
             <p className="honest" data-testid="skill-grade-left-out">
-              Left out: {plan.left_out.join(" ")}
+              Left out: {plan.left_out.map((left) => `Test ${left.at + 1}: ${left.why}`).join(" ")}
             </p>
           )}
         </>

@@ -34,7 +34,10 @@ fn planned(query: &str) -> Planned {
         } else {
             Vec::new()
         },
-        left_out: vec![(1, "it starts with a dash".into())],
+        left_out: vec![grades::LeftOut {
+            at: 1,
+            why: "it starts with a dash".into(),
+        }],
         cap: grades::cap::Cap {
             tokens: 50_000,
             from: grades::cap::From::Yours,
@@ -58,7 +61,10 @@ fn the_plan_shows_each_query_as_the_chat_reads_it_and_what_is_left_out() {
     assert_eq!(plan.tests[0].query, "ship it⟦U+202E⟧now");
     assert_eq!(
         plan.left_out,
-        vec!["Test 2: it starts with a dash".to_owned()]
+        vec![GradeLeftOut {
+            at: 1,
+            why: "it starts with a dash".to_owned()
+        }]
     );
     assert_eq!(
         plan.outcomes_refused.as_deref(),

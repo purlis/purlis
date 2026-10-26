@@ -1453,15 +1453,18 @@ ADR 0101 §5). The one folder inside a skill's folder purlis reads beyond `SKILL
 level, in skill-creator's own shapes so its tools read them too. **Written by** the person (and,
 with SK-17, a chat's draft); **read by** `purlis_skills::grade::fixtures_of`, for the Skill
 studio's Grade and `purlis skill grade`, through the skill's folder held open and never through a
-link, each file at most 256 KiB, parsed as JSON and taken key by key; a file that is not whole is
-refused whole with the sentence saying where, and a key not below is left out. A grade's chat is
-handed the skill without this folder. Results never go here: they go to the
-[eval record](#personas_gradesyyyy-mmdevicejsonl). **experimental** behind the `skill-studio` flag.
+link, each file at most 256 KiB, parsed as JSON and taken key by key; a file that is not whole,
+or one with an object that names a key twice (#3275), is refused whole with the sentence saying
+where, and a key not below is left out. A grade's chat is handed the skill without this folder.
+Results never go here: they go to the [eval record](#personas_gradesyyyy-mmdevicejsonl).
+**experimental** behind the `skill-studio` flag. **Tier:** Plane — committed with the skill's
+folder at a shared level, so it travels with the skill; a `skills.local/` copy's are this
+machine's alone, as the rest of that copy is.
 
 | File | Shape | Meaning |
 |---|---|---|
 | `evals/triggers.json` | a list of `{"query": <text>, "should_trigger": <bool>}`, at most 100, no query twice, each query 1 byte to 8 KiB | the **trigger tests**: a query the skill should start on, or a near miss it should leave alone. A grade sends each query as a chat's first message; one a harness would read as its own flag is left out and named in the plan |
-| `evals/evals.json` | `{"skill_name": <the skill's name>, "evals": [{"id": <int>, "prompt": <text>, "expected_output": <text>, "files": [<path in the skill's folder>], "expectations": [<text>]}]}`, at most 100 evals, ids unique; `assertions` is read as another name for `expectations`, and an eval with both is refused | the **outcome evals**. Read and counted now; graded by a later version (#2779's follow-up). `files` are plain paths inside the skill's folder, at most 16; each expectation at most 2 KiB, at most 32 |
+| `evals/evals.json` | `{"skill_name": <the skill's name>, "evals": [{"id": <int>, "prompt": <text>, "expected_output": <text>, "files": [<path in the skill's folder>], "expectations": [<text>]}]}`, at most 100 evals, ids unique; `assertions` is read as another name for `expectations`, and an eval with both is refused | the **outcome evals**. Read and counted now; graded by a later version (#3235). `files` are plain paths inside the skill's folder, at most 16, each at most 512 bytes with no control character; each expectation at most 2 KiB, at most 32 |
 
 ### `skills.local/` — the project's local skills
 

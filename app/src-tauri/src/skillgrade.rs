@@ -67,6 +67,14 @@ pub struct GradeQuery {
     pub hides: bool,
 }
 
+/// **A trigger test a grade leaves out** (`grades::LeftOut`): its place in the file, from 0, and
+/// why, as a sentence.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct GradeLeftOut {
+    pub at: u32,
+    pub why: String,
+}
+
 /// What a grade's chats spent last time, worked out for this one.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Type)]
 pub struct GradeEstimate {
@@ -87,7 +95,7 @@ pub struct SkillGradePlan {
     /// Why the trigger tests could not be read, where they were not.
     pub tests_refused: Option<String>,
     /// The trigger tests left out, each with why: a query no chat can be started on.
-    pub left_out: Vec<String>,
+    pub left_out: Vec<GradeLeftOut>,
     /// The outcome evals the skill has, shown and not run (#3235 grades them).
     pub outcome_evals: u32,
     pub outcomes_refused: Option<String>,
@@ -182,7 +190,10 @@ impl SkillGradePlan {
             left_out: planned
                 .left_out
                 .iter()
-                .map(|(at, why)| format!("Test {}: {why}", at + 1))
+                .map(|left| GradeLeftOut {
+                    at: u32::try_from(left.at).unwrap_or(u32::MAX),
+                    why: left.why.clone(),
+                })
                 .collect(),
             outcome_evals: planned
                 .fixtures
@@ -375,12 +386,11 @@ pub(crate) async fn skill_grade_start(
             ));
         }
         // The one read of the copy the consent was taken from: laid out and recorded as is.
-        let copy = planned.copy.ok_or_else(|| {
-            format!("{skill} has no trigger tests to grade, so nothing was started.")
-        })?;
-        let request = planned.request.ok_or_else(|| {
-            format!("{skill} has no trigger tests to grade, so nothing was started.")
-        })?;
+        let (Some(copy), Some(request)) = (planned.copy, planned.request) else {
+            return Err(format!(
+                "{skill} has no trigger tests to grade, so nothing was started."
+            ));
+        };
         let (profile, on) = chats_on(&root, profile);
         on?;
         let profile = profile.ok_or("The grade did not start: no profile was found.")?;
