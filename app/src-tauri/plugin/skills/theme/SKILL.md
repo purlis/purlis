@@ -137,19 +137,20 @@ values and what it reaches. Read it before you set one this table leaves out. Th
 text size is the person's text-size setting, which no theme sets: point them at it when they
 ask for bigger words.
 
-Sizes are px at the default text size and grow with it; corners and the focus ring do not. The
-project strip sits in the title bar, whose height no token reaches yet.
+Sizes are px at the default text size and grow with it; corners and the focus ring do not. No
+token reaches the title bar's height yet.
 
 A line must fit its box, in both densities: `font-size.base` × `line-height.body` within
 `size.control`, and `font-size.md` × `line-height.body` within `size.chrome`. Compact is
 tighter: `font-size.md` 14 fits comfortable (14 × 1.4 = 19.6, within 21) and fails compact
 (14 × 1.3 = 18.2, over 18). The check reports each line that does not fit, with its density.
 
-**Still square, whatever `radius.*` says:** the project and workspace strip tabs, the settings
-gear on a strip, and every tree row. Tell the person when they ask for rounder ones: the theme
-cannot round those yet. The session tabs (chats, views, files) and their `×` are rounded through
-their parts (`tabs.*`, below), and a list's rows by `radius.control` and the `list` family's parts. The
-focus ring tokens reach every focus ring, the strip tabs', the closer's and the gear's among them.
+**Corners are a family's parts.** The rail's project buttons (`rail.*`), the title bar's
+workspace chips (`titlebar.*`) and the session tabs (chats, views, files) and their `×`
+(`tabs.*`, below) are rounded through their parts, and a list's rows by `radius.control` and the
+`list` family's parts. A tree's rows join when the tree family brings its parts (#2911): until
+then no key reaches their corners, so tell the person that when they ask for rounder ones. The
+focus ring tokens reach every focus ring, the closer's among them.
 
 **One part of one control** is a component part, in a top-level `parts` object:
 `"button.root.corner-radius": "full"` rounds every button to a pill, and

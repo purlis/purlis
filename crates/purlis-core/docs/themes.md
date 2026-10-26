@@ -197,12 +197,13 @@ Purlis Classic's compact value. The window's own text size is the person's text-
 not a token: words with no size of their own (a list row's, a paragraph's) follow it, and every
 *px at 14px* length grows with it.
 
-The project strip sits in the title bar, whose height no token reaches yet. **Still square,
-whatever `radius.*` says:** the project and workspace strip tabs, the settings gear on a strip,
-and every tree row. The session tabs and their `×` are rounded through their parts ([Session
-tabs](#session-tabs)), and a list's rows by `radius.control` (the list family, since manifest
-version 11; `radius.md` before #3177). **The focus ring tokens reach every focus ring**, the strip tabs', a tab's `×` closer's and
-the strip gear's among them; a ring that sits half as far out or in draws half the offset. Under
+No token reaches the title bar's height yet. **Corners are a family's parts.** The rail's
+project buttons, the title bar's workspace chips, the session tabs and their `×` are rounded
+through their parts ([Session tabs](#session-tabs)), and a list's rows by `radius.control` (the
+list family, since manifest version 11; `radius.md` before #3177). A tree's rows join when the
+tree family brings its parts (#2911); until then no key reaches their corners. **The focus ring
+tokens reach every focus ring**, a tab's `×` closer's among them; a ring that sits half as far
+out or in draws half the offset. Under
 forced colours the ring is drawn in the system's `Highlight` at the theme's width and offset:
 forced colours replace colour, not geometry.
 

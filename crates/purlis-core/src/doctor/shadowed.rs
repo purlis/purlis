@@ -26,9 +26,10 @@ const NAME: &str = "shadowed docs";
 
 /// The skills purlis's Claude Code plugin ships, by directory name: the bundle's
 /// `plugin/skills/<name>/SKILL.md` (held to that directory by a test).
-pub(crate) const SHIPPED_SKILLS: [&str; 11] = [
+pub(crate) const SHIPPED_SKILLS: [&str; 12] = [
     "add-curation-action",
     "browser",
+    "building-purlis-ui",
     "compact",
     "handoff",
     "persona",
