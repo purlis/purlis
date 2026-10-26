@@ -453,7 +453,7 @@ fn skill_list_says_under_codex_and_opencode_which_skills_a_repo_leaves_out_and_w
         assert_eq!(row(&lost, "SKILL"), "SKILL LEVEL STATE", "{text}");
         assert_eq!(
             row(&lost, "deploy"),
-            "deploy workspace left out: hidden by the repo skill of this name",
+            "deploy workspace left out: hidden by the skill of this name in the repo app",
             "{text}"
         );
     }
@@ -477,7 +477,7 @@ fn skill_list_says_under_codex_and_opencode_which_skills_a_repo_leaves_out_and_w
     assert_eq!(codex["repo_left_out"][0]["level"], "workspace");
     assert_eq!(
         codex["repo_left_out"][0]["left_out"],
-        "hidden by the repo skill of this name"
+        "hidden by the skill of this name in the repo app"
     );
 }
 
@@ -505,7 +505,9 @@ fn skill_list_marks_a_project_skill_a_repo_has_a_copy_of_as_the_studio_does() {
     let deploy = row(&text.lines().collect::<Vec<_>>(), "deploy");
     let both = "the repo app has a skill of this name too, and a chat there gets both";
     let alone = |title: &str| {
-        format!("the repo app has a skill of this name too, and {title} chats there get the repo's copy alone")
+        format!(
+            "the repo app has a skill of this name too, and {title} chats there get the repo's copy alone"
+        )
     };
     let squeezed = |said: &str| said.split_whitespace().collect::<Vec<_>>().join(" ");
     assert!(
