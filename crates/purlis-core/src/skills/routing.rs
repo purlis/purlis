@@ -83,6 +83,49 @@ pub enum PinnedBy {
     Persona(String),
 }
 
+/// **The pins `by` has written** (SK-15d, #3232): the workspace's `settings.skills.pinned` or the
+/// persona's `pinned-skills:`, as written, held to no limit: what the studio's Pin switch shows
+/// and changes, where [`pins_of`] is what a chat reads.
+pub fn pins_written(plane: &Path, by: &PinnedBy) -> Vec<String> {
+    match by {
+        PinnedBy::Workspace(ws) => pinned_in(plane, ws),
+        PinnedBy::Persona(persona) => crate::personaverbs::pinned_skills(plane, persona),
+    }
+}
+
+/// **Every workspace and persona of the project whose pins name `name`** (SK-15d, #3232): the
+/// workspaces first, then the personas, each by name in order. What a skill's tab lists, so a
+/// pin is always seen and can be undone.
+pub fn pinners_of(plane: &Path, name: &str) -> Vec<PinnedBy> {
+    let workspaces = crate::workspaces::Plane::open(plane)
+        .workspaces()
+        .unwrap_or_default()
+        .into_iter()
+        .map(PinnedBy::Workspace);
+    let personas = crate::personaverbs::names(plane)
+        .into_iter()
+        .map(PinnedBy::Persona);
+    workspaces
+        .chain(personas)
+        .filter(|by| pins_written(plane, by).iter().any(|one| one == name))
+        .collect()
+}
+
+/// **Which of a chat's workspace and persona pin anything** (SK-15d, #3232): where its pins are
+/// past the budget, where unpinning one is done.
+pub(crate) fn pinners_of_a_chat(
+    plane: &Path,
+    workspace: Option<&str>,
+    persona: Option<&str>,
+) -> Vec<PinnedBy> {
+    workspace
+        .map(|ws| PinnedBy::Workspace(ws.to_owned()))
+        .into_iter()
+        .chain(persona.map(|p| PinnedBy::Persona(p.to_owned())))
+        .filter(|by| !pins_written(plane, by).is_empty())
+        .collect()
+}
+
 /// **Pins `name` (`on`) or unpins it** for `by`'s chats (SK-15, ADR 0102 §4): the workspace's
 /// `settings.skills.pinned`, through the Workspace level's own save, or the persona's
 /// `pinned-skills:` line. `Ok(false)` where it already was so, and nothing is written. A pin only
@@ -95,18 +138,15 @@ pub(crate) fn pin(plane: &Path, by: &PinnedBy, name: &str, on: bool) -> Result<b
             "no skill is named {name:?}, so nothing was pinned: `purlis skill list` lists them"
         ));
     }
-    let mut pins = match by {
-        PinnedBy::Workspace(ws) => {
-            let held = crate::workspaces::Plane::open(plane);
-            if !held.workspace(ws).is_ok_and(|one| one.dir().is_dir()) {
-                return Err(format!(
-                    "this project has no workspace {ws:?}: `purlis workspace list` lists them"
-                ));
-            }
-            pinned_in(plane, ws)
+    if let PinnedBy::Workspace(ws) = by {
+        let held = crate::workspaces::Plane::open(plane);
+        if !held.workspace(ws).is_ok_and(|one| one.dir().is_dir()) {
+            return Err(format!(
+                "this project has no workspace {ws:?}: `purlis workspace list` lists them"
+            ));
         }
-        PinnedBy::Persona(persona) => crate::personaverbs::pinned_skills(plane, persona),
-    };
+    }
+    let mut pins = pins_written(plane, by);
     if pins.iter().any(|one| one == name) == on {
         return Ok(false);
     }

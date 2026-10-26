@@ -633,6 +633,66 @@ pub(crate) async fn skill_turn(
     .await
 }
 
+/// **Whose pins a pin is** (SK-15d, #3232): a workspace's or a persona's, by name. The core's
+/// `PinnedBy`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(tag = "at", rename_all = "kebab-case")]
+pub enum SkillPinner {
+    Workspace { name: String },
+    Persona { name: String },
+}
+
+impl From<&SkillPinner> for purlis_core::skills::PinnedBy {
+    fn from(by: &SkillPinner) -> purlis_core::skills::PinnedBy {
+        match by {
+            SkillPinner::Workspace { name } => {
+                purlis_core::skills::PinnedBy::Workspace(name.clone())
+            }
+            SkillPinner::Persona { name } => purlis_core::skills::PinnedBy::Persona(name.clone()),
+        }
+    }
+}
+
+impl From<purlis_core::skills::PinnedBy> for SkillPinner {
+    fn from(by: purlis_core::skills::PinnedBy) -> SkillPinner {
+        match by {
+            purlis_core::skills::PinnedBy::Workspace(name) => SkillPinner::Workspace { name },
+            purlis_core::skills::PinnedBy::Persona(name) => SkillPinner::Persona { name },
+        }
+    }
+}
+
+/// **Pins `name` for `by`'s chats, or unpins it** (SK-15d, #3232): the core's `verbs::pin`,
+/// which `purlis skill pin` calls too, one commit.
+pub(crate) fn pin(
+    root: &std::path::Path,
+    by: &SkillPinner,
+    name: &str,
+    on: bool,
+) -> Result<SkillChanged, String> {
+    let by = by.into();
+    heard(root, |cx| verbs::pin(cx, &by, name, on))
+}
+
+/// **Pins the skill `name` for a workspace's or a persona's chats, or unpins it**, so no router
+/// hides it from them. One commit.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_pin(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    by: SkillPinner,
+    name: String,
+    on: bool,
+) -> Result<SkillChanged, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("pinning the skill", move || {
+        flag_on()?;
+        pin(held.root(), &by, &name, on)
+    })
+    .await
+}
+
 /// **Shares** a local skill: commits it to the project at its level (#2767), one commit.
 pub(crate) fn share(root: &std::path::Path, at: &Whose, name: &str) -> Result<(), String> {
     heard(root, |cx| verbs::share(cx, at, name)).map(|_| ())

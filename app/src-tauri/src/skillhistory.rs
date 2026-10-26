@@ -115,6 +115,9 @@ pub struct SkillDetails {
     pub used_by: Vec<String>,
     /// Whether the project holds more skills than the graph reads.
     pub uses_cut: bool,
+    /// Every workspace and persona that pins it (SK-15d), so no router hides it from their
+    /// chats: the workspaces first, then the personas.
+    pub pinned_by: Vec<crate::skillchange::SkillPinner>,
 }
 
 /// One version's diff.
@@ -191,6 +194,10 @@ fn details_of(root: &std::path::Path, name: &str, now: u64) -> SkillDetails {
             .collect(),
         used_by: node.used_by,
         uses_cut: node.cut,
+        pinned_by: purlis_core::skills::pinners_of(root, name)
+            .into_iter()
+            .map(Into::into)
+            .collect(),
     }
 }
 

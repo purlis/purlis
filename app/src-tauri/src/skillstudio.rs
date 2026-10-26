@@ -114,6 +114,9 @@ pub struct StudioSkill {
     pub hidden: Vec<SkillHiddenOn>,
     /// Whether that chat's workspace or persona pins it, so no router hides it.
     pub pinned: bool,
+    /// Which of the studio's workspace and persona have it in their pins, as written (SK-15d):
+    /// what the row's Pin switch shows. Empty for a skill from outside the plane.
+    pub pinned_by: Vec<crate::skillchange::SkillPinner>,
 }
 
 /// A skill router (SK-15, ADR 0102): the core's `Router`.
@@ -456,6 +459,28 @@ pub(crate) fn studio(
         .as_deref()
         .map(|ws| purlis_core::skills::turned_off(root, ws))
         .unwrap_or_default();
+    // Each pinner the studio is filtered to, with what it has written (SK-15d).
+    let pinners: Vec<(purlis_core::skills::PinnedBy, Vec<String>)> = workspace
+        .as_deref()
+        .map(|ws| purlis_core::skills::PinnedBy::Workspace(ws.to_owned()))
+        .into_iter()
+        .chain(
+            persona
+                .as_deref()
+                .map(|p| purlis_core::skills::PinnedBy::Persona(p.to_owned())),
+        )
+        .map(|by| {
+            let pins = purlis_core::skills::pins_written(root, &by);
+            (by, pins)
+        })
+        .collect();
+    let pinned_by = |name: &str| {
+        pinners
+            .iter()
+            .filter(|(_, pins)| pins.iter().any(|one| one == name))
+            .map(|(by, _)| by.clone().into())
+            .collect()
+    };
     let purlis_core::skills::StudioList {
         rows,
         harnesses: all,
@@ -487,7 +512,6 @@ pub(crate) fn studio(
             not_granted,
             turned_off: row.origin == purlis_core::skills::Origin::Project
                 && off.contains(&row.name),
-            name: row.name,
             level: row.origin.into(),
             label: purlis_core::skills::level_shown(row.origin, row.local),
             local: row.local,
@@ -508,6 +532,8 @@ pub(crate) fn studio(
             lint: row.lint,
             hidden: row.hidden.iter().map(Into::into).collect(),
             pinned: row.pinned,
+            pinned_by: pinned_by(&row.name),
+            name: row.name,
         })
         .collect();
     let (harnesses, clashes) = harnesses(&all);
@@ -559,6 +585,7 @@ fn outside_shown(row: purlis_core::skills::StudioRow) -> StudioSkill {
         lint: row.lint,
         hidden: row.hidden.iter().map(Into::into).collect(),
         pinned: row.pinned,
+        pinned_by: Vec::new(),
     }
 }
 

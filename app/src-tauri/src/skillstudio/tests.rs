@@ -427,3 +427,64 @@ fn the_runs_panel_is_told_to_the_window_by_the_word_the_window_names_it_by() {
     let told = serde_json::to_value(SkillPanelKey::Runs).unwrap();
     assert_eq!(told["kind"], RUNS_PANEL);
 }
+
+#[test]
+fn a_row_says_which_of_the_studios_workspace_and_persona_pin_it_sk15d() {
+    use crate::skillchange::SkillPinner;
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("plane");
+    std::fs::create_dir_all(root.join("workspaces/alpha")).unwrap();
+    std::fs::write(
+        root.join("workspaces/alpha/workspace.json"),
+        r#"{"settings": {"skills": {"pinned": ["deploy"]}}}"#,
+    )
+    .unwrap();
+    std::fs::create_dir_all(root.join("personas/ops")).unwrap();
+    std::fs::write(
+        root.join("personas/ops/persona.md"),
+        "---\npinned-skills: deploy, triage\n---\n",
+    )
+    .unwrap();
+    for (name, said) in [("deploy", "Deploys."), ("triage", "Triages.")] {
+        skill(
+            &root.join("skills"),
+            name,
+            &format!("---\nname: {name}\ndescription: {said}\n---\n"),
+        );
+        std::fs::write(
+            root.join(format!("skills/{name}.toml")),
+            "grant = \"all\"\n",
+        )
+        .unwrap();
+    }
+
+    let pins = |workspace, persona| {
+        studio(&root, None, true, workspace, persona, &no_harness())
+            .skills
+            .into_iter()
+            .map(|row| (row.name, row.pinned_by))
+            .collect::<Vec<_>>()
+    };
+
+    let alpha = SkillPinner::Workspace {
+        name: "alpha".to_owned(),
+    };
+    let ops = SkillPinner::Persona {
+        name: "ops".to_owned(),
+    };
+    assert_eq!(
+        pins(Some("alpha"), None),
+        [
+            ("deploy".to_owned(), vec![alpha.clone()]),
+            ("triage".to_owned(), vec![])
+        ]
+    );
+    assert_eq!(
+        pins(None, Some("ops")),
+        [
+            ("deploy".to_owned(), vec![ops.clone()]),
+            ("triage".to_owned(), vec![ops.clone()])
+        ]
+    );
+    assert!(pins(None, None).iter().all(|(_, by)| by.is_empty()));
+}

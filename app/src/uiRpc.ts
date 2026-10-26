@@ -960,6 +960,7 @@ export const commands = {
 	skillRestore: __WINDOW_ONLY_RESULT,
 	skillGrant: __WINDOW_ONLY_RESULT,
 	skillTurn: __WINDOW_ONLY_RESULT,
+	skillPin: __WINDOW_ONLY_RESULT,
 	/**
 	 *  **What a skill's tab shows beside its runs**: each copy's history, lifecycle state and
 	 *  owners, and the skills it names and that name it. Nothing while the flag is off.
@@ -9252,6 +9253,11 @@ export type SkillBudget = {
 	 *  all of it is then listed (ADR 0102 §4).
 	 */
 	still_over: BudgetStillOver | null,
+	/**
+	 *  Which of the chat's workspace and persona pin a skill (SK-15d): where the pins are
+	 *  undone in the Skill studio when they alone are past the budget.
+	 */
+	pinned_by: SkillPinner[],
 };
 
 /**
@@ -9308,6 +9314,11 @@ export type SkillDetails = {
 	used_by: string[],
 	/**  Whether the project holds more skills than the graph reads. */
 	uses_cut: boolean,
+	/**
+	 *  Every workspace and persona that pins it (SK-15d), so no router hides it from their
+	 *  chats: the workspaces first, then the personas.
+	 */
+	pinned_by: SkillPinner[],
 };
 
 /**  One version's diff. */
@@ -9444,6 +9455,12 @@ export type SkillPanel = {
  *  extension adds, by its id and the panel's.
  */
 export type SkillPanelKey = { kind: "runs" } | { kind: "extension"; extension: string; panel: string };
+
+/**
+ *  **Whose pins a pin is** (SK-15d, #3232): a workspace's or a persona's, by name. The core's
+ *  `PinnedBy`.
+ */
+export type SkillPinner = { at: "workspace"; name: string } | { at: "persona"; name: string };
 
 /**  A skill router (SK-15, ADR 0102): the core's `Router`. */
 export type SkillRouter = 
@@ -10040,6 +10057,11 @@ export type StudioSkill = {
 	hidden: SkillHiddenOn[],
 	/**  Whether that chat's workspace or persona pins it, so no router hides it. */
 	pinned: boolean,
+	/**
+	 *  Which of the studio's workspace and persona have it in their pins, as written (SK-15d):
+	 *  what the row's Pin switch shows. Empty for a skill from outside the plane.
+	 */
+	pinned_by: SkillPinner[],
 };
 
 /**

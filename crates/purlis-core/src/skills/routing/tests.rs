@@ -472,3 +472,70 @@ fn pins_past_their_limits_are_none_and_say_why() {
         ["skill-00"]
     );
 }
+
+#[test]
+fn a_skill_says_every_workspace_and_persona_that_pins_it_sk15d() {
+    let (tmp, _bundle) = a_plane_of(3);
+    let root = tmp.path();
+    std::fs::create_dir_all(root.join("workspaces/ops")).unwrap();
+    let workspace = PinnedBy::Workspace("smart-ide".to_owned());
+    let persona = PinnedBy::Persona("reviewer".to_owned());
+    assert!(pinners_of(root, "skill-01").is_empty());
+
+    pin(root, &workspace, "skill-01", true).unwrap();
+    pin(root, &persona, "skill-01", true).unwrap();
+    pin(
+        root,
+        &PinnedBy::Workspace("ops".to_owned()),
+        "skill-02",
+        true,
+    )
+    .unwrap();
+
+    assert_eq!(
+        pinners_of(root, "skill-01"),
+        [workspace.clone(), persona.clone()]
+    );
+    assert_eq!(
+        pinners_of(root, "skill-02"),
+        [PinnedBy::Workspace("ops".to_owned())]
+    );
+    assert_eq!(pins_written(root, &workspace), ["skill-01"]);
+    assert_eq!(pins_written(root, &persona), ["skill-01"]);
+}
+
+#[test]
+fn a_chat_says_which_of_its_workspace_and_persona_pin_anything_sk15d() {
+    let (tmp, bundle) = a_plane_of(MOST + 5);
+    let root = tmp.path();
+    let chat = |persona| for_use_skill(&running(root, &bundle, persona));
+    assert!(chat(Some("reviewer")).pinned_by.is_empty());
+
+    pin(
+        root,
+        &PinnedBy::Persona("reviewer".to_owned()),
+        "skill-02",
+        true,
+    )
+    .unwrap();
+    assert_eq!(
+        chat(Some("reviewer")).pinned_by,
+        [PinnedBy::Persona("reviewer".to_owned())]
+    );
+    assert!(chat(None).pinned_by.is_empty());
+
+    pin(
+        root,
+        &PinnedBy::Workspace("smart-ide".to_owned()),
+        "skill-03",
+        true,
+    )
+    .unwrap();
+    assert_eq!(
+        chat(Some("reviewer")).pinned_by,
+        [
+            PinnedBy::Workspace("smart-ide".to_owned()),
+            PinnedBy::Persona("reviewer".to_owned())
+        ]
+    );
+}
