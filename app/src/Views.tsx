@@ -83,6 +83,7 @@ import {
 import { HeadingOffer } from "./PanelSection";
 import { SavingView } from "./SavingView";
 import { LicencesView } from "./LicencesView";
+import { ShortcutsView } from "./keys/ShortcutsView";
 import { BrowserView } from "./BrowserView";
 import { BrowserTimeline } from "./BrowserTimeline";
 import { isBrowserTimeline } from "./browserTimelines";
@@ -112,6 +113,7 @@ import { SkillTab } from "./SkillTab";
 import {
   SAVING_VIEW,
   LICENCES_VIEW,
+  SHORTCUTS_VIEW,
   SETTINGS_TAB_TITLE,
   settingsLevelOf,
   settingsView,
@@ -453,6 +455,19 @@ export function ViewPane({
         waits={waits}
         onAsk={onAsk}
       />
+    );
+  }
+  // **The keyboard shortcuts** (#2921): the key registry's cheat sheet, with no title of its own
+  // (the operator's ruling of 2026-10-24, #3147): the tab is its name.
+  if (view.from === null && view.view === SHORTCUTS_VIEW.view) {
+    return (
+      <section
+        className="view-pane view-alone"
+        data-testid="view-pane-shortcuts"
+        aria-label={title}
+      >
+        <ShortcutsView />
+      </section>
     );
   }
   const about = aboutOf(view, offered);

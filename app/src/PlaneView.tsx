@@ -65,8 +65,9 @@ import {
   withQueue,
   PASS_THROUGH_BYTES,
   PASS_THROUGH_KEY,
+  FOCUS_MODE_ID,
+  SHORTCUTS_ID,
   saidOf,
-  CHAT_KEYBOARD,
   type BranchPath,
   type FileRef,
   type Clone,
@@ -349,7 +350,7 @@ import {
   type TaskEndHand,
   type TaskEndInline,
 } from "./TaskEnd";
-import { giveKeyboardTo, inADialog } from "./paneKeyboard";
+import { giveKeyboardTo } from "./paneKeyboard";
 import { endedState, type Away } from "./TaskAway";
 import { useHeldAmong } from "./dispatchesHeld";
 import { useRefusedAmong } from "./vaultRefusals";
@@ -372,7 +373,7 @@ import { handReferences } from "./referencesMany";
 import { DRAFT, isMemory, memoryRefOf } from "./memories";
 import type { FirstTaskDoes } from "./FirstTaskTab";
 import { onAMac } from "./tabKeys";
-import { opensAShell } from "./shellKey";
+import { pressed, SIDE_KEY_IDS } from "./keys/registry";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { SandboxChangedNotice, useOlderSandbox } from "./SandboxChanged";
 import { useSandboxCommands } from "./sandboxAsked";
@@ -616,6 +617,7 @@ export const PlaneView = memo(function PlaneView({
   settingsAsked,
   savingAsked,
   licencesAsked,
+  focusMode = false,
   settingsTabAsked,
   settingsLinkAsked,
   yourSettingsAsked,
@@ -676,6 +678,8 @@ export const PlaneView = memo(function PlaneView({
   savingAsked?: number;
   /** The same, for the Licences tab About opens in the project in front (#1719). */
   licencesAsked?: number;
+  /** Focus mode is on (#2921): its palette row says it brings the window's parts back. */
+  focusMode?: boolean;
   /** The same, for the Settings tab (`WindowDoing.openSettingsTab`, SE-16): a count that goes
    *  up each time the window asks for it on THIS project's strip. */
   settingsTabAsked?: number;
@@ -2326,6 +2330,31 @@ export const PlaneView = memo(function PlaneView({
         sidePanels.map((one) => one.view),
       ),
     [toggle, sidePanels],
+  );
+  /**
+   * **A region's key or row while focus mode is on** (#2921, D-2921-19): it leaves focus mode
+   * first, so nothing changes out of sight. A key that puts a region away or brings it back
+   * (⌘B, ⌥⌘B, ⌘J) only leaves it, and the regions come back as they were; a key that shows a
+   * view (⌘⇧E…) leaves it and shows the view, which the person then sees.
+   */
+  const focusModeNow = useRef(focusMode);
+  useLayoutEffect(() => {
+    focusModeNow.current = focusMode;
+  });
+  const toggleFocusMode = windowDoes.toggleFocusMode;
+  const toggleRegionSeen = useCallback(
+    (id: Toggled) => {
+      if (focusModeNow.current) toggleFocusMode();
+      else toggleRegion(id);
+    },
+    [toggleFocusMode, toggleRegion],
+  );
+  const showSideViewSeen = useCallback(
+    (view: ViewId) => {
+      if (focusModeNow.current) toggleFocusMode();
+      showSideView(view);
+    },
+    [toggleFocusMode, showSideView],
   );
   /** Where each side's view lives now (#1752): its move as a palette row, and the region rows'
    *  notes naming the views there. Held by what it says, so a resize or a view picked, which
@@ -6231,8 +6260,10 @@ export const PlaneView = memo(function PlaneView({
       openProject: windowDoes.openProject,
       createProject: windowDoes.createProject,
       showExtensions: windowDoes.showExtensions,
-      showSideView,
-      toggleRegion,
+      toggleFocusMode: windowDoes.toggleFocusMode,
+      // A region's row in focus mode leaves it first (D-2921-19).
+      showSideView: showSideViewSeen,
+      toggleRegion: toggleRegionSeen,
       moveView: moveSideView,
       // F6 and Shift+F6 from the palette (#1751): once the palette has closed and given the
       // keyboard back, so the step starts from where the person was.
@@ -6267,8 +6298,8 @@ export const PlaneView = memo(function PlaneView({
     }),
     [
       beginRename,
-      showSideView,
-      toggleRegion,
+      showSideViewSeen,
+      toggleRegionSeen,
       moveSideView,
       restartTab,
       restartListed,
@@ -7064,6 +7095,7 @@ export const PlaneView = memo(function PlaneView({
             harnesses: harnessCards,
             memoryStores,
             away,
+            focusMode,
             sidePanels,
             profiles: profileNames,
             screenReader,
@@ -7077,6 +7109,7 @@ export const PlaneView = memo(function PlaneView({
       places,
       askedBy,
       away,
+      focusMode,
       sidePanels,
       clones,
       cloningNow,
@@ -7591,12 +7624,35 @@ export const PlaneView = memo(function PlaneView({
   useEffect(() => {
     if (!inFront) return;
     const key = (e: KeyboardEvent) => {
-      if (!opensAShell(e, onAMac())) return;
+      // The key and its rule are the key registry's (#2921): never under a modal.
+      if (pressed(e, ["shell.new"]) === undefined) return;
       const offer = by("shell.new");
       if (offer === undefined) return;
       e.preventDefault();
       e.stopPropagation();
       // A held key is not a second press: one shell for one press.
+      if (e.repeat) return;
+      press(offer);
+    };
+    window.addEventListener("keydown", key, true);
+    return () => window.removeEventListener("keydown", key, true);
+  }, [by, inFront, press]);
+
+  /**
+   * **Focus mode's key and the keyboard shortcuts' key** (#2921, `keys/ownKeys.ts`): each presses
+   * its catalogue row, as the palette would, so the key and the row are one act. Claimed on the
+   * window, capture-phase, by the project in front, as the shell's key is; their context rules
+   * (a modal keeps both, an editor keeps ⌘/) are the key registry's.
+   */
+  useEffect(() => {
+    if (!inFront) return;
+    const key = (e: KeyboardEvent) => {
+      const hit = pressed(e, ["focus.toggle", "shortcuts.show"]);
+      if (hit === undefined) return;
+      const offer = by(hit.id === "focus.toggle" ? FOCUS_MODE_ID : SHORTCUTS_ID);
+      if (offer === undefined) return;
+      e.preventDefault();
+      e.stopPropagation();
       if (e.repeat) return;
       press(offer);
     };
@@ -7619,10 +7675,14 @@ export const PlaneView = memo(function PlaneView({
   useEffect(() => {
     if (!inFront) return;
     const key = (e: KeyboardEvent) => {
-      const which = taskKeyOf(e, onAMac());
-      if (which === undefined || inADialog()) return;
+      // The keys are the key registry's (#2921), with its rules: not under a dialog, and left to
+      // a field when the row cannot run.
+      const mac = onAMac();
+      const which = taskKeyOf(e, mac);
+      if (which === undefined) return;
       const offer = by(TASK_KEY_ROW[which]);
-      if (offer?.available !== true && typedInto(e.target)) return;
+      const runnable = offer?.available === true;
+      if (pressed(e, [`tasks.${which}`], { mac, runnable }) === undefined) return;
       e.preventDefault();
       e.stopPropagation();
       if (e.repeat || offer?.available !== true) return;
@@ -7642,20 +7702,21 @@ export const PlaneView = memo(function PlaneView({
   useEffect(() => {
     if (!inFront) return;
     const key = (e: KeyboardEvent) => {
-      const which = sideKeyOf(e, onAMac());
-      if (which === undefined || inADialog()) return;
-      const on = e.target;
-      if (which.chatKeeps && on instanceof Element && on.closest(`[${CHAT_KEYBOARD}]`) !== null)
-        return;
+      // The keys and their rules are the key registry's (#2921): not under a dialog, and off a
+      // Mac a chord a terminal has a use for is left to a chat that has the keyboard.
+      const mac = onAMac();
+      const which = sideKeyOf(e, mac);
+      if (which === undefined) return;
+      if (pressed(e, SIDE_KEY_IDS, { mac }) === undefined) return;
       e.preventDefault();
       e.stopPropagation();
       if (e.repeat) return;
-      if ("toggle" in which) toggleRegion(which.toggle);
-      else showSideView(which.show);
+      if ("toggle" in which) toggleRegionSeen(which.toggle);
+      else showSideViewSeen(which.show);
     };
     window.addEventListener("keydown", key, true);
     return () => window.removeEventListener("keydown", key, true);
-  }, [inFront, showSideView, toggleRegion]);
+  }, [inFront, showSideViewSeen, toggleRegionSeen]);
 
   /**
    * A pane's own button: that pane becomes the focused one, and then the row runs.
@@ -9798,17 +9859,6 @@ const CORE_ROOT_WORD = "project root";
 
 /** No row of the Chats list is on screen: what the clock is read with until the list says. */
 const NO_ROWS_DRAWN: ReadonlySet<number> = new Set();
-
-/**
- * Whether a key landed where the person types text that is not a chat's: a field, a text box
- * or an editor. A terminal reads from a text box of its own, inside a pane that says the chat
- * has the keyboard there (`CHAT_KEYBOARD`), and is not one of these.
- */
-function typedInto(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  if (target.closest(`[${CHAT_KEYBOARD}]`) !== null) return false;
-  return target.isContentEditable || target.tagName === "INPUT" || target.tagName === "TEXTAREA";
-}
 
 const NO_NEEDS: readonly Needing[] = [];
 /**

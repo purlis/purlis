@@ -192,6 +192,20 @@ export function TooltipDetail({ id, children }: { id?: string; children: Tip }) 
 }
 
 /**
+ * **The key that does what the target does** (#2921, N25): the `shortcut` part, after the hint's
+ * words, from the key registry (`keys/registry.ts`). It is words of the hint, so a reader hears
+ * it where the hint is heard.
+ */
+export function TooltipShortcut({ keys }: { keys: string | undefined }) {
+  if (keys === undefined || keys === "") return null;
+  return (
+    <kbd data-scope="tooltip" data-part="shortcut">
+      {keys}
+    </kbd>
+  );
+}
+
+/**
  * **A target and its tooltip**, for a target that takes React Aria's focusable context itself
  * (the button family). The trigger is always drawn, with or without a hint, so a hint that comes
  * and goes never draws the target afresh and never takes its focus away.
@@ -369,11 +383,14 @@ const showsWords = (children: unknown): boolean =>
  */
 export function Tooltip({
   tip,
+  shortcut,
   children,
   ref,
   ...handed
 }: {
   tip: Tip;
+  /** The key that does the same, drawn after the hint's words (#2921). */
+  shortcut?: string;
   children: ReactElement;
   ref?: Ref<HTMLElement>;
   [prop: string]: unknown;
@@ -406,13 +423,24 @@ export function Tooltip({
         : iconOnly
           ? { kind: "detail", id: detailId }
           : { kind: "tooltip" };
+  const keys = <TooltipShortcut keys={shortcut} />;
   const surface = iconOnly ? (
     <TooltipSurface>
       {label}
-      {line !== undefined ? <TooltipDetail id={detailId}>{line}</TooltipDetail> : null}
+      {line !== undefined ? (
+        <TooltipDetail id={detailId}>
+          {line}
+          {keys}
+        </TooltipDetail>
+      ) : (
+        keys
+      )}
     </TooltipSurface>
   ) : (
-    <TooltipSurface>{tip}</TooltipSurface>
+    <TooltipSurface>
+      {tip}
+      {keys}
+    </TooltipSurface>
   );
   return (
     <TooltipTrigger delay={TOOLTIP_DELAY} closeDelay={TOOLTIP_CLOSE_DELAY} isDisabled={!has}>

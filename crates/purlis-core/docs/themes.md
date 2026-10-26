@@ -298,7 +298,7 @@ an unknown token is.
 | `popover` (since version 6) | `root` (`fill`, `text`, `border-colour`, `border-width`, `corner-radius`, `shadow`: the surface a popover and a menu stand on), `filter` (`fill`, `padding`), `rule` (`fill`), `list` (`padding`, `gap`), `header` (`text`, `font-size`, `font-weight`), `footer` (`fill`, `text`, `padding`, `font-size`), `key` (`fill`, `text`, `corner-radius`) | `popover`, `menu` |
 | `menu` (since version 6) | `root` (every property: a menu's row), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`), `shortcut` (`text`, `font-size`), `indicator` (`text`: a toggle's tick, a submenu's arrow) | `default`, `danger` (what cannot be undone) |
 | `dialog` (since version 7) | `root` (`fill`, `border-colour`, `border-width`, `corner-radius`, `shadow`), `title` (`text`, `font-size`, `font-weight`), `subtitle`, `description` and `summary` (`text`), `separator` (`fill`, the rule over the footer) | `dialog`, `alert` |
-| `list` (since version 11) | `root` (every property: a list's row), `body` (`padding`, `gap`: the list around the rows), `lead` and `trail` (`text`, `gap`: a row's marks and its end), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`), `header` (`text`, `font-size`, `font-weight`: a group's name) | none |
+| `list` (since version 11) | `root` (every property: a list's row), `body` (`padding`, `gap`: the list around the rows), `lead` and `trail` (`text`, `gap`: a row's marks and its end), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`), `header` (`text`, `font-size`, `font-weight`: a group's name), `shortcut` (`text`, `font-size`: the key that does the same, since the next release) | none |
 | `select` (since the next release) | `root` (every property but `font-weight`: the button that shows what is picked, drawn as the text input's box), `placeholder` (`text`: what it shows while nothing is picked), `chevron` (`text`) | none |
 | `combobox` (since the next release) | `root` (every property but `font-weight`: the box typed in, with its suggestions under it), `chevron` (`text`) | none |
 | `checkbox` (since NEXT) | `root` (`fill`, `text`, `corner-radius`, `gap`: the row pressed, a chip's ground), `box` (`fill`, `border-colour`, `border-width`, `corner-radius`: the box ticked), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`) | `box`, `chip` |
@@ -434,7 +434,8 @@ of their corners is clamped to half their own box (`min(r, 50%)`; `full` is `50%
 its words in that height. `panel.root.corner-radius` sets one panel's corners over the theme's
 `panel.corner-radius` token, which sets every panel's.
 **The tooltip** (`tooltip`, manifest version 5, #2908) has a `root`, its surface, and a `detail`, an icon button's
-second line. A theme sets the surface's fill, words, edge colour and width, corners and shadow;
+second line, and since the next release's manifest version (#2921) a `shortcut`, the key that does what its target
+does, after its words. A theme sets the surface's fill, words, edge colour and width, corners and shadow;
 its size is its words', so none of its sizes is a theme's. Purlis draws it with corners of 8 and
 no edge: `"tooltip.root.corner-radius": 8`, `"tooltip.root.border-width": 0`.
 

@@ -138,7 +138,8 @@ export function ActivityBar({
               <ActivityItem
                 variant={variant}
                 selected={selected}
-                tip={said + (key === undefined ? "" : ` (${key})`)}
+                tip={said}
+                shortcut={key}
                 role="tab"
                 id={tabOf(view)}
                 aria-selected={selected}
