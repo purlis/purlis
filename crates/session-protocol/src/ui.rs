@@ -705,6 +705,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     "go_browser",
     // A chat's browsers, listed to be watched (#2024): the window's alone, as watching is.
     "chat_browsers",
+    // A chat's browser timeline and its screenshots (#2017): the window's alone, as watching
+    // is, since they hold pictures of the chat's pages.
+    "chat_browser_timeline",
+    "chat_browser_timeline_shot",
     // The person's own theme choice, and the move of their old theme file into a theme folder
     // (#2323): each writes how their window looks on this machine, and the move moves their
     // file, so only their press in the window makes either.

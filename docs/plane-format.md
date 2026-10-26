@@ -5863,6 +5863,40 @@ down rather than read off the code.
 - **Tier:** Clone state, rebuildable — deleting it loses only the offer of where
   the browsers were. Never committed.
 
+### `app/browser-timelines/<chat>/`
+- **What:** chat `<chat>`'s browser timeline (#2017, spec #2008): what its agent did in its
+  browsers, with the screenshots its tools returned, as proof of the work. The app keeps it,
+  not the session host (ADR 0068, amended for #2017). `<chat>` is the chat's ULID (ADR 0066),
+  in its canonical spelling; a folder by any other name is no timeline. The folder is 0700 and
+  holds `timeline.json`, 0600,
+  `{"moments": [{"at": <seconds since 1970>, "browser": "b1", "by": "agent"|"person"|"purlis",
+  "did": "Clicked e12", "page"?: "https://shop.example.test/cart", "shot"?: 3,
+  "unkept"?: "bound"|"too_large"|"driven"}], "next": 4}`, oldest first, and `<shot>.png`, 0600,
+  for each moment whose `shot` names one.
+- **What a moment holds is what the agent was given, never more:** its act in words that hold
+  nothing typed (a typing is `Typed into 2 fields`; a reference the agent wrote is cut to 200
+  characters), the page it left cut to its scheme, host, port and path, and for a screenshot
+  the picture the agent was answered, already blanked. No address at all, in `page` or in
+  `did`, for a browser that holds a login purlis performed or was opened from a kept one. No
+  screenshot of the timeline's own, and none kept whose answer came back while the person or
+  purlis drove the browser (`unkept: "driven"`); their taking it over, handing it back and
+  purlis signing in are moments with no screenshot. A read of the page and a retry are no
+  moment.
+- **Bounded:** the newest 200 moments, the newest 24 screenshots of them (`unkept: "bound"` on
+  those let go), none over 4 MiB (`unkept: "too_large"`), 96 MiB of screenshots across the
+  project's timelines (the oldest go first, whichever chat's), and the timelines of the
+  project's 16 chats written to last. The list is written before a screenshot it no longer
+  names is removed.
+- **Written by** the app, as each of the chat's browser calls is answered, and as the person
+  takes a browser over and hands it back (`purlis_core::browsertimeline::record`). Nothing is
+  read, written or removed through a link on the way to it. A `timeline.json` that does not read
+  is warned of and the folder removed. **Removed** when the chat closes, and each time the app
+  writes its record of open chats: the timeline of a chat not in it (once two minutes old), and
+  any screenshot its list does not name (`sweep`). **Read by** the window's browser timeline
+  tab, through the app. No chat reads or writes it: the folder is denied to every chat, as a
+  dispatch's record is, since a screenshot one persona's chat was given is not for another's.
+- **Tier:** Clone state, transient — it lasts as long as its chat. Never committed.
+
 ### `app/sandbox-blocks.json`
 - **No longer written** (#1662). It held seven days of sandbox blocks for `purlis doctor`'s
   count; those are kept now in this machine's network record in purlis's data home
