@@ -8,8 +8,8 @@
  *
  * Loaded only in the matrix cells `pictured.json` names (`matrix.ts`), each its own baseline:
  * `src/<dir>/__screenshots__/<file>.stories.tsx/<story id>_<theme>_<appearance>-<browser>-linux.png`.
- * A missing one fails, as a changed one does; both are written only by the labelled job
- * (`.github/workflows/stories-baselines.yml`, `docs/component-stories.md`).
+ * A missing one fails, as a changed one does; both are drawn only by a pull request's stories run
+ * and taken from it on request (`.github/workflows/stories.yml`, `docs/component-stories.md`).
  *
  * A story says what is taken with `parameters.screenshot`: the frame (the default), `"page"` for
  * one that draws outside its frame (a dialog, a menu, a popover), or `false` for none. Which it
