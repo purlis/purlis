@@ -427,7 +427,7 @@ pub fn stats(root: &Path, name: Option<&str>, recent_days: i64, today: NaiveDate
         && n != SHARED_PERSONA
         && let Some(refused) = crate::personas::name_refusal(root, n)
     {
-        say(Say::Fail(refused));
+        say(Say::Fail(refused.into()));
         return 1;
     }
     let mut names: Vec<String> = match name {
@@ -541,24 +541,30 @@ pub fn stats(root: &Path, name: Option<&str>, recent_days: i64, today: NaiveDate
         }
         say(Say::Out(String::new()));
     }
-    say(Say::Info(format!(
-        "RECENT = memories in the last {recent_days} days · VERIFY = share carrying a \
+    say(Say::Info(
+        format!(
+            "RECENT = memories in the last {recent_days} days · VERIFY = share carrying a \
          verification marker (quality proxy) · DUP = share in a near-dup pair (noise) · DISP = \
          times work was DISPATCHED to it (committed dispatch log, and this machine's dispatch \
          records) · ⬡/◇ = memory-blind role (activity: profile), not judged by volume."
-    )));
+        )
+        .into(),
+    ));
     let total: u64 = disp.values().sum();
     let log = crate::dispatch::rows(root);
     let (fired, first, followed) = advice(&log);
     if fired > 0 {
         let since = first.map_or_else(String::new, |d| d.format("%Y-%m-%d").to_string());
-        say(Say::Info(format!(
-            "Routing advice: fired {} · work handed to a persona {} \
+        say(Say::Info(
+            format!(
+                "Routing advice: fired {} · work handed to a persona {} \
              since the first one ({since}). Advice that fires and is never followed is \
              the block failing, not the roster — read it that way before adding more personas.",
-            counted(fired, "time", "times"),
-            counted(followed, "time", "times")
-        )));
+                counted(fired, "time", "times"),
+                counted(followed, "time", "times")
+            )
+            .into(),
+        ));
     }
     if !drifted.is_empty() {
         say(Say::Info(
@@ -585,38 +591,50 @@ pub fn stats(root: &Path, name: Option<&str>, recent_days: i64, today: NaiveDate
         Err(_) => say(Say::Warn(RECORDS_UNREAD.into())),
     }
     if unused > 0 {
-        say(Say::Warn(format!(
-            "{} NEVER dispatched — {}, lint green, and {} unused. \
+        say(Say::Warn(
+            format!(
+                "{} NEVER dispatched — {}, lint green, and {} unused. \
              Check whether a chat does {} work itself where it could dispatch to {}.",
-            counted(unused, "persona", "personas"),
-            plural(unused, "it exists", "they exist"),
-            plural(unused, "is", "are"),
-            plural(unused, "its", "their"),
-            plural(unused, "it", "them")
-        )));
+                counted(unused, "persona", "personas"),
+                plural(unused, "it exists", "they exist"),
+                plural(unused, "is", "are"),
+                plural(unused, "its", "their"),
+                plural(unused, "it", "them")
+            )
+            .into(),
+        ));
     }
     if drafts > 0 {
-        say(Say::Info(format!(
-            "{} — no chat is dispatched to a persona while `draft: \
+        say(Say::Info(
+            format!(
+                "{} — no chat is dispatched to a persona while `draft: \
              true` is set, so {} not counted above. Finish the charter, then drop the \
              line.",
-            counted(drafts, "draft persona", "draft personas"),
-            plural(drafts, "it is", "they are")
-        )));
+                counted(drafts, "draft persona", "draft personas"),
+                plural(drafts, "it is", "they are")
+            )
+            .into(),
+        ));
     }
     if dormant > 0 {
-        say(Say::Warn(format!(
-            "{} — a REAL prune signal (old, zero memory, no declared \
+        say(Say::Warn(
+            format!(
+                "{} — a REAL prune signal (old, zero memory, no declared \
              activity: profile). The steward can quiz-propose removal (cite this).",
-            counted(dormant, "dormant persona", "dormant personas")
-        )));
+                counted(dormant, "dormant persona", "dormant personas")
+            )
+            .into(),
+        ));
     }
     if idle > 0 {
-        say(Say::Info(format!(
-            "{} — {} memory but none recent; watch, don't prune yet.",
-            counted(idle, "idle persona", "idle personas"),
-            plural(idle, "has", "have")
-        )));
+        say(Say::Info(
+            format!(
+                "{} — {} memory but none recent; watch, don't prune yet.",
+                counted(idle, "idle persona", "idle personas"),
+                plural(idle, "has", "have")
+            )
+            .into(),
+        ));
     }
     0
 }

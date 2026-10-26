@@ -8,39 +8,52 @@
 //! the words ARE the interface: an agent that reads `charter recall` at session start
 //! parses what it prints, and a harness that runs both charters must not be able to tell
 //! them apart. The glyph is coloured only when stderr is a terminal — the message never is.
+//!
+//! A message is [`Markup`] (SK-54, #3225): a literal is purlis's own words, and a `String` —
+//! any `format!` that splices a name, a reason or a path — enters escaped, whole. A line that
+//! wants purlis's colour builds it with [`Markup::styled`].
 
 use std::io::IsTerminal;
 use std::path::Path;
 
 use purlis_core::tui::{Markup, Sgr};
 
-fn glyph(colour: Sgr, mark: &'static str) -> Markup {
+/// One line in purlis's voice: the mark, in its colour when `coloured`, then the message.
+fn said(colour: Sgr, mark: &'static str, msg: Markup, coloured: bool) -> Markup {
     let mark = Markup::new().own(mark);
-    if std::io::stderr().is_terminal() {
+    let glyph = if coloured {
         Markup::new().styled(colour, mark)
     } else {
         mark
-    }
+    };
+    glyph.own(" ").then(msg)
+}
+
+fn say(colour: Sgr, mark: &'static str, msg: Markup) {
+    eprintln!(
+        "{}",
+        said(colour, mark, msg, std::io::stderr().is_terminal())
+    );
 }
 
 /// `util.info`: `• <msg>` on stderr.
-pub fn info(msg: &str) {
-    eprintln!("{} {msg}", glyph(Sgr::Cyan, "•"));
+pub fn info(msg: impl Into<Markup>) {
+    say(Sgr::Cyan, "•", msg.into());
 }
 
 /// `util.ok`: `✓ <msg>` on stderr.
-pub fn ok(msg: &str) {
-    eprintln!("{} {msg}", glyph(Sgr::Green, "✓"));
+pub fn ok(msg: impl Into<Markup>) {
+    say(Sgr::Green, "✓", msg.into());
 }
 
 /// `util.warn`: `! <msg>` on stderr.
-pub fn warn(msg: &str) {
-    eprintln!("{} {msg}", glyph(Sgr::Yellow, "!"));
+pub fn warn(msg: impl Into<Markup>) {
+    say(Sgr::Yellow, "!", msg.into());
 }
 
 /// `util.err`: `✗ <msg>` on stderr.
-pub fn err(msg: &str) {
-    eprintln!("{} {msg}", glyph(Sgr::Red, "✗"));
+pub fn err(msg: impl Into<Markup>) {
+    say(Sgr::Red, "✗", msg.into());
 }
 
 /// `str.rstrip()`, with Python's idea of whitespace.
@@ -89,7 +102,7 @@ pub fn rel(root: &Path, path: &Path) -> String {
 /// path worded two ways is two different repairs for one directory.
 pub fn unread(root: &Path, unread: &purlis_core::memstore::Unread) {
     for (path, code) in unread {
-        err(&purlis_core::memstore::cannot_check(root, path, *code));
+        err(purlis_core::memstore::cannot_check(root, path, *code).to_string());
     }
 }
 
