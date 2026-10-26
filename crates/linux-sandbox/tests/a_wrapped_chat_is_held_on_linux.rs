@@ -402,6 +402,17 @@ fn only_the_proxy_and_the_hook_socket_are_reached() {
     assert_eq!(p.run(&["abstract", "purlis-probe"]), "EACCES");
 }
 
+/// A socket listens only where it was bound: one the chat never bound is refused rather than
+/// bound by the kernel to a port it picks on every interface. A server on an abstract unix
+/// socket, which the chat binds itself, listens as before.
+#[test]
+fn a_socket_listens_only_where_it_was_bound() {
+    let mut p = project();
+    assert_eq!(p.run(&["listen-unbound", "4"]), "EACCES");
+    assert_eq!(p.run(&["listen-unbound", "6"]), "EACCES");
+    assert_eq!(p.run(&["abstract-listen", "purlis-probe-listen"]), "ok");
+}
+
 #[test]
 fn a_process_the_chat_starts_is_held_the_same_and_cannot_lift_it() {
     let mut p = project();

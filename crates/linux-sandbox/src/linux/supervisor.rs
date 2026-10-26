@@ -30,8 +30,8 @@ use std::sync::{Arc, Mutex};
 use nix::errno::Errno;
 use nix::fcntl::{AT_FDCWD, AtFlags, OFlag, RenameFlags, openat, renameat2};
 use nix::sys::socket::{
-    AddressFamily, SockFlag, SockType, SockaddrIn, SockaddrIn6, UnixAddr, connect, setsockopt,
-    socket, sockopt,
+    AddressFamily, Backlog, SockFlag, SockType, SockaddrIn, SockaddrIn6, SockaddrLike,
+    SockaddrStorage, UnixAddr, connect, setsockopt, socket, sockopt,
 };
 use nix::sys::stat::{
     FchmodatFlags, Mode, SFlag, UtimensatFlags, fchmodat, mkdirat, mknodat, utimensat,
@@ -242,6 +242,7 @@ impl Supervisor {
                     self.times(&chat, id, int(0), path.as_deref(), times.as_deref(), int(3))
                 }
                 libc::SYS_connect => self.connect(&chat, id, int(0), a[1], a[2] as usize),
+                libc::SYS_listen => self.listen(id, chat.tgid, int(0), int(1)),
                 #[cfg(target_arch = "x86_64")]
                 legacy => self.legacy(&chat, id, legacy, &a, tid),
                 #[cfg(not(target_arch = "x86_64"))]
@@ -909,6 +910,40 @@ impl Supervisor {
             cloexec: flags & libc::O_CLOEXEC != 0,
         })
     }
+
+    /// **A listen, made by the supervisor on the socket it judged**: the chat's own socket,
+    /// taken from its descriptor table as it is now (`pidfd_getfd`), listens only where it was
+    /// bound. An internet socket the chat never bound is refused: the kernel would otherwise
+    /// bind it first, to a port it picks on every interface, past every rule, since Landlock
+    /// judges a bind the chat makes and not one the kernel makes for it. A socket the chat bound
+    /// (a unix socket, or an internet one its bind was allowed) listens as it would have. The
+    /// listen is made on the socket judged, never on whatever the chat's descriptor holds by
+    /// then. Where the chat's socket cannot be taken, nothing listens.
+    fn listen(&self, id: u64, tgid: i32, fd: i32, backlog: i32) -> Result<Answer, Errno> {
+        let socket = chats_own(tgid, fd).map_err(|_| REFUSED)?;
+        let name = nix::sys::socket::getsockname::<SockaddrStorage>(socket.as_raw_fd())?;
+        let unbound = match name.family() {
+            Some(AddressFamily::Inet) => name.as_sockaddr_in().is_some_and(|it| it.port() == 0),
+            Some(AddressFamily::Inet6) => name.as_sockaddr_in6().is_some_and(|it| it.port() == 0),
+            _ => false,
+        };
+        if unbound {
+            return Err(REFUSED);
+        }
+        if !self.alive(id) {
+            return Ok(Answer::Gone);
+        }
+        nix::sys::socket::listen(&socket, Backlog::new(backlog.clamp(0, libc::SOMAXCONN))?)?;
+        Ok(Answer::Value(0))
+    }
+}
+
+/// **Descriptor `fd` of the chat process `tgid`, as this process's own**: the same open socket,
+/// not a copy of it, so what is done to it is done to the chat's.
+fn chats_own(tgid: i32, fd: i32) -> rustix::io::Result<OwnedFd> {
+    let pid = rustix::process::Pid::from_raw(tgid).ok_or(rustix::io::Errno::SRCH)?;
+    let process = rustix::process::pidfd_open(pid, rustix::process::PidfdFlags::empty())?;
+    rustix::process::pidfd_getfd(&process, fd, rustix::process::PidfdGetfdFlags::empty())
 }
 
 /// What purlis's own profile language has no word for on Linux, and every wrapped chat needs:

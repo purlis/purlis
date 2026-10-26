@@ -320,6 +320,19 @@ jobs:
           image=$(docker image inspect --format '{{index .RepoDigests 0}}' localhost:5000/purlis-runner-parity:candidate)
           echo "image $image"
           echo "DOCKER_POOL_TEST_IMAGE=$image" >> "$GITHUB_ENV"
+      # The Linux wrap's listen in a container, as a Docker pool runs one: Docker's built-in
+      # seccomp profile, no new privileges, not root. The supervisor takes the chat's socket with
+      # `pidfd_getfd`; where a runtime refuses that, nothing listens.
+      - name: A socket listens only where it was bound, in a container
+        if: steps.scope.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          bin=$(cargo test --locked -p purlis-linux-sandbox --test a_wrapped_chat_is_held_on_linux --no-run 2>&1 \
+            | sed -n 's/.*Executable .*(\(.*\))$/\1/p' | tail -1)
+          echo "test binary: $bin"
+          docker run --rm --security-opt no-new-privileges --user "$(id -u):$(id -g)" \
+            --volume "$PWD:$PWD" --workdir "$PWD" --entrypoint "$PWD/$bin" \
+            purlis-runner:parity a_socket_listens_only_where_it_was_bound --test-threads=1
       # Under `tools/no-orphans.sh`, as `rust` is: a test ends what it started, its pool's
       # container included.
       - name: The behaviour suite on its Docker pool target, and the window's real-Docker tests
@@ -1006,7 +1019,7 @@ jobs:
           BASE: ${{ steps.base.outputs.sha }}
         run: |
           changed=$(git diff --name-only "$BASE" HEAD)
-          if echo "$changed" | grep -qE '^(crates/studio-probe/|\.github/actions/studio-probe-names/|crates/purlis-core/src/(executor|extension)(\.rs|/)|crates/purlis-core/src/sandbox/(seatbelt|egress|reach|wrapper|hosts)(\.rs|/)|Cargo\.lock$|rust-toolchain\.toml$)'; then
+          if echo "$changed" | grep -qE '^(crates/studio-probe/|\.github/actions/studio-probe-names/|crates/purlis-core/src/(executor|extension)(\.rs|/)|crates/purlis-core/src/sandbox/(seatbelt|egress|reach|wrapper|hosts)(\.rs|/)|crates/purlis-core/tests/a_sandboxed_chat_listens_nowhere_under_seatbelt\.rs|Cargo\.lock$|rust-toolchain\.toml$)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "::notice::the studio confinement has not changed; not run"
@@ -1025,6 +1038,10 @@ jobs:
       - name: The studio probe, confined by Seatbelt
         if: steps.scope.outputs.run == 'true'
         run: cargo test --locked -p studio-probe
+      # A wrapped chat's own compiled profile, applied for real: no port bound, nothing listening.
+      - name: A wrapped chat listens nowhere, confined by Seatbelt
+        if: steps.scope.outputs.run == 'true'
+        run: cargo test --locked -p purlis-core --test a_sandboxed_chat_listens_nowhere_under_seatbelt
       # Which of the confined profile's parts the probe needs to start, each tried on its own.
       # What Seatbelt refused while the probe ran, from the system's log, for a red run's reader.
       - name: What the sandbox refused
