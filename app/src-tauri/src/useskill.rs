@@ -107,6 +107,9 @@ pub struct SkillBudget {
     /// What is still past the budget with all the router may hide hidden, where something is:
     /// all of it is then listed (ADR 0102 §4).
     pub still_over: Option<BudgetStillOver>,
+    /// Which of the chat's workspace and persona pin a skill (SK-15d): where the pins are
+    /// undone in the Skill studio when they alone are past the budget.
+    pub pinned_by: Vec<crate::skillchange::SkillPinner>,
 }
 
 /// What Use skill… offers a chat, and its budget.
@@ -218,6 +221,7 @@ pub(crate) fn shown(skills: Option<&purlis_core::skills::ChatSkills>) -> ChatSki
                     .count(),
             ),
             still_over: skills.still_over.map(Into::into),
+            pinned_by: skills.pinned_by.iter().cloned().map(Into::into).collect(),
         }),
     }
 }

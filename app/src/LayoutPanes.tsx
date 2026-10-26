@@ -11,7 +11,7 @@ import {
   type RefObject,
 } from "react";
 import { Group, Panel } from "react-resizable-panels";
-import { Separator } from "./shownSeparator";
+import { Separator } from "./ui/panel/Separator";
 import {
   type ChatBlocked,
   type HarnessGlance,
@@ -794,7 +794,7 @@ export function LayoutPanes({
          * A split has exactly two children and they never swap, so the side IS the identity.
          */
         <Fragment key={side}>
-          {side === 1 && <Separator aria-label="Resize the split" />}
+          {side === 1 && <Separator className="pane-split" aria-label="Resize the split" />}
           <Panel>
             <LayoutPanes
               plane={plane}

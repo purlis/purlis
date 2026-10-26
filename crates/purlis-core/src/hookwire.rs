@@ -215,8 +215,14 @@ impl Report {
                 // One bit of the prompt, and only on the event that carries one: whether the
                 // person typed `/smart-close` (#1332). The prompt never leaves the hook.
                 smart_close: event == Event::UserPromptSubmit
-                    && field("prompt")
-                        .is_some_and(|prompt| crate::state::smart_close_typed(&prompt)),
+                    && field("prompt").is_some_and(|prompt| {
+                        crate::state::smart_close_typed(
+                            &prompt,
+                            chat_harness(env)
+                                .as_deref()
+                                .and_then(crate::harness::Harness::of_registry_or_kind),
+                        )
+                    }),
                 unattended: crate::floorguard::unattended(field("permission_mode").as_deref()),
                 // Only a `Stop` of the chat's own can end its turn, so only there is it asked.
                 helpers_at_work: event == Event::Stop
@@ -4832,6 +4838,29 @@ mod tests {
         let odd = line.replace("claude-opus-4-1", "two words");
         let read: Report = serde_json::from_str(&odd).expect("the rest of the line reads");
         assert_eq!((read.chat, read.detail.model), (7, None));
+    }
+
+    #[test]
+    fn opencode_s_own_name_for_smart_close_is_heard_in_an_opencode_chat_alone() {
+        // opencode knows purlis's built-in skills as `purlis-<name>`; nowhere else is that name
+        // purlis's, so a skill named so in another chat is its own.
+        let heard = |harness: Option<&str>| {
+            let mut pairs = vec![(SOCKET_ENV, "/tmp/s.sock"), (CHAT_ENV, "7")];
+            pairs.extend(harness.map(|harness| (HARNESS_ENV, harness)));
+            let env = env_of(&pairs);
+            Report::read(
+                Event::UserPromptSubmit,
+                &prompt_payload("/purlis-smart-close"),
+                &env,
+            )
+            .expect("a report")
+            .detail
+            .smart_close
+        };
+        assert!(heard(Some("opencode")));
+        assert!(!heard(Some("claude")));
+        assert!(!heard(Some("codex")));
+        assert!(!heard(None));
     }
 
     #[test]

@@ -55,14 +55,25 @@ afterEach(() => {
 
 /**
  * **Past the settle guard** (#1695): a press on a granting Notice within {@link SETTLE_MS} of its
- * drawing does nothing. The guard reads the clock, so the clock is moved on rather than waited
- * for (#3136): only `Date` is faked, from the first settle on, and every timer stays real.
+ * drawing does nothing. The guard reads the monotonic clock (#3227), so that clock is moved on
+ * rather than waited for (#3136): it runs on from where it was, ahead by each settle, and every
+ * timer stays real. (Faking it from the first settle on would start it again near zero, before
+ * every time the guard had already read.)
  */
+const ahead = { by: 0, spy: undefined as { mockRestore: () => void } | undefined };
 const settled = () =>
   act(() => {
-    if (!vi.isFakeTimers()) vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(Date.now() + SETTLE_MS + 50);
+    if (ahead.spy === undefined) {
+      const real = performance.now.bind(performance);
+      ahead.spy = vi.spyOn(performance, "now").mockImplementation(() => real() + ahead.by);
+    }
+    ahead.by += SETTLE_MS + 50;
   });
+afterEach(() => {
+  ahead.spy?.mockRestore();
+  ahead.spy = undefined;
+  ahead.by = 0;
+});
 
 const PLANE = "/home/dev/plane";
 const ALPHA = `${PLANE}/workspaces/alpha`;

@@ -684,6 +684,7 @@ spec #2897, ADR 0104), each one wrapper under `app/src/ui/` and its own lint rul
 | --- | --- | --- | --- |
 | Panel | `Panel`, or `panelRoot(variant)` on a library's resizable panel (`ui/panel/Panel.tsx`) | `root` | `side`, `content`, `bottom` |
 | Panel section | `PanelSection`, `PanelSectionHead`, `PanelSectionTitle` (`ui/panel/Panel.tsx`) | `root`, `head`, `title` | `default` |
+| Panel separator | `Separator` (`ui/panel/Separator.tsx`), every resize handle between two panels | `root`, `grip` | none |
 | Empty state | `EmptyState` (`ui/empty-state/EmptyState.tsx`) | `root`, `icon`, `headline`, `body`, `action` | `page`, `panel` |
 | Status item | `StatusItem` (pressed, runs a command), `StatusCell` (says, runs nothing), `StatusVerdict` (`ui/status/StatusItem.tsx`) | `root`, `icon`, `label`, `count` | `bar`, `pill`, `waiting`, `accent` |
 
@@ -695,6 +696,15 @@ spec #2897, ADR 0104), each one wrapper under `app/src/ui/` and its own lint rul
   gutter (`App.css`, `.regions`), the panel family the corners and the ground.
 - **A section's title** is the label's capitals in the secondary tier, its mark in the title's
   colour. Where it sits (its margin) is its view's; the line between two sections is a separator.
+- **A resize handle is a panel separator** (#3143): the room it takes and its line at rest are
+  the regions' (`App.css`, `--separator-room`): the gutter at a region's edge, and between two
+  panes in a split the gutter in the window's colour, or the hairline where the panels sit flush; its box is never thinner than the keyboard's ring
+  and straddles that room with a negative margin, so Tab always lands on something drawn and
+  nothing moves. Under the pointer, while dragged and with the keyboard it shows its grip, a
+  short mark at its middle drawn over the panels either side. Purlis's grip is the faint tier
+  under the pointer, the muted tier while dragged and `focus.ring` with the keyboard on it, in
+  place of the window's ring; Purlis Classic keeps its accent line through its theme's parts.
+  Forced colours draw the grip in `CanvasText` and `Highlight`, and the ring comes back.
 - **The status bar follows its contribution model** (N28, `ui/status/StatusBar.tsx`): every item,
   purlis's own and an extension's, says its `id`, `side` (left or right) and `priority` (highest
   first from the side's left), and the person may hide any item from the bar's menu (a right
@@ -724,7 +734,7 @@ item families (`purlis/tooltip-family`, an error). A frame's `title` is its name
 
 | Where the hint is | How it is written |
 | --- | --- |
-| On words, a mark, a row, a tab, a field | `<Tooltip tip={…}>` around the one element, which hands its props and its ref to the DOM |
+| On words, a mark, a row, a tab, a field | `<Tooltip tip={…}>` around the one element, which hands its props and its ref to the DOM; `shortcut` draws the key that does the same after the words (the `shortcut` part, #2921) |
 | On a `Button`, a `ToggleButton`, a `StatusItem`, a `StatusCell` or a menu's `MenuItem` | its `tooltip` |
 | On an `IconButton` | its `aria-label`, which its tooltip always shows; its `tooltip` is a second line under it (the `detail` part) |
 | Beside a menu's row, opened by the row's rest | `AnchoredTooltip` (`ui/menu/MenuTip.tsx`) |
@@ -735,6 +745,12 @@ item families (`purlis/tooltip-family`, an error). A frame's `title` is its name
   one was just open. A row's tooltip stands by the pointer or the row's words, not the whole row,
   and an anchored tooltip (a row's, a menu row's) keeps its width: it takes the side with room for
   all of it, and stands under its anchor where neither side has (#3328, `ui/tooltip/side.ts`).
+- **A strip's tooltips stand below it** (#3361): a strip is a row of targets, and a tooltip at a
+  target's end would sit on the row, over the next. A target inside an element marked
+  `TIPS_BELOW` (`data-tips="below"`; the chat strip's row) has its tooltip below it, or above
+  where the window has no room, at the same 10 px. The strip says so, never a call site, and it
+  is read from where the target stands in the DOM (`placementFor`), so a menu or a popover opened
+  from the strip, portalled out of it, keeps R166's placement.
 - **WCAG 1.4.13**: Esc takes it down and leaves the focus where it was (dismissible). **The first
   Esc is the tooltip's alone**: heard first on the window's capture phase while it is up, it reaches no
   dialog, menu, palette or terminal, and the next Esc is theirs. The pointer can move onto a tooltip it
@@ -884,7 +900,7 @@ old `.ui-list` class: `eslint.config.js` refuses both (`purlis/list-family`, an 
 | Rule | How |
 | --- | --- |
 | **Header, body, footer** | Three rows: the title and the line under it, the body, which is the only part that scrolls, and the footer with the answers, always in view. A control the keyboard is on is never under the footer (WCAG 2.4.11): the two never overlap. |
-| **Width by size, never by content** | `size="standard"`, 560 px, or `size="wide"`, 780 px, only for a list beside its details; each at most the window's width less 16 px a side. |
+| **Width by size, never by content** | `size="standard"`, 600 px, or `size="wide"`, 800 px, only for a list beside its details; each at most the window's width less 16 px a side. |
 | **Height** | At most the window less 48 px; `height` gives a dialog one of its own, and it takes the lesser of the two whatever it holds. |
 | **A fixed top** | 24 px under the window's top edge, so a change in its content moves only its bottom edge. |
 | **Text that changes with a choice keeps its room** | `Reserved` (`ui/dialog/Reserved.tsx`) lays every text a place can show in one cell, and an answer's `reserve` lists every word it can say (`Create`, `Creating…`), so nothing moves or resizes when a choice or a state changes. |
@@ -2075,7 +2091,7 @@ A part of a project's view is therefore mounted while nobody can see it. What th
   with the panes.
 - **A measurement** taken while the element is in no document measures nothing: `fits.ts` and
   `wholeWays.ts` keep what they last measured, and measure again as the view comes back.
-- **A split that resizes** uses `Separator` from `shownSeparator.tsx`, not the library's own:
+- **A split that resizes** uses `Separator` from `ui/panel/Separator.tsx`, not the library's own:
   `react-resizable-panels` asks about every handle on every press on the document, and throws
   for one that is in no document. The handle is disabled while its project is behind, which the
   library changes in place; disabling the `Group` registers it again and lays it out again.
@@ -2144,6 +2160,34 @@ sequence above, so it is written down here for the same reason.
   to attack.
 
 ## Which keys belong to the chat, and which to the window
+
+**Every key is declared in one registry** (`app/src/keys/registry.ts`, #2921, spec #2897 N24).
+Each act has one entry: what it does, the group the cheat sheet lists it under, where it applies
+(the window, the palette, ⌘P's files, a dialog, a menu, a focused tab or row, a chat's terminal,
+an editor, a form), its chords on a Mac and everywhere else, and what it yields to:
+
+- a **modal** dialog that is up (the dialog family's root or an alert dialog; the operator's
+  ruling of 2026-10-24);
+- any **dialog** that has the keyboard, a popover's included;
+- the **palette** while it is up;
+- a chat's **terminal**: always, only for its Ctrl chords, or only off a Mac;
+- a **tab** that renames on `F2`, an **editor** (CodeMirror's `Mod-/`; and, for the palette,
+  only the chords its keymap binds: ⌘⇧K and a Mac's Ctrl+K, `editorKeeps`), or a **field** the
+  key would be typed into when its row cannot run.
+
+A handler asks `pressed(event, ids)` which of its acts a keystroke is; the registry applies the
+context rules, so one rule reads the same wherever its handler is. How a key is recognised stays
+with its reasons, in `sideKeys.ts`, `taskKeys.ts`, `workspaceSwitch.ts` and the rest. Off a Mac
+Ctrl takes ⌘'s place, except where a chat would lose the chord (Ctrl+Shift+P, Ctrl+Shift+F); a
+test holds that. **`registry.test.ts` fails on a conflict**: two acts on one chord in places that
+overlap, neither yielding to the other. That is checked on the declared chords and on each
+act's own matcher fed every other act's chords. A new key goes into the registry first, and the
+test says whether it is free.
+
+The palette's rows, every menu's rows (`MenuShortcuts`, provided in `main.tsx`) and the activity
+items' tooltips show their key from the registry, through the list, menu and tooltip families'
+`shortcut` parts. The cheat sheet (`keys/ShortcutsView.tsx`, ⌘/ or the *Keyboard shortcuts* row)
+is generated from it. Focus mode (⌘⇧↩, `keys/focusMode.ts`) is one of its keys.
 
 Every pane in this window is a terminal running somebody's shell, and a shell's line editor has
 bindings of its own. So "the window takes this key" is never free: it is taken out of the

@@ -248,12 +248,13 @@ describe("what a keyboard reaches in the window's modal surfaces", () => {
 
     expect(await reachableByKeyboard()).toEqual([
       'button "Cancel"',
-      'button "Start"',
+      'button "Start chat"',
+      // The persona list, left of the details (#2918): one stop, the persona picked.
+      'option "steward"',
       'radio "claude"',
-      'radio "steward"',
-      'checkbox "Draw purlis\'s footer in this chat"',
       // The Name field (charter-app#254): an `<input>`, which every engine puts in the sequence.
       'input "Name"',
+      'checkbox "Draw purlis\'s footer in this chat"',
       'summary "1 refused"',
     ]);
   });
@@ -269,11 +270,11 @@ describe("what a keyboard reaches in the window's modal surfaces", () => {
     expect(await reachableByKeyboard({ shift: true })).toEqual([
       'button "Cancel"',
       'summary "1 refused"',
-      'input "Name"',
       'checkbox "Draw purlis\'s footer in this chat"',
-      'radio "steward"',
+      'input "Name"',
       'radio "claude"',
-      'button "Start"',
+      'option "steward"',
+      'button "Start chat"',
     ]);
   });
 
@@ -302,10 +303,10 @@ describe("what a keyboard reaches in the window's modal surfaces", () => {
     expect(await reachableByKeyboard()).toEqual([
       'button "Cancel"',
       'button "Approve and start"',
+      'option "No persona"',
       'radio "claude"',
-      'radio "None"',
-      'checkbox "Draw purlis\'s footer in this chat"',
       'input "Name"',
+      'checkbox "Draw purlis\'s footer in this chat"',
     ]);
   });
 
@@ -336,7 +337,7 @@ describe("what a keyboard reaches in the window's modal surfaces", () => {
     // Cancel is focused on opening and `Start` stands just after it in the footer (#2910) —
     // one Tab, and it is the press the engine used to refuse.
     await tab();
-    expect(screen.getByRole("button", { name: "Start" })).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Start chat" })).toHaveFocus();
     await userEvent.keyboard("{Enter}");
 
     expect(started).toEqual([{ profile: "claude", persona: null, footer: false }]);
@@ -859,12 +860,12 @@ describe("what a keyboard reaches in the window's modal surfaces", () => {
     // last in the footer, #2910) lands on the first, by the dialog's own move, and never on
     // `<body>`.
     picker();
-    const start = screen.getByRole("button", { name: "Start" });
+    const start = screen.getByRole("button", { name: "Start chat" });
     await act(async () => start.focus());
 
     await tab();
 
     expect(document.activeElement).not.toBe(document.body);
-    await waitFor(() => expect(screen.getByRole("radio", { name: "claude" })).toHaveFocus());
+    await waitFor(() => expect(screen.getByRole("option", { name: "steward" })).toHaveFocus());
   });
 });

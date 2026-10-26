@@ -42,7 +42,20 @@ async fn operate() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    purlis_cluster_operator::run(client).await;
+    // Mounted from its Secret by the kubelet: the operator reads no Secret itself (#2056).
+    let path = purlis_cluster_operator::vouch::SIGNING_KEY_PATH;
+    let signing = match std::fs::read_to_string(path)
+        .map_err(|error| error.to_string())
+        .and_then(|pem| purlis_cluster_operator::vouch::SigningKey::from_pem(&pem))
+    {
+        Ok(signing) => signing,
+        Err(error) => {
+            tracing::error!(%error, %path, "no signing key: the operator vouches for no runner without one (docs/cluster-operator.md)");
+            return ExitCode::FAILURE;
+        }
+    };
+    tracing::info!(signing_key = %signing.public(), "signing runners' link keys");
+    purlis_cluster_operator::run(client, signing).await;
     ExitCode::SUCCESS
 }
 

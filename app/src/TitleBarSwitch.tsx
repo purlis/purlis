@@ -14,7 +14,7 @@ import {
 } from "react";
 import { House, Plus } from "lucide-react";
 import { OUTSIDE, OUTSIDE_TITLE } from "./actions";
-import { theChatKeepsIt } from "./Palette";
+import { pressed } from "./keys/registry";
 import { onAMac } from "./tabKeys";
 import { type ReportedWorkspaces } from "./planeReport";
 import { moves } from "./workspaceSlide";
@@ -39,7 +39,6 @@ import {
   WorkspaceChip,
 } from "./ui/titlebar/TitleBarWorkspaces";
 import {
-  opensTheWorkspaces,
   pinKeySaid,
   pinOfKey,
   projectsFound,
@@ -131,7 +130,7 @@ export function TitleBarSwitch({
   inFront: string;
   /** The rail is shown, so the bar names the project in words; hidden, the name switches. */
   railShown: boolean;
-  /** The palette is up: the keys are not this bar's (a dialog is found by `aModalIsUp`). */
+  /** The palette is up: the keys are not this bar's (a modal is the key registry's to find). */
   held?: boolean;
   does: SwitchDoes;
   /** A chip's context menu, around the chip: the workspace's rows of the catalogue. */
@@ -195,8 +194,15 @@ export function TitleBarSwitch({
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       const now = latest.current;
-      if (now.held || aModalIsUp()) return;
-      if (opensTheWorkspaces(e, now.mac)) {
+      // The keys and their context rules are the registry's (#2921): a modal that is up and the
+      // palette keep them; off a Mac a pin's Ctrl chord is a chat's while it has the keyboard; the
+      // popover's key is taken from a chat on purpose.
+      const hit = pressed(e, ["workspaces.open", "workspace.pin"], {
+        mac: now.mac,
+        palette: now.held === true,
+      });
+      if (hit === undefined) return;
+      if (hit.id === "workspaces.open") {
         e.preventDefault();
         e.stopPropagation();
         if (e.repeat) return;
@@ -212,8 +218,6 @@ export function TitleBarSwitch({
       }
       const place = pinOfKey(e, now.mac);
       if (place === undefined) return;
-      // Off a Mac, a Ctrl chord is the chat's while it has the keyboard (charter-app#106).
-      if (!now.mac && theChatKeepsIt(e)) return;
       const to = now.pins[place - 1];
       if (to === undefined) return;
       e.preventDefault();
@@ -714,16 +718,5 @@ function ProjectSwitcher({
       <PopoverRule />
       <PopoverFooter hints={PROJECT_KEYS} />
     </>
-  );
-}
-
-/**
- * Whether a dialog is up (the dialog family's, or an alert dialog): the title bar's keys are not
- * taken from under it. React Aria marks no dialog `aria-modal`, so the family's own root is what
- * is looked for. The switchers' own popovers are not dialogs of that family.
- */
-function aModalIsUp(): boolean {
-  return (
-    document.querySelector('[data-scope="dialog"][data-part="root"], [role="alertdialog"]') !== null
   );
 }

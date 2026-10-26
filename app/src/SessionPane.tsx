@@ -23,6 +23,8 @@ import { RECONNECTING_SAID, useReconnecting } from "./reconnecting";
 import { draw } from "./renderer";
 import { onScreenReaderMode, screenReaderMode } from "./screenReader";
 import { onAMac } from "./tabKeys";
+import { opensFind } from "./keys/findKeys";
+import { isKey } from "./keys/registry";
 import { moveAlong } from "./tabSequence";
 import { TerminalMenu, type PaneMenu } from "./TerminalMenu";
 import {
@@ -217,7 +219,7 @@ export function SessionPane({
     // them. Each is swallowed on every phase — keydown, keypress, keyup — so xterm sends
     // nothing of its own for it, and acted on once, at keydown.
     pane.attachCustomKeyEventHandler((event) => {
-      if (opensFind(event)) {
+      if (isKey(event, "chat.find")) {
         if (event.type === "keydown") {
           event.preventDefault();
           setFinding((open) => ({ search, asked: (open?.asked ?? 0) + 1 }));
@@ -246,7 +248,7 @@ export function SessionPane({
         }
         return false;
       }
-      if (newline !== undefined && isShiftEnter(event)) {
+      if (newline !== undefined && isKey(event, "chat.newline")) {
         if (event.type === "keydown") {
           event.preventDefault();
           // Through the terminal's own input, so it reaches the program by the one path
@@ -470,31 +472,8 @@ export function SessionPane({
  *  from here too, where every chat's terminal follows it. */
 export { screenReaderMode, setScreenReaderMode } from "./screenReader";
 
-/**
- * **Whether this key opens the find bar: `⌘F` on a Mac, `Ctrl+Shift+F` everywhere else.**
- *
- * One modifier per platform, as the text-size keys are (`textSize.sizeKey`), and for the rule
- * `docs/ui-primitives.md` holds every claimed key to. xterm.js 6.0.0 sends nothing for a
- * `⌘`-chord but `⌘A`, so `⌘F` takes nothing from the chat. `Ctrl+F` would: it is `\x06`,
- * readline's forward-char, in the shell every chat starts in — so off a Mac the chord adds
- * `Shift`, as GNOME Terminal and Konsole do for their own find, and xterm sends nothing for a
- * `Ctrl+Shift` letter. A Mac's `Ctrl+F` stays the shell's too.
- */
-export function opensFind(event: globalThis.KeyboardEvent, mac: boolean = onAMac()): boolean {
-  if (event.key !== "f" && event.key !== "F") return false;
-  if (event.altKey) return false;
-  return mac
-    ? event.metaKey && !event.ctrlKey && !event.shiftKey
-    : event.ctrlKey && event.shiftKey && !event.metaKey;
-}
-
-/** Shift+Enter and nothing else held. xterm.js 6.0.0 ignores Shift on Enter and sends a bare
- *  CR — the same byte as Enter, which is why every harness submitted on it. */
-function isShiftEnter(event: globalThis.KeyboardEvent): boolean {
-  return (
-    event.key === "Enter" && event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey
-  );
-}
+/** The find bar's key, read by the key registry too (#2921): `keys/findKeys.ts`. */
+export { opensFind };
 
 /**
  * **How the keyboard leaves a chat's terminal: Ctrl+Tab forwards, Ctrl+Shift+Tab backwards**
@@ -518,7 +497,7 @@ function isShiftEnter(event: globalThis.KeyboardEvent): boolean {
  * Tab walks (`tabSequence.ts`).
  */
 export function leavesTheChat(event: KeyboardEvent<HTMLElement>) {
-  if (event.key !== "Tab" || !event.ctrlKey || event.metaKey || event.altKey) return;
+  if (!isKey(event.nativeEvent, "chat.leave")) return;
   event.preventDefault();
   event.stopPropagation();
   moveAlong(event.currentTarget, event.shiftKey);

@@ -8,9 +8,10 @@ name: cluster operator
 # Kubernetes purlis supports with the pinned upstream agent-sandbox, the operator installed by its
 # Helm chart, and a runner image built from this commit (`operator/e2e/kind.sh`).
 #
-# Only a change to the operator, the runner image, the toolchain, the licence and advisory
-# rules or this file runs it on a pull request, so every other pull request waits on none of
-# it; it also runs nightly on `main`. It publishes nothing and holds no write permission.
+# Only a change to the operator, the runner image, the desktop's side of a cluster runner, the
+# toolchain, the licence and advisory rules or this file runs it on a pull request, so every
+# other pull request waits on none of it; it also runs nightly on `main`. It publishes nothing
+# and holds no write permission.
 
 on:
   pull_request:
@@ -23,6 +24,12 @@ on:
       - .github/actions/helm/**
       - tools/operator-install*
       - .github/workflows/operator.yml
+      # The desktop's side of a cluster runner, which the kind run checks too (#2056).
+      - crates/purlis-core/src/clusterpool*
+      - crates/purlis-core/src/runnerlink*
+      - crates/purlis-core/tests/a_chat_runs_on_a_cluster_runner_through_kubectl_exec.rs
+      - crates/purlis-cli/src/bridge.rs
+      - fixtures/runner-link-key/**
   push:
     branches: [main]
     paths:
@@ -34,6 +41,12 @@ on:
       - .github/actions/helm/**
       - tools/operator-install*
       - .github/workflows/operator.yml
+      # The desktop's side of a cluster runner, which the kind run checks too (#2056).
+      - crates/purlis-core/src/clusterpool*
+      - crates/purlis-core/src/runnerlink*
+      - crates/purlis-core/tests/a_chat_runs_on_a_cluster_runner_through_kubectl_exec.rs
+      - crates/purlis-cli/src/bridge.rs
+      - fixtures/runner-link-key/**
   # Nightly, so a new advisory against the operator's own lock, or a change elsewhere that
   # breaks the runner image the kind run builds, is reported though nothing here changed.
   schedule:
@@ -94,7 +107,8 @@ jobs:
   kind:
     name: operator on a kind cluster
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    # It also builds and runs the desktop's side of a cluster runner from the root workspace.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

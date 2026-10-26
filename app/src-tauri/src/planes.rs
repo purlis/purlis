@@ -743,12 +743,16 @@ impl Held {
         // smart-close pass is issued on** (#1332): the line read from their own keys, never
         // what the chat reports (#1361). Marked before the bytes are sent, so it is there
         // before the hook the prompt fires can be.
-        let submitted =
-            self.closing
-                .person_typed(session, bytes, std::time::Instant::now(), || {
-                    let glance = self.board().glance(session);
-                    glance.state == purlis_core::state::State::Waiting && !glance.asking
-                });
+        let submitted = self.closing.person_typed(
+            session,
+            bytes,
+            std::time::Instant::now(),
+            self.chats.harness(session),
+            || {
+                let glance = self.board().glance(session);
+                glance.state == purlis_core::state::State::Waiting && !glance.asking
+            },
+        );
         // And a prompt the person sends a dispatched task is what its report says of them: that
         // they stepped in, and nothing of what they typed (#1442, #1463).
         crate::dispatched::person_typed(self, session, bytes, submitted);

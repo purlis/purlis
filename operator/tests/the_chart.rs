@@ -131,8 +131,10 @@ const OPERATOR_HEADER: &str = "# Copyright 2026 Purlis
 # operator's digest (docs/cluster-operator.md).
 #
 # What it may do is the ClusterRole below and nothing else. It holds no right to exec or attach
-# to a pod, reads no Secret, and never touches a pod at all: upstream's controller makes the
-# runners' pods. operator/tests/the_install_manifests.rs holds every rule.
+# to a pod and none to read a Secret, and it only reads a runner's pod by name, for the link key
+# it vouches for: upstream's controller makes the runners' pods. Its own signing key is a
+# Secret the kubelet mounts in its pod, made before it is installed (docs/cluster-operator.md).
+# operator/tests/the_install_manifests.rs holds every rule.
 ---
 # The namespace the chart is installed in, which Helm leaves to the person: only pods that meet
 # the restricted Pod Security Standard are admitted in it.
