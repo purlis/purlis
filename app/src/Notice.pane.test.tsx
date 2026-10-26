@@ -467,13 +467,10 @@ describe("Ask {persona}'s rules", () => {
     /\/\*[\s\S]*?\*\//g,
     "",
   );
-  const rule = (selector: string) =>
-    new RegExp(`(^|[},])\\s*${selector}\\s*\\{([^}]*)\\}`).exec(css)?.[2] ?? "";
 
   it("draws the box you write in as every list field: the row's width, growing with its lines", () => {
     // The shared list field (DS-10, `ListField.test.tsx`) is the whole of it: no rule of the
     // dialog's own sizes it.
-    expect(rule("\\.ask-persona \\.ui-setting-control > textarea\\.ui-field")).toBe("");
     expect(css).not.toMatch(/\.ask-persona[^{]*textarea/);
   });
 

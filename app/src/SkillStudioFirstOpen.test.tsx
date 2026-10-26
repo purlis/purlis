@@ -38,6 +38,8 @@ const secrets = {
   folder: "/app/plugin/skills/secrets",
   compat: [],
   lint: [],
+  hidden: [],
+  pinned: false,
   written: "purlis:secrets",
   named: false,
   unchecked: null,

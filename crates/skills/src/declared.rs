@@ -85,6 +85,30 @@ impl Given {
             Given::Named(named)
         }
     }
+
+    /// **What was given, in plain words**: `name: value; …` with `none` for a value left empty,
+    /// the one line as it was given, or `None` for nothing. What a harness that substitutes no
+    /// arguments is passed, and what a skill started through `skill_load` is (SK-15).
+    pub fn in_words(&self) -> Option<String> {
+        match self {
+            Given::Nothing => None,
+            Given::Raw(line) => Some(line.clone()),
+            Given::Named(values) => Some(
+                values
+                    .iter()
+                    .map(|one| {
+                        let value = if one.value.is_empty() {
+                            "none"
+                        } else {
+                            &one.value
+                        };
+                        format!("{}: {value}", one.name)
+                    })
+                    .collect::<Vec<_>>()
+                    .join("; "),
+            ),
+        }
+    }
 }
 
 /// The key that makes a skill manual-only.
