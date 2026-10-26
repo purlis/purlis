@@ -342,6 +342,12 @@ pub fn widen(own: &mut Own, widened: &super::Widened) -> Result<(), &'static str
     for port in &widened.ports {
         own.after.push(super::localport::seatbelt_rule(*port));
     }
+    // Each port a person let this chat listen on (#2019): bound and accepted on the loopback
+    // alone, never another interface.
+    for port in &widened.listens {
+        own.after
+            .extend(super::localport::listen_rules(*port).into_iter().take(2));
+    }
     Ok(())
 }
 

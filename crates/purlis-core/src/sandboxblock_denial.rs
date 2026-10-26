@@ -134,7 +134,14 @@ impl<'a> Denial<'a> {
                 Kind::LocalService
             }
             Operation::Connect => Kind::Host,
-            Operation::Other => Kind::System,
+            // A server's port on this Mac (#2019): whatever interface it asked for, the port is
+            // named, and only the loopback is ever allowed.
+            Operation::Listen
+                if crate::sandbox::localport::listened_port(self.target).is_some() =>
+            {
+                Kind::LocalService
+            }
+            Operation::Listen | Operation::Other => Kind::System,
             _ if self.target.is_empty() => Kind::System,
             _ => super::kind_of_in(Path::new(self.target), place, temp),
         };

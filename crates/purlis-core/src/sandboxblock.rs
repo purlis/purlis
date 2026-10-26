@@ -119,6 +119,9 @@ pub enum Operation {
     Connect,
     /// Reach a system service by name (macOS's `mach-lookup`).
     Lookup,
+    /// Listen on a port of this machine (`network-bind`, `network-inbound`; #2019): a server
+    /// the chat started.
+    Listen,
     /// Start a program.
     Run,
     /// Something done to a file that the report does not say: a bare "Operation not permitted".
@@ -129,11 +132,12 @@ pub enum Operation {
 
 impl Operation {
     /// Every operation, in the order a count lists them.
-    pub const ALL: [Operation; 7] = [
+    pub const ALL: [Operation; 8] = [
         Self::Write,
         Self::Read,
         Self::Connect,
         Self::Lookup,
+        Self::Listen,
         Self::Run,
         Self::File,
         Self::Other,
@@ -146,6 +150,7 @@ impl Operation {
             Self::Read => "read",
             Self::Connect => "connect",
             Self::Lookup => "lookup",
+            Self::Listen => "listen",
             Self::Run => "run",
             Self::File => "file",
             Self::Other => "other",
@@ -157,9 +162,9 @@ impl Operation {
         Self::ALL.into_iter().find(|op| op.word() == word)
     }
 
-    /// The operation a Seatbelt word names: `file-write-create`, `network-outbound`, …. Of
-    /// the network's words only a connection out is one: a refused listen on a port
-    /// (`network-bind`, `network-inbound`) is of this machine's own port, and no host's.
+    /// The operation a Seatbelt word names: `file-write-create`, `network-outbound`, …. A
+    /// refused listen on a port (`network-bind`, `network-inbound`) is of this machine's own
+    /// port, and no host's (#2019).
     fn of_seatbelt(word: &str) -> Self {
         if word.starts_with("file-write") {
             Self::Write
@@ -169,6 +174,8 @@ impl Operation {
             Self::Connect
         } else if word.starts_with("mach-lookup") {
             Self::Lookup
+        } else if word.starts_with("network-bind") || word.starts_with("network-inbound") {
+            Self::Listen
         } else if word.starts_with("process-exec") {
             Self::Run
         } else if word.starts_with("file-") {
@@ -185,6 +192,7 @@ impl Operation {
             Self::Read => "a read of",
             Self::Connect => "a connection to",
             Self::Lookup => "a lookup of",
+            Self::Listen => "listening on",
             Self::Run => "starting a program in",
             Self::File => "a file operation in",
             Self::Other => "an operation on",
@@ -358,6 +366,10 @@ impl Block {
             return "a lookup of an internet host by a program that does not go through the \
                     sandbox's proxy"
                 .to_owned();
+        }
+        // A server the chat started, on a port of this Mac (#2019).
+        if (self.operation, self.kind) == (Operation::Listen, Kind::LocalService) {
+            return "listening on a port of this Mac".to_owned();
         }
         // Likewise a connection to an address dialled past the proxy (#2423).
         if (self.operation, self.kind) == (Operation::Connect, Kind::Address) {
@@ -1221,6 +1233,15 @@ fn target_of(block: &Block, named: &str, place: &Place<'_>) -> Option<String> {
                 .ok()
                 .map(|port| port.to_string())
         }
+        // A port to listen on (#2019), from the address the server asked for or the port
+        // alone, judged as a grant judges one.
+        (Operation::Listen, Kind::LocalService) => {
+            let port = crate::sandbox::localport::listened_port(named)
+                .map_or_else(|| named.to_owned(), |port| port.to_string());
+            crate::sandbox::localport::port(&port)
+                .ok()
+                .map(|port| port.to_string())
+        }
         // The certificate check is one service, whatever the line said of it.
         (Operation::Lookup, Kind::CertificateCheck) => {
             Some(crate::sandbox::services::TRUSTD.to_owned())
@@ -1326,7 +1347,7 @@ fn names_a_lookup(block: &Block) -> bool {
         (block.operation, block.kind),
         (Operation::Lookup, Kind::Host)
             | (Operation::Connect, Kind::LocalSocket)
-            | (Operation::Connect, Kind::LocalService)
+            | (Operation::Connect | Operation::Listen, Kind::LocalService)
             | (Operation::Lookup, Kind::CertificateCheck)
     )
 }
@@ -1693,6 +1714,14 @@ fn network_refusal_on(line: &str, docker_words: bool) -> Option<(Operation, Kind
             Some(port.to_string()),
         ));
     }
+    // A server the chat started, refused its port (#2019): Node's or Go's `EPERM` on listening.
+    if let Some(port) = crate::sandbox::localport::listen_refused_in(line) {
+        return Some((
+            Operation::Listen,
+            Kind::LocalService,
+            Some(port.to_string()),
+        ));
+    }
     // A local socket: Go's dial refused by the sandbox (`EPERM`), on any platform; or Docker's
     // client in its own words where the sandbox says them (#1637). A socket's own file mode
     // (`EACCES`, "connect: permission denied") is never the sandbox's.
@@ -1771,16 +1800,27 @@ fn a_host_word(word: &str) -> bool {
 /// in the failure's `error`, which is read here. Without the ending, no Notice came up for it.
 fn ends_as_a_refusal(line: &str) -> bool {
     let lower = line.trim().trim_end_matches('.').to_ascii_lowercase();
-    const ENDINGS: [&str; 7] = [
+    const ENDINGS: [&str; 8] = [
         "nodename nor servname provided, or not known",
         ": no such host",
         "connect: operation not permitted",
+        "bind: operation not permitted",
         "connect tunnel failed, response 403",
         "blocked by network allowlist",
         "or host of this project lists it",
         "x509: osstatus -26276",
     ];
     if ENDINGS.iter().any(|ending| lower.ends_with(ending)) {
+        return true;
+    }
+    // Node's refused listen ends with the address it asked for: `listen EPERM: operation not
+    // permitted 127.0.0.1:3000` (#2019).
+    if lower.contains("listen eperm: ")
+        && crate::sandbox::localport::listen_refused_in(line).is_some()
+        && lower
+            .rsplit_once(' ')
+            .is_some_and(|(_, last)| crate::sandbox::localport::listened_port(last).is_some())
+    {
         return true;
     }
     // Node's refused connect ends with its own local address: `connect EPERM 127.0.0.1:5432 -
@@ -1909,7 +1949,10 @@ pub fn printed_port(payload: &serde_json::Value) -> Option<u16> {
     .into_iter()
     .flatten()
     .flat_map(str::lines)
-    .find_map(crate::sandbox::localport::refused_in)
+    .find_map(|line| {
+        crate::sandbox::localport::refused_in(line)
+            .or_else(|| crate::sandbox::localport::listen_refused_in(line))
+    })
 }
 
 /// The kind of `path`, read against `place` and never kept, with this process's temporary

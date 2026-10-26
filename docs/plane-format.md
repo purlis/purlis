@@ -4087,7 +4087,9 @@ write into this folder cannot make its own text arrive as the person's.
   up by name; a `com.apple.trustd.agent` an older build kept here is read and grants nothing,
   since the certificate check is the project's own setting now) and `ports_mine` (the services
   on this Mac you let every chat of the project connect to, each by its one loopback port, from a
-  block's Notice or Settings' Network page). One
+  block's Notice or Settings' Network page) and `listens_mine` (the ports of this Mac's loopback
+  you let every chat of the project listen on, each by its one port, from a block's Notice;
+  #2019). One
   file per clone, under
   purlis's folder in the config home (`$PURLIS_CONFIG_HOME`, `$XDG_CONFIG_HOME` or `~/.config`,
   then `purlis/`), which every chat is denied writing; `0700` folder.

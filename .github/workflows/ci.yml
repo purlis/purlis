@@ -1038,7 +1038,7 @@ jobs:
           BASE: ${{ steps.base.outputs.sha }}
         run: |
           changed=$(git diff --name-only "$BASE" HEAD)
-          if echo "$changed" | grep -qE '^(crates/studio-probe/|\.github/actions/studio-probe-names/|crates/purlis-core/src/(executor|extension)(\.rs|/)|crates/purlis-core/src/sandbox/(seatbelt|egress|reach|wrapper|hosts)(\.rs|/)|crates/purlis-core/tests/a_sandboxed_chat_listens_nowhere_under_seatbelt\.rs|Cargo\.lock$|rust-toolchain\.toml$)'; then
+          if echo "$changed" | grep -qE '^(crates/studio-probe/|\.github/actions/studio-probe-names/|crates/purlis-core/src/(executor|extension)(\.rs|/)|crates/purlis-core/src/sandbox/(seatbelt|egress|reach|wrapper|hosts|localport)(\.rs|/)|crates/purlis-core/tests/a_sandboxed_chat_listens_nowhere_under_seatbelt\.rs|Cargo\.lock$|rust-toolchain\.toml$)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "::notice::the studio confinement has not changed; not run"
@@ -1061,6 +1061,11 @@ jobs:
       - name: A wrapped chat listens nowhere, confined by Seatbelt
         if: steps.scope.outputs.run == 'true'
         run: cargo test --locked -p purlis-core --test a_sandboxed_chat_listens_nowhere_under_seatbelt
+      # A chat allowed to listen on one port, under its own compiled profile for real (#2019):
+      # what it may bind, listen on and accept, and what it may not.
+      - name: Listening on a port, confined by Seatbelt
+        if: steps.scope.outputs.run == 'true'
+        run: cargo test --locked -p purlis-core --lib -- sandbox::localport::tests::under_seatbelt
       # Which of the confined profile's parts the probe needs to start, each tried on its own.
       # What Seatbelt refused while the probe ran, from the system's log, for a red run's reader.
       - name: What the sandbox refused

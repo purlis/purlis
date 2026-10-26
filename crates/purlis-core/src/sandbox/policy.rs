@@ -540,7 +540,7 @@ impl Locks {
             }),
             grant::What::Write(_) => self.write_grants_refused(),
             grant::What::Socket(_) | grant::What::Service(_) => self.socket_grants_refused(),
-            grant::What::Port(_) => self.port_grants_refused(),
+            grant::What::Port(_) | grant::What::Listen(_) => self.port_grants_refused(),
         }
     }
 
@@ -581,7 +581,7 @@ impl Locks {
         let locked = match what {
             grant::What::Write(_) => self.write_grants_refused(),
             grant::What::Socket(_) | grant::What::Service(_) => self.socket_grants_refused(),
-            grant::What::Port(_) => self.port_grants_refused(),
+            grant::What::Port(_) | grant::What::Listen(_) => self.port_grants_refused(),
             grant::What::Host(_) => None,
         };
         let a_list_of_hosts = matches!(what, grant::What::Host(_))

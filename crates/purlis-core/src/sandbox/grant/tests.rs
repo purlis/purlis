@@ -785,6 +785,97 @@ fn a_port_on_this_mac_allowed_for_a_chat_reaches_its_start_as_that_port_alone() 
     assert!(!other.reach.lists_exactly(loopback, 50795));
 }
 
+/// #2019: a port a chat was allowed to listen on reaches its start alone: its sandbox binds and
+/// accepts on that port of the loopback and connects to it, and the port becomes a named local
+/// port of its reach, which its browser's lane carries by its literal address; another port
+/// stays refused to the chat and its browser.
+#[test]
+fn a_port_a_chat_may_listen_on_is_bound_reached_and_named_for_its_browser_alone() {
+    use crate::sandbox::browser_reach::{Lane, Refusal, Verdict};
+    let project = project();
+    let mut chat = Grants::default();
+    chat.add(&What::Listen(3000));
+    chat.add(&What::Listen(3000));
+    assert_eq!(chat.listens, vec![3000]);
+    assert!(!chat.is_empty());
+
+    let granted = compiled_with(&project, Os::MacOs, &chat);
+    assert_eq!(granted.widened.listens, vec![3000]);
+    assert_eq!(granted.widened.ports, vec![3000]);
+    let loopback: std::net::IpAddr = "127.0.0.1".parse().unwrap();
+    assert!(granted.reach.lists_exactly(loopback, 3000));
+    assert!(!granted.reach.lists_exactly(loopback, 3001));
+
+    let mut own_rules = crate::sandbox::seatbelt::Own::default();
+    crate::sandbox::seatbelt::widen(&mut own_rules, &granted.widened).expect("widens");
+    for rule in [
+        "(allow network-bind (local tcp \"localhost:3000\"))",
+        "(allow network-inbound (local tcp \"localhost:3000\"))",
+        "(allow network-outbound (remote ip \"localhost:3000\"))",
+    ] {
+        assert!(own_rules.after.contains(&rule.to_owned()), "{rule}");
+    }
+    assert!(
+        !own_rules
+            .after
+            .iter()
+            .any(|rule| rule.contains("network-bind") && !rule.contains("localhost:3000"))
+    );
+
+    let own: [std::net::IpAddr; 1] = ["192.0.2.10".parse().unwrap()];
+    let lane = Lane::of(granted.reach.clone());
+    assert!(matches!(
+        lane.decide("127.0.0.1", 3000, false, &own),
+        Verdict::Carry { .. }
+    ));
+    assert!(matches!(
+        lane.decide("::1", 3000, true, &own),
+        Verdict::Carry { .. }
+    ));
+    assert_eq!(
+        lane.decide("127.0.0.1", 3001, false, &own),
+        Verdict::Refused(Refusal::ThisMachine)
+    );
+
+    // A chat allowed nothing listens on nothing, and its browser reaches no port of this Mac.
+    let other = compiled_with(&project, Os::MacOs, &Grants::default());
+    assert!(other.widened.listens.is_empty());
+    assert_eq!(
+        Lane::of(other.reach).decide("127.0.0.1", 3000, false, &own),
+        Verdict::Refused(Refusal::ThisMachine)
+    );
+}
+
+/// #2019: a port allowed to listen on for this project on this machine reaches every chat's
+/// start there, and its Remove takes it off the next.
+#[test]
+fn a_port_to_listen_on_kept_for_this_project_reaches_every_chats_start() {
+    let project = project();
+    crate::sandbox::local::grant_listen(&project.root, 5173).expect("kept");
+    assert_eq!(
+        crate::sandbox::local::granted_listens(&project.root),
+        vec![5173]
+    );
+    let granted = compiled_with(&project, Os::MacOs, &Grants::default());
+    assert_eq!(granted.widened.listens, vec![5173]);
+    crate::sandbox::local::revoke_listen(&project.root, 5173).expect("removed");
+    let after = compiled_with(&project, Os::MacOs, &Grants::default());
+    assert!(after.widened.listens.is_empty());
+}
+
+#[test]
+fn a_listen_grant_is_told_and_audited_by_its_number() {
+    let what = What::Listen(3000);
+    assert_eq!(what.word(), "listen");
+    assert_eq!(what.target(), "3000");
+    assert!(what.machine_only());
+    assert!(!what.machine_wide());
+    assert_eq!(
+        what.to_string(),
+        "listening on port 3000 on this Mac only (127.0.0.1)"
+    );
+}
+
 #[test]
 fn a_port_grant_is_told_and_audited_by_its_number() {
     let what = What::Port(50795);

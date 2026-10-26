@@ -43,6 +43,8 @@ pub enum About {
     Service { service: String },
     /// A service on this Mac, by its one loopback port, its sandbox refused (qw384).
     Port { port: String },
+    /// Listening on one port of this Mac's loopback, its sandbox refused (#2019).
+    Listen { port: String },
     /// A vault its persona may not use.
     Vault { vault: String },
     /// A browser for the chat (#2013): the first browser tool it called asked the person what
@@ -79,6 +81,9 @@ impl About {
             What::Port(port) => Self::Port {
                 port: port.to_string(),
             },
+            What::Listen(port) => Self::Listen {
+                port: port.to_string(),
+            },
         }
     }
 
@@ -97,6 +102,15 @@ impl About {
                     code(port)
                 )
             }
+            // Where it listens and where its browser opens it, since only the loopback is
+            // allowed: a server started on every interface is still refused.
+            Self::Listen { port } => format!(
+                "listening on port {} on this Mac only (start the server on {}; its browser \
+                 opens {})",
+                code(port),
+                code(&format!("127.0.0.1:{port}")),
+                code(&format!("http://127.0.0.1:{port}"))
+            ),
             Self::Vault { vault } => format!("using vault {}", code(vault)),
             Self::BrowserSite { site } => {
                 format!("its browser going to and sending to {}", code(site))

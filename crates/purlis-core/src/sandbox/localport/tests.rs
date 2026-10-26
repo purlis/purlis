@@ -218,3 +218,165 @@ fn a_name_of_this_mac_names_its_port_and_no_other_name_does() {
         assert_eq!(named_port(never), None, "{never}");
     }
 }
+
+/// #2019: a server's own refusal to listen names the port it asked for, on this Mac's loopback
+/// or on every interface, and nothing else does.
+#[test]
+fn a_refused_listen_names_the_port_the_server_asked_for() {
+    for (line, port) in [
+        (
+            "Error: listen EPERM: operation not permitted 127.0.0.1:3000",
+            3000,
+        ),
+        ("Error: listen EPERM: operation not permitted :::5173", 5173),
+        (
+            "Error: listen EPERM: operation not permitted ::1:8080",
+            8080,
+        ),
+        ("listen EPERM: operation not permitted 0.0.0.0:4000", 4000),
+        (
+            "listen tcp 127.0.0.1:8080: bind: operation not permitted",
+            8080,
+        ),
+        ("listen tcp :9000: bind: operation not permitted", 9000),
+        ("listen tcp [::1]:9001: bind: operation not permitted", 9001),
+        (
+            "listen tcp4 0.0.0.0:9002: bind: operation not permitted",
+            9002,
+        ),
+    ] {
+        assert_eq!(listen_refused_in(line), Some(port), "{line}");
+    }
+    for never in [
+        // Another machine's address, a port already taken, a privileged port's own error, a
+        // connect, and a port of zero.
+        "listen tcp 192.168.1.5:3000: bind: operation not permitted",
+        "Error: listen EADDRINUSE: address already in use 127.0.0.1:3000",
+        "listen tcp 127.0.0.1:80: bind: permission denied",
+        "dial tcp 127.0.0.1:3000: connect: operation not permitted",
+        "listen tcp 127.0.0.1:0: bind: operation not permitted",
+        "Error: listen EPERM: operation not permitted",
+    ] {
+        assert_eq!(listen_refused_in(never), None, "{never}");
+    }
+}
+
+/// #2019: listening on a port is allowed on this Mac's loopback alone, at that one port, and
+/// the chat may connect to its own server there.
+#[test]
+fn a_port_a_chat_may_listen_on_is_bound_accepted_and_reached_on_the_loopback_alone() {
+    assert_eq!(
+        listen_rules(3000),
+        [
+            "(allow network-bind (local tcp \"localhost:3000\"))".to_owned(),
+            "(allow network-inbound (local tcp \"localhost:3000\"))".to_owned(),
+            "(allow network-outbound (remote ip \"localhost:3000\"))".to_owned(),
+        ]
+    );
+}
+
+/// **Under Seatbelt, for real** (#2019): what a chat allowed to listen on one port can bind,
+/// listen on and accept, tried by a small Perl program inside the chat's own compiled profile.
+/// It prints `yes` when every step worked, or the step that was refused.
+#[cfg(target_os = "macos")]
+mod under_seatbelt {
+    use super::super::super::{Widened, backend, seatbelt};
+
+    /// The Perl program: a socket of family `4` or `6` and type `stream` or `dgram`, bound to
+    /// `address` on `port` (or not bound at all, for `listen-only`), then listened on, connected
+    /// to and accepted from.
+    const TRY: &str = r#"
+use Socket qw(:all);
+my ($family, $type, $address, $port, $mode) = @ARGV;
+my $af = $family eq "6" ? AF_INET6 : AF_INET;
+my $st = $type eq "dgram" ? SOCK_DGRAM : SOCK_STREAM;
+my $at = sub { $af == AF_INET6 ? pack_sockaddr_in6($_[0], inet_pton(AF_INET6, $address))
+                               : pack_sockaddr_in($_[0], inet_aton($address)) };
+socket(my $s, $af, $st, 0) or do { print "socket\n"; exit };
+setsockopt($s, SOL_SOCKET, SO_REUSEADDR, 1);
+if ($mode ne "listen-only") { bind($s, $at->($port)) or do { print "bind\n"; exit } }
+if ($st == SOCK_DGRAM) { print "yes\n"; exit }
+listen($s, 4) or do { print "listen\n"; exit };
+if ($mode eq "listen-only") { print "yes\n"; exit }
+socket(my $c, $af, SOCK_STREAM, 0) or do { print "client\n"; exit };
+connect($c, $at->($port)) or do { print "connect\n"; exit };
+accept(my $in, $s) or do { print "accept\n"; exit };
+print "yes\n";
+"#;
+
+    fn can_apply() -> bool {
+        crate::forklock::status(std::process::Command::new(backend::SANDBOX_EXEC).args([
+            "-p",
+            "(version 1)(allow default)",
+            "/usr/bin/true",
+        ]))
+        .is_ok_and(|status| status.success())
+    }
+
+    /// A port nothing listens on now.
+    fn free_port() -> u16 {
+        std::net::TcpListener::bind(("127.0.0.1", 0))
+            .and_then(|listener| listener.local_addr())
+            .expect("a free port")
+            .port()
+    }
+
+    #[test]
+    fn a_chat_listens_on_its_one_port_on_this_mac_only_and_nowhere_else() {
+        if !can_apply() {
+            eprintln!("skipped: this process is already sandboxed, so no second profile applies");
+            return;
+        }
+        let port = free_port();
+        let cwd = tempfile::tempdir().expect("a folder");
+        let tmp = tempfile::tempdir().expect("a temp folder");
+        let mut own = seatbelt::Own::default();
+        seatbelt::widen(
+            &mut own,
+            &Widened {
+                ports: vec![port],
+                listens: vec![port],
+                ..Widened::default()
+            },
+        )
+        .expect("widens");
+        let profile =
+            seatbelt::profile(&[], &own, cwd.path(), tmp.path(), &[], None).expect("a profile");
+        let tried = |family: &str, kind: &str, address: &str, port: u16, mode: &str| -> String {
+            let out = crate::forklock::output(
+                std::process::Command::new(backend::SANDBOX_EXEC)
+                    .args([
+                        "-p",
+                        &profile,
+                        "/usr/bin/perl",
+                        "-e",
+                        TRY,
+                        family,
+                        kind,
+                        address,
+                    ])
+                    .arg(port.to_string())
+                    .arg(mode)
+                    .current_dir(cwd.path()),
+            )
+            .expect("it runs");
+            String::from_utf8_lossy(&out.stdout).trim().to_owned()
+        };
+        assert_eq!(tried("4", "stream", "127.0.0.1", port, "serve"), "yes");
+        assert_eq!(tried("6", "stream", "::1", port, "serve"), "yes");
+        assert_eq!(
+            tried("6", "stream", "::ffff:0.0.0.0", port, "serve"),
+            "bind"
+        );
+        assert_eq!(
+            tried("4", "stream", "127.0.0.1", port.wrapping_add(1), "serve"),
+            "bind"
+        );
+        assert_eq!(tried("4", "dgram", "127.0.0.1", port, "serve"), "bind");
+        assert_eq!(
+            tried("4", "stream", "127.0.0.1", port, "listen-only"),
+            "listen"
+        );
+        assert_eq!(tried("6", "stream", "::1", port, "listen-only"), "listen");
+    }
+}

@@ -951,7 +951,7 @@ fn past_the_proxy(block: &purlis_core::sandboxblock::Block) -> bool {
 /// ([`ChatBlocked::suggested`], qw384): none for any other Notice, and none that is no port a
 /// grant could name.
 fn suggested_port(told: &ChatBlocked, suggested: Option<&str>) -> Option<String> {
-    (told.offer == BlockOffer::Port && told.target.is_none())
+    (matches!(told.offer, BlockOffer::Port | BlockOffer::Listen) && told.target.is_none())
         .then(|| purlis_core::sandbox::localport::port(suggested?).ok())
         .flatten()
         .map(|port| port.to_string())
@@ -1113,6 +1113,14 @@ fn allowed_already(
                 false,
             )?
         }
+        BlockOffer::Listen => {
+            let port: u16 = target?.parse().ok()?;
+            in_force(
+                grant::What::Listen(port),
+                local::granted_listens(root).contains(&port),
+                false,
+            )?
+        }
         BlockOffer::Service => {
             let target = target?;
             in_force(
@@ -1170,7 +1178,7 @@ fn scopes_ruled_out(
         BlockOffer::Socket | BlockOffer::Service => {
             &[Level::Once, Level::Machine, Level::Chat, Level::You]
         }
-        BlockOffer::Write | BlockOffer::Port => &[Level::Chat, Level::You],
+        BlockOffer::Write | BlockOffer::Port | BlockOffer::Listen => &[Level::Chat, Level::You],
         _ => return None,
     };
     locks.scopes_removed(offered)
@@ -1193,6 +1201,10 @@ pub enum BlockOffer {
     /// allowing it means. [`ChatBlocked::target`] is null where the refusal named no port, which
     /// the person types.
     Port,
+    /// Allow listening on one port of this Mac's loopback (#2019): [`ChatBlocked::route`] says
+    /// what allowing it means. [`ChatBlocked::target`] is null where the refusal named no port,
+    /// which the person types.
+    Listen,
     /// Never granted, and there is a way that works: [`ChatBlocked::route`] says it.
     Brokered,
     /// Not something purlis grants a chat (off the allowlist, a socket it cannot name): the person may
@@ -1209,6 +1221,25 @@ pub enum BlockOffer {
     /// new. [`ChatBlocked::route`] says so and that this chat reaches it once it restarts; the
     /// Notice offers Restart this chat.
     Allowed,
+}
+
+impl BlockOffer {
+    /// **What an Allow on this offer grants**, of the kinds a block names: none for an offer
+    /// with no Allow of its own.
+    pub(crate) fn granted(self) -> Option<crate::sandboxing::GrantWhat> {
+        use crate::sandboxing::GrantWhat;
+        Some(match self {
+            Self::Host => GrantWhat::Host,
+            Self::Write => GrantWhat::Write,
+            Self::Socket => GrantWhat::Socket,
+            Self::Service => GrantWhat::Service,
+            Self::Port => GrantWhat::Port,
+            Self::Listen => GrantWhat::Listen,
+            Self::Brokered | Self::Unsandboxed | Self::None | Self::Policy | Self::Allowed => {
+                return None;
+            }
+        })
+    }
 }
 
 /// What a block's Notice offers once `locks`, an administrator's policy (#1343), have their say
@@ -1305,11 +1336,12 @@ fn held(
         }
         // A service on this Mac (qw384): for this chat, or for every chat of this project on
         // this machine, each a policy leaves open; never once, never the project's.
-        BlockOffer::Port => {
+        // A port to listen on (#2019) at the same two scopes, held by the same lock.
+        BlockOffer::Port | BlockOffer::Listen => {
             let named = target
                 .as_deref()
                 .and_then(|port| port.parse::<u16>().ok())
-                .map(What::Port);
+                .and_then(|port| offer.granted()?.of_port(port));
             let mut why = locks.port_grants_refused();
             let levels: Vec<GrantLevel> = [GrantLevel::Chat, GrantLevel::You]
                 .into_iter()
@@ -1515,6 +1547,24 @@ fn offered_to(
                 }
             }
         }
+        // A server the chat started, on a port of this Mac (#2019): Allow listening there,
+        // naming its port where the refusal named one, or the port the person types; never
+        // purlis's own.
+        (Operation::Listen, Kind::LocalService) => {
+            let said = format!(
+                "Allowing it {}. A server started on every interface (0.0.0.0) is still \
+                 refused: start it on 127.0.0.1.",
+                purlis_core::sandbox::localport::LISTEN_RISK
+            );
+            match target.map(purlis_core::sandbox::localport::port) {
+                None => (BlockOffer::Listen, None, Some(said)),
+                Some(Ok(port)) => (BlockOffer::Listen, Some(port.to_string()), Some(said)),
+                Some(Err(grant::Refused::Never(why))) => (BlockOffer::Brokered, None, Some(why)),
+                Some(Err(grant::Refused::Outside(why) | grant::Refused::Not(why))) => {
+                    (BlockOffer::Listen, None, Some(why))
+                }
+            }
+        }
         // A service of the runner the chat runs on, which its runner asks about (#2510): Allow,
         // naming its port, for this chat alone there. Its runner's name is said where the
         // window knows it ([`on_its_runner`]).
@@ -1687,6 +1737,12 @@ fn for_its_harness(
         );
         return (offer, target, why);
     }
+    // A port to listen on (#2019): Claude Code's sandbox lets a command bind every loopback
+    // port or none, never one, so nothing purlis allows reaches it there.
+    if offer == BlockOffer::Listen && claude {
+        let (offer, _, why) = without_the_sandbox(CLAUDE_CODE_LISTEN_SAID);
+        return (offer, target, why);
+    }
     // A service on this Mac (qw384b): Claude Code's sandbox takes no one port, so its chat is
     // carried the port by name through purlis's proxy, and the Notice says how it is reached.
     if offer == BlockOffer::Port && claude {
@@ -1708,6 +1764,16 @@ pub const CLAUDE_CODE_PORT_SAID: &str = "In a Claude Code chat a command reaches
      curl https://this-mac.internal:<port>, or kubectl once Point kubectl at it gives this chat \
      its own copy of a context on this Mac. A program that uses no proxy, such as psql or \
      redis-cli, cannot reach it.";
+
+/// Why a Claude Code chat cannot be allowed to listen on one port (#2019): its sandbox's
+/// `allowLocalBinding` lets a command bind every port of this machine or none, never one, and
+/// turning it on also lets the chat connect to every service on this machine; purlis never
+/// allows every port.
+pub const CLAUDE_CODE_LISTEN_SAID: &str = "Claude Code's sandbox can let a command listen on \
+     every port of this Mac or on none, never on one alone, and letting it listen on every port \
+     also lets this chat reach every service on this Mac. So purlis cannot allow this one port \
+     for this chat. Start it without the sandbox, or start the server in a Codex or opencode \
+     chat, which can be allowed its one port.";
 
 /// Start without the sandbox, saying `why` nothing is allowed: the way out of a block no grant
 /// names (#1637), which an administrator's policy may still forbid ([`held`]).

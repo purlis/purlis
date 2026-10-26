@@ -676,6 +676,62 @@ describe("a service on this Mac's Notice (qw384)", () => {
   });
 });
 
+describe("a port to listen on's Notice (#2019)", () => {
+  const SERVER: ChatBlocked = {
+    ...UNNAMED,
+    harness: "codex",
+    operation: "listen",
+    kind: "local-service",
+    said: "listening on a port of this Mac",
+    offer: "listen",
+    target: "5173",
+    route:
+      "Allowing it lets this chat start a server on that port on this Mac only (127.0.0.1), " +
+      "and lets its commands and its browser reach whatever listens there, as you. Nothing on " +
+      "another machine reaches it, but any web page your own browser opens can, and opening it " +
+      "in your own browser hands it your cookies for the sites on this Mac. A server started on every interface (0.0.0.0) is still refused: " +
+      "start it on 127.0.0.1.",
+    levels: ["chat", "you"],
+  };
+
+  it("names the port, says it is this Mac only, and sends that one port", async () => {
+    const { sent } = drawn(SERVER);
+
+    expect(screen.getByText("5173")).toBeTruthy();
+    expect(screen.getAllByText(/start it on 127\.0\.0\.1/).length).toBeGreaterThan(0);
+    await userEvent.click(screen.getByRole("button", { name: "Allow only for this chat" }));
+
+    await waitFor(() =>
+      expect(sent("allow_sandbox_block")).toEqual([
+        {
+          plane: PLANE,
+          session: 4,
+          shown: { operation: "listen", kind: "local-service", what: "listen", target: "5173" },
+          level: "chat",
+        },
+      ]),
+    );
+  });
+
+  it("asks for a port the refusal did not name, pre-filled from the output to check", async () => {
+    const { sent } = drawn({ ...SERVER, target: null, suggested: "5173" });
+    const box = screen.getByRole("textbox", { name: "Port to allow" });
+    expect(box).toHaveValue("5173");
+    expect(box).toHaveAccessibleDescription(/from the command's output: check it/);
+    await userEvent.click(screen.getByRole("button", { name: "Allow only for this chat" }));
+    await waitFor(() =>
+      expect(sent("allow_sandbox_block")).toEqual([
+        {
+          plane: PLANE,
+          session: 4,
+          shown: { operation: "listen", kind: "local-service", what: "listen", target: "5173" },
+          level: "chat",
+        },
+      ]),
+    );
+  });
+});
+
 describe("an Allow that restarts the chat says beforehand what will end (#1986)", () => {
   const FOLDER: ChatBlocked = {
     ...UNNAMED,

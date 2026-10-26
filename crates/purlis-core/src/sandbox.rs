@@ -2487,6 +2487,30 @@ fn granted_hosts(
     )
 }
 
+/// **The ports of this Mac's loopback a chat in the project at `root` may listen on** (#2019):
+/// `chat`'s, then yours for this project on this machine, each at a scope `locks` leave open
+/// and with the layer that granted it. [`Widened::and_listens`] judges each again.
+fn granted_listens(
+    root: &Path,
+    chat: &grant::Grants,
+    locks: &policy::Locks,
+) -> Vec<(u16, reach::By)> {
+    let mut out: Vec<(u16, reach::By)> = chat
+        .listens
+        .iter()
+        .filter(|port| locks.keeps_scope(chat.level_of(&grant::What::Listen(**port))))
+        .map(|port| (*port, reach::By::Chat))
+        .collect();
+    if locks.keeps_scope(grant::Level::You) {
+        out.extend(
+            local::granted_listens(root)
+                .into_iter()
+                .map(|port| (port, reach::By::You)),
+        );
+    }
+    out
+}
+
 /// The folders a chat in the project at `root` may write besides its own: `chat`'s and the
 /// ones you let every chat write here, each judged again ([`grant::still_grantable`]); none
 /// where `locks` forbid write grants (#1343). The one place a chat's start and Settings' count
@@ -2546,6 +2570,7 @@ pub fn held_by_policy(root: &Path) -> Vec<HeldGrant> {
                 .filter_map(service),
         )
         .chain(local::granted_ports(root).into_iter().map(What::Port))
+        .chain(local::granted_listens(root).into_iter().map(What::Listen))
         .map(|what| (what, Level::You));
     let everywhere = local::sockets_everywhere()
         .into_iter()
@@ -2932,6 +2957,10 @@ pub struct Widened {
     /// port (qw384): its own grants and yours on this machine, never purlis's own
     /// ([`localport::still_ports`]).
     pub ports: Vec<u16>,
+    /// The ports of this Mac's loopback a person let this chat listen on (#2019): its own
+    /// grants and yours on this machine, never purlis's own. Each is in [`Self::ports`] too, so
+    /// the chat reaches its own server and its browser reaches it as a named local port.
+    pub listens: Vec<u16>,
 }
 
 impl Widened {
@@ -2951,7 +2980,27 @@ impl Widened {
             sockets: Vec::new(),
             services: Vec::new(),
             ports: Vec::new(),
+            listens: Vec::new(),
         }
+    }
+
+    /// These widenings with the ports of this Mac's loopback at `listens` to listen on besides
+    /// (#2019), each one a port to connect to as well: none where `locks` forbid ports, and
+    /// never a port purlis itself listens on.
+    #[must_use]
+    pub fn and_listens(mut self, listens: &[u16], locks: &policy::Locks) -> Self {
+        if locks.port_grants_refused().is_some() {
+            return self;
+        }
+        for port in localport::still_ports(listens) {
+            if !self.listens.contains(&port) {
+                self.listens.push(port);
+            }
+            if !self.ports.contains(&port) {
+                self.ports.push(port);
+            }
+        }
+        self
     }
 
     /// These widenings with the services on this Mac at `ports` besides (qw384): none where
@@ -3153,6 +3202,12 @@ impl Compiled {
             &ports.iter().map(|(port, _)| *port).collect::<Vec<_>>(),
             &locks,
         );
+        let listens = granted_listens(root, chat, &locks);
+        let widened = widened.and_listens(
+            &listens.iter().map(|(port, _)| *port).collect::<Vec<_>>(),
+            &locks,
+        );
+        ports.extend(listens);
         let mut layered: Vec<(String, reach::By)> = Vec::new();
         for (port, by) in &ports {
             if widened.ports.contains(port) {
@@ -3329,6 +3384,14 @@ impl Compiled {
                 &ports.iter().map(|(port, _)| *port).collect::<Vec<_>>(),
                 &locks,
             );
+        // Ports to listen on (#2019), at the scopes policy leaves open: each one a named local
+        // port of the chat's reach too, so its browser opens the server it started.
+        let listens = granted_listens(root, chat, &locks);
+        let widened = widened.and_listens(
+            &listens.iter().map(|(port, _)| *port).collect::<Vec<_>>(),
+            &locks,
+        );
+        ports.extend(listens);
         // The chat's proxy carries a client that does use it to exactly those ports of this
         // machine, at the layer that granted each.
         for (port, by) in &ports {

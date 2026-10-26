@@ -848,6 +848,8 @@ struct Settled {
     services: Vec<String>,
     /// The services on this Mac a chat may connect to, each by its port (qw384).
     ports: Vec<u16>,
+    /// The ports of this Mac a chat may listen on (#2019).
+    listens: Vec<u16>,
 }
 
 /// **What of a running chat its sandbox is compiled from now** ([`Chats::on_older_sandbox`]):
@@ -907,6 +909,12 @@ impl Settled {
                 ports.dedup();
                 ports
             },
+            listens: {
+                let mut listens = confines.widened.listens.clone();
+                listens.sort_unstable();
+                listens.dedup();
+                listens
+            },
         }
     }
 
@@ -948,6 +956,10 @@ impl Settled {
                 // was before ports were allowed (qw384).
                 if !settled.ports.is_empty() {
                     list("ports", &mut settled.ports.iter().map(u16::to_string));
+                }
+                // Likewise ports to listen on (#2019).
+                if !settled.listens.is_empty() {
+                    list("listens", &mut settled.listens.iter().map(u16::to_string));
                 }
             }
         }
@@ -1976,10 +1988,14 @@ impl Chats {
     /// Each chat it was withdrawn from is told narrowed ([`Self::tell_narrowed_to`]), whose
     /// browsers end, and a browser it opens after is given the port withdrawn (#2013).
     pub fn withdraw_port(&self, chat: Option<&str>, port: u16) -> Result<Vec<u32>, String> {
-        let what = purlis_core::sandbox::grant::What::Port(port);
+        // A chat that holds the port to connect to or to listen on (#2019) keeps it.
+        let held = [
+            purlis_core::sandbox::grant::What::Port(port),
+            purlis_core::sandbox::grant::What::Listen(port),
+        ];
         let holding: Vec<String> = lock(&self.grants)
             .iter()
-            .filter(|(_, made)| made.iter().any(|one| one.what == what))
+            .filter(|(_, made)| made.iter().any(|one| held.contains(&one.what)))
             .map(|(id, _)| id.clone())
             .collect();
         let open = lock(&self.open);

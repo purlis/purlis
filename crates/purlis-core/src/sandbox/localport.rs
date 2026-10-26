@@ -309,6 +309,68 @@ pub fn refused_in(line: &str) -> Option<u16> {
     None
 }
 
+/// **The Seatbelt rules that let a wrapped chat listen on `port`** (#2019): bind it and accept
+/// connections on it on the loopback interface alone, and connect to it there, so the chat can
+/// reach the server it started. Never another interface: a server started on every interface
+/// (`0.0.0.0`, `::`) is still refused, and is told to start on `127.0.0.1`.
+pub fn listen_rules(port: u16) -> [String; 3] {
+    [
+        format!("(allow network-bind (local tcp \"localhost:{port}\"))"),
+        format!("(allow network-inbound (local tcp \"localhost:{port}\"))"),
+        seatbelt_rule(port),
+    ]
+}
+
+/// What allowing a chat to listen on a port means, in one honest line (#2019).
+pub const LISTEN_RISK: &str = "lets this chat start a server on that port on this Mac only \
+                               (127.0.0.1), and lets its commands and its browser reach whatever \
+                               listens there, as you. Nothing on another machine reaches it, but \
+                               any web page your own browser opens can, and opening it in your \
+                               own browser hands it your cookies for the sites on this Mac";
+
+/// **The port a server's own refusal to listen names** (#2019): Node's `listen EPERM:
+/// operation not permitted 127.0.0.1:3000` and Go's `listen tcp 127.0.0.1:3000: bind: operation
+/// not permitted`, on this Mac's loopback or on every interface (`0.0.0.0`, `::`, no address).
+/// None for any other line, another machine's address, or a port of zero.
+pub fn listen_refused_in(line: &str) -> Option<u16> {
+    let lower = line.to_ascii_lowercase();
+    let address = if let Some(at) = lower.find("listen eperm: operation not permitted ") {
+        line[at + "listen eperm: operation not permitted ".len()..]
+            .split_whitespace()
+            .next()?
+    } else if let Some(at) = lower.find("listen tcp")
+        && lower.contains(": bind: operation not permitted")
+    {
+        // `listen tcp 127.0.0.1:3000: bind: …`, `listen tcp4 :3000: bind: …`.
+        let rest = line[at + "listen tcp".len()..].trim_start_matches(['4', '6']);
+        rest.strip_prefix(' ')?.split(": ").next()?
+    } else {
+        return None;
+    };
+    listened_port(address)
+}
+
+/// **The port of `address` where it is this Mac's loopback or every interface** (#2019):
+/// `127.0.0.1:N`, `[::1]:N`, `::1:N`, `localhost:N`, and `0.0.0.0:N`, `:::N`, `[::]:N`, `:N` or
+/// Seatbelt's `*:N`. None for another machine's address or a port of zero.
+pub fn listened_port(address: &str) -> Option<u16> {
+    let address = address.trim().trim_end_matches(['.', ',', ';']);
+    let (host, port) = address.rsplit_once(':')?;
+    let port = port.parse::<u16>().ok().filter(|port| *port != 0)?;
+    let host = host.trim_start_matches('[').trim_end_matches(']');
+    let here = host.is_empty()
+        || host == "*"
+        || host == "::"
+        || host.eq_ignore_ascii_case("localhost")
+        || host.parse::<IpAddr>().is_ok_and(|ip| {
+            // Exactly the loopback addresses the profile carries, never another of 127/8.
+            ip.is_unspecified()
+                || ip == IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)
+                || ip == IpAddr::V6(std::net::Ipv6Addr::LOCALHOST)
+        });
+    here.then_some(port)
+}
+
 #[cfg(test)]
 #[path = "localport/tests.rs"]
 mod tests;

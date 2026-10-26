@@ -66,7 +66,9 @@ function ofSandbox(grant: SandboxGrant): AllowedLately | undefined {
             ? `Reach the service ${inertly(grant.target)}`
             : grant.what === "port"
               ? `Connect to the service on this Mac at port ${inertly(grant.target)}`
-              : undefined;
+              : grant.what === "listen"
+                ? `Listen on port ${inertly(grant.target)} of this Mac`
+                : undefined;
   if (says === undefined) return undefined;
   return {
     key: `sandbox:${grant.id}`,

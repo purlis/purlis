@@ -38,6 +38,13 @@ fn every_kind() -> Vec<(About, &'static str)> {
             "connecting to the service on this Mac at port `50795`",
         ),
         (
+            About::Listen {
+                port: "3000".to_owned(),
+            },
+            "listening on port `3000` on this Mac only (start the server on `127.0.0.1:3000`; \
+             its browser opens `http://127.0.0.1:3000`)",
+        ),
+        (
             About::Vault {
                 vault: "devops".to_owned(),
             },
@@ -210,6 +217,12 @@ fn a_grant_s_what_and_level_name_the_same_ask_and_scope() {
         About::of(&What::Port(50795)),
         About::Port {
             port: "50795".to_owned()
+        }
+    );
+    assert_eq!(
+        About::of(&What::Listen(3000)),
+        About::Listen {
+            port: "3000".to_owned()
         }
     );
     assert_eq!(Scope::of(Level::Once), Scope::Once);

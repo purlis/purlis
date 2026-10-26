@@ -31,6 +31,9 @@
 //!
 //! - **A service on this Mac** ([`What::Port`], [`super::localport`]): one loopback port, never
 //!   a range, every port or one of purlis's own; this chat's or this project's on this machine.
+//! - **A port to listen on** ([`What::Listen`], #2019): one loopback port a server the chat
+//!   starts binds, never another interface, a range or one of purlis's own; this chat's or this
+//!   project's on this machine. Its browser reaches it as a named local port.
 //!
 //! **No read is granted.** A chat's sandbox denies reads only for the classes above, so a read
 //! block is always one of those and is answered with the brokered route.
@@ -72,6 +75,9 @@ pub enum What {
     /// Connect to a service on this Mac: whatever listens on this one port of the loopback
     /// interface ([`super::localport::port`], qw384).
     Port(u16),
+    /// Listen on this one port of the loopback interface, and connect to it there (#2019): a
+    /// server the chat starts, which its browser then reaches as a named local port.
+    Listen(u16),
 }
 
 impl What {
@@ -83,6 +89,7 @@ impl What {
             Self::Socket(_) => "socket",
             Self::Service(_) => "service",
             Self::Port(_) => "port",
+            Self::Listen(_) => "listen",
         }
     }
 
@@ -92,7 +99,7 @@ impl What {
             Self::Host(host) => host.to_string(),
             Self::Write(path) | Self::Socket(path) => path.display().to_string(),
             Self::Service(name) => name.clone(),
-            Self::Port(port) => port.to_string(),
+            Self::Port(port) | Self::Listen(port) => port.to_string(),
         }
     }
 
@@ -119,6 +126,9 @@ impl fmt::Display for What {
             Self::Socket(path) => write!(f, "connecting to the local socket {}", path.display()),
             Self::Service(name) => write!(f, "reaching the system service {name}"),
             Self::Port(port) => write!(f, "connecting to the service on this Mac at port {port}"),
+            Self::Listen(port) => {
+                write!(f, "listening on port {port} on this Mac only (127.0.0.1)")
+            }
         }
     }
 }
@@ -255,6 +265,8 @@ pub struct Grants {
     pub services: Vec<String>,
     /// Services on this Mac, each by its one port (qw384).
     pub ports: Vec<u16>,
+    /// Ports of this Mac's loopback the chat may listen on (#2019).
+    pub listens: Vec<u16>,
     /// Which of them were allowed for the chat's next run alone ([`Level::Once`], D-sock-3):
     /// a scope of its own, so a start can judge each against the scopes policy leaves open.
     pub once: Vec<What>,
@@ -268,6 +280,7 @@ impl Grants {
             && self.sockets.is_empty()
             && self.services.is_empty()
             && self.ports.is_empty()
+            && self.listens.is_empty()
     }
 
     /// `what` added, once.
@@ -280,8 +293,13 @@ impl Grants {
                 self.services.push(name.clone());
             }
             What::Port(port) if !self.ports.contains(port) => self.ports.push(*port),
-            What::Host(_) | What::Write(_) | What::Socket(_) | What::Service(_) | What::Port(_) => {
-            }
+            What::Listen(port) if !self.listens.contains(port) => self.listens.push(*port),
+            What::Host(_)
+            | What::Write(_)
+            | What::Socket(_)
+            | What::Service(_)
+            | What::Port(_)
+            | What::Listen(_) => {}
         }
     }
 

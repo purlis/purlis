@@ -1360,6 +1360,9 @@ pub enum GrantWhat {
     Service,
     /// A service on this Mac, by its one loopback port (qw384): this machine's alone.
     Port,
+    /// A port of this Mac's loopback to listen on (#2019): this machine's alone, and a named
+    /// local port of the chat's browser.
+    Listen,
     /// Always for a persona's browser (#2241): what every chat as the persona may have its
     /// browser reach in this project on this machine. Allowed from a chat's browser Ask
     /// (`allow_chat_browser`), never from a block's Allow.
@@ -1371,6 +1374,16 @@ pub enum GrantWhat {
 }
 
 impl GrantWhat {
+    /// **The grant of `port` this kind names** (#2019): a service on this Mac to connect to, or
+    /// a port on this Mac to listen on. None for any other kind.
+    pub(crate) fn of_port(self, port: u16) -> Option<sandbox::grant::What> {
+        match self {
+            Self::Port => Some(sandbox::grant::What::Port(port)),
+            Self::Listen => Some(sandbox::grant::What::Listen(port)),
+            _ => None,
+        }
+    }
+
     fn word(self) -> &'static str {
         match self {
             Self::Host => "host",
@@ -1380,6 +1393,7 @@ impl GrantWhat {
             Self::Socket => "socket",
             Self::Service => "service",
             Self::Port => "port",
+            Self::Listen => "listen",
             Self::Browser => sandbox::local::BROWSER,
             Self::BrowserSite => sandbox::local::BROWSER_SITE,
         }
@@ -1394,6 +1408,7 @@ impl GrantWhat {
             Self::Socket,
             Self::Service,
             Self::Port,
+            Self::Listen,
             Self::Browser,
             Self::BrowserSite,
         ]
@@ -1602,6 +1617,14 @@ pub(crate) fn judged(
                 .to_owned(),
         );
     }
+    // A port to listen on (#2019): the same two scopes, for the same reason.
+    if what == GrantWhat::Listen && !matches!(level, Level::Chat | Level::You) {
+        return refused(
+            "purlis allows listening on a port of this Mac for this chat, or for every chat of \
+             this project on this machine."
+                .to_owned(),
+        );
+    }
     if level == Level::Once && matches!(what, GrantWhat::Host | GrantWhat::Write) {
         return refused(
             "purlis allows a host or a folder for this chat, or for longer, not once.".to_owned(),
@@ -1672,6 +1695,9 @@ pub(crate) fn judged(
         }
         GrantWhat::Port => {
             What::Port(sandbox::localport::port(target).map_err(|why| why.to_string())?)
+        }
+        GrantWhat::Listen => {
+            What::Listen(sandbox::localport::port(target).map_err(|why| why.to_string())?)
         }
     };
     // Policy (#1343): the strictest wins, for a host at the level it would be kept at, and for
@@ -1864,6 +1890,7 @@ pub(crate) fn kept_for(
             sandbox::local::services_everywhere().contains(service)
         }
         (What::Port(port), Level::You, _) => sandbox::local::granted_ports(root).contains(port),
+        (What::Listen(port), Level::You, _) => sandbox::local::granted_listens(root).contains(port),
         _ => false,
     };
     if !already {
@@ -1932,6 +1959,10 @@ pub(crate) fn kept_for(
             sandbox::local::grant_port(root, *port)
                 .map_err(|why| format!("purlis could not keep port {port}: {why}"))?;
         }
+        (What::Listen(port), _, _) => {
+            sandbox::local::grant_listen(root, *port)
+                .map_err(|why| format!("purlis could not keep port {port}: {why}"))?;
+        }
         (What::Host(host), Level::You | Level::Project, _) => {
             if !already {
                 purlis_core::settings::hosts::grant(root, hosts_file(level), host)?;
@@ -1950,7 +1981,7 @@ pub(crate) fn kept_for(
         told_to_retry: retry,
     } = match what {
         What::Host(host) => chats.allow_live(session, host, level),
-        What::Write(_) | What::Socket(_) | What::Service(_) | What::Port(_) => {
+        What::Write(_) | What::Socket(_) | What::Service(_) | What::Port(_) | What::Listen(_) => {
             crate::chats::Live::default()
         }
     };
@@ -2376,6 +2407,13 @@ fn committed_by(
     purlis_core::committedby::last_touching(root, &wanted)
 }
 
+/// Whether this machine still keeps `port` for every chat of the project at `root`, to connect
+/// to or to listen on (#2019): then removing one of the two withdraws it from no chat.
+fn held_for_the_project(root: &std::path::Path, port: u16) -> bool {
+    sandbox::local::granted_ports(root).contains(&port)
+        || sandbox::local::granted_listens(root).contains(&port)
+}
+
 /// The separator of a grant's id: no host or folder purlis grants holds it.
 const SEP: char = '\u{1f}';
 
@@ -2475,6 +2513,12 @@ fn grants_of(
         let target = port.to_string();
         let at = when(GrantWhat::Port, &target, Level::You);
         out.push(row(GrantWhat::Port, target, Level::You, at));
+    }
+    // The ports of this Mac you let every chat here listen on (#2019).
+    for port in sandbox::local::granted_listens(root) {
+        let target = port.to_string();
+        let at = when(GrantWhat::Listen, &target, Level::You);
+        out.push(row(GrantWhat::Listen, target, Level::You, at));
     }
     let locks = sandbox::policy::Locks::of(root);
     if let Some(policy) = sandbox::Plane::read(root).in_force(&locks) {
@@ -2664,6 +2708,11 @@ fn grants_of(
                 .parse()
                 .ok()
                 .and_then(|port| locks.holds_kept(&sandbox::grant::What::Port(port), level)),
+            GrantWhat::Listen => one
+                .target
+                .parse()
+                .ok()
+                .and_then(|port| locks.holds_kept(&sandbox::grant::What::Listen(port), level)),
         };
     }
     // What the project declares it expects is said beside its grant (D-sock-4), never a grant.
@@ -2732,6 +2781,7 @@ fn revoke(
         GrantWhat::Socket => What::Socket(std::path::PathBuf::from(target)),
         GrantWhat::Service => What::Service(target.to_owned()),
         GrantWhat::Port => What::Port(target.parse().map_err(|_| gone())?),
+        GrantWhat::Listen => What::Listen(target.parse().map_err(|_| gone())?),
     };
     let there = match (&grant, level, chat) {
         (_, Level::Once | Level::Chat, Some(chat)) => chats.holds(chat, &grant),
@@ -2755,6 +2805,7 @@ fn revoke(
             sandbox::local::services_everywhere().contains(service)
         }
         (What::Port(port), Level::You, _) => sandbox::local::granted_ports(root).contains(port),
+        (What::Listen(port), Level::You, _) => sandbox::local::granted_listens(root).contains(port),
         _ => false,
     };
     if !there {
@@ -2780,8 +2831,8 @@ fn revoke(
             }
             // Carried by its proxy no longer (qw384b), unless this machine's file still holds
             // it for every chat of the project.
-            if let What::Port(port) = &grant
-                && !sandbox::local::granted_ports(root).contains(port)
+            if let What::Port(port) | What::Listen(port) = &grant
+                && !held_for_the_project(root, *port)
             {
                 not_withdrawn = chats.withdraw_port(Some(chat), *port).err();
             }
@@ -2818,8 +2869,18 @@ fn revoke(
             sandbox::local::revoke_port(root, *port)
                 .map_err(|why| format!("purlis could not remove port {port}: {why}"))?;
             // Carried by no open chat's proxy any more but one that holds it for itself
-            // (qw384b).
-            not_withdrawn = chats.withdraw_port(None, *port).err();
+            // (qw384b), or while the project still listens on it (#2019).
+            if !held_for_the_project(root, *port) {
+                not_withdrawn = chats.withdraw_port(None, *port).err();
+            }
+        }
+        (What::Listen(port), None) => {
+            sandbox::local::revoke_listen(root, *port)
+                .map_err(|why| format!("purlis could not remove port {port}: {why}"))?;
+            // Its browsers and proxies reach it no more (#2019), as for a port to connect to.
+            if !held_for_the_project(root, *port) {
+                not_withdrawn = chats.withdraw_port(None, *port).err();
+            }
         }
     }
     if let Err(why) = sandbox::local::forget_made(root, what, target, level.word()) {

@@ -100,6 +100,7 @@ const LOCAL_READS: &[&str] = &[
     "confirmed_levels",
     "dispatch_mine_in",
     "grantable_folders",
+    "granted_listens",
     "granted_ports",
     "granted_services",
     "granted_sockets",
@@ -664,7 +665,8 @@ fn the_crates_sources() -> Vec<(String, String)> {
 }
 
 fn the_table() -> Value {
-    serde_json::from_str(include_str!("../../../../src/writeSites.json")).expect("the table is JSON")
+    serde_json::from_str(include_str!("../../../../src/writeSites.json"))
+        .expect("the table is JSON")
 }
 
 #[test]

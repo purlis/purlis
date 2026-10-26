@@ -18,7 +18,16 @@ import { useReadOnlySaid } from "./ReadOnlyLine";
 import { sandboxCommandReturned } from "./sandboxAsked";
 import { asksMoved } from "./asks";
 import { inTheWindow } from "./personaHostsAllow";
-import { eachHost, hostsOf, inertly, isAnAsk, matched, type HeldBlock } from "./sandboxBlocks";
+import {
+  eachHost,
+  hostsOf,
+  inertly,
+  isAnAsk,
+  isGrantedOffer,
+  matched,
+  type GrantedOffer,
+  type HeldBlock,
+} from "./sandboxBlocks";
 import { SandboxChoose, chooseSaid, mayChoose } from "./SandboxChoose";
 import { SETTLE_MS } from "./TaskBlocksNotice";
 import { moreRefusedSaid, useRefusedMore } from "./refusedMore";
@@ -149,7 +158,7 @@ export function SandboxBlockNotice({
         ? [{ what: block.choose, target: "" }]
         : isAnAsk(block)
           ? eachHost(block).map((one) => ({
-              what: block.offer as "host" | "write" | "socket" | "service" | "port",
+              what: block.offer as GrantedOffer,
               target: one.target ?? "",
             }))
           : [];
@@ -480,13 +489,7 @@ function AllowNotice({
   const [owedSince, setOwedSince] = useState(-Infinity);
   /** The hosts the chat's proxy refused past the ones it names (#1353): said, never offered. */
   const moreRefused = useRefusedMore(block.plane, block.session);
-  const what: GrantWhat =
-    block.offer === "host" ||
-    block.offer === "socket" ||
-    block.offer === "service" ||
-    block.offer === "port"
-      ? block.offer
-      : "write";
+  const what: GrantWhat = isGrantedOffer(block.offer) ? block.offer : "write";
   const target = block.target ?? typed.trim();
   /** A folder, a socket, a service or a port reaches the chat only by restarting it, at its next pause
    *  (#1986): what that ends is said before the Allow. A host the chat's proxy may take live
@@ -829,13 +832,7 @@ function AllowNotice({
       </Notice>
     );
   }
-  if (
-    block.offer !== "host" &&
-    block.offer !== "write" &&
-    block.offer !== "socket" &&
-    block.offer !== "service" &&
-    block.offer !== "port"
-  )
+  if (!isGrantedOffer(block.offer))
     return (
       <Notice cause={cause} at="pane" tone="trouble" label="Sandbox block" onDismiss={onDismiss}>
         The sandbox blocked {block.said}.{behind}
@@ -898,7 +895,11 @@ function AllowNotice({
     block.target === null ? (
       <SettingRow
         label={
-          what === "host" ? "Host to allow" : what === "port" ? "Port to allow" : "Folder to allow"
+          what === "host"
+            ? "Host to allow"
+            : what === "port" || what === "listen"
+              ? "Port to allow"
+              : "Folder to allow"
         }
         help={
           what === "host"
@@ -907,7 +908,11 @@ function AllowNotice({
               ? suggested !== undefined && typed.trim() === suggested
                 ? `${PORT_FROM_OUTPUT} An Allow lets the chat connect to whatever listens on this Mac at that port, as you.`
                 : "An Allow lets the chat connect to whatever listens on this Mac at the port you type here, as you."
-              : "An Allow lets the chat write in the folder you type here and everything in it."
+              : what === "listen"
+                ? suggested !== undefined && typed.trim() === suggested
+                  ? `${PORT_FROM_OUTPUT} An Allow lets the chat start a server on that port on this Mac only (127.0.0.1), and its browser reach it there.`
+                  : "An Allow lets the chat start a server on the port you type here, on this Mac only (127.0.0.1), and its browser reach it there."
+                : "An Allow lets the chat write in the folder you type here and everything in it."
         }
         control={(ids) => (
           <Field
@@ -915,7 +920,15 @@ function AllowNotice({
             ids={ids}
             value={typed}
             onChange={setTyped}
-            placeholder={what === "host" ? "api.example.com" : what === "port" ? "6443" : undefined}
+            placeholder={
+              what === "host"
+                ? "api.example.com"
+                : what === "port"
+                  ? "6443"
+                  : what === "listen"
+                    ? "3000"
+                    : undefined
+            }
           />
         )}
       />
@@ -928,6 +941,11 @@ function AllowNotice({
           <>
             Allow connecting to the service on this Mac at port <Target of={block.target} />.{" "}
             {block.route}
+          </>
+        ) : what === "listen" ? (
+          // #2019: one port, named whole, where the server listens and its browser opens it.
+          <>
+            Allow listening on port <Target of={block.target} /> of this Mac. {block.route}
           </>
         ) : what === "socket" || what === "service" ? (
           // D-sock-6: named whole, with what allowing it means, in purlis's words.
