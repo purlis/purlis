@@ -683,7 +683,8 @@ spec #2897, ADR 0104), each one wrapper under `app/src/ui/` and its own lint rul
   `title` part (`PanelTitle`): 13px and strong in the primary tier, in its own case. A list puts its search field in the top with
   `InPanelTop`, and draws it where it stands outside a view. Memory, Todos and Sessions are
   drawn on it, in a half of the Panel or in either sidebar, and so are Personas, Vaults and every
-  extension's panel (#3341).
+  extension's panel (#3341), and the Chats view (#3342), whose rows lead with the
+  persona's mark and the chat's state as a dot on its corner.
 - **The status bar follows its contribution model** (N28, `ui/status/StatusBar.tsx`): every item,
   purlis's own and an extension's, says its `id`, `side` (left or right) and `priority` (highest
   first from the side's left), and the person may hide any item from the bar's menu (a right

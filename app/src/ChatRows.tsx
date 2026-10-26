@@ -104,6 +104,69 @@ export const ChatShownState = memo(function ChatShownState({
 });
 
 /**
+ * **Who a chat runs as, with its state on it** (#3342, the operator's ruling of 2026-10-26): the
+ * persona's mark in the persona's colour, first on the chat's row, and the chat's state a small
+ * dot on its corner (`App.css` draws `StateShown`'s mark as the dot; a chat that is done wears
+ * none). A chat with no persona wears the terminal's mark. Its tooltip and what a screen reader
+ * hears both say the two: `steward, needs you`.
+ */
+export const ChatPersonaState = memo(function ChatPersonaState({
+  persona,
+  session,
+  shell,
+  report = null,
+  outcome = null,
+  asking = null,
+  harness,
+  changed = false,
+}: {
+  persona: string | null;
+  session: number;
+  changed?: boolean;
+  shell: boolean;
+  report?: TaskFacts["report"] | null;
+  outcome?: string | null;
+  asking?: string | null;
+  harness: string | null;
+}) {
+  const below = useTasksBelow(session);
+  const shown = useChatsSelect(
+    useChatsHere(),
+    (states) =>
+      shownState({
+        board: markOf(states, session, shell),
+        needsYou: states.needsYou.includes(session),
+        task: report === null ? null : { report, outcome, asking },
+        harness,
+        tasksAtWork: tasksAtWorkOf(states, below),
+      }),
+    sameShown,
+  );
+  const who = persona ?? "terminal";
+  const said = shown === undefined ? who : `${who}, ${shown.word}`;
+  return (
+    <span className="chat-persona" data-state={shown?.kind}>
+      {persona === null ? (
+        <Tooltip tip={said}>
+          <SquareTerminal className="node-icon" aria-hidden="true" />
+        </Tooltip>
+      ) : (
+        <PersonaMark persona={persona} tip={said} />
+      )}
+      {/* Heard after the chat's name, as the persona and then the state: the state's word is
+          `StateShown`'s, out of sight where it stands. */}
+      <span className="hidden-words">{shown === undefined ? who : `${who},`}</span>
+      {shown !== undefined && (
+        <>
+          {" "}
+          <StateShown shown={shown} changed={changed} markOnly />
+        </>
+      )}
+    </span>
+  );
+});
+
+/**
  * **Whether tab `id` shows a chat being stopped** (#1459): its own chat, or the task one of its
  * panes shows in its place. A task of the tab that is not on screen is the chip's to tell.
  */
