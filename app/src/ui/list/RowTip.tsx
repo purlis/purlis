@@ -105,8 +105,8 @@ function Shown({
   // and again when the pointer comes to a row the keyboard opened it on.
   const [place, setPlace] = useState<Place | null>(null);
   useLayoutEffect(() => {
-    setPlace(placeOf(anchor.current, pointer));
-  }, [pointer]);
+    setPlace(placeOf(anchor.current, scope, pointer));
+  }, [scope, pointer]);
   const placed = place !== null && place.by === pointer;
   useEffect(() => onTooltipEscape(() => flushSync(onEscape)), [onEscape]);
   // **The tooltip is the row's description while it is shown**, as every tooltip is its
@@ -153,8 +153,9 @@ function Shown({
  * a line with no width, or on the row's words, as far as they are drawn. Where neither can be
  * measured it stays on the whole row.
  */
-function placeOf(span: HTMLSpanElement | null, pointer: number | null): Place {
-  const row = span?.parentElement;
+function placeOf(span: HTMLSpanElement | null, scope: string, pointer: number | null): Place {
+  // The row's element, which the anchor is set across (`list.css`).
+  const row = span?.closest(`[data-scope="${scope}"][data-part="root"]`);
   if (row === null || row === undefined) return { by: pointer, at: null };
   const box = row.getBoundingClientRect();
   if (pointer !== null) return { by: pointer, at: { left: pointer - box.left, width: 0 } };
