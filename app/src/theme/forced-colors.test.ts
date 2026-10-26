@@ -254,6 +254,20 @@ describe("forced colours", () => {
     }
   });
 
+  it("tell a refused box from a taken one by its edge's shape, which takes no room (#3335)", () => {
+    const refused =
+      ':is( [data-scope="text-input"], [data-scope="textarea"], [data-scope="select"], [data-scope="combobox"] )[data-part="root"][data-invalid]';
+    const it = drawn(refused);
+    expect(it.get("border-style")).toBe("dashed");
+    expect(it.get("border-color")).toBe("CanvasText");
+    // Its own edge, at the width it has: nothing moves, and the focus ring (an outline) stays.
+    for (const property of it.keys())
+      expect(property, property).not.toMatch(/width|outline|padding|margin|^border$/);
+    // Every box a value is given to is reached.
+    for (const family of ["text-input", "textarea", "select", "combobox"])
+      expect(refused).toContain(`[data-scope="${family}"]`);
+  });
+
   it("outline what is opened over the window, taking no room", () => {
     for (const over of [
       '[role="dialog"]',

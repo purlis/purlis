@@ -327,8 +327,8 @@ says what each family, part and variant is):
 | `switch` (since the next release) | `root` (`text`, `gap`), `track` (`fill`, `corner-radius`), `thumb` (`fill`, `corner-radius`), `label` (`text`, `font-size`, `font-weight`) | none | `hover`, `selected`, `focused`, `disabled` |
 | `table` (since the next release) | `root` (`fill`, `text`), `frame` (`fill`, `border-colour`, `border-width`, `corner-radius`, `shadow`), `head` (`text`, `font-size`, `font-weight`), `cell` (`padding`), `rule` (`fill`), `bar` (`gap`) | none | `hover`, `focused`, `selected`, `disabled` |
 | `tabs` (since version 8) | `tab` (`fill`, `text`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`, `max-width`, `flare`, `inset`), `label` (`text`, `font-size`, `font-weight`), `closer` (`fill`, `text`, `corner-radius`), `count` (`fill`, `text`, `corner-radius`), `indicator` (`fill`, `height`, `corner-radius`, `position`), `strip` (`fill`, `border-colour`, `border-width`), `layout` (`attach`, `sizing`, `dividers`, `gap`) | `chat`, `view`, `file`, `background` | `hover`, `selected` |
-| `text-input` (since version 3) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `height`), `icon` (`text`) | none | `hover`, `focused`, `disabled` |
-| `textarea` (since version 3) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `font-size`) | none | `hover`, `focused`, `disabled` |
+| `text-input` (since version 3) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `height`), `icon` (`text`) | none | `hover`, `focused`, `disabled`, `invalid` |
+| `textarea` (since version 3) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `font-size`) | none | `hover`, `focused`, `disabled`, `invalid` |
 | `titlebar` (since version 12) | `workspace` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`), `count` (`fill`, `text`), `crumb` (`fill`, `text`, `corner-radius`), `all` (`fill`, `text`, `corner-radius`), `pin` (`fill`, `text`, `corner-radius`), `row` (`fill`, `text`, `corner-radius`) | `pinned`, `unpinned` | `hover`, `selected`, `focused` |
 | `tooltip` (since version 5) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`), `detail` (`text`), `shortcut` (`text`, `font-size`) (since the next release) | none | none |
 | `tree` (since the next release) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `gap`, `font-size`, `font-weight`, `height`), `body` (`padding`, `gap`), `twist` (`text`), `lead` (`text`, `gap`), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`), `trail` (`text`, `gap`), `header` (`text`, `font-size`, `font-weight`) | none | `hover`, `focused`, `selected`, `disabled` |
@@ -347,6 +347,14 @@ A select's and a combobox's box are drawn as the text input's, so `select.root.b
 their own: a select's list and a combobox's suggestions stand on the popover's `menu` surface and
 each option is a menu's row, so `menu.root.hover.fill` reaches an option too. A chevron is a mark,
 held at 3:1 as an icon is; the placeholder and the chevron fall back to the quiet tier.
+
+A box a person gives a value to (`text-input`, `textarea`, `select`, `combobox`) is refused in
+`invalid` (since NEXT): `text-input.root.invalid.border-colour` reaches every refused one-line box.
+Its edge is what says a value is refused, so such a box keeps its edge's width (`border-width` 0
+on its root refuses the theme; a transparent `border-colour` draws no edge at rest, with
+`invalid.border-colour` the refused one), and in any
+state it is refused in, an edge that is transparent, under 3:1 on its fill, or drawn as the same
+box's edge when it is not refused falls back to the danger colour.
 
 A choice is chosen in `selected`: a box ticked (`checkbox.box.selected.fill`), a radio, a segment or
 a card picked, a switch on (`switch.track.selected.fill`). A choice's size is its family's: no

@@ -7531,6 +7531,18 @@
         "text-input.root.disabled.shadow": {
           "$ref": "#/$defs/part-shadow"
         },
+        "text-input.root.invalid.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "text-input.root.invalid.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "text-input.root.invalid.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "text-input.root.invalid.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
         "text-input.icon.text": {
           "$ref": "#/$defs/part-text"
         },
@@ -7541,6 +7553,9 @@
           "$ref": "#/$defs/part-text"
         },
         "text-input.icon.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "text-input.icon.invalid.text": {
           "$ref": "#/$defs/part-text"
         },
         "textarea.root.fill": {
@@ -7601,6 +7616,18 @@
           "$ref": "#/$defs/part-border-colour"
         },
         "textarea.root.disabled.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "textarea.root.invalid.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "textarea.root.invalid.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "textarea.root.invalid.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "textarea.root.invalid.shadow": {
           "$ref": "#/$defs/part-shadow"
         },
         "titlebar.workspace.fill": {
