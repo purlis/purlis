@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793006194614,
+  "lastUpdate": 1793007820740,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -25368,6 +25368,48 @@ window.BENCHMARK_DATA = {
             "value": 102.284907,
             "unit": "ms",
             "extra": "median of 5 runs: 100.912, 101.816, 102.285, 102.567, 102.825 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9d6a4644e3ada312d5686d7b3ddedba2e5b50862",
+          "message": "Button family: a quiet ghost for the strip's marks and a pane's corner (#3214) (#3265)\n\n* Compact sm buttons hold the 24px target (#3210)\n\nAn sm button's height was max(size.chrome, space.7), 18px in the compact\ndensity, under WCAG 2.5.8's 24px target. It now floors at 24 CSS px, tall\nand wide, as the status item does (R115), and still grows with the chrome\nand the scale over it. The wrapping row's floor and the engine's\nsized_apart height (the corner clamp) follow. A story stands two sm glyph\nbuttons at the row's own gap and holds each to 24px in every cell.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* sm buttons: the floor is height only, so a line still squeezes words (#3210)\n\nA 24px min-inline-size kept the pane line's harness chip from giving way,\nand pane-crumbs.e2e saw the breadcrumb's state pushed past its edge. An\nicon button is square, so it is 24 wide already.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Button family: a quiet ghost for the strip's marks and a pane's corner (#3214)\n\nThe `quiet` variant: no fill and no edge at rest, words in the quiet tier,\nthe ghost's hover fill with primary words under the pointer, the family's\nring. Added to the parts manifest since NEXT, held by the theme check.\n\nThe strip's `+` (and every Doer drawn icon-only), `N more`, a pane's split\nand close, and the tasks menu's place marks are now quiet buttons of the\nfamily; their hand-drawn look rules are gone, and the button lint no\nlonger lets `bare`, `show-more`, `ends-a-chat` or `tasks-menu-place` pass\nas another family's. Crumbs and a tab's task chip are #3264.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* Quiet ghost: review fixes (#3214)\n\n- The quiet ghost's words-floor test measures a rule that differs from the\n  default; its comment names what holds the built-ins (check::PAIRS).\n- The engine's button defaults and the button.css parity test cover the\n  words under the pointer (hover_text).\n- A unit test and a story pin the danger hover on a pane's close that ends\n  a chat; the story draws the small icon-only quiet marks.\n- N more lands on the menu's first row for a virtual press too.\n- An App.css comment wrapped under 100 columns.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* QuietPaneMarks: read each mark's hover colour as drawn (#3214)\n\nThe story put the pointer on the close and waited for its fill, which in\nCI never came. It now reads what each mark draws under the hover state\nattribute, in the cell's theme; the window tests hold React Aria's hover.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Pane marks: no gap between the 24px quiet marks (#3214)\n\nThe quiet marks are 24px squares, a few px wider than the hand-drawn ones,\nand with the cluster's gap a narrow pane's breadcrumb lost the room its\nstate needs (pane-crumbs.e2e). Each mark is a whole target with its own\nhover fill, so the gap is dropped.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-26T13:27:33+04:00",
+          "tree_id": "9b240f8208f82cb0891f2761f0bf6976bf5319b5",
+          "url": "https://github.com/purlis/purlis/commit/9d6a4644e3ada312d5686d7b3ddedba2e5b50862"
+        },
+        "date": 1793007818577,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.47292100000000004,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.457, 0.463, 0.473, 0.486, 0.491 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.254073499999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.124, 16.160, 16.254, 16.294, 16.480 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.78759550000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.207, 101.268, 101.788, 102.084, 102.432 ms"
           }
         ]
       }
