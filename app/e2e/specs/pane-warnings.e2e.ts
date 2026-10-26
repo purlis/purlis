@@ -59,7 +59,6 @@ async function untilShows(index: number, text: string): Promise<void> {
 /** Draws a warning into pane `pane`'s band, as `Notice at="pane"` draws one, and waits until
  *  the band is drawn. */
 async function raise(pane: number, sentence: string, ways: string[]): Promise<void> {
-  const rowsBefore = (await measured(pane)).rowCount;
   const drawn = await browser.execute(
     (at: number, says: string, answers: string[]) => {
       const frames = [...document.querySelectorAll(".pane-frame")].filter((frame) =>
@@ -117,7 +116,7 @@ async function raise(pane: number, sentence: string, ways: string[]): Promise<vo
     { timeout: 10_000, interval: 50, timeoutMsg: `pane ${pane} never drew its band` },
   );
   // The terminal is fitted to the room the band left before anything is measured.
-  await untilRefitted(pane, rowsBefore);
+  await untilRefitted(pane);
 }
 
 async function lower(): Promise<void> {
@@ -196,29 +195,37 @@ function offTheTerminal(seen: Awaited<ReturnType<typeof measured>>) {
     check("a chip is over the terminal", (chip as Box).bottom <= screen.top + 1, { chip, screen });
 }
 
-/** Waits until the terminal of pane `pane` is fitted to the room it has: its rows changed from
- *  `was`, or a second went by with no change to wait for, and then held still for three reads
- *  in a row. A band that comes or goes can lay out in more than one frame (its last Notice
- *  gone, then the row's own room), and a fit read between the two is not the room it ends with. */
-async function untilRefitted(pane: number, was: number): Promise<void> {
-  await browser
-    .waitUntil(async () => (await measured(pane)).rowCount !== was, {
-      timeout: 2_000,
-      interval: 100,
-    })
-    .catch(() => undefined);
-  let last = (await measured(pane)).rowCount;
-  let still = 0;
+/** Waits until the terminal of pane `pane` is fitted to the room it has (#3216): its band is
+ *  drawn exactly while it holds a warning, and the terminal has the rows the room under the band
+ *  and the header fits, counted as the terminal's fit counts them (`FitAddon`: the pane's height
+ *  less the terminal's padding, in whole cells). Not "held still for a while": a read between two
+ *  layouts can hold still too. What the scenario then checks is the rows that fit. */
+async function untilRefitted(pane: number): Promise<void> {
   await browser
     .waitUntil(
-      async () => {
-        const now = (await measured(pane)).rowCount;
-        still = now === last ? still + 1 : 0;
-        last = now;
-        return still >= 3;
-      },
-      { timeout: 3_000, interval: 100 },
+      () =>
+        browser.execute((at: number) => {
+          const frames = [...document.querySelectorAll(".pane-frame")].filter((frame) =>
+            frame.querySelector('[data-testid="pane"]'),
+          );
+          const frame = frames[at];
+          const row = frame?.querySelector(".pane-notice-row");
+          const holder = frame?.querySelector<HTMLElement>('[data-testid="pane"]');
+          const term = holder?.querySelector<HTMLElement>(".xterm");
+          const screen = term?.querySelector<HTMLElement>(".xterm-screen");
+          const rows = term?.querySelector(".xterm-rows")?.children.length ?? 0;
+          if (!row || !holder || !term || !screen || rows === 0) return false;
+          const holds = row.querySelector(".pane-notices > *") !== null;
+          if (holds !== (getComputedStyle(row).display !== "none")) return false;
+          const cell = parseFloat(screen.style.height) / rows;
+          const style = getComputedStyle(term);
+          const padding = parseInt(style.paddingTop) + parseInt(style.paddingBottom);
+          const room = parseInt(getComputedStyle(holder).height) - padding;
+          return rows === Math.max(1, Math.floor(room / cell));
+        }, pane),
+      { timeout: 10_000, interval: 100 },
     )
+    // The checks after it say what the rows were.
     .catch(() => undefined);
 }
 
@@ -297,11 +304,13 @@ describe("a pane's warnings, inside the pane", () => {
 
   it("keeps the terminal's last line where it was as a warning comes and goes (rule 4)", async () => {
     await windowIs(1280, 800);
+    // The room it has with no warning, the last scenario's put away.
+    await untilRefitted(0);
     const before = await measured(0);
     check("no terminal grid", before.lastRow !== null && before.screen !== null, before);
 
     await raise(0, SHORT, ["Open in Skill studio", "Dismiss"]);
-    await untilRefitted(0, before.rowCount);
+    await untilRefitted(0);
     const shown = await measured(0);
     // Fitted to the room left: fewer rows, the grid under the header, its bottom where it was.
     check("the terminal kept every row", shown.rowCount < before.rowCount, {
@@ -316,7 +325,7 @@ describe("a pane's warnings, inside the pane", () => {
     );
 
     await lower();
-    await untilRefitted(0, shown.rowCount);
+    await untilRefitted(0);
     const gone = await measured(0);
     check("the room was not given back", gone.rowCount === before.rowCount, {
       before: before.rowCount,

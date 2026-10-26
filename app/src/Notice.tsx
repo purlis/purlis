@@ -12,7 +12,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { createPortal } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
 import clsx from "clsx";
 import { PersonaMark } from "./PersonaMark";
 import { NoticeWayGuard, useNoticeSettle } from "./noticeSettle";
@@ -531,12 +531,17 @@ export function NoticePaneRow({
       }
     };
     place();
+    // **Counted in the task the Notice came or went in** (#3216), so the row is drawn or put
+    // away in the same frame as its Notice, never a frame later: the last one gone and the row's
+    // own room gone are one change of the terminal's room, and the terminal is fitted once, to
+    // the room it ends with, not first to an in-between one a row short (its pty told both).
+    const placeNow = () => flushSync(place);
     // A Notice that comes or goes, and one that comes to ask something or stops asking where it
     // stands (an answered question says what was done in the same box): either changes the two.
     // (`data-asks` is on each Notice's box, so the subtree is watched for that one attribute.)
-    const watching = new MutationObserver(place);
+    const watching = new MutationObserver(placeNow);
     watching.observe(stack, { childList: true });
-    const asking = new MutationObserver(place);
+    const asking = new MutationObserver(placeNow);
     asking.observe(stack, { subtree: true, attributeFilter: ["data-asks"] });
     // A Notice kept for the keyboard goes behind "+N more" once the keyboard has left it: after
     // the focus has moved, which is after `focusout`.
