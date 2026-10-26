@@ -45,6 +45,7 @@ fn free_port() -> u16 {
 
 #[test]
 fn a_wrapped_chat_binds_no_port_and_listens_nowhere() {
+    purlis_core::unsteered!();
     if !can_apply() {
         eprintln!("skipped: this process is already sandboxed, so no second profile applies");
         return;

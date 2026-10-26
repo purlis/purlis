@@ -327,11 +327,13 @@ jobs:
         if: steps.scope.outputs.run == 'true'
         run: |
           set -euo pipefail
-          bin=$(cargo test --locked -p purlis-linux-sandbox --test a_wrapped_chat_is_held_on_linux --no-run 2>&1 \
-            | sed -n 's/.*Executable .*(\(.*\))$/\1/p' | tail -1)
+          bin=$(cargo test --locked -p purlis-linux-sandbox --test a_wrapped_chat_is_held_on_linux --no-run \
+            --message-format=json | jq -r 'select(.profile.test == true and .executable != null) | .executable' \
+            | grep '/a_wrapped_chat_is_held_on_linux-' | tail -1)
+          test -x "$bin"
           echo "test binary: $bin"
           docker run --rm --security-opt no-new-privileges --user "$(id -u):$(id -g)" \
-            --volume "$PWD:$PWD" --workdir "$PWD" --entrypoint "$PWD/$bin" \
+            --volume "$PWD:$PWD" --workdir "$PWD" --entrypoint "$bin" \
             purlis-runner:parity a_socket_listens_only_where_it_was_bound --test-threads=1
       # Under `tools/no-orphans.sh`, as `rust` is: a test ends what it started, its pool's
       # container included.
