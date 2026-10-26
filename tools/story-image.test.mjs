@@ -8,7 +8,7 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { imageProblems, lockedPlaywright } from "./story-image.mjs";
+import { WORKFLOWS, imageProblems, lockedPlaywright } from "./story-image.mjs";
 
 const DIGEST = `sha256:${"a1".repeat(32)}`;
 const OTHER = `sha256:${"b2".repeat(32)}`;
@@ -92,16 +92,10 @@ test("the repository's own stories workflows pass", () => {
   const read = (path) => readFileSync(join(root, path), "utf8");
   const locked = lockedPlaywright(JSON.parse(read("app/package-lock.json")));
   assert.deepEqual(
-    imageProblems(locked, [
-      {
-        name: "stories.yml",
-        text: read(".github/workflows/stories.yml"),
-      },
-      {
-        name: "stories-baselines.yml",
-        text: read(".github/workflows/stories-baselines.yml"),
-      },
-    ]),
+    imageProblems(
+      locked,
+      WORKFLOWS.map((path) => ({ name: path, text: read(path) })),
+    ),
     [],
   );
 });
