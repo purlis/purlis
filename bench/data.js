@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793027868495,
+  "lastUpdate": 1793030124386,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -25746,6 +25746,48 @@ window.BENCHMARK_DATA = {
             "value": 101.22944000000001,
             "unit": "ms",
             "extra": "median of 5 runs: 100.692, 100.770, 101.229, 101.636, 102.007 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "c47e71ac0b25b9e53ad1407587baecbed5e1566a",
+          "message": "Tab strip marks on the tabs' line, their tooltips clear; pane header padding (#3361, #3332) (#3372)\n\n* Tab strip: the + on the tabs' line, its tooltip clear of the strip (#3361)\n\nThe chat strip's tabs stand on its floor, so the strip's own marks, 24px\ntall, sat on the floor beside them, below the tabs' line. They now take\nthe row's whole height and are centred in it. Every tooltip on the strip\n(its tabs, the +, N more, a tab's chip) stands below it, or above where\nthere is no room, instead of beside its target on the strip's row\n(TipsBelow). A story measures each mark's centre against a tab's, in every\ncell, and where the +'s tooltip stands.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Pane header: 16px from the pane's edges, 12 in compact (#3332)\n\nThe header's side padding is space.6 on both sides. In a pane under about\n24rem, where the breadcrumb's line cannot hold the longest state with\nanything else, it keeps its former 12/6 inset, so the state word keeps its\nroom (pane-crumbs.e2e).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* MarksOnTheTabsLine: open the + tooltip from the keyboard's focus (#3361)\n\nA focus set from script is not a visible focus to React Aria, which opens a\ntooltip on one only; a key first makes it the keyboard's.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* MarksOnTheTabsLine: open the + tooltip under the pointer (#3361)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* MarksOnTheTabsLine: wait out the tooltip's delay, and its leaving (#3361)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* MarksOnTheTabsLine: open the + tooltip from the keyboard (#3361)\n\nThe pointer's hover did not open it in every cell; Tab to the + opens it\nat once, as the tooltip family's own story does.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* MarksOnTheTabsLine: Esc takes the tooltip down (#3361)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* Strip tooltips: scoped by where the target stands, not by React (#3361)\n\nA React context crossed portals, so a menu opened from the strip (the\ntasks menu's place marks, its Since and totals) stood its tooltips below\ntoo, over the next row. The chat strip's row now carries data-tips=\"below\"\nand the tooltip surface reads it from the target's place in the DOM\n(placementFor), as it reads the title bar's drag region; a portalled menu\nkeeps R166's placement. A window test holds both sides; the story measures\nthe task chip's and N more's tooltips as well as the +'s; ui-primitives.md\nrecords the exception; the narrow-pane comment says compact's 8 and 4.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-26T15:00:01Z",
+          "tree_id": "b36509ef3d50368ba3cc2e0851f05250a7f5360c",
+          "url": "https://github.com/purlis/purlis/commit/c47e71ac0b25b9e53ad1407587baecbed5e1566a"
+        },
+        "date": 1793030121617,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.47189149999999996,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.454, 0.469, 0.472, 0.474, 0.480 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.255406,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.234, 16.239, 16.255, 16.322, 16.382 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.2421215,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.354, 101.991, 102.242, 102.325, 102.445 ms"
           }
         ]
       }
