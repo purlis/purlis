@@ -526,6 +526,9 @@ impl purlis_host::Hear for HookChannels {
                 },
             },
         );
+        // A `secret exec` of a chat composed here runs here on the values its desktop sends
+        // (#2047).
+        relaying.of_project_at(path);
         let reading = listener.hear(relaying.hearing(Arc::clone(&tokens)));
         Ok(Some(Arc::new(HookChannel {
             socket,
@@ -613,6 +616,7 @@ impl purlis_host::Channel for HookChannel {
 
     fn forget(&self, number: u32) {
         self.tokens.forget(number);
+        crate::hostedchats::forget(&self.root, number);
         // What it spooled is recorded and its keys dropped, off the host's runtime: a drain
         // makes each line durable (V99i, #2003).
         let (socket, root, log) = (self.socket.clone(), self.root.clone(), self.log.clone());

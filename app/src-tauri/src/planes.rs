@@ -291,6 +291,9 @@ pub struct Held {
     removal_asks: crate::removalasks::Asked,
     /// Each chat's browsers, and what the person said they may reach (#2013).
     browsers: crate::chatbrowsers::ChatBrowsers,
+    /// The person's Allows of a persona's tools on a pool, and the runner chats' commands that
+    /// wait on one (#2047).
+    pool_tools: crate::pooltools::PoolTools,
     /// Where the chats' browsers run: the window's session host, where it has one.
     browser_driver: Option<Arc<dyn crate::chatbrowsers::Driver>>,
     /// Told each time a browser is added to its chats' or taken from them (#2024).
@@ -567,6 +570,12 @@ impl Held {
     /// Each chat's browsers, and what the person said they may reach (#2013).
     pub fn browsers(&self) -> &crate::chatbrowsers::ChatBrowsers {
         &self.browsers
+    }
+
+    /// The person's Allows of a persona's tools on a pool, and the runner chats' commands that
+    /// wait on one (#2047).
+    pub fn pool_tools(&self) -> &crate::pooltools::PoolTools {
+        &self.pool_tools
     }
 
     /// Where the chats' browsers run: none where the window has no session host.
@@ -1090,6 +1099,8 @@ impl Held {
         self.brokered.forget(session);
         self.vault_refusals.forget(session);
         self.removal_asks.forget(session);
+        // What its runner's commands wait on goes with it (#2047).
+        self.pool_tools.forget(session);
         // Its browsers end with it (#2013), and leave its rows and its tab (#2024); a pinned
         // one runs on, listed by what the chat was called (#2022).
         let was = self
@@ -4238,6 +4249,7 @@ impl Planes {
                 .telling(Arc::clone(&browsers_listed))
                 .limited_by(Arc::new(purlis_core::browserlimits::Limits::here)),
             browser_driver: self.browser_driver.clone(),
+            pool_tools: crate::pooltools::PoolTools::default(),
             browsers_listed,
             browser_timeline,
             proposals: crate::proposals::Proposals::default(),

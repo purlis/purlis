@@ -272,7 +272,9 @@ signal-hook = "0.4"
 # between its delete and its new write (ruling V90a, `secrets::keyhold`), with the safe
 # `pthread_sigmask`. Already in this workspace's lockfile. `net` is for `getifaddrs`: the egress
 # proxy and the sandbox's hosts refuse this machine's own interface addresses (#1341).
-nix = { version = "0.31", default-features = false, features = ["signal", "net"] }
+# `resource` is for `setrlimit`: a brokered run writes no core file, which would hold its values
+# (#2047).
+nix = { version = "0.31", default-features = false, features = ["signal", "net", "resource"] }
 
 [target."cfg(target_os = \"macos\")".dependencies]
 # Keyring items held to charter's app (ruling V90a): the helper that writes them turns the

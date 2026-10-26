@@ -703,6 +703,12 @@ export const commands = {
 	 */
 	answerPoolLogin: (plane: PlaneId, session: number, allow: boolean, reason: string | null) => typedError<null, string>(__TAURI_INVOKE("answer_pool_login", { plane, session, allow, reason })),
 	/**
+	 *  **Allow or Keep off on run `run` of chat `session`'s tool on its pool** (#2047): with
+	 *  `allow`, this desktop sends the tool its vault values on the pool's runner for that run
+	 *  alone; Keep off refuses that run. The command that waits goes on, or is refused, at once.
+	 */
+	answerPoolTool: (plane: PlaneId, session: number, run: number, allow: boolean) => typedError<null, string>(__TAURI_INVOKE("answer_pool_tool", { plane, session, run, allow })),
+	/**
 	 *  **Allow on chat `session`'s browser sites** (#2018): `sites`, the sites the Ask showed, are
 	 *  browser sites at `level`: this chat, every chat of this project on this machine, or everyone
 	 *  in the project, committed (#2443). A grant for the browser alone (ruled 2026-10-17): the
@@ -4235,6 +4241,11 @@ export type AnswerPath =
  *  for the chat that asked (#2050).
  */
 { via: "pool-login" } | 
+/**
+ *  `answer_pool_tool`, allowing for Allow this run and not for Keep off, for run `run` of
+ *  the chat that asked (#2047).
+ */
+{ via: "pool-tool"; run: number } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -4394,7 +4405,12 @@ export type AskSource =
  *  A runner chat's browser login, which waits on the person's opt-in for its persona on its
  *  pool (#2050): an Allow lets that persona's logins be filled on the pool's runner.
  */
-"pool-login";
+"pool-login" | 
+/**
+ *  One run of a runner chat's declared tool, which waits on the person (#2047): an Allow
+ *  lets this desktop send that tool its vault values on the pool's runner for that run alone.
+ */
+"pool-tool";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the
