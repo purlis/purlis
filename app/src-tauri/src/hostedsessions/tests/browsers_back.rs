@@ -64,6 +64,9 @@ impl Browsing2 {
     }
 }
 
+/// A frame a view drew: what it shows, and its image.
+type Drawn = (Option<String>, Vec<u8>);
+
 /// The note the host keeps of each browser of the project at `root`, as `window` reads it.
 fn notes_kept(window: &AWindow, root: &std::path::Path) -> Vec<Option<serde_json::Value>> {
     let project = purlis_core::scaffold::planefile::id_to_hold_by(root).unwrap();
@@ -125,7 +128,7 @@ fn a_chats_browser_comes_back_with_its_chat_its_lease_and_its_view_after_the_win
     });
     assert!(!kept_screen.shown().stopped);
 
-    let drawn: Arc<Mutex<Vec<(Option<String>, Vec<u8>)>>> = Arc::default();
+    let drawn: Arc<Mutex<Vec<Drawn>>> = Arc::default();
     let drawing = Arc::clone(&drawn);
     let watching = again
         .window
