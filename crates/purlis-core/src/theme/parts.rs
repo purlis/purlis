@@ -2151,7 +2151,7 @@ fn faint_mark(
         } else {
             look.marks[0]
         };
-        if let Some(ratio) = lowest(theme, family, on, look.marks[at])
+        if let Some(ratio) = lowest(theme, &grounds(theme, family), on, look.marks[at])
             && ratio < floor
         {
             return Some((
@@ -2351,7 +2351,7 @@ fn consent_broken(
         }
         Consent::Asks => {
             let own = edge(rules, family, variant.name, &look);
-            let ratio = own.and_then(|border| lowest(theme, family, look.fill, border));
+            let ratio = own.and_then(|border| lowest(theme, on, look.fill, border));
             if ratio.is_none_or(|ratio| ratio < 3.0) {
                 return Some(Consented::Own(
                     "an ask keeps its waiting edge, 3:1 on its fill".to_owned(),
