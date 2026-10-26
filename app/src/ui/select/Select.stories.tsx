@@ -4,8 +4,8 @@
 /**
  * **The select and combobox families** (#2906): a select holding a value, one holding nothing
  * with its placeholder, its list open from the keyboard, a long list filtered, each size, an
- * unavailable select with its reason, a settings row (the prototype's), and a combobox with its
- * suggestions. Each is drawn, held to axe, walked by the keyboard and compared with its baseline
+ * unavailable select with its reason, a refused one with why (#3110), a settings row (the
+ * prototype's), and a combobox with its suggestions, unavailable and refused. Each is drawn, held to axe, walked by the keyboard and compared with its baseline
  * in Chromium and WebKit (`docs/component-stories.md`). A list draws outside its frame, so each
  * picture is the page's.
  */
@@ -220,6 +220,53 @@ export const Unavailable: Story = {
   },
 };
 
+/** **Refused** (#3110): the form will not take what it holds. The danger colour on its edge, inside
+ *  the box as a text field's, and nothing moves; the words that say why are its description, heard
+ *  with it, and it still opens from the keyboard. */
+export const Refused: Story = {
+  render: () => {
+    function Refusing() {
+      const [value, setValue] = useState("");
+      return (
+        <div style={{ display: "grid", gap: "var(--space-2)", inlineSize: "20rem" }}>
+          <Select
+            aria-label="Harness"
+            aria-describedby="harness-why"
+            value={value}
+            options={HARNESSES}
+            placeholder="Pick a harness"
+            isInvalid={value === ""}
+            onValueChange={setValue}
+          />
+          <p id="harness-why" style={{ margin: 0, color: "var(--danger-text)" }}>
+            {value === "" ? "A persona needs a harness to run." : ""}
+          </p>
+        </div>
+      );
+    }
+    return <Refusing />;
+  },
+  play: async ({ canvas, userEvent }) => {
+    const select = theSelect(canvas, "Harness");
+    await expect(select).toHaveAttribute("aria-invalid", "true");
+    await expect(select).toHaveAccessibleDescription("A persona needs a harness to run.");
+    const box = select.getBoundingClientRect();
+    await userEvent.tab();
+    await untilFocused(() => select, "Refused: Tab onto the select");
+    // Still a select: Enter opens its list and Escape closes it, the value as it was.
+    await userEvent.keyboard("{Enter}");
+    await screen.findByRole("listbox");
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull(), CLOSES);
+    await untilFocused(() => select, "Refused: Escape leaves the keyboard on the select");
+    await expect(select).toHaveAttribute("aria-invalid", "true");
+    // A colour only: the box is the size it was. The baseline: refused, with the ring.
+    const after = select.getBoundingClientRect();
+    await expect([after.width, after.height]).toEqual([box.width, box.height]);
+    expectFocusInSight();
+  },
+};
+
 /**
  * **A settings row** (`prototype/settings-page`, R64): the label column with its help under it,
  * and the select in the control column, at most 320 px wide.
@@ -339,5 +386,47 @@ export const UnavailableSuggestions: Story = {
       () => canvas.getByRole("button", { name: "After" }),
       "Unavailable: Tab passes it",
     );
+  },
+};
+
+/** **A refused combobox** (#3110): what is typed is not one it allows. The danger colour on its
+ *  edge, as a text field's, the words that say why its description, and its suggestions still
+ *  open from the keyboard. */
+export const RefusedSuggestions: Story = {
+  render: () => {
+    function Box() {
+      const SKILLS = ["purlis:handoff", "purlis:persona", "deploy"];
+      const [value, setValue] = useState("no-such-skill");
+      const refused = value !== "" && !SKILLS.includes(value);
+      return (
+        <div style={{ display: "grid", gap: "var(--space-2)", inlineSize: "20rem" }}>
+          <ComboBox
+            label="Add a skill"
+            suggestions={SKILLS}
+            value={value}
+            onChange={setValue}
+            isInvalid={refused}
+            aria-describedby="skill-why"
+          />
+          <p id="skill-why" style={{ margin: 0, color: "var(--danger-text)" }}>
+            {refused ? "ops has no skill by that name." : ""}
+          </p>
+        </div>
+      );
+    }
+    return <Box />;
+  },
+  play: async ({ canvas, userEvent }) => {
+    const box = canvas.getByRole("combobox", { name: "Add a skill" });
+    await expect(box).toHaveAttribute("aria-invalid", "true");
+    await expect(box).toHaveAccessibleDescription("ops has no skill by that name.");
+    await userEvent.tab();
+    await untilFocused(() => box, "Refused suggestions: Tab into the box");
+    await userEvent.keyboard("{ArrowDown}");
+    await screen.findByRole("listbox");
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull(), CLOSES);
+    await expect(box).toHaveAttribute("aria-invalid", "true");
+    expectFocusInSight();
   },
 };

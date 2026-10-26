@@ -108,10 +108,25 @@ pub enum State {
     Focused,
     Disabled,
     Open,
+    /// A box whose value is refused (#3110): the select's and the combobox's, whose wrappers mark
+    /// it. A colour, never a size, as every state.
+    Invalid,
 }
 
 /// Every state a key may name, in the order the stylesheet writes them.
-pub const STATES: [State; 6] = [
+pub const STATES: [State; 7] = [
+    State::Hover,
+    State::Pressed,
+    State::Selected,
+    State::Focused,
+    State::Disabled,
+    State::Open,
+    State::Invalid,
+];
+
+/// **The states a control that is never refused names**: all but [`State::Invalid`], which only a
+/// box a person gives a value to is in (the button's and the dialog's list).
+pub(super) const NEVER_REFUSED: [State; 6] = [
     State::Hover,
     State::Pressed,
     State::Selected,
@@ -130,6 +145,7 @@ impl State {
             Self::Focused => "focused",
             Self::Disabled => "disabled",
             Self::Open => "open",
+            Self::Invalid => "invalid",
         }
     }
 
@@ -143,12 +159,16 @@ impl State {
             Self::Focused => "[data-focus-visible]",
             Self::Disabled => "[data-disabled]",
             Self::Open => "[data-open]",
+            Self::Invalid => "[data-invalid]",
         }
     }
 
     /// The manifest version it came in.
     pub fn since(self) -> u32 {
-        1
+        match self {
+            Self::Invalid => NEXT,
+            _ => 1,
+        }
     }
 
     fn says(self) -> &'static str {
@@ -159,6 +179,7 @@ impl State {
             Self::Focused => "The keyboard is on it.",
             Self::Disabled => "It cannot be used now.",
             Self::Open => "What it opens is open.",
+            Self::Invalid => "Its value is refused, and the words that say why describe it.",
         }
     }
 
@@ -698,7 +719,7 @@ pub const MANIFEST: &[Family] = &[
         line_height: 1.0,
         border_width: 1.0,
         defaults: button_look_in,
-        states: &STATES,
+        states: &NEVER_REFUSED,
         focused: "[data-focus-visible]",
         words: &[],
         corner_most: None,
@@ -1107,12 +1128,18 @@ fn field_look(_variant: &str, _states: &[State]) -> Look {
 
 /// **A text input's and a textarea's colours as `app/src/ui/field/field.css` draws them**: the
 /// sunken ground behind the control's edge (`border.control`, none in Purlis), in every state; the keyboard's ring and a refused value's
-/// danger edge are drawn by the family, outside the parts.
-fn box_look(_variant: &str, _states: &[State]) -> Look {
+/// danger edge are drawn by the family, outside the parts. A select and a combobox draw the same
+/// box, and a refused one (`invalid`, #3110) is a state of their parts: the danger colour on the
+/// same edge, inside the box, as `app/src/ui/select/select.css` draws it.
+fn box_look(_variant: &str, states: &[State]) -> Look {
     Look {
         fill: "surface.sunken",
         text: "text.primary",
-        border: "border.control",
+        border: if states.contains(&State::Invalid) {
+            "danger.base"
+        } else {
+            "border.control"
+        },
     }
 }
 
@@ -1368,7 +1395,10 @@ pub(super) fn allow_from_primary(theme: &ResolvedTheme) -> Vec<AllowLook> {
         for state in std::iter::once(None).chain(
             STATES
                 .into_iter()
-                .filter(|state| !matches!(state, State::Selected | State::Disabled))
+                .filter(|state| {
+                    family.states.contains(state)
+                        && !matches!(state, State::Selected | State::Disabled)
+                })
                 .map(Some),
         ) {
             let states: Vec<State> = state.into_iter().collect();
@@ -2383,13 +2413,15 @@ fn edge(rules: &[Rule], family: &Family, variant: &str, look: &Drawn) -> Option<
 }
 
 /// What a look a theme changed breaks of the reading floors, if anything: each part's words at
-/// 4.5:1 and its icon at 3:1 on its fill, and a border that is the part's only edge at 3:1;
-/// with more contrast asked for, each raised as [`super::Least::floor`] raises it (#2925).
+/// 4.5:1 and its icon at 3:1 on its fill, and a border that is the part's only edge at 3:1, or,
+/// while `states` hold [`State::Invalid`], the edge that says a value is refused (#3110), on any
+/// fill; with more contrast asked for, each raised as [`super::Least::floor`] raises it (#2925).
 fn unreadable(
     theme: &ResolvedTheme,
     rules: &[Rule],
     family: &Family,
     variant: &str,
+    states: &[State],
     look: &Drawn,
 ) -> Option<(String, Option<f64>)> {
     for (at, part) in family.parts.iter().enumerate() {
@@ -2408,15 +2440,17 @@ fn unreadable(
             ));
         }
     }
-    // A border is the part's edge where its fill is not told from what it is drawn on.
+    // A border is the part's edge where its fill is not told from what it is drawn on, and a
+    // refused box's edge is what says so at a glance, whatever its fill.
     if let Some(border) = edge(rules, family, variant, look) {
         let fill = hex(theme, look.fill);
-        let on_its_ground = fill.is_none_or(|fill| {
-            !is_opaque(fill)
-                || grounds(theme, family)
-                    .iter()
-                    .any(|ground| ground.eq_ignore_ascii_case(&solid(fill)))
-        });
+        let on_its_ground = states.contains(&State::Invalid)
+            || fill.is_none_or(|fill| {
+                !is_opaque(fill)
+                    || grounds(theme, family)
+                        .iter()
+                        .any(|ground| ground.eq_ignore_ascii_case(&solid(fill)))
+            });
         let floor = theme.least.floor(3.0);
         if on_its_ground
             && let Some(ratio) = lowest(theme, family, look.fill, border)
@@ -2730,7 +2764,8 @@ impl Held<'_> {
             if look == drawn(&[], self.family, variant, states) {
                 continue;
             }
-            if let Some((floor, ratio)) = unreadable(theme, self.rules, self.family, variant, &look)
+            if let Some((floor, ratio)) =
+                unreadable(theme, self.rules, self.family, variant, states, &look)
             {
                 self.fall(variant, states, floor, ratio);
             }
