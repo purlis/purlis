@@ -1365,6 +1365,7 @@ impl Chats {
     /// **Fail closed.** A sandbox compiled for another harness, or one the harness is not armed
     /// to carry here (the app shipped without its plugin or its binary), refuses the chat rather
     /// than starting it without the sandbox.
+    #[allow(clippy::too_many_arguments)]
     fn state_hooks(
         &self,
         harness: Option<Harness>,
