@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793002599082,
+  "lastUpdate": 1793004662499,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -25284,6 +25284,48 @@ window.BENCHMARK_DATA = {
             "value": 101.820795,
             "unit": "ms",
             "extra": "median of 5 runs: 101.526, 101.607, 101.821, 101.852, 102.265 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ea7216adbf7384a2ce9f97a4325a0e0fbece796e",
+          "message": "studio probe: look its names up in the job's hosts file, not public DNS (#3306)\n\n* studio probe: look its names up in the job's hosts file, not public DNS\n\nThe three network probes failed on a runner whose resolver dropped a\nlookup though the confinement held (#3261). The private-range names are\nnow `.test` names the job writes into its hosts file, example.com is\npinned there when the job starts, and the tests look a name up and ask\nthe proxy a few times before they fail. They still fail on CI, never\nskip, and a broken confinement fails every try.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* studio probe: a mismatched hello must meet an open tunnel that is cut off\n\nThe proxy answers 200 before it reads the hello, so a refusal is a 200\nand nothing back; a tunnel that never opened was a network failure\npassing as one. The names step runs on GitHub-hosted runners only, as\na persistent runner would collect stale hosts lines.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-26T12:49:13+04:00",
+          "tree_id": "74eb60cf7539dc93c2690c1cc4c80d59b9554a3a",
+          "url": "https://github.com/purlis/purlis/commit/ea7216adbf7384a2ce9f97a4325a0e0fbece796e"
+        },
+        "date": 1793004660265,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.523279,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.483, 0.518, 0.523, 0.529, 0.548 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.165008,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.368, 17.029, 17.165, 17.166, 17.218 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.01350199999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.367, 103.078, 104.014, 104.297, 107.574 ms"
           }
         ]
       }
