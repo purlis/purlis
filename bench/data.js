@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793036113266,
+  "lastUpdate": 1793038185014,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -25914,6 +25914,48 @@ window.BENCHMARK_DATA = {
             "value": 103.0908725,
             "unit": "ms",
             "extra": "median of 5 runs: 102.815, 102.827, 103.091, 103.617, 106.741 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "83b2c295fbdbd30d95a71ce41e4df43f49ff59ba",
+          "message": "SK-39: the compatibility badge reads Codex's own manual-only setting (#3313)\n\n* The compatibility badge reads Codex's own manual-only setting (SK-39)\n\nA skill Codex finds itself, the person's own or a repo's, is kept out of\nits model's choice by agents/openai.yaml (policy.allow_implicit_invocation:\nfalse). The Codex adapter names that file (HarnessAdapter::manual_beside),\nthe host reads it through the skill's held folder without following links,\nand purlis-skills' one strict YAML reader (handed::flag_at) reads it,\nfailing closed. The badge then says the skill runs only when asked for,\nas it now does wherever a harness keeps a skill manual-only itself.\n\nCloses #3050\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* A sidecar key is compared by its text, and the ADR records both gaps (SK-39 review)\n\nkeys_once compared whole nodes, so a plain and a quoted spelling of one\nkey slipped past the duplicate check. The ADR amendment now names\npolicy.products in the one-way gap, and records that a sidecar Codex\nreads but purlis refuses badges as automatic on purpose.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-26T17:27:15Z",
+          "tree_id": "de07eaa747e4d16e8b11783fab6ed6226ee03a47",
+          "url": "https://github.com/purlis/purlis/commit/83b2c295fbdbd30d95a71ce41e4df43f49ff59ba"
+        },
+        "date": 1793038181487,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5183245000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.515, 0.517, 0.518, 0.520, 0.542 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.063544999999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.772, 16.973, 17.064, 17.100, 17.268 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 105.44522,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.433, 104.747, 105.445, 106.188, 106.291 ms"
           }
         ]
       }
