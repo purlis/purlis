@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793011577856,
+  "lastUpdate": 1793014062083,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -25452,6 +25452,48 @@ window.BENCHMARK_DATA = {
             "value": 101.10051949999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.287, 100.936, 101.101, 101.417, 102.516 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "1db0295a318437d5f9329e7f942b89da1318319a",
+          "message": "Row tooltips keep their width at the window's edge (#3328) (#3346)\n\n* Row tooltips keep their width at the window's edge (#3328)\n\nA row's tooltip was anchored to the whole row. A row across the window\n(the left panel closed) has no room at its end, React Aria flipped the\ntooltip to the start and set it by its right edge, and it took only the\nroom left of the row: a column of single words.\n\n- A row's tooltip stands by the pointer (where it rested as the delay ran\n  out) or, from the keyboard, by the row's words.\n- An anchored tooltip chooses its side for its whole width (side.ts):\n  the end, else the start, else under its anchor (over it at the\n  window's foot). It keeps the width its words give it. R166 holds.\n- Story: a bottom panel across the window with the left panel closed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* docs: a row's tooltip keeps its width (#3328)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Row tooltips: measure the anchor from the row's element (#3328)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Row tooltip story: core-token inset, width held to the family's widest (#3328)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* Row tooltip story: the second row's words fill the row and are cut (#3328)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-26T15:22:30+04:00",
+          "tree_id": "c24ed4a5b1f9c16aac8dc0792893288e96a02e29",
+          "url": "https://github.com/purlis/purlis/commit/1db0295a318437d5f9329e7f942b89da1318319a"
+        },
+        "date": 1793014059569,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.27575399999999994,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.259, 0.274, 0.276, 0.286, 0.287 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4579685,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.375, 16.411, 16.458, 16.591, 16.637 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.418105,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.617, 101.077, 101.418, 101.572, 102.701 ms"
           }
         ]
       }
