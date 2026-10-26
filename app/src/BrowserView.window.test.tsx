@@ -40,11 +40,14 @@ let besides: Record<string, (args: Record<string, unknown>) => unknown> = {};
 
 /** The pool whose runner the watched browser runs on, as `watch_browser` answers (#2050). */
 let onPool: string | null = null;
+/** Whether `watch_browser` answers at all: a view not attached yet says nowhere it runs. */
+let watchAnswers = true;
 
 beforeEach(() => {
   painted.length = 0;
   besides = {};
   onPool = null;
+  watchAnswers = true;
 });
 
 afterEach(() => {
@@ -74,6 +77,7 @@ function core(
       if (cmd === "open_browser") return open();
       if (cmd === "watch_browser") {
         frames = (args as { frames: Channel<BrowserFrame> }).frames;
+        if (!watchAnswers) return new Promise(() => {});
         return { view: 4, width: 1280, height: 800, person_drives: personDrives, pool: onPool };
       }
       if (cmd === "browser_input") return input((args ?? {}) as Record<string, unknown>);
@@ -595,6 +599,18 @@ describe("a browser the person opened goes where they send it (#2176)", () => {
     host.page("http://localhost:5173");
 
     expect(await screen.findByText("localhost:5173 on pool builds")).toBeInTheDocument();
+    expect(screen.queryByText(/on this (Mac|computer)/)).toBeNull();
+  });
+
+  it("names no device while neither its view nor the chats' browsers say where it runs (#2050)", async () => {
+    watchAnswers = false;
+    besides.chat_browsers = () => [];
+    const host = await opened();
+    await waitFor(() => expect(host.asked("chat_browsers").length).toBeGreaterThan(0));
+
+    host.page("http://localhost:5173");
+
+    expect(await screen.findByText("localhost:5173")).toBeInTheDocument();
     expect(screen.queryByText(/on this (Mac|computer)/)).toBeNull();
   });
 
