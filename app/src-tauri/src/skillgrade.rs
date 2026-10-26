@@ -224,6 +224,8 @@ pub enum GradeEnded {
     OverCap,
     /// A chat did not say what it spent, so the cap could not be held.
     SpendNotReported,
+    /// A fault in purlis ended it before it was scored (#3353): recorded as interrupted.
+    Failed,
 }
 
 impl From<GradeEnd> for GradeEnded {
@@ -234,6 +236,8 @@ impl From<GradeEnd> for GradeEnded {
             GradeEnd::ChatsDidNotStart => GradeEnded::ChatsDidNotStart,
             GradeEnd::OverCap => GradeEnded::OverCap,
             GradeEnd::SpendNotReported => GradeEnded::SpendNotReported,
+            // Recorded at a start for a grade purlis stopped under, never told as one ends.
+            GradeEnd::Interrupted => GradeEnded::Failed,
         }
     }
 }
@@ -271,6 +275,47 @@ static RUNNING: std::sync::LazyLock<Mutex<HashMap<String, Running>>> =
 /// The grades running now, held.
 fn running() -> std::sync::MutexGuard<'static, HashMap<String, Running>> {
     RUNNING.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// **Runs the grade `grade`'s `body`, and the grade is not running after it, whatever happened
+/// in it** (#3353): a panic in it is handed to `failed` once the grade is no longer running, so
+/// a grade never stays running with nothing left to end it. Where a build aborts on a panic, the
+/// app ends with it, and the project's next start records the grade as interrupted
+/// (`grades::underway`).
+fn held_to_its_end(grade: &str, body: impl FnOnce(), failed: impl FnOnce()) {
+    let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(body));
+    running().remove(grade);
+    if ran.is_err() {
+        tracing::warn!("purlis: grade {grade} ended on a fault in purlis before it was scored");
+        failed();
+    }
+}
+
+/// What the window says of a grade a fault in purlis ended once it was recorded.
+const FAILED_ONCE_RECORDED: &str = "A fault in purlis ended the grade once it was recorded: its \
+     scorecard is in Grades below.";
+
+/// What the window says of a grade a fault in purlis ended.
+const FAILED: &str = "A fault in purlis ended the grade before it was scored, so it is recorded \
+     as interrupted: grade it again.";
+
+/// **Whether this app runs the grade `grade` now**: what a project's start asks before it
+/// records a grade under way of this process as interrupted (`grades::underway::interrupted`).
+pub(crate) fn runs_here(grade: &str) -> bool {
+    running().contains_key(grade)
+}
+
+/// **Records the grades under way in the project at `root` that nothing runs, as interrupted**
+/// (#3353): what a project's start does, and a grade a fault ended.
+pub(crate) fn record_interrupted(root: &std::path::Path) -> Vec<String> {
+    let recorded =
+        grades::underway::interrupted(root, &purlis_core::machine::this_log_name(), runs_here);
+    for grade in &recorded {
+        tracing::info!(
+            "purlis: grade {grade} was under way when purlis stopped: recorded as interrupted"
+        );
+    }
+    recorded
 }
 
 /// The grade of `skill` running in `plane` now, by id.
@@ -367,6 +412,29 @@ pub(crate) async fn skill_grade_start(
             cost_usd: Some(planned.cap.cost_usd()),
         };
         let grade = id.clone();
+        // Held as under way while it runs (#3353): a crash, a fault or a quit before it ends
+        // leaves it to the project's next start to record as interrupted.
+        let under_way = Graded {
+            v: grades::VERSION,
+            grade: grade.clone(),
+            skill: skill.clone(),
+            level: grades::recorded_level(&level),
+            tree: copy.content.word().to_owned(),
+            commit: copy.commit.clone(),
+            harness: None,
+            profile: Some(profile.clone()),
+            ts: purlis_core::dispatch::stamp(chrono::Utc::now()),
+            runs: request.runs,
+            spent: Spent::default(),
+            report: grades::underway::interrupted_report(cap, limits.cost_usd),
+        };
+        if let Err(why) = grades::underway::began(&root, &level, &under_way) {
+            tracing::warn!(
+                "purlis: grade {grade} is not held as under way ({why}): a crash before it ends \
+                 loses it"
+            );
+        }
+        let held_at = root.clone();
         std::thread::Builder::new()
             .name("purlis-grade".to_owned())
             .spawn(move || {
@@ -390,64 +458,70 @@ pub(crate) async fn skill_grade_start(
                     );
                 };
                 tell(0, None, None, None);
-                let mut chats = InChats {
-                    held: &held,
-                    snapshot: &copy.snapshot,
-                    cost_left: limits.cost_usd,
-                    skill: &skill,
-                    profile: &profile,
-                    stop: &stop,
-                    spent: Spent::default(),
-                    tell: &|ran, tokens| tell(ran, tokens, None, None),
-                    harness: None,
+                let run = || {
+                    let mut chats = InChats {
+                        held: &held,
+                        snapshot: &copy.snapshot,
+                        cost_left: limits.cost_usd,
+                        skill: &skill,
+                        profile: &profile,
+                        stop: &stop,
+                        spent: Spent::default(),
+                        tell: &|ran, tokens| tell(ran, tokens, None, None),
+                        harness: None,
+                    };
+                    let report = grading::grade(&request, &mut chats, Some(limits));
+                    let harness = chats.harness.take();
+                    let spent = chats.spent;
+                    let graded = Graded {
+                        harness,
+                        ts: purlis_core::dispatch::stamp(chrono::Utc::now()),
+                        spent,
+                        report,
+                        ..under_way.clone()
+                    };
+                    let recorded = grades::record(
+                        &root,
+                        &level,
+                        &graded,
+                        &purlis_core::machine::this_log_name(),
+                    );
+                    grades::underway::ended(&root, &grade);
+                    running().remove(&grade);
+                    let said = match (&graded.report.not_started, recorded) {
+                        (Some(why), _) => Some(why.clone()),
+                        (None, Some(_)) if graded.report.ended == GradeEnd::SpendNotReported => Some(
+                            "This profile's chats do not say what they spend, so a grade on it cannot \
+                             be held to its cap."
+                                .to_owned(),
+                        ),
+                        (None, None) => Some(
+                            "The grade ran, but this project could not be written, so it was not \
+                             recorded."
+                                .to_owned(),
+                        ),
+                        (None, Some(_)) => None,
+                    };
+                    tell(
+                        graded.spent.chats,
+                        graded.report.spent_tokens,
+                        Some(graded.report.ended.into()),
+                        said,
+                    );
                 };
-                let report = grading::grade(&request, &mut chats, Some(limits));
-                let harness = chats.harness.take();
-                let spent = chats.spent;
-                let graded = Graded {
-                    v: grades::VERSION,
-                    grade: grade.clone(),
-                    skill: skill.clone(),
-                    level: grades::recorded_level(&level),
-                    tree: copy.content.word().to_owned(),
-                    commit: copy.commit.clone(),
-                    harness,
-                    profile: Some(profile.clone()),
-                    ts: purlis_core::dispatch::stamp(chrono::Utc::now()),
-                    runs: request.runs,
-                    spent,
-                    report,
-                };
-                let recorded = grades::record(
-                    &root,
-                    &level,
-                    &graded,
-                    &purlis_core::machine::this_log_name(),
-                );
-                running().remove(&grade);
-                let said = match (&graded.report.not_started, recorded) {
-                    (Some(why), _) => Some(why.clone()),
-                    (None, Some(_)) if graded.report.ended == GradeEnd::SpendNotReported => Some(
-                        "This profile's chats do not say what they spend, so a grade on it cannot \
-                         be held to its cap."
-                            .to_owned(),
-                    ),
-                    (None, None) => Some(
-                        "The grade ran, but this project could not be written, so it was not \
-                         recorded."
-                            .to_owned(),
-                    ),
-                    (None, Some(_)) => None,
-                };
-                tell(
-                    graded.spent.chats,
-                    graded.report.spent_tokens,
-                    Some(graded.report.ended.into()),
-                    said,
-                );
+                held_to_its_end(&grade, run, || {
+                    // Recorded as interrupted, unless the fault came once it was recorded whole.
+                    let said = if record_interrupted(&root).contains(&grade) {
+                        FAILED
+                    } else {
+                        FAILED_ONCE_RECORDED
+                    };
+                    tell(0, None, Some(GradeEnded::Failed), Some(said.to_owned()));
+                });
             })
             .map_err(|why| {
                 running().remove(&id);
+                grades::underway::ended(&held_at, &id);
                 format!("The grade could not start ({why}).")
             })?;
         Ok(id)

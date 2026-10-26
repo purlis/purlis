@@ -483,3 +483,81 @@ fn a_command_behind_characters_no_reader_sees_is_still_left_out() {
     }
     assert_eq!(left_out_why("\u{feff}ship it"), None, "a prompt stays one");
 }
+
+/// A row as purlis writes it for a copy with changes not committed: needs no repository.
+fn uncommitted_row() -> Graded {
+    Graded {
+        v: VERSION,
+        grade: "g1".to_owned(),
+        skill: "deploy".into(),
+        level: Level::project().rel(),
+        tree: "uncommitted".to_owned(),
+        commit: None,
+        harness: Some("claude".into()),
+        profile: Some("work".into()),
+        ts: "2026-10-25T10:00:00+00:00".to_owned(),
+        runs: 3,
+        report: report(true),
+        spent: Spent {
+            chats: 3,
+            tokens: Some(1200),
+            cost_usd: Some(0.04),
+        },
+    }
+}
+
+/// #3353 (L1): a row read back is checked whole, its spend and its report too: a teammate's
+/// purlis writes them, and the Grades panel and the terminal say them.
+#[test]
+fn a_row_whose_spend_or_report_does_not_hold_together_is_skipped() {
+    assert!(uncommitted_row().sound(), "a row purlis writes is kept");
+    type Breaks = fn(&mut Graded);
+    let broken: [(&str, Breaks); 13] = [
+        ("a cost below nothing", |row| {
+            row.spent.cost_usd = Some(-1.0)
+        }),
+        ("an unnamed grader", |row| row.report.grader = String::new()),
+        ("a grader's name of control characters", |row| {
+            row.report.grader = "purlis\u{1b}[2J".into();
+        }),
+        ("more triggered than ran", |row| {
+            row.report.triggers[0].triggered = 4;
+        }),
+        ("more runs than the grade had", |row| {
+            row.report.triggers[0].runs = 9;
+            row.report.triggers[0].triggered = 9;
+        }),
+        ("a rate that is not triggered over runs", |row| {
+            row.report.triggers[0].rate = Some(0.25);
+        }),
+        ("a pass with nothing run", |row| {
+            let test = &mut row.report.triggers[0];
+            test.runs = 0;
+            test.triggered = 0;
+            test.rate = None;
+        }),
+        ("a chat id that is no id", |row| {
+            row.report.triggers[0].chats[0] = Some("\u{202e}evil".into());
+        }),
+        ("a pass rate above all", |row| {
+            row.report.arms[0].pass_rate.as_mut().unwrap().mean = 1.5;
+        }),
+        ("a spread below nothing", |row| {
+            row.report.arms[0].seconds.as_mut().unwrap().stddev = -1.0;
+        }),
+        ("a difference past a whole", |row| {
+            row.report.delta = Some(3.0)
+        }),
+        ("a cap's cost below nothing", |row| {
+            row.report.cost_cap_usd = Some(-5.0);
+        }),
+        ("a reason that breaks the line", |row| {
+            row.report.not_started = Some("no\u{1b}[31m chat".into());
+        }),
+    ];
+    for (what, breaks) in broken {
+        let mut row = uncommitted_row();
+        breaks(&mut row);
+        assert!(!row.sound(), "{what}: {row:?}");
+    }
+}

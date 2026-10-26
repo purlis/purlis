@@ -190,6 +190,24 @@ describe("a grade's token cap", () => {
   });
 });
 
+describe("a grade a fault ended", () => {
+  it("says it ended before it was scored, and is told as ended (#3353)", () => {
+    expect(
+      endedSaid({
+        plane: "p",
+        skill: "deploy",
+        grade: "g",
+        ran: 0,
+        of: 12,
+        tokens: null,
+        cap: 200000,
+        ended: "failed",
+        said: "A fault in purlis ended the grade before it was scored.",
+      }),
+    ).toBe("A fault in purlis ended the grade before it was scored.");
+  });
+});
+
 describe("a grade that cannot run, or runs already", () => {
   it("says why no grade can run on the profile, and offers no Grade press", async () => {
     mockIPC((cmd) => {

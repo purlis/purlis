@@ -94,3 +94,31 @@ fn a_grade_that_is_not_running_cannot_be_stopped() {
     let said = tauri::async_runtime::block_on(skill_grade_stop(plane, "nope".into()));
     assert!(said.is_err());
 }
+
+/// #3353 (L3): a panic inside a grade ends it as failed, and it is not running after.
+#[test]
+fn a_grade_that_panics_ends_as_failed_and_is_not_running_after() {
+    let plane: PlaneId = serde_json::from_value(serde_json::json!("plane-of-a-panic")).unwrap();
+    for (grade, panics) in [("panics", true), ("ends", false)] {
+        running().insert(
+            grade.to_owned(),
+            Running {
+                plane: plane.clone(),
+                skill: "deploy".into(),
+                stop: Arc::new(AtomicBool::new(false)),
+            },
+        );
+        let failed = std::cell::Cell::new(false);
+        held_to_its_end(
+            grade,
+            || {
+                if panics {
+                    panic!("a fault in the grade");
+                }
+            },
+            || failed.set(true),
+        );
+        assert_eq!(failed.get(), panics, "{grade}");
+        assert_eq!(running_of(&plane, "deploy"), None, "{grade} is not running");
+    }
+}

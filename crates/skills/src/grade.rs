@@ -261,6 +261,9 @@ pub enum GradeEnd {
     /// A chat that ran did not say what it spent, so the grade could not be held to its cap
     /// and stopped asking for more.
     SpendNotReported,
+    /// purlis stopped before the grade ended (a crash, a fault in it, or a quit), so it was never
+    /// scored: recorded by the host at its next start, never by this runner (#3353).
+    Interrupted,
 }
 
 /// **The grade report**: the scores per trigger test and arm, each arm's summary, and the

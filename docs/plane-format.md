@@ -343,6 +343,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`skills-deleting/<stamp>-<folder>`](#skills-deletingstamp-folder)
   - [`skill-drafts/<id>/`](#skill-draftsid)
   - [`<state>/skill-grades/<YYYY-MM>.jsonl`](#stateskill-gradesyyyy-mmjsonl)
+  - [`<state>/grades-under-way/<grade>.json`](#stategrades-under-waygradejson)
   - [`skill-tries/<id>/`](#skill-triesid)
   - [`skill-levels/<chat id>.json`](#skill-levelschat-idjson)
   - [`chat-settings/<chat id>.json`](#chat-settingschat-idjson)
@@ -3720,7 +3721,10 @@ An end row, never a pass or a fail:
 - **Format:** JSON Lines, append-only, one row per **grade** (SK-16, #2779,
   [ADR 0105](adr/0105-a-grade-is-real-chats-purlis-runs-cost-first-scored-by-skill-runs-and-recorded-against-the-skills-version.md) §5): the **eval record**.
 - **Status:** **experimental**, behind the `skill-studio` flag; written by the app when a grade
-  ends, whole or stopped, and read by the Skill studio's Grades panel, a skill's history and
+  ends, whole or stopped, or at the project's next start for a grade purlis stopped under before
+  it was scored (`report.ended` `interrupted`, no chat scored, #3353,
+  [`<state>/grades-under-way/`](#stategrades-under-waygradejson)), and read by the Skill studio's
+  Grades panel (one copy's grades: the copy the skill's tab shows, #3353), a skill's history and
   `purlis skill grade`.
 - **Tier:** Plane — committed, beside the skill log, so a teammate sees a skill's grades on the
   version they pulled.
@@ -3741,7 +3745,11 @@ An end row, never a pass or a fail:
   16 MiB, each line at most 1 MiB; a line that
   is not a row, a row of a newer `v`, and a row that says more than purlis writes (a commit that
   is no whole hex id, a harness, profile or id that is no plain name, a stamp that is no time)
-  is skipped. At most 200 grades of a skill are answered, newest first
+  or whose spend and report do not hold together (a cost below nothing; a grader that is no plain
+  name; a test triggered more often than it ran, run more often than the grade's `runs`, with a
+  rate that is not the two's share or a pass where nothing ran, or a chat that is no plain id; an
+  arm twice, a pass rate that is no share, a spread out of order; a difference past a whole; a
+  reason that holds a control character or passes 2 KiB, #3353) is skipped. At most 200 grades of a skill are answered, newest first
   (`purlis_core::skills::grades::grades_of`).
 - **Git:** committed. Nothing commits it by itself: the next save does.
 - **Encoding details:** path `personas/_grades/{%Y-%m}.{device}.jsonl`, `<device>` named as the
@@ -7183,6 +7191,20 @@ rewritten.
   beside the committed record by `grades::grades_of`, held to the same limits.
 - **Status:** **internal**, **experimental** behind the `skill-studio` flag.
 - **Tier:** Clone state — this machine's own; nothing rebuilds it.
+- **Git:** gitignored, under the state directory.
+
+### `<state>/grades-under-way/<grade>.json`
+- **Format:** one JSON object per grade running on this machine (#3353): `pid`, the process that
+  runs it; `local`, whether its copy is this machine's alone; and `graded`, its eval record row as
+  it would be recorded were it interrupted now (`report.ended` `interrupted`, no chat scored,
+  nothing spent). Written `0600` through no link when a grade starts
+  (`grades::underway::began`) and removed when it ends (`grades::underway::ended`). At the
+  project's next start, each file whose process no longer runs is recorded as it is, interrupted,
+  and removed (`grades::underway::interrupted`): so a crash, a fault or a quit never leaves a grade
+  running or loses it. A file that is a link, larger than 64 KiB, named by another id or not a
+  sound row is removed unrecorded.
+- **Status:** **internal**, **experimental** behind the `skill-studio` flag.
+- **Tier:** Clone state, transient — it lasts as long as its grade.
 - **Git:** gitignored, under the state directory.
 
 ### `skill-tries/<id>/`

@@ -9,6 +9,7 @@ import {
   type SkillCopy,
   type SkillDetails,
   type SkillDiff,
+  type SkillLevel,
   type SkillLifecycle,
   type SkillVersion,
   type StatsRow,
@@ -80,12 +81,16 @@ export function SkillDetailsPanel({
   name,
   changed,
   onGraded,
+  onCopy,
 }: {
   plane: string;
   name: string;
   changed: number;
   /** Told when a grade of the skill ended (SK-16), so the tab reads its grades again. */
   onGraded?: () => void;
+  /** Told the level of the copy shown, each time it is read or picked: the tab's Grades panel
+   * shows that copy's grades alone (#3353). */
+  onCopy?: (level: SkillLevel) => void;
 }) {
   const [page, setPage] = useState<SkillDetails>();
   const [refused, setRefused] = useState<string>();
@@ -107,6 +112,11 @@ export function SkillDetailsPanel({
     };
   }, [plane, name, changed, done]);
 
+  const shown = page?.copies[Math.min(picked, page.copies.length - 1)];
+  useEffect(() => {
+    if (shown !== undefined) onCopy?.(shown.level);
+  }, [shown, onCopy]);
+
   if (refused !== undefined)
     return (
       <EmptyState
@@ -123,7 +133,7 @@ export function SkillDetailsPanel({
       </p>
     );
 
-  const copy: SkillCopy | undefined = page.copies[Math.min(picked, page.copies.length - 1)];
+  const copy: SkillCopy | undefined = shown;
   const change = (label: string, act: () => Promise<Changed>) => {
     setBusy(true);
     void act().then((answer) => {

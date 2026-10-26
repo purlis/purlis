@@ -128,9 +128,10 @@ impl Graded {
     }
 
     /// **Whether a row read back says only what purlis writes**: a tree or `uncommitted`, a
-    /// commit that is a whole hex id, a harness and a profile that are plain names, and a stamp
-    /// of a time's shape. A teammate's purlis writes the record, and a person reads these words
-    /// in the window and the terminal, so a row that says anything else is skipped.
+    /// commit that is a whole hex id, a harness and a profile that are plain names, a stamp of a
+    /// time's shape, and a spend and a report that hold together ([`report_holds_together`],
+    /// #3353). A teammate's purlis writes the record, and a person reads these words in the
+    /// window and the terminal, so a row that says anything else is skipped.
     fn sound(&self) -> bool {
         let hex = |word: &str| {
             matches!(word.len(), 40 | 64)
@@ -138,29 +139,109 @@ impl Graded {
                     .bytes()
                     .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
         };
-        let plain = |word: &str| {
-            !word.is_empty()
-                && word.len() <= 64
-                && word
-                    .bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b))
-        };
         self.content().is_some()
             && self.commit.as_deref().is_none_or(hex)
             && self.harness.as_deref().is_none_or(plain)
             && self.profile.as_deref().is_none_or(plain)
             && plain(&self.grade)
             && chrono::DateTime::parse_from_rfc3339(&self.ts).is_ok()
+            && self.spent.cost_usd.is_none_or(amount)
+            && report_holds_together(&self.report, self.runs)
     }
 }
+
+/// A plain name: at most 64 of letters, digits, `-`, `_` and `.`.
+fn plain(word: &str) -> bool {
+    !word.is_empty()
+        && word.len() <= 64
+        && word
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b))
+}
+
+/// An amount: a finite number, not below nothing.
+fn amount(value: f64) -> bool {
+    value.is_finite() && value >= 0.0
+}
+
+/// A share: a finite number from nothing to the whole.
+fn share(value: f64) -> bool {
+    (0.0..=1.0).contains(&value)
+}
+
+/// The longest reason a report gives why its chats stopped starting, as read back.
+const MOST_REASON_BYTES: usize = 2 * 1024;
+
+/// **Whether the report `report` of a grade of `runs` runs holds together** (#3353): what the
+/// built-in runner could have written. Its grader is a plain name; each trigger test's query is
+/// one a fixture could hold, its triggered runs at most its runs and its runs at most the
+/// grade's, its rate what those two make and its pass there exactly where its rate is, each chat
+/// a plain id; each arm once, its pass rate a share and its other figures amounts, every spread
+/// in order; the difference between two shares; and every cost an amount. Its reason is one
+/// line a reader sees whole.
+fn report_holds_together(report: &GradeReport, runs: u8) -> bool {
+    let stat = |stat: &grade::Stat, fits: fn(f64) -> bool| {
+        [stat.mean, stat.min, stat.max].into_iter().all(fits)
+            && amount(stat.stddev)
+            && stat.min <= stat.mean
+            && stat.mean <= stat.max
+    };
+    let tests = report.triggers.iter().all(|test| {
+        let rate = match (test.runs, test.rate) {
+            (0, None) => true,
+            (0, Some(_)) | (_, None) => false,
+            (ran, Some(rate)) => {
+                share(rate) && (rate - f64::from(test.triggered) / f64::from(ran)).abs() < 1e-9
+            }
+        };
+        !test.query.trim().is_empty()
+            && test.query.len() <= grade::MOST_PROMPT_BYTES
+            && test.triggered <= test.runs
+            && test.runs <= u32::from(runs)
+            && rate
+            && test.pass.is_some() == test.rate.is_some()
+            && test.chats.len() <= usize::from(runs)
+            && test.chats.iter().flatten().all(|chat| plain(chat))
+    });
+    let mut arms = std::collections::HashSet::new();
+    let arms_hold = report.arms.iter().all(|arm| {
+        arms.insert(arm.arm)
+            && arm.pass_rate.as_ref().is_none_or(|one| stat(one, share))
+            && arm.tokens.as_ref().is_none_or(|one| stat(one, amount))
+            && arm.seconds.as_ref().is_none_or(|one| stat(one, amount))
+    });
+    plain(&report.grader)
+        && report.triggers.len() <= grade::MOST_TRIGGER_TESTS * ARMS_THERE_ARE
+        && tests
+        && arms_hold
+        && report
+            .delta
+            .is_none_or(|delta| (-1.0..=1.0).contains(&delta))
+        && [report.cost_cap_usd, report.spent_usd]
+            .into_iter()
+            .flatten()
+            .all(amount)
+        && report
+            .not_started
+            .as_deref()
+            .is_none_or(|why| why.len() <= MOST_REASON_BYTES && !why.chars().any(char::is_control))
+}
+
+/// Every arm a grade can compare: the skill, no skill and its previous version.
+const ARMS_THERE_ARE: usize = 3;
 
 /// **Appends `graded`, a grade of the copy at `level`, to this month's file of the project at
 /// `root`**: the committed record, or, for a copy that is this machine's alone ([`is_local`]),
 /// this machine's state. `None` where the project is one this purlis may not write, or the write
 /// was refused.
 pub fn record(root: &Path, level: &Level, graded: &Graded, device: &str) -> Option<PathBuf> {
+    record_to(root, is_local(root, level), graded, device)
+}
+
+/// [`record`], to this machine's state where `local`, else to the committed record.
+fn record_to(root: &Path, local: bool, graded: &Graded, device: &str) -> Option<PathBuf> {
     let row = serde_json::to_value(graded).ok()?;
-    if is_local(root, level) {
+    if local {
         return append_local(&local_path_for(root, chrono::Utc::now()), &row).ok();
     }
     if crate::compat::read_only(root).is_some() {
@@ -494,8 +575,7 @@ pub fn chat_refused(ready: &crate::start::Ready) -> Result<crate::sandbox::Level
     let command: Vec<String> = std::iter::once(ready.program.clone())
         .chain(ready.command.iter().cloned())
         .collect();
-    if let Some(why) =
-        adapter.grade_refused(&command, &crate::harness_plugin::Env::of(&ready.env))
+    if let Some(why) = adapter.grade_refused(&command, &crate::harness_plugin::Env::of(&ready.env))
     {
         return Err(why);
     }
@@ -572,6 +652,7 @@ fn commit_of(root: &Path, level: &Level, name: &str, content: &Content) -> Optio
 }
 
 pub mod cap;
+pub mod underway;
 
 #[cfg(test)]
 mod tests;
