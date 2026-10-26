@@ -2053,10 +2053,12 @@ mod network_log {
             // read the checks and merge: thirty-three on GitHub, forty-nine on GitLab (qw371:
             // a scene per answer of purlis's own gate). Making a repo asks who the account is,
             // its owners, the create, and the delete (GitHub reads the repo first; #1819). A
-            // search is one call (#806). What a failed check found is one call (qw378).
+            // search is one call (#806). What a failed check found is one call (qw378). Browser
+            // proof (#2026): GitHub keeps two pictures in seven calls on a branch that is there
+            // and six on a first proof, GitLab in two uploads, and a comment is one call on each.
             let expected = match kind {
-                "github" => 59,
-                _ => 92,
+                "github" => 73,
+                _ => 95,
             };
             assert_eq!(paths.len(), expected, "{kind}: the recorded REST calls");
             for path in paths {
