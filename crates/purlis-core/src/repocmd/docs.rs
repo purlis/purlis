@@ -50,7 +50,7 @@ pub fn docs(root: &Path, group: &str, say: Sink) -> u8 {
     let doc = match inventory::load(root, group) {
         Ok(doc) => doc,
         Err(why) => {
-            say(Say::Warn(why));
+            say(Say::Warn(why.into()));
             return 1;
         }
     };
@@ -73,11 +73,10 @@ pub fn docs(root: &Path, group: &str, say: Sink) -> u8 {
             .map_err(|e| format!("could not write {}: {e}", at.display()))
     });
     match written {
-        Ok(()) => say(Say::Done(format!(
-            "Generated docs/topology.md ({} repos)",
-            repos.len()
-        ))),
-        Err(why) => say(Say::Warn(why)),
+        Ok(()) => say(Say::Done(
+            format!("Generated docs/topology.md ({} repos)", repos.len()).into(),
+        )),
+        Err(why) => say(Say::Warn(why.into())),
     }
     match refresh_readme(root, &mut *say) {
         Roster::Rewrote => {
@@ -117,7 +116,7 @@ fn refresh_readme(root: &Path, say: Sink) -> Roster {
         // plane itself. Said here because the alternative is charter writing the operator's
         // roster into a file outside the plane, quietly.
         if std::fs::symlink_metadata(&at).is_ok() {
-            say(Say::Warn(why));
+            say(Say::Warn(why.into()));
         }
         return Roster::Unchanged;
     }
@@ -138,7 +137,9 @@ fn refresh_readme(root: &Path, say: Sink) -> Roster {
         // `workspace.say_unread`: one sentence each, and then the README is left alone. A
         // count charter did not take has no business being committed as a number.
         for (path, code) in &unread {
-            say(Say::Fail(crate::memstore::cannot_check(root, path, *code)));
+            say(Say::Fail(
+                crate::memstore::cannot_check(root, path, *code).into(),
+            ));
         }
         return Roster::Unread;
     }

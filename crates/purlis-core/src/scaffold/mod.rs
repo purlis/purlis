@@ -83,19 +83,22 @@ use std::path::{Path, PathBuf};
 use crate::counts::counted;
 use crate::names;
 use crate::plane::Place;
+use crate::tui::Markup;
 use settings::Wrote;
 
 /// One line a command says, in the voice `charter/util.py` gives it.
+///
+/// Each holds [`Markup`]: a name or a value read at run time enters it escaped (SK-54).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Say {
     /// `• ` — a note.
-    Info(String),
+    Info(Markup),
     /// `✓ ` — it worked.
-    Ok(String),
+    Ok(Markup),
     /// `! ` — something the operator should look at.
-    Warn(String),
+    Warn(Markup),
     /// `✗ ` — something asked for did not happen.
-    Err(String),
+    Err(Markup),
 }
 
 impl Say {
@@ -316,16 +319,16 @@ struct Run {
 }
 
 impl Run {
-    fn info(&mut self, s: impl Into<String>) {
+    fn info(&mut self, s: impl Into<Markup>) {
         self.said.push(Say::Info(s.into()));
     }
-    fn ok(&mut self, s: impl Into<String>) {
+    fn ok(&mut self, s: impl Into<Markup>) {
         self.said.push(Say::Ok(s.into()));
     }
-    fn warn(&mut self, s: impl Into<String>) {
+    fn warn(&mut self, s: impl Into<Markup>) {
         self.said.push(Say::Warn(s.into()));
     }
-    fn err(&mut self, s: impl Into<String>) {
+    fn err(&mut self, s: impl Into<Markup>) {
         self.said.push(Say::Err(s.into()));
     }
 
@@ -412,20 +415,22 @@ fn refused(root: &Path) -> Option<Outcome> {
     // at all, because every other file would belong to a project whose format it cannot see.
     if let Some(why) = escaping_manifest(root) {
         return Some(Outcome {
-            said: vec![Say::Err(why)],
+            said: vec![Say::Err(why.into())],
             code: 1,
             asks_forge: None,
         });
     }
     match planefile::load(root) {
-        planefile::Read::Refused(why) => Some(Outcome {
-            said: vec![Say::Err(format!(
+        planefile::Read::Refused(why) => {
+            Some(Outcome {
+                said: vec![Say::Err(format!(
                 "{why} Nothing was run. `purlis doctor` reports it; `purlis update` is the way \
                  out."
-            ))],
-            code: 1,
-            asks_forge: None,
-        }),
+            ).into())],
+                code: 1,
+                asks_forge: None,
+            })
+        }
         _ => None,
     }
 }
@@ -562,11 +567,10 @@ pub fn init(place: &Place, args: &InitArgs) -> Outcome {
             Wrote::Malformed(_) => {
                 malformed_settings = true;
                 let path = root.join(settings::SETTINGS);
-                run.warn(format!(
-                    "{}\n{}",
-                    left_untouched(&path),
-                    settings::hooks_snippet()
-                ));
+                run.warn(Markup::lines([
+                    left_untouched(&path).into(),
+                    Markup::lines_of(&settings::hooks_snippet()),
+                ]));
             }
             Wrote::Blocked(dir) => run.blocked.push((".claude".to_owned(), dir)),
             Wrote::Failed(path, e) => write_failed(&mut run, &path, &e),
@@ -787,11 +791,10 @@ pub fn reinit(place: &Place) -> Outcome {
                 .push(".claude/settings.json (plane-root guard already wired)".to_owned()),
             Wrote::Malformed(_) => {
                 let path = root.join(settings::SETTINGS);
-                run.warn(format!(
-                    "{}\n{}",
-                    left_untouched(&path),
-                    settings::hooks_snippet()
-                ));
+                run.warn(Markup::lines([
+                    left_untouched(&path).into(),
+                    Markup::lines_of(&settings::hooks_snippet()),
+                ]));
             }
             // Python's `reinit` drops this status on the floor; the `.claude` blocker is
             // reported here rather than lost.
@@ -1668,12 +1671,14 @@ fn repo_is_not_a_plane_yet(root: &Path, args: &InitArgs) -> Option<Outcome> {
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| name.clone());
-    run.info(format!(
-        "A plane is a directory of its own, and this repo is the first clone in it:\n      \
-         mkdir ../{name}-plane && cd ../{name}-plane\n      purlis \
-         init{flags} --adopt ../{here}\n  That clones this repo into the plane's first \
-         workspace. Nothing here is written by any of it — this repo is read, and only read."
-    ));
+    run.info(Markup::lines([
+        "A plane is a directory of its own, and this repo is the first clone in it:".into(),
+        format!("      mkdir ../{name}-plane && cd ../{name}-plane").into(),
+        format!("      purlis init{flags} --adopt ../{here}").into(),
+        "  That clones this repo into the plane's first workspace. Nothing here is written by \
+         any of it — this repo is read, and only read."
+            .into(),
+    ]));
     // Named in full rather than summarised: this is the line somebody decides on, and "plane
     // scaffolding" is not a list anyone can picture. Built from the same constants the writes
     // come from, so a path that moves cannot leave this sentence behind.
@@ -1686,13 +1691,18 @@ fn repo_is_not_a_plane_yet(root: &Path, args: &InitArgs) -> Option<Outcome> {
     .map(str::to_owned)
     .chain(BASELINE_DIRS.iter().map(|d| format!("{d}/")))
     .collect::<Vec<_>>();
-    run.info(format!(
+    run.info(Markup::lines([
         "To make THIS repo the plane instead — purlis's own plane is one, which is why the \
-         option is here — ask for it by name:\n      purlis init \
-         --plane-is-this-repo{flags}\n  That writes {} into this repo, and purlis's own \
-         rules into its tracked .gitignore.",
-        written.join(", ")
-    ));
+         option is here — ask for it by name:"
+            .into(),
+        format!("      purlis init --plane-is-this-repo{flags}").into(),
+        format!(
+            "  That writes {} into this repo, and purlis's own rules into its tracked \
+             .gitignore.",
+            written.join(", ")
+        )
+        .into(),
+    ]));
     run.info(
         "Why the default changed: docs/adr/0035-a-plane-is-untrusted-until-the-operator-opens-\
          it.md, and charter-app spec decision 27. `purlis init` anywhere that is not the top \
@@ -1790,12 +1800,19 @@ fn first_clone_step(run: &mut Run, root: &Path, args: &InitArgs) -> u8 {
                 _ => "default".to_owned(),
             };
             if !root.join("workspaces").join(&ws).join(&name).exists() {
-                run.info(format!(
-                    "You are standing in the git repo '{name}'. Work happens in a workspace, not \
-                     in the plane root — clone it into the first one:\n      purlis init \
-                     --clone-this-repo\n  Nothing is cloned unless you run that. It lands in \
-                     workspaces/{ws}/{name}/, and declining leaves this plane complete."
-                ));
+                run.info(Markup::lines([
+                    format!(
+                        "You are standing in the git repo '{name}'. Work happens in a \
+                         workspace, not in the plane root — clone it into the first one:"
+                    )
+                    .into(),
+                    "      purlis init --clone-this-repo".into(),
+                    format!(
+                        "  Nothing is cloned unless you run that. It lands in \
+                         workspaces/{ws}/{name}/, and declining leaves this plane complete."
+                    )
+                    .into(),
+                ]));
             }
         }
         return 0;

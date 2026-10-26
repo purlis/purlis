@@ -13,7 +13,8 @@
  *   order), never a look.
  * - **Variants**: `secondary` (the plain button, the default), `primary` (the answer purlis
  *   suggests), `ghost`, `danger` (what cannot be undone from purlis, D-1719-3), `soft-accent`,
- *   `warning-soft`, `link`, and `grants`: an answer that grants, an Allow or an Accept
+ *   `warning-soft`, `link`, `quiet` (the ghost with quiet words: a strip's end mark, a crumb, a
+ *   pane's corner, #3214), and `grants`: an answer that grants, an Allow or an Accept
  *   (ADR 0097 §6), which leads with the open lock the family draws itself and never takes the
  *   primary look.
  * - **Sizes**: `sm`, `md` (the default) and `lg`, which is only for the control beside a list's
@@ -60,6 +61,7 @@ export const BUTTON_VARIANTS = [
   "soft-accent",
   "warning-soft",
   "link",
+  "quiet",
 ] as const;
 export type ButtonVariant = (typeof BUTTON_VARIANTS)[number];
 

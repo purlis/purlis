@@ -262,7 +262,7 @@ pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, String> {
                 .and_then(|ws| purlis_core::worktree::path_for(&root, ws, &repo, &piece).ok());
             if crate::brokered::removal_held(&root, target.as_deref()) {
                 say(purlis_core::repocmd::Say::Fail(
-                    crate::brokered::no_piece_removal_in_a_sandbox(&repo, &piece),
+                    crate::brokered::no_piece_removal_in_a_sandbox(&repo, &piece).into(),
                 ));
                 return Ok(1);
             }
@@ -284,7 +284,7 @@ fn standing_in(
             say(purlis_core::repocmd::Say::Fail(
                 "not inside a branch folder: run it from inside the piece (`purlis worktree list` \
                  shows where they are)"
-                    .to_owned(),
+                    .into(),
             ));
             1
         }
