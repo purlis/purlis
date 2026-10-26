@@ -373,7 +373,7 @@ pub fn revert(
         match store::read(plane, ws, &new_slug) {
             Ok(found) => Some(found),
             Err(e) => {
-                say(Say::Fail(e.to_string()));
+                say(Say::Fail(e.to_string().into()));
                 return 1;
             }
         }
@@ -386,25 +386,34 @@ pub fn revert(
     for m in record.members.iter().filter(|m| !log.contains_key(&m.repo)) {
         let repo = named(&m.repo);
         if started.get(&m.repo).is_some_and(|p| p.started(At::Any)) {
-            say(Say::Warn(format!(
-                "{repo}: a landing purlis started is not recorded yet, so there is no commit \
+            say(Say::Warn(
+                format!(
+                    "{repo}: a landing purlis started is not recorded yet, so there is no commit \
                  to revert. Record it first: purlis change land {} --repo {repo}",
-                named(slug)
-            )));
+                    named(slug)
+                )
+                .into(),
+            ));
         } else {
-            say(Say::Warn(format!(
-                "{repo}: no landing record, so no commit to revert — purlis cannot revert \
+            say(Say::Warn(
+                format!(
+                    "{repo}: no landing record, so no commit to revert — purlis cannot revert \
                  this member. If it was merged in a browser, finding the commit is a person's \
                  job."
-            )));
+                )
+                .into(),
+            ));
         }
     }
     for repo in log.keys().filter(|r| record.member(r).is_none()) {
-        say(Say::Warn(format!(
-            "{}: landed by purlis, and later dropped from {}; not reverted.",
-            named(repo),
-            named(slug)
-        )));
+        say(Say::Warn(
+            format!(
+                "{}: landed by purlis, and later dropped from {}; not reverted.",
+                named(repo),
+                named(slug)
+            )
+            .into(),
+        ));
     }
     let landed: Vec<(&Member, &Landing)> = record
         .members
@@ -412,10 +421,13 @@ pub fn revert(
         .filter_map(|m| Some((m, log.get(&m.repo)?)))
         .collect();
     if landed.is_empty() {
-        say(Say::Fail(format!(
-            "{}: purlis has landed no member of this change, so there is nothing to revert.",
-            named(slug)
-        )));
+        say(Say::Fail(
+            format!(
+                "{}: purlis has landed no member of this change, so there is nothing to revert.",
+                named(slug)
+            )
+            .into(),
+        ));
         return REFUSED;
     }
 
@@ -433,10 +445,9 @@ pub fn revert(
     for (m, line) in landed {
         let repo = m.repo.as_str();
         if new.exclusion(repo).is_some() {
-            say(Say::Info(format!(
-                "{}: excluded from {new_slug}; left out.",
-                named(repo)
-            )));
+            say(Say::Info(
+                format!("{}: excluded from {new_slug}; left out.", named(repo)).into(),
+            ));
             continue;
         }
         let branch = new
@@ -444,11 +455,14 @@ pub fn revert(
             .map_or_else(|| default_branch(&new_slug), |x| x.branch.clone());
         // Seeded before: its branch is a person's from here, and is not touched.
         if new.member(repo).is_some() && branch_made(plane, ws, repo, &branch) {
-            say(Say::Info(format!(
-                "{}: already seeded on {}; left as it is.",
-                named(repo),
-                named(&branch)
-            )));
+            say(Say::Info(
+                format!(
+                    "{}: already seeded on {}; left as it is.",
+                    named(repo),
+                    named(&branch)
+                )
+                .into(),
+            ));
             continue;
         }
         let target = match checked(plane, ws, line, &new_slug) {
@@ -485,23 +499,26 @@ pub fn revert(
     });
     let said_refused = |say: &mut dyn FnMut(Say)| {
         for r in &refused {
-            say(Say::Fail(format!("{}: {}", named(&r.repo), r.why)));
+            say(Say::Fail(format!("{}: {}", named(&r.repo), r.why).into()));
         }
     };
     if new.members.is_empty() {
         said_refused(say);
-        say(Say::Fail(format!(
-            "no member of {} could be reverted, so no change was created.",
-            named(slug)
-        )));
+        say(Say::Fail(
+            format!(
+                "no member of {} could be reverted, so no change was created.",
+                named(slug)
+            )
+            .into(),
+        ));
         return code;
     }
     if joined.is_empty() && seeded.is_empty() && existing.is_some() {
         said_refused(say);
         if refused.is_empty() {
-            say(Say::Done(format!(
-                "{new_slug}: every member purlis landed is seeded; nothing to do."
-            )));
+            say(Say::Done(
+                format!("{new_slug}: every member purlis landed is seeded; nothing to do.").into(),
+            ));
         }
         return code;
     }
@@ -540,11 +557,13 @@ pub fn revert(
             "change '{new_slug}' updated — {} to revert",
             counted(new.members.len(), "member", "members")
         )
+        .into()
     } else {
         format!(
             "change '{new_slug}' created — {} to revert",
             counted(new.members.len(), "member", "members")
         )
+        .into()
     }));
     for s in &seeded {
         let branch = new
@@ -559,10 +578,13 @@ pub fn revert(
         )));
     }
     said_refused(say);
-    say(Say::Info(format!(
-        "It is an ordinary change from here: purlis change push {new_slug}, then purlis \
+    say(Say::Info(
+        format!(
+            "It is an ordinary change from here: purlis change push {new_slug}, then purlis \
          change land {new_slug} --repo <name> for each member, blockers first."
-    )));
+        )
+        .into(),
+    ));
     code
 }
 

@@ -24,7 +24,7 @@ fn said(report: &Report) -> String {
         .said
         .iter()
         .map(|line| match line {
-            Say::Info(t) | Say::Ok(t) | Say::Warn(t) | Say::Err(t) => t.clone(),
+            Say::Info(t) | Say::Ok(t) | Say::Warn(t) | Say::Err(t) => t.to_string(),
         })
         .collect::<Vec<_>>()
         .join("\n")

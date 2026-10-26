@@ -115,7 +115,7 @@ pub struct Asking<'a> {
 /// `charter persona use <name>`, and its exit code.
 pub fn use_persona(root: &Path, name: &str, asking: &Asking, say: Sink) -> u8 {
     if let Some(refused) = crate::personas::name_refusal(root, name) {
-        say(Say::Fail(refused));
+        say(Say::Fail(refused.into()));
         return 1;
     }
     if asking.in_chat {
@@ -129,10 +129,9 @@ pub fn use_persona(root: &Path, name: &str, asking: &Asking, say: Sink) -> u8 {
         &[("persona", name)],
         asking.now,
     );
-    say(Say::Done(format!(
-        "Active persona set to '{name}'{}.",
-        scope_note(root, scope)
-    )));
+    say(Say::Done(
+        format!("Active persona set to '{name}'{}.", scope_note(root, scope)).into(),
+    ));
     warn_env(name, asking.env_persona, say);
     say_tool_ceiling(root, name, usable(asking.ids.session.as_deref()), say);
     say_mcp_boundary(root, name, say);
@@ -166,11 +165,14 @@ pub fn clear(asking: &crate::active::Asking, say: Sink) -> u8 {
             "This shell had no persona selection of its own, so nothing was cleared.".into(),
         ));
     } else if now.rung == crate::active::PersonaRung::Environment {
-        say(Say::Warn(format!(
-            "Persona selection cleared, but {} outranks every selection and still decides \
+        say(Say::Warn(
+            format!(
+                "Persona selection cleared, but {} outranks every selection and still decides \
                  in this shell.",
-            persona_variable()
-        )));
+                persona_variable()
+            )
+            .into(),
+        ));
     } else {
         say(Say::Done("Active persona cleared.".into()));
     }
@@ -181,16 +183,20 @@ pub fn clear(asking: &crate::active::Asking, say: Sink) -> u8 {
     let source = now.rung.label();
     let at = format!("'{}' (via {source})", crate::personas::one_line(name));
     if super::list::exists(root, name) {
-        say(Say::Info(format!("This shell now resolves to {at}.")));
+        say(Say::Info(
+            format!("This shell now resolves to {at}.").into(),
+        ));
     } else {
-        say(Say::Info(format!(
-            "This shell now resolves to {at}, where {}.",
-            super::list::MISSING
-        )));
-        say(Say::Info(format!(
-            "Ways out: {}.",
-            super::list::ways_out(source)
-        )));
+        say(Say::Info(
+            format!(
+                "This shell now resolves to {at}, where {}.",
+                super::list::MISSING
+            )
+            .into(),
+        ));
+        say(Say::Info(
+            format!("Ways out: {}.", super::list::ways_out(source)).into(),
+        ));
     }
     0
 }
@@ -207,10 +213,13 @@ pub(super) fn warn_env(name: &str, env: Option<&str>, say: Sink) {
         return;
     }
     let shown = crate::personas::one_line(env);
-    say(Say::Warn(format!(
-        "{} is set to '{shown}' and takes precedence — commands use '{shown}', not '{name}'.",
-        persona_variable()
-    )));
+    say(Say::Warn(
+        format!(
+            "{} is set to '{shown}' and takes precedence — commands use '{shown}', not '{name}'.",
+            persona_variable()
+        )
+        .into(),
+    ));
 }
 
 /// How a chat the app started is said to run: as its persona, or with none.
@@ -229,10 +238,13 @@ fn chat_runs(env: &str) -> String {
 fn refuse_in_chat(name: &str, env: Option<&str>, say: Sink) -> u8 {
     let env = crate::memstore::py_strip(env.unwrap_or_default());
     if env == name {
-        say(Say::Info(format!(
-            "This chat already runs as '{name}', and a chat's persona is fixed for its life: \
+        say(Say::Info(
+            format!(
+                "This chat already runs as '{name}', and a chat's persona is fixed for its life: \
              there is nothing to select."
-        )));
+            )
+            .into(),
+        ));
         return 0;
     }
     let still = if env.is_empty() {
@@ -241,16 +253,19 @@ fn refuse_in_chat(name: &str, env: Option<&str>, say: Sink) -> u8 {
         let shown = crate::personas::one_line(env);
         format!("use '{shown}', with the vaults of '{shown}'")
     };
-    say(Say::Fail(format!(
-        "This chat runs {}, and a chat's persona is fixed for its life: nothing was changed, \
+    say(Say::Fail(
+        format!(
+            "This chat runs {}, and a chat's persona is fixed for its life: nothing was changed, \
          and commands here still {still}.",
-        chat_runs(env)
-    )));
+            chat_runs(env)
+        )
+        .into(),
+    ));
     say(Say::Info(format!(
         "To use a vault of '{name}' here, run the command that needs it and ask the operator to \
          press Allow in the notice on this chat's tab. To have '{name}' do the work, dispatch \
          to it: `purlis dispatch --to {name}`."
-    )));
+    ).into()));
     1
 }
 
@@ -278,11 +293,14 @@ fn say_tool_ceiling(root: &Path, name: &str, sid: Option<&str>, say: Sink) {
     if added.is_empty() {
         return;
     }
-    say(Say::Info(format!(
-        "  {} declared since this session started: {}.",
-        counted(added.len(), "tool", "tools"),
-        added.join(", ")
-    )));
+    say(Say::Info(
+        format!(
+            "  {} declared since this session started: {}.",
+            counted(added.len(), "tool", "tools"),
+            added.join(", ")
+        )
+        .into(),
+    ));
     say(Say::Info(
         "  Those still prompt HERE. The tool-gate answers within the set that existed at \
          session start — `tools:` is read from a file this session can write, and freezing it \
@@ -301,15 +319,18 @@ fn say_mcp_boundary(root: &Path, name: &str, say: Sink) {
     }
     let mut names: Vec<&String> = servers.keys().collect();
     names.sort();
-    say(Say::Info(format!(
-        "  {} declared: {}.",
-        counted(names.len(), "MCP server", "MCP servers"),
-        names
-            .iter()
-            .map(|s| s.as_str())
-            .collect::<Vec<_>>()
-            .join(", ")
-    )));
+    say(Say::Info(
+        format!(
+            "  {} declared: {}.",
+            counted(names.len(), "MCP server", "MCP servers"),
+            names
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+        .into(),
+    ));
     say(Say::Info(
         "  They are NOT started for the session you are in, and servers already live here \
          (from .mcp.json or an enabled plugin) stay live. A chat started as this persona is \
