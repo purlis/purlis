@@ -398,7 +398,11 @@ fn each_harness_badge_says_what_applies_what_is_left_out_and_what_is_carried_ove
 
     let claude = on(Harness::ClaudeCode, Origin::Project);
     assert_eq!(claude.fit, Fit::Partial);
-    assert_eq!(claude.lines(), [left_out]);
+    assert_eq!(
+        claude.lines(),
+        ["Runs only when asked for by name.", left_out],
+        "Claude Code keeps it manual-only by its own key"
+    );
 
     for harness in [Harness::Codex, Harness::Opencode] {
         let badge = on(harness, Origin::Project);

@@ -45,7 +45,8 @@
   Claude Code, Codex and opencode, whether everything it asks for applies there, and what is left
   out, carried over or not applied. A skill of a program's own or a repo's that would widen a
   chat is marked. A manual-only skill now stays out of the chat's choice, and costs nothing in
-  its budget, on all three. The editor's live lint also warns of a description too short to say
+  its budget, on all three. Its badge says it runs only when asked for, and so does that of a
+  Codex skill or a repo's that Codex's own settings keep out of its choice (#3050). The editor's live lint also warns of a description too short to say
   when to use the skill, a skill it names that does not exist, and a program the skill runs that
   this machine does not have. A chat that starts without a skill it would have loaded, because
   the skill is broken, says which and why on its tab, with a way to the Skill studio.
