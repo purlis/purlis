@@ -11,11 +11,17 @@
  * They are modelled on that shape, not captured from a device; the tests that feed them hold
  * what the gesture does with each part of it. A real trace is also not always one event a frame:
  * WebKit merges the wheel events of a busy page into one, their travel summed ({@link merged}),
- * and a workspace switch is when the page is busy.
+ * and a workspace switch is when the page is busy. The window's `performance.now()` fallback,
+ * for an event with no time of its own, does not model the times of merged events.
  */
 
 /** The fingers moving: from a touch to the swipe's fastest. Its travel passes 60px by the 6th. */
 export const STROKE: readonly number[] = [1, 3, 6, 11, 17, 24, 30, 34, 36];
+
+/** A stroke that ramps up slowly and unevenly: its travel passes 60px by the 13th event. */
+export const SLOW_STROKE: readonly number[] = [
+  1, 2, 2, 3, 4, 3, 5, 6, 5, 7, 8, 9, 8, 10, 12, 11, 13, 15, 14, 16, 18, 20,
+];
 
 /** The momentum after {@link STROKE}: 48 frames (0.8 s), far more than another 60px of travel. */
 export const MOMENTUM: readonly number[] = [

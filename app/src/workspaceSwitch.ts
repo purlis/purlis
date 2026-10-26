@@ -148,7 +148,9 @@ export class Swipe {
     // Jitter the other way is no part of the tail's speed: it would read as the tail fading. And
     // the tail has faded to a speed only once two events in a row show it: one event read slow,
     // late from a busy page and never merged, is not a fade the next event could rise from.
-    if (way === this.way) {
+    // The opening event after a quiet has no gap to read a speed from: it may be several frames
+    // merged as the page was busy when the swipe began, so it sets no speed (#3327).
+    if (way === this.way && !quiet) {
       if (speed > this.fastest) {
         this.fastest = speed;
         this.slowest = speed;

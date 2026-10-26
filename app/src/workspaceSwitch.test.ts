@@ -20,6 +20,7 @@ import {
   merged,
   MOMENTUM,
   played,
+  SLOW_STROKE,
   STROKE,
   type Traced,
 } from "./swipeTraces.testkit";
@@ -131,11 +132,17 @@ describe("a trackpad's swipes, momentum and all (#3327, R112)", () => {
 
   it("never steps twice for a stroke whose events WebKit merged, wherever and however many", () => {
     // A busy page (a switch is one) gets its wheel events merged, their travel summed.
-    const whole = played([[...STROKE, ...MOMENTUM]]);
     const twice: string[] = [];
-    for (let count = 2; count <= 7; count++)
-      for (let start = 0; start + count <= whole.length; start++)
-        if (steps(merged(whole, start, count)).length !== 1) twice.push(`${count} at ${start}`);
+    for (const [named, stroke] of [
+      ["stroke", STROKE],
+      ["slow stroke", SLOW_STROKE],
+    ] as const) {
+      const whole = played([[...stroke, ...MOMENTUM]]);
+      for (let count = 2; count <= 7; count++)
+        for (let start = 0; start + count <= whole.length; start++)
+          if (steps(merged(whole, start, count)).length !== 1)
+            twice.push(`${named}: ${count} at ${start}`);
+    }
     expect(twice).toEqual([]);
   });
 
@@ -179,8 +186,14 @@ describe("a trackpad's swipes, momentum and all (#3327, R112)", () => {
   });
 
   it("never steps twice for a stroke that ramps up slowly and unevenly", () => {
-    const slow = [1, 2, 2, 3, 4, 3, 5, 6, 5, 7, 8, 9, 8, 10, 12, 11, 13, 15, 14, 16, 18, 20];
-    expect(steps(played([[...slow, ...MOMENTUM]])).length).toBe(1);
+    expect(steps(played([[...SLOW_STROKE, ...MOMENTUM]])).length).toBe(1);
+  });
+
+  it("never steps twice for a slow stroke whose opening frames came merged", () => {
+    // The page was busy as the swipe began: its first five frames arrive as one event, which
+    // has no gap to read a speed from, so the ramp after it is not a tail rising again.
+    const trace = merged(played([[...SLOW_STROKE, ...MOMENTUM]]), 0, 5);
+    expect(steps(trace).length).toBe(1);
   });
 });
 
