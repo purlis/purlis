@@ -137,7 +137,7 @@ export const PinsNotUsed: Story = {
     ).toHaveFocus();
     await userEvent.tab();
     await expect(
-      canvas.getByRole("button", { name: 'Remove the pin "Deploy Now" from workspace ops' }),
+      canvas.getByRole("button", { name: 'Remove it, the pin "Deploy Now" of workspace ops' }),
     ).toHaveFocus();
     expectFocusInSight();
     (document.activeElement as HTMLElement | null)?.blur();

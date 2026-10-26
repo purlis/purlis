@@ -90,7 +90,7 @@ export function SkillPinsRefusedLine({
       ) : (
         <Button
           size="sm"
-          aria-label={`Remove the pin ${JSON.stringify(bad)} from ${pinnerSaid(refused.by)}`}
+          aria-label={`Remove it, the pin ${JSON.stringify(bad)} of ${pinnerSaid(refused.by)}`}
           isDisabled={busy}
           onPress={() => onRemove(bad)}
         >

@@ -184,7 +184,7 @@ describe("a skill's history, state and uses", () => {
     const pins = await screen.findByTestId("skill-pinned-by");
     expect(pins.textContent).toContain(`ops's pins aren't used: "Bad" is not a skill's name`);
     fireEvent.click(
-      screen.getByRole("button", { name: 'Remove the pin "Bad" from workspace ops' }),
+      screen.getByRole("button", { name: 'Remove it, the pin "Bad" of workspace ops' }),
     );
     await waitFor(() =>
       expect(asked.find((one) => one.cmd === "skill_pin")?.args).toMatchObject({

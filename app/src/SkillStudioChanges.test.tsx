@@ -392,7 +392,7 @@ describe("the Skill studio's changes", () => {
     ).toBeInTheDocument();
 
     await user.click(
-      screen.getByRole("button", { name: 'Remove the pin "Not A Name" from workspace ops' }),
+      screen.getByRole("button", { name: 'Remove it, the pin "Not A Name" of workspace ops' }),
     );
     await waitFor(() =>
       expect(asked.find((one) => one.cmd === "skill_pin")?.args).toMatchObject({
