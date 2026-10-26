@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793035625702,
+  "lastUpdate": 1793038969588,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -7790,6 +7790,42 @@ window.BENCHMARK_DATA = {
             "value": 279.8,
             "unit": "MB",
             "extra": "median of 6 samples: 270.7, 294.3, 282.3, 279.3, 280.3, 199.9 MB; window 171.6 MB, session host 108.2 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "08ef23c1b2f2236124696ab09d1a5516ed3a0284",
+          "message": "Runners: browsers on runners (#2050) (#3290)\n\n* Runners: a runner runs its window's browsers, held to the link's frames (#2050)\n\nA chat's browser on a runner is started, watched, driven and logged in as\nthe desktop's host relays the window (session protocol 1.38): remote-link\nmay send each, and the relay sends them on for its local-ui client alone.\nA kept login never leaves its device.\n\nA browser view keeps one frame in flight: the next frame is the newest, sent\nonce the client has drawn the last. A view over a link between hosts is held\nto 15 frames a second and 1280 pixels wide; the engine scales its\nscreencast down to the widest view's width.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* Runners: a browser login asked while the desktop is away waits for it (#2050)\n\nOn a runner whose desktop is away, browser_login is answered at once in\nwords that say the login waits for the person as an Ask; the ask is kept in\nmemory and handed on as soon as a window hears the runner again, and what it\ncame to is told to the chat's next browser call. The opt-ins of a persona's\nlogins on a pool are bound to the pool's definition and image digests.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* Runners: a runner chat's browser runs on its runner, and logs in by opt-in (#2050)\n\nThe window starts a runner chat's browser on its pool's runner, over the\nlink its chats there share, and sends every act, view, take-over and login\nof it there. Its chip names the pool, so a runner's localhost is never read\nas this Mac's. A login in a runner's browser asks the person once whether\nthat persona's logins may be filled on that pool; the answer is bound to the\npool's definition and image digests and holds while purlis runs.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* Runners: logins only on a runner shown to be yours, asked per login (#2050)\n\nReview round 1. A pool login is filled only where the pool's Docker engine\nis a local socket on this machine; any other engine is refused in words\nuntil a pool can be marked owned. The opt-in is bound to the login, the pool,\nits image, the receiving runner and its engine, and the login is checked\nagainst the persona's declared and allowed logins before anyone is asked. A\nlogin that waited for the desktop is asked about afresh, at most once, within\n15 minutes, and is let go of with its chat. A runner chat without the sandbox\ngets no login. The window holds a runner browser's frames to the link's caps,\nthe desktop's relay sends no browser to a runner before 1.38, and a runner's\nhost lets a link between hosts act only on browsers opened for its window.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-26T16:29:57Z",
+          "tree_id": "30a4295654fb685a7abcf2851283b902d0cf7dc5",
+          "url": "https://github.com/purlis/purlis/commit/08ef23c1b2f2236124696ab09d1a5516ed3a0284"
+        },
+        "date": 1793038966999,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 1192,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1133, 1192, 1575 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 283.4,
+            "unit": "MB",
+            "extra": "median of 6 samples: 305.2, 308, 287.2, 278.4, 279.6, 213.6 MB; window 166.1 MB, session host 117.3 MB"
           }
         ]
       }
