@@ -117,18 +117,25 @@ pub(crate) struct Entry {
     pub(crate) size: u64,
     /// The permission bits.
     pub(crate) mode: Mode,
+    /// The device and inode: two entries with both the same are two names of one file.
+    pub(crate) dev: u64,
+    pub(crate) ino: u64,
 }
 
 impl Entry {
     /// The entry `stat` describes.
-    // `st_nlink` is a u16 on macOS and a u64 on Linux, so the widening is a no-op on one of them.
-    #[allow(clippy::useless_conversion)]
+    // `st_nlink` is a u16 on macOS and a u64 on Linux, so the widening is a no-op on one of them;
+    // `st_dev` is an i32 on macOS and a u64 on Linux, so its cast is.
+    #[allow(clippy::useless_conversion, clippy::unnecessary_cast)]
     fn of(stat: &rustix::fs::Stat) -> Self {
         Self {
             kind: FileType::from_raw_mode(stat.st_mode),
             links: u64::from(stat.st_nlink),
             size: stat.st_size as u64,
             mode: Mode::from_raw_mode(stat.st_mode as rustix::fs::RawMode) & Mode::all(),
+            // As std's `MetadataExt::dev` widens it, so the two compare equal.
+            dev: stat.st_dev as u64,
+            ino: stat.st_ino as u64,
         }
     }
 
@@ -475,6 +482,30 @@ impl Store {
             .collect();
         names.sort();
         Ok(names)
+    }
+
+    /// The name of every entry directly in the store, sorted, when there are no more than
+    /// `most` of them: `None` for a bigger store, or one that cannot be read. The listing stops
+    /// at the first name past `most`, and nothing is looked at per entry. A name that is not
+    /// UTF-8 is left out.
+    pub(crate) fn names_within(&self, most: usize) -> Option<Vec<String>> {
+        let mut dir = rustix::fs::Dir::read_from(self.fd.as_fd()).ok()?;
+        let mut names = Vec::new();
+        while let Some(entry) = dir.read() {
+            let entry = entry.ok()?;
+            let Ok(name) = entry.file_name().to_str() else {
+                continue;
+            };
+            if name == "." || name == ".." {
+                continue;
+            }
+            if names.len() == most {
+                return None;
+            }
+            names.push(name.to_owned());
+        }
+        names.sort();
+        Some(names)
     }
 
     /// The names of the plain files directly in the store (a regular file with one name),

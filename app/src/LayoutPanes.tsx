@@ -37,6 +37,7 @@ import { NONE_RESTORING } from "./restoringChats";
 import { SessionPane } from "./SessionPane";
 import { droppedReference, overChat, useReferenceChats } from "./references";
 import { NoticeOf, NoticePaneRow } from "./Notice";
+import { paneBand } from "./noticeSettle";
 import { type Blocks } from "./sandboxBlocks";
 import { ChatGauge, useChatUsage } from "./ChatGauge";
 import { SkillsChip } from "./UseSkill";
@@ -124,6 +125,7 @@ export function paneMenuOf(offerFor: (id: string) => Offer | undefined): Catalog
  */
 export function PaneFrame({
   plane,
+  pane,
   session,
   crumbs,
   ending,
@@ -141,6 +143,8 @@ export function PaneFrame({
   children,
 }: {
   plane: PlaneId;
+  /** The pane it draws, by its number in the tabs: its band is remembered by it (#3167). */
+  pane?: number;
   session: number;
   /** Whether the keyboard is in this pane: a split says which of its panes has it (#2914). */
   focused?: boolean;
@@ -199,7 +203,13 @@ export function PaneFrame({
           read and tabbed to (#1647); a terminal keeps Tab for its shell, so a control written
           after it is one Tab never reaches (charter-app#189). */}
       <div className="pane-top">
-        <PaneNotices notices={notices} asked={asked} others={others} onShowChat={onShowChat} />
+        <PaneNotices
+          band={pane === undefined ? undefined : paneBand(plane, pane)}
+          notices={notices}
+          asked={asked}
+          others={others}
+          onShowChat={onShowChat}
+        />
         <PaneHead doing={doing}>
           <div className="pane-chips">
             {/* **Which chat this is, while the tab shows a task** (#1486): first in the line, and
@@ -327,11 +337,14 @@ export type HiddenChat = {
  * those acts on its own chat: the Notice is that chat's, drawn here.
  */
 export function PaneNotices({
+  band,
   notices,
   asked,
   others,
   onShowChat,
 }: {
+  /** The pane the band is (`paneBand`), whichever component draws it (#3167). */
+  band?: string;
   notices: ReactNode;
   /** The questions for several of the pane's tasks at once (#1508): after the shown chat's
    *  own, before each other chat's, since each waits for the person. */
@@ -340,7 +353,7 @@ export function PaneNotices({
   onShowChat: (session: number) => void;
 }) {
   return (
-    <NoticePaneRow>
+    <NoticePaneRow band={band}>
       {notices}
       {asked}
       {others.map((other) => (
@@ -646,6 +659,7 @@ export function LayoutPanes({
           {/* As `PaneFrame` draws them: the band and the header, above what the pane shows. */}
           <div className="pane-top">
             <PaneNotices
+              band={paneBand(plane, layout.pane)}
               notices={null}
               asked={asked[layout.pane]}
               others={hidden}
@@ -694,6 +708,7 @@ export function LayoutPanes({
     return (
       <PaneFrame
         plane={plane}
+        pane={layout.pane}
         session={content.session}
         focused={layout.pane === focused}
         crumbs={path}

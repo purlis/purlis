@@ -2,14 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * **The activity family** (#2917, R116–R120): the left bar's tabs across a side panel's top and the
- * right bar's column, each with its top group, its gap and its bottom group, a plain count and the
- * hot one. Walked by the keyboard, held to axe and compared with its baseline
+ * **The activity family** (#2917, R116–R120; #3144): the left bar's column beside the project rail,
+ * the right bar's column, and the `tab` variant's row across a side panel's top, each with its top
+ * group, its gap and its bottom group, a plain count and the hot one. Walked by the keyboard, held to axe and compared with its baseline
  * (`docs/component-stories.md`); a chosen item is the same box as the others, so nothing moves.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
-import { expect } from "storybook/test";
+import { expect, waitFor } from "storybook/test";
 import {
   Brain,
   FolderGit2,
@@ -104,13 +104,14 @@ function Group({
 }
 
 /** A corner's bar, its top item open, pressed to switch. */
-function Corner({ variant }: { variant: ActivityVariant }) {
-  const [top, bottom] = variant === "tab" ? [LEFT_TOP, LEFT_BOTTOM] : [RIGHT_TOP, RIGHT_BOTTOM];
+function Corner({ variant, side }: { variant: ActivityVariant; side: "left" | "right" }) {
+  const [top, bottom] = side === "left" ? [LEFT_TOP, LEFT_BOTTOM] : [RIGHT_TOP, RIGHT_BOTTOM];
   const [open, setOpen] = useState<string | undefined>(top[0].name);
   const [half, setHalf] = useState<string | undefined>(undefined);
   const bar = (
     <ActivityBarFrame
       variant={variant}
+      data-side={side}
       top={<Group name="Views" items={top} variant={variant} open={open} onPick={setOpen} />}
       bottom={
         <Group
@@ -126,6 +127,14 @@ function Corner({ variant }: { variant: ActivityVariant }) {
   return variant === "tab" ? (
     <div style={{ inlineSize: "240px", blockSize: "120px" }}>
       <Panel variant="side">{bar}</Panel>
+    </div>
+  ) : side === "left" ? (
+    // The left column beside the side panel, as the switcher prototype's variant D draws it.
+    <div style={{ display: "flex", gap: "var(--space-4)", blockSize: "360px" }}>
+      {bar}
+      <div style={{ display: "grid", inlineSize: "160px" }}>
+        <Panel variant="side" />
+      </div>
     </div>
   ) : (
     <div style={{ display: "flex", blockSize: "360px" }}>{bar}</div>
@@ -160,15 +169,33 @@ const pressedByTheKeyboard: Story["play"] = async ({ canvas, userEvent }) => {
   ]);
 };
 
-/** The left bar: tabs across the side panel's top, Branch folders and Changes at the row's end. */
+/** The left bar (#3144): a 44px column beside the side panel, Branch folders and Changes at its
+ *  foot; Classic's accent edge along its left. */
+export const TheLeftColumn: Story = {
+  args: { variant: "bar", side: "left" },
+  play: async (context) => {
+    await pressedByTheKeyboard(context);
+    // The keyboard let go, so the picture shows the chosen item at rest: Classic's accent edge
+    // along its left, not under the focus ring.
+    const chosen = context.canvas.getAllByRole("button")[1];
+    await expect(chosen).toHaveAttribute("data-selected");
+    (chosen.ownerDocument.activeElement as HTMLElement | null)?.blur();
+    // The item hears its blur and draws it on React's next commit, not in the same task.
+    await waitFor(() => expect(chosen).not.toHaveAttribute("data-focus-visible"));
+    await expect(chosen).toHaveAttribute("data-selected");
+  },
+};
+
+/** The `tab` variant, for a theme that names it: tabs across a side panel's top, the bottom group
+ *  at the row's end. No bar of the window draws it since #3144. */
 export const TabsAcrossTheSidePanel: Story = {
-  args: { variant: "tab" },
+  args: { variant: "tab", side: "left" },
   play: pressedByTheKeyboard,
 };
 
 /** The right bar: a 44px column, Memory, Todos and History at its foot, Needs you's count hot. */
 export const TheRightColumn: Story = {
-  args: { variant: "bar" },
+  args: { variant: "bar", side: "right" },
   play: async (context) => {
     await pressedByTheKeyboard(context);
     const hot = context.canvasElement.querySelector('[data-part="count"][data-tone="needs-you"]');

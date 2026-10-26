@@ -490,6 +490,7 @@ import {
   withNote,
 } from "./ChatNotices";
 import { LayoutPanes } from "./LayoutPanes";
+import { forgetPaneBand, forgetPaneBands, paneBand } from "./noticeSettle";
 
 /** Any C0 or C1 control character, or DEL: what a line typed and left unrun must not hold. */
 // eslint-disable-next-line no-control-regex
@@ -573,7 +574,7 @@ type Typed =
  * chats is kept as state here and reported to the window, and its view takes it all at once as
  * it comes back. Its terminals are not React's to draw: they go on taking what their programs
  * write. What any part of it draws over the whole window, a dialog or a menu, is drawn only
- * while the project is in front, whenever it was opened (`overlays/`); and should anything
+ * while the project is in front, whenever it was opened (the families' surfaces); and should anything
  * still be over the window once the project has left, the view is not kept at all
  * (`drawnOverTheWindow`).
  *
@@ -725,6 +726,21 @@ export const PlaneView = memo(function PlaneView({
   shellAsked?: { typed: string; at: number };
 }) {
   const [tabs, setTabs] = useState<Tabs>(noTabs);
+  // **A pane closed for good lets its band's memory go** (#3167): a pane's number is never
+  // used again, so one gone from every tab is gone for good.
+  const panesDrawn = useRef<{ plane: string; panes: ReadonlySet<number> }>(undefined);
+  useEffect(() => {
+    const panes = new Set(tabs.order.flatMap((id) => contentsOf(tabs, id).map((one) => one.pane)));
+    const was = panesDrawn.current;
+    if (was !== undefined) {
+      for (const pane of was.panes) {
+        if (was.plane !== plane || !panes.has(pane)) forgetPaneBand(paneBand(was.plane, pane));
+      }
+    }
+    panesDrawn.current = { plane, panes };
+  }, [plane, tabs]);
+  // The project leaves the window: every one of its panes is gone for good.
+  useEffect(() => () => forgetPaneBands(plane), [plane]);
   /**
    * **The breadcrumb each pane last drew for the task it shows**, by tab, pane and chat
    * (#1486). A pane never shows a task without its breadcrumb, and a task that has ended has

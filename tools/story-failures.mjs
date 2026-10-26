@@ -10,6 +10,8 @@
 //   file `PURLIS_STORY_REPORT` names. It keeps an error's message apart from its stack: WebKit's
 //   stack does not repeat the message, as Chromium's does, so a report that keeps only the
 //   stack (Vitest's JSON one) loses why a story failed in WebKit;
+//   It also names each story that takes no picture (`screenshot: false`), whose baselines
+//   `tools/story-baselines.mjs` then calls obsolete;
 // - run as a script, it reads those reports and prints one annotation per story that failed:
 //
 //   node tools/story-failures.mjs <browser> <report> [<browser> <report> ...]
@@ -154,7 +156,8 @@ export function cellOf(project) {
 }
 
 /** **The reporter**: at the end of the run, each failed story's errors, the errors of a story
- *  file or a suite, those outside any, and whether the run failed. */
+ *  file or a suite, those outside any, whether the run failed, and the stories that take no
+ *  picture. */
 export default class StoryFailures {
   onTestRunEnd(testModules, unhandledErrors = [], reason) {
     const failures = testModules.flatMap((module) =>
@@ -171,6 +174,22 @@ export default class StoryFailures {
         .map((one) => ({ file: module.relativeModuleId, ...kept(one) })),
     );
     const errors = [...inFiles, ...unhandledErrors.map(kept)];
+    // Each story that takes no picture (`screenshots.setup.ts` marks it), once, whatever cells
+    // it ran in: its baselines are obsolete (`tools/story-baselines.mjs`).
+    const unpictured = [
+      ...new Map(
+        testModules.flatMap((module) =>
+          [...module.children.allTests()]
+            .map((test) => test.meta())
+            .map((meta) => meta.screenshot)
+            .filter((shot) => shot?.taken === false && shot.story)
+            .map(({ story }) => [
+              `${module.relativeModuleId}\n${story}`,
+              { file: module.relativeModuleId, id: String(story) },
+            ]),
+        ),
+      ).values(),
+    ];
     const failed =
       reason === "failed" ||
       reason === "interrupted" ||
@@ -183,7 +202,10 @@ export default class StoryFailures {
         );
       return;
     }
-    writeFileSync(to, JSON.stringify({ failed, failures, errors }, null, 2));
+    writeFileSync(
+      to,
+      JSON.stringify({ failed, failures, errors, unpictured }, null, 2),
+    );
   }
 }
 
