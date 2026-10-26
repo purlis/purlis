@@ -7,8 +7,8 @@
   "hosts": [
     "probe.invalid",
     "example.com",
-    "10.0.0.1.sslip.io",
-    "100.64.0.1.sslip.io"
+    "ten.studio-probe.test",
+    "cgnat.studio-probe.test"
   ],
   "contributes": {
     "runs": "bin/studio-probe",

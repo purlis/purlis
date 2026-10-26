@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { useState } from "react";
+import { drawnWith } from "../../cascade.testkit";
 import { Form } from "../field/Field";
 import { ComboBox } from "./ComboBox";
 
@@ -17,7 +18,15 @@ afterEach(cleanup);
 
 const SKILLS = ["purlis:handoff", "purlis:persona", "deploy"];
 
-function Box({ onSend, isDisabled }: { onSend?: (value: string) => void; isDisabled?: boolean }) {
+function Box({
+  onSend,
+  isDisabled,
+  isInvalid,
+}: {
+  onSend?: (value: string) => void;
+  isDisabled?: boolean;
+  isInvalid?: boolean;
+}) {
   const [value, setValue] = useState("");
   return (
     <Form
@@ -33,7 +42,10 @@ function Box({ onSend, isDisabled }: { onSend?: (value: string) => void; isDisab
         value={value}
         onChange={setValue}
         isDisabled={isDisabled}
+        isInvalid={isInvalid}
+        aria-describedby={isInvalid ? "why" : undefined}
       />
+      {isInvalid && <p id="why">ops has no such skill.</p>}
       <button type="submit">Add</button>
     </Form>
   );
@@ -115,5 +127,26 @@ describe("the combobox", () => {
     render(<Box isDisabled />);
     expect(box()).toBeDisabled();
     expect(box().closest('[data-scope="combobox"]')).toHaveAttribute("data-disabled");
+  });
+
+  it("says it is refused, heard with why, and draws the danger edge without moving (#3110)", async () => {
+    const user = userEvent.setup();
+    render(<Box isInvalid />);
+    expect(box()).toHaveAttribute("aria-invalid", "true");
+    expect(box()).toHaveAccessibleDescription("ops has no such skill.");
+    const root = box().closest('[data-scope="combobox"][data-part="root"]') as Element;
+    expect(root).toHaveAttribute("data-invalid");
+    expect(drawnWith(root, "border-color")).toBe("var(--danger-base)");
+    expect(drawnWith(root, "border")).toBe("1px solid var(--border-control)");
+    // Still a combobox: ↓ opens its suggestions.
+    await user.click(box());
+    await user.keyboard("{ArrowDown}");
+    expect(await screen.findByRole("listbox")).toBeInTheDocument();
+  });
+
+  it("is not refused unless it is told so", () => {
+    render(<Box />);
+    expect(box()).not.toHaveAttribute("aria-invalid");
+    expect(box().closest('[data-scope="combobox"]')).not.toHaveAttribute("data-invalid");
   });
 });
