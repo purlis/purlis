@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { type Offer } from "./actions";
 import { useArrived } from "./lib/arrived";
+import { Count } from "./ui/badge/Badge";
 import { Button, IconButton } from "./ui/button/Button";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 import { tabPart } from "./ui/tabs/Tabs";
@@ -285,7 +286,7 @@ export function ShowMore({
         onKeyDown={opensOnTheArrows(open !== false, setOpen)}
       >
         {`${hidden.length} more`}
-        {needs > 0 && <span className="show-more-needs">{needs}</span>}
+        {needs > 0 && <Count variant="hot">{needs}</Count>}
         <ChevronDown />
       </Button>
       <AnchoredMenu

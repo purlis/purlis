@@ -13,7 +13,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { Group, Panel, usePanelRef, type Layout } from "react-resizable-panels";
-import { Separator } from "./ui/panel/Separator";
+import { Separator as ResizeHandle } from "./ui/panel/Separator";
 import { useProjectShown } from "./projectShown";
 import { X } from "lucide-react";
 import { ActivityBar, VIEW_MARKS, type PanelTab, type Tabbed } from "./ActivityBar";
@@ -721,7 +721,7 @@ function Halves({
   return (
     <Group className="panel-halves" orientation="horizontal" onLayoutChanged={settled}>
       {half("left", left)}
-      <Separator
+      <ResizeHandle
         className={both ? undefined : "edge-gone"}
         disableDoubleClick
         elementRef={between}
@@ -1189,7 +1189,7 @@ function Slot({
 function Edge({ open, named, onReset }: { open: boolean; named: string; onReset?: () => void }) {
   const element = useHandleReset(onReset);
   return (
-    <Separator
+    <ResizeHandle
       aria-label={named}
       className={open ? undefined : "edge-gone"}
       disableDoubleClick={onReset !== undefined}

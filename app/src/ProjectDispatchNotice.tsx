@@ -12,6 +12,7 @@ import {
   useDispatchArrival,
 } from "./dispatchArrival";
 import { Notice, type NoticeAction } from "./Notice";
+import { Card } from "./ui/card/Card";
 
 /**
  * **What the target personas of `pairs` work with**, in the words the grant question uses
@@ -118,21 +119,20 @@ export function ProjectDispatchNotice({
   const fixes: readonly [NoticeAction, ...NoticeAction[]] = [first ?? decline, ...rest];
 
   const each = summed ? (
-    <details
-      className="block-report ui-inline-surface"
-      onToggle={(event) => setOpened(event.currentTarget.open ? shown : undefined)}
-    >
-      <summary>Show all {pairs.length} pairs</summary>
-      <ul>
-        {pairs.map((one) => (
-          <li key={one.id}>{pairSaid(one)}</li>
+    <Card className="block-report">
+      <details onToggle={(event) => setOpened(event.currentTarget.open ? shown : undefined)}>
+        <summary>Show all {pairs.length} pairs</summary>
+        <ul>
+          {pairs.map((one) => (
+            <li key={one.id}>{pairSaid(one)}</li>
+          ))}
+        </ul>
+        {/* What each target works with is read with the pairs it belongs to. */}
+        {worksWith(pairs).map((one) => (
+          <p key={one}>{one}</p>
         ))}
-      </ul>
-      {/* What each target works with is read with the pairs it belongs to. */}
-      {worksWith(pairs).map((one) => (
-        <p key={one}>{one}</p>
-      ))}
-    </details>
+      </details>
+    </Card>
   ) : undefined;
 
   const arrived = waiting.length > 0 && shown !== putAway;

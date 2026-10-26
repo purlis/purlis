@@ -87,6 +87,7 @@ import { DISPATCH } from "./settings/dispatch";
 import { Button } from "./ui/button/Button";
 import { TextField } from "./ui/field/Field";
 import { PanelSectionTitle } from "./ui/panel/Panel";
+import { Count } from "./ui/badge/Badge";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /** What a chat's state is drawn from (`ChatShownState`): its row's and its card's alike. */
@@ -1594,10 +1595,13 @@ const TasksFolded = memo(function TasksFolded({ session }: { session: number }) 
   const total = tasksIn(counts);
   if (total === 0) return null;
   return (
-    <span className="task-count ui-text-meta ui-text-strong" data-testid={`task-count-${session}`}>
-      <span aria-hidden="true">{total}</span>
-      <span className="hidden-words">{total === 1 ? "1 task" : `${total} tasks`}</span>
-    </span>
+    <Count
+      className="task-count"
+      data-testid={`task-count-${session}`}
+      said={total === 1 ? "1 task" : `${total} tasks`}
+    >
+      {total}
+    </Count>
   );
 });
 

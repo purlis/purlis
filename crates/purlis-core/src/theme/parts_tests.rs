@@ -106,15 +106,16 @@ fn a_theme_that_names_no_parts_draws_exactly_as_today() {
         assert!(parts::fallen(theme).is_empty());
     }
     // Purlis names its panels' fill (#2913), the one its docked tabs join by default (#2914),
-    // and the edges it draws none of (#3177): its tooltip's, dialog's and popover's. Its tabs and
-    // its buttons are the family defaults and cost nothing to measure: a button part would have
-    // its consent floors measured at every hue a workspace's colour can take, at every launch.
+    // the edges it draws none of (#3177): its tooltip's, dialog's and popover's, and its cards'
+    // ground and edge (#2912). Its tabs and its buttons are the family defaults and cost nothing
+    // to measure: a button part would have its consent floors measured at every hue a
+    // workspace's colour can take, at every launch.
     let purlis = built_in("purlis").expect("Purlis");
     assert!(
         purlis
             .parts
             .keys()
-            .all(|key| ["panel", "tooltip", "dialog", "popover"].contains(&key.family)),
+            .all(|key| ["panel", "tooltip", "dialog", "popover", "card"].contains(&key.family)),
         "{:?}",
         purlis.parts.keys().collect::<Vec<_>>()
     );

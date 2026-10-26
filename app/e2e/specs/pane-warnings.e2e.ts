@@ -65,7 +65,9 @@ async function raise(pane: number, sentence: string, ways: string[]): Promise<vo
       const frames = [...document.querySelectorAll(".pane-frame")].filter((frame) =>
         frame.querySelector('[data-testid="pane"]'),
       );
-      const stack = frames[at]?.querySelector(".pane-top .pane-notice-row > .pane-notices");
+      const stack = frames[at]?.querySelector(
+        '.pane-top [data-scope="notice-row"][data-part="root"] > [data-scope="notice-row"][data-part="stack"]',
+      );
       if (!stack) return false;
       const el = [
         (tag: string, cls: string, text?: string): HTMLElement => {
@@ -75,15 +77,25 @@ async function raise(pane: number, sentence: string, ways: string[]): Promise<vo
           return made;
         },
       ][0];
-      const box = el("div", "notice-pane-box ui-inline-surface ui-inline-surface-waiting");
+      // The notice family's box in a pane (`ui/notice`, #2912), as `Notice` draws it.
+      const box = el("div", "");
+      Object.assign(box.dataset, {
+        scope: "notice",
+        part: "root",
+        variant: "news",
+        placement: "pane",
+      });
       box.dataset.raised = "pane-warnings.e2e";
       box.setAttribute("data-asks", "");
-      const line = el("div", "notice notice-pane");
+      const line = el("div", "");
       Object.assign(line.dataset, { scope: "button-row", size: "sm", wraps: "" });
       line.setAttribute("role", "status");
-      line.append(el("div", "notice-says", says));
+      const message = el("div", "", says);
+      Object.assign(message.dataset, { scope: "notice", part: "message" });
+      line.append(message);
       for (const way of answers) {
-        const button = el("button", way === "Dismiss" ? "notice-dismiss" : "notice-fix");
+        const button = el("button", "");
+        button.dataset.way = way === "Dismiss" ? "dismiss" : "fix";
         Object.assign(button.dataset, {
           scope: "button",
           part: "root",
@@ -111,7 +123,7 @@ async function raise(pane: number, sentence: string, ways: string[]): Promise<vo
         const frames = [...document.querySelectorAll(".pane-frame")].filter((frame) =>
           frame.querySelector('[data-testid="pane"]'),
         );
-        const row = frames[at]?.querySelector(".pane-notice-row");
+        const row = frames[at]?.querySelector('[data-scope="notice-row"][data-part="root"]');
         return row !== null && row !== undefined && getComputedStyle(row).display !== "none";
       }, pane),
     { timeout: 10_000, interval: 50, timeoutMsg: `pane ${pane} never drew its band` },
@@ -149,7 +161,7 @@ async function measured(pane: number) {
     return {
       frame: box(frame),
       frameFill: frame ? getComputedStyle(frame).backgroundColor : "",
-      band: box(frame?.querySelector(".pane-notice-row")),
+      band: box(frame?.querySelector('[data-scope="notice-row"][data-part="root"]')),
       head: box(frame?.querySelector(".pane-head")),
       chips: [...(frame?.querySelectorAll(".pane-head > .pane-chips > *") ?? [])].map(box),
       screen: box(frame?.querySelector(".xterm-screen")),
@@ -162,7 +174,7 @@ async function measured(pane: number) {
       joined: layout ? getComputedStyle(layout).getPropertyValue("--tabs-joined").trim() : "",
       warnings: raised.map((one) => ({
         box: box(one),
-        says: box(one.querySelector(".notice-says")),
+        says: box(one.querySelector('[data-scope="notice"][data-part="message"]')),
         buttons: [...one.querySelectorAll("button")].map(box),
       })),
     };
@@ -381,7 +393,9 @@ describe("a pane's warnings, inside the pane", () => {
     const sideways = await browser.execute(() => {
       const all: number[] = [];
       for (
-        let el: Element | null = document.querySelector(".pane-notice-row");
+        let el: Element | null = document.querySelector(
+          '[data-scope="notice-row"][data-part="root"]',
+        );
         el;
         el = el.parentElement
       )

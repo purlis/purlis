@@ -77,6 +77,9 @@
  *   `ui-tree-row`, `ui-tree-twist`) and its `data-scope`. A tree is the family's `Tree` and
  *   `TreeRow` (`ui/tree/Tree`). The trees still drawn by hand are turned off by file in
  *   `eslint.config.js`, each until its lane moves it.
+ * - `purlis/card-family`, `purlis/notice-family`, `purlis/badge-family` and
+ *   `purlis/separator-family` (errors: these families have moved, #2912): the same, and a raw
+ *   `<hr>`, which is the separator family's `Separator` (`ui/separator/Separator`).
  * - `purlis/panel-separator-family` (error: every resize handle is the family's, #3143):
  *   `data-scope="panel-separator"` written by hand, and the panel library's own `Separator`,
  *   by name or through `import * as`.
@@ -791,6 +794,44 @@ const treeFamily = moved({
     "a tree: draw it as `<Tree>` and `<TreeRow>`, with the row's slots, from `ui/tree/Tree` (#2911).",
 });
 
+const cardFamily = moved({
+  description: "A box one step off its surface is the shared Card family",
+  scopes: ["card"],
+  classes: ["ui-inline-surface", "ui-inline-surface-*"],
+  message: 'a card: draw it as `<Card>` (an ask as `variant="ask"`) from `ui/card/Card` (#2912).',
+});
+
+const noticeFamily = moved({
+  description: "A Notice is drawn by the shared notice family",
+  scopes: ["notice", "notice-list", "notice-row"],
+  classes: [
+    "notice",
+    "notice-*",
+    "pane-notice-row",
+    "pane-notice-row-*",
+    "pane-notices",
+    "window-notices",
+  ],
+  message:
+    "a Notice: draw it as `<Notice>` (`src/Notice.tsx`), which draws through `ui/notice/Notice` (#2912).",
+});
+
+const badgeFamily = moved({
+  description: "A badge or a count is the shared badge and count family",
+  scopes: ["badge", "count"],
+  classes: ["ui-setting-badge", "count-pill", "count-pill-*", "show-more-needs", "activity-said"],
+  message:
+    "a badge or a count: draw it as `<Badge>`, `<Count>` or `<CountGroup>` from `ui/badge/Badge` (#2912).",
+});
+
+const separatorFamily = moved({
+  description: "A line between two groups is the shared Separator family",
+  scopes: ["separator"],
+  classes: [],
+  elements: ["hr"],
+  message: "a separator: draw it as `<Separator>` from `ui/separator/Separator` (#2912).",
+});
+
 const separatorScope = moved({
   description: "A resize handle between two panels is the shared panel separator family",
   scopes: ["panel-separator"],
@@ -851,6 +892,10 @@ export const purlisUi = {
     "tabs-family": tabsFamily,
     "titlebar-family": titlebarFamily,
     "tree-family": treeFamily,
+    "card-family": cardFamily,
+    "notice-family": noticeFamily,
+    "badge-family": badgeFamily,
+    "separator-family": separatorFamily,
     "panel-separator-family": panelSeparatorFamily,
   },
 };

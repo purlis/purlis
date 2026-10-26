@@ -103,6 +103,11 @@ export default tseslint.config(
       "purlis/titlebar-family": "error",
       // Every tree is the tree family's, on React Aria, since #2911 (the trees below aside).
       "purlis/tree-family": "error",
+      // The card, notice, badge and count, and separator families have moved (#2912).
+      "purlis/card-family": "error",
+      "purlis/notice-family": "error",
+      "purlis/badge-family": "error",
+      "purlis/separator-family": "error",
       "purlis/panel-separator-family": "error",
     },
   },

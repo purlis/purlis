@@ -228,9 +228,8 @@ describe("forced colours", () => {
 
   it("mark what needs you in the system's pair for what is marked", () => {
     for (const needs of [
-      ".count-pill-needs",
-      ".show-more-needs",
       '[data-scope="activity"][data-part="count"][data-tone="needs-you"]',
+      '[data-scope="count"][data-part="root"][data-variant="hot"]',
       '[data-scope="status-item"][data-variant="waiting"] > [data-part="count"]',
       ".repo-instruction-text .invisible-char",
     ]) {
@@ -247,8 +246,7 @@ describe("forced colours", () => {
       '[data-scope="menu"][data-part="root"][data-variant="danger"]',
       '[data-scope="status-item"][data-part="root"][data-tone="danger"]',
       ".trouble",
-      ".ui-inline-surface-trouble",
-      ".notice-list .notice-inbox.notice-trouble",
+      '[data-scope="notice"][data-part="root"][data-variant="trouble"]',
       ".ui-setting-error p",
     ]) {
       expect(drawn(danger).get("outline"), danger).toBe("2px dashed CanvasText");

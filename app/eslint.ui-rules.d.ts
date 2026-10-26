@@ -28,6 +28,10 @@ export const purlisUi: {
     | "tabs-family"
     | "titlebar-family"
     | "tree-family"
+    | "card-family"
+    | "notice-family"
+    | "badge-family"
+    | "separator-family"
     | "panel-separator-family",
     Rule.RuleModule
   >;
