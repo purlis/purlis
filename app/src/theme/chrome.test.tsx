@@ -75,6 +75,7 @@ import { RelaunchAsk } from "../RelaunchAsk";
 import { RemoveFromWorkspace } from "../RemoveFromWorkspace";
 import { RemovePersona } from "../RemovePersona";
 import { RenameWorkspace } from "../RenameWorkspace";
+import { AddVision } from "../AddVision";
 import { RequestMerge } from "../SavingMerge";
 import { SavingView } from "../SavingView";
 import { StartChat } from "../StartChat";
@@ -1138,6 +1139,20 @@ const DIALOGS: Opened[] = [
           trouble="beta already exists"
           renaming={false}
           onRename={nothing}
+          onCancel={nothing}
+        />,
+      ),
+  },
+  {
+    name: "adding a workspace's vision",
+    file: "AddVision.tsx",
+    open: async () =>
+      render(
+        <AddVision
+          workspace="gamma"
+          trouble="a vision has words: nothing was written"
+          saving={false}
+          onSave={nothing}
           onCancel={nothing}
         />,
       ),
