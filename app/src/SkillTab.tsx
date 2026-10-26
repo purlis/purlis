@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useId, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 import { LoaderCircle } from "lucide-react";
 import {
   commands,
@@ -155,6 +155,9 @@ export function SkillTab({
 }) {
   const [panels, setPanels] = useState<SkillPanel[]>();
   const [refused, setRefused] = useState<string>();
+  // A grade that ended (SK-16): its scorecard and the history's grade are read again.
+  const [graded, setGraded] = useState(0);
+  const regraded = useCallback(() => setGraded((n) => n + 1), []);
   useEffect(() => {
     let live = true;
     void commands.skillPanels(plane, name).then((answer) => {
@@ -167,12 +170,12 @@ export function SkillTab({
     return () => {
       live = false;
     };
-  }, [plane, name, changed]);
+  }, [plane, name, changed, graded]);
 
   return (
     <div className="skill-tab" data-testid="skill-tab">
       {/* No heading with the skill's name: its tab says it (#3147). */}
-      <SkillDetailsPanel plane={plane} name={name} changed={changed} />
+      <SkillDetailsPanel plane={plane} name={name} changed={changed + graded} onGraded={regraded} />
       <SkillTotals plane={plane} name={name} changed={changed} />
       {refused !== undefined ? (
         <EmptyState

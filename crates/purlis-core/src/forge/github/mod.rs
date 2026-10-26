@@ -15,9 +15,9 @@ use super::backend::{
 use super::checks::{self, Annotation, Checks, FailedCheck};
 use super::pr::{
     AutoMerge, GITHUB_AUTO_MERGE_NOT_ALLOWED, GITHUB_METHODS, GITHUB_NOTHING_TO_WAIT_FOR, Gate,
-    Gated, MergeAs, MergedAt, Opened, Pinned, Pr, Ready, Request, State, check_gate, commit_named,
-    first, held_to_the_forges_clock, is_ours, none_will_run, not_queued_when, not_this_saves,
-    pr_of, unknown_state,
+    Gated, Image, MergeAs, MergedAt, Opened, Pinned, Pr, Ready, Request, State, check_gate,
+    commit_named, first, held_to_the_forges_clock, is_ours, none_will_run, not_queued_when,
+    not_this_saves, pr_of, unknown_state,
 };
 use super::transport::{Call, Field, Method, NoAnswer};
 use super::{
@@ -30,6 +30,7 @@ use super::{
 #[allow(dead_code)]
 mod graphql;
 mod making;
+mod proof;
 mod read;
 #[cfg(test)]
 mod read_tests;
@@ -385,6 +386,8 @@ impl Repos for GitHub {
             },
         );
         Ok(About {
+            can_push: answer["permissions"]["push"].as_bool(),
+            uploads_need_sign_in: None,
             visibility,
             issues,
             push_protection,
@@ -1015,6 +1018,39 @@ impl Requests for GitHub {
 
     fn ci_word(&self, caller: &Caller, path: &str, branch: &str) -> Result<Option<String>, Raised> {
         self.rollup(caller, path, branch)
+    }
+
+    fn keep_images(
+        &self,
+        caller: &Caller,
+        path: &str,
+        pr: &Pr,
+        images: &[Image],
+    ) -> Result<Vec<String>, ForgeError> {
+        proof::keep(&self.0, caller, path, pr, images)
+    }
+
+    fn comment(
+        &self,
+        caller: &Caller,
+        path: &str,
+        pr: &Pr,
+        body: &str,
+    ) -> Result<String, ForgeError> {
+        let (owner, name) = owner_name(path);
+        let api = format!(
+            "repos/{}/{}/issues/{}/comments",
+            quote(owner),
+            quote(name),
+            pr.number
+        );
+        let doing = format!("commenting on pull request #{} in {path}", pr.number);
+        let call = Call::write(Method::Post, api, vec![Field::text("body", body)]);
+        let record = self.0.ask(caller, &call, &doing)?;
+        record["html_url"]
+            .as_str()
+            .map(str::to_string)
+            .ok_or_else(|| ForgeError::new(format!("{doing}: the answer named no html_url")))
     }
 }
 

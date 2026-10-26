@@ -157,7 +157,7 @@ impl<'a> Env<'a> {
     }
 
     /// `name`'s directory, or `fallback` under the home directory.
-    fn dir(&self, name: &str, fallback: &str) -> Option<PathBuf> {
+    pub(crate) fn dir(&self, name: &str, fallback: &str) -> Option<PathBuf> {
         self.var(name)
             .map(PathBuf::from)
             .or_else(|| self.home.as_ref().map(|home| home.join(fallback)))

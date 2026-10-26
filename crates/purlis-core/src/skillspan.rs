@@ -72,7 +72,8 @@ pub struct Tracker {
 /// turn it is sent in opens are theirs.
 #[derive(Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Prompted {
-    /// [`StartedBy::Curation`] or [`StartedBy::Trigger`]; any other start is held for nothing.
+    /// [`StartedBy::Curation`], [`StartedBy::Trigger`] or [`StartedBy::Grade`]; any other start
+    /// is held for nothing.
     pub by: StartedBy,
     /// The prompt's lead, the digest of its first six words. Never the text itself.
     pub lead: u64,
@@ -356,7 +357,10 @@ impl Tracker {
     /// the next prompt that holds its lead is theirs, and so are the runs its turn opens at the
     /// top. The one put there last stands. Any other start is held for nothing.
     pub fn prompted(&mut self, key: &str, prompted: Prompted) {
-        if matches!(prompted.by, StartedBy::Curation | StartedBy::Trigger) {
+        if matches!(
+            prompted.by,
+            StartedBy::Curation | StartedBy::Trigger | StartedBy::Grade
+        ) {
             self.prompted.insert(key.to_owned(), prompted);
         }
     }

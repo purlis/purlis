@@ -394,7 +394,7 @@ std::thread_local! {
 }
 
 /// Runs `hear` with the ask it hears known to have come over `pool`'s link, or this machine's.
-fn heard_from<T>(pool: Option<String>, hear: impl FnOnce() -> T) -> T {
+pub(crate) fn heard_from<T>(pool: Option<String>, hear: impl FnOnce() -> T) -> T {
     HEARD_FROM.with(|from| *from.borrow_mut() = pool);
     let heard = hear();
     HEARD_FROM.with(|from| *from.borrow_mut() = None);

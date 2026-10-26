@@ -3,6 +3,7 @@
 
 import { useCallback, useState } from "react";
 import {
+  drawnOnlyPresent,
   isPanelView,
   RIGHT_HALF_VIEWS,
   RIGHT_SIDEBAR_VIEWS,
@@ -218,8 +219,9 @@ export const CATALOGUE: Record<RegionId, Definition> = {
     name: "Navigation",
     size: 16,
     // Search since #1676. Changes, which holds what the bottom region drew (B-7), was here
-    // too until it moved to the Panel's left half (#1739, P-2).
-    views: ["chats", "explorer", "search"],
+    // too until it moved to the Panel's left half (#1739, P-2). Skills under Search (#3266),
+    // drawn only while the Skill studio's preview is on (`sideViews.PREVIEWED_VIEWS`).
+    views: ["chats", "explorer", "search", "skills"],
   },
   // The right is "for you" (ADR 0038 as amended 2026-10-10, B-13): what is asking for you,
   // each a view, opening on the Inbox, first on its bar (P-2, #1738); the extensions' panels
@@ -379,10 +381,10 @@ export function tabsOf(
 ): ViewId[] {
   const placement = arrangement.find((one) => one.id === id);
   const own = placement === undefined ? (CATALOGUE[id].views ?? []) : viewsOf(placement);
-  const drawn = own.filter((view) => !isPanelView(view) || present.includes(view));
+  const drawn = own.filter((view) => !drawnOnlyPresent(view) || present.includes(view));
   if (CATALOGUE[id].panels !== true) return drawn;
   const elsewhere = new Set(arrangement.filter((one) => one.id !== id).flatMap(viewsOf));
-  return [...drawn, ...present.filter((view) => !elsewhere.has(view))];
+  return [...drawn, ...present.filter((view) => isPanelView(view) && !elsewhere.has(view))];
 }
 
 /**
@@ -394,7 +396,7 @@ export function tabsOf(
  * when nothing is left out.
  */
 export function drawnNow(arrangement: Arrangement, present: readonly ViewId[]): Arrangement {
-  const gone = (view: ViewId) => isPanelView(view) && !present.includes(view);
+  const gone = (view: ViewId) => drawnOnlyPresent(view) && !present.includes(view);
   if (!arrangement.some((one) => one.views?.some(gone))) return arrangement;
   return arrangement.map((one) =>
     one.views?.some(gone) ? { ...one, views: one.views.filter((view) => !gone(view)) } : one,
@@ -405,13 +407,15 @@ export function drawnNow(arrangement: Arrangement, present: readonly ViewId[]): 
  * **Where each view lives now, for the palette** (#1752): every view each region's bar draws
  * ({@link tabsOf}), in region order, with its name and the place "Move to panel" or "Move to
  * sidebar" would put it ({@link movesTo}; none for the Inbox, which is pinned). An extension's
- * panel is named as it declared, and listed only while it is contributed (`panels`).
+ * panel is named as it declared, and listed only while it is contributed (`panels`); a view
+ * behind a preview only while its preview is on (`previews`, #3266).
  */
 export function placesOf(
   arrangement: Arrangement,
   panels: readonly { view: ViewId; name: string }[],
+  previews: readonly ViewId[] = [],
 ): { view: ViewId; name: string; region: RegionId; to?: ViewPlace }[] {
-  const present = panels.map((one) => one.view);
+  const present = [...panels.map((one) => one.view), ...previews];
   return REGION_IDS.flatMap((region) =>
     tabsOf(arrangement, region, present).map((view) => {
       const name = isPanelView(view)
@@ -432,15 +436,17 @@ const opening = (id: RegionId): ViewId | undefined =>
  * catalogue's, while that is still there, else the first of its views now (#1740). Nothing for
  * a region without views.
  *
- * `panels` are the extensions' panels the window has now (#1678). One picked last whose
- * extension is not contributing it any more — removed, or not approved on this machine — is not
- * there to show, so the region opens on its default; the file keeps the pick, so it comes back
- * with the panel.
+ * `panels` are the extensions' panels the window has now (#1678), and the views behind a preview
+ * that is on (#3266). One picked last whose extension is not contributing it any more — removed,
+ * or not approved on this machine — or whose preview is off is not there to show, so the region
+ * opens on its default; the file keeps the pick, so it comes back with the panel or the preview.
  */
 export function openView(placement: Placement, panels: readonly ViewId[] = []): ViewId | undefined {
   const picked = placement.view;
-  if (picked !== undefined && (!isPanelView(picked) || panels.includes(picked))) return picked;
-  const there = viewsOf(placement).filter((view) => !isPanelView(view) || panels.includes(view));
+  if (picked !== undefined && (!drawnOnlyPresent(picked) || panels.includes(picked))) return picked;
+  const there = viewsOf(placement).filter(
+    (view) => !drawnOnlyPresent(view) || panels.includes(view),
+  );
   const opens = CATALOGUE[placement.id].opens;
   return opens !== undefined && there.includes(opens) ? opens : there[0];
 }

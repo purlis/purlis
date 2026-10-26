@@ -153,6 +153,11 @@ pub(crate) fn run_brokered(
     blocked: purlis_core::secrets::brokered::Told,
 ) {
     use purlis_core::secrets::brokered;
+    // A chat on a pool's runner runs it there, on values this desktop sends it (#2047): by the
+    // link the line came over, never by what it says.
+    if let Some(pool) = crate::hooks::heard_from_a_pool() {
+        return crate::pooltools::run_on_its_runner(held, &pool, ask, reader, writer);
+    }
     // A server's start, as the line says, heard only while the chat is starting.
     let start = ask.secret_exec.mcp.clone().filter(|_| {
         held.mcp_failures()

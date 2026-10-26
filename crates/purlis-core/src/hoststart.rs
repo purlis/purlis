@@ -383,6 +383,8 @@ pub fn compose_ready(
         sandbox,
         persona: persona.as_deref(),
         env: &ready.env,
+        // The host starts no grade's chat: a grade is the window's (SK-16).
+        graded: false,
     })?;
     let (hooks, armed_env) = armed;
     // No watcher of the project's own settings runs here, so a sandboxed Claude Code chat is
@@ -457,6 +459,21 @@ pub fn compose_ready(
         && let Err(why) = crate::sandbox::local::count(root, counted)
     {
         tracing::warn!("purlis: a composed chat was not counted ({why})");
+    }
+    // What its sandbox armed here, for a `secret exec` its desktop sends the values of (#2047);
+    // a chat started without one leaves no record of an earlier chat under its number.
+    match sandbox {
+        None => crate::hostedchats::forget(root, starting.number),
+        Some(applied) => crate::hostedchats::record(
+            root,
+            starting.number,
+            crate::hostedchats::Composed {
+                persona: persona.clone(),
+                folder: cwd.clone(),
+                harness: ready.harness,
+                confines: applied.confines().clone(),
+            },
+        ),
     }
     Ok(Launch {
         program,
@@ -758,6 +775,11 @@ pub struct Arming<'a> {
     /// The chat's own variables, as its profile sets them: where its harness keeps its own
     /// config (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`), which a Try it's turn-offs are read from.
     pub env: &'a [(String, String)],
+    /// **Whether it is a grade's chat** (SK-16): the start's own word, the record's `graded`,
+    /// which decides its MCP limits. A start that says so in a folder that is no grade's arm,
+    /// or one in a grade's arm that does not, is refused: the two never disagree in a chat that
+    /// starts (the review of #3229).
+    pub graded: bool,
 }
 
 /// [`armed`], with the Skill studio's flag `studio` as given rather than as this machine and
@@ -772,6 +794,7 @@ pub(crate) fn armed_as(studio: bool, arming: &Arming<'_>) -> Result<Armed, Strin
         sandbox,
         persona,
         env,
+        graded,
     } = *arming;
     let not_carried = |then: &str| {
         crate::sandbox::under_policy(
@@ -787,6 +810,26 @@ pub(crate) fn armed_as(studio: bool, arming: &Arming<'_>) -> Result<Armed, Strin
         && harness != Some(applied.harness())
     {
         return Err(not_carried("."));
+    }
+    // A grade's chat (SK-16): its MCP servers and tools held to purlis's read tools, as its
+    // start says, and only where its folder is a grade's arm and its harness can be held so.
+    let in_an_arm = cwd.is_some_and(|cwd| crate::skills::verbs::drafts::graded_piece(root, cwd));
+    if graded != in_an_arm {
+        return Err(if graded {
+            "A grade's chat starts only in the folder a grade laid out for it, so nothing was \
+             started."
+        } else {
+            "This folder is a grade's, and only a grade's chat starts in it, so nothing was \
+             started."
+        }
+        .to_owned());
+    }
+    if graded && (harness != Some(Harness::ClaudeCode) || kit.binary.is_none()) {
+        return Err(
+            "A grade's chat starts on Claude Code alone, as only there can purlis hold it to a \
+             grade's limits, so nothing was started."
+                .to_owned(),
+        );
     }
     let (Some(harness), Some(binary)) = (harness, kit.binary.as_deref()) else {
         return match sandbox {
@@ -843,6 +886,7 @@ pub(crate) fn armed_as(studio: bool, arming: &Arming<'_>) -> Result<Armed, Strin
         plugin: kit.plugin.as_deref(),
         persona: persona.map(|persona| crate::harness::As { root, persona }),
         skills,
+        graded,
         laid_out: linked.as_deref(),
     };
     // Which folder the chat is handed, for its terminal to note while it runs (SK-24).
@@ -857,7 +901,8 @@ pub(crate) fn armed_as(studio: bool, arming: &Arming<'_>) -> Result<Armed, Strin
             env.extend(held);
             Ok((args, env))
         }
-        StateHooks::None if sandbox.is_some() => Err(not_carried(
+        // A grade's chat is never started without its limits.
+        StateHooks::None if sandbox.is_some() || graded => Err(not_carried(
             ": purlis's plugin, which carries it, was not found.",
         )),
         StateHooks::None => Ok((Vec::new(), Vec::new())),

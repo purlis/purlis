@@ -464,6 +464,14 @@ pub trait SessionHost: Send + Sync {
     /// Every chat this plane left running in the host that nothing reattached is closed
     /// (#2006): what a put back that settled leaves no tab for, so nothing runs unseen.
     fn close_what_was_not_reattached(&self) {}
+
+    /// **The browsers this plane left in the host from before this window** (#2025), running
+    /// or ended, each answered once: what the put back takes back with their chats
+    /// (`crate::chatbrowsers::take_back`). A host in the window's own process outlives no window,
+    /// and one before 1.39 answers no browser, so either has none.
+    fn browsers_left(&self) -> Vec<purlis_session_protocol::session::HeldProgram> {
+        Vec::new()
+    }
 }
 
 /// One chat as the board has it, read under one hold so the three agree.
@@ -616,6 +624,8 @@ pub(crate) mod pretend {
         reattached: Mutex<Vec<u32>>,
         /// The chats left running that nothing reattached, closed.
         closed_left: Mutex<Vec<u32>>,
+        /// The browsers left from before this window ([`Pretend::leaves_a_browser`], #2025).
+        browsers_left: Mutex<Vec<purlis_session_protocol::session::HeldProgram>>,
         /// Whether it runs its chats on a runner, which composes each harness chat
         /// ([`Pretend::on_a_runner`], #2446).
         on_a_runner: std::sync::atomic::AtomicBool,
@@ -684,6 +694,12 @@ pub(crate) mod pretend {
         ) {
             lock(&self.seen.left).push((number, plan));
             lock(&self.seen.ran_in).push((number, ran));
+        }
+
+        /// Browser `browser` runs from before this window: a window that comes back takes it
+        /// back with its chat, or ends it (#2025).
+        pub fn leaves_a_browser(&self, browser: purlis_session_protocol::session::HeldProgram) {
+            lock(&self.seen.browsers_left).push(browser);
         }
 
         /// The chats reattached, in order.
@@ -1000,6 +1016,9 @@ pub(crate) mod pretend {
                 .map(|(one, _)| one)
                 .collect();
             lock(&self.seen.closed_left).extend(left);
+        }
+        fn browsers_left(&self) -> Vec<purlis_session_protocol::session::HeldProgram> {
+            std::mem::take(&mut *lock(&self.seen.browsers_left))
         }
     }
 

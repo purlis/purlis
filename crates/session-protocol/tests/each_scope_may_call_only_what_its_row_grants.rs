@@ -296,6 +296,11 @@ fn every_command() -> Vec<Command> {
             project: "01J9PRJCT00000000000000000".into(),
         },
         Command::Quit,
+        // The window's note of a program, kept in the host for it (1.39, #2025).
+        Command::NoteProgram {
+            program: CHAT.into(),
+            note: session::ProgramNote(serde_json::json!({"chat": 3})),
+        },
         // The desktop taken out of a runner's peers (1.25, #2525).
         Command::Unpair,
         // A browser the person takes over, drives and hands back: the window's alone (1.14).
@@ -332,6 +337,7 @@ fn every_command() -> Vec<Command> {
                 user: None,
                 password: purlis_session_protocol::browsing::Secret::new("not-a-real-one".into()),
                 keep: None,
+                identity: None,
             },
         },
         // A login that keeps its login on this device once the browser ends (1.27, #2021): the
@@ -349,6 +355,7 @@ fn every_command() -> Vec<Command> {
                     identity: "0123456789abcdef0123456789abcdef".into(),
                     address: "https://shop.example.test/login".into(),
                 }),
+                identity: None,
             },
         },
         // A browser opened from kept logins (1.27, #2021): the window's alone, as a login is.
@@ -361,6 +368,12 @@ fn every_command() -> Vec<Command> {
                 address: "https://shop.example.test/login".into(),
             }),
             ..session::StartProgram::of("01J9PRJCT00000000000000000", session::ProgramKind::Browser)
+        })),
+        // A start that keeps a note for the window (1.39, #2025): the window's alone, even of a
+        // shell, which a terminal may start.
+        Command::StartProgram(Box::new(session::StartProgram {
+            note: Some(session::ProgramNote(serde_json::json!({"chat": 3}))),
+            ..session::StartProgram::of("01J9PRJCT00000000000000000", session::ProgramKind::Shell)
         })),
         // A relaying host names the window a link is for, and is named again the confinements
         // of the chats that window started (1.22, #2511): over the link between hosts alone.
@@ -444,6 +457,7 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "browse",
             "programs_of",
             "quit",
+            "note_program",
             "take_over",
             "browser_input",
             "size_browser",
@@ -451,6 +465,7 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "log_in",
             "log_in",        // a login kept on this device
             "start_program", // a browser opened from kept logins
+            "start_program", // a program noted for the window
             "name_window",
             "relay_to",
             "take_code",

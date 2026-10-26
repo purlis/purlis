@@ -574,6 +574,7 @@ fn a_try_turns_off_every_harness_skill_and_plugin_on_every_harness() {
         plugin: None,
         persona: None,
         skills: None,
+        graded: false,
         laid_out: None,
     };
     for (harness, own) in [
@@ -598,4 +599,54 @@ fn a_try_turns_off_every_harness_skill_and_plugin_on_every_harness() {
             .get("figma@market"),
         Some(&false)
     );
+}
+
+/// SK-16 (#2779): a grade's arm with the skill hands its chat the copy as the project has it,
+/// without the fixtures it is graded by; the arm without it hands the chat no project skill.
+#[test]
+fn a_grades_arms_hand_a_chat_the_skill_without_its_fixtures_or_no_skill_at_all() {
+    let tmp = plane();
+    let root = tmp.path();
+    std::fs::create_dir_all(root.join("skills/deploy/evals")).unwrap();
+    std::fs::write(root.join("skills/deploy/evals/triggers.json"), "[]").unwrap();
+    std::fs::write(root.join("skills/deploy/notes.md"), "kept\n").unwrap();
+    skill_at(root, "skills/release", "release", "Cuts it.");
+
+    let copy = snapshot(root, &Level::project(), "deploy").unwrap();
+    assert!(
+        copy.files.keys().all(|path| !path.starts_with("evals/")),
+        "{:?}",
+        copy.files
+    );
+    // An edit after the grade read it changes nothing it lays out.
+    std::fs::write(root.join("skills/deploy/notes.md"), "edited mid-grade\n").unwrap();
+    let with = lay_out_arm(root, Some(&copy)).unwrap();
+    assert!(graded_piece(root, &with.piece));
+    let skills_from = tried(root, &with.piece).expect("the piece is a try's");
+    let set = crate::skills::in_the_studio(None, &skills_from, None, None);
+    let names: Vec<&str> = set
+        .effective
+        .iter()
+        .map(|e| e.skill.name.as_str())
+        .collect();
+    assert_eq!(names, ["deploy"]);
+    let laid = skills_from.join("skills/deploy");
+    assert_eq!(
+        std::fs::read_to_string(laid.join("notes.md")).unwrap(),
+        "kept\n"
+    );
+    assert!(
+        !laid.join("evals").exists(),
+        "the fixtures stay out of the chat's reach"
+    );
+
+    let without = lay_out_arm(root, None).unwrap();
+    assert!(graded_piece(root, &without.piece));
+    let none_from = tried(root, &without.piece).expect("the piece is a try's");
+    let set = crate::skills::in_the_studio(None, &none_from, None, None);
+    assert!(set.effective.is_empty(), "{:?}", set.effective);
+
+    assert!(end_try_at(root, &with.piece).unwrap());
+    assert!(end_try_at(root, &without.piece).unwrap());
+    assert!(!skills_from.exists() && !none_from.exists());
 }

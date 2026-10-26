@@ -14,6 +14,7 @@ import {
   ListTodo,
   MessagesSquare,
   Search,
+  Sparkles,
   UsersRound,
   type LucideIcon,
 } from "lucide-react";
@@ -185,6 +186,8 @@ export const VIEW_MARKS: Record<OwnViewId, LucideIcon> = {
   explorer: FolderTree,
   // #1676: a magnifier for finding in files, and a branch for what git says of the repos.
   search: Search,
+  // #3266: the Skill studio's own mark (`SkillStudioTab`'s empty states).
+  skills: Sparkles,
   changes: GitBranch,
   // #1737: a repo is a folder git keeps, as the cockpit's repo mark has it.
   repos: FolderGit2,

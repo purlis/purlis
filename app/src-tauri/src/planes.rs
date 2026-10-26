@@ -291,6 +291,9 @@ pub struct Held {
     removal_asks: crate::removalasks::Asked,
     /// Each chat's browsers, and what the person said they may reach (#2013).
     browsers: crate::chatbrowsers::ChatBrowsers,
+    /// The person's Allows of a persona's tools on a pool, and the runner chats' commands that
+    /// wait on one (#2047).
+    pool_tools: crate::pooltools::PoolTools,
     /// Where the chats' browsers run: the window's session host, where it has one.
     browser_driver: Option<Arc<dyn crate::chatbrowsers::Driver>>,
     /// Told each time a browser is added to its chats' or taken from them (#2024).
@@ -569,6 +572,12 @@ impl Held {
         &self.browsers
     }
 
+    /// The person's Allows of a persona's tools on a pool, and the runner chats' commands that
+    /// wait on one (#2047).
+    pub fn pool_tools(&self) -> &crate::pooltools::PoolTools {
+        &self.pool_tools
+    }
+
     /// Where the chats' browsers run: none where the window has no session host.
     pub fn browser_driver(&self) -> Option<&Arc<dyn crate::chatbrowsers::Driver>> {
         self.browser_driver.as_ref()
@@ -577,6 +586,8 @@ impl Held {
     /// Tells the window where the chats' browsers moved since `before`, a
     /// [`crate::chatbrowsers::ChatBrowsers::listing`] read earlier (#2024).
     pub fn browsers_listed_since(&self, before: u64) {
+        // Each browser's window note follows what the window did to it (#2025).
+        self.browsers.renote();
         if self.browsers.listing() != before {
             (self.browsers_listed)();
         }
@@ -898,6 +909,9 @@ impl Held {
         // What the session host still runs of this project from before this window and no
         // chat put back reattached ends now, so nothing runs with no tab (#2006).
         self.chats.close_what_was_not_reattached();
+        // And its browsers, each with its chat, pinned past it, or as the person's own; what
+        // nothing takes back ends too (#2025).
+        crate::chatbrowsers::take_back(self);
         if wanted > 0 {
             tracing::info!(
                 "purlis: plane {}, {back} of {wanted} chats back",
@@ -1085,6 +1099,8 @@ impl Held {
         self.brokered.forget(session);
         self.vault_refusals.forget(session);
         self.removal_asks.forget(session);
+        // What its runner's commands wait on goes with it (#2047).
+        self.pool_tools.forget(session);
         // Its browsers end with it (#2013), and leave its rows and its tab (#2024); a pinned
         // one runs on, listed by what the chat was called (#2022).
         let was = self
@@ -4189,6 +4205,8 @@ impl Planes {
         // What the chats of a dispatch said, expired once a day while the project is open
         // (#1556): the open and a timeline's read expire only what they read.
         let talk_sweep = crate::activity::Daily::start(root.clone(), Arc::clone(&me));
+        // Where its browsers' notes are kept for (#2025).
+        let browsers_root = root.clone();
         // The window is told of this project's chats' browsers as they come and go (#2024).
         let browsers_listed: Arc<dyn Fn() + Send + Sync> = {
             let listed = Arc::clone(&self.browsers_listed);
@@ -4227,9 +4245,11 @@ impl Planes {
             vault_refusals: crate::vaultroute::Refusals::default(),
             removal_asks: crate::removalasks::Asked::default(),
             browsers: crate::chatbrowsers::ChatBrowsers::default()
+                .noting(self.browser_driver.clone(), &browsers_root)
                 .telling(Arc::clone(&browsers_listed))
                 .limited_by(Arc::new(purlis_core::browserlimits::Limits::here)),
             browser_driver: self.browser_driver.clone(),
+            pool_tools: crate::pooltools::PoolTools::default(),
             browsers_listed,
             browser_timeline,
             proposals: crate::proposals::Proposals::default(),

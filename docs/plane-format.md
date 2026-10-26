@@ -252,6 +252,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`personas/_dispatch/<YYYY-MM>.<device>.jsonl`](#personas_dispatchyyyy-mmdevicejsonl)
   - [`personas/_dispatch/<YYYY-MM>.<host>.backfill.jsonl`](#personas_dispatchyyyy-mmhostbackfilljsonl)
   - [`personas/_skills/<YYYY-MM>.<device>.jsonl`](#personas_skillsyyyy-mmdevicejsonl)
+  - [`personas/_grades/<YYYY-MM>.<device>.jsonl`](#personas_gradesyyyy-mmdevicejsonl)
   - [`.claude/agents/<name>.md` (generated sub-agent)](#claudeagentsnamemd-generated-sub-agent)
   - [`.charter/persona-state/ephemeral/<session>/<name|_shared>/<slug>.md`](#charterpersona-stateephemeralsessionname_sharedslugmd)
   - [`.charter/persona-state/trace/<session>.jsonl`](#charterpersona-statetracesessionjsonl)
@@ -341,6 +342,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`skills-deleted/<stamp>-<name>/`](#skills-deletedstamp-name)
   - [`skills-deleting/<stamp>-<folder>`](#skills-deletingstamp-folder)
   - [`skill-drafts/<id>/`](#skill-draftsid)
+  - [`<state>/skill-grades/<YYYY-MM>.jsonl`](#stateskill-gradesyyyy-mmjsonl)
   - [`skill-tries/<id>/`](#skill-triesid)
   - [`skill-levels/<chat id>.json`](#skill-levelschat-idjson)
   - [`chat-settings/<chat id>.json`](#chat-settingschat-idjson)
@@ -913,7 +915,7 @@ key refuses.
   decided it, and `[chat_env]` by `chatenv` (ADR 0047, amendment of 2026-09-29), which has no
   counterpart in `charter.toml`; any other top-level key is refused with a sentence
   (`charter/profiles.py:325`, and in purlis `crates/purlis-core/src/profiles.rs`
-  `derive_from`, whose sentence names all seven tables). A missing file declares nothing and is not a refusal
+  `derive_from`, whose sentence names all seven tables, and, since #2779, `[skill_grades]` by `skills::grades::cap`). A missing file declares nothing and is not a refusal
   (`charter/profiles.py:241`). Profile `env` is stored **sorted by name**
   (`charter/profiles.py:363`), and `~` in `command[0]` and in every `env` value is expanded
   only at launch (`charter/profiles.py:474`, `charter/profiles.py:480`) — never in the file
@@ -938,6 +940,7 @@ key refuses.
 | `[dispatch]`, `[dispatch.workspaces.<workspace>]`, `[dispatch.personas.<persona>]` | as in `charter.toml` | optional | **purlis only** (#1440: the **You** level). Your own dispatch limits on this machine, in the same shape and with the same refusals as `charter.toml`'s, **and never a dispatch grant**: `[dispatch.grants]` here is refused with a sentence and read as absent, since a grant of your own is kept by the app in `app/sandbox.json` `dispatch_mine` and the project's are in the committed file (#1437). **They only ever lower a limit**: a value above what the project's files give is ignored, and Settings › Project › Dispatch says so on its "Me on this machine" row. **Read even where git would carry this file**, which leaves every other table of it out: a lowering can only lower, so honouring it is the strict reading. An administrator's policy caps the result. | stable | `crates/purlis-core/src/dispatchlimits.rs` `Files::read`, `in_force` |
 | `[harnesses.<name>]` | table | optional | **purlis only** (#968, ADR 0073 §5). A harness declaration of this machine's own, in the schema of [`harnesses/<name>.toml`](#harnessesnametoml--a-harness-declaration); `name` may be left out and is the table's, and a different `name` is refused. A name of its own declares a harness for this machine alone: it gives a profile from this file, asked about once like any profile here; the one question shows the words its declaration adds, and is asked again when they change. It may not take a project declaration's name, nor a name purlis gives a harness it ships. The name of a harness purlis ships (`claude`, `codex`, `opencode`) replaces that harness's measured facts on this machine (`[terminal]`, `title`, `tested`, and the capabilities on its card) and never how it is run or armed: `program`, `[levels]`, `[session]`, `env`, `[sign_in]`, `[folders]` and `[conversation]` are the built-in's, left out or restated word for word; otherwise the table is refused and the built-in stands. A word is added to a built-in's command by a profile, which asks first, and to its environment by `[chat_env]`. In a harness of this machine's own a bare `{id}` word is allowed, a bare `{name}` is not. A prompt is typed into either on one line only. | stable | `crates/purlis-core/src/harness_declaration.rs` `read`, `with_local`, `parse`, `replacement_session` |
 | `[chat_env].pass` | list[str] | optional, default `[]` | **purlis only** (ADR 0047, amendment of 2026-09-29). More of this machine's own environment every chat started in this plane is given, beyond the built-in keep-list and what the chat's harness declares (`crates/purlis-core/src/chatenv.rs` `PASSED`, `Harness::env_passed`). Each entry is a variable's name (letters, digits and `_`, not starting with a digit), or such a name ending in `*` for a prefix. A credential-class name (forge, cloud, model-provider or registry credential, or a name holding `KEY`/`TOKEN`/`SECRET`/`PASSWORD`) passes only by its exact name, never by a prefix. `OP_*`, a vault's declared identity variables, a harness's identity, `CHARTER_WORKSPACE`, `CHARTER_PLANE_ROOT_SESSION` and `TERM` are never passed, whatever is listed. An entry of another shape, a `pass` that is not a list, or another key in the table is refused with a sentence and passes nothing. No counterpart in `charter.toml`. | stable | `crates/purlis-core/src/chatenv.rs` `from_text`, `refusals`, `inherited` |
+| `[skill_grades].token_cap` | int | optional; absent = 200000 | **purlis only** (#2779, ADR 0105 §4, the operator's ruling of 2026-10-26 on #3229). The tokens a grade of a skill in this project may spend on this machine before it stops: the running chat is ended, no more are started, and the end says it stopped at the cap and what it spent. A whole number from 1000 to 100000000. Written by the Skill studio's plan ("Set the cap") and by hand; read by `purlis_core::skills::grades::cap::token_cap` for the plan, which shows it before Grade is pressed, and for the grade. This machine's alone: the person who pays for a grade's chats sets it, so `[skill_grades]` in `charter.toml` is refused, and so is any other key in the table or a value out of bounds, which leaves the default. **experimental** behind the `skill-studio` flag. | experimental | `crates/purlis-core/src/skills/grades/cap.rs` |
 
 ---
 
@@ -1443,6 +1446,21 @@ left out of what is handed.
 
 The file is read following no link, at most 64 KiB, as TOML, and only these keys are taken from
 it; a write keeps every other key and comment, and removes the file when nothing is left in it.
+
+**A skill's fixtures: `<skill>/evals/`** (SK-16, #2779, [ADR 0105](adr/0105-a-grade-is-real-chats-purlis-runs-cost-first-scored-by-skill-runs-and-recorded-against-the-skills-version.md);
+ADR 0101 §5). The one folder inside a skill's folder purlis reads beyond `SKILL.md`, at every
+level, in skill-creator's own shapes so its tools read them too. **Written by** the person (and,
+with SK-17, a chat's draft); **read by** `purlis_skills::grade::fixtures_of`, for the Skill
+studio's Grade and `purlis skill grade`, through the skill's folder held open and never through a
+link, each file at most 256 KiB, parsed as JSON and taken key by key; a file that is not whole is
+refused whole with the sentence saying where, and a key not below is left out. A grade's chat is
+handed the skill without this folder. Results never go here: they go to the
+[eval record](#personas_gradesyyyy-mmdevicejsonl). **experimental** behind the `skill-studio` flag.
+
+| File | Shape | Meaning |
+|---|---|---|
+| `evals/triggers.json` | a list of `{"query": <text>, "should_trigger": <bool>}`, at most 100, no query twice, each query 1 byte to 8 KiB | the **trigger tests**: a query the skill should start on, or a near miss it should leave alone. A grade sends each query as a chat's first message; one a harness would read as its own flag is left out and named in the plan |
+| `evals/evals.json` | `{"skill_name": <the skill's name>, "evals": [{"id": <int>, "prompt": <text>, "expected_output": <text>, "files": [<path in the skill's folder>], "expectations": [<text>]}]}`, at most 100 evals, ids unique; `assertions` is read as another name for `expectations`, and an eval with both is refused | the **outcome evals**. Read and counted now; graded by a later version (#2779's follow-up). `files` are plain paths inside the skill's folder, at most 16; each expectation at most 2 KiB, at most 32 |
 
 ### `skills.local/` — the project's local skills
 
@@ -3694,6 +3712,40 @@ An end row, never a pass or a fail:
 | `tokens` | integer | absent where the harness reported none | Tokens spent inside it, from the chat's usage record | stable | `eventlog::Recorder` |
 | `parent` | ULID | absent for a run at the top | The run it started inside | stable | `skilluse::ended` |
 
+
+---
+
+### `personas/_grades/<YYYY-MM>.<device>.jsonl`
+
+- **Format:** JSON Lines, append-only, one row per **grade** (SK-16, #2779,
+  [ADR 0105](adr/0105-a-grade-is-real-chats-purlis-runs-cost-first-scored-by-skill-runs-and-recorded-against-the-skills-version.md) §5): the **eval record**.
+- **Status:** **experimental**, behind the `skill-studio` flag; written by the app when a grade
+  ends, whole or stopped, and read by the Skill studio's Grades panel, a skill's history and
+  `purlis skill grade`.
+- **Tier:** Plane — committed, beside the skill log, so a teammate sees a skill's grades on the
+  version they pulled.
+- **What a row holds:** `v` (1); `grade`, the grade's id; `skill`; `level`, the copy's folder
+  relative to the plane (`skills`, `workspaces/<ws>/skills`, `personas/<p>/skills`). A copy that
+  is this machine's alone (a `skills.local/` copy, or one in a workspace that is this machine's
+  alone) is never graded into this file: its grades go to
+  [`<state>/skill-grades/`](#stateskill-gradesyyyy-mmjsonl); `tree`, what the copy's folder held by content, as a skill run's start
+  records it (the tree git holds of it, or `uncommitted`); `commit`, the commit that tree is, or
+  null; `harness` and `profile`, the plain names its chats ran on; `ts`; `runs`, each fixture's
+  runs per arm; `report`, the grade report as ADR 0105 §1 spells it, with the token cap it was
+  held to and what its chats spent (`cap`, `spent_tokens`, ADR 0105 §4), and the cost bound
+  beside it and what they cost, where their harness said (`cost_cap_usd`, `spent_usd`, absent
+  otherwise; ADR 0105 as amended 2026-10-26); and `spent`,
+  `{chats, tokens, cost_usd}` as the chats' harness reported them, null where it did not.
+- **Read:** the folder only where it is a folder of its own (no link) holding at most 600 names,
+  newest month first, stopping once 200 grades are held; each file following no link and at most
+  16 MiB, each line at most 1 MiB; a line that
+  is not a row, a row of a newer `v`, and a row that says more than purlis writes (a commit that
+  is no whole hex id, a harness, profile or id that is no plain name, a stamp that is no time)
+  is skipped. At most 200 grades of a skill are answered, newest first
+  (`purlis_core::skills::grades::grades_of`).
+- **Git:** committed. Nothing commits it by itself: the next save does.
+- **Encoding details:** path `personas/_grades/{%Y-%m}.{device}.jsonl`, `<device>` named as the
+  skill log's is; keys sorted, `\n`, `O_APPEND` through no link, `0o644` (`dispatch::append`).
 ---
 
 ### `.claude/agents/<name>.md` (generated sub-agent)
@@ -5934,6 +5986,7 @@ down rather than read off the code.
 | `chats[].label` | str | default `""` (absent) | the name the operator gave the chat (purlis#254), which its tab says instead of the default `<persona> <N>`. purlis's label only: `name` is still what the harness was started with and is resumed under. Written only when one was given, so a plane that never renamed a chat writes the record it always wrote. Held on the way in to the rule a rename is: trimmed, at most 64 characters, and no control or invisible formatting character (`purlis_core::panel::undrawable`); a value that breaks it reads as absent and the chat comes back under its default |
 | `chats[].from` | object | absent | the chat a dispatch opened this one from, a handoff or a task (purlis#258, #259, #1436): `{"chat": <n>, "id": "<ULID>", "name": "<str>", "workspace": "<str>", "report": "owed" \| "sent" \| "again" \| "failed", "mode": "task", "depth": <n>, "root": "<ULID>", "above": ["<persona>", ""], "by": "person"}`. `chat` is the app's number for that chat, the key its reports are left under; `id` is that chat's own id (ADR 0066's `handed_from`, #872), written by the app from its record of the asking chat, so the link still resolves once the number is dealt again or the chat has closed; absent where that chat had no id yet and in a record written before the key, and anything that is not a ULID reads as absent (unknown); reports still go by `chat`; `name` is the name it was shown under when it handed off (a copy, so the note still reads once it has closed); `workspace` is where it handed off from, where a report goes once it is gone — a workspace's name, or `plane root` for a chat that handed off from the plane root (SI-1b); `report` is absent for a handoff, which owes none, `"owed"` for a task whose report has not been sent (and for a `--report` handoff an older purlis opened, which is read as a task, below), and `"sent"` after it. **A task kept open may report once more** (#1768): one whose report came out `blocked`, and one the person took up again after its report (a key of theirs in its pane), say `"again"`, which takes one more report and is otherwise read as `"sent"`: nothing waits on that report, and purlis reports nothing in its place. That report's record says `"sent"`, or `"again"` where it came out `blocked` once more; a `"sent"` task the person takes up again says `"again"`. A record written before the value never says it, and reads as it did. A handed-off chat the person stops may send one report in its last turn (#1448), by `purlis dispatch report` (#1471), and its record then says `"sent"`. For a task, `"failed"` says the app reported in the chat's place (#1443): its program ended before it reported, or the person closed or stopped it, and the chat that asked was told so. It is final, as `"sent"` is: a chat started again in that tab cannot report for the task. Written only for a handed-off chat, so a plane that never handed off writes the record it always wrote. Held on the way in: a `chat` of `0`, a `name` the label rule refuses or a `workspace` that is neither a workspace's name nor `plane root` reads as the whole key absent — the note is not drawn and no report is owed. `mode` is `"task"` for a chat a dispatch started as a task, which owes one report, is listed under the chat that asked and whose report says how it ended; it is absent for a handoff, which is every record written before the key, and any other value reads as a handoff. **An older record is read as what it now is** (#1519): a purlis from before #1515 started a chat that needed an answer as a handoff with `--report`, so its record has no `mode` and `report` `"owed"`. This purlis opens no such chat: a request on the hook socket that asks for a report opens nothing, records nothing and is refused, naming `purlis dispatch` (#1471). Such a chat, still open after an update, is read as the task of the chat that asked: `mode` `"task"`, `depth` at least `1`, and `tab_opened` `true` where its `from` reads, so it has the tab it was opened with. Its report then wakes the chat that asked, that chat lists it and may wait on it, and an end without a report is reported for, as for any task; and, as any task, purlis ends it once it has reported (it can be reopened from its finished row). Its report goes only to the chat `chat` names, and it holds the grants it held. **The chat that asked gains a task owner's powers over it**, which it had over no handoff: it may tell it, cancel it, answer its questions and wait on it. No other chat may. It reports with `purlis dispatch report`, and the older command it was taught is answered with that one. The next write of the record writes the newer shape. A handoff with no `report`, or one whose report is `"sent"`, is the handoff it was. `depth` is how many dispatches stand between this chat and the chat the person started, `1` for a chat that one dispatched, written when the chat is started so that closing a chat above it never makes a chain look shallower; it is absent for `0`, which is a record written before the key; a chat's depth is read as at least the number of chats the walk finds above it (#1548), and a value above 8, the deepest a chain can be, reads as 8. `root` is the lineage the chat is in, by the id (`chats[].id`) of the chat the person started: copied down each dispatch, a handoff's too, so every chat of one lineage names the same root whichever chats between them have closed, and a chat started again under a new number is still in it. The dispatch limit on a lineage counts by it (#1436). It is absent for a record written before the key and for a lineage whose first chat had no id, and such a chat is counted by who dispatched whom, as before; a value that is not a ULID reads as absent. It says which lineage and nothing else: `chat` is where the report goes, and neither says who may steer the chat. `above` is the personas of the chats above this one, nearest first, `""` for a chat on no persona (#1521): the asking chat's own, then the `above` its record keeps, written by the app when it starts the chat, from its record of the asking chat and never from anything a chat sent, a handoff's too. **The loop rule and the person's never for a chat above read it**, so a chain still holds where a chat in the middle has closed, finished or been cleared. It holds one name per dispatch above, as many as `depth` says. A finished task reopened as an ordinary chat names no `from`, so nothing is above it and what it dispatches starts a new chain. It is absent for a record written before the key: such a chat's chain is read from the chats still open, as before, and where that walk meets a chat that has closed (or a loop), purlis reads the chain from its own dispatch records (`<state>/app/dispatches/`), and only where they show it whole, up to the chat `root` names and as deep as `depth` says (#1548); otherwise it cannot say who was above, and **refuses any dispatch to another persona** from it, and one to its own where the person said never to any persona dispatching there, saying that the chat's chain began under an older version, which kept no record of it. One whose length is not `depth`, or that names what cannot be a persona's name, reads as absent, never as a shorter chain. When the chat `chat` names is started again under a new number (a restart for a grant, Restart now, Start fresh), the app rewrites `chat` to the new number. `by` is `"person"` for a task the person started from that chat's tab with **Ask <persona>…** (#1438), and absent otherwise; any other value reads as absent. **It is wording only**: it decides what the new chat's first line and its report say about who asked, and nothing reads it to allow, grant or start anything |
 | `chats[].reopened` | str | default `""` (absent) | `"task"` for a finished task the person reopened as an ordinary chat (ADR 0090 item 16, #1543), `"person"` for one they had asked for with **Ask <persona>…**, and absent for every other chat. Written by the app when it reopens the task, from the task's own record, and never from anything a chat sent. A reopened task names no `from`, so it owes no report and nothing above it reads it, but it still runs on the profile a dispatch chose: **each later start of it, a relaunch or a restart, is held to what that dispatch was held to**, a profile the project lists for its persona under `[dispatch.profiles]` and one whose command does not switch the harness's permission prompts off, as the Reopen itself was. **Any other value reads as `"task"`**, so a word somebody else wrote never lets the chat out of that check; `"person"` changes only the words of a refusal, as `from.by` does. Not a format change, for `pinned`'s reason |
+| `chats[].graded` | bool | default `false` (absent) | whether a **grade** runs this chat (SK-16, #2779, ADR 0105 §3): one trigger test's chat, started on its query in a throwaway piece, which the grade watches and ends. It has no tab and is listed nowhere, and a relaunch never starts it again: it is dropped from the record, and its throwaway piece goes once no chat stands in it. Written by `curation::start_graded` alone; absent on every other chat, and on every record written before it |
 | `chats[].tab_opened` | bool | default `false` (absent) | whether the person opened this task chat's tab (#1447). Read only for a chat a dispatch started as a task, which is listed with no tab until its row asks for one; every other chat has a tab from its start. Written by the window's `open_chat_tab`, and taken back by `close_chat_tab` when the person sends the tab back to the Chats list (#1488), which ends nothing: the task keeps working. Written only when it changes; absent on every record written before it |
 | `chats[].shows` | int | default `0` (absent) | the `number` of the chat this chat's tab shows in place of it (#1486): a task below it, at any depth, that the person switched the tab to. Absent while the tab shows its own chat. Written by the window's `tab_shows`, only when it changes, and re-pointed where a chat is started again under a new number, as `from.chat` is. **It says where the person is looking, and nothing else is decided by it**: the core starts and allows nothing by this number. The chat the tab in front shows is the one the person is taken to be looking at, so a task that has reported is not ended while it is that chat (its end, already due, waits until they switch away), and no system notification is sent about that chat while the window has the keyboard. A launch puts the tab back on that chat only where it is open and is a task below this one, and on the session's own chat otherwise; the window then says so, and the key goes. A launch that leaves a finished task out of the put-back takes the key off the tab that showed it. Not a format change, for `pinned`'s reason: its absence reads as what every record without it meant |
 | `chats[].beside` | int | default `0` (absent) | the `number` of the chat whose tab this chat has a pane in (#1489), where it is not that tab's own chat: a task the person opened beside the session that asked for it, or any chat started in a split. Absent for a chat that is its tab's own, and for one with no pane. Written by the window's `tab_shows`, only when it changes, and re-pointed where a chat is started again under a new number, as `shows` is. Two things read it: a launch puts a **task** back beside that chat, where it came back with a tab, and leaves it in the Chats list otherwise (every other chat comes back as a tab of its own, as it always has); and every chat beside the chat in front is on screen with it, so a reported task among them is not ended while the person reads it and none is notified about. The core starts and allows nothing by this number. Not a format change, for `pinned`'s reason |
@@ -7122,6 +7175,16 @@ rewritten.
   and removal goes through folders held open with `O_NOFOLLOW`.
 - **Git:** gitignored, under the state directory.
 
+### `<state>/skill-grades/<YYYY-MM>.jsonl`
+- **Format:** JSON Lines, append-only: the eval record's rows
+  ([`personas/_grades/`](#personas_gradesyyyy-mmdevicejsonl)) for a copy of a skill that is this
+  machine's alone, a `skills.local/` copy or one in a workspace that is this machine's alone
+  (SK-16, #2779, the review of #3229). Written `0600` through no link (`grades::record`), read
+  beside the committed record by `grades::grades_of`, held to the same limits.
+- **Status:** **internal**, **experimental** behind the `skill-studio` flag.
+- **Tier:** Clone state — this machine's own; nothing rebuilds it.
+- **Git:** gitignored, under the state directory.
+
 ### `skill-tries/<id>/`
 - **Format:** one folder per Try it of a draft skill (SK-9, #2772), `<id>` sixteen random hex
   characters. `skills/<name>/` holds the skill as the draft makes it: the project's files of the
@@ -7134,7 +7197,11 @@ rewritten.
   `skill-tries/<id>/` were a project of its own (`drafts::tried`).
 - **Status:** **internal**, **experimental** behind the `skill-studio` flag (#2772).
 - **Tier:** Clone state, transient — it lasts as long as its chat.
-- **Written by:** `drafts::try_out`, from the studio's Try it.
+- **Written by:** `drafts::try_out`, from the studio's Try it; and `drafts::lay_out_arm`, for each
+  chat of a grade (SK-16, #2779): the skill as the grade read it once (`drafts::snapshot`),
+  without its `evals/` folder, or, for the arm without the skill, no `skills/` at all; and an
+  empty file `graded` beside `piece`, which arms the chat started there as a grade's chat
+  (`--strict-mcp-config`, purlis's server with `--graded`, ADR 0105 §3).
 - **Removed by:** with its [throwaway piece](#workspacesthrowawaypurlis-try-id), the same way and
   at the same moments. What is left is the skill run the chat recorded, under the skill's name.
 - **Git:** gitignored, under the state directory; the piece is ignored and never staged.

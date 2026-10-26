@@ -325,8 +325,8 @@ const GEOMETRY_GROUPS: &[&str] = &[
 /// **The views a theme's icon set may draw** (#2337): each view's tab on the rails, by the
 /// window's own id (`OwnViewId` in `app/src/sideViews.ts`, in `VIEW_MARKS`' order).
 pub const RAIL_VIEWS: &[&str] = &[
-    "chats", "explorer", "search", "changes", "repos", "inbox", "todos", "memory", "personas",
-    "sessions", "vaults",
+    "chats", "explorer", "search", "skills", "changes", "repos", "inbox", "todos", "memory",
+    "personas", "sessions", "vaults",
 ];
 
 /// **The glyphs a theme's icon set may draw besides its views** (#2922, ruling #2866): the

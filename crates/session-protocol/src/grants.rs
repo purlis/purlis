@@ -37,7 +37,7 @@
 //! | `record`, a write in the event log the host holds (1.8) | yes | | | | | |
 //! | `board_moved`, `board` (1.10) | yes | | | | | |
 //! | `browse`, an act of a chat's browser, and a browser's `reach` (1.11) | yes | | | | | relayed (1.38) |
-//! | `programs_of` (1.13) | yes | | | | | |
+//! | `programs_of` (1.13), a project's browsers among them, `note_program` and a start's `note` (1.39) | yes | | | | | |
 //! | `quit` (1.13) | yes | | | | | |
 //! | `take_back`, a relaying host naming the window a link is for, named again the confinements of the chats that window started (1.22) | | | | | | yes |
 //! | `take_over`, `hand_back`, `browser_input`, `size_browser`: the person driving a browser (1.14) | yes | | | | | relayed (1.38) |
@@ -114,7 +114,9 @@
 //!   #2006). What `programs_of` answers is how the window takes each chat back, the place of
 //!   its confinement among it, which only the window confines; and `quit` ends every program
 //!   and the host with them, which is the person's act of quitting purlis. A stop needs no
-//!   human, so every other scope still has `stop` and `stop_all`.
+//!   human, so every other scope still has `stop` and `stop_all`. A program's note (1.39,
+//!   #2025) is the window's own record of it, which it reads back as it takes the program back
+//!   (a chat's browser, by its chat), so only the window keeps one.
 //! - **A window takes back its own runner chats' sandboxes after a re-link, and only its own**
 //!   (1.22, #2511, ruled 2026-10-17). `take_back` is the desktop's relay's own word over the
 //!   link between hosts, never a client's: on each link it makes for one window it names that
@@ -260,7 +262,8 @@ pub enum Power {
     /// window's moves of it.
     Board,
     /// `programs_of` (1.13): a held project's programs, with what a window takes each back by,
-    /// its confinement's place among them.
+    /// its confinement's place among them; and the window's note of each, kept in the host by
+    /// `note_program` and a start's `note` (1.39, #2025).
     Reattach,
     /// `quit` (1.13): the host ends every program and stops.
     Quit,

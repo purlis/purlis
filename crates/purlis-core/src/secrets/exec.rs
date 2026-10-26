@@ -183,6 +183,18 @@ pub(crate) fn prepare(
     ctx: &Ctx,
     v: &registry::Vault,
     req: &Request,
+    env: Vec<(OsString, OsString)>,
+    within: Option<&std::path::Path>,
+    caught: &dyn Fn() -> Option<i32>,
+) -> Result<Prepared, Stopped> {
+    prepare_from(&|key| cmd::get_value(ctx, v, key), req, env, within, caught)
+}
+
+/// [`prepare`], each value read by `read`: a vault's provider, or the values a runner's desktop
+/// sent for one run (#2047).
+pub(crate) fn prepare_from(
+    read: &dyn Fn(&str) -> Result<String, super::VaultError>,
+    req: &Request,
     mut env: Vec<(OsString, OsString)>,
     within: Option<&std::path::Path>,
     caught: &dyn Fn() -> Option<i32>,
@@ -198,7 +210,7 @@ pub(crate) fn prepare(
     // terminating signal arrive meanwhile? If so nothing is started — the credential already
     // read goes no further than this process, and the files made so far are removed.
     let resolve = |key: &str| -> Result<String, Stopped> {
-        let got = cmd::get_value(ctx, v, key);
+        let got = read(key);
         if let Some(sig) = caught() {
             return Err(Stopped::Signal(128 + sig));
         }

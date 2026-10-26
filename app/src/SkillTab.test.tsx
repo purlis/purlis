@@ -76,6 +76,7 @@ function runsPanel(rows: { key: string; cells: string[] }[]) {
 describe("a skill's Runs panel", () => {
   it("lists each run's signals, never a verdict, and marks the run the chip opened it on", async () => {
     mockIPC((cmd) => {
+      if (cmd === "skill_grade_plan") return { running: null };
       if (cmd === "skill_details") return EMPTY_PAGE;
       if (cmd === "skill_stats") return NO_TOTALS;
       if (cmd === "skill_panels")
@@ -119,6 +120,7 @@ describe("a skill's Runs panel", () => {
 
   it("says there are no runs yet, and how one starts", async () => {
     mockIPC((cmd) => {
+      if (cmd === "skill_grade_plan") return { running: null };
       if (cmd === "skill_details") return EMPTY_PAGE;
       if (cmd === "skill_stats") return NO_TOTALS;
       if (cmd === "skill_panels") return [runsPanel([])];
@@ -137,6 +139,7 @@ describe("a skill's Runs panel", () => {
     const table = panel.blocks[panel.blocks.length - 1] as { empty: { offer: string | null } };
     table.empty.offer = "chat.new";
     mockIPC((cmd) => {
+      if (cmd === "skill_grade_plan") return { running: null };
       if (cmd === "skill_details") return EMPTY_PAGE;
       if (cmd === "skill_stats") return NO_TOTALS;
       if (cmd === "skill_panels") return [panel];
@@ -162,6 +165,7 @@ describe("a skill's Runs panel", () => {
 describe("a panel an extension adds to a skill's tab", () => {
   it("is drawn after purlis's own, under its title and the extension's name", async () => {
     mockIPC((cmd) => {
+      if (cmd === "skill_grade_plan") return { running: null };
       if (cmd === "skill_details") return EMPTY_PAGE;
       if (cmd === "skill_stats") return NO_TOTALS;
       if (cmd === "skill_panels")
@@ -219,6 +223,7 @@ describe("a skill's totals", () => {
       ms: 65_000,
     });
     mockIPC((cmd) => {
+      if (cmd === "skill_grade_plan") return { running: null };
       if (cmd === "skill_details") return EMPTY_PAGE;
       if (cmd === "skill_panels") return [runsPanel([])];
       if (cmd === "skill_stats")
@@ -248,6 +253,7 @@ describe("a skill's totals", () => {
 
   it("shows nothing to total before a skill has run", async () => {
     mockIPC((cmd) => {
+      if (cmd === "skill_grade_plan") return { running: null };
       if (cmd === "skill_details") return EMPTY_PAGE;
       if (cmd === "skill_panels") return [runsPanel([])];
       if (cmd === "skill_stats") return NO_TOTALS;
