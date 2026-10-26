@@ -91,13 +91,11 @@ pub struct PlaneSkills<'a> {
 /// the `skill-studio` flag let them in.
 pub fn for_chat(kit: Kit<'_>, harness: Harness) -> SkillSet {
     let built_in = kit.plugin.and_then(in_bundle);
-    ask(
+    routed(
         built_in.as_deref(),
         kit.skills,
         kit.persona.map(|persona| persona.persona),
-        harness.skills(),
-        None,
-        Some(harness.skill_budget()),
+        harness,
     )
 }
 
@@ -198,14 +196,7 @@ pub fn lay_out_for_chat(
         workspace,
         repo,
     });
-    let set = ask(
-        built_in,
-        at,
-        persona,
-        harness.skills(),
-        None,
-        Some(harness.skill_budget()),
-    );
+    let set = routed(built_in, at, persona, harness);
     match lay_out(&set, sets, &harness.skill_frontmatter()) {
         Ok(folder) => folder,
         Err(why) => {
@@ -841,6 +832,29 @@ pub struct Running<'a> {
     pub built_in: Option<&'a Path>,
     /// Whether its set holds the plane's skills: the flag, as at a chat's start.
     pub plane_skills: bool,
+    /// The folder it was started in: the clone whose repo skills its start read
+    /// ([`repo_skills_at_start`]), so its set is routed as the one it was handed (#3245).
+    pub cwd: Option<&'a Path>,
+}
+
+impl Running<'_> {
+    /// Its set, routed as its start routed it ([`lay_out_for_chat`]): from the same plane,
+    /// workspace, persona, built-in skills and harness, and the repo skills of the same clone.
+    fn routed(&self) -> SkillSet {
+        let repo = repo_skills_at_start(
+            self.plane_skills,
+            self.harness,
+            self.plane,
+            self.workspace,
+            self.cwd,
+        );
+        let at = self.plane_skills.then_some(PlaneSkills {
+            plane: self.plane,
+            workspace: self.workspace,
+            repo: &repo,
+        });
+        routed(self.built_in, at, self.persona, self.harness)
+    }
 }
 
 /// One skill Use skill… offers a chat: one of its set, with what it declares and the name its
@@ -883,21 +897,8 @@ pub struct ChatSkills {
 /// [`of_a_chat`] works them out), each with what it declares, and the budget the set spends on
 /// its harness.
 pub fn for_use_skill(chat: &Running<'_>) -> ChatSkills {
-    let route = chat.harness.skills();
-    let at = chat.plane_skills.then_some(PlaneSkills {
-        plane: chat.plane,
-        workspace: chat.workspace,
-        repo: &[],
-    });
     // Routed as its start routed it, so a skill its harness was not handed is marked.
-    let set = ask(
-        chat.built_in,
-        at,
-        chat.persona,
-        route,
-        None,
-        Some(chat.harness.skill_budget()),
-    );
+    let set = chat.routed();
     let still_over = set.routing.as_ref().and_then(|routing| routing.still_over);
     let hidden = |name: &str| set.hidden_by_router(name).cloned();
     let offered: Vec<Offered> = set
@@ -1017,49 +1018,46 @@ fn load_text(name: &str, given: &Given) -> String {
     }
 }
 
-/// **The stamp of the plane skills a chat has now** (#2770): a chat in the plane at `plane`, at
-/// its root or in `workspace`, running as `persona`, on `harness`. The window takes one as a chat
+/// **The stamp of the plane skills chat `chat` has now** (#2770). The window takes one as a chat
 /// starts and again when the project's skills change; where they differ, the chat's harness does
 /// not take the change in by itself ([`Harness::skills_reload`]) and its tab offers a restart.
 /// An empty stamp where the project's skills do not reach its chats ([`reach_chats_here`]).
 ///
-/// The built-in skills in `built_in` count against the chat's budget as they do where the chat
-/// is armed (SK-15), so what its router hides, and so its index, is what the chat was handed.
-pub fn stamp_now(
-    plane: &Path,
-    workspace: Option<&str>,
-    persona: Option<&str>,
-    harness: Harness,
-    built_in: Option<&Path>,
-) -> Stamp {
-    if !reach_chats_here(plane) {
+/// Routed as the chat's start routed it ([`Running`]), so what its router hides, and so its
+/// index, is what the chat was handed: the built-in skills count against its budget (SK-15), and
+/// so do the repo skills of its clone (#3245).
+pub fn stamp_now(chat: &Running<'_>) -> Stamp {
+    if !reach_chats_here(chat.plane) {
         return Stamp::default();
     }
-    stamp_of(plane, workspace, persona, harness, built_in)
+    stamp_of(chat)
 }
 
 /// [`stamp_now`] whatever the flag says: for a caller that asked the flag once for many chats.
-pub fn stamp_of(
-    plane: &Path,
-    workspace: Option<&str>,
+pub fn stamp_of(chat: &Running<'_>) -> Stamp {
+    Stamp::of(&chat.routed(), chat.harness.skills_reload())
+}
+
+/// **The set of a chat on `harness` as its listing is routed** (SK-15): one ask, from the
+/// built-in skills in `built_in`, the plane's at `at` where they reach it, and its persona, by
+/// its harness's route and within its budget. The one routing the folder a chat is handed
+/// ([`lay_out_for_chat`]), what its adapter arms it with ([`for_chat`]), Use skill…
+/// ([`for_use_skill`]) and its restart's stamp ([`stamp_of`]) are worked out by, so they agree
+/// (#3245).
+fn routed(
+    built_in: Option<&Path>,
+    at: Option<PlaneSkills<'_>>,
     persona: Option<&str>,
     harness: Harness,
-    built_in: Option<&Path>,
-) -> Stamp {
-    let at = PlaneSkills {
-        plane,
-        workspace,
-        repo: &[],
-    };
-    let set = ask(
+) -> SkillSet {
+    ask(
         built_in,
-        Some(at),
+        at,
         persona,
         harness.skills(),
         None,
         Some(harness.skill_budget()),
-    );
-    Stamp::of(&set, harness.skills_reload())
+    )
 }
 
 /// One ask of purlis-skills, from a directory of built-in skills, the plane with the workspace
@@ -1742,6 +1740,23 @@ pub fn repo_skills_of_chat(
         .collect();
     let choices = crate::harness_plugin::Choices::read_in(plane, Some(workspace));
     crate::harness_plugin::repo_skills(harness.adapter().plugins(), &choices, &mine)
+}
+
+/// **The repo skills a chat's start reads** (SK-6; #3245): where the plane's skills reach it
+/// (`on`) and it was started in `cwd` in `workspace`, those of the clone `cwd` is in
+/// ([`repo_skills_of_chat`]); none otherwise. What its arming, Use skill… and its stamp all
+/// read, so each routes the set the chat was handed.
+pub fn repo_skills_at_start(
+    on: bool,
+    harness: Harness,
+    plane: &Path,
+    workspace: Option<&str>,
+    cwd: Option<&Path>,
+) -> Vec<OutsideSkill> {
+    match (on, workspace, cwd) {
+        (true, Some(workspace), Some(cwd)) => repo_skills_of_chat(harness, plane, workspace, cwd),
+        _ => Vec::new(),
+    }
 }
 
 /// One skill as the Skill studio and `purlis skill list` and `show` show it: every copy of a name,

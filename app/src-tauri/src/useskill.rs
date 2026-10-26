@@ -178,6 +178,7 @@ fn of_the_chat(
         harness: chat.harness?,
         built_in: built_in.as_deref(),
         plane_skills: true,
+        cwd: chat.cwd.as_deref(),
     });
     Some((skills, chat.salt))
 }

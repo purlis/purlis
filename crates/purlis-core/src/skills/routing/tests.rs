@@ -60,7 +60,22 @@ fn running<'a>(root: &'a Path, bundle: &'a Path, persona: Option<&'a str>) -> Ru
         harness: Harness::ClaudeCode,
         built_in: Some(bundle),
         plane_skills: true,
+        cwd: None,
     }
+}
+
+/// The stamp of a Codex chat in `smart-ide`, on no persona, with the built-in skills in
+/// `built_in`.
+fn stamp(root: &Path, built_in: Option<&Path>) -> crate::skills::Stamp {
+    crate::skills::stamp_of(&Running {
+        plane: root,
+        workspace: Some("smart-ide"),
+        persona: None,
+        harness: Harness::Codex,
+        built_in,
+        plane_skills: true,
+        cwd: None,
+    })
 }
 
 fn hidden(skills: &ChatSkills) -> Vec<&str> {
@@ -385,7 +400,7 @@ fn use_skill_asks_a_chat_to_load_a_hidden_skill_and_holds_no_run_for_it() {
 fn the_stamp_of_a_chat_changes_when_what_its_index_names_changes() {
     let (tmp, _bundle) = a_plane_of(MOST + 5);
     let root = tmp.path();
-    let before = crate::skills::stamp_of(root, Some("smart-ide"), None, Harness::Codex, None);
+    let before = stamp(root, None);
 
     write(
         &root.join("skills/skill-99"),
@@ -393,10 +408,7 @@ fn the_stamp_of_a_chat_changes_when_what_its_index_names_changes() {
     );
     std::fs::write(root.join("skills/skill-99.toml"), "grant = \"all\"\n").unwrap();
 
-    assert_ne!(
-        crate::skills::stamp_of(root, Some("smart-ide"), None, Harness::Codex, None),
-        before
-    );
+    assert_ne!(stamp(root, None), before);
 }
 
 #[test]
@@ -459,20 +471,44 @@ fn a_chat_the_built_in_skills_put_past_the_budget_is_stamped_with_its_index() {
             .any(|name| name == INDEX)
     );
 
-    let with =
-        crate::skills::stamp_of(root, Some("smart-ide"), None, Harness::Codex, Some(&bundle));
-    let without = crate::skills::stamp_of(root, Some("smart-ide"), None, Harness::Codex, None);
+    let with = stamp(root, Some(&bundle));
+    let without = stamp(root, None);
     assert_ne!(with, without, "the built-in skills decide what is hidden");
+}
 
-    // A hidden skill's description is only in the index: changing it changes the stamp.
+#[test]
+fn a_hidden_skills_description_edit_offers_no_restart_and_its_deprecation_does() {
+    // SK-15 review (#3245): the harness lists the index by its fixed description, and a hidden
+    // skill is loaded as it is now (`skill_load`), so only what the index names, and what it says
+    // to use instead, is what a running chat would miss.
+    let (tmp, _bundle) = a_plane_of(MOST + 5);
+    let root = tmp.path();
+    let before = stamp(root, None);
+
     write(
         &root.join("skills/skill-05"),
-        "---\nname: skill-05\ndescription: Does something else.\n---\n",
+        "---\nname: skill-05\ndescription: Does something else entirely.\n---\n",
     );
-    assert_ne!(
-        crate::skills::stamp_of(root, Some("smart-ide"), None, Harness::Codex, Some(&bundle)),
-        with
+    assert_eq!(
+        stamp(root, None),
+        before,
+        "a description edit of a hidden skill"
     );
+
+    std::fs::write(
+        root.join("skills/skill-05.toml"),
+        "grant = \"all\"\nlifecycle = \"deprecated\"\n",
+    )
+    .unwrap();
+    let deprecated = stamp(root, None);
+    assert_ne!(deprecated, before, "a hidden skill deprecated");
+
+    std::fs::write(
+        root.join("skills/skill-05.toml"),
+        "grant = \"all\"\nlifecycle = \"deprecated\"\nreplacement = \"skill-06\"\n",
+    )
+    .unwrap();
+    assert_ne!(stamp(root, None), deprecated, "its replacement named");
 }
 
 #[test]
@@ -646,4 +682,70 @@ fn a_pinners_list_of_too_many_says_so_and_names_no_entry_sk15d() {
     let refused = pins_refused(root, &PinnedBy::Workspace("smart-ide".to_owned())).unwrap();
     assert_eq!(refused.bad, None);
     assert!(refused.why.contains("more than 64 pins"), "{}", refused.why);
+}
+
+#[test]
+fn use_skill_and_the_stamp_of_a_chat_in_a_clone_route_its_repo_skills_as_its_folder_did() {
+    // #3245: a chat's start routes its set with the repo skills of the clone it works in, so
+    // Use skill… and its restart's stamp read the same clone, and mark hidden what it was not
+    // handed.
+    let (tmp, bundle) = a_plane_of(MOST - 1);
+    let root = tmp.path();
+    let clone = root.join("workspaces/smart-ide/api");
+    std::fs::create_dir_all(clone.join(".git")).unwrap();
+    for at in 0..5 {
+        let name = format!("repo-{at}");
+        write(
+            &clone.join(".agents/skills").join(&name),
+            &format!("---\nname: {name}\ndescription: The repo's {at}.\n---\n"),
+        );
+    }
+    let repo = crate::skills::repo_skills_of_chat(Harness::Codex, root, "smart-ide", &clone);
+    assert_eq!(repo.len(), 5, "{repo:?}");
+    let folder = crate::skills::lay_out_for_chat(
+        Some(root),
+        Some("smart-ide"),
+        None,
+        Some(&bundle),
+        &root.join("sets"),
+        Harness::Codex,
+        &repo,
+    )
+    .expect("a set's folder");
+    let handed: Vec<String> = std::fs::read_dir(folder.join(DIR_IN_BUNDLE))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert!(handed.iter().any(|name| name == INDEX), "{handed:?}");
+
+    let in_the_clone = Running {
+        harness: Harness::Codex,
+        cwd: Some(&clone),
+        ..running(root, &bundle, None)
+    };
+    let chat = for_use_skill(&in_the_clone);
+    assert!(!hidden(&chat).is_empty());
+    for one in chat
+        .offered
+        .iter()
+        .filter(|one| one.effective.origin.of_the_plane())
+    {
+        let name = &one.effective.skill.name;
+        assert_eq!(
+            handed.contains(name),
+            one.hidden.is_none(),
+            "{name}: listed by Use skill… exactly where its folder holds it"
+        );
+    }
+
+    let elsewhere = Running {
+        cwd: None,
+        ..in_the_clone
+    };
+    assert!(hidden(&for_use_skill(&elsewhere)).is_empty());
+    assert_ne!(
+        crate::skills::stamp_of(&in_the_clone),
+        crate::skills::stamp_of(&elsewhere),
+        "the clone's skills decide what is hidden"
+    );
 }

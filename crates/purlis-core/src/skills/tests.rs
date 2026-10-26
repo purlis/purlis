@@ -830,6 +830,7 @@ fn running<'a>(root: &'a Path, bundle: &'a Path, workspace: Option<&'a str>) -> 
         harness: Harness::ClaudeCode,
         built_in: Some(bundle),
         plane_skills: true,
+        cwd: None,
     }
 }
 

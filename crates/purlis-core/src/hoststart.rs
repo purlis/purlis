@@ -863,10 +863,7 @@ pub(crate) fn armed_as(studio: bool, arming: &Arming<'_>) -> Result<Armed, Strin
     };
     // And the repo skills of the clone it works in, read here too, so a narrower repo copy of a
     // plane skill is the one its harness gets where purlis builds what it is handed (SK-6).
-    let repo = match (on, workspace.as_deref(), cwd) {
-        (true, Some(ws), Some(cwd)) => crate::skills::repo_skills_of_chat(harness, root, ws, cwd),
-        _ => Vec::new(),
-    };
+    let repo = crate::skills::repo_skills_at_start(on, harness, root, workspace.as_deref(), cwd);
     let linked = laid_out_on(
         on,
         skills_root,

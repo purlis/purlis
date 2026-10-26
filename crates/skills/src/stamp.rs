@@ -67,18 +67,41 @@ impl Stamp {
             })
             .collect();
         // The index a router hands in place of what it hid (SK-15): a change to what is hidden
-        // changes it.
+        // changes it: what it names, and what it says to use instead, but not its text (#3245).
+        // The harness lists the index by its fixed description, and a hidden skill is loaded as
+        // it is now (`skill_load`), so a hidden skill's description edit is nothing a running
+        // chat misses.
         if let Some(index) = set.index() {
             rows.push(Stamped {
                 name: index.name,
                 path: PathBuf::new(),
-                description: index.text,
+                description: named_by_the_index(set),
                 body: None,
             });
         }
         rows.sort();
         Stamp(rows)
     }
+}
+
+/// What `set`'s index names, one line each, by name: every skill a router hid, and where one is
+/// deprecated, that it is and what it names instead.
+fn named_by_the_index(set: &SkillSet) -> String {
+    let mut named: Vec<String> = set
+        .effective
+        .iter()
+        .filter(|effective| set.hidden_by_router(&effective.skill.name).is_some())
+        .map(|effective| match &effective.deprecated {
+            None => effective.skill.name.clone(),
+            Some(deprecated) => format!(
+                "{}\tdeprecated\t{}",
+                effective.skill.name,
+                deprecated.replacement.as_deref().unwrap_or_default()
+            ),
+        })
+        .collect();
+    named.sort();
+    named.join("\n")
 }
 
 #[cfg(test)]

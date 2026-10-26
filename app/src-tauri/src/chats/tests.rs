@@ -8103,7 +8103,15 @@ fn a_chat_whose_skills_changed_since_it_started_is_listed_for_a_restart() {
                 ran: None,
                 grants_as: None,
                 skills: harness.map(|harness| {
-                    purlis_core::skills::stamp_of(plane.path(), None, None, harness, None)
+                    purlis_core::skills::stamp_of(&purlis_core::skills::Running {
+                        plane: plane.path(),
+                        workspace: None,
+                        persona: None,
+                        harness,
+                        built_in: None,
+                        plane_skills: true,
+                        cwd: None,
+                    })
                 }),
             },
         );
