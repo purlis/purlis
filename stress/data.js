@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793025698362,
+  "lastUpdate": 1793028186007,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -7718,6 +7718,42 @@ window.BENCHMARK_DATA = {
             "value": 270.3,
             "unit": "MB",
             "extra": "median of 6 samples: 261.9, 293.1, 282.8, 269.7, 270.9, 200.8 MB; window 153.4 MB, session host 118.6 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "4b023c0e3fbb760c26f82a36ec6f3f774d7755f0",
+          "message": "Runners: a chat runs on a cluster runner, vouched for by the operator (#2056) (#3293)\n\n* Runners: a chat runs on a cluster runner, vouched for by the operator (#2056)\n\nThe runner's pod makes its link key as it starts; the cluster operator signs\n{claim, pod, link key, requester} with an Ed25519 key each Pool's status names;\nthe desktop pins that key, pairs over its own kubectl exec, and refuses a runner\nwhose answer or statement disagrees. A Claim names its requester, stamped by the\nadmission policy and immutable.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* Runners: a pod sharing the node's namespaces or a credential is never vouched for (#2056)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* Runners: the cluster operator holds the pod to its template in full and follows its owners by uid (#2056)\n\nReview round 1. The pod is compared with the operator's template in every\nfield but a short, tested list the cluster sets; a template another field\nmanager changed is refused; the claim is followed to its pod by uid through\nthe upstream claim and sandbox. Names and uids in a statement are only as\nKubernetes gives them, and the pod is named as pod/<name> to kubectl. A\nstatement that no longer holds is taken away, and vouched claims are looked\nat again every minute. One bounded-run helper serves docker and kubectl; the\nsigning key is made through a pipe; docs say what vouching rests on.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* Runners: the operator logs why it vouches for no key, and the kind run shows each claim's word (#2056)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* Runners: the kind run shows what upstream sets on a runner's pod (#2056)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* Runners: a runner's pod may carry the name servers the pinned upstream gives it, and no others (#2056)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* Runners: the pod is held to its template's labels, annotations and resources too, and the template to the operator's own (#2056)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* Runners: the cluster runner's names and the operator's mounted key, as ruled 2026-10-26 (#2056)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-26T13:34:48Z",
+          "tree_id": "9c220a9f8cf5f81bb11479402b09ad2b1efd3ea9",
+          "url": "https://github.com/purlis/purlis/commit/4b023c0e3fbb760c26f82a36ec6f3f774d7755f0"
+        },
+        "date": 1793028182893,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 697,
+            "unit": "MB",
+            "extra": "median of 3 samples: 591, 697, 739 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 424.6,
+            "unit": "MB",
+            "extra": "median of 6 samples: 413.5, 419, 423.5, 425.7, 426.6, 589.5 MB; window 235.8 MB, session host 188.9 MB"
           }
         ]
       }
