@@ -1613,8 +1613,11 @@ pub(crate) fn serve_handed_wrapped(
 /// nothing is asked for a command its own sandbox would never run.
 pub fn armed_as(asker: &Asker, wanted: &Wanted) -> Result<String, String> {
     let Some(confines) = &asker.confines else {
-        return Err("this chat was not started in its sandbox here, so no vault value is sent                     for its commands"
-            .to_owned());
+        return Err(
+            "this chat was not started in its sandbox here, so no vault value is sent \
+                    for its commands"
+                .to_owned(),
+        );
     };
     let persona = asker.persona.as_deref().unwrap_or_default();
     let program = wanted
