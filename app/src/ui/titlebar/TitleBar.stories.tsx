@@ -203,12 +203,15 @@ export const ChosenStates: Story = {
     const boxes = [box(chosen), box(other)];
     const fill = (one: HTMLElement) => getComputedStyle(one).backgroundColor;
     const fills: Record<string, string> = { rest: fill(other), chosen: fill(chosen) };
-    // The pointer may rest where a story before this one left it, over a chip: moved off the
-    // bar first, so reaching a chip is an entry the chip hears.
-    await userEvent.hover(canvas.getByText("Nothing chosen"));
-    await waitFor(() => expect(other).not.toHaveAttribute("data-hovered"));
-    await userEvent.hover(other);
-    await waitFor(() => expect(other).toHaveAttribute("data-hovered"));
+    // The pointer may rest where a story before this one left it: it leaves the bar and comes
+    // back until the chip hears it arrive, so the chip is surely under it.
+    const point = (one: HTMLElement) =>
+      waitFor(async () => {
+        await userEvent.hover(canvas.getByText("Nothing chosen"));
+        await userEvent.hover(one);
+        await expect(one).toHaveAttribute("data-hovered");
+      });
+    await point(other);
     fills.hover = fill(other);
     await expect(box(other)).toBe(boxes[1]);
     // The primary words on the wash, as under the pointer.
@@ -219,8 +222,7 @@ export const ChosenStates: Story = {
     await waitFor(() =>
       expect(document.querySelector('[role="tooltip"][data-scope="tooltip"]')).toBeNull(),
     );
-    await userEvent.hover(chosen);
-    await waitFor(() => expect(chosen).toHaveAttribute("data-hovered"));
+    await point(chosen);
     fills["chosen + hover"] = fill(chosen);
     await expect(box(chosen)).toBe(boxes[0]);
     // Every state its own fill: the chosen chip never looks hovered, nor at rest.
@@ -236,8 +238,7 @@ export const ChosenStates: Story = {
     await expect(fill(chosen)).toBe(fills.chosen);
     // The picture: the chosen chip under the pointer.
     chosen.blur();
-    await userEvent.hover(chosen);
-    await waitFor(() => expect(chosen).toHaveAttribute("data-hovered"));
+    await point(chosen);
   },
 };
 
