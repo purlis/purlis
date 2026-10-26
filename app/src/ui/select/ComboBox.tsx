@@ -19,11 +19,13 @@
  * - **Sizes**: `sm` 24, `md` 28 (the default), `lg` 32, as the text input's.
  * - **Keyboard first**: ↓ opens the suggestions, ↑ and ↓ move and stop at the ends, Enter picks,
  *   Escape closes the list and then clears nothing.
- * - **Refused** (`isInvalid`, #3110): a value typed that is not allowed draws the danger colour on
- *   the box's edge, as a text field's, and the box is marked invalid (`aria-invalid`); the words
- *   that say why are its description (`aria-describedby`).
+ * - **Refused** (`error`, #3110, #3334): a value typed that is not allowed draws the danger colour
+ *   on the box's edge, as a text field's, and the box is marked invalid (`aria-invalid`). The words
+ *   that say why are the field's error line under the box, its room kept whether or not it says
+ *   anything, so a refusal that lands while the person types is heard at once and moves nothing.
+ *   `isInvalid` is for words drawn elsewhere and named by `aria-describedby`.
  */
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import {
   Button as AriaButton,
   ComboBox as AriaComboBox,
@@ -35,7 +37,7 @@ import {
   useFilter,
 } from "react-aria-components";
 import { Check, ChevronDown } from "lucide-react";
-import { TextField, type PlainTextFieldProps } from "../field/Field";
+import { ErrorLine, TextField, describedBy, type PlainTextFieldProps } from "../field/Field";
 import { Surface } from "../popover/Popover";
 import { Tooltip } from "../tooltip/Tooltip";
 import type { SelectSize } from "./Select";
@@ -53,8 +55,10 @@ export type ComboBoxProps = {
   suggestions: readonly string[];
   placeholder?: string;
   isDisabled?: boolean;
-  /** Refused: what is typed is not allowed. The words that say why are drawn by its row or its
-   *  form and named by `aria-describedby`. */
+  /** Why what is typed is not allowed, said under the box in the field's error line and heard as
+   *  it lands; `undefined` while it is allowed. Given at all, set or not, the line's room is kept. */
+  error?: string;
+  /** Refused, where the words that say why are drawn elsewhere and named by `aria-describedby`. */
   isInvalid?: boolean;
   /** Its hint, the shared tooltip (#2908), on the box. */
   tooltip?: string;
@@ -83,9 +87,13 @@ export function ComboBox({
   ...rest
 }: ComboBoxProps) {
   const { contains } = useFilter({ sensitivity: "base" });
+  const errorId = `${useId()}-error`;
+  const refusable = "error" in rest;
+  const { error, ...given } = rest;
   const data: Record<string, unknown> = {};
   const aria: Record<string, unknown> = {};
-  for (const [key, one] of Object.entries(rest)) (key.startsWith("data-") ? data : aria)[key] = one;
+  for (const [key, one] of Object.entries(given))
+    (key.startsWith("data-") ? data : aria)[key] = one;
   const items = [...new Set(suggestions)].map((name) => ({ id: name, name }));
   return (
     <AriaComboBox
@@ -96,8 +104,9 @@ export function ComboBox({
       defaultItems={items}
       inputValue={value}
       onInputChange={onChange}
+      aria-describedby={describedBy(given["aria-describedby"], errorId, error)}
       isDisabled={isDisabled}
-      isInvalid={isInvalid}
+      isInvalid={error !== undefined || isInvalid === true}
       validationBehavior="aria"
       className={className}
       data-scope="field"
@@ -123,6 +132,7 @@ export function ComboBox({
               <ChevronDown aria-hidden="true" />
             </AriaButton>
           </Group>
+          {refusable && <ErrorLine id={errorId} said={error} />}
           <Surface kind="menu" data-of="select">
             <ListBox<{ id: string; name: string }> data-scope="popover" data-part="list">
               {(one) => (

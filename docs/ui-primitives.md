@@ -581,7 +581,7 @@ refuses all four (`purlis/select-family`, an error).
 
 | Member | Is |
 | --- | --- |
-| `Select` | a button that shows what is picked and opens the list to pick from; `value`, `options` (`value`, `label`, `isDisabled`, `tooltip`), `onValueChange`, `placeholder`, `isDisabled`, `isInvalid`, `tooltip`, `size` |
+| `Select` | a button that shows what is picked and opens the list to pick from; `value`, `options` (`value`, `label`, `isDisabled`, `tooltip`), `onValueChange`, `placeholder`, `isDisabled`, `error`, `isInvalid`, `tooltip`, `size` |
 | `ComboBox` | a box to type in with the suggestions that match in a list under it; what is typed is the value, and a suggestion picked writes its words (Add a skill) |
 | `ListComboBox` | the box over a list drawn in place under it, always shown, whose rows and aim are its owner's (the command palette): the field family's box with the combobox's ARIA, which only this family writes |
 
@@ -610,11 +610,14 @@ refuses all four (`purlis/select-family`, an error).
   by its row's label (`aria-labelledby`), one with no row by its `aria-label`. An unavailable
   select with a reason (`tooltip`) stays in reach of the keyboard so its reason is heard, and
   opens nothing.
-- **Refused** (`isInvalid`, #3110): a select whose value the form will not take, or a combobox
-  whose typed value is not allowed, draws the danger colour on its edge, inside the box as the
-  text input's, and is marked `aria-invalid` and `data-invalid`; the words that say why are drawn
-  by its row or its form and named by `aria-describedby`, so they are heard with it. A colour
-  only, so nothing moves; a theme reaches it as the `invalid` state of either family's `root`.
+- **Refused** (`error`, #3110, #3334): a select whose value the form will not take, or a
+  combobox whose typed value is not allowed, draws the danger colour on its edge, inside the box
+  as the text input's, and is marked `aria-invalid` and `data-invalid`. `error` says why in the
+  field's error line under the box (the `field.error` part), a live region kept from the start,
+  so a refusal that lands while the person types is heard at once and nothing moves; a select
+  given `error` stands in a field of its own, placed by its `className`. `isInvalid` marks one
+  refused whose words are drawn elsewhere (a settings row's), named by `aria-describedby`. A
+  colour only; a theme reaches it as the `invalid` state of either family's `root`.
 - **The button carries what it holds as `data-value`**, which the e2e specs read
   (`e2e/acting.ts`, `choose`), and a test picks through `ui/select/select.testkit.ts`
   (`selectNamed`, `pickIn`, `offeredIn`).
