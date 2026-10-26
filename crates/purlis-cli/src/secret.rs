@@ -257,10 +257,10 @@ struct Console;
 impl Io for Console {
     fn say(&mut self, line: Say) {
         match line {
-            Say::Info(t) => voice::info(&t),
-            Say::Ok(t) => voice::ok(&t),
-            Say::Warn(t) => voice::warn(&t),
-            Say::Err(t) => voice::err(&t),
+            Say::Info(t) => voice::info(t.clone()),
+            Say::Ok(t) => voice::ok(t.clone()),
+            Say::Warn(t) => voice::warn(t.clone()),
+            Say::Err(t) => voice::err(t.clone()),
         }
     }
 
@@ -414,7 +414,7 @@ pub fn persona_secret(
     if let Some(name) = &flag
         && let Some(refused) = purlis_core::personas::name_refusal(here.plane.root(), name)
     {
-        voice::err(&refused);
+        voice::err(refused.to_string());
         return 1;
     }
     let Some(name) = here.active_persona(flag.as_deref()) else {
@@ -429,7 +429,7 @@ pub fn persona_secret(
     let vault = match cmd::persona_vault(&ctx, &name) {
         Ok(v) => v,
         Err(message) => {
-            voice::err(&message);
+            voice::err(message.to_string());
             return 1;
         }
     };

@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { type Offer } from "./actions";
 import { useArrived } from "./lib/arrived";
-import { Button } from "./ui/button/Button";
+import { Button, IconButton } from "./ui/button/Button";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 import { tabPart } from "./ui/tabs/Tabs";
 
@@ -107,24 +107,38 @@ export function Doer({
         {words ?? offer.title}
       </Button>
     );
+  // **The quiet ghost** (#3214): a mark at the end of a strip is not the point of the strip, so
+  // its words or its glyph are in the quiet tier until the pointer reaches it.
+  const place = clsx(
+    offer.id === "pane.close" && !closesOnly(offer.does) && "ends-a-chat",
+    bare && "bare",
+  );
+  const tip = offer.reason || offer.note || undefined;
+  if (bare)
+    return (
+      <IconButton
+        variant="quiet"
+        size="sm"
+        className={place}
+        icon={<Mark />}
+        aria-label={words ?? offer.title}
+        tooltip={tip}
+        isDisabled={!offer.available}
+        onPress={() => onPress(offer)}
+      />
+    );
   return (
-    <Tooltip tip={offer.reason || offer.note || (bare ? offer.title : undefined)}>
-      <button
-        className={clsx(
-          offer.id === "pane.close" && !closesOnly(offer.does) && "ends-a-chat",
-          bare && "bare",
-        )}
-        // WebKit leaves a `<button>` out of the tab sequence unless its `tabindex` is written down
-        // (`docs/ui-primitives.md`, charter-app#189).
-        tabIndex={0}
-        disabled={!offer.available}
-        aria-label={bare ? (words ?? offer.title) : undefined}
-        onClick={() => onPress(offer)}
-      >
-        {Mark && <Mark />}
-        {!bare && (words ?? offer.title)}
-      </button>
-    </Tooltip>
+    <Button
+      variant="quiet"
+      size="sm"
+      className={place || undefined}
+      icon={Mark && <Mark />}
+      tooltip={tip}
+      isDisabled={!offer.available}
+      onPress={() => onPress(offer)}
+    >
+      {words ?? offer.title}
+    </Button>
   );
 }
 
@@ -138,7 +152,7 @@ export function Doer({
  * fail: a missing icon is cosmetic, a missing button is not.
  *
  * `pane.close` ends a chat, so its mark is the same `X` a tab's close carries and it gets the
- * same danger hover (`App.css`, `.ends-a-chat`) — an icon may not make ending a chat look
+ * same danger hover (`paneFrame.css`, `.ends-a-chat`) — an icon may not make ending a chat look
  * lighter than it is.
  *
  * **The project strip draws three of these side by side, so no two may be the same glyph**
@@ -251,22 +265,29 @@ export function ShowMore({
     // is a menu on a strip, not a question that has to be answered before the window can be
     // used again. A click outside closes it, which is what every menu on every platform does.
     <>
-      <button
+      {/* The quiet ghost (#3214), as the `+` beside it is: no box, quiet words. */}
+      <Button
         ref={trigger}
+        variant="quiet"
+        size="sm"
         className={arrived ? "show-more arrived" : "show-more"}
         aria-label={`Show ${many} the strip is not showing${needsSaid}`}
         aria-haspopup="menu"
         aria-expanded={open !== false}
-        tabIndex={0}
         onPointerDown={(event) => event.preventDefault()}
-        // A press by Enter or Space (no pointer) lands on the menu's first row.
-        onClick={(event) => setOpen((up) => (up ? false : event.detail === 0 ? "first" : true))}
+        // A press by Enter or Space, or a screen reader's (a virtual press), lands on the
+        // menu's first row.
+        onPress={(event) =>
+          setOpen((up) =>
+            up ? false : ["keyboard", "virtual"].includes(event.pointerType) ? "first" : true,
+          )
+        }
         onKeyDown={opensOnTheArrows(open !== false, setOpen)}
       >
-        {hidden.length} more
+        {`${hidden.length} more`}
         {needs > 0 && <span className="show-more-needs">{needs}</span>}
         <ChevronDown />
-      </button>
+      </Button>
       <AnchoredMenu
         triggerRef={trigger}
         isOpen={open !== false}
