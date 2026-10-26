@@ -209,6 +209,12 @@ export const ChosenStates: Story = {
     await expect(box(other)).toBe(boxes[1]);
     // The primary words on the wash, as under the pointer.
     await expect(getComputedStyle(chosen).color).toBe(getComputedStyle(other).color);
+    // The pointer leaves, and the tooltip it opened goes, before it reaches the chosen chip.
+    await userEvent.unhover(other);
+    await waitFor(() => expect(other).not.toHaveAttribute("data-hovered"));
+    await waitFor(() =>
+      expect(document.querySelector('[role="tooltip"][data-scope="tooltip"]')).toBeNull(),
+    );
     await userEvent.hover(chosen);
     await waitFor(() => expect(chosen).toHaveAttribute("data-hovered"));
     fills["chosen + hover"] = fill(chosen);
