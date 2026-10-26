@@ -183,6 +183,154 @@ impl std::fmt::Display for NotPrivate {
 
 impl std::error::Error for NotPrivate {}
 
+/// The file [`Mode::Secret`] was writing has a second name (a hard link), so nothing was
+/// written. Carried inside the `io::Error`, as [`NotPrivate`] is; its words say what to do
+/// next, and name the other name once [`named_in`] has found it.
+#[derive(Debug)]
+pub struct SecondName {
+    path: PathBuf,
+    other: Option<PathBuf>,
+}
+
+impl std::fmt::Display for SecondName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let path = self.path.display();
+        match &self.other {
+            Some(other) => {
+                let other = other.display();
+                write!(
+                    f,
+                    "{path} has a second name (a hard link), {other}, so purlis does not rewrite \
+                     it in place. Remove {other}, or put a plain copy of the file at {path}, then \
+                     try again. A value written through the other name reaches both names."
+                )
+            }
+            None => write!(
+                f,
+                "{path} has a second name (a hard link), so purlis does not rewrite it in place. \
+                 Remove the other name, or put a plain copy of the file at {path}, then try \
+                 again. A value written through the other name reaches both names."
+            ),
+        }
+    }
+}
+
+impl std::error::Error for SecondName {}
+
+/// `e`, with the other name of the file it refused named, when `e` is a [`SecondName`] and a
+/// same-file search of `project` finds that name ([`other_name_in`]). Any other error, or a
+/// search that finds nothing, is returned as it was.
+pub fn named_in(e: io::Error, project: &Path) -> io::Error {
+    let Some(refused) = e.get_ref().and_then(|e| e.downcast_ref::<SecondName>()) else {
+        return e;
+    };
+    match other_name_in(project, &refused.path) {
+        Some(other) => io::Error::new(
+            e.kind(),
+            SecondName {
+                path: refused.path.clone(),
+                other: Some(other),
+            },
+        ),
+        None => e,
+    }
+}
+
+/// How far [`other_name_in`] looks: folders below the project, entries in all, entries in one
+/// folder (a bigger folder is passed over whole), and the folders it never enters — git's own,
+/// and the two that hold a build's or a package manager's thousands of files.
+const SEARCH_DEPTH: usize = 12;
+const SEARCH_ENTRIES: usize = 20_000;
+const SEARCH_FOLDER_ENTRIES: usize = 2_000;
+const NOT_SEARCHED: [&str; 3] = [".git", "node_modules", "target"];
+
+/// Another name, inside `project`, of the regular file at `path`: an entry on the same device
+/// with the same inode that is not `path` itself. Breadth first and in name order, so the
+/// nearest name is the one found; bounded by [`SEARCH_DEPTH`], [`SEARCH_ENTRIES`] and
+/// [`SEARCH_FOLDER_ENTRIES`]. Every folder is opened through [`crate::held::Store`], one
+/// component at a time with `O_NOFOLLOW`, so a folder that is a link, or one swapped for a link
+/// while the search runs, is not entered. A folder on another device is not entered either,
+/// since a second name is always on the file's own.
+#[cfg(unix)]
+fn other_name_in(project: &Path, path: &Path) -> Option<PathBuf> {
+    use rustix::fs::FileType;
+    use std::os::unix::fs::MetadataExt;
+    let held = std::fs::symlink_metadata(path).ok()?;
+    if !held.file_type().is_file() || held.nlink() < 2 {
+        return None;
+    }
+    let (dev, ino) = (held.dev(), held.ino());
+    // Where `path` itself is below the project, so the search does not name it back.
+    let itself = std::fs::canonicalize(directory_of(path).ok()?)
+        .ok()?
+        .join(path.file_name()?);
+    let itself = std::fs::canonicalize(project)
+        .ok()
+        .and_then(|top| itself.strip_prefix(top).ok().map(Path::to_path_buf));
+    let top = crate::held::Store::project(project).ok()?;
+    let mut left = SEARCH_ENTRIES;
+    // Folders are queued by name and opened again from the top when their turn comes, so the
+    // queue holds no descriptors.
+    let mut folders = std::collections::VecDeque::from([Vec::<String>::new()]);
+    while let Some(below) = folders.pop_front() {
+        let opened;
+        let folder = if below.is_empty() {
+            &top
+        } else {
+            let Some(deeper) = open_below(&top, &below) else {
+                continue;
+            };
+            opened = deeper;
+            &opened
+        };
+        let Some(names) = folder.names_within(SEARCH_FOLDER_ENTRIES) else {
+            continue;
+        };
+        for name in names {
+            left = left.checked_sub(1)?;
+            let Ok(Some(entry)) = folder.entry(&name) else {
+                continue;
+            };
+            if entry.dev != dev {
+                continue;
+            }
+            if entry.kind == FileType::Directory {
+                if below.len() < SEARCH_DEPTH && !NOT_SEARCHED.contains(&name.as_str()) {
+                    let mut deeper = below.clone();
+                    deeper.push(name);
+                    folders.push_back(deeper);
+                }
+            } else if entry.kind == FileType::RegularFile && entry.ino == ino {
+                let here: PathBuf = below.iter().chain([&name]).collect();
+                if itself.as_deref() != Some(here.as_path()) {
+                    // Said under the project's own spelling, as the refused path is.
+                    return Some(project.join(here));
+                }
+            }
+        }
+    }
+    None
+}
+
+/// The folder `below` (one name or more) names under `top`, opened one component at a time
+/// without following a link: `None` when any of it is not a folder, is a link, or is gone.
+#[cfg(unix)]
+fn open_below(top: &crate::held::Store, below: &[String]) -> Option<crate::held::Store> {
+    let (first, rest) = below.split_first()?;
+    let mut folder = top.sub(first, false).ok()??;
+    let names = rest.iter();
+    for name in names {
+        folder = folder.sub(name, false).ok()??;
+    }
+    Some(folder)
+}
+
+#[cfg(not(unix))]
+fn other_name_in(project: &Path, path: &Path) -> Option<PathBuf> {
+    let _ = (project, path);
+    None
+}
+
 /// Every temp file [`replace`] writes starts with this, so one pattern names all of them:
 /// `.purlis-generated.<name>.<pid>.<tag>.tmp` ([`crate::names::GENERATED_TEMP_PREFIX`]; an
 /// older charter's were `.charter-generated.…`, and are still recognised). It is the prefix
@@ -250,10 +398,10 @@ fn replace_through(
     if mode == Mode::Secret && has_a_second_name(path) {
         return Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
-            format!(
-                "{} has a second name, so purlis does not rewrite it in place",
-                path.display()
-            ),
+            SecondName {
+                path: path.to_path_buf(),
+                other: None,
+            },
         ));
     }
     let wanted = mode.permissions(now);
@@ -609,451 +757,4 @@ pub(crate) mod hook {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_replace_that_dies_before_its_rename_leaves_the_old_file_whole_and_no_temp() {
-        let dir = tempfile::tempdir().unwrap();
-        let target = dir.path().join("charter.toml");
-        std::fs::write(&target, "old\n").unwrap();
-        let _hook = hook::set(|target, temp| {
-            assert_eq!(std::fs::read_to_string(target).unwrap(), "old\n");
-            assert_eq!(std::fs::read_to_string(temp).unwrap(), "new\n");
-            Err(io::Error::other("killed"))
-        });
-
-        let err = replace(dir.path(), &target, b"new\n", Mode::Kept).unwrap_err();
-
-        assert_eq!(err.to_string(), "killed");
-        assert_eq!(std::fs::read_to_string(&target).unwrap(), "old\n");
-        let left: Vec<_> = std::fs::read_dir(dir.path()).unwrap().collect();
-        assert_eq!(left.len(), 1, "the temp file was cleaned up");
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn a_replace_keeps_the_mode_the_file_had_and_gives_a_new_one_the_mode_asked_for() {
-        use std::os::unix::fs::PermissionsExt;
-        let dir = tempfile::tempdir().unwrap();
-        let kept = dir.path().join("kept");
-        std::fs::write(&kept, "x").unwrap();
-        std::fs::set_permissions(&kept, std::fs::Permissions::from_mode(0o640)).unwrap();
-        replace(dir.path(), &kept, b"y", Mode::KeptOrPrivate).unwrap();
-        let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
-        assert_eq!(mode(&kept), 0o640);
-
-        let fresh = dir.path().join("fresh");
-        replace(dir.path(), &fresh, b"z", Mode::KeptOrPrivate).unwrap();
-        assert_eq!(mode(&fresh), 0o600);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn a_replace_refuses_a_target_that_is_a_link_and_leaves_what_it_points_at() {
-        let dir = tempfile::tempdir().unwrap();
-        let outside = tempfile::tempdir().unwrap();
-        let victim = outside.path().join("bashrc");
-        std::fs::write(&victim, "mine").unwrap();
-        let target = dir.path().join(".gitignore");
-        std::os::unix::fs::symlink(&victim, &target).unwrap();
-
-        assert!(replace(dir.path(), &target, b"x", Mode::Kept).is_err());
-        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "mine");
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn a_secret_with_a_second_name_is_refused_and_both_names_keep_their_bytes() {
-        use std::os::unix::fs::MetadataExt;
-        let dir = tempfile::tempdir().unwrap();
-        let target = dir.path().join("app.json");
-        std::fs::write(&target, "old\n").unwrap();
-        let second = dir.path().join("second.json");
-        std::fs::hard_link(&target, &second).unwrap();
-        let inode = std::fs::metadata(&target).unwrap().ino();
-
-        let err = replace(dir.path(), &target, b"new\n", Mode::Secret).unwrap_err();
-
-        assert_eq!(
-            err.to_string(),
-            format!(
-                "{} has a second name, so purlis does not rewrite it in place",
-                target.display()
-            )
-        );
-        assert_eq!(std::fs::read(&target).unwrap(), b"old\n");
-        assert_eq!(std::fs::read(&second).unwrap(), b"old\n");
-        assert_eq!(std::fs::metadata(&target).unwrap().ino(), inode);
-        assert_eq!(std::fs::metadata(&target).unwrap().nlink(), 2);
-        assert_eq!(
-            std::fs::read_dir(dir.path()).unwrap().count(),
-            2,
-            "no temp left"
-        );
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn a_secret_with_one_name_is_rewritten_as_before() {
-        use std::os::unix::fs::PermissionsExt;
-        let dir = tempfile::tempdir().unwrap();
-        let target = dir.path().join("app.json");
-        std::fs::write(&target, "old\n").unwrap();
-
-        replace(dir.path(), &target, b"new\n", Mode::Secret).unwrap();
-
-        assert_eq!(std::fs::read(&target).unwrap(), b"new\n");
-        let mode = std::fs::metadata(&target).unwrap().permissions().mode() & 0o777;
-        assert_eq!(mode, 0o600);
-        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn a_plane_file_with_a_second_name_is_rewritten_as_before() {
-        let dir = tempfile::tempdir().unwrap();
-        let target = dir.path().join("charter.toml");
-        std::fs::write(&target, "old\n").unwrap();
-        let second = dir.path().join("second.toml");
-        std::fs::hard_link(&target, &second).unwrap();
-
-        replace(dir.path(), &target, b"new\n", Mode::Kept).unwrap();
-
-        assert_eq!(std::fs::read(&target).unwrap(), b"new\n");
-        assert_eq!(std::fs::read(&second).unwrap(), b"old\n");
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn a_read_only_file_is_refused_as_an_in_place_write_would_refuse_it() {
-        use std::os::unix::fs::PermissionsExt;
-        let dir = tempfile::tempdir().unwrap();
-        let target = dir.path().join("charter.toml");
-        std::fs::write(&target, "old\n").unwrap();
-        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o444)).unwrap();
-
-        let err = replace(dir.path(), &target, b"new\n", Mode::Kept).unwrap_err();
-
-        assert_eq!(err.kind(), io::ErrorKind::PermissionDenied);
-        assert_eq!(std::fs::read_to_string(&target).unwrap(), "old\n");
-        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
-    }
-
-    /// EPERM, which is what a sandbox answers a write it refuses — not EACCES, a file's mode.
-    fn eperm() -> io::Error {
-        io::Error::from_raw_os_error(1)
-    }
-
-    #[test]
-    fn a_write_a_sandbox_refuses_names_the_file_it_was_writing() {
-        // #1345: `purlis persona remember` from a chat printed only "Operation not permitted
-        // (os error 1)", with no path and no next step.
-        let dir = tempfile::tempdir().unwrap();
-        let target = dir.path().join("memory.md");
-        let _hook = hook::set(|_, _| Err(eperm()));
-
-        let err = replace(dir.path(), &target, b"new\n", Mode::Kept).unwrap_err();
-
-        assert_eq!(err.kind(), io::ErrorKind::PermissionDenied);
-        assert!(
-            err.to_string().contains(&target.display().to_string()),
-            "{err}"
-        );
-    }
-
-    #[test]
-    fn only_a_chat_given_a_sandbox_is_told_its_sandbox_refused_the_write() {
-        let path = Path::new("/plane/personas/steward/memory/fact.md");
-        let said = refused_write(eperm(), path, true).to_string();
-        assert!(said.contains("this chat's sandbox refused"), "{said}");
-        assert!(
-            said.contains("/plane/personas/steward/memory/fact.md"),
-            "{said}"
-        );
-        assert!(said.contains("operator"), "the next step: {said}");
-
-        // EPERM is also privacy controls, system integrity protection and an immutable flag.
-        let unsandboxed = refused_write(eperm(), path, false).to_string();
-        assert_eq!(
-            unsandboxed,
-            "could not write /plane/personas/steward/memory/fact.md: Operation not permitted"
-        );
-    }
-
-    #[test]
-    fn a_sandbox_s_refusal_says_what_it_refused_and_the_one_way_on() {
-        // #1421: "a sandboxed chat writes only inside its own folder" stopped being true when
-        // the cache and host grants came (#1337, #1341); and a write of purlis's own is never
-        // granted, so no Allow is promised.
-        let path = Path::new("/plane/personas/_dispatch/2026-10.host.jsonl");
-        let said = refused_write(eperm(), path, true).to_string();
-        assert_eq!(
-            said,
-            "this chat's sandbox refused writing /plane/personas/_dispatch/2026-10.host.jsonl \
-             (Operation not permitted). purlis does not grant its own writes to a chat; ask the \
-             operator to run this command outside the chat."
-        );
-        assert!(!said.contains("only inside its own folder"), "{said}");
-    }
-
-    #[test]
-    fn the_os_s_words_keep_the_sandbox_s_clause_in_a_sandboxed_chat() {
-        // #1421: `init`, `browser install` and the handoff's warning name the path themselves,
-        // and said only "(Operation not permitted)" in a sandboxed chat.
-        let path = Path::new("/plane/.gitignore");
-        let sandboxed = refused_write(eperm(), path, true);
-        assert_eq!(
-            os_words(&sandboxed),
-            "Operation not permitted: this chat's sandbox refused it"
-        );
-        let not = refused_write(eperm(), path, false);
-        assert_eq!(os_words(&not), "Operation not permitted");
-        // A refusal no site reworded is judged as this process stands.
-        assert_eq!(
-            words_of(&eperm(), true),
-            "Operation not permitted: this chat's sandbox refused it"
-        );
-        assert_eq!(words_of(&eperm(), false), "Operation not permitted");
-        // Anything else is the OS's words alone, sandboxed or not.
-        assert_eq!(
-            words_of(&io::Error::from_raw_os_error(28), true),
-            "No space left on device"
-        );
-        assert!(
-            !os_words(&sandboxed).contains("/plane"),
-            "named once, by the caller"
-        );
-    }
-
-    #[test]
-    fn a_reworded_refusal_still_carries_its_errno() {
-        let refused = refused_write(eperm(), Path::new("/plane/x.md"), true);
-        assert_eq!(refused.kind(), io::ErrorKind::PermissionDenied);
-        assert_eq!(os_cause(&refused).raw_os_error(), Some(1));
-        let plain = io::Error::from_raw_os_error(13);
-        assert_eq!(os_cause(&plain).raw_os_error(), Some(13));
-    }
-
-    #[test]
-    fn a_write_site_maps_a_refusal_to_one_naming_its_path() {
-        // #1359: what every append and every folder made ahead of a write maps its error
-        // through. Run on every platform: the sites' own tests need macOS's immutable flag.
-        let path = Path::new("/plane/workspaces/alpha/work/device.jsonl");
-        let refused = refused_at(path)(eperm());
-        let said = refused.to_string();
-        assert!(
-            said.contains("/plane/workspaces/alpha/work/device.jsonl"),
-            "{said}"
-        );
-        assert!(!said.contains("os error"), "{said}");
-        assert_eq!(refused.kind(), io::ErrorKind::PermissionDenied);
-        assert_eq!(os_cause(&refused).raw_os_error(), Some(1));
-
-        let full = refused_at(path)(io::Error::from_raw_os_error(28));
-        assert_eq!(
-            full.raw_os_error(),
-            Some(28),
-            "a full disk stays a full disk"
-        );
-    }
-
-    #[test]
-    fn a_folder_made_ahead_of_a_write_is_made_and_a_failure_that_is_not_a_refusal_is_kept() {
-        let dir = tempfile::tempdir().unwrap();
-        let deep = dir.path().join("a/b/c");
-        create_dir_all(&deep).unwrap();
-        assert!(deep.is_dir());
-
-        // A file where a folder must go: not EPERM, so the OS's own error comes back.
-        let file = dir.path().join("file");
-        std::fs::write(&file, "").unwrap();
-        let blocked = create_dir_all(&file.join("below")).unwrap_err();
-        assert!(blocked.raw_os_error().is_some(), "{blocked}");
-    }
-
-    #[test]
-    fn a_failure_that_is_not_a_refusal_is_passed_on_as_it_was() {
-        let path = Path::new("/plane/x.md");
-        let full = refused_write(io::Error::from_raw_os_error(28), path, true);
-        assert_eq!(
-            full.raw_os_error(),
-            Some(28),
-            "a full disk stays a full disk"
-        );
-    }
-
-    #[test]
-    fn a_file_charter_cannot_read_as_text_is_never_overwritten() {
-        let dir = tempfile::tempdir().unwrap();
-        let target = dir.path().join(".gitignore");
-        std::fs::write(&target, b"\xff\xfe").unwrap();
-        let err = update(dir.path(), &target, |_| Ok(Some("new".into()))).unwrap_err();
-        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
-        assert_eq!(std::fs::read(&target).unwrap(), b"\xff\xfe");
-    }
-
-    #[cfg(unix)]
-    fn mode(p: &Path) -> u32 {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::metadata(p).unwrap().permissions().mode() & 0o777
-    }
-
-    #[cfg(unix)]
-    fn chmod(p: &Path, mode: u32) {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(p, std::fs::Permissions::from_mode(mode)).unwrap();
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn a_kept_file_that_is_new_gets_the_umask_s_mode_and_not_a_private_one() {
-        let dir = tempfile::tempdir().unwrap();
-        let plain = dir.path().join("plain");
-        std::fs::write(&plain, "x").unwrap();
-        let fresh = dir.path().join("workspace.json");
-        replace(dir.path(), &fresh, b"{}", Mode::Kept).unwrap();
-        assert_eq!(mode(&fresh), mode(&plain));
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn a_private_file_ends_0600_over_a_loose_or_read_only_one() {
-        let dir = tempfile::tempdir().unwrap();
-        let state = dir.path().join("launched.json");
-        std::fs::write(&state, "old").unwrap();
-        chmod(&state, 0o644);
-        replace(dir.path(), &state, b"new", Mode::Private).unwrap();
-        assert_eq!(mode(&state), 0o600);
-
-        // Charter's own state: its mode is charter's, so read-only is not a refusal here.
-        chmod(&state, 0o400);
-        replace(dir.path(), &state, b"newer", Mode::Private).unwrap();
-        assert_eq!(std::fs::read_to_string(&state).unwrap(), "newer");
-        assert_eq!(mode(&state), 0o600);
-
-        let fresh = dir.path().join("fresh");
-        replace(dir.path(), &fresh, b"z", Mode::Private).unwrap();
-        assert_eq!(mode(&fresh), 0o600);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn a_secret_ends_0600_and_a_read_only_one_is_refused() {
-        let dir = tempfile::tempdir().unwrap();
-        let vault = dir.path().join("app.json");
-        std::fs::write(&vault, "{}").unwrap();
-        chmod(&vault, 0o644);
-        replace(dir.path(), &vault, b"{\"K\": 1}", Mode::Secret).unwrap();
-        assert_eq!(mode(&vault), 0o600);
-
-        chmod(&vault, 0o400);
-        let err = replace(dir.path(), &vault, b"{}", Mode::Secret).unwrap_err();
-        assert_eq!(err.kind(), io::ErrorKind::PermissionDenied);
-        assert_eq!(std::fs::read_to_string(&vault).unwrap(), "{\"K\": 1}");
-    }
-
-    /// A temp that will end private is CREATED 0600: a descriptor opened on it in the instant
-    /// before a chmod would keep reading whatever is written after.
-    #[cfg(unix)]
-    #[test]
-    fn a_private_temp_is_0600_from_the_instant_it_exists() {
-        use std::os::unix::fs::PermissionsExt;
-        let dir = tempfile::tempdir().unwrap();
-        let loose = dir.path().join("loose");
-        std::fs::write(&loose, "old").unwrap();
-        chmod(&loose, 0o644);
-        let seen: std::rc::Rc<std::cell::RefCell<Vec<(u32, u64)>>> = Default::default();
-        let log = seen.clone();
-        let _watch = hook::watch_created(move |file| {
-            let meta = file.metadata().unwrap();
-            log.borrow_mut()
-                .push((meta.permissions().mode() & 0o777, meta.len()));
-        });
-
-        replace(dir.path(), &dir.path().join("new"), b"s", Mode::Secret).unwrap();
-        replace(dir.path(), &loose, b"s", Mode::Private).unwrap();
-        replace(
-            dir.path(),
-            &dir.path().join("tab"),
-            b"s",
-            Mode::KeptOrPrivate,
-        )
-        .unwrap();
-        let kept = dir.path().join("kept");
-        std::fs::write(&kept, "old").unwrap();
-        chmod(&kept, 0o600);
-        replace(dir.path(), &kept, b"s", Mode::Kept).unwrap();
-
-        assert_eq!(*seen.borrow(), [(0o600, 0); 4]);
-    }
-
-    #[test]
-    fn the_temp_prefix_is_the_layer_s_marker_and_a_dot() {
-        assert_eq!(TEMP_PREFIX, format!("{}.", crate::layer::MARKER));
-    }
-
-    #[test]
-    fn every_temp_carries_the_one_prefix_charter_s_temps_are_known_by() {
-        let dir = tempfile::tempdir().unwrap();
-        let target = dir.path().join("settings.json");
-        let _hook = hook::set(|_, temp| {
-            let name = temp.file_name().unwrap().to_string_lossy().into_owned();
-            assert!(
-                name.starts_with(".purlis-generated.settings.json."),
-                "{name}"
-            );
-            assert!(name.ends_with(".tmp"), "{name}");
-            Ok(())
-        });
-        replace(dir.path(), &target, b"{}", Mode::Kept).unwrap();
-    }
-
-    /// The link is planted at the TEMP path, which is the path the write actually opens.
-    /// Planting it at the target proves nothing about this: the target's gate answers first.
-    #[cfg(unix)]
-    #[test]
-    fn a_link_at_the_temp_path_is_refused_and_what_it_points_at_is_untouched() {
-        let dir = tempfile::tempdir().unwrap();
-        let captured = dir.path().join("captured.json");
-        let target = dir.path().join("launched.json");
-        let temp = dir.path().join(".launched.json.writing");
-        std::os::unix::fs::symlink(&captured, &temp).unwrap();
-
-        let refused = replace_through(dir.path(), &target, &temp, b"{}", Mode::Private);
-
-        assert!(refused.is_err(), "the temp path was written through");
-        assert!(!captured.exists(), "the bytes went through a link");
-        assert!(!target.exists());
-    }
-
-    /// The walk, not `O_NOFOLLOW`, answers about a directory ABOVE the file: the flag speaks
-    /// only for the last component.
-    #[cfg(unix)]
-    #[test]
-    fn a_directory_swapped_for_a_link_is_refused_at_the_moment_of_the_write() {
-        let plane = tempfile::tempdir().unwrap();
-        let elsewhere = plane.path().join("elsewhere");
-        std::fs::create_dir_all(&elsewhere).unwrap();
-        std::os::unix::fs::symlink(&elsewhere, plane.path().join(".charter")).unwrap();
-
-        let target = plane.path().join(".charter/launched.json");
-        assert!(replace(plane.path(), &target, b"{}", Mode::Private).is_err());
-        assert_eq!(std::fs::read_dir(&elsewhere).unwrap().count(), 0);
-    }
-
-    /// Debris from a killed process at the temp's name is written over, not a refusal of
-    /// every later write.
-    #[test]
-    fn a_temp_left_by_a_killed_process_does_not_stop_the_next_write() {
-        let dir = tempfile::tempdir().unwrap();
-        let target = dir.path().join("launched.json");
-        let temp = dir.path().join(".launched.json.writing");
-        std::fs::write(&temp, "half a record from a process that died").unwrap();
-
-        replace_through(dir.path(), &target, &temp, b"{}", Mode::Private).unwrap();
-
-        assert_eq!(std::fs::read(&target).unwrap(), b"{}");
-        assert!(!temp.exists());
-    }
-}
+mod tests;

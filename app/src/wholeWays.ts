@@ -9,8 +9,8 @@
  *
  * The order a short line gives up its things in is: the harness's name first, cut to its
  * padding (the stylesheet: it shrinks a million times faster than anything else); then the
- * breadcrumb's names, each to an ellipsis; then the ways, the last first; and the state word
- * last of all. The first two are the stylesheet's, and this is the third. It is not left to
+ * breadcrumb's names, each to an ellipsis; then the ways, the last first; then what padding the
+ * line's other items kept, the last first; and the state word last of all. The first two are the stylesheet's, and this is the third. It is not left to
  * shrinking and wrapping: a line is made up by everything on it at once, so the group gave
  * a sliver while the harness still had room to give, and text is a fraction of a pixel
  * wider than any constant kept beside it. Measured in CI: a group 0.03px short of "Close
@@ -26,9 +26,14 @@ export function fitWays(group: HTMLElement): void {
   if (line === null) return;
   const crumbs = line.querySelector<HTMLElement>(":scope > .pane-crumbs");
   const state = crumbs?.querySelector<HTMLElement>(".shown-state") ?? null;
+  // The line's other items (the gauge, the harness's name, Brief), already cut to their padding
+  // by the stylesheet before a way is given up.
+  const others = ([...line.children] as HTMLElement[]).filter(
+    (one) => one !== crumbs && one !== group,
+  );
   // Something that must not be given up for a way is: the state word is cut, or pushed out
   // of its breadcrumb, or a way runs past the line's end.
-  setAsideUntilWhole(ways, () => {
+  const short = () => {
     if (state !== null && crumbs !== null) {
       const word = state.querySelector<HTMLElement>(".word") ?? state;
       if (word.scrollWidth > word.clientWidth + 1) return true;
@@ -36,7 +41,14 @@ export function fitWays(group: HTMLElement): void {
         return true;
     }
     return runsPast(ways, line);
-  });
+  };
+  for (const one of others) delete one.dataset.away;
+  setAsideUntilWhole(ways, short);
+  // **Then their padding too, the last first** (#3144): in the narrowest pane, with every way
+  // set aside, what is left of those items is what the state word still lacks. Set aside, an
+  // item keeps its place on the line at no width, drawn as nothing and out of the tab sequence
+  // (`paneFrame.css`), and comes back with the room.
+  if (short()) setAsideUntilWhole(others, short);
 }
 
 /**

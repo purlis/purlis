@@ -28,7 +28,8 @@ const GO = '[data-testid="chats-section"] .chats-hidden-go';
 async function picked(): Promise<string> {
   return browser.execute(
     (group: string) =>
-      document.querySelector(`${group} [role="radio"][aria-checked="true"]`)?.textContent ?? "",
+      document.querySelector(`${group} input[type="radio"]:checked`)?.closest("label")
+        ?.textContent ?? "",
     SWITCH,
   );
 }
@@ -37,10 +38,10 @@ async function picked(): Promise<string> {
 async function pick(says: string): Promise<void> {
   await browser.execute(
     (group: string, words: string) => {
-      const radio = [...document.querySelectorAll<HTMLElement>(`${group} [role="radio"]`)].find(
-        (one) => one.textContent === words,
-      );
-      if (radio?.getAttribute("aria-checked") !== "true") radio?.click();
+      const radio = [
+        ...document.querySelectorAll<HTMLElement>(`${group} input[type="radio"]`),
+      ].find((one) => one.closest("label")?.textContent === words);
+      if ((radio as HTMLInputElement | undefined)?.checked !== true) radio?.click();
     },
     SWITCH,
     says,

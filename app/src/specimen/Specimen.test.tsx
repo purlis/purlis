@@ -11,6 +11,7 @@ import { Specimen, type Drawing } from "./Specimen";
 import { CHAT_LINES, EDITOR_TEXT, TERMINAL_LINES } from "./fixture";
 import { FAILED, GIVEN, READY, drawn, failed, given } from "./page";
 import { PURLIS_LIGHT } from "../theme/handed.testkit";
+import { selectNamed } from "../ui/select/select.testkit";
 
 /**
  * **The theme specimen** (#2330): what it draws, and that it draws nothing of the person's.
@@ -84,7 +85,7 @@ describe("the theme specimen", () => {
     expect(within(settings).getByRole("textbox", { name: "Name" })).toBeInTheDocument();
     expect(within(settings).getByRole("slider", { name: "Text size" })).toBeInTheDocument();
     expect(within(settings).getByRole("radiogroup", { name: "Density" })).toBeInTheDocument();
-    expect(within(settings).getByRole("combobox", { name: "Appearance" })).toBeInTheDocument();
+    expect(selectNamed("Appearance", settings)).toBeInTheDocument();
     expect(within(settings).getByRole("switch", { name: "Reduce motion" })).toBeInTheDocument();
     expect(
       within(settings).getByRole("checkbox", { name: "Show line numbers" }),

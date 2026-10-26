@@ -22,7 +22,7 @@ import type {
   SettingsStep,
   SettingsWhich,
 } from "../bindings";
-import { pickIn } from "../primitives/select.testkit";
+import { pickIn, querySelectNamed } from "../ui/select/select.testkit";
 import { tipOf } from "../ui/tooltip/tooltip.testkit";
 
 /**
@@ -336,7 +336,7 @@ describe("the Project level", () => {
 
     await userEvent.click(screen.getByRole("radio", { name: "Project" }));
 
-    expect(screen.getByRole("radio", { name: "Project" })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("radio", { name: "Project" })).toBeChecked();
     expect(await within(nav()).findByRole("button", { name: "General" })).toBeInTheDocument();
   });
 
@@ -668,7 +668,7 @@ describe("a change at the Project level", () => {
         "On for everyone in this project.",
       );
       expect(screen.queryByRole("button", { name: "Turn the sandbox on" })).toBeNull();
-      expect(screen.queryByRole("combobox", { name: "Sandbox mode" })).toBeNull();
+      expect(querySelectNamed("Sandbox mode")).toBeNull();
     } finally {
       SHARED.fields.pop();
     }
@@ -1189,6 +1189,8 @@ describe("the Project level of a read-only project (#826)", () => {
       for (const control of shown().querySelectorAll<HTMLElement>(
         "input, select, textarea, button",
       )) {
+        // A select's hidden native twin, for a form's autofill, is no control a person reaches.
+        if (control.closest('[data-testid="hidden-select-container"]') !== null) continue;
         // Off: disabled, inside a disabled fieldset, or unavailable and kept in reach for its
         // reason (`aria-disabled`, #2908).
         const off =

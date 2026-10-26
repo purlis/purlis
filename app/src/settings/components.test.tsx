@@ -13,7 +13,7 @@ import {
   SettingRow,
   SettingsLayout,
 } from "./components";
-import { pickIn } from "../primitives/select.testkit";
+import { pickIn, selectNamed } from "../ui/select/select.testkit";
 import { hoverTipOf, tipOf } from "../ui/tooltip/tooltip.testkit";
 
 afterEach(cleanup);
@@ -133,8 +133,8 @@ describe("the level switcher and the arrow keys (D-626-4)", () => {
     levels();
 
     expect(screen.getByRole("radiogroup", { name: "Level" })).toBeInTheDocument();
-    expect(level("You")).toHaveAttribute("aria-checked", "true");
-    expect(level("Project")).toHaveAttribute("aria-checked", "false");
+    expect(level("You")).toBeChecked();
+    expect(level("Project")).not.toBeChecked();
   });
 
   it("goes to the next level on a single arrow, once, as a radio choice picks", async () => {
@@ -146,7 +146,7 @@ describe("the level switcher and the arrow keys (D-626-4)", () => {
     expect(level("Project")).toHaveFocus();
     expect(onLevelChange).toHaveBeenCalledTimes(1);
     expect(onLevelChange).toHaveBeenCalledWith("project");
-    expect(level("Project")).toHaveAttribute("aria-checked", "true");
+    expect(level("Project")).toBeChecked();
     // The roving stop moved with it: Tab comes back to the level shown.
     expect(level("Project")).toHaveAttribute("tabindex", "0");
     expect(level("You")).toHaveAttribute("tabindex", "-1");
@@ -196,7 +196,7 @@ describe("the level switcher and the arrow keys (D-626-4)", () => {
     const elsewhere = screen.getByRole("button", { name: "to workspace" });
     await user.click(elsewhere);
 
-    expect(level("Workspace")).toHaveAttribute("aria-checked", "true");
+    expect(level("Workspace")).toBeChecked();
     expect(elsewhere).toHaveFocus();
   });
 });
@@ -283,7 +283,7 @@ describe("a select", () => {
         )}
       />,
     );
-    expect(screen.getByRole("combobox", { name: "Override for" })).toBeDisabled();
+    expect(selectNamed("Override for")).toBeDisabled();
   });
 });
 
@@ -315,9 +315,9 @@ describe("checks: any of a few, each ticked on its own", () => {
   it("is a group the row names, with a box per option ticked from the set", () => {
     checks();
     const group = screen.getByRole("group", { name: "Repos" });
-    const boxes = Array.from(group.querySelectorAll<HTMLElement>("[role=checkbox]"));
+    const boxes = Array.from(group.querySelectorAll<HTMLElement>('input[type="checkbox"]'));
 
-    expect(boxes.map((box) => box.getAttribute("aria-checked"))).toEqual([
+    expect(boxes.map((box) => String((box as HTMLInputElement).checked))).toEqual([
       "true",
       "false",
       "false",
@@ -445,7 +445,7 @@ describe("a control with no row: a table's cell or a pick inside a sentence", ()
         onValueChange={onValueChange}
       />,
     );
-    const where = screen.getByRole("combobox", { name: "In which workspace" });
+    const where = selectNamed("In which workspace");
     expect(where).toHaveTextContent("choose where it holds");
     await expect(pickIn(where, "choose where it holds")).rejects.toThrow(/out of reach/);
     expect(onValueChange).not.toHaveBeenCalled();

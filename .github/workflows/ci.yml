@@ -173,6 +173,24 @@ jobs:
       # tauri::generate_context! reads the built frontend, so it has to exist before clippy.
       - run: mkdir -p app/dist
       - run: cargo fmt --all --check
+      # `crates/unicode/src/tables.rs` is generated, and is what its generator makes of its
+      # pinned inputs (#3218): `tools/gen-unicode-tables.py` runs on the committed UCD files in
+      # `tools/ucd/<version>/` under the CPython whose `unicodedata` is of that version, and
+      # any difference from the committed file fails here. A hand edit, a changed input file
+      # (the header records each one's sha256) or a generator change without its output each
+      # turn this red. The Python is pinned by minor version, because a minor release is what
+      # fixes CPython's Unicode version: 3.14 is Unicode 16.0.0.
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+      - name: The Unicode tables are what the generator makes of their pinned inputs
+        run: |
+          python -I tools/gen-unicode-tables.py > "$RUNNER_TEMP/tables.rs"
+          rustfmt --edition 2024 "$RUNNER_TEMP/tables.rs"
+          if ! diff -u crates/unicode/src/tables.rs "$RUNNER_TEMP/tables.rs"; then
+            echo "::error file=crates/unicode/src/tables.rs::not what tools/gen-unicode-tables.py makes of tools/ucd/; regenerate it (the generator's docstring says how)"
+            exit 1
+          fi
       # No release build carries a crate's test-only feature, each listed in the script's
       # `TEST_ONLY` (#2216, #3180): the features Cargo resolves for each build the shipping
       # workflows make, read with `cargo tree` and nothing compiled. An error names the manifest

@@ -25,7 +25,7 @@ import type {
   SettingsField,
   SettingsFile,
 } from "../bindings";
-import { offeredIn, pickIn } from "../primitives/select.testkit";
+import { offeredIn, pickIn, selectNamed } from "../ui/select/select.testkit";
 
 /**
  * **Settings › Harness & profiles, a page per profile** (ST-4, #1236): each `[harness.<name>]`
@@ -694,7 +694,7 @@ describe("New profile… in the default pickers", () => {
     const { asked } = core({ profiles: [] });
     await atProject();
     await open("Harness & profiles");
-    const harness = screen.getByRole("combobox", { name: "Default harness" });
+    const harness = selectNamed("Default harness");
     await waitFor(async () => expect(await offeredIn(harness)).toContain("New profile…"));
 
     await pickIn(harness, "New profile…");

@@ -5,10 +5,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { useRef, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import * as Select from "@radix-ui/react-select";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { isView, RADIX_FROM, sourceFiles, SRC, withoutComments } from "./guards.testkit";
-import { PACKAGES, partsNotHeld } from "./overlaysHeld.testkit";
 import {
   drawnOverTheWindow,
   InTheWindow,
@@ -20,6 +18,8 @@ import { ContextMenu } from "./ui/menu/ContextMenu";
 import { AnchoredMenu, InlineMenu, Menu, MenuItem, MenuTrigger } from "./ui/menu/Menu";
 import { AnchoredPopover, HeldPopover, PopoverDialog, PopoverTrigger } from "./ui/popover/Popover";
 import { AlertDialog, Dialog } from "./ui/dialog/Dialog";
+import { Select } from "./ui/select/Select";
+import { selectNamed } from "./ui/select/select.testkit";
 
 /**
  * **Nothing a project's view opens over the window can stay up over another project**
@@ -34,13 +34,10 @@ import { AlertDialog, Dialog } from "./ui/dialog/Dialog";
 
 afterEach(cleanup);
 
-/** Each Radix package the window draws with, and whether what it draws is over the window. */
+/** Each Radix package the window draws with, and whether what it draws is over the window. None
+ *  draws over it now: every overlay is a family's, on React Aria (#2906). */
 const KINDS: Record<string, "over" | "says nothing to answer" | "in place"> = {
-  "@radix-ui/react-select": "over",
-  "@radix-ui/react-checkbox": "in place",
-  "@radix-ui/react-radio-group": "in place",
   "@radix-ui/react-roving-focus": "in place",
-  "@radix-ui/react-switch": "in place",
 };
 
 /** The files that put something outside where they are drawn, by React's own portal. */
@@ -62,73 +59,17 @@ const sources = sourceFiles(isView).map((file) => ({
   text: withoutComments(readFileSync(join(SRC, file), "utf8"), "ts"),
 }));
 
-const OURS = import.meta.glob("./overlays/*.tsx", { eager: true });
-
-/** The packages whose parts are drawn over the window, by the name after `react-`. */
-const OVER = Object.entries(KINDS)
-  .filter(([, what]) => what !== "in place")
-  .map(([kind]) => kind.slice("@radix-ui/react-".length));
-
 describe("every way the window draws something over itself", () => {
   it("is a kind the rule was written for", () => {
     const used = new Set<string>();
     for (const { text } of sources)
       for (const found of text.matchAll(new RegExp(`from "${RADIX_FROM}([a-z-]+)"`, "g")))
         used.add(`@radix-ui/react-${found[1]}`);
-    // A package not listed is a kind nobody has decided about: say what it draws in `KINDS`,
-    // give it a file in `overlays/`, and where it is drawn over the window, teach
-    // `drawnOverTheWindow` its role below.
+    // A package not listed is a kind nobody has decided about: say what it draws in `KINDS`.
     expect([...used].filter((kind) => !(kind in KINDS))).toEqual([]);
-  });
-
-  it("is written through `overlays/`, where its portal asks whether its project is shown", () => {
-    // From the package itself, an overlay's portal is Radix's own, and a project kept behind
-    // another could open it over the one in front.
-    const direct = sources
-      .filter(({ file }) => !file.startsWith("overlays/"))
-      .filter(({ text }) => new RegExp(`from "@radix-ui/react-(?:${OVER.join("|")})"`).test(text))
-      .map(({ file }) => file);
-    expect(direct).toEqual([]);
-  });
-
-  it("has a file there for each kind, and no other", () => {
-    expect(Object.keys(OURS).sort()).toEqual(OVER.map((kind) => `./overlays/${kind}.tsx`).sort());
-    expect(Object.keys(PACKAGES).sort()).toEqual([...OVER].sort());
-  });
-
-  it.each(OVER)(
-    "hands on every part of %s that draws held back, by what it is and not by its name",
-    (kind) => {
-      // Radix exports every part twice, `Content` and `DialogContent`: the same part. Handed on
-      // whole (`export *`), the long name was a way to write an overlay that asks nothing, and a
-      // project behind could draw it over the window. So each file lists the parts it hands on:
-      // Radix's own for a part that does not draw, and for one that does, a part that draws
-      // nothing while its project is behind, which is looked at by drawing it there
-      // (`overlaysHeld.testkit.ts`). A name nobody listed fails, whatever it is called.
-      const ours = OURS[`./overlays/${kind}.tsx`] as Record<string, unknown>;
-      expect(partsNotHeld(PACKAGES[kind], ours)).toEqual([]);
-      // The portal everywhere; the content too, for an overlay written without its portal.
-      expect(Object.keys(ours)).toEqual(expect.arrayContaining(["Portal", "Content"]));
-    },
-  );
-
-  it("opens each one through its portal", () => {
-    // `<Dialog.Content>` with no `<Dialog.Portal>` around it is drawn in place; held back all
-    // the same (above), and never seen here, so the rule stays one sentence.
-    const without = sources
-      .filter(({ file }) => !file.startsWith("overlays/"))
-      .flatMap(({ file, text }) =>
-        [
-          ...text.matchAll(
-            new RegExp(`import \\* as (\\w+) from "${RADIX_FROM}(?:${OVER.join("|")})"`, "g"),
-          ),
-        ]
-          .filter(
-            ([, name]) => text.includes(`<${name}.Content`) && !text.includes(`<${name}.Portal`),
-          )
-          .map(([, name]) => `${file}: ${name}`),
-      );
-    expect(without).toEqual([]);
+    // **Nothing the window draws over itself is Radix's**: a kind that draws over the window is
+    // a family's, on React Aria, whose surface asks whether its project is shown.
+    expect(Object.entries(KINDS).filter(([, what]) => what !== "in place")).toEqual([]);
   });
 
   it("is drawn by one of those, and by no portal of the window's own", () => {
@@ -136,7 +77,7 @@ describe("every way the window draws something over itself", () => {
       .filter(({ text }) => /\bcreatePortal\(/.test(text))
       .map(({ file }) => file);
     // A new portal puts something outside where it is drawn: into its own project's element
-    // (list it), or over the window, where it must go through `overlays/` as these do.
+    // (list it), or over the window, where it is a family's surface instead.
     expect(portals).toEqual(PORTALS);
   });
 });
@@ -147,26 +88,6 @@ describe("each kind drawn over the window is found as its project leaves the fro
     const own = document.body.appendChild(document.createElement("main"));
     return own.appendChild(document.createElement("div"));
   }
-
-  const kinds: [string, React.ReactElement][] = [
-    [
-      "@radix-ui/react-select",
-      <Select.Root open value="a">
-        <Select.Trigger aria-label="Profile">
-          <Select.Value />
-        </Select.Trigger>
-        <Select.Portal>
-          <Select.Content>
-            <Select.Viewport>
-              <Select.Item value="a">
-                <Select.ItemText>a</Select.ItemText>
-              </Select.Item>
-            </Select.Viewport>
-          </Select.Content>
-        </Select.Portal>
-      </Select.Root>,
-    ],
-  ];
 
   /** The families' own overlays: a dialog and an alert dialog (#2910), a menu, and a popover that
    *  asks (#2909). */
@@ -194,7 +115,7 @@ describe("each kind drawn over the window is found as its project leaves the fro
     ],
   ];
 
-  it.each([...kinds, ...families])("%s", (_, drawn) => {
+  it.each(families)("%s", (_, drawn) => {
     const place = slot();
     expect(drawnOverTheWindow(place)).toBe(false);
     render(drawn);
@@ -202,11 +123,25 @@ describe("each kind drawn over the window is found as its project leaves the fro
     place.parentElement?.remove();
   });
 
-  it("and every kind listed as drawn over the window is one of those", () => {
-    const over = Object.entries(KINDS)
-      .filter(([, what]) => what === "over")
-      .map(([kind]) => kind);
-    expect(over.sort()).toEqual(kinds.map(([kind]) => kind).sort());
+  it("the select family's list", async () => {
+    const place = slot();
+    render(
+      <Select
+        aria-label="Profile"
+        value="a"
+        options={[
+          { value: "a", label: "a" },
+          { value: "b", label: "b" },
+        ]}
+        onValueChange={() => {}}
+      />,
+    );
+    expect(drawnOverTheWindow(place)).toBe(false);
+    const profile = selectNamed("Profile");
+    fireEvent.keyDown(profile, { key: "Enter" });
+    fireEvent.keyUp(profile, { key: "Enter" });
+    await waitFor(() => expect(drawnOverTheWindow(place)).toBe(true));
+    place.parentElement?.remove();
   });
 });
 
