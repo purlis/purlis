@@ -966,9 +966,10 @@ are `item` (the root), `icon`, `count` and `indicator`; both corners draw the `b
   the switcher prototype's variant D draws it
   with "Bar: column". The side panel's views at the top (Chats, Explorer, Search), its half of
   the bottom panel's (Repos, Changes) at its foot. A press switches the view; a press of the
-  open one does nothing (R121), and ⌘B is the way to put the side away. The column stands
-  whether or not the side is out, so nothing moves when it goes or comes back; while the side is
-  away none of its icons is marked, and a press brings it back on that view. A hidden rail
+  open one puts the side away, as on the right (R121 as amended 2026-10-26, #3329), and so does
+  ⌘B. The column stands whether or not the side is out, so nothing moves when it goes or comes
+  back; while the side is away none of its icons is marked, and a press brings it back on that
+  view. A hidden rail
   leaves the column at the window's edge, and the rail's peek slides in over it.
 - **The right bar** (R117): the same column at the window's edge, its own views at the top (a
   press toggles the 300px right panel, whose header has a × that closes it) and its half of the
