@@ -429,7 +429,9 @@ function AcrossTheWindow() {
     <div
       style={{
         position: "fixed",
-        insetInline: "110px 0",
+        // The rail and the left bar, the left panel closed.
+        insetInlineStart: "calc(var(--space-8) * 3)",
+        insetInlineEnd: 0,
         insetBlockEnd: 0,
         padding: "var(--space-3)",
         background: "var(--surface-raised)",
@@ -470,7 +472,12 @@ async function expectReadable(where: string) {
     return up;
   });
   const box = tip.getBoundingClientRect();
-  await expect(box.width, `${where}: the tooltip keeps its width`).toBeGreaterThanOrEqual(300);
+  // Its words are long enough to fill the family's widest: 320 px, or the window less its edges.
+  const widest = Number.parseFloat(getComputedStyle(tip).maxInlineSize);
+  await expect(
+    box.width,
+    `${where}: the tooltip keeps its width (${widest} px wide at most, the window ${window.innerWidth} px)`,
+  ).toBeGreaterThanOrEqual(widest - 1);
   await expect(box.left, `${where}: inside the window`).toBeGreaterThanOrEqual(0);
   await expect(box.right, `${where}: inside the window`).toBeLessThanOrEqual(window.innerWidth);
 }
