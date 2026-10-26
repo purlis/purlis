@@ -13,7 +13,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { Group, Panel, usePanelRef, type Layout } from "react-resizable-panels";
-import { Separator } from "./shownSeparator";
+import { Separator } from "./ui/panel/Separator";
 import { useProjectShown } from "./projectShown";
 import { X } from "lucide-react";
 import { ActivityBar, VIEW_MARKS, type PanelTab, type Tabbed } from "./ActivityBar";
