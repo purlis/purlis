@@ -118,7 +118,7 @@ export async function harnessRowCount(): Promise<number> {
         .join(" ");
       return named === "Harness";
     });
-    return group ? group.querySelectorAll('[role="radio"]').length : 0;
+    return group ? group.querySelectorAll('input[type="radio"]').length : 0;
   });
 }
 
@@ -148,7 +148,10 @@ export async function whereTheKeyboardIs(): Promise<string> {
   return browser.execute(() => {
     const on = document.activeElement;
     if (!on || on === document.body) return "(nothing)";
-    const labelled = on.id ? document.querySelector(`label[for="${CSS.escape(on.id)}"]`) : null;
+    // A choice's input is in its own label (#2907); a row's box is named by its `<label for>`.
+    const labelled =
+      (on.id ? document.querySelector(`label[for="${CSS.escape(on.id)}"]`) : null) ??
+      (on instanceof HTMLInputElement ? on.closest("label") : null);
     const named = on.getAttribute("aria-label") ?? labelled?.textContent ?? on.textContent ?? "";
     const role = on.getAttribute("role") ?? on.tagName.toLowerCase();
     return `${role} ${JSON.stringify(named.trim().slice(0, 40))}`;

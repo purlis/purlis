@@ -396,10 +396,7 @@ describe("the Workspace level", () => {
 
     expect(screen.getByRole("radio", { name: "Workspace" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("radio", { name: "Workspace" }));
-    expect(screen.getByRole("radio", { name: "Workspace" })).toHaveAttribute(
-      "aria-checked",
-      "true",
-    );
+    expect(screen.getByRole("radio", { name: "Workspace" })).toBeChecked();
     expect(await within(nav()).findByRole("button", { name: "Live" })).toBeInTheDocument();
 
     cleanup();
@@ -435,15 +432,12 @@ describe("the Workspace level", () => {
     const runs = screen.getByRole("region", { name: "Runs on" });
     expect(runs).toHaveTextContent("Kept on this machine only, never in a committed file.");
     const here = await within(runs).findByRole("radio", { name: /This machine/ });
-    await waitFor(() => expect(here).toHaveAttribute("aria-checked", "true"));
+    await waitFor(() => expect(here).toBeChecked());
 
     await userEvent.click(within(runs).getByRole("radio", { name: /Pool builds/ }));
 
     await waitFor(() =>
-      expect(within(runs).getByRole("radio", { name: /Pool builds/ })).toHaveAttribute(
-        "aria-checked",
-        "true",
-      ),
+      expect(within(runs).getByRole("radio", { name: /Pool builds/ })).toBeChecked(),
     );
     expect(asked("set_chats_run_on")).toEqual([
       { plane: PLANE, workspace: "alpha", pool: "builds" },
@@ -1168,10 +1162,7 @@ describe("Settings at a workspace's level, as a view", () => {
     );
 
     expect(await screen.findByRole("region", { name: "Settings · alpha" })).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: "Workspace" })).toHaveAttribute(
-      "aria-checked",
-      "true",
-    );
+    expect(screen.getByRole("radio", { name: "Workspace" })).toBeChecked();
     expect(await within(nav()).findByRole("button", { name: "Live" })).toBeInTheDocument();
     expect(asked("open_view")).toEqual([]);
   });

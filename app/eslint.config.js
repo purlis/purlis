@@ -12,19 +12,18 @@ const PRIMITIVES = ["react-aria-components", "react-aria", "react-stately"];
 
 /**
  * **The families a raw `<button>` may still belong to** (#2904, D-2904-9): the tabs and strips,
- * the list, tree and table rows, the menu rows, the segmented control, the activity items, the
+ * the list, tree and table rows, the menu rows, the activity items, the
  * title bar's workspace chips, the cards and the settings nav. Each by
  * the role its button says, or by its family's class. The status items and the title bar's status
- * pills have moved (#2913). A menu's rows are the menu family's since #2909, and no button says
+ * pills have moved (#2913), and so have the choices (#2907). A menu's rows are the menu family's since #2909, and no button says
  * their role.
  */
 const OTHER_FAMILIES = {
-  roles: ["tab", "switch", "radio", "checkbox", "treeitem", "row", "link"],
+  roles: ["tab", "treeitem", "row", "link"],
   classes: [
-    // Rows of a list, a tree or a table, a segment.
+    // Rows of a list, a tree or a table.
     "ui-row",
     "ui-tree-row",
-    "ui-segmented-item",
     "vault-secret",
     // The tab strips and a pane's top line: a tab's marks and closer, the strip's offers.
     "closer",
@@ -87,7 +86,8 @@ export default tseslint.config(
       "purlis/field-family": "error",
       // A select and a box with suggestions are the select and combobox families', since #2906.
       "purlis/select-family": "error",
-      "purlis/choice-family": "warn",
+      // A checkbox, a radio, a switch, a segmented control, a slider: the choice families (#2907).
+      "purlis/choice-family": "error",
       // The menu, context menu and popover families have moved (#2909).
       "purlis/menu-family": "error",
       "purlis/dialog-family": "error",

@@ -7,19 +7,25 @@ import {
   useId,
   useLayoutEffect,
   useRef,
-  type FocusEvent,
-  type KeyboardEvent,
   type ReactNode,
   type Ref,
 } from "react";
-import * as Checkbox from "@radix-ui/react-checkbox";
-import * as RadioGroup from "@radix-ui/react-radio-group";
 import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
-import * as Switch from "@radix-ui/react-switch";
-import { Check, Info, ListFilter } from "lucide-react";
+import { Info, ListFilter } from "lucide-react";
 import { Select } from "../ui/select/Select";
 import { useTabStop } from "../roving";
 import { Button } from "../ui/button/Button";
+import { Checkbox, CheckboxGroup, RovingCheckbox } from "../ui/choice/Checkbox";
+import {
+  OptionCard,
+  OptionCards,
+  Radio,
+  RadioGroup,
+  Segment,
+  SegmentedControl,
+} from "../ui/choice/Radio";
+import { Slider } from "../ui/choice/Slider";
+import { Switch } from "../ui/choice/Switch";
 import { TextArea, TextField } from "../ui/field/Field";
 import { Tooltip } from "../ui/tooltip/Tooltip";
 import { useReadOnlyReasonId } from "../readOnlyReason";
@@ -33,8 +39,9 @@ import { useReadOnlyReasonId } from "../readOnlyReason";
  * reasons written there: charter had two hand-built form styles that had already drifted
  * (`settings-*` and the dialogs' `choices`), and one small set is how a new setting stays a few
  * lines. Each piece is a thin layer over a native element or a Radix primitive already in the
- * window — radio group, checkbox, roving focus — and **says which at its call site**: the props
- * are the primitive's words (`value`, `onValueChange`, `checked`), not new ones.
+ * window — the choice families (`ui/choice`, #2907), the field family, roving focus — and **says
+ * which at its call site**: the props are the primitive's words (`value`, `onValueChange`,
+ * `checked`), not new ones.
  *
  * Drawn in `App.css` under `ui-*` classes, every colour a design-system token. The old
  * hand-built `settings-*`, `asks`, `choices`, `choice`, `who` and `picking` classes were deleted
@@ -49,6 +56,9 @@ import { useReadOnlyReasonId } from "../readOnlyReason";
  */
 const QuietHints = createContext(false);
 
+/** The elements a `<label for>` focuses on its own. */
+const LABELABLE = new Set(["INPUT", "SELECT", "TEXTAREA", "BUTTON", "METER", "OUTPUT", "PROGRESS"]);
+
 /** One level of the switcher: You, Project, Workspace or Persona (`CONTEXT.md`, **Level**). */
 export type LevelOffer = { id: string; label: string };
 
@@ -60,13 +70,13 @@ export type GroupOffer = { id: string; label: string; sub?: boolean };
  * **The two columns** (V89b): the level switcher and what that level is above a nav of its
  * groups, and the chosen group beside them.
  *
- * The switcher is a Radix radio group, because a level is one choice of a few; it lists only
- * the levels it is handed, so a level with nothing to set is not offered. **An arrow goes to the
- * next level** (D-626-4), as every {@link Choice} radio picks and the WAI-ARIA radio pattern
- * asks, with `Choice`'s own repair ({@link useArrowPick}): a level is a view and writes nothing,
- * so nothing holds the pick for a button. The caller may draw the new level with a layout of
- * its own (`SettingsTab` does), so the switcher the arrow left is gone; the one drawn next takes
- * the focus back on the level arrowed to, and only then. The nav is buttons in
+ * The switcher is the segmented control (`ui/choice`, #2907), because a level is one choice of a
+ * few; it lists only the levels it is handed, so a level with nothing to set is not offered. **An
+ * arrow goes to the next level** (D-626-4), as every {@link Choice} radio picks and the WAI-ARIA
+ * radio pattern asks: a level is a view and writes nothing, so nothing holds the pick for a
+ * button. The caller may draw the new level with a layout of its own (`SettingsTab` does), so
+ * the switcher the keyboard left is gone; the one drawn next takes the focus back on the level
+ * picked, and only then. The nav is buttons in
  * one Tab stop, moved through with the arrow keys (`roving.ts`, as the explorer's rows are), and
  * the chosen one says so with `aria-current`.
  *
@@ -119,14 +129,11 @@ export function SettingsLayout({
     group,
     groups.map((one) => one.id),
   );
-  const { arrowing, listen } = useArrowPick();
   const switcher = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     if (arrowedTo !== level) return;
     arrowedTo = undefined;
-    const shown = switcher.current?.querySelector<HTMLElement>(
-      '[role="radio"][aria-checked="true"]',
-    );
+    const shown = switcher.current?.querySelector<HTMLElement>('input[type="radio"]:checked');
     if (shown && document.activeElement !== shown) shown.focus();
   }, [level]);
   const words = filter.trim();
@@ -139,35 +146,29 @@ export function SettingsLayout({
   return (
     <div className="ui-settings" ref={holder}>
       <div className="ui-settings-top">
-        <RadioGroup.Root
+        <SegmentedControl
           ref={switcher}
-          className="ui-levels"
           aria-label="Level"
-          orientation="horizontal"
           value={level}
-          onValueChange={onLevelChange}
-          {...listen}
+          onChange={(to) => {
+            // Picked from the keyboard (the focus is on the switcher), the level drawn next takes
+            // the focus back. Forgotten once this pick is done, so a level the caller did not
+            // show never takes the focus later.
+            if (switcher.current?.contains(document.activeElement)) {
+              arrowedTo = to;
+              setTimeout(() => {
+                if (arrowedTo === to) arrowedTo = undefined;
+              });
+            }
+            onLevelChange(to);
+          }}
         >
           {levels.map((one) => (
-            <RadioGroup.Item
-              key={one.id}
-              className="ui-level"
-              value={one.id}
-              onFocus={() => {
-                if (!arrowing.current || one.id === level) return;
-                arrowedTo = one.id;
-                // Forgotten once this press is done, so a level the caller did not show never
-                // takes the focus later.
-                setTimeout(() => {
-                  if (arrowedTo === one.id) arrowedTo = undefined;
-                });
-                onLevelChange(one.id);
-              }}
-            >
+            <Segment key={one.id} value={one.id}>
               {one.label}
-            </RadioGroup.Item>
+            </Segment>
           ))}
-        </RadioGroup.Root>
+        </SegmentedControl>
         {about !== undefined && <p className="ui-settings-about">{about}</p>}
       </div>
       <div className="ui-settings-side">
@@ -276,6 +277,9 @@ export type RowIds = {
   label?: string;
   /** A control with no row: what its help line would have said, as its tooltip. */
   title?: string;
+  /** The row's name, in words, for a control a `<label for>` cannot name: a slider, whose
+   *  native range is its thumb's. */
+  name?: string;
 };
 
 /** A row's way back to the value beneath it. */
@@ -378,7 +382,20 @@ export function SettingRow({
               {label}
             </span>
           ) : (
-            <label className="ui-setting-label" id={labelledBy} htmlFor={id}>
+            <label
+              className="ui-setting-label"
+              id={labelledBy}
+              htmlFor={id}
+              onClick={(event) => {
+                // A control a `<label for>` cannot reach (a slider's root, which hands the
+                // focus to its thumb) is given the focus the press would have given it.
+                const control = document.getElementById(id);
+                if (control !== null && !LABELABLE.has(control.tagName)) {
+                  event.preventDefault();
+                  control.focus();
+                }
+              }}
+            >
               {label}
             </label>
           )}
@@ -386,7 +403,7 @@ export function SettingRow({
           {badge && <OriginBadge badge={badge} />}
         </div>
         <div className="ui-setting-control">
-          {control({ id, labelledBy, describedBy })}
+          {control({ id, labelledBy, describedBy, name: label })}
           {reset && (
             <Button
               isDisabled={reset.disabled}
@@ -545,22 +562,19 @@ export function Field(props: FieldProps) {
   const { ids } = props;
   if (props.kind === "range")
     return (
-      <span className="ui-field ui-field-range">
-        <input
-          id={ids.id}
-          type="range"
-          min={props.min}
-          max={props.max}
-          step={props.step ?? 1}
-          value={props.value}
-          aria-valuetext={(props.spoken ?? props.shown)(props.value)}
-          aria-describedby={ids.describedBy}
-          onChange={(event) => props.onChange(event.currentTarget.valueAsNumber)}
-        />
-        <output htmlFor={ids.id} aria-live="polite">
-          {props.shown(props.value)}
-        </output>
-      </span>
+      <Slider
+        id={ids.id}
+        className="ui-setting-slider"
+        minValue={props.min}
+        maxValue={props.max}
+        step={props.step}
+        value={props.value}
+        shown={props.shown}
+        spoken={props.spoken}
+        label={ids.label ?? ids.name ?? ""}
+        aria-describedby={ids.describedBy}
+        onChange={props.onChange}
+      />
     );
   if (props.kind === "list") return <ListField {...props} />;
   // A value its check refuses is never written: the box says why, and keeps the words.
@@ -665,21 +679,24 @@ export type Option = {
 };
 
 /**
- * **A value picked**: `radio` one of a few, each with a line on what it does (a Radix radio
- * group); `select` one of many (the select family, `ui/select/Select.tsx`); `switch` a
- * setting on or off, in force the moment it is turned (a Radix switch, #1860); `toggle` an option
- * of a form on or off, done only when its button is pressed (a Radix checkbox);
- * `checks` any of a few, each ticked on its own (a Radix checkbox per option, in a group the row
- * names — the repos a workspace takes, the files offered to memory; DS-3e); `chips` any of a
- * few too, drawn small and side by side over the list they narrow (the Chats list's state
- * chips, #1687): **one Tab stop**, with the arrow keys between them (Radix roving focus,
- * `roving.ts`) and Space ticking the one the keyboard is on (a native checkbox in each chip),
- * so a list's filter costs the keyboard one stop however many chips it has.
+ * **A value picked**, each from its family in `ui/choice` (#2907): `radio` one of a few, each
+ * with a line on what it does (the radio group); `cards` one of a few compared before picking
+ * (the option cards: Start a chat's harnesses); `select` one of many (the select family,
+ * `ui/select/Select.tsx`, #2906); `switch` a setting on or off, in force the moment it is turned
+ * (the switch, #1860); `toggle` an option of a form on or off, done only when its button is
+ * pressed (a checkbox); `checks` any of a few, each ticked on its own (a checkbox per option, in
+ * a group the row names — the repos a workspace takes, the files offered to memory; DS-3e);
+ * `chips` any of a few too, drawn small and side by side over the list they narrow (the Chats
+ * list's state chips, #1687): **one Tab stop**, with the arrow keys between them and Space
+ * ticking the one the keyboard is on, so a list's filter costs the keyboard one stop however many
+ * chips it has.
  */
 export type ChoiceProps = Tied &
   (
     | {
-        kind: "radio";
+        /** `cards`: the same choice drawn as option cards, each of the same height, its mark and
+         *  name on the first line and its line under them, and no radio circle (R24). */
+        kind: "radio" | "cards";
         options: readonly Option[];
         value: string | undefined;
         onValueChange: (to: string) => void;
@@ -718,183 +735,93 @@ type Ticks = {
   onCheckedChange: (value: string, on: boolean) => void;
 };
 
-/** The keys a radio group moves its pick with (Radix's own list). */
-const ARROWS = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"];
-
-/** The level an arrow went to, until the layout drawn at it takes the focus back (D-626-4). */
+/** The level picked from the keyboard, until the layout drawn at it takes the focus back
+ *  (D-626-4). */
 let arrowedTo: string | undefined;
 
 /**
- * **A radio group whose pick follows the arrow keys**: `arrowing` says whether an arrow key is
- * down in the group, so the item the focus moves to is picked; `listen` goes on the group's
- * `RadioGroup.Root`, and each item's `onFocus` picks while `arrowing` holds. Every radio group
- * the set draws has it — {@link Choice}'s radios and {@link SettingsLayout}'s levels.
- *
- * Radix means a radio's pick to follow the arrow keys, and learns that one is down from a
- * `keydown` listener on `document`, which hears the key only after React's handlers (on the
- * root and on each portal, below `document`) have set the focus moving. So one press moved
- * the focus and picked nothing, and only a held key picked (`docs/ui-primitives.md`, "A radio
- * group's pick does not follow the arrow keys on its own"). Heard here, in the capture phase,
- * it is known before the focus moves, and forgotten when the key comes up or the focus leaves
- * the group. A choice that writes something with no Undo, or starts something, still holds
- * the pick and acts on a button (DS-3b, DS-3d).
- */
-export function useArrowPick() {
-  const arrowing = useRef(false);
-  const listen = {
-    onKeyDownCapture: (event: KeyboardEvent) => {
-      if (ARROWS.includes(event.key)) arrowing.current = true;
-    },
-    onBlurCapture: (event: FocusEvent<HTMLElement>) => {
-      // Out of the group, an arrow held on the way out is no longer a move between options.
-      if (!event.currentTarget.contains(event.relatedTarget as Node | null))
-        arrowing.current = false;
-    },
-    onKeyUpCapture: () => {
-      // After the move, not before it: the roving focus moves on a timer of its own, set
-      // when the key went down, so a quick press is up before the focus arrives.
-      setTimeout(() => {
-        arrowing.current = false;
-      });
-    },
-  };
-  return { arrowing, listen };
-}
-
-/** A chip's look: its edge and ground say it is on as well as its tick, never colour alone. */
-const CHIP =
-  "inline-flex flex-none items-center gap-1 rounded-full border border-border-subtle px-1.5 " +
-  "text-sm whitespace-nowrap text-text-secondary hover:bg-surface-hover " +
-  "data-on:border-text-secondary data-on:bg-surface-hover data-on:text-text-primary";
-
-/**
- * **The chips** of {@link Choice}: one Tab stop, the arrows between them. Each is a native
- * checkbox in its chip's label, as the list's filter has always drawn one: the browser ticks it
- * on Space and on a press of the chip's words, and a screen reader hears a checkbox named by
- * the chip. The roving focus gives each its `tabIndex`, 0 or -1, so the WebKit fix the set's
- * other boxes carry (#186) is not wanted here: it would make every chip a stop of its own.
+ * **The chips** of {@link Choice} (#1687): the checkbox family's chips (`ui/choice`, #2907), one
+ * Tab stop with the arrows between them, Space ticking the one the keyboard is on and a press of
+ * a chip's words ticking it as a press of its tick does.
  */
 function Chips({ ids, options, checked, onCheckedChange }: Tied & Ticks) {
-  const chipId = (at: number) => `${ids.id}-${at}`;
-  const stop = useTabStop(
-    undefined,
-    options.map((_, at) => chipId(at)),
-  );
   return (
-    <RovingFocusGroup.Root asChild orientation="horizontal" {...stop}>
-      <div
-        id={ids.id}
-        role="group"
-        className="flex flex-wrap gap-1"
-        aria-label={ids.label}
-        aria-labelledby={ids.labelledBy}
-        aria-describedby={ids.describedBy}
-      >
-        {options.map((one, at) => {
-          const on = checked.has(one.value);
-          return (
-            // By place, not by value, as every option list of the set is keyed.
-            <Tooltip key={at} tip={one.title}>
-              <label className={CHIP} data-on={on || undefined}>
-                <RovingFocusGroup.Item asChild tabStopId={chipId(at)}>
-                  <input
-                    type="checkbox"
-                    className="m-0"
-                    checked={on}
-                    disabled={one.disabled}
-                    onChange={(event) => onCheckedChange(one.value, event.currentTarget.checked)}
-                  />
-                </RovingFocusGroup.Item>
-                {one.label}
-              </label>
-            </Tooltip>
-          );
-        })}
-      </div>
-    </RovingFocusGroup.Root>
+    <CheckboxGroup
+      id={ids.id}
+      roving
+      aria-label={ids.label}
+      aria-labelledby={ids.labelledBy}
+      aria-describedby={ids.describedBy}
+    >
+      {options.map((one, at) => (
+        // By place, not by value, as every option list of the set is keyed.
+        <RovingCheckbox
+          key={at}
+          at={at}
+          variant="chip"
+          tooltip={one.title}
+          isSelected={checked.has(one.value)}
+          isDisabled={one.disabled}
+          onChange={(on) => onCheckedChange(one.value, on)}
+        >
+          {one.label}
+        </RovingCheckbox>
+      ))}
+    </CheckboxGroup>
   );
 }
 
 export function Choice(props: ChoiceProps) {
   const { ids } = props;
-  const { arrowing, listen } = useArrowPick();
   if (props.kind === "chips") return <Chips {...props} />;
   if (props.kind === "switch")
     return (
-      <Tooltip tip={ids.title}>
-        <Switch.Root
-          id={ids.id}
-          className="ui-switch"
-          // #186: Radix's switch is a `<button>`, and WebKit leaves one out of the Tab order
-          // without `tabIndex`.
-          tabIndex={0}
-          checked={props.checked}
-          disabled={props.disabled}
-          aria-label={ids.label}
-          aria-labelledby={ids.labelledBy}
-          aria-describedby={ids.describedBy}
-          onCheckedChange={props.onCheckedChange}
-        >
-          <Switch.Thumb className="ui-switch-thumb" />
-        </Switch.Root>
-      </Tooltip>
+      <Switch
+        id={ids.id}
+        tooltip={ids.title}
+        isSelected={props.checked}
+        isDisabled={props.disabled}
+        aria-label={ids.label}
+        aria-labelledby={ids.labelledBy}
+        aria-describedby={ids.describedBy}
+        onChange={props.onCheckedChange}
+      />
     );
   if (props.kind === "toggle")
     return (
-      <Checkbox.Root
+      <Checkbox
         id={ids.id}
-        className="ui-checkbox"
-        // #186: Radix's checkbox is a `<button>`, and WebKit leaves one out of the Tab order
-        // without `tabIndex` — New project's box was reachable by nothing until it had one.
-        tabIndex={0}
-        checked={props.checked}
-        disabled={props.disabled}
+        tooltip={ids.title}
+        isSelected={props.checked}
+        isDisabled={props.disabled}
+        aria-label={ids.label}
         aria-describedby={ids.describedBy}
-        onCheckedChange={(to) => props.onCheckedChange(to === true)}
-      >
-        <Checkbox.Indicator>
-          <Check />
-        </Checkbox.Indicator>
-      </Checkbox.Root>
+        onChange={props.onCheckedChange}
+      />
     );
   if (props.kind === "checks")
     return (
-      <div
+      <CheckboxGroup
         id={ids.id}
-        role="group"
-        className="ui-choice-checks"
         aria-label={ids.label}
         aria-labelledby={ids.labelledBy}
         aria-describedby={ids.describedBy}
       >
         {props.options.map((one, at) => (
           // By place, not by value: two options can share one (two owners' `api`, D-DS3e-10).
-          <div className="ui-choice-option" key={at}>
-            <Tooltip tip={one.title}>
-              <Checkbox.Root
-                id={`${ids.id}-${at}`}
-                className="ui-checkbox"
-                // #186: WebKit leaves a `<button>` out of the Tab order without `tabIndex`.
-                tabIndex={0}
-                checked={props.checked.has(one.value)}
-                disabled={one.disabled}
-                aria-describedby={one.says ? `${ids.id}-${at}-says` : undefined}
-                onCheckedChange={(to) => props.onCheckedChange(one.value, to === true)}
-              >
-                <Checkbox.Indicator>
-                  <Check />
-                </Checkbox.Indicator>
-              </Checkbox.Root>
-            </Tooltip>
-            <label htmlFor={`${ids.id}-${at}`}>{one.label}</label>
-            {one.says && (
-              <div className="ui-choice-says" id={`${ids.id}-${at}-says`}>
-                {one.says}
-              </div>
-            )}
-          </div>
+          <Checkbox
+            key={at}
+            id={`${ids.id}-${at}`}
+            tooltip={one.title}
+            isSelected={props.checked.has(one.value)}
+            isDisabled={one.disabled}
+            description={one.says}
+            onChange={(on) => props.onCheckedChange(one.value, on)}
+          >
+            {one.label}
+          </Checkbox>
         ))}
-      </div>
+      </CheckboxGroup>
     );
   if (props.kind === "select")
     return (
@@ -921,53 +848,56 @@ export function Choice(props: ChoiceProps) {
         onValueChange={props.onValueChange}
       />
     );
+  if (props.kind === "cards")
+    return (
+      <OptionCards
+        id={ids.id}
+        value={props.value ?? null}
+        onChange={props.onValueChange}
+        isDisabled={props.disabled}
+        aria-label={ids.label}
+        aria-labelledby={ids.labelledBy}
+        aria-describedby={ids.describedBy}
+      >
+        {props.options.map((one, at) => (
+          <OptionCard
+            key={at}
+            id={`${ids.id}-${at}`}
+            value={one.value}
+            tooltip={one.title}
+            isDisabled={one.disabled}
+            icon={one.mark}
+            title={one.label}
+            detail={one.says}
+          />
+        ))}
+      </OptionCards>
+    );
   return (
-    <RadioGroup.Root
+    <RadioGroup
       id={ids.id}
-      className="ui-choice-radio"
-      value={props.value ?? ""}
-      onValueChange={props.onValueChange}
-      disabled={props.disabled}
+      value={props.value ?? null}
+      onChange={props.onValueChange}
+      isDisabled={props.disabled}
       aria-label={ids.label}
       aria-labelledby={ids.labelledBy}
       aria-describedby={ids.describedBy}
-      {...listen}
     >
       {props.options.map((one, at) => (
         // By place, not by value: two options can share one (two owners' `api`, D-DS3e-10).
-        <div className="ui-choice-option" key={at}>
-          <Tooltip tip={one.title}>
-            <RadioGroup.Item
-              className="ui-radio"
-              value={one.value}
-              id={`${ids.id}-${at}`}
-              disabled={one.disabled}
-              aria-describedby={one.says ? `${ids.id}-${at}-says` : undefined}
-              onFocus={() => {
-                if (
-                  arrowing.current &&
-                  !props.disabled &&
-                  !one.disabled &&
-                  one.value !== props.value
-                )
-                  props.onValueChange(one.value);
-              }}
-            >
-              <RadioGroup.Indicator className="ui-radio-mark" />
-            </RadioGroup.Item>
-          </Tooltip>
-          <label htmlFor={`${ids.id}-${at}`}>
-            {one.mark}
-            {one.label}
-          </label>
-          {one.says && (
-            <span className="ui-choice-says" id={`${ids.id}-${at}-says`}>
-              {one.says}
-            </span>
-          )}
-        </div>
+        <Radio
+          key={at}
+          id={`${ids.id}-${at}`}
+          value={one.value}
+          tooltip={one.title}
+          isDisabled={one.disabled}
+          lead={one.mark}
+          description={one.says}
+        >
+          {one.label}
+        </Radio>
       ))}
-    </RadioGroup.Root>
+    </RadioGroup>
   );
 }
 
