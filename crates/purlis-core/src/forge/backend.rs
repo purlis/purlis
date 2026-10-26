@@ -363,6 +363,13 @@ pub struct About {
     pub visibility: Visibility,
     pub issues: Issues,
     pub push_protection: PushProtection,
+    /// Whether the account may push to the repo: GitHub's `permissions.push`, a GitLab access
+    /// level of Developer or above. `None` where the answer does not say.
+    pub can_push: Option<bool>,
+    /// Whether opening one of the repo's uploads needs a sign-in that can read the repo:
+    /// GitLab's `enforce_auth_checks_on_uploads`. `None` where the forge does not say, and
+    /// always on GitHub, which keeps no uploads of a repo's own (#2026).
+    pub uploads_need_sign_in: Option<bool>,
 }
 
 /// Whether the forge itself refuses a push that carries a secret: GitHub's push protection,

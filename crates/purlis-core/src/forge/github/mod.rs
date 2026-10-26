@@ -386,6 +386,8 @@ impl Repos for GitHub {
             },
         );
         Ok(About {
+            can_push: answer["permissions"]["push"].as_bool(),
+            uploads_need_sign_in: None,
             visibility,
             issues,
             push_protection,

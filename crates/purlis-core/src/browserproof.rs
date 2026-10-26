@@ -9,10 +9,12 @@
 //!   window's two presses are its only callers, [`show`] and then [`attach`], and the forge is
 //!   asked with the person's own purlis sign-in alone (the app's
 //!   `forge::signin::signed_in_backend`), never through `gh` or `glab`, and never as a chat.
-//! - **Only what the person saw.** [`show`] answers the request, where the pictures will be kept
-//!   and who can read them there, the comment's words, and each picked screenshot with the
-//!   digest of its bytes. [`attach`] is handed that answer back and refuses unless every
-//!   screenshot still reads with the same digest: a screenshot the timeline let go, or one that
+//! - **Only what the person saw.** [`show`] reads the request and its repo (open, who can read
+//!   it, whether the person may write there) and answers the request, where the pictures will
+//!   be kept and who can open them there, a warning that they are public and permanent to the
+//!   repo's readers, the comment's words, and each picked screenshot with its bytes, which the
+//!   window draws, and their digest. [`attach`] is handed that answer back and refuses unless
+//!   showing it again now answers the same: a screenshot the timeline let go, or one that
 //!   changed, is never sent in its place.
 //! - **Blanked already.** The timeline holds only the pictures the agent's browser tools
 //!   returned, each already blanked by the browser where purlis filled a field or the person
@@ -28,7 +30,11 @@ use std::path::Path;
 use sha2::{Digest, Sha256};
 
 use crate::browsertimeline;
-use crate::forge::pr::{Image, Pr, State, proof_kept_at};
+use crate::counts::counted;
+use crate::forge::backend::{RepoRecord, Visibility};
+use crate::forge::pr::{
+    Image, Pr, State, proof_kept_at, proof_needs_push, request_mark, request_page_between,
+};
 use crate::forge::{Caller, Forge, ForgeBackend, Kind};
 
 /// The most screenshots one proof attaches.
@@ -64,8 +70,11 @@ pub struct Shown {
     pub number: String,
     /// The repo it is in.
     pub path: String,
-    /// Where the pictures are kept on the forge, and who can read them there.
+    /// Where the pictures are kept on the forge, and who can open them there.
     pub kept_at: String,
+    /// The line said before the pictures: they are public and permanent to whoever can read
+    /// the repo, and whether that is everyone (the person's ruling on D-2026-3).
+    pub warning: String,
     /// The comment's words, which come before the pictures.
     pub words: String,
     /// The screenshots, in the order they go.
@@ -98,11 +107,9 @@ pub fn request_of(root: &Path, address: &str) -> Result<Request, String> {
         .and_then(|rest| rest.split_once('/'))
         .map(|(_, path)| path.trim_end_matches('/'))
         .ok_or_else(refused)?;
-    let between = match forge.kind {
-        Kind::GitHub => "/pull/",
-        Kind::GitLab => "/-/merge_requests/",
-    };
-    let (path, number) = rest.rsplit_once(between).ok_or_else(refused)?;
+    let (path, number) = rest
+        .rsplit_once(request_page_between(forge.kind))
+        .ok_or_else(refused)?;
     let number: u64 = number
         .parse()
         .ok()
@@ -133,18 +140,40 @@ pub fn request_of(root: &Path, address: &str) -> Result<Request, String> {
     })
 }
 
+/// What [`show`] answers: what the person is shown, and the bytes of each screenshot, in the
+/// order of [`Shown::shots`], which the window draws.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Showing {
+    pub shown: Shown,
+    pub pictures: Vec<Vec<u8>>,
+}
+
+/// Makes the backend a proof is shown and attached through, for a request's forge.
+pub type BackendFor<'a> = dyn Fn(&Forge) -> Result<Box<dyn ForgeBackend>, String> + 'a;
+
 /// The comment's words before the pictures: purlis's own, the same for every proof of `count`
 /// screenshots.
 pub fn words(count: usize) -> String {
-    let screenshots = if count == 1 {
-        "1 screenshot".to_string()
-    } else {
-        format!("{count} screenshots")
+    format!(
+        "### Browser proof\n\n{} of what an agent did in a browser, attached from purlis by the \
+         person who picked them. A field purlis filled in or the person typed into is blanked.",
+        counted(count, "screenshot", "screenshots")
+    )
+}
+
+/// The line said before the pictures (the person's ruling on D-2026-3), with whether the repo
+/// is public said plainly.
+pub fn warning(path: &str, host: &str, visibility: Visibility) -> String {
+    let readers = match visibility {
+        Visibility::Public => format!("{path} is public: everyone can see these."),
+        Visibility::Internal => {
+            format!("{path} is internal: everyone signed in to {host} can see these.")
+        }
+        Visibility::Private => format!("{path} is private."),
     };
     format!(
-        "### Browser proof\n\n{screenshots} of what an agent did in a browser, attached from \
-         purlis by the person who picked them. A field purlis filled in or the person typed \
-         into is blanked."
+        "Public and permanent: anyone who can read {path} (everyone, on a public repo) sees \
+         these, even after the request closes. {readers}"
     )
 }
 
@@ -156,21 +185,34 @@ fn digest(png: &[u8]) -> String {
 }
 
 /// **What attaching `picked` of chat `chat`'s screenshots to the request at `address` would
-/// send**, read now, for the person to see before anything goes. Refused when nothing is picked,
-/// too many are, a picked one is no screenshot the timeline keeps, or the address is no request
-/// on a forge the project knows. It asks no forge.
-pub fn show(root: &Path, chat: &str, address: &str, picked: &[u64]) -> Result<Shown, String> {
+/// send**, for the person to see before anything goes. It reads the timeline, and asks the
+/// request's forge, through `backend` as `caller`, whether the request is open, who can read its
+/// repo and whether the person may write there; it writes nothing.
+///
+/// Refused when nothing is picked, too many are, a picked one is no screenshot the timeline
+/// keeps, the address is no request on a forge the project knows, the request is not open, or
+/// the forge keeps the pictures in the repo and the person may not push there.
+pub fn show(
+    root: &Path,
+    chat: &str,
+    address: &str,
+    picked: &[u64],
+    backend: &BackendFor<'_>,
+    caller: &Caller,
+) -> Result<Showing, String> {
     if picked.is_empty() {
         return Err("Pick at least one screenshot to attach.".to_string());
     }
     if picked.len() > MOST_PICKED {
         return Err(format!(
-            "At most {MOST_PICKED} screenshots go in one proof."
+            "At most {} go in one proof.",
+            counted(MOST_PICKED, "screenshot", "screenshots")
         ));
     }
     let request = request_of(root, address)?;
     let moments = browsertimeline::read(root, chat);
     let mut shots: Vec<ShownShot> = Vec::new();
+    let mut pictures = Vec::new();
     for &shot in picked {
         if shots.iter().any(|one| one.shot == shot) {
             continue;
@@ -180,34 +222,92 @@ pub fn show(root: &Path, chat: &str, address: &str, picked: &[u64]) -> Result<Sh
             .find(|moment| moment.shot == Some(shot))
             .map(|moment| moment.at);
         let (Some(at), Some(png)) = (at, browsertimeline::shot_of(root, chat, shot)) else {
-            return Err("A screenshot you picked is no longer kept.".to_string());
+            return Err(NO_LONGER_KEPT.to_string());
         };
         shots.push(ShownShot {
             shot,
             at,
             digest: digest(&png),
         });
+        pictures.push(png);
     }
-    let sign = match request.forge.kind {
-        Kind::GitHub => '#',
-        Kind::GitLab => '!',
-    };
-    Ok(Shown {
-        number: format!("{sign}{}", request.number),
-        kept_at: proof_kept_at(request.forge.kind, &request.path, request.number),
-        words: words(shots.len()),
-        path: request.path,
-        request: request.url,
-        shots,
+    let number = format!("{}{}", request_mark(request.forge.kind), request.number);
+    let forge = backend(&request.forge)?;
+    let pr = pr_of(&request);
+    match forge
+        .state(caller, &request.path, &pr)
+        .map_err(|why| why.said().to_string())?
+    {
+        State::Open => {}
+        _ => {
+            return Err(format!(
+                "{number} in {} is not open, so no proof is attached to it.",
+                request.path
+            ));
+        }
+    }
+    let about = forge
+        .about(caller, &repo_of(&request))
+        .map_err(|why| why.said().to_string())?;
+    if proof_needs_push(request.forge.kind) && about.can_push == Some(false) {
+        return Err(format!(
+            "You cannot push to {path}, and the pictures are kept on a branch there, so no proof \
+             can be attached to {number}. Someone who can push to {path} can attach it.",
+            path = request.path
+        ));
+    }
+    Ok(Showing {
+        shown: Shown {
+            number,
+            kept_at: proof_kept_at(
+                request.forge.kind,
+                &request.path,
+                request.number,
+                about.uploads_need_sign_in,
+            ),
+            warning: warning(&request.path, &request.forge.host, about.visibility),
+            words: words(shots.len()),
+            path: request.path,
+            request: request.url,
+            shots,
+        },
+        pictures,
     })
 }
 
+fn pr_of(request: &Request) -> Pr {
+    Pr {
+        number: request.number,
+        url: request.url.clone(),
+    }
+}
+
+/// The request's repo, as [`crate::forge::Repos::about`] is asked of it: by its path.
+fn repo_of(request: &Request) -> RepoRecord {
+    let name = request
+        .path
+        .rsplit_once('/')
+        .map_or(request.path.as_str(), |(_, name)| name);
+    RepoRecord {
+        id: None,
+        name: name.to_string(),
+        path_with_namespace: request.path.clone(),
+        default_branch: None,
+        description: String::new(),
+        web_url: String::new(),
+        ssh_url: String::new(),
+        topics: Vec::new(),
+        forge: request.forge.kind,
+    }
+}
+
 /// **Attach what [`show`] showed** to its request, as the person, through `backend` (the
-/// person's own sign-in, which the app makes; `caller` is the person in the window).
+/// person's own sign-in, which the app makes; `caller` is the person in the window). Answers the
+/// comment's page: the forge's answer where it is on the forge's own host, else the request's.
 ///
-/// Refused, before the forge is asked to keep anything, when a screenshot shown is no longer kept
-/// or its bytes are not the ones shown, when the words are not this proof's, or when the request
-/// is not open.
+/// Refused, before the forge is asked to keep anything, unless showing it again now answers
+/// exactly what was shown: the same screenshots with the same bytes, the same words, an open
+/// request, and the same readers.
 pub fn attach(
     root: &Path,
     chat: &str,
@@ -216,44 +316,30 @@ pub fn attach(
     caller: &Caller,
 ) -> Result<Attached, String> {
     let request = request_of(root, &shown.request)?;
-    let fresh = show(
-        root,
-        chat,
-        &shown.request,
-        &shown.shots.iter().map(|one| one.shot).collect::<Vec<_>>(),
-    )
-    .map_err(|_| changed())?;
-    if fresh != *shown {
+    let picked: Vec<u64> = shown.shots.iter().map(|one| one.shot).collect();
+    // A screenshot let go since is what changed; any other refusal (a request that closed, a
+    // sign-in that went) is said in its own words.
+    let fresh = show(root, chat, &shown.request, &picked, backend, caller).map_err(|why| {
+        if why == NO_LONGER_KEPT {
+            changed()
+        } else {
+            why
+        }
+    })?;
+    if fresh.shown != *shown {
         return Err(changed());
     }
-    let mut images = Vec::new();
-    for (n, one) in shown.shots.iter().enumerate() {
-        let png = browsertimeline::shot_of(root, chat, one.shot).ok_or_else(changed)?;
-        if digest(&png) != one.digest {
-            return Err(changed());
-        }
-        images.push(Image {
+    let images: Vec<Image> = fresh
+        .pictures
+        .into_iter()
+        .enumerate()
+        .map(|(n, png)| Image {
             name: format!("browser-proof-{}.png", n + 1),
             png,
-        });
-    }
+        })
+        .collect();
     let forge = backend(&request.forge)?;
-    let pr = Pr {
-        number: request.number,
-        url: request.url.clone(),
-    };
-    match forge
-        .state(caller, &request.path, &pr)
-        .map_err(|why| why.said().to_string())?
-    {
-        State::Open => {}
-        _ => {
-            return Err(format!(
-                "{} in {} is not open, so no proof is attached to it.",
-                shown.number, shown.path
-            ));
-        }
-    }
+    let pr = pr_of(&request);
     let kept = forge
         .keep_images(caller, &request.path, &pr, &images)
         .map_err(|why| why.said().to_string())?;
@@ -264,14 +350,18 @@ pub fn attach(
     let comment = forge
         .comment(caller, &request.path, &pr, &body)
         .map_err(|why| why.said().to_string())?;
-    Ok(Attached { comment })
+    let own = comment.starts_with(&format!("https://{}/", request.forge.host))
+        && !comment.contains(['\\', ' ', '\n', '\r', '@']);
+    Ok(Attached {
+        comment: if own { comment } else { request.url },
+    })
 }
 
-/// Makes the backend a proof is attached through, for a request's forge.
-pub type BackendFor<'a> = dyn Fn(&Forge) -> Result<Box<dyn ForgeBackend>, String> + 'a;
+/// Why a screenshot picked is not shown.
+const NO_LONGER_KEPT: &str = "A screenshot you picked is no longer kept.";
 
 fn changed() -> String {
-    "What you were shown changed since: show it again before attaching.".to_string()
+    "What you were shown changed since: press Show what goes again before attaching.".to_string()
 }
 
 #[cfg(test)]

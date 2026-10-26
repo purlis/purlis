@@ -7461,8 +7461,15 @@ nav.piece-files-head {
 }
 
 .browser-proof-bar > p,
-.browser-proof-said {
+.browser-proof-said,
+.browser-proof-warning {
   margin: 0;
+}
+
+/* Said before the pictures, apart from the rest: they are public and permanent to the repo's
+   readers (the person's ruling on D-2026-3). */
+.browser-proof-warning {
+  font-weight: 600;
 }
 
 .browser-proof-choose {

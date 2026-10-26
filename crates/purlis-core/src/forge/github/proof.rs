@@ -7,9 +7,15 @@
 //! one builds on the last, so it never holds a file of the repo's own, a workflow included,
 //! and moving it runs nothing. A picture is shown from its commit by `raw/<commit>/<name>`,
 //! which GitHub draws for whoever can read the repo.
+//!
+//! **A branch of that name purlis did not make is never built on.** Anyone who can push could
+//! put one there first, holding a workflow, and the person's own push of the next proof would
+//! carry it and run it as them. So before anything is written, the branch's last commit is
+//! read: it must have at most one parent, and its tree must hold only pictures purlis names,
+//! `browser-proof-<n>.png` blobs at the top, the listing whole. Anything else is refused.
 
 use super::super::backend::{Asker, Caller};
-use super::super::pr::{Image, Pr, is_object_name, proof_branch};
+use super::super::pr::{Image, Pr, is_object_name, is_proof_name, proof_branch};
 use super::super::transport::{Call, Field, Method};
 use super::super::{Failure, ForgeError, LIST_TIMEOUT, quote};
 use super::owner_name;
@@ -40,6 +46,46 @@ pub(super) fn keep(
             )))
         }
     };
+    // The branch's last commit, if it is there: a later proof builds on it, once its tree is
+    // seen to hold only proof. Read before anything is written.
+    let reference = Call::get(format!("{repo}/git/ref/heads/{branch}"), LIST_TIMEOUT);
+    let parent = match asker.ask(caller, &reference, &doing) {
+        Ok(record) => Some(sha_of(&record["object"], "sha")?),
+        Err(why) if *why.failure() == Failure::NotFound => None,
+        Err(why) => return Err(why),
+    };
+    let not_ours = || {
+        ForgeError::new(format!(
+            "the branch {branch} of {path} holds what purlis did not put there, so no proof is \
+             added to it"
+        ))
+    };
+    let mut fields = Vec::new();
+    if let Some(parent) = &parent {
+        let commit = Call::get(format!("{repo}/git/commits/{parent}"), LIST_TIMEOUT);
+        let record = asker.ask(caller, &commit, &doing)?;
+        if record["parents"]
+            .as_array()
+            .is_none_or(|parents| parents.len() > 1)
+        {
+            return Err(not_ours());
+        }
+        let tree = sha_of(&record["tree"], "sha")?;
+        let listing = Call::get(format!("{repo}/git/trees/{tree}"), LIST_TIMEOUT);
+        let listed = asker.ask(caller, &listing, &doing)?;
+        let only_proof = listed["truncated"].as_bool() == Some(false)
+            && listed["tree"].as_array().is_some_and(|entries| {
+                entries.iter().all(|entry| {
+                    entry["type"].as_str() == Some("blob")
+                        && entry["mode"].as_str() == Some("100644")
+                        && entry["path"].as_str().is_some_and(is_proof_name)
+                })
+            });
+        if !only_proof {
+            return Err(not_ours());
+        }
+        fields.push(Field::text("base_tree", &tree));
+    }
     let mut blobs = Vec::new();
     for image in images {
         let content = base64::engine::general_purpose::STANDARD.encode(&image.png);
@@ -52,19 +98,6 @@ pub(super) fn keep(
             ],
         );
         blobs.push(sha_of(&asker.ask(caller, &call, &doing)?, "sha")?);
-    }
-    // The branch's last commit, if it is there: a later proof builds on it.
-    let reference = Call::get(format!("{repo}/git/ref/heads/{branch}"), LIST_TIMEOUT);
-    let parent = match asker.ask(caller, &reference, &doing) {
-        Ok(record) => Some(sha_of(&record["object"], "sha")?),
-        Err(why) if *why.failure() == Failure::NotFound => None,
-        Err(why) => return Err(why),
-    };
-    let mut fields = Vec::new();
-    if let Some(parent) = &parent {
-        let commit = Call::get(format!("{repo}/git/commits/{parent}"), LIST_TIMEOUT);
-        let tree = sha_of(&asker.ask(caller, &commit, &doing)?["tree"], "sha")?;
-        fields.push(Field::text("base_tree", &tree));
     }
     for (image, blob) in images.iter().zip(&blobs) {
         fields.extend([

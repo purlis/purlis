@@ -336,6 +336,10 @@ mod cases {
                 issues: Issues::Open,
                 // The account is no admin, so neither forge names the setting.
                 push_protection: PushProtection::Unknown,
+                // GitHub's `permissions.push`; GitLab's Developer access.
+                can_push: Some(true),
+                // Neither recording names GitLab's setting, and GitHub has none.
+                uploads_need_sign_in: None,
             })
         );
         spent(&over);
@@ -1265,6 +1269,34 @@ fn githubs_first_proof_on_a_request_starts_a_branch_with_no_parent() {
     spent(&recorded);
 }
 
+/// A proof branch somebody else made first, holding a workflow beside a picture, or ending in a
+/// merge, is never built on: refused before anything is written, so nothing of it is carried
+/// into the person's push (#2026).
+#[test]
+fn a_proof_branch_purlis_did_not_make_is_never_built_on() {
+    purlis_core::unsteered!();
+    for scene in ["planted", "merge"] {
+        let text = recording("github", &format!("keep_images.{scene}"));
+        let recorded = Arc::new(Recorded::parse(&text).unwrap());
+        let backend = Forge::default_of(Kind::GitHub).backend_over(recorded.clone());
+        let pr = Pr {
+            number: 12,
+            url: String::new(),
+        };
+        let kept = backend.keep_images(&caller(), "acme/api", &pr, &proof_images());
+        assert_eq!(
+            kept.map_err(|why| why.said().to_string()),
+            Err(
+                "the branch purlis/browser-proof/pr-12 of acme/api holds what purlis did not \
+                 put there, so no proof is added to it"
+                    .to_string()
+            ),
+            "{scene}"
+        );
+        spent(&recorded);
+    }
+}
+
 contract!(github, github, Recorded);
 contract!(gitlab, gitlab, Recorded);
 // The native transport, against a server answering the same recordings over HTTP: on each
@@ -1367,8 +1399,10 @@ fn every_method_of_the_seam_has_a_case_on_both_forges() {
 
 /// The recordings of one forge's own scene beside a case's, each read by a test of its own:
 /// `<case>.<scene>.json`.
-const SCENES: [(&str, &str, &str); 22] = [
+const SCENES: [(&str, &str, &str); 24] = [
     ("github", "keep_images", "first"),
+    ("github", "keep_images", "planted"),
+    ("github", "keep_images", "merge"),
     ("gitlab", "request_auto_merge", "train"),
     ("gitlab", "request_auto_merge", "train_pre19"),
     ("github", "merge_when_ready", "pending"),
@@ -1922,6 +1956,8 @@ mod who_can_open_an_issue {
                 visibility: Visibility::Public,
                 issues: Issues::Off,
                 push_protection: PushProtection::Unknown,
+                can_push: None,
+                uploads_need_sign_in: None,
             }
         );
         assert_eq!(
@@ -1946,10 +1982,21 @@ mod who_can_open_an_issue {
                 visibility: Visibility::Internal,
                 issues: Issues::Open,
                 push_protection: PushProtection::Unknown,
+                can_push: Some(false),
+                uploads_need_sign_in: None,
             }
         );
         let off = json!({"visibility": "private", "issues_access_level": "disabled"});
         assert_eq!(gitlab(off).issues, Issues::Off);
+        // A Developer may push, and a project that checks who opens its uploads says so (#2026).
+        let developer = json!({"visibility": "private", "enforce_auth_checks_on_uploads": true,
+                               "permissions": {"project_access": {"access_level": 30},
+                                               "group_access": null}});
+        let developer = gitlab(developer);
+        assert_eq!(
+            (developer.can_push, developer.uploads_need_sign_in),
+            (Some(true), Some(true))
+        );
     }
 
     /// Whether the forge refuses a push that carries a secret (SQ-8), in each forge's own field:
@@ -2054,10 +2101,10 @@ mod network_log {
             // a scene per answer of purlis's own gate). Making a repo asks who the account is,
             // its owners, the create, and the delete (GitHub reads the repo first; #1819). A
             // search is one call (#806). What a failed check found is one call (qw378). Browser
-            // proof (#2026): GitHub keeps two pictures in seven calls on a branch that is there
-            // and six on a first proof, GitLab in two uploads, and a comment is one call on each.
+            // proof (#2026): GitHub keeps two pictures in eight calls on a branch that is there
+            // and six on a first proof, and reads three or two of one it refuses, GitLab in two uploads, and a comment is one call on each.
             let expected = match kind {
-                "github" => 73,
+                "github" => 79,
                 _ => 95,
             };
             assert_eq!(paths.len(), expected, "{kind}: the recorded REST calls");

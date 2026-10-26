@@ -109,16 +109,59 @@ pub fn proof_branch(number: u64) -> String {
     )
 }
 
-/// Where a request's browser proof is kept on its forge, and who can see it there, in the
-/// words the person is shown before anything is sent (#2026).
-pub fn proof_kept_at(kind: Kind, path: &str, number: u64) -> String {
-    match kind {
-        Kind::GitHub => format!(
-            "on the branch {} of {path}, which whoever can read {path} can read",
+/// Where a request's browser proof is kept on its forge, and who can open it there, in the
+/// words the person is shown before anything is sent (#2026). `uploads_need_sign_in` is a
+/// GitLab project's `enforce_auth_checks_on_uploads`, where it was read: without it, an upload is
+/// opened by anyone who has its link.
+pub fn proof_kept_at(
+    kind: Kind,
+    path: &str,
+    number: u64,
+    uploads_need_sign_in: Option<bool>,
+) -> String {
+    match (kind, uploads_need_sign_in) {
+        (Kind::GitHub, _) => format!(
+            "on the branch {} of {path}, in its history for good",
             proof_branch(number)
         ),
-        Kind::GitLab => format!("as uploads of {path}, which whoever can read {path} can read"),
+        (Kind::GitLab, Some(true)) => format!(
+            "as uploads of {path}, which only those who can read {path} can open; they stay \
+             after the comment is deleted"
+        ),
+        (Kind::GitLab, _) => format!(
+            "as uploads of {path}, which anyone with their link can open, signed in or not; \
+             they stay after the comment is deleted"
+        ),
     }
+}
+
+/// Whether attaching proof on `kind` writes to the repo itself, so it needs push access there:
+/// GitHub's proof branch does; GitLab's uploads need only the right to comment (#2026).
+pub fn proof_needs_push(kind: Kind) -> bool {
+    matches!(kind, Kind::GitHub)
+}
+
+/// The mark a request's number takes on `kind`: `#12` on GitHub, `!12` on GitLab.
+pub fn request_mark(kind: Kind) -> char {
+    match kind {
+        Kind::GitHub => '#',
+        Kind::GitLab => '!',
+    }
+}
+
+/// What comes between a repo's page and a request's number in the request's page on `kind`.
+pub fn request_page_between(kind: Kind) -> &'static str {
+    match kind {
+        Kind::GitHub => "/pull/",
+        Kind::GitLab => "/-/merge_requests/",
+    }
+}
+
+/// Whether `name` is a picture name browser proof writes: `browser-proof-<digits>.png`.
+pub fn is_proof_name(name: &str) -> bool {
+    name.strip_prefix("browser-proof-")
+        .and_then(|rest| rest.strip_suffix(".png"))
+        .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
 }
 
 /// Whether `sha` is a whole git object name, as a forge answers one: forty or sixty-four

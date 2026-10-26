@@ -9160,6 +9160,15 @@ export type SharedFolder = {
 	says: string,
 };
 
+/**
+ *  **What the person is shown before attaching**: the proof, which is handed back to attach, and
+ *  the bytes of each of its screenshots, PNG in base64, in its order, which the window draws.
+ */
+export type ShowingProof = {
+	proof: ShownProof,
+	pictures: string[],
+};
+
 /**  One ask, as the registry lists it and its row draws it. */
 export type Shown = {
 	/**  The chat that asked. */
@@ -9213,8 +9222,13 @@ export type ShownProof = {
 	number: string,
 	/**  The repo it is in, `owner/name`. */
 	path: string,
-	/**  Where the pictures are kept on the forge, and who can read them there. */
+	/**  Where the pictures are kept on the forge, and who can open them there. */
 	keptAt: string,
+	/**
+	 *  The line said before the pictures: public and permanent to the repo's readers, and
+	 *  whether the repo is public.
+	 */
+	warning: string,
 	/**  The comment's words, before the pictures. */
 	words: string,
 	/**  The pictures, in the order they go. */

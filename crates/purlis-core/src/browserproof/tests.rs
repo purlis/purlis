@@ -64,14 +64,39 @@ fn write(method: &str, path: &str, fields: Value, out: Value) -> Value {
            "reply": {"code": 0, "out": out.to_string(), "err": ""}})
 }
 
+/// The two reads [`show`] asks: request 12's state, and the repo's visibility and the person's
+/// right to push there.
+fn looked(state: &str, repo: Value) -> Vec<Value> {
+    vec![
+        get(
+            "repos/acme/api/pulls/12",
+            json!({"number": 12, "state": state, "merged": state == "closed"}),
+        ),
+        get("repos/acme/api", repo),
+    ]
+}
+
+/// A private repo the person may push to.
+fn pushable() -> Value {
+    json!({"visibility": "private", "permissions": {"push": true, "pull": true}})
+}
+
+fn recorded(exchanges: Vec<Value>) -> Arc<Recorded> {
+    Arc::new(
+        Recorded::parse(
+            &json!({"source": "GitHub REST API version 2022-11-28, as the forge contract \
+                               recordings", "exchanges": exchanges})
+            .to_string(),
+        )
+        .expect("a recording"),
+    )
+}
+
 /// A GitHub whose request 12 is open and whose proof branch is not there yet, answering the
-/// keeping of `pngs` and a comment of `body`.
-fn github(pngs: &[&[u8]], body: &str) -> Arc<Recorded> {
+/// reads of a show, then the keeping of `pngs` and a comment of `body` answered at `page`.
+fn github(pngs: &[&[u8]], body: &str, page: &str) -> Arc<Recorded> {
     let commit = "6".repeat(40);
-    let mut exchanges = vec![get(
-        "repos/acme/api/pulls/12",
-        json!({"number": 12, "state": "open", "merged": false}),
-    )];
+    let mut exchanges = looked("open", pushable());
     let mut entries = Vec::new();
     for (n, png) in pngs.iter().enumerate() {
         let blob = format!("{n}").repeat(40);
@@ -118,9 +143,9 @@ fn github(pngs: &[&[u8]], body: &str) -> Arc<Recorded> {
         "POST",
         "repos/acme/api/issues/12/comments",
         json!([{"text": ["body", body]}]),
-        json!({"html_url": "https://github.com/acme/api/pull/12#issuecomment-1"}),
+        json!({"html_url": page}),
     ));
-    Arc::new(Recorded::parse(&json!({"source": "GitHub REST API version 2022-11-28, as the forge contract recordings", "exchanges": exchanges}).to_string()).expect("a recording"))
+    recorded(exchanges)
 }
 
 fn over(recorded: &Arc<Recorded>) -> impl Fn(&Forge) -> Result<Box<dyn ForgeBackend>, String> {
@@ -132,22 +157,39 @@ fn never(_: &Forge) -> Result<Box<dyn ForgeBackend>, String> {
     panic!("the forge was asked")
 }
 
+fn shown_now(root: &Path, picked: &[u64], repo: Value) -> Result<Showing, String> {
+    let reads = recorded(looked("open", repo));
+    let showing = show(root, CHAT, PR, picked, &over(&reads), &Caller::window());
+    assert_eq!(reads.unspent(), Vec::new(), "both reads asked");
+    showing
+}
+
+/// The comment the two screenshots make, kept on the first proof's commit.
+fn body_of_two() -> String {
+    format!(
+        "{}\n\n![Browser screenshot 1](https://github.com/acme/api/raw/{c}/browser-proof-1.png)\
+         \n\n![Browser screenshot 2](https://github.com/acme/api/raw/{c}/browser-proof-2.png)",
+        words(2),
+        c = "6".repeat(40)
+    )
+}
+
 #[test]
-fn only_the_screenshots_the_person_picked_are_shown_with_where_they_go() {
+fn only_the_screenshots_the_person_picked_are_shown_with_their_bytes_and_where_they_go() {
     let dir = project();
     took(dir.path(), 1, b"\x89PNG one");
     took(dir.path(), 2, b"\x89PNG two");
     let all = shots(dir.path());
 
-    let shown = show(dir.path(), CHAT, PR, &all[1..]).expect("shown");
+    let showing = shown_now(dir.path(), &all[1..], pushable()).expect("shown");
 
+    let shown = &showing.shown;
     assert_eq!(shown.request, PR);
     assert_eq!(shown.number, "#12");
     assert_eq!(shown.path, "acme/api");
     assert_eq!(
         shown.kept_at,
-        "on the branch purlis/browser-proof/pr-12 of acme/api, which whoever can read acme/api \
-         can read"
+        "on the branch purlis/browser-proof/pr-12 of acme/api, in its history for good"
     );
     assert_eq!(
         shown.shots,
@@ -157,6 +199,7 @@ fn only_the_screenshots_the_person_picked_are_shown_with_where_they_go() {
             digest: "4ce1f4445c0247b6b59c2c6abdc3f68d4ecf5f165db2a0aaa9c9edb6f429c94e".into(),
         }]
     );
+    assert_eq!(showing.pictures, [b"\x89PNG two".to_vec()]);
     assert!(
         shown
             .words
@@ -164,26 +207,58 @@ fn only_the_screenshots_the_person_picked_are_shown_with_where_they_go() {
     );
 }
 
+/// The person's ruling on D-2026-3: a line before the pictures says they are public and
+/// permanent to the repo's readers, and says "public" plainly when the repo is.
+#[test]
+fn the_warning_says_public_and_permanent_and_whether_the_repo_is_public() {
+    let dir = project();
+    took(dir.path(), 1, b"\x89PNG one");
+    let public = json!({"visibility": "public", "permissions": {"push": true}});
+
+    let shown = shown_now(dir.path(), &shots(dir.path()), public)
+        .expect("shown")
+        .shown;
+
+    assert_eq!(
+        shown.warning,
+        "Public and permanent: anyone who can read acme/api (everyone, on a public repo) sees \
+         these, even after the request closes. acme/api is public: everyone can see these."
+    );
+    let private = shown_now(dir.path(), &shots(dir.path()), pushable()).expect("shown");
+    assert!(private.shown.warning.ends_with("acme/api is private."));
+}
+
+#[test]
+fn someone_who_cannot_push_to_the_repo_is_told_before_anything_is_written() {
+    let dir = project();
+    took(dir.path(), 1, b"\x89PNG one");
+    let fork = json!({"visibility": "public", "permissions": {"push": false, "pull": true}});
+
+    assert_eq!(
+        shown_now(dir.path(), &shots(dir.path()), fork),
+        Err(
+            "You cannot push to acme/api, and the pictures are kept on a branch there, so no \
+             proof can be attached to #12. Someone who can push to acme/api can attach it."
+                .to_string()
+        )
+    );
+}
+
 #[test]
 fn nothing_picked_or_a_screenshot_no_longer_kept_is_refused() {
     let dir = project();
     took(dir.path(), 1, b"\x89PNG one");
+    let refused = |chat: &str, picked: &[u64]| {
+        show(dir.path(), chat, PR, picked, &never, &Caller::window()).map(|_| ())
+    };
     assert_eq!(
-        show(dir.path(), CHAT, PR, &[]),
+        refused(CHAT, &[]),
         Err("Pick at least one screenshot to attach.".to_string())
     );
+    assert_eq!(refused(CHAT, &[999]), Err(NO_LONGER_KEPT.to_string()));
     assert_eq!(
-        show(dir.path(), CHAT, PR, &[999]),
-        Err("A screenshot you picked is no longer kept.".to_string())
-    );
-    assert_eq!(
-        show(
-            dir.path(),
-            "01JB0000000000000000000001",
-            PR,
-            &shots(dir.path())
-        ),
-        Err("A screenshot you picked is no longer kept.".to_string()),
+        refused("01JB0000000000000000000001", &shots(dir.path())),
+        Err(NO_LONGER_KEPT.to_string()),
         "another chat's screenshots are not this chat's"
     );
 }
@@ -223,46 +298,64 @@ fn attaching_sends_the_shown_bytes_and_purlis_words_and_nothing_the_agent_wrote(
     took(dir.path(), 1, b"\x89PNG one");
     took(dir.path(), 2, b"\x89PNG two");
     let all = shots(dir.path());
-    let shown = show(dir.path(), CHAT, PR, &all).expect("shown");
-    let body = format!(
-        "{}\n\n![Browser screenshot 1](https://github.com/acme/api/raw/{c}/browser-proof-1.png)\
-         \n\n![Browser screenshot 2](https://github.com/acme/api/raw/{c}/browser-proof-2.png)",
-        words(2),
-        c = "6".repeat(40)
-    );
+    let shown = shown_now(dir.path(), &all, pushable())
+        .expect("shown")
+        .shown;
+    let body = body_of_two();
     assert!(!body.contains("staging") && !body.contains("agent-typed"));
-    let recorded = github(&[b"\x89PNG one", b"\x89PNG two"], &body);
+    let page = "https://github.com/acme/api/pull/12#issuecomment-1";
+    let forge = github(&[b"\x89PNG one", b"\x89PNG two"], &body, page);
 
-    let attached = attach(
-        dir.path(),
-        CHAT,
-        &shown,
-        &over(&recorded),
-        &Caller::window(),
-    );
+    let attached = attach(dir.path(), CHAT, &shown, &over(&forge), &Caller::window());
 
     assert_eq!(
         attached,
         Ok(Attached {
-            comment: "https://github.com/acme/api/pull/12#issuecomment-1".into()
+            comment: page.into()
         })
     );
-    assert_eq!(recorded.unspent(), Vec::new(), "every exchange asked");
+    assert_eq!(forge.unspent(), Vec::new(), "every exchange asked");
+}
+
+/// A comment's page the forge answers off its own host is not handed to the window to open:
+/// the request's own page is, which the person gave.
+#[test]
+fn a_comment_page_off_the_forges_host_is_never_the_one_opened() {
+    let dir = project();
+    took(dir.path(), 1, b"\x89PNG one");
+    took(dir.path(), 2, b"\x89PNG two");
+    let shown = shown_now(dir.path(), &shots(dir.path()), pushable())
+        .expect("shown")
+        .shown;
+    let forge = github(
+        &[b"\x89PNG one", b"\x89PNG two"],
+        &body_of_two(),
+        "file:///etc/passwd",
+    );
+
+    let attached = attach(dir.path(), CHAT, &shown, &over(&forge), &Caller::window());
+
+    assert_eq!(attached, Ok(Attached { comment: PR.into() }));
 }
 
 #[test]
-fn a_shown_proof_that_changed_since_is_refused_before_the_forge_is_asked() {
+fn a_shown_proof_that_changed_since_is_refused_before_anything_is_written() {
     let dir = project();
     took(dir.path(), 1, b"\x89PNG one");
-    let shown = show(dir.path(), CHAT, PR, &shots(dir.path())).expect("shown");
+    let shown = shown_now(dir.path(), &shots(dir.path()), pushable())
+        .expect("shown")
+        .shown;
 
     let mut other = shown.clone();
     other.shots[0].digest = "0".repeat(64);
     let mut reworded = shown.clone();
     reworded.words = "Typed by the agent".into();
-    for changed in [other, reworded] {
+    let mut quieter = shown.clone();
+    quieter.warning = "Nobody will see these.".into();
+    for changed in [other, reworded, quieter] {
+        let reads = recorded(looked("open", pushable()));
         assert_eq!(
-            attach(dir.path(), CHAT, &changed, &never, &Caller::window()),
+            attach(dir.path(), CHAT, &changed, &over(&reads), &Caller::window()),
             Err(super::changed())
         );
     }
@@ -279,27 +372,17 @@ fn a_shown_proof_that_changed_since_is_refused_before_the_forge_is_asked() {
 fn a_request_that_is_not_open_gets_no_proof_and_nothing_is_kept() {
     let dir = project();
     took(dir.path(), 1, b"\x89PNG one");
-    let shown = show(dir.path(), CHAT, PR, &shots(dir.path())).expect("shown");
-    let recorded = Arc::new(
-        Recorded::parse(
-            &json!({"source": "GitHub REST API version 2022-11-28, pulls: Get a pull request", "exchanges": [get(
-                "repos/acme/api/pulls/12",
-                json!({"number": 12, "state": "closed", "merged": true}),
-            )]})
-            .to_string(),
-        )
-        .expect("a recording"),
-    );
+    let shown = shown_now(dir.path(), &shots(dir.path()), pushable())
+        .expect("shown")
+        .shown;
+    let closed = recorded(vec![get(
+        "repos/acme/api/pulls/12",
+        json!({"number": 12, "state": "closed", "merged": true}),
+    )]);
 
     assert_eq!(
-        attach(
-            dir.path(),
-            CHAT,
-            &shown,
-            &over(&recorded),
-            &Caller::window()
-        ),
+        attach(dir.path(), CHAT, &shown, &over(&closed), &Caller::window()),
         Err("#12 in acme/api is not open, so no proof is attached to it.".to_string())
     );
-    assert_eq!(recorded.unspent(), Vec::new());
+    assert_eq!(closed.unspent(), Vec::new());
 }

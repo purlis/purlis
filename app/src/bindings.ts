@@ -740,9 +740,12 @@ export const commands = {
 	browserProofRequests: (plane: PlaneId, chat: string) => typedError<ProofRequest[], string>(__TAURI_INVOKE("browser_proof_requests", { plane, chat })),
 	/**
 	 *  **What attaching screenshots `shots` of chat `chat` to the request at `request` would
-	 *  send**, for the person to see first. Asks no forge.
+	 *  send**, for the person to see first, with each screenshot's bytes to draw. It reads the
+	 *  request and its repo with the person's sign-in, and writes nothing.
+	 * 
+	 *  On a blocking thread: it asks the forge twice.
 	 */
-	showBrowserProof: (plane: PlaneId, chat: string, request: string, shots: number[]) => typedError<ShownProof, string>(__TAURI_INVOKE("show_browser_proof", { plane, chat, request, shots })),
+	showBrowserProof: (plane: PlaneId, chat: string, request: string, shots: number[]) => typedError<ShowingProof, string>(__TAURI_INVOKE("show_browser_proof", { plane, chat, request, shots })),
 	/**
 	 *  **Attach what the person was shown**, with the person's own purlis sign-in to the request's
 	 *  forge and never through `gh` or `glab`: the press of Attach in the proof the window showed.
@@ -11014,6 +11017,15 @@ export type SharedFolder = {
 	says: string,
 };
 
+/**
+ *  **What the person is shown before attaching**: the proof, which is handed back to attach, and
+ *  the bytes of each of its screenshots, PNG in base64, in its order, which the window draws.
+ */
+export type ShowingProof = {
+	proof: ShownProof,
+	pictures: string[],
+};
+
 /**  One ask, as the registry lists it and its row draws it. */
 export type Shown = {
 	/**  The chat that asked. */
@@ -11067,8 +11079,13 @@ export type ShownProof = {
 	number: string,
 	/**  The repo it is in, `owner/name`. */
 	path: string,
-	/**  Where the pictures are kept on the forge, and who can read them there. */
+	/**  Where the pictures are kept on the forge, and who can open them there. */
 	keptAt: string,
+	/**
+	 *  The line said before the pictures: public and permanent to the repo's readers, and
+	 *  whether the repo is public.
+	 */
+	warning: string,
 	/**  The comment's words, before the pictures. */
 	words: string,
 	/**  The pictures, in the order they go. */

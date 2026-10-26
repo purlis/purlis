@@ -2,8 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { commands, type ProofRequest, type ShownProof } from "./bindings";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { commands, type ProofRequest, type ShowingProof, type ShownProof } from "./bindings";
+import { frameBytes, paint } from "./browserFrames";
+import { counted } from "./dispatches";
 import { Notice } from "./Notice";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { Radio, RadioGroup } from "./ui/choice/Radio";
@@ -12,39 +14,42 @@ import { Form, TextField } from "./ui/field/Field";
 /** The choice that names a request by its address rather than an offered one. */
 const ANOTHER = "another";
 
+/** What is said when the core could not be asked at all. */
+const NOT_ASKED = "purlis could not be asked. Try again.";
+
 /** Where Attach browser proof is: choosing the request, seeing what goes, or done. */
 type Step =
-  | { kind: "choosing"; refused: string | null }
-  | { kind: "showing"; shown: ShownProof; refused: string | null; attaching: boolean }
+  | { kind: "choosing" }
+  | { kind: "showing"; showing: ShowingProof; attaching: boolean }
   | { kind: "attached"; comment: string };
 
 /**
  * **Attach browser proof** (#2026, spec #2008 story 57): the screenshots the person picked in a
  * chat's browser timeline, attached to a pull or merge request only after the person has seen
- * exactly what goes: the request, where the pictures are kept and who can read them there, the
- * comment's words and each picture. Nothing is attached by itself, and nothing here sends a
- * moment's words or page. The core refuses what changed since it was shown, and attaches with
- * the person's own purlis sign-in alone.
+ * exactly what goes: the request, where the pictures are kept and who can open them there, a
+ * warning that they are public and permanent to the repo's readers, the comment's words and each
+ * picture, drawn from the very bytes that will be sent. Nothing is attached by itself, and
+ * nothing here sends a moment's words or page. The core refuses what changed since it was
+ * shown, and attaches with the person's own purlis sign-in alone.
  */
 export function BrowserProof({
   plane,
   chat,
   picked,
-  drawn,
   onDone,
 }: {
   plane: string;
   chat: string;
   /** The screenshots picked, by number, newest first as the timeline lists them. */
   picked: number[];
-  /** Draws screenshot `shot` as the timeline draws it. */
-  drawn: (shot: number) => ReactNode;
   onDone: () => void;
 }) {
   const [offered, setOffered] = useState<ProofRequest[]>([]);
   const [choice, setChoice] = useState<string>(ANOTHER);
   const [typed, setTyped] = useState("");
-  const [step, setStep] = useState<Step>({ kind: "choosing", refused: null });
+  const [step, setStep] = useState<Step>({ kind: "choosing" });
+  const [refused, setRefused] = useState<string | null>(null);
+  const [asking, setAsking] = useState(false);
   useEffect(() => {
     let gone = false;
     void commands
@@ -63,34 +68,44 @@ export function BrowserProof({
   const request = choice === ANOTHER ? typed.trim() : choice;
   const show = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (request === "") return;
+    if (request === "" || asking) return;
+    setAsking(true);
+    setRefused(null);
     void commands
       .showBrowserProof(plane, chat, request, picked)
-      .then((answer) =>
-        setStep(
-          answer.status === "error"
-            ? { kind: "choosing", refused: answer.error }
-            : { kind: "showing", shown: answer.data, refused: null, attaching: false },
-        ),
-      )
-      .catch(() => undefined);
+      .then((answer) => {
+        if (answer.status === "error") setRefused(answer.error);
+        else setStep({ kind: "showing", showing: answer.data, attaching: false });
+      })
+      .catch(() => setRefused(NOT_ASKED))
+      .finally(() => setAsking(false));
   };
-  /** Puts a refusal away, staying on the step it was said on. */
-  const unrefuse = () =>
-    setStep((was) => (was.kind === "attached" ? was : Object.assign({}, was, { refused: null })));
-  const attach = (shown: ShownProof) => {
-    setStep({ kind: "showing", shown, refused: null, attaching: true });
+  const attach = (showing: ShowingProof) => {
+    setStep({ kind: "showing", showing, attaching: true });
+    setRefused(null);
+    const said = (why: string) => {
+      setRefused(why);
+      setStep({ kind: "showing", showing, attaching: false });
+    };
     void commands
-      .attachBrowserProof(plane, chat, shown)
-      .then((answer) =>
-        setStep(
-          answer.status === "error"
-            ? { kind: "showing", shown, refused: answer.error, attaching: false }
-            : { kind: "attached", comment: answer.data },
-        ),
-      )
-      .catch(() => undefined);
+      .attachBrowserProof(plane, chat, showing.proof)
+      .then((answer) => {
+        if (answer.status === "error") said(answer.error);
+        else setStep({ kind: "attached", comment: answer.data });
+      })
+      .catch(() => said(NOT_ASKED));
   };
+
+  const refusal = refused !== null && (
+    <Notice
+      at="pane"
+      tone="trouble"
+      cause="browser-proof-refused"
+      onDismiss={() => setRefused(null)}
+    >
+      {refused}
+    </Notice>
+  );
 
   if (step.kind === "attached")
     return (
@@ -105,8 +120,8 @@ export function BrowserProof({
       </section>
     );
   if (step.kind === "showing") {
-    const { shown } = step;
-    const count = shown.shots.length === 1 ? "1 screenshot" : `${shown.shots.length} screenshots`;
+    const { showing } = step;
+    const shown: ShownProof = showing.proof;
     return (
       <section
         className="browser-proof"
@@ -114,33 +129,41 @@ export function BrowserProof({
         data-testid="browser-proof-shown"
       >
         <p className="browser-proof-said">
-          {count} go to {shown.number} in {shown.path}, as a comment by you. The pictures are kept{" "}
-          {shown.keptAt}.
+          {counted(shown.shots.length, "screenshot goes", "screenshots go")} to {shown.number} in{" "}
+          {shown.path}, as a comment by you. The pictures are kept {shown.keptAt}.
         </p>
         <blockquote className="browser-proof-words" data-testid="browser-proof-words">
           {shown.words}
         </blockquote>
+        <p className="browser-proof-warning" data-testid="browser-proof-warning">
+          {shown.warning}
+        </p>
         <ol className="browser-proof-shots" aria-label="The screenshots that go">
-          {shown.shots.map((one) => (
-            <li key={one.shot}>{drawn(one.shot)}</li>
+          {showing.pictures.map((png, at) => (
+            <li key={shown.shots[at]?.shot ?? at}>
+              <Picture png={png} at={at + 1} />
+            </li>
           ))}
         </ol>
-        {step.refused !== null && (
-          <Notice at="pane" tone="trouble" cause="browser-proof-refused" onDismiss={unrefuse}>
-            {step.refused}
-          </Notice>
-        )}
+        {refusal}
         <ButtonRow>
           <Button
             variant="primary"
             aria-disabled={step.attaching ? true : undefined}
             onPress={() => {
-              if (!step.attaching) attach(shown);
+              if (!step.attaching) attach(showing);
             }}
           >
-            Attach
+            Attach proof
           </Button>
-          <Button onPress={() => setStep({ kind: "choosing", refused: null })}>Back</Button>
+          <Button
+            onPress={() => {
+              setRefused(null);
+              setStep({ kind: "choosing" });
+            }}
+          >
+            Back
+          </Button>
           <Button variant="ghost" onPress={onDone}>
             Cancel
           </Button>
@@ -173,13 +196,13 @@ export function BrowserProof({
             onChange={setTyped}
           />
         )}
-        {step.refused !== null && (
-          <Notice at="pane" tone="trouble" cause="browser-proof-refused" onDismiss={unrefuse}>
-            {step.refused}
-          </Notice>
-        )}
+        {refusal}
         <ButtonRow>
-          <Button variant="primary" type="submit" aria-disabled={request === "" ? true : undefined}>
+          <Button
+            variant="primary"
+            type="submit"
+            aria-disabled={request === "" || asking ? true : undefined}
+          >
             Show what goes
           </Button>
           <Button variant="ghost" onPress={onDone}>
@@ -188,5 +211,25 @@ export function BrowserProof({
         </ButtonRow>
       </Form>
     </section>
+  );
+}
+
+/** One picture that goes, drawn on a canvas from the bytes that will be sent. */
+function Picture({ png, at }: { png: string; at: number }) {
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const [undrawn, setUndrawn] = useState(false);
+  useEffect(() => {
+    if (canvas.current === null) return;
+    paint(canvas.current, frameBytes(png), undefined, "image/png").catch(() => setUndrawn(true));
+  }, [png]);
+  if (undrawn) return <p className="ui-text-meta">This screenshot could not be drawn.</p>;
+  return (
+    <canvas
+      ref={canvas}
+      className="browser-timeline-shot"
+      role="img"
+      aria-label={`Browser screenshot ${at}, as it goes`}
+      data-testid="browser-proof-picture"
+    />
   );
 }

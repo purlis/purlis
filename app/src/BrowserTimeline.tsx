@@ -8,6 +8,7 @@ import { frameBytes, paint } from "./browserFrames";
 import { TIMELINE_MOVED, atSaid, unkeptSaid } from "./browserTimelines";
 import { listen } from "./here";
 import { BrowserProof } from "./BrowserProof";
+import { counted } from "./dispatches";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { Checkbox } from "./ui/choice/Checkbox";
 import { EmptyState } from "./ui/empty-state/EmptyState";
@@ -98,7 +99,6 @@ export function BrowserTimeline({ plane, chat }: { plane: string; chat: string }
       else now.delete(shot);
       return now;
     });
-  const didOf = (shot: number) => moments.find((moment) => moment.shot === shot)?.did ?? "";
   return (
     <div className="browser-timeline-pane">
       {kept.size > 0 &&
@@ -107,7 +107,6 @@ export function BrowserTimeline({ plane, chat }: { plane: string; chat: string }
             plane={plane}
             chat={chat}
             picked={chosen}
-            drawn={(shot) => <Shot plane={plane} chat={chat} shot={shot} did={didOf(shot)} />}
             onDone={() => {
               setAttaching(false);
               setPicked(new Set());
@@ -118,9 +117,7 @@ export function BrowserTimeline({ plane, chat }: { plane: string; chat: string }
             <p className="ui-text-meta">
               {chosen.length === 0
                 ? "Pick screenshots to attach to a pull request as proof."
-                : chosen.length === 1
-                  ? "1 screenshot picked."
-                  : `${chosen.length} screenshots picked.`}
+                : `${counted(chosen.length, "screenshot", "screenshots")} picked.`}
             </p>
             <ButtonRow size="sm">
               <Button
@@ -134,7 +131,7 @@ export function BrowserTimeline({ plane, chat }: { plane: string; chat: string }
                   if (chosen.length > 0) setAttaching(true);
                 }}
               >
-                Attach browser proof
+                Attach browser proof…
               </Button>
             </ButtonRow>
           </div>

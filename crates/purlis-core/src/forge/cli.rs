@@ -245,13 +245,13 @@ impl Transport for Cli {
     }
 }
 
-/// The token variables either CLI would sign in with in place of its stored login: `gh`'s
-/// ([`TOKEN_ENV`]) and `glab`'s.
 /// Why the CLI transport sends no call with a file (#2026): `gh api -F name=@path` and
 /// `glab api` read a file from disk, and the only file purlis sends goes with its own sign-in.
 pub const FILE_REFUSED: &str =
     "purlis sends a file only with its own sign-in, never through gh or glab";
 
+/// The token variables either CLI would sign in with in place of its stored login: `gh`'s
+/// ([`TOKEN_ENV`]) and `glab`'s.
 const EVERY_TOKEN_ENV: [&str; 7] = [
     TOKEN_ENV[0],
     TOKEN_ENV[1],

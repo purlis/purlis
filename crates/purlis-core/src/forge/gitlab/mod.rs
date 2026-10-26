@@ -17,7 +17,7 @@ use super::checks::{self, Annotation, Checks, FailedCheck};
 use super::pr::{
     AutoMerge, GITLAB_ACTIVE, GITLAB_NOT_MERGEABLE, Gate, Gated, Image, MergeAs, MergedAt, Opened,
     Pinned, Pr, Ready, Request, State, check_gate, commit_named, held_to_the_forges_clock, is_ours,
-    none_will_run, not_queued_when, not_this_saves, own_mr, pr_of, unknown_state,
+    is_proof_name, none_will_run, not_queued_when, not_this_saves, own_mr, pr_of, unknown_state,
 };
 use super::transport::{Call, Field, Method, Reply};
 use super::{
@@ -330,10 +330,23 @@ impl Repos for GitLab {
                 .as_bool()
                 .or_else(|| answer["pre_receive_secret_detection_enabled"].as_bool()),
         );
+        // Developer (30) and above may push. A `permissions` block with neither access is a
+        // stranger's answer; none at all says nothing.
+        let can_push = answer
+            .get("permissions")
+            .filter(|p| p.is_object())
+            .map(|p| {
+                ["project_access", "group_access"]
+                    .iter()
+                    .filter_map(|via| p[via]["access_level"].as_u64())
+                    .any(|level| level >= 30)
+            });
         Ok(About {
             visibility,
             issues,
             push_protection,
+            can_push,
+            uploads_need_sign_in: answer["enforce_auth_checks_on_uploads"].as_bool(),
         })
     }
 }
@@ -1097,16 +1110,20 @@ impl Requests for GitLab {
                 vec![Field::file("file", &image.name, &image.png)],
             );
             let record = self.0.ask(caller, &call, &doing)?;
-            // The upload's address in the project, `/uploads/<secret>/<name>`, which a note in
-            // the project draws. Only that shape is taken: it goes into the comment as is.
+            // The upload's address in the project, `/uploads/<32 hex>/<the name sent>`, which a
+            // note in the project draws. Only that shape is taken: it goes into the comment.
             let url = record["url"].as_str().unwrap_or_default();
-            let plain = url.strip_prefix("/uploads/").is_some_and(|rest| {
-                !rest.is_empty()
-                    && !rest.contains("..")
-                    && rest.bytes().all(|b| {
-                        b.is_ascii_alphanumeric() || matches!(b, b'/' | b'.' | b'_' | b'-')
-                    })
-            });
+            let plain = url
+                .strip_prefix("/uploads/")
+                .and_then(|rest| rest.split_once('/'))
+                .is_some_and(|(secret, name)| {
+                    secret.len() == 32
+                        && secret
+                            .bytes()
+                            .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+                        && name == image.name
+                        && is_proof_name(name)
+                });
             if !plain {
                 return Err(ForgeError::new(format!(
                     "{doing}: the answer named no upload address"

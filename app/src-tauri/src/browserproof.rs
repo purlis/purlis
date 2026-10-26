@@ -47,12 +47,23 @@ pub struct ShownProof {
     pub number: String,
     /// The repo it is in, `owner/name`.
     pub path: String,
-    /// Where the pictures are kept on the forge, and who can read them there.
+    /// Where the pictures are kept on the forge, and who can open them there.
     pub kept_at: String,
+    /// The line said before the pictures: public and permanent to the repo's readers, and
+    /// whether the repo is public.
+    pub warning: String,
     /// The comment's words, before the pictures.
     pub words: String,
     /// The pictures, in the order they go.
     pub shots: Vec<ProofShot>,
+}
+
+/// **What the person is shown before attaching**: the proof, which is handed back to attach, and
+/// the bytes of each of its screenshots, PNG in base64, in its order, which the window draws.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct ShowingProof {
+    pub proof: ShownProof,
+    pub pictures: Vec<String>,
 }
 
 impl From<browserproof::Shown> for ShownProof {
@@ -62,6 +73,7 @@ impl From<browserproof::Shown> for ShownProof {
             number: shown.number,
             path: shown.path,
             kept_at: shown.kept_at,
+            warning: shown.warning,
             words: shown.words,
             shots: shown
                 .shots
@@ -83,6 +95,7 @@ impl From<ShownProof> for browserproof::Shown {
             number: shown.number,
             path: shown.path,
             kept_at: shown.kept_at,
+            warning: shown.warning,
             words: shown.words,
             shots: shown
                 .shots
@@ -146,8 +159,21 @@ pub async fn browser_proof_requests(
         .collect())
 }
 
+/// The person's own purlis sign-in to `forge`, and nothing else: never `gh` or `glab`.
+fn signed_in(forge: &Forge) -> Result<Box<dyn ForgeBackend>, String> {
+    purlis_core::forge::signin::signed_in_backend(
+        forge,
+        &Caller::window(),
+        purlis_core::netlog::Feature::Forge,
+    )
+    .map_err(|why| why.said().to_owned())
+}
+
 /// **What attaching screenshots `shots` of chat `chat` to the request at `request` would
-/// send**, for the person to see first. Asks no forge.
+/// send**, for the person to see first, with each screenshot's bytes to draw. It reads the
+/// request and its repo with the person's sign-in, and writes nothing.
+///
+/// On a blocking thread: it asks the forge twice.
 #[tauri::command]
 #[specta::specta]
 pub async fn show_browser_proof(
@@ -156,11 +182,32 @@ pub async fn show_browser_proof(
     chat: String,
     request: String,
     shots: Vec<u32>,
-) -> Result<ShownProof, String> {
+) -> Result<ShowingProof, String> {
+    use base64::Engine as _;
     let held = planes.held(&plane)?;
     open_chat(&held, &chat)?;
+    let root = held.root().to_path_buf();
     let picked: Vec<u64> = shots.into_iter().map(u64::from).collect();
-    browserproof::show(held.root(), &chat, &request, &picked).map(ShownProof::from)
+    let showing = tauri::async_runtime::spawn_blocking(move || {
+        browserproof::show(
+            &root,
+            &chat,
+            &request,
+            &picked,
+            &signed_in,
+            &Caller::window(),
+        )
+    })
+    .await
+    .map_err(|err| format!("showing the proof did not finish: {err}"))??;
+    Ok(ShowingProof {
+        proof: ShownProof::from(showing.shown),
+        pictures: showing
+            .pictures
+            .iter()
+            .map(|png| base64::engine::general_purpose::STANDARD.encode(png))
+            .collect(),
+    })
 }
 
 /// **Attach what the person was shown**, with the person's own purlis sign-in to the request's
@@ -180,14 +227,6 @@ pub async fn attach_browser_proof(
     open_chat(&held, &chat)?;
     let root = held.root().to_path_buf();
     tauri::async_runtime::spawn_blocking(move || {
-        let signed_in = |forge: &Forge| -> Result<Box<dyn ForgeBackend>, String> {
-            purlis_core::forge::signin::signed_in_backend(
-                forge,
-                &Caller::window(),
-                purlis_core::netlog::Feature::Forge,
-            )
-            .map_err(|why| why.said().to_owned())
-        };
         browserproof::attach(&root, &chat, &shown.into(), &signed_in, &Caller::window())
             .map(|attached| attached.comment)
     })
