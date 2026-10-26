@@ -399,8 +399,11 @@ export const MarksOnTheTabsLine: Story = {
         Math.abs(middleOf(one) - line),
         `${what} off the tabs' line`,
       ).toBeLessThanOrEqual(1);
-    // The pointer on the `+`, whose name its tooltip shows after the delay.
-    await userEvent.hover(plus);
+    // The keyboard on the `+`, whose name its tooltip shows at once: Tab along the strip's stops
+    // (a tab's chip, the strip's tab) until it is there.
+    for (let stops = 0; stops < 8 && document.activeElement !== plus; stops += 1)
+      await userEvent.tab();
+    await expect(plus).toHaveFocus();
     const strip = canvasElement.querySelector("header.bar") as HTMLElement;
     await waitFor(
       () =>
@@ -413,8 +416,8 @@ export const MarksOnTheTabsLine: Story = {
     const below = tip.getBoundingClientRect().top >= strip.getBoundingClientRect().bottom;
     const above = tip.getBoundingClientRect().bottom <= strip.getBoundingClientRect().top;
     await expect(below || above, "the tooltip sits on the strip's row").toBe(true);
-    // And it goes, so the picture is the strip alone.
-    await userEvent.unhover(plus);
+    // And it goes with the keyboard, so the picture is the strip alone.
+    await userEvent.tab();
     await waitFor(
       () => expect(document.querySelector('[role="tooltip"][data-scope="tooltip"]')).toBeNull(),
       { timeout: 3000 },
