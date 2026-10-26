@@ -92,8 +92,21 @@ pub(crate) struct Target {
     pub host: Option<Arc<Connection>>,
     /// What kills the host outright, on a host process's target (#2007).
     pub kill_the_host: Option<Arc<dyn Fn() + Send + Sync>>,
+    /// The runner's container, on a Docker pool's target: the machine its chats run on.
+    pub runner: Option<OnTheRunner>,
     /// What keeps the target running for as long as the test does.
     _keeps: Vec<Box<dyn std::any::Any>>,
+}
+
+impl Target {
+    /// Whether the process `pid`, as the window was told it, is alive on the machine the
+    /// target's chats run on.
+    fn alive(&self, pid: u32) -> bool {
+        match &self.runner {
+            Some(runner) => runner.has(pid),
+            None => purlis_core::process::alive(pid),
+        }
+    }
 }
 
 /// A project, its manifest written, and where it is.
@@ -155,6 +168,7 @@ pub(crate) fn in_the_window() -> Target {
         log: data.path().to_path_buf(),
         host: None,
         kill_the_host: None,
+        runner: None,
         _keeps: vec![Box::new(project), Box::new(config), Box::new(data)],
     }
 }
@@ -175,7 +189,7 @@ fn in_a_host_keeping_its_switch_in(folder: &Path) -> Target {
     let folder = folder.to_path_buf();
     let data = tempfile::tempdir().expect("a data home");
     let log = data.path().to_path_buf();
-    let mut target = a_window_on(log.clone(), false, move || a_host(&folder, &log));
+    let mut target = a_window_on(log.clone(), Runs::Here, move || a_host(&folder, &log));
     target._keeps.push(Box::new(data));
     target
 }
@@ -193,7 +207,7 @@ pub(crate) fn through_a_link() -> Target {
     // Host B runs the chats, so it writes their event log.
     let data = tempfile::tempdir().expect("host B's data home");
     let host_b = a_host(folder.path(), data.path());
-    let mut target = a_window_on(data.path().to_path_buf(), true, move || {
+    let mut target = a_window_on(data.path().to_path_buf(), Runs::OnARunner, move || {
         purlis_host::Relay::new(Arc::new(move || {
             let host_b = host_b.clone();
             Box::pin(async move { Ok(linked_to(host_b).await) })
@@ -202,6 +216,373 @@ pub(crate) fn through_a_link() -> Target {
     target._keeps.push(Box::new(folder));
     target._keeps.push(Box::new(data));
     target
+}
+
+/// Where the window's chats of a target's project run, as its sessions are told.
+#[derive(Clone)]
+enum Runs {
+    /// In the host the window speaks to.
+    Here,
+    /// On a runner that host relays to, which holds the project at the window's own path.
+    OnARunner,
+    /// On the runner of the pool named, kept in the desktop's config home `config`, which the
+    /// window's host relays the project's links to, and which holds the project where it keeps
+    /// its projects and is sent its code (#2046).
+    OnAPoolsRunner { pool: String, config: PathBuf },
+}
+
+/// The variable naming the runner image a Docker pool's target runs, by digest: the parity
+/// job's (`.github/workflows/ci.yml`, #2045). Without it, the target is not made and its tests
+/// run nothing, as every real-Docker test here does; the `rust` job leaves them out by name, so
+/// they are reported skipped there, not passed.
+const DOCKER_POOL_IMAGE: &str = "DOCKER_POOL_TEST_IMAGE";
+
+/// The variable the parity job sets: there a Docker pool's target is made or the test fails,
+/// so an image that went missing never passes as nothing run.
+const PARITY: &str = "PURLIS_PARITY";
+
+/// **A chat on a Docker pool's runner** (#2045, spec #2041): a pool added on this machine as
+/// the window adds one ([`a_pool_on`]). The window speaks to its own host, which relays to the
+/// runner's `purlis serve` over the link between hosts, through `docker exec` and the key pinned
+/// at the pairing ([`crate::runnerlinks::ToARunner`]), and its chats are routed as the window
+/// routes a pool's ([`crate::routedsessions::RoutedSessions::every_start_on`]). The runner
+/// holds the project where it keeps its projects, sent its code by the window, so the project
+/// is a repository with one commit. What a chat on it inherits is what the runner's host
+/// inherited, read from the container.
+///
+/// The image is the runner image of this build with the repo's fake harness and `purlis` at
+/// the paths this test's build has them, so a behaviour's program is where it names it on
+/// either machine (`tests/parity/runner.Dockerfile`). Each test adds a pool of its own and
+/// removes it, its container and its home, however the test ends.
+pub(crate) fn in_a_docker_pool() -> Option<Target> {
+    let Ok(image) = std::env::var(DOCKER_POOL_IMAGE) else {
+        assert!(
+            std::env::var_os(PARITY).is_none(),
+            "{PARITY} is set and {DOCKER_POOL_IMAGE} names no runner image: the parity job built none"
+        );
+        return None;
+    };
+    let config = tempfile::tempdir().expect("the desktop's config home");
+    let docker = purlis_core::dockerpool::Docker::at(
+        std::env::var_os("DOCKER_POOL_TEST_DOCKER").unwrap_or("docker".into()),
+    )
+    .with_settings_in(config.path().join("docker-settings"));
+    let machine = crate::runnerlinks::Machine {
+        config: config.path().to_path_buf(),
+        docker: docker.clone(),
+        keyring: Arc::new(purlis_core::secrets::keyring::FileStore::at(
+            config.path().join("keyring.json"),
+        )),
+    };
+    let (name, removes) = a_pool_on(&machine, &image);
+    let made = purlis_core::runners::runner_for(config.path(), &name)
+        .expect("its runner is kept")
+        .made;
+    let inherited = environment_in(&docker, made.container.as_str());
+    // The window's own host, as the window's binary composes it, relaying the project's links
+    // to the pool's runner as the app's does (`crate::runnerlinks::relays_to`); it keeps the
+    // device's event log in `data`.
+    let (folder, data) = (
+        tempfile::tempdir().expect("the window's host's folder"),
+        tempfile::tempdir().expect("a data home"),
+    );
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .expect("a runtime");
+    let host = runtime.block_on(async {
+        a_host(folder.path(), data.path()).relaying_with(crate::runnerlinks::relaying({
+            let machine = machine.clone();
+            move || Ok(machine.clone())
+        }))
+    });
+    // The window's links to it, as the window's binary dials them: its own, and each relayed
+    // to a pool's runner by the host.
+    let handle = runtime.handle().clone();
+    let link_to = move |naming, pool: Option<String>| {
+        let (host, inner) = (host.clone(), handle.clone());
+        crate::hostedsessions::open_within(&handle, PATIENCE, async move {
+            crate::hostedsessions::HostLink::over_relayed(
+                a_local_ui_link_to(host).await,
+                inner,
+                || {},
+                naming,
+                pool.as_deref(),
+            )
+            .await
+        })
+    };
+    let connection = Arc::new(Connection::default());
+    let window = link_to(None, None).expect("the window's own link");
+    let dial: crate::hostedsessions::Dial = {
+        let link_to = link_to.clone();
+        Arc::new(move |_within, naming| link_to(naming, None))
+    };
+    let relayed: crate::hostedsessions::RelayedDial =
+        Arc::new(move |_within, naming, pool: &str| link_to(naming, Some(pool.to_owned())));
+    connection.ready_relaying(Arc::new(window), dial, relayed);
+    let mut target = a_window_over(
+        connection,
+        inherited,
+        data.path().to_path_buf(),
+        Runs::OnAPoolsRunner {
+            pool: name.clone(),
+            config: config.path().to_path_buf(),
+        },
+    );
+    target.runner = Some(OnTheRunner {
+        docker: docker.clone(),
+        container: made.container.as_str().to_owned(),
+    });
+    a_repository(&target.root);
+    // Ended in this order once the window's sessions are: the runtime and its links, the
+    // window's host, the pool and its runner, and last the config home it is kept in.
+    target._keeps.push(Box::new(runtime));
+    target._keeps.push(Box::new(folder));
+    target._keeps.push(Box::new(data));
+    target._keeps.push(Box::new(removes));
+    target._keeps.push(Box::new(config));
+    Some(target)
+}
+
+/// A `local-ui` link to `host` over an in-memory stream, served as the window's host serves
+/// each link it admits.
+async fn a_local_ui_link_to(host: purlis_host::Hosting) -> link::Link {
+    let held = Credentials::mint().expect("credentials");
+    let (a, b) = tokio::io::duplex(1 << 20);
+    let (client, served) = tokio::join!(
+        link::connect(
+            a,
+            session::speaks(),
+            Scope::LocalUi,
+            held.of(Scope::LocalUi)
+        ),
+        link::serve_any(b, session::speaks(), &held)
+    );
+    tokio::spawn(session::serve(
+        served.expect("the host admits the window"),
+        purlis_host::Routed::new(host),
+        None,
+    ));
+    client.expect("the window links to its host")
+}
+
+/// A pool of its own added on `machine` as the window adds one
+/// ([`crate::dockerpools::add_on`]), its runner a container of `image` paired with this
+/// desktop: its name, and what removes it, its container and its home however the test ends.
+fn a_pool_on(machine: &crate::runnerlinks::Machine, image: &str) -> (String, RemovesThePool) {
+    use purlis_core::dockerpool::Image;
+    use purlis_core::runners::{Pool, Set};
+    let name = format!(
+        "parity-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("after 1970")
+            .as_nanos()
+    );
+    let pool = Pool::new(
+        &name,
+        Image::pinned(image).expect("an image named by digest"),
+        Set::default(),
+    )
+    .expect("a pool");
+    crate::dockerpools::add_on(machine, &pool).expect("the pool is added and its runner paired");
+    let removes = RemovesThePool {
+        config: machine.config.clone(),
+        docker: machine.docker.clone(),
+        name: name.clone(),
+    };
+    (name, removes)
+}
+
+/// What the runner's host in `container` was started with: the environment of the
+/// container's first process, which starts it.
+fn environment_in(
+    docker: &purlis_core::dockerpool::Docker,
+    container: &str,
+) -> Vec<(OsString, OsString)> {
+    use std::os::unix::ffi::OsStringExt;
+    let out = purlis_core::forklock::output(std::process::Command::new(docker.program()).args([
+        "exec",
+        container,
+        "cat",
+        "/proc/1/environ",
+    ]))
+    .expect("docker runs");
+    assert!(out.status.success(), "the runner's environment: {out:?}");
+    out.stdout
+        .split(|byte| *byte == 0)
+        .filter(|pair| !pair.is_empty())
+        .filter_map(|pair| {
+            let at = pair.iter().position(|byte| *byte == b'=')?;
+            Some((
+                OsString::from_vec(pair[..at].to_vec()),
+                OsString::from_vec(pair[at + 1..].to_vec()),
+            ))
+        })
+        .collect()
+}
+
+/// Removes a test's pool, its runner's container and its home, however the test ends.
+struct RemovesThePool {
+    config: PathBuf,
+    docker: purlis_core::dockerpool::Docker,
+    name: String,
+}
+
+impl Drop for RemovesThePool {
+    fn drop(&mut self) {
+        // A behaviour that failed on the runner is read with what its host said.
+        if std::thread::panicking()
+            && let Ok(kept) = purlis_core::runners::runner_for(&self.config, &self.name)
+        {
+            let said = purlis_core::forklock::output(
+                std::process::Command::new(self.docker.program()).args([
+                    "logs",
+                    "--tail",
+                    "200",
+                    kept.made.container.as_str(),
+                ]),
+            );
+            if let Ok(said) = said {
+                use std::io::Write as _;
+                let _ = writeln!(
+                    std::io::stderr(),
+                    "the runner's host said:\n{}{}",
+                    String::from_utf8_lossy(&said.stdout),
+                    String::from_utf8_lossy(&said.stderr)
+                );
+            }
+        }
+        let removed = purlis_core::pools::remove(&self.config, &self.docker, &self.name, None);
+        if !removed
+            .as_ref()
+            .is_ok_and(|removed| removed.as_ref().is_none_or(|removed| removed.forgotten))
+        {
+            let said = format!("the pool {} was not removed whole: {removed:?}", self.name);
+            // Said, not panicked, while the test already fails: a second panic aborts the run.
+            if std::thread::panicking() {
+                tracing::warn!("{said}");
+            } else {
+                panic!("{said}");
+            }
+        }
+    }
+}
+
+/// A Docker pool's runner, as a test reaches into its container.
+pub(crate) struct OnTheRunner {
+    docker: purlis_core::dockerpool::Docker,
+    container: String,
+}
+
+impl OnTheRunner {
+    /// Runs `script` in the runner's container, as its own user or as root, `given` on its
+    /// standard input.
+    fn runs(&self, as_root: bool, script: &str, given: &[u8]) {
+        use std::io::Write as _;
+        let mut command = std::process::Command::new(self.docker.program());
+        command.args(["exec", "--interactive"]);
+        if as_root {
+            command.args(["--user", "0"]);
+        }
+        command
+            .args([self.container.as_str(), "sh", "-c", script])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        let mut child = purlis_core::forklock::spawn(&mut command).expect("docker runs");
+        child
+            .stdin
+            .take()
+            .expect("piped")
+            .write_all(given)
+            .expect("given");
+        let out = child.wait_with_output().expect("it ends");
+        assert!(out.status.success(), "{script}: {out:?}");
+    }
+
+    /// Whether the process `pid` of the runner's container is there.
+    fn has(&self, pid: u32) -> bool {
+        let out = purlis_core::forklock::output(
+            std::process::Command::new(self.docker.program()).args([
+                "exec",
+                self.container.as_str(),
+                "test",
+                "-e",
+                &format!("/proc/{pid}"),
+            ]),
+        )
+        .expect("docker runs");
+        out.status.success()
+    }
+
+    /// The runner has a profile of its own named `name`, of Claude Code, signed in with no
+    /// key, its `claude` the program `program` is on this machine.
+    fn signs_in(&self, name: &str, program: &Path) {
+        use purlis_core::profilestore::{Folders, MachineProfile};
+        let config = tempfile::tempdir().expect("a config home to write it in");
+        purlis_core::profilestore::update(config.path(), |store| {
+            store.profiles.push(MachineProfile {
+                name: name.to_owned(),
+                harness: "claude".to_owned(),
+                title: name.to_owned(),
+                folders: Folders {
+                    config: PathBuf::from(format!("/home/purlis/.claude-{name}")),
+                    data: None,
+                },
+                adopted: None,
+                imported: None,
+                sign_in: None,
+                pinned: None,
+                sandbox_only: false,
+                rest: Default::default(),
+            });
+        })
+        .expect("the profile is kept");
+        let store =
+            std::fs::read(purlis_core::profilestore::path(config.path())).expect("the store reads");
+        let at = format!(
+            "\"$HOME\"/.config/{}",
+            purlis_core::machine::dir(Path::new("")).display()
+        );
+        self.runs(
+            false,
+            &format!(
+                "mkdir -p {at} \"$HOME\"/.claude-{name} && umask 077 && cat > {at}/{}",
+                purlis_core::profilestore::FILE
+            ),
+            &store,
+        );
+        // The parity image's `claude` runs what is here (`tests/parity/runner.Dockerfile`).
+        self.runs(
+            false,
+            "mkdir -p \"$HOME\"/.parity && cat > \"$HOME\"/.parity/claude && chmod 0755 \"$HOME\"/.parity/claude",
+            &std::fs::read(program).expect("the program reads"),
+        );
+    }
+}
+
+/// Makes the project at `root` a repository with one commit, as a project the window holds on
+/// a pool's runner is: its code is sent there as git sends it.
+fn a_repository(root: &Path) {
+    git(root, &["init", "-q", "-b", "main"]);
+    git(root, &["add", "-A"]);
+    git(
+        root,
+        &[
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@example.invalid",
+            "commit",
+            "-q",
+            "-m",
+            "a project",
+        ],
+    );
 }
 
 /// A session host as the window's binary composes it, keeping its kill switch in `folder`: its
@@ -271,7 +652,7 @@ pub(crate) async fn linked_to(host_b: purlis_host::Hosting) -> link::Link {
 /// it in `log`.
 fn a_window_on<H: session::Host + Clone>(
     log: PathBuf,
-    on_a_runner: bool,
+    runs: Runs,
     host: impl FnOnce() -> H + Send + 'static,
 ) -> Target {
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -282,7 +663,7 @@ fn a_window_on<H: session::Host + Clone>(
     // Made on the runtime, as a host is made where it serves.
     let host = runtime.block_on(async move { host() });
     let (connection, _window) = crate::hostedsessions::tests::in_memory(host, &runtime);
-    let mut target = a_window_over(connection, std::env::vars_os().collect(), log, on_a_runner);
+    let mut target = a_window_over(connection, std::env::vars_os().collect(), log, runs);
     target._keeps.push(Box::new(runtime));
     target
 }
@@ -294,7 +675,7 @@ fn a_window_over(
     connection: Arc<Connection>,
     inherited: Vec<(OsString, OsString)>,
     log: PathBuf,
-    on_a_runner: bool,
+    runs: Runs,
 ) -> Target {
     let config = tempfile::tempdir().expect("a config home");
     let (project, root) = a_project();
@@ -305,15 +686,26 @@ fn a_window_over(
     }));
     let switch = KillSwitch::kept_in(Some(config.path().to_path_buf()));
     switch.held_by(Arc::clone(&connection) as Arc<dyn crate::killswitch::Authority>);
-    let mut sessions = if on_a_runner {
-        HostedSessions::on_a_runner(Arc::clone(&connection), &root)
-    } else {
-        HostedSessions::new(Arc::clone(&connection), &root)
+    let mut sessions: Box<dyn SessionHost> = match runs {
+        Runs::Here => Box::new(HostedSessions::new(Arc::clone(&connection), &root)),
+        Runs::OnARunner => Box::new(HostedSessions::on_a_runner(Arc::clone(&connection), &root)),
+        // Routed as the window routes a project's chats (`crate::routedsessions`), every start on
+        // the pool's runner: this machine's host holds the project, keeps its board and deals
+        // each chat's number, and the runner's lines are heard as that pool's.
+        Runs::OnAPoolsRunner { pool, config } => Box::new(
+            crate::routedsessions::RoutedSessions::of_the_project(
+                Box::new(HostedSessions::new(Arc::clone(&connection), &root)),
+                &connection,
+                &config,
+                &root,
+            )
+            .every_start_on(&pool),
+        ),
     };
     sessions.hear_through(hooks.relayed_from_the_host().expect("heard from the host"));
     sessions.stopped_by(Arc::clone(&switch));
     Target {
-        sessions: Box::new(sessions),
+        sessions,
         hooks,
         moved,
         root,
@@ -323,6 +715,7 @@ fn a_window_over(
         log,
         host: Some(connection),
         kill_the_host: None,
+        runner: None,
         _keeps: vec![Box::new(project), Box::new(config)],
     }
 }
@@ -359,7 +752,7 @@ fn in_a_host_process_at(home: &Path) -> Target {
     connection
         .wait(PATIENCE)
         .expect("the window connects to its host");
-    let mut target = a_window_over(connection, inherited, log, false);
+    let mut target = a_window_over(connection, inherited, log, Runs::Here);
     target.savers_here = 0;
     target.kill_the_host = Some(host.0.killer());
     // Ended before the folders it serves from go.
@@ -728,7 +1121,7 @@ fn a_chat_named_alone_is_composed_by_the_host_as_its_profile_says(target: &Targe
         "#!/bin/sh\nprintf 'COMPOSED as %s:' \"$PURLIS_PERSONA\"\nfor arg; do last=\"$arg\"; done\n\
          printf '\\n%s :END' \"$last\"\nread line\n",
     );
-    a_profile(&target.root, "work", &harness);
+    a_profile(target, "work", &harness);
     if target.host.is_none() {
         let refused = target
             .sessions
@@ -772,6 +1165,78 @@ fn a_chat_named_alone_is_composed_by_the_host_as_its_profile_says(target: &Targe
     assert!(refused.contains("someone-elses"), "{refused}");
 }
 
+/// **A harness chat started by its names is viewed, typed into, answered and stopped** (#3072):
+/// the chat a person starts from the window, on a profile the machine it runs on has signed
+/// in, composed by the host it runs in. Its tab draws it, what its tab types reaches it, the
+/// ask its hook raises is held by the window and answered from there, and stopping every
+/// program ends it and keeps its tab. The window's own process composes no such start.
+fn a_harness_chat_started_by_its_names_is_viewed_typed_into_answered_and_stopped(target: &Target) {
+    if target.host.is_none() {
+        let refused = target
+            .sessions
+            .open_named(
+                None,
+                &named("start here", false),
+                purlis_core::sandbox::plan::Hearing::default(),
+                &|_| {},
+            )
+            .unwrap_err();
+        assert_eq!(refused, crate::host::NOT_COMPOSED_HERE);
+        return;
+    }
+    let Hooked {
+        harness,
+        payload,
+        option,
+        prints,
+    } = &HOOKED_HARNESSES[0];
+    let bin = tempfile::tempdir().expect("a folder for the harness");
+    let program = stand_in::claude_code(
+        bin.path(),
+        "claude",
+        &format!(
+            "#!/bin/sh\nprintf 'READY.'\nread line\nprintf 'you said %s.' \"$line\"\n\
+             printf '%s' '{payload}' | PURLIS_HARNESS={harness} '{}' hook permissionrequest\n\
+             printf 'decided.'\nread line\n",
+            purlis()
+        ),
+    );
+    a_profile(target, "work", &program);
+    let ends = told_of_ends(target);
+
+    let id = target
+        .sessions
+        .open_named(
+            None,
+            &named("start here", false),
+            purlis_core::sandbox::plan::Hearing::default(),
+            &|id| {
+                target.hooks.board().opened(id, None, None);
+            },
+        )
+        .expect("it starts")
+        .number;
+    let pane = Pane::on(target, id);
+    pane.shows("READY.");
+
+    target.sessions.input(id, b"hello there\r").expect("typed");
+    pane.shows("you said hello there.");
+
+    answers_its_ask(target, id, harness, option);
+    pane.shows(prints);
+    pane.shows("decided.");
+
+    assert_eq!(target.sessions.stop_every_program(), 1);
+    until("the window is told it ended", || {
+        ends.lock()
+            .expect("ends")
+            .iter()
+            .any(|(ended, _)| *ended == id)
+    });
+    assert!(target.sessions.running().contains(&id), "its tab stays");
+    target.sessions.close(id).expect("it closes");
+}
+
 /// **A person's opt-out of a chat the host composes is written in its event log before it
 /// starts** (#2171, ADR 0067 §7), under the chat's own run.
 fn an_opt_out_of_a_chat_the_host_composes_is_in_its_event_log_before_it_starts(target: &Target) {
@@ -785,7 +1250,7 @@ fn an_opt_out_of_a_chat_the_host_composes_is_in_its_event_log_before_it_starts(t
         // The first message, alone on a line of its own (see the test above).
         "#!/bin/sh\nfor arg; do last=\"$arg\"; done\nprintf '\\n%s :END' \"$last\"\nread line\n",
     );
-    a_profile(&target.root, "work", &harness);
+    a_profile(target, "work", &harness);
 
     let id = target
         .sessions
@@ -823,9 +1288,13 @@ fn named(first_message: &str, without_sandbox: bool) -> crate::host::Named {
     }
 }
 
-/// The project at `root` has the persona `steward` and this machine the profile `name`, of
-/// Claude Code, running `program`, as the person approved it.
-fn a_profile(root: &Path, name: &str, program: &Path) {
+/// The target's project has the persona `steward` and the machine its chats run on the
+/// profile `name`, of Claude Code, running `program`, as the person approved it there: in the
+/// project's own local settings on this machine, and on a Docker pool's runner as a profile of
+/// the runner's own, which the window's project settings never reach (they are this machine's
+/// alone, #2046), its `claude` being `program`.
+fn a_profile(target: &Target, name: &str, program: &Path) {
+    let root = &target.root;
     let persona = root.join("personas").join("steward");
     std::fs::create_dir_all(&persona).expect("its persona");
     std::fs::write(persona.join("persona.md"), "# steward\n").expect("its persona");
@@ -844,6 +1313,9 @@ fn a_profile(root: &Path, name: &str, program: &Path) {
         &purlis_core::profiletrust::fingerprint(declared.get(name).expect("declared")),
     )
     .expect("approved");
+    if let Some(runner) = &target.runner {
+        runner.signs_in(name, program);
+    }
 }
 
 fn what_its_tab_types_reaches_it(target: &Target) {
@@ -982,7 +1454,7 @@ fn a_closed_chat_is_ended_and_gone(target: &Target) {
 
     assert!(!target.sessions.running().contains(&id));
     assert!(target.sessions.input(id, b"x").is_err());
-    until("its program is gone", || !purlis_core::process::alive(pid));
+    until("its program is gone", || !target.alive(pid));
 }
 
 fn a_program_reading_a_line_is_not_yet_ready_to_be_typed_at_key_by_key(target: &Target) {
@@ -1271,6 +1743,29 @@ fn a_chat_whose_turn_ends_needs_you_on_every_harness(target: &Target) {
     }
 }
 
+/// Waits until the window holds an ask of chat `id`, on `harness`, and answers it `option`, as
+/// the person does from Needs you.
+fn answers_its_ask(target: &Target, id: u32, harness: &str, option: &str) {
+    let ask = {
+        let deadline = Instant::now() + PATIENCE;
+        loop {
+            let pending = target.hooks.asks().pending(Instant::now());
+            if let Some(ask) = pending.into_iter().find(|ask| ask.chat == id.to_string()) {
+                break ask;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "{harness}: the window never held the ask"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    };
+    target
+        .hooks
+        .answer(id, &ask.id.to_string(), option)
+        .expect("answered in the window");
+}
+
 fn a_permission_ask_is_answered_from_the_window_on_every_harness(target: &Target) {
     for Hooked {
         harness,
@@ -1288,24 +1783,7 @@ fn a_permission_ask_is_answered_from_the_window_on_every_harness(target: &Target
             )),
         );
         let pane = Pane::on(target, id);
-        let ask = {
-            let deadline = Instant::now() + PATIENCE;
-            loop {
-                let pending = target.hooks.asks().pending(Instant::now());
-                if let Some(ask) = pending.into_iter().find(|ask| ask.chat == id.to_string()) {
-                    break ask;
-                }
-                assert!(
-                    Instant::now() < deadline,
-                    "{harness}: the window never held the ask"
-                );
-                std::thread::sleep(Duration::from_millis(10));
-            }
-        };
-        target
-            .hooks
-            .answer(id, &ask.id.to_string(), option)
-            .expect("answered in the window");
+        answers_its_ask(target, id, harness, option);
 
         pane.shows(prints);
         pane.shows("decided.");
@@ -2567,61 +3045,58 @@ fn a_chat_ending_with_the_window_gone_still_writes_its_record_and_its_dispatch_r
 }
 
 /// Each behaviour, as a test of its own on every target. Each group after `not yet through a
-/// link` runs on the window's and the host's targets, and through a link waits for what its
-/// reason names (#2042).
+/// link` runs on the window's and the host's targets, and through a link and in a Docker pool
+/// (whose runner is reached through a link) waits for what its reason names (#2042). Each
+/// group after `not yet in a Docker pool` runs on every target but a Docker pool's, which waits
+/// for what its reason names (#2045).
 macro_rules! on_every_target {
+    (@one $behaviour:ident, through_a_link: [$($link:meta)*], in_a_docker_pool: [$($docker:meta)*]) => {
+        mod $behaviour {
+            #[test]
+            fn in_the_window() {
+                super::$behaviour(&super::in_the_window());
+            }
+
+            #[test]
+            fn in_the_host() {
+                super::$behaviour(&super::in_the_host());
+            }
+
+            #[cfg(target_os = "linux")]
+            #[test]
+            fn in_a_host_process() {
+                super::$behaviour(&super::in_a_host_process());
+            }
+
+            #[test]
+            $(#[$link])*
+            fn through_a_link() {
+                super::$behaviour(&super::through_a_link());
+            }
+
+            /// Run by the parity job, which names a runner image; elsewhere it runs nothing.
+            #[test]
+            $(#[$docker])*
+            fn in_a_docker_pool() {
+                if let Some(target) = super::in_a_docker_pool() {
+                    super::$behaviour(&target);
+                }
+            }
+        }
+    };
     (
         $($behaviour:ident),* $(,)?;
         $(not yet through a link ($why:literal): $($waiting:ident),+ $(,)?;)*
+        $(not yet in a Docker pool ($docker_why:literal): $($docker_waiting:ident),+ $(,)?;)*
     ) => {
         $(
-            mod $behaviour {
-                #[test]
-                fn in_the_window() {
-                    super::$behaviour(&super::in_the_window());
-                }
-
-                #[test]
-                fn in_the_host() {
-                    super::$behaviour(&super::in_the_host());
-                }
-
-                #[cfg(target_os = "linux")]
-                #[test]
-                fn in_a_host_process() {
-                    super::$behaviour(&super::in_a_host_process());
-                }
-
-                #[test]
-                fn through_a_link() {
-                    super::$behaviour(&super::through_a_link());
-                }
-            }
+            on_every_target!(@one $behaviour, through_a_link: [], in_a_docker_pool: []);
         )*
         $($(
-            mod $waiting {
-                #[test]
-                fn in_the_window() {
-                    super::$waiting(&super::in_the_window());
-                }
-
-                #[test]
-                fn in_the_host() {
-                    super::$waiting(&super::in_the_host());
-                }
-
-                #[cfg(target_os = "linux")]
-                #[test]
-                fn in_a_host_process() {
-                    super::$waiting(&super::in_a_host_process());
-                }
-
-                #[test]
-                #[ignore = $why]
-                fn through_a_link() {
-                    super::$waiting(&super::through_a_link());
-                }
-            }
+            on_every_target!(@one $waiting, through_a_link: [ignore = $why], in_a_docker_pool: [ignore = $why]);
+        )+)*
+        $($(
+            on_every_target!(@one $docker_waiting, through_a_link: [], in_a_docker_pool: [ignore = $docker_why]);
         )+)*
     };
 }
@@ -2629,6 +3104,7 @@ macro_rules! on_every_target {
 on_every_target!(
     a_chat_starts_and_its_tab_draws_what_it_wrote,
     a_chat_named_alone_is_composed_by_the_host_as_its_profile_says,
+    a_harness_chat_started_by_its_names_is_viewed_typed_into_answered_and_stopped,
     what_its_tab_types_reaches_it,
     a_resize_reaches_its_terminal,
     a_chat_is_told_its_own_number,
@@ -2638,18 +3114,20 @@ on_every_target!(
     a_program_reading_a_line_is_not_yet_ready_to_be_typed_at_key_by_key,
     a_chat_starts_with_the_path_and_variables_the_window_gives_it,
     a_chat_whose_turn_ends_needs_you_on_every_harness,
-    a_permission_ask_is_answered_from_the_window_on_every_harness,
-    a_hook_refuses_a_listener_that_is_not_its_chats_ancestor,
-    the_event_log_has_one_writer_and_each_hook_line_is_written_once,
-    a_sandboxed_chats_proxy_carries_what_it_lists_and_refuses_the_rest,
-    a_port_withdrawn_while_a_chat_runs_is_carried_no_longer,
-    an_ask_raised_by_a_chats_proxy_is_answered_from_the_window;
+    a_permission_ask_is_answered_from_the_window_on_every_harness;
     not yet through a link ("an opt-out is asked again on the device a chat moves to, ADR 0078 §4"):
     an_opt_out_of_a_chat_the_host_composes_is_in_its_event_log_before_it_starts;
     not yet through a link ("the window's re-arm and its shell while stopped cross a link in #2220"):
     stop_all_ends_every_chat_and_none_starts_until_the_window_re_arms,
     while_stopped_the_operators_shell_opens;
-    not yet through a link ("saving a project on a runner comes with code over the link in #2046"):
+    not yet through a link ("where a project whose chats run on a runner is saved is not decided, #3312"):
     a_write_in_the_project_is_saved_after_its_quiet_period_and_the_window_is_told,
     exactly_one_saver_runs_for_the_project_and_none_once_it_is_stopped;
+    not yet in a Docker pool ("a pool runner chat's hook line is recorded in no event log, #3304"):
+    the_event_log_has_one_writer_and_each_hook_line_is_written_once;
+    not yet in a Docker pool ("the behaviour reaches the chat's machine from this one: its proxy, a service or a rival hook listener, which on a pool's runner are in its container, #3288"):
+    a_hook_refuses_a_listener_that_is_not_its_chats_ancestor,
+    a_sandboxed_chats_proxy_carries_what_it_lists_and_refuses_the_rest,
+    a_port_withdrawn_while_a_chat_runs_is_carried_no_longer,
+    an_ask_raised_by_a_chats_proxy_is_answered_from_the_window;
 );

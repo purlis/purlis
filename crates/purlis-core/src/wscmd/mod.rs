@@ -781,7 +781,7 @@ pub fn git_user(root: &Path) -> String {
 /// Say a list of reasons under a headline, one per line, the way charter does.
 pub(crate) fn say_each(say: Sink, lines: impl IntoIterator<Item = String>) {
     for line in lines {
-        say(Say::Fail(format!("  {line}")));
+        say(Say::Fail(format!("  {line}").into()));
     }
 }
 

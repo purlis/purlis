@@ -38,6 +38,7 @@ use std::path::Path;
 use crate::active::Ids;
 use crate::counts::{counted, plural};
 use crate::repocmd::{Say, Sink};
+use crate::tui::Markup;
 
 /// What `charter persona create` was asked for.
 pub struct Create<'a> {
@@ -136,43 +137,54 @@ fn one_line_refusal(flag: &str, value: &str) -> Option<String> {
 pub fn create(root: &Path, ask: &Create, register_vault: Option<RegisterVault>, say: Sink) -> u8 {
     let name = ask.name;
     if let Some(refused) = crate::personas::shape_refusal(name) {
-        say(Say::Fail(refused));
+        say(Say::Fail(refused.into()));
         return 1;
     }
     if let Some(reserved) = crate::personas::reserved_refusal(name) {
-        say(Say::Fail(format!("{reserved}. Choose another name")));
+        say(Say::Fail(format!("{reserved}. Choose another name").into()));
         return 1;
     }
     if let Some(selecting) = ask.select.as_ref().filter(|s| s.in_chat) {
-        say(Say::Fail(super::select::create_use_refusal(
-            name,
-            selecting.env_persona,
-        )));
+        say(Say::Fail(
+            super::select::create_use_refusal(name, selecting.env_persona).into(),
+        ));
         return 1;
     }
     let existing = crate::personas::def_path(root, name);
     if existing.exists() && !ask.force {
-        say(Say::Fail(format!(
-            "persona '{name}' already exists ({}). Edit it, or pass --force to overwrite.",
-            super::rel(root, &existing)
-        )));
+        say(Say::Fail(
+            format!(
+                "persona '{name}' already exists ({}). Edit it, or pass --force to overwrite.",
+                super::rel(root, &existing)
+            )
+            .into(),
+        ));
         return 1;
     }
     let extends = ask.extends.filter(|e| !e.is_empty());
     if let Some(parent) = extends
         && let Some(refused) = crate::personas::name_refusal(root, parent)
     {
-        say(Say::Fail(refused));
+        say(Say::Fail(refused.into()));
         return 1;
     }
     let delegate_when = crate::memstore::py_strip(ask.delegate_when.unwrap_or_default());
     if delegate_when.is_empty() && extends.is_none() {
-        say(Say::Fail(format!(
-            "--delegate-when is required: say when the steward should route work to '{name}', \
-             e.g.\n  purlis persona create {name} --delegate-when \"CI/CD pipelines, k8s \
-             deploys, cluster access\"\nIt becomes the persona's routing line in its \
-             dispatchable description. (Inheriting one? Pass --extends <parent> instead.)"
-        )));
+        say(Say::Fail(Markup::lines([
+            format!(
+                "--delegate-when is required: say when the steward should route work to \
+                 '{name}', e.g."
+            )
+            .into(),
+            format!(
+                "  purlis persona create {name} --delegate-when \"CI/CD pipelines, k8s \
+                 deploys, cluster access\""
+            )
+            .into(),
+            "It becomes the persona's routing line in its dispatchable description. \
+             (Inheriting one? Pass --extends <parent> instead.)"
+                .into(),
+        ])));
         return 1;
     }
     let role = ask
@@ -186,12 +198,14 @@ pub fn create(root: &Path, ask: &Create, register_vault: Option<RegisterVault>, 
         ("--delegate-when", delegate_when),
     ] {
         if let Some(refused) = one_line_refusal(flag, value) {
-            say(Say::Fail(refused));
+            say(Say::Fail(refused.into()));
             return 1;
         }
     }
     if vault != super::NO_VAULT && !crate::secrets::registry::name_ok(vault) {
-        say(Say::Fail(crate::secrets::registry::name_refusal(vault)));
+        say(Say::Fail(
+            crate::secrets::registry::name_refusal(vault).into(),
+        ));
         return 1;
     }
 
@@ -200,7 +214,7 @@ pub fn create(root: &Path, ask: &Create, register_vault: Option<RegisterVault>, 
     if !existing.exists()
         && let Err(refused) = set_aside_before_creating(root, name, &mut *say)
     {
-        say(Say::Fail(refused));
+        say(Say::Fail(refused.into()));
         return 1;
     }
 
@@ -215,13 +229,13 @@ pub fn create(root: &Path, ask: &Create, register_vault: Option<RegisterVault>, 
     let persona = match plane.persona(name) {
         Ok(persona) => persona,
         Err(e) => {
-            say(Say::Fail(e.to_string()));
+            say(Say::Fail(e.to_string().into()));
             return 1;
         }
     };
     let file = persona.dir().join("persona.md");
     if let Err(refused) = crate::contain::writable(root, &file) {
-        say(Say::Fail(refused.to_string()));
+        say(Say::Fail(refused.to_string().into()));
         return 1;
     }
     // The persona is committed: it names the program as the plane spells it (D-RN11a-1).
@@ -235,7 +249,7 @@ pub fn create(root: &Path, ask: &Create, register_vault: Option<RegisterVault>, 
         .map_err(|e| std::io::Error::other(e.to_string()))
         .and_then(|shared| shared.scaffold_memory());
     if let Err(e) = written.and(shared) {
-        say(Say::Fail(e.to_string()));
+        say(Say::Fail(e.to_string().into()));
         return 1;
     }
     // `--force` over a legacy flat `personas/<name>.md`: the new directory layout is the
@@ -245,41 +259,53 @@ pub fn create(root: &Path, ask: &Create, register_vault: Option<RegisterVault>, 
         && crate::contain::writable(root, &existing).is_ok()
         && let Err(e) = std::fs::remove_file(&existing)
     {
-        say(Say::Warn(format!(
-            "the legacy {} is still there ({e}) — personas/{name}/persona.md is what purlis \
+        say(Say::Warn(
+            format!(
+                "the legacy {} is still there ({e}) — personas/{name}/persona.md is what purlis \
              reads; delete the old file.",
-            super::rel(root, &existing)
-        )));
+                super::rel(root, &existing)
+            )
+            .into(),
+        ));
     }
-    say(Say::Done(format!(
-        "Created persona '{name}' → personas/{name}/ (persona.md + memory/ + refs/; edit the \
+    say(Say::Done(
+        format!(
+            "Created persona '{name}' → personas/{name}/ (persona.md + memory/ + refs/; edit the \
          charter, then commit — personas are shared)."
-    )));
+        )
+        .into(),
+    ));
     say_revived(name, revived, say);
     if super::is_draft(root, name) {
-        say(Say::Info(format!(
-            "  marked `draft: true` — no chat is dispatched to '{name}' yet.\n  Write what it \
-             owns and how it works in personas/{name}/persona.md, then drop the `draft: true` \
-             line."
-        )));
+        say(Say::Info(Markup::lines([
+            format!("  marked `draft: true` — no chat is dispatched to '{name}' yet.").into(),
+            format!(
+                "  Write what it owns and how it works in personas/{name}/persona.md, then drop \
+                 the `draft: true` line."
+            )
+            .into(),
+        ])));
     }
     match register_vault {
         Some(_) if vault == super::NO_VAULT => say(Say::Info(format!(
             "'{name}' declares `vault: {vault}` — it holds no credentials, so there is no vault \
              to register."
-        ))),
+        ).into())),
         Some(register) => register(vault),
         None if vault == super::NO_VAULT => {}
         None => say(Say::Info(format!(
             "Set up its vault locally when ready: purlis vault add {vault} --persona {name}"
-        ))),
+        ).into())),
     }
     if let Some(selecting) = &ask.select {
         let scope = super::select::set_active(root, name, selecting.ids);
-        say(Say::Done(format!(
-            "Active persona set to '{name}'{}.",
-            super::select::scope_note(root, scope)
-        )));
+        say(Say::Done(
+            format!(
+                "Active persona set to '{name}'{}.",
+                super::select::scope_note(root, scope)
+            )
+            .into(),
+        ));
         super::select::warn_env(name, selecting.env_persona, say);
     }
     0
@@ -306,21 +332,24 @@ fn say_revived(name: &str, revived: crate::active::Pointers, say: Sink) {
     if rungs.is_empty() {
         return;
     }
-    say(Say::Warn(format!(
-        "{} already named '{name}' before it existed, and now {} it: {}. \
+    say(Say::Warn(
+        format!(
+            "{} already named '{name}' before it existed, and now {} it: {}. \
          Nobody chose it again: those sessions and terminals now resolve to this persona.",
-        counted(
-            sessions + terminals + usize::from(active_file),
-            "selection",
-            "selections"
-        ),
-        plural(
-            sessions + terminals + usize::from(active_file),
-            "selects",
-            "select"
-        ),
-        rungs.join(", ")
-    )));
+            counted(
+                sessions + terminals + usize::from(active_file),
+                "selection",
+                "selections"
+            ),
+            plural(
+                sessions + terminals + usize::from(active_file),
+                "selects",
+                "select"
+            ),
+            rungs.join(", ")
+        )
+        .into(),
+    ));
 }
 
 /// `_dependents_of`: every other persona that `extends:` or `uses:` `name`, as `other (why)`.
@@ -361,13 +390,16 @@ fn nevers_naming(root: &Path, name: &str) -> usize {
 fn say_nevers_hold(root: &Path, name: &str, say: Sink) {
     let held = nevers_naming(root, name);
     if held > 0 {
-        say(Say::Info(format!(
-            "{held} {} you said never to on this machine {} '{name}', said of an earlier \
+        say(Say::Info(
+            format!(
+                "{held} {} you said never to on this machine {} '{name}', said of an earlier \
              persona of this name. A never still holds for this one; lift it in {}.",
-            if held == 1 { "pair" } else { "pairs" },
-            if held == 1 { "names" } else { "name" },
-            crate::dispatchgrant::SETTINGS
-        )));
+                if held == 1 { "pair" } else { "pairs" },
+                if held == 1 { "names" } else { "name" },
+                crate::dispatchgrant::SETTINGS
+            )
+            .into(),
+        ));
     }
 }
 
@@ -387,23 +419,29 @@ fn set_aside_before_creating(root: &Path, name: &str, say: Sink) -> Result<(), S
     })?;
     let held = aside.grants.len() + aside.accepted.len();
     if held > 0 {
-        say(Say::Info(format!(
-            "Set aside {held} dispatch {} on this machine that named an earlier '{name}': in \
+        say(Say::Info(
+            format!(
+                "Set aside {held} dispatch {} on this machine that named an earlier '{name}': in \
              force for no chat until you give them back to this one, or remove them, in {}.",
-            if held == 1 { "grant" } else { "grants" },
-            crate::dispatchgrant::SETTINGS
-        )));
+                if held == 1 { "grant" } else { "grants" },
+                crate::dispatchgrant::SETTINGS
+            )
+            .into(),
+        ));
     }
     // A grant limited to one workspace is not set aside: what is set aside keeps no
     // workspace, and given back it would hold in all of them.
     let ended = aside.ended.len();
     if ended > 0 {
-        say(Say::Info(format!(
-            "Ended {ended} dispatch {} on this machine that named an earlier '{name}' and \
+        say(Say::Info(
+            format!(
+                "Ended {ended} dispatch {} on this machine that named an earlier '{name}' and \
              held in one workspace only. This one has none of them: its first dispatch \
              there asks you.",
-            if ended == 1 { "grant" } else { "grants" },
-        )));
+                if ended == 1 { "grant" } else { "grants" },
+            )
+            .into(),
+        ));
     }
     say_nevers_hold(root, name, say);
     Ok(())
@@ -417,23 +455,32 @@ fn set_aside_before_creating(root: &Path, name: &str, say: Sink) -> Result<(), S
 fn mark_gone_after_removing(root: &Path, name: &str, say: Sink) {
     match crate::dispatchdormant::persona_removed(root, name) {
         Ok(false) => {}
-        Ok(true) => say(Say::Info(format!(
-            "Dispatch grants on this machine name '{name}'. They are in force for no chat \
+        Ok(true) => say(Say::Info(
+            format!(
+                "Dispatch grants on this machine name '{name}'. They are in force for no chat \
              while it is not a persona, and a persona made later under this name gets them \
              only if you give them back, in {}.",
-            crate::dispatchgrant::SETTINGS
-        ))),
-        Err(why) => say(Say::Info(format!(
-            "Dispatch grants on this machine name '{name}', and purlis could not record that \
+                crate::dispatchgrant::SETTINGS
+            )
+            .into(),
+        )),
+        Err(why) => say(Say::Info(
+            format!(
+                "Dispatch grants on this machine name '{name}', and purlis could not record that \
              it is gone ({why}). They are in force for no chat while it is not a persona."
-        ))),
+            )
+            .into(),
+        )),
     }
     if nevers_naming(root, name) > 0 {
-        say(Say::Info(format!(
-            "What you said never to for '{name}' still holds, and will hold for a persona made \
+        say(Say::Info(
+            format!(
+                "What you said never to for '{name}' still holds, and will hold for a persona made \
              under this name, until you lift it in {}.",
-            crate::dispatchgrant::SETTINGS
-        )));
+                crate::dispatchgrant::SETTINGS
+            )
+            .into(),
+        ));
     }
 }
 
@@ -469,13 +516,13 @@ pub(crate) fn remove_unless_adopted(
     say: Sink,
 ) -> u8 {
     if let Some(refused) = crate::personas::shape_refusal(name) {
-        say(Say::Fail(refused));
+        say(Say::Fail(refused.into()));
         return 1;
     }
     if !crate::personas::def_path(root, name).exists() {
-        say(Say::Fail(format!(
-            "no persona '{name}' (create it: purlis persona create {name})"
-        )));
+        say(Say::Fail(
+            format!("no persona '{name}' (create it: purlis persona create {name})").into(),
+        ));
         return 1;
     }
     if !adopted.is_empty() {
@@ -484,30 +531,33 @@ pub(crate) fn remove_unless_adopted(
         } else {
             ("chats have", "them")
         };
-        say(Say::Fail(format!(
-            "Refusing to remove '{name}' — {has} adopted it and {} running: {}. A chat keeps \
+        say(Say::Fail(
+            format!(
+                "Refusing to remove '{name}' — {has} adopted it and {} running: {}. A chat keeps \
              its persona for its life, so close {them} first.",
-            if adopted.len() == 1 { "is" } else { "are" },
-            adopted.join(", ")
-        )));
+                if adopted.len() == 1 { "is" } else { "are" },
+                adopted.join(", ")
+            )
+            .into(),
+        ));
         return 1;
     }
     let dependents = dependents_of(root, name);
     if !dependents.is_empty() && !force {
-        say(Say::Fail(format!(
-            "Refusing to remove '{name}' — it is still referenced by:"
-        )));
+        say(Say::Fail(
+            format!("Refusing to remove '{name}' — it is still referenced by:").into(),
+        ));
         for dependent in &dependents {
-            say(Say::Fail(format!("  {dependent}")));
+            say(Say::Fail(format!("  {dependent}").into()));
         }
         say(Say::Info(
             "Repoint or remove those first (an `extends:` parent's purlis is inherited, so \
              folding it into the child before removing keeps the discipline)."
                 .into(),
         ));
-        say(Say::Info(format!(
-            "Override with: purlis persona remove {name} --force"
-        )));
+        say(Say::Info(
+            format!("Override with: purlis persona remove {name} --force").into(),
+        ));
         return 1;
     }
     let definition = crate::personas::def_path(root, name);
@@ -523,7 +573,7 @@ pub(crate) fn remove_unless_adopted(
     if let Err(refused) = crate::contain::writable(root, &target)
         .and_then(|()| crate::contain::writable(root, &definition))
     {
-        say(Say::Fail(refused.to_string()));
+        say(Say::Fail(refused.to_string().into()));
         return 1;
     }
     let removed = if dir_layout {
@@ -532,27 +582,32 @@ pub(crate) fn remove_unless_adopted(
         std::fs::remove_file(&target)
     };
     if let Err(e) = removed {
-        say(Say::Fail(format!(
-            "could not remove {}: {e}",
-            super::rel(root, &target)
-        )));
+        say(Say::Fail(
+            format!("could not remove {}: {e}", super::rel(root, &target)).into(),
+        ));
         return 1;
     }
     if dir_layout {
-        say(Say::Done(format!(
-            "Removed persona directory personas/{name}/ (definition, memory, and refs — commit \
+        say(Say::Done(
+            format!(
+                "Removed persona directory personas/{name}/ (definition, memory, and refs — commit \
              the deletion)."
-        )));
+            )
+            .into(),
+        ));
     } else {
-        say(Say::Done(format!(
-            "Removed persona definition {} (commit the deletion).",
-            super::rel(root, &target)
-        )));
+        say(Say::Done(
+            format!(
+                "Removed persona definition {} (commit the deletion).",
+                super::rel(root, &target)
+            )
+            .into(),
+        ));
     }
     if super::retired::remove_agent(root, name) {
-        say(Say::Info(format!(
-            "  also removed generated .claude/agents/{name}.md."
-        )));
+        say(Say::Info(
+            format!("  also removed generated .claude/agents/{name}.md.").into(),
+        ));
     }
     mark_gone_after_removing(root, name, &mut *say);
     say(Say::Info(
