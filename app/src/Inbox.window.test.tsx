@@ -38,7 +38,7 @@ import type { DispatchPending, InboxUpdate, Shown } from "./bindings";
 // The clock alone is the test's: an Allow waits for its row to settle (`SETTLE_MS`), and every
 // test but the ones about that wait reads the list for longer than that before it presses.
 beforeEach(() => {
-  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.useFakeTimers({ toFake: ["Date", "performance"] });
 });
 
 afterEach(() => {
@@ -50,7 +50,7 @@ afterEach(() => {
 });
 
 /** The person reads what is drawn for longer than an Allow waits. */
-const read = () => act(() => vi.setSystemTime(Date.now() + SETTLE_MS + 1));
+const read = () => act(() => vi.advanceTimersByTime(SETTLE_MS + 1));
 
 const PLANE = "/home/dev/plane";
 

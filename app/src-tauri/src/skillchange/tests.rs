@@ -160,3 +160,21 @@ fn a_template_id_reads_back_as_the_core_s_both_ways() {
         assert_eq!(SkillTemplateId::from(core), id);
     }
 }
+
+#[test]
+fn a_pinner_the_window_sends_is_the_cores_and_back_sk15d() {
+    let sent: SkillPinner = serde_json::from_str(r#"{"at":"persona","name":"reviewer"}"#).unwrap();
+    let core: purlis_core::skills::PinnedBy = (&sent).into();
+    assert_eq!(
+        core,
+        purlis_core::skills::PinnedBy::Persona("reviewer".to_owned())
+    );
+    assert_eq!(SkillPinner::from(core), sent);
+    let workspace = SkillPinner::Workspace {
+        name: "ops".to_owned(),
+    };
+    assert_eq!(
+        serde_json::to_string(&workspace).unwrap(),
+        r#"{"at":"workspace","name":"ops"}"#
+    );
+}

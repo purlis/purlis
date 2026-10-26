@@ -114,6 +114,9 @@ pub struct StudioSkill {
     pub hidden: Vec<SkillHiddenOn>,
     /// Whether that chat's workspace or persona pins it, so no router hides it.
     pub pinned: bool,
+    /// Which of the studio's workspace and persona have it in their pins, as written (SK-15d):
+    /// what the row's Pin switch shows. Empty for a skill from outside the plane.
+    pub pinned_by: Vec<crate::skillchange::SkillPinner>,
 }
 
 /// A skill router (SK-15, ADR 0102): the core's `Router`.
@@ -370,15 +373,49 @@ pub enum ClashOutcome {
     BothLoad,
     /// The repo's narrower copy is the one the chat gets; the plane's is left out.
     RepoWins,
+    /// Both load under one name, and the chat may use either: a copy named as one of purlis's
+    /// own skills where the program reads every skill by its bare name.
+    EitherOne,
+}
+
+/// Each pinner a chat in `workspace` on `persona` reads, with the pins it has written (SK-15d).
+fn pinners_of(
+    root: &std::path::Path,
+    workspace: Option<&str>,
+    persona: Option<&str>,
+) -> Vec<(purlis_core::skills::PinnedBy, Vec<String>)> {
+    workspace
+        .map(|ws| purlis_core::skills::PinnedBy::Workspace(ws.to_owned()))
+        .into_iter()
+        .chain(persona.map(|p| purlis_core::skills::PinnedBy::Persona(p.to_owned())))
+        .map(|by| {
+            let pins = purlis_core::skills::pins_written(root, &by);
+            (by, pins)
+        })
+        .collect()
+}
+
+/// Which of `pinners` pin the skill `name` (SK-15d).
+fn pinned_by_of(
+    pinners: &[(purlis_core::skills::PinnedBy, Vec<String>)],
+    name: &str,
+) -> Vec<crate::skillchange::SkillPinner> {
+    pinners
+        .iter()
+        .filter(|(_, pins)| pins.iter().any(|one| one == name))
+        .map(|(by, _)| by.clone().into())
+        .collect()
 }
 
 /// **One of the plane's or the built-in skills' rows, for the window**, for a chat at the root or
-/// in `workspace`, which turned off the project skills `off`: its grant, and where the grant
-/// does not reach the workspace, why. The studio's rows and each persona's (#3266) alike.
+/// in `workspace`, which turned off the project skills `off` and is pinned by `pinned_by`
+/// (SK-15d): its grant, and where the grant does not reach the workspace, why. The studio's rows
+/// and each persona's (#3266) alike.
 fn plane_shown(
     root: &std::path::Path,
     workspace: Option<&str>,
     off: &[String],
+    pinned_by: Vec<crate::skillchange::SkillPinner>,
     row: purlis_core::skills::StudioRow,
 ) -> StudioSkill {
     let grant = (row.origin == purlis_core::skills::Origin::Project).then(|| {
@@ -416,6 +453,7 @@ fn plane_shown(
         lint: row.lint,
         hidden: row.hidden.iter().map(Into::into).collect(),
         pinned: row.pinned,
+        pinned_by,
     }
 }
 
@@ -443,12 +481,18 @@ pub(crate) fn persona_skills(
         .unwrap_or_default();
     purlis_core::skills::persona_rows(built_in, root, workspace)
         .into_iter()
-        .map(|(persona, rows)| PersonaSkills {
-            persona,
-            skills: rows
-                .into_iter()
-                .map(|row| plane_shown(root, workspace, &off, row))
-                .collect(),
+        .map(|(persona, rows)| {
+            let pinners = pinners_of(root, workspace, Some(&persona));
+            PersonaSkills {
+                skills: rows
+                    .into_iter()
+                    .map(|row| {
+                        let by = pinned_by_of(&pinners, &row.name);
+                        plane_shown(root, workspace, &off, by, row)
+                    })
+                    .collect(),
+                persona,
+            }
         })
         .collect()
 }
@@ -473,6 +517,9 @@ pub struct Studio {
     pub clashes: Vec<StudioClash>,
     /// What it offers to start from (SK-22, #2785): the core's `skills::first_open`.
     pub first: StudioFirst,
+    /// Why a chat reads none of the pins of the workspace or the persona it is filtered to,
+    /// where it reads none (SK-15d): its rows' Pin switches then say so.
+    pub pins_refused: Option<crate::skillchange::SkillPinsRefused>,
 }
 
 /// **What the studio offers when it opens** (SK-22, #2785; decision 42), as the core works it
@@ -531,12 +578,19 @@ pub(crate) fn studio(
             harnesses: Vec::new(),
             clashes: Vec::new(),
             first: StudioFirst::default(),
+            pins_refused: None,
         };
     }
     let off = workspace
         .as_deref()
         .map(|ws| purlis_core::skills::turned_off(root, ws))
         .unwrap_or_default();
+    // Each pinner the studio is filtered to, with what it has written (SK-15d).
+    let pinners = pinners_of(root, workspace.as_deref(), persona.as_deref());
+    let pins_refused = pinners
+        .iter()
+        .find_map(|(by, _)| crate::skillchange::pins_refused(root, by));
+    let pinned_by = |name: &str| pinned_by_of(&pinners, name);
     let purlis_core::skills::StudioList {
         rows,
         harnesses: all,
@@ -550,7 +604,10 @@ pub(crate) fn studio(
     let first = purlis_core::skills::first_open::first_open(root, &rows).into();
     let skills = rows
         .into_iter()
-        .map(|row| plane_shown(root, workspace.as_deref(), &off, row))
+        .map(|row| {
+            let by = pinned_by(&row.name);
+            plane_shown(root, workspace.as_deref(), &off, by, row)
+        })
         .collect();
     let (harnesses, clashes) = harnesses(&all);
     let workspaces = purlis_core::workspaces::Plane::open(root)
@@ -566,6 +623,7 @@ pub(crate) fn studio(
         harnesses,
         clashes,
         first,
+        pins_refused,
     }
 }
 
@@ -601,6 +659,7 @@ fn outside_shown(row: purlis_core::skills::StudioRow) -> StudioSkill {
         lint: row.lint,
         hidden: row.hidden.iter().map(Into::into).collect(),
         pinned: row.pinned,
+        pinned_by: Vec::new(),
     }
 }
 
@@ -625,6 +684,7 @@ fn harnesses(
                     outcome: match clash.outcome {
                         purlis_core::skills::Outcome::BothLoad => ClashOutcome::BothLoad,
                         purlis_core::skills::Outcome::RepoWins => ClashOutcome::RepoWins,
+                        purlis_core::skills::Outcome::EitherOne => ClashOutcome::EitherOne,
                     },
                 });
             }

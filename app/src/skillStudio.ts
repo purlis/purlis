@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useRef, useSyncExternalStore } from "react";
-import { commands, PERSONA_SCOPE_KEY, SKILL_STUDIO_IN } from "./bindings";
+import { commands, PERSONA_SCOPE_KEY, SKILL_STUDIO_IN, type SkillPinner } from "./bindings";
 import type { ViewRef } from "./tabs";
 
 /**
@@ -224,4 +224,20 @@ export function useStudioStart(
       startListeners.delete(take);
     };
   }, [key, ready]);
+}
+
+/** **The studio a pin is changed in** (SK-15d): its workspace's chats, or its persona's. */
+export function scopeOfPinner(by: SkillPinner): StudioScope {
+  return by.at === "workspace" ? inWorkspace(by.name) : asPersona(by.name);
+}
+
+/** A pinner as a sentence names it: `workspace ops`, `persona reviewer`. */
+export function pinnerSaid(by: SkillPinner): string {
+  return `${by.at} ${by.name}`;
+}
+
+/** **The pinner the studio of `scope` pins for**, or `null` at the project's root (SK-15d). */
+export function pinnerOf(scope: StudioScope): SkillPinner | null {
+  if (scope.at === "root") return null;
+  return { at: scope.at, name: scope.name };
 }

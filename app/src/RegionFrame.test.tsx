@@ -229,7 +229,18 @@ const VIEWS: Partial<Record<ViewId, React.ReactNode>> = {
   inbox: <div data-testid="v-inbox">inbox</div>,
   personas: <div data-testid="v-personas">personas</div>,
   sessions: <div data-testid="v-sessions">sessions</div>,
-  vaults: <div data-testid="v-vaults">vaults</div>,
+  // A section with provenance and an action, as an extension's panel draws (#3330).
+  vaults: (
+    <PanelSection
+      testid="panel-vaults"
+      mark={Flame}
+      title="Vaults"
+      provenance="ext/keys"
+      actions={<button type="button">New vault</button>}
+    >
+      <div data-testid="v-vaults">vaults</div>
+    </PanelSection>
+  ),
   "panel:ext/stats/burn": <div data-testid="v-burn">burn</div>,
 };
 
@@ -658,6 +669,24 @@ describe("the Panel's right half (#1738)", () => {
     ).toEqual(["Put the panel's left half away"]);
   });
 
+  it("heads a sidebar's view once: its title, provenance and actions on the side's head (#3330)", () => {
+    const vaults = DEFAULT_ARRANGEMENT.map((one) =>
+      one.id === "aside" ? { ...one, view: "vaults" as const } : one,
+    );
+    render(<WithViews from={vaults} />);
+
+    const head = slot("right").querySelector(".side-head") as HTMLElement;
+    expect(within(head).getByRole("heading", { name: "Vaults" })).toBeInTheDocument();
+    expect(within(head).getByRole("button", { name: "New vault" })).toBeInTheDocument();
+    // Whose panel it is stays in sight (ADR 0041 item 5), on the head now.
+    expect(head).toHaveTextContent("ext/keys");
+    // One title: the section draws no head of its own.
+    expect(within(slot("right")).getAllByRole("heading", { name: /vaults/i })).toHaveLength(1);
+    expect(
+      slot("right").querySelector('[data-scope="panel-section"][data-part="head"]'),
+    ).toBeNull();
+  });
+
   it("titles the half after the view that is open, and draws only that view's actions", async () => {
     const todos = DEFAULT_ARRANGEMENT.map((one) =>
       one.id === "panel-right" ? { ...one, view: "todos" as const } : one,
@@ -913,10 +942,11 @@ describe("a moved view keeps what it held (#1752)", () => {
     expect(box.closest(".slot-right")).not.toBeNull();
     expect(box).toHaveValue("kept");
     expect(mounted.get("memory")).toBe(was);
-    // In the sidebar, on its own heading.
+    // In the sidebar, on the sidebar's head, the view's one title (#3330).
     const button = screen.getByRole("button", { name: "New memory" });
     expect(button.closest(".half-head")).toBeNull();
-    expect(button.closest('[data-scope="panel-section"][data-part="head"]')).not.toBeNull();
+    expect(button.closest(".side-head")).not.toBeNull();
+    expect(document.querySelector('[data-scope="panel-section"][data-part="head"]')).toBeNull();
   });
 
   it("keeps the keyboard in a view moved while the person is in it", () => {

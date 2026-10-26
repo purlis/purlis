@@ -14,6 +14,7 @@
  * says when its terminal is there ({@link paneDrawn}). Whichever comes second hands it over.
  * Nothing else is held: a chat that is never drawn is owed nothing once another is asked for.
  */
+import { inADialog } from "./keys/contexts";
 
 /** The terminals on screen, each by the chat it shows, as the way to put the keyboard in it. */
 const drawn = new Map<string, () => void>();
@@ -45,12 +46,8 @@ function forgive() {
   document.removeEventListener("focusin", movedOn);
 }
 
-/** Whether a dialog has the keyboard: a question the person is answering keeps it, whatever a
- *  pane behind it is drawn as. */
-export function inADialog(): boolean {
-  const at = document.activeElement;
-  return at instanceof Element && at.closest('[role="dialog"], [role="alertdialog"]') !== null;
-}
+/** Whether a dialog has the keyboard: the key registry's question (`keys/contexts.ts`, #2921). */
+export { inADialog } from "./keys/contexts";
 
 /**
  * A pane says chat `session`'s terminal is drawn, and how to put the keyboard in it. Answers

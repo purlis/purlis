@@ -23,16 +23,20 @@
 //!   project read-only instead of quietly losing them, and a build that has it copies no
 //!   `.claude/skills` into a clone again ([`crate::guest::RETIRED_MIRROR`]).
 //!
-//! Once committed, it refreshes this machine's clones, so the copies purlis made there go now; a
+//! Once committed, it lets go of the project's claim and lock, then refreshes this machine's
+//! clones ([`crate::guest::wire`], which takes neither), so the copies purlis made there go now; a
 //! teammate's clones refresh the next time a chat starts in them. A copy somebody edited is kept,
 //! and named in what the fix says.
 //!
 //! # Every chat keeps its skills, or nothing is written
 //!
 //! Before it writes, it refuses a folder that is not a whole skill (a chat would never get it), a
-//! skill named as a built-in skill in any case (a built-in name is never taken), a name the
-//! project's skills already have, and two folders that name one skill. After it has moved them
-//! and before it commits, it works out the skill set of every chat it can name: at the
+//! skill named as a built-in skill (a built-in name is never taken), a name the project's skills
+//! already have, two folders that name one skill, a folder named as another's grant file, and a
+//! folder whose name `skills/` already holds, each compared in any case: a disk that ignores case
+//! holds two such folders as one. A folder or skill name that is not ASCII is refused, since
+//! disks fold and normalise it each their own way. After it has moved them and before it
+//! commits, it works out the skill set of every chat it can name: at the
 //! project's root and in each workspace, as no persona and as each persona, on every route, and
 //! in each clone with that clone's own committed skills on each program's route. Unless each
 //! moved skill is in every one of them, or left out only where a workspace turned it off or a
@@ -128,14 +132,14 @@ pub fn apply_in(
     if !studio {
         return Fixed::Refused(STUDIO_OFF.to_owned());
     }
-    let Some(_claim) = crate::planegit::Claim::within(root, CLAIM_WAIT) else {
+    let Some(claim) = crate::planegit::Claim::within(root, CLAIM_WAIT) else {
         return Fixed::Refused(
             "a save is running in this project; nothing was written. Run the fix again once it \
              has finished"
                 .to_owned(),
         );
     };
-    let _held = crate::rewrite::Lock::on(root);
+    let held = crate::rewrite::Lock::on(root);
     if let Err(why) = committable(root, "the move") {
         return Fixed::Refused(why);
     }
@@ -176,6 +180,10 @@ pub fn apply_in(
     let paths: Vec<&str> = paths.iter().map(String::as_str).collect();
     match commit_paths(root, &paths, &body(&plan)) {
         Ok(sha) => {
+            // The commit is made, so the project is let go before its clones are refreshed:
+            // a refresh is a chat's start, which never waits on the project's claim or lock.
+            drop(held);
+            drop(claim);
             let mut said = std::mem::take(&mut work.text.said);
             said.extend(references);
             said.extend(clashes);
@@ -308,6 +316,7 @@ fn plan(root: &Path, built_in: Option<&Path>, tracked: &[String]) -> Result<Plan
         }
     }
     names.sort();
+    clash_among(&names)?;
     let make_to = match root.join(TO).symlink_metadata() {
         Err(why) if why.kind() == std::io::ErrorKind::NotFound => true,
         Ok(meta) if meta.file_type().is_dir() => false,
@@ -319,19 +328,78 @@ fn plan(root: &Path, built_in: Option<&Path>, tracked: &[String]) -> Result<Plan
             );
         }
     };
+    // What `skills/` holds, by the names its entries have: compared in any case, so a teammate
+    // whose disk ignores case gets the same answer as this machine.
+    let held: Vec<String> = if make_to {
+        Vec::new()
+    } else {
+        std::fs::read_dir(root.join(TO))
+            .map_err(|why| format!("could not read the project's skills folder ({why})"))?
+            .filter_map(Result::ok)
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .collect()
+    };
     for folder in &names {
-        for taken in [folder.clone(), format!("{folder}.toml")] {
-            if root.join(TO).join(&taken).symlink_metadata().is_ok() {
-                return Err(format!(
-                    "the project's skills already hold {taken}, so the skill folder {folder} \
-                     cannot move into its place; nothing was written. Rename one of them, \
-                     commit, then run the fix again"
-                ));
-            }
+        if let Some(taken) = taken_by(&held, folder) {
+            return Err(format!(
+                "the project's skills already hold {taken}, so the skill folder {folder} cannot \
+                 move into its place; nothing was written. Rename one of them, commit, then run \
+                 the fix again"
+            ));
         }
     }
     let folders = whole(root, built_in, &names)?;
     Ok(Plan { folders, make_to })
+}
+
+/// Why the folders `names` cannot all move, among themselves, or `Ok`: a name that is not ASCII
+/// (which disks fold and normalise each their own way), two that differ only in case (one folder
+/// on a disk that ignores case, as macOS's and Windows' do by default), or a folder named as
+/// another's grant file `<folder>.toml`, in any case.
+fn clash_among(names: &[String]) -> Result<(), String> {
+    if let Some(odd) = names.iter().find(|name| !name.is_ascii()) {
+        return Err(format!(
+            "the skill folder {odd} has a name that is not plain ASCII, which disks compare each \
+             their own way; nothing was written. Rename it to letters, digits and hyphens, \
+             commit, then run the fix again"
+        ));
+    }
+    for (at, one) in names.iter().enumerate() {
+        if let Some(other) = names[at + 1..].iter().find(|other| same_name(one, other)) {
+            return Err(format!(
+                "the skill folders {one} and {other} differ only in case, so they are one folder \
+                 wherever a disk ignores case; nothing was written. Rename one of them, commit, \
+                 then run the fix again"
+            ));
+        }
+    }
+    for folder in names {
+        let grant = format!("{folder}.toml");
+        if let Some(other) = names.iter().find(|other| same_name(other, &grant)) {
+            return Err(format!(
+                "the skill folder {other} has the name of the skill folder {folder}'s grant file \
+                 {grant}, so one would land on the other; nothing was written. Rename one of \
+                 them, commit, then run the fix again"
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// The entry of `held` (what `skills/` holds) that the folder `folder` or its grant file
+/// `<folder>.toml` would land on, in any case, or `None`.
+fn taken_by<'a>(held: &'a [String], folder: &str) -> Option<&'a str> {
+    let grant = format!("{folder}.toml");
+    held.iter()
+        .find(|entry| same_name(entry, folder) || same_name(entry, &grant))
+        .map(String::as_str)
+}
+
+/// Whether two names are one where case is ignored: a folder's on a disk that ignores case, a
+/// skill's to every program that folds it. The move takes ASCII names only ([`clash_among`],
+/// [`whole`]), so ASCII's fold is every disk's.
+fn same_name(one: &str, other: &str) -> bool {
+    one.eq_ignore_ascii_case(other)
 }
 
 /// Why `.claude/skills` holds something a move cannot carry, or `Ok`: a file git does not track
@@ -390,13 +458,10 @@ fn carried(root: &Path) -> Result<(), String> {
 }
 
 /// The skill each of `names`' folders holds, or why moving one would lose it: the folder is not a
-/// whole skill, or its name is a built-in skill's (in any case), a project skill's, or another
-/// moved folder's.
+/// whole skill, or its name is not ASCII, or is a built-in skill's, a project skill's, or another
+/// moved folder's, each in any case.
 fn whole(root: &Path, built_in: Option<&Path>, names: &[String]) -> Result<Vec<Folder>, String> {
-    let built_in: Vec<String> = crate::skills::built_in_names(built_in)
-        .into_iter()
-        .map(|name| name.to_lowercase())
-        .collect();
+    let built_in: Vec<String> = crate::skills::built_in_names(built_in);
     let project: Vec<String> = crate::skills::scan(root, Path::new(TO))
         .into_iter()
         .filter_map(Result::ok)
@@ -423,16 +488,24 @@ fn whole(root: &Path, built_in: Option<&Path>, names: &[String]) -> Result<Vec<F
             }
             None => return Err(lost_before(folder, "it is not a folder purlis can read")),
         };
-        let why = if built_in.contains(&name.to_lowercase()) {
+        let why = if !name.is_ascii() {
+            Some(
+                "the name is not plain ASCII, which programs compare each their own way; rename \
+                 it to letters, digits and hyphens"
+                    .to_owned(),
+            )
+        } else if built_in.iter().any(|theirs| same_name(theirs, &name)) {
             Some(
                 "a built-in skill has this name, and a built-in skill is never replaced".to_owned(),
             )
-        } else if project.contains(&name) {
-            Some("the project's skills already have a skill of this name".to_owned())
+        } else if let Some(theirs) = project.iter().find(|theirs| same_name(theirs, &name)) {
+            Some(format!(
+                "the project's skills already have the skill {theirs}, the same name in any case"
+            ))
         } else {
             folders
                 .iter()
-                .find(|other| other.name == name)
+                .find(|other| same_name(&other.name, &name))
                 .map(|other| format!("the skill folder {} names the same skill", other.folder))
         };
         if let Some(why) = why {

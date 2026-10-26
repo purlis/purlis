@@ -17,7 +17,10 @@ fn claim(namespace: &str, name: &str, pool: &str) -> Arc<Claim> {
             namespace: Some(namespace.into()),
             ..ObjectMeta::default()
         },
-        spec: ClaimSpec { pool: pool.into() },
+        spec: ClaimSpec {
+            pool: pool.into(),
+            requester: "ada@example.com".into(),
+        },
         status: None,
     })
 }

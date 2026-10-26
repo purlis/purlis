@@ -64,9 +64,15 @@ fn claude_code_runs_a_skill_by_its_plugins_name_with_each_argument_a_shell_word(
 #[test]
 fn opencode_runs_a_skill_as_its_own_slash_command_with_each_argument_one_quoted_word() {
     let opencode = Harness::Opencode;
+    // Its set holds a built-in skill as `purlis-<name>` (`Route::built_in_name`), the name
+    // opencode reads in the `SKILL.md` purlis hands it.
     assert_eq!(
-        opencode.skill_start_text(&invoked("handoff", Origin::BuiltIn, &Given::Nothing)),
-        "/handoff"
+        opencode.skill_start_text(&invoked(
+            &crate::skills::Route::Config.built_in_name("handoff"),
+            Origin::BuiltIn,
+            &Given::Nothing
+        )),
+        "/purlis-handoff"
     );
     assert_eq!(
         opencode.skill_start_text(&invoked(

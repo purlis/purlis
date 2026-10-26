@@ -83,13 +83,20 @@ fn a_theme_rounds_the_buttons_root_to_a_pill() {
 fn a_theme_that_names_no_parts_draws_exactly_as_today() {
     // Purlis Classic names only its tabs' strip look (#2914), its activity items' (#2917), and
     // what keeps it as it drew when the family defaults took Purlis's (#3177): its rail's 9px
-    // corners, its title bar's 5px chips and its update pill's primary words. Nothing it draws
+    // corners, its title bar's 5px chips and its update pill's primary words; and its resize
+    // handles' accent line (#3143). Nothing it draws
     // falls back.
     for theme in built_ins() {
         assert!(
-            theme.parts.keys().all(
-                |key| ["tabs", "activity", "rail", "titlebar", "status-item"].contains(&key.family)
-            ),
+            theme.parts.keys().all(|key| [
+                "tabs",
+                "activity",
+                "rail",
+                "titlebar",
+                "status-item",
+                "panel-separator",
+            ]
+            .contains(&key.family)),
             "{} names parts beyond what keeps it as it drew",
             theme.name
         );
@@ -1288,9 +1295,12 @@ fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
             "label",
             "description",
             "trail",
-            "header"
+            "header",
+            "shortcut"
         ]
     );
+    // The key at a row's end (#2921), the next release's.
+    assert_eq!(list["parts"][7]["since"], parts::NEXT);
     // A textarea is as tall as its lines: no height to set.
     assert!(
         !family("textarea")["parts"][0]["properties"]
@@ -1308,7 +1318,8 @@ fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
         .iter()
         .map(|one| one["name"].as_str().unwrap())
         .collect();
-    assert_eq!(parts, ["root", "detail"]);
+    assert_eq!(parts, ["root", "detail", "shortcut"]);
+    assert_eq!(tooltip["parts"][2]["since"], parts::NEXT);
 }
 
 #[test]

@@ -22,6 +22,7 @@
  * first time a file is edited (`settings/RawToml.tsx`), so the window's main bundle carries no
  * CodeMirror (`tools/main-chunk-has-no-codemirror.mjs`, #987).
  */
+import { EDITOR_HOLDER } from "../keys/contexts";
 import { useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { bracketMatching } from "@codemirror/language";
@@ -195,6 +196,8 @@ export function TextEditor({
     <>
       <div
         ref={host}
+        // The key registry's mark for "an editor has the keyboard here" (#2921).
+        {...{ [EDITOR_HOLDER]: "" }}
         className="light-editor text-editor"
         data-testid="text-editor"
         onKeyDown={find.onKeyDown}
@@ -363,6 +366,8 @@ export function ConflictMerge({
     <>
       <div
         ref={host}
+        // The key registry's mark for "an editor has the keyboard here" (#2921).
+        {...{ [EDITOR_HOLDER]: "" }}
         role="group"
         aria-label={`${diskLabel}, beside ${label}`}
         className="light-editor merge text-editor"

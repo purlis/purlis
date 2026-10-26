@@ -29,6 +29,7 @@ export function skill(name: string, over: Partial<StudioSkill> = {}): StudioSkil
     lint: [],
     hidden: [],
     pinned: false,
+    pinned_by: [],
     ...over,
   };
 }
@@ -45,6 +46,7 @@ export function studio(skills: StudioSkill[], over: Partial<Studio> = {}): Studi
     harnesses: [],
     clashes: [],
     first: { starts: false, unmoved: null },
+    pins_refused: null,
     ...over,
   };
 }

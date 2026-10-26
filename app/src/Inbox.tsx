@@ -1184,7 +1184,7 @@ function updateStops(updates: Updates | undefined): string[] {
 }
 
 /** The time now: when an update was drawn where it stands, or when an answer was pressed. */
-const placedAt = () => Date.now();
+const placedAt = () => performance.now();
 
 const READ_ALL_STOP = "inbox:read-all";
 const DISMISS_ALL_STOP = "inbox:dismiss-all";

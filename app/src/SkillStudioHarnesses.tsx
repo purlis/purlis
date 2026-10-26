@@ -52,6 +52,8 @@ export function clashSaid(clash: StudioClash): string {
         : `${owner.name} in ${clash.harness}`;
   if (clash.outcome === "repo-wins")
     return `${whose} has a skill of this name too, and ${clash.harness} chats there get the repo's copy alone`;
+  if (clash.outcome === "either-one")
+    return `${whose} has a skill of this name too, and ${clash.harness} chats there get both under one name and may use either: rename that one`;
   return `${whose} has a skill of this name too, and a chat there gets both`;
 }
 

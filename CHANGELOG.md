@@ -384,6 +384,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A chat on a pool's runner has its hooks recorded.** Each line a runner chat's hook sends
+  is now written once, in the runner's own event log, and the hook is told it was taken. Before,
+  the runner refused the line, so it was recorded in no event log and the hook kept a copy
+  (#3304).
+
 - **`purlis doctor` names `purlis persona optimize` for a persona's memory.** Its memory
   indexes row said curating a persona's memory from the CLI was "not in this version yet",
   although `purlis persona optimize` has shipped. It now names that command, as it names

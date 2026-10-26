@@ -79,9 +79,9 @@ fn host_armed(harness: Harness, here: &Here) -> (Vec<String>, Vec<(String, Strin
         skills: Some(PlaneSkills {
             plane: &here.plane,
             workspace: None,
-            linked: linked.as_deref(),
             repo: &[],
         }),
+        laid_out: linked.as_deref(),
     };
     match harness.state_hooks(
         kit,
@@ -116,11 +116,12 @@ fn claude_folder(args: &[String]) -> PathBuf {
 fn opencode_folder(env: &[(String, String)]) -> PathBuf {
     let config: serde_json::Value =
         serde_json::from_str(var(env, purlis_core::opencode::CONFIG_ENV).unwrap()).unwrap();
-    let dirs = config["plugin"][0][1]["skills"]
-        .as_array()
-        .expect("a list of directories");
-    assert_eq!(dirs.len(), 2, "{dirs:?}");
-    PathBuf::from(dirs[1].as_str().unwrap())
+    // One folder, the built-in skills in it beside the plane's.
+    PathBuf::from(
+        config["plugin"][0][1]["skills"]
+            .as_str()
+            .expect("one directory"),
+    )
 }
 
 #[test]
