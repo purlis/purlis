@@ -560,7 +560,33 @@ impl Family {
             .find(|(one, _)| *one == name)
             .map(|(_, token)| *token)
     }
+
+    /// **Whether the window draws `variant` while `states` hold** (#3255): every look a key may
+    /// name, unless one of its states is one only some variants are drawn in ([`DRAWN_ONLY`]).
+    #[cfg(test)]
+    pub(super) fn draws(&self, variant: &str, states: &[State]) -> bool {
+        DRAWN_ONLY.iter().all(|(family, state, variants)| {
+            *family != self.name || !states.contains(state) || variants.contains(&variant)
+        })
+    }
 }
+
+/// **The states only some of a family's variants are drawn in** (#3255), by family: a key may
+/// still name the others (a theme's `button.root.danger.selected` is valid), but the window never
+/// draws them, so the guards that walk the looks the window draws (`state_words_tests.rs`) leave
+/// them out, and no pair holds a colour on a ground it is never drawn on.
+/// - **A toggle is a plain or a ghost button** (ADR 0097 §6, #2958): the suggested answer, the
+///   consent answers and the soft, warning and link looks are never pressed as one.
+///   `ToggleButton` takes only these, and `app/src/theme/consentToggles.test.ts` holds every
+///   other element that says it is pressed to them, reading this list.
+/// - **A row that opens a submenu is a plain row**: the ways to end something are inside the
+///   submenu, never the row that opens it (`docs/ui-primitives.md`, "Menus"), so a danger row is
+///   never open. `app/src/ui/menu/submenuRows.guard.test.ts` holds every `Submenu`'s row to it.
+#[cfg(test)]
+const DRAWN_ONLY: &[(&str, State, &[&str])] = &[
+    ("button", State::Selected, &["secondary", "ghost"]),
+    ("menu", State::Open, &["default"]),
+];
 
 /// A part of a family in a look, as a sentence names it: `button.root.primary`, or
 /// `text-input.root` for a family that has no variants.

@@ -3,7 +3,8 @@
 
 //! **A state's colour drawn as a part's words is held as words** (#3041): wherever a family of
 //! the manifest draws a state's colour (waiting, running, failed, the needs-you hand) as its
-//! words, at rest or under the pointer, the check holds that colour on the part's fill at
+//! words, in every look the window draws (at rest, under the pointer, pressed as a toggle and
+//! with what it opens open, #3255), the check holds that colour on the part's fill at
 //! [`aa_text`] for the window's text size, 4.5:1, not at the 3:1 a mark takes. The pairs are
 //! [`PAIRS`], so the check names them and the consent floors fall back from them.
 
@@ -20,12 +21,26 @@ fn is_wash(token: &str) -> bool {
     token.starts_with("wash.") || token.ends_with(".wash")
 }
 
-/// The looks a family's words are read in: at rest, and under the pointer where it has one.
-fn read_in(family: &Family) -> Vec<Vec<State>> {
+/// **The looks `variant`'s words are read in**: at rest, and under the pointer where the family
+/// has one; and pressed as a toggle (selected) or with what it opens open, each at rest and under
+/// the pointer, where the family marks the state. A look the window never draws in `variant`
+/// ([`Family::draws`], #3255) is left out: a danger button is never a toggle.
+fn read_in(family: &Family, variant: &str) -> Vec<Vec<State>> {
+    let hover = family.states.contains(&State::Hover);
     let mut sets = vec![Vec::new()];
-    if family.states.contains(&State::Hover) {
+    if hover {
         sets.push(vec![State::Hover]);
     }
+    for held in [State::Selected, State::Open] {
+        if !family.states.contains(&held) {
+            continue;
+        }
+        sets.push(vec![held]);
+        if hover {
+            sets.push(vec![State::Hover, held]);
+        }
+    }
+    sets.retain(|states| family.draws(variant, states));
     sets
 }
 
@@ -40,7 +55,7 @@ fn state_words() -> Vec<Words> {
     let mut found = Vec::new();
     for family in MANIFEST {
         for variant in family.looks() {
-            for states in read_in(family) {
+            for states in read_in(family, variant) {
                 let look = (family.defaults)(variant, &states);
                 let under: Vec<&'static str> = if look.fill == TRANSPARENT {
                     family.grounds.to_vec()
@@ -148,4 +163,35 @@ fn the_waiting_words_of_a_button_a_badge_and_a_count_are_among_them() {
         has("titlebar.count", "wash.warning", Some("surface.overlay")),
         "{found:?}"
     );
+}
+
+#[test]
+fn the_looks_read_are_the_ones_the_window_draws() {
+    let family = |name: &str| MANIFEST.iter().find(|one| one.name == name).unwrap();
+    let button = family("button");
+    // A plain button is pressed as a toggle, and under the pointer while pressed.
+    let plain = read_in(button, "secondary");
+    assert!(plain.contains(&vec![State::Selected]), "{plain:?}");
+    assert!(
+        plain.contains(&vec![State::Hover, State::Selected]),
+        "{plain:?}"
+    );
+    // A danger or a warning button never is: its pressed look is no look the window draws.
+    for variant in ["danger", "warning-soft", "primary", "grants"] {
+        let drawn = read_in(button, variant);
+        assert!(drawn.contains(&vec![State::Hover]), "{variant}: {drawn:?}");
+        assert!(
+            !drawn.iter().any(|one| one.contains(&State::Selected)),
+            "{variant}: {drawn:?}"
+        );
+    }
+    // A menu's plain row opens a submenu; a danger row never does.
+    let menu = family("menu");
+    assert!(read_in(menu, "default").contains(&vec![State::Open]));
+    assert!(
+        !read_in(menu, "danger")
+            .iter()
+            .any(|one| one.contains(&State::Open))
+    );
+    assert!(read_in(menu, "danger").contains(&vec![State::Selected]));
 }
