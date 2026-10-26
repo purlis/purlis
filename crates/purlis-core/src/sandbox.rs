@@ -1704,6 +1704,14 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             app.join(crate::dispatchrecord::DIR_NAME),
             Access::ReadWrite,
         );
+        // Every chat's browser timeline (#2017), neither read nor written: a screenshot one
+        // persona's chat was given is not for a chat running as another. A chat was handed
+        // its own screenshots as its tools answered.
+        deny(
+            Class::Integrity,
+            root.join(state).join(crate::browsertimeline::DIR),
+            Access::ReadWrite,
+        );
         // The person's approvals of a profile's command and of a project's harness
         // declaration (#1458): what lets purlis start that program, written by the app when
         // the person approves in the window and by nothing a chat runs. Read, never written.
