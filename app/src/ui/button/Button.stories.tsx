@@ -129,12 +129,19 @@ export const QuietPaneMarks: Story = {
       await expect(box.height).toBeGreaterThanOrEqual(24);
       await expect(Math.round(box.width)).toBe(Math.round(box.height));
     }
+    // What each draws under the pointer, in this cell's theme: the state attribute React Aria
+    // writes for a hover, put on each for the reading and taken off after, so the colour is
+    // read as drawn and not raced against the pointer.
     const danger = getComputedStyle(canvas.getByTestId("danger")).backgroundColor;
-    await userEvent.hover(close);
-    await waitFor(() => expect(getComputedStyle(close).backgroundColor).toBe(danger));
-    await userEvent.hover(split);
-    await waitFor(() => expect(getComputedStyle(split).backgroundColor).not.toBe(danger));
-    await userEvent.unhover(split);
+    const hovered = (one: HTMLElement) => {
+      one.setAttribute("data-hovered", "true");
+      const ground = getComputedStyle(one).backgroundColor;
+      one.removeAttribute("data-hovered");
+      return ground;
+    };
+    await expect(hovered(close)).toBe(danger);
+    await expect(hovered(split)).not.toBe(danger);
+    await expect(getComputedStyle(close).backgroundColor).not.toBe(danger);
     await userEvent.tab();
     await expect(split).toHaveFocus();
     expectFocusInSight();
