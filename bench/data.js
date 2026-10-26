@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793022014321,
+  "lastUpdate": 1793023968813,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -25620,6 +25620,48 @@ window.BENCHMARK_DATA = {
             "value": 101.649981,
             "unit": "ms",
             "extra": "median of 5 runs: 101.424, 101.591, 101.650, 102.102, 102.460 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "23681d228d691dc4729e403e766d0708b239e949",
+          "message": "Chats: the sticky head takes the panel's fill (#3331) (#3356)\n\n* chats: the sticky head takes the panel's fill, not the window's (#3331)\n\nThe Chats head painted surface.base (the window) over a list on the\npanel's fill, which Purlis sets to surface.raised. A theme's\npanel.root.fill now also writes --panel-fill on the panel, the family\ndefault says the same, and .chats-head paints var(--panel-fill).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* theme parts test: a panel fill also writes --panel-fill (#3331)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* contrast check: hold the Chats head panel fill by hand (#3331)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* chats: a story of the list scrolled under its head, filled as its panel (#3331)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* chats story: no colour literal in the play check (#3331)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* ci: run the checks against the drawn baselines (#3331)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-26T13:06:19Z",
+          "tree_id": "4dd3820bac0c83fdfb172ebe7b86bb3bcb2ff143",
+          "url": "https://github.com/purlis/purlis/commit/23681d228d691dc4729e403e766d0708b239e949"
+        },
+        "date": 1793023966372,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5317480000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.519, 0.528, 0.532, 0.538, 0.555 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.0092595,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.673, 16.888, 17.009, 17.079, 17.329 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.24383449999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.558, 103.634, 104.244, 104.849, 105.654 ms"
           }
         ]
       }
