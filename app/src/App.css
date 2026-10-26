@@ -1147,8 +1147,8 @@ body {
   margin-block: 0;
 }
 
-/* The persona picked: a 36 px mark, its name at 600 and its one line (R23). The name takes the
-   body's size: the type scale has no 15 (R160), and it stays under the dialog's 16 px title. */
+/* The persona picked: a 36 px mark, its name at 15/600 (the heading step, `font-size.lg`, 15 in
+   Purlis, R160) and its one line (R23). */
 .start-chat-who {
   display: flex;
   gap: var(--space-5);
@@ -1165,7 +1165,7 @@ body {
 
 .start-chat-who h3 {
   margin: 0;
-  font-size: var(--font-size-base);
+  font-size: var(--font-size-lg);
   font-weight: var(--font-weight-strong);
   overflow-wrap: anywhere;
 }
@@ -1190,6 +1190,27 @@ body {
   font-weight: var(--font-weight-strong);
   letter-spacing: 0.04em;
   text-transform: uppercase;
+}
+
+/* What stops a start, under the persona: drawn only when there is something to say. */
+.start-chat-told {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.start-chat-told:empty {
+  display: none;
+}
+
+.start-chat-told > * {
+  margin: 0;
+}
+
+/* A harness card's facts, two lines: the bill and the model, then the command and its source. */
+.start-chat-facts {
+  display: grid;
+  gap: var(--space-1);
+  min-inline-size: 0;
 }
 
 .start-chat-help {

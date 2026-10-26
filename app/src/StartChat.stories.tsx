@@ -88,7 +88,7 @@ const OPTIONS: StartOptions = {
 };
 
 /** The dialog as the window opens it, and what was answered once it is gone. */
-function Window() {
+function Window({ options = OPTIONS }: { options?: StartOptions }) {
   const [open, setOpen] = useState(true);
   const [said, setSaid] = useState("Nothing started");
   return (
@@ -98,7 +98,7 @@ function Window() {
       </p>
       {open && (
         <StartChat
-          options={OPTIONS}
+          options={options}
           place="smart-ide"
           onStart={(profile, persona, footer, label) => {
             setSaid(
@@ -175,7 +175,7 @@ export const PrototypeB: Story = {
     await expect(boxOf(dialog)).toEqual(box);
 
     // The footer and its answers are in view whatever the panes hold.
-    const start = page.getByRole("button", { name: "Start" });
+    const start = page.getByRole("button", { name: "Start chat" });
     const shown = start.getBoundingClientRect();
     await expect(shown.bottom).toBeLessThanOrEqual(window.innerHeight);
 
@@ -190,5 +190,61 @@ export const PrototypeB: Story = {
         "Started keycloak-master as keycloak-master on opencode",
       ),
     );
+  },
+};
+
+/** The prototype's harnesses in a project that runs every chat sandboxed, one asking approval. */
+const GUARDED: StartOptions = {
+  ...OPTIONS,
+  profiles: [
+    {
+      ...OPTIONS.profiles[0],
+      sandbox: {
+        state: "sandboxed",
+        said: "claude reaches only the hosts this project allows.",
+        install: null,
+        locked: null,
+      },
+    },
+    { ...OPTIONS.profiles[1], shown: "opencode --port 0", approval: "new" },
+    OPTIONS.profiles[2],
+  ],
+};
+
+/**
+ * **A sandboxed project with a profile to approve**: ticking the opt-out and picking the profile
+ * that asks for approval change the main answer's words and look, and move and widen nothing —
+ * not the dialog, not the answer (R163).
+ */
+export const SandboxAndApproval: Story = {
+  args: { options: GUARDED },
+  play: async ({ userEvent }) => {
+    const page = within(document.body);
+    const dialog = await page.findByRole("dialog", { name: "Start a chat" });
+    await waitFor(() => expect(page.getByRole("button", { name: "Cancel" })).toHaveFocus());
+    await expect(
+      page.getByText("claude reaches only the hosts this project allows."),
+    ).toBeVisible();
+    await pictureNow();
+    const box = boxOf(dialog);
+    const answer = () => page.getByRole("button", { name: /^(Start|Approve)/ });
+    const room = () => {
+      const { top, width, height } = answer().getBoundingClientRect();
+      return [top, width, height];
+    };
+    const before = room();
+
+    await userEvent.click(page.getByRole("checkbox", { name: "Start without the sandbox" }));
+    await expect(answer()).toHaveAccessibleName("Start without the sandbox");
+    await expect(page.getByRole("textbox", { name: "Why, if you want it recorded" })).toBeVisible();
+    await expect(boxOf(dialog)).toEqual(box);
+    await expect(room()).toEqual(before);
+
+    await userEvent.click(page.getByRole("radio", { name: "opencode" }));
+    await expect(answer()).toHaveAccessibleName("Approve and start");
+    await expect(page.getByRole("alert")).toHaveTextContent("opencode --port 0");
+    await expect(boxOf(dialog)).toEqual(box);
+    await expect(room()).toEqual(before);
+    expectFocusInSight();
   },
 };

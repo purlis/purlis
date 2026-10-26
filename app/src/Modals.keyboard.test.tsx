@@ -248,7 +248,7 @@ describe("what a keyboard reaches in the window's modal surfaces", () => {
 
     expect(await reachableByKeyboard()).toEqual([
       'button "Cancel"',
-      'button "Start"',
+      'button "Start chat"',
       // The persona list, left of the details (#2918): one stop, the persona picked.
       'option "steward"',
       'radio "claude"',
@@ -274,7 +274,7 @@ describe("what a keyboard reaches in the window's modal surfaces", () => {
       'input "Name"',
       'radio "claude"',
       'option "steward"',
-      'button "Start"',
+      'button "Start chat"',
     ]);
   });
 
@@ -337,7 +337,7 @@ describe("what a keyboard reaches in the window's modal surfaces", () => {
     // Cancel is focused on opening and `Start` stands just after it in the footer (#2910) —
     // one Tab, and it is the press the engine used to refuse.
     await tab();
-    expect(screen.getByRole("button", { name: "Start" })).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Start chat" })).toHaveFocus();
     await userEvent.keyboard("{Enter}");
 
     expect(started).toEqual([{ profile: "claude", persona: null, footer: false }]);
@@ -860,7 +860,7 @@ describe("what a keyboard reaches in the window's modal surfaces", () => {
     // last in the footer, #2910) lands on the first, by the dialog's own move, and never on
     // `<body>`.
     picker();
-    const start = screen.getByRole("button", { name: "Start" });
+    const start = screen.getByRole("button", { name: "Start chat" });
     await act(async () => start.focus());
 
     await tab();

@@ -141,7 +141,7 @@ async function openAChat(name?: string) {
   await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
   const picker = await screen.findByRole("dialog", { name: "Start a chat" });
   if (name !== undefined) await userEvent.type(within(picker).getByLabelText(/^Name/), name);
-  await userEvent.click(within(picker).getByRole("button", { name: "Start" }));
+  await userEvent.click(within(picker).getByRole("button", { name: "Start chat" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
 }
 
@@ -181,7 +181,7 @@ describe("a new chat's name", () => {
     await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
     const picker = await screen.findByRole("dialog", { name: "Start a chat" });
     await userEvent.click(within(picker).getByRole("option", { name: "No persona" }));
-    await userEvent.click(within(picker).getByRole("button", { name: "Start" }));
+    await userEvent.click(within(picker).getByRole("button", { name: "Start chat" }));
 
     await waitFor(() => expect(tabNames()).toEqual(["claude 1"]));
   });
@@ -193,7 +193,7 @@ describe("a new chat's name", () => {
     await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
     const picker = await screen.findByRole("dialog", { name: "Start a chat" });
     await userEvent.type(within(picker).getByLabelText(/^Name/), "x");
-    await userEvent.click(within(picker).getByRole("button", { name: "Start" }));
+    await userEvent.click(within(picker).getByRole("button", { name: "Start chat" }));
 
     expect(await within(picker).findByRole("alert")).toHaveTextContent(/invisible formatting/);
   });

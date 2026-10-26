@@ -323,7 +323,7 @@ afterEach(() => {
 /** Opens a chat where the operator is standing: New tab, a row, Start. */
 async function openAChat() {
   await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
-  await userEvent.click(await screen.findByRole("button", { name: "Start" }));
+  await userEvent.click(await screen.findByRole("button", { name: "Start chat" }));
 }
 
 /** Focuses a workspace from the title bar's ⌄ (#2916), which is the axis (ADR 0036). */
@@ -434,7 +434,7 @@ describe("the four regions", () => {
 
     fireEvent.contextMenu(row);
     await userEvent.click(await screen.findByRole("menuitem", { name: "New tab" }));
-    await userEvent.click(await screen.findByRole("button", { name: "Start" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Start chat" }));
 
     expect(startedIn(asked)).toEqual([`${ALPHA}/svc`]);
   });
@@ -447,12 +447,12 @@ describe("the four regions", () => {
 
     fireEvent.contextMenu(await screen.findByTestId("repo-svc"));
     await userEvent.click(await screen.findByRole("menuitem", { name: "New tab" }));
-    await userEvent.click(await screen.findByRole("button", { name: "Start" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Start chat" }));
     await waitFor(() => expect(boxes()).toHaveLength(1));
     fireEvent.contextMenu(await screen.findByTestId("repo-svc"));
     await userEvent.click(await screen.findByRole("menuitem", { name: "New tab" }));
     await userEvent.click(await screen.findByRole("checkbox", { name: /new branch in svc/ }));
-    await userEvent.click(await screen.findByRole("button", { name: "Start" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Start chat" }));
     await waitFor(() => expect(boxes()).toHaveLength(2));
     await openAChat();
 
@@ -504,7 +504,7 @@ describe("the four regions", () => {
     render(<App />);
 
     await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
-    await userEvent.click(await screen.findByRole("button", { name: "Start" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Start chat" }));
     const starting = await screen.findByRole("button", { name: "Starting…" });
     expect(starting).toBeDisabled();
     fireEvent.click(starting);
@@ -523,7 +523,7 @@ describe("the four regions", () => {
     render(<App />);
     fireEvent.contextMenu(await screen.findByTestId("repo-svc"));
     await userEvent.click(await screen.findByRole("menuitem", { name: "New tab" }));
-    await userEvent.click(await screen.findByRole("button", { name: "Start" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Start chat" }));
     await waitFor(() => expect(startedIn(asked)).toHaveLength(1));
 
     await openAChat();

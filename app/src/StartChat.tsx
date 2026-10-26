@@ -14,8 +14,14 @@ import { UserRound } from "lucide-react";
 import { PersonaMark } from "./PersonaMark";
 import { HarnessSummary } from "./HarnessCard";
 import { FirstOnHarness, noteHarness } from "./cardLink";
-import { ApprovalSentence, ProfileMeta } from "./ProfileApproval";
-import { commands, type PlaneId, type StartOptions, type WithoutSandbox } from "./bindings";
+import { ApprovalSentence } from "./ProfileApproval";
+import {
+  commands,
+  type PlaneId,
+  type ProfileRow,
+  type StartOptions,
+  type WithoutSandbox,
+} from "./bindings";
 import { useChatsHere } from "./chatState";
 import { profileCommand, profilePage } from "./settings/profileAddress";
 import { Button } from "./ui/button/Button";
@@ -23,11 +29,12 @@ import { Checkbox } from "./ui/choice/Checkbox";
 import { OptionCard, OptionCards } from "./ui/choice/Radio";
 import { Dialog } from "./ui/dialog/Dialog";
 import { TextField } from "./ui/field/Field";
+import { submits as chordSends } from "./ui/field/submitKey";
 import { HarnessIcon, ownIconsOf } from "./ui/harness-icon/HarnessIcon";
 import { ListBox, ListOption } from "./ui/list/List";
 import { FILTERED_FROM, ListFilter, noMatchSaid, type Noun } from "./ui/list/ListFilter";
 import { RowLabel, RowLead, RowTrail } from "./ui/list/Row";
-import { startAnswer } from "./StartChatApproval";
+import { reachableWords, startAnswer } from "./StartChatApproval";
 
 /**
  * The key of the row that stands for "no persona at all".
@@ -70,12 +77,17 @@ const HEIGHT = 620;
  *   and its check (R24–R27, #2798 d3).
  * - **The name, the footer box** and, where they apply, the branch box and the sandbox.
  * - **The footer** says what Start will do, `steward on Claude Code` (R33), then Cancel and
- *   Start. Start keeps the room of every word it can say (R163).
+ *   Start chat. It keeps the room of every word it can reach in this dialog (R163).
  *
  * **⏎ starts from the filter, a persona row or a harness card** (R17), as ⌘⏎ does from anywhere
  * (N26): never from the Name field, where Return is a stray key, and never an approval or a start
- * without the sandbox, which are a press of their own button (ADR 0097 §6). The keyboard starts
- * on Cancel, so a Return pressed by habit as the dialog opens starts nothing.
+ * without the sandbox, which are a press of their own button (ADR 0097 §6). It starts as the key
+ * comes up, once, and a held key's repeats start nothing. The keyboard starts on Cancel, so a
+ * Return pressed by habit as the dialog opens starts nothing, and a double-click on a row only
+ * picks it.
+ *
+ * **What stops a start is said at the top of the details**: a refusal, its way to the Inbox,
+ * the command to approve, brought into view, never left under the fold of the scrolling pane.
  *
  * A dialog rather than a pane that draws itself: the tmux frame put the selector in the
  * chat's own pane because tmux had already made the pane, and here there is no chat yet.
@@ -280,7 +292,20 @@ export function StartChat({
       ? { reason: reason.trim() === "" ? null : reason }
       : null;
   const blockedByPolicy = refused && locked !== null;
-  const startWord = withoutSandbox !== null ? "Start without the sandbox" : "Start";
+  // The words Start can reach in this dialog, and whether one is a grant (B1 of #3378's review):
+  // the options are fixed while it is open, so the room kept for them never changes.
+  // A mock or an older answer may leave a row's `approval` or `sandbox` out: read as none.
+  const canApprove = options.profiles.some((row) => Boolean(row.approval));
+  const reach = {
+    words: reachableWords({
+      canApprove,
+      canOptOut: options.profiles.some(
+        (row) =>
+          row.sandbox != null && row.sandbox.locked === null && row.sandbox.state !== "unsandboxed",
+      ),
+    }),
+    grant: canApprove,
+  };
   // The project's Local file, by the name the core read, for the two lines that name it.
   const localFile = useLocalFile(
     useChatsHere().plane,
@@ -309,10 +334,6 @@ export function StartChat({
   // What ⏎ from the list or the cards and ⌘⏎ from anywhere may start: a plain start, never an
   // approval or a start without the sandbox (ADR 0097 §6), and nothing while one is running.
   const byKey = !approves && withoutSandbox === null && !unavailable && !starting;
-  const startByKey = (event: KeyboardEvent) => {
-    event.preventDefault();
-    if (byKey) start();
-  };
 
   // The list, and whether the picked row is to be brought into view after this render (R22).
   const list = useRef<HTMLDivElement>(null);
@@ -334,7 +355,6 @@ export function StartChat({
   };
   // ↑ and ↓ in the filter move the pick through the rows shown, and stop at the ends (R16).
   const moveFromFilter = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === "Enter" && !event.nativeEvent.isComposing) return startByKey(event);
     if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
     event.preventDefault();
     if (keys.length === 0) return;
@@ -356,9 +376,73 @@ export function StartChat({
     row?.scrollIntoView?.({ block: "nearest" });
   });
 
+  // **⏎ starts from the filter, a persona row or a harness card** (R17, D-2918-3), as a key the
+  // person lets go of: armed on a ⏎ that goes down there — not held, not composing, with no
+  // modifier (⌘⏎ is the dialog's own chord) — and pressed as it comes up, so a held Return starts
+  // once and never again after a refusal, and none of it reaches the new chat's terminal. Only a
+  // plain start: never an approval or a start without the sandbox (ADR 0097 §6).
+  const armed = useRef(false);
+  const enterDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key !== "Enter") return;
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const row = target.closest<HTMLElement>('[role="option"][data-key]');
+    const filterBox = target instanceof HTMLInputElement && target.type === "search";
+    const card = target instanceof HTMLInputElement && target.type === "radio";
+    if (!row && !filterBox && !card) return;
+    // ⌘⏎ on a card: the card's own press handling keeps the key from the dialog's chord, so it
+    // is answered here, once, on the chord's terms (N26).
+    if (card && chordSends(event.nativeEvent)) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!event.repeat && byKey) start();
+      return;
+    }
+    if (event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return;
+    event.preventDefault();
+    // A held key's repeats neither arm nor disarm: the press is the one that went down first.
+    if (event.repeat) return;
+    armed.current = false;
+    // A ⏎ that commits a composition is the composition's (WebKit says so by keyCode 229).
+    if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+    // From the filter with nothing it matches, there is nothing shown to start.
+    if (filterBox && keys.length === 0) return;
+    // A row the keyboard is on and not yet picked is the one ⏎ starts.
+    const key = row?.dataset.key;
+    if (key !== undefined && key !== pickedKey && keys.includes(key))
+      pickPersona(key === NO_PERSONA ? null : key);
+    armed.current = true;
+  };
+  const enterUp = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key !== "Enter" || !armed.current) return;
+    armed.current = false;
+    event.preventDefault();
+    if (byKey) start();
+  };
+
+  // The filter names the row its ↑ and ↓ picked (`aria-activedescendant`), so a screen reader
+  // says the pick as it moves. The row's id is React Aria's, read from the row once it is drawn.
+  const panes = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const box = panes.current?.querySelector<HTMLInputElement>('input[type="search"]');
+    if (!box) return;
+    const row = [...(list.current?.querySelectorAll<HTMLElement>("[data-key]") ?? [])].find(
+      (one) => one.dataset.key === pickedKey,
+    );
+    if (row?.id) box.setAttribute("aria-activedescendant", row.id);
+    else box.removeAttribute("aria-activedescendant");
+  });
+
+  // A refusal is said where the eye is: the details' top, brought into view (B2 of the review).
+  const told = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (trouble) told.current?.scrollIntoView?.({ block: "nearest" });
+  }, [trouble]);
+
   const listId = useId();
   const harnessLabel = useId();
   const nameLabel = useId();
+  const whoId = useId();
   const who = persona ?? "No persona";
 
   // **The persona picked**, said once at the top of the details: what it says of itself
@@ -413,12 +497,17 @@ export function StartChat({
         approves,
         withoutSandbox: withoutSandbox !== null,
         starting,
-        startWord,
         unavailable,
+        reach,
         onPress: start,
       })}
     >
-      <div className="start-chat-panes">
+      <div
+        className="start-chat-panes"
+        ref={panes}
+        onKeyDownCapture={enterDown}
+        onKeyUpCapture={enterUp}
+      >
         <div className="start-chat-personas">
           {filtered && (
             <ListFilter
@@ -445,9 +534,6 @@ export function StartChat({
               if (key === undefined) return;
               pickPersona(key === NO_PERSONA ? null : String(key));
               scrollTo.current = true;
-            }}
-            onAction={() => {
-              if (byKey) start();
             }}
             empty={<p className="start-chat-empty">{noMatchSaid(PERSONAS, query)}</p>}
           >
@@ -478,19 +564,7 @@ export function StartChat({
           </ListBox>
         </div>
 
-        <div
-          className="start-chat-details"
-          // ⏎ on a harness card starts, as from the list (R17). Heard as it goes down, before
-          // the card's own press handling, which keeps Return from reaching the pane.
-          onKeyDownCapture={(event) => {
-            if (
-              event.key === "Enter" &&
-              event.target instanceof HTMLInputElement &&
-              event.target.type === "radio"
-            )
-              startByKey(event);
-          }}
-        >
+        <section className="start-chat-details" aria-labelledby={whoId}>
           <div className="start-chat-who" data-testid="start-chat-who">
             {persona === null ? (
               <span className="start-chat-no-mark" aria-hidden="true">
@@ -500,9 +574,32 @@ export function StartChat({
               <PersonaMark persona={persona} />
             )}
             <div>
-              <h3>{who}</h3>
+              <h3 id={whoId}>{who}</h3>
               <p>{personaLine}</p>
             </div>
+          </div>
+
+          {/* **What stops the start, at the top, where it is seen** (B2 of #3378's review): a
+            refusal, its way to the Inbox, the command to approve and what the harness lacks the
+            first time. Below them the pane would scroll them out of sight. */}
+          <div ref={told} className="start-chat-told">
+            {trouble && (
+              <p className="honest mid-turn" role="alert">
+                {trouble}
+              </p>
+            )}
+            {trouble && signIn !== undefined && onShowSignIn && (
+              <p className="honest">
+                {/* One Ask per profile, in the Inbox: its Sign in runs the harness's own sign-in
+                  in a shell tab the person drives (#2035). */}
+                Sign in {signIn} waits in the Inbox.{" "}
+                <Button onPress={onShowSignIn}>Go to the Inbox</Button>
+              </p>
+            )}
+            <ApprovalSentence row={picked} />
+            {/* What the picked harness lacks, said once by Start: the first chat on it here
+              (#1134, W10). */}
+            <FirstOnHarness glance={picked?.harness} />
           </div>
 
           {/* These two lines are drawn once the file's name is known (a read of a moment), so
@@ -527,9 +624,9 @@ export function StartChat({
           )}
 
           <div className="start-chat-section">
-            <div className="start-chat-label" id={harnessLabel}>
+            <h3 className="start-chat-label" id={harnessLabel}>
               Harness
-            </div>
+            </h3>
             <OptionCards
               aria-labelledby={harnessLabel}
               value={profile ?? null}
@@ -544,7 +641,7 @@ export function StartChat({
                   title={row.name}
                   // Its facts, the command first among them: the words about to run are read
                   // beside the card that runs them (V69).
-                  detail={<ProfileMeta row={row} />}
+                  detail={<CardFacts row={row} />}
                 />
               ))}
             </OptionCards>
@@ -562,11 +659,11 @@ export function StartChat({
           {picked?.harness && <HarnessSummary glance={picked.harness} />}
 
           <div className="start-chat-section">
-            <div className="start-chat-label" id={nameLabel}>
+            <label className="start-chat-label" htmlFor={nameLabel}>
               Name
-            </div>
+            </label>
             <TextField
-              aria-labelledby={nameLabel}
+              id={nameLabel}
               value={name}
               onChange={setName}
               // It follows the persona picked: the name the chat takes when this is left empty.
@@ -682,27 +779,36 @@ export function StartChat({
               </ul>
             </details>
           )}
-
-          <ApprovalSentence row={picked} />
-          {/* What the picked harness lacks, said once by Start: the first chat on it here
-            (#1134, W10). */}
-          <FirstOnHarness glance={picked?.harness} />
-          {trouble && (
-            <p className="honest mid-turn" role="alert">
-              {trouble}
-            </p>
-          )}
-          {trouble && signIn !== undefined && onShowSignIn && (
-            <p className="honest">
-              {/* One Ask per profile, in the Inbox: its Sign in runs the harness's own sign-in
-                in a shell tab the person drives (#2035). */}
-              Sign in {signIn} waits in the Inbox.{" "}
-              <Button onPress={onShowSignIn}>Go to the Inbox</Button>
-            </p>
-          )}
-        </div>
+        </section>
       </div>
     </Dialog>
+  );
+}
+
+/**
+ * **A harness card's facts, in two lines** (R25, R28): what the chat is billed to and the model,
+ * then the command that runs — never cut from the card, since it is what is approved (V69) — with
+ * where it was declared, whether it is the default and whether it asks for approval. The harness's
+ * kind is said only where the profile's name does not say it already.
+ */
+function CardFacts({ row }: { row: ProfileRow }) {
+  const bill = [
+    row.billed_to ? `Billed to ${row.billed_to}.` : undefined,
+    row.model ? `Model: ${row.model}.` : undefined,
+  ].filter((said) => said !== undefined);
+  return (
+    <span className="start-chat-facts">
+      {bill.length > 0 && <span className="start-chat-bill">{bill.join(" ")}</span>}
+      <span className="meta profile-meta">
+        {row.kind !== row.name && <span className="what">{row.kind}</span>}
+        {/* Already contained by the core: a profile is a file a chat can write, and a control
+            byte in a command must never redraw this card. */}
+        <code className="where">{row.shown}</code>
+        <span className="from">{row.source}</span>
+        {row.is_default && <span className="what">default</span>}
+        {row.approval && <span className="what needs-approval">{row.approval}</span>}
+      </span>
+    </span>
   );
 }
 
