@@ -721,20 +721,110 @@ describe("a granting answer on a pane that moved while its line stood still (#31
     }
   });
 
-  it("lets a press through after the person scrolled the band themselves", async () => {
-    // The same 80 on screen, with nothing in the band gone: a scroll the band could still take.
+  /** The person's own ways to scroll the band (#3217): each is what the browser hears first. */
+  const byThePerson: Record<string, (band: Element) => void> = {
+    wheel: (band) => band.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: -80 })),
+    "a scroll key": (band) =>
+      band.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "PageUp" })),
+    touch: (band) => band.dispatchEvent(new Event("touchstart", { bubbles: true })),
+    "its scrollbar": (band) =>
+      band.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 })),
+  };
+
+  for (const [how, scroll] of Object.entries(byThePerson)) {
+    it(`lets a press through after the person scrolled the band themselves (${how})`, async () => {
+      // The same 80 on screen, with nothing in the band gone: a scroll the band could still take.
+      const band = { top: 100, height: 300 };
+      const unscroll = scrolling(band);
+      const { rect, allowed } = aConsent(
+        () => DOMRect.fromRect({ x: 12, y: 140 - band.top, width: 90, height: 24 }),
+        () => 116 - band.top,
+      );
+      try {
+        const stack = document.querySelector(".pane-notices") as HTMLElement;
+        scroll(stack);
+        band.top = 20;
+        await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+        expect(allowed).toEqual(["forge"]);
+        expect(screen.queryByText(NOTICE_MOVED_JUST_NOW)).toBeNull();
+      } finally {
+        rect.mockRestore();
+        unscroll();
+      }
+    });
+  }
+
+  it("holds a press after a scroll of the band the person did not make (#3217)", async () => {
+    // The same 80 on screen, the band holding as much as before, and nothing from the person:
+    // the window scrolled it (a box brought into view, a focus that scrolled).
     const band = { top: 100, height: 300 };
     const unscroll = scrolling(band);
     const { rect, allowed } = aConsent(
       () => DOMRect.fromRect({ x: 12, y: 140 - band.top, width: 90, height: 24 }),
       () => 116 - band.top,
     );
+    let clock = 1_000_000;
+    const now = vi.spyOn(performance, "now").mockImplementation(() => clock);
     try {
       band.top = 20;
       await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+      expect(allowed).toEqual([]);
+      expect(screen.getByText(NOTICE_MOVED_JUST_NOW)).toBeTruthy();
+
+      clock += 2000;
+      await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
       expect(allowed).toEqual(["forge"]);
-      expect(screen.queryByText(NOTICE_MOVED_JUST_NOW)).toBeNull();
     } finally {
+      now.mockRestore();
+      rect.mockRestore();
+      unscroll();
+    }
+  });
+
+  it("holds a press after a scroll that came long after the person's last scroll (#3217)", async () => {
+    const band = { top: 100, height: 300 };
+    const unscroll = scrolling(band);
+    const { rect, allowed } = aConsent(
+      () => DOMRect.fromRect({ x: 12, y: 140 - band.top, width: 90, height: 24 }),
+      () => 116 - band.top,
+    );
+    let clock = 1_000_000;
+    const now = vi.spyOn(performance, "now").mockImplementation(() => clock);
+    try {
+      const stack = document.querySelector(".pane-notices") as HTMLElement;
+      byThePerson.wheel(stack);
+      clock += 5000;
+      band.top = 20;
+      await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+      expect(allowed).toEqual([]);
+    } finally {
+      now.mockRestore();
+      rect.mockRestore();
+      unscroll();
+    }
+  });
+
+  it("holds a press after a scroll that follows a key that scrolls nothing (#3217)", async () => {
+    const band = { top: 100, height: 300 };
+    const unscroll = scrolling(band);
+    const { rect, allowed } = aConsent(
+      () => DOMRect.fromRect({ x: 12, y: 140 - band.top, width: 90, height: 24 }),
+      () => 116 - band.top,
+    );
+    const clock = 1_000_000;
+    const now = vi.spyOn(performance, "now").mockImplementation(() => clock);
+    try {
+      const stack = document.querySelector(".pane-notices") as HTMLElement;
+      stack.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Escape" }));
+      // A press on a Notice's way out is no scroll of the band either.
+      screen
+        .getByRole("button", { name: "Keep blocked" })
+        .dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 }));
+      band.top = 20;
+      await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
+      expect(allowed).toEqual([]);
+    } finally {
+      now.mockRestore();
       rect.mockRestore();
       unscroll();
     }

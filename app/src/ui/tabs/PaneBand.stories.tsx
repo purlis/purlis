@@ -563,7 +563,9 @@ export const ConsentClamped: Story = {
     expect(allowed).toEqual(["forge"]);
     allowed.length = 0;
 
-    // The person scrolls the band to its end: a scroll, and no move.
+    // The person scrolls the band to its end: a scroll, and no move. Their wheel is heard first
+    // (#3217); a scroll with nothing from the person before it would be one.
+    stack.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: stack.scrollHeight }));
     stack.scrollTop = stack.scrollHeight;
     await waitFor(() => expect(stack.scrollTop).toBeGreaterThan(24));
     await twoFrames();

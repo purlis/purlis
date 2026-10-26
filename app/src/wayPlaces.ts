@@ -14,11 +14,13 @@ import { useLayoutEffect, useRef, useState, type RefObject } from "react";
  *
  * **What counts as a move**: any change of the box's size, or of its place in what scrolls it
  * (its place on screen with every scroll above it added back), against where it last settled
- * (so a drift too small to see between two reads still adds up). A scroll alone is no move:
- * the person scrolling a list to read it, or a test's driver bringing an answer into view,
- * moves nothing under them they did not choose to move. A scroll the page was **made** to take is
- * one: a box that scrolls cannot stay where it was scrolled to once what it holds got shorter
- * than that (the browser clamps it), and everything in it slides on screen though nothing in it
+ * (so a drift too small to see between two reads still adds up). **The person's own scroll is
+ * no move**: one that follows, within {@link OWN_SCROLL_MS}, their wheel or trackpad, a key that
+ * scrolls, a touch, or a press on a scrollbar (#3217): it moves nothing under them they did not
+ * choose to move. **Any other scroll is one, read on screen**: a scroll the window made (a box
+ * brought into view, a focus that scrolled, a scroll put back), and one the page was made to
+ * take: a box that scrolls cannot stay where it was scrolled to once what it holds got shorter
+ * than that (the browser clamps it). Everything in it slides on screen though nothing in it
  * moved inside it.
  *
  * **When it is read**: in the commit of each render of a watching component (its own answers
@@ -32,6 +34,77 @@ import { useLayoutEffect, useRef, useState, type RefObject } from "react";
 
 /** Less than this, in CSS pixels, is no move: what rounding and a transform's subpixels say. */
 const STILL = 0.5;
+
+/** **How long after the person's own scroll input a scroll is still theirs** (#3217), in ms:
+ *  long enough for a key's smooth scroll to end, and a trackpad's glide sends wheel events as
+ *  it goes. */
+export const OWN_SCROLL_MS = 500;
+
+/** When the person last asked for a scroll, and whether they are holding a scrollbar now. */
+let ownScroll = { at: -Infinity, holding: false };
+
+/** **Whether a scroll now is the person's own**: it follows their scroll input closely. */
+const scrollIsOwn = () => ownScroll.holding || performance.now() - ownScroll.at < OWN_SCROLL_MS;
+
+/** The keys that scroll what has the keyboard, or bring the next stop into view. */
+const SCROLL_KEYS = new Set([
+  "ArrowUp",
+  "ArrowDown",
+  "ArrowLeft",
+  "ArrowRight",
+  "PageUp",
+  "PageDown",
+  "Home",
+  "End",
+  " ",
+  "Tab",
+]);
+
+/** Whether `el` takes the keys it is given as words: they scroll nothing there (but Tab). */
+const writesIn = (el: EventTarget | null) =>
+  el instanceof HTMLElement &&
+  (el.isContentEditable || el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement);
+
+/** Whether `el` scrolls: a press on it is on its scrollbar, or on the box it scrolls. */
+const scrolls = (el: EventTarget | null) =>
+  el instanceof Element &&
+  (el.scrollHeight > el.clientHeight + STILL || el.scrollWidth > el.clientWidth + STILL);
+
+/** **The person's own scroll input**, heard before anything acts on it. */
+function heard(event: Event) {
+  const now = performance.now();
+  switch (event.type) {
+    case "wheel":
+    case "touchstart":
+    case "touchmove":
+      ownScroll = { ...ownScroll, at: now };
+      return;
+    case "keydown": {
+      const key = (event as KeyboardEvent).key;
+      if (SCROLL_KEYS.has(key) && (key === "Tab" || !writesIn(event.target))) {
+        ownScroll = { ...ownScroll, at: now };
+      }
+      return;
+    }
+    case "pointerdown":
+      if (scrolls(event.target)) ownScroll = { at: now, holding: true };
+      return;
+    default:
+      // A scrollbar let go, or a touch ended: its glide is still theirs for a moment.
+      if (ownScroll.holding || event.type === "touchend") ownScroll = { at: now, holding: false };
+  }
+}
+
+const HEARD = [
+  "wheel",
+  "touchstart",
+  "touchmove",
+  "touchend",
+  "keydown",
+  "pointerdown",
+  "pointerup",
+  "pointercancel",
+] as const;
 
 /** A box's place, and since when it is there. */
 export type WayPlace = {
@@ -90,9 +163,10 @@ const PAGE: Chain = { x: 0, y: 0, made: false };
 /** What a watch with nothing kept past its drawing keeps: nothing, as it is never named. */
 const NOTHING_KEPT = new Map<string, WayPlace>();
 
-/** **Whether `box` was made to scroll back since the watch last read it**: it was scrolled
- *  further than what it holds now lets it be, so the browser clamped it. */
-function clamped(watch: Watch, box: Element): boolean {
+/** **Whether `box` was made to scroll since the watch last read it**: it was scrolled further
+ *  than what it holds now lets it be, so the browser clamped it; or it scrolled, and not as the
+ *  person asked (#3217). */
+function madeToScroll(watch: Watch, box: Element): boolean {
   const now: Scrolled = {
     top: box.scrollTop,
     left: box.scrollLeft,
@@ -101,11 +175,12 @@ function clamped(watch: Watch, box: Element): boolean {
   };
   const was = watch.scrolled.get(box);
   watch.scrolled.set(box, now);
-  return (
-    was !== undefined &&
-    ((now.top < was.top - STILL && was.top > now.maxTop + STILL) ||
-      (now.left < was.left - STILL && was.left > now.maxLeft + STILL))
-  );
+  if (was === undefined) return false;
+  const clamped =
+    (now.top < was.top - STILL && was.top > now.maxTop + STILL) ||
+    (now.left < was.left - STILL && was.left > now.maxLeft + STILL);
+  const scrolled = differ(now.top, was.top) || differ(now.left, was.left);
+  return clamped || (scrolled && !scrollIsOwn());
 }
 
 /** Watches `el`'s size, once. */
@@ -122,7 +197,7 @@ function chainOf(watch: Watch, el: Element | null, pass: Pass): Chain {
   if (known !== undefined) return known;
   const up = chainOf(watch, el.parentElement, pass);
   sizeOf(el);
-  const made = clamped(watch, el) || up.made;
+  const made = madeToScroll(watch, el) || up.made;
   const chain = { x: up.x + el.scrollLeft, y: up.y + el.scrollTop, made };
   pass.set(el, chain);
   return chain;
@@ -224,6 +299,11 @@ function listen(on: boolean) {
     if (on) document.addEventListener(kind, inAFrame, how);
     else document.removeEventListener(kind, inAFrame, how);
   }
+  for (const kind of HEARD) {
+    if (on) document.addEventListener(kind, heard, how);
+    else document.removeEventListener(kind, heard, how);
+  }
+  if (!on) ownScroll = { at: -Infinity, holding: false };
   if (on) window.addEventListener("resize", inAFrame);
   else window.removeEventListener("resize", inAFrame);
   // A font that loads late lays the words out again.
