@@ -506,7 +506,9 @@ fn upkeep(
     let mut say = |line| lines.borrow_mut().push(line);
     let saved = || {
         if let Some(line) = crate::wscmd::memory::next_save(root) {
-            lines.borrow_mut().push(crate::repocmd::Say::Info(line));
+            lines
+                .borrow_mut()
+                .push(crate::repocmd::Say::Info(line.into()));
         }
     };
     let chat = asker.chat.to_string();

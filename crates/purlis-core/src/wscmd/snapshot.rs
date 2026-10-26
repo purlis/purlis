@@ -49,43 +49,45 @@ pub fn snapshot(request: &Request, say: Sink) -> u8 {
     } = *request;
 
     let Ok(workspace) = crate::workspaces::Plane::open(root).workspace(ws) else {
-        say(Say::Fail(format!(
-            "invalid workspace name '{}'",
-            crate::personas::one_line(ws)
-        )));
+        say(Say::Fail(
+            format!("invalid workspace name '{}'", crate::personas::one_line(ws)).into(),
+        ));
         return 1;
     };
     let found = match crate::repos::clones(root, ws) {
         Ok(found) => found,
         Err(why) => {
-            say(Say::Fail(format!(
-                "could not read workspace '{ws}' — {why}"
-            )));
+            say(Say::Fail(
+                format!("could not read workspace '{ws}' — {why}").into(),
+            ));
             return 1;
         }
     };
     // Said, never dropped: a clone charter refused to look at is one this snapshot will not
     // record, and the operator is the only one who can tell whether the link is theirs.
     for (name, why) in &found.refused {
-        say(Say::Warn(format!("{name} is not recorded — {why}")));
+        say(Say::Warn(format!("{name} is not recorded — {why}").into()));
     }
     if found.repos.is_empty() {
-        say(Say::Fail(format!(
-            "workspace '{ws}' has no repo clones to snapshot."
-        )));
+        say(Say::Fail(
+            format!("workspace '{ws}' has no repo clones to snapshot.").into(),
+        ));
         return 1;
     }
     let blockers = wscmd::restore_blockers(root, ws);
     if !blockers.is_empty() && !force {
-        say(Say::Fail(format!(
-            "Refusing to snapshot '{ws}' — push repo work first so the branch captures the \
+        say(Say::Fail(
+            format!(
+                "Refusing to snapshot '{ws}' — push repo work first so the branch captures the \
              real state:"
-        )));
+            )
+            .into(),
+        ));
         wscmd::say_each(say, blockers);
         say(Say::Info(
             "Commit + push inside each repo, then retry (or --force to snapshot branches \
              as-is)."
-                .to_string(),
+                .into(),
         ));
         return 2;
     }
@@ -113,7 +115,7 @@ pub fn snapshot(request: &Request, say: Sink) -> u8 {
     let held = match workspace.manifest_lock() {
         Ok(held) => held,
         Err(why) => {
-            say(Say::Fail(format!("{why}, so nothing was recorded.")));
+            say(Say::Fail(format!("{why}, so nothing was recorded.").into()));
             return 1;
         }
     };
@@ -144,24 +146,35 @@ pub fn snapshot(request: &Request, say: Sink) -> u8 {
     let written = workspace.write_manifest(&doc);
     drop(held);
     if let Err(why) = written {
-        say(Say::Fail(format!(
-            "could not write workspaces/{ws}/workspace.json ({why}) — nothing was recorded."
-        )));
+        say(Say::Fail(
+            format!(
+                "could not write workspaces/{ws}/workspace.json ({why}) — nothing was recorded."
+            )
+            .into(),
+        ));
         return 1;
     }
-    say(Say::Done(format!(
-        "Snapshot '{ws}' → workspaces/{ws}/workspace.json  ({}):",
-        counted(rows.len(), "repo", "repos")
-    )));
+    say(Say::Done(
+        format!(
+            "Snapshot '{ws}' → workspaces/{ws}/workspace.json  ({}):",
+            counted(rows.len(), "repo", "repos")
+        )
+        .into(),
+    ));
     for row in &rows {
-        say(Say::Info(format!(
-            "  {} @ {}",
-            row["name"].as_str().unwrap_or_default(),
-            row["branch"].as_str().unwrap_or_default()
-        )));
+        say(Say::Info(
+            format!(
+                "  {} @ {}",
+                row["name"].as_str().unwrap_or_default(),
+                row["branch"].as_str().unwrap_or_default()
+            )
+            .into(),
+        ));
     }
     say(Say::Info(
-        "Share it with the team: purlis save   (commits + pushes manifest + memory).".to_string(),
+        "Share it with the team: purlis save   (commits + pushes manifest + memory)."
+            .to_string()
+            .into(),
     ));
     0
 }

@@ -45,14 +45,14 @@ pub fn discover_as(root: &Path, options: Options, caller: &Caller, say: Sink) ->
     let cfg = match forge::load_config(root) {
         Ok(cfg) => cfg,
         Err(why) => {
-            say(Say::Plain(why));
+            say(Say::Plain(why.into()));
             return 1;
         }
     };
     let to_query = match forge::to_query(&cfg) {
         Ok(q) => q,
         Err(why) => {
-            say(Say::Plain(why));
+            say(Say::Plain(why.into()));
             return 1;
         }
     };
@@ -60,13 +60,16 @@ pub fn discover_as(root: &Path, options: Options, caller: &Caller, say: Sink) ->
     let mut batches: Vec<Vec<Value>> = Vec::new();
     let mut probe_failures = 0usize;
     for (forge, owner, exclude) in &to_query {
-        say(Say::Info(format!(
-            "Querying {} {} `{owner}` …",
-            forge.kind.word(),
-            forge.kind.owner_noun()
-        )));
+        say(Say::Info(
+            format!(
+                "Querying {} {} `{owner}` …",
+                forge.kind.word(),
+                forge.kind.owner_noun()
+            )
+            .into(),
+        ));
         if let Err(why) = forge::signin::ready(forge, caller) {
-            say(Say::Plain(why.to_string()));
+            say(Say::Plain(why.to_string().into()));
             return 1;
         }
         let owned = forge.backend().owned(caller, &Owner::new(owner.clone()));
@@ -76,20 +79,23 @@ pub fn discover_as(root: &Path, options: Options, caller: &Caller, say: Sink) ->
                 .filter(|p| !exclude.contains(&p.name))
                 .collect(),
             Err(why) => {
-                say(Say::Plain(why.to_string()));
+                say(Say::Plain(why.to_string().into()));
                 return 1;
             }
         };
-        say(Say::Info(format!(
-            "Found {} on {}. {}",
-            counted(repos.len(), "project", "projects"),
-            forge.kind.word(),
-            if options.no_probe {
-                "Skipping stack probe."
-            } else {
-                "Probing repo stacks …"
-            }
-        )));
+        say(Say::Info(
+            format!(
+                "Found {} on {}. {}",
+                counted(repos.len(), "project", "projects"),
+                forge.kind.word(),
+                if options.no_probe {
+                    "Skipping stack probe."
+                } else {
+                    "Probing repo stacks …"
+                }
+            )
+            .into(),
+        ));
         let (records, failed) = build_batch(forge, &repos, options.no_probe, caller);
         probe_failures += failed;
         batches.push(records);
@@ -99,7 +105,7 @@ pub fn discover_as(root: &Path, options: Options, caller: &Caller, say: Sink) ->
     let previous = match inventory::load(root, &group) {
         Ok(doc) => doc,
         Err(why) => {
-            say(Say::Plain(why));
+            say(Say::Plain(why.into()));
             return 1;
         }
     };
@@ -123,14 +129,14 @@ pub fn discover_as(root: &Path, options: Options, caller: &Caller, say: Sink) ->
     let merged = match inventory::merge(&every) {
         Ok(merged) => merged,
         Err(why) => {
-            say(Say::Plain(why));
+            say(Say::Plain(why.into()));
             return 1;
         }
     };
     let doc = match inventory::save(root, &group, &merged) {
         Ok(doc) => doc,
         Err(why) => {
-            say(Say::Plain(why));
+            say(Say::Plain(why.into()));
             return 1;
         }
     };
@@ -139,29 +145,33 @@ pub fn discover_as(root: &Path, options: Options, caller: &Caller, say: Sink) ->
         .map(|r| py_str(r.get("name").unwrap_or(&Value::Null)))
         .collect();
 
-    say(Say::Done(format!(
-        "Wrote {} repos to inventory/repos.json",
-        doc["count"]
-    )));
+    say(Say::Done(
+        format!("Wrote {} repos to inventory/repos.json", doc["count"]).into(),
+    ));
     if probe_failures > 0 {
-        say(Say::Warn(format!(
-            "⚠ stack probe FAILED for {} — {} `stack` was written as \
+        say(Say::Warn(
+            format!(
+                "⚠ stack probe FAILED for {} — {} `stack` was written as \
              \"unknown\" because the probe itself errored (network/auth/a GitHub secondary rate \
              limit), not because {} a recognised build file. Re-run `purlis discover` \
              to re-probe; if it keeps failing, check `purlis doctor` (forge auth) or wait out \
              the rate-limit window.",
-            counted(probe_failures, "repo", "repos"),
-            plural(probe_failures, "its", "their"),
-            plural(probe_failures, "it lacks", "they lack")
-        )));
+                counted(probe_failures, "repo", "repos"),
+                plural(probe_failures, "its", "their"),
+                plural(probe_failures, "it lacks", "they lack")
+            )
+            .into(),
+        ));
     }
     let added: Vec<&String> = after.difference(&before).collect();
     let removed: Vec<&String> = before.difference(&after).collect();
     if !added.is_empty() {
-        say(Say::Info(format!("New in group: {}", join(&added))));
+        say(Say::Info(format!("New in group: {}", join(&added)).into()));
     }
     if !removed.is_empty() {
-        say(Say::Warn(format!("No longer in group: {}", join(&removed))));
+        say(Say::Warn(
+            format!("No longer in group: {}", join(&removed)).into(),
+        ));
     }
 
     if !options.no_docs {

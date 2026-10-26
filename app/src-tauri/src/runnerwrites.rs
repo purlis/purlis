@@ -134,7 +134,7 @@ pub fn hold(held: &Held, pool: &str, asker: Asker, write: Write) -> Answer {
         Some(_) => {
             held.chats().asks_may_have_moved();
             Answer::Said {
-                lines: vec![purlis_core::repocmd::Say::Done(HELD_SAID.to_owned())],
+                lines: vec![purlis_core::repocmd::Say::Done(HELD_SAID.into())],
                 code: 0,
             }
         }

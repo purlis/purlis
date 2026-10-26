@@ -33,7 +33,7 @@ use crate::wscmd;
 /// and then [`Removal::refused_over`] is what it refused on.
 pub fn drop_repo(root: &Path, ws: &str, repo: &str, say: Sink) -> Removal {
     let fail = |say: Sink, why: String| {
-        say(Say::Fail(why));
+        say(Say::Fail(why.into()));
         Removal {
             code: 1,
             refused_over: Vec::new(),
@@ -83,10 +83,13 @@ pub fn drop_repo(root: &Path, ws: &str, repo: &str, say: Sink) -> Removal {
         .collect();
     if !risky.is_empty() {
         let joined: Vec<String> = risky.iter().map(ToString::to_string).collect();
-        say(Say::Fail(format!(
-            "Refusing to remove '{repo}' — this would discard work: {}. Push or commit first.",
-            joined.join("; ")
-        )));
+        say(Say::Fail(
+            format!(
+                "Refusing to remove '{repo}' — this would discard work: {}. Push or commit first.",
+                joined.join("; ")
+            )
+            .into(),
+        ));
         return Removal {
             code: 2,
             refused_over: risky,
@@ -102,9 +105,9 @@ pub fn drop_repo(root: &Path, ws: &str, repo: &str, say: Sink) -> Removal {
         );
     }
     forget_in_manifest(root, ws, repo, say);
-    say(Say::Done(format!(
-        "Removed '{repo}' from workspace '{ws}'."
-    )));
+    say(Say::Done(
+        format!("Removed '{repo}' from workspace '{ws}'.").into(),
+    ));
     Removal {
         code: 0,
         refused_over: Vec::new(),
@@ -156,7 +159,7 @@ fn branches_with_folders(repo: &str, pieces: Vec<crate::worktree::Piece>) -> Str
 /// Exit codes: 0 dropped, 1 could not, and nothing was written.
 pub fn drop_membership(root: &Path, ws: &str, repo: &str, say: Sink) -> u8 {
     let mut fail = |why: String| {
-        say(Say::Fail(why));
+        say(Say::Fail(why.into()));
         1
     };
     let Some(dir) = wscmd::workspace_dir(root, ws) else {
@@ -229,9 +232,12 @@ pub fn drop_membership(root: &Path, ws: &str, repo: &str, say: Sink) -> u8 {
             crate::shown::short(&why.to_string())
         ));
     }
-    say(Say::Done(format!(
-        "Removed '{repo}' from workspace '{ws}'. Nothing was deleted: it was not cloned here."
-    )));
+    say(Say::Done(
+        format!(
+            "Removed '{repo}' from workspace '{ws}'. Nothing was deleted: it was not cloned here."
+        )
+        .into(),
+    ));
     0
 }
 
@@ -264,16 +270,21 @@ fn forget_in_manifest(root: &Path, ws: &str, repo: &str, say: Sink) {
     let _held = match workspace.manifest_lock() {
         Ok(held) => held,
         Err(why) => {
-            say(Say::Warn(format!("{why}, so it may still name '{repo}'.")));
+            say(Say::Warn(
+                format!("{why}, so it may still name '{repo}'.").into(),
+            ));
             return;
         }
     };
     let (doc, owner) = workspace.manifest();
     if owner == Ownership::Operator {
-        say(Say::Warn(format!(
-            "workspaces/{ws}/workspace.json was not written by purlis — left untouched, so it \
+        say(Say::Warn(
+            format!(
+                "workspaces/{ws}/workspace.json was not written by purlis — left untouched, so it \
              still names '{repo}'."
-        )));
+            )
+            .into(),
+        ));
         return;
     }
     let Some(mut doc) = doc else {

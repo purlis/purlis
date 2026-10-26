@@ -2007,7 +2007,7 @@ mod drafted_tests {
     #[test]
     fn a_draft_answer_says_whether_it_made_the_draft_in_its_field() {
         let said = Answer::Drafted {
-            lines: vec![Say::Done("saved".to_owned())],
+            lines: vec![Say::Done("saved".to_owned().into())],
             code: 0,
             made: false,
         };
@@ -2022,7 +2022,9 @@ mod drafted_tests {
         // An older app answers `Said`: the draft it wrote is printed and its exit kept, and a
         // draft made now is the one it said as done.
         let made = Answer::Said {
-            lines: vec![Say::Done("The theme draft dusk is started".to_owned())],
+            lines: vec![Say::Done(
+                "The theme draft dusk is started".to_owned().into(),
+            )],
             code: 0,
         };
         assert_eq!(
@@ -2030,7 +2032,7 @@ mod drafted_tests {
             Some((0, true))
         );
         let there = Answer::Said {
-            lines: vec![Say::Info("The theme draft dusk is there".to_owned())],
+            lines: vec![Say::Info("The theme draft dusk is there".to_owned().into())],
             code: 0,
         };
         assert_eq!(super::drafted(there).map(|(_, _, made)| made), Some(false));

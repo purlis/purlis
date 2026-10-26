@@ -119,7 +119,7 @@ pub(crate) fn ran(code: u8, said: Vec<Say>) -> Result<Vec<String>, String> {
     let refusals: Vec<String> = said
         .iter()
         .filter_map(|line| match line {
-            Say::Fail(text) | Say::Plain(text) => Some(text.clone()),
+            Say::Fail(text) | Say::Plain(text) => Some(text.to_string()),
             _ => None,
         })
         .collect();
@@ -247,7 +247,7 @@ fn create_in(
     if code == 0
         && let Some(note) = purlis_core::skills::levels::vouch_if_made(root, &owner, was_there)
     {
-        said.push(Say::Info(note));
+        said.push(Say::Info(note.into()));
     }
     ran(code, said)
 }
