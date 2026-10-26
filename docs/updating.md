@@ -229,8 +229,8 @@ What a release brought is written as it merges, one changelog fragment per pull 
 #      there too and stays
 #    - `node tools/theme-parts-release.mjs`: the component parts manifest takes this release's
 #      one version (ADR 0103, amended 2026-10-25): every `since: NEXT` becomes the last
-#      version plus one, `parts::VERSION` is raised to it, its digest is pinned and the theme
-#      schema written again. With nothing since NEXT it changes nothing. The stable tag is
+#      version plus one, `parts::VERSION` is raised to it, its digest is pinned, and the theme
+#      schema and docs/themes.md's family table written again. With nothing since NEXT it changes nothing. The stable tag is
 #      refused while a NEXT is left (`--check`)
 #    - CHANGELOG.md: rename `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD`, put an empty
 #      `## [Unreleased]` above it, and point the link references at the bottom at the new

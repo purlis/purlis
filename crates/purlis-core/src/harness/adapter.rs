@@ -176,6 +176,14 @@ pub trait HarnessAdapter: Sync {
     /// says which version it read and how.
     fn skill_frontmatter(&self) -> crate::skills::Honours;
 
+    /// **The file beside a `SKILL.md` this harness reads to keep one of the skills it finds
+    /// itself out of its model's choice** (SK-39), and how a text of it says so: what the badge
+    /// of each of its own and its repo skills reads. Pure: the host reads the file. `None`, the
+    /// default, for a harness that keeps one out by its frontmatter alone.
+    fn manual_beside(&self) -> Option<crate::skills::ManualBeside> {
+        None
+    }
+
     /// **Whether this harness names the skill a prompt the person sent started** (SK-12): a
     /// hook it fires says so ([`Self::prompt_started`]), and a skill Use skill… typed is then
     /// confirmed by that name. `false`, the default, for a harness that does not, whose typed

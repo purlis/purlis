@@ -402,6 +402,8 @@ export const commands = {
 	browserProofRequests: __WINDOW_ONLY_RESULT,
 	showBrowserProof: __WINDOW_ONLY_RESULT,
 	attachBrowserProof: __WINDOW_ONLY_RESULT,
+	browsersTakenBack: __WINDOW_ONLY_RESULT,
+	browserViewed: __WINDOW_ONLY_RESULT,
 	pinChatBrowser: __WINDOW_ONLY_RESULT,
 	browsersAtQuit: __WINDOW_ONLY_RESULT,
 	putAwayBrowsersAtQuit: __WINDOW_ONLY_RESULT,

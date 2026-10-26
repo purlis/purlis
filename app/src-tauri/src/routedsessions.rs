@@ -638,6 +638,11 @@ impl SessionHost for RoutedSessions {
         }
         self.here.close_what_was_not_reattached();
     }
+
+    /// This machine's host's alone: a browser runs only there (#2025).
+    fn browsers_left(&self) -> Vec<purlis_session_protocol::session::HeldProgram> {
+        self.here.browsers_left()
+    }
 }
 
 /// The project's saver, which also fetches the runners' branches back as the window comes back
