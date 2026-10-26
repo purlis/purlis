@@ -289,6 +289,34 @@ export const Unpinned: Story = {
 };
 
 /**
+ * **A name with descenders** (#3326): `git-ci-cd`, dashed while it is not pinned, beside the
+ * pinned and the current chips. Every chip's name box holds the font's whole height, ascent to
+ * descent, so the clip that draws its ellipsis never cuts a g, j, p, q or y. One rule draws the
+ * name in every state, so the states the pointer gives are the screenshots'.
+ */
+export const Descenders: Story = {
+  args: { focusedAt: "git-ci-cd" },
+  play: async ({ canvas }) => {
+    const chips = chipsOf(canvas.getByTestId("title-bar"));
+    await expect(chips[chips.length - 1]).toHaveTextContent("git-ci-cd+");
+    const cut = chips.flatMap((chip) => {
+      const name = chip.querySelector<HTMLElement>('[data-part="name"]');
+      if (name === null) return [`${chip.textContent ?? ""}: no name part`];
+      const style = getComputedStyle(name);
+      const pen = document.createElement("canvas").getContext("2d");
+      if (pen === null) return ["no canvas"];
+      pen.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+      const ink = pen.measureText(name.textContent ?? "");
+      const tall = ink.fontBoundingBoxAscent + ink.fontBoundingBoxDescent;
+      const box = name.getBoundingClientRect().height;
+      return box + 0.5 >= tall ? [] : [`${name.textContent ?? ""}: ${box}px of ${tall}px`];
+    });
+    await expect(cut).toEqual([]);
+    for (const one of chips) await expect(Math.round(one.getBoundingClientRect().height)).toBe(28);
+  },
+};
+
+/**
  * **The workspace popover** (R106–R109): 320px under the ⌄, its filter with the key, the root
  * first, the pins, the rest, a pin toggle on each and New workspace… last; the keys in its
  * footer. Typing chooses the first match; ↑ and ↓ stop at the ends; Escape closes it.

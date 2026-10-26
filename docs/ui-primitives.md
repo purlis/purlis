@@ -684,6 +684,7 @@ spec #2897, ADR 0104), each one wrapper under `app/src/ui/` and its own lint rul
 | --- | --- | --- | --- |
 | Panel | `Panel`, or `panelRoot(variant)` on a library's resizable panel (`ui/panel/Panel.tsx`) | `root` | `side`, `content`, `bottom` |
 | Panel section | `PanelSection`, `PanelSectionHead`, `PanelSectionTitle` (`ui/panel/Panel.tsx`) | `root`, `head`, `title` | `default` |
+| Panel separator | `Separator` (`ui/panel/Separator.tsx`), every resize handle between two panels | `root`, `grip` | none |
 | Empty state | `EmptyState` (`ui/empty-state/EmptyState.tsx`) | `root`, `icon`, `headline`, `body`, `action` | `page`, `panel` |
 | Status item | `StatusItem` (pressed, runs a command), `StatusCell` (says, runs nothing), `StatusVerdict` (`ui/status/StatusItem.tsx`) | `root`, `icon`, `label`, `count` | `bar`, `pill`, `waiting`, `accent` |
 
@@ -695,6 +696,15 @@ spec #2897, ADR 0104), each one wrapper under `app/src/ui/` and its own lint rul
   gutter (`App.css`, `.regions`), the panel family the corners and the ground.
 - **A section's title** is the label's capitals in the secondary tier, its mark in the title's
   colour. Where it sits (its margin) is its view's; the line between two sections is a separator.
+- **A resize handle is a panel separator** (#3143): the room it takes and its line at rest are
+  the regions' (`App.css`, `--separator-room`): the gutter at a region's edge, and between two
+  panes in a split the gutter in the window's colour, or the hairline where the panels sit flush; its box is never thinner than the keyboard's ring
+  and straddles that room with a negative margin, so Tab always lands on something drawn and
+  nothing moves. Under the pointer, while dragged and with the keyboard it shows its grip, a
+  short mark at its middle drawn over the panels either side. Purlis's grip is the faint tier
+  under the pointer, the muted tier while dragged and `focus.ring` with the keyboard on it, in
+  place of the window's ring; Purlis Classic keeps its accent line through its theme's parts.
+  Forced colours draw the grip in `CanvasText` and `Highlight`, and the ring comes back.
 - **The status bar follows its contribution model** (N28, `ui/status/StatusBar.tsx`): every item,
   purlis's own and an extension's, says its `id`, `side` (left or right) and `priority` (highest
   first from the side's left), and the person may hide any item from the bar's menu (a right
@@ -732,7 +742,9 @@ item families (`purlis/tooltip-family`, an error). A frame's `title` is its name
 - **One placement and one delay, which no call site changes**: beside its target at the target's
   end, 10 px from it, flipped to its start where the window has no room (R166); open after the
   pointer rests 500 ms, at once on the keyboard's focus, and at once for the next target while
-  one was just open.
+  one was just open. A row's tooltip stands by the pointer or the row's words, not the whole row,
+  and an anchored tooltip (a row's, a menu row's) keeps its width: it takes the side with room for
+  all of it, and stands under its anchor where neither side has (#3328, `ui/tooltip/side.ts`).
 - **WCAG 1.4.13**: Esc takes it down and leaves the focus where it was (dismissible). **The first
   Esc is the tooltip's alone**: heard first on the window's capture phase while it is up, it reaches no
   dialog, menu, palette or terminal, and the next Esc is theirs. The pointer can move onto a tooltip it
@@ -966,9 +978,10 @@ are `item` (the root), `icon`, `count` and `indicator`; both corners draw the `b
   the switcher prototype's variant D draws it
   with "Bar: column". The side panel's views at the top (Chats, Explorer, Search), its half of
   the bottom panel's (Repos, Changes) at its foot. A press switches the view; a press of the
-  open one does nothing (R121), and ⌘B is the way to put the side away. The column stands
-  whether or not the side is out, so nothing moves when it goes or comes back; while the side is
-  away none of its icons is marked, and a press brings it back on that view. A hidden rail
+  open one puts the side away, as on the right (R121 as amended 2026-10-26, #3329), and so does
+  ⌘B. The column stands whether or not the side is out, so nothing moves when it goes or comes
+  back; while the side is away none of its icons is marked, and a press brings it back on that
+  view. A hidden rail
   leaves the column at the window's edge, and the rail's peek slides in over it.
 - **The right bar** (R117): the same column at the window's edge, its own views at the top (a
   press toggles the 300px right panel, whose header has a × that closes it) and its half of the
@@ -2072,7 +2085,7 @@ A part of a project's view is therefore mounted while nobody can see it. What th
   with the panes.
 - **A measurement** taken while the element is in no document measures nothing: `fits.ts` and
   `wholeWays.ts` keep what they last measured, and measure again as the view comes back.
-- **A split that resizes** uses `Separator` from `shownSeparator.tsx`, not the library's own:
+- **A split that resizes** uses `Separator` from `ui/panel/Separator.tsx`, not the library's own:
   `react-resizable-panels` asks about every handle on every press on the document, and throws
   for one that is in no document. The handle is disabled while its project is behind, which the
   library changes in place; disabling the `Group` registers it again and lays it out again.

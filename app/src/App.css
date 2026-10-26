@@ -2069,15 +2069,12 @@ body {
   fill: var(--text-muted);
 }
 
-/* The handle between two panes: thin, and easier to hit than it looks. */
+/* The handle between two panes: thin, and easier to hit than it looks. Its box, which straddles
+   the room it takes here (`--separator-room`, none between two panes), and its look under the
+   pointer, while it is dragged and with the keyboard are the panel separator family's
+   (`ui/panel/panel.css`, #3143), which a theme's `panel-separator` parts set. */
 [data-separator] {
-  background: var(--border-subtle);
-  flex: 0 0 1px;
-}
-
-[data-separator]:hover,
-[data-separator][data-dragging] {
-  background: var(--accent-base);
+  flex: none;
 }
 
 .xterm {
@@ -2133,16 +2130,11 @@ body {
 }
 
 /* Each boundary between two regions is the gutter's width, and draws no line of its own: a
-   side's line is its slot's border. Its handle shows under the pointer as a line along its
-   middle, no wider than the gutter, so a flush window's handles draw nothing, as before. */
-.region-row > [data-separator] {
-  width: var(--window-gutter);
-  background-color: transparent;
-}
-
+   side's line is its slot's border. Under the pointer its handle shows its grip at its middle
+   (`ui/panel/panel.css`, #3143), never a line the window's length. */
+.region-row > [data-separator],
 .regions > [data-separator] {
-  height: var(--window-gutter);
-  background-color: transparent;
+  --separator-room: var(--window-gutter);
 }
 
 /* **A workspace switch slides the workspace in** (#2916, R114): the regions, which are its side
@@ -2172,24 +2164,6 @@ body {
   }
 }
 
-.region-row > [data-separator]:hover,
-.region-row > [data-separator][data-dragging] {
-  background-color: transparent;
-  background-image: linear-gradient(var(--accent-base), var(--accent-base));
-  background-position: center;
-  background-size: min(var(--window-gutter), var(--focus-ring-width)) 100%;
-  background-repeat: no-repeat;
-}
-
-.regions > [data-separator]:hover,
-.regions > [data-separator][data-dragging] {
-  background-color: transparent;
-  background-image: linear-gradient(var(--accent-base), var(--accent-base));
-  background-position: center;
-  background-size: 100% min(var(--window-gutter), var(--focus-ring-width));
-  background-repeat: no-repeat;
-}
-
 /* The row above the Panel fills its panel's inner box, as a slot's content does. */
 .region-upper,
 .region-row {
@@ -2215,29 +2189,42 @@ body {
    drawn no pixels wide. A side's slot has a line because the slot has a border; a half has
    none, so its handle is the line, and there is never a second one. */
 .panel-halves > [data-separator] {
+  --separator-room: max(var(--panel-border-width), var(--window-gutter));
   align-self: stretch;
-  /* The line is the handle's content box, `panel.border-width` wide in the middle of the gap:
-     the whole handle where the halves sit flush, nothing where they float (`border-box`, so the
-     padding never moves a half). */
-  box-sizing: border-box;
-  width: max(var(--panel-border-width), var(--window-gutter));
-  padding-inline: calc(
-    (max(var(--panel-border-width), var(--window-gutter)) - var(--panel-border-width)) / 2
-  );
+  /* The line is the handle's content box, `panel.border-width` wide in the middle of its box
+     (`--separator-box`, the family's): Purlis Classic's hairline, and nothing in Purlis, whose
+     `panel.border-width` is 0. */
+  padding-inline: calc((var(--separator-box) - var(--panel-border-width)) / 2);
+  background-color: var(--border-subtle);
   background-clip: content-box;
 }
 
-/* Under the pointer the line is the accent, as wide as the focus ring where there is a gutter to
-   draw it in. */
-.panel-halves > [data-separator]:hover,
-.panel-halves > [data-separator][data-dragging] {
-  padding-inline: calc(
-    (
-        max(var(--panel-border-width), var(--window-gutter)) -
-          max(var(--panel-border-width), min(var(--window-gutter), var(--focus-ring-width)))
-      ) /
-      2
-  );
+/* **Two panes in a split part as two regions do** (#3143, D-3143-8): by the window's gutter, a gap
+   in the window's own colour, where a theme floats its panels (Purlis), and by the hairline
+   between two flush regions where it does not (Purlis Classic: `panel.border-width`, 1). The
+   handle takes that room and draws both, centred along it: the gap as an image the gutter's
+   width (none in a flush window), the hairline as its content box, as the halves draw theirs. */
+.pane-split {
+  --separator-room: max(var(--window-gutter), var(--panel-border-width));
+  background-color: var(--border-subtle);
+  background-image: linear-gradient(var(--surface-deep), var(--surface-deep)), none;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-clip: border-box, content-box;
+}
+
+.pane-split[aria-orientation="vertical"] {
+  padding-inline: calc((var(--separator-box) - var(--panel-border-width)) / 2);
+  background-size:
+    var(--window-gutter) 100%,
+    auto;
+}
+
+.pane-split[aria-orientation="horizontal"] {
+  padding-block: calc((var(--separator-box) - var(--panel-border-width)) / 2);
+  background-size:
+    100% var(--window-gutter),
+    auto;
 }
 
 /* And each half keeps what it holds the same step clear of that line. */
@@ -2283,13 +2270,13 @@ body {
   text-overflow: ellipsis;
 }
 
-.half-actions {
+.view-actions {
   display: flex;
   gap: var(--space-2);
   align-items: center;
 }
 
-.half-actions[hidden] {
+.view-actions[hidden] {
   display: none;
 }
 
@@ -3273,7 +3260,9 @@ body {
   top: 0;
   margin-inline: calc(-1 * var(--space-4));
   padding: var(--space-4) var(--space-4) var(--space-2);
-  background: var(--surface-base);
+  /* The panel's own fill, so the head is one piece with the rows under it (#3331): Purlis fills
+     its panels a step up from the window. */
+  background: var(--panel-fill, var(--surface-base));
 }
 
 /* **The title and the scope switch share a line** (#1679), the switch at its end, as a view's
@@ -7395,6 +7384,45 @@ nav.piece-files-head {
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
+}
+
+/* **A chat's browser timeline** (#2017): its moments, the newest first, each with the
+   screenshot the agent took where one is kept, drawn at the pane's width at most. */
+.browser-timeline {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-height: 0;
+  margin: 0;
+  padding: var(--space-3);
+  overflow: auto;
+  list-style: none;
+}
+
+.browser-timeline-moment {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-block-end: var(--space-3);
+  border-block-end: 1px solid var(--border-subtle);
+}
+
+.browser-timeline-said,
+.browser-timeline-page,
+.browser-timeline-unkept {
+  margin: 0;
+}
+
+.browser-timeline-page {
+  overflow-wrap: anywhere;
+}
+
+.browser-timeline-shot {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--border-subtle);
 }
 
 /* **Where the page is, and on which device** (#2024): purlis's own words, first in the bar

@@ -278,6 +278,10 @@ pub const PAIRS: &[Pair] = &[
     p("state.unreadable", "surface.raised", TEXT),
     p("accent.base", "surface.base", 3.0),
     p("focus.ring", "surface.base", 3.0),
+    // A resize handle's grip with the keyboard on it (#3143), on the window's frame a gutter
+    // shows and on a panel Purlis floats.
+    p("focus.ring", "surface.deep", 3.0),
+    p("focus.ring", "surface.raised", 3.0),
     // The three strips are three shades (charter-app#193): a tab that is not the one you are on
     // is muted text on its strip, and the one you are on is primary text on `layer.selected`.
     p("text.muted", "layer.project", 4.5),

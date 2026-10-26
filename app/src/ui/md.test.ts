@@ -18,14 +18,13 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { readBuiltInThemes } from "../../.storybook/builtInThemes";
 
 const APP = process.cwd();
 const SRC = join(APP, "src");
 
 type Cell = { geometry: { comfortable: Record<string, string> }; parts: string };
-const THEMES = JSON.parse(
-  readFileSync(join(APP, ".storybook", "built-in-themes.json"), "utf8"),
-) as Record<string, Record<string, Cell>>;
+const THEMES = readBuiltInThemes<Cell>(join(APP, ".storybook", "built-in-themes.json"));
 
 const CELLS: [string, string, Cell][] = Object.entries(THEMES).flatMap(([theme, appearances]) =>
   Object.entries(appearances).map(([id, cell]) => [theme, id, cell] as [string, string, Cell]),

@@ -289,25 +289,39 @@ a key names, the more it wins: a state over rest, then a variant over every vari
 names a family, part, variant, state or property purlis does not have is said and left out, as
 an unknown token is.
 
-| Family | Parts | Variants |
-|---|---|---|
-| `button` | `root` (every property), `label` (`text`, `font-size`, `font-weight`), `icon` (`text`) | `secondary`, `primary`, `ghost`, `danger`, `grants` (an Allow or an Accept); since version 2 `soft-accent`, `warning-soft` and `link`; since the next release's manifest version `quiet` (a ghost with quiet words) |
-| `field` (since version 3) | `root` (`gap`: the room between what it stacks), `label` (`text`, `font-size`, `font-weight`), `help` (`text`, `font-size`), `error` (`text`, `font-size`) | none |
-| `text-input` (since version 3) | `root` (every property but `font-weight`: the box for one line, and the words typed in it), `icon` (`text`: a filter's or a search's glass) | none |
-| `textarea` (since version 3) | `root` (every property but `gap`, `font-weight` and `height`: a textarea is as tall as its lines) | none |
-| `popover` (since version 6) | `root` (`fill`, `text`, `border-colour`, `border-width`, `corner-radius`, `shadow`: the surface a popover and a menu stand on), `filter` (`fill`, `padding`), `rule` (`fill`), `list` (`padding`, `gap`), `header` (`text`, `font-size`, `font-weight`), `footer` (`fill`, `text`, `padding`, `font-size`), `key` (`fill`, `text`, `corner-radius`) | `popover`, `menu` |
-| `menu` (since version 6) | `root` (every property: a menu's row), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`), `shortcut` (`text`, `font-size`), `indicator` (`text`: a toggle's tick, a submenu's arrow) | `default`, `danger` (what cannot be undone) |
-| `dialog` (since version 7) | `root` (`fill`, `border-colour`, `border-width`, `corner-radius`, `shadow`), `title` (`text`, `font-size`, `font-weight`), `subtitle`, `description` and `summary` (`text`), `separator` (`fill`, the rule over the footer) | `dialog`, `alert` |
-| `list` (since version 11) | `root` (every property: a list's row), `body` (`padding`, `gap`: the list around the rows), `lead` and `trail` (`text`, `gap`: a row's marks and its end), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`), `header` (`text`, `font-size`, `font-weight`: a group's name) | none |
-| `select` (since the next release) | `root` (every property but `font-weight`: the button that shows what is picked, drawn as the text input's box), `placeholder` (`text`: what it shows while nothing is picked), `chevron` (`text`) | none |
-| `combobox` (since the next release) | `root` (every property but `font-weight`: the box typed in, with its suggestions under it), `chevron` (`text`) | none |
-| `checkbox` (since NEXT) | `root` (`fill`, `text`, `corner-radius`, `gap`: the row pressed, a chip's ground), `box` (`fill`, `border-colour`, `border-width`, `corner-radius`: the box ticked), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`) | `box`, `chip` |
-| `radio` (since NEXT) | `root` (`text`, `gap`), `mark` (`fill`, `border-colour`, `border-width`: the circle picked), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`) | none |
-| `switch` (since NEXT) | `root` (`text`, `gap`), `track` and `thumb` (`fill`, `corner-radius`), `label` (`text`, `font-size`, `font-weight`) | none |
-| `segmented-control` (since NEXT) | `root` (`fill`, `corner-radius`, `shadow`, `padding`, `gap`: the ground its segments stand on) | none |
-| `segment` (since NEXT) | `root` (`fill`, `text`, `shadow`, `corner-radius`), `label` and `count` (`text`) | none |
-| `slider` (since NEXT) | `root` (`text`, `gap`), `track` and `fill` (`fill`, `corner-radius`), `thumb` (`fill`, `border-colour`, `corner-radius`), `output` (`text`: its value) | none |
-| `option-card` (since NEXT) | `root` (`fill`, `text`, `border-colour`, `shadow`, `corner-radius`, `padding`, `gap`), `icon`, `title` (`text`, `font-size`, `font-weight`), `detail` (`text`, `font-size`), `check` (`text`) | `card`, `tile` |
+One row a family, in the families' names' order, written from the manifest (`purlis theme parts`
+says what each family, part and variant is):
+
+| Family | Parts | Variants | States |
+|---|---|---|---|
+| `activity` (since version 10) | `item` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`), `icon` (`text`), `count` (`fill`, `text`), `indicator` (`fill`) | `tab`, `bar` | `hover`, `pressed`, `selected`, `focused` |
+| `button` | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`), `label` (`text`, `font-size`, `font-weight`), `icon` (`text`) | `secondary`, `primary`, `ghost`, `danger`, `grants`, `soft-accent` (since version 2), `warning-soft` (since version 2), `link` (since version 2), `quiet` (since the next release) | `hover`, `pressed`, `selected`, `focused`, `disabled`, `open` |
+| `checkbox` (since the next release) | `root` (`fill`, `text`, `corner-radius`, `gap`), `box` (`fill`, `border-colour`, `border-width`, `corner-radius`), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`) | `box`, `chip` | `hover`, `selected`, `focused`, `disabled` |
+| `combobox` (since the next release) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `height`), `chevron` (`text`) | none | `hover`, `focused`, `disabled`, `open`, `invalid` |
+| `dialog` (since version 7) | `root` (`fill`, `border-colour`, `border-width`, `corner-radius`, `shadow`), `title` (`text`, `font-size`, `font-weight`), `subtitle` (`text`), `description` (`text`), `separator` (`fill`), `summary` (`text`) | `dialog`, `alert` | `hover`, `pressed`, `selected`, `focused`, `disabled`, `open` |
+| `editor` (since version 8) | `toolbar` (`fill`, `text`, `padding`, `gap`, `font-size`) | `default` | none |
+| `empty-state` (since version 4) | `root` (`padding`, `gap`), `icon` (`text`), `headline` (`text`, `font-size`, `font-weight`), `body` (`text`, `font-size`), `action` (`gap`) | `page`, `panel` | none |
+| `field` (since version 3) | `root` (`gap`), `label` (`text`, `font-size`, `font-weight`), `help` (`text`, `font-size`), `error` (`text`, `font-size`) | none | `disabled` |
+| `list` (since version 11) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`), `body` (`padding`, `gap`), `lead` (`text`, `gap`), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`), `trail` (`text`, `gap`), `header` (`text`, `font-size`, `font-weight`) | none | `hover`, `focused`, `selected`, `disabled` |
+| `menu` (since version 6) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`), `shortcut` (`text`, `font-size`), `indicator` (`text`) | `default`, `danger` | `hover`, `focused`, `selected`, `disabled`, `open` |
+| `option-card` (since the next release) | `root` (`fill`, `text`, `border-colour`, `shadow`, `corner-radius`, `padding`, `gap`), `icon` (`text`), `title` (`text`, `font-size`, `font-weight`), `detail` (`text`, `font-size`), `check` (`text`) | `card`, `tile` | `hover`, `selected`, `focused`, `disabled` |
+| `panel` (since version 4) | `root` (`fill`, `border-colour`, `border-width`, `corner-radius`, `shadow`) | `side`, `content`, `bottom` | none |
+| `panel-section` (since version 4) | `root` (`padding`, `gap`), `head` (`padding`, `gap`), `title` (`text`, `font-size`, `font-weight`) | `default` | none |
+| `panel-separator` (since the next release) | `root` (`fill`), `grip` (`fill`) | none | `hover`, `pressed`, `focused` |
+| `popover` (since version 6) | `root` (`fill`, `text`, `border-colour`, `border-width`, `corner-radius`, `shadow`), `filter` (`fill`, `padding`), `rule` (`fill`), `list` (`padding`, `gap`), `header` (`text`, `font-size`, `font-weight`), `footer` (`fill`, `text`, `padding`, `font-size`), `key` (`fill`, `text`, `corner-radius`) | `popover`, `menu` | none |
+| `radio` (since the next release) | `root` (`text`, `gap`), `mark` (`fill`, `border-colour`, `border-width`), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`) | none | `hover`, `selected`, `focused`, `disabled` |
+| `rail` (since version 9) | `button` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`), `monogram` (`font-size`, `font-weight`), `badge` (`fill`, `text`), `unsaved` (`fill`) | `project`, `action` | `hover`, `selected`, `focused` |
+| `segment` (since the next release) | `root` (`fill`, `text`, `shadow`, `corner-radius`), `label` (`text`), `count` (`text`) | none | `hover`, `selected`, `focused`, `disabled` |
+| `segmented-control` (since the next release) | `root` (`fill`, `corner-radius`, `shadow`, `padding`, `gap`) | none | none |
+| `select` (since the next release) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `height`), `placeholder` (`text`), `chevron` (`text`) | none | `hover`, `focused`, `disabled`, `open`, `invalid` |
+| `slider` (since the next release) | `root` (`text`, `gap`), `track` (`fill`, `corner-radius`), `fill` (`fill`, `corner-radius`), `thumb` (`fill`, `border-colour`, `corner-radius`), `output` (`text`) | none | `disabled` |
+| `status-item` (since version 4) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`), `icon` (`text`), `label` (`text`, `font-size`, `font-weight`), `count` (`text`) | `bar`, `pill`, `waiting`, `accent` | `hover`, `pressed`, `focused`, `disabled` |
+| `switch` (since the next release) | `root` (`text`, `gap`), `track` (`fill`, `corner-radius`), `thumb` (`fill`, `corner-radius`), `label` (`text`, `font-size`, `font-weight`) | none | `hover`, `selected`, `focused`, `disabled` |
+| `tabs` (since version 8) | `tab` (`fill`, `text`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`, `max-width`, `flare`, `inset`), `label` (`text`, `font-size`, `font-weight`), `closer` (`fill`, `text`, `corner-radius`), `count` (`fill`, `text`, `corner-radius`), `indicator` (`fill`, `height`, `corner-radius`, `position`), `strip` (`fill`, `border-colour`, `border-width`), `layout` (`attach`, `sizing`, `dividers`, `gap`) | `chat`, `view`, `file`, `background` | `hover`, `selected` |
+| `text-input` (since version 3) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `height`), `icon` (`text`) | none | `hover`, `focused`, `disabled` |
+| `textarea` (since version 3) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `font-size`) | none | `hover`, `focused`, `disabled` |
+| `titlebar` (since version 12) | `workspace` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`), `count` (`fill`, `text`), `crumb` (`fill`, `text`, `corner-radius`), `all` (`fill`, `text`, `corner-radius`), `pin` (`fill`, `text`, `corner-radius`), `row` (`fill`, `text`, `corner-radius`) | `pinned`, `unpinned` | `hover`, `selected`, `focused` |
+| `tooltip` (since version 5) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`), `detail` (`text`) | none | none |
 
 A field is its label, its control (a `text-input` or a `textarea`), its help and its error, as
 one: `field.help.text` reaches a field's help line, `text-input.root.border-width` every one-line
@@ -445,6 +459,23 @@ bar of the window draws since the left bar became a column); its `item`
 (the root: colours, edge and corners, never a size), its `icon`, its `count` and its
 `indicator`, the mark along a chosen item's edge. Purlis draws the family default; Purlis
 Classic's own `parts` give its square items and accent edge (`activity.indicator.selected.fill`).
+
+**The panel separator** (the next release's manifest version, #3143): `panel-separator`, the handle between two
+panels that resizes them (a side's edge, the line under the work, the line between the bottom
+panel's halves, a split between panes). Its `root` is the handle and its `grip` a short mark at
+its middle, drawn over what is either side of it, so a wider look never changes the handle's box.
+Each takes only `fill`, in the states `hover`, `pressed` (dragged) and `focused` (the keyboard
+on it), keyed on the panel library's own marks and `:focus-visible` (the manifest's
+`attributes`), not React Aria's. It is drawn in marks (the manifest's `marks`): what it draws in
+a state is held at 3:1 on its grounds as a non-text mark, a focused handle draws a mark of its
+own, and a part that breaks either draws its family default there. At rest a handle parts its
+panels as the regions part: by the window's gutter where a theme floats its panels (two panes in
+a split sit `window.gutter` apart, in the window's colour), and by the hairline
+(`panel.border-width`) where they sit flush. Purlis draws the family default: no grip at rest, a
+faint grip under the pointer, a muted one while dragged and one in `focus.ring` with the keyboard
+on it, in place of a ring the handle's length. Purlis Classic's own `parts` draw its accent line in all three and no grip
+(`panel-separator.root.hover.fill: accent.base`, `panel-separator.grip.hover.fill: transparent`,
+and the same for `pressed` and `focused`).
 
 The strip tabs, a tab's `×` closer, the gear on a strip and the list and tree rows are not
 families with parts today: they are drawn as the note under [Geometry](#geometry) says.

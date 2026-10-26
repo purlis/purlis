@@ -83,13 +83,20 @@ fn a_theme_rounds_the_buttons_root_to_a_pill() {
 fn a_theme_that_names_no_parts_draws_exactly_as_today() {
     // Purlis Classic names only its tabs' strip look (#2914), its activity items' (#2917), and
     // what keeps it as it drew when the family defaults took Purlis's (#3177): its rail's 9px
-    // corners, its title bar's 5px chips and its update pill's primary words. Nothing it draws
+    // corners, its title bar's 5px chips and its update pill's primary words; and its resize
+    // handles' accent line (#3143). Nothing it draws
     // falls back.
     for theme in built_ins() {
         assert!(
-            theme.parts.keys().all(
-                |key| ["tabs", "activity", "rail", "titlebar", "status-item"].contains(&key.family)
-            ),
+            theme.parts.keys().all(|key| [
+                "tabs",
+                "activity",
+                "rail",
+                "titlebar",
+                "status-item",
+                "panel-separator",
+            ]
+            .contains(&key.family)),
             "{} names parts beyond what keeps it as it drew",
             theme.name
         );
