@@ -53,15 +53,20 @@ describe("a browser view tab", () => {
       timeout: FIRST_BROWSER,
       timeoutMsg: "no browser view tab was drawn",
     });
-    // A frame drawn sizes the canvas to the page it shows.
+    // A frame drawn sizes the canvas to the page it shows, and paints it: the engine's blank
+    // page is white, opaque, where a canvas nothing drew on is clear.
     await until(
       async () =>
         browser.execute((selector: string) => {
           const canvas = document.querySelector<HTMLCanvasElement>(selector);
-          return canvas !== null && canvas.hasAttribute("width") && canvas.width > 0;
+          if (canvas === null || !canvas.hasAttribute("width") || canvas.width === 0) return false;
+          const pixel = canvas
+            .getContext("2d")
+            ?.getImageData(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2), 1, 1).data;
+          return pixel !== undefined && pixel[3] === 255 && pixel[0] > 200 && pixel[1] > 200;
         }, FRAME),
       FIRST_BROWSER,
-      "the browser view drew no frame",
+      "the browser view drew no frame of the page",
     );
     expect(await $(BAR).getAttribute("data-driving")).toBe("agent");
 
@@ -101,7 +106,7 @@ describe("a browser view tab", () => {
     );
 
     // Handed back, as the person leaves it.
-    await $(BAR).$("button=Done").click();
+    await $(BAR).$("aria/Done").click();
     await until(
       async () => (await $(BAR).getAttribute("data-driving")) === "agent",
       30_000,

@@ -413,12 +413,14 @@ one of its own, under its number, its conversation and its run, without starting
 a reopen, which starts a chat's program again on its conversation.
 _Avoid_: resume (that is the harness's), restore, reconnect (that is the link's)
 
-**Note** (of a hosted program):
-What the window keeps of one of its programs in the session host, in its own words, which the
-host never reads and answers back to a window that comes back: for a browser, whose chat it is,
-what the chat calls it, whether it is pinned and the logins it holds. A window that comes back
-takes each browser back by its note, and ends one with none (ADR 0068, amended for #2025).
-_Avoid_: tag, label, metadata, annotation
+**Window note** (of a browser):
+What the window keeps of one of its browsers in the session host, in its own words, which the
+host never reads and answers back to a window that comes back: whose it is (a chat, by its number
+and identity, the person, or one being ended), what its chat calls it, the chat's browser Ask
+answer, the logins it holds, and whether a view tab of its own showed it. A window that comes back
+takes each browser back by its window note, and ends one with none (ADR 0068, amended for #2025).
+Not the **Host record**, which the host writes for itself about what it started.
+_Avoid_: note (unqualified), tag, label, metadata, annotation
 
 **View** (of a hosted program):
 One client's live look at a hosted program, of a kind: a terminal view, or a **browser view**.

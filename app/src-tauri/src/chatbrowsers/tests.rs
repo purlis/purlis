@@ -59,6 +59,8 @@ struct Hosted {
     waiting: Mutex<u32>,
     /// The note the window last kept of each browser in the host, by program (#2025).
     notes: Mutex<std::collections::HashMap<String, super::Note>>,
+    /// How many notes were sent.
+    notes_sent: Mutex<u32>,
 }
 
 impl Hosted {
@@ -211,7 +213,8 @@ impl Driver for Hosted {
         Ok(self.host_drives.lock().unwrap().clone())
     }
 
-    fn note(&self, program: &str, note: &super::Note) {
+    fn note(&self, _root: &Path, program: &str, note: &super::Note) {
+        *self.notes_sent.lock().unwrap() += 1;
         self.notes
             .lock()
             .unwrap()

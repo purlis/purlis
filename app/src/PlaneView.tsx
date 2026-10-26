@@ -303,6 +303,7 @@ import {
   browserView,
   goWhenShown,
   browsersLetGo,
+  browsersShown,
   chatBrowserTitle,
   isBrowser,
   openBrowserBeside,
@@ -3691,8 +3692,16 @@ export const PlaneView = memo(function PlaneView({
   useEffect(() => {
     for (const program of browsersLetGo(browsersBefore.current, tabs, chatProgramsNow.current))
       void commands.closeBrowser(program);
+    // Which browsers a view tab of its own shows, for the core to note: a crash of the window
+    // brings those tabs back (#2025).
+    const was = browsersShown(browsersBefore.current);
+    const now = browsersShown(tabs);
+    for (const program of now)
+      if (!was.has(program)) void commands.browserViewed(plane, program, true);
+    for (const program of was)
+      if (!now.has(program)) void commands.browserViewed(plane, program, false);
     browsersBefore.current = tabs;
-  }, [tabs]);
+  }, [tabs, plane]);
 
   /**
    * Closes the tab showing `view` — a vault or a persona that was just deleted — **when that tab

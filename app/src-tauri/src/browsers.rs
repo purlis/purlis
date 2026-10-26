@@ -411,8 +411,8 @@ mod hosted {
             }
         }
 
-        fn note(&self, program: &str, note: &crate::chatbrowsers::Note) {
-            WindowBrowsers::note(self, program, note);
+        fn note(&self, root: &Path, program: &str, note: &crate::chatbrowsers::Note) {
+            WindowBrowsers::note(self, root, program, note);
         }
 
         fn taken_back(&self, root: &Path, program: &str) {
@@ -453,7 +453,7 @@ mod hosted {
         logged: Arc<Mutex<HashMap<String, Logged>>>,
         /// Where each browser's note goes to be kept in the host, in the order given (#2025):
         /// one thread sends them, started with the first.
-        notes: Mutex<Option<std::sync::mpsc::Sender<(String, serde_json::Value)>>>,
+        notes: Mutex<Option<std::sync::mpsc::Sender<Noted>>>,
     }
 
     /// **Told what the window says of a browser in the event log** (#2293): the project the
@@ -494,6 +494,13 @@ mod hosted {
         dimmed: bool,
     }
 
+    /// A window note on its way to the host: the project's root, the browser, the note.
+    type Noted = (
+        PathBuf,
+        String,
+        purlis_session_protocol::session::ProgramNote,
+    );
+
     /// Told the program of each browser the window started whose engine ended (#2385), on the
     /// link's own thread: whoever is told does its work elsewhere.
     pub(crate) type Ended = Arc<dyn Fn(String) + Send + Sync + 'static>;
@@ -520,31 +527,32 @@ mod hosted {
             }
         }
 
-        /// **Keeps `note` as this window's note of browser `program` in its host** (#2025):
-        /// sent after every note given before it, never waited on. A host before 1.42 keeps
-        /// none, and is sent none.
-        pub(crate) fn note(&self, program: &str, note: &crate::chatbrowsers::Note) {
-            let Ok(note) = serde_json::to_value(note) else {
+        /// **Keeps `note` as this window's note of browser `program`, of the project at `root`,
+        /// in its host** (#2025), on that project's own link: sent after every note given before
+        /// it, never waited on. A host before 1.39 keeps none, and is sent none.
+        pub(crate) fn note(&self, root: &Path, program: &str, note: &crate::chatbrowsers::Note) {
+            let Some(note) = note.kept() else {
                 return;
             };
             let mut notes = lock(&self.notes);
             let sender = notes.get_or_insert_with(|| {
-                let (sender, noted) = std::sync::mpsc::channel::<(String, serde_json::Value)>();
+                let (sender, noted) = std::sync::mpsc::channel::<Noted>();
                 let connection = Arc::clone(&self.connection);
                 let spawned = std::thread::Builder::new()
                     .name("purlis-browser-notes".into())
                     .spawn(move || {
-                        for (program, note) in noted {
-                            let Ok(link) = connection.wait(LINK_WITHIN) else {
-                                continue;
-                            };
-                            if link.version() < session::TAKES_BROWSERS_BACK {
-                                continue;
-                            }
-                            if let Err(why) = link.call(Command::NoteProgram {
-                                program: program.clone(),
-                                note,
-                            }) {
+                        for (root, program, note) in noted {
+                            let sent = connection.of_project(&root, LINK_WITHIN).and_then(|link| {
+                                if link.version() < session::KNOWS_BROWSERS_TAKEN_BACK {
+                                    return Ok(());
+                                }
+                                link.call(Command::NoteProgram {
+                                    program: program.clone(),
+                                    note,
+                                })
+                                .map(|_| ())
+                            });
+                            if let Err(why) = sent {
                                 tracing::warn!(
                                     "purlis: the session host kept no note of browser {program}: \
                                      {why}"
@@ -557,7 +565,7 @@ mod hosted {
                 }
                 sender
             });
-            let _ = sender.send((program.to_owned(), note));
+            let _ = sender.send((root.to_path_buf(), program.to_owned(), note));
         }
 
         /// **Browser `program`, left in the host by a window before this one, is this window's
@@ -746,8 +754,6 @@ mod hosted {
             reach: Option<BrowserReach>,
         ) -> Result<String, String> {
             self.open_reaching(root, reach, None)
-                // Noted as theirs, so a crash of the window gives it back in a view tab (#2025).
-                .inspect(|program| self.note(program, &crate::chatbrowsers::Note::theirs()))
                 .map_err(|not| match not {
                     NotStarted::Full { most } => purlis_core::browserlimits::device_full_told(most),
                     NotStarted::NoSandbox => {
@@ -1226,7 +1232,12 @@ pub async fn open_browser(
         crate::off_the_window("starting a browser", move || {
             // It reaches what the project's browsers reach, and asks of a new site (#2176).
             let reach = crate::chatbrowsers::person_reach(&held);
-            browsers.open_for_the_person(held.root(), Some(reach))
+            let program = browsers.open_for_the_person(held.root(), Some(reach))?;
+            // The person's own, noted so (#2025).
+            let listing = held.browsers().listing();
+            held.browsers().opened_by_the_person(&program);
+            held.browsers_listed_since(listing);
+            Ok(program)
         })
         .await
     }

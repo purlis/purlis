@@ -801,3 +801,32 @@ describe("the person's own browser after a crash of the window (#2025)", () => {
     );
   });
 });
+
+describe("a browser's view tab, told to the core (#2025)", () => {
+  it("says the tab shows it as it opens, and no longer as it closes", async () => {
+    const host = core([B7]);
+    await opened();
+    const browsers = within(await chatsTree()).getByRole("group", {
+      name: "Browsers of steward 1",
+    });
+
+    await userEvent.click(within(browsers).getByRole("button", { name: /Browser b1/ }));
+
+    await waitFor(() =>
+      expect(host.asked("browser_viewed")).toContainEqual({
+        plane: PLANE,
+        program: "B7",
+        viewed: true,
+      }),
+    );
+    await waitFor(() => expect(tabNames()).toContain("Browser b1 of steward 1"));
+    await fromThePalette("Close this view");
+    await waitFor(() =>
+      expect(host.asked("browser_viewed")).toContainEqual({
+        plane: PLANE,
+        program: "B7",
+        viewed: false,
+      }),
+    );
+  });
+});

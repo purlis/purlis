@@ -733,11 +733,18 @@ export const commands = {
 	 */
 	chatBrowserTimelineShot: (plane: PlaneId, chat: string, shot: number) => typedError<string, string>(__TAURI_INVOKE("chat_browser_timeline_shot", { plane, chat, shot })),
 	/**
-	 *  **The person's own browsers of project `plane` a crash of the window left running**
-	 *  (#2025), taken back as it came back: the window opens a view tab of each, once. Read again
-	 *  on [`LISTED`]. The window's alone (`ui::WINDOW_ONLY`), as watching is.
+	 *  **The browsers of project `plane` a crash of the window left running that come back in a
+	 *  view tab** (#2025): the person's own, and any a view tab of its own showed, taken back as the
+	 *  window came back; the window opens a view tab of each, once. Read again on [`LISTED`]. The
+	 *  window's alone (`ui::WINDOW_ONLY`), as watching is.
 	 */
 	browsersTakenBack: (plane: PlaneId) => typedError<string[], string>(__TAURI_INVOKE("browsers_taken_back", { plane })),
+	/**
+	 *  **Whether a view tab of its own shows browser `program` of project `plane` now** (#2025): the
+	 *  window says so as its tabs change, so a crash of the window brings that tab back. The
+	 *  window's alone (`ui::WINDOW_ONLY`), as watching is.
+	 */
+	browserViewed: (plane: PlaneId, program: string, viewed: boolean) => typedError<null, string>(__TAURI_INVOKE("browser_viewed", { plane, program, viewed })),
 	/**
 	 *  **The person pins chat `session`'s browser `program`, or unpins it** (#2022): pinned, it
 	 *  outlives its chat. The window's alone (`ui::WINDOW_ONLY`).

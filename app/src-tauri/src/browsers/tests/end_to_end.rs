@@ -552,8 +552,8 @@ impl crate::chatbrowsers::Driver for Acting {
         self.browsers.driven()
     }
 
-    fn note(&self, program: &str, note: &crate::chatbrowsers::Note) {
-        self.browsers.note(program, note);
+    fn note(&self, root: &Path, program: &str, note: &crate::chatbrowsers::Note) {
+        self.browsers.note(root, program, note);
     }
 
     fn taken_back(&self, root: &Path, program: &str) {

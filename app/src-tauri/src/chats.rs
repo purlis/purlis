@@ -2143,6 +2143,13 @@ impl Chats {
 
     /// Whether a session of the chat whose id is `id` is open: what its grants last as long
     /// as (D-1348-1).
+    /// **Chat `session`'s identity** (ADR 0066), where it is open and its record has one.
+    pub fn id_of(&self, session: u32) -> Option<String> {
+        lock(&self.open)
+            .get(&session)
+            .and_then(|one| one.chat.identity.id.clone())
+    }
+
     pub fn id_is_open(&self, id: &str) -> bool {
         lock(&self.open)
             .values()

@@ -792,8 +792,11 @@ struct Hosted {
     stopping: Arc<Mutex<Option<Stopped>>>,
     /// How its run is sandboxed, as this host applied it (#2636).
     sandbox: session::RunSandbox,
-    /// The window's note of it (1.42, #2025): its own words, kept for it and never read here.
-    note: Option<serde_json::Value>,
+    /// The window's note of it (1.39, #2025): its own words, kept for it and never read here.
+    note: Option<session::ProgramNote>,
+    /// A browser purlis performed a login in, or opened from a kept login (1.39, #2025): the
+    /// host's own record, which no note of the window's unsays.
+    logged_in: Arc<std::sync::atomic::AtomicBool>,
 }
 
 /// Says the host's act `by` is ending a program, keeping the highest where another is already.
@@ -1739,6 +1742,7 @@ impl Hosting {
                 stopping: Arc::clone(&stopping),
                 sandbox: sandbox.clone(),
                 note: start.note.clone(),
+                logged_in: Arc::default(),
             },
         );
         // Written down before the start is answered, so a host killed from here on leaves it
@@ -1936,6 +1940,7 @@ impl Hosting {
                 // proxy's: no chat's run.
                 sandbox: session::RunSandbox::Off,
                 note: start.note.clone(),
+                logged_in: Arc::new(std::sync::atomic::AtomicBool::new(start.kept.is_some())),
             },
         );
         drop(state);
@@ -1997,6 +2002,13 @@ impl Hosting {
         login: purlis_session_protocol::browsing::LogIn,
     ) -> Result<Answer, Refusal> {
         let running = self.running(program)?;
+        // Recorded before it is tried, whatever it comes to: a login that timed out may have
+        // signed the browser in all the same (#2025).
+        if let Some(hosted) = self.state().programs.get(program) {
+            hosted
+                .logged_in
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+        }
         tokio::task::spawn_blocking(move || running.log_in(login))
             .await
             .map_err(|why| not_started(why.to_string()))?
@@ -2056,17 +2068,33 @@ impl Hosting {
         }))
     }
 
-    /// **`note` is the window's note of `program` from now on** (1.42, #2025): kept, never read,
+    /// **`note` is the window's note of `program` from now on** (1.39, #2025): kept, never read,
     /// and answered with the program to a window that comes back. One past its bound is refused
     /// and the one before is kept.
-    fn note_program(&self, program: &str, note: serde_json::Value) -> Result<Answer, Refusal> {
+    fn note_program(
+        &self,
+        program: &str,
+        note: session::ProgramNote,
+        peer: &Peer,
+    ) -> Result<Answer, Refusal> {
         a_note_that_fits(Some(&note))?;
         let mut state = self.state();
-        let hosted = state
+        // Only of a program in a project the link holds.
+        let at = state
             .programs
-            .get_mut(program)
+            .get(program)
+            .map(|hosted| hosted.at.clone())
             .ok_or_else(|| no_such_program(program))?;
-        hosted.note = Some(note);
+        if !state
+            .projects
+            .get(&at)
+            .is_some_and(|held| held.links.contains_key(&link_of(peer)))
+        {
+            return Err(no_such_program(program));
+        }
+        if let Some(hosted) = state.programs.get_mut(program) {
+            hosted.note = Some(note);
+        }
         Ok(Answer::Done)
     }
 
@@ -2074,10 +2102,10 @@ impl Hosting {
     /// `peer` came on holds it, which it must (#2006): what a window that comes back takes back,
     /// each with the place of the confinement it runs in. Each confinement it answers is named to
     /// that link (#2444), which may act on it and hear it from then on. Its browsers too, to a
-    /// link of 1.42 or later (#2025), each with who drives it; and each program with the note
+    /// link of 1.39 or later (#2025), each with who drives it; and each program with the note
     /// the window keeps of it here.
     fn programs_of(&self, project: &str, peer: &Peer) -> Result<Answer, Refusal> {
-        let knows_browsers = peer.version() >= session::TAKES_BROWSERS_BACK;
+        let knows_browsers = peer.version() >= session::KNOWS_BROWSERS_TAKEN_BACK;
         let mut state = self.state();
         let at = held_by(&state, project, link_of(peer))
             .cloned()
@@ -2113,6 +2141,8 @@ impl Hosting {
                 rows: hosted.size.rows,
                 driver: hosted.running.driver().filter(|_| knows_browsers),
                 note: hosted.note.clone().filter(|_| knows_browsers),
+                logged_in: knows_browsers
+                    && hosted.logged_in.load(std::sync::atomic::Ordering::SeqCst),
             })
             .collect();
         programs.sort_by(|a, b| (a.number, &a.program).cmp(&(b.number, &b.program)));
@@ -3083,7 +3113,7 @@ impl session::Host for Hosting {
             Command::LogIn { program, login } => self.log_in(&program, login).await,
             Command::ProgramsOf { project } => self.programs_of(&project, peer),
             // Only the window's link reaches this: the grants refuse every other.
-            Command::NoteProgram { program, note } => self.note_program(&program, note),
+            Command::NoteProgram { program, note } => self.note_program(&program, note, peer),
             // Only the window's link reaches this: the grants refuse every other.
             Command::Quit => Ok(self.quit().await),
             // The person's own (#2014): each may wait on the engine (a take-over on an act's
@@ -3249,23 +3279,20 @@ fn a_plain_name(id: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
-/// **A note the host keeps for the window, where one is, fits its bound** (1.42, #2025): one past
-/// [`session::NOTE_MOST`] bytes is refused [`session::TOO_LARGE`].
-fn a_note_that_fits(note: Option<&serde_json::Value>) -> Result<(), Refusal> {
-    let Some(note) = note else {
-        return Ok(());
-    };
-    let bytes = serde_json::to_vec(note).map_or(usize::MAX, |bytes| bytes.len());
-    if bytes > session::NOTE_MOST {
-        return Err(Refusal {
+/// **A note the host keeps for the window, where one is, fits its bound** (1.39, #2025): one past
+/// [`session::ProgramNote::MOST`] bytes is refused [`session::TOO_LARGE`].
+fn a_note_that_fits(note: Option<&session::ProgramNote>) -> Result<(), Refusal> {
+    match note {
+        Some(note) if !note.fits() => Err(Refusal {
             code: session::TOO_LARGE.into(),
             why: format!(
-                "a program's note is at most {} bytes, and this one is {bytes}",
-                session::NOTE_MOST
+                "a program's note is at most {} bytes, and this one is {}",
+                session::ProgramNote::MOST,
+                note.bytes()
             ),
-        });
+        }),
+        _ => Ok(()),
     }
-    Ok(())
 }
 
 fn no_such_program(program: &str) -> Refusal {

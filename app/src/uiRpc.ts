@@ -399,6 +399,7 @@ export const commands = {
 	chatBrowserTimeline: __WINDOW_ONLY_RESULT,
 	chatBrowserTimelineShot: __WINDOW_ONLY_RESULT,
 	browsersTakenBack: __WINDOW_ONLY_RESULT,
+	browserViewed: __WINDOW_ONLY_RESULT,
 	pinChatBrowser: __WINDOW_ONLY_RESULT,
 	browsersAtQuit: __WINDOW_ONLY_RESULT,
 	putAwayBrowsersAtQuit: __WINDOW_ONLY_RESULT,

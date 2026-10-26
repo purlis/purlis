@@ -17,6 +17,7 @@ use crate::browsers::{
     BrowserInput, BrowserViewRole, InputOutcome, MouseAct, MouseButton, WindowBrowsers,
 };
 use crate::chatbrowsers::{AsPersona, BrowserDriver, ChatBrowser, ChatBrowsers, Driver};
+use purlis_session_protocol::session::HeldProgram;
 
 /// A window's browsers on its connection: the host's, and its chats', which note each there.
 struct Browsing2 {
@@ -25,19 +26,42 @@ struct Browsing2 {
     chats: ChatBrowsers,
 }
 
-fn browsing(window: &AWindow) -> Browsing2 {
+/// Each chat's identity, as the app's record of it says.
+fn id_of(chat: u32) -> String {
+    format!("01JA0CHT{chat:018}")
+}
+
+fn browsing(window: &AWindow, root: &std::path::Path) -> Browsing2 {
     let browsers = Arc::new(WindowBrowsers::new(Arc::clone(&window.connection)));
     let driver: Arc<dyn Driver> = browsers.clone();
     Browsing2 {
         window: browsers,
-        chats: ChatBrowsers::default().noting(Some(Arc::clone(&driver))),
+        chats: ChatBrowsers::default().noting(Some(Arc::clone(&driver)), root),
         driver,
     }
+}
+
+/// What a window that comes back with chats `open` open does with the browsers `left`: every
+/// chat may log in with what it holds, and has no Always.
+fn take_back(again: &Browsing2, left: Vec<HeldProgram>, open: &[u32], root: &std::path::Path) {
+    let opened = |session: u32| open.contains(&session).then(|| Some(id_of(session)));
+    crate::chatbrowsers::take_back_from(
+        left,
+        &crate::chatbrowsers::Back {
+            open: &opened,
+            as_persona: &|_| AsPersona::default(),
+            may_log_in: &|_, _| Ok(()),
+        },
+        &again.chats,
+        Some(&again.driver),
+        root,
+    );
 }
 
 impl Browsing2 {
     /// One browser call of chat `chat`'s, as its tool server sends it.
     fn call(&self, root: &std::path::Path, chat: u32, asked: Browsing) {
+        self.chats.identify(chat, Some(id_of(chat)));
         self.chats.answer(
             Some(&self.driver),
             root,
@@ -53,6 +77,8 @@ impl Browsing2 {
             &|_| Err("no logins here".into()),
             1000,
         );
+        // As every command of the window's ends: its browsers' notes follow.
+        self.chats.renote();
     }
 
     /// Chat `chat`'s first browser, allowed by the person, and its program.
@@ -68,7 +94,10 @@ impl Browsing2 {
 type Drawn = (Option<String>, Vec<u8>);
 
 /// The note the host keeps of each browser of the project at `root`, as `window` reads it.
-fn notes_kept(window: &AWindow, root: &std::path::Path) -> Vec<Option<serde_json::Value>> {
+fn notes_kept(
+    window: &AWindow,
+    root: &std::path::Path,
+) -> Vec<Option<purlis_session_protocol::session::ProgramNote>> {
     let project = purlis_core::scaffold::planefile::id_to_hold_by(root).unwrap();
     let link = window.connection.of_project(root, PATIENCE).unwrap();
     match link.call(Command::ProgramsOf { project }).unwrap() {
@@ -85,7 +114,7 @@ fn notes_kept(window: &AWindow, root: &std::path::Path) -> Vec<Option<serde_json
 fn a_chats_browser_comes_back_with_its_chat_its_lease_and_its_view_after_the_window_crashes() {
     let host = Comeback::new();
     let first = host.window();
-    let browsers = browsing(&first);
+    let browsers = browsing(&first, &host.root);
     for number in [3, 4] {
         first
             .sessions
@@ -107,10 +136,10 @@ fn a_chats_browser_comes_back_with_its_chat_its_lease_and_its_view_after_the_win
     let back = host.window();
     back.sessions.reattach(3, &|_| {}).expect("chat 3 is back");
     back.sessions.close_what_was_not_reattached();
-    let again = browsing(&back);
+    let again = browsing(&back, &host.root);
     let left = back.sessions.browsers_left();
     assert_eq!(left.len(), 2, "{left:?}");
-    crate::chatbrowsers::take_back_from(left, &[3], &again.chats, Some(&again.driver), &host.root);
+    take_back(&again, left, &[3], &host.root);
 
     assert_eq!(
         again.chats.listed(),
@@ -187,18 +216,18 @@ fn a_chats_browser_comes_back_with_its_chat_its_lease_and_its_view_after_the_win
 fn a_browser_the_window_kept_no_note_of_is_ended_when_it_comes_back() {
     let host = Comeback::new();
     let first = host.window();
-    let browsers = browsing(&first);
+    let browsers = browsing(&first, &host.root);
     // Started without a note: a window that crashed before it noted it.
     let program = browsers.window.open(&host.root).unwrap();
     first.crashes();
     std::mem::forget(browsers);
 
     let back = host.window();
-    let again = browsing(&back);
+    let again = browsing(&back, &host.root);
     let left = back.sessions.browsers_left();
     assert_eq!(left.len(), 1);
     assert_eq!(left[0].program, program);
-    crate::chatbrowsers::take_back_from(left, &[], &again.chats, Some(&again.driver), &host.root);
+    take_back(&again, left, &[], &host.root);
 
     let screen = host.browsers.started()[0].clone();
     until("it is ended", || screen.shown().stopped);
@@ -209,11 +238,13 @@ fn a_browser_the_window_kept_no_note_of_is_ended_when_it_comes_back() {
 fn the_persons_own_browser_comes_back_for_a_view_tab_of_its_own() {
     let host = Comeback::new();
     let first = host.window();
-    let browsers = browsing(&first);
+    let browsers = browsing(&first, &host.root);
     let program = browsers
         .window
         .open_for_the_person(&host.root, None)
         .unwrap();
+    browsers.chats.opened_by_the_person(&program);
+    browsers.chats.renote();
     until("the host keeps its note", || {
         notes_kept(&first, &host.root).iter().all(Option::is_some)
     });
@@ -221,10 +252,93 @@ fn the_persons_own_browser_comes_back_for_a_view_tab_of_its_own() {
     std::mem::forget(browsers);
 
     let back = host.window();
-    let again = browsing(&back);
+    let again = browsing(&back, &host.root);
     let left = back.sessions.browsers_left();
-    crate::chatbrowsers::take_back_from(left, &[], &again.chats, Some(&again.driver), &host.root);
+    take_back(&again, left, &[], &host.root);
 
     assert_eq!(again.chats.take_theirs_back(), [program]);
     assert!(!host.browsers.started()[0].shown().stopped);
+}
+
+#[test]
+fn a_browser_whose_engine_ended_while_no_window_was_there_is_let_go_of() {
+    let host = Comeback::new();
+    let first = host.window();
+    let browsers = browsing(&first, &host.root);
+    first
+        .sessions
+        .open(Some(3), &a_shell("true"), &|_| {})
+        .unwrap();
+    browsers.a_browser_of(&host.root, 3);
+    until("the host keeps its note", || {
+        notes_kept(&first, &host.root).iter().all(Option::is_some)
+    });
+    first.crashes();
+    std::mem::forget(browsers);
+    host.browsers.started()[0].ends(Exit::Code(1));
+
+    let back = host.window();
+    back.sessions.reattach(3, &|_| {}).expect("chat 3 is back");
+    let again = browsing(&back, &host.root);
+    let left = back.sessions.browsers_left();
+    assert!(left[0].exit.is_some(), "the host says it ended");
+    take_back(&again, left, &[3], &host.root);
+
+    assert!(again.chats.listed().is_empty(), "nothing of it comes back");
+}
+
+#[test]
+fn a_browser_whose_note_does_not_read_is_ended_when_the_window_comes_back() {
+    let host = Comeback::new();
+    let first = host.window();
+    let browsers = browsing(&first, &host.root);
+    let program = browsers.window.open(&host.root).unwrap();
+    first
+        .connection
+        .of_project(&host.root, PATIENCE)
+        .unwrap()
+        .call(Command::NoteProgram {
+            program: program.clone(),
+            note: purlis_session_protocol::session::ProgramNote(
+                serde_json::json!({"owner": "someone else's"}),
+            ),
+        })
+        .expect("a note is kept, read or not");
+    first.crashes();
+    std::mem::forget(browsers);
+
+    let back = host.window();
+    let again = browsing(&back, &host.root);
+    let left = back.sessions.browsers_left();
+    take_back(&again, left, &[], &host.root);
+
+    let screen = host.browsers.started()[0].clone();
+    until("it is ended", || screen.shown().stopped);
+}
+
+#[test]
+fn a_relink_never_hands_back_a_browser_this_window_started_since() {
+    let host = Comeback::new();
+    let first = host.window();
+    let first_browsers = browsing(&first, &host.root);
+    let before = first_browsers.window.open(&host.root).unwrap();
+    first.crashes();
+    std::mem::forget(first_browsers);
+
+    let back = host.window();
+    let again = browsing(&back, &host.root);
+    back.sessions.hold().expect("held");
+    // A browser this window starts, and a re-link that holds the project again.
+    let since = again.window.open(&host.root).unwrap();
+    for cut in back.cuts.lock().unwrap().iter() {
+        cut.abort();
+    }
+    let left: Vec<String> = back
+        .sessions
+        .browsers_left()
+        .into_iter()
+        .map(|one| one.program)
+        .collect();
+
+    assert_eq!(left, [before], "only those of the first hold: not {since}");
 }

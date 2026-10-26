@@ -296,10 +296,10 @@ fn every_command() -> Vec<Command> {
             project: "01J9PRJCT00000000000000000".into(),
         },
         Command::Quit,
-        // The window's note of a program, kept in the host for it (1.42, #2025).
+        // The window's note of a program, kept in the host for it (1.39, #2025).
         Command::NoteProgram {
             program: CHAT.into(),
-            note: serde_json::json!({"chat": 3}),
+            note: session::ProgramNote(serde_json::json!({"chat": 3})),
         },
         // The desktop taken out of a runner's peers (1.25, #2525).
         Command::Unpair,
@@ -350,10 +350,10 @@ fn every_command() -> Vec<Command> {
             }),
             ..session::StartProgram::of("01J9PRJCT00000000000000000", session::ProgramKind::Browser)
         })),
-        // A start that keeps a note for the window (1.42, #2025): the window's alone, even of a
+        // A start that keeps a note for the window (1.39, #2025): the window's alone, even of a
         // shell, which a terminal may start.
         Command::StartProgram(Box::new(session::StartProgram {
-            note: Some(serde_json::json!({"chat": 3})),
+            note: Some(session::ProgramNote(serde_json::json!({"chat": 3}))),
             ..session::StartProgram::of("01J9PRJCT00000000000000000", session::ProgramKind::Shell)
         })),
         // A relaying host names the window a link is for, and is named again the confinements

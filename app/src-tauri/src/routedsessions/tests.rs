@@ -300,3 +300,61 @@ fn a_chat_on_a_pool_is_named_by_its_pool_and_one_here_by_none() {
     world.sessions.close(there).unwrap();
     assert_eq!(world.sessions.pool_of(there), None);
 }
+
+/// #2025: the browsers this machine's host kept from before this window reach the put back
+/// through the routing, which every app's project is held through: none was taken back before.
+#[test]
+fn the_browsers_left_on_this_machines_host_reach_the_put_back_through_the_routing() {
+    let world = a_world();
+    world
+        .here
+        .leaves_a_browser(purlis_session_protocol::session::HeldProgram {
+            program: "01J9BRWSR000000000000000000".into(),
+            kind: purlis_session_protocol::session::ProgramKind::Browser,
+            number: 0,
+            process: Some(4343),
+            run: None,
+            exit: None,
+            confined: None,
+            plan: None,
+            sandbox: None,
+            cols: 1280,
+            rows: 800,
+            driver: None,
+            note: None,
+            logged_in: false,
+        });
+
+    let left = world.sessions.browsers_left();
+
+    assert_eq!(left.len(), 1);
+    assert_eq!(left[0].program, "01J9BRWSR000000000000000000");
+    assert!(world.sessions.browsers_left().is_empty(), "each once");
+}
+
+/// Every method of the window's chats' host that has a default is one the routing says, so no
+/// answer of this machine's host is lost to the default on the way (#2025: `browsers_left` was).
+#[test]
+fn the_routing_says_every_method_of_a_chats_host() {
+    let trait_source = include_str!("../host.rs");
+    let routed_source = include_str!("../routedsessions.rs");
+    let methods = |source: &str, opening: &str| -> Vec<String> {
+        let at = source.find(opening).expect("the block");
+        let block = &source[at..];
+        let end = block.find("\n}\n").expect("its end");
+        block[..end]
+            .lines()
+            .filter_map(|line| line.strip_prefix("    fn "))
+            .filter_map(|rest| rest.split(['(', '<']).next())
+            .map(str::to_owned)
+            .collect()
+    };
+    let every = methods(trait_source, "pub trait SessionHost");
+    let said = methods(routed_source, "impl SessionHost for RoutedSessions");
+    // `fetch_back` is the routing's own, through its saver (`FetchingBack`).
+    let unsaid: Vec<&String> = every
+        .iter()
+        .filter(|one| !said.contains(one) && one.as_str() != "fetch_back")
+        .collect();
+    assert!(unsaid.is_empty(), "the routing does not say {unsaid:?}");
+}

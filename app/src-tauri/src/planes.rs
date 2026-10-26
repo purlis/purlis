@@ -577,6 +577,8 @@ impl Held {
     /// Tells the window where the chats' browsers moved since `before`, a
     /// [`crate::chatbrowsers::ChatBrowsers::listing`] read earlier (#2024).
     pub fn browsers_listed_since(&self, before: u64) {
+        // Each browser's window note follows what the window did to it (#2025).
+        self.browsers.renote();
         if self.browsers.listing() != before {
             (self.browsers_listed)();
         }
@@ -4188,6 +4190,8 @@ impl Planes {
         // What the chats of a dispatch said, expired once a day while the project is open
         // (#1556): the open and a timeline's read expire only what they read.
         let talk_sweep = crate::activity::Daily::start(root.clone(), Arc::clone(&me));
+        // Where its browsers' notes are kept for (#2025).
+        let browsers_root = root.clone();
         // The window is told of this project's chats' browsers as they come and go (#2024).
         let browsers_listed: Arc<dyn Fn() + Send + Sync> = {
             let listed = Arc::clone(&self.browsers_listed);
@@ -4226,7 +4230,7 @@ impl Planes {
             vault_refusals: crate::vaultroute::Refusals::default(),
             removal_asks: crate::removalasks::Asked::default(),
             browsers: crate::chatbrowsers::ChatBrowsers::default()
-                .noting(self.browser_driver.clone())
+                .noting(self.browser_driver.clone(), &browsers_root)
                 .telling(Arc::clone(&browsers_listed))
                 .limited_by(Arc::new(purlis_core::browserlimits::Limits::here)),
             browser_driver: self.browser_driver.clone(),
