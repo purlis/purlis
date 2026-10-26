@@ -42,7 +42,8 @@ fn state_words() -> Vec<Words> {
         for variant in family.looks() {
             for states in read_in(family) {
                 let look = (family.defaults)(variant, &states);
-                let under: Vec<&'static str> = if look.fill == TRANSPARENT {
+                // A root with no fill, or a wash, stands on each of the family's grounds.
+                let under: Vec<&'static str> = if look.fill == TRANSPARENT || is_wash(look.fill) {
                     family.grounds.to_vec()
                 } else {
                     vec![look.fill]

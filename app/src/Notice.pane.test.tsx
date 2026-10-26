@@ -647,7 +647,7 @@ describe("a granting answer on a pane that moved while its line stood still (#31
   function scrolling(band: { top: number; height: number }) {
     const of = (key: "top" | "height" | "client") =>
       function (this: Element) {
-        if (!this.classList.contains("pane-notices")) return 0;
+        if (!this.matches('[data-scope="notice-row"][data-part="stack"]')) return 0;
         return key === "client" ? 200 : band[key as "top" | "height"];
       };
     const spies = [
@@ -666,7 +666,7 @@ describe("a granting answer on a pane that moved while its line stood still (#31
     ) {
       if (this.closest('[data-variant="grants"]') !== null) return allowAt();
       // What the band holds slides with its scroll; the row and the band themselves do not.
-      const inBand = this.closest(".pane-notices > *") !== null;
+      const inBand = this.closest('[data-scope="notice-row"][data-part="stack"] > *') !== null;
       return DOMRect.fromRect({ x: 0, y: inBand ? lineTop() : 0, width: 300, height: 60 });
     });
     const allowed: string[] = [];
