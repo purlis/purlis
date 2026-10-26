@@ -4246,6 +4246,13 @@ export type EngineDownloadShown = {
 	says: string,
 };
 
+/**  **The machine whose engine a Notice is about** (#2990): this one, or a pool's runner. */
+export type EngineMachine = 
+/**  The machine the window runs on. */
+{ kind: "here" } | 
+/**  The runner of pool `pool`. */
+{ kind: "runner"; pool: string };
+
 /**  What the Notice says and offers. */
 export type EngineSandboxShown = {
 	/**  The sentence. */
@@ -4255,8 +4262,10 @@ export type EngineSandboxShown = {
 	 *  folder whose path holds a control character.
 	 */
 	command: string | null,
-	/**  This machine's own Chrome, where one is installed. */
+	/**  This machine's own Chrome, where one is installed: never for a runner's. */
 	chrome: string | null,
+	/**  The machine whose engine it is (#2990). */
+	machine: EngineMachine,
 };
 
 /**  One field of an entry the core refused, and why: the field is the entry's own key. */

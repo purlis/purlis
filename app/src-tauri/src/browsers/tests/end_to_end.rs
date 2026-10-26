@@ -1056,7 +1056,9 @@ fn the_engines_sandbox_and_this_machines_chrome_in_homes_of_their_own() {
 
     let notice = crate::enginesandbox::notice()
         .expect("the Notice reads")
-        .expect("the Notice stands");
+        .into_iter()
+        .find(|notice| notice.machine == crate::enginesandbox::EngineMachine::Here)
+        .expect("this machine's Notice stands");
     let command = notice.command.expect("a command to add the profile");
     assert!(command.contains("sudo apparmor_parser -r"), "{command}");
     assert_eq!(notice.chrome, Some(chrome.display().to_string()));
