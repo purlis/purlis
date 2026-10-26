@@ -216,7 +216,11 @@ code, .mono { font-family: var(--mono); font-size: 12px; }
 .dot.needs { background: var(--needs-you); }
 .dot.done { background: var(--green); }
 .av { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: 10px; font-weight: 600; color: var(--window); flex: none; }
-.pav { width: 20px; height: 20px; border-radius: 6px; display: grid; place-items: center; flex: none; }
+.pav { position: relative; width: 20px; height: 20px; border-radius: 6px; display: grid; place-items: center; flex: none; }
+.pav .pst { position: absolute; right: -2px; bottom: -2px; width: 8px; height: 8px; box-shadow: 0 0 0 2px var(--surface-raised); }
+.row:hover .pav .pst { box-shadow: 0 0 0 2px var(--surface-hover); }
+.row.sel .pav .pst { box-shadow: 0 0 0 2px var(--list-selected); }
+.pav .pst.done { display: none; }
 [data-q1="C"] .row .pav { align-self: flex-start; margin-top: 4px; }
 .cb { width: 15px; height: 15px; border-radius: 4px; background: var(--card-button); flex: none; display: grid; place-items: center; color: #fff; }
 .cb.done { background: var(--accent-fill); }
@@ -517,7 +521,7 @@ function viewHead(id) {
 }
 function rowHTML(id, r) {
   const sel = S.sel[id] === r[0] ? ' sel' : '';
-  if (id === 'chats') { const pn = r[2].split(' ')[0]; const pc = PCOL[pn] || '#c6b3ee'; return `<div class="row${sel}" data-sel="${id}" data-val="${esc(r[0])}"><span class="dot ${r[1]}"></span><span class="rcol"><span class="rt">${esc(r[0])}</span><span class="rs">${esc(r[2])} · smart-ide</span></span><span class="rm">${r[3]}</span><span class="pav" title="${esc(r[2])}" aria-label="Runs as ${esc(r[2])}" style="color:${pc};background:${pc}24">${I('personas', 12, 2)}</span></div>`; }
+  if (id === 'chats') { const pn = r[2].split(' ')[0]; const pc = PCOL[pn] || '#c6b3ee'; const SW = { needs: 'needs you', run: 'running', wait: 'waiting', done: 'done' }; return `<div class="row${sel}" data-sel="${id}" data-val="${esc(r[0])}"><span class="pav" title="${esc(r[2])} · ${SW[r[1]]}" aria-label="${esc(r[2])}, ${SW[r[1]]}" style="color:${pc};background:${pc}24">${I('personas', 12, 2)}<span class="pst dot ${r[1]}"></span></span><span class="rcol"><span class="rt">${esc(r[0])}</span><span class="rs">${esc(r[2])} · smart-ide</span></span><span class="rm">${r[3]}</span></div>`; }
   if (id === 'memory') return `<div class="row${sel}" data-sel="${id}" data-val="${esc(r[0])}"><span class="rcol"><span class="rt">${esc(r[0])}</span><span class="rs">saved 2026-${r[1]}</span></span><span class="rm">${r[1]}</span></div>`;
   if (id === 'todos') { const d = S.tab.todos === 'Done' || TODOS[1][1].includes(r); return `<div class="row${d ? ' isdone' : ''}${sel}" data-sel="${id}" data-val="${esc(r[0])}"><span class="cb${d ? ' done' : ''}">${d ? I('check', 11, 3) : ''}</span><span class="rcol"><span class="rt">${esc(r[0])}</span><span class="rs">${esc(r[1])}</span></span></div>`; }
   if (id === 'personas') return `<div class="row${sel}" data-sel="${id}" data-val="${esc(r[0])}"><span class="av" style="background:${r[3]}">${r[0][0].toUpperCase()}</span><span class="rcol"><span class="rt">${esc(r[0])}</span><span class="rs">${esc(r[1])}</span></span>${r[2] ? `<span class="dot ${r[2]}"></span>` : ''}</div>`;
