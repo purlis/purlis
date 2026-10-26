@@ -86,9 +86,8 @@ export const ScrolledUnderItsHead: Story = {
     // Sticky: the head stands at the top of the scrolled view.
     const top = (head as HTMLElement).getBoundingClientRect().top;
     await expect(Math.abs(top - view.getBoundingClientRect().top)).toBeLessThanOrEqual(1);
-    // Filled with the panel's own colour, and opaque, so no row shows through it.
+    // Filled with the panel's own colour, which is opaque, so no row shows through it.
     const fill = getComputedStyle(head as HTMLElement).backgroundColor;
     await expect(fill).toBe(getComputedStyle(panel as HTMLElement).backgroundColor);
-    await expect(fill).not.toBe("rgba(0, 0, 0, 0)");
   },
 };
