@@ -25,7 +25,7 @@ fn has_pair(args: &[String], flag: &str, value: &str) -> bool {
 
 #[test]
 fn a_runner_container_starts_with_every_capability_dropped_and_no_new_privileges() {
-    let args = runner().create_args();
+    let args = runner().create_args(std::path::Path::new(SECCOMP_AT));
     assert_eq!(args[0], "run");
     assert!(has_pair(&args, "--cap-drop", "ALL"), "{args:?}");
     assert!(
@@ -38,18 +38,55 @@ fn a_runner_container_starts_with_every_capability_dropped_and_no_new_privileges
     assert!(has_pair(&args, "--cgroupns", "private"), "{args:?}");
 }
 
+/// Where a test names the runner's seccomp profile as kept for a run of `docker`.
+const SECCOMP_AT: &str = "/data/docker-settings/run-x/runner-seccomp.json";
+
 #[test]
-fn a_runner_container_keeps_the_default_seccomp_profile_and_is_never_privileged() {
-    let args = runner().create_args();
+fn a_runner_container_has_the_runners_seccomp_profile_and_is_never_privileged() {
+    let args = runner().create_args(std::path::Path::new(SECCOMP_AT));
     assert!(!args.iter().any(|a| a.contains("privileged")), "{args:?}");
-    assert!(!args.iter().any(|a| a.contains("seccomp")), "{args:?}");
+    let seccomp: Vec<&String> = args.iter().filter(|a| a.contains("seccomp")).collect();
+    assert_eq!(seccomp, [&format!("seccomp={SECCOMP_AT}")], "{args:?}");
     assert!(!args.iter().any(|a| a.contains("apparmor")), "{args:?}");
     assert!(!args.iter().any(|a| a == "--cap-add"), "{args:?}");
 }
 
+/// #3410: the runner's profile is Docker's default with `pidfd_getfd` allowed besides, and
+/// nothing else: every rule of Docker's own is there as it was.
+#[test]
+fn the_runners_seccomp_profile_is_dockers_default_and_one_call() {
+    let profile: serde_json::Value = serde_json::from_str(SECCOMP_PROFILE).expect("JSON");
+    assert_eq!(profile["defaultAction"], "SCMP_ACT_ERRNO");
+    let rules = profile["syscalls"].as_array().expect("its rules");
+    let added: Vec<&serde_json::Value> = rules
+        .iter()
+        .filter(|rule| rule["names"] == serde_json::json!(["pidfd_getfd"]))
+        .collect();
+    assert_eq!(
+        added,
+        [&serde_json::json!({"names": ["pidfd_getfd"], "action": "SCMP_ACT_ALLOW"})]
+    );
+    // Docker's own rule for it stays as Docker wrote it, behind the capability no runner has.
+    assert!(rules.iter().any(|rule| {
+        rule["names"]
+            .as_array()
+            .is_some_and(|names| names.contains(&"pidfd_getfd".into()))
+            && rule["includes"]["caps"] == serde_json::json!(["CAP_SYS_PTRACE"])
+    }));
+    assert_eq!(rules.len(), 38);
+}
+
+#[test]
+fn a_profile_is_compacted_as_dockers_client_compacts_one() {
+    assert_eq!(
+        compacted("{ \"a\" : [ 1,\n\t2 ], \"b c\": \"x \\\" y\" }"),
+        "{\"a\":[1,2],\"b c\":\"x \\\" y\"}"
+    );
+}
+
 #[test]
 fn a_runner_container_runs_the_pinned_image_by_digest_as_its_session_host() {
-    let args = runner().create_args();
+    let args = runner().create_args(std::path::Path::new(SECCOMP_AT));
     let at = args
         .iter()
         .position(|a| a == &format!("ghcr.io/purlis/purlis-runner@{DIGEST}"))
@@ -59,7 +96,7 @@ fn a_runner_container_runs_the_pinned_image_by_digest_as_its_session_host() {
 
 #[test]
 fn a_runner_container_holds_its_home_on_a_volume_of_its_own_and_no_folder_of_this_machine() {
-    let args = runner().create_args();
+    let args = runner().create_args(std::path::Path::new(SECCOMP_AT));
     let mounts: Vec<&String> = args
         .windows(2)
         .filter(|w| w[0] == "--mount")
@@ -74,7 +111,7 @@ fn a_runner_container_holds_its_home_on_a_volume_of_its_own_and_no_folder_of_thi
 
 #[test]
 fn a_runner_container_has_a_read_only_root_and_a_tmp_that_runs_no_program() {
-    let args = runner().create_args();
+    let args = runner().create_args(std::path::Path::new(SECCOMP_AT));
     assert!(args.iter().any(|a| a == "--read-only"), "{args:?}");
     assert!(
         has_pair(&args, "--tmpfs", "/tmp:rw,nosuid,nodev,noexec,size=1024m"),
@@ -84,7 +121,7 @@ fn a_runner_container_has_a_read_only_root_and_a_tmp_that_runs_no_program() {
 
 #[test]
 fn a_runner_container_is_held_to_its_pools_limits_or_the_defaults() {
-    let args = runner().create_args();
+    let args = runner().create_args(std::path::Path::new(SECCOMP_AT));
     for (flag, value) in [
         ("--cpus", "2"),
         ("--memory", "4096m"),
@@ -95,7 +132,7 @@ fn a_runner_container_is_held_to_its_pools_limits_or_the_defaults() {
     }
     let limits = Limits::new(1500, 8192, 256, 512).unwrap();
     let limited = runner().limited(limits);
-    let args = limited.create_args();
+    let args = limited.create_args(std::path::Path::new(SECCOMP_AT));
     for (flag, value) in [
         ("--cpus", "1.500"),
         ("--memory", "8192m"),
@@ -143,7 +180,7 @@ fn a_pools_limits_leave_a_runner_room_to_start_a_chat() {
 
 #[test]
 fn a_runner_container_is_named_and_labelled_as_the_pools() {
-    let args = runner().create_args();
+    let args = runner().create_args(std::path::Path::new(SECCOMP_AT));
     assert!(has_pair(&args, "--name", "purlis-runner-first"), "{args:?}");
     assert!(
         has_pair(&args, "--label", "purlis.runner=first"),

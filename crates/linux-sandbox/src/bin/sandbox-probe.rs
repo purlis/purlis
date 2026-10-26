@@ -122,6 +122,44 @@ mod probe {
                     nix::sys::socket::listen(&socket, nix::sys::socket::Backlog::new(1)?)
                 }))
             }
+            // A thread with a descriptor table of its own listens on its own socket, never
+            // bound, at the number where the process's table holds a bound one.
+            "listen-unshared" => {
+                use nix::sys::socket::{
+                    AddressFamily, Backlog, SockFlag, SockType, UnixAddr, bind, listen, socket,
+                };
+                use std::os::fd::AsRawFd;
+                let bound = socket(
+                    AddressFamily::Unix,
+                    SockType::Stream,
+                    SockFlag::empty(),
+                    None,
+                )
+                .map_err(|why| format!("{why:?}"))?;
+                bind(
+                    bound.as_raw_fd(),
+                    &UnixAddr::new_abstract(word(1).as_bytes())
+                        .map_err(|why| format!("{why:?}"))?,
+                )
+                .map_err(|why| format!("{why:?}"))?;
+                std::thread::spawn(move || {
+                    let mut at = bound;
+                    nix(
+                        nix::sched::unshare(nix::sched::CloneFlags::CLONE_FILES).and_then(|()| {
+                            let own = socket(
+                                AddressFamily::Inet,
+                                SockType::Stream,
+                                SockFlag::empty(),
+                                None,
+                            )?;
+                            nix::unistd::dup2(&own, &mut at)?;
+                            listen(&at, Backlog::new(1)?)
+                        }),
+                    )
+                })
+                .join()
+                .unwrap_or_else(|_| Err("the thread panicked".to_owned()))
+            }
             // A server on an abstract unix socket: bound, then listening.
             "abstract-listen" => {
                 use std::os::linux::net::SocketAddrExt;

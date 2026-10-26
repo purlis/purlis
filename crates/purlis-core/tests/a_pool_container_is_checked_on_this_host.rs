@@ -61,7 +61,11 @@ fn made_and_inspected(
     out: &Path,
     name: &str,
 ) -> Result<(Made, serde_json::Value), String> {
-    let mut args = runner.create_args();
+    // The runner's seccomp profile, kept where `docker` reads it, as the pool keeps it for a run.
+    let seccomp = out.join(purlis_core::dockerpool::SECCOMP_FILE);
+    std::fs::write(&seccomp, purlis_core::dockerpool::SECCOMP_PROFILE)
+        .map_err(|why| format!("the runner's seccomp profile could not be kept: {why}"))?;
+    let mut args = runner.create_args(&seccomp);
     // Each loosening as a flag and its value: in place of the pool's own value of a flag the
     // pool gives once (`--network`, `--ipc`, `--cgroupns`), else after `run --detach`.
     for pair in loosened.chunks(2) {

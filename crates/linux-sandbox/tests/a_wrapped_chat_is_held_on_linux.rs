@@ -411,6 +411,17 @@ fn a_socket_never_bound_does_not_listen() {
     assert_eq!(p.run(&["listen-unbound", "6"]), "EACCES");
 }
 
+/// A thread with a descriptor table of its own is judged by its own socket: its unbound one is
+/// refused, though the process's table holds a bound socket at the same number.
+#[test]
+fn a_thread_with_its_own_descriptors_is_judged_by_its_own_socket() {
+    let mut p = project();
+    assert_eq!(
+        p.run(&["listen-unshared", "purlis-probe-unshared"]),
+        "EACCES"
+    );
+}
+
 /// A server on an abstract unix socket, which the chat binds itself, listens as before.
 #[test]
 fn a_server_on_a_socket_the_chat_bound_listens() {

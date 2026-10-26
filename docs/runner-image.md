@@ -138,7 +138,13 @@ needs:
   (`landlock` in the kernel's list of security modules);
 - a container runtime whose seccomp profile allows the `landlock_create_ruleset`,
   `landlock_add_rule`, `landlock_restrict_self`, `seccomp` and `process_vm_readv` system
-  calls. Docker's default profile and Kubernetes' `RuntimeDefault` allow them.
+  calls. Docker's default profile and Kubernetes' `RuntimeDefault` allow them;
+- for a chat's server to listen, `pidfd_open` and `pidfd_getfd` too: the supervisor makes a
+  chat's `listen` on the chat's own socket, which it takes with them. Docker's default profile
+  allows `pidfd_getfd` only with `CAP_SYS_PTRACE`, so a Docker pool makes each runner with its
+  own profile, Docker's default and that one call besides
+  (`crates/purlis-core/src/dockerpool/seccomp.json`). Where a runtime refuses it, no server a
+  chat starts listens, and everything else works.
 
 On a kernel without it, a sandboxed chat is refused and the refusal says which version is
 needed.

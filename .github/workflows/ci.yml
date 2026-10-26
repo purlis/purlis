@@ -320,9 +320,10 @@ jobs:
           image=$(docker image inspect --format '{{index .RepoDigests 0}}' localhost:5000/purlis-runner-parity:candidate)
           echo "image $image"
           echo "DOCKER_POOL_TEST_IMAGE=$image" >> "$GITHUB_ENV"
-      # The Linux wrap's listen in a container, as a Docker pool runs one: Docker's built-in
-      # seccomp profile, no new privileges, not root. The supervisor takes the chat's socket with
-      # `pidfd_getfd`; where a runtime refuses that, nothing listens.
+      # The Linux wrap's listen in a container, as a Docker pool runs one: the runner's seccomp
+      # profile (Docker's default and `pidfd_getfd`), no new privileges, every capability
+      # dropped, not root. A socket the chat bound listens there; one it never bound does not.
+      # Docker's own default profile is tried too: there nothing listens (fail closed).
       - name: A socket listens only where it was bound, in a container
         if: steps.scope.outputs.run == 'true'
         run: |
@@ -332,15 +333,19 @@ jobs:
             | grep '/a_wrapped_chat_is_held_on_linux-' | tail -1)
           test -x "$bin"
           echo "test binary: $bin"
-          contained=(docker run --rm --security-opt no-new-privileges --user "$(id -u):$(id -g)"
-            --volume "$PWD:$PWD" --workdir "$PWD" --entrypoint "$bin" purlis-runner:parity)
-          # Refused there too: a socket never bound does not listen.
-          "${contained[@]}" a_socket_never_bound_does_not_listen --exact --test-threads=1
-          # Where the runtime refuses `pidfd_getfd`, nothing listens (fail closed): said, not red.
-          if "${contained[@]}" a_server_on_a_socket_the_chat_bound_listens --exact --test-threads=1; then
-            echo "::notice title=Listening in a container::a socket the chat bound listens there"
+          contained() {
+            docker run --rm --security-opt no-new-privileges --cap-drop ALL --user "$(id -u):$(id -g)" \
+              "$@" --volume "$PWD:$PWD" --workdir "$PWD" --entrypoint "$bin" purlis-runner:parity
+          }
+          runner=(--security-opt "seccomp=$PWD/crates/purlis-core/src/dockerpool/seccomp.json")
+          contained "${runner[@]}" a_socket_never_bound_does_not_listen --exact --test-threads=1
+          contained "${runner[@]}" a_server_on_a_socket_the_chat_bound_listens --exact --test-threads=1
+          contained "${runner[@]}" a_thread_with_its_own_descriptors_is_judged_by_its_own_socket --exact --test-threads=1
+          contained a_socket_never_bound_does_not_listen --exact --test-threads=1
+          if contained a_server_on_a_socket_the_chat_bound_listens --exact --test-threads=1; then
+            echo "::notice title=Listening in a container::Docker's own default profile lets the chat's socket be taken now"
           else
-            echo "::notice title=Listening in a container::this runtime refuses taking the chat's socket, so nothing listens there"
+            echo "::notice title=Listening in a container::under Docker's own default profile nothing listens (fail closed)"
           fi
       # Under `tools/no-orphans.sh`, as `rust` is: a test ends what it started, its pool's
       # container included.

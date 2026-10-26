@@ -7,8 +7,9 @@
 //!
 //! **Every runner container is confined the same way, and nothing loosens it** ([`Runner`]):
 //!
-//! - Docker's default seccomp profile, and the runtime's default AppArmor profile: no
-//!   `--security-opt` that names either, and never `--privileged`;
+//! - Docker's default seccomp profile with one call added, `pidfd_getfd`, which the Linux
+//!   sandbox's supervisor takes a chat's socket with to make its `listen` ([`SECCOMP_PROFILE`],
+//!   #3410); the runtime's default AppArmor profile; and never `--privileged`;
 //! - every capability dropped (`--cap-drop ALL`), none added, and no new privileges
 //!   (`no-new-privileges`), so nothing in it gains a power its user does not have;
 //! - a user who is not root, by number ([`User`]);
@@ -377,14 +378,15 @@ impl Runner {
     }
 
     /// `docker`'s arguments that make and start the runner's container, confined as the
-    /// module says. Its id is what `docker` prints.
-    pub fn create_args(&self) -> Vec<String> {
-        self.create_args_for(None)
+    /// module says, with [`SECCOMP_PROFILE`] read from `seccomp`. Its id is what `docker`
+    /// prints.
+    pub fn create_args(&self, seccomp: &std::path::Path) -> Vec<String> {
+        self.create_args_for(None, seccomp)
     }
 
     /// [`Runner::create_args`], the container also labelled as made by `desktop`
     /// ([`DESKTOP_LABEL`], #2869), where one is named.
-    pub fn create_args_for(&self, desktop: Option<&str>) -> Vec<String> {
+    pub fn create_args_for(&self, desktop: Option<&str>, seccomp: &std::path::Path) -> Vec<String> {
         let mut args: Vec<String> = Vec::new();
         let mut pair = |flag: &str, value: String| {
             args.push(flag.to_owned());
@@ -398,6 +400,7 @@ impl Runner {
         pair("--user", self.user.spelled());
         pair("--cap-drop", "ALL".into());
         pair("--security-opt", "no-new-privileges".into());
+        pair("--security-opt", format!("seccomp={}", seccomp.display()));
         pair("--network", "bridge".into());
         pair("--ipc", "private".into());
         pair("--cgroupns", "private".into());
@@ -569,7 +572,13 @@ pub fn check_on(inspected: &serde_json::Value, made: &Made, engine: Engine) -> R
     if !options.iter().any(|option| is_no_new_privileges(option)) {
         return Err(not("may gain new privileges"));
     }
-    if let Some(option) = options.iter().find(|option| !is_no_new_privileges(option)) {
+    if !options.iter().any(|option| is_the_runners_seccomp(option)) {
+        return Err(not("does not have the runner's seccomp profile"));
+    }
+    if let Some(option) = options
+        .iter()
+        .find(|option| !is_no_new_privileges(option) && !is_the_runners_seccomp(option))
+    {
         let named = option.split(['=', ':']).next().unwrap_or_default();
         return Err(not(&format!(
             "has a security option of its own ({named}), where purlis keeps the runtime's defaults"
@@ -1008,6 +1017,51 @@ fn is_containers_default(profile: &str) -> bool {
 }
 
 /// Whether a security option is `no-new-privileges`, as Docker takes and writes it.
+/// **The runner container's seccomp profile** (#3410): Docker's default
+/// (`moby/profiles`, `seccomp/v0.2.4`, Apache-2.0) with one call allowed besides, `pidfd_getfd`,
+/// which that profile allows only with `CAP_SYS_PTRACE`. The Linux sandbox's supervisor takes a
+/// chat's own socket with it to make the chat's `listen` (`purlis_linux_sandbox`), and every
+/// capability is dropped from a runner, so without it no server a chat starts there listens.
+/// Nothing else differs from Docker's default.
+pub const SECCOMP_PROFILE: &str = include_str!("dockerpool/seccomp.json");
+
+/// The file name [`SECCOMP_PROFILE`] is kept under in a run's folder, for `docker` to read.
+pub const SECCOMP_FILE: &str = "runner-seccomp.json";
+
+/// Whether `option`, one of a container's security options as `docker inspect` writes it, is
+/// the runner's seccomp profile: Docker's client reads the file and sends it compacted, and
+/// the engine keeps it as it came.
+fn is_the_runners_seccomp(option: &str) -> bool {
+    option
+        .strip_prefix("seccomp=")
+        .is_some_and(|profile| profile == compacted(SECCOMP_PROFILE))
+}
+
+/// `json` with the white space between its tokens taken out, as Go's `json.Compact`, which
+/// Docker's client runs on a seccomp profile, leaves it.
+pub fn compacted(json: &str) -> String {
+    let mut out = String::with_capacity(json.len());
+    let (mut quoted, mut escaped) = (false, false);
+    for c in json.chars() {
+        if quoted {
+            out.push(c);
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == '"' {
+                quoted = false;
+            }
+        } else if c == '"' {
+            quoted = true;
+            out.push(c);
+        } else if !matches!(c, ' ' | '\t' | '\n' | '\r') {
+            out.push(c);
+        }
+    }
+    out
+}
+
 fn is_no_new_privileges(option: &str) -> bool {
     matches!(
         option,
@@ -1236,10 +1290,21 @@ impl Docker {
     /// `most` bytes: one that prints more is ended and refused. What it says on standard error
     /// is kept only to be shown, up to [`MOST_SAID`], and never read to decide anything.
     fn run(&self, args: &[String], input: Option<&str>, most: u64) -> Result<String, Refused> {
-        let mut command = std::process::Command::new(&self.program);
         // A checked copy of Docker's settings, the engine pinned, and its helpers found where it
         // is (#2752), whatever the window's environment and Docker's own settings say.
-        let prepared = self.prepared()?;
+        self.run_prepared(&self.prepared()?, args, input, most)
+    }
+
+    /// [`Docker::run`], given its run's folder already prepared, which is kept until the run
+    /// ends.
+    fn run_prepared(
+        &self,
+        prepared: &settings::Prepared,
+        args: &[String],
+        input: Option<&str>,
+        most: u64,
+    ) -> Result<String, Refused> {
+        let mut command = std::process::Command::new(&self.program);
         command.envs(prepared.env.iter().map(|(name, value)| (name, value)));
         for name in settings::CLEARED {
             command.env_remove(name);
@@ -1403,7 +1468,23 @@ impl Docker {
         }
         // Docker makes the container and its volume before it starts it, so a run that fails
         // can leave both: they are removed with the refusal.
-        let out = match self.run(&runner.create_args_for(desktop), None, MOST_INSPECTED) {
+        // The runner's seccomp profile, in the run's own folder, read by `docker` as it runs.
+        let prepared = self.prepared()?;
+        let seccomp = prepared
+            .keep(SECCOMP_FILE, SECCOMP_PROFILE)
+            .map_err(|why| {
+                refused(format!(
+                    "purlis could not keep the runner's seccomp profile for docker: {why}"
+                ))
+            })?;
+        let made = self.run_prepared(
+            &prepared,
+            &runner.create_args_for(desktop, &seccomp),
+            None,
+            MOST_INSPECTED,
+        );
+        drop(prepared);
+        let out = match made {
             Ok(out) => out,
             Err(why) => return Err(self.and_removed(why, &container, &volume)),
         };

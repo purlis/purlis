@@ -28,7 +28,7 @@ seccompiler = "=0.5.0"
 libc = "0.2"
 # Safe wrappers for the rest: the `*at` calls the supervisor performs, the descriptor passing,
 # reading a notifying process's memory, and its signals. The version purlis-same-user links.
-nix = { version = "0.31", default-features = false, features = ["fs", "process", "socket", "uio", "signal", "user", "net", "time"] }
+nix = { version = "0.31", default-features = false, features = ["fs", "process", "socket", "uio", "signal", "user", "net", "time", "sched"] }
 # `pidfd_open` and `pidfd_getfd`, safe, which nix has no wrapper for: the supervisor takes the
 # chat's own socket to judge and make its `listen`. Already in this workspace's lockfile.
 # Pinned likewise (ruled 2026-10-26).
