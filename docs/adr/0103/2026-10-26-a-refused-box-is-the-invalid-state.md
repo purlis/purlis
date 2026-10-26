@@ -13,10 +13,18 @@ form that needs one: a required choice in Settings, or a combobox whose typed va
   colour and shadow. The family default is the danger colour (`danger.base`) on the box's own
   edge, inside the box, as the text input's refused value is drawn (`app/src/ui/field/field.css`);
   `app/src/ui/select/select.css` draws it, and a test holds the engine's default to that rule.
+- **The key shape is the operator's ruling** (2026-10-26, relayed by the dispatcher on #3322):
+  `<family>.<part>.invalid.<property>`, the state named `invalid`.
 - **The edge is held to 3:1 on the box's fill, whatever the fill**: it is what says at a glance a
   value is refused, so a theme's `invalid` look whose edge does not clear 3:1 draws the family
   default there, even on a fill that is none of the box's grounds (where an edge at rest is not
   held). The token floors hold the default: `danger.base` on `surface.sunken` at 3:1.
+- **No theme erases the refusal.** A box that can be refused keeps its edge: `border-width` 0 on
+  its root is refused, as it is on an answer that grants. In every set of states that holds
+  `invalid`, an edge that is transparent, or drawn alike (closer than `ALLOW_APART` in OKLab) to
+  the edge the same states draw without `invalid`, falls back to the refused default, written
+  after the theme's rules. So a rest or hover edge that reaches the refused box, or a refused
+  edge set to `transparent`, never leaves a refused box looking valid.
 - **The words that say why are not a part**: they are the box's description, drawn by its row or
   its form and named by `aria-describedby`, so they are heard with it.
 

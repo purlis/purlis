@@ -2074,8 +2074,9 @@ fn the_select_families_default_is_what_select_css_draws() {
 
 #[test]
 fn a_select_and_a_combobox_take_the_text_inputs_keys_and_hold_their_floors() {
+    // A width but 0: a box that can be refused keeps its edge (#3110).
     let loaded = load(&with_parts(json!({
-        "select.root.border-width": 0,
+        "select.root.border-width": 2,
         "select.root.fill": "surface.raised",
         "select.chevron.text": "text.muted",
         "select.placeholder.text": "text.secondary",

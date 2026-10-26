@@ -5,9 +5,9 @@
  * **The select and combobox families** (#2906): a select holding a value, one holding nothing
  * with its placeholder, its list open from the keyboard, a long list filtered, each size, an
  * unavailable select with its reason, a refused one with why (#3110), a settings row (the
- * prototype's), and a combobox with its suggestions, unavailable and refused. Each is drawn, held to axe, walked by the keyboard and compared with its baseline
- * in Chromium and WebKit (`docs/component-stories.md`). A list draws outside its frame, so each
- * picture is the page's.
+ * prototype's), and a combobox with its suggestions, unavailable and refused. Each is drawn, held
+ * to axe, walked by the keyboard and compared with its baseline in Chromium and WebKit
+ * (`docs/component-stories.md`). A list draws outside its frame, so each picture is the page's.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
@@ -420,6 +420,9 @@ export const RefusedSuggestions: Story = {
     const box = canvas.getByRole("combobox", { name: "Add a skill" });
     await expect(box).toHaveAttribute("aria-invalid", "true");
     await expect(box).toHaveAccessibleDescription("ops has no skill by that name.");
+    const root = box.closest('[data-scope="combobox"][data-part="root"]') as HTMLElement;
+    await expect(root).toHaveAttribute("data-invalid");
+    const before = root.getBoundingClientRect();
     await userEvent.tab();
     await untilFocused(() => box, "Refused suggestions: Tab into the box");
     await userEvent.keyboard("{ArrowDown}");
@@ -427,6 +430,9 @@ export const RefusedSuggestions: Story = {
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull(), CLOSES);
     await expect(box).toHaveAttribute("aria-invalid", "true");
+    // A colour only: the box is the size it was.
+    const after = root.getBoundingClientRect();
+    await expect([after.width, after.height]).toEqual([before.width, before.height]);
     expectFocusInSight();
   },
 };

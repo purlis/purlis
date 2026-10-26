@@ -16,6 +16,18 @@ fn with_parts(parts: Value) -> Value {
     json!({ "name": "Shaped", "extends": "purlis-classic", "parts": parts })
 }
 
+/// A theme's parts that set one key.
+fn one(key: String, value: Value) -> Value {
+    Value::Object([(key, value)].into_iter().collect())
+}
+
+/// The sentences a refused theme says.
+fn refusal(parts: Value) -> Vec<String> {
+    let loaded = load(&with_parts(parts));
+    assert!(loaded.refused, "the theme was drawn");
+    said(&loaded)
+}
+
 fn said(resolved: &Resolved) -> Vec<String> {
     resolved
         .complaints
@@ -151,5 +163,129 @@ fn a_refused_edge_that_cannot_be_seen_on_its_box_falls_back() {
         fallen.iter().any(|one| one.part.starts_with("select.root")
             && one.floor == "the root's border contrasts 3:1 with its fill"),
         "{fallen:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------------------
+// No theme erases the refusal (#3322's review, B1)
+// ---------------------------------------------------------------------------------------
+
+/// Where each family's refused root falls back, said by its look's name.
+const REFUSED: &[(&str, &str)] = &[("select", "select.root"), ("combobox", "combobox.root")];
+
+/// The floor a refused box breaks when its edge is gone or drawn as its unrefused edge.
+const HIDDEN: &str = "a refused box keeps its own edge, told apart from the edge it has when it \
+                      is not refused";
+
+/// What fell for `family`'s root in a state set holding `invalid`, as `floor` says.
+fn refused_fell(parts: Value, family: &str) -> Vec<String> {
+    let loaded = load(&with_parts(parts));
+    assert!(!loaded.refused, "{:?}", said(&loaded));
+    parts::fallen(loaded.theme.first())
+        .into_iter()
+        .filter(|one| {
+            one.part.starts_with(&format!("{family}.root."))
+                && one.part.contains("invalid")
+                && one.floor == HIDDEN
+        })
+        .map(|one| one.part)
+        .collect()
+}
+
+#[test]
+fn a_transparent_refused_edge_falls_back() {
+    for (family, _) in REFUSED {
+        let fell = refused_fell(
+            one(
+                format!("{family}.root.invalid.border-colour"),
+                json!("transparent"),
+            ),
+            family,
+        );
+        assert!(
+            fell.contains(&format!("{family}.root.invalid")),
+            "{family}: {fell:?}"
+        );
+    }
+}
+
+#[test]
+fn a_refused_box_keeps_its_edge_s_width() {
+    for (family, root) in REFUSED {
+        let refused = refusal(one(format!("{root}.border-width"), json!(0)));
+        assert!(
+            refused.iter().any(|one| one.starts_with(&format!(
+                "parts.{family}.root.border-width is refused: a box that can be refused keeps its edge"
+            ))),
+            "{family}: {refused:?}"
+        );
+        // Any other width is the theme's.
+        let loaded = load(&with_parts(one(format!("{root}.border-width"), json!(2))));
+        assert!(!loaded.refused, "{family}: {:?}", said(&loaded));
+    }
+}
+
+#[test]
+fn an_edge_at_rest_that_reaches_the_refused_box_falls_back() {
+    for (family, _) in REFUSED {
+        // The rest edge reaches every state, so refused would look as valid.
+        let fell = refused_fell(
+            one(
+                format!("{family}.root.border-colour"),
+                json!("border.strong"),
+            ),
+            family,
+        );
+        assert!(
+            fell.contains(&format!("{family}.root.invalid")),
+            "{family}: {fell:?}"
+        );
+        // And so does a hover's or a focus's, with the state it holds at once.
+        let fell = refused_fell(
+            one(
+                format!("{family}.root.hover.border-colour"),
+                json!("border.strong"),
+            ),
+            family,
+        );
+        assert!(
+            fell.iter()
+                .any(|one| one.contains("hover") && one.contains("invalid")),
+            "{family}: {fell:?}"
+        );
+    }
+    // What falls back draws the danger edge in the refused state, after the theme's rules.
+    let loaded = load(&with_parts(
+        json!({ "select.root.border-colour": "border.strong" }),
+    ));
+    let sheet = parts::stylesheet(loaded.theme.first());
+    let rest = sheet
+        .find(":where([data-scope=\"select\"][data-part=\"root\"]) {")
+        .expect("the theme's rest rule");
+    let refused = sheet
+        .rfind("[data-scope=\"select\"][data-part=\"root\"][data-invalid]) {")
+        .expect("the refused fallback");
+    assert!(refused > rest, "{sheet}");
+    assert!(
+        sheet[refused..]
+            .lines()
+            .next()
+            .unwrap()
+            .contains("var(--danger-base)"),
+        "{sheet}"
+    );
+}
+
+#[test]
+fn a_refused_edge_drawn_apart_is_drawn_as_written() {
+    let loaded = load(&with_parts(json!({
+        "select.root.border-colour": "border.strong",
+        "select.root.invalid.border-colour": "danger.base",
+    })));
+    assert!(!loaded.refused, "{:?}", said(&loaded));
+    let fell = parts::fallen(loaded.theme.first());
+    assert!(
+        !fell.iter().any(|one| one.part == "select.root.invalid"),
+        "{fell:?}"
     );
 }

@@ -1925,19 +1925,57 @@ fn joined(parts: &mut Parts) {
 
 /// Why `key` would take a consent part's mark away, if it would: a border width of 0 on Allow.
 fn edge_removed(key: &Key, value: &PartValue) -> Option<String> {
+    if key.property != Prop::BorderWidth || *value != PartValue::Length(Length::Number(0.0)) {
+        return None;
+    }
     let consent = key
         .variant
         .and_then(|name| variant(key.family, name))
         .and_then(|one| one.consent);
-    (consent == Some(Consent::Grants)
-        && key.property == Prop::BorderWidth
-        && *value == PartValue::Length(Length::Number(0.0)))
-    .then(|| {
-        format!(
+    if consent == Some(Consent::Grants) {
+        return Some(format!(
             "parts.{key} is refused: an answer that grants keeps its accent edge and its lock, \
              so a theme can never disguise a consent decision"
-        )
-    })
+        ));
+    }
+    // A refused box says so by its edge (#3110), and a state never sets a width, so a box with
+    // no edge at rest could never show it.
+    family(key.family)
+        .filter(|one| one.states.contains(&State::Invalid) && key.part == one.parts[0].name)
+        .map(|_| {
+            format!(
+                "parts.{key} is refused: a box that can be refused keeps its edge, which is how \
+                 it shows a value is refused"
+            )
+        })
+}
+
+/// The floor a refused box breaks when its edge is gone, or drawn as the edge it has while it is
+/// not refused (#3110): then nothing on screen says the value is refused.
+const REFUSAL_HIDDEN: &str = "a refused box keeps its own edge, told apart from the edge it has \
+     when it is not refused";
+
+/// Whether `look`, drawn while `states` hold [`State::Invalid`], hides the refusal: no edge, or an
+/// edge not told at a glance from the one the same states draw without it.
+fn refusal_hidden(
+    theme: &ResolvedTheme,
+    rules: &[Rule],
+    family: &Family,
+    variant: &str,
+    states: &[State],
+    look: &Drawn,
+) -> bool {
+    let Some(own) = edge(rules, family, variant, look) else {
+        return true;
+    };
+    let valid: Vec<State> = states
+        .iter()
+        .copied()
+        .filter(|one| *one != State::Invalid)
+        .collect();
+    let unrefused = drawn(rules, family, variant, &valid);
+    let theirs = edge(rules, family, variant, &unrefused).unwrap_or(TRANSPARENT);
+    alike(theme, own, theirs, super::ALLOW_APART)
 }
 
 /// **The parts that are marks, not controls** (#2914): a tab's indicator is a line a few px tall,
@@ -2761,6 +2799,14 @@ impl Held<'_> {
     fn readable(&mut self, theme: &ResolvedTheme, states: &[State]) {
         for variant in self.family.looks() {
             let look = drawn(self.rules, self.family, variant, states);
+            // A refused box's edge is held whether or not the theme names its refused state: a
+            // rule at rest or in another state reaches it too (#3110).
+            if states.contains(&State::Invalid)
+                && refusal_hidden(theme, self.rules, self.family, variant, states, &look)
+            {
+                self.fall(variant, states, REFUSAL_HIDDEN.to_owned(), None);
+                continue;
+            }
             if look == drawn(&[], self.family, variant, states) {
                 continue;
             }
@@ -2812,16 +2858,22 @@ impl Held<'_> {
             return;
         }
         self.fell.push(Fell { part, floor, ratio });
-        let state = states
-            .iter()
-            .rev()
-            .find(|state| {
-                self.rules
-                    .iter()
-                    .any(|rule| std::ptr::eq(rule.family, family) && rule.state == Some(**state))
-            })
-            .or(states.last())
-            .copied();
+        // A refused box draws its refused default in any set it is refused in, written after
+        // the theme's rules, so its danger edge is back whatever else holds (#3110).
+        let state = if states.contains(&State::Invalid) {
+            Some(State::Invalid)
+        } else {
+            states
+                .iter()
+                .rev()
+                .find(|state| {
+                    self.rules.iter().any(|rule| {
+                        std::ptr::eq(rule.family, family) && rule.state == Some(**state)
+                    })
+                })
+                .or(states.last())
+                .copied()
+        };
         // A family with no variants has one look, which a rule for every variant reaches.
         let reached = (!variant.is_empty()).then_some(variant);
         let written = self.rules.iter().any(|rule| {
