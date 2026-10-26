@@ -575,6 +575,18 @@ impl Family {
             .map_or(self.grounds, |(_, _, grounds)| *grounds)
     }
 
+    /// **The opaque ground `part`'s own wash is laid on**, whatever the root's fill, where the
+    /// family's stylesheet backs it with one ([`PART_LAID_ON`], D-3345-3); `None` for a wash laid
+    /// on the root's fill.
+    #[cfg(test)]
+    pub(super) fn laid_on(&self, part: usize) -> Option<&'static str> {
+        let name = self.parts.get(part).map(|one| one.name);
+        PART_LAID_ON
+            .iter()
+            .find(|(family, one, _)| *family == self.name && Some(*one) == name)
+            .map(|(_, _, ground)| *ground)
+    }
+
     /// **Whether the window draws `variant` while `states` hold** (#3255): every look a key may
     /// name, unless one of its states is one only some variants are drawn in ([`DRAWN_ONLY`]).
     #[cfg(test)]
@@ -606,6 +618,12 @@ const DRAWN_ONLY: &[(&str, State, &[&str])] = &[
 /// family and part: what the window draws the part on, not every ground the family stands on.
 #[cfg(test)]
 const PART_GROUNDS: &[(&str, &str, &[&str])] = &[("field", "error", FIELD_ERROR_GROUNDS)];
+
+/// **A part whose own wash is laid on a ground of its own** (D-3345-3), by family and part: the
+/// title bar's waiting count is backed by the bar's own ground (`titlebar.css`), so its amber
+/// reads the same on a chip at rest, under the pointer and chosen, whatever the chip's fill.
+#[cfg(test)]
+const PART_LAID_ON: &[(&str, &str, &str)] = &[("titlebar", "count", "surface.deep")];
 
 /// **What a field's error is drawn on** (#3254): only a field that can refuse its value keeps its
 /// error's line (`refusable` in `app/src/ui/field/Field.tsx`), and those stand on the window, a

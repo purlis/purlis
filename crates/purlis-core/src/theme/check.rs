@@ -381,9 +381,8 @@ pub const PAIRS: &[Pair] = &[
     // pointer, it is held at the window's text size on the part's fill, not at the 3:1 a mark
     // takes (`parts/state_words_tests.rs` keeps this list whole).
     // - A title-bar chip's waiting count (#2916, R101): its digits in amber on the amber wash,
-    //   over the title bar, and over the card's fill while the chip is lit.
+    //   over the title bar, which backs it on every chip, lit or chosen (D-3345-3).
     p("state.waiting", "wash.warning", TEXT).over("surface.deep"),
-    p("state.waiting", "wash.warning", TEXT).over("surface.overlay"),
     // - The rail's waiting badge (R79): its digits in amber on the overlay's pill.
     p("state.waiting", "surface.overlay", TEXT),
     // - The warning-soft button: amber words on the control, and under the pointer.
@@ -397,13 +396,6 @@ pub const PAIRS: &[Pair] = &[
     //   accent's wash laid on the frame, and on the stronger wash under the pointer.
     p("text.primary", "accent.wash", TEXT).over("surface.deep"),
     p("text.primary", "accent.wash-hover", TEXT).over("surface.deep"),
-    //   Its waiting count, the amber words on the warning's wash, laid on that chosen ground.
-    p("state.waiting", "wash.warning", TEXT)
-        .over("accent.wash")
-        .over("surface.deep"),
-    p("state.waiting", "wash.warning", TEXT)
-        .over("accent.wash-hover")
-        .over("surface.deep"),
     // - What a dialog is honest about (`.honest`): its words at the opacity it fades them to.
     p("text.primary", "surface.overlay", TEXT).faded(0.8),
     // - A task that is away draws its words on the terminal's own background.

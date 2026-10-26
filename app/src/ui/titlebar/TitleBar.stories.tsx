@@ -167,6 +167,26 @@ function composited(fill: string, ground: string): [number, number, number] {
 }
 
 /** How far apart two drawn colours are, the largest of their channels' differences. */
+/** WCAG's relative luminance of a drawn colour. */
+function luminance([r, g, b]: number[]): number {
+  const lin = (channel: number) => {
+    const c = channel / 255;
+    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+}
+
+/** **How a chip's waiting count reads** (D-3345-3): its amber words over its wash laid on its
+ *  own opaque ground, as drawn, and that ground. */
+function countOn(count: HTMLElement): { ratio: number; ground: string } {
+  const style = getComputedStyle(count);
+  const wash = /rgba?\([^)]*\)/.exec(style.backgroundImage)?.[0] ?? "rgba(0, 0, 0, 0)";
+  const drawn = composited(wash, style.backgroundColor);
+  const words = composited(style.color, `rgb(${drawn.join(", ")})`);
+  const [light, dark] = [luminance(words), luminance(drawn)].sort((a, b) => b - a);
+  return { ratio: (light + 0.05) / (dark + 0.05), ground: style.backgroundColor };
+}
+
 function apart(one: number[], other: number[]): number {
   return Math.max(...one.map((channel, at) => Math.abs(channel - other[at])));
 }
@@ -270,6 +290,13 @@ export const ChosenStates: Story = {
     await expect(chosen).toHaveFocus();
     await waitFor(() => expect(chosen).toHaveAttribute("data-focus-visible"));
     await expect(box(chosen)).toBe(boxes[0]);
+    // Its waiting count stands on its own ground, the bar's, chosen and under the pointer as at
+    // rest, and its amber reads at 4.5:1 there (D-3345-3).
+    const count = chosen.querySelector<HTMLElement>('[data-part="count"]');
+    if (count === null) throw new Error("the chosen chip draws no count");
+    const lit = countOn(count);
+    await expect(rgba(lit.ground)[3]).toBe(1);
+    await expect(lit.ratio).toBeGreaterThanOrEqual(4.5);
     await expect(fill(chosen)).toBe(fills.chosen);
     // The picture: the chosen chip under the pointer.
     chosen.blur();

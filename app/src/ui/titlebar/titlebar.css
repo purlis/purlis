@@ -139,7 +139,9 @@
   text-overflow: ellipsis;
 }
 
-/* A workspace's waiting count (R101): 16px, amber on its wash. */
+/* A workspace's waiting count (R101): 16px, amber on its wash, the wash laid on the bar's own
+   ground (D-3345-3), so it reads the same on a chip at rest, under the pointer and chosen,
+   whatever the chip's fill: never the amber on the accent's wash. */
 [data-part="count"][data-scope="titlebar"] {
   display: inline-grid;
   flex: none;
@@ -150,7 +152,9 @@
   padding-inline: var(--space-2);
   border-radius: var(--radius-full);
   color: var(--state-waiting);
-  background-color: var(--wash-warning);
+  /* The wash, laid on the bar's ground rather than on the chip's fill. */
+  background-color: var(--surface-deep);
+  background-image: linear-gradient(var(--wash-warning), var(--wash-warning));
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-strong);
   font-variant-numeric: tabular-nums;
