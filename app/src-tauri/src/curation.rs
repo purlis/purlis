@@ -670,12 +670,21 @@ fn sent(
         ..Default::default()
     };
     before(number);
-    // The skill runs its turn opens are the grade's, where it is one (SK-16): held before the
-    // chat starts, as a curation action's are.
-    if let Some(by) = chat.starts_runs {
-        held.hooks().skill_prompted(&root, number, by, &chat.prompt);
-    }
     let session = held.chats().start_ready(&record, &ready, size)?;
+    // The skill runs its turn opens are the grade's, where it is one (SK-16): held under the
+    // salt of the id its start gave it (SK-38), as a curation action's are. The id is minted by
+    // the start, so this is the first moment it can be; the harness is still booting, well before
+    // its first prompt's hook.
+    if let Some(by) = chat.starts_runs {
+        match held.chats().skills_of(session).and_then(|chat| chat.salt) {
+            Some(salt) => held
+                .hooks()
+                .skill_prompted(&root, session, by, &chat.prompt, &salt),
+            None => tracing::debug!(
+                "purlis: chat {session} started with no id, so its message starts no run"
+            ),
+        }
+    }
     // Said in the app's own log, as every send purlis makes is: which chat, and for what.
     tracing::info!(
         "purlis: chat {number} was started on a message purlis wrote and sent ({why:?})"
