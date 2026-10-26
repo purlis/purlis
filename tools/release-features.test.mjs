@@ -252,12 +252,25 @@ test("a workflow listed as not shipping that publishes is an error", () => {
     "      - run: gh release create v1 dist/*",
     "      - uses: docker/build-push-action@0123456789abcdef0123456789abcdef01234567 # v7",
     "    permissions:\n      packages: write",
+    "      - run: docker push ghcr.io/purlis/purlis-runner:main",
+    "      - run: docker push localhost.example.com:5000/a:b",
+    "      - run: podman push \"$IMAGE\"",
   ]) {
     const [found] = workflowErrors([{ name: listed, text: `${publish}\n      - run: cargo build -p a` }]);
     assert.equal(found?.name, listed, publish);
     assert.match(found.error, /publishes/);
   }
   assert.deepEqual(workflowErrors([{ name: listed, text: "      # gh release create v1\n      - run: cargo build -p a" }]), []);
+});
+
+test("a push to a registry on the job's own loopback publishes nothing", () => {
+  const listed = Object.keys(NOT_SHIPPING)[0];
+  for (const push of [
+    "      - run: docker push localhost:5000/purlis-runner-parity:candidate",
+    "      - run: podman push 127.0.0.1:5000/a:b",
+  ]) {
+    assert.deepEqual(workflowErrors([{ name: listed, text: `${push}\n      - run: cargo build -p a` }]), [], push);
+  }
 });
 
 test("cargo run or test with a release profile is a build, never skipped", () => {
