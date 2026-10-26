@@ -194,7 +194,7 @@ pub fn vault(root: &Path, state: &Path, name: &str) -> crate::personas::Vault {
         };
     }
     match crate::secrets::registry::load_registry(&vault_ctx(root, state)) {
-        Err(why) => Vault::RegistryUnreadable(why.message),
+        Err(why) => Vault::RegistryUnreadable(why.message.to_string()),
         Ok(doc) => crate::secrets::registry::vaults_for_persona(&doc, name)
             .into_iter()
             .next()

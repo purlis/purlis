@@ -135,10 +135,11 @@ impl Quiet {
     fn on(&self) -> Result<&dyn Store, VaultError> {
         match &self.off {
             Ok(_) => Ok(&*self.store),
-            Err(e) => Err(VaultError::would_ask(format!(
-                "{}; so that the system asks nothing, nothing was read",
-                e.message
-            ))),
+            Err(e) => {
+                Err(VaultError::would_ask(e.message.clone().then(
+                    "; so that the system asks nothing, nothing was read".into(),
+                )))
+            }
         }
     }
 }
@@ -186,7 +187,7 @@ impl From<VaultError> for Miss {
         if e.kind == Kind::WouldAsk {
             Self::WouldAsk
         } else {
-            Self::Failed(e.message)
+            Self::Failed(e.message.to_string())
         }
     }
 }
@@ -900,16 +901,20 @@ fn copy_back(reach: &Reach, to: &str, from: &str, key: &str) -> Result<(), Strin
     let store = reach.store();
     let Some(value) = store
         .get(to, key)
-        .map_err(|e| e.message)?
+        .map_err(|e| e.message.to_string())?
         .map(keyring::Secret::into_inner)
     else {
         // Not found under either: nothing to lose.
         return Ok(());
     };
     if reach.its_own() {
-        store.make_own(from, key, &value).map_err(|e| e.message)?;
+        store
+            .make_own(from, key, &value)
+            .map_err(|e| e.message.to_string())?;
     } else {
-        let held = store.make_fresh(from, key, &value).map_err(|e| e.message)?;
+        let held = store
+            .make_fresh(from, key, &value)
+            .map_err(|e| e.message.to_string())?;
         held_by_the_app(store, held, from, key)?;
     }
     match store

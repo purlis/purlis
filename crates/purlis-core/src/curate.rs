@@ -352,6 +352,7 @@ pub fn optimize(
     say: crate::repocmd::Sink,
 ) -> u8 {
     use crate::repocmd::Say;
+    use crate::tui::Markup;
     let (apply, stale_days, today) = (how.apply, how.stale_days, how.today);
     let mut actions_total = 0;
     let mut unread: Unread = Vec::new();
@@ -415,7 +416,7 @@ pub fn optimize(
             if !pending.is_empty() {
                 say(Say::Out("  would auto-apply (re-run with --apply):".into()));
                 for p in pending {
-                    say(Say::Out(format!("    + {p}")));
+                    say(Say::Out(Markup::new().own("    + ").text(p).to_string()));
                 }
             }
             rep
@@ -424,7 +425,7 @@ pub fn optimize(
         if !proposals.is_empty() {
             say(Say::Out(how.proposals.to_string()));
             for p in proposals {
-                say(Say::Out(format!("    ? {p}")));
+                say(Say::Out(Markup::new().own("    ? ").text(p).to_string()));
             }
         } else if apply {
             say(Say::Info("  clean — nothing to propose.".into()));

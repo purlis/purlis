@@ -940,11 +940,13 @@ pub fn list(ctx: &Ctx, io: &mut dyn Io) -> i32 {
 fn verify_vault(ctx: &Ctx, v: &Vault) -> Vec<(String, Option<String>)> {
     let keys = match cmd::keys(ctx, v) {
         Ok(k) => k,
-        Err(e) => return vec![("*".into(), Some(e.message))],
+        Err(e) => return vec![("*".into(), Some(e.message.to_string()))],
     };
     keys.into_iter()
         .map(|k| {
-            let err = cmd::get_value(ctx, v, &k).err().map(|e| e.message);
+            let err = cmd::get_value(ctx, v, &k)
+                .err()
+                .map(|e| e.message.to_string());
             (k, err)
         })
         .collect()

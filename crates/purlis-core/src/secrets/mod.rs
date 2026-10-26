@@ -27,6 +27,8 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
+use crate::tui::Markup;
+
 pub mod brokered;
 pub mod cmd;
 pub mod dotenv;
@@ -85,10 +87,16 @@ pub enum Cause {
 ///
 /// **The sentence never holds a value.** Every constructor in this module is handed names —
 /// a vault, a key, a URI, an exit status — and nothing a resolver printed.
+///
+/// **The sentence is [`Markup`](crate::tui::Markup)** (#3321): purlis's own words go in as
+/// they are, and a name or a path spliced into one is escaped, its line ends too, so it cannot
+/// start a line that reads as purlis's. A refusal purlis lays out over lines builds them with
+/// [`Markup::lines`](crate::tui::Markup::lines); a `String` given to a constructor is one
+/// line, escaped whole.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VaultError {
     pub kind: Kind,
-    pub message: String,
+    pub message: crate::tui::Markup,
     /// What the provider diagnosed the failure as; `None` where it recognised nothing.
     pub cause: Option<Cause>,
 }
@@ -97,14 +105,15 @@ impl VaultError {
     /// The refusal as a line of purlis's voice says it (SK-54).
     ///
     /// A vault's refusal is purlis's own prose, often laid out over lines (a sentence, then
-    /// what to run), so its line ends are kept ([`crate::tui::Markup::lines_of`]) and every
-    /// other hidden character in it is marked. What a provider's program printed never goes
-    /// into one: `op`'s and a resolver's output are withheld, because they can hold the secret.
+    /// what to run); it was built as [`Markup`](crate::tui::Markup), so the only line ends it
+    /// holds are purlis's own, and a name's are marked. What a provider's program printed never
+    /// goes into one: `op`'s and a resolver's output are withheld, because they can hold the
+    /// secret.
     pub fn said(&self) -> crate::tui::Markup {
-        crate::tui::Markup::lines_of(&self.message)
+        self.message.clone()
     }
 
-    pub fn new(message: impl Into<String>) -> Self {
+    pub fn new(message: impl Into<crate::tui::Markup>) -> Self {
         Self {
             kind: Kind::Other,
             message: message.into(),
@@ -112,7 +121,7 @@ impl VaultError {
         }
     }
 
-    pub fn not_found(message: impl Into<String>) -> Self {
+    pub fn not_found(message: impl Into<crate::tui::Markup>) -> Self {
         Self {
             kind: Kind::NotFound,
             message: message.into(),
@@ -120,7 +129,7 @@ impl VaultError {
         }
     }
 
-    pub fn not_configured(message: impl Into<String>) -> Self {
+    pub fn not_configured(message: impl Into<crate::tui::Markup>) -> Self {
         Self {
             kind: Kind::NotConfigured,
             message: message.into(),
@@ -136,7 +145,7 @@ impl VaultError {
         }
     }
 
-    pub fn unavailable(message: impl Into<String>) -> Self {
+    pub fn unavailable(message: impl Into<crate::tui::Markup>) -> Self {
         Self {
             kind: Kind::Unavailable,
             message: message.into(),
@@ -144,7 +153,7 @@ impl VaultError {
         }
     }
 
-    pub fn would_ask(message: impl Into<String>) -> Self {
+    pub fn would_ask(message: impl Into<crate::tui::Markup>) -> Self {
         Self {
             kind: Kind::WouldAsk,
             message: message.into(),
@@ -575,30 +584,44 @@ fn identity_unset(
     }
     if identity::in_keyring(ctx, vault) {
         let why = keyring.map_or_else(
-            || format!("{} holds no token for it", keyring::STORE_NAME),
+            || Markup::from(format!("{} holds no token for it", keyring::STORE_NAME)),
             |e| e.message,
         );
-        return VaultError::new(format!(
-            "vault '{}' is read through ${source}, which was moved into {}, but {why}, and it \
-             is not set here either. purlis will not fall back to an ambient ${target}.\n  \
-             Paste the token again in this vault's tab in the app. Or export {source}=… where \
-             purlis runs.",
-            vault.name,
-            keyring::STORE_NAME
-        ));
+        return VaultError::new(Markup::lines([
+            Markup::from(format!(
+                "vault '{}' is read through ${source}, which was moved into {}, but ",
+                vault.name,
+                keyring::STORE_NAME
+            ))
+            .then(why)
+            .then(Markup::from(format!(
+                ", and it is not set here either. purlis will not fall back to an ambient \
+                 ${target}."
+            ))),
+            Markup::from(format!(
+                "  Paste the token again in this vault's tab in the app. Or export {source}=… \
+                 where purlis runs."
+            )),
+        ]));
     }
-    VaultError::new(format!(
-        "vault '{}' is read through ${source}, which is unset. purlis will not fall \
-         back to an ambient ${target}: that would read this vault under an identity \
-         it does not declare, and the failure would look like a missing secret rather \
-         than a wrong credential.\n  Put the token in {}: open this vault's tab in the app \
-         and paste it into the box there. Or export {source}=… where purlis runs. If this vault \
-         should not be bound to that identity at all: purlis vault add {} --provider {} --force",
-        vault.name,
-        keyring::STORE_NAME,
-        vault.name,
-        vault.provider
-    ))
+    VaultError::new(Markup::lines([
+        Markup::from(format!(
+            "vault '{}' is read through ${source}, which is unset. purlis will not fall \
+             back to an ambient ${target}: that would read this vault under an identity \
+             it does not declare, and the failure would look like a missing secret rather \
+             than a wrong credential.",
+            vault.name,
+        )),
+        Markup::from(format!(
+            "  Put the token in {}: open this vault's tab in the app \
+             and paste it into the box there. Or export {source}=… where purlis runs. If this \
+             vault should not be bound to that identity at all: purlis vault add {} --provider \
+             {} --force",
+            keyring::STORE_NAME,
+            vault.name,
+            vault.provider
+        )),
+    ]))
 }
 
 /// [`identity_unset`] for a vault that declares a token kept in the keyring and read through no
@@ -621,25 +644,37 @@ fn kept_token_missing(
     };
     if identity::in_keyring(ctx, vault) {
         let why = keyring.map_or_else(
-            || format!("{} holds none for it", keyring::STORE_NAME),
+            || Markup::from(format!("{} holds none for it", keyring::STORE_NAME)),
             |e| e.message,
         );
-        return VaultError::new(format!(
-            "vault '{}' is read with a service-account token purlis keeps in {}, but {why}. \
-             purlis will not fall back to an ambient ${target}.\n  Paste the token again in \
-             this vault's tab in the app.{again}",
+        return VaultError::new(Markup::lines([
+            Markup::from(format!(
+                "vault '{}' is read with a service-account token purlis keeps in {}, but ",
+                vault.name,
+                keyring::STORE_NAME
+            ))
+            .then(why)
+            .then(Markup::from(format!(
+                ". purlis will not fall back to an ambient ${target}."
+            ))),
+            Markup::from(format!(
+                "  Paste the token again in this vault's tab in the app.{again}"
+            )),
+        ]));
+    }
+    VaultError::new(Markup::lines([
+        Markup::from(format!(
+            "vault '{}' is read with a service-account token purlis keeps in {}, and this \
+             machine has none for it. purlis will not fall back to an ambient ${target}: that \
+             would read this vault under an identity it does not declare.",
             vault.name,
             keyring::STORE_NAME
-        ));
-    }
-    VaultError::new(format!(
-        "vault '{}' is read with a service-account token purlis keeps in {}, and this machine \
-         has none for it. purlis will not fall back to an ambient ${target}: that would read \
-         this vault under an identity it does not declare.\n  Put the token in: open this \
-         vault's tab in the app and paste it into the box there.{again}",
-        vault.name,
-        keyring::STORE_NAME
-    ))
+        )),
+        Markup::from(format!(
+            "  Put the token in: open this vault's tab in the app and paste it into the box \
+             there.{again}"
+        )),
+    ]))
 }
 
 /// `VaultProvider.identity_note`: ` (identity from $SOURCE)`, or `""` — appended to a read
