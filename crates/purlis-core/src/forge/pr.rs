@@ -135,6 +135,13 @@ pub fn proof_kept_at(
     }
 }
 
+/// Whether anyone with a picture's link can open browser proof kept on `kind`, signed in or not,
+/// whoever can read the repo: a GitLab upload, unless the project checks who opens its uploads
+/// (`uploads_need_sign_in`). GitHub draws a picture only for whoever can read the repo.
+pub fn proof_open_by_link(kind: Kind, uploads_need_sign_in: Option<bool>) -> bool {
+    matches!(kind, Kind::GitLab) && uploads_need_sign_in != Some(true)
+}
+
 /// Whether attaching proof on `kind` writes to the repo itself, so it needs push access there:
 /// GitHub's proof branch does; GitLab's uploads need only the right to comment (#2026).
 pub fn proof_needs_push(kind: Kind) -> bool {

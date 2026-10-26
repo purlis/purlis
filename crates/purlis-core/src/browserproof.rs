@@ -33,7 +33,8 @@ use crate::browsertimeline;
 use crate::counts::counted;
 use crate::forge::backend::{RepoRecord, Visibility};
 use crate::forge::pr::{
-    Image, Pr, State, proof_kept_at, proof_needs_push, request_mark, request_page_between,
+    Image, Pr, State, proof_kept_at, proof_needs_push, proof_open_by_link, request_mark,
+    request_page_between,
 };
 use crate::forge::{Caller, Forge, ForgeBackend, Kind};
 
@@ -162,14 +163,19 @@ pub fn words(count: usize) -> String {
 }
 
 /// The line said before the pictures (the person's ruling on D-2026-3), with whether the repo
-/// is public said plainly.
-pub fn warning(path: &str, host: &str, visibility: Visibility) -> String {
-    let readers = match visibility {
-        Visibility::Public => format!("{path} is public: everyone can see these."),
-        Visibility::Internal => {
+/// is public said plainly, and, where the pictures open for anyone with their link
+/// (`open_by_link`, a GitLab project that does not check who opens its uploads), that too: a
+/// private project is then no bound on who sees them.
+pub fn warning(path: &str, host: &str, visibility: Visibility, open_by_link: bool) -> String {
+    let link = "anyone with a picture's link can open it, signed in or not";
+    let readers = match (visibility, open_by_link) {
+        (Visibility::Public, _) => format!("{path} is public: everyone can see these."),
+        (Visibility::Internal, false) => {
             format!("{path} is internal: everyone signed in to {host} can see these.")
         }
-        Visibility::Private => format!("{path} is private."),
+        (Visibility::Internal, true) => format!("{path} is internal, but {link}."),
+        (Visibility::Private, false) => format!("{path} is private."),
+        (Visibility::Private, true) => format!("{path} is private, but {link}."),
     };
     format!(
         "Public and permanent: anyone who can read {path} (everyone, on a public repo) sees \
@@ -265,7 +271,12 @@ pub fn show(
                 request.number,
                 about.uploads_need_sign_in,
             ),
-            warning: warning(&request.path, &request.forge.host, about.visibility),
+            warning: warning(
+                &request.path,
+                &request.forge.host,
+                about.visibility,
+                proof_open_by_link(request.forge.kind, about.uploads_need_sign_in),
+            ),
             words: words(shots.len()),
             path: request.path,
             request: request.url,

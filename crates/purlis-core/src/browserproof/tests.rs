@@ -228,6 +228,57 @@ fn the_warning_says_public_and_permanent_and_whether_the_repo_is_public() {
     assert!(private.shown.warning.ends_with("acme/api is private."));
 }
 
+/// A private GitLab project whose uploads open for anyone with their link is no bound on who
+/// sees the pictures, so the warning does not stop at "is private"; one that checks who opens
+/// them does.
+#[test]
+fn a_private_gitlab_project_that_does_not_check_its_uploads_is_not_said_to_be_private_alone() {
+    let dir = project();
+    took(dir.path(), 1, b"\x89PNG one");
+    let mr = "https://gitlab.com/acme/api/-/merge_requests/12";
+    let read = |enforce: Value| {
+        let reads = recorded(vec![
+            get(
+                "projects/acme%2Fapi/merge_requests/12",
+                json!({"iid": 12, "state": "opened"}),
+            ),
+            get(
+                "projects/acme%2Fapi",
+                json!({"visibility": "private", "enforce_auth_checks_on_uploads": enforce,
+                       "permissions": {"project_access": {"access_level": 30}}}),
+            ),
+        ]);
+        let shown = show(
+            dir.path(),
+            CHAT,
+            mr,
+            &shots(dir.path()),
+            &over(&reads),
+            &Caller::window(),
+        )
+        .expect("shown")
+        .shown;
+        assert_eq!(reads.unspent(), Vec::new());
+        shown
+    };
+
+    let open = read(json!(false));
+    assert!(
+        open.warning.ends_with(
+            "acme/api is private, but anyone with a picture's link can open it, signed in or not."
+        ),
+        "{}",
+        open.warning
+    );
+    assert!(open.kept_at.contains("anyone with their link can open"));
+    let checked = read(json!(true));
+    assert!(
+        checked.warning.ends_with("acme/api is private."),
+        "{}",
+        checked.warning
+    );
+}
+
 #[test]
 fn someone_who_cannot_push_to_the_repo_is_told_before_anything_is_written() {
     let dir = project();
