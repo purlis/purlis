@@ -101,7 +101,7 @@ describe("a browser view tab", () => {
     );
 
     // Handed back, as the person leaves it.
-    await $(`${BAR} button=Done`).click();
+    await $(BAR).$("button=Done").click();
     await until(
       async () => (await $(BAR).getAttribute("data-driving")) === "agent",
       30_000,
