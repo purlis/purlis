@@ -13,6 +13,7 @@ import {
   noTabs,
   openBeside,
   openTab,
+  panesMovedInto,
   panesOf,
   placeBeside,
   placedOf,
@@ -350,5 +351,48 @@ describe("the breadcrumb of a pane that shows its own chat", () => {
     const orphan = listed(12, "left behind", 9);
     const tabs = moveToOwnTab(twoSessions(), 12, "left behind", "devops", null);
     expect(placedCrumbsOf(tabs, tabOf(tabs, 12), [...chats, orphan])).toEqual({});
+  });
+});
+
+describe("the panes a task moved into (#3271)", () => {
+  const paneOf = (tabs: Tabs, session: number) =>
+    panesOf(tabs, tabOf(tabs, session)).find((one) => one.session === session)?.pane;
+
+  it("names the session's pane a task left for a tab of its own", () => {
+    const before = twoSessions();
+    const after = moveToOwnTab(before, 4, "talk", "devops", null, askedBy);
+    expect(panesMovedInto(before, after, askedBy)).toEqual([
+      { from: paneOf(before, 1), to: paneOf(after, 4) },
+    ]);
+  });
+
+  it("names it for a task that was shown in its session's pane", () => {
+    const before = switchTabTo(twoSessions(), 4, askedBy);
+    const after = moveToOwnTab(before, 4, "talk", "devops", null, askedBy);
+    expect(panesMovedInto(before, after, askedBy)).toEqual([
+      { from: paneOf(before, 1), to: paneOf(after, 4) },
+    ]);
+  });
+
+  it("names it for a task placed beside its session", () => {
+    const before = twoSessions();
+    const after = placeBeside(before, 4, askedBy, "talk");
+    expect(panesMovedInto(before, after, askedBy)).toEqual([
+      { from: paneOf(before, 1), to: paneOf(after, 4) },
+    ]);
+  });
+
+  it("names the pane a task had beside its session, as it moves to a tab of its own", () => {
+    const before = placeBeside(twoSessions(), 4, askedBy, "talk");
+    const after = moveToOwnTab(before, 4, "talk", "devops", null, askedBy);
+    expect(panesMovedInto(before, after, askedBy)).toEqual([
+      { from: paneOf(before, 4), to: paneOf(after, 4) },
+    ]);
+  });
+
+  it("names nothing for a pane that is new: a chat with no home before", () => {
+    const before = twoSessions();
+    expect(panesMovedInto(before, openTab(before, 3, "3", "steward"), askedBy)).toEqual([]);
+    expect(panesMovedInto(before, selectTab(before, tabOf(before, 2)), askedBy)).toEqual([]);
   });
 });

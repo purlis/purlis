@@ -1546,6 +1546,28 @@ function withoutPaneOf(tabs: Tabs, session: number): Tabs {
 }
 
 /**
+ * **The panes a chat moved into** (#3271): each pane of `after` that `before` did not have,
+ * with the pane its chat was at home in before ({@link homeOf}), where its Notices were drawn: a
+ * task given a tab of its own ({@link moveToOwnTab}) or a pane beside its session
+ * ({@link placeBeside}). A pane whose chat had no home before is new, and is not listed.
+ */
+export function panesMovedInto(
+  before: Tabs,
+  after: Tabs,
+  askedBy: AskedBy,
+): { from: number; to: number }[] {
+  if (before === after) return [];
+  const had = new Set(before.order.flatMap((id) => contentsOf(before, id).map((one) => one.pane)));
+  return after.order.flatMap((id) =>
+    panesOf(after, id).flatMap(({ pane, session }) => {
+      if (had.has(pane)) return [];
+      const home = homeOf(before, session, askedBy);
+      return home === undefined || home.pane === pane ? [] : [{ from: home.pane, to: pane }];
+    }),
+  );
+}
+
+/**
  * **Moves a task to a tab of its own** (#1489, V100-38): at the strip's end, in front. It is
  * taken out of any pane that was showing it, so one chat is in one place, and out of a split
  * it was opened beside its session in. Its own tasks go with it: they are at home in its tab

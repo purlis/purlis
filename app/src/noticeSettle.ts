@@ -80,6 +80,26 @@ export function forgetPaneBands(plane?: string) {
 const freshBand = (): BandMemory => ({ hadAny: false, emptiedAt: -Infinity, places: new Map() });
 
 /**
+ * **Carries pane `from`'s band memory to pane `to`** (#3271): a chat given a new pane (a tab of
+ * its own, a pane beside its session) has its Notices drawn there now, so what stood in the band
+ * they were drawn in still counts. Carried as a copy, since the pane it left goes on: whether that
+ * band held a Notice, when it went empty, and where each of its grants was. Into a band that has
+ * read already it only adds, so it can only hold more.
+ */
+export function carryPaneBand(from: string, to: string) {
+  const was = bands.get(from);
+  if (was === undefined) return;
+  const into = bands.get(to);
+  if (into === undefined) {
+    bands.set(to, { hadAny: was.hadAny, emptiedAt: was.emptiedAt, places: new Map(was.places) });
+    return;
+  }
+  into.hadAny ||= was.hadAny;
+  into.emptiedAt = Math.max(into.emptiedAt, was.emptiedAt);
+  for (const [name, place] of was.places) if (!into.places.has(name)) into.places.set(name, place);
+}
+
+/**
  * **The Notices' move-settle guard** (#1695, train 50's and train 54's reviews): a Notice that
  * grants something is drawn among others that come and go, so a press on one of its ways out
  * within {@link SETTLE_MS} of that way out moving does nothing, and says why.

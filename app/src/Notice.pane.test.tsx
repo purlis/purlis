@@ -11,6 +11,7 @@ import { Notice, NoticePaneRow } from "./Notice";
 import {
   NOTICE_MOVED_JUST_NOW,
   NoticeWayGuard,
+  carryPaneBand,
   forgetPaneBand,
   paneBand,
   useNoticeSettle,
@@ -1585,6 +1586,142 @@ describe("a pane's band read only once its boxes are drawn (#3302)", () => {
     const { rerender } = render(<Listed which="one" />);
     clock.now += 10_000;
     rerender(<Listed which="two" />);
+    await userEvent.click(allow());
+    expect(allowed).toEqual([]);
+  });
+});
+
+describe("a task's band memory carried to the pane it moved to (#3271)", () => {
+  const clock = { now: 1_000_000 };
+  let spies: { mockRestore: () => void }[] = [];
+  const laidOut = () => {
+    clock.now = 1_000_000;
+    spies = [
+      vi.spyOn(performance, "now").mockImplementation(() => clock.now),
+      vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (
+        this: Element,
+      ) {
+        if (this.closest(".pane-notice-row-empty") !== null) return DOMRect.fromRect();
+        return DOMRect.fromRect({ x: 12, y: 24, width: 90, height: 24 });
+      }),
+    ];
+  };
+  afterEach(() => {
+    for (const spy of spies) spy.mockRestore();
+    spies = [];
+  });
+
+  function Block({ target, allowed }: { target: string; allowed: string[] }) {
+    return (
+      <Notice
+        cause="sandbox-blocked:4:write:path:chat"
+        at="pane"
+        tone="trouble"
+        label="Sandbox block"
+        fixes={[
+          { label: "Allow for this chat", onPress: () => allowed.push(target), allows: true },
+        ]}
+      >
+        The sandbox blocked writing {target}.
+      </Notice>
+    );
+  }
+  const Warning = () => (
+    <Notice cause="mcp-failed:4:figma" at="pane" label="MCP server" onDismiss={() => undefined}>
+      MCP server figma did not start.
+    </Notice>
+  );
+  let named = 0;
+  const allow = () => screen.getByRole("button", { name: "Allow for this chat" });
+
+  /** The task's warning stood in its session's pane `from`; the task is moved to pane `to`,
+   *  where a consent is drawn in the warning's place. */
+  function moved(carried: boolean) {
+    const from = paneBand("moved", named++);
+    const to = paneBand("moved", named++);
+    const allowed: string[] = [];
+    const { unmount } = render(
+      <NoticePaneRow band={from}>
+        <Warning />
+      </NoticePaneRow>,
+    );
+    clock.now += 10_000;
+    if (carried) carryPaneBand(from, to);
+    unmount();
+    render(
+      <NoticePaneRow band={to}>
+        <Block target="~/a" allowed={allowed} />
+      </NoticePaneRow>,
+    );
+    return allowed;
+  }
+
+  it("holds a consent drawn where the task's warning stood, in the pane it moved to", async () => {
+    laidOut();
+    const allowed = moved(true);
+    await userEvent.click(allow());
+    expect(allowed).toEqual([]);
+    expect(screen.getByText(NOTICE_MOVED_JUST_NOW)).toBeTruthy();
+    clock.now += 2000;
+    await userEvent.click(allow());
+    expect(allowed).toEqual(["~/a"]);
+  });
+
+  it("lets a pane that is new, with nothing carried to it, stand its first Notice", async () => {
+    laidOut();
+    const allowed = moved(false);
+    await userEvent.click(allow());
+    expect(allowed).toEqual(["~/a"]);
+  });
+
+  it("lets the same grant, where it stood, be pressed at once in the pane it moved to", async () => {
+    laidOut();
+    const from = paneBand("moved", named++);
+    const to = paneBand("moved", named++);
+    const allowed: string[] = [];
+    const { unmount } = render(
+      <NoticePaneRow band={from}>
+        <Block target="~/a" allowed={allowed} />
+      </NoticePaneRow>,
+    );
+    clock.now += 10_000;
+    carryPaneBand(from, to);
+    unmount();
+    render(
+      <NoticePaneRow band={to}>
+        <Block target="~/a" allowed={allowed} />
+      </NoticePaneRow>,
+    );
+    await userEvent.click(allow());
+    expect(allowed).toEqual(["~/a"]);
+  });
+
+  it("only adds to a band that has read already: what it held still holds", async () => {
+    laidOut();
+    const from = paneBand("moved", named++);
+    const to = paneBand("moved", named++);
+    const allowed: string[] = [];
+    // The pane it left: its warning went long ago, so its band remembers nothing standing.
+    const left = render(
+      <NoticePaneRow band={from}>
+        <Warning />
+      </NoticePaneRow>,
+    );
+    left.rerender(<NoticePaneRow band={from}>{null}</NoticePaneRow>);
+    const { unmount } = left;
+    const into = render(
+      <NoticePaneRow band={to}>
+        <Warning />
+      </NoticePaneRow>,
+    );
+    clock.now += 10_000;
+    carryPaneBand(from, to);
+    unmount();
+    into.rerender(
+      <NoticePaneRow band={to}>
+        <Block target="~/a" allowed={allowed} />
+      </NoticePaneRow>,
+    );
     await userEvent.click(allow());
     expect(allowed).toEqual([]);
   });
