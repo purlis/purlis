@@ -732,7 +732,9 @@ item families (`purlis/tooltip-family`, an error). A frame's `title` is its name
 - **One placement and one delay, which no call site changes**: beside its target at the target's
   end, 10 px from it, flipped to its start where the window has no room (R166); open after the
   pointer rests 500 ms, at once on the keyboard's focus, and at once for the next target while
-  one was just open.
+  one was just open. A row's tooltip stands by the pointer or the row's words, not the whole row,
+  and an anchored tooltip (a row's, a menu row's) keeps its width: it takes the side with room for
+  all of it, and stands under its anchor where neither side has (#3328, `ui/tooltip/side.ts`).
 - **A strip's tooltips stand below it** (#3361): a strip is a row of targets, and a tooltip at a
   target's end would sit on the row, over the next. A target inside an element marked
   `TIPS_BELOW` (`data-tips="below"`; the chat strip's row) has its tooltip below it, or above
@@ -972,9 +974,10 @@ are `item` (the root), `icon`, `count` and `indicator`; both corners draw the `b
   the switcher prototype's variant D draws it
   with "Bar: column". The side panel's views at the top (Chats, Explorer, Search), its half of
   the bottom panel's (Repos, Changes) at its foot. A press switches the view; a press of the
-  open one does nothing (R121), and ⌘B is the way to put the side away. The column stands
-  whether or not the side is out, so nothing moves when it goes or comes back; while the side is
-  away none of its icons is marked, and a press brings it back on that view. A hidden rail
+  open one puts the side away, as on the right (R121 as amended 2026-10-26, #3329), and so does
+  ⌘B. The column stands whether or not the side is out, so nothing moves when it goes or comes
+  back; while the side is away none of its icons is marked, and a press brings it back on that
+  view. A hidden rail
   leaves the column at the window's edge, and the rail's peek slides in over it.
 - **The right bar** (R117): the same column at the window's edge, its own views at the top (a
   press toggles the 300px right panel, whose header has a × that closes it) and its half of the
