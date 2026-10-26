@@ -66,7 +66,9 @@
 
 /* ---------------------------------------------------------------------------------------------
    A chip (R101): 28px, padding 0 10, corners of 8, quiet 13px words. Under the pointer the
-   primary words on the card's fill; the current one takes the same. Its count after its name.
+   primary words on the card's fill. The current one takes the primary words on the accent's
+   wash, and the stronger wash under the pointer, so it never looks merely hovered (R101 as
+   amended by #3345, the sidebar-views prototype's Q4 A). Its count after its name.
    --------------------------------------------------------------------------------------------- */
 
 [data-part="workspace"][data-scope="titlebar"] {
@@ -93,10 +95,19 @@
   appearance: none;
 }
 
-[data-part="workspace"][data-scope="titlebar"][data-hovered],
-[data-part="workspace"][data-scope="titlebar"][data-selected] {
+[data-part="workspace"][data-scope="titlebar"][data-hovered] {
   color: var(--text-primary);
   background-color: var(--surface-overlay);
+}
+
+/* Only a fill changes between these, never a size (R153). */
+[data-part="workspace"][data-scope="titlebar"][data-selected] {
+  color: var(--text-primary);
+  background-color: var(--accent-wash);
+}
+
+[data-part="workspace"][data-scope="titlebar"][data-selected][data-hovered] {
+  background-color: var(--accent-wash-hover);
 }
 
 /* The current workspace while it is not pinned (R105): muted words, a dashed line, "+", and no

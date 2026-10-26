@@ -777,6 +777,11 @@ follows the value the theme gives the old one (`vocabulary::KIN`):
 | `accent.fill-hover` | `tab.active` |
 | `accent.fill-edge` | `accent.base` |
 | `accent.fill-text` | `text.primary` |
+| `accent.wash-hover` | `tab.active` |
+
+Later, `accent.wash-hover` came in (#3345): the chosen title-bar chip's ground under the pointer,
+a step stronger than `accent.wash`, which is the chosen chip's ground at rest; both hold the
+primary words at 4.5:1 over the title bar.
 
 Over Purlis, whose primary is filled and whose controls draw no edge, a theme keeps Purlis's
 values unless it names them. `radius.control` is Classic's `radius.md`, 4, where a theme names

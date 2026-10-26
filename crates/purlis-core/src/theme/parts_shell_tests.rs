@@ -395,10 +395,9 @@ fn the_title_bar_chip_s_defaults_are_what_titlebar_css_draws() {
     let css = css_of(include_str!("../../../../app/src/ui/titlebar/titlebar.css"));
     let root = "[data-part=\"workspace\"][data-scope=\"titlebar\"]";
     let base = rule(&css, root);
-    let lit = rule(
-        &css,
-        &format!("{root}[data-hovered],\n{root}[data-selected]"),
-    );
+    let hovered = rule(&css, &format!("{root}[data-hovered]"));
+    let chosen = rule(&css, &format!("{root}[data-selected]"));
+    let chosen_hovered = rule(&css, &format!("{root}[data-selected][data-hovered]"));
     let unpinned = rule(&css, &format!("{root}[data-variant=\"unpinned\"]"));
     // A pin: quiet words, no box, until the pointer reaches it or it is current (R101).
     assert_eq!(
@@ -409,17 +408,32 @@ fn the_title_bar_chip_s_defaults_are_what_titlebar_css_draws() {
             "transparent"
         ]
     );
-    for state in [parts::State::Hover, parts::State::Selected] {
+    // Under the pointer the card's fill; chosen the accent's wash, and the stronger wash under
+    // the pointer, each with the primary words (R101 as amended by #3345).
+    for (states, fill, text) in [
+        (&[parts::State::Hover][..], hovered, hovered),
+        (&[parts::State::Selected][..], chosen, chosen),
+        (
+            &[parts::State::Hover, parts::State::Selected][..],
+            chosen_hovered,
+            chosen,
+        ),
+    ] {
         assert_eq!(
-            parts::look_of("titlebar", "pinned", &[state]),
+            parts::look_of("titlebar", "pinned", states),
             [
-                token(declared(lit, "background-color").unwrap()).as_str(),
-                token(declared(lit, "color").unwrap()).as_str(),
+                token(declared(fill, "background-color").unwrap()).as_str(),
+                token(declared(text, "color").unwrap()).as_str(),
                 "transparent"
             ],
-            "{state:?}"
+            "{states:?}"
         );
     }
+    assert_ne!(
+        parts::look_of("titlebar", "pinned", &[parts::State::Hover])[0],
+        parts::look_of("titlebar", "pinned", &[parts::State::Selected])[0],
+        "the chosen chip never looks hovered"
+    );
     // The dashed chip: muted words, the subtle line (R105).
     let [_, text, border] = parts::look_of("titlebar", "unpinned", &[]);
     assert_eq!(text, token(declared(unpinned, "color").unwrap()));

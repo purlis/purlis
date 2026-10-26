@@ -505,6 +505,7 @@ fn a_light_wash_reads_in_its_own_hue_on_every_ground_it_is_laid_on() {
         "diff.deleted",
         "diff.inserted",
         "accent.wash",
+        "accent.wash-hover",
     ] {
         let hue = light_rule::oklch_of(&dark.value(wash)[..7]).2;
         for ground in ["surface.base", "surface.raised", "surface.overlay"] {
@@ -546,6 +547,7 @@ fn light_is_dark_reflected_by_its_one_rule() {
         "diff.deleted",
         "diff.inserted",
         "accent.wash",
+        "accent.wash-hover",
     ];
     // The pairs a reflected colour missed, and the ground it is stepped away from (#2700).
     let stepped = [

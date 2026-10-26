@@ -184,6 +184,53 @@ export const Pins: Story = {
   },
 };
 
+/**
+ * **The chosen chip, in every state** (R101 as amended by #3345, the sidebar-views prototype's
+ * Q4 A): the chosen chip on the accent's wash, any other under the pointer on the card's fill,
+ * the chosen one under the pointer on the stronger wash, and the keyboard's ring. Each state
+ * draws its own fill in every built-in theme, and none moves the chip's box by a pixel. The
+ * picture is the chosen chip under the pointer.
+ */
+export const ChosenStates: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const chips = chipsOf(canvas.getByTestId("title-bar"));
+    const [chosen, other] = chips;
+    await expect(chosen).toHaveAttribute("data-selected");
+    const box = (one: HTMLElement) => {
+      const { width, height } = one.getBoundingClientRect();
+      return `${width}x${height}`;
+    };
+    const boxes = [box(chosen), box(other)];
+    const fill = (one: HTMLElement) => getComputedStyle(one).backgroundColor;
+    const fills: Record<string, string> = { rest: fill(other), chosen: fill(chosen) };
+    await userEvent.hover(other);
+    await waitFor(() => expect(other).toHaveAttribute("data-hovered"));
+    fills.hover = fill(other);
+    await expect(box(other)).toBe(boxes[1]);
+    // The primary words on the wash, as under the pointer.
+    await expect(getComputedStyle(chosen).color).toBe(getComputedStyle(other).color);
+    await userEvent.hover(chosen);
+    await waitFor(() => expect(chosen).toHaveAttribute("data-hovered"));
+    fills["chosen + hover"] = fill(chosen);
+    await expect(box(chosen)).toBe(boxes[0]);
+    // Every state its own fill: the chosen chip never looks hovered, nor at rest.
+    await expect(new Set(Object.values(fills)).size).toBe(Object.keys(fills).length);
+    await userEvent.unhover(chosen);
+    // The keyboard's ring on the chosen chip moves nothing either.
+    chosen.focus();
+    await userEvent.keyboard("{ArrowRight}");
+    await userEvent.keyboard("{ArrowLeft}");
+    await expect(chosen).toHaveFocus();
+    await waitFor(() => expect(chosen).toHaveAttribute("data-focus-visible"));
+    await expect(box(chosen)).toBe(boxes[0]);
+    await expect(fill(chosen)).toBe(fills.chosen);
+    // The picture: the chosen chip under the pointer.
+    chosen.blur();
+    await userEvent.hover(chosen);
+    await waitFor(() => expect(chosen).toHaveAttribute("data-hovered"));
+  },
+};
+
 /** **The dashed chip** (R105): the current workspace while it is not pinned, after the pins. */
 export const Unpinned: Story = {
   args: { focusedAt: "docs" },

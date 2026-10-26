@@ -34,6 +34,7 @@ pub const TOKENS: &[&str] = &[
     "accent.base",
     "accent.surface",
     "accent.wash",
+    "accent.wash-hover",
     "accent.text",
     "accent.fill",
     "accent.fill-hover",
@@ -230,6 +231,7 @@ pub const TINTABLE: &[&str] = &[
     "accent.base",
     "accent.surface",
     "accent.wash",
+    "accent.wash-hover",
     "accent.text",
     "accent.fill",
     "accent.fill-hover",
@@ -371,10 +373,12 @@ pub fn follow_muted(
 /// token that drew it before (#3177): a plain control's edge was the strong rule's, the accent's
 /// wash and the primary's fill were its surface, the accent's words were the accent, the
 /// primary's fill under the pointer was the active tab's, its edge was the accent, and its words
-/// were the primary words.
-pub const KIN: [(&str, &str); 7] = [
+/// were the primary words. A chosen title-bar chip's wash under the pointer (#3345) was the
+/// active tab's, as the primary's fill under the pointer was, which Purlis Classic draws alike.
+pub const KIN: [(&str, &str); 8] = [
     ("border.control", "border.strong"),
     ("accent.wash", "accent.surface"),
+    ("accent.wash-hover", "tab.active"),
     ("accent.text", "accent.base"),
     ("accent.fill", "accent.surface"),
     ("accent.fill-hover", "tab.active"),
