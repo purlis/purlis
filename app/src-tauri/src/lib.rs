@@ -2880,6 +2880,7 @@ fn commands() -> Builder<tauri::Wry> {
         .typ::<projectsettings::Rescreened>()
         .typ::<chatbrowsers::BrowsersEnded>()
         .typ::<chatbrowsers::BrowsersListed>()
+        .typ::<chatbrowsers::TimelineMoved>()
         // What `theme-drafts-close-handed` carries (#2761).
         .typ::<themedrafts::CloseHanded>()
         // What `smart-close` carries (ADR 0064).
@@ -4024,6 +4025,18 @@ pub fn run() {
                             &plane.clone(),
                             chatbrowsers::LISTED,
                             chatbrowsers::BrowsersListed { plane },
+                        );
+                    })
+                })
+                // A chat's browser timeline moved: a tab of it reads it again (#2017).
+                .telling_browser_timelines({
+                    let window = app.handle().clone();
+                    std::sync::Arc::new(move |plane: crate::planes::PlaneId, chat: String| {
+                        windows::emit_for_plane(
+                            &window,
+                            &plane.clone(),
+                            chatbrowsers::TIMELINE_MOVED,
+                            chatbrowsers::TimelineMoved { plane, chat },
                         );
                     })
                 })
