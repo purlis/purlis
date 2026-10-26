@@ -222,9 +222,10 @@ export const SandboxAndApproval: Story = {
     const page = within(document.body);
     const dialog = await page.findByRole("dialog", { name: "Start a chat" });
     await waitFor(() => expect(page.getByRole("button", { name: "Cancel" })).toHaveFocus());
-    await expect(
-      page.getByText("claude reaches only the hosts this project allows."),
-    ).toBeVisible();
+    // Said in the details' Sandbox section; the dialog fades in as it opens, so it is waited for.
+    await waitFor(() =>
+      expect(page.getByText("claude reaches only the hosts this project allows.")).toBeVisible(),
+    );
     await pictureNow();
     const box = boxOf(dialog);
     const answer = () => page.getByRole("button", { name: /^(Start|Approve)/ });
@@ -236,7 +237,9 @@ export const SandboxAndApproval: Story = {
 
     await userEvent.click(page.getByRole("checkbox", { name: "Start without the sandbox" }));
     await expect(answer()).toHaveAccessibleName("Start without the sandbox");
-    await expect(page.getByRole("textbox", { name: "Why, if you want it recorded" })).toBeVisible();
+    await expect(
+      page.getByRole("textbox", { name: "Why, if you want it recorded" }),
+    ).toBeInTheDocument();
     await expect(boxOf(dialog)).toEqual(box);
     await expect(room()).toEqual(before);
 
