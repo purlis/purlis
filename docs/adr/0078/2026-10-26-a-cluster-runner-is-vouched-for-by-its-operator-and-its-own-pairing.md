@@ -5,7 +5,7 @@ the operator signs {claim, pod, link key, requester} with a key the desktop pinn
 was added; the desktop also pairs over its own exec, and both must agree; a changed key is
 refused and asked about."* It adds to §3 and §8 for runners of a cluster pool, and to the
 amendment of 2026-10-17 on a Docker pool's runner (items 3 and 5); it changes neither for a
-Docker pool. *Decided in implementation, to be confirmed* (D-2056-1 to D-2056-8 in its pull
+Docker pool. *Decided in implementation, ruled by the person 2026-10-26* (D-2056-1 to D-2056-8 in its pull
 request).
 
 1. **A cluster runner makes its link key as its pod starts, not at its pairing.** The pod's first
