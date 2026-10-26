@@ -7470,6 +7470,30 @@
         },
         "option-card.check.tile.disabled.text": {
           "$ref": "#/$defs/part-text"
+        },
+        "panel-separator.root.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "panel-separator.root.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "panel-separator.root.pressed.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "panel-separator.root.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "panel-separator.grip.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "panel-separator.grip.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "panel-separator.grip.pressed.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "panel-separator.grip.focused.fill": {
+          "$ref": "#/$defs/part-fill"
         }
       }
     }
