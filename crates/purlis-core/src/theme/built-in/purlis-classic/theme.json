@@ -23,7 +23,8 @@
     "activity.indicator.selected.fill": "accent.base",
     "rail.button.corner-radius": 9,
     "status-item.root.accent.text": "text.primary",
-    "titlebar.workspace.corner-radius": 5
+    "titlebar.workspace.corner-radius": 5,
+    "table.rule.fill": "border.subtle"
   },
   "appearances": [
     {

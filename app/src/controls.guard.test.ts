@@ -35,7 +35,7 @@ import {
  * | `<button>`, or a Radix trigger or close without `asChild`        | a row, a segment or a menu row; a button of the button family is `Button` (#2904), never a native `<button>` |
  * | `<input>`, `<textarea>`                                          | nothing: a box is the field family's `TextField` or `TextArea` (#2905); a checkbox `ui-checkbox`, a radio `ui-radio` |
  * | `<select>`, Radix Select's `Trigger`                             | `ui-select`               |
- * | `<table>`                                                        | `ui-table`                |
+ * | `<table>`                                                        | nothing: a table is the table family's `Table` or `ControlTable` (#2911) |
  * | a Radix menu's or Select's `Content` or `SubContent`             | `ui-menu`                 |
  * | a Radix menu's or Select's `Item`, `SubTrigger`, checkbox or radio item | `ui-menu-item`     |
  *
@@ -62,7 +62,8 @@ const WEARS: Record<string, string[]> = {
   "input:dynamic": ["ui-checkbox", "ui-radio"],
   textarea: [],
   select: ["ui-select"],
-  table: ["ui-table"],
+  // A table is the table family's (#2911): no class makes a raw one right.
+  table: [],
   menu: ["ui-menu"],
   "menu-item": ["ui-menu-item"],
 };
@@ -343,6 +344,7 @@ describe("the control guard (#1837)", () => {
       '<textarea className="notes">',
       "<select>",
       '<table className="vault-secrets">',
+      '<table className="ui-table ui-table-fixed">',
       "<Menu.Content>",
       "<Menu.Item>",
       '<Pick.Trigger className="field">',

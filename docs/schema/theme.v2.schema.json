@@ -7470,6 +7470,81 @@
         },
         "option-card.check.tile.disabled.text": {
           "$ref": "#/$defs/part-text"
+        },
+        "table.root.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "table.root.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "table.root.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "table.root.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "table.root.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "table.root.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "table.root.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "table.root.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "table.root.disabled.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "table.root.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "table.frame.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "table.frame.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "table.frame.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "table.frame.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "table.frame.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "table.head.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "table.head.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "table.head.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "table.cell.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "table.rule.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "table.rule.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "table.rule.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "table.rule.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "table.rule.disabled.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "table.bar.gap": {
+          "$ref": "#/$defs/part-gap"
         }
       }
     }

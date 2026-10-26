@@ -308,6 +308,7 @@ an unknown token is.
 | `segment` (since NEXT) | `root` (`fill`, `text`, `shadow`, `corner-radius`), `label` and `count` (`text`) | none |
 | `slider` (since NEXT) | `root` (`text`, `gap`), `track` and `fill` (`fill`, `corner-radius`), `thumb` (`fill`, `border-colour`, `corner-radius`), `output` (`text`: its value) | none |
 | `option-card` (since NEXT) | `root` (`fill`, `text`, `border-colour`, `shadow`, `corner-radius`, `padding`, `gap`), `icon`, `title` (`text`, `font-size`, `font-weight`), `detail` (`text`, `font-size`), `check` (`text`) | `card`, `tile` |
+| `table` (since the next release) | `root` (`fill`, `text`: a table's row, at rest and in each state), `frame` (`fill`, `border-colour`, `border-width`, `corner-radius`, `shadow`: the card that holds the table), `head` (`text`, `font-size`, `font-weight`: a column's name), `cell` (`padding`), `rule` (`fill`: the rule between rows and under the columns' names, none by default; Purlis Classic fills it), `bar` (`gap`: the bar over a table that chooses) | none |
 
 A field is its label, its control (a `text-input` or a `textarea`), its help and its error, as
 one: `field.help.text` reaches a field's help line, `text-input.root.border-width` every one-line

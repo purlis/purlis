@@ -597,7 +597,6 @@ const CONTROL_GROUNDS: &[&str] = &[
     "layer.project",
     "layer.workspace",
     "layer.chat",
-    "layer.selected",
     "terminal.background",
 ];
 
@@ -1056,6 +1055,7 @@ pub const MANIFEST: &[Family] = &[
     choice::SEGMENT,
     choice::SLIDER,
     choice::OPTION_CARD,
+    collection::TABLE,
 ];
 
 /// The popover and menu families (#2909): the surface a popover and a menu stand on, and a
@@ -1072,7 +1072,7 @@ mod shell;
 #[path = "parts_dialog.rs"]
 mod dialog;
 
-/// The collection families (#2911): a list's row.
+/// The collection families (#2911): a list's row and a table's.
 #[path = "parts_collections.rs"]
 mod collection;
 /// The select and combobox families (#2906).

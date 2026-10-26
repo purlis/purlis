@@ -410,7 +410,8 @@ fn the_manifest_names_the_tabs_and_the_editor_toolbar() {
             "segmented-control",
             "segment",
             "slider",
-            "option-card"
+            "option-card",
+            "table",
         ]
     );
     let tabs = &manifest["families"][4];

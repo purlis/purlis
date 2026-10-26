@@ -635,9 +635,6 @@ const CLASSLESS: readonly string[] = [
   // The band a chat row takes for a moment once it is revealed (`revealTask.ts` sets the
   // attribute as it runs); the row is a `.ui-row`, which holds no button.
   ".chats-section [data-revealed]",
-  // A selected or current table row's cells: the one table whose rows are current (a wanted
-  // skill's row, `SkillTab.tsx`, set by an expression) holds no button.
-  '.ui-table tbody tr:is([aria-selected="true"], [aria-current]:not([aria-current="false"])) > *',
   // Selected words, not a box anything stands on.
   ':root[data-theme-draws~="selection.background"] :not(.cm-editor, .cm-editor *)::selection',
   // The handle between two panes, which the panel library draws, and which holds nothing.

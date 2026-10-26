@@ -123,6 +123,7 @@ amendment, named `<yyyy-mm-dd>-<slug>.md`:
 - [2026-10-24, a row of a collection carries its own menu and tooltip](0104/2026-10-24-a-row-carries-its-own-menu-and-tooltip.md)
 - [2026-10-24, the select and combobox families, and no top layer](0104/2026-10-24-the-select-and-combobox-families.md)
 - [2026-10-24, the choice families](0104/2026-10-24-the-choice-families.md)
+- [2026-10-25, a table of data is a grid, and a table of controls is a table](0104/2026-10-25-a-table-of-data-is-a-grid-and-a-table-of-controls-is-a-table.md)
 
 ## What was rejected
 

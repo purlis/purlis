@@ -73,6 +73,8 @@ const FAINT: ReadonlySet<string> = new Set([
   '[data-scope="select"][data-part="root"][data-disabled] [data-part="chevron"]',
   '[data-scope="select"][data-part="root"][data-disabled] [data-part="placeholder"]',
   '[data-scope="combobox"][data-part="root"][data-disabled] [data-part="chevron"]',
+  // A table's row that cannot be used (#2911).
+  '[data-scope="table"][data-part="root"][data-disabled]',
 ]);
 
 /** Informational words, each drawn in quiet: line numbers, placeholders, counts, paths, group
