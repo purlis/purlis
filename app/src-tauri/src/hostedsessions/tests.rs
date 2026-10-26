@@ -40,6 +40,31 @@ pub(crate) fn in_memory<H: session::Host + Clone>(
     (connection, link)
 }
 
+/// [`in_memory`], whose links to a pool's runner reach `runner` (#2050): as a window whose host
+/// relays them, seen apart from the relay, which `purlis-host`'s tests hold to its rules.
+pub(crate) fn in_memory_with_a_runner<H: session::Host + Clone, R: session::Host + Clone>(
+    hosting: H,
+    runner: R,
+    runtime: &tokio::runtime::Runtime,
+) -> Arc<Connection> {
+    let link = Arc::new(
+        runtime
+            .block_on(a_link_to(hosting.clone(), || {}))
+            .expect("the window speaks to the host"),
+    );
+    let handle = runtime.handle().clone();
+    let dial: Dial = Arc::new({
+        let handle = handle.clone();
+        move |within, naming| open_within(&handle, within, a_named_link_to(hosting.clone(), naming))
+    });
+    let relayed: RelayedDial = Arc::new(move |within, naming, _pool: &str| {
+        open_within(&handle, within, a_named_link_to(runner.clone(), naming))
+    });
+    let connection = Arc::new(Connection::default());
+    connection.ready_relaying(link, dial, relayed);
+    connection
+}
+
 /// A `local-ui` link to `hosting` over an in-memory stream; `closed` is called once the host's
 /// end of it ends.
 async fn a_link_to<H: session::Host>(

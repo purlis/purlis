@@ -153,8 +153,7 @@ async fn a_keystrokes_round_trip_behind_a_busy_pages_frames_stays_within_the_lin
     let drawing = {
         let drawn = Arc::clone(&drawn);
         tokio::spawn(async move {
-            while let Some(Ok(Chunk::Snapshot(bytes) | Chunk::Live(bytes))) = reader.next().await
-            {
+            while let Some(Ok(Chunk::Snapshot(bytes) | Chunk::Live(bytes))) = reader.next().await {
                 drawn.fetch_add(bytes.len(), std::sync::atomic::Ordering::Relaxed);
                 if reader.ack(bytes.len()).await.is_err() {
                     return;

@@ -575,7 +575,9 @@ pub enum Command {
     /// waits for the password field to go, and hands the browser back, which then reaches that
     /// origin alone. Answered [`Answer::Browsed`] with the page it left, or refused
     /// [`BROWSER_REFUSED`] in words that carry no value. The values never show in this
-    /// command's `Debug`. The window's alone ([`crate::grants::Power::LogIn`]).
+    /// command's `Debug`. The window's alone ([`crate::grants::Power::LogIn`]), relayed by its
+    /// host to a runner's browser from 1.38 (#2050), and never one that keeps a kept login there
+    /// ([`crate::grants::Power::KeptLogin`]).
     LogIn {
         program: String,
         login: crate::browsing::LogIn,
@@ -892,7 +894,7 @@ pub struct StartProgram {
     pub alone: Vec<u16>,
     /// For a [`ProgramKind::Browser`], the kept login it opens from (1.27, #2021): it starts
     /// signed in from that login's store, held to the login's site from its first moment. The
-    /// window's alone ([`crate::grants::Power::LogIn`]).
+    /// window's alone, on its own device ([`crate::grants::Power::KeptLogin`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kept: Option<crate::browsing::KeptLogin>,
 }

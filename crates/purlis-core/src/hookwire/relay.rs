@@ -36,7 +36,8 @@
 //! **A browser login asked while nobody is there waits for the window** (#2050, spec #2041
 //! story 14): on a runner whose desktop is away, `browser_login` is answered at once in words
 //! that say it waits for the person as an Ask and the chat should carry on, and the ask is
-//! kept, in memory, at most [`MOST_LOGINS_WAITING`] and each chat's login once. As soon as a
+//! kept, in memory, at most [`MOST_LOGINS_WAITING`], at most [`MOST_LOGINS_WAITING_FOR_A_CHAT`]
+//! of one chat's, and each chat's login once. As soon as a
 //! window hears this host's lines again, each is handed on to it as it was asked, so the window
 //! decides it as it decides any login (the persona's opt-in for the pool included), and what it
 //! came to is said to that chat at the start of its next browser call. No value is kept here:
@@ -182,6 +183,9 @@ pub const NOBODY_HEARS: &str = "purlis's window is not there to take this";
 
 /// The most browser logins that wait for the window at once (#2050).
 pub const MOST_LOGINS_WAITING: usize = 16;
+
+/// The most of them one chat's: no chat crowds out another's.
+pub const MOST_LOGINS_WAITING_FOR_A_CHAT: usize = 4;
 
 /// The most things one chat's next browser call is told of logins that waited.
 const MOST_TOLD: usize = 8;
@@ -438,8 +442,12 @@ impl Relaying {
             one.chat == browse.chat
                 && matches!(&one.asked, Browsing::LogIn { login: theirs } if *theirs == login)
         });
+        let its_own = waiting
+            .iter()
+            .filter(|(_, one)| one.chat == browse.chat)
+            .count();
         if !already {
-            if waiting.len() >= MOST_LOGINS_WAITING {
+            if waiting.len() >= MOST_LOGINS_WAITING || its_own >= MOST_LOGINS_WAITING_FOR_A_CHAT {
                 return Answer::No {
                     why: format!(
                         "the person's desktop is not connected, and too many logins wait for \

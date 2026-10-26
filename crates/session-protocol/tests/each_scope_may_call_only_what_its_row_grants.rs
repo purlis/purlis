@@ -449,7 +449,7 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "size_browser",
             "hand_back",
             "log_in",
-            "log_in", // a login kept on this device
+            "log_in",        // a login kept on this device
             "start_program", // a browser opened from kept logins
             "name_window",
             "relay_to",

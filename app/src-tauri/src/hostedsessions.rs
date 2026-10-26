@@ -144,7 +144,7 @@ pub(crate) fn routed(
         Arc::new(move |pool| {
             purlis_core::runners::runner_for(&config, pool).map_err(|why| format!("{why}."))?;
             Ok(Box::new(HostedSessions::on_a_pools_runner(
-                connection.relaying_to(pool),
+                connection.to_a_pool(pool),
                 &plane,
             )) as Box<dyn SessionHost>)
         })
@@ -270,6 +270,9 @@ pub struct Connection {
     /// The window's own link that this connection's project links were opened beside: one to a
     /// host started again after it ended holds every root on a link of its own anew (#2007).
     window_was: Mutex<Option<u64>>,
+    /// The window's connection to each pool's runner, made the first time it is asked for
+    /// ([`Connection::to_a_pool`]): what a pool's chats and their browsers share (#2050).
+    pools: Mutex<HashMap<String, Arc<Connection>>>,
 }
 
 /// [`Dial`], for a link the window's host relays to the runner of the pool it names (#2046):
@@ -335,6 +338,18 @@ impl Connection {
             to_a_pool: Some((Arc::clone(self), pool.to_owned())),
             ..Connection::default()
         })
+    }
+
+    /// **The window's one connection to the runner of `pool`** ([`Self::relaying_to`]), made the
+    /// first time it is asked for and the same after (#2050): a runner chat and its browsers are
+    /// held on one link per project root, so its browser runs beside it, and one name the window
+    /// keeps for a root's link to the pool is never two links'.
+    pub fn to_a_pool(self: &Arc<Self>, pool: &str) -> Arc<Connection> {
+        Arc::clone(
+            lock(&self.pools)
+                .entry(pool.to_owned())
+                .or_insert_with(|| self.relaying_to(pool)),
+        )
     }
 
     /// Name the window on each project root's link by the name it keeps for that root in

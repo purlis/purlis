@@ -163,9 +163,10 @@ fn run(weak: &Weak<Inner>, asked: &Receiver<Ask>) {
                     // Started again at the new width, on the page it casts.
                     if let Some(session) = on.take() {
                         waiting = None;
-                        let _ = inner
-                            .devtools
-                            .call("Page.stopScreencast", json!({}), Some(&session));
+                        let _ =
+                            inner
+                                .devtools
+                                .call("Page.stopScreencast", json!({}), Some(&session));
                     }
                     if showing {
                         follow(&inner, &mut on, most_width);

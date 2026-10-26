@@ -111,8 +111,8 @@ struct Runner {
 fn a_runner() -> Runner {
     let store = tempfile::tempdir().unwrap();
     let browsers = StandInBrowsers::in_folder(store.path().join("browsers"));
-    let hosting = Hosting::running_with(ComposesNothing, StandIns::default())
-        .with_browsers(browsers.clone());
+    let hosting =
+        Hosting::running_with(ComposesNothing, StandIns::default()).with_browsers(browsers.clone());
     Runner {
         hosting,
         browsers,
@@ -324,7 +324,9 @@ async fn host_a_sends_a_browser_or_a_login_on_for_its_window_alone() {
     let started = another
         .start_program(StartProgram::of(PROJECT, ProgramKind::Browser))
         .await;
-    let logged_in = another.log_in("01J9ZQ8000000000000000000D", a_login(None)).await;
+    let logged_in = another
+        .log_in("01J9ZQ8000000000000000000D", a_login(None))
+        .await;
 
     for refused in [started.unwrap_err(), logged_in.unwrap_err()] {
         let refusal = refused.refusal().expect("host A refuses it");
@@ -357,7 +359,13 @@ async fn over_the_link_a_focused_view_is_held_to_fifteen_frames_a_second_1280_pi
     let mut window = a_window(&runner, &dials).await;
     let (program, screen) = window.browser(&runner).await;
 
-    watched(&window.client, &mut window.views, &program, ViewRole::Focused).await;
+    watched(
+        &window.client,
+        &mut window.views,
+        &program,
+        ViewRole::Focused,
+    )
+    .await;
 
     let shown = screen.shown();
     assert_eq!(

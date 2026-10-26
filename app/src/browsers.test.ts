@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 import {
   addressChip,
+  deviceOf,
   browserView,
   browsersLetGo,
   browsersShown,
@@ -117,5 +118,16 @@ describe("a browser's address chip (#2024)", () => {
       said: "A blank page on this Mac",
       whole: null,
     });
+  });
+});
+
+describe("the device a browser's chip names (#2050)", () => {
+  it("is this machine, or the pool whose runner the browser runs on", () => {
+    expect(deviceOf(null, true)).toBe("this Mac");
+    expect(deviceOf(null, false)).toBe("this computer");
+    expect(deviceOf("builds", true)).toBe("pool builds");
+    expect(addressChip("http://localhost:5173/", deviceOf("builds", true)).said).toBe(
+      "localhost:5173 on pool builds",
+    );
   });
 });

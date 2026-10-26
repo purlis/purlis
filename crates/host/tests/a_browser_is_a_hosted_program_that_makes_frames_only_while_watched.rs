@@ -273,7 +273,8 @@ async fn a_view_not_done_drawing_its_frame_is_sent_no_other_then_the_newest_whol
     let mut linked = linked().await;
     let (program, screen) = linked.browser().await;
     let (_, mut reader) = linked.watch(&program, ViewRole::Focused).await;
-    let snapshot = every_frame_until(&mut reader, Instant::now() + Duration::from_millis(200)).await;
+    let snapshot =
+        every_frame_until(&mut reader, Instant::now() + Duration::from_millis(200)).await;
     assert!(snapshot.is_empty(), "nothing made yet");
 
     let big = vec![0x5a_u8; 200 * 1024];
@@ -296,11 +297,19 @@ async fn a_view_not_done_drawing_its_frame_is_sent_no_other_then_the_newest_whol
     let mut frames = Frames::default();
     let in_flight = frames.push(&held).unwrap();
     let images: Vec<_> = in_flight.iter().filter_map(Frame::aimed).collect();
-    assert_eq!(images.len(), 1, "one frame in flight: {:?}", said(&in_flight).len());
+    assert_eq!(
+        images.len(),
+        1,
+        "one frame in flight: {:?}",
+        said(&in_flight).len()
+    );
     assert_eq!(images[0].1.len(), 200 * 1024, "whole");
     assert!(frames.is_between_frames());
     let nothing_more = timeout(Duration::from_millis(300), reader.next()).await;
-    assert!(nothing_more.is_err(), "nothing more is sent until it is drawn");
+    assert!(
+        nothing_more.is_err(),
+        "nothing more is sent until it is drawn"
+    );
 
     reader.ack(last).await.unwrap();
     let next = every_frame_until(&mut reader, Instant::now() + Duration::from_millis(500)).await;

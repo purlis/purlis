@@ -44,6 +44,16 @@
 //!   that host. It is listed apart in the Granted list. Each act tells the browser what it
 //!   reaches now ([`Driver::act`]): the chat's reach and its browser sites, so an Allow since it
 //!   started reaches it at its next act.
+//! - **A runner chat's browser runs on its runner** (#2050, spec #2041): a chat on a pool's
+//!   runner has its browsers started there, beside it ([`Driver::start`]), so its `localhost`
+//!   is the runner's own, and every act goes there. **A login there needs the person's opt-in**
+//!   for the chat's persona on that pool, bound to the pool's definition and image
+//!   (`purlis_core::poollogins`): the first login asks, as one Ask in the registry
+//!   ([`PoolLoginWaits`]); a pool whose definition or image changed since asks again; Keep off
+//!   refuses its logins there until the pool changes. The opt-in lasts while the app runs. Its
+//!   values are read here, as the persona declares the login and this machine allowed it (the
+//!   runner armed its tools, of which this window holds no record), and go to the runner's
+//!   browser for that one login; a runner keeps no value, and no kept login (#2021).
 //! - **A chat started without the sandbox gets a browser like a sandboxed one** (#2242): with
 //!   no record of its sandbox, its browser lists what a sandboxed chat of its persona would list
 //!   here, read at each call, never the floor's reach (D-2011-10); its sites ask as any chat's
@@ -90,11 +100,14 @@ pub enum NotStarted {
 /// **Where a chat's browsers run**: the window's session host (`crate::browsers`), behind a
 /// seam so what is decided here is tested without one.
 pub trait Driver: Send + Sync + 'static {
-    /// Starts a browser in the project at `root` reaching `reach`, and answers its program.
-    /// Opened from the kept login `kept` where one is named (#2021).
+    /// Starts a browser in the project at `root` reaching `reach`, and answers its program: on
+    /// the runner of `pool` where one is named, as its chat runs there (#2050), else on this
+    /// machine. Opened from the kept login `kept` where one is named (#2021), on this machine
+    /// alone.
     fn start(
         &self,
         root: &Path,
+        pool: Option<&str>,
         reach: BrowserReach,
         kept: Option<KeptLogin>,
     ) -> Result<String, NotStarted>;
@@ -314,6 +327,28 @@ pub struct ChatBrowsers {
     /// The sites each browser the person opened asked about (#2176), by its program, until
     /// they answer or its next address: what their Allow may name.
     theirs: Mutex<HashMap<String, Vec<Site>>>,
+    /// The person's opt-ins of a persona's browser logins on a pool (#2050), for this run.
+    pool_logins: purlis_core::poollogins::OptIns,
+    /// The runner chats whose browser login waits on that opt-in, by chat (#2050).
+    pool_asks: Mutex<HashMap<u32, PoolLoginWaits>>,
+    /// The pool each browser started on a pool's runner runs on, by program (#2050).
+    on_pools: Mutex<HashMap<String, String>>,
+}
+
+/// **A runner chat's browser login that waits on the person's opt-in** for its persona on its
+/// pool (#2050): what its Ask says and its answer binds.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PoolLoginWaits {
+    pub session: u32,
+    pub persona: String,
+    /// The pool as it is defined now: what an Allow is bound to.
+    pub bound: purlis_core::poollogins::Bound,
+    /// The login the chat asked for, by its name.
+    pub login: String,
+    /// When it began to wait, in seconds since 1970.
+    pub since: u64,
+    /// The person answered before, for the pool as it was: its definition or image changed.
+    pub changed: bool,
 }
 
 /// **A login a browser holds** (#2022): the persona whose login purlis performed in it, or
@@ -387,6 +422,9 @@ impl Default for ChatBrowsers {
             listing: Arc::default(),
             told: None,
             theirs: Mutex::default(),
+            pool_logins: purlis_core::poollogins::OptIns::default(),
+            pool_asks: Mutex::default(),
+            on_pools: Mutex::default(),
         }
     }
 }
@@ -514,6 +552,9 @@ pub struct ChatBrowser {
     /// Who drives it, where the agent does not (#2300): the person, who took it over, or
     /// purlis, while it performs a login.
     pub driver: Option<BrowserDriver>,
+    /// The pool whose runner it runs on, beside its chat, or `null` on this machine (#2050):
+    /// what its row and thumbnail name as its device.
+    pub pool: Option<String>,
 }
 
 /// **Who drives a browser, where its chat's agent does not** (#2300), as its row and thumbnail
@@ -860,6 +901,10 @@ impl ChatBrowsers {
                 .map(|one| one.program.clone()),
         );
         let keep = |program: &String| alive.contains(program);
+        self.on_pools
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .retain(|program, _| keep(program));
         self.logins_held
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -1171,6 +1216,12 @@ impl ChatBrowsers {
         );
         // Stable within a chat: its browsers are kept oldest first.
         listed.sort_by_key(|one| (one.session, one.was.is_some(), one.unended));
+        // On the runner it runs on, where it runs on one (#2050).
+        let on_pools = self.on_pools.lock().unwrap_or_else(PoisonError::into_inner);
+        for one in &mut listed {
+            one.pool = on_pools.get(&one.program).cloned();
+        }
+        drop(on_pools);
         // With the login each holds (#2022).
         let held = self
             .logins_held
@@ -1499,6 +1550,90 @@ impl ChatBrowsers {
         }
     }
 
+    /// **Whether chat `session`, running as `persona` on the pool `bound` says, may have its
+    /// browser login `login` filled there now** (#2050): where the person opted the persona in
+    /// for the pool as it is now. Otherwise the chat is refused in words that say what to do,
+    /// and, where the person has not answered for the pool as it is, its Ask is raised (once for
+    /// the chat): `Err((why, raised))`.
+    pub fn pool_login(
+        &self,
+        session: u32,
+        persona: &str,
+        bound: &purlis_core::poollogins::Bound,
+        login: &str,
+        now: u64,
+    ) -> Result<(), (String, bool)> {
+        use purlis_core::poollogins::Standing;
+        let pool = &bound.pool;
+        let changed = match self.pool_logins.standing(persona, bound) {
+            Standing::Allowed => return Ok(()),
+            Standing::KeptOff => return Err((pool_login_kept_off_said(persona, pool), false)),
+            Standing::Unasked => false,
+            Standing::Changed => true,
+        };
+        let mut asks = self
+            .pool_asks
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let raised = !asks.contains_key(&session);
+        if raised {
+            asks.insert(
+                session,
+                PoolLoginWaits {
+                    session,
+                    persona: persona.to_owned(),
+                    bound: bound.clone(),
+                    login: login.to_owned(),
+                    since: now,
+                    changed,
+                },
+            );
+        }
+        Err((pool_login_asked_said(persona, pool, changed), raised))
+    }
+
+    /// **Every runner chat whose browser login waits on the person's opt-in** (#2050), longest
+    /// waiting first.
+    pub fn pool_logins_waiting(&self) -> Vec<PoolLoginWaits> {
+        let mut waits: Vec<PoolLoginWaits> = self
+            .pool_asks
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .values()
+            .cloned()
+            .collect();
+        waits.sort_by_key(|one| (one.since, one.session));
+        waits
+    }
+
+    /// **The person answers chat `session`'s pool login Ask** (#2050): `allow` opts its persona
+    /// in for the pool as the Ask showed it, Keep off keeps its logins off there, each until the
+    /// pool changes. Every chat of that persona whose login on that pool waits is answered with
+    /// it. Answers the chats answered, `session`'s first, or none where it waits no more.
+    pub fn answer_pool_login(&self, session: u32, allow: bool) -> Vec<PoolLoginWaits> {
+        let mut asks = self
+            .pool_asks
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let Some(asked) = asks.remove(&session) else {
+            return Vec::new();
+        };
+        if allow {
+            self.pool_logins.allow(&asked.persona, asked.bound.clone());
+        } else {
+            self.pool_logins
+                .keep_off(&asked.persona, asked.bound.clone());
+        }
+        let others: Vec<u32> = asks
+            .values()
+            .filter(|one| one.persona == asked.persona && one.bound.pool == asked.bound.pool)
+            .map(|one| one.session)
+            .collect();
+        let mut answered = vec![asked];
+        answered.extend(others.into_iter().filter_map(|other| asks.remove(&other)));
+        answered
+    }
+
     /// **Every chat whose browser's sites wait on the person** (#2018), longest waiting first.
     pub fn sites_waiting(&self) -> Vec<SitesWait> {
         let mut waits: Vec<SitesWait> = self
@@ -1818,6 +1953,7 @@ impl ChatBrowsers {
         &self,
         driver: Option<&Arc<dyn Driver>>,
         root: &Path,
+        pool: Option<&str>,
         browse: &BrowseAsk,
         reach: &dyn Fn() -> BrowserReach,
         unsandboxed: bool,
@@ -1840,7 +1976,8 @@ impl ChatBrowsers {
             }
             _ => None,
         };
-        let (mut answer, raised) = self.answer_now(driver, root, browse, reach, persona, read, now);
+        let (mut answer, raised) =
+            self.answer_now(driver, root, pool, browse, reach, persona, read, now);
         // What the browser held back for the person says so first (#2018).
         if let Answer::Browsed { browsed, .. } = &mut answer
             && !browsed.asked.is_empty()
@@ -1905,6 +2042,7 @@ impl ChatBrowsers {
         &self,
         driver: Option<&Arc<dyn Driver>>,
         root: &Path,
+        pool: Option<&str>,
         browse: &BrowseAsk,
         reach: &dyn Fn() -> BrowserReach,
         as_persona: AsPersona,
@@ -1962,6 +2100,7 @@ impl ChatBrowsers {
             let program = driver
                 .start(
                     root,
+                    pool,
                     with_sites(
                         reach(),
                         open_web,
@@ -1987,6 +2126,12 @@ impl ChatBrowsers {
             // Opened from a kept store, it holds that login from its first moment (#2699).
             if let Some(kept) = kept_as {
                 self.signed_in_with(&program, kept);
+            }
+            if let Some(pool) = pool {
+                self.on_pools
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .insert(program.clone(), pool.to_owned());
             }
             let name = format!("b{}", chat.next);
             chat.next += 1;
@@ -2191,6 +2336,36 @@ pub struct LoginRead {
     pub identity: String,
 }
 
+/// What a runner chat is told of its browser login while the person is asked whether
+/// `persona`'s logins may be filled on pool `pool` (#2050), again where it `changed`.
+fn pool_login_asked_said(persona: &str, pool: &str, changed: bool) -> String {
+    if changed {
+        format!(
+            "pool {pool}'s runner changed since the person let {persona}'s browser logins be \
+             filled there (its image or how it is defined), so purlis asked them again and filled \
+             nothing: you are told once they answer; call browser_login again then, and go on \
+             with what needs no login meanwhile"
+        )
+    } else {
+        format!(
+            "this browser runs on pool {pool}'s runner, so purlis asked the person whether \
+             {persona}'s browser logins may be filled there, and filled nothing: you are told \
+             once they answer; call browser_login again then, and go on with what needs no login \
+             meanwhile"
+        )
+    }
+}
+
+/// What a runner chat is told of its browser login where the person keeps `persona`'s logins
+/// off on pool `pool` (#2050).
+fn pool_login_kept_off_said(persona: &str, pool: &str) -> String {
+    format!(
+        "the person keeps {persona}'s browser logins off on pool {pool}, whose runner this \
+         browser runs on, so nothing was filled: do not call browser_login there again; tell the \
+         person what needs the login, or go on without it"
+    )
+}
+
 /// What a chat's browser call asks of the browser itself: one of its acts, or a login of
 /// purlis's by the login's name (#2016).
 enum Doing {
@@ -2323,11 +2498,18 @@ pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk) -> Answer {
     let reach = || reach_of(held, browse.chat);
     let unsandboxed = held.chats().started_unsandboxed(browse.chat);
     let as_persona = || as_persona_of(held, browse.chat);
-    let logins = |name: &str| login_of(held, browse.chat, name);
+    // A chat on a pool's runner has its browsers there, and its logins wait on the person's
+    // opt-in for that pool (#2050).
+    let pool = held.chats().pool_of(browse.chat);
+    let logins = |name: &str| match &pool {
+        Some(pool) => pool_login_of(held, browse.chat, name, pool, now),
+        None => login_of(held, browse.chat, name),
+    };
     let listing = held.browsers().listing();
     let (answer, raised) = held.browsers().answer(
         held.browser_driver(),
         held.root(),
+        pool.as_deref(),
         browse,
         &reach,
         unsandboxed,
@@ -2394,6 +2576,58 @@ fn login_of(held: &crate::planes::Held, session: u32, name: &str) -> ReadLogin {
     Ok(LoginRead {
         login,
         opens,
+        identity,
+    })
+}
+
+/// **Runner chat `session`'s browser login `name`, on the runner of `pool`** (#2050): read only
+/// once the person opted the chat's persona in for the pool as it is now, else its Ask is raised
+/// and the chat refused in words. Its values are read as the persona declares the login and
+/// this machine allowed it, at the call, as for a chat with no compiled sandbox here: the runner
+/// armed its tools, of which this window holds no record. Never a kept login: a runner keeps
+/// none, so nothing is kept, and nothing opens from one.
+fn pool_login_of(
+    held: &crate::planes::Held,
+    session: u32,
+    name: &str,
+    pool: &str,
+    now: u64,
+) -> ReadLogin {
+    let (mut asker, _) = held
+        .chats()
+        .login_asker(held.root(), session)
+        .ok_or_else(|| format!("chat {session} is not one this app has open"))?;
+    let Some(persona) = asker.persona.clone().filter(|persona| !persona.is_empty()) else {
+        return Err(format!(
+            "this chat runs as no persona, so it has no browser login {name}, and nothing was \
+             filled"
+        ));
+    };
+    let config = held.chats().pools_in().ok_or_else(|| {
+        format!("purlis keeps no pools on this machine, so no login {name} was filled on {pool}")
+    })?;
+    let bound = purlis_core::poollogins::Bound::read(&config, pool)
+        .map_err(|why| format!("no login {name} was filled on pool {pool}: {why}"))?;
+    if let Err((why, raised)) = held
+        .browsers()
+        .pool_login(session, &persona, &bound, name, now)
+    {
+        if raised {
+            tracing::info!(
+                "purlis: chat {session}'s browser login on pool {pool} asks the person to opt \
+                 its persona in"
+            );
+            held.chats().asks_may_have_moved();
+        }
+        return Err(why);
+    }
+    // Its tools are the runner's, never this window's record of a sandbox here.
+    asker.confines = None;
+    let (login, identity) =
+        purlis_core::secrets::brokered::login_and_identity_for(&asker, name, true)?;
+    Ok(LoginRead {
+        login,
+        opens: false,
         identity,
     })
 }
@@ -2802,6 +3036,66 @@ pub fn kept_off(
             reason,
         ),
     );
+    held.chats().asks_may_have_moved();
+    Ok(())
+}
+
+/// What a pool login Ask answered by nothing any more says.
+const POOL_LOGIN_WAITS_NO_MORE: &str =
+    "Nothing is asking about browser logins on a pool for that chat any more.";
+
+/// **Allow or Keep off on chat `session`'s pool login Ask** (#2050): with `allow`, its persona's
+/// browser logins may be filled on the pool's runner while the app runs and the pool stays as
+/// the Ask showed it; Keep off refuses them there until the pool changes, with the reason the
+/// person typed. Every chat of that persona that waits on that pool is answered with it, and
+/// each is told on its next turn.
+#[tauri::command]
+#[specta::specta]
+pub async fn answer_pool_login(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    session: u32,
+    allow: bool,
+    reason: Option<String>,
+) -> Result<(), String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("answering a pool's browser logins", move || {
+        pool_login_answered(&held, session, allow, reason.as_deref())
+    })
+    .await
+}
+
+/// [`answer_pool_login`]'s work.
+pub fn pool_login_answered(
+    held: &crate::planes::Held,
+    session: u32,
+    allow: bool,
+    reason: Option<&str>,
+) -> Result<(), String> {
+    let answered = held.browsers().answer_pool_login(session, allow);
+    if answered.is_empty() {
+        return Err(POOL_LOGIN_WAITS_NO_MORE.to_owned());
+    }
+    for one in &answered {
+        let about = purlis_core::askoutcome::About::PoolLogin {
+            pool: one.bound.pool.clone(),
+        };
+        held.chats().tell_outcome(
+            one.session,
+            if allow {
+                purlis_core::askoutcome::Outcome {
+                    about,
+                    answer: purlis_core::askoutcome::Answer::Allowed {
+                        scope: purlis_core::askoutcome::Scope::Persona {
+                            persona: one.persona.clone(),
+                        },
+                    },
+                }
+            } else {
+                crate::askoutcome::kept(about, reason)
+            },
+        );
+    }
     held.chats().asks_may_have_moved();
     Ok(())
 }

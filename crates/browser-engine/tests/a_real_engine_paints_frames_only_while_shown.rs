@@ -124,7 +124,12 @@ fn a_narrowed_engine_paints_frames_no_wider_than_asked() {
     browser.show(collecting(&frames));
     let start = Instant::now();
     let width = loop {
-        if let Some(width) = frames.lock().unwrap().last().and_then(|jpeg| jpeg_width(jpeg)) {
+        if let Some(width) = frames
+            .lock()
+            .unwrap()
+            .last()
+            .and_then(|jpeg| jpeg_width(jpeg))
+        {
             break width;
         }
         assert!(

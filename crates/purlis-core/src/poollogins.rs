@@ -204,7 +204,10 @@ mod tests {
         assert_eq!(a, Bound::of(&one), "the same pool, the same bound");
         assert_eq!(a.image, "a".repeat(64));
         assert_ne!(a.image, b.image);
-        assert_ne!(a.definition, b.definition, "its image is part of its definition");
+        assert_ne!(
+            a.definition, b.definition,
+            "its image is part of its definition"
+        );
         assert_eq!(a.image, c.image);
         assert_ne!(a.definition, c.definition, "and so are its limits");
     }

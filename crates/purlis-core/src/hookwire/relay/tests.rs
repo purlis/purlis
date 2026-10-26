@@ -1412,7 +1412,11 @@ fn a_login_that_waited_is_handed_on_once_the_window_hears_again_and_its_chat_is_
     (host.each)(report(3)).expect("the window is back and takes the report");
     let start = std::time::Instant::now();
     while !window.heard().contains(&"ask on 42".to_owned()) {
-        assert!(start.elapsed() < Duration::from_secs(5), "{:?}", window.heard());
+        assert!(
+            start.elapsed() < Duration::from_secs(5),
+            "{:?}",
+            window.heard()
+        );
         std::thread::sleep(Duration::from_millis(10));
     }
     // Its answer is in before the chat's next call is.
@@ -1423,7 +1427,10 @@ fn a_login_that_waited_is_handed_on_once_the_window_hears_again_and_its_chat_is_
     assert!(said.contains("while the person was away"), "{said}");
     assert!(said.contains("shop-login"), "{said}");
     assert!(said.contains("did c-1"), "what the login came to: {said}");
-    assert!(said.ends_with("did c-2"), "then the call's own answer: {said}");
+    assert!(
+        said.ends_with("did c-2"),
+        "then the call's own answer: {said}"
+    );
 }
 
 #[test]
@@ -1451,6 +1458,24 @@ fn a_chats_next_call_is_told_of_a_login_that_waited_once_and_another_chat_never(
 }
 
 #[test]
+fn one_chat_cannot_crowd_out_anothers_logins_that_wait() {
+    let here = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let (window, holding) = a_window();
+    let host = now_and_then(&window, &holding, &here);
+    let login =
+        |chat: u32, name: &str| a_browse(chat, "c-1", Browsing::LogIn { login: name.into() });
+
+    for n in 0..MOST_LOGINS_WAITING_FOR_A_CHAT {
+        let _ = (host.answer)(40, login(3, &format!("login-{n}")));
+    }
+    let past = said_of(&(host.answer)(40, login(3, "one-more")));
+    let another = said_of(&(host.answer)(41, login(4, "login-0")));
+
+    assert!(past.contains("too many"), "{past}");
+    assert!(another.contains("waits for them as an Ask"), "{another}");
+}
+
+#[test]
 fn the_same_login_asked_again_while_away_waits_once_and_only_so_many_wait() {
     let here = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let (window, holding) = a_window();
@@ -1472,7 +1497,12 @@ fn the_same_login_asked_again_while_away_waits_once_and_only_so_many_wait() {
         .iter()
         .filter(|heard| heard.starts_with("ask on 4"))
         .count();
-    assert_eq!(asked, 1, "chat 3's login was handed on once: {:?}", window.heard());
+    assert_eq!(
+        asked,
+        1,
+        "chat 3's login was handed on once: {:?}",
+        window.heard()
+    );
     assert!(
         said_of(&last).contains("too many"),
         "one past the bound is refused: {}",

@@ -79,6 +79,15 @@ export function thisDevice(onAMac: boolean): string {
 }
 
 /**
+ * **The device a browser runs on, as its chip names it** (#2050): the runner of `pool` where it
+ * runs on one, `pool builds`, so a runner's `localhost` is never taken for this machine's; else
+ * this machine.
+ */
+export function deviceOf(pool: string | null, onAMac: boolean): string {
+  return pool === null ? thisDevice(onAMac) : `pool ${pool}`;
+}
+
+/**
  * **What a browser's chip says** (#2024, spec #2008): the page's host and the device the browser
  * runs on, `localhost:5173 on this Mac`, drawn by purlis outside the page so a page cannot fake
  * it; `whole` is what it was given, for its tooltip. It is given the page's origin alone
