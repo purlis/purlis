@@ -80,6 +80,9 @@ describe("the Vaults section", () => {
     draw();
 
     const list = await screen.findByRole("grid", { name: "Vaults" });
+    // React Aria draws the grid before its rows (its collection is built in a pass of its own):
+    // the last vault's row is when the list is there to be read.
+    await within(list).findByRole("row", { name: /files/ });
     const rows = within(list)
       .getAllByRole("row")
       .map((row) => row.textContent);
@@ -105,7 +108,7 @@ describe("the Vaults section", () => {
     const { pressed } = draw();
     const list = await screen.findByRole("grid", { name: "Vaults" });
 
-    await userEvent.click(within(list).getByRole("row", { name: /ops/ }));
+    await userEvent.click(await within(list).findByRole("row", { name: /ops/ }));
 
     expect(pressed.map((offer) => offer.id)).toEqual(["vault.open:ops"]);
     expect(pressed[0].does).toEqual({
@@ -135,7 +138,7 @@ describe("the Vaults section", () => {
     ]);
     draw();
     const list = await screen.findByRole("grid", { name: "Vaults" });
-    const row = within(list).getByRole("row");
+    const row = await within(list).findByRole("row");
     expect(row).toHaveClass("is-trouble");
     // No card: the tab says why, at the top, where the operator is looking when it matters.
     expect(screen.queryByText("op CLI not found")).not.toBeInTheDocument();
@@ -156,6 +159,7 @@ describe("the Vaults section", () => {
     core([vault("files", { provider: "plain-file", count: 1 }), vault("ops")]);
     draw();
     const list = await screen.findByRole("grid", { name: "Vaults" });
+    await within(list).findByRole("row", { name: /ops/ });
     const [first, second] = within(list).getAllByRole("row");
     act(() => first.focus());
     await userEvent.keyboard("{ArrowDown}");
@@ -233,7 +237,7 @@ describe("the vault picker", () => {
     const { pressed, cancel } = pick([vault("files", { provider: "plain-file" }), vault("ops")]);
     const dialog = await screen.findByRole("dialog", { name: "Open vault" });
 
-    await userEvent.click(within(dialog).getByRole("row", { name: /ops/ }));
+    await userEvent.click(await within(dialog).findByRole("row", { name: /ops/ }));
 
     expect(pressed.map((offer) => offer.id)).toEqual(["vault.open:ops"]);
     expect(cancel).toHaveBeenCalled();
