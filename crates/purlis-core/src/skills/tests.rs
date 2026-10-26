@@ -1018,8 +1018,16 @@ fn the_studio_lists_each_harnesss_own_skills_beside_the_projects_and_marks_a_cla
     };
 
     let set = in_the_studio(None, &plane, None, None);
-    let harnesses =
-        harnesses_in_the_studio(&set, &plane, None, &[], &[], &env, &Known::of(&plane, None));
+    let harnesses = harnesses_in_the_studio(
+        &set,
+        &|route| in_the_studio_on(None, &plane, None, None, route),
+        &plane,
+        None,
+        &[],
+        &[],
+        &env,
+        &Known::of(&plane, None),
+    );
 
     let titles: Vec<&str> = harnesses.iter().map(|h| h.group.adapter.title()).collect();
     assert_eq!(titles, ["Claude Code", "opencode", "Codex"]);

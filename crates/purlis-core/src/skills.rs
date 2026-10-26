@@ -115,20 +115,17 @@ pub fn skills_off_for(
 ) -> Vec<String> {
     // By the name the harness knows each by (`purlis-<name>` on opencode's route): a harness
     // skill of a built-in skill's bare name is then another skill, and turned off as any is.
-    let route = harness.skills();
-    let mut built_in: Vec<String> = built_in_names(kit.plugin.and_then(in_bundle).as_deref())
-        .iter()
-        .map(|name| route.built_in_name(name))
-        .collect();
     // And the index skill's own name there, `purlis-skill-index` (SK-15).
-    if route.names_built_ins_its_own() {
-        built_in.push(route.built_in_name(INDEX));
-    }
+    let built_in = harness.skills().built_in_names(
+        built_in_names(kit.plugin.and_then(in_bundle).as_deref())
+            .iter()
+            .map(String::as_str),
+    );
     let adapter = harness.adapter().plugins();
     let mut off: Vec<String> = chosen
         .skills_off
         .iter()
-        .filter(|name| !built_in.contains(name))
+        .filter(|name| !built_in.contains(name.as_str()))
         .filter(|name| adapter.skill_named_alone(name).is_none())
         .cloned()
         .collect();
@@ -1457,6 +1454,19 @@ pub fn in_the_studio(
     workspace: Option<&str>,
     persona: Option<&str>,
 ) -> SkillSet {
+    in_the_studio_on(built_in, plane, workspace, persona, Route::Plugin)
+}
+
+/// [`in_the_studio`] on `route`: what a harness on a route that names built-in skills their own
+/// ([`Route::names_built_ins_its_own`]) is shown its clashes against, each built-in skill by the
+/// name it knows it by (SK-37).
+fn in_the_studio_on(
+    built_in: Option<&Path>,
+    plane: &Path,
+    workspace: Option<&str>,
+    persona: Option<&str>,
+    route: Route,
+) -> SkillSet {
     let at = PlaneSkills {
         plane,
         workspace,
@@ -1470,14 +1480,7 @@ pub fn in_the_studio(
             .collect::<Vec<_>>()
     });
     // Not routed here: each harness's own set is, by its own budget ([`studio_list`]).
-    ask(
-        built_in,
-        Some(at),
-        persona,
-        Route::Plugin,
-        here.as_deref(),
-        None,
-    )
+    ask(built_in, Some(at), persona, route, here.as_deref(), None)
 }
 
 /// **Every harness the project's profiles run**, in the registry's order, or Claude Code alone
@@ -1636,11 +1639,14 @@ pub struct HarnessInTheStudio {
 
 /// **Every harness in the Skill studio** (SK-6, #2769), for a chat in the plane at `plane`, at
 /// its root or in `workspace` (whose clones' own skills are listed), whose plane skills are
-/// `set` ([`in_the_studio`]) for a persona whose `skills:` list says `names`, and with `env` read
+/// `set` ([`in_the_studio`]), or `set_on` a harness's own route where it names built-in skills
+/// their own, for a persona whose `skills:` list says `names`, and with `env` read
 /// for where each harness keeps its own: one per harness purlis knows, in the registry's order.
 /// Read from the harnesses' own files, never written.
+#[allow(clippy::too_many_arguments)]
 fn harnesses_in_the_studio(
     set: &SkillSet,
+    set_on: &dyn Fn(Route) -> SkillSet,
     plane: &Path,
     workspace: Option<&str>,
     names: &[Reference],
@@ -1664,7 +1670,15 @@ fn harnesses_in_the_studio(
                 &choices,
                 &clones,
             ));
-            let set = set.clone().with_outside(harness.skills(), outside.clone());
+            // Each built-in skill by the name this harness knows it by (`purlis-<name>` on
+            // opencode's route), so a copy of that name is the clash, and a bare one is not.
+            let route = harness.skills();
+            let set = if route.names_built_ins_its_own() {
+                set_on(route)
+            } else {
+                set.clone()
+            };
+            let set = set.with_outside(route, outside.clone());
             let by_a_repo = SkillSet {
                 left_out: set.left_out_by_a_repo().cloned().collect(),
                 ..SkillSet::default()
@@ -2078,7 +2092,9 @@ pub fn studio_list(
         .unwrap_or_default();
     let known = Known::of(plane, built_in);
     let pins = pins_or_none(plane, workspace, persona);
-    let harnesses = harnesses_in_the_studio(&set, plane, workspace, &names, &pins, env, &known);
+    let set_on = |route| in_the_studio_on(built_in, plane, workspace, persona, route);
+    let harnesses =
+        harnesses_in_the_studio(&set, &set_on, plane, workspace, &names, &pins, env, &known);
     let mut rows = studio_rows(&set, plane, &names);
     with_harness_badges(&mut rows, &harnesses, &known);
     with_routing(&mut rows, &harnesses);
