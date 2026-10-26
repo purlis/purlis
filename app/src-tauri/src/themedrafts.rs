@@ -498,9 +498,9 @@ pub(crate) fn asked(
                 );
                 Answer::Drafted {
                     lines: vec![if started.made {
-                        Say::Done(said)
+                        Say::Done(said.into())
                     } else {
-                        Say::Info(said)
+                        Say::Info(said.into())
                     }],
                     code: 0,
                     made: started.made,
@@ -515,12 +515,12 @@ pub(crate) fn asked(
                 .broken
                 .iter()
                 .take(8)
-                .map(|one| Say::Warn(one.said()))
+                .map(|one| Say::Warn(one.said().into()))
                 .collect();
             lines.push(Say::Fail(format!(
                 "The theme draft {folder} is saved, and not drawn: it breaks a hard floor, so the \
                  window keeps its last good version. Fix it and save again."
-            )));
+            ).into()));
             Answer::Drafted {
                 lines,
                 code: 1,
@@ -532,12 +532,12 @@ pub(crate) fn asked(
                 .refused
                 .iter()
                 .take(8)
-                .map(|one| Say::Warn(one.said.clone()))
+                .map(|one| Say::Warn(one.said.clone().into()))
                 .collect();
             lines.push(Say::Fail(format!(
                 "The theme draft {folder} is saved, and not drawn: it is refused. Fix it and save \
                  again."
-            )));
+            ).into()));
             Answer::Drafted {
                 lines,
                 code: 1,
@@ -545,10 +545,13 @@ pub(crate) fn asked(
             }
         }
         Ok(saved) => Answer::Drafted {
-            lines: vec![Say::Done(format!(
-                "The theme draft {folder} is saved and drawn {here}; Keep puts it in {}.",
-                kept_to(&saved.kept_to)
-            ))],
+            lines: vec![Say::Done(
+                format!(
+                    "The theme draft {folder} is saved and drawn {here}; Keep puts it in {}.",
+                    kept_to(&saved.kept_to)
+                )
+                .into(),
+            )],
             code: 0,
             made: saved.made,
         },

@@ -357,7 +357,7 @@ pub fn optimize(
     let mut unread: Unread = Vec::new();
     let missed = |missing: Unread, unread: &mut Unread, say: crate::repocmd::Sink| {
         for (path, code) in &missing {
-            say(Say::Fail(memstore::cannot_check(root, path, *code)));
+            say(Say::Fail(memstore::cannot_check(root, path, *code).into()));
         }
         unread.extend(missing);
     };
@@ -397,7 +397,7 @@ pub fn optimize(
                 }
             };
             for action in &actions {
-                say(Say::Done(format!("  auto: {action}")));
+                say(Say::Done(format!("  auto: {action}").into()));
             }
             actions_total += actions.len();
             if !actions.is_empty() {
@@ -437,7 +437,7 @@ pub fn optimize(
                 .into(),
         ));
     } else if actions_total == 0 {
-        say(Say::Info(how.tidy.to_string()));
+        say(Say::Info(how.tidy.into()));
     }
     if unread.is_empty() { 0 } else { 1 }
 }

@@ -748,8 +748,6 @@ const HEIGHT_EXCEPTIONS: Record<string, Record<string, string>> = {
   "App.css": {
     ".title-bar | min-height: max(40px, 2.1rem) (a strip)":
       "the system's title bar, 40px as the prototype draws it (R90): on macOS the traffic lights are placed at its own title bar's height whatever the page draws, and a shorter bar has them over the regions (ADR 0054)",
-    ".tasks-menu-place | height: var(--size-chrome) (a control)":
-      "an icon square at the end of a menu's row, the small control height, so the row stays a control tall",
   },
 };
 

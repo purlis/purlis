@@ -500,7 +500,7 @@ fn gated(
     say: &mut dyn FnMut(Say),
 ) -> u8 {
     let refuse = |say: &mut dyn FnMut(Say), why: String| {
-        say(Say::Fail(why));
+        say(Say::Fail(why.into()));
         REFUSED
     };
     // The refusals of the request come before anything is read.
@@ -594,11 +594,14 @@ fn gated(
             );
         }
         Err(why) => {
-            say(Say::Fail(format!(
-                "{}: purlis could not ask for its request: {}",
-                named(repo),
-                forge_said(&why.to_string())
-            )));
+            say(Say::Fail(
+                format!(
+                    "{}: purlis could not ask for its request: {}",
+                    named(repo),
+                    forge_said(&why.to_string())
+                )
+                .into(),
+            ));
             return 1;
         }
     };
@@ -672,22 +675,28 @@ fn gated(
             format!("{}: {}", named(repo), not_passed(&checks, &req.head)),
         );
     }
-    say(Say::Info(format!(
-        "{}: checks PASSED at {}{}",
-        named(repo),
-        short(&req.head),
-        counted(&checks)
-    )));
+    say(Say::Info(
+        format!(
+            "{}: checks PASSED at {}{}",
+            named(repo),
+            short(&req.head),
+            counted(&checks)
+        )
+        .into(),
+    ));
 
     let queued = match me.backend.lands_through_queue(&caller, path, &pr) {
         Ok(queued) => queued,
         Err(why) => {
-            say(Say::Fail(format!(
-                "{}: purlis could not tell how {sigil}{} lands: {}. Nothing was merged.",
-                named(repo),
-                req.number,
-                forge_said(&why.to_string())
-            )));
+            say(Say::Fail(
+                format!(
+                    "{}: purlis could not tell how {sigil}{} lands: {}. Nothing was merged.",
+                    named(repo),
+                    req.number,
+                    forge_said(&why.to_string())
+                )
+                .into(),
+            ));
             return 1;
         }
     };
@@ -731,11 +740,14 @@ fn gated(
     let via = if queued { Via::Queue } else { Via::Direct };
     let started = Pending::new(slug, repo, req.number, &req.head, via, Stage::Asked, now);
     if !books.pend(started.clone()) {
-        say(Say::Fail(format!(
-            "{}: purlis could not write its pending landing, so it did not ask the forge. \
+        say(Say::Fail(
+            format!(
+                "{}: purlis could not write its pending landing, so it did not ask the forge. \
              Nothing was merged.",
-            named(repo)
-        )));
+                named(repo)
+            )
+            .into(),
+        ));
         return 1;
     }
     let asked = if queued {
@@ -773,9 +785,9 @@ fn gated(
                     1,
                 ),
             };
-            say(Say::Fail(said));
+            say(Say::Fail(said.into()));
             if !noted {
-                say(Say::Fail(unnoted(plane, ws, repo)));
+                say(Say::Fail(unnoted(plane, ws, repo).into()));
                 return 1;
             }
             return code;
@@ -783,37 +795,46 @@ fn gated(
     };
     if let MergedAt::Later(why) = asked {
         let noted = books.pend(started.at(Stage::MergeLater, now));
-        say(Say::Fail(format!(
-            "{}: {}. It will merge whatever head the branch has when a pipeline passes, not \
+        say(Say::Fail(
+            format!(
+                "{}: {}. It will merge whatever head the branch has when a pipeline passes, not \
              the one purlis checked. Cancel its auto-merge on GitLab.",
-            named(repo),
-            forge_said(&why)
-        )));
+                named(repo),
+                forge_said(&why)
+            )
+            .into(),
+        ));
         if !noted {
-            say(Say::Fail(unnoted(plane, ws, repo)));
+            say(Say::Fail(unnoted(plane, ws, repo).into()));
         }
         return 1;
     }
     if queued {
         let kind = me.on.forge.kind;
         let noun = kind.queue_noun();
-        say(Say::Done(format!(
-            "queued {sigil}{} in its {noun} at {}: the forge merges it once the {noun}'s own \
+        say(Say::Done(
+            format!(
+                "queued {sigil}{} in its {noun} at {}: the forge merges it once the {noun}'s own \
              checks pass.",
-            req.number,
-            short(&req.head)
-        )));
+                req.number,
+                short(&req.head)
+            )
+            .into(),
+        ));
         if how == How::Squash && !kind.queue_takes_squash() {
-            say(Say::Warn(format!(
-                "this {noun} lands by the method its own rule sets, so --squash was not \
+            say(Say::Warn(
+                format!(
+                    "this {noun} lands by the method its own rule sets, so --squash was not \
                  purlis's to choose."
-            )));
+                )
+                .into(),
+            ));
         }
         say(Say::Info(format!(
             "Nothing is recorded until it has merged. Then run: purlis change land {} --repo {}",
             named(slug),
             named(repo)
-        )));
+        ).into()));
         return 0;
     }
 
@@ -830,37 +851,49 @@ fn gated(
             ..
         })) if head == req.head => c,
         Ok(_) => {
-            say(Say::Fail(format!(
-                "{}: the forge did not confirm the merge on a read-back, so nothing was \
+            say(Say::Fail(
+                format!(
+                    "{}: the forge did not confirm the merge on a read-back, so nothing was \
                  recorded yet. {again}",
-                named(repo)
-            )));
+                    named(repo)
+                )
+                .into(),
+            ));
             return 1;
         }
         Err(why) => {
-            say(Say::Fail(format!(
-                "{}: the read-back failed ({}), so nothing was recorded yet. {again}",
-                named(repo),
-                forge_said(&why.to_string())
-            )));
+            say(Say::Fail(
+                format!(
+                    "{}: the read-back failed ({}), so nothing was recorded yet. {again}",
+                    named(repo),
+                    forge_said(&why.to_string())
+                )
+                .into(),
+            ));
             return 1;
         }
     };
     if !books.log(repo, &req, &confirmed) {
-        say(Say::Fail(format!(
-            "{}: merged {sigil}{} as {}, but the landing log could not be written. {again}",
-            named(repo),
-            req.number,
-            short(&confirmed)
-        )));
+        say(Say::Fail(
+            format!(
+                "{}: merged {sigil}{} as {}, but the landing log could not be written. {again}",
+                named(repo),
+                req.number,
+                short(&confirmed)
+            )
+            .into(),
+        ));
         return 1;
     }
     let squash = if how == How::Squash { " (squash)" } else { "" };
-    say(Say::Done(format!(
-        "merged {sigil}{} as {}{squash}, trailer {trailer}",
-        req.number,
-        short(&confirmed)
-    )));
+    say(Say::Done(
+        format!(
+            "merged {sigil}{} as {}{squash}, trailer {trailer}",
+            req.number,
+            short(&confirmed)
+        )
+        .into(),
+    ));
     0
 }
 
@@ -883,52 +916,67 @@ fn merged_already(
         At::Request(req.number, &req.head),
     ) {
         Evidence::Logged(line) => {
-            say(Say::Fail(format!(
-                "{}: {sigil}{} is already landed, and the landing log has it as {}. Nothing to \
+            say(Say::Fail(
+                format!(
+                    "{}: {sigil}{} is already landed, and the landing log has it as {}. Nothing to \
                  land.",
-                named(repo),
-                req.number,
-                short(&line.merge)
-            )));
+                    named(repo),
+                    req.number,
+                    short(&line.merge)
+                )
+                .into(),
+            ));
             REFUSED
         }
         Evidence::Started(p) => {
             let Some(commit) = commit else {
-                say(Say::Fail(format!(
-                    "{}: {sigil}{} is merged, and the forge names no commit it merged as, so \
+                say(Say::Fail(
+                    format!(
+                        "{}: {sigil}{} is merged, and the forge names no commit it merged as, so \
                      nothing was recorded.",
-                    named(repo),
-                    req.number
-                )));
+                        named(repo),
+                        req.number
+                    )
+                    .into(),
+                ));
                 return 1;
             };
             let via = p.via;
             if !books.log(repo, req, commit) {
-                say(Say::Fail(format!(
-                    "{}: the landing log could not be written, so nothing was recorded.",
-                    named(repo)
-                )));
+                say(Say::Fail(
+                    format!(
+                        "{}: the landing log could not be written, so nothing was recorded.",
+                        named(repo)
+                    )
+                    .into(),
+                ));
                 return 1;
             }
             let how = match via {
                 Via::Queue => format!("its {}", me.on.forge.kind.queue_noun()),
                 Via::Direct => "charter".to_string(),
             };
-            say(Say::Done(format!(
-                "recorded the landing {how} made: {sigil}{} merged as {} at {}",
-                req.number,
-                short(commit),
-                short(&req.head)
-            )));
+            say(Say::Done(
+                format!(
+                    "recorded the landing {how} made: {sigil}{} merged as {} at {}",
+                    req.number,
+                    short(commit),
+                    short(&req.head)
+                )
+                .into(),
+            ));
             0
         }
         Evidence::None => {
-            say(Say::Fail(format!(
-                "{}: {sigil}{} is already merged, and not by purlis: purlis has no record of \
+            say(Say::Fail(
+                format!(
+                    "{}: {sigil}{} is already merged, and not by purlis: purlis has no record of \
                  starting that landing, so it records none. Nothing to land.",
-                named(repo),
-                req.number
-            )));
+                    named(repo),
+                    req.number
+                )
+                .into(),
+            ));
             REFUSED
         }
     }
@@ -945,37 +993,46 @@ fn blockers_landed(
     let repo = member.repo.as_str();
     for need in &member.needs {
         let Some(blocker) = record.member(need) else {
-            say(Say::Fail(format!(
-                "{}: blocker {} is not a member of this change.",
-                named(repo),
-                named(need)
-            )));
+            say(Say::Fail(
+                format!(
+                    "{}: blocker {} is not a member of this change.",
+                    named(repo),
+                    named(need)
+                )
+                .into(),
+            ));
             return Err(REFUSED);
         };
         let reached = match reach(books.plane, books.ws, need, backend_of) {
             Ok(reached) => reached,
             Err(why) => {
-                say(Say::Fail(format!("{}: blocker {why}", named(repo))));
+                say(Say::Fail(format!("{}: blocker {why}", named(repo)).into()));
                 return Err(REFUSED);
             }
         };
         match member_landed(books, blocker, &reached) {
             Ok(None) => {}
             Ok(Some(why)) => {
-                say(Say::Fail(format!(
-                    "{}: blocker {} has not landed ({why}).",
-                    named(repo),
-                    named(need)
-                )));
+                say(Say::Fail(
+                    format!(
+                        "{}: blocker {} has not landed ({why}).",
+                        named(repo),
+                        named(need)
+                    )
+                    .into(),
+                ));
                 return Err(REFUSED);
             }
             Err(why) => {
-                say(Say::Fail(format!(
-                    "{}: purlis could not read blocker {}: {}",
-                    named(repo),
-                    named(need),
-                    forge_said(&why)
-                )));
+                say(Say::Fail(
+                    format!(
+                        "{}: purlis could not read blocker {}: {}",
+                        named(repo),
+                        named(need),
+                        forge_said(&why)
+                    )
+                    .into(),
+                ));
                 return Err(1);
             }
         }
