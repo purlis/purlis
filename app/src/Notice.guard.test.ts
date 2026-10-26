@@ -520,6 +520,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "being read again after the branch moved, which goes when the new one comes",
   },
   "editor/ToYourEditor.tsx": { count: 1, why: "the piece files' read refusal, inside the editor" },
+  "keys/ShortcutsView.tsx": {
+    count: 1,
+    why: "a filter that matches no shortcut says so where the cheat sheet's list was (#2921)",
+  },
   "references.tsx": {
     count: 1,
     why: "the reference picker saying it found no chat, inside its menu",

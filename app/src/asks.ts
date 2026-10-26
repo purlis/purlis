@@ -307,6 +307,14 @@ export async function answerTaken(
         if (option === "keep")
           return commands.keepChatBrowserOff(plane, ask.session, reason?.trim() || null);
         break;
+      case "pool-login":
+        // A runner chat's browser login (#2050): Allow lets its persona's logins be filled on the
+        // pool's runner while purlis runs and the pool stays as it is; Keep off refuses them there,
+        // with the reason the person typed. The chat is told on its next turn.
+        if (option === "allow") return commands.answerPoolLogin(plane, ask.session, true, null);
+        if (option === "keep")
+          return commands.answerPoolLogin(plane, ask.session, false, reason?.trim() || null);
+        break;
       case "take-over": {
         // A browser whose page needs the person (#2015): Take over takes the session host's
         // lease first, so their first click or key reaches the page, then opens its view. The

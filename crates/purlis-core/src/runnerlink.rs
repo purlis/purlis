@@ -45,6 +45,84 @@ pub const PEERS_FILE: &str = crate::machine::PEERS_FILE;
 /// home that already holds either is refused whichever desktop asks. What was made is read
 /// back before it is answered.
 pub fn pair(config_root: &Path, desktop: &Pinned) -> Result<Pinned, String> {
+    pair_with(config_root, desktop, || {
+        LinkKey::generate().map_err(|why| why.to_string())
+    })
+}
+
+/// **Make a cluster runner's link key as its pod starts** (#2056): the pod's first step,
+/// before anything else in the pod runs. The key's private half is written to `handoff`, a
+/// file made here and nowhere else (`0600`, never through a link), for the runner's pairing
+/// to take ([`pair_with_key_made_at_start`]); its public half, as 64 lower-case hex, to
+/// `published`, which the cluster shows in the pod's status for its operator to vouch for.
+pub fn make_at_start(handoff: &Path, published: &Path) -> Result<(), String> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    let key = LinkKey::generate().map_err(|why| why.to_string())?;
+    let hex = Zeroizing::new(hex_of(made_private(&key)?.as_ref()));
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+        .open(handoff)
+        .map_err(|why| {
+            format!(
+                "the runner's link key could not be made at {}: {why}",
+                handoff.display()
+            )
+        })?;
+    file.write_all(hex.as_bytes())
+        .and_then(|()| file.sync_all())
+        .map_err(|why| format!("the runner's link key could not be written: {why}"))?;
+    std::fs::write(published, hex_of(key.public().as_bytes()))
+        .map_err(|why| format!("the runner's public link key could not be published: {why}"))
+}
+
+/// **Pair a cluster runner with the key its pod made as it started** (#2056), read from
+/// `handoff` ([`make_at_start`]), and only from a file this user alone may read: as [`pair`]
+/// pairs, with that key instead of a new one. Once the pairing is kept, `handoff` is removed,
+/// so the key is left only in the session host's own folder. A runner is paired once: with no
+/// key at `handoff`, its pairing has taken it already, or the pod made none.
+pub fn pair_with_key_made_at_start(
+    config_root: &Path,
+    desktop: &Pinned,
+    handoff: &Path,
+) -> Result<Pinned, String> {
+    let made = match purlis_same_user::read_private_file(handoff) {
+        Ok(text) => Zeroizing::new(text),
+        Err(why) if why.kind() == std::io::ErrorKind::NotFound => {
+            return Err(format!(
+                "this runner's pod holds no link key it made as it started at {}: a runner is \
+                 paired once, and its pairing takes that key; claim a new runner",
+                handoff.display()
+            ));
+        }
+        Err(why) => {
+            return Err(format!(
+                "the link key this runner's pod made as it started could not be read safely: {why}"
+            ));
+        }
+    };
+    let paired = pair_with(config_root, desktop, || {
+        let private = bytes_of(made.trim())
+            .map(Zeroizing::new)
+            .ok_or_else(|| "the link key this runner's pod made is not one key".to_owned())?;
+        LinkKey::from_private(private)
+            .map_err(|why| format!("the link key this runner's pod made is not one key: {why}"))
+    })?;
+    std::fs::remove_file(handoff).map_err(|why| {
+        format!("the runner is paired, but the key its pod made could not be taken away: {why}")
+    })?;
+    Ok(paired)
+}
+
+/// [`pair`], with the key `key` gives, asked for once the home is known to hold no pairing.
+fn pair_with(
+    config_root: &Path,
+    desktop: &Pinned,
+    key: impl FnOnce() -> Result<LinkKey, String>,
+) -> Result<Pinned, String> {
     let folder = &crate::machine::charterd(config_root);
     let held = purlis_same_user::PrivateDirectory::open(folder)
         .map_err(|why| format!("the session host's folder could not be opened: {why}"))?;
@@ -71,7 +149,7 @@ pub fn pair(config_root: &Path, desktop: &Pinned) -> Result<Pinned, String> {
              holds no purlis machine store"
                 .to_owned()
         })?;
-    let key = LinkKey::generate().map_err(|why| why.to_string())?;
+    let key = key()?;
     let hex = Zeroizing::new(hex_of(made_private(&key)?.as_ref()));
     held.create_file(KEY_FILE, hex.as_bytes())
         .map_err(|why| match why.kind() {

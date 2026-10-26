@@ -215,8 +215,14 @@ impl Report {
                 // One bit of the prompt, and only on the event that carries one: whether the
                 // person typed `/smart-close` (#1332). The prompt never leaves the hook.
                 smart_close: event == Event::UserPromptSubmit
-                    && field("prompt")
-                        .is_some_and(|prompt| crate::state::smart_close_typed(&prompt)),
+                    && field("prompt").is_some_and(|prompt| {
+                        crate::state::smart_close_typed(
+                            &prompt,
+                            chat_harness(env)
+                                .as_deref()
+                                .and_then(crate::harness::Harness::of_registry_or_kind),
+                        )
+                    }),
                 unattended: crate::floorguard::unattended(field("permission_mode").as_deref()),
                 // Only a `Stop` of the chat's own can end its turn, so only there is it asked.
                 helpers_at_work: event == Event::Stop
@@ -814,6 +820,11 @@ impl ChatTokens {
     }
 
     /// Forgets `chat`'s token: a line for it is dropped from now on.
+    /// **Whether chat `chat`'s token is held**: it has started and not been forgotten (#2050).
+    pub fn holds(&self, chat: u32) -> bool {
+        self.held().contains_key(&chat)
+    }
+
     pub fn forget(&self, chat: u32) {
         self.unrecorded_forgotten(chat);
         self.held().remove(&chat);
@@ -1414,6 +1425,11 @@ pub struct BrowseAsk {
     /// The act's own id: a retry with the same id answers again and acts on nothing.
     pub call_id: String,
     pub asked: Browsing,
+    /// **It waited for the window** (#2050): a runner's host kept it while its desktop was away
+    /// and hands it on now. A login that waited is asked of the person afresh, never performed
+    /// on an answer they gave before. Set by the host alone: a hook line's own is cleared.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub waited: bool,
 }
 
 /// What a chat asks of its browsers ([`BrowseAsk`]).
@@ -4809,6 +4825,29 @@ mod tests {
         let odd = line.replace("claude-opus-4-1", "two words");
         let read: Report = serde_json::from_str(&odd).expect("the rest of the line reads");
         assert_eq!((read.chat, read.detail.model), (7, None));
+    }
+
+    #[test]
+    fn opencode_s_own_name_for_smart_close_is_heard_in_an_opencode_chat_alone() {
+        // opencode knows purlis's built-in skills as `purlis-<name>`; nowhere else is that name
+        // purlis's, so a skill named so in another chat is its own.
+        let heard = |harness: Option<&str>| {
+            let mut pairs = vec![(SOCKET_ENV, "/tmp/s.sock"), (CHAT_ENV, "7")];
+            pairs.extend(harness.map(|harness| (HARNESS_ENV, harness)));
+            let env = env_of(&pairs);
+            Report::read(
+                Event::UserPromptSubmit,
+                &prompt_payload("/purlis-smart-close"),
+                &env,
+            )
+            .expect("a report")
+            .detail
+            .smart_close
+        };
+        assert!(heard(Some("opencode")));
+        assert!(!heard(Some("claude")));
+        assert!(!heard(Some("codex")));
+        assert!(!heard(None));
     }
 
     #[test]

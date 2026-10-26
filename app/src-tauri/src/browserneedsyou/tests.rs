@@ -24,6 +24,7 @@ impl Driver for Host {
     fn start(
         &self,
         _root: &Path,
+        _pool: Option<&str>,
         _reach: BrowserReach,
         _kept: Option<purlis_session_protocol::browsing::KeptLogin>,
     ) -> Result<String, crate::chatbrowsers::NotStarted> {
@@ -87,6 +88,7 @@ fn browse(chat: u32, browser: Option<&str>, asked: Browsing) -> BrowseAsk {
         chat,
         browser: browser.map(str::to_owned),
         call_id: "c-1".into(),
+        waited: false,
         asked,
     }
 }
@@ -133,6 +135,7 @@ impl Project {
             .answer(
                 Some(&self.driver),
                 Path::new("/p"),
+                None,
                 asked,
                 &BrowserReach::default,
                 false,

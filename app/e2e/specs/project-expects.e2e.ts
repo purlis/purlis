@@ -15,6 +15,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import { anEmptyRecord, copyFixturePlane } from "../harness.js";
+import { pressGrant } from "../acting.js";
 import { bandNotice } from "../reading.js";
 import { PROJECTS, ask, inFront, openFromTheStrip } from "../switching.js";
 
@@ -142,8 +143,8 @@ async function noNotice(why: string): Promise<void> {
 async function press(label: string): Promise<void> {
   const button = await $(`[data-cause="${CAUSE}"]`).$(`button=${label}`);
   await button.waitForClickable({ timeout: 20_000 });
-  if (label === ALLOW) await browser.pause(2_000);
-  await button.click();
+  if (label === ALLOW) await pressGrant(button);
+  else await button.click();
 }
 
 /** Opens Settings for the project in front, at the Project level. */

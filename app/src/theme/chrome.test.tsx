@@ -659,6 +659,7 @@ const DIALOGS: Opened[] = [
               most_chars: 6000,
               hidden: 0,
               still_over: null,
+              pinned_by: [],
               warns: "both",
             },
           }}

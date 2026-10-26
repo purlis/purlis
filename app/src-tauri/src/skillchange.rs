@@ -633,6 +633,93 @@ pub(crate) async fn skill_turn(
     .await
 }
 
+/// **Whose pins a pin is** (SK-15d, #3232): a workspace's or a persona's, by name. The core's
+/// `PinnedBy`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(tag = "at", rename_all = "kebab-case")]
+pub enum SkillPinner {
+    Workspace { name: String },
+    Persona { name: String },
+}
+
+impl From<&SkillPinner> for purlis_core::skills::PinnedBy {
+    fn from(by: &SkillPinner) -> purlis_core::skills::PinnedBy {
+        match by {
+            SkillPinner::Workspace { name } => {
+                purlis_core::skills::PinnedBy::Workspace(name.clone())
+            }
+            SkillPinner::Persona { name } => purlis_core::skills::PinnedBy::Persona(name.clone()),
+        }
+    }
+}
+
+impl From<purlis_core::skills::PinnedBy> for SkillPinner {
+    fn from(by: purlis_core::skills::PinnedBy) -> SkillPinner {
+        match by {
+            purlis_core::skills::PinnedBy::Workspace(name) => SkillPinner::Workspace { name },
+            purlis_core::skills::PinnedBy::Persona(name) => SkillPinner::Persona { name },
+        }
+    }
+}
+
+/// **Why a chat reads none of a pinner's pins** (SK-15d): the core's `PinsRefused`, with whose
+/// list it is.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct SkillPinsRefused {
+    pub by: SkillPinner,
+    /// What is wrong, in a clause: `"Not A Name" is not a skill's name (…)`, `the list holds more
+    /// than 64 pins`.
+    pub why: String,
+    /// The entry that is not a skill's name, which Unpin takes out; null for too many.
+    pub bad: Option<String>,
+    /// The file the list is written in, relative to the project.
+    pub file: String,
+}
+
+/// Why a chat reads none of `by`'s pins in the project at `root`, or `None`.
+pub(crate) fn pins_refused(
+    root: &std::path::Path,
+    by: &purlis_core::skills::PinnedBy,
+) -> Option<SkillPinsRefused> {
+    purlis_core::skills::pins_refused(root, by).map(|refused| SkillPinsRefused {
+        by: by.clone().into(),
+        why: refused.why,
+        bad: refused.bad,
+        file: refused.file,
+    })
+}
+
+/// **Pins `name` for `by`'s chats, or unpins it** (SK-15d, #3232): the core's `verbs::pin`,
+/// which `purlis skill pin` calls too, one commit.
+pub(crate) fn pin(
+    root: &std::path::Path,
+    by: &SkillPinner,
+    name: &str,
+    on: bool,
+) -> Result<SkillChanged, String> {
+    let by = by.into();
+    heard(root, |cx| verbs::pin(cx, &by, name, on))
+}
+
+/// **Pins the skill `name` for a workspace's or a persona's chats, or unpins it**, so no router
+/// hides it from them. One commit.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_pin(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    by: SkillPinner,
+    name: String,
+    on: bool,
+) -> Result<SkillChanged, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("pinning the skill", move || {
+        flag_on()?;
+        pin(held.root(), &by, &name, on)
+    })
+    .await
+}
+
 /// **Shares** a local skill: commits it to the project at its level (#2767), one commit.
 pub(crate) fn share(root: &std::path::Path, at: &Whose, name: &str) -> Result<(), String> {
     heard(root, |cx| verbs::share(cx, at, name)).map(|_| ())

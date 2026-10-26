@@ -263,7 +263,18 @@
   min-inline-size: 0;
   min-block-size: var(--size-chrome);
   padding-block: var(--space-2);
-  padding-inline: var(--space-5) var(--space-3);
+  /* 16px from the pane's edges, 12 in the compact density (#3332). */
+  padding-inline: var(--space-6);
+}
+
+/* **In a narrow pane the line keeps the room it had** (#3332): under about 24rem the breadcrumb's
+   line cannot hold the longest state word with anything else (`App.css`, `.pane-crumbs`), so
+   the header keeps its former inset (space.5 at its start and space.3 at its end: 12 and 6, or 8
+   and 4 in compact), and the state word its room. */
+@container (max-width: 24rem) {
+  .pane-head {
+    padding-inline: var(--space-5) var(--space-3);
+  }
 }
 
 .pane-top > :is(.pane-notice-row-empty, [data-scope="notice-row"][data-empty]) + .pane-head {
