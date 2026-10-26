@@ -20,6 +20,14 @@ import { EmptyState } from "./ui/empty-state/EmptyState";
 import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "./ui/table/Table";
 import { TextField } from "./ui/field/Field";
 import { SkillPinnedBy } from "./SkillPins";
+import { SkillGrade } from "./SkillGrade";
+
+/** A version's newest grade, as its row says it (SK-16): the trigger tests that passed with it. */
+export function gradeSaid(version: SkillVersion): string {
+  const grade = version.grade;
+  if (grade === null) return "Not graded";
+  return `${grade.passed} of ${counted(grade.fixtures, "trigger test", "trigger tests")} passed`;
+}
 
 /** A copy's state, as its tab says it in one line. */
 export function lifecycleSaid(name: string, lifecycle: SkillLifecycle): string {
@@ -72,10 +80,13 @@ export function SkillDetailsPanel({
   plane,
   name,
   changed,
+  onGraded,
 }: {
   plane: string;
   name: string;
   changed: number;
+  /** Told when a grade of the skill ended (SK-16), so the tab reads its grades again. */
+  onGraded?: () => void;
 }) {
   const [page, setPage] = useState<SkillDetails>();
   const [refused, setRefused] = useState<string>();
@@ -178,6 +189,14 @@ export function SkillDetailsPanel({
               commands.skillOwners(plane, copy.level, name, owners),
             )
           }
+        />
+      )}
+      {copy !== undefined && (
+        <SkillGrade
+          plane={plane}
+          name={name}
+          level={copy.level}
+          onGraded={onGraded ?? (() => setDone((n) => n + 1))}
         />
       )}
       {copy !== undefined && (
@@ -351,6 +370,7 @@ function History({
             <TableColumn>By</TableColumn>
             <TableColumn>Change</TableColumn>
             <TableColumn>Runs on it</TableColumn>
+            <TableColumn>Grade</TableColumn>
             <TableColumn hideName>Actions</TableColumn>
           </TableHeader>
           <TableBody>
@@ -418,6 +438,7 @@ function VersionRow({
         <TableCell>{version.author}</TableCell>
         <TableCell>{version.subject}</TableCell>
         <TableCell>{runsSaid(version.runs)}</TableCell>
+        <TableCell>{gradeSaid(version)}</TableCell>
         <TableCell>
           <Button size="sm" variant="ghost" aria-expanded={open} onPress={onShow}>
             {open ? "Hide changes" : "Show changes"}
@@ -435,7 +456,7 @@ function VersionRow({
           textValue="Revert to this version"
           data-testid="skill-revert-confirm"
         >
-          <TableCell colSpan={5}>
+          <TableCell colSpan={6}>
             <p>Put the skill back as this version had it? The revert is saved as a new version.</p>
             {asked.widens === undefined ? (
               <p className="pending" aria-busy="true">
@@ -465,7 +486,7 @@ function VersionRow({
       )}
       {open && (
         <TableRow id={`${version.commit}:changes`} textValue="What it changed">
-          <TableCell colSpan={5}>
+          <TableCell colSpan={6}>
             {diff === undefined ? (
               <p className="pending" aria-busy="true">
                 <LoaderCircle className="node-icon spinning" />

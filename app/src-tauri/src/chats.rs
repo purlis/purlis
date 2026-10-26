@@ -442,6 +442,9 @@ pub struct SkillsMissing {
     pub broken: Vec<SkillBroken>,
     /// The project's skills the repo the chat works in leaves out, each with why (SK-53).
     pub by_a_repo: Vec<SkillBroken>,
+    /// The repo's own skills named like one of purlis's built-in skills, which the chat's
+    /// program loads beside purlis's (SK-37).
+    pub beside_a_built_in: Vec<String>,
 }
 
 /// A skill a chat would have loaded that could not be loaded (SK-8): the core's `Broken`, for
@@ -1366,9 +1369,13 @@ impl Chats {
     /// `persona` is the persona the chat runs as, which a harness that can is handed the MCP
     /// servers and the denied tools of (#1451, `purlis_core::personaverbs::chatstart`).
     ///
+    /// `graded` is whether it is a grade's chat (SK-16), as its record says: what holds it to
+    /// purlis's server and read tools alone (`purlis_core::hoststart::Arming::graded`).
+    ///
     /// **Fail closed.** A sandbox compiled for another harness, or one the harness is not armed
     /// to carry here (the app shipped without its plugin or its binary), refuses the chat rather
     /// than starting it without the sandbox.
+    #[allow(clippy::too_many_arguments)]
     fn state_hooks(
         &self,
         harness: Option<Harness>,
@@ -1377,6 +1384,7 @@ impl Chats {
         sandbox: Option<&purlis_core::sandbox::Applied>,
         persona: Option<&str>,
         env: &[(String, String)],
+        graded: bool,
     ) -> Result<Armed, String> {
         purlis_core::hoststart::armed(&purlis_core::hoststart::Arming {
             root: &self.project,
@@ -1387,6 +1395,7 @@ impl Chats {
             sandbox,
             persona,
             env,
+            graded,
         })
     }
 
@@ -3161,6 +3170,15 @@ impl Chats {
             && self
                 .sessions
                 .composes_its_harness_chats_in(workspace.as_deref());
+        // A grade's chat is armed here, with its limits, or not at all (SK-16): a runner
+        // composes its own line, and would start it with none of them.
+        if on_the_runner && chat.graded {
+            return Err(
+                "A grade's chat runs on this machine alone, and this project's chats are started \
+                 by a runner, so nothing was started."
+                    .to_owned(),
+            );
+        }
         // The services of this machine the person allowed it alone, which the runner is told
         // of: it leaves out those its own sandbox does not give, and asks about each (#2590).
         let alone = sandbox
@@ -3298,6 +3316,7 @@ impl Chats {
                 no_built_in: not.no_built_in,
                 broken: not.broken.into_iter().map(SkillBroken::from).collect(),
                 by_a_repo: not.by_a_repo.into_iter().map(SkillBroken::from).collect(),
+                beside_a_built_in: not.beside_a_built_in,
             })
         };
         // A sandboxed Claude Code chat whose project's own settings it does not load says which
@@ -3396,6 +3415,8 @@ impl Chats {
                 sandbox,
                 runs_as.as_deref(),
                 &env,
+                // A grade's chat, as its record says (SK-16): the one word its limits take.
+                chat.graded,
             )?
         };
         let hooks = match &settings_watched {
@@ -3849,6 +3870,14 @@ impl Chats {
             return Err(LETTING_GO.to_owned());
         }
         Ok((session, failed))
+    }
+
+    /// **Whether chat `session` is a grade's** (SK-16), which the window draws nowhere: its
+    /// record's [`purlis_core::reopen::Chat::graded`].
+    pub fn kept_from_the_window(&self, session: u32) -> bool {
+        lock(&self.open)
+            .get(&session)
+            .is_some_and(|one| one.chat.graded)
     }
 
     /// Ends a chat. It is no longer one a quit would record.
@@ -5106,6 +5135,9 @@ impl Chats {
         let chats: Vec<(Chat, Why)> = record
             .chats
             .iter()
+            // A grade's chat is never started again: its grade ended with the run it was in
+            // (SK-16). Its throwaway piece goes once no chat stands in it.
+            .filter(|chat| !chat.graded)
             .map(|chat| match &chat.identity.id {
                 Some(id) if seen.insert(id.clone()) => (chat.clone(), Why::Relaunch),
                 _ => (

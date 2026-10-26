@@ -7310,6 +7310,64 @@ nav.piece-files-head {
   border: 1px solid var(--border-subtle);
 }
 
+/* **Browser proof** (#2026): the bar over a chat's timeline that attaches the screenshots
+   the person picked, and the steps of choosing the request and seeing what goes. */
+.browser-timeline-pane {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.browser-proof-bar,
+.browser-proof {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-block-end: 1px solid var(--border-subtle);
+}
+
+.browser-proof {
+  max-height: 60%;
+  overflow: auto;
+}
+
+.browser-proof-bar > p,
+.browser-proof-said,
+.browser-proof-warning {
+  margin: 0;
+}
+
+/* Said before the pictures, apart from the rest: they are public and permanent to the repo's
+   readers (the person's ruling on D-2026-3). */
+.browser-proof-warning {
+  font-weight: var(--font-weight-strong);
+}
+
+.browser-proof-choose {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.browser-proof-words {
+  margin: 0;
+  padding-inline-start: var(--space-3);
+  border-inline-start: 2px solid var(--border-subtle);
+  white-space: pre-wrap;
+}
+
+.browser-proof-shots {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
 /* **Where the page is, and on which device** (#2024): purlis's own words, first in the bar
    above the page and outside the frame, so a page can never draw them. */
 .browser-chip {
@@ -7459,6 +7517,50 @@ nav.piece-files-head {
 .skill-starts p {
   margin: 0;
   font-size: var(--font-size-sm);
+  /* Each start's line, in the empty state's quiet tier, which holds AA on every theme. */
+  color: var(--text-muted);
+}
+
+/* The Skills view (#3266): a sidebar view, its header's two ways in, the switch to the chat in
+   front, then the list, which takes the rest and scrolls. The list's look is the list family's. */
+.skills-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-block-size: 0;
+  block-size: 100%;
+  padding: var(--space-2);
+}
+
+/* Only the list gives way to a short sidebar: a control squeezed below its height is a target
+   too small to press (WCAG 2.5.8). */
+.skills-view > * {
+  flex-shrink: 0;
+}
+
+.skills-view .skill-starts {
+  grid-template-columns: 1fr;
+}
+
+.skills-view-only {
+  align-self: flex-start;
+}
+
+.skills-view > .skills-view-list {
+  flex: 1 1 0;
+  min-block-size: 0;
+  overflow: auto;
+}
+
+/* A row's one mark, in the quiet tier: never a colour alone (WCAG 1.4.1). */
+.skills-view-mark {
+  color: var(--text-quiet);
+  font-size: var(--font-size-sm);
+}
+
+/* A row's tooltip, one line each: what the skill does, then why it has its mark. */
+.skills-view-tip {
+  display: block;
 }
 
 /* Skill sources (SK-10): the install review leads with its summary, risky items marked. */

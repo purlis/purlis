@@ -88,7 +88,7 @@ pub(crate) fn narrowing(text: &str) -> Narrowing {
 /// none of that name, whatever is on disk.
 pub fn by_name<'a>(set: &'a SkillSet, name: &str) -> Option<&'a Effective> {
     let name = name.trim();
-    let leaf = name.rsplit_once(':').map_or(name, |(_, leaf)| leaf);
+    let leaf = crate::leaf_name(name);
     set.effective
         .iter()
         .find(|effective| effective.skill.name == name || effective.skill.name == leaf)

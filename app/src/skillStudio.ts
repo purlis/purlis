@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useSyncExternalStore } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import { commands, PERSONA_SCOPE_KEY, SKILL_STUDIO_IN, type SkillPinner } from "./bindings";
 import type { ViewRef } from "./tabs";
 
@@ -118,6 +118,9 @@ export function skillStudioAs(persona: string): string {
   return `${SKILL_STUDIO_IN}${scopeKey(asPersona(persona))}`;
 }
 
+/** **What opens the studio, in words**: the palette's row and the Skills view's header (#3266). */
+export const OPEN_SKILL_STUDIO = "Open Skill studio";
+
 /** The catalogue row that opens the studio on a chat at the project's root (#2765). */
 export const SKILL_STUDIO_SHOW = "skills.studio";
 
@@ -172,6 +175,55 @@ export async function setSkillStudioOn(on: boolean): Promise<string | undefined>
   if (answer.status === "ok") said = answer.data;
   told();
   return answer.status === "error" ? answer.error : undefined;
+}
+
+/**
+ * **A start the studio is asked to open on** (#3266): the Skills view's New skill and Browse
+ * sources open the studio's own, so each start is the studio's one copy. `new` is the New skill
+ * form, `sources` its skill sources.
+ */
+export type StudioStart = "new" | "sources";
+
+/** The start asked for, by the studio's view key, until a studio of that key takes it. */
+let startAsked: { key: string; start: StudioStart } | undefined;
+const startListeners = new Set<() => void>();
+
+/** Asks the studio on `scope`'s chats to open on `start`: the one drawn now, or the next. */
+export function askStudioStart(scope: StudioScope, start: StudioStart): void {
+  startAsked = { key: scopeKey(scope), start };
+  for (const one of startListeners) one();
+}
+
+/**
+ * **Hands the studio on `scope`'s chats each start asked of it** (#3266), once it is `ready`
+ * (its skills read): one asked before it was drawn, then each asked while it is. A start is taken
+ * once, so drawing the studio again opens nothing.
+ */
+export function useStudioStart(
+  scope: StudioScope,
+  ready: boolean,
+  onStart: (start: StudioStart) => void,
+): void {
+  const key = scopeKey(scope);
+  const held = useRef(onStart);
+  useEffect(() => {
+    held.current = onStart;
+  });
+  useEffect(() => {
+    if (!ready) return;
+    const take = () => {
+      if (startAsked?.key !== key) return;
+      const { start } = startAsked;
+      startAsked = undefined;
+      held.current(start);
+    };
+    startListeners.add(take);
+    // One asked before this studio was drawn, taken after this render.
+    void Promise.resolve().then(take);
+    return () => {
+      startListeners.delete(take);
+    };
+  }, [key, ready]);
 }
 
 /** **The studio a pin is changed in** (SK-15d): its workspace's chats, or its persona's. */

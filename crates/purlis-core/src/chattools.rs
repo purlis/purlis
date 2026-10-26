@@ -165,12 +165,28 @@ pub const CODEX_TOOL_TIMEOUT_SECS: i64 = 3600;
 /// alone. Claude Code hands a stdio server its own environment and directory (measured on
 /// 2.1.288), so the chat's place reaches it with nothing named.
 pub fn claude_code_config(binary: &Path) -> String {
+    claude_code_config_as(binary, false)
+}
+
+/// The argument a grade's chat starts the server with (SK-16, the operator's ruling of
+/// 2026-10-26): it lists and answers the tools that only read ([`PRE_ALLOWED`]), and refuses
+/// every other.
+pub const GRADED_ARG: &str = "--graded";
+
+/// [`claude_code_config`], for a grade's chat with `graded`: the server started with
+/// [`GRADED_ARG`].
+pub fn claude_code_config_as(binary: &Path, graded: bool) -> String {
+    let args: Vec<&str> = if graded {
+        vec![SUBCOMMAND, GRADED_ARG]
+    } else {
+        vec![SUBCOMMAND]
+    };
     json!({
         "mcpServers": {
             SERVER: {
                 "type": "stdio",
                 "command": binary.display().to_string(),
-                "args": [SUBCOMMAND],
+                "args": args,
             }
         }
     })

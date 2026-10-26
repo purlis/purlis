@@ -2516,6 +2516,16 @@ window, held by the project in front, and never under a dialog. Every view is al
 row (_Show the Chats view_, _Show the Explorer view_, _Search in files_, _Show the Changes
 view_), with the key said on the row.
 
+**The Skills view's key is `⌘⇧X`** (#3266), VS Code's for its Extensions view, and
+`Ctrl+Shift+X` off a Mac: `Ctrl` with `Shift` and a letter is no byte, so it is the window's while
+a chat has the keyboard, as `Ctrl+Shift+E` is. The view sits under Search on the left and is
+there only while the Skill studio's preview is on; while it is off the key is left alone, no
+palette row names the view, and a side left on it opens on Chats until the preview is back
+(`sideViews.PREVIEWED_VIEWS`, which `regions.openView` reads as it reads an extension's panel
+that is not contributed now). Its list is the list family's: one Tab stop, ↑ and ↓ past the
+groups' names, typing finds a skill, Enter opens its tab, and Shift+F10 or the menu key opens a
+row's menu.
+
 **The Panel's key is `⌘J`** (#1737, P-6), VS Code's, and `Ctrl+J` off a Mac: it hides the whole
 Panel, every half of it, and shows it again on the views its halves had. It hides only a Panel
 that is drawn: a half holding only extensions' panels that no extension contributes now is not

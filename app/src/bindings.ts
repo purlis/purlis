@@ -703,6 +703,12 @@ export const commands = {
 	 */
 	answerPoolLogin: (plane: PlaneId, session: number, allow: boolean, reason: string | null) => typedError<null, string>(__TAURI_INVOKE("answer_pool_login", { plane, session, allow, reason })),
 	/**
+	 *  **Allow or Keep off on run `run` of chat `session`'s tool on its pool** (#2047): with
+	 *  `allow`, this desktop sends the tool its vault values on the pool's runner for that run
+	 *  alone; Keep off refuses that run. The command that waits goes on, or is refused, at once.
+	 */
+	answerPoolTool: (plane: PlaneId, session: number, run: number, allow: boolean) => typedError<null, string>(__TAURI_INVOKE("answer_pool_tool", { plane, session, run, allow })),
+	/**
 	 *  **Allow on chat `session`'s browser sites** (#2018): `sites`, the sites the Ask showed, are
 	 *  browser sites at `level`: this chat, every chat of this project on this machine, or everyone
 	 *  in the project, committed (#2443). A grant for the browser alone (ruled 2026-10-17): the
@@ -740,6 +746,28 @@ export const commands = {
 	 *  moment of the timeline lists. The window's alone (`ui::WINDOW_ONLY`).
 	 */
 	chatBrowserTimelineShot: (plane: PlaneId, chat: string, shot: number) => typedError<string, string>(__TAURI_INVOKE("chat_browser_timeline_shot", { plane, chat, shot })),
+	/**
+	 *  **The requests the window offers for chat `chat`'s proof**: the open request of each save of
+	 *  a repo of the chat's workspace. Read from git and the save journal, never the network. None
+	 *  for a chat at the project's root. The person can name any other request by its address.
+	 */
+	browserProofRequests: (plane: PlaneId, chat: string) => typedError<ProofRequest[], string>(__TAURI_INVOKE("browser_proof_requests", { plane, chat })),
+	/**
+	 *  **What attaching screenshots `shots` of chat `chat` to the request at `request` would
+	 *  send**, for the person to see first, with each screenshot's bytes to draw. It reads the
+	 *  request and its repo with the person's sign-in, and writes nothing.
+	 * 
+	 *  On a blocking thread: it asks the forge twice.
+	 */
+	showBrowserProof: (plane: PlaneId, chat: string, request: string, shots: number[]) => typedError<ShowingProof, string>(__TAURI_INVOKE("show_browser_proof", { plane, chat, request, shots })),
+	/**
+	 *  **Attach what the person was shown**, with the person's own purlis sign-in to the request's
+	 *  forge and never through `gh` or `glab`: the press of Attach in the proof the window showed.
+	 *  Answers the comment's page.
+	 * 
+	 *  On a blocking thread: it asks the forge several times.
+	 */
+	attachBrowserProof: (plane: PlaneId, chat: string, shown: ShownProof) => typedError<string, string>(__TAURI_INVOKE("attach_browser_proof", { plane, chat, shown })),
 	/**
 	 *  **The browsers of project `plane` a crash of the window left running that come back in a
 	 *  view tab** (#2025): the person's own, and any a view tab of its own showed, taken back as the
@@ -1766,6 +1794,12 @@ export const commands = {
 	 */
 	skillStudio: (plane: PlaneId, workspace: string | null, persona: string | null) => typedError<Studio, string>(__TAURI_INVOKE("skill_studio", { plane, workspace, persona })),
 	/**
+	 *  **Every persona's own skills** (#3266): what the Skills view lists under Personas, for a chat
+	 *  in `workspace` or at the root, in one read rather than one studio per persona. On a blocking
+	 *  thread, as it reads the project's skill folders.
+	 */
+	skillPersonaSkills: (plane: PlaneId, workspace: string | null) => typedError<PersonaSkills[], string>(__TAURI_INVOKE("skill_persona_skills", { plane, workspace })),
+	/**
 	 *  The runs of skill `skill` in the project, newest first, for its Runs panel: none while the
 	 *  flag is off. On a blocking thread, as it reads the project's skill log.
 	 */
@@ -1815,6 +1849,11 @@ export const commands = {
 	broken: SkillBroken[],
 	/**  The project's skills the repo the chat works in leaves out, each with why (SK-53). */
 	by_a_repo: SkillBroken[],
+	/**
+	 *  The repo's own skills named like one of purlis's built-in skills, which the chat's
+	 *  program loads beside purlis's (SK-37).
+	 */
+	beside_a_built_in: string[],
 } | null, string>(__TAURI_INVOKE("chat_skills_missing", { plane, session })),
 	/**  Puts a chat's missing-skills Notice away. */
 	putAwayChatSkillsMissing: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("put_away_chat_skills_missing", { plane, session })),
@@ -1923,6 +1962,25 @@ export const commands = {
 	 *  chats from now on. The person's press in the studio, on a skill left out for it.
 	 */
 	skillLevelAccept: (plane: PlaneId, folder: string) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_level_accept", { plane, folder })),
+	/**  **What grading the copy of `skill` at `level` would run**, before anything runs. */
+	skillGradePlan: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_grade_plan", { plane, level, skill, profile })),
+	/**
+	 *  **Grades the copy of `skill` at `level`**, on `profile` (the project's default where none
+	 *  is picked): its chats run one at a time behind the window, which is told each step
+	 *  ([`EVENT`]). The answer is the grade's id. Refused while a grade runs in the project.
+	 */
+	skillGradeStart: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null, consent: string) => typedError<string, string>(__TAURI_INVOKE("skill_grade_start", { plane, level, skill, profile, consent })),
+	/**
+	 *  **Stops the grade `grade`**: the chat it runs now is ended, no other starts, and what ran is
+	 *  scored and recorded.
+	 */
+	skillGradeStop: (plane: PlaneId, grade: string) => typedError<null, string>(__TAURI_INVOKE("skill_grade_stop", { plane, grade })),
+	/**
+	 *  **Sets the token cap a grade in the project is held to**, on this machine (#2779; the
+	 *  operator's ruling of 2026-10-26): the person who pays for the chats sets it, and the plan shows
+	 *  it before Grade is pressed. The answer is the plan of `skill` at `level` again, with it.
+	 */
+	skillGradeSetCap: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null, tokens: number | null) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_grade_set_cap", { plane, level, skill, profile, tokens })),
 	/**  The project's skill sources. */
 	skillSources: (plane: PlaneId) => typedError<SkillSource[], string>(__TAURI_INVOKE("skill_sources", { plane })),
 	/**
@@ -3887,6 +3945,8 @@ export const PERSONA_SCOPE_KEY = "persona/" as const;
 
 export const SESSION_BUS_ANSWERS = "session-bus://answers" as const;
 
+export const SKILL_GRADE = "skill-grade" as const;
+
 export const SKILL_RUNS_PANEL = "runs" as const;
 
 export const SKILL_STUDIO_IN = "skills.studio:" as const;
@@ -4224,6 +4284,11 @@ export type AnswerPath =
  *  for the chat that asked (#2050).
  */
 { via: "pool-login" } | 
+/**
+ *  `answer_pool_tool`, allowing for Allow this run and not for Keep off, for run `run` of
+ *  the chat that asked (#2047).
+ */
+{ via: "pool-tool"; run: number } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -4383,7 +4448,12 @@ export type AskSource =
  *  A runner chat's browser login, which waits on the person's opt-in for its persona on its
  *  pool (#2050): an Allow lets that persona's logins be filled on the pool's runner.
  */
-"pool-login";
+"pool-login" | 
+/**
+ *  One run of a runner chat's declared tool, which waits on the person (#2047): an Allow
+ *  lets this desktop send that tool its vault values on the pool's runner for that run alone.
+ */
+"pool-tool";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the
@@ -6968,6 +7038,30 @@ export type GoneProject = {
 	said: string,
 };
 
+/**  How a grade ended, as the window is told it. */
+export type GradeEnded = "whole" | "stopped" | "chats-did-not-start" | 
+/**  It reached its token cap. */
+"over-cap" | 
+/**  A chat did not say what it spent, so the cap could not be held. */
+"spend-not-reported";
+
+/**  What a grade's chats spent last time, worked out for this one. */
+export type GradeEstimate = {
+	tokens: number | null,
+	cost_usd: number | null,
+	/**  The chats of the grade it is worked out from. */
+	chats_then: number,
+};
+
+/**  One trigger test, as the plan shows it before anything runs. */
+export type GradeQuery = {
+	/**  The query as the chat will read it, each character no reader would see marked. */
+	query: string,
+	should_trigger: boolean,
+	/**  Whether it holds a character no reader would see. */
+	hides: boolean,
+};
+
 /**  Who a grant is for, as the window sends it ([`sandbox::grant::Level`]). */
 export type GrantLevel = 
 /**  This chat's next run alone (D-sock-3): a socket or a service only. */
@@ -8765,6 +8859,15 @@ export type PersonaProfile = {
 /**  What a change to a persona's skills does, as the studio asks it. */
 export type PersonaSkillChange = "add" | "remove";
 
+/**
+ *  **One persona's own skills** (#3266), as the Skills view lists them: the rows of its own
+ *  level, for a chat as it in the workspace the view shows.
+ */
+export type PersonaSkills = {
+	persona: string,
+	skills: StudioSkill[],
+};
+
 /**  Where a smart close stands. */
 export type Phase = 
 /**  Waiting for the chat's turn to end before the prompt is sent. */
@@ -9543,6 +9646,29 @@ export type ProjectUpdate = {
 };
 
 /**
+ *  A pull or merge request the window offers to attach proof to: the open request of a save of
+ *  one of the chat's workspace's repos.
+ */
+export type ProofRequest = {
+	/**  Its page. */
+	url: string,
+	/**  The repo's name in the workspace. */
+	repo: string,
+	/**  What its forge calls it: `pull request` or `merge request`. */
+	request: string,
+};
+
+/**  One screenshot as the person was shown it, handed back to attach. */
+export type ProofShot = {
+	/**  Its number in the chat's timeline, to read with `chat_browser_timeline_shot`. */
+	shot: number,
+	/**  When it was taken, in seconds since 1970. */
+	at: number,
+	/**  SHA-256 of its bytes, lower-case hex. */
+	digest: string,
+};
+
+/**
  *  **A proposed change whole, as its own tab draws it** (PC-7): the file before and after, and
  *  whether Apply is offered there, or why it is not shown.
  */
@@ -10284,6 +10410,8 @@ export type RunStart =
 "curation" | 
 /**  A trigger sent the prompt. */
 "trigger" | 
+/**  A grade sent the prompt: a trigger test's chat. */
+"grade" | 
 /**  A start a newer purlis wrote. */
 "unknown";
 
@@ -11023,6 +11151,15 @@ export type SharedFolder = {
 	says: string,
 };
 
+/**
+ *  **What the person is shown before attaching**: the proof, which is handed back to attach, and
+ *  the bytes of each of its screenshots, PNG in base64, in its order, which the window draws.
+ */
+export type ShowingProof = {
+	proof: ShownProof,
+	pictures: string[],
+};
+
 /**  One ask, as the registry lists it and its row draws it. */
 export type Shown = {
 	/**  The chat that asked. */
@@ -11063,6 +11200,30 @@ export type Shown = {
 	 *  not shown and no Allow is offered. Absent for any other ask.
 	 */
 	writes?: WritesShown | null,
+};
+
+/**
+ *  **What attaching would send**, shown to the person before anything goes, and handed back
+ *  unchanged to [`attach_browser_proof`].
+ */
+export type ShownProof = {
+	/**  The request's page. */
+	request: string,
+	/**  `#12` or `!12`. */
+	number: string,
+	/**  The repo it is in, `owner/name`. */
+	path: string,
+	/**  Where the pictures are kept on the forge, and who can open them there. */
+	keptAt: string,
+	/**
+	 *  The line said before the pictures: public and permanent to the repo's readers, and
+	 *  whether the repo is public.
+	 */
+	warning: string,
+	/**  The comment's words, before the pictures. */
+	words: string,
+	/**  The pictures, in the order they go. */
+	shots: ProofShot[],
 };
 
 /**
@@ -11268,6 +11429,69 @@ export type SkillGrade = {
 	fixtures: number,
 };
 
+/**  **What grading a copy would run, before anything runs** (decision 22). */
+export type SkillGradePlan = {
+	/**  The trigger tests it runs, in the file's order. */
+	tests: GradeQuery[],
+	/**  The chats it runs in all, each one turn, and how many times each test runs in each arm. */
+	chats: number,
+	runs: number,
+	/**  Why the trigger tests could not be read, where they were not. */
+	tests_refused: string | null,
+	/**  The trigger tests left out, each with why: a query no chat can be started on. */
+	left_out: string[],
+	/**  The outcome evals the skill has, shown and not run (#3235 grades them). */
+	outcome_evals: number,
+	outcomes_refused: string | null,
+	estimate: GradeEstimate | null,
+	/**  The grade of this skill running now, where one is. */
+	running: string | null,
+	/**  The tokens a grade may spend before it stops, and whether this machine set it. */
+	token_cap: number | null,
+	cap_set_here: boolean,
+	/**
+	 *  The cost a grade may reach besides, where its chats say what they cost: the cap's tokens
+	 *  at the dearest price (`grades::cap::Cap::cost_usd`).
+	 */
+	cost_cap_usd: number | null,
+	/**  The longest one of its chats runs, in minutes: the plan's "up to". */
+	chat_minutes: number,
+	/**
+	 *  The profile its chats run on, and the sandbox they run in there, by its name, or why no
+	 *  grade can run on it (the operator's ruling of 2026-10-26).
+	 */
+	profile: string | null,
+	sandbox: string | null,
+	refused: string | null,
+	/**
+	 *  What pressing Grade consents to: handed back with the press, and a grade on another plan
+	 *  is refused.
+	 */
+	consent: string | null,
+};
+
+/**
+ *  **One step of a grade**, as [`EVENT`] tells the window: how many of its chats have run, and,
+ *  once it is over, how it ended and what it says.
+ */
+export type SkillGradeStep = {
+	plane: PlaneId,
+	skill: string,
+	grade: string,
+	ran: number,
+	of: number,
+	/**  What its chats have spent so far, where they said, and the cap it is held to. */
+	tokens: number | null,
+	cap: number | null,
+	/**  How it ended, once it has. */
+	ended: GradeEnded | null,
+	/**
+	 *  What the window says of its end: why its chats did not start, or that it was not
+	 *  recorded.
+	 */
+	said: string | null,
+};
+
 /**  Where a project skill reaches, as the studio sets it. */
 export type SkillGrant = 
 /**  Chats at the project's root alone. */
@@ -11328,8 +11552,8 @@ export type SkillLintLevel =
 "warns";
 
 /**
- *  **One panel on a skill's tab** (ADR 0101 §6), as the window draws it: purlis's Runs panel,
- *  then each panel an extension that declares `studio-panel` adds, each answered in panel blocks
+ *  **One panel on a skill's tab** (ADR 0101 §6), as the window draws it: purlis's Grades and Runs
+ *  panels, then each panel an extension that declares `studio-panel` adds, each answered in panel blocks
  *  or refused with the core's sentence.
  */
 export type SkillPanel = {
@@ -11346,7 +11570,7 @@ export type SkillPanel = {
  *  **Which panel on a skill's tab**, as the window holds it: purlis's Runs panel, or one an
  *  extension adds, by its id and the panel's.
  */
-export type SkillPanelKey = { kind: "runs" } | { kind: "extension"; extension: string; panel: string };
+export type SkillPanelKey = { kind: "grades" } | { kind: "runs" } | { kind: "extension"; extension: string; panel: string };
 
 /**
  *  **Whose pins a pin is** (SK-15d, #3232): a workspace's or a persona's, by name. The core's
@@ -11506,6 +11730,11 @@ export type SkillsMissing = {
 	broken: SkillBroken[],
 	/**  The project's skills the repo the chat works in leaves out, each with why (SK-53). */
 	by_a_repo: SkillBroken[],
+	/**
+	 *  The repo's own skills named like one of purlis's built-in skills, which the chat's
+	 *  program loads beside purlis's (SK-37).
+	 */
+	beside_a_built_in: string[],
 };
 
 /**  What the window says about a slow launch: its line, and the relaunch that line suggests. */

@@ -266,9 +266,15 @@ export function losesNothing(loss: WorktreeLoss): boolean {
   );
 }
 
-/** The heading over a list of what goes with the folder: `2 uncommitted files would be lost:`. */
-export function counted(count: number, one: string, many: string): string {
-  return count === 1 ? `1 ${one}` : `${count} ${many}`;
+/** The heading over a list of what goes with the folder: `2 uncommitted files would be lost:`.
+ *  `shown` is the count as it is written, where it is not its digits alone (`200,000`). */
+export function counted(
+  count: number,
+  one: string,
+  many: string,
+  shown: string = String(count),
+): string {
+  return count === 1 ? `${shown} ${one}` : `${shown} ${many}`;
 }
 
 /** A record's time (UTC, RFC 3339) as the window says it: `2026-10-07 12:00 UTC`. The text as

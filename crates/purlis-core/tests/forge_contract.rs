@@ -53,7 +53,7 @@ mod scene;
 use scene::{MERGE, SAVE, SHA, Scene};
 
 /// Every case, by the seam method it covers. The parity test compares this with the traits.
-const CASES: [&str; 25] = [
+const CASES: [&str; 27] = [
     "owned",
     "about",
     "reachable",
@@ -79,12 +79,14 @@ const CASES: [&str; 25] = [
     "owners_to_create_under",
     "create_repo",
     "delete_created_repo",
+    "keep_images",
+    "comment",
 ];
 
 /// The cases the live run does not run, each with why and the ticket that will run it. Each one
 /// would merge or queue the fixture's one open request, which the read cases need open; running
 /// them needs a request opened afresh for each run.
-const NOT_LIVE: [(&str, &str); 10] = [
+const NOT_LIVE: [(&str, &str); 12] = [
     (
         "request_auto_merge",
         "auto-merge would land the fixture's open request; it needs a request opened per run (#712)",
@@ -126,6 +128,16 @@ const NOT_LIVE: [(&str, &str); 10] = [
     (
         "delete_created_repo",
         "it deletes the repo a run made, which needs that repo and a token that may delete (#712)",
+    ),
+    (
+        "keep_images",
+        "it writes a proof branch or uploads to the fixture each run; it needs a request opened \
+         per run and what it kept removed after (#3395)",
+    ),
+    (
+        "comment",
+        "it comments on the fixture's open request each run; it needs a request opened per run \
+         (#3395)",
     ),
 ];
 
@@ -324,6 +336,10 @@ mod cases {
                 issues: Issues::Open,
                 // The account is no admin, so neither forge names the setting.
                 push_protection: PushProtection::Unknown,
+                // GitHub's `permissions.push`; GitLab's Developer access.
+                can_push: Some(true),
+                // Neither recording names GitLab's setting, and GitHub has none.
+                uploads_need_sign_in: None,
             })
         );
         spent(&over);
@@ -413,6 +429,65 @@ mod cases {
                 .body(&over.caller, &scene.path("api"), &open(scene)),
             Ok(BODY.to_string())
         );
+        spent(&over);
+    }
+
+    pub fn keep_images(kind: &str, how: How) {
+        let Some(over) = over(kind, "keep_images", how) else {
+            return;
+        };
+        let scene = &over.scene;
+        let kept = over
+            .backend
+            .keep_images(
+                &over.caller,
+                &scene.path("api"),
+                &open(scene),
+                &proof_images(),
+            )
+            .unwrap();
+        let commit = "6".repeat(40);
+        let want = match kind {
+            "github" => vec![
+                format!(
+                    "https://{}/acme/api/raw/{commit}/browser-proof-1.png",
+                    over.host
+                ),
+                format!(
+                    "https://{}/acme/api/raw/{commit}/browser-proof-2.png",
+                    over.host
+                ),
+            ],
+            _ => vec![
+                "/uploads/66dbcd21ec5d24ed6ea225176098d52b/browser-proof-1.png".to_string(),
+                "/uploads/0a1b2c3d4e5f60718293a4b5c6d7e8f9/browser-proof-2.png".to_string(),
+            ],
+        };
+        assert_eq!(kept, want);
+        spent(&over);
+    }
+
+    pub fn comment(kind: &str, how: How) {
+        let Some(over) = over(kind, "comment", how) else {
+            return;
+        };
+        let scene = &over.scene;
+        let page = match kind {
+            "github" => "https://github.com/acme/api/pull/12",
+            _ => "https://gitlab.com/acme/api/-/merge_requests/12",
+        };
+        let pr = Pr {
+            number: scene.open,
+            url: page.to_string(),
+        };
+        let said = over
+            .backend
+            .comment(&over.caller, &scene.path("api"), &pr, "Browser proof");
+        let want = match kind {
+            "github" => "https://github.com/acme/api/pull/12#issuecomment-99",
+            _ => "https://gitlab.com/acme/api/-/merge_requests/12#note_99",
+        };
+        assert_eq!(said, Ok(want.to_string()));
         spent(&over);
     }
 
@@ -1141,8 +1216,85 @@ macro_rules! contract {
                 purlis_core::unsteered!();
                 super::cases::delete_created_repo(stringify!($forge), super::How::$how);
             }
+            #[test]
+            $(#[$attr])?
+            fn keep_images_keeps_each_picture_and_answers_where_the_request_shows_it() {
+                purlis_core::unsteered!();
+                super::cases::keep_images(stringify!($forge), super::How::$how);
+            }
+            #[test]
+            $(#[$attr])?
+            fn comment_posts_on_the_request_and_answers_the_comments_page() {
+                purlis_core::unsteered!();
+                super::cases::comment(stringify!($forge), super::How::$how);
+            }
         }
     };
+}
+
+/// The two pictures the browser proof cases keep, as the recordings carry them.
+fn proof_images() -> Vec<purlis_core::forge::pr::Image> {
+    vec![
+        purlis_core::forge::pr::Image {
+            name: "browser-proof-1.png".into(),
+            png: b"\x89PNG\r\n\x1a\none".to_vec(),
+        },
+        purlis_core::forge::pr::Image {
+            name: "browser-proof-2.png".into(),
+            png: b"\x89PNG\r\n\x1a\ntwo".to_vec(),
+        },
+    ]
+}
+
+/// GitHub's first proof on a request: the branch is not there, so its commit has no parent and
+/// the branch is made at it, never on top of anything of the repo's own (#2026).
+#[test]
+fn githubs_first_proof_on_a_request_starts_a_branch_with_no_parent() {
+    purlis_core::unsteered!();
+    let text = recording("github", "keep_images.first");
+    let recorded = Arc::new(Recorded::parse(&text).unwrap());
+    let backend = Forge::default_of(Kind::GitHub).backend_over(recorded.clone());
+    let pr = Pr {
+        number: 12,
+        url: String::new(),
+    };
+    let commit = "6".repeat(40);
+    assert_eq!(
+        backend.keep_images(&caller(), "acme/api", &pr, &proof_images()),
+        Ok(vec![
+            format!("https://github.com/acme/api/raw/{commit}/browser-proof-1.png"),
+            format!("https://github.com/acme/api/raw/{commit}/browser-proof-2.png"),
+        ])
+    );
+    spent(&recorded);
+}
+
+/// A proof branch somebody else made first, holding a workflow beside a picture, or ending in a
+/// merge, is never built on: refused before anything is written, so nothing of it is carried
+/// into the person's push (#2026).
+#[test]
+fn a_proof_branch_purlis_did_not_make_is_never_built_on() {
+    purlis_core::unsteered!();
+    for scene in ["planted", "merge"] {
+        let text = recording("github", &format!("keep_images.{scene}"));
+        let recorded = Arc::new(Recorded::parse(&text).unwrap());
+        let backend = Forge::default_of(Kind::GitHub).backend_over(recorded.clone());
+        let pr = Pr {
+            number: 12,
+            url: String::new(),
+        };
+        let kept = backend.keep_images(&caller(), "acme/api", &pr, &proof_images());
+        assert_eq!(
+            kept.map_err(|why| why.said().to_string()),
+            Err(
+                "the branch purlis/browser-proof/pr-12 of acme/api holds what purlis did not \
+                 put there, so no proof is added to it"
+                    .to_string()
+            ),
+            "{scene}"
+        );
+        spent(&recorded);
+    }
 }
 
 contract!(github, github, Recorded);
@@ -1247,7 +1399,10 @@ fn every_method_of_the_seam_has_a_case_on_both_forges() {
 
 /// The recordings of one forge's own scene beside a case's, each read by a test of its own:
 /// `<case>.<scene>.json`.
-const SCENES: [(&str, &str, &str); 21] = [
+const SCENES: [(&str, &str, &str); 24] = [
+    ("github", "keep_images", "first"),
+    ("github", "keep_images", "planted"),
+    ("github", "keep_images", "merge"),
     ("gitlab", "request_auto_merge", "train"),
     ("gitlab", "request_auto_merge", "train_pre19"),
     ("github", "merge_when_ready", "pending"),
@@ -1801,6 +1956,8 @@ mod who_can_open_an_issue {
                 visibility: Visibility::Public,
                 issues: Issues::Off,
                 push_protection: PushProtection::Unknown,
+                can_push: None,
+                uploads_need_sign_in: None,
             }
         );
         assert_eq!(
@@ -1825,10 +1982,21 @@ mod who_can_open_an_issue {
                 visibility: Visibility::Internal,
                 issues: Issues::Open,
                 push_protection: PushProtection::Unknown,
+                can_push: Some(false),
+                uploads_need_sign_in: None,
             }
         );
         let off = json!({"visibility": "private", "issues_access_level": "disabled"});
         assert_eq!(gitlab(off).issues, Issues::Off);
+        // A Developer may push, and a project that checks who opens its uploads says so (#2026).
+        let developer = json!({"visibility": "private", "enforce_auth_checks_on_uploads": true,
+                               "permissions": {"project_access": {"access_level": 30},
+                                               "group_access": null}});
+        let developer = gitlab(developer);
+        assert_eq!(
+            (developer.can_push, developer.uploads_need_sign_in),
+            (Some(true), Some(true))
+        );
     }
 
     /// Whether the forge refuses a push that carries a secret (SQ-8), in each forge's own field:
@@ -1932,10 +2100,12 @@ mod network_log {
             // read the checks and merge: thirty-three on GitHub, forty-nine on GitLab (qw371:
             // a scene per answer of purlis's own gate). Making a repo asks who the account is,
             // its owners, the create, and the delete (GitHub reads the repo first; #1819). A
-            // search is one call (#806). What a failed check found is one call (qw378).
+            // search is one call (#806). What a failed check found is one call (qw378). Browser
+            // proof (#2026): GitHub keeps two pictures in eight calls on a branch that is there
+            // and six on a first proof, and reads three or two of one it refuses, GitLab in two uploads, and a comment is one call on each.
             let expected = match kind {
-                "github" => 59,
-                _ => 92,
+                "github" => 79,
+                _ => 95,
             };
             assert_eq!(paths.len(), expected, "{kind}: the recorded REST calls");
             for path in paths {

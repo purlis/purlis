@@ -45,7 +45,7 @@ import {
   type SlotId,
   type ViewId,
 } from "./regions";
-import { isPanelView, type ViewPlace } from "./sideViews";
+import { isPanelView, NO_PREVIEWS, type ViewPlace } from "./sideViews";
 import { useArrived } from "./lib/arrived";
 import { HeadActions } from "./viewHead";
 import { lastUsed, narrowed, narrowPicked, useNarrow } from "./narrowPanel";
@@ -83,6 +83,7 @@ export function RegionFrame({
   content,
   views,
   panels = [],
+  previews = NO_PREVIEWS,
   badges,
   keys,
   onPick,
@@ -113,6 +114,9 @@ export function RegionFrame({
    * declared. What each draws is in {@link views} under its id.
    */
   panels?: readonly PanelTab[];
+  /** **purlis's own views behind a preview that is on now** (#3266, `sideViews.PREVIEWED_VIEWS`):
+   *  one left out is drawn nowhere, and its region opens on its first view meanwhile. */
+  previews?: readonly ViewId[];
   /** What each view's tab carries beside its icon: a count, drawn while the side is away too. */
   badges?: Partial<Record<ViewId, ReactNode>>;
   /** How each view's key is spelled, for its tab's tooltip. */
@@ -153,7 +157,7 @@ export function RegionFrame({
     setBefore(kept);
     setLast(lastUsed(before, kept, last));
   }
-  const present = panels.map((one) => one.view);
+  const present = [...panels.map((one) => one.view), ...previews];
   // Without the moved panels no extension contributes now (`regions.drawnNow`): a half left
   // with none of its views is not drawn, and F6 skips it.
   const now = drawnNow(kept, present);

@@ -489,7 +489,11 @@ enum Command {
     ///
     /// Hidden: nobody types it. Each harness starts it for a chat the app armed.
     #[command(name = "mcp", hide = true)]
-    Mcp,
+    Mcp {
+        /// A grade's chat (SK-16): the tools that only read, and no other.
+        #[arg(long = "graded", hide = true)]
+        graded: bool,
+    },
 
     /// Scan what is staged here as a chat's commit would be scanned: secrets and personal data
     /// in the lines it adds, and what the allowlist lets through. Commits nothing.
@@ -1085,7 +1089,7 @@ fn read_only_standing(command: &Command) -> ReadOnly {
         }
         // Its read tools answer and every tool that writes is refused at the call (#1051):
         // `tests/the_mcp_server_on_a_read_only_project_changes_nothing.rs` calls every tool.
-        | Command::Mcp => ReadOnly::RunsAndSays,
+        | Command::Mcp { .. } => ReadOnly::RunsAndSays,
         _ => ReadOnly::Refused,
     }
 }
@@ -3257,7 +3261,7 @@ fn run(command: Command) -> Result<u8, String> {
         | Command::Dispatch { .. }
         | Command::Report(_)
         | Command::ShellGuard { .. }
-        | Command::Mcp
+        | Command::Mcp { .. }
         | Command::GitHook { .. }
         | Command::Scan { .. }
         | Command::Workspace(WorkspaceCommand::Remove { .. })
@@ -4341,14 +4345,14 @@ fn main() -> ExitCode {
     }
     // After the gate: on a project this purlis cannot write, the server starts, and refuses
     // each tool that writes at its call (#1051).
-    if let Command::Mcp = &cli.command {
+    if let Command::Mcp { graded } = &cli.command {
         // Started by the harness, as a hook is (#1421).
         purlis_core::sandbox::started_by_the_harness();
         // A chat holds this server for its whole life: the config home stays where it is until
         // it ends (`renamelocal::busy::LOCK`, D-RN5-11).
         let _holds = purlis_core::machine::config_root_if_there()
             .and_then(|root| purlis_core::renamelocal::busy::hold_shared(&root));
-        return match mcp::serve() {
+        return match mcp::serve(*graded) {
             Ok(code) => ExitCode::from(code),
             Err(why) => {
                 voice::err(why.to_string());

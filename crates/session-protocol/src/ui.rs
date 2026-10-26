@@ -321,6 +321,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Whether a persona's browser logins may be filled on a pool's runner (#2050): the person's
     // answer alone. No chat opts itself in.
     "answer_pool_login",
+    // Whether this desktop sends a persona's tool its vault values on a pool's runner (#2047):
+    // the person's answer alone. No chat allows its own tool.
+    "answer_pool_tool",
     // A chat's browser sites (#2018): the person's answer alone. No chat allows its own
     // browser a site.
     "allow_browser_sites",
@@ -634,6 +637,14 @@ pub const WINDOW_ONLY: &[&str] = &[
     "skill_draft_reject",
     "skill_draft_chat",
     "skill_draft_try",
+    // A grade of a skill started or stopped (SK-16, #2779): it runs chats on the person's
+    // profile, each started on a trigger test's query, and records the grade in the project.
+    // The person's own press in their window, after the plan showed what it costs.
+    "skill_grade_start",
+    "skill_grade_stop",
+    // A grade's token cap (#2779): what this machine's grades may spend, in its own settings
+    // file. The person's own press in their window.
+    "skill_grade_set_cap",
     // Accepting a workspace or persona folder a chat could have made (SK-9): its skills then
     // reach chats, so only the person's own press in their window does it.
     "skill_level_accept",
@@ -707,6 +718,11 @@ pub const WINDOW_ONLY: &[&str] = &[
     // is, since they hold pictures of the chat's pages.
     "chat_browser_timeline",
     "chat_browser_timeline_shot",
+    // Browser proof on a pull request (#2026): the person picks the screenshots, sees what goes,
+    // and attaches it with their own sign-in, so only their presses in the window make any.
+    "browser_proof_requests",
+    "show_browser_proof",
+    "attach_browser_proof",
     // The person's own browsers a crash of the window left running, for their view tabs
     // (#2025): the window's alone, as watching is.
     "browsers_taken_back",
@@ -1045,9 +1061,12 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "show_window_holding",
     "skill_details",
     "skill_diff",
+    "skill_grade_plan",
     "skill_lint",
     "skill_move_needs_grant",
     "skill_panels",
+    // Every persona's own skills, for the Skills view (#3266): read only.
+    "skill_persona_skills",
     "skill_revert_widens",
     "skill_runs",
     "skill_stats",

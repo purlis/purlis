@@ -39,6 +39,9 @@ use super::etag::{EtagStore, Stored};
 use super::transport::{Call, Endpoint, Field, NoAnswer, Reply, Transport};
 use super::{Forge, ForgeError, Kind};
 
+/// The boundary of a form a call with a file is sent as ([`form_of`]).
+const FORM_BOUNDARY: &str = "purlis-form-6f1c0e7a9b2d4c58";
+
 /// Hands out an account's token when a request is sent. FW-1 and FW-3a decide the sign-in
 /// flows and write the keyring-backed source; the seam takes a source so that no caller ever
 /// holds the token (ADR 0070 §4).
@@ -284,8 +287,27 @@ impl Http {
             request = request.header(http::header::IF_NONE_MATCH, &stored.etag);
         }
         let started = Instant::now();
-        let response = match body {
-            Some(body) => {
+        // The boundary is fixed: a file's bytes that held it would end the part early, so
+        // a body that holds it is refused rather than sent cut.
+        let form = form_of(&call.fields, FORM_BOUNDARY)?;
+        if let Some((_, bytes)) = &form
+            && bytes
+                .windows(FORM_BOUNDARY.len())
+                .filter(|w| *w == FORM_BOUNDARY.as_bytes())
+                .count()
+                != call.fields.len() + 1
+        {
+            return Err("a file sent holds the form's boundary".to_string());
+        }
+        let response = match (body, form) {
+            (_, Some((kind, bytes))) => {
+                let request = request
+                    .header(http::header::CONTENT_TYPE, kind)
+                    .body(bytes)
+                    .map_err(|e| e.to_string())?;
+                self.agent.run(request)
+            }
+            (Some(body), None) => {
                 let bytes = serde_json::to_vec(&body).map_err(|e| e.to_string())?;
                 let request = request
                     .header(http::header::CONTENT_TYPE, "application/json")
@@ -293,7 +315,7 @@ impl Http {
                     .map_err(|e| e.to_string())?;
                 self.agent.run(request)
             }
-            None => {
+            (None, None) => {
                 let request = request.body(()).map_err(|e| e.to_string())?;
                 self.agent.run(request)
             }
@@ -417,6 +439,10 @@ pub fn request_for(
                 }
                 return Ok((method, url, None));
             }
+            // A call with a file is a form ([`form_of`]), with no JSON body.
+            if call.fields.iter().any(|f| matches!(f, Field::File(..))) {
+                return Ok((method, url, None));
+            }
             let mut body = Map::new();
             for field in &call.fields {
                 set(&mut body, field_name(field), field_value(field))?;
@@ -428,8 +454,72 @@ pub fn request_for(
 
 fn field_name(field: &Field) -> &str {
     match field {
-        Field::Text(name, _) | Field::Typed(name, _) => name,
+        Field::Text(name, _) | Field::Typed(name, _) | Field::File(name, _, _) => name,
     }
+}
+
+/// The `multipart/form-data` body of a call with a file, and its content type, or `None` for a
+/// call with none (#2026). Each text or typed field is a part holding its value; a file is a
+/// part holding its bytes, decoded from the base64 it is carried in, typed `image/png` when its
+/// name ends `.png`. A name that could break out of its part's header is refused.
+pub(super) fn form_of(
+    fields: &[Field],
+    boundary: &str,
+) -> Result<Option<(String, Vec<u8>)>, String> {
+    use base64::Engine as _;
+    if !fields.iter().any(|f| matches!(f, Field::File(..))) {
+        return Ok(None);
+    }
+    let plain = |name: &str| {
+        if name.is_empty()
+            || name
+                .chars()
+                .any(|c| c == '"' || c == '\\' || c.is_control())
+        {
+            Err(format!("the form field name {name:?} cannot be sent"))
+        } else {
+            Ok(())
+        }
+    };
+    let mut body = Vec::new();
+    for field in fields {
+        body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
+        match field {
+            Field::Text(name, value) | Field::Typed(name, value) => {
+                plain(name)?;
+                body.extend_from_slice(
+                    format!("Content-Disposition: form-data; name=\"{name}\"\r\n\r\n").as_bytes(),
+                );
+                body.extend_from_slice(value.as_bytes());
+            }
+            Field::File(name, file_name, content) => {
+                plain(name)?;
+                plain(file_name)?;
+                let kind = if file_name.ends_with(".png") {
+                    "image/png"
+                } else {
+                    "application/octet-stream"
+                };
+                body.extend_from_slice(
+                    format!(
+                        "Content-Disposition: form-data; name=\"{name}\"; \
+                         filename=\"{file_name}\"\r\nContent-Type: {kind}\r\n\r\n"
+                    )
+                    .as_bytes(),
+                );
+                let bytes = base64::engine::general_purpose::STANDARD
+                    .decode(content)
+                    .map_err(|_| format!("the file {file_name} is not base64"))?;
+                body.extend_from_slice(&bytes);
+            }
+        }
+        body.extend_from_slice(b"\r\n");
+    }
+    body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
+    Ok(Some((
+        format!("multipart/form-data; boundary={boundary}"),
+        body,
+    )))
 }
 
 /// A field's JSON value: a text field is a string; a typed one is `true`, `false`, `null` or an
@@ -437,6 +527,8 @@ fn field_name(field: &Field) -> &str {
 fn field_value(field: &Field) -> Value {
     match field {
         Field::Text(_, value) => Value::String(value.clone()),
+        // Sent in a form, never in JSON ([`form_of`]); a GET's query names only its file.
+        Field::File(_, file_name, _) => Value::String(file_name.clone()),
         Field::Typed(_, value) => match value.as_str() {
             "true" => Value::Bool(true),
             "false" => Value::Bool(false),
@@ -450,7 +542,8 @@ fn field_value(field: &Field) -> Value {
 }
 
 /// Set `name` to `value` in `into`: `a[b]` is key `b` of object `a`, `a[]` appends to array
-/// `a`, as `gh api` builds nested parameters.
+/// `a`, and `a[][b]` sets key `b` of the last object of array `a`, starting a new object when
+/// that one already has it, as `gh api` builds nested parameters.
 fn set(into: &mut Map<String, Value>, name: &str, value: Value) -> Result<(), String> {
     let Some(open) = name.find('[') else {
         into.insert(name.to_string(), value);
@@ -462,10 +555,32 @@ fn set(into: &mut Map<String, Value>, name: &str, value: Value) -> Result<(), St
         .ok_or_else(|| format!("the field {name} opens a bracket it never closes"))?;
     let key = &rest[1..close];
     let tail = &rest[close + 1..];
-    if key.is_empty() {
-        if !tail.is_empty() {
-            return Err(format!("the field {name} nests past an array"));
+    if key.is_empty() && !tail.is_empty() {
+        let inner_key = tail
+            .strip_prefix('[')
+            .and_then(|t| t.strip_suffix(']'))
+            .filter(|k| !k.is_empty() && !k.contains(['[', ']']))
+            .ok_or_else(|| format!("the field {name} nests past a list of objects"))?;
+        let slot = into
+            .entry(head.to_string())
+            .or_insert_with(|| Value::Array(Vec::new()));
+        let Value::Array(items) = slot else {
+            return Err(format!("the field {name} is both a value and a list"));
+        };
+        let fresh = match items.last() {
+            Some(Value::Object(last)) => last.contains_key(inner_key),
+            Some(_) => return Err(format!("the field {name} mixes values and objects")),
+            None => true,
+        };
+        if fresh {
+            items.push(Value::Object(Map::new()));
         }
+        if let Some(Value::Object(last)) = items.last_mut() {
+            last.insert(inner_key.to_string(), value);
+        }
+        return Ok(());
+    }
+    if key.is_empty() {
         let slot = into
             .entry(head.to_string())
             .or_insert_with(|| Value::Array(Vec::new()));
@@ -781,6 +896,59 @@ mod tests {
                                "variables": {"value": {"singleSelectOptionId": "opt"},
                                              "number": 12}})
         );
+    }
+
+    /// `a[][k]` builds a list of objects as `gh api` does: a key the last object already has
+    /// starts the next one (a git tree's entries, #2026).
+    #[test]
+    fn a_list_of_objects_starts_a_new_object_at_a_repeated_key() {
+        let root = ApiRoot::at("https://x.example");
+        let write = Call::write(
+            Method::Post,
+            "repos/o/r/git/trees",
+            vec![
+                Field::text("tree[][path]", "a.png"),
+                Field::text("tree[][sha]", "1"),
+                Field::text("tree[][path]", "b.png"),
+                Field::text("tree[][sha]", "2"),
+            ],
+        );
+        let (_, _, body) = request_for(&root, &write).unwrap();
+        assert_eq!(
+            body.unwrap(),
+            serde_json::json!({"tree": [{"path": "a.png", "sha": "1"},
+                                        {"path": "b.png", "sha": "2"}]})
+        );
+    }
+
+    /// A call with a file is sent as `multipart/form-data`, the file's bytes decoded from the
+    /// base64 it is carried in, each other field a part of its own (#2026).
+    #[test]
+    fn a_call_with_a_file_is_sent_as_a_form_with_the_files_bytes() {
+        let root = ApiRoot::at("https://x.example");
+        let write = Call::write(
+            Method::Post,
+            "projects/o%2Fr/uploads",
+            vec![Field::file("file", "shot-1.png", &[0x89, b'P', b'N', b'G'])],
+        );
+        let (method, url, body) = request_for(&root, &write).unwrap();
+        assert_eq!(
+            (method, url.as_str()),
+            (
+                http::Method::POST,
+                "https://x.example/projects/o%2Fr/uploads"
+            )
+        );
+        assert_eq!(body, None, "no JSON body");
+        let (kind, bytes) = form_of(&write.fields, "b0und").unwrap().unwrap();
+        assert_eq!(kind, "multipart/form-data; boundary=b0und");
+        let mut want = b"--b0und\r\nContent-Disposition: form-data; name=\"file\"; \
+                         filename=\"shot-1.png\"\r\nContent-Type: image/png\r\n\r\n"
+            .to_vec();
+        want.extend_from_slice(&[0x89, b'P', b'N', b'G']);
+        want.extend_from_slice(b"\r\n--b0und--\r\n");
+        assert_eq!(bytes, want);
+        assert_eq!(form_of(&[Field::text("a", "b")], "b0und").unwrap(), None);
     }
 
     /// A forge's refusal reaches the window as one line with no control or bidi character,

@@ -18,6 +18,8 @@ export const LUCIDE: Readonly<Record<string, string>> = {
   chats: "message-square",
   explorer: "network",
   search: "search",
+  // #3266: the Skills view, the Skill studio's own sparkles.
+  skills: "sparkles",
   repos: "folder",
   changes: "workflow",
   inbox: "bell",

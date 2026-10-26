@@ -963,6 +963,17 @@ half**, together. Left is navigation, right is what is for you (ADR 0038). A vie
 within its own side.
 _Avoid_: pane (a pane is a chat's terminal), column
 
+**Sidebar view**:
+One of the views an activity bar shows in its sidebar, one at a time (Chats, Explorer, Search,
+**Skills**, …). The window says "the Explorer view".
+_Avoid_: view alone (that is a hosted program's), panel (that is the bottom region)
+
+**Skills** (sidebar view):
+The **sidebar view** under Search on the left that lists the skills of the title bar's workspace
+by level, with what needs the person on top, and opens each skill's tab, while the **Skill
+studio**'s preview is on (#3266). The window says "the Skills view". The studio stays a view tab.
+_Avoid_: skills panel, skill list
+
 **Panel**:
 The full-width region under both sidebars and the editor, in a left and a right **Panel half**,
 switched by the **Lower icons**. It holds reference lists, such as Repos, beside what the
@@ -1645,8 +1656,9 @@ _Avoid_: loaded skills, available skills
 
 **Skill studio**:
 The one place where every skill a chat can get is listed, made, edited, installed, removed,
-observed and graded: a view tab, with each skill opening as its own. It is built behind the
-`skill-studio` flag until its **finish line** (spec #2762).
+observed and graded: a view tab, with each skill opening as its own. The **Skills** sidebar view
+lists the same skills and opens it. It is built behind the `skill-studio` flag until its
+**finish line** (spec #2762).
 _Avoid_: skill manager, skills page
 
 **Finish line** (of the Skill studio):
@@ -1768,6 +1780,24 @@ not.
 
 **Outcome eval**:
 A grade of how well a skill does its job on fixture tasks.
+
+**Grade** (of a skill):
+One run of a grading framework on a copy of a skill: its trigger tests (and, later, its outcome
+evals) run as real chats in each **arm**, scored and recorded in the **eval record** against the
+version the copy held. A grade shows what it runs and spends before it starts, and starts only on
+the person's press (ADR 0105).
+_Avoid_: test run, benchmark, eval (alone)
+
+**Arm** (of a grade):
+One side of a grade's comparison: the skill as it is, no skill at all, or the skill's previous
+version. Each fixture runs in every arm, and the difference is the arm with the skill against the
+baseline.
+_Avoid_: configuration, variant
+
+**Eval record**:
+The project's committed log of grades, one row per grade, beside the skill log. A grade is tied to
+a skill's version by what its folder held. Results never go in the skill's folder.
+_Avoid_: results file, benchmark
 
 The skills' relationships: a **project skill** reaches a workspace only through a **grant**; a
 **persona skill** adds to what the chat has where it runs; when two levels hold a skill of the

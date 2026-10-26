@@ -585,13 +585,14 @@ pub fn derive_with(
             && key != crate::dispatchlimits::TABLE
             && key != crate::harness_declaration::LOCAL_TABLE
             && key != crate::skills::source::TABLE
+            && key != crate::skills::grades::cap::TABLE
         {
             let name = shown::short(key);
             set.refused.push(Refused {
                 reason: format!(
                     "[{name}] in charter.local.toml is not read — that file carries \
                      [harness], [extensions], [theme], [harness_plugins], [plane], [repos], \
-                     [chat_env], [sandbox] hosts, [dispatch] limits and [[skill_sources]], and nothing else, because an ignored file must not change plane policy \
+                     [chat_env], [sandbox] hosts, [dispatch] limits, [[skill_sources]] and [skill_grades], and nothing else, because an ignored file must not change plane policy \
                      with no trace in git. Put [{name}] in charter.toml."
                 ),
                 name,
