@@ -104,9 +104,9 @@ fn a_forget_takes_the_memory_from_the_chats_own_persona_and_no_other() {
     assert_eq!(code, 0, "{lines:?}");
     assert_eq!(
         lines,
-        vec![Say::Done(format!(
-            "Forgot '{mine}' from steward's persistent memory."
-        ))]
+        vec![Say::Done(
+            format!("Forgot '{mine}' from steward's persistent memory.").into()
+        )]
     );
     assert!(files_in(&root.join("personas/steward/memory")).is_empty());
     assert_eq!(
@@ -236,7 +236,7 @@ fn a_verb_that_finds_nothing_says_so_and_exits_one() {
         vec![Say::Fail(
             "no memory 'nothing-like-it' in workspace 'alpha' (list them: purlis workspace \
              recall)."
-                .to_owned()
+                .into()
         )]
     );
 }

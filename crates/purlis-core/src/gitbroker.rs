@@ -231,7 +231,7 @@ fn isolated_answer(
                     .display()
                     .to_string();
                 for note in repocmd::unread::filter_notes(&folder, piece, &at) {
-                    say(Say::Warn(note));
+                    say(Say::Warn(note.into()));
                 }
             }
             code
@@ -440,11 +440,14 @@ pub fn fitted(lines: Vec<Say>, budget: usize) -> Vec<Say> {
     let mut kept: Vec<Say> = lines.into_iter().map(shortened).collect();
     let mut cut = 0;
     let note = |cut: usize| {
-        Say::Warn(format!(
-            "{} more {} cut here to fit the app's answer; the app's log has the run",
-            cut,
-            plural(cut, "line was", "lines were")
-        ))
+        Say::Warn(
+            format!(
+                "{} more {} cut here to fit the app's answer; the app's log has the run",
+                cut,
+                plural(cut, "line was", "lines were")
+            )
+            .into(),
+        )
     };
     while !kept.is_empty() && size(&[kept.as_slice(), &[note(cut + 1)]].concat()) > budget {
         kept.pop();
@@ -467,11 +470,11 @@ fn shortened(line: Say) -> Say {
         }
     };
     match line {
-        Say::Info(text) => Say::Info(cut(text)),
-        Say::Done(text) => Say::Done(cut(text)),
-        Say::Warn(text) => Say::Warn(cut(text)),
-        Say::Fail(text) => Say::Fail(cut(text)),
-        Say::Plain(text) => Say::Plain(cut(text)),
+        Say::Info(text) => Say::Info(text.shortened(A_LINE_AT_MOST)),
+        Say::Done(text) => Say::Done(text.shortened(A_LINE_AT_MOST)),
+        Say::Warn(text) => Say::Warn(text.shortened(A_LINE_AT_MOST)),
+        Say::Fail(text) => Say::Fail(text.shortened(A_LINE_AT_MOST)),
+        Say::Plain(text) => Say::Plain(text.shortened(A_LINE_AT_MOST)),
         Say::Out(text) => Say::Out(cut(text)),
     }
 }
@@ -555,7 +558,7 @@ fn cut_pinned(
     if pinned.holds() {
         code
     } else {
-        say(Say::Fail(REPLACED.to_owned()));
+        say(Say::Fail(REPLACED.into()));
         code.max(1)
     }
 }

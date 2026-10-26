@@ -1672,21 +1672,20 @@ the focus rings, #2867):
   and their min, max, block and inline forms, or a custom property only they read) is not a step
   of the scale, so the guard does not read it either (#2319): a dialog's width, an icon's square
   and a strip's cap on a tab are each that box's own.
-- **`controls.guard.test.ts`** fails on a control that does not wear its class
-  (`docs/ui-primitives.md`, "The control classes"): a `<button>` or a Radix trigger without
-  `asChild` (a row, segment or menu row; a button of the button family is `Button`, never a
-  native `<button>`), an `<input>` or `<textarea>` (none: a box is the field family's
-  `TextField` or `TextArea`; a checkbox `ui-checkbox`, a radio `ui-radio`), a `<select>` (none: a
-  select is the select family's `Select`), a `<table>` (`ui-table`), and a Radix menu's content and rows
-  (`ui-menu`, `ui-menu-item`). **It holds two heights too** (#2449): a `height`, `min-height`,
-  `block-size` or `min-block-size` set on a control is `--size-control`, and one set on a strip
-  or a pane header is `--size-chrome`. A control is `--size-chrome` only as the small form: a
-  `.ui-segmented-sm`, or a control whose selector puts it inside a strip. A
-  field of several lines is a whole number of controls. A control is what the rule's subject
-  names (each selector of a list on its own, a nested rule as its full selector, an `:is()` or
-  `:where()` as each selector in it): a `button`, `select`, `textarea` or non-toggle `input`, a
-  primitive control class, or a class some component gives a control (a list's row and a
-  segment are their list's). A strip or a pane header is a class named for one (`-bar`,
+- **`controls.guard.test.ts`** fails on a native control that is not its family's and does not
+  wear its class (`docs/ui-primitives.md`, "Every control is a family's"): a `<button>` or a
+  Radix trigger without `asChild` (a list's row or a tree's row, `ui-row` or `ui-tree-row`; a
+  button is the button family's `Button`, a segment the choice family's), an `<input>` or
+  `<textarea>` (none: a box is the field family's `TextField` or `TextArea`, a checkbox or a
+  radio the choice family's), a `<select>` (none: the select family's `Select`), a `<table>`
+  (`ui-table`), and a Radix menu's content and rows (none: the menu family's). **It holds two
+  heights too** (#2449): a `height`, `min-height`, `block-size` or `min-block-size` set on a
+  control is `--size-control`, and one set on a strip or a pane header is `--size-chrome`. A
+  control is `--size-chrome` only as the small form: a control whose selector puts it inside a
+  strip. A field of several lines is a whole number of controls. A control is what the rule's
+  subject names (each selector of a list on its own, a nested rule as its full selector, an
+  `:is()` or `:where()` as each selector in it): a `button`, `select`, `textarea` or non-toggle
+  `input`, or a class some component gives a control (a list's row is its list's). A strip or a pane header is a class named for one (`-bar`,
   `-strip`, `-head`, `-tabs`, `strip-*`, the three strips, `.pane-chips`, the status line; not
   a chart's bar or a side's column) and the rows of controls a strip or a pane's top line draws
   as part of itself (`.pane-task-ends`, `.tab-tasks`, and the top line's chips). **The pane's

@@ -52,7 +52,7 @@ pub struct Forget<'a> {
 pub fn forget(root: &Path, ask: &Forget, say: Sink) -> (u8, bool) {
     let name = ask.name;
     if let Some(refused) = crate::personas::name_refusal(root, name) {
-        say(Say::Fail(refused));
+        say(Say::Fail(refused.into()));
         return (1, false);
     }
     let owner = if ask.shared {
@@ -72,14 +72,15 @@ pub fn forget(root: &Path, ask: &Forget, say: Sink) -> (u8, bool) {
             } else {
                 "persistent"
             };
-            say(Say::Done(format!(
-                "Forgot '{}' from {name}'s {kind} memory.",
-                ask.slug
-            )));
+            say(Say::Done(
+                format!("Forgot '{}' from {name}'s {kind} memory.", ask.slug).into(),
+            ));
             (0, !ask.ephemeral)
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            say(Say::Fail(format!("no memory '{}' in that store", ask.slug)));
+            say(Say::Fail(
+                format!("no memory '{}' in that store", ask.slug).into(),
+            ));
             (1, false)
         }
         // A slug is one file in the store; `../<elsewhere>` is a path, and the store's resolver
@@ -91,15 +92,18 @@ pub fn forget(root: &Path, ask: &Forget, say: Sink) -> (u8, bool) {
                     ask.slug.strip_suffix(".md").unwrap_or(ask.slug),
                 ) =>
         {
-            say(Say::Fail(format!(
-                "'{}' is not the slug of one memory — name a file in {}/, not a path.",
-                crate::shown::short(ask.slug),
-                super::rel(root, &dir)
-            )));
+            say(Say::Fail(
+                format!(
+                    "'{}' is not the slug of one memory — name a file in {}/, not a path.",
+                    crate::shown::short(ask.slug),
+                    super::rel(root, &dir)
+                )
+                .into(),
+            ));
             (1, false)
         }
         Err(e) => {
-            say(Say::Fail(e.to_string()));
+            say(Say::Fail(e.to_string().into()));
             (1, false)
         }
     }
@@ -142,21 +146,24 @@ impl Memory<'_> {
     /// one path segment is refused here, before any store is asked, in the words `forget` uses.
     fn persona(&self, root: &Path, say: Sink) -> Option<crate::personas::Persona> {
         if let Some(refused) = crate::personas::name_refusal(root, self.name) {
-            say(Say::Fail(refused));
+            say(Say::Fail(refused.into()));
             return None;
         }
         if !crate::contain::segment_ok(self.slug.strip_suffix(".md").unwrap_or(self.slug)) {
-            say(Say::Fail(format!(
-                "'{}' is not the slug of one memory — name a file in {}/, not a path.",
-                crate::shown::short(self.slug),
-                super::rel(root, &memory_dir(root, self.owner()))
-            )));
+            say(Say::Fail(
+                format!(
+                    "'{}' is not the slug of one memory — name a file in {}/, not a path.",
+                    crate::shown::short(self.slug),
+                    super::rel(root, &memory_dir(root, self.owner()))
+                )
+                .into(),
+            ));
             return None;
         }
         match crate::workspaces::Plane::open(root).persona(self.owner()) {
             Ok(persona) => Some(persona),
             Err(e) => {
-                say(Say::Fail(e.to_string()));
+                say(Say::Fail(e.to_string().into()));
                 None
             }
         }
@@ -165,14 +172,17 @@ impl Memory<'_> {
     /// Say why a memory operation failed; always exit 1.
     fn failed(&self, e: &std::io::Error, say: Sink) -> (u8, bool) {
         if e.kind() == std::io::ErrorKind::NotFound {
-            say(Say::Fail(format!(
-                "no memory '{}' in {} (list them: purlis persona recall {})",
-                crate::shown::short(self.slug),
-                self.place(),
-                self.name
-            )));
+            say(Say::Fail(
+                format!(
+                    "no memory '{}' in {} (list them: purlis persona recall {})",
+                    crate::shown::short(self.slug),
+                    self.place(),
+                    self.name
+                )
+                .into(),
+            ));
         } else {
-            say(Say::Fail(e.to_string()));
+            say(Say::Fail(e.to_string().into()));
         }
         (1, false)
     }
@@ -202,17 +212,20 @@ pub fn edit_memory(
     let (title, text) = opened.revised(title, text);
     match persona.edit_memory(&exact, &title, &text, memstore::Base::Read(&opened.text)) {
         Ok(path) => {
-            say(Say::Done(format!(
-                "Edited '{}' in {} → {}",
-                ask.slug,
-                ask.place(),
-                super::rel(root, &path)
-            )));
+            say(Say::Done(
+                format!(
+                    "Edited '{}' in {} → {}",
+                    ask.slug,
+                    ask.place(),
+                    super::rel(root, &path)
+                )
+                .into(),
+            ));
             (0, true)
         }
         Err(memstore::EditRefused::Io(e)) => ask.failed(&e, say),
         Err(stale) => {
-            say(Say::Fail(stale.to_string()));
+            say(Say::Fail(stale.to_string().into()));
             (1, false)
         }
     }
@@ -230,15 +243,18 @@ pub fn archive_memory(root: &Path, ask: &Memory, say: Sink) -> (u8, bool) {
     };
     match persona.archive_memory(&exact) {
         Ok(path) => {
-            say(Say::Done(format!(
-                "Archived '{}' from {} → {}. Undo: `purlis persona unarchive-memory {} {}{}`",
-                ask.slug,
-                ask.place(),
-                super::rel(root, &path),
-                ask.name,
-                memstore::undo_args(&exact, &path),
-                ask.flag()
-            )));
+            say(Say::Done(
+                format!(
+                    "Archived '{}' from {} → {}. Undo: `purlis persona unarchive-memory {} {}{}`",
+                    ask.slug,
+                    ask.place(),
+                    super::rel(root, &path),
+                    ask.name,
+                    memstore::undo_args(&exact, &path),
+                    ask.flag()
+                )
+                .into(),
+            ));
             (0, true)
         }
         Err(e) => ask.failed(&e, say),
@@ -262,12 +278,15 @@ pub fn unarchive_memory(
     };
     match persona.unarchive_memory(&exact, restore_as) {
         Ok(path) => {
-            say(Say::Done(format!(
-                "Restored '{}' to {} → {}",
-                ask.slug,
-                ask.place(),
-                super::rel(root, &path)
-            )));
+            say(Say::Done(
+                format!(
+                    "Restored '{}' to {} → {}",
+                    ask.slug,
+                    ask.place(),
+                    super::rel(root, &path)
+                )
+                .into(),
+            ));
             (0, true)
         }
         Err(e) => ask.failed(&e, say),
@@ -279,7 +298,7 @@ pub fn unarchive_memory(
 /// nothing.
 pub fn dedupe(root: &Path, name: &str, threshold: f64, say: Sink) -> u8 {
     if let Some(refused) = crate::personas::name_refusal(root, name) {
-        say(Say::Fail(refused));
+        say(Say::Fail(refused.into()));
         return 1;
     }
     let mut entries = Vec::new();
@@ -290,15 +309,15 @@ pub fn dedupe(root: &Path, name: &str, threshold: f64, say: Sink) -> u8 {
         unread.extend(missed);
     }
     for (path, code) in &unread {
-        say(Say::Fail(memstore::cannot_check(root, path, *code)));
+        say(Say::Fail(memstore::cannot_check(root, path, *code).into()));
     }
     let code = u8::from(!unread.is_empty());
     let shown = crate::curate::py_float(threshold);
     let pairs = memstore::duplicates(&entries, threshold);
     if pairs.is_empty() {
-        say(Say::Done(format!(
-            "no near-duplicate memories for '{name}' (threshold {shown})."
-        )));
+        say(Say::Done(
+            format!("no near-duplicate memories for '{name}' (threshold {shown}).").into(),
+        ));
         return code;
     }
     say(Say::Out(format!(
@@ -342,7 +361,7 @@ pub fn optimize(root: &Path, ask: &Optimize, changed: &mut dyn FnMut(), say: Sin
     if let Some(name) = name.filter(|n| *n != shared)
         && let Some(refused) = crate::personas::name_refusal(root, name)
     {
-        say(Say::Fail(refused));
+        say(Say::Fail(refused.into()));
         return 1;
     }
     let mut names = match name {
@@ -399,7 +418,7 @@ pub struct Log<'a> {
 pub fn log(root: &Path, ask: &Log, say: Sink) -> u8 {
     let name = ask.name;
     if let Some(refused) = crate::personas::name_refusal(root, name) {
-        say(Say::Fail(refused));
+        say(Say::Fail(refused.into()));
         return 1;
     }
     if let Some(message) = ask.message.filter(|m| !m.is_empty()) {
@@ -410,17 +429,20 @@ pub fn log(root: &Path, ask: &Log, say: Sink) -> u8 {
             &[("persona", name), ("msg", message)],
             ask.now,
         );
-        say(Say::Done(format!(
-            "Noted to {name}'s session activity (see `purlis persona log {name}` / `purlis \
+        say(Say::Done(
+            format!(
+                "Noted to {name}'s session activity (see `purlis persona log {name}` / `purlis \
              persona recall {name}`)."
-        )));
+            )
+            .into(),
+        ));
         return 0;
     }
     let entries = crate::trace::for_persona(root, ask.session, name, ask.n);
     if entries.is_empty() {
-        say(Say::Info(format!(
-            "no activity for '{name}' in this session yet."
-        )));
+        say(Say::Info(
+            format!("no activity for '{name}' in this session yet.").into(),
+        ));
         return 0;
     }
     for entry in &entries {

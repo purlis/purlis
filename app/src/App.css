@@ -435,10 +435,6 @@ body {
   margin-inline-start: calc(var(--space-1) - var(--tabs-gap) - var(--space-2));
 }
 
-.bar .strip-doing button.bare {
-  border-radius: calc(var(--radius-md) + 1px);
-}
-
 /* The innermost of the three strips: the chats of the workspace above, **drawn as the editor's
    own tab bar** (DS-6, #1836; ADR 0036 as amended 2026-10-12). It sits at the top of the centre
    column, directly above the chat it shows, and begins at the centre's left edge with no inset
@@ -491,8 +487,8 @@ body {
    rather than as a permanent control — an operator who never overflows the strip never sees
    it, and one who does reads how many tabs are past the edge without opening anything.
 
-   Only what is true of it on every strip lives here; what it is DRAWN as is `button.show-more`
-   below, beside the `+` it is drawn as a sibling of. */
+   Only what is true of it on every strip lives here; it is drawn as the button family's quiet
+   ghost, as the `+` beside it is (#3214). */
 .show-more {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
@@ -669,90 +665,15 @@ body {
    any button it reached that did not say the whole of what it is, the fresh mark among them. A
    button of the family draws itself; each mark below says all of its own look. */
 
-/* **A `+` drawn as a tab rather than as a button** — the operator's *"it should looks like
-   new tab, without label — just icon"*. It is the same square at the end of every strip, so
-   an operator learns it once; its accessible name is the catalogue's own words, which is the
-   one condition `docs/design-system.md` puts on an icon with no text beside it.
-
-   **It says the whole of what it is.** It used to inherit `display`, `font` and `cursor` from a
-   rule that dressed every button on the bar, which was true of the only two strips that had
-   one — and then charter-app#193 put a `+` on the workspace strip, where there is no such rule,
-   and the same class drew an inline box at the browser's own font with its icon off centre. A
-   rule that works in two places because of where it is written is one that breaks at the
-   third. */
-button.bare {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  align-self: center;
-  gap: var(--space-2);
-  min-width: var(--size-control);
-  padding: var(--space-2);
-  border: 0;
-  border-radius: var(--radius-md);
-  background: none;
-  color: var(--text-muted);
-  font: inherit;
-  cursor: pointer;
-}
-
-button.bare:hover:not(:disabled, [aria-disabled="true"]) {
-  color: var(--text-primary);
-  background: var(--surface-hover);
-  border: 0;
-}
-
-button.bare:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: var(--focus-ring-inset);
-}
-
-/* **`N more` is one of the strip's own controls, and is drawn as one** — the operator's
-   *"lets make 'N more' button looks like that buttons, to have all buttons in same style"*
-   (charter-app#193). It was three different buttons: a bordered control box on the chat strip
-   (from a rule that dressed every button on the bar, gone since #3129), a borderless one on the project strip, which is gone (#2915), and a third
-   rule of its own on the workspace strip that drew a bordered box with a different padding
-   from the chat strip's. Three looks for one control, and the difference was never anything
-   about the control — it was which ancestor's rule happened to reach it.
-
-   So it takes `button.bare`'s look, which is what the `+` beside it already wears: no border,
-   no fill, muted until a pointer is on it. That is the right family rather than merely a
-   consistent one — the `+` and this are the two things at the end of a strip that are not
-   tabs, they are pressed for the same kind of reason, and a bordered box next to a bare glyph
-   read as two different kinds of thing.
-
-   **Not `.bare` itself**, because `.bare` means *an icon and no words* and this has words: it
-   keeps its own padding for them and takes no `min-width`, so it is as wide as `12 more` is
-   and no wider. `Doer`'s `iconOnly` is the other half of that distinction, in the JSX. */
-button.show-more {
-  display: inline-flex;
-  align-items: center;
-  align-self: center;
-  gap: var(--space-1);
-  padding: var(--space-1) var(--space-3);
-  border: 0;
-  border-radius: var(--radius-md);
-  background: none;
-  color: var(--text-muted);
-  font: inherit;
-  cursor: pointer;
-}
-
-button.show-more:hover:not(:disabled, [aria-disabled="true"]) {
-  color: var(--text-primary);
-  background: var(--surface-hover);
-  border: 0;
-}
-
-button.show-more:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: var(--focus-ring-inset);
-}
+/* **The marks at the end of a strip** (the `+`, the project strip's open and create, the
+   switcher, `N more`) are the button family's quiet ghost (#3214): no box, quiet words, the
+   hover fill under the pointer. `Doer`'s `iconOnly` draws a quiet icon button, which wears
+   `bare`; `N more` is a quiet button with words, which wears `show-more`. */
 
 /* **`End this pane's chat` is not on the bar any more** — it is in each pane's own corner, and
-   `.pane-doing .ends-a-chat` below is where its danger hover now lives. The rule that was here
-   is gone with the button rather than left behind matching nothing: dead CSS is how a rule
-   comes to be copied for a reason that stopped being true. */
+   `.pane-doing > .ends-a-chat` in `paneFrame.css` is where its danger hover now lives. The
+   rule that was here is gone with the button rather than left behind matching nothing: dead
+   CSS is how a rule comes to be copied for a reason that stopped being true. */
 
 .trouble {
   margin: 0;
@@ -1885,25 +1806,8 @@ button.show-more:focus-visible {
   display: inline-flex;
 }
 
-.tasks-menu-place {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--size-chrome);
-  height: var(--size-chrome);
-  padding: 0;
-  border: none;
-  border-radius: var(--radius-md);
-  background: none;
-  color: var(--text-secondary);
-  cursor: pointer;
-}
-
-.tasks-menu-place:hover {
-  background: var(--surface-overlay);
-  color: var(--text-primary);
-}
-
+/* A line's own marks are the button family's quiet ghost (#3214); the icon here is a step
+   under the line's words. */
 .tasks-menu-place svg {
   width: 0.85rem;
   height: 0.85rem;
@@ -2141,43 +2045,6 @@ button.show-more:focus-visible {
   pointer-events: none;
 }
 
-.pane-doing button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 1.6rem;
-  padding: var(--space-1);
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: none;
-  color: var(--text-muted);
-  font: inherit;
-  cursor: pointer;
-}
-
-.pane-doing button:hover:not(:disabled, [aria-disabled="true"]) {
-  background: var(--surface-hover);
-  color: var(--text-primary);
-}
-
-.pane-doing button:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: var(--focus-ring-inset);
-}
-
-.pane-doing button:is(:disabled, [aria-disabled="true"]) {
-  opacity: 0.45;
-  cursor: default;
-}
-
-/* Ending a chat is the danger colour here as it is on a tab's `×`, and for the same reason:
-   it does the same thing. It asks first now, and a confirmation is not a licence for the
-   control to look lighter than what it does. */
-.pane-doing .ends-a-chat:hover:not(:disabled, [aria-disabled="true"]) {
-  background: var(--danger-surface);
-  color: var(--danger-text);
-}
-
 /* The trend: a bar per turn, filled in the tone its class names — the same three tokens the
    numbers use, so a green 98% and its bar can never be two greens. */
 .gauge-trend {
@@ -2235,6 +2102,17 @@ button.show-more:focus-visible {
   display: flex;
   flex: 1;
   min-height: 0;
+}
+
+/* **The opener's page scrolls as one** (#3325). The welcome, a door's page (`DoorPage.tsx`) and
+   the guided steps are drawn in `.panes` here, and their own `overflow: auto` never had a height
+   to scroll in: they grew to their content, and what was below the window's edge (Create a
+   project's Open a repo…) was cut off with no scrollbar. `.panes` is the room under the bar, a
+   stretched item of `.body`'s row, so it is the one scroller, the window's width: the wheel
+   works beside the reading column too, and the window's lines above the page scroll with it.
+   `welcome.e2e.ts` measures it at a short window. */
+.body > .panes:has(> :is(.welcome, .onboarding)) {
+  overflow-y: auto;
 }
 
 /* **The regions** (ADR 0038). A column of two: a row of the left side, the panes and the
@@ -6953,9 +6831,7 @@ nav.piece-files-head {
 
 .ui-settings-nav button:focus-visible,
 .ui-settings-raw button:focus-visible,
-.ui-setting-reset:focus-visible,
-.ui-setting-control > .ui-field + button:focus-visible,
-.ui-field:focus-visible {
+.ui-setting-reset:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: var(--focus-ring-offset);
 }
@@ -7357,20 +7233,6 @@ nav.piece-files-head {
 /* A row whose control is its answers (the forge question): the row already spaces them. */
 .ui-setting-control > .ui-setting-actions {
   margin: 0;
-}
-
-.ui-field {
-  padding: var(--space-2) var(--space-3);
-  color: var(--text-primary);
-  background: var(--surface-sunken);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  font: inherit;
-}
-
-.ui-field:disabled {
-  color: var(--text-muted);
-  cursor: default;
 }
 
 /* A setting's slider takes the row's room, up to a comfortable reach. */

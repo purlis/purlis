@@ -56,10 +56,13 @@ pub fn default_command(root: &Path, name: Option<&str>, clear: bool, say: Sink) 
                 // read-only file, an unreadable one and a full disk all land here. The file is
                 // replaced by rename (#357), so a failed write leaves it as it was; the
                 // sentence still claims nothing about it, as the recorded answer has it.
-                say(Say::Fail(format!(
-                    "could not clear the default persona: could not update {} ({e}).",
-                    manifest.display()
-                )));
+                say(Say::Fail(
+                    format!(
+                        "could not clear the default persona: could not update {} ({e}).",
+                        manifest.display()
+                    )
+                    .into(),
+                ));
                 return 1;
             }
         }
@@ -70,27 +73,34 @@ pub fn default_command(root: &Path, name: Option<&str>, clear: bool, say: Sink) 
                 // An unlink that failed removed nothing, so the file is there as it was; and
                 // charter.toml's declaration is already gone, so this dotfile is now the rung
                 // that resolves when it names a persona that exists.
-                say(Say::Fail(format!(
-                    "could not clear the default persona: could not remove {} ({e}), which is \
+                say(Say::Fail(
+                    format!(
+                        "could not clear the default persona: could not remove {} ({e}), which is \
                      left in place.",
-                    legacy.display()
-                )));
+                        legacy.display()
+                    )
+                    .into(),
+                ));
                 return 1;
             }
         }
         if had {
             say(Say::Done(
-                "Cleared the declared default persona (commit with `purlis save`).".to_string(),
+                "Cleared the declared default persona (commit with `purlis save`)."
+                    .to_string()
+                    .into(),
             ));
         } else {
-            say(Say::Info("No default persona was declared.".to_string()));
+            say(Say::Info(
+                "No default persona was declared.".to_string().into(),
+            ));
         }
         return 0;
     }
 
     if let Some(name) = name.filter(|n| !n.is_empty()) {
         if let Some(refused) = crate::personas::name_refusal(root, name) {
-            say(Say::Fail(refused));
+            say(Say::Fail(refused.into()));
             return 1;
         }
         match set_key(&manifest, "persona", "default", Some(name)) {
@@ -99,36 +109,48 @@ pub fn default_command(root: &Path, name: Option<&str>, clear: bool, say: Sink) 
                 // Not the clear's "nothing declared": the declaration is a line in this file,
                 // and there is no file to put it in. That is what the OS answered, so it is
                 // said as a fact; "could not update" would send the reader after a permission.
-                say(Say::Fail(format!(
-                    "could not declare the default persona: there is no {} to declare it in.",
-                    manifest.display()
-                )));
+                say(Say::Fail(
+                    format!(
+                        "could not declare the default persona: there is no {} to declare it in.",
+                        manifest.display()
+                    )
+                    .into(),
+                ));
                 return 1;
             }
             Err(e) => {
-                say(Say::Fail(format!(
-                    "could not declare the default persona: could not update {} ({e}).",
-                    manifest.display()
-                )));
+                say(Say::Fail(
+                    format!(
+                        "could not declare the default persona: could not update {} ({e}).",
+                        manifest.display()
+                    )
+                    .into(),
+                ));
                 return 1;
             }
         }
-        say(Say::Done(format!(
-            "Default persona declared: '{name}' → charter.toml [persona] default (shared; \
+        say(Say::Done(
+            format!(
+                "Default persona declared: '{name}' → charter.toml [persona] default (shared; \
              commit with `purlis save`)."
-        )));
+            )
+            .into(),
+        ));
         if legacy.exists() {
             // Said at the moment it becomes true, not in a `doctor` run somebody may never
             // do: from now on the two files disagree and the dotfile is the one that loses.
-            say(Say::Warn(format!(
-                "personas/.default also exists (naming '{}') and is now IGNORED — charter.toml \
+            say(Say::Warn(
+                format!(
+                    "personas/.default also exists (naming '{}') and is now IGNORED — charter.toml \
                  outranks it. Delete it: rm personas/.default",
-                legacy_default(root).unwrap_or_else(|| "?".to_string())
-            )));
+                    legacy_default(root).unwrap_or_else(|| "?".to_string())
+                )
+                .into(),
+            ));
         }
         say(Say::Info(
             "Overridden per-developer by `purlis persona use` / $CHARTER_PERSONA / --persona."
-                .to_string(),
+                .into(),
         ));
         return 0;
     }
@@ -139,20 +161,25 @@ pub fn default_command(root: &Path, name: Option<&str>, clear: bool, say: Sink) 
         say(Say::Info(
             "declared front door (charter.toml [persona] default). Change: purlis persona \
              default <name>  ·  clear: --clear"
-                .to_string(),
+                .into(),
         ));
         return 0;
     }
     match legacy_default(root) {
         Some(cur) => {
             say(Say::Out(cur.clone()));
-            say(Say::Info(format!(
-                "committed team-wide default (personas/.default) — the legacy location. Move \
+            say(Say::Info(
+                format!(
+                    "committed team-wide default (personas/.default) — the legacy location. Move \
                  it: purlis persona default {cur}"
-            )));
+                )
+                .into(),
+            ));
         }
         None => say(Say::Info(
-            "No default persona declared. Set one: purlis persona default <name>".to_string(),
+            "No default persona declared. Set one: purlis persona default <name>"
+                .to_string()
+                .into(),
         )),
     }
     0

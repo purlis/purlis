@@ -16,11 +16,11 @@ use crate::repocmd::{Say, Sink};
 /// ephemeral scratch is counted.
 pub fn show(root: &Path, state: &Path, name: &str, session: &str, say: Sink) -> u8 {
     if let Some(refused) = crate::personas::name_refusal(root, name) {
-        say(Say::Fail(refused));
+        say(Say::Fail(refused.into()));
         return 1;
     }
     let Some(def) = super::resolve(root, name) else {
-        say(Say::Fail(format!("persona '{name}' does not load")));
+        say(Say::Fail(format!("persona '{name}' does not load").into()));
         return 1;
     };
     let out = |text: String, say: Sink| say(Say::Out(text));
@@ -133,7 +133,9 @@ fn memory_summary(root: &Path, name: &str, session: &str, say: Sink) -> bool {
         "         personas/{name}/memory/  ·  recall: purlis persona recall {name}"
     )));
     for (path, code) in &unread {
-        say(Say::Fail(crate::memstore::cannot_check(root, path, *code)));
+        say(Say::Fail(
+            crate::memstore::cannot_check(root, path, *code).into(),
+        ));
     }
     !unread.is_empty()
 }

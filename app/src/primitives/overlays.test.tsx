@@ -13,7 +13,7 @@
  * - **a dialog still works**: it is announced by its title, the keyboard stays in it, and Escape
  *   leaves it; a popover opens from the keyboard and says what it is;
  * - **every overlay in the window wears the surface**, and every button in one the shared
- *   button, read from the source the way `controls.test.tsx` reads the menus;
+ *   button, read from the source the way `controls.guard.test.ts` reads every control;
  * - **`App.css` draws no overlay surface of its own**: the classes it keeps (`.row-card`) only
  *   place and size theirs.
  */
@@ -46,13 +46,14 @@ const RULES: [string, string][] = [...CSS.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map
 );
 
 describe("the overlays stylesheet", () => {
-  it("is in the components layer, after the controls it shares a surface with", () => {
+  it("is in the components layer, after the control families whose controls stand on it", () => {
     const styles = sheet("styles.css");
     // In parts: the stylesheet guard reads a quoted path ending in the extension as an import.
     const overlays = ['@import "./primitives/overlays', 'css" layer(components);'].join(".");
-    const controls = ['@import "./primitives/controls', 'css" layer(components);'].join(".");
+    const button = ['@import "./ui/button/button', 'css" layer(components);'].join(".");
     expect(styles).toContain(overlays);
-    expect(styles.indexOf(overlays)).toBeGreaterThan(styles.indexOf(controls));
+    expect(styles.indexOf(button)).toBeGreaterThan(-1);
+    expect(styles.indexOf(overlays)).toBeGreaterThan(styles.indexOf(button));
   });
 
   it("reads only tokens", () => {
@@ -253,15 +254,15 @@ const PARTS: [RegExp, string][] = [
 const FAMILY = /^(AnchoredPopover|HeldPopover|PopoverDialog|Menu|InlineMenu)$/;
 
 /** A native control inside an overlay, and the class it must wear. A button of the button family
- *  is `Button` (#2904), so a native `<button>` left inside one is a row, a segment or a menu's
- *  row. */
+ *  is `Button` (#2904), a segment the choice family's and a menu's row the menu family's, so a
+ *  native `<button>` left inside one is a list's row. */
 const NATIVE: Record<string, string[]> = {
-  button: ["ui-row", "ui-tree-row", "ui-segmented-item", "ui-menu-item"],
-  // A box is the field family's (#2905), in a dialog's settings row too, so a native box left
-  // inside one is never right; a select in a settings row is the set's own (`.ui-field`).
+  button: ["ui-row", "ui-tree-row"],
+  // A box is the field family's (#2905), in a dialog's settings row too, and a select the select
+  // family's (#2906, #3289), so a native one left inside an overlay is never right.
   input: [],
   textarea: [],
-  select: ["ui-select", "ui-field"],
+  select: [],
 };
 
 /** The button family's members (`ui/button/Button.tsx`), which draw their own look. */
