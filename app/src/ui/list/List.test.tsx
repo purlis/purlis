@@ -310,6 +310,29 @@ describe("a row's own tooltip, menu and keys (ADR 0104, 2026-10-24)", () => {
     }
   });
 
+  it("stands by the pointer, not the whole row, so a row across the window leaves it room (#3328)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      render(<Tipped />);
+      // A row from the rail to the window's edge: the left panel closed.
+      vi.spyOn(row(), "getBoundingClientRect").mockReturnValue(
+        DOMRect.fromRect({ x: 110, y: 400, width: 914, height: 24 }),
+      );
+      fireEvent.pointerEnter(row(), { clientX: 200, pointerType: "mouse" });
+      fireEvent.pointerMove(row(), { clientX: 300, pointerType: "mouse" });
+      await act(async () => {
+        vi.advanceTimersByTime(TOOLTIP_DELAY + 10);
+      });
+      expect(screen.getByRole("tooltip")).toHaveTextContent("2026-10-10 09:12");
+      const anchor = row().querySelector<HTMLElement>('[data-part="tip-anchor"]');
+      // Where the pointer rested as the delay ran out, a line with no width.
+      expect(anchor?.style.left).toBe("190px");
+      expect(anchor?.style.width).toBe("0px");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("opens its menu on a right-click, and on the menu key on its first row", async () => {
     render(<Tipped />);
     fireEvent.contextMenu(row());

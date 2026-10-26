@@ -119,8 +119,12 @@
   outline-offset: calc(var(--focus-ring-width) * -1);
 }
 
+/* The name clips to draw its ellipsis, so its own line is the body's, not the chip's `1`: a box
+   exactly the font size tall cut the descenders off (the g of git-ci-cd, #3326). The chip is
+   28px and centres it, so its height and its neighbours do not move. */
 [data-part="name"][data-scope="titlebar"] {
   overflow: hidden;
+  line-height: var(--line-height-body);
   text-overflow: ellipsis;
 }
 

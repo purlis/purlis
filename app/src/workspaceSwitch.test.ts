@@ -14,6 +14,16 @@ import {
   workspacesKeyCap,
   workspacesKeySaid,
 } from "./workspaceSwitch";
+import {
+  FRAME,
+  leftward,
+  merged,
+  MOMENTUM,
+  played,
+  SLOW_STROKE,
+  STROKE,
+  type Traced,
+} from "./swipeTraces.testkit";
 
 const PINS = ["smart-ide", "charter", "skills"];
 
@@ -74,6 +84,116 @@ describe("one swipe steps one pin (R112)", () => {
     const swipe = new Swipe();
     expect(swipe.feed(50, 0)).toBeUndefined();
     expect(swipe.feed(50, 500)).toBeUndefined();
+  });
+});
+
+describe("a trackpad's swipes, momentum and all (#3327, R112)", () => {
+  /** The steps a trace takes, with the index of the event that took each. */
+  const steps = (trace: readonly Traced[], swipe = new Swipe()) =>
+    trace.flatMap(({ dx, at }, n) => {
+      const step = swipe.feed(dx, at);
+      return step === undefined ? [] : [{ step, n }];
+    });
+
+  it("steps once for a stroke and its whole momentum", () => {
+    const trace = played([[...STROKE, ...MOMENTUM]]);
+    expect(steps(trace)).toEqual([{ step: 1, n: 5 }]);
+  });
+
+  it("steps again for a second stroke started in the first one's momentum tail", () => {
+    // The fingers touch down again as the tail fades: momentum stops and the next stroke ramps.
+    const trace = played([STROKE, MOMENTUM.slice(0, 30), STROKE], 0, FRAME * 2);
+    const first = STROKE.length + 30;
+    expect(steps(trace).map(({ step }) => step)).toEqual([1, 1]);
+    expect(steps(trace)[1].n).toBeGreaterThan(first);
+  });
+
+  it("steps again for a second stroke right after the momentum ends, without a quiet", () => {
+    const trace = played([[...STROKE, ...MOMENTUM], STROKE], 0, FRAME * 3);
+    expect(steps(trace).map(({ step }) => step)).toEqual([1, 1]);
+  });
+
+  it("steps back for a stroke the other way in the momentum", () => {
+    const trace = played([STROKE, MOMENTUM.slice(0, 12), leftward(STROKE)]);
+    expect(steps(trace).map(({ step }) => step)).toEqual([1, -1]);
+  });
+
+  it("takes three strokes in a row, each in the one before's tail, as three steps", () => {
+    const tail = MOMENTUM.slice(0, 34);
+    const trace = played([STROKE, tail, STROKE, tail, STROKE, MOMENTUM], 0, FRAME * 2);
+    expect(steps(trace).map(({ step }) => step)).toEqual([1, 1, 1]);
+  });
+
+  it("never steps twice for one stroke, however its tail wavers", () => {
+    // Rounding gives a tail repeats and one-pixel upticks; none is a new stroke.
+    const wavering = MOMENTUM.map((dx, n) => (n % 3 === 2 && dx > 1 ? dx + 1 : dx));
+    expect(steps(played([[...STROKE, ...wavering]])).length).toBe(1);
+  });
+
+  it("never steps twice for a stroke whose events WebKit merged, wherever and however many", () => {
+    // A busy page (a switch is one) gets its wheel events merged, their travel summed.
+    const twice: string[] = [];
+    for (const [named, stroke] of [
+      ["stroke", STROKE],
+      ["slow stroke", SLOW_STROKE],
+    ] as const) {
+      const whole = played([[...stroke, ...MOMENTUM]]);
+      for (let count = 2; count <= 7; count++)
+        for (let start = 0; start + count <= whole.length; start++)
+          if (steps(merged(whole, start, count)).length !== 1)
+            twice.push(`${named}: ${count} at ${start}`);
+    }
+    expect(twice).toEqual([]);
+  });
+
+  it("never steps twice for a merge at the peak and another in the tail", () => {
+    const whole = played([[...STROKE, ...MOMENTUM]]);
+    // The render right after the step merges the peak; a later one merges part of the tail.
+    for (const [peak, tail] of [
+      [2, 3],
+      [3, 2],
+      [5, 3],
+      [7, 5],
+    ])
+      for (let at = 20; at + tail <= whole.length - peak + 1; at++) {
+        const trace = merged(merged(whole, 6, peak), at, tail);
+        expect({ peak, tail, at, steps: steps(trace).length }).toEqual({
+          peak,
+          tail,
+          at,
+          steps: 1,
+        });
+      }
+  });
+
+  it("still steps again for a second stroke whose events WebKit merged", () => {
+    const trace = played([STROKE, MOMENTUM.slice(0, 30), STROKE], 0, FRAME * 2);
+    const second = STROKE.length + 30;
+    expect(steps(merged(trace, second + 2, 3)).map(({ step }) => step)).toEqual([1, 1]);
+  });
+
+  it("never steps twice for one event that came late from a busy page, unmerged", () => {
+    // Read alone it is slow, as if the tail had faded; the next event is the stroke going on.
+    const late = played([STROKE.slice(0, 7)]);
+    const last = late[late.length - 1].at;
+    const trace = [...late, { dx: 40, at: last + 200 }, { dx: 40, at: last + 202 }];
+    expect(steps(trace).length).toBe(1);
+  });
+
+  it("never steps twice for a one-pixel turn the other way in the tail", () => {
+    const jitter = MOMENTUM.map((dx, n) => (n === 15 ? -1 : dx));
+    expect(steps(played([[...STROKE, ...jitter]])).length).toBe(1);
+  });
+
+  it("never steps twice for a stroke that ramps up slowly and unevenly", () => {
+    expect(steps(played([[...SLOW_STROKE, ...MOMENTUM]])).length).toBe(1);
+  });
+
+  it("never steps twice for a slow stroke whose opening frames came merged", () => {
+    // The page was busy as the swipe began: its first five frames arrive as one event, which
+    // has no gap to read a speed from, so the ramp after it is not a tail rising again.
+    const trace = merged(played([[...SLOW_STROKE, ...MOMENTUM]]), 0, 5);
+    expect(steps(trace).length).toBe(1);
   });
 });
 
