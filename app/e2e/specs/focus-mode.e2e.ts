@@ -119,6 +119,7 @@ async function workWidth(): Promise<number> {
 
 /** Focus mode's key, from the page, until the window is `want`. */
 async function focusModeTo(want: boolean): Promise<void> {
+  if ((await inFocusMode()) === want) return;
   // A modal keeps the window's keys (the operator's ruling): none is left up for this, and one
   // still leaving (its exit drawn) is waited out.
   await noDialogIsLeftUp();
@@ -224,6 +225,13 @@ describe("focus mode", function () {
       timeoutMsg: `no pane showed ${READY}`,
     });
     if (await inFocusMode()) await focusModeTo(false);
+  });
+
+  // **Each case starts out of focus mode, with no key held**: a modifier an earlier spec's driver
+  // left down would make its Enter this spec's Ctrl+Shift+Enter.
+  beforeEach(async () => {
+    await browser.releaseActions().catch(() => undefined);
+    await focusModeTo(false);
   });
 
   after(async () => {
