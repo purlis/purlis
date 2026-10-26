@@ -1465,7 +1465,7 @@ pub(super) fn allow_from_primary(theme: &ResolvedTheme) -> Vec<AllowLook> {
 }
 
 /// A variant's button colours as the engine holds them, for the test that holds them to
-/// `controls.css`: at rest, under the pointer, and selected.
+/// `ui/button/button.css`: at rest, under the pointer, and selected.
 #[cfg(test)]
 pub(super) fn defaults_json(variant: &str) -> Value {
     let rest = button_look(variant, None);
