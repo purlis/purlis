@@ -115,7 +115,8 @@ fn a_refused_skill_call_or_a_sub_agents_stop_changes_nothing() {
 #[test]
 fn a_skill_use_skill_typed_is_on_the_chats_tab_from_the_prompt_it_was_typed_into() {
     let (runs, told) = listening();
-    use purlis_core::skillspan::{Confirmed, PromptMarks, Typed};
+    use purlis_core::skillspan::{Confirmed, PromptMarks, PromptSalt, Typed};
+    let salt = PromptSalt::of_chat("01JB00000000000000000000C4").unwrap();
     runs.typed(
         4,
         Typed {
@@ -123,7 +124,7 @@ fn a_skill_use_skill_typed_is_on_the_chats_tab_from_the_prompt_it_was_typed_into
             run: RUN.parse().unwrap(),
             workspace: None,
             level: None,
-            text: PromptMarks::digest("$deploy"),
+            text: PromptMarks::digest("$deploy", &salt),
             confirmed: Confirmed::ByPrompt,
         },
     );
@@ -131,7 +132,7 @@ fn a_skill_use_skill_typed_is_on_the_chats_tab_from_the_prompt_it_was_typed_into
     assert_eq!(told.try_iter().count(), 0);
 
     let mut sent = report(4, Event::UserPromptSubmit);
-    sent.detail.prompt_marks = PromptMarks::of("$deploy");
+    sent.detail.prompt_marks = PromptMarks::of("$deploy", &salt);
     runs.reported(&sent);
     runs.heard(&call(4, "toolu_1", None));
     runs.reported(&report(4, Event::Stop));

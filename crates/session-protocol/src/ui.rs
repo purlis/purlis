@@ -318,6 +318,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // answer alone. No chat answers its own Ask.
     "allow_chat_browser",
     "keep_chat_browser_off",
+    // Whether a persona's browser logins may be filled on a pool's runner (#2050): the person's
+    // answer alone. No chat opts itself in.
+    "answer_pool_login",
     // A chat's browser sites (#2018): the person's answer alone. No chat allows its own
     // browser a site.
     "allow_browser_sites",
@@ -712,6 +715,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     // is, since they hold pictures of the chat's pages.
     "chat_browser_timeline",
     "chat_browser_timeline_shot",
+    // The person's own browsers a crash of the window left running, for their view tabs
+    // (#2025): the window's alone, as watching is.
+    "browsers_taken_back",
+    "browser_viewed",
     // The person's own theme choice, and the move of their old theme file into a theme folder
     // (#2323): each writes how their window looks on this machine, and the move moves their
     // file, so only their press in the window makes either.

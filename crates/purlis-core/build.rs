@@ -24,7 +24,7 @@
 //! news` became the app's own CHANGELOG.md, #352.)
 
 use std::fmt::Write as _;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 fn main() {
     // `charter news` compiles the repository's CHANGELOG.md in with `include_str!`, which
@@ -45,6 +45,7 @@ fn main() {
         "FILES",
         "Every project template's files, as `(<template>/<path>, text)`, sorted by path.",
     );
+    families();
     println!("cargo:rustc-env=PURLIS_BUILD_PROFILE={}", profile());
     println!(
         "cargo:rustc-env=PURLIS_RELEASE_VERSION={}",
@@ -188,4 +189,202 @@ fn compile(dir: &str, out: &str, konst: &str, doc: &str, key: impl Fn(&str) -> S
     let target = Path::new(&std::env::var("OUT_DIR").expect("cargo sets OUT_DIR")).join(out);
     std::fs::write(&target, text)
         .unwrap_or_else(|e| panic!("cannot write {}: {e}", target.display()));
+}
+
+/// **What the first twelve manifest versions shipped, in the order they shipped it** (ADR 0103):
+/// the order `purlis theme parts` lists them in and version 12's digest was taken over. Frozen: a
+/// family that came in later is placed by the version it came in, then its name ([`families`]),
+/// so no family is ever added here.
+const SHIPPED: [&str; 18] = [
+    "button",
+    "field",
+    "text-input",
+    "textarea",
+    "tabs",
+    "editor",
+    "panel",
+    "panel-section",
+    "empty-state",
+    "status-item",
+    "tooltip",
+    "popover",
+    "menu",
+    "dialog",
+    "rail",
+    "activity",
+    "list",
+    "titlebar",
+];
+
+/// One family a family's file declares: its module, its constant, its name and the version it
+/// came in (`u32::MAX` for `super::NEXT`, which no release has given a number yet).
+struct Declared {
+    module: String,
+    konst: String,
+    name: String,
+    since: u32,
+}
+
+/// **The component parts manifest, assembled from each family's own file** (spec #2897, the
+/// operator's ruling of 2026-10-26 that two family pull requests never touch the same lines).
+///
+/// Every `src/theme/parts_<module>.rs` that is not a test is a module of `theme::parts`, and each
+/// `pub(super) const <NAME>: Family = Family {` at the start of a line in it is a family of
+/// `theme::parts::MANIFEST`: the family's own `name:` and `since:` are its lines at one
+/// indent inside it. Every `src/theme/parts_<module>_tests.rs` is a test module
+/// of `theme`. Both are written to `OUT_DIR`, which `parts.rs` and `theme.rs` include.
+///
+/// The order is what [`SHIPPED`] says for what it names, then by `since` and name, NEXT last: a
+/// family's place depends on nothing another pull request writes.
+fn families() {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/theme");
+    println!("cargo:rerun-if-changed={}", dir.display());
+    let mut files: Vec<(String, PathBuf)> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", dir.display()))
+        .map(|entry| {
+            let entry =
+                entry.unwrap_or_else(|e| panic!("cannot read an entry of {}: {e}", dir.display()));
+            (
+                entry.file_name().to_string_lossy().into_owned(),
+                entry.path(),
+            )
+        })
+        .filter(|(name, _)| name.starts_with("parts_") && name.ends_with(".rs"))
+        .collect();
+    files.sort();
+
+    let mut modules = String::new();
+    let mut tests = String::new();
+    let mut declared: Vec<Declared> = Vec::new();
+    for (name, path) in &files {
+        println!("cargo:rerun-if-changed={}", path.display());
+        let stem = &name["parts_".len()..name.len() - ".rs".len()];
+        let plain = stem
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_');
+        assert!(
+            plain,
+            "{name}: a family file is named parts_<snake_case>.rs"
+        );
+        // The engine's own tests, which `theme.rs` declares.
+        if stem == "tests" {
+            continue;
+        }
+        if stem.ends_with("_tests") {
+            writeln!(
+                tests,
+                "#[cfg(test)]\n#[path = {:?}]\nmod parts_{stem};",
+                path.to_string_lossy()
+            )
+            .expect("writing to a String cannot fail");
+            continue;
+        }
+        writeln!(
+            modules,
+            "#[path = {:?}]\nmod {stem};",
+            path.to_string_lossy()
+        )
+        .expect("writing to a String cannot fail");
+        let text = std::fs::read_to_string(path)
+            .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+        declared.extend(declared_in(stem, name, &text));
+    }
+
+    for (at, one) in declared.iter().enumerate() {
+        assert!(
+            declared[..at].iter().all(|other| other.name != one.name),
+            "two families are named {:?}",
+            one.name
+        );
+    }
+    let place = |one: &Declared| {
+        let shipped = SHIPPED.iter().position(|name| *name == one.name);
+        (
+            shipped.unwrap_or(SHIPPED.len()),
+            one.since,
+            one.name.clone(),
+        )
+    };
+    declared.sort_by_key(place);
+    for name in SHIPPED {
+        assert!(
+            declared.iter().any(|one| one.name == name),
+            "{name} shipped in the manifest and no family file declares it: a released family is \
+             never taken away"
+        );
+    }
+
+    let mut text =
+        String::from("// Generated by `build.rs` (`families`) from `src/theme/parts_*.rs`.\n\n");
+    text.push_str(&modules);
+    text.push_str(
+        "\n/// **The closed manifest**: every family a theme may name, each declared in its own file\n\
+         /// (`parts_<family>.rs`) and assembled by `build.rs`: what the first twelve versions\n\
+         /// shipped in the order they shipped it, then each later family by the version it came in\n\
+         /// and its name.\npub const MANIFEST: &[Family] = &[\n",
+    );
+    for one in &declared {
+        writeln!(text, "    {}::{},", one.module, one.konst)
+            .expect("writing to a String cannot fail");
+    }
+    text.push_str("];\n");
+    let out = PathBuf::from(std::env::var("OUT_DIR").expect("cargo sets OUT_DIR"));
+    for (file, body) in [
+        ("theme_parts_families.rs", text),
+        ("theme_parts_tests.rs", tests),
+    ] {
+        let target = out.join(file);
+        std::fs::write(&target, body)
+            .unwrap_or_else(|e| panic!("cannot write {}: {e}", target.display()));
+    }
+}
+
+/// Every family `text`, the file `name` of module `module`, declares.
+fn declared_in(module: &str, name: &str, text: &str) -> Vec<Declared> {
+    let mut found = Vec::new();
+    let mut lines = text.lines();
+    while let Some(line) = lines.next() {
+        let Some(konst) = line
+            .strip_prefix("pub(super) const ")
+            .and_then(|rest| rest.strip_suffix(": Family = Family {"))
+        else {
+            // A family declared in another shape would be left out of the manifest in silence.
+            assert!(
+                !line.contains(": Family = Family"),
+                "{name}: {line:?} declares a family build.rs cannot read: write it \
+                 `pub(super) const <NAME>: Family = Family {{` alone on its line"
+            );
+            continue;
+        };
+        let mut family_name = None;
+        let mut since = None;
+        for inside in lines.by_ref() {
+            if inside == "};" {
+                break;
+            }
+            if let Some(said) = inside.strip_prefix("    name: ") {
+                family_name
+                    .get_or_insert_with(|| said.trim_end_matches(',').trim_matches('"').to_owned());
+            } else if let Some(said) = inside.strip_prefix("    since: ") {
+                let said = said.trim_end_matches(',');
+                since.get_or_insert_with(|| {
+                    if said == "super::NEXT" {
+                        u32::MAX
+                    } else {
+                        said.parse().unwrap_or_else(|_| {
+                            panic!("{name}: {konst}'s since is {said:?}: a number or super::NEXT")
+                        })
+                    }
+                });
+            }
+        }
+        found.push(Declared {
+            module: module.to_owned(),
+            konst: konst.to_owned(),
+            name: family_name
+                .unwrap_or_else(|| panic!("{name}: {konst} has no `name:` of its own")),
+            since: since.unwrap_or_else(|| panic!("{name}: {konst} has no `since:` of its own")),
+        });
+    }
+    found
 }

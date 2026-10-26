@@ -184,6 +184,8 @@ pub struct ChatForSkills {
     pub persona: Option<String>,
     /// Its harness, `None` for a shell or a program purlis has no adapter for.
     pub harness: Option<Harness>,
+    /// What its prompts are digested under (SK-38): its own id, which its hooks read too.
+    pub salt: Option<purlis_core::skillspan::PromptSalt>,
 }
 
 /// One chat open here, as its theme drafts are found and named ([`Chats::drafting`]).
@@ -1270,6 +1272,11 @@ impl Chats {
         self.pools_in = config;
     }
 
+    /// This machine's config home, where the pools it keeps are, where it keeps any (#2050).
+    pub fn pools_in(&self) -> Option<PathBuf> {
+        self.pools_in.clone()
+    }
+
     /// This device's id, as [`Self::on_device`] gave it, or `None` where the machine store has
     /// none. It names the work link log a chat's link goes in (ADR 0088 §3).
     pub fn device(&self) -> Option<&str> {
@@ -2149,6 +2156,13 @@ impl Chats {
 
     /// Whether a session of the chat whose id is `id` is open: what its grants last as long
     /// as (D-1348-1).
+    /// **Chat `session`'s identity** (ADR 0066), where it is open and its record has one.
+    pub fn id_of(&self, session: u32) -> Option<String> {
+        lock(&self.open)
+            .get(&session)
+            .and_then(|one| one.chat.identity.id.clone())
+    }
+
     pub fn id_is_open(&self, id: &str) -> bool {
         lock(&self.open)
             .values()
@@ -4724,6 +4738,12 @@ impl Chats {
             workspace: running.workspace.clone(),
             persona: running.persona().started_as,
             harness: running.harness,
+            salt: running
+                .chat
+                .identity
+                .id
+                .as_deref()
+                .and_then(purlis_core::skillspan::PromptSalt::of_chat),
         })
     }
 
@@ -5189,6 +5209,13 @@ impl Chats {
     /// chat put back reattached is closed (#2006): once a put back has settled.
     pub(crate) fn close_what_was_not_reattached(&self) {
         self.sessions.close_what_was_not_reattached();
+    }
+
+    /// **The browsers the session host still runs, or ran, in this project from before this
+    /// window** (#2025), each once: what the project's put back takes back with their chats, or
+    /// ends.
+    pub(crate) fn browsers_left(&self) -> Vec<purlis_session_protocol::session::HeldProgram> {
+        self.sessions.browsers_left()
     }
 
     /// The second half of putting a record back: **starts** what

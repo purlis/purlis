@@ -18,6 +18,7 @@
 
 /// <reference types="node" />
 import { readFileSync } from "node:fs";
+import { readBuiltInThemes } from "../../.storybook/builtInThemes";
 import { join } from "node:path";
 
 /** Vitest's working directory is `app`. */
@@ -26,10 +27,9 @@ const STORYBOOK = join(process.cwd(), ".storybook");
 /** One appearance of a built-in theme, by reference into `built-in-themes.json`. */
 type Cell = { theme: string; appearance: string };
 
-const themes = JSON.parse(readFileSync(join(STORYBOOK, "built-in-themes.json"), "utf8")) as Record<
-  string,
-  Record<string, { name: string; appearance: string }>
->;
+const themes = readBuiltInThemes<{ name: string; appearance: string }>(
+  join(STORYBOOK, "built-in-themes.json"),
+);
 
 const atCreation = JSON.parse(readFileSync(join(STORYBOOK, "at-creation.json"), "utf8")) as {
   default: Cell;

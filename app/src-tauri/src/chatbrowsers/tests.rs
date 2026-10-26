@@ -20,6 +20,8 @@ use super::{
 #[derive(Default)]
 struct Hosted {
     started: Mutex<Vec<BrowserReach>>,
+    /// The pool each browser started on, in order, or none for this machine (#2050).
+    on_pools: Mutex<Vec<Option<String>>>,
     acts: Mutex<Vec<(String, String, Act)>>,
     /// What each act was told its browser reaches from then on (#2018).
     reached: Mutex<Vec<BrowserReach>>,
@@ -57,6 +59,10 @@ struct Hosted {
     holds_from: Mutex<Option<u32>>,
     /// How many closes wait now.
     waiting: Mutex<u32>,
+    /// The note the window last kept of each browser in the host, by program (#2025).
+    notes: Mutex<std::collections::HashMap<String, super::Note>>,
+    /// How many notes were sent.
+    notes_sent: Mutex<u32>,
 }
 
 impl Hosted {
@@ -97,6 +103,7 @@ impl Driver for Hosted {
     fn start(
         &self,
         _root: &Path,
+        pool: Option<&str>,
         reach: BrowserReach,
         kept: Option<purlis_session_protocol::browsing::KeptLogin>,
     ) -> Result<String, NotStarted> {
@@ -107,6 +114,7 @@ impl Driver for Hosted {
             return Err(not);
         }
         self.kept.lock().unwrap().push(kept);
+        self.on_pools.lock().unwrap().push(pool.map(str::to_owned));
         let mut started = self.started.lock().unwrap();
         started.push(reach);
         Ok(format!("program-{}", started.len()))
@@ -208,6 +216,14 @@ impl Driver for Hosted {
         }
         Ok(self.host_drives.lock().unwrap().clone())
     }
+
+    fn note(&self, _root: &Path, program: &str, note: &super::Note) {
+        *self.notes_sent.lock().unwrap() += 1;
+        self.notes
+            .lock()
+            .unwrap()
+            .insert(program.to_owned(), note.clone());
+    }
 }
 
 fn ask(chat: u32, asked: Browsing) -> BrowseAsk {
@@ -215,6 +231,7 @@ fn ask(chat: u32, asked: Browsing) -> BrowseAsk {
         chat,
         browser: None,
         call_id: "c-1".into(),
+        waited: false,
         asked,
     }
 }
@@ -263,6 +280,7 @@ fn answered_started(
     browsers.answer(
         Some(&driver),
         Path::new("/p"),
+        None,
         browse,
         &|| reach(),
         unsandboxed,
@@ -285,6 +303,7 @@ fn logins(name: &str) -> super::ReadLogin {
             user: None,
             password: Secret::new(LOGIN_VALUE.into()),
             keep: Some(kept_as(name)),
+            identity: Some(IDENTITY.into()),
         },
         opens: name == "kept-login",
         identity: IDENTITY.into(),
@@ -600,6 +619,7 @@ fn a_running_browser_ends_when_its_chats_reach_narrows_and_the_next_opens_on_wha
     let (answer, _) = browsers.answer(
         Some(&driver),
         Path::new("/p"),
+        None,
         &ask(3, click()),
         &|| narrower.clone(),
         false,
@@ -665,6 +685,7 @@ fn with_no_session_host_there_is_no_browser_and_the_chat_is_told_so() {
             .answer(
                 None,
                 Path::new("/p"),
+                None,
                 &ask(3, click()),
                 &|| reach(),
                 false,
@@ -1512,6 +1533,7 @@ fn answered_at(
         .answer(
             Some(&driver),
             Path::new("/p"),
+            None,
             browse,
             &|| reach(),
             true,
@@ -2715,6 +2737,243 @@ fn two_logins_at_once_in_one_browser_hold_its_purlis_mark_until_both_have_answer
     assert_eq!(driver(&browsers), None);
 }
 
+// ---- Browsers on runners (#2050) ----
+
+#[test]
+fn a_chat_on_a_pools_runner_has_its_browser_started_on_that_runner() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    let driver: Arc<dyn Driver> = hosted.clone();
+    let on_builds = |browse: &BrowseAsk| {
+        browsers.answer(
+            Some(&driver),
+            Path::new("/p"),
+            Some("builds"),
+            browse,
+            &|| reach(),
+            false,
+            &AsPersona::default,
+            &logins,
+            1000,
+        )
+    };
+    on_builds(&ask(3, click()));
+    browsers.allow(3, false);
+
+    let (answer, _) = on_builds(&ask(3, click()));
+    answered(&browsers, &hosted, &ask(4, click()));
+    browsers.allow(4, false);
+    answered(&browsers, &hosted, &ask(4, click()));
+
+    assert!(matches!(answer, Answer::Browsed { .. }), "{answer:?}");
+    assert_eq!(
+        *hosted.on_pools.lock().unwrap(),
+        [Some("builds".to_owned()), None],
+        "chat 3's on its pool's runner, chat 4's on this machine"
+    );
+}
+
+fn a_pool_as(image: &str) -> purlis_core::poollogins::Bound {
+    purlis_core::poollogins::Bound {
+        pool: "builds".into(),
+        definition: format!("defined with {image}"),
+        image: image.into(),
+        runner: "01JB0RUNNER0000000000000000".into(),
+        runner_key: "ab".repeat(32),
+        runner_image: image.into(),
+        engine: "this machine's Docker (/var/run/docker.sock)".into(),
+    }
+}
+
+/// Chat `session`'s login `login` (its identity `id-<login>`) on `pool`, at `now`.
+fn on_the_pool(
+    browsers: &ChatBrowsers,
+    session: u32,
+    persona: &str,
+    pool: &purlis_core::poollogins::Bound,
+    login: &str,
+    waited: bool,
+    now: u64,
+) -> Result<(), (String, bool)> {
+    browsers.pool_login(
+        session,
+        persona,
+        pool,
+        login,
+        &format!("id-{login}"),
+        waited,
+        now,
+    )
+}
+
+#[test]
+fn a_runner_chats_first_login_asks_once_whether_its_personas_login_may_be_filled_on_the_pool() {
+    let browsers = ChatBrowsers::default();
+    let pool = a_pool_as("aaaa");
+
+    let first = on_the_pool(&browsers, 3, "steward", &pool, "shop-login", false, 1000);
+    let again = on_the_pool(&browsers, 3, "steward", &pool, "shop-login", false, 1001);
+
+    let (why, raised) = first.expect_err("asked, and nothing filled");
+    assert!(raised, "the first raises its Ask");
+    assert!(why.contains("pool builds"), "{why}");
+    assert!(why.contains("steward's login shop-login"), "{why}");
+    assert!(why.contains("filled nothing"), "{why}");
+    assert!(!again.expect_err("still asked").1, "and only the first");
+    let waits = browsers.pool_logins_waiting();
+    assert_eq!(waits.len(), 1);
+    assert_eq!(
+        (
+            waits[0].session,
+            waits[0].persona.as_str(),
+            waits[0].identity.as_str(),
+            waits[0].changed
+        ),
+        (3, "steward", "id-shop-login", false)
+    );
+}
+
+#[test]
+fn once_the_person_allows_a_login_on_the_pool_that_login_goes_ahead_and_no_other() {
+    let browsers = ChatBrowsers::default();
+    let pool = a_pool_as("aaaa");
+    let _ = on_the_pool(&browsers, 3, "steward", &pool, "shop-login", false, 1000);
+    let _ = on_the_pool(&browsers, 4, "steward", &pool, "shop-login", false, 1000);
+    let _ = on_the_pool(&browsers, 5, "steward", &pool, "bank-login", false, 1000);
+    let _ = on_the_pool(&browsers, 6, "reviewer", &pool, "shop-login", false, 1000);
+
+    let answered = browsers.answer_pool_login(3, true);
+
+    let sessions: Vec<u32> = answered.iter().map(|one| one.session).collect();
+    assert_eq!(
+        sessions,
+        [3, 4],
+        "every chat of that persona waiting on that login"
+    );
+    assert!(on_the_pool(&browsers, 3, "steward", &pool, "shop-login", false, 1002).is_ok());
+    assert!(
+        on_the_pool(&browsers, 3, "steward", &pool, "bank-login", false, 1002).is_err(),
+        "another login of the persona is asked apart"
+    );
+    assert!(
+        on_the_pool(&browsers, 6, "reviewer", &pool, "shop-login", false, 1002).is_err(),
+        "another persona is asked apart"
+    );
+    assert!(
+        browsers.answer_pool_login(4, true).is_empty(),
+        "chat 4 was answered with chat 3"
+    );
+}
+
+#[test]
+fn a_login_that_waited_for_the_window_is_asked_afresh_though_it_was_allowed() {
+    let browsers = ChatBrowsers::default();
+    let pool = a_pool_as("aaaa");
+    let _ = on_the_pool(&browsers, 3, "steward", &pool, "shop-login", false, 1000);
+    browsers.answer_pool_login(3, true);
+
+    let waited = on_the_pool(&browsers, 3, "steward", &pool, "shop-login", true, 2000);
+
+    let (_, raised) = waited.expect_err("asked, not performed");
+    assert!(raised);
+    assert_eq!(browsers.pool_logins_waiting().len(), 1);
+}
+
+#[test]
+fn a_changed_pool_image_asks_for_the_opt_in_again() {
+    let browsers = ChatBrowsers::default();
+    let _ = on_the_pool(
+        &browsers,
+        3,
+        "steward",
+        &a_pool_as("aaaa"),
+        "shop-login",
+        false,
+        1000,
+    );
+    browsers.answer_pool_login(3, true);
+
+    let moved = on_the_pool(
+        &browsers,
+        3,
+        "steward",
+        &a_pool_as("bbbb"),
+        "shop-login",
+        false,
+        2000,
+    );
+
+    let (why, raised) = moved.expect_err("asked again");
+    assert!(raised);
+    assert!(why.contains("changed since the person let"), "{why}");
+    assert!(browsers.pool_logins_waiting()[0].changed);
+}
+
+#[test]
+fn keep_off_refuses_a_login_on_the_pool_until_it_changes() {
+    let browsers = ChatBrowsers::default();
+    let _ = on_the_pool(
+        &browsers,
+        3,
+        "steward",
+        &a_pool_as("aaaa"),
+        "shop-login",
+        false,
+        1000,
+    );
+    browsers.answer_pool_login(3, false);
+
+    let (why, raised) = on_the_pool(
+        &browsers,
+        3,
+        "steward",
+        &a_pool_as("aaaa"),
+        "shop-login",
+        false,
+        1001,
+    )
+    .expect_err("kept off");
+    let (_, changed) = on_the_pool(
+        &browsers,
+        3,
+        "steward",
+        &a_pool_as("bbbb"),
+        "shop-login",
+        false,
+        1002,
+    )
+    .expect_err("asked again once it changed");
+
+    assert!(!raised, "no Ask while it stands");
+    assert!(
+        why.contains("keeps steward's login shop-login off on pool builds"),
+        "{why}"
+    );
+    assert!(changed);
+}
+
+#[test]
+fn a_chat_that_closes_takes_its_pool_login_ask_with_it() {
+    let browsers = ChatBrowsers::default();
+    let _ = on_the_pool(
+        &browsers,
+        3,
+        "steward",
+        &a_pool_as("aaaa"),
+        "shop-login",
+        false,
+        1000,
+    );
+
+    browsers.forget(None, 3, "Chat 3");
+
+    assert!(browsers.pool_logins_waiting().is_empty());
+    assert!(
+        browsers.answer_pool_login(3, true).is_empty(),
+        "and answering it grants nothing"
+    );
+}
+
 /// #2017: a screenshot the agent was answered goes to its chat's timeline, unless the person
 /// drives that browser as the answer comes back; and a call no browser answered is no moment.
 #[test]
@@ -2771,3 +3030,4 @@ fn a_chats_timeline_keeps_no_screenshot_answered_while_purlis_drives_its_browser
     assert_eq!(driven.png, None, "nothing of a moment purlis drove");
     assert_eq!(driven.moment.unkept, Some(Unkept::Driven));
 }
+mod taken_back;

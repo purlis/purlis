@@ -175,3 +175,21 @@ fn an_origin_longer_than_a_whole_dns_name_is_none_and_an_origin_is_its_own_origi
         assert_eq!(origin_of(origin).as_deref(), Some(origin), "{origin}");
     }
 }
+
+#[test]
+fn a_jpegs_size_is_read_from_its_header_and_anything_else_has_none() {
+    use purlis_session_protocol::view::frames::jpeg_size;
+    // SOI, an APP0 of 16 bytes, then a baseline SOF0: 8-bit, 800 high, 1280 wide.
+    let mut jpeg = vec![0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10];
+    jpeg.extend_from_slice(&[0; 14]);
+    jpeg.extend_from_slice(&[0xff, 0xc0, 0x00, 0x11, 0x08, 0x03, 0x20, 0x05, 0x00]);
+
+    assert_eq!(jpeg_size(&jpeg), Some((1280, 800)));
+    assert_eq!(jpeg_size(&jpeg[..jpeg.len() - 2]), None, "cut short");
+    assert_eq!(jpeg_size(b"not a jpeg"), None);
+    assert_eq!(
+        jpeg_size(&[0xff, 0xd8, 0xff, 0xe0, 0x00, 0x00]),
+        None,
+        "a bad length"
+    );
+}

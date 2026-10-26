@@ -887,11 +887,15 @@ fn use_skill_offers_exactly_the_chats_set_and_a_manual_only_one_is_free_on_every
         ["deploy", "purlis-handoff", "release", "review"]
     );
     assert_eq!(opencode.offered[1].known_as, "purlis-handoff");
+    let salt = crate::skillspan::PromptSalt::of_chat("01JB00000000000000000000C4").unwrap();
     assert_eq!(
-        opencode.typed("purlis-handoff", &[]).unwrap().text,
+        opencode.typed("purlis-handoff", &[], &salt).unwrap().text,
         "/purlis-handoff"
     );
-    assert!(opencode.typed("handoff", &[]).is_err(), "no bare `handoff`");
+    assert!(
+        opencode.typed("handoff", &[], &salt).is_err(),
+        "no bare `handoff`"
+    );
 
     // In the workspace: its own skill and the granted one, never one it was not granted.
     let in_smart_ide = for_use_skill(&running(root, &bundle, Some("smart-ide")));
@@ -934,7 +938,8 @@ fn use_skill_types_a_skill_of_the_set_in_its_harnesss_syntax_and_holds_the_run_i
             harness,
             ..running(root, &bundle, Some("smart-ide"))
         });
-        let typing = chat.typed("review", &values).unwrap();
+        let salt = crate::skillspan::PromptSalt::of_chat("01JB00000000000000000000C4").unwrap();
+        let typing = chat.typed("review", &values, &salt).unwrap();
         assert_eq!(typing.text, text, "{harness:?}");
         let Start::Held(held) = typing.start else {
             panic!("a listed skill's run is held")
@@ -944,9 +949,9 @@ fn use_skill_types_a_skill_of_the_set_in_its_harnesss_syntax_and_holds_the_run_i
         assert_eq!(held.workspace.as_deref(), Some("smart-ide"));
         assert_eq!(held.level.map(|level| level.origin), Some(Origin::Project));
         // What a prompt holding the text is marked with.
-        let sent = crate::skillspan::PromptMarks::of(&format!("{text} and more"));
+        let sent = crate::skillspan::PromptMarks::of(&format!("{text} and more"), &salt);
         assert!(sent.holds(held.text), "{harness:?}");
-        let refused = chat.typed("deploy", &[]).unwrap_err();
+        let refused = chat.typed("deploy", &[], &salt).unwrap_err();
         assert!(
             refused.contains("not one of this chat's skills"),
             "{refused}"
@@ -1759,6 +1764,157 @@ fn the_studio_lists_under_each_harness_the_skills_a_repo_leaves_out_of_its_chats
             .all(|row| row.left_out.is_none()),
         "the plane's own rows are a chat's in no clone"
     );
+}
+
+/// What Codex's own sidecar says of a skill it finds itself, keeping it out of its model's
+/// choice (SK-39): the fixture `agents/openai.yaml`.
+const CODEX_MANUAL_ONLY: &str =
+    "interface:\n  display_name: Deploy\npolicy:\n  allow_implicit_invocation: false\n";
+
+/// What a badge says of a skill its harness runs only when asked for.
+const RUNS_ONLY_WHEN_ASKED: &str = "Runs only when asked for by name.";
+
+/// The skill `name` in `dir`, with Codex's sidecar saying `sidecar` beside it where given.
+fn a_skill_with_a_sidecar(dir: &Path, name: &str, sidecar: Option<&str>) {
+    let folder = dir.join(name);
+    std::fs::create_dir_all(folder.join("agents")).unwrap();
+    std::fs::write(
+        folder.join("SKILL.md"),
+        format!("---\nname: {name}\ndescription: Does {name}.\n---\n"),
+    )
+    .unwrap();
+    if let Some(sidecar) = sidecar {
+        std::fs::write(folder.join("agents/openai.yaml"), sidecar).unwrap();
+    }
+}
+
+/// The badge lines `harness` gives the row `name` among `rows`.
+fn said_on(rows: &[StudioRow], name: &str, harness: Harness) -> Vec<String> {
+    rows.iter()
+        .find(|row| row.name == name)
+        .unwrap_or_else(|| panic!("{name} listed"))
+        .compat
+        .iter()
+        .find(|badge| badge.harness == harness)
+        .unwrap_or_else(|| panic!("{name} badged on {harness:?}"))
+        .compat
+        .lines()
+}
+
+#[test]
+fn a_codex_skill_its_sidecar_keeps_out_of_the_models_choice_says_so_on_its_badge() {
+    // SK-39 (#3050): Codex keeps a skill it finds itself, the person's own or a repo's, out of
+    // its catalogue by `agents/openai.yaml`, and its badge says it runs only when asked for. A
+    // skill purlis hands is briefed, never discovered, so its sidecar is never read; nor does
+    // another harness read Codex's file.
+    let tmp = tempfile::tempdir().unwrap();
+    let plane = tmp.path().join("plane");
+    std::fs::create_dir_all(&plane).unwrap();
+    std::fs::write(plane.join("charter.toml"), "[plane]\n").unwrap();
+    let api = plane.join("workspaces/alpha/api");
+    std::fs::create_dir_all(api.join(".git")).unwrap();
+    let repo = api.join(".agents/skills");
+    a_skill_with_a_sidecar(&repo, "deploy", Some(CODEX_MANUAL_ONLY));
+    a_skill_with_a_sidecar(
+        &repo,
+        "lint",
+        Some("policy:\n  allow_implicit_invocation: true\n"),
+    );
+    a_skill_with_a_sidecar(&repo, "plain", None);
+    let codex_home = tmp.path().join("codex-home");
+    a_skill_with_a_sidecar(&codex_home.join("skills"), "mine", Some(CODEX_MANUAL_ONLY));
+    a_skill_with_a_sidecar(
+        &plane.join("workspaces/alpha/skills"),
+        "ship",
+        Some(CODEX_MANUAL_ONLY),
+    );
+    let chat = [("CODEX_HOME".to_owned(), codex_home.display().to_string())];
+    let env = crate::harness_plugin::Env {
+        chat: &chat,
+        home: Some(tmp.path().join("home")),
+        process: false,
+    };
+
+    let list = studio_list(None, &plane, Some("alpha"), None, &env);
+
+    let rows_of = |harness: Harness| {
+        list.harnesses
+            .iter()
+            .find(|one| one.harness == harness)
+            .map(|one| one.rows.clone())
+            .unwrap_or_default()
+    };
+    let codex = rows_of(Harness::Codex);
+    for name in ["deploy", "mine"] {
+        assert_eq!(
+            said_on(&codex, name, Harness::Codex),
+            ["Everything it asks for applies.", RUNS_ONLY_WHEN_ASKED],
+            "{name}"
+        );
+    }
+    for name in ["lint", "plain"] {
+        assert_eq!(
+            said_on(&codex, name, Harness::Codex),
+            ["Everything it asks for applies."],
+            "{name}"
+        );
+    }
+    let opencode = rows_of(Harness::Opencode);
+    assert_eq!(
+        said_on(&opencode, "deploy", Harness::Opencode),
+        ["Everything it asks for applies."],
+        "opencode reads no such file"
+    );
+    for harness in Harness::ALL {
+        assert!(
+            !said_on(&list.rows, "ship", harness).contains(&RUNS_ONLY_WHEN_ASKED.to_owned()),
+            "{harness:?}: a skill purlis hands is never read by its sidecar"
+        );
+    }
+}
+
+#[test]
+fn a_codex_sidecar_purlis_cannot_read_plainly_leaves_its_skill_listed() {
+    // SK-39: failing closed, a sidecar that is a link, or that Codex's own reader might not read
+    // as manual-only, says nothing, as Codex then lists the skill.
+    let tmp = tempfile::tempdir().unwrap();
+    let skills = tmp.path().join("skills");
+    let elsewhere = tmp.path().join("elsewhere.yaml");
+    std::fs::write(&elsewhere, CODEX_MANUAL_ONLY).unwrap();
+    a_skill_with_a_sidecar(&skills, "linked", None);
+    std::os::unix::fs::symlink(&elsewhere, skills.join("linked/agents/openai.yaml")).unwrap();
+    for (name, sidecar) in [
+        (
+            "anchored",
+            "policy: &p\n  allow_implicit_invocation: false\nagain: *p\n",
+        ),
+        (
+            "twice",
+            "policy:\n  allow_implicit_invocation: false\n  allow_implicit_invocation: true\n",
+        ),
+        (
+            "quoted",
+            "policy:\n  allow_implicit_invocation: \"false\"\n",
+        ),
+        ("not-yaml", "policy: [\n"),
+    ] {
+        a_skill_with_a_sidecar(&skills, name, Some(sidecar));
+    }
+    a_skill_with_a_sidecar(&skills, "plain", Some(CODEX_MANUAL_ONLY));
+    let said = |name: &str| {
+        let path = skills.join(name).join("SKILL.md");
+        badges((&skills, &path), Origin::Repo, &[Harness::Codex])[0]
+            .compat
+            .lines()
+    };
+    assert_eq!(
+        said("plain"),
+        ["Everything it asks for applies.", RUNS_ONLY_WHEN_ASKED],
+        "the same file, read plainly, says it"
+    );
+    for name in ["linked", "anchored", "twice", "quoted", "not-yaml"] {
+        assert_eq!(said(name), ["Everything it asks for applies."], "{name}");
+    }
 }
 
 #[test]

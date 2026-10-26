@@ -695,6 +695,14 @@ export const commands = {
 	 */
 	keepChatBrowserOff: (plane: PlaneId, session: number, reason: string | null) => typedError<null, string>(__TAURI_INVOKE("keep_chat_browser_off", { plane, session, reason })),
 	/**
+	 *  **Allow or Keep off on chat `session`'s pool login Ask** (#2050): with `allow`, its persona's
+	 *  browser logins may be filled on the pool's runner while the app runs and the pool stays as
+	 *  the Ask showed it; Keep off refuses them there until the pool changes, with the reason the
+	 *  person typed. Every chat of that persona that waits on that pool is answered with it, and
+	 *  each is told on its next turn.
+	 */
+	answerPoolLogin: (plane: PlaneId, session: number, allow: boolean, reason: string | null) => typedError<null, string>(__TAURI_INVOKE("answer_pool_login", { plane, session, allow, reason })),
+	/**
 	 *  **Allow on chat `session`'s browser sites** (#2018): `sites`, the sites the Ask showed, are
 	 *  browser sites at `level`: this chat, every chat of this project on this machine, or everyone
 	 *  in the project, committed (#2443). A grant for the browser alone (ruled 2026-10-17): the
@@ -732,6 +740,19 @@ export const commands = {
 	 *  moment of the timeline lists. The window's alone (`ui::WINDOW_ONLY`).
 	 */
 	chatBrowserTimelineShot: (plane: PlaneId, chat: string, shot: number) => typedError<string, string>(__TAURI_INVOKE("chat_browser_timeline_shot", { plane, chat, shot })),
+	/**
+	 *  **The browsers of project `plane` a crash of the window left running that come back in a
+	 *  view tab** (#2025): the person's own, and any a view tab of its own showed, taken back as the
+	 *  window came back; the window opens a view tab of each, once. Read again on [`LISTED`]. The
+	 *  window's alone (`ui::WINDOW_ONLY`), as watching is.
+	 */
+	browsersTakenBack: (plane: PlaneId) => typedError<string[], string>(__TAURI_INVOKE("browsers_taken_back", { plane })),
+	/**
+	 *  **Whether a view tab of its own shows browser `program` of project `plane` now** (#2025): the
+	 *  window says so as its tabs change, so a crash of the window brings that tab back. The
+	 *  window's alone (`ui::WINDOW_ONLY`), as watching is.
+	 */
+	browserViewed: (plane: PlaneId, program: string, viewed: boolean) => typedError<null, string>(__TAURI_INVOKE("browser_viewed", { plane, program, viewed })),
 	/**
 	 *  **The person pins chat `session`'s browser `program`, or unpins it** (#2022): pinned, it
 	 *  outlives its chat. The window's alone (`ui::WINDOW_ONLY`).
@@ -4219,6 +4240,11 @@ export type AnswerPath =
  *  Keep blocked with the person's reason, each for `sites`, the sites the ask showed (#2018).
  */
 { via: "browser-sites"; sites: string[] } | 
+/**
+ *  `answer_pool_login`, allowing for Allow and not for Keep off with the person's reason,
+ *  for the chat that asked (#2050).
+ */
+{ via: "pool-login" } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -4373,7 +4399,12 @@ export type AskSource =
  *  Sites new to the project a chat's browser held back what it would open, send or type
  *  on (#2018): an Allow is a browser site grant, for the browser alone.
  */
-"browser-site";
+"browser-site" | 
+/**
+ *  A runner chat's browser login, which waits on the person's opt-in for its persona on its
+ *  pool (#2050): an Allow lets that persona's logins be filled on the pool's runner.
+ */
+"pool-login";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the
@@ -4767,6 +4798,11 @@ export type BrowserWatching = {
 	width: number,
 	height: number,
 	person_drives: boolean,
+	/**
+	 *  **The pool whose runner the browser runs on** (#2050), or `null` on this machine: what its
+	 *  chip names as its device, so `localhost` on a runner is never taken for this machine's.
+	 */
+	pool: string | null,
 };
 
 /**  **A chat whose browsers ended because the person narrowed its reach**, as its tab says so. */
@@ -5041,6 +5077,11 @@ export type ChatBrowser = {
 	 *  purlis, while it performs a login.
 	 */
 	driver: BrowserDriver | null,
+	/**
+	 *  The pool whose runner it runs on, beside its chat, or `null` on this machine (#2050):
+	 *  what its row and thumbnail name as its device.
+	 */
+	pool: string | null,
 };
 
 /**

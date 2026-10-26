@@ -244,6 +244,9 @@ pub struct Connection {
     /// The window's own link that this connection's project links were opened beside: one to a
     /// host started again after it ended holds every root on a link of its own anew (#2007).
     window_was: Mutex<Option<u64>>,
+    /// The window's connection to each pool's runner, made the first time it is asked for
+    /// ([`Connection::to_a_pool`]): what a pool's chats and their browsers share (#2050).
+    pools: Mutex<HashMap<String, Arc<Connection>>>,
 }
 
 /// [`Dial`], for a link the window's host relays to the runner of the pool it names (#2046):
@@ -309,6 +312,18 @@ impl Connection {
             to_a_pool: Some((Arc::clone(self), pool.to_owned())),
             ..Connection::default()
         })
+    }
+
+    /// **The window's one connection to the runner of `pool`** ([`Self::relaying_to`]), made the
+    /// first time it is asked for and the same after (#2050): a runner chat and its browsers are
+    /// held on one link per project root, so its browser runs beside it, and one name the window
+    /// keeps for a root's link to the pool is never two links'.
+    pub fn to_a_pool(self: &Arc<Self>, pool: &str) -> Arc<Connection> {
+        Arc::clone(
+            lock(&self.pools)
+                .entry(pool.to_owned())
+                .or_insert_with(|| self.relaying_to(pool)),
+        )
     }
 
     /// Name the window on each project root's link by the name it keeps for that root in
@@ -548,10 +563,65 @@ pub type FrameSink = Box<dyn FnMut(Option<String>, bytes::Bytes) + Send>;
 /// for no page, said where it changes and before the first image of each snapshot.
 pub type OriginSink = Box<dyn FnMut(Option<String>) + Send>;
 
-/// What a browser view is drawn into: its frames, and its page's origin.
+/// What a browser view is drawn into: its frames, and its page's origin; and, for a view of a
+/// browser on another host, the window's own hold on its frames ([`HeldFrames`]).
 pub struct FrameSinks {
     pub frames: FrameSink,
     pub origins: OriginSink,
+    pub held: Option<HeldFrames>,
+}
+
+/// **The window's own hold on a runner browser's frames** (#2050): the runner's host is held to
+/// the link's frames, and the window holds it to them too, whatever it sends. A frame larger than
+/// [`MOST_HELD_FRAME_BYTES`], one whose header says it is wider than the link's widest or
+/// higher than [`MOST_HELD_FRAME_HEIGHT`] (read before anything decodes it), or one that comes
+/// sooner than [`HELD_FRAMES_AT_LEAST`] after the last drawn, is acknowledged and not drawn.
+#[derive(Debug, Default)]
+pub struct HeldFrames {
+    last: Option<Instant>,
+}
+
+/// The largest frame of a runner's browser the window draws.
+pub const MOST_HELD_FRAME_BYTES: usize = 4 << 20;
+
+/// The highest frame of a runner's browser the window draws, in pixels.
+pub const MOST_HELD_FRAME_HEIGHT: u16 = 8192;
+
+/// The least time between two frames of a runner's browser the window draws: a little under
+/// the link's 15 a second, so a frame the link bunched is not lost.
+pub const HELD_FRAMES_AT_LEAST: Duration = Duration::from_millis(50);
+
+impl FrameSinks {
+    /// Whether `image` is drawn: every frame, but for a view the window holds (#2050).
+    fn held_draw(&mut self, image: &[u8]) -> bool {
+        match &mut self.held {
+            Some(held) => held.draws(image, Instant::now()),
+            None => true,
+        }
+    }
+}
+
+impl HeldFrames {
+    /// Whether `image`, coming `now`, is drawn.
+    pub fn draws(&mut self, image: &[u8], now: Instant) -> bool {
+        if image.len() > MOST_HELD_FRAME_BYTES {
+            return false;
+        }
+        let Some((width, height)) = purlis_session_protocol::view::frames::jpeg_size(image) else {
+            return false;
+        };
+        if width > purlis_host::LINK_MOST_FRAME_WIDTH || height > MOST_HELD_FRAME_HEIGHT {
+            return false;
+        }
+        if self
+            .last
+            .is_some_and(|last| now.saturating_duration_since(last) < HELD_FRAMES_AT_LEAST)
+        {
+            return false;
+        }
+        self.last = Some(now);
+        true
+    }
 }
 
 /// What a view's stream is drawn into: a pane's terminal, as text, or a browser view's canvas,
@@ -1011,10 +1081,13 @@ impl HostLink {
 
     /// Draw browser view `view`'s frames into `sink`, each whole (#2012), and its page's origin
     /// into `origins` (#2300): its stream may already be here.
-    pub(crate) fn draw_frames(&self, view: u32, sink: FrameSink, origins: OriginSink) {
+    /// The window holds the view to the link's frames itself where `held` (#2050): a view of a
+    /// browser on a runner.
+    pub(crate) fn draw_frames(&self, view: u32, sink: FrameSink, origins: OriginSink, held: bool) {
         let sinks = FrameSinks {
             frames: sink,
             origins,
+            held: held.then(HeldFrames::default),
         };
         self.draw_into(view, Draws::Frames(Arc::new(Mutex::new(sinks))));
     }
@@ -1347,13 +1420,21 @@ async fn draw_frames_from(mut reader: Reader, shared: &Arc<Shared>, sink: &Arc<M
         for frame in whole {
             use purlis_session_protocol::view::frames::{AIMED_JPEG, JPEG, ORIGIN};
             match frame.format {
-                JPEG if !frame.image.is_empty() => (lock(sink).frames)(None, frame.image),
+                JPEG if !frame.image.is_empty() => {
+                    let mut sinks = lock(sink);
+                    if sinks.held_draw(&frame.image) {
+                        (sinks.frames)(None, frame.image);
+                    }
+                }
                 // What it shows, as the window echoes it back with the person's input (#2014).
                 AIMED_JPEG => {
                     if let Some((aim, image)) = frame.aimed()
                         && !image.is_empty()
                     {
-                        (lock(sink).frames)(Some(crate::browsers::aim_said(&aim)), image);
+                        let mut sinks = lock(sink);
+                        if sinks.held_draw(&image) {
+                            (sinks.frames)(Some(crate::browsers::aim_said(&aim)), image);
+                        }
                     }
                 }
                 // Where its page is, its origin alone (#2300), as this window reads one.
@@ -1568,6 +1649,9 @@ pub struct HostedSessions {
     /// Each program the host still had for this project as the window held it, from before
     /// this window, that nothing has reattached yet, by its number (#2006).
     left: Arc<Mutex<HashMap<u32, HeldProgram>>>,
+    /// Each browser the host still had for this project as the window first held it, from
+    /// before this window, until the put back takes them (#2025): `None` until that first hold.
+    browsers_left: Arc<Mutex<Option<Vec<HeldProgram>>>>,
     /// Why the board the host kept could not be taken as the window held the project, where it
     /// could not (#2006).
     untaken: Arc<Mutex<Option<String>>>,
@@ -1620,6 +1704,7 @@ impl HostedSessions {
             kill_switch: crate::killswitch::KillSwitch::unthrown(),
             lost: Arc::default(),
             left: Arc::default(),
+            browsers_left: Arc::default(),
             untaken: Arc::default(),
             reconnecting,
             on_a_runner: false,
@@ -1686,6 +1771,7 @@ impl HostedSessions {
             relayed: Arc::clone(&self.relayed),
             opened: Arc::clone(&self.opened),
             left: Arc::clone(&self.left),
+            browsers_left: Arc::clone(&self.browsers_left),
             untaken: Arc::clone(&self.untaken),
             root: self.root.clone(),
             reconnects: Arc::clone(&self.reconnects),
@@ -1832,6 +1918,7 @@ fn held_on(holding: &Holding) -> Result<(Arc<HostLink>, String), String> {
         relayed,
         opened,
         left,
+        browsers_left,
         untaken,
         root,
         reconnects,
@@ -1911,11 +1998,17 @@ fn held_on(holding: &Holding) -> Result<(Arc<HostLink>, String), String> {
             project: project.clone(),
         }) {
             Ok(Answer::Programs(programs)) => {
-                *lock(left) = programs
+                // Its browsers, from a host of 1.39 or later (#2025), taken back with their
+                // chats once the put back has settled: those of the first hold alone, so a
+                // re-link never hands back a browser this window started since.
+                let (browsers, chats): (Vec<HeldProgram>, Vec<HeldProgram>) = programs
                     .into_iter()
-                    .filter(|program| program.kind != ProgramKind::Browser)
+                    .partition(|program| program.kind == ProgramKind::Browser);
+                *lock(left) = chats
+                    .into_iter()
                     .map(|program| (program.number, program))
                     .collect();
+                lock(browsers_left).get_or_insert(browsers);
             }
             Ok(other) => {
                 tracing::warn!("purlis: the session host answered its programs with {other:?}");
@@ -1953,6 +2046,7 @@ fn holds_again(holding: &Holding, on: u64, project: &str) -> NotHeld {
         relayed,
         opened,
         left,
+        browsers_left,
         untaken,
         root,
         reconnects,
@@ -1987,6 +2081,7 @@ fn holds_again(holding: &Holding, on: u64, project: &str) -> NotHeld {
             relayed: Arc::clone(&relayed),
             opened: Arc::clone(&opened),
             left: Arc::clone(&left),
+            browsers_left: Arc::clone(&browsers_left),
             untaken: Arc::clone(&untaken),
             root: root.clone(),
             reconnects: Arc::clone(&reconnects),
@@ -2032,6 +2127,7 @@ struct Holding {
     relayed: Arc<Mutex<Option<Arc<Relayed>>>>,
     opened: Arc<AtomicU32>,
     left: Arc<Mutex<HashMap<u32, HeldProgram>>>,
+    browsers_left: Arc<Mutex<Option<Vec<HeldProgram>>>>,
     /// Why the board the host kept could not be taken, where it could not (#2006).
     untaken: Arc<Mutex<Option<String>>>,
     root: PathBuf,
@@ -2807,6 +2903,15 @@ impl SessionHost for HostedSessions {
     fn ran_in(&self, number: u32) -> Option<purlis_session_protocol::session::RunSandbox> {
         self.link().ok()?;
         lock(&self.left).get(&number)?.sandbox.clone()
+    }
+
+    fn browsers_left(&self) -> Vec<HeldProgram> {
+        if self.link().is_err() {
+            return Vec::new();
+        }
+        lock(&self.browsers_left)
+            .replace(Vec::new())
+            .unwrap_or_default()
     }
 
     fn close_what_was_not_reattached(&self) {

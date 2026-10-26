@@ -35,6 +35,7 @@ pub fn tool(
                 chat,
                 browser: asked.browser,
                 call_id,
+                waited: false,
                 asked: asked.asked,
             }))
         },
@@ -57,6 +58,7 @@ pub fn tool(
                 chat,
                 browser: Some(browser),
                 call_id: changes_id,
+                waited: false,
                 asked: Browsing::Act(Act::Changes { page: Some(page) }),
             }))
         },
@@ -121,6 +123,7 @@ pub fn needs_you(args: &serde_json::Map<String, serde_json::Value>) -> Result<St
                 chat,
                 browser: asked.browser,
                 call_id,
+                waited: false,
                 asked: asked.asked,
             }))
         },

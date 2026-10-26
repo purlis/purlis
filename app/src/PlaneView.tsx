@@ -305,12 +305,13 @@ import {
   browserView,
   goWhenShown,
   browsersLetGo,
+  browsersShown,
   chatBrowserTitle,
   isBrowser,
   openBrowserBeside,
 } from "./browsers";
 import { sendToDriven } from "./browserDriving";
-import { programsOf, useChatBrowsers } from "./chatBrowsers";
+import { programsOf, useBrowsersTakenBack, useChatBrowsers } from "./chatBrowsers";
 import { browserTimelineTitle, browserTimelineView } from "./browserTimelines";
 import type { BrowserShown } from "./ChatBrowsersShown";
 
@@ -3702,6 +3703,14 @@ export const PlaneView = memo(function PlaneView({
     kept: keptBrowsers,
     read: chatBrowsersRead,
   } = useChatBrowsers(plane);
+  /** The person's own browsers a crash of the window left running, each back in a view tab of
+   *  its own (#2025). */
+  const showTakenBack = useCallback(
+    (program: string) => showView(browserView(program), BROWSER_TITLE),
+    [showView],
+  );
+  // Once the record's tabs are adopted, which lays the strip out afresh.
+  useBrowsersTakenBack(plane, settled ? showTakenBack : undefined);
   /** Their programs: a tab showing one closes only its view, since it ends with its chat, and
    *  one pinned past its chat ends only when the person stops it (#2022). */
   const chatPrograms = useMemo(
@@ -3719,8 +3728,16 @@ export const PlaneView = memo(function PlaneView({
   useEffect(() => {
     for (const program of browsersLetGo(browsersBefore.current, tabs, chatProgramsNow.current))
       void commands.closeBrowser(program);
+    // Which browsers a view tab of its own shows, for the core to note: a crash of the window
+    // brings those tabs back (#2025).
+    const was = browsersShown(browsersBefore.current);
+    const now = browsersShown(tabs);
+    for (const program of now)
+      if (!was.has(program)) void commands.browserViewed(plane, program, true);
+    for (const program of was)
+      if (!now.has(program)) void commands.browserViewed(plane, program, false);
     browsersBefore.current = tabs;
-  }, [tabs]);
+  }, [tabs, plane]);
 
   /**
    * Closes the tab showing `view` — a vault or a persona that was just deleted — **when that tab

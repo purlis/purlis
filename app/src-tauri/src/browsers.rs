@@ -52,12 +52,15 @@ pub enum BrowserViewRole {
 
 /// A browser view the window has open: its number, the size of the page its frames are
 /// painted at, in CSS pixels, and whether the person drives the browser (#2014).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, specta::Type)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, specta::Type)]
 pub struct BrowserWatching {
     pub view: u32,
     pub width: u16,
     pub height: u16,
     pub person_drives: bool,
+    /// **The pool whose runner the browser runs on** (#2050), or `null` on this machine: what its
+    /// chip names as its device, so `localhost` on a runner is never taken for this machine's.
+    pub pool: Option<String>,
 }
 
 /// One frame of a browser view, as the window is sent it (#2014): what it shows (`p1:5`, the
@@ -316,10 +319,11 @@ mod hosted {
         fn start(
             &self,
             root: &Path,
+            pool: Option<&str>,
             reach: BrowserReach,
             kept: Option<purlis_session_protocol::browsing::KeptLogin>,
         ) -> Result<String, crate::chatbrowsers::NotStarted> {
-            self.open_reaching(root, Some(reach), kept)
+            self.open_on(root, pool, Some(reach), kept)
         }
 
         fn act(
@@ -330,7 +334,7 @@ mod hosted {
             reach: BrowserReach,
         ) -> Result<Browsed, crate::chatbrowsers::Refused> {
             use crate::chatbrowsers::Refused;
-            let link = self.link().map_err(Refused::Said)?;
+            let link = self.link_for(program).map_err(Refused::Said)?;
             let command = Command::Browse {
                 program: program.to_owned(),
                 call_id: call_id.to_owned(),
@@ -358,7 +362,7 @@ mod hosted {
             login: purlis_session_protocol::browsing::LogIn,
         ) -> Result<Browsed, crate::chatbrowsers::Refused> {
             use crate::chatbrowsers::Refused;
-            let link = self.link().map_err(Refused::Said)?;
+            let link = self.link_for(program).map_err(Refused::Said)?;
             let command = Command::LogIn {
                 program: program.to_owned(),
                 login,
@@ -400,7 +404,7 @@ mod hosted {
         }
 
         fn stop(&self, program: &str) -> Result<(), String> {
-            match self.link()?.call_refused_within(
+            match self.link_for(program)?.call_refused_within(
                 Command::Stop {
                     chat: program.to_owned(),
                 },
@@ -411,15 +415,34 @@ mod hosted {
             }
         }
 
+        fn note(&self, root: &Path, program: &str, note: &crate::chatbrowsers::Note) {
+            WindowBrowsers::note(self, root, program, note);
+        }
+
+        fn taken_back(&self, root: &Path, program: &str) {
+            WindowBrowsers::taken_back(self, root, program);
+        }
+
         fn driven(&self) -> Result<Vec<String>, String> {
-            match self.link()?.call(Command::List)? {
-                Answer::Chats(listed) => Ok(listed
-                    .into_iter()
-                    .filter(|one| one.kind == Some(ProgramKind::Browser) && one.driver.is_some())
-                    .map(|one| one.chat)
-                    .collect()),
-                other => Err(format!("the session host answered a list with {other:?}")),
+            let mut driven = Vec::new();
+            let mut links = vec![self.link()?];
+            links.extend(self.pool_links());
+            for link in links {
+                match link.call(Command::List)? {
+                    Answer::Chats(listed) => driven.extend(
+                        listed
+                            .into_iter()
+                            .filter(|one| {
+                                one.kind == Some(ProgramKind::Browser) && one.driver.is_some()
+                            })
+                            .map(|one| one.chat),
+                    ),
+                    other => {
+                        return Err(format!("the session host answered a list with {other:?}"));
+                    }
+                }
             }
+            Ok(driven)
         }
     }
 
@@ -428,7 +451,7 @@ mod hosted {
     /// held on its root's own link, which its chats share (#2178).
     pub(crate) struct WindowBrowsers {
         connection: Arc<Connection>,
-        projects: Mutex<HashMap<PathBuf, Held>>,
+        projects: Mutex<HashMap<At, Held>>,
         ended: Ended,
         /// The most browsers the device runs at once (#2023), read at each start, and the lock
         /// one start holds from its count to its start, so two never both take the last.
@@ -443,6 +466,9 @@ mod hosted {
         says: Says,
         /// Who drives each browser, as the window last said it, by program (#2293).
         logged: Arc<Mutex<HashMap<String, Logged>>>,
+        /// Where each browser's note goes to be kept in the host, in the order given (#2025):
+        /// one thread sends them, started with the first.
+        notes: Mutex<Option<std::sync::mpsc::Sender<Noted>>>,
     }
 
     /// **Told what the window says of a browser in the event log** (#2293): the project the
@@ -483,6 +509,13 @@ mod hosted {
         dimmed: bool,
     }
 
+    /// A window note on its way to the host: the project's root, the browser, the note.
+    type Noted = (
+        PathBuf,
+        String,
+        purlis_session_protocol::session::ProgramNote,
+    );
+
     /// Told the program of each browser the window started whose engine ended (#2385), on the
     /// link's own thread: whoever is told does its work elsewhere.
     pub(crate) type Ended = Arc<dyn Fn(String) + Send + Sync + 'static>;
@@ -491,6 +524,14 @@ mod hosted {
     struct Held {
         project: String,
         browsers: Vec<String>,
+    }
+
+    /// **Where the window holds a project for its browsers** (#2050): its root, on this
+    /// machine's session host, or on the runner of the pool its chats run on.
+    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+    struct At {
+        root: PathBuf,
+        pool: Option<String>,
     }
 
     impl WindowBrowsers {
@@ -505,7 +546,95 @@ mod hosted {
                 acts: std::sync::atomic::AtomicU64::new(0),
                 says: Arc::new(|_, _| {}),
                 logged: Arc::default(),
+                notes: Mutex::new(None),
             }
+        }
+
+        /// **Keeps `note` as this window's note of browser `program`, of the project at `root`,
+        /// in its host** (#2025), on that project's own link: sent after every note given before
+        /// it, never waited on. A host before 1.39 keeps none, and is sent none.
+        pub(crate) fn note(&self, root: &Path, program: &str, note: &crate::chatbrowsers::Note) {
+            // Kept on this machine's host alone: a runner's browser has none yet (#3380).
+            if self.pool_of(program).is_some() {
+                return;
+            }
+            let Some(note) = note.kept() else {
+                return;
+            };
+            let mut notes = lock(&self.notes);
+            let sender = notes.get_or_insert_with(|| {
+                let (sender, noted) = std::sync::mpsc::channel::<Noted>();
+                let connection = Arc::clone(&self.connection);
+                let spawned = std::thread::Builder::new()
+                    .name("purlis-browser-notes".into())
+                    .spawn(move || {
+                        for (root, program, note) in noted {
+                            let sent = connection.of_project(&root, LINK_WITHIN).and_then(|link| {
+                                if link.version() < session::KNOWS_BROWSERS_TAKEN_BACK {
+                                    return Ok(());
+                                }
+                                link.call(Command::NoteProgram {
+                                    program: program.clone(),
+                                    note,
+                                })
+                                .map(|_| ())
+                            });
+                            if let Err(why) = sent {
+                                tracing::warn!(
+                                    "purlis: the session host kept no note of browser {program}: \
+                                     {why}"
+                                );
+                            }
+                        }
+                    });
+                if let Err(why) = spawned {
+                    tracing::warn!("purlis: browsers' notes cannot be kept in the host: {why}");
+                }
+                sender
+            });
+            let _ = sender.send((root.to_path_buf(), program.to_owned(), note));
+        }
+
+        /// **Browser `program`, left in the host by a window before this one, is this window's
+        /// again** in the project at `root` (#2025): listed among the browsers started there, and
+        /// its end told as for one it started.
+        pub(crate) fn taken_back(&self, root: &Path, program: &str) {
+            // Left on this machine's host: a runner's are not taken back yet (#3380).
+            let at = At {
+                root: root.to_path_buf(),
+                pool: None,
+            };
+            let link = match self.held(&at) {
+                Ok((link, _)) => link,
+                Err(why) => {
+                    tracing::warn!("purlis: browser {program} could not be taken back: {why}");
+                    return;
+                }
+            };
+            self.follow_its_end(&link, program);
+            if let Some(held) = self.projects().get_mut(&at)
+                && !held.browsers.iter().any(|one| one == program)
+            {
+                held.browsers.push(program.to_owned());
+            }
+            // Who drives it, as the host holds the lease: kept, not said again.
+            self.seed_from_the_host(&link, program);
+        }
+
+        /// Its end, as the host says it, told to whoever is told (#2385).
+        fn follow_its_end(&self, link: &HostLink, program: &str) {
+            let ended = Arc::clone(&self.ended);
+            let logged = Arc::clone(&self.logged);
+            let named = program.to_owned();
+            link.when_it_ends(
+                program,
+                Box::new(move |ending| {
+                    lock(&logged).remove(&named);
+                    // Who ended it and why is in the session host's own line (#2745).
+                    tracing::info!("{}", ended_said(&named, &ending));
+                    ended(named);
+                }),
+            );
         }
 
         /// **`says` is told who drives each browser and that someone typed, never what**
@@ -518,10 +647,55 @@ mod hosted {
 
         /// The project the window started `program` in, where it did.
         fn root_of(&self, program: &str) -> Option<PathBuf> {
+            self.at_of(program).map(|at| at.root)
+        }
+
+        /// Where the window started `program`, where it did.
+        fn at_of(&self, program: &str) -> Option<At> {
             self.projects()
                 .iter()
                 .find(|(_, held)| held.browsers.iter().any(|one| one == program))
-                .map(|(root, _)| root.clone())
+                .map(|(at, _)| at.clone())
+        }
+
+        /// **The pool whose runner `program` runs on** (#2050), where the window started it on
+        /// one: what its view's chip names as its device.
+        pub(crate) fn pool_of(&self, program: &str) -> Option<String> {
+            self.at_of(program).and_then(|at| at.pool)
+        }
+
+        /// **The link every command about `program` goes over** (#2050): the window's own, or,
+        /// for a browser the window started on a pool's runner, the link its project is held on
+        /// there, which the window's host relays to the runner.
+        fn link_for(&self, program: &str) -> Result<Arc<HostLink>, String> {
+            match self.at_of(program) {
+                Some(at) if at.pool.is_some() => self.link_at(&at, LINK_WITHIN),
+                _ => self.link(),
+            }
+        }
+
+        /// The link the project at `at` is held on, waiting at most `within`: its root's own on
+        /// this machine's host, or the one its host relays to the pool's runner (#2050).
+        fn link_at(&self, at: &At, within: Duration) -> Result<Arc<HostLink>, String> {
+            match &at.pool {
+                Some(pool) => self.connection.to_a_pool(pool).of_project(&at.root, within),
+                None => self.connection.of_project(&at.root, within),
+            }
+        }
+
+        /// The link of each pool the window started a browser on that is open now: a runner
+        /// not reached now has nothing this window can list there.
+        fn pool_links(&self) -> Vec<Arc<HostLink>> {
+            let pools: Vec<At> = self
+                .projects()
+                .iter()
+                .filter(|(at, held)| at.pool.is_some() && !held.browsers.is_empty())
+                .map(|(at, _)| at.clone())
+                .collect();
+            pools
+                .iter()
+                .filter_map(|at| self.link_at(at, Duration::ZERO).ok())
+                .collect()
         }
 
         /// **Who drives `program`, as the host lists it**, kept where this window has not said
@@ -618,22 +792,28 @@ mod hosted {
             self.connection.wait(LINK_WITHIN)
         }
 
-        /// The project at `root`'s own link, with the project held on it, and the project's id.
-        fn held(&self, root: &Path) -> Result<(Arc<HostLink>, String), String> {
-            let link = self.connection.of_project(root, LINK_WITHIN)?;
+        /// The project at `at`'s own link, with the project held on it, and the project's id.
+        /// On a pool's runner it is the link the project's chats there are held on, and the
+        /// runner holds it where it keeps its projects (#2050).
+        fn held(&self, at: &At) -> Result<(Arc<HostLink>, String), String> {
+            let link = self.link_at(at, LINK_WITHIN)?;
             let mut projects = self.projects();
-            if let Some(held) = projects.get(root) {
+            if let Some(held) = projects.get(at) {
                 return Ok((link, held.project.clone()));
             }
-            let project = purlis_core::scaffold::planefile::id_to_hold_by(root).map_err(|why| {
-                format!("this project has no id the session host can name it by: {why}")
-            })?;
+            let project =
+                purlis_core::scaffold::planefile::id_to_hold_by(&at.root).map_err(|why| {
+                    format!("this project has no id the session host can name it by: {why}")
+                })?;
             link.call(Command::HoldProject {
                 project: project.clone(),
-                project_path: root.display().to_string(),
+                project_path: match &at.pool {
+                    Some(_) => String::new(),
+                    None => at.root.display().to_string(),
+                },
             })?;
             projects.insert(
-                root.to_path_buf(),
+                at.clone(),
                 Held {
                     project: project.clone(),
                     browsers: Vec::new(),
@@ -682,7 +862,25 @@ mod hosted {
             reach: Option<BrowserReach>,
             kept: Option<purlis_session_protocol::browsing::KeptLogin>,
         ) -> Result<String, NotStarted> {
-            let (link, project) = self.held(root).map_err(NotStarted::Failed)?;
+            self.open_on(root, None, reach, kept)
+        }
+
+        /// [`Self::open_reaching`], on the runner of `pool` where one is named (#2050): a runner
+        /// chat's browser runs on its runner, beside it. It is never opened from a kept login
+        /// there, which stays on this device.
+        pub(crate) fn open_on(
+            &self,
+            root: &Path,
+            pool: Option<&str>,
+            reach: Option<BrowserReach>,
+            kept: Option<purlis_session_protocol::browsing::KeptLogin>,
+        ) -> Result<String, NotStarted> {
+            let at = At {
+                root: root.to_path_buf(),
+                pool: pool.map(str::to_owned),
+            };
+            let kept = kept.filter(|_| at.pool.is_none());
+            let (link, project) = self.held(&at).map_err(NotStarted::Failed)?;
             let _one_at_a_time = self.starting.lock().unwrap_or_else(PoisonError::into_inner);
             let running = match link.call(Command::List).map_err(NotStarted::Failed)? {
                 Answer::Chats(listed) => listed
@@ -717,19 +915,8 @@ mod hosted {
             crate::enginedownload::here().finished(&named);
             match answered.map_err(|refused| not_started(refused, budget))? {
                 Answer::ProgramStarted { program, .. } => {
-                    let ended = Arc::clone(&self.ended);
-                    let logged = Arc::clone(&self.logged);
-                    let named = program.clone();
-                    link.when_it_ends(
-                        &program,
-                        Box::new(move |ending| {
-                            lock(&logged).remove(&named);
-                            // Who ended it and why is in the session host's own line (#2745).
-                            tracing::info!("{}", ended_said(&named, &ending));
-                            ended(named);
-                        }),
-                    );
-                    if let Some(held) = self.projects().get_mut(root) {
+                    self.follow_its_end(&link, &program);
+                    if let Some(held) = self.projects().get_mut(&at) {
                         held.browsers.push(program.clone());
                     }
                     Ok(program)
@@ -751,7 +938,7 @@ mod hosted {
             origins: OriginSink,
             link_said: LinkSaid,
         ) -> Result<BrowserWatching, String> {
-            let link = self.link()?;
+            let link = self.link_for(program)?;
             let role = match role {
                 BrowserViewRole::Focused => ViewRole::Focused,
                 BrowserViewRole::Thumbnail => ViewRole::Thumbnail,
@@ -771,7 +958,9 @@ mod hosted {
             };
             // Followed before it draws, so its first frame finds it.
             self.follow(&link, attached.view, link_said);
-            link.draw_frames(attached.view, frames, origins);
+            // A runner's browser is held to the link's frames by the window too (#2050).
+            let held = self.pool_of(program).is_some();
+            link.draw_frames(attached.view, frames, origins, held);
             // The lease is the host's: a view opened again says whether the person still drives.
             let person_drives = matches!(
                 link.call(Command::List),
@@ -795,13 +984,14 @@ mod hosted {
                 width: attached.cols,
                 height: attached.rows,
                 person_drives,
+                pool: self.pool_of(program),
             })
         }
 
         /// **The person cancels the engine's download for `program`'s start** (#2207): nothing
         /// of it is kept, and the start is refused in words that say so.
         pub(crate) fn cancel_download(&self, program: &str) -> Result<(), String> {
-            self.link()?
+            self.link_for(program)?
                 .call(Command::CancelEngineDownload {
                     program: program.to_owned(),
                 })
@@ -811,7 +1001,7 @@ mod hosted {
         /// The person takes `program` over (#2014): the chat's acts are refused until they
         /// hand it back, and one in flight is cut.
         pub(crate) fn take_over(&self, program: &str) -> Result<(), String> {
-            self.link()?.call(Command::TakeOver {
+            self.link_for(program)?.call(Command::TakeOver {
                 program: program.to_owned(),
             })?;
             self.drove(program, Drives::Person);
@@ -820,7 +1010,7 @@ mod hosted {
 
         /// The person hands `program` back to its chat (#2014).
         pub(crate) fn hand_back(&self, program: &str) -> Result<(), String> {
-            self.link()?.call(Command::HandBack {
+            self.link_for(program)?.call(Command::HandBack {
                 program: program.to_owned(),
             })?;
             self.drove(program, Drives::Agent);
@@ -844,7 +1034,7 @@ mod hosted {
             let Some(input) = input.wire() else {
                 return Ok(InputOutcome::Missed);
             };
-            let sent = self.link()?.call_refused_within(
+            let sent = self.link_for(program)?.call_refused_within(
                 Command::BrowserInput {
                     program: program.to_owned(),
                     input,
@@ -875,7 +1065,7 @@ mod hosted {
             address: &str,
             reach: &BrowserReach,
         ) -> Result<Went, String> {
-            let link = self.link()?;
+            let link = self.link_for(program)?;
             match link.call_refused_within(
                 Command::HandBack {
                     program: program.to_owned(),
@@ -952,7 +1142,7 @@ mod hosted {
 
         /// The person sets `program`'s pages to `width` by `height` CSS pixels (#2014).
         pub(crate) fn size(&self, program: &str, width: u16, height: u16) -> Result<(), String> {
-            self.link()?
+            self.link_for(program)?
                 .call(Command::SizeBrowser {
                     program: program.to_owned(),
                     width,
@@ -963,7 +1153,7 @@ mod hosted {
 
         /// Closes view `view` of `program`: its frames stop with the last view.
         pub(crate) fn unwatch(&self, program: &str, view: u32) -> Result<(), String> {
-            let link = self.link()?;
+            let link = self.link_for(program)?;
             lock(&self.dimming).views.remove(&(link.id(), view));
             link.undraw(view);
             link.call(Command::DetachView {
@@ -1002,22 +1192,20 @@ mod hosted {
             hear(&self.dimming, link, heard);
         }
 
-        fn projects(&self) -> std::sync::MutexGuard<'_, HashMap<PathBuf, Held>> {
+        fn projects(&self) -> std::sync::MutexGuard<'_, HashMap<At, Held>> {
             self.projects.lock().unwrap_or_else(PoisonError::into_inner)
         }
 
         /// Whether `program` is a browser this window started in the project at `root` (#2022).
         pub(crate) fn started_in(&self, root: &Path, program: &str) -> bool {
-            self.projects()
-                .get(root)
-                .is_some_and(|held| held.browsers.iter().any(|one| one == program))
+            self.at_of(program).is_some_and(|at| at.root == root)
         }
 
         /// Ends `program` and forgets it.
         pub(crate) fn close(&self, program: &str) -> Result<(), String> {
             // Forgotten only once the host has ended it: one it could not be told of stays
             // listed, so letting go of its project and Stop all still end it.
-            let closed = self.link()?.call_refused_within(
+            let closed = self.link_for(program)?.call_refused_within(
                 Command::Close {
                     program: program.to_owned(),
                 },
@@ -1039,26 +1227,39 @@ mod hosted {
         /// The project at `root` is let go of (#2012): every browser the window started in it is
         /// ended, and the window's hold on it let go of. Answers how many browsers it ended.
         pub(crate) fn let_go(&self, root: &Path) -> usize {
-            let Some(held) = self.projects().remove(root) else {
-                return 0;
+            let held: Vec<(At, Held)> = {
+                let mut projects = self.projects();
+                let ats: Vec<At> = projects
+                    .keys()
+                    .filter(|at| at.root == root)
+                    .cloned()
+                    .collect();
+                ats.into_iter()
+                    .filter_map(|at| projects.remove(&at).map(|held| (at, held)))
+                    .collect()
             };
-            let Ok(link) = self.connection.of_project(root, Duration::ZERO) else {
-                return 0;
-            };
-            let ended = held
-                .browsers
-                .into_iter()
-                .filter(|program| {
-                    link.call(Command::Close {
-                        program: program.clone(),
+            let mut ended = 0;
+            for (at, held) in held {
+                let Ok(link) = self.link_at(&at, Duration::ZERO) else {
+                    continue;
+                };
+                ended += held
+                    .browsers
+                    .into_iter()
+                    .filter(|program| {
+                        link.call(Command::Close {
+                            program: program.clone(),
+                        })
+                        .is_ok()
                     })
-                    .is_ok()
-                })
-                .count();
-            if let Err(why) = link.call(Command::LetGoOfProject {
-                project: held.project,
-            }) {
-                tracing::warn!("purlis: the session host kept a project its browsers left: {why}");
+                    .count();
+                if let Err(why) = link.call(Command::LetGoOfProject {
+                    project: held.project,
+                }) {
+                    tracing::warn!(
+                        "purlis: the session host kept a project its browsers left: {why}"
+                    );
+                }
             }
             ended
         }
@@ -1068,19 +1269,27 @@ mod hosted {
             let Ok(link) = self.connection.wait(Duration::ZERO) else {
                 return 0;
             };
-            let Ok(Answer::Chats(programs)) = link.call(Command::List) else {
-                return 0;
-            };
-            programs
-                .into_iter()
-                .filter(|program| program.kind == Some(ProgramKind::Browser))
-                .filter(|browser| {
-                    link.call(Command::Stop {
-                        chat: browser.chat.clone(),
+            let mut stopped = 0;
+            // This machine's host's, and every one the window started on a pool's runner it
+            // reaches now (#2050).
+            let mut links = vec![link];
+            links.extend(self.pool_links());
+            for link in links {
+                let Ok(Answer::Chats(programs)) = link.call(Command::List) else {
+                    continue;
+                };
+                stopped += programs
+                    .into_iter()
+                    .filter(|program| program.kind == Some(ProgramKind::Browser))
+                    .filter(|browser| {
+                        link.call(Command::Stop {
+                            chat: browser.chat.clone(),
+                        })
+                        .is_ok()
                     })
-                    .is_ok()
-                })
-                .count()
+                    .count();
+            }
+            stopped
         }
     }
 
@@ -1146,7 +1355,12 @@ pub async fn open_browser(
         crate::off_the_window("starting a browser", move || {
             // It reaches what the project's browsers reach, and asks of a new site (#2176).
             let reach = crate::chatbrowsers::person_reach(&held);
-            browsers.open_for_the_person(held.root(), Some(reach))
+            let program = browsers.open_for_the_person(held.root(), Some(reach))?;
+            // The person's own, noted so (#2025).
+            let listing = held.browsers().listing();
+            held.browsers().opened_by_the_person(&program);
+            held.browsers_listed_since(listing);
+            Ok(program)
         })
         .await
     }

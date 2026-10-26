@@ -963,9 +963,15 @@ pub enum Start {
 
 impl ChatSkills {
     /// **The text that starts skill `name` of this chat's set**, with `values` for its arguments
-    /// in the order it declares them ([`Given::of`]), and the run it starts, or why there is
-    /// none: a skill that is not in the chat's set is never typed.
-    pub fn typed(&self, name: &str, values: &[String]) -> Result<Typing, String> {
+    /// in the order it declares them ([`Given::of`]), and the run it starts, its text digested
+    /// under the chat's `salt` ([`crate::skillspan::PromptSalt`]), or why there is none: a skill
+    /// that is not in the chat's set is never typed.
+    pub fn typed(
+        &self,
+        name: &str,
+        values: &[String],
+        salt: &crate::skillspan::PromptSalt,
+    ) -> Result<Typing, String> {
         let offered = self
             .offered
             .iter()
@@ -995,7 +1001,7 @@ impl ChatSkills {
                 origin: offered.effective.origin,
                 local: offered.effective.local,
             }),
-            text: crate::skillspan::PromptMarks::digest(&text),
+            text: crate::skillspan::PromptMarks::digest(&text, salt),
             confirmed: self.harness.typed_start(),
         });
         Ok(Typing { text, start: held })
@@ -1992,9 +1998,22 @@ pub struct HarnessCompat {
     pub compat: Compat,
 }
 
+/// **A file a harness reads beside a `SKILL.md` to keep a skill it finds itself out of its
+/// model's choice** (SK-39), as its adapter says ([`Harness::manual_beside`]).
+#[derive(Debug, Clone, Copy)]
+pub struct ManualBeside {
+    /// Its path inside the skill's folder.
+    pub file: &'static str,
+    /// Whether a text of it says the skill is manual-only, failing closed: `false` for anything
+    /// the harness might not read so.
+    pub says: fn(&str) -> bool,
+}
+
 /// The badges of the skill from `origin` whose `SKILL.md` is at `path` on each of `harnesses`
 /// ([`purlis_skills::compat`]), read by the one reader that follows no link: one that cannot be
-/// read is refused, or, from outside the plane, may widen the chat.
+/// read is refused, or, from outside the plane, may widen the chat. A skill the harness finds
+/// itself is manual-only where the file its harness reads beside it says so
+/// ([`kept_manual_beside`]).
 fn badges(
     (root, path): (&Path, &Path),
     origin: Origin,
@@ -2006,11 +2025,36 @@ fn badges(
         .map(|harness| HarnessCompat {
             harness: *harness,
             compat: match &text {
-                Ok(text) => compat(text, origin, &harness.skill_frontmatter()),
+                Ok(text) => {
+                    let badge = compat(text, origin, &harness.skill_frontmatter());
+                    if kept_manual_beside(*harness, (root, path), origin) {
+                        badge.kept_manual()
+                    } else {
+                        badge
+                    }
+                }
                 Err(why) => Compat::refused(why.clone(), origin),
             },
         })
         .collect()
+}
+
+/// **Whether `harness` keeps the skill from `origin` whose `SKILL.md` is at `path` under `root`
+/// out of its model's choice by a file of its own beside it** (SK-39): only a skill it finds
+/// itself, never one purlis hands it, which it does not read so. The file is read through the
+/// skill's folder held from its root, never through a link, and at most
+/// [`purlis_skills::MOST_BYTES`] of it: one that cannot be read so says nothing.
+fn kept_manual_beside(harness: Harness, (root, path): (&Path, &Path), origin: Origin) -> bool {
+    let Some(beside) = harness.manual_beside() else {
+        return false;
+    };
+    if origin.handed() {
+        return false;
+    }
+    purlis_skills::SkillFolder::open(root, path)
+        .ok()
+        .and_then(|folder| folder.read(Path::new(beside.file), purlis_skills::MOST_BYTES))
+        .is_some_and(|text| (beside.says)(&text))
 }
 
 /// **Each studio row of a harness skill a persona names, with its badge and lint on every

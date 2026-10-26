@@ -6607,8 +6607,13 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   line that reads the same, and a copy is passed over only where it is the same chat's, under
   the same id, and says the same thing.
   A `UserPromptSubmit` report carries `prompt_marks` (#2775): a 256-bit Bloom filter of the
-  SHA-256 digests of the stretches of each line of the prompt (from any word, up to 6 words; at
-  most 36), and never the prompt's words, so the app knows a skill Use skill… typed was in the prompt sent. It is heard
+  HMAC-SHA256 digests, keyed by the chat's own id (`PURLIS_CHAT_ULID`, #3029), of the stretches
+  of each line of the prompt (from any word, up to 6 words; at most 36), and never the prompt's
+  words, so the app knows a skill Use skill… typed was in the prompt sent. Only a Codex or
+  opencode chat marks every stretch; a Claude Code chat, which names the skill instead, marks
+  the prompt's lead alone (the first 6 words of its first line, so a first line that short is
+  digested whole), what a curation action's prompt is known by, and a hook with no chat id marks
+  nothing. The key separates chats and hides nothing: the chat's id is no secret (#3369). It is heard
   live alone: never spooled, never in the event log. A `userpromptexpansion` tool line (Claude
   Code) names the skill a `/<skill>` the person sent expanded into, as its `skill`, started by
   `use-skill`: the app opens a run only for a skill Use skill… typed and still holds.

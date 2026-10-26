@@ -417,6 +417,12 @@ impl Harness {
         self.adapter().skill_frontmatter()
     }
 
+    /// [`HarnessAdapter::manual_beside`]: the file beside a `SKILL.md` this harness keeps one of
+    /// its own skills manual-only by, where it has one (SK-39).
+    pub fn manual_beside(self) -> Option<crate::skills::ManualBeside> {
+        self.adapter().manual_beside()
+    }
+
     /// How a chat on this harness comes to know charter's skills, for that chat alone and with
     /// nothing written (ADR 0063). [`Self::state_hooks`] is where each route is taken.
     ///
