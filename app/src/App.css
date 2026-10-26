@@ -6339,7 +6339,9 @@ nav.piece-files-head {
    panels, the bottom Panel and the status bar out of the flow, and the work alone in their room.
    Nothing is unmounted and nothing is written: the regions' groups lay the editor out over the
    room the others leave, and the same sizes come back. The handles between the regions go with
-   them. The title bar stays. */
+   them. The title bar stays. The side columns and the status bar are drawn by their families'
+   rules, a layer above this one, so each family's sheet takes them out itself (`activity.css`,
+   `status.css`). */
 .window[data-focus-mode]
   :is(
     [data-scope="rail"][data-part="slot"],
