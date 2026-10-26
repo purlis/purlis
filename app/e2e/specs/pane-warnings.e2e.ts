@@ -198,8 +198,13 @@ function offTheTerminal(seen: Awaited<ReturnType<typeof measured>>) {
 /** Waits until the terminal of pane `pane` is fitted to the room it has (#3216): its band is
  *  drawn exactly while it holds a warning, and the terminal has the rows the room under the band
  *  and the header fits, counted as the terminal's fit counts them (`FitAddon`: the pane's height
- *  less the terminal's padding, in whole cells). Not "held still for a while": a read between two
- *  layouts can hold still too. What the scenario then checks is the rows that fit. */
+ *  less the terminal's padding, in whole cells).
+ *
+ *  A band whose last warning goes is put away in two layouts: the warning's box first, then a
+ *  render later the band's own room (`NoticePaneRow` counts what it holds from an observer). A
+ *  frame between the two has the terminal fitted a row short, and a read there is not the room
+ *  the pane ends with; "held still for a while" can be that frame too. What the scenario then
+ *  checks is the rows that fit. */
 async function untilRefitted(pane: number): Promise<void> {
   await browser
     .waitUntil(

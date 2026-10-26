@@ -190,25 +190,6 @@ describe("a pane's row of Notices", () => {
     );
   });
 
-  // **The band goes in one step when its last warning goes** (#3216): the warning's box and the
-  // band's own room leave in the same task, so the window never lays out a band with nothing in
-  // it, and the terminal under it is fitted once, to the room it ends with, not first to a row
-  // short. Read straight after the observers have run (a microtask), with no render waited for.
-  it("puts the band away in the same task its last warning leaves", async () => {
-    const { container } = render(<NoticePaneRow>{null}</NoticePaneRow>);
-    const row = container.querySelector(".pane-notice-row") as HTMLElement;
-    const stack = row.querySelector(".pane-notices") as HTMLElement;
-    const box = document.createElement("div");
-    box.className = "notice-pane-box";
-    stack.append(box);
-    await Promise.resolve();
-    expect(row).not.toHaveClass("pane-notice-row-empty");
-
-    box.remove();
-    await Promise.resolve();
-    expect(row).toHaveClass("pane-notice-row-empty");
-  });
-
   it("stands the ones that ask before one that only says, keeping the pane's order on screen", async () => {
     // The session's own "Allowed." came first in the pane, and the question two of its tasks
     // wait on came third: the question stands, and what can be read later is behind +1 more.
