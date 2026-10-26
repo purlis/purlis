@@ -33,17 +33,30 @@ import { describe, expect, it } from "vitest";
 import { property, TOKENS, type Token } from "./theme";
 
 const SRC = join(process.cwd(), "src");
-const PARTS = join(process.cwd(), "..", "crates", "purlis-core", "src", "theme", "parts.rs");
+const THEME = join(process.cwd(), "..", "crates", "purlis-core", "src", "theme");
 
-/** Each family's grounds as the manifest lists them, read out of the core's source: written out
- *  (`grounds: &[…]`), or named by a shared list (`grounds: CONTROL_GROUNDS`, `const … = &[…];`). */
-function manifestGrounds(source: string): Map<string, string[]> {
+/** Each family's grounds, as the engine's manifest lists them: from each family's own file,
+ *  `parts_<family>.rs` (ADR 0103 amended 2026-10-26), a shared list named there read from that
+ *  file first and then from `parts.rs`, which the file imports it from. */
+function engineGrounds(): Map<string, string[]> {
+  const parts = readFileSync(join(THEME, "parts.rs"), "utf8");
+  const grounds = new Map<string, string[]>();
+  for (const name of readdirSync(THEME).filter((one) => /^parts_\w+\.rs$/.test(one))) {
+    if (name.endsWith("_tests.rs")) continue;
+    const own = readFileSync(join(THEME, name), "utf8");
+    for (const [family, listed] of manifestGrounds(`${parts}\n${own}`, own))
+      grounds.set(family, listed);
+  }
+  return grounds;
+}
+
+function manifestGrounds(source: string, families = source): Map<string, string[]> {
   const tokens = (list: string) => [...list.matchAll(/"([^"]+)"/g)].map(([, token]) => token);
   const shared = new Map<string, string[]>();
   for (const [, name, list] of source.matchAll(/\nconst ([A-Z_]+): &\[&str\] = &\[([^\]]*)\];/g))
     shared.set(name, tokens(list));
   const grounds = new Map<string, string[]>();
-  for (const [, name, list, named] of source.matchAll(
+  for (const [, name, list, named] of families.matchAll(
     /Family \{\s*name: "([^"]+)",[\s\S]*?\n\s*grounds: (?:&\[([^\]]*)\]|([A-Z_]+),)/g,
   ))
     grounds.set(name, named === undefined ? tokens(list) : (shared.get(named) ?? []));
@@ -814,8 +827,8 @@ describe("the grounds a button is drawn on", () => {
   const read = readGrounds(sources(SRC), sheets());
 
   it("are, in the window, exactly the grounds the button family's manifest lists", () => {
-    const listed = manifestGrounds(readFileSync(PARTS, "utf8")).get("button");
-    expect(listed, "the button family's grounds in parts.rs").toBeDefined();
+    const listed = engineGrounds().get("button");
+    expect(listed, "the button family's grounds in parts_button.rs").toBeDefined();
     const where = read.found;
     const found = [...where.keys()].sort();
     expect(found).toContain("surface.base");

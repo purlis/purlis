@@ -9,7 +9,13 @@
  * {@link FAMILIES}; `vite.config.ts` puts there, as the window, the stories and their tests are
  * built, an import of each family stylesheet `styles.css` does not name, in the families' names'
  * order. So a pull request that adds a family adds its folder and nothing else here.
+ *
+ * Whatever reads `styles.css` for the sheets it imports reads it through {@link builtStyles}, as
+ * the build does, or a family that came in through the marker would escape it.
  */
+
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 
 /** The line of `styles.css` that the families' imports take the place of. */
 export const FAMILIES = "/* @families: every other src/ui/<family>/<family>.css, by name */";
@@ -37,4 +43,21 @@ export function withEveryFamily(styles: string, families: readonly string[]): st
     .filter((sheet) => !named.has(sheet))
     .map((sheet) => `@import "${sheet}" layer(components);`);
   return [...lines.slice(0, at), ...imports, ...lines.slice(at + 1)].join("\n");
+}
+
+/** Every family with a stylesheet of its own under `ui`, the folder `src/ui`. */
+export function familiesIn(ui: string): string[] {
+  return readdirSync(ui, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .filter((name) => existsSync(join(ui, name, `${name}.css`)));
+}
+
+/** **`styles.css` as the window is built from it**: read from `src`, the app's `src` folder, with
+ *  every family's import in its marker's place. */
+export function builtStyles(src: string): string {
+  return withEveryFamily(
+    readFileSync(join(src, "styles.css"), "utf8"),
+    familiesIn(join(src, "ui")),
+  );
 }

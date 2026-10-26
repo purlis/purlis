@@ -9,8 +9,8 @@ built-in themes, which held each appearance's parts stylesheet on one line) all 
 same place, so every family pull request conflicted with every other on each merge.
 
 - **A family is its own file.** `crates/purlis-core/src/theme/parts_<family>.rs` declares it as
-  `pub(super) const <NAME>: Family = Family { … }`, its `name` and `since` the first lines inside
-  it; its tests are `parts_<family>_tests.rs`. `build.rs` reads the directory and writes the
+  `pub(super) const <NAME>: Family = Family { … }` alone on its line, with its own `name` and
+  `since` at one indent inside it (build.rs refuses a family declared in another shape); its tests are `parts_<family>_tests.rs`. `build.rs` reads the directory and writes the
   module of each, the test module of each and `MANIFEST`, which `parts.rs` and `theme.rs`
   include. The families `parts.rs` held itself (button, field, text input, textarea, tabs,
   editor, tooltip) moved to files of their own.
@@ -22,7 +22,9 @@ same place, so every family pull request conflicted with every other on each mer
 - **What a pull request regenerates is in name order.** The schema's part keys and
   `docs/themes.md`'s family table (now written from the manifest, one row a family, and held to
   it by a test) list the families by name, so two new families add their lines in two places.
-  The stories' copy of the built-in themes keeps each parts stylesheet a rule a line.
+  The stories' copy of the built-in themes keeps each parts stylesheet a rule a line, in the
+  engine's cascade order, which interleaves families, so two pull requests that change two
+  families' rules in a built-in theme can still meet on adjacent lines.
   `styles.css` imports the families that need a place of their own by name; the build puts every
   other family's stylesheet at its `@families` line, by name.
 - **The tests derive their family lists from `MANIFEST`.**

@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   PARTS,
+  files,
   literals,
   literalsIn,
   markers,
@@ -223,4 +224,18 @@ test("this repository writes no literal VERSION + 1 as a since: an addition is s
     "write each of these as `since: NEXT` (`super::NEXT` in a family's own file); a literal " +
       "VERSION + 1 is never given a version by the release step and would ship unpinned",
   );
+});
+
+test("the release step's rewrite leaves this repository's code compiling: no NEXT is a conversion's argument", () => {
+  // `u64::from(parts::NEXT)` becomes `u64::from(13)`, an i32 no `From` takes (E0277): the
+  // release step's first cargo run would not compile. Write such a value as `VERSION + 1`.
+  const conversion = /\bfrom\(\s*\d+\s*\)/g;
+  const broken = [];
+  for (const file of files(REPO)) {
+    const text = readFileSync(join(REPO, file), "utf8");
+    const before = (text.match(conversion) ?? []).length;
+    const after = (replace(text, 9999).match(conversion) ?? []).length;
+    if (after !== before) broken.push(file);
+  }
+  assert.deepEqual(broken, [], "a NEXT passed to `from(...)` turns into an untyped literal");
 });

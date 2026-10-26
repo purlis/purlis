@@ -2,15 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /// <reference types="vitest/config" />
-import { defineConfig } from "vite";
+import { defineConfig, normalizePath } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwind from "@tailwindcss/vite";
 import process from "node:process";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { Plugin } from "vite";
 import { generate, NOTICES_FILE, render } from "../tools/third-party-notices.mjs";
-import { withEveryFamily } from "./src/ui/stylesheets.ts";
+import { familiesIn, withEveryFamily } from "./src/ui/stylesheets.ts";
 
 const host = process.env.TAURI_DEV_HOST;
 
@@ -83,19 +83,33 @@ function thirdPartyNotices(): Plugin {
  */
 function familyStylesheets(): Plugin {
   const ui = fileURLToPath(new URL("src/ui", import.meta.url));
-  const styles = fileURLToPath(new URL("src/styles.css", import.meta.url));
+  const styles = normalizePath(fileURLToPath(new URL("src/styles.css", import.meta.url)));
+  /** A family's own stylesheet, `src/ui/<family>/<family>.css`. */
+  const isFamilySheet = (file: string) => {
+    const [family, sheet, ...rest] = normalizePath(file)
+      .slice(normalizePath(ui).length + 1)
+      .split("/");
+    return rest.length === 0 && sheet === `${family}.css`;
+  };
   return {
     name: "purlis-family-stylesheets",
     enforce: "pre",
+    // A family added or taken away while the dev server runs: styles.css is built again.
+    configureServer(server) {
+      server.watcher.add(ui);
+      const changed = (file: string) => {
+        if (!normalizePath(file).startsWith(`${normalizePath(ui)}/`) || !isFamilySheet(file))
+          return;
+        for (const module of server.moduleGraph.getModulesByFile(styles) ?? [])
+          server.moduleGraph.invalidateModule(module);
+        server.ws.send({ type: "full-reload" });
+      };
+      server.watcher.on("add", changed);
+      server.watcher.on("unlink", changed);
+    },
     transform(code, id) {
-      if (id.split("?")[0] !== styles) return undefined;
-      // A family added while the dev server runs is drawn too.
-      this.addWatchFile(ui);
-      const families = readdirSync(ui, { withFileTypes: true })
-        .filter((entry) => entry.isDirectory())
-        .map((entry) => entry.name)
-        .filter((name) => existsSync(`${ui}/${name}/${name}.css`));
-      return { code: withEveryFamily(code, families), map: null };
+      if (normalizePath(id.split("?")[0]) !== styles) return undefined;
+      return { code: withEveryFamily(code, familiesIn(ui)), map: null };
     },
   };
 }

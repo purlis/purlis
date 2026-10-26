@@ -230,8 +230,8 @@ struct Declared {
 ///
 /// Every `src/theme/parts_<module>.rs` that is not a test is a module of `theme::parts`, and each
 /// `pub(super) const <NAME>: Family = Family {` at the start of a line in it is a family of
-/// `theme::parts::MANIFEST`: the family's own `name:` and `since:` are the first two
-/// lines indented one level inside it. Every `src/theme/parts_<module>_tests.rs` is a test module
+/// `theme::parts::MANIFEST`: the family's own `name:` and `since:` are its lines at one
+/// indent inside it. Every `src/theme/parts_<module>_tests.rs` is a test module
 /// of `theme`. Both are written to `OUT_DIR`, which `parts.rs` and `theme.rs` include.
 ///
 /// The order is what [`SHIPPED`] says for what it names, then by `since` and name, NEXT last: a
@@ -348,6 +348,12 @@ fn declared_in(module: &str, name: &str, text: &str) -> Vec<Declared> {
             .strip_prefix("pub(super) const ")
             .and_then(|rest| rest.strip_suffix(": Family = Family {"))
         else {
+            // A family declared in another shape would be left out of the manifest in silence.
+            assert!(
+                !line.contains(": Family = Family"),
+                "{name}: {line:?} declares a family build.rs cannot read: write it \
+                 `pub(super) const <NAME>: Family = Family {{` alone on its line"
+            );
             continue;
         };
         let mut family_name = None;

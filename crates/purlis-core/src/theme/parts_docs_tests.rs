@@ -130,7 +130,8 @@ fn the_docs_family_table_is_the_manifest_s() {
 
 #[test]
 fn the_table_says_what_came_later_and_what_no_release_has_shipped() {
-    let next = u64::from(parts::NEXT);
+    // VERSION + 1, not the marker: the release step writes a number over every NEXT in code.
+    let next = u64::from(parts::VERSION) + 1;
     let one = |since: u64| serde_json::json!({ "name": "x", "since": since });
     assert_eq!(since(&one(3), 3), "");
     assert_eq!(since(&one(4), 3), " (since version 4)");

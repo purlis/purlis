@@ -5,21 +5,17 @@
  * **Every family's stylesheet is in the window's `components` layer once** (`stylesheets.ts`):
  * named in `styles.css`, or put in its `@families` line's place by `vite.config.ts`, by name.
  */
-import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { FAMILIES, familySheet, withEveryFamily } from "./stylesheets";
+import { builtStyles, FAMILIES, familiesIn, familySheet, withEveryFamily } from "./stylesheets";
 
 const SRC = join(process.cwd(), "src");
 
-const families = readdirSync(join(SRC, "ui"), { withFileTypes: true })
-  .filter((entry) => entry.isDirectory())
-  .map((entry) => entry.name)
-  .filter((name) => existsSync(join(SRC, "ui", name, `${name}.css`)));
+const families = familiesIn(join(SRC, "ui"));
 
 describe("the families' stylesheets", () => {
   it("are each imported into the components layer once, as the window is built", () => {
-    const built = withEveryFamily(readFileSync(join(SRC, "styles.css"), "utf8"), families);
+    const built = builtStyles(SRC);
     expect(families.length).toBeGreaterThan(0);
     for (const family of families) {
       const imported = built

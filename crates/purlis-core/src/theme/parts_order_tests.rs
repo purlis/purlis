@@ -11,7 +11,8 @@
 
 use super::parts;
 
-/// The families after the twelve versions' own, as `build.rs` places them: by `since`, then name.
+/// The families no release has shipped, as `build.rs` places them: after every released one, by
+/// `since`, then name.
 #[test]
 fn a_family_added_later_is_placed_by_its_version_then_its_name() {
     let names: Vec<&str> = parts::MANIFEST.iter().map(|one| one.name).collect();
@@ -20,15 +21,17 @@ fn a_family_added_later_is_placed_by_its_version_then_its_name() {
     unique.dedup();
     assert_eq!(unique.len(), names.len(), "a family name twice: {names:?}");
 
-    // What version 12 listed is a prefix: the digest holds its order, this that nothing later
-    // comes before it.
+    // What the last release listed is a prefix: the digest holds its order, this that nothing
+    // added since comes before it.
     let shipped = parts::MANIFEST
         .iter()
-        .take_while(|one| one.since <= 12)
+        .take_while(|one| one.since <= parts::VERSION)
         .count();
     assert!(
-        parts::MANIFEST[shipped..].iter().all(|one| one.since > 12),
-        "a family of the first twelve versions listed after a later one: {names:?}"
+        parts::MANIFEST[shipped..]
+            .iter()
+            .all(|one| one.since > parts::VERSION),
+        "a released family listed after an unreleased one: {names:?}"
     );
     let later: Vec<(u32, &str)> = parts::MANIFEST[shipped..]
         .iter()

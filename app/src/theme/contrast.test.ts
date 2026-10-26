@@ -19,6 +19,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { builtStyles } from "../ui/stylesheets";
 import { property, TOKENS, type Token } from "./theme";
 
 /**
@@ -134,7 +135,11 @@ describe("every pair a stylesheet draws", () => {
    *  being imported, so none can draw a pair this test never sees. */
   const sheetNames = [
     "styles.css",
-    ...[...read("styles.css").matchAll(/@import "\.\/([^"]+\.css)"/g)]
+    ...[
+      ...builtStyles(join(process.cwd(), "src"))
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .matchAll(/@import "\.\/([^"]+\.css)"/g),
+    ]
       .map((hit) => hit[1])
       .filter((file) => !file.startsWith("theme/")),
   ];
