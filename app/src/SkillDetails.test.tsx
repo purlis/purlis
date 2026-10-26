@@ -182,7 +182,9 @@ describe("a skill's history, state and uses", () => {
     render(<SkillDetailsPanel plane="p" name="deploy" changed={0} />);
 
     const pins = await screen.findByTestId("skill-pinned-by");
-    expect(pins.textContent).toContain(`ops's pins aren't used: "Bad" is not a skill's name`);
+    expect(pins.textContent).toContain(
+      `workspace ops's pins aren't used: "Bad" is not a skill's name`,
+    );
     fireEvent.click(
       screen.getByRole("button", { name: 'Remove it, the pin "Bad" of workspace ops' }),
     );

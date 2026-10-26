@@ -383,7 +383,7 @@ describe("the Skill studio's changes", () => {
     render(<SkillStudioTab plane="p" scope={inWorkspace("ops")} changed={0} />);
 
     expect(await screen.findByTestId("skill-pins-refused")).toHaveTextContent(
-      `ops's pins aren't used: "Not A Name" is not a skill's name (it holds a capital).`,
+      `workspace ops's pins aren't used: "Not A Name" is not a skill's name (it holds a capital).`,
     );
     const pin = screen.getByRole("switch", { name: "Pin deploy for workspace ops" });
     expect(pin).toBeChecked();
@@ -420,7 +420,7 @@ describe("the Skill studio's changes", () => {
     render(<SkillStudioTab plane="p" scope={asPersona("reviewer")} changed={0} />);
 
     expect(await screen.findByTestId("skill-pins-refused")).toHaveTextContent(
-      "reviewer's pins aren't used: the list holds more than 64 pins. Unpin some, or edit personas/reviewer/persona.md.",
+      "persona reviewer's pins aren't used: the list holds more than 64 pins. Unpin some, or edit personas/reviewer/persona.md.",
     );
   });
 
