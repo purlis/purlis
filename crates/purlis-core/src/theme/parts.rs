@@ -524,6 +524,13 @@ impl Family {
             .map(|(_, token)| *token)
     }
 
+    /// The colour `part`'s words are drawn in by default, for the tests that hold it to a
+    /// family's stylesheet.
+    #[cfg(test)]
+    pub(super) fn own_words_of(&self, part: usize) -> Option<&'static str> {
+        self.own_words(part)
+    }
+
     /// The colour `part`'s words are drawn in by default, when it is not the root's.
     fn own_words(&self, part: usize) -> Option<&'static str> {
         let name = self.parts.get(part)?.name;
@@ -676,7 +683,7 @@ pub const MANIFEST: &[Family] = &[
         sized_apart: &[
             (
                 "[data-scope=\"button\"][data-part=\"root\"][data-size=\"sm\"]",
-                "max(var(--size-chrome), var(--space-7))",
+                "max(24px, var(--size-chrome), var(--space-7))",
             ),
             (
                 "[data-scope=\"button\"][data-part=\"root\"][data-size=\"lg\"]",
@@ -1096,6 +1103,13 @@ pub const MANIFEST: &[Family] = &[
     shell::TITLEBAR,
     select::SELECT,
     select::COMBOBOX,
+    choice::CHECKBOX,
+    choice::RADIO,
+    choice::SWITCH,
+    choice::SEGMENTED_CONTROL,
+    choice::SEGMENT,
+    choice::SLIDER,
+    choice::OPTION_CARD,
     // **A tree's row** (#2911): the list's row, a level a step in, with its twist.
     collection::TREE,
 ];
@@ -1120,12 +1134,21 @@ mod collection;
 /// The select and combobox families (#2906).
 #[path = "parts_select.rs"]
 mod select;
+
+/// The choice families (#2907): checkbox, radio, switch, segmented control and segment, slider
+/// and option card.
+#[path = "parts_choice.rs"]
+mod choice;
 #[cfg(test)]
 pub(super) use dialog::DIALOG_TIERS;
 
 /// The activity item family (#2917): a view's icon on a side's bar.
 #[path = "parts_activity.rs"]
 mod activity;
+
+#[cfg(test)]
+#[path = "state_words_tests.rs"]
+mod state_words_tests;
 
 /// **A field's colours as `app/src/ui/field/field.css` draws them**: no ground and no edge of
 /// its own, its label in the primary tier. Its help's and its error's words are the family's

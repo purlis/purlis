@@ -39,7 +39,7 @@
   [role="tab"][aria-selected="true"],
   [role="option"][aria-selected="true"],
   [aria-current]:not([aria-current="false"]),
-  .ui-segmented-item[data-state="checked"],
+  [data-scope="segment"][data-part="root"][data-selected],
   .ui-menu-item[data-highlighted],
   .ui-menu-item[data-state="open"],
   [data-scope="menu"][data-part="root"][data-focused]:not([data-disabled]),
@@ -60,7 +60,7 @@
 
   /* And a shape, so it is told without the colour: a tab and a segment are underlined. */
   [role="tab"][aria-selected="true"],
-  .ui-segmented-item[data-state="checked"] {
+  [data-scope="segment"][data-part="root"][data-selected] {
     text-decoration-line: underline;
     text-decoration-thickness: 2px;
     text-underline-offset: 0.25em;
@@ -80,28 +80,67 @@
   [data-scope="menu"][data-part="root"][data-disabled],
   [data-scope="menu"][data-part="root"][data-unavailable],
   [data-scope="list"][data-part="root"][data-disabled],
-  [data-scope="tree"][data-part="root"][data-disabled] {
+  [data-scope="tree"][data-part="root"][data-disabled],
+  [data-scope="checkbox"][data-part="root"][data-disabled],
+  [data-scope="radio"][data-part="root"][data-disabled],
+  [data-scope="switch"][data-part="root"][data-disabled],
+  [data-scope="segment"][data-part="root"][data-disabled],
+  [data-scope="slider"][data-part="root"][data-disabled],
+  [data-scope="option-card"][data-part="root"][data-disabled] {
     color: GrayText;
   }
 
-  /* A switch: its thumb is the mark, on the side it is switched to, and on is filled. */
-  .ui-switch-thumb {
+  /* A switch: its track is outlined, its thumb is the mark, on the side it is switched to, and
+     on is filled. */
+  [data-scope="switch"][data-part="track"] {
+    outline: 1px solid CanvasText;
+    outline-offset: -1px;
+  }
+
+  [data-scope="switch"][data-part="thumb"] {
     forced-color-adjust: none;
     background-color: CanvasText;
   }
 
-  .ui-switch[data-state="checked"] {
+  [data-scope="switch"][data-part="root"][data-selected] [data-scope="switch"][data-part="track"] {
     forced-color-adjust: none;
-    border-color: Highlight;
     background-color: Highlight;
   }
 
-  .ui-switch[data-state="checked"] .ui-switch-thumb {
+  [data-scope="switch"][data-part="root"][data-selected] [data-scope="switch"][data-part="thumb"] {
     background-color: HighlightText;
   }
 
-  /* A radio's dot. A checkbox's tick is an icon in the text's colour, which forced colours draw. */
-  .ui-radio-mark {
+  /* A radio's dot. A checkbox's tick is an icon in the text's colour, which forced colours
+     draw. */
+  [data-scope="radio"][data-part="mark"]::after {
+    forced-color-adjust: none;
+    background-color: CanvasText;
+  }
+
+  /* A chosen option card: the system's pair, as what is selected is, and its check is the shape.
+     Everything it holds is drawn in the pair's words too, a line's own colour (a profile's
+     approval mark, its command) included, so nothing on it keeps a theme's colour. */
+  [data-scope="option-card"][data-part="root"][data-selected] {
+    forced-color-adjust: none;
+    color: SelectedItemText;
+    background-color: SelectedItem;
+  }
+
+  [data-scope="option-card"][data-part="root"][data-selected] * {
+    color: SelectedItemText;
+  }
+
+  /* A slider's track is outlined, as a switch's is, and its fill up to its value and its thumb
+     are the mark. */
+  [data-scope="slider"][data-part="track"] {
+    outline: 1px solid CanvasText;
+    outline-offset: -1px;
+  }
+
+  /* A slider's fill up to its value, and its thumb. */
+  [data-scope="slider"][data-part="fill"],
+  [data-scope="slider"][data-part="thumb"] {
     forced-color-adjust: none;
     background-color: CanvasText;
   }

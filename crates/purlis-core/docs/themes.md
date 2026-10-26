@@ -303,6 +303,13 @@ an unknown token is.
 | `list` (since version 11) | `root` (every property: a list's row), `body` (`padding`, `gap`: the list around the rows), `lead` and `trail` (`text`, `gap`: a row's marks and its end), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`), `header` (`text`, `font-size`, `font-weight`: a group's name) | none |
 | `select` (since the next release) | `root` (every property but `font-weight`: the button that shows what is picked, drawn as the text input's box), `placeholder` (`text`: what it shows while nothing is picked), `chevron` (`text`) | none |
 | `combobox` (since the next release) | `root` (every property but `font-weight`: the box typed in, with its suggestions under it), `chevron` (`text`) | none |
+| `checkbox` (since NEXT) | `root` (`fill`, `text`, `corner-radius`, `gap`: the row pressed, a chip's ground), `box` (`fill`, `border-colour`, `border-width`, `corner-radius`: the box ticked), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`) | `box`, `chip` |
+| `radio` (since NEXT) | `root` (`text`, `gap`), `mark` (`fill`, `border-colour`, `border-width`: the circle picked), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`) | none |
+| `switch` (since NEXT) | `root` (`text`, `gap`), `track` and `thumb` (`fill`, `corner-radius`), `label` (`text`, `font-size`, `font-weight`) | none |
+| `segmented-control` (since NEXT) | `root` (`fill`, `corner-radius`, `shadow`, `padding`, `gap`: the ground its segments stand on) | none |
+| `segment` (since NEXT) | `root` (`fill`, `text`, `shadow`, `corner-radius`), `label` and `count` (`text`) | none |
+| `slider` (since NEXT) | `root` (`text`, `gap`), `track` and `fill` (`fill`, `corner-radius`), `thumb` (`fill`, `border-colour`, `corner-radius`), `output` (`text`: its value) | none |
+| `option-card` (since NEXT) | `root` (`fill`, `text`, `border-colour`, `shadow`, `corner-radius`, `padding`, `gap`), `icon`, `title` (`text`, `font-size`, `font-weight`), `detail` (`text`, `font-size`), `check` (`text`) | `card`, `tile` |
 | `tree` (since the next release's manifest version) | `root` (every property but `padding`, which is its indentation: a tree's row), `body` (`padding`, `gap`), `twist` (`text`: the chevron that opens a row's rows, a mark), `lead` and `trail` (`text`, `gap`), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`), `header` (`text`, `font-size`, `font-weight`) | none |
 
 A field is its label, its control (a `text-input` or a `textarea`), its help and its error, as
@@ -320,13 +327,19 @@ their own: a select's list and a combobox's suggestions stand on the popover's `
 each option is a menu's row, so `menu.root.hover.fill` reaches an option too. A chevron is a mark,
 held at 3:1 as an icon is; the placeholder and the chevron fall back to the quiet tier.
 
+A choice is chosen in `selected`: a box ticked (`checkbox.box.selected.fill`), a radio, a segment or
+a card picked, a switch on (`switch.track.selected.fill`). A choice's size is its family's: no
+choice takes a height, and a mark's corner is clamped to half its own box, so a tick never moves
+anything.
+
 The states are `hover`, `pressed`, `selected` (chosen, or a toggle that is on), `focused` (the
 keyboard is on it; a field whenever it holds the caret), `disabled` and `open`. A family names
 only the states its wrapper marks: the button every one; a text input and a textarea `hover`,
 `focused` and `disabled`; a select and a combobox `hover`, `focused` (a select from the keyboard, a
 combobox whenever it holds the caret), `disabled` and `open`; a field's root `disabled` alone; a
-dialog every one, though none
-changes its size. A key naming another is said and left
+dialog every one, though none changes its size; a choice `hover`, `selected`, `focused` and
+`disabled`, and a slider's row `disabled` alone (its thumb, not its row, is under the pointer and
+the keyboard). A key naming another is said and left
 out.
 
 | Property | Value | Bounds |

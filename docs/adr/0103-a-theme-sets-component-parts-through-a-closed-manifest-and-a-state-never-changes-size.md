@@ -149,5 +149,6 @@ reaches it.
 
 The amendments to this decision are files of their own in [`0103/`](0103/), one per
 amendment, named `<yyyy-mm-dd>-<slug>.md`. The latest:
+[2026-10-24, the choice families join the manifest](0103/2026-10-24-the-choice-families-join-the-manifest.md);
 [2026-10-25, one manifest version per release](0103/2026-10-25-one-manifest-version-per-release.md).
 Also [2026-10-25, the tree family joins the manifest](0103/2026-10-25-the-tree-family-joins-the-manifest.md).

@@ -66,11 +66,14 @@ async function toCreateOnGitHub(): Promise<void> {
   if (!pressed) throw new Error("the Projects strip offers no Open a project…");
   await $(DOORS).waitForExist({ timeout: 20_000, timeoutMsg: "the welcome never came" });
   await press(DOORS, "Create a project");
-  await $(`${WHERE} button[value="github"]`).waitForExist({
+  // A native radio of the radio group (#2907), clicked as the driver's pointerless click reaches
+  // it: React Aria takes a virtual press on the input, not on its label.
+  const github = await $(`${WHERE} input[type="radio"][value="github"]`);
+  await github.waitForExist({
     timeout: 20_000,
     timeoutMsg: "Create a project asked no Where it lives",
   });
-  await $(`${WHERE} button[value="github"]`).click();
+  await browser.execute((el: HTMLElement) => el.click(), github as unknown as HTMLElement);
   // The owners come from the stand-in forge's account: the account itself is picked.
   await browser.waitUntil(
     async () =>
