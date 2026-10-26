@@ -93,6 +93,7 @@ pub(super) const TABLE: Family = Family {
     // The card, a column's name and the bar stand around a row.
     around: &["frame", "head", "bar"],
     fills: &[],
+    under: &[],
 };
 
 /// **A table's row as `app/src/ui/table/table.css` draws it**, which a test holds to that file:

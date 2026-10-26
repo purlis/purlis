@@ -77,6 +77,7 @@ pub(super) const PANEL: Family = Family {
     corner_most: None,
     around: &[],
     fills: &[],
+    under: &[],
 };
 
 /// **The panel's colours as `app/src/ui/panel/panel.css` draws them**: the base surface, the
@@ -137,6 +138,7 @@ pub(super) const PANEL_SECTION: Family = Family {
     corner_most: None,
     around: &[],
     fills: &[],
+    under: &[],
 };
 
 /// **A section's colours as `panel.css` draws them**: no ground of its own, its title in the
@@ -214,6 +216,7 @@ pub(super) const EMPTY_STATE: Family = Family {
     corner_most: None,
     around: &[],
     fills: &[],
+    under: &[],
 };
 
 /// **An empty state's colours as `empty-state.css` draws them**: no ground, its sentence and its
@@ -304,6 +307,7 @@ pub(super) const STATUS_ITEM: Family = Family {
     corner_most: None,
     around: &[],
     fills: &[],
+    under: &[],
 };
 
 /// **A status item's colours as `app/src/ui/status/status.css` draws them**, at rest and under
@@ -410,6 +414,7 @@ pub(super) const RAIL: Family = Family {
     around: &[],
     // The badge's pill, the overlay's surface (`rail.css`): its digits are read on it (#3041).
     fills: &[("badge", "surface.overlay")],
+    under: &[],
 };
 
 /// **A rail button's colours as `app/src/ui/rail/rail.css` draws them.** A project's are its own
@@ -511,11 +516,22 @@ pub(super) const TITLEBAR: Family = Family {
     // What its wrapper marks: under the pointer, the current workspace, the keyboard's focus.
     states: &[State::Hover, State::Selected, State::Focused],
     focused: "[data-focus-visible]",
-    words: &[("count", "state.waiting")],
+    // Each part's words as `titlebar.css` draws them: the count in amber, the crumb secondary,
+    // the ⌄ quiet and a row's pin faint, marks both, and a switcher's row secondary.
+    words: &[
+        ("count", "state.waiting"),
+        ("crumb", "text.secondary"),
+        ("all", "text.quiet"),
+        ("pin", "text.faint"),
+        ("row", "text.secondary"),
+    ],
     corner_most: None,
     around: &[],
     // The count's pill, the amber wash (`titlebar.css`): its digits are read on it (#3041).
     fills: &[("count", "wash.warning")],
+    // A switcher's row and its pin paint no ground at rest: they stand on the popover's surface
+    // the switcher is drawn on, which their words are read on (#3099).
+    under: &[("row", "surface.overlay"), ("pin", "surface.overlay")],
 };
 
 /// **A chip's colours as `app/src/ui/titlebar/titlebar.css` draws them.** Quiet words with no box

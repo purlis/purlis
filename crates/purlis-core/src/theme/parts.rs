@@ -525,6 +525,11 @@ pub struct Family {
     /// The fill of a part that is not the root's, by the part's name: an activity item's count on
     /// its own pill (#2917). Its words are held to this fill, and a fallback draws it again.
     fills: &'static [(&'static str, &'static str)],
+    /// The ground a part's words are read on where the part paints none of its own and it is
+    /// not the root's, by the part's name (#3099): a tab's count on the counts button its parent
+    /// paints, a switcher's row on the popover it is drawn in. Its words are held to this ground,
+    /// but a fallback never paints it, since the part does not.
+    under: &'static [(&'static str, &'static str)],
 }
 
 impl Family {
@@ -564,6 +569,18 @@ impl Family {
     #[cfg(test)]
     pub(super) fn own_words_of(&self, part: usize) -> Option<&'static str> {
         self.own_words(part)
+    }
+
+    /// What `part`'s words are read on by default, when it is not the root's fill: its own fill,
+    /// or the ground it stands on ([`Family::under`]).
+    fn own_ground(&self, part: usize) -> Option<&'static str> {
+        let name = self.parts.get(part)?.name;
+        self.own_fill(part).or_else(|| {
+            self.under
+                .iter()
+                .find(|(one, _)| *one == name)
+                .map(|(_, token)| *token)
+        })
     }
 
     /// The colour `part`'s words are drawn in by default, when it is not the root's.
@@ -729,6 +746,10 @@ fn own_states(family: &Family) -> &'static [(State, &'static str)] {
 #[cfg(test)]
 #[path = "state_words_tests.rs"]
 mod state_words_tests;
+
+#[cfg(test)]
+#[path = "part_fills_tests.rs"]
+mod part_fills_tests;
 
 /// **A field's colours as `app/src/ui/field/field.css` draws them**: no ground and no edge of
 /// its own, its label in the primary tier. Its help's and its error's words are the family's
@@ -1973,7 +1994,7 @@ fn drawn(rules: &[Rule], family: &Family, variant: &str, states: &[State]) -> Dr
                     return fill;
                 }
                 part_fill(rules, family, part, variant, states)
-                    .or_else(|| family.own_fill(part))
+                    .or_else(|| family.own_ground(part))
                     .unwrap_or(fill)
             })
             .collect(),
@@ -2068,15 +2089,20 @@ fn lowest(theme: &ResolvedTheme, family: &Family, fill: &str, front: &str) -> Op
         .map(|ratio| (ratio * 100.0).floor() / 100.0)
 }
 
-/// The floor a part's words or marks are held to: 4.5:1 for words, 3:1 for a mark (an icon, a
-/// select's chevron).
-fn floor_of(part: &Part) -> f64 {
-    if is_mark(part) { 3.0 } else { 4.5 }
+/// **The parts whose words are a mark, not words** (#3099): a tab's ×, and the title bar's ⌄
+/// and pin, each a glyph to be told apart, held at 3:1 (WCAG 1.4.11) in the faint tier
+/// ([`super::check::FAINT`]), as an icon and a select's chevron are.
+const MARK_WORDS: &[(&str, &str)] = &[("tabs", "closer"), ("titlebar", "all"), ("titlebar", "pin")];
+
+/// Whether `part` of `family` draws a mark rather than words: an icon, the chevron of a select
+/// or a combobox, or one of [`MARK_WORDS`].
+fn is_mark(family: &Family, part: &Part) -> bool {
+    matches!(part.name, "icon" | "chevron") || MARK_WORDS.contains(&(family.name, part.name))
 }
 
-/// Whether a part is a mark and not words: an icon, or the chevron of a select or a combobox.
-fn is_mark(part: &Part) -> bool {
-    matches!(part.name, "icon" | "chevron")
+/// The floor a part's words or marks are held to: 4.5:1 for words, 3:1 for a mark.
+fn floor_of(family: &Family, part: &Part) -> f64 {
+    if is_mark(family, part) { 3.0 } else { 4.5 }
 }
 
 /// **What a look of a family drawn in marks breaks** (#3143), if anything: each part it draws,
@@ -2205,11 +2231,15 @@ fn unreadable(
 ) -> Option<(String, Option<f64>)> {
     for (at, part) in family.parts.iter().enumerate() {
         // With more contrast asked for, the reading floors are raised (#2925).
-        let floor = theme.least.floor(floor_of(part));
+        let floor = theme.least.floor(floor_of(family, part));
         if let Some(ratio) = lowest(theme, family, look.grounds[at], look.words[at])
             && ratio < floor
         {
-            let what = if is_mark(part) { "marks" } else { "words" };
+            let what = if is_mark(family, part) {
+                "marks"
+            } else {
+                "words"
+            };
             return Some((
                 format!(
                     "the {}'s {what} contrast {floor}:1 with its fill",
