@@ -57,6 +57,11 @@ const LINK_VOLUME: &str = "purlis-link";
 /// pod's status: Kubernetes' own default, named so a change of default never moves it.
 pub const TERMINATION_LOG: &str = "/dev/termination-log";
 
+/// **The name servers the pinned upstream gives a runner's pod**, with `dnsPolicy: None`, when it
+/// manages the sandbox's network, its default: public resolvers, not the cluster's. Measured on
+/// the kind run of v1.0.6; moving the pin moves it.
+pub const MANAGED_NAME_SERVERS: [&str; 2] = ["8.8.8.8", "1.1.1.1"];
+
 /// What [`KEY_STEP`] runs, after the image's own entrypoint (`purlis`).
 pub fn key_step_args() -> Vec<String> {
     [

@@ -493,6 +493,27 @@ fn what_the_cluster_sets_on_a_pod_does_not_stop_it_being_vouched_for() {
     }
     assert_eq!(vouch::key_published(&set, &template()), Ok(KEY.to_owned()));
     assert!(!vouch::SET_BY_THE_CLUSTER.is_empty());
+    // Upstream's own name servers, where it manages the pod's network; no others.
+    let upstreams = |pod: &mut Pod, servers: Vec<String>| {
+        spec(pod).dns_policy = Some("None".into());
+        spec(pod).dns_config = Some(PodDNSConfig {
+            nameservers: Some(servers),
+            ..PodDNSConfig::default()
+        });
+    };
+    let managed = upstream::MANAGED_NAME_SERVERS.map(str::to_owned).to_vec();
+    upstreams(&mut set, managed.clone());
+    assert_eq!(vouch::key_published(&set, &template()), Ok(KEY.to_owned()));
+    for servers in [
+        vec!["10.0.0.9".to_owned()],
+        [managed, vec!["10.0.0.9".into()]].concat(),
+    ] {
+        upstreams(&mut set, servers);
+        assert!(matches!(
+            vouch::key_published(&set, &template()),
+            Err(NotYet::Refused(_))
+        ));
+    }
 }
 
 fn owned_by(kind: &str, api_version: &str, name: &str, uid: &str) -> Vec<OwnerReference> {

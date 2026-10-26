@@ -186,7 +186,7 @@ pub const SET_BY_THE_CLUSTER: &[&str] = &[
     "nodeName (any)",
     "schedulerName (any)",
     "tolerations (only the not-ready and unreachable ones added for 300 seconds)",
-    "dnsPolicy (ClusterFirst)",
+    "dnsPolicy (ClusterFirst), or dnsPolicy None with exactly the name servers the pinned upstream gives a pod whose network it manages",
     "restartPolicy (Always)",
     "terminationGracePeriodSeconds (30)",
     "priority (0)",
@@ -215,6 +215,12 @@ pub fn normalised(spec: &PodSpec) -> serde_json::Value {
     pod.remove("nodeName");
     pod.remove("schedulerName");
     drop_if(pod, "dnsPolicy", json!("ClusterFirst"));
+    let upstreams_dns = json!({ "nameservers": crate::upstream::MANAGED_NAME_SERVERS });
+    if pod.get("dnsPolicy") == Some(&json!("None")) && pod.get("dnsConfig") == Some(&upstreams_dns)
+    {
+        pod.remove("dnsPolicy");
+        pod.remove("dnsConfig");
+    }
     drop_if(pod, "restartPolicy", json!("Always"));
     drop_if(pod, "terminationGracePeriodSeconds", json!(30));
     drop_if(pod, "priority", json!(0));
