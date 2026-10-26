@@ -345,8 +345,10 @@
   margin-inline-start: auto;
 }
 
+/* No gap between the marks: each is a whole 24px target (WCAG 2.5.8) with its own hover fill,
+   so a gap would only take room a narrow pane's breadcrumb needs (#3214). */
 .pane-actions > .pane-doing {
-  gap: var(--space-1);
+  gap: 0;
   padding: 0;
   border: 0;
   background-color: transparent;
