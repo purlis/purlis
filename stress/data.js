@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793010216235,
+  "lastUpdate": 1793017715619,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -7610,6 +7610,42 @@ window.BENCHMARK_DATA = {
             "value": 422.1,
             "unit": "MB",
             "extra": "median of 6 samples: 414.4, 420, 420.8, 423.3, 424.3, 551.6 MB; window 235.6 MB, session host 186 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5560b513f15c3447df5953fc99d430a0f3933e2a",
+          "message": "titlebar: every sideways swipe switches, not only the first (#3327) (#3348)\n\n* titlebar: every sideways swipe switches, not only the first (#3327)\n\nA swipe's gesture ended only after 220ms with no sideways wheel. A macOS\ntrackpad's momentum keeps the wheel going for a second or more, so a second\nswipe started in that tail was folded into the first and did nothing. A\ngesture now also ends when the wheel turns the other way, or speeds up again\nonce its tail has faded to half its fastest; momentum does neither. One step\nper stroke still holds.\n\nThe swipe tests feed traces in a trackpad's shape (a stroke, its momentum)\nwith their own timestamps, so the window test of one pin per gesture no\nlonger depends on how long the test took between its events (#3195).\n\nCloses #3195\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* titlebar: a swipe's tail is read by speed, so merged events never switch twice (#3327)\n\nReview of #3348: WebKit merges the wheel events of a busy page into one,\ntheir travel summed, and a switch is when the page is busy. Comparing each\nevent's size let one merged tail event read as a new stroke, and the rest\nof the tail switched again. Speeds are now px a frame (an event's travel over\nthe frames since the last one), and a fade counts only once two events in a\nrow show it, so one late, unmerged event is not one either. A turn the other\nway ends a gesture only when it travels SWIPE_RISE_PX or more; jitter the\nother way is left out of the tail's speed.\n\nUnit traces now merge events (2 to 7 frames, everywhere in a stroke and its\nmomentum; at the peak and again mid-tail), add a late event and a one-pixel\nreversal, each one step. The R114 window test's swipe is stamped too.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* titlebar: a swipe's opening event sets no speed (#3327)\n\nRe-check of #3348: the event after a quiet has no gap to read a speed from,\nso its raw size became the gesture's fastest. When a swipe's first frames\ncame merged (the page busy as it began), the ramp after them read as a\nfaded tail rising again and stepped twice. The opening event now counts\ntoward travel only. The merge sweep covers the slow stroke too, and a case\npins a slow stroke whose first five frames come merged.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-26T15:31:07+04:00",
+          "tree_id": "31945b9c4db31e2f6e10a1a18346df85b16662a3",
+          "url": "https://github.com/purlis/purlis/commit/5560b513f15c3447df5953fc99d430a0f3933e2a"
+        },
+        "date": 1793017713222,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 1124,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1094, 1124, 1523 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 285.6,
+            "unit": "MB",
+            "extra": "median of 6 samples: 308.7, 298.3, 287.6, 282.8, 283.6, 202.3 MB; window 167.1 MB, session host 118.5 MB"
           }
         ]
       }
