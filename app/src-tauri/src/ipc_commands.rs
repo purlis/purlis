@@ -120,6 +120,8 @@ macro_rules! app_commands {
                 chatbrowsers::chat_browsers,
                 chatbrowsers::chat_browser_timeline,
                 chatbrowsers::chat_browser_timeline_shot,
+                chatbrowsers::browsers_taken_back,
+                chatbrowsers::browser_viewed,
                 chatbrowsers::pin_chat_browser,
                 chatbrowsers::browsers_at_quit,
                 chatbrowsers::put_away_browsers_at_quit,
