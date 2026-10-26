@@ -391,6 +391,29 @@ fn a_clash_in_case_alone_is_refused_before_anything_moves() {
 }
 
 #[test]
+fn a_clone_is_refreshed_without_waiting_on_the_planes_claim() {
+    purlis_core::unsteered!();
+    let f = project();
+    // What the fix holds while it moves and commits: the plane's claim and its rewrite lock. A
+    // second take of either from the same process waits (the lock for as long as it is held).
+    let _claim = purlis_core::planegit::Claim::of(&f.plane).expect("nothing holds the plane");
+    let _held = purlis_core::rewrite::Lock::on(&f.plane);
+    let (done, wired) = std::sync::mpsc::channel();
+    let (plane, clone) = (f.plane.clone(), f.clone.clone());
+    std::thread::spawn(move || {
+        guest::wire(&plane, &clone);
+        let _ = done.send(());
+    });
+
+    assert!(
+        wired
+            .recv_timeout(std::time::Duration::from_secs(60))
+            .is_ok(),
+        "guest::wire waited on the plane's claim or its lock"
+    );
+}
+
+#[test]
 fn what_a_move_cannot_carry_is_refused() {
     purlis_core::unsteered!();
     // An untracked file beside the committed ones.

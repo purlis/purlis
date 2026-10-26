@@ -23,7 +23,8 @@
 //!   project read-only instead of quietly losing them, and a build that has it copies no
 //!   `.claude/skills` into a clone again ([`crate::guest::RETIRED_MIRROR`]).
 //!
-//! Once committed, it refreshes this machine's clones, so the copies purlis made there go now; a
+//! Once committed, it lets go of the project's claim and lock, then refreshes this machine's
+//! clones ([`crate::guest::wire`], which takes neither), so the copies purlis made there go now; a
 //! teammate's clones refresh the next time a chat starts in them. A copy somebody edited is kept,
 //! and named in what the fix says.
 //!
@@ -129,14 +130,14 @@ pub fn apply_in(
     if !studio {
         return Fixed::Refused(STUDIO_OFF.to_owned());
     }
-    let Some(_claim) = crate::planegit::Claim::within(root, CLAIM_WAIT) else {
+    let Some(claim) = crate::planegit::Claim::within(root, CLAIM_WAIT) else {
         return Fixed::Refused(
             "a save is running in this project; nothing was written. Run the fix again once it \
              has finished"
                 .to_owned(),
         );
     };
-    let _held = crate::rewrite::Lock::on(root);
+    let held = crate::rewrite::Lock::on(root);
     if let Err(why) = committable(root, "the move") {
         return Fixed::Refused(why);
     }
@@ -177,6 +178,10 @@ pub fn apply_in(
     let paths: Vec<&str> = paths.iter().map(String::as_str).collect();
     match commit_paths(root, &paths, &body(&plan)) {
         Ok(sha) => {
+            // The commit is made, so the project is let go before its clones are refreshed:
+            // a refresh is a chat's start, which never waits on the project's claim or lock.
+            drop(held);
+            drop(claim);
             let mut said = std::mem::take(&mut work.text.said);
             said.extend(references);
             said.extend(clashes);
