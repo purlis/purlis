@@ -771,7 +771,9 @@ describe("a granting answer on a pane that moved while its line stood still (#31
         () => 116 - band.top,
       );
       try {
-        const stack = document.querySelector(".pane-notices") as HTMLElement;
+        const stack = document.querySelector(
+          '[data-scope="notice-row"][data-part="stack"]',
+        ) as HTMLElement;
         scroll(stack);
         band.top = 20;
         await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
@@ -821,7 +823,9 @@ describe("a granting answer on a pane that moved while its line stood still (#31
     let clock = 1_000_000;
     const now = vi.spyOn(performance, "now").mockImplementation(() => clock);
     try {
-      const stack = document.querySelector(".pane-notices") as HTMLElement;
+      const stack = document.querySelector(
+        '[data-scope="notice-row"][data-part="stack"]',
+      ) as HTMLElement;
       byThePerson.wheel(stack);
       clock += 5000;
       band.top = 20;
@@ -844,7 +848,9 @@ describe("a granting answer on a pane that moved while its line stood still (#31
     const clock = 1_000_000;
     const now = vi.spyOn(performance, "now").mockImplementation(() => clock);
     try {
-      const stack = document.querySelector(".pane-notices") as HTMLElement;
+      const stack = document.querySelector(
+        '[data-scope="notice-row"][data-part="stack"]',
+      ) as HTMLElement;
       stack.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Escape" }));
       // A press on a Notice's way out is no scroll of the band either.
       screen
@@ -1421,7 +1427,7 @@ describe("a hold measured on a clock that only goes forward (#3227)", () => {
     const rect = vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (
       this: Element,
     ) {
-      const box = this.closest(".pane-notices > *");
+      const box = this.closest('[data-scope="notice-row"][data-part="stack"] > *');
       const top = box === null ? 0 : [...(box.parentElement?.children ?? [])].indexOf(box) * 40;
       return DOMRect.fromRect({ x: 0, y: top, width: 100, height: 30 });
     });
@@ -1493,7 +1499,7 @@ describe("a hold measured on a clock that only goes forward (#3227)", () => {
 
 describe("a pane's band read only once its boxes are drawn (#3302)", () => {
   // As a real engine lays the band out: the row is not drawn while it is empty
-  // (`.pane-notice-row-empty`, display: none), so every box in it is 0x0 then; once drawn,
+  // (the row's `data-empty`, display: none), so every box in it is 0x0 then; once drawn,
   // every answer stands in one place.
   const clock = { now: 1_000_000 };
   let spies: { mockRestore: () => void }[] = [];
@@ -1504,7 +1510,8 @@ describe("a pane's band read only once its boxes are drawn (#3302)", () => {
       vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (
         this: Element,
       ) {
-        if (this.closest(".pane-notice-row-empty") !== null) return DOMRect.fromRect();
+        if (this.closest('[data-scope="notice-row"][data-empty]') !== null)
+          return DOMRect.fromRect();
         return DOMRect.fromRect({ x: 12, y: 24, width: 90, height: 24 });
       }),
     ];
@@ -1721,7 +1728,8 @@ describe("a task's band memory carried to the pane it moved to (#3271)", () => {
       vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (
         this: Element,
       ) {
-        if (this.closest(".pane-notice-row-empty") !== null) return DOMRect.fromRect();
+        if (this.closest('[data-scope="notice-row"][data-empty]') !== null)
+          return DOMRect.fromRect();
         return DOMRect.fromRect({ x: 12, y: 24, width: 90, height: 24 });
       }),
     ];

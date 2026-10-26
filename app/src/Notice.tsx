@@ -453,9 +453,9 @@ export function NoticeList({
   );
 }
 
-/** **Whether a pane's row of Notices is drawn**: not while it holds none (`.pane-notice-row-empty`
+/** **Whether a pane's row of Notices is drawn**: not while it holds none (the row's `data-empty`
  *  is `display: none`), which is how it starts, until it has counted what it holds (#3302). */
-const rowDrawn = (row: HTMLElement) => !row.classList.contains("pane-notice-row-empty");
+const rowDrawn = (row: HTMLElement) => !row.hasAttribute("data-empty");
 
 /**
  * **A pane's Notices: a row of their own at the top of the pane, above its terminal** (#1647).
