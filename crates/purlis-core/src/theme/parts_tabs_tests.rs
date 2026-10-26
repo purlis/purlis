@@ -303,7 +303,10 @@ fn what_a_chosen_tab_joins_it_takes_the_fill_of() {
     let chosen = format!(":where({TAB}[data-selected])");
     let file = format!(":where({TAB}[data-variant=\"file\"][data-selected])");
     for one in [
-        format!("  {PANEL} {{ background-color: var(--surface-overlay); }}"),
+        format!(
+            "  {PANEL} {{ background-color: var(--surface-overlay); --panel-fill: \
+             var(--surface-overlay); }}"
+        ),
         "  :where([data-scope=\"editor\"][data-part=\"toolbar\"]) { background-color: \
          var(--surface-hover); }"
             .to_owned(),
@@ -381,39 +384,9 @@ fn the_manifest_names_the_tabs_and_the_editor_toolbar() {
         .iter()
         .map(|one| one["name"].as_str().unwrap())
         .collect();
-    assert_eq!(
-        families,
-        [
-            "button",
-            "field",
-            "text-input",
-            "textarea",
-            "tabs",
-            "editor",
-            "panel",
-            "panel-section",
-            "empty-state",
-            "status-item",
-            "tooltip",
-            "popover",
-            "menu",
-            "dialog",
-            "rail",
-            "activity",
-            "list",
-            "titlebar",
-            "select",
-            "combobox",
-            "checkbox",
-            "radio",
-            "switch",
-            "segmented-control",
-            "segment",
-            "slider",
-            "option-card",
-            "tree",
-        ]
-    );
+    // The tabs and the editor's toolbar shipped fifth and sixth (version 8), and keep their place:
+    // the manifest's order is `build.rs`'s (`families`), held by `parts_order_tests.rs`.
+    assert_eq!(families[4..6], ["tabs", "editor"]);
     let tabs = &manifest["families"][4];
     let parts: Vec<&str> = tabs["parts"]
         .as_array()

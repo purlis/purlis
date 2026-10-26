@@ -202,6 +202,25 @@
     outline: none;
   }
 
+  /* A resize handle's grip under the pointer and while it is dragged (#3143): forced colours take
+     a fill away, so the grip asks to keep the system's own, the words' colour and the highlight. */
+  [data-scope="panel-separator"][data-part="grip"] {
+    forced-color-adjust: none;
+  }
+
+  [data-scope="panel-separator"][data-part="root"]:is(
+      [data-separator="hover"],
+      [data-separator="focus"]:hover
+    ):not(:focus-visible)
+    > [data-scope="panel-separator"][data-part="grip"] {
+    background-color: CanvasText;
+  }
+
+  [data-scope="panel-separator"][data-part="root"]:is([data-separator="active"], :focus-visible)
+    > [data-scope="panel-separator"][data-part="grip"] {
+    background-color: Highlight;
+  }
+
   /* Focus: wherever Tab lands, a ring the system's palette draws. A menu's row says it by being
      the highlighted one, above, and the terminal's textarea is off screen. Last in the block, and
      more specific than each outline above, so it is drawn over all of them. Forced colours replace

@@ -29,6 +29,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Plugin } from "vite";
+import { readBuiltInThemes } from "./builtInThemes.ts";
 
 const HANDED = "virtual:purlis-handed";
 const FACES = "virtual:purlis-faces";
@@ -47,7 +48,7 @@ type Themes = Record<
 const THEMES = fileURLToPath(new URL("built-in-themes.json", import.meta.url));
 
 function themes(): Themes {
-  return JSON.parse(readFileSync(THEMES, "utf8")) as Themes;
+  return readBuiltInThemes(THEMES) as unknown as Themes;
 }
 
 /** One appearance of a built-in theme, by reference into `built-in-themes.json`. */

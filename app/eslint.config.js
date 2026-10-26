@@ -101,6 +101,7 @@ export default tseslint.config(
       "purlis/titlebar-family": "error",
       // Every tree is the tree family's, on React Aria, since #2911 (the trees below aside).
       "purlis/tree-family": "error",
+      "purlis/panel-separator-family": "error",
     },
   },
   // **The tablists still drawn by hand**, each until the ticket that moves it onto the tabs

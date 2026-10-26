@@ -20,6 +20,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { builtStyles } from "../ui/stylesheets";
 import { GEOMETRY_PROPERTIES } from "./geometry";
 import { LITERALS, dataUrls, mixesNoColourOfItsOwn } from "./literal";
 import { MOTION_TOKENS, motionProperty } from "./motion";
@@ -389,7 +390,10 @@ describe("the stylesheet and the vocabulary agree", () => {
   /** Every stylesheet of the window's own that `styles.css` imports, outside `theme/`: App.css,
    *  the control baseline and each primitive's sheet (ADR 0094). A new sheet is read here by
    *  being imported, so none can draw outside this check. */
-  const ownSheets = [...bridge.matchAll(/@import "\.\/([^"]+\.css)"/g)]
+  // As the window is built from it: a family the `@families` line brings in is read too.
+  const ownSheets = [
+    ...builtStyles(join(process.cwd(), "src")).matchAll(/@import "\.\/([^"]+\.css)"/g),
+  ]
     .map((hit) => hit[1])
     .filter((path) => !path.startsWith("theme/"));
   const css = ownSheets.map((path) => nonEmpty(`src/${path}`)).join("\n");

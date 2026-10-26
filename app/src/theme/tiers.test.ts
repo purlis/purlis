@@ -69,6 +69,9 @@ const FAINT: ReadonlySet<string> = new Set([
   '[data-scope="list"][data-part="root"][data-unavailable]',
   // A tree's row that cannot be used (#2911).
   '[data-scope="tree"][data-part="root"][data-disabled]',
+  // A resize handle's grip under the pointer, a mark (`ui/panel/panel.css`, #3143).
+  '[data-scope="panel-separator"][data-part="root"][data-separator="hover"] > [data-scope="panel-separator"][data-part="grip"]',
+  '[data-scope="panel-separator"][data-part="root"][data-separator="focus"]:hover:not(:focus-visible) > [data-scope="panel-separator"][data-part="grip"]',
   // An unavailable select's or combobox's words and marks (#2906).
   '[data-scope="select"][data-part="root"][data-disabled]',
   '[data-scope="combobox"][data-part="root"][data-disabled]',
